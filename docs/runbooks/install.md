@@ -61,11 +61,22 @@ Parámetros opcionales de `Core`:
 
 ## 3. Después de instalar
 
-1. Los administradores reciben una contraseña temporal por correo (vence en 3 días) y registran MFA al entrar. La URL está en el output `AppUrl` de `Core`.
+1. **Primer ingreso de los administradores.** Reciben una contraseña temporal por correo (vence en 3 días) y registran MFA (TOTP) al entrar; MFA es obligatorio. La URL está en el output `AppUrl` de `Core`. Si la contraseña temporal venció, quien administra la cuenta de AWS la renueva con `aws cognito-idp admin-create-user --message-action RESEND` o fija una con `admin-set-user-password`.
 2. Confirmar la suscripción del correo de alertas.
-3. En la aplicación: áreas y OUs (Ajustes › Áreas), grupos (Ajustes › Grupos), presupuestos y modelos. Nada de eso se configura en la plantilla.
-4. Dar grupo a las personas que se registren: hoy se hace en Cognito (`aws cognito-idp admin-add-user-to-group`), no en la aplicación.
+3. **En la aplicación, con los dos administradores** (cada cambio lo propone uno y lo aprueba el otro):
+   1. Ajustes › Áreas y OUs: crear las áreas y asignarles sus OU.
+   2. Ajustes › Grupos: crear el grupo de cada área (`bu-<área>`, tipo «área»). No existe hasta que alguien lo crea, y hay que crear antes el área.
+   3. Presupuestos y modelos, si los valores de la versión no sirven (por defecto USD 5 al mes por usuario y USD 30 por agente).
+4. **Personas: todavía fuera de la aplicación.** No hay pantalla para dar de alta personas ni para asignarlas a grupos. Quien administra la cuenta de AWS lo hace en Cognito (el id del directorio es el output `UserPoolId`):
+   - Alta: las personas con correo de un dominio de `SignUpDomains` se registran solas. A las demás se las crea con `aws cognito-idp admin-create-user` (Cognito les envía la contraseña temporal).
+   - Grupos: `aws cognito-idp admin-add-user-to-group`. Un líder de área necesita `bu-lead` y `bu-<área>`; un administrador, `mango-admin`; quien ve toda la organización, `finops-central`; quien crea agentes, `mango-agent-creator`. El cambio se ve en el siguiente ingreso de la persona.
 5. Ajustes › Conectividad: comprobar la cuenta pagadora y las cuentas miembro.
+6. Catálogo de MCP: habilitar los packs que se vayan a usar (doble aprobación; la instalación de cada uno tarda unos 5 minutos). Si un pack queda en error, «Reintentar» repite la instalación sin pedir otra aprobación.
+
+### Comprobar la instalación
+
+- `Mango-<ns>-OrgAccess` publica en el output `MemberTemplateSha256` el sha256 de la plantilla que despliega en las cuentas miembro. Debe ser el de la `TemplateBody` del StackSet `Mango-<ns>-Member` (`aws cloudformation describe-stack-set`, sin el salto de línea final que añade la CLI).
+- Las pruebas de punta a punta del repositorio (`tests/e2e/`, `tests/eval/`) corren contra cualquier instalación de prueba: toman todo de los outputs de `Mango-<ns>-Core` (`--stack`), de los parámetros de `Mango-<ns>-OrgAccess` y de la propia aplicación. Necesitan usuarios de prueba con su contraseña y su secreto TOTP en un archivo fuera del repositorio. **No se corren contra una instalación con datos reales**: crean agentes, habilitan packs y fijan contraseñas.
 
 ## 4. Actualizar
 
@@ -85,4 +96,6 @@ Parámetros opcionales de `Core`:
 |---|---|
 | `Access Denied` al leer la `TemplateURL` o el código de una Lambda | La organización no está en la lista de clientes del proveedor, o se instala desde una cuenta de otra organización |
 | El stack falla en una regla antes de crear nada | `ManagementAccountId` es la cuenta donde se instala `Core`; la región no es `us-east-1`; `ExcludedAccountIds` no incluye la cuenta de Mango |
+| Un pack queda en error con `verify_tools` / `tools_response_invalid` justo al habilitarlo | Visto una vez al instalar dos packs a la vez: el Runtime recién creado respondió algo que no era la lista de tools. «Reintentar» lo resolvió. El log de `Mango-<ns>-PackProvisioner` registra la forma de la respuesta (`pack_provisioner.tools_response_invalid`) |
+| El sha256 de la plantilla del StackSet no coincide con `MemberTemplateSha256` | Versiones hasta `v0.1.0-gb557f40`: una descripción con un carácter fuera de ASCII, que CloudFormation guarda como `?`. No cambia permisos. Se corrige actualizando `OrgAccess` a una versión posterior |
 | `CannotPullContainerError` en `mango-api` | La cuenta no puede leer el repositorio de imágenes del proveedor (misma lista de clientes) |
