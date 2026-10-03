@@ -1,0 +1,77 @@
+{
+  "Mango": {
+    "entityTypes": {
+      "User": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "role": { "type": "String", "required": false },
+            "businessUnit": { "type": "String", "required": false },
+            "isAdmin": { "type": "Boolean", "required": true },
+            "groups": { "type": "Set", "element": { "type": "String" }, "required": false }
+          }
+        }
+      },
+      "Agent": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "creator": { "type": "Entity", "name": "User", "required": false },
+            "groups": { "type": "Set", "element": { "type": "String" }, "required": false },
+            "users": {
+              "type": "Set",
+              "element": { "type": "Entity", "name": "User" },
+              "required": false
+            }
+          }
+        }
+      },
+      "Platform": { "shape": { "type": "Record", "attributes": {} } }
+    },
+    "actions": {
+      "UseAgent": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Agent"] } },
+      "CreateAgent": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "EditAgent": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Agent"] } },
+      "ApproveAgent": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Agent", "Platform"] }
+      },
+      "RetireAgent": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Agent"] } },
+      "ViewMcpCatalog": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "EnableMcp": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ApproveMcp": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ViewAudit": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ViewGroups": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ViewAdmin": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ManageBudgets": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ManageModels": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ProposeBusinessUnits": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ApproveBusinessUnits": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ProposeGroups": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ApproveGroups": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ProposeMfaReset": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ApproveMfaReset": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ViewApprovals": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ApproveToolCall": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ProposeToolPolicy": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ApproveToolPolicy": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      }
+    }
+  }
+}

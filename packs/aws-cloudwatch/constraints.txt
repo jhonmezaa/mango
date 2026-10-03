@@ -1,0 +1,7 @@
+# Upper bounds for the lock (packs/README.md, «Restricciones del lock»). AgentCore Runtime
+# takes wheels for aarch64-manylinux2014 (glibc 2.17); these packages publish arm64 wheels for
+# it only up to these lines, and for manylinux_2_28 after them.
+numpy<2.3
+pandas<2.3.3
+scipy<1.17
+statsmodels<0.15

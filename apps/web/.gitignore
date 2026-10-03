@@ -1,0 +1,8 @@
+dist/
+node_modules/
+coverage/
+# Playwright output (`pnpm e2e`).
+test-results/
+playwright-report/
+# Local runtime config for `pnpm dev` against a real backend (never committed).
+config.local.json

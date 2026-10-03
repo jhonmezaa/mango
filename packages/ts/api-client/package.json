@@ -1,0 +1,24 @@
+{
+  "name": "@mango/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Types, zod schemas and operation table generated from the OpenAPI of mango-api. Do not edit src/ by hand: run `mise run api-client`.",
+  "exports": {
+    "./operations": "./src/operations.gen.ts",
+    "./schemas": "./src/zod.gen.ts",
+    "./types": "./src/types.gen.ts"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/generate.mjs --check"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
+    "typescript": "catalog:"
+  }
+}

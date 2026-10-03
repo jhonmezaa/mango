@@ -1,0 +1,17 @@
+[project]
+name = "mango-approval-executor"
+version = "0.1.0"
+description = "Approval executor Lambda: the only code of Mango that writes to AWS accounts, and only with an approval (D27)"
+requires-python = ">=3.13,<3.14"
+dependencies = ["boto3>=1.40", "pydantic>=2.11", "mango-aws", "mango-core"]
+
+[tool.uv.sources]
+mango-aws = { workspace = true }
+mango-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_approval_executor"]

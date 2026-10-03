@@ -1,0 +1,4 @@
+# Build settings of the pack (packs/README.md, «Tamaño del zip»).
+# Stored, the zip is 304 MB (numpy, pandas, scipy and statsmodels): over the 250 MB limit of
+# AgentCore Runtime. Agreed on 2026-10-02.
+compression: deflate

@@ -1,0 +1,1176 @@
+/* Chat view: conversation list, header, hero, messages, tool calls, composer and markdown. */
+@layer components {
+  .chat-grid {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .chat-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-left: 1px solid var(--border);
+  }
+  .chat-scroll {
+    /* Contain absolutely positioned descendants (e.g. .sr-only) so they never grow the page. */
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .chat-column {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 28px 32px;
+  }
+
+  /* Conversation loading and error states (design chat.jsx `ChatSkeleton` and the
+     "No se pudo cargar la conversación" block). */
+  .chat-skeleton {
+    display: grid;
+    gap: 22px;
+  }
+  .chat-skeleton-bubble {
+    height: 38px;
+    margin-left: auto;
+    border-radius: 12px;
+  }
+  .chat-skeleton-lines {
+    display: grid;
+    gap: 8px;
+  }
+  .chat-skeleton-line {
+    height: 12px;
+    border-radius: 4px;
+  }
+  .chat-load-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 92px 32px;
+    text-align: center;
+  }
+  .chat-load-error-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    color: var(--amber);
+    background: var(--row-hover);
+    border-radius: 10px;
+  }
+  .chat-load-error-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .chat-load-error-body {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+  }
+  .chat-load-error-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  /* Design chat.jsx `ChatBlocked`: no agent to talk to (none, not available, retired). */
+  .chat-blocked {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 80px 32px;
+    text-align: center;
+  }
+  .chat-blocked-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    color: var(--text-muted);
+    background: var(--row-hover);
+    border-radius: 12px;
+  }
+  .chat-blocked-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .chat-blocked-body {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+  /* Design chat.jsx: notice above the messages (tools missing while their MCP is disabled). */
+  .chat-notice {
+    margin-bottom: 18px;
+  }
+
+  /* Conversation list */
+  .thread-list {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  /* Design chat.jsx `Drawer` "Historial" (340px) wrapping the conversation list. */
+  .chat-threads-drawer {
+    width: 340px;
+  }
+  .chat-threads-drawer > .thread-list {
+    flex: 1;
+  }
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .drawer-title {
+    min-width: 0;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .thread-list-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .thread-list-title {
+    flex: 1;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .thread-list-search {
+    padding: 8px 12px;
+  }
+  .thread-list-search .input {
+    width: 100%;
+    padding: 6px 10px 6px 28px;
+    font-size: 12px;
+  }
+  .thread-list-body {
+    /* Contain absolutely positioned descendants (e.g. .sr-only) so they never grow the page. */
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .thread-list-empty {
+    padding: 24px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .thread-list-error {
+    display: grid;
+    gap: 10px;
+    justify-items: center;
+    padding: 24px 12px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .thread-group-label {
+    margin: 0;
+    padding: 12px 12px 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .thread-group-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .thread-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    color: var(--text);
+    text-align: left;
+    border-left: 2px solid transparent;
+  }
+  .thread-row:hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+  .thread-row[aria-current='page'] {
+    background: var(--row-hover);
+    border-left-color: var(--accent);
+  }
+  .thread-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+  .thread-row-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .thread-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .thread-row-time {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .thread-row-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* Chat header (inside the topbar) */
+  .chat-head {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .chat-head-name {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .chat-head-sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .model-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    border-radius: 4px;
+  }
+  /* Design chat.jsx ModelSwitcher. */
+  .model-switch-btn {
+    font-family: var(--font-mono);
+    cursor: pointer;
+    background: transparent;
+  }
+  .model-switch-btn:hover:not(:disabled),
+  .model-switch-btn.is-open {
+    background: var(--input-bg);
+  }
+  .model-switch-btn.is-open {
+    border-color: var(--border-strong);
+  }
+  .model-switch-btn:disabled {
+    cursor: default;
+  }
+  .model-pop {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 50;
+    min-width: 220px;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: 4px;
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    white-space: normal;
+  }
+  .model-pop-title {
+    padding: 6px 10px 4px;
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
+  .model-pop-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .model-pop-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    color: var(--text);
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .model-pop-item:hover,
+  .model-pop-item.is-active {
+    background: var(--row-hover);
+  }
+  .model-pop-item.is-active {
+    font-weight: 600;
+  }
+  .model-pop-check {
+    flex-shrink: 0;
+    color: var(--accent-ink);
+  }
+  .model-pop-note {
+    margin-top: 4px;
+    padding: 6px 10px 4px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .chat-cost {
+    margin-right: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* Agent avatar */
+  .agent-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--green-soft);
+    color: var(--green);
+  }
+  .agent-avatar-sm {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+  }
+  .agent-avatar-lg {
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+  }
+  /* An agent the page cannot name (not listed for the user): neutral, no agent color. */
+  .agent-avatar-unknown {
+    background: var(--row-hover);
+    color: var(--text-muted);
+  }
+
+  /* Hero (empty conversation) */
+  .agent-hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100%;
+    padding: 60px 32px;
+  }
+  .agent-hero-inner {
+    width: 100%;
+    max-width: 680px;
+  }
+  .agent-hero-name {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 30px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--text-strong);
+  }
+  .agent-hero-desc {
+    max-width: 600px;
+    margin: 0 0 22px;
+    font-size: 16px;
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .suggestion-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .suggestion {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    height: 100%;
+    padding: 14px;
+    color: var(--text);
+    text-align: left;
+  }
+  .suggestion > svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--accent-ink);
+  }
+  .suggestion-title {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .suggestion-sub {
+    display: block;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
+  /* Messages (actions appear on hover or focus; always on touch screens) */
+  .msg-hover .msg-actions {
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .msg-hover:hover .msg-actions,
+  .msg-hover:focus-within .msg-actions {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .msg-hover .msg-actions {
+      opacity: 1;
+    }
+  }
+  .msg-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .msg-actions-agent {
+    gap: 2px;
+    margin-top: 10px;
+  }
+  .msg-time {
+    margin-right: 4px;
+  }
+  .msg-user {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 22px;
+  }
+  .msg-user-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    max-width: 78%;
+  }
+  .msg-user-bubble {
+    margin: 0;
+    padding: 10px 16px;
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .msg-agent {
+    max-width: 760px;
+    margin-bottom: 24px;
+  }
+  .msg-stopped {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -14px 0 22px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .msg-thinking {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  /* Design chat.jsx `ch-phase` and `ch-steps`: phase under the partial text and the steps of
+     the turn. Only color tokens, so both themes work; the steps wrap on a narrow screen. */
+  .ch-phase {
+    margin-top: 8px;
+    min-height: 20px;
+  }
+  .ch-steps {
+    margin-bottom: 10px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .ch-steps-t {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .ch-steps-t:hover {
+    color: var(--text);
+  }
+  .ch-steps-t .tool-chevron.is-open {
+    transform: rotate(90deg);
+  }
+  .ch-steps-l {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0 0 0 4px;
+    display: grid;
+    gap: 6px;
+    border-left: 1px solid var(--border);
+  }
+  .ch-steps-l li {
+    /* Contain the .sr-only status label. */
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    padding-left: 10px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .ch-steps-l li.is-ok svg {
+    color: var(--green);
+  }
+  .ch-steps-l li.is-failed,
+  .ch-steps-l li.is-failed svg {
+    color: var(--red);
+  }
+  .msg-guardrail {
+    margin-top: 10px;
+  }
+  .msg-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: 10.5px;
+    color: var(--blue);
+  }
+  .msg-notice {
+    margin: 12px 0 14px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .msg-notice .notice-title {
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  /* Tool calls, grouped per turn */
+  .tool-group {
+    max-width: 760px;
+    margin-bottom: 14px;
+  }
+  .tool-group-head {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .tool-group-time {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .tool-chevron {
+    transition: transform 0.15s;
+  }
+  .tool-group-head .tool-chevron.is-open {
+    transform: rotate(90deg);
+  }
+  .tool-row-head .tool-chevron {
+    color: var(--text-dim);
+  }
+  .tool-row-head .tool-chevron.is-open {
+    transform: rotate(180deg);
+  }
+  .tool-group-list {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .tool-row + .tool-row {
+    border-top: 1px solid var(--border);
+  }
+  .tool-row-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .tool-row-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+  }
+  .tool-row-time {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .tool-row-params {
+    margin: 0 12px 10px;
+  }
+
+  /* Composer */
+  .composer {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 16px;
+    border-top: 1px solid var(--border);
+  }
+  /* Design chat.jsx: the box that replaces the composer when no message can be sent. */
+  .composer-blocked {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 32px 20px;
+  }
+  .composer-blocked-box {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .composer-blocked-box > svg {
+    flex-shrink: 0;
+  }
+  .composer-box {
+    padding: 10px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .composer-textarea {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    max-height: 240px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+    resize: none;
+    outline: none;
+  }
+  .composer-textarea::placeholder {
+    color: var(--text-dim);
+  }
+  .composer-textarea:focus-visible {
+    outline: none;
+  }
+  .composer-error {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--red);
+  }
+  .composer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .composer-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  /* Markdown of agent responses: design styles.css `.md` is the single source (sans 14.5px /
+     1.65). Links are buttons (`.md-link`) because every one needs confirmation. */
+  .md {
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .md p {
+    margin: 0 0 12px;
+  }
+  .md > :first-child {
+    margin-top: 0;
+  }
+  .md > :last-child {
+    margin-bottom: 0;
+  }
+  .md h1,
+  .md h2,
+  .md h3 {
+    margin: 20px 0 8px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    color: var(--text-strong);
+  }
+  .md h1 {
+    font-size: 18px;
+  }
+  .md h2 {
+    font-size: 15px;
+  }
+  .md h3 {
+    font-size: 13px;
+  }
+  .md strong {
+    font-weight: 600;
+  }
+  .md em {
+    font-style: italic;
+  }
+  .md ul,
+  .md ol {
+    margin: 4px 0 12px;
+    padding-left: 20px;
+  }
+  .md ul {
+    list-style: disc;
+  }
+  .md ol {
+    list-style: decimal;
+  }
+  .md li {
+    margin: 3px 0;
+  }
+  .md code {
+    padding: 1px 5px;
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--kbd-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .md pre {
+    margin: 8px 0 14px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .md pre code {
+    padding: 0;
+    font-size: inherit;
+    background: transparent;
+    border: 0;
+  }
+  .md-table-wrap {
+    margin: 8px 0 14px;
+    overflow-x: auto;
+  }
+  .md table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .md th,
+  .md td {
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .md th {
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+    background: none;
+    border-bottom-color: var(--border-strong);
+  }
+  .md tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  /* Numeric columns (set by rehypeNumericColumns). */
+  .md th.num,
+  .md td.num {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .md blockquote {
+    margin: 8px 0 12px;
+    padding: 2px 0 2px 12px;
+    color: var(--text-muted);
+    border-left: 2px solid var(--border-strong);
+  }
+  .md hr {
+    margin: 16px 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+  .md-link {
+    color: var(--accent-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .md-link:hover {
+    color: var(--text-strong);
+  }
+  /* "Abrir enlace externo" (design chat.jsx): 440px modal, host in bold above the full URL. */
+  .external-link-dialog {
+    width: 440px;
+    padding: 20px;
+  }
+  .external-link-dialog .modal-title {
+    margin-bottom: 14px;
+    font-size: 15px;
+  }
+  .external-link-body {
+    margin: 0 0 10px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+  }
+  .external-link-host {
+    margin: 0 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-strong);
+    word-break: break-all;
+  }
+  .external-link-url {
+    margin: 0 0 16px;
+    padding: 8px 10px;
+    font-size: 12px;
+    word-break: break-all;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .md-blocked {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border: 1px dashed var(--border-strong);
+    border-radius: 4px;
+  }
+
+  /* Design v12 (styles.css .ch-model-soon): only the model's "Próximamente" tag is dropped at
+     1180px; the dimmed "Modelo ▾" and its accessible "próximamente" name stay. */
+  @media (max-width: 1180px) {
+    .ch-model-soon > .soon-tag {
+      display: none;
+    }
+  }
+  /* Design v11 (styles.css .chat-actions): the header controls give way progressively, the cost
+     at 1000px, the skills/MCP popover at 860px and "Más opciones" at 640px. */
+  @media (max-width: 1100px) {
+    .chat-main .topbar-sep {
+      display: none;
+    }
+  }
+  @media (max-width: 1000px) {
+    .chat-soon-cost {
+      display: none;
+    }
+  }
+  @media (max-width: 860px) {
+    .chat-soon-tools {
+      display: none;
+    }
+  }
+  @media (max-width: 640px) {
+    .chat-soon-more,
+    .chat-conv-label {
+      display: none;
+    }
+  }
+  @media (max-width: 1200px) {
+    .chat-grid {
+      grid-template-columns: 260px minmax(0, 1fr);
+    }
+  }
+  /* Design v0.11: below 1100px the conversation list is a drawer (ChatPage renders it). */
+  @media (max-width: 1100px) {
+    .chat-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .chat-main {
+      border-left: 0;
+    }
+  }
+  @media (max-width: 900px) {
+    .chat-column {
+      padding: 20px 16px;
+    }
+    .chat-load-error {
+      padding: 64px 16px;
+    }
+    .agent-hero {
+      padding: 32px 16px;
+    }
+    .suggestion-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .composer {
+      padding: 12px;
+    }
+    .msg-user-inner {
+      max-width: 90%;
+    }
+    .chat-threads-drawer {
+      width: 100%;
+      max-width: 100vw;
+    }
+    /* No room for the keyboard hint next to the buttons on phones. */
+    .composer-hint {
+      display: none;
+    }
+  }
+}
+
+@keyframes mango-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Streaming cursor after the last block of the response. */
+@layer components {
+  .md-streaming > :is(ul, ol):last-child::after {
+    content: none;
+  }
+  .md-streaming > :last-child::after,
+  .md-streaming > :is(ul, ol):last-child > li:last-child::after {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 13px;
+    margin-left: 2px;
+    vertical-align: -2px;
+    background: var(--accent);
+    animation: mango-blink 0.9s steps(2) infinite;
+  }
+
+  /* Agent picker (design ui.jsx AgentPicker). */
+  .picker-overlay {
+    align-items: flex-start;
+    padding-top: 8vh;
+  }
+  .picker {
+    display: flex;
+    flex-direction: column;
+    width: 760px;
+    max-width: 94vw;
+    max-height: 84vh;
+    overflow: hidden;
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  }
+  .picker-head {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .picker-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .picker-sub {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .picker-head .search-wrap .input {
+    width: 100%;
+    padding: 9px 10px 9px 30px;
+    font-size: 13px;
+  }
+  .picker-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 16px 18px;
+  }
+  .picker-label {
+    margin: 0;
+    padding: 4px 4px 8px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+  .picker-grid-mini {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 8px;
+  }
+  .picker-card {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    text-align: left;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .picker-card:hover {
+    background: var(--card-hover);
+    border-color: var(--accent-border);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  }
+  .picker-card-name {
+    display: block;
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .picker-card-meta {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .picker-card-desc {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .picker-empty {
+    margin: 0;
+    padding: 40px 20px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .picker-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  /* Pills (design: filter groups). */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--card);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .pill:hover {
+    background: var(--card-hover);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .pill-active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent-border);
+  }
+  .pill-count {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    opacity: 0.7;
+  }
+  .pill-active .pill-count {
+    opacity: 1;
+  }
+}

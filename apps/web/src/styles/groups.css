@@ -1,0 +1,160 @@
+/*
+ * Ajustes › Grupos (design groups-admin.jsx). Ported from the design (Claude Design styles.css
+ * `gr-*`); values are the design's. The modal reuses the governance dialog.
+ */
+@layer components {
+  /* The long description takes the room that is left; the button stays on its right. */
+  @media (min-width: 721px) {
+    .gr-head > div:first-child {
+      flex: 1 1 320px;
+      min-width: 0;
+    }
+    .gr-head > .btn {
+      flex-shrink: 0;
+    }
+  }
+  /* `.g-frame .badge` resets the tone of a badge; the violet one is first used here. */
+  .g-frame .badge-violet {
+    background: var(--violet-soft);
+    color: var(--violet);
+  }
+  .gr-tr {
+    display: grid;
+    grid-template-columns: minmax(200px, 2fr) 110px 120px 80px 70px 40px;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .gr-tr.mc-th {
+    border-top: none;
+  }
+  .gr-tr.is-pending {
+    opacity: 0.75;
+  }
+  .gr-table {
+    padding: 0;
+    overflow: hidden;
+  }
+  .gr-id {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-strong);
+  }
+  .gr-id + .badge {
+    margin-left: 6px;
+  }
+  .gr-desc {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gr-area {
+    font-size: 12.5px;
+  }
+  .gr-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .gr-search {
+    flex: 1 1 200px;
+    max-width: 280px;
+  }
+  /* Four type filters do not fit a phone next to the search: the group scrolls. */
+  .gr-toolbar .tk-quick {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .gr-empty {
+    padding: 16px;
+  }
+  .gr-changes {
+    margin-top: 22px;
+  }
+  .gr-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .gr-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .gr-field-error {
+    margin-top: 5px;
+    font-size: 12px;
+    color: var(--red);
+  }
+  .gr-field-hint {
+    margin-top: 5px;
+  }
+  .gr-types {
+    display: grid;
+    gap: 6px;
+  }
+  .gr-type {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .gr-type.is-on {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+  }
+  .gr-type input {
+    margin-top: 3px;
+    accent-color: var(--accent-ink);
+  }
+  .gr-type-name {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .gr-area-select {
+    width: auto;
+    min-width: 200px;
+  }
+  .gr-link {
+    font-size: 12px;
+    color: var(--accent-ink);
+  }
+  .gr-link:hover {
+    text-decoration: underline;
+  }
+  .gr-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+  }
+  .gr-foot-spacer {
+    flex: 1;
+  }
+  .gr-delete {
+    color: var(--red);
+  }
+  .input.gr-invalid {
+    border-color: var(--red);
+  }
+
+  @media (max-width: 760px) {
+    .gr-tr {
+      grid-template-columns: minmax(0, 1fr) auto 40px;
+    }
+    .gr-tr > :nth-child(3),
+    .gr-tr > :nth-child(4),
+    .gr-tr > :nth-child(5) {
+      display: none;
+    }
+  }
+}

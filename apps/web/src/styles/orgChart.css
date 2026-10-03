@@ -1,0 +1,502 @@
+/*
+ * Org Chart (design other-views.jsx `OrgChart`: `oc-*`). Ported from the design (Claude Design
+ * styles.css); values are the design's. The classes without a design counterpart (`oc-page`,
+ * `oc-grid`, `oc-toolbar`, `oc-legend`, `oc-panel*`, `oc-mini*`, `oc-kid*`, `oc-deleg-*`) carry
+ * what the prototype writes as inline styles.
+ */
+@layer components {
+  /* Design `.page-wrap.oc-page`. */
+  .oc-page {
+    padding: 12px 32px 48px;
+  }
+
+  .oc-stats {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+  .oc-stats > div {
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-left: 1px solid var(--border);
+  }
+  .oc-stats > div:first-child {
+    border-left: none;
+  }
+  .oc-stats > div > span:first-child {
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  /* "Próximamente" goes under the value when the cell is narrow. */
+  .oc-stats .soon {
+    flex-wrap: wrap;
+  }
+  .oc-stats b {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-strong);
+  }
+
+  /* Design: `grid-template-columns: minmax(0,1fr) 340px` with the panel open (`keep-grid`). */
+  .oc-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .oc-grid.has-panel {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+  .oc-card {
+    padding: 0;
+    overflow: hidden;
+  }
+  .oc-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .oc-search {
+    flex: 1;
+    min-width: 160px;
+    max-width: 280px;
+  }
+  .oc-search .input {
+    width: 100%;
+  }
+  .oc-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+  .oc-zoom {
+    min-width: 64px;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .oc-canvas {
+    position: relative;
+    overflow: hidden;
+    height: clamp(420px, 62vh, 720px);
+    background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1px);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .oc-canvas.grabbing {
+    cursor: grabbing;
+  }
+  .oc-canvas:focus-visible {
+    outline: 2px solid var(--accent-ink);
+    outline-offset: -2px;
+  }
+  .oc-tree {
+    transform-origin: 0 0;
+    width: max-content;
+    position: absolute;
+    left: 0;
+    top: 0;
+    will-change: transform;
+  }
+  .oc-canvas.grabbing .oc-tree {
+    transition: none;
+  }
+  .oc-hint {
+    position: absolute;
+    left: 12px;
+    bottom: 10px;
+    z-index: 2;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 10px;
+    pointer-events: none;
+  }
+  .oc-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .oc-node button {
+    cursor: pointer;
+  }
+  .oc-tree ul {
+    display: flex;
+    justify-content: center;
+    padding: 20px 0 0;
+    margin: 0;
+    position: relative;
+    list-style: none;
+  }
+  .oc-tree > ul {
+    padding-top: 0;
+  }
+  .oc-tree li {
+    position: relative;
+    padding: 20px 6px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .oc-tree > ul > li {
+    padding-top: 0;
+  }
+  .oc-tree li::before,
+  .oc-tree li::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 50%;
+    width: 50%;
+    height: 20px;
+    border-top: 1px solid var(--border-strong);
+  }
+  .oc-tree li::after {
+    right: auto;
+    left: 50%;
+    border-left: 1px solid var(--border-strong);
+  }
+  .oc-tree li:only-child::before,
+  .oc-tree li:only-child::after {
+    border-top: none;
+  }
+  .oc-tree li:only-child::before {
+    display: none;
+  }
+  .oc-tree li:first-child::before,
+  .oc-tree li:last-child::after {
+    border-top: none;
+  }
+  .oc-tree li:last-child::before {
+    border-right: 1px solid var(--border-strong);
+    border-radius: 0 8px 0 0;
+  }
+  .oc-tree li:first-child::after {
+    border-radius: 8px 0 0 0;
+  }
+  .oc-tree li:only-child::after {
+    border-radius: 0;
+  }
+  .oc-tree > ul > li::before,
+  .oc-tree > ul > li::after {
+    display: none;
+  }
+  .oc-tree ul ul::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    height: 20px;
+    border-left: 1px solid var(--border-strong);
+  }
+  .oc-node {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 196px;
+    transition:
+      border-color 0.12s,
+      box-shadow 0.12s;
+  }
+  .oc-node:hover {
+    border-color: var(--border-strong);
+  }
+  .oc-node.on {
+    border-color: var(--accent-ink);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .oc-node.hit {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .oc-node.root {
+    background: var(--text-strong);
+    border-color: var(--text-strong);
+  }
+  /* Design `ghost`: «Supervisor no visible» stands for supervisors the caller cannot see. */
+  .oc-node.ghost {
+    border-style: dashed;
+    opacity: 0.85;
+  }
+  .oc-node.root .oc-name {
+    color: var(--bg);
+  }
+  .oc-node.root .oc-role {
+    color: color-mix(in oklab, var(--bg) 70%, transparent);
+  }
+  .oc-node.root .oc-ic {
+    background: color-mix(in oklab, var(--bg) 14%, transparent);
+    color: var(--bg);
+  }
+  .oc-node-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    border-radius: 12px;
+  }
+  .oc-ic {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--row-hover);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .oc-name {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .oc-role {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .oc-toggle {
+    position: absolute;
+    left: 50%;
+    bottom: -11px;
+    transform: translateX(-50%);
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--card);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+  .oc-toggle:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+  .oc-tree li > ul {
+    padding-top: 28px;
+  }
+  .oc-tree li > ul::before {
+    height: 28px;
+  }
+  .oc-tree li > ul > li {
+    padding-top: 20px;
+  }
+
+  .oc-legend {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .oc-legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* Design `OrgSidePanel`. */
+  .oc-panel {
+    position: sticky;
+    top: 20px;
+    padding: 0;
+  }
+  .oc-panel-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .oc-panel-ic {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--row-hover);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .oc-panel-name {
+    font-size: 14px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .oc-panel-role {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+  .oc-panel-b {
+    padding: 14px;
+  }
+  .oc-panel-t {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .oc-kv {
+    font-size: 12.5px;
+  }
+  /* Design `MiniStat`. */
+  .oc-mini {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--row-hover);
+    text-align: center;
+  }
+  .oc-mini-v {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .oc-mini-l {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  /* Design `OrgAgentFacts`: a row without data yet shows «—» and the tag. */
+  .oc-kv-soon {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .oc-panel-desc {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .oc-panel-alert {
+    margin-bottom: 14px;
+    font-size: 12.5px;
+  }
+  .oc-panel-note {
+    margin: 0 0 14px;
+  }
+  .oc-kid {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--row-hover);
+    margin-bottom: 4px;
+  }
+  .oc-kid-ic {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .oc-kid-name {
+    font-size: 13.5px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .oc-kid-role {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .oc-deleg-t {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 32px 0 12px;
+  }
+  /* Design: the «Delegación A2A» card, "Próximamente" and without rows. */
+  .oc-deleg-soon {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 20px;
+  }
+  .oc-deleg-soon > svg {
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+  .oc-deleg-soon-t {
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+
+  @media (max-width: 1100px) {
+    .oc-stats {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .oc-stats > div:nth-child(4) {
+      border-left: none;
+    }
+    .oc-stats > div:nth-child(n + 4) {
+      border-top: 1px solid var(--border);
+    }
+  }
+  /* Design (oct 2026): at 760px and below the panel goes under the canvas. */
+  @media (max-width: 760px) {
+    .oc-grid.has-panel {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .oc-panel {
+      position: static;
+    }
+  }
+  /* Design `@media (max-width:900px) .page-wrap`. */
+  @media (max-width: 900px) {
+    .oc-page {
+      padding: 8px 16px 40px;
+    }
+  }
+}

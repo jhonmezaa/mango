@@ -1,0 +1,67 @@
+[project]
+name = "mango-workspace"
+version = "0.1.0"
+description = "Mango Hub monorepo (Python workspace root)"
+requires-python = ">=3.13,<3.14"
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE", "NOTICE"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/py/*", "connectors/*", "functions/*", "apps/api", "deployment/pack-builder"]
+# Catalog data only (manifest and tool schema); its code is functions/approval-executor.
+exclude = ["connectors/aws-budgets"]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.14",
+  "mypy>=1.18",
+  "pytest>=8.4",
+  "boto3-stubs[sts,ce,budgets,organizations,dynamodb,firehose,verifiedpermissions,bedrock-agentcore,bedrock-agentcore-control,bedrock-runtime,lambda,cognito-idp,kms,stepfunctions,iam,logs,s3]>=1.40",
+  "types-pyyaml>=6.0",
+  "moto[dynamodb]>=5.1",
+  "httpx>=0.28",
+  # Evaluates the real Cedar policies in tests (policies/cedar/platform); never shipped.
+  "cedarpy>=4.12,<5",
+  # The MCP SDK the awslabs servers are built on: the common pack entry point is tested
+  # against it (caller isolation under concurrency, S-M1); never shipped by Mango.
+  "mcp>=2.2,<3",
+  # The other library awslabs servers are built on (Billing): its adapter in the common pack
+  # entry point is tested against it, like the SDK above; never shipped by Mango. Same
+  # version as packs/aws-billing/requirements.lock, so the test runs what the pack ships.
+  "fastmcp==4.0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "S", "BLE", "A", "C4", "SIM", "RUF", "PL", "TRY", "N"]
+ignore = ["TRY003", "PLR0913"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["mango_*", "finops_eval"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "PLR2004", "S105", "S106", "S107"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+files = ["packages/py", "connectors", "functions", "apps/api/src", "tests/eval", "deployment/pack-builder"]
+exclude = ["/tests/"]
+explicit_package_bases = true
+mypy_path = ["packages/py/mango-aws/src", "packages/py/mango-core/src", "packages/py/mango-packs/src", "packages/py/mango-pack-runtime/src", "deployment/pack-builder/src", "connectors/cost-explorer/src", "functions/gateway-interceptor/src", "functions/pre-token/src", "functions/pre-sign-up/src", "functions/admin-probe/src", "functions/approval-executor/src", "functions/provisioner/src", "functions/reconciler/src", "apps/api/src", "tests/eval"]
+
+[[tool.mypy.overrides]]
+# Only installed for live runs of tests/eval (uv run --with ...), not in the workspace.
+module = ["pycognito.*", "pyotp.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["packages/py", "connectors", "functions", "apps/api", "tests/eval", "deployment"]
+pythonpath = ["tests/eval"]
+addopts = "-q --import-mode=importlib"

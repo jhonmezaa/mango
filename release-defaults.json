@@ -1,0 +1,11 @@
+{
+  "models": {
+    "agent": "us.anthropic.claude-sonnet-4-6",
+    "auxiliary": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+  },
+  "modelPrices": {
+    "us.anthropic.claude-sonnet-4-6": { "input": 3.0, "output": 15.0, "cacheRead": 0.3, "cacheWrite": 3.75 },
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": { "input": 1.0, "output": 5.0, "cacheRead": 0.1, "cacheWrite": 1.25 }
+  },
+  "budgets": { "userMonthlyUsd": 5, "agentMonthlyUsd": 30 }
+}

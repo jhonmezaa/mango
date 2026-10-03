@@ -1,0 +1,78 @@
+# AWS CloudWatch MCP pack over the member accounts (D51). Schema: packages/py/mango-packs
+# (PackManifest). Guide: packs/README.md. Threat model: docs/security/threat-models/
+# aws-cloudwatch-pack-threat-model.md.
+schema_version: 1
+id: aws-cloudwatch
+version: "0.3.1-2" # <upstream version>-<Mango revision>
+name: AWS CloudWatch
+description: Metrics, alarms and log group metadata of the organization's member accounts, read in the account each question names. No log events. Central users only.
+
+source:
+  package: awslabs.cloudwatch-mcp-server
+  version: "0.3.1"
+  sha256: 2161532a8f48d454b87d6e4d53f25188e98a7661b9187db9decea907810187be # wheel
+  exclude_newer: "2026-09-24T00:00:00Z" # lock cutoff: 7 days of quarantine
+
+# The server does not filter by area: every call runs as the central user who asked.
+data_tier: account_data
+identity_mode: central_only
+# Each call reads one member account, the one its `account_id` argument names (an argument
+# of Mango's, added and removed by the common entry point): Read broker ->
+# Mango-<ns>-ReadOnly of that account, with SourceIdentity = user.
+identity:
+  chain: member
+
+# Ceiling of every call's session, not permissions of the pack role (it has none). All of
+# them are granted to the role of the member accounts (MEMBER_READ_ONLY_STATEMENTS), all of
+# them read-only: every operation of the tools below maps to one of these actions.
+iam:
+  # get_metric_data, analyze_metric, get_recommended_metric_alarms.
+  - actions:
+      - cloudwatch:GetMetricData
+    resources: ["*"]
+    reason: A GetMetricData query names metrics, not a resource with an ARN; the action only works on "*".
+  # get_active_alarms, get_alarm_history. The role narrows it to the alarms of its own account.
+  - actions:
+      - cloudwatch:DescribeAlarms
+      - cloudwatch:DescribeAlarmHistory
+    resources: ["arn:aws:cloudwatch:*:*:alarm:*"]
+  # describe_log_groups: names, retention and size of log groups, and saved queries. No events.
+  - actions:
+      - logs:DescribeLogGroups
+      - logs:DescribeQueryDefinitions
+    resources: ["*"]
+    reason: Neither action has a resource type in the IAM service reference.
+
+# What the Runtime reaches (R6), each through its VPC endpoint: STS to assume the Read broker
+# and the role of the member account, CloudWatch and CloudWatch Logs. Endpoints only exist in
+# the Region of the installation, so that is the only Region the pack reads: the common entry
+# point refuses a call that names another one.
+egress:
+  aws: [sts, cloudwatch, logs]
+
+# Arguments of the tools served that the entry point hides and removes (entrypoint.py):
+#   profile_name: would pick other credentials.
+#   account_identifiers, include_linked_accounts (describe_log_groups): would read the
+#     accounts linked to a monitoring account, which may not be accounts Mango reads.
+# `region` stays, held to the shape of a Region name and to the installation's own Region by
+# the common entry point.
+#
+# Upstream tools left out on purpose (the entry point removes them):
+#   execute_log_insights_query, get_logs_insight_query_results, cancel_logs_insight_query,
+#   execute_cwl_insights_batch, analyze_log_group: read the content of logs, start and stop
+#     queries billed by the data they scan (user, 2026-10-02: no log content).
+#   recommend_indexes_loggroup, recommend_indexes_account: run Logs Insights queries too.
+#   execute_promql_query, execute_promql_range_query, get_promql_label_values,
+#   get_promql_series, get_promql_labels: sign HTTP requests of their own with `requests`,
+#     outside botocore, and need actions the role of the member accounts does not have.
+tools:
+  - { name: get_metric_data, access: read }
+  - { name: get_metric_metadata, access: read }
+  - { name: analyze_metric, access: read }
+  - { name: get_recommended_metric_alarms, access: read }
+  - { name: get_active_alarms, access: read }
+  - { name: get_alarm_history, access: read }
+  - { name: describe_log_groups, access: read }
+tools_hash: "sha256:b8c6066a1e77886339a3d5da64986d6b640bd2f9696f35d6e37e98defd357219"
+
+config: []

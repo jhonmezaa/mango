@@ -1,0 +1,184 @@
+/*
+ * Brains (design models-view.jsx). Ported from the design (Claude Design styles.css `mv-*`);
+ * values are the design's.
+ */
+@layer components {
+  .mv-conn {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin: 16px 28px 0;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card);
+  }
+  .mv-conn-ic {
+    color: var(--green);
+    background: var(--green-soft);
+  }
+  .mv-tr {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) 160px minmax(150px, 1fr) 190px 70px 170px;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: left;
+  }
+  .mv-tr.mc-th {
+    border-top: none;
+  }
+  .mv-tr:hover:not(.mc-th) {
+    background: var(--row-hover);
+  }
+  .mv-tr.is-dim {
+    opacity: 0.65;
+  }
+  .mv-cap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: var(--row-hover);
+    color: var(--text-muted);
+  }
+  .mv-soon {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .mv-soon-c {
+    padding: 14px 16px;
+    opacity: 0.85;
+  }
+  .mv-soon-w {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+    font-size: 11.5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+  .mv-soon-note {
+    grid-column: 1 / -1;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+  /* Design: the price inputs of the confirmation form (inline styles in models-view.jsx). */
+  .mv-price {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding-left: 10px;
+    background: var(--card);
+  }
+  .mv-price:focus-within {
+    border-color: var(--accent-ink);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .mv-price input {
+    border: none;
+    outline: none;
+    background: transparent;
+    flex: 1;
+    min-width: 0;
+    padding: 7px 8px;
+    font: inherit;
+    color: var(--text);
+  }
+  .mv-check {
+    accent-color: var(--accent);
+  }
+
+  /*
+   * Classes of the design shared with other screens (MCP catalog, approvals) that this screen
+   * is the first to use. Same values as the design. The ones already shared are in agents.css.
+   */
+  .ap-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+  }
+  /* Design: `style={{ borderTop: 'none' }}` on the Brains toolbar. */
+  .ap-bar.mv-bar,
+  .mv-bar .ap-filters {
+    border-top: none;
+  }
+  /* Five status filters do not fit a phone: the group scrolls instead of being cut off. */
+  .mv-bar .tk-quick {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .mc-ic {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    background: var(--row-hover);
+    color: var(--text-muted);
+  }
+  .mc-ic.lg {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+  .mc-foot {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  @media (max-width: 1100px) {
+    .mv-tr {
+      grid-template-columns: minmax(200px, 2fr) 150px 180px 60px;
+    }
+    .mv-tr > :nth-child(3),
+    .mv-tr > :nth-child(6) {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .mv-conn {
+      margin: 12px 16px 0;
+    }
+    .ap-bar {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .mc-body {
+      padding: 12px 16px 32px;
+    }
+    .mv-tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .mv-tr > :nth-child(4),
+    .mv-tr > :nth-child(5) {
+      display: none;
+    }
+    /* Status filters stay on one line and scroll sideways. */
+    .mv-status-f {
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      max-width: 100%;
+      scrollbar-width: none;
+    }
+    .mv-status-f > button {
+      flex-shrink: 0;
+    }
+  }
+}

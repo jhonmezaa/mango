@@ -1,0 +1,149 @@
+/*
+ * Shared by the marketplace screens (Marketplace, Agent Builder, agent review, Org Chart, MCP
+ * catalog): tabs, inline notices and the classes more than one of them uses. Ported from the
+ * design (Claude Design styles.css `mk-*`, `mc-*`, `ap-bar`, `sr-link`); values are the design's. The side panel (`mk-drawer`) and the badges
+ * are in admin.css and components.css.
+ */
+@layer components {
+  .mk-tabs {
+    display: flex;
+    gap: 20px;
+    margin-top: 4px;
+  }
+  .mk-tabs button {
+    padding: 10px 0;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mk-tabs button.is-on {
+    color: var(--text-strong);
+    border-bottom-color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .mk-count {
+    font-size: 11px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--row-hover);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mc-alert {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 11px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    background: var(--row-hover);
+    border: 1px solid var(--border);
+  }
+  /* Design: `style={{ display: 'block' }}` on notices without an icon. */
+  .mc-alert-block {
+    display: block;
+  }
+  .mc-alert > svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--text-muted);
+  }
+  .mc-alert.red {
+    background: var(--red-soft);
+    border-color: color-mix(in oklab, var(--red) 25%, transparent);
+  }
+  .mc-alert.red > svg {
+    color: var(--red);
+  }
+  .mc-alert.amber {
+    background: var(--amber-soft);
+    border-color: color-mix(in oklab, var(--amber) 25%, transparent);
+  }
+  .mc-alert.amber > svg {
+    color: var(--amber);
+  }
+
+  /*
+   * Classes the design shares between screens (Marketplace, agent review, Brains, MCP catalog):
+   * names, avatars, tables, toolbars and inline links. One copy, with the design's values.
+   */
+  .ap-bar {
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ap-reason {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+  .mc-body {
+    padding: 16px 28px 40px;
+  }
+  .mc-table {
+    padding: 0;
+    overflow: hidden;
+  }
+  .mc-th {
+    border-top: none;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+  .mk-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .mk-avatar.sm {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+  .mk-danger {
+    background: var(--red) !important;
+    color: #fff !important;
+    border-color: var(--red) !important;
+  }
+  .mk-danger:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .mk-line {
+    font-size: 13px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    gap: 10px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .mk-line:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+  .mk-name {
+    font-weight: 600;
+    font-size: 13.5px;
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sr-link {
+    font-size: 12px;
+    color: var(--accent-ink);
+  }
+}

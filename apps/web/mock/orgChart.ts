@@ -1,0 +1,38 @@
+/**
+ * Mock routes of the Org Chart screen: GET /agents/org.
+ * The agents live in `agents.ts`; the response follows the generated contract
+ * (packages/ts/api-client) and `organization` of mango_api.agents. The mock user is an admin, so
+ * they get every published agent (D38).
+ */
+import { agents, publishedVersion, ROOT_SUPERVISOR } from './agents.ts';
+import { sendJson, type ApiHandler } from './http.ts';
+
+export const handleOrgChart: ApiHandler = (req, res, path) => {
+  if (path !== '/agents/org' || req.method !== 'GET') return Promise.resolve(false);
+  const published = [...agents.values()].flatMap((agent) => {
+    const version = publishedVersion(agent);
+    return version
+      ? [{ id: agent.agent_id, version: version.number, definition: version.definition }]
+      : [];
+  });
+  const visible = new Set(published.map((agent) => agent.id));
+  const nodes = published
+    .map(({ id, version, definition }) => {
+      const supervisor = definition.reports_to ?? ROOT_SUPERVISOR;
+      return {
+        id,
+        version,
+        name: definition.name,
+        role: definition.role,
+        description: definition.description,
+        category: definition.category,
+        icon: definition.icon,
+        color: definition.color,
+        // null when the supervisor is retired or not published.
+        reports_to: supervisor === ROOT_SUPERVISOR || visible.has(supervisor) ? supervisor : null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'es') || a.id.localeCompare(b.id));
+  sendJson(res, 200, { root: ROOT_SUPERVISOR, nodes });
+  return Promise.resolve(true);
+};

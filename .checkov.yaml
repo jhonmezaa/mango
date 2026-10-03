@@ -1,0 +1,19 @@
+# Checkov: IaC checks complementary to cdk-nag (synth) and cfn-guard (`mise run guard`).
+# Run through `mise run checkov` after `mise run synth` (CI: `-c env=example`).
+# Suppressions live in the CDK code (`infra/lib/checkov.ts`, `Metadata.checkov.skip`), never here.
+directory:
+  - .
+framework:
+  - cloudformation # synthesized templates in infra/cdk.out
+  - dockerfile
+  - github_actions
+skip-path:
+  - node_modules
+  - \.venv
+  - docs
+  - infra/cdk\.out/asset\. # bundled Lambda code and third-party dependencies
+  - apps/web/dist
+  - dist # built releases and packs: the templates are scanned in infra/cdk.out
+compact: true
+quiet: true
+download-external-modules: false

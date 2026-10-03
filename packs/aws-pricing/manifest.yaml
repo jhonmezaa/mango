@@ -1,0 +1,44 @@
+# AWS Pricing MCP pack (D19). Schema: packages/py/mango-packs (PackManifest). Guide: packs/README.md.
+schema_version: 1
+id: aws-pricing
+version: "1.1.1-2" # <upstream version>-<Mango revision>
+name: AWS Pricing
+description: Public AWS list prices from the AWS Price List API, by service, region and attributes.
+
+source:
+  package: awslabs.aws-pricing-mcp-server
+  version: "1.1.1"
+  sha256: 613446bdf660e8bfa30da985c4a102f62c6ab6f8a459ffe43285311ae059175d # wheel
+  exclude_newer: "2026-09-24T00:00:00Z" # lock cutoff: 7 days of quarantine
+
+data_tier: public
+identity_mode: service
+
+iam:
+  - actions:
+      - pricing:DescribeServices
+      - pricing:GetAttributeValues
+      - pricing:GetProducts
+      - pricing:ListPriceLists
+      - pricing:GetPriceListFileUrl
+    resources: ["*"]
+    reason: The AWS Price List API has no resource types, so its actions do not accept ARNs.
+
+# What the Runtime reaches (R6): the Price List API through its VPC endpoint. Nothing else is
+# routable from the pack network. `get_price_list_urls` returns URLs; it does not fetch them.
+egress:
+  aws: [pricing]
+
+# Upstream tools left out on purpose (the entry point removes them, R6):
+#   analyze_cdk_project, analyze_terraform_project: read the server's file system.
+#   generate_cost_report: writes a file at a path chosen by the model.
+tools:
+  - { name: get_pricing, access: read }
+  - { name: get_pricing_service_codes, access: read }
+  - { name: get_pricing_service_attributes, access: read }
+  - { name: get_pricing_attribute_values, access: read }
+  - { name: get_price_list_urls, access: read }
+  - { name: get_bedrock_patterns, access: read }
+tools_hash: "sha256:84df0a12b9b26389bcc708fcfb2fef570658c011232ac3538d56eefe36b0ad0e"
+
+config: []

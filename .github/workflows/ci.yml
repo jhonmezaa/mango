@@ -1,0 +1,67 @@
+# Continuous integration: the same gates as `mise run lint|typecheck|test|synth|guard|checkov|audit|secrets`.
+# It only verifies; nothing is deployed from CI (D8, D9).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+      - run: uv sync --all-packages --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+
+  typescript:
+    name: TypeScript (web, infra, cdk-nag, cfn-guard, checkov)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --if-present run lint
+      - run: pnpm -r --if-present run typecheck
+      # The infra stacks embed the SPA build, so it is built before infra tests and synth.
+      - run: pnpm --filter @mango/web build
+      - run: pnpm -r --if-present run test
+      # Browser flow (create, review, use an agent) against the local mock: no AWS, no secrets.
+      - run: pnpm --filter @mango/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @mango/web run e2e
+      # Synthesis runs cdk-nag (AwsSolutions); the example config needs no AWS credentials.
+      - run: pnpm --filter @mango/infra exec cdk synth --quiet -c env=example
+      - run: mise run guard
+      - run: mise run checkov
+
+  security:
+    name: Security (dependencies, secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+      - run: mise run audit
+      - run: gitleaks git . --no-banner --redact

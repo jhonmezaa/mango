@@ -1,0 +1,212 @@
+[
+  {
+    "name": "list_accounts_in_scope",
+    "description": "List the AWS accounts the current user is allowed to analyze, with their name, business units (áreas) and OU path. Call it first when the user refers to accounts, áreas or OUs by name, then pass the matching account_ids to the cost tools (e.g. to answer how much an área or OU spends).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_cost_and_usage",
+    "description": "Get actual AWS cost for a period, optionally grouped (by service, account, region, usage type, instance type or a cost allocation tag) and optionally filtered by accounts or services. Results are always limited to the user's accounts. Grouped rows come sorted from highest to lowest amount within each period (a top N is the first N rows of the period), and `totals` gives the exact total of each period: report it instead of adding up rows. Dates are YYYY-MM-DD; end_date is exclusive. Max range 13 months; DAILY granularity max 92 days; at most 2 group_by entries.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "description": "Inclusive start date, YYYY-MM-DD"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Exclusive end date, YYYY-MM-DD"
+        },
+        "granularity": {
+          "type": "string",
+          "description": "MONTHLY (default) or DAILY"
+        },
+        "metric": {
+          "type": "string",
+          "description": "UnblendedCost (default), AmortizedCost or NetUnblendedCost"
+        },
+        "group_by": {
+          "type": "array",
+          "description": "Up to 2 groupings. type DIMENSION with key SERVICE, LINKED_ACCOUNT, REGION, USAGE_TYPE or INSTANCE_TYPE; or type TAG with key = tag key",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "DIMENSION or TAG"
+              },
+              "key": {
+                "type": "string",
+                "description": "Dimension name or tag key"
+              }
+            },
+            "required": [
+              "type",
+              "key"
+            ]
+          }
+        },
+        "account_ids": {
+          "type": "array",
+          "description": "Optional 12-digit account ids to restrict to; must be within the user's accounts",
+          "items": {
+            "type": "string"
+          }
+        },
+        "services": {
+          "type": "array",
+          "description": "Optional exact AWS service names to filter, e.g. 'Amazon Elastic Compute Cloud - Compute'",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ]
+    }
+  },
+  {
+    "name": "get_cost_forecast",
+    "description": "Forecast AWS cost from today (or a future start date) until end_date (exclusive), limited to the user's accounts. With MONTHLY granularity each amount is the projected total of the whole calendar month (actual to date + remaining days); use DAILY to get only the remaining days.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "description": "Start date, today or later, YYYY-MM-DD"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Exclusive end date, YYYY-MM-DD, at most 12 months ahead"
+        },
+        "granularity": {
+          "type": "string",
+          "description": "MONTHLY (default) or DAILY"
+        },
+        "metric": {
+          "type": "string",
+          "description": "UNBLENDED_COST (default), AMORTIZED_COST or NET_UNBLENDED_COST"
+        },
+        "account_ids": {
+          "type": "array",
+          "description": "Optional account ids within scope",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ]
+    }
+  },
+  {
+    "name": "get_anomalies",
+    "description": "List cost anomalies detected by AWS Cost Anomaly Detection in a period, with their root causes, limited to the user's accounts.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "description": "Inclusive start date, YYYY-MM-DD"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Exclusive end date, YYYY-MM-DD"
+        },
+        "account_ids": {
+          "type": "array",
+          "description": "Optional account ids within scope",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ]
+    }
+  },
+  {
+    "name": "get_savings_plans_coverage",
+    "description": "Monthly Savings Plans coverage (share of eligible spend covered) for the user's accounts.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "description": "Inclusive start date, YYYY-MM-DD"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Exclusive end date, YYYY-MM-DD"
+        },
+        "account_ids": {
+          "type": "array",
+          "description": "Optional account ids within scope",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ]
+    }
+  },
+  {
+    "name": "get_savings_plans_utilization",
+    "description": "Organization-wide Savings Plans utilization and net savings. Only available to the central FinOps team.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "description": "Inclusive start date, YYYY-MM-DD"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Exclusive end date, YYYY-MM-DD"
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ]
+    }
+  },
+  {
+    "name": "get_savings_plans_recommendation",
+    "description": "Organization-wide Savings Plans purchase recommendation (hourly commitment, estimated monthly savings). Only available to the central FinOps team.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "savings_plans_type": {
+          "type": "string",
+          "description": "COMPUTE_SP (default), EC2_INSTANCE_SP or SAGEMAKER_SP"
+        },
+        "term": {
+          "type": "string",
+          "description": "ONE_YEAR (default) or THREE_YEARS"
+        },
+        "payment_option": {
+          "type": "string",
+          "description": "NO_UPFRONT (default), PARTIAL_UPFRONT or ALL_UPFRONT"
+        },
+        "lookback_days": {
+          "type": "string",
+          "description": "SEVEN_DAYS, THIRTY_DAYS (default) or SIXTY_DAYS"
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,969 @@
+[
+  {
+    "description": "Reads the alert thresholds (notifications) configured on AWS Budgets.\n\nA notification is an alert that fires when a budget crosses a threshold (e.g. 80% of the limit).\nRead-only.\n\n- Omit `budget_name` to audit every budget's notifications across the account\n  (DescribeBudgetNotificationsForAccount). Each returned notification carries its `budget_name`.\n- Pass `budget_name` to read one budget's notifications directly (DescribeNotificationsForBudget).\n\nPagination: results are paginated. Use `max_results` to bound page size and `max_pages` to bound\nhow many pages are fetched; a `next_token` in the response can be passed back to continue. Large\nresponses are automatically offloaded to session SQL to save tokens.\n\nFor a budget's spend-vs-limit status use the `budgets` tool; for its enforcement actions use\n`budget-actions`. The account ID is retrieved automatically or you may pass `account_id`.",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional AWS account ID; retrieved automatically if not provided."
+        },
+        "budget_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional. When provided, reads that one budget's notifications directly."
+        },
+        "max_pages": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional cap on how many pages to auto-paginate through."
+        },
+        "max_results": {
+          "default": 100,
+          "description": "Maximum number of results per page. Defaults to 100.",
+          "type": "integer"
+        },
+        "next_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional pagination token from a previous response."
+        }
+      },
+      "type": "object"
+    },
+    "name": "budget-notifications",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Budget Notifications"
+  },
+  {
+    "description": "Retrieves AWS budget information using the AWS Budgets API.\n\nThis tool uses the DescribeBudgets API to retrieve all budgets for an account.\n\nThe API returns information about:\n- Budget names, types, and time periods\n- Budget limits (amount and unit)\n- Current actual spend\n- Forecasted spend\n- Cost filters applied to budgets\n\nWith this information, you can determine which budgets have been exceeded or are projected to exceed their limits.\n\nThe tool automatically retrieves the AWS account ID of the calling identity or uses the provided account_id.",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional AWS account ID. If not provided, it will be retrieved automatically."
+        },
+        "budget_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional budget name filter. If provided, only returns information for the specified budget."
+        },
+        "max_results": {
+          "default": 100,
+          "description": "Maximum number of results to return. Defaults to 100.",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "budgets",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Budgets"
+  },
+  {
+    "description": "Retrieves recommendations from AWS Compute Optimizer.\n\nIMPORTANT USAGE GUIDELINES:\n- Focus on recommendations with the highest estimated savings first\n- Include all relevant details when presenting specific recommendations\n\nUSE THIS TOOL FOR:\n- **Performance optimization** (CPU, memory, network utilization analysis)\n- **Performance-based rightsizing** (not cost-based)\n- **Idle resource detection only when filtering by a specific Finding** — Idle, Unattached,\n  or Unused (use get_idle_recommendations). For general idle detection or cost-savings\n  recommendations, use cost-optimization instead.\n\n**Note:** Compute Optimizer is a regional service. Specify a `region` to get recommendations for resources in that region. If omitted, defaults to AWS_REGION env var or us-east-1.\n\nThis tool supports the following operations:\n1. get_ec2_instance_recommendations: Get recommendations for EC2 instances\n2. get_auto_scaling_group_recommendations: Get recommendations for Auto Scaling groups\n3. get_ebs_volume_recommendations: Get recommendations for EBS volumes\n4. get_lambda_function_recommendations: Get recommendations for Lambda functions\n5. get_rds_recommendations: Get recommendations for RDS instances\n6. get_ecs_service_recommendations: Get recommendations for ECS services\n7. get_idle_recommendations: Get idle resource recommendations across supported resource types\n\nEach operation can be filtered by AWS account IDs, regions, finding types, and more.\n\nCommon finding types include:\n- UNDERPROVISIONED: The resource doesn't have enough capacity\n- OVERPROVISIONED: The resource has excess capacity and could be downsized\n- OPTIMIZED: The resource is already optimized\n- NOT_OPTIMIZED: The resource can be optimized but specific finding type isn't available\n\nFor get_idle_recommendations, the `finding` field uses a distinct enum:\n- Idle: Provisioned and running, but utilization is so low it is effectively doing nothing\n- Unattached: Resource exists but isn't connected to anything\n- Unused: Resource is provisioned but sees no meaningful activity\nIts `filters` accept the filter names `Finding` (values: Idle, Unattached, Unused) and\n`ResourceType`.",
+    "inputSchema": {
+      "properties": {
+        "account_ids": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional list of AWS account IDs as JSON array string"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional filter expression as JSON string"
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of results to return (1-100)"
+        },
+        "next_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional pagination token from a previous response"
+        },
+        "operation": {
+          "description": "The operation to perform (e.g., 'get_ec2_instance_recommendations')",
+          "type": "string"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS region to query (e.g., 'us-west-2'). Defaults to AWS_REGION env var or us-east-1."
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    },
+    "name": "compute-optimizer",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Compute Optimizer"
+  },
+  {
+    "description": "Retrieves AWS cost anomalies using the Cost Explorer GetAnomalies API.\n\nThis tool allows you to retrieve cost anomalies detected on your AWS account during a specified time period.\nAnomalies are available for up to 90 days.\n\nYou can filter anomalies by:\n- Date range (required)\n- Monitor ARN (optional)\n- Feedback status (optional)\n- Total impact (optional)\n\nNote: Both start_date and end_date are INCLUSIVE. To get anomalies including today, use today's date as end_date.\n\nFeedback status options:\n- YES: Anomalies marked as accurate\n- NO: Anomalies marked as inaccurate\n- PLANNED_ACTIVITY: Anomalies marked as planned activities",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "description": "End date in YYYY-MM-DD format (inclusive — use today's date to include today's anomalies). Required.",
+          "type": "string"
+        },
+        "feedback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional filter for anomalies by feedback status (YES, NO, PLANNED_ACTIVITY)."
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional maximum number of results to return."
+        },
+        "monitor_arn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ARN of a specific cost anomaly monitor to filter results."
+        },
+        "start_date": {
+          "description": "Start date in YYYY-MM-DD format (inclusive). Required.",
+          "type": "string"
+        },
+        "total_impact_end": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional end value for total impact filter (required when using BETWEEN operator)."
+        },
+        "total_impact_operator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional numeric operator for filtering by total impact (EQUAL, GREATER_THAN, LESS_THAN, GREATER_THAN_OR_EQUAL, LESS_THAN_OR_EQUAL, BETWEEN)."
+        },
+        "total_impact_start": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional start value for total impact filter."
+        }
+      },
+      "required": [
+        "start_date",
+        "end_date"
+      ],
+      "type": "object"
+    },
+    "name": "cost-anomaly",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Cost Anomaly"
+  },
+  {
+    "description": "Retrieves AWS cost comparisons between two one-month periods.\n\nDo not use this tool except for comparing the costs of one month to the costs of another month. This tool should not be used for week-over-week or quarter-over-quarter (e.g., comparing Q2 vs. Q1) analysis.\n\nUSE THIS TOOL ONLY FOR:\n- **Month-to-month cost variance analysis** (e.g., January vs February)\n- **Root cause analysis** of cost changes between specific months\n- **Detailed cost driver identification** (what exactly caused the cost change)\n- **Service-level impact analysis** for month-over-month changes\n- **Executive reporting** on monthly cost variances\n\nSTRICT LIMITATIONS:\n- ONLY compares exactly one month to another month\n- Both periods must start on 1st day of month, end on 1st day of next month\n- Cannot compare weeks, quarters, or custom periods\n- DO NOT USE for general cost analysis or flexible time periods\n\nThis tool supports two main operations:\n1. getCostAndUsageComparisons: Compare costs between two time periods with flexible grouping and filtering\n2. getCostComparisonDrivers: Identify key factors driving cost changes between two time periods\n\nBoth operations require:\n- BaselineTimePeriod: Earlier time period for comparison (must be exactly one month)\n- ComparisonTimePeriod: Later time period for comparison (must be exactly one month)\n- MetricForComparison: The cost metric to compare (e.g., BlendedCost, UnblendedCost)\n\nSupported metrics for comparison include:\n- AmortizedCost: Costs with upfront and recurring reservation fees spread across the period\n- BlendedCost: Average cost of all usage throughout the billing period\n- NetAmortizedCost: Amortized cost after discounts\n- NetUnblendedCost: Unblended cost after discounts\n- NormalizedUsageAmount: Normalized usage amount\n- UnblendedCost: Actual costs incurred during the specified period\n- UsageQuantity: Usage amounts in their respective units\n\nYou can group results by dimensions such as:\n- SERVICE: AWS service (e.g., Amazon EC2, Amazon S3)\n- LINKED_ACCOUNT: Member accounts in an organization\n- REGION: AWS Region\n- USAGE_TYPE: Type of usage (e.g., BoxUsage:t2.micro)\n- INSTANCE_TYPE: EC2 instance type (e.g., t2.micro, m5.large)\n- PLATFORM: Operating system (e.g., Windows, Linux)\n- TENANCY: Instance tenancy (e.g., shared, dedicated)\n- RECORD_TYPE: Record type (e.g., Usage, Credit, Tax)\n- LEGAL_ENTITY_NAME: AWS seller of record\n\nNote:\n- Time periods must start and end on the first day of a month, with a duration of exactly one month\n- The getCostComparisonDrivers operation automatically includes SERVICE and USAGE_TYPE dimensions\n- Data is available for the last 13 months, or up to 38 months if multi-year data is enabled",
+    "inputSchema": {
+      "properties": {
+        "baseline_end_date": {
+          "description": "Baseline period end date in YYYY-MM-DD format (must be first day of next month)",
+          "type": "string"
+        },
+        "baseline_start_date": {
+          "description": "Baseline period start date in YYYY-MM-DD format (must be first day of month)",
+          "type": "string"
+        },
+        "billing_view_arn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ARN of a specific billing view"
+        },
+        "comparison_end_date": {
+          "description": "Comparison period end date in YYYY-MM-DD format (must be first day of next month)",
+          "type": "string"
+        },
+        "comparison_start_date": {
+          "description": "Comparison period start date in YYYY-MM-DD format (must be first day of month)",
+          "type": "string"
+        },
+        "filter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional filter to apply to the results as a JSON string"
+        },
+        "group_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional grouping of results as a JSON string (e.g., '[{\"Type\": \"DIMENSION\", \"Key\": \"SERVICE\"}]')"
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of results to return (default: 10, max: 2000 for comparisons, max: 10 for drivers)"
+        },
+        "metric_for_comparison": {
+          "description": "The cost metric to compare (e.g., BlendedCost, UnblendedCost, AmortizedCost)",
+          "type": "string"
+        },
+        "operation": {
+          "description": "The operation to perform: 'getCostAndUsageComparisons' or 'getCostComparisonDrivers'",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "baseline_start_date",
+        "baseline_end_date",
+        "comparison_start_date",
+        "comparison_end_date",
+        "metric_for_comparison"
+      ],
+      "type": "object"
+    },
+    "name": "cost-comparison",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Cost Comparison"
+  },
+  {
+    "description": "Retrieves AWS cost and usage data using the Cost Explorer API.\n\nIMPORTANT USAGE GUIDELINES:\n- Use UnblendedCost metric by default (not BlendedCost) unless user specifies otherwise\n- Exclude record_types 'Credit' and 'Refund' by default unless user requests inclusion\n- Choose DAILY granularity for periods <3 months, MONTHLY for longer periods\n- Start with high-level dimensions (SERVICE, LINKED_ACCOUNT) before detailed ones\n- Always remember that the end_date is exclusive\n\nUSE THIS TOOL FOR:\n- **Historical cost trends** and spending analysis (any time period)\n- **Usage pattern analysis** over time\n- **Cost breakdown** by service, account, region, or any dimension\n- **Forecasting** future costs and usage\n- **Resource-level cost analysis** (last 14 days)\n- **Multi-dimensional cost analysis** with complex grouping\n\n## OPERATIONS\n\n1) getCostAndUsage — account-level historical cost/usage\n   Required: operation=\"getCostAndUsage\", start_date, end_date, granularity, metrics\n   Optional: group_by, filter, next_token, max_pages, billing_view_arn\n   Example: {\"operation\": \"getCostAndUsage\", \"start_date\": \"2024-01-01\", \"end_date\": \"2024-02-01\", \"granularity\": \"DAILY\", \"metrics\": [\"UnblendedCost\"], \"group_by\": \"[{\"Type\": \"DIMENSION\", \"Key\": \"SERVICE\"}]\"}\n\n2. getCostAndUsageWithResources - Resource-level cost data (limited to last 14 days)\n   Required: operation=\"getCostAndUsageWithResources\", filter, granularity, start_date, end_date\n   Optional: metrics, group_by, next_token, max_pages, billing_view_arn\n   Notes: RESOURCE_ID must be included in either filter OR group_by parameters. This operation is limited to past 14 days of data from current date. Hourly granularity is only available for EC2-Instances resource-level data. All other resource-level data is available at daily granularity.\n   Example: {\"operation\": \"getCostAndUsageWithResources\", \"start_date\": \"2025-08-07\", \"end_date\": \"2025-08-21\", \"granularity\": \"DAILY\", \"filter\": \"{\"Dimensions\": {\"Key\": \"SERVICE\", \"Values\": [\"Amazon Elastic Compute Cloud - Compute\"]}}\", \"group_by\": \"[{\"Type\": \"DIMENSION\", \"Key\": \"RESOURCE_ID\"}]\"}\n   Returns: Cost data with resource-level granularity\n\n3. getDimensionValues - List of available values for specified dimension\n   Required: operation=\"getDimensionValues\", dimension, start_date, end_date\n   Optional: context, search_string, filter, max_results, billing_view_arn\n   Example: {\"operation\": \"getDimensionValues\", \"dimension\": \"SERVICE\", \"start_date\": \"2024-01-01\", \"end_date\": \"2024-02-01\"}\n   Returns: List of values for specified dimension with automatic pagination\n\n4. getCostForecast - Future cost projections\n   Required: operation=\"getCostForecast\", metric, granularity, start_date, end_date\n   Optional: filter, prediction_interval_level, billing_view_arn\n   Example: {\"operation\": \"getCostForecast\", \"metric\": \"UNBLENDED_COST\", \"granularity\": \"MONTHLY\", \"start_date\": \"2025-08-22\", \"end_date\": \"2025-11-22\"}\n   Notes: metric value for this operation should be in all caps\n   Returns: Cost forecast for specified time period and granularity\n\n5. getUsageForecast - Future usage projections\n   Required: operation=\"getUsageForecast\", metric, granularity, start_date, end_date, filter\n   Optional: prediction_interval_level, billing_view_arn\n   Example 1: {\"operation\": \"getUsageForecast\", \"metric\": \"USAGE_QUANTITY\", \"granularity\": \"MONTHLY\", \"start_date\": \"2025-08-22\", \"end_date\": \"2025-11-22\", \"filter\": \"{\"Dimensions\": {\"Key\": \"USAGE_TYPE_GROUP\", \"Values\": [\"EC2-Instance\"]}}\"}\n   Example 2: {\"operation\": \"getUsageForecast\", \"metric\": \"USAGE_QUANTITY\", \"granularity\": \"MONTHLY\", \"start_date\": \"2025-08-22\", \"end_date\": \"2025-11-22\", \"filter\": \"{\"And\": [{\"Dimensions\": {\"Key\": \"SERVICE\", \"Values\": [\"Amazon Elastic Compute Cloud - Compute\"]}}, {\"Dimensions\": {\"Key\": \"USAGE_TYPE\", \"Values\": [\"BoxUsage:p4de.24xlarge\"]}}]}\"}\n   Example 3: {\"operation\": \"getUsageForecast\", \"metric\": \"USAGE_QUANTITY\", \"granularity\": \"MONTHLY\", \"start_date\": \"2025-08-22\", \"end_date\": \"2025-11-22\", \"filter\": \"{\"Dimensions\": {\"Key\": \"USAGE_TYPE\", \"Values\": [\"BoxUsage:p4de.24xlarge\", \"Reservation:p4de.24xlarge\", \"UnusedBox:p4de.24xlarge\"]}}\", \"group_by\": \"[{\"Type\": \"DIMENSION\", \"Key\": \"REGION\"}]\"}\n   Notes: Valid values for metric is: USAGE_QUANTITY, NORMALIZED_USAGE_AMOUNT. Valid values for granularity is: DAILY, MONTHLY. Filter is REQUIRED and must specify USAGE_TYPE or USAGE_TYPE_GROUP to define what usage units to forecast.\n   Returns: Usage forecast for specified time period and granularity\n\n6. getTagsOrValues - Available cost allocation tags or values\n   Required: operation=\"getTagsOrValues\"\n   Optional: start_date, end_date, search_string, next_token, max_pages, billing_view_arn\n   Example 1: {\"operation\": \"getTagsOrValues\"}\n   Example 2: {\"operation\": \"getTagsOrValues\", \"tag_key\": \"Environment\"}\n   Returns: List of available cost allocation tags with automatic pagination. If tag values for a particular key are needed, pass the tag key as a parameter.\n\n7. getCostCategories - Available cost categories or values inside a category\n   Required: operation=\"getCostCategories\", start_date, end_date\n   Optional: cost_category_name, search_string, next_token, max_pages, billing_view_arn\n   Example 1 (list category names): {\"operation\": \"getCostCategories\", \"start_date\": \"2024-01-01\", \"end_date\": \"2024-08-01\"}\n   Example 2 (list values inside a category): {\"operation\": \"getCostCategories\", \"cost_category_name\": \"CostCenters\", \"start_date\": \"2024-01-01\", \"end_date\": \"2024-08-01\"}\n   Notes: Without cost_category_name the response contains CostCategoryNames. With cost_category_name set the response contains CostCategoryValues for that category. Pagination is automatic.\n\n8. getSavingsPlansUtilization - Savings Plans utilization data\n   Required: operation=\"getSavingsPlansUtilization\", start_date, end_date\n   Optional: granularity, filter\n   Example: {\"operation\": \"getSavingsPlansUtilization\", \"granularity\": \"MONTHLY\"}\n   Notes: This operation supports only DAILY and MONTHLY granularity\n   Returns: Savings Plans utilization for the specified time period\n\nDIMENSION REFERENCE:\n- AZ: The Availability Zone (e.g., us-east-1a)\n- DATABASE_ENGINE: The Amazon RDS database (e.g., Aurora, MySQL)\n- DEPLOYMENT_OPTION: RDS deployment scope (SingleAZ, MultiAZ)\n- INSTANCE_TYPE: The EC2 instance type (e.g., m4.xlarge)\n- INSTANCE_TYPE_FAMILY: Family of instances (e.g., Compute Optimized, Memory Optimized)\n- LINKED_ACCOUNT: AWS member accounts\n- OPERATING_SYSTEM: OS type (e.g., Windows, Linux)\n- PLATFORM: EC2 operating system\n- PURCHASE_TYPE: Reservation type (e.g., On-Demand, Reserved)\n- REGION: AWS Region\n- SERVICE: AWS service (e.g., Amazon DynamoDB)\n- TAG: Cost allocation tag\n- TENANCY: EC2 tenancy (shared, dedicated)\n- USAGE_TYPE: Usage type (e.g., DataTransfer-In-Bytes)\n- RECORD_TYPE: Charge types (e.g., RI fees, usage costs)\n\nBILLING VIEW SUPPORT:\nMost Cost Explorer operations support an optional billing_view_arn parameter that allows you to scope\nyour query to a specific billing view. If not provided, the query defaults to the account's primary\nbilling view. You can use the list-billing-views and get-billing-view tools upon request to discover\navailable billing views and their ARNs.\n\nBilling view types:\n- PRIMARY: Default view with all cost data for the account/org. Use for standard cost analysis.\n- BILLING_GROUP: AWS managed view for Billing Conductor billing groups with pro forma cost data.\n- CUSTOM: Customer-created views with filtered cost data that can be shared across accounts and\n  organizations. Use for business-unit, team, or cross-org cost visibility without management\n  account access.\n- BILLING_TRANSFER: Available to Bill Transfer (bill receiver) account, who is responsible for\n  paying the consolidated bill on behalf of the other organization.\n  AWS managed view containing chargeable data, which is what the Bill Transfer (bill receiver)\n  account owes to AWS for their Bill Source accounts' cloud consumption.\n- BILLING_TRANSFER_SHOWBACK: Available to Bill Transfer (bill receiver) account.\n  AWS managed view showing pro forma showback/chargeback data (what Bill Source account owe their partner).\n  Use for showback/chargeback reporting in billing transfer scenarios.",
+    "inputSchema": {
+      "properties": {
+        "billing_view_arn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ARN of a billing view to scope the query"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The context for (getDimensionValues), which can be COST_AND_USAGE (the default),\nRESERVATIONS, or SAVINGS_PLANS. SAVINGS_PLANS scopes values to the plans an account owns."
+        },
+        "cost_category_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Cost category to get values for"
+        },
+        "dimension": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Dimension to get values for (getDimensionValues)"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End date for cost data in YYYY-MM-DD format (exclusive)"
+        },
+        "filter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Filter to apply to the results"
+        },
+        "granularity": {
+          "default": "DAILY",
+          "description": "Granularity of the returned data (DAILY, MONTHLY, etc.)",
+          "type": "string"
+        },
+        "group_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How to group the results"
+        },
+        "max_pages": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of pages to retrieve"
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of results to return"
+        },
+        "metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metric for cost forecasts"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Metrics to include in the response"
+        },
+        "next_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pagination token"
+        },
+        "operation": {
+          "description": "The operation to perform",
+          "type": "string"
+        },
+        "prediction_interval_level": {
+          "default": 80,
+          "description": "Confidence level for forecasts",
+          "type": "integer"
+        },
+        "search_string": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Search string to filter dimension values"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Start date for cost data in YYYY-MM-DD format"
+        },
+        "tag_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tag key to get values for"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    },
+    "name": "cost-explorer",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Cost Explorer"
+  },
+  {
+    "description": "Retrieves cost optimization recommendations from AWS Cost Optimization Hub.\n\nIMPORTANT USAGE GUIDELINES:\n- Focus on recommendations with the highest estimated savings first\n- Include all relevant details when presenting specific recommendations\n\nUSE THIS TOOL FOR:\n- **Idle/unused resource detection** (EC2, RDS, EBS, Lambda, etc.)\n- **Cost savings recommendations** (rightsizing, stopping, deleting resources)\n- **Reserved Instance and Savings Plans purchase recommendations**\n- **Cross-service cost optimization analysis**\n- **Monthly cost reduction opportunities**\n\nDO NOT USE FOR: Performance optimization (use compute-optimizer)\n\nSupported Operations:\n1. list_recommendation_summaries: High-level overview of savings opportunities grouped by a dimension\n2. list_recommendations: Detailed list of specific recommendations\n3. get_recommendation: Get detailed information about a specific recommendation\n4. list_efficiency_metrics: Cost efficiency score, estimated savings, and spend as\n   a time series (optionally grouped by AccountId or Region). Use for questions\n   about the cost-efficiency score, its trend over time, month-over-month change,\n   cross-region/cross-account comparison, and top/worst performers.\n\nIMPORTANT: 'list_recommendation_summaries' operation REQUIRES a 'group_by' parameter.\nValid 'group_by' values: AccountId, Region, ActionType, ResourceType, RestartNeeded, RollbackPossible, ImplementationEffort\n\nCRITICAL PARAMETER REQUIREMENTS:\n- 'filters' parameter must be passed as JSON string format\n- 'max_results' must be integer (not string)\n- 'get_recommendation' requires only 'recommendation_id' (mapped to the API's recommendationId)\n- Service only available in us-east-1 region\n\nlist_efficiency_metrics parameters:\n- 'granularity': 'Daily' or 'Monthly' (defaults to 'Monthly' when omitted)\n- 'start_date' / 'end_date': window bounds as 'YYYY-MM-DD' (daily) or 'YYYY-MM'\n  (monthly); end is exclusive. Both default to a ~90-day lookback when omitted.\n  The API only serves data whose start is within the most recent 90 days (Daily)\n  or 3 months (Monthly) of today; an older start_date is automatically moved\n  forward to that window, so the returned time_period/start_date may be later\n  than requested.\n- 'group_by' (optional): 'AccountId' or 'Region' only. Omit to aggregate across all.\n- 'order_by' (optional): JSON string {\"dimension\": \"Score\"|\"Savings\"|\"Spend\",\n  \"order\": \"Asc\"|\"Desc\"} for top/worst-performer and directional-sort questions.\n- Does NOT accept 'filters'.\n\nSorting: 'order_by' (JSON string {\"dimension\": ..., \"order\": \"Asc\"|\"Desc\"}) is also\naccepted by 'list_recommendations'. Valid dimensions: EstimatedMonthlySavings,\nEstimatedMonthlyCost, RestartNeeded, ImplementationEffort, AccountId, RollbackPossible,\nRegion, ResourceType, ActionType, ResourceArn, ResourceId, EstimatedSavingsPercentage.\n('list_recommendation_summaries' does not support order_by.)\n\nAvailable Filter Parameters (pass as JSON string):\n- resourceTypes: ['Ec2Instance', 'LambdaFunction', 'EbsVolume', 'EcsService', 'Ec2AutoScalingGroup', 'Ec2InstanceSavingsPlans', 'ComputeSavingsPlans', 'SageMakerSavingsPlans', 'Ec2ReservedInstances', 'RdsReservedInstances', 'OpenSearchReservedInstances', 'RedshiftReservedInstances', 'ElastiCacheReservedInstances', 'RdsDbInstanceStorage', 'RdsDbInstance', 'DynamoDbReservedCapacity', 'MemoryDbReservedInstances']\n- actionTypes: ['Rightsize', 'Stop', 'Upgrade', 'PurchaseSavingsPlans', 'PurchaseReservedInstances', 'MigrateToGraviton', 'Delete', 'ScaleIn']\n- implementationEfforts: ['VeryLow', 'Low', 'Medium', 'High', 'VeryHigh']\n- regions: AWS region codes (e.g., [\"us-east-1\", \"us-west-2\"])\n- accountIds: List of AWS account IDs\n- restartNeeded: boolean\n- rollbackPossible: boolean\n\nCost Optimization Hub provides recommendations across multiple AWS services, including:\n- EC2 instances (right-sizing, Graviton migration)\n- EBS volumes (unused volumes, IOPS optimization)\n- RDS instances (right-sizing, engine optimization)\n- Lambda functions (memory size optimization)\n- SP/RI\n- And more\n\nEach recommendation includes:\n- The resource ARN and ID\n- The estimated monthly savings\n- The current state of the resource\n- The recommended state of the resource\n",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exclusive window end for list_efficiency_metrics ('YYYY-MM-DD'\nor 'YYYY-MM'). Defaults to today when omitted."
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional filter expression as JSON string (not supported by list_efficiency_metrics)"
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Time granularity for list_efficiency_metrics ('Daily' or\n'Monthly'). Defaults to 'Monthly' when omitted."
+        },
+        "group_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional grouping parameter. For list_recommendation_summaries any\nof the recommendation dimensions; for list_efficiency_metrics only\nAccountId or Region."
+        },
+        "include_all_recommendations": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether to include all recommendations"
+        },
+        "max_pages": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of pages to fetch when paginating\nlist_recommendations, list_recommendation_summaries, or\nlist_efficiency_metrics. Use with ``next_token`` to walk results\nincrementally."
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Per-page result count (boto3 ``maxResults``). NOT a total\ncap. Combine with ``max_pages`` to bound total fetched results."
+        },
+        "next_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pagination token to resume from a previous response.\nApplies to list_recommendations, list_recommendation_summaries, and\nlist_efficiency_metrics."
+        },
+        "operation": {
+          "description": "The operation to perform ('list_recommendations', 'get_recommendation', 'list_recommendation_summaries', or 'list_efficiency_metrics')",
+          "type": "string"
+        },
+        "order_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional ordering as JSON string ``{\"dimension\": ..., \"order\":\n\"Asc\"|\"Desc\"}``. For list_efficiency_metrics the dimension is one of\nScore/Savings/Spend; also accepted by list_recommendations. In\nranking_mode='performance' order_by does NOT drive the fetch — only its\n``order`` picks the ranking direction (Score Asc = worst/lowest first,\nScore Desc or omitted = best/top first)."
+        },
+        "ranking_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For list_efficiency_metrics only. Set to 'performance' for a\n\"most efficient / top / worst performer\" ranking of accounts or Regions.\nThe tool fetches the highest-spend accounts first (orderBy Spend Desc)\nup to a page cap, drops idle/no-score groups, then: if the FULL set was\nretrieved, keeps the highest-spend groups making up ~80% of total spend\n(Pareto) and ranks them by score; if the fetch hit the cap, skips the\nspend cutoff and ranks the fetched top spenders by score, flagging in\nranking_focus that only the top ~N spenders were analyzed (see console\nfor the rest). Ranking direction comes from order_by (see above).\nRequires group_by=AccountId or Region. Omit for the raw per-group series\n(e.g. a plain trend or single-account score)."
+        },
+        "recommendation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Recommendation ID for get_recommendation operation (mapped to the API's recommendationId)"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Inclusive window start for list_efficiency_metrics\n('YYYY-MM-DD' or 'YYYY-MM'). Defaults to a ~90-day lookback when omitted."
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    },
+    "name": "cost-optimization",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Cost Optimization"
+  },
+  {
+    "description": "Retrieves AWS Reserved Instance (RI) coverage and utilization data using the Cost Explorer API.\n\nThis tool provides insights into your Reserved Instance (RI) and Savings Plans usage patterns through two main operations:\n\n1. get_reservation_coverage: Shows how much of your eligible usage is covered by RIs\n   - Helps identify opportunities to purchase additional RIs\n   - Supports grouping by dimensions like REGION, INSTANCE_TYPE, etc.\n   - Can filter by specific services, regions, or instance types\n\n2. get_reservation_utilization: Shows how effectively you're using your purchased RIs\n   - Reveals underutilized or idle reserved capacity\n   - Can be grouped by SUBSCRIPTION_ID to see utilization per RI\n   - Helps identify RIs that could be modified or sold in the marketplace\n\nSupported dimensions for grouping reservation coverage:\n- AZ: Availability Zone\n- INSTANCE_TYPE: Instance type (e.g., m4.xlarge)\n- LINKED_ACCOUNT: Member accounts in organization\n- PLATFORM: Operating system\n- REGION: AWS Region\n- SERVICE: AWS service (EC2, RDS, etc.)\n- TENANCY: Instance tenancy (default, dedicated)\n\nReservation utilization can only be grouped by SUBSCRIPTION_ID.\n\nIMPORTANT: `granularity` and `group_by` are mutually exclusive. If `group_by` is\nprovided, `granularity` is ignored (the Cost Explorer API does not allow both for\nGetReservationCoverage or GetReservationUtilization). Provide one or the other,\nnot both.",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End date in YYYY-MM-DD format (exclusive). Defaults to today if not provided."
+        },
+        "filter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional filter to apply to the results as a JSON string, such as filtering by service, region, or instance type."
+        },
+        "granularity": {
+          "default": "DAILY",
+          "description": "Time granularity of the data (DAILY or MONTHLY). Defaults to DAILY. Ignored when group_by is provided (granularity and group_by are mutually exclusive).",
+          "type": "string"
+        },
+        "group_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional grouping of results as a JSON string. For coverage, supports multiple dimensions. For utilization, only supports SUBSCRIPTION_ID."
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of results to return per page."
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of metrics to retrieve for coverage as a JSON string (e.g., '[\"HoursCoverage\", \"CostCoverage\"]'). Defaults to all metrics."
+        },
+        "operation": {
+          "description": "The operation to perform: 'get_reservation_coverage' or 'get_reservation_utilization'",
+          "type": "string"
+        },
+        "sort_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional sorting configuration as a JSON string with key and direction (ASCENDING or DESCENDING)."
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Start date in YYYY-MM-DD format (inclusive). Defaults to 30 days ago if not provided."
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    },
+    "name": "ri-performance",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Ri Performance"
+  },
+  {
+    "description": "Tool that retrieves AWS Savings Plans coverage and utilization data using the Cost Explorer API.\n\nThis tool provides insights into your Savings Plans usage patterns through three main operations:\n\n1. get_savings_plans_coverage: Shows how much of your eligible usage is covered by Savings Plans\n2. get_savings_plans_utilization: Shows overall utilization metrics for your Savings Plans\n3. get_savings_plans_utilization_details: Shows detailed per-Savings Plan utilization\n\nIMPORTANT: For get_savings_plans_coverage, `granularity` and `group_by` are mutually\nexclusive. If `group_by` is provided, `granularity` is ignored (the Cost Explorer\nGetSavingsPlansCoverage API does not allow both). Valid `group_by` dimensions for\ncoverage are SERVICE, REGION, or INSTANCE_FAMILY.",
+    "inputSchema": {
+      "properties": {
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End date in YYYY-MM-DD format (exclusive). Defaults to today if not provided."
+        },
+        "filter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional filter to apply to the results as a JSON string."
+        },
+        "granularity": {
+          "default": "DAILY",
+          "description": "Time granularity of the data (DAILY or MONTHLY). Defaults to DAILY. For coverage, ignored when group_by is provided (granularity and group_by are mutually exclusive).",
+          "type": "string"
+        },
+        "group_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional grouping of results as a JSON string. For coverage, supports SERVICE, REGION, or INSTANCE_FAMILY."
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of results to return per page."
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List of metrics to retrieve as a JSON string. For coverage, only 'SpendCoveredBySavingsPlans' is valid."
+        },
+        "operation": {
+          "description": "The operation to perform: 'get_savings_plans_coverage', 'get_savings_plans_utilization', or 'get_savings_plans_utilization_details'",
+          "type": "string"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Start date in YYYY-MM-DD format (inclusive). Defaults to 30 days ago if not provided."
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    },
+    "name": "sp-performance",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Sp Performance"
+  }
+]

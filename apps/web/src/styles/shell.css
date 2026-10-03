@@ -1,0 +1,595 @@
+/* App shell (v0.11): sidebar 248px / 60px rail, 64px borderless topbar, responsive behavior. */
+@layer components {
+  .app {
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    height: 100dvh;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .app-sb-collapsed {
+    grid-template-columns: 60px minmax(0, 1fr);
+  }
+  .app-mobile {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .main:focus {
+    outline: none;
+  }
+  .content {
+    /* Contain absolutely positioned descendants (e.g. .sr-only) so they never grow the page. */
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* Topbar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    height: 64px;
+    min-height: 64px;
+    padding: 0 28px 0 32px;
+    background: var(--bg);
+  }
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .topbar-sep {
+    width: 1px;
+    height: 20px;
+    margin: 0 6px;
+    background: var(--border);
+  }
+  .topbar-create {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-left: 4px;
+    border-radius: 50%;
+    background: var(--primary-bg);
+    color: var(--primary-fg);
+  }
+  .topbar-create:hover {
+    background: var(--primary-bg-hover);
+  }
+  .topbar-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 420px;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 9px;
+    background: var(--input-bg);
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .topbar-search:hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+  .topbar-search .kbd {
+    margin-left: auto;
+  }
+  .topbar-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    color: var(--text-muted);
+  }
+  .topbar-icon:hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+
+  /* Sidebar */
+  /* No overflow clipping here: the account menu pops out of the 60px rail. .sb-nav scrolls. */
+  .sidebar {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+  }
+  .sb-top {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    height: 64px;
+    padding: 0 12px;
+  }
+  .sidebar-collapsed .sb-top {
+    justify-content: center;
+    padding: 0;
+  }
+  .sb-workspace {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 8px;
+    color: var(--text);
+    text-align: left;
+  }
+  button.sb-workspace:hover,
+  a.sb-workspace:hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+  .sidebar-collapsed .sb-workspace {
+    width: auto;
+    justify-content: center;
+  }
+  .sb-ws-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .sb-ws-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    line-height: 1.25;
+  }
+  .sb-ws-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .sb-ws-org {
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .sb-ws-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+
+  .sb-nav {
+    /* Contain absolutely positioned descendants (e.g. .sr-only) so they never grow the page. */
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0 16px;
+  }
+  .sb-group {
+    margin: 0 0 18px;
+    padding: 0;
+    list-style: none;
+  }
+  .sb-label {
+    margin: 0;
+    padding: 6px 20px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .sb-divider {
+    height: 1px;
+    margin: 8px 16px;
+    background: var(--border);
+  }
+  .sb-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: calc(100% - 16px);
+    margin: 1px 8px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    text-align: left;
+    transition:
+      background 0.08s ease,
+      color 0.08s ease;
+  }
+  .sb-item:hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+  .sb-item[aria-current='page'],
+  .sb-item[aria-current='page']:hover,
+  .sb-item[data-contains-active] {
+    color: var(--accent-ink);
+  }
+  .sb-item[aria-current='page'] .sb-item-icon,
+  .sb-item[data-contains-active] .sb-item-icon {
+    color: var(--accent-ink);
+  }
+  .sb-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    color: var(--text-muted);
+  }
+  /* Pinned agent (design shell.jsx): the row holds a link and the button that unpins it. */
+  .sb-item-agent {
+    padding: 0;
+    list-style: none;
+  }
+  .sb-item-main {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 7px 10px;
+    border-radius: 8px;
+    color: inherit;
+    text-align: left;
+    text-decoration: none;
+  }
+  .sb-pin-btn {
+    display: flex;
+    margin-right: 6px;
+    padding: 3px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .sb-item:hover .sb-pin-btn,
+  .sb-pin-btn:focus-visible {
+    opacity: 1;
+  }
+  .sb-pin-btn:hover {
+    background: var(--border);
+  }
+  @media (hover: none) {
+    .sb-pin-btn {
+      opacity: 1;
+    }
+  }
+  .sidebar-collapsed .sb-item-agent {
+    padding: 0;
+  }
+  .sidebar-collapsed .sb-item-main {
+    justify-content: center;
+    padding: 9px 0;
+  }
+  .sb-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sb-item-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    transition: transform 0.15s;
+  }
+  .sb-item[aria-expanded='true'] .sb-item-chevron {
+    transform: rotate(180deg);
+  }
+  .sb-item-sub {
+    padding-left: 40px;
+    font-size: 13.5px;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .sb-item-sub[aria-current='page'] {
+    font-weight: 500;
+  }
+  .sidebar-collapsed .sb-item {
+    justify-content: center;
+    gap: 0;
+    width: 40px;
+    margin: 2px auto;
+    padding: 9px 0;
+  }
+  .sb-item-icon {
+    position: relative;
+  }
+  .sb-item-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--row-hover);
+    color: var(--text-muted);
+    font-size: 11.5px;
+  }
+  .sb-item[aria-current='page'] .sb-item-badge {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+  .sb-dot-badge {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .sb-item.is-soon {
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
+  .sb-item.is-soon:hover {
+    background: transparent;
+  }
+  .sb-item.is-soon .sb-item-icon,
+  .sb-item.is-soon .sb-item-label {
+    opacity: 0.55;
+  }
+  .sidebar-collapsed .sb-item.is-soon .soon-tag {
+    display: none;
+  }
+
+  /* Footer / user menu */
+  .sb-footer {
+    position: relative;
+    flex-shrink: 0;
+    padding: 10px 8px;
+    border-top: 1px solid var(--border);
+  }
+  .sb-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px;
+    border-radius: 8px;
+    color: var(--text);
+    text-align: left;
+  }
+  .sb-user:hover,
+  .sb-user[aria-expanded='true'] {
+    background: var(--row-hover);
+  }
+  .sidebar-collapsed .sb-user {
+    justify-content: center;
+    padding: 6px 0;
+  }
+  .sb-user-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--row-hover);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .sb-user[aria-expanded='true'] .sb-user-avatar,
+  .sb-user:hover .sb-user-avatar {
+    background: var(--border);
+  }
+  .sb-user-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+  .sb-user-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .sb-user-role {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  /* Design v10 (shell.jsx): both variants scroll within the viewport; with the rail, the menu is
+     fixed next to it (left 68px, 260px wide). */
+  .sb-user-menu {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 8px;
+    right: 8px;
+    z-index: 41;
+    min-width: 230px;
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+  }
+  .sidebar-collapsed .sb-user-menu {
+    position: fixed;
+    bottom: 12px;
+    left: 68px;
+    right: auto;
+    width: 260px;
+    min-width: 0;
+    max-height: calc(100vh - 24px);
+    z-index: 300;
+  }
+  .sb-menu-note {
+    padding: 6px 10px 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .sb-menu-note-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .sb-menu-head {
+    padding: 6px 10px 8px;
+  }
+  .sb-menu-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .sb-menu-email {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  /* Design shell.jsx (oct 2026): role label, then the account's groups as mono badges. */
+  .sb-menu-role {
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .sb-menu-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sb-menu-groups .badge {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+  .menu-item.danger,
+  .menu-item.danger > svg {
+    color: var(--red);
+  }
+  .sb-user-menu .menu-item {
+    white-space: nowrap;
+  }
+  /* Keep the "Próximamente" tag inside the menu: the label wraps, as in the design. */
+  .sb-user-menu .menu-item[aria-disabled='true'] {
+    white-space: normal;
+  }
+  .sb-user-menu .menu-item > .flex-1 {
+    min-width: 0;
+  }
+  .menu-item[aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+  .menu-item[aria-disabled='true']:hover {
+    background: transparent;
+  }
+  .menu-item[aria-disabled='true'] > :not(.soon-tag) {
+    opacity: 0.55;
+  }
+
+  /* Off-canvas sidebar (<900px) */
+  .sidebar-mobile {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 200;
+    width: 270px;
+    transform: translateX(-100%);
+    /* Stay visible while sliding out, then leave the tab order. */
+    transition:
+      transform 0.2s ease,
+      visibility 0s linear 0.2s;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.4);
+    visibility: hidden;
+  }
+  .sidebar-mobile.open {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease;
+  }
+  .sb-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 199;
+    background: rgba(0, 0, 0, 0.5);
+    animation: mango-fade-in 0.15s;
+  }
+
+  /* Offline banner */
+  .offline-banner {
+    margin: 0;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    text-align: center;
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+
+  @media (max-width: 900px) {
+    .topbar {
+      padding: 0 10px;
+    }
+    .topbar-actions {
+      gap: 4px;
+    }
+    .page-head {
+      padding: 8px 16px 16px;
+    }
+    .page-toolbar {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    /* Design v12 (styles.css): the "Próximamente" search shrinks to its icon, without the text,
+       ⌘K or the tag. The accessible name stays in the Soon wrapper's sr-only text. */
+    .topbar-search {
+      justify-content: center;
+      width: 36px;
+      min-width: 36px;
+      padding: 0;
+    }
+    .topbar-search > span {
+      display: none;
+    }
+    .topbar .soon:has(.topbar-search) > .soon-tag {
+      display: none;
+    }
+  }
+}

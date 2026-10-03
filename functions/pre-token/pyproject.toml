@@ -1,0 +1,14 @@
+[project]
+name = "mango-pre-token"
+version = "0.1.0"
+description = "Cognito pre token generation (V2) trigger: maps Cognito groups to Mango claims (D14, D35)"
+requires-python = ">=3.13,<3.14"
+# The runtime ships boto3 too; declaring it pins the version that is bundled and tested.
+dependencies = ["boto3>=1.40"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_pre_token"]

@@ -1,0 +1,121 @@
+# AWS Billing and Cost Management MCP pack (D37). Schema: packages/py/mango-packs
+# (PackManifest). Guide: packs/README.md. Threat model: docs/security/threat-models/
+# aws-billing-pack-threat-model.md.
+schema_version: 1
+id: aws-billing
+version: "0.0.38-5" # <upstream version>-<Mango revision>
+name: AWS Billing and Cost Management
+description: Cost and usage, forecasts, anomalies, month-over-month comparisons, Savings Plans and reservations, budgets and optimization recommendations of the whole organization, read in the payer account. Central users only.
+
+source:
+  package: awslabs.billing-cost-management-mcp-server
+  version: "0.0.38"
+  sha256: 7bf7f82cd1c2599b0826c149fbb1a8697f3c53a2851121ad1ada3d3c8e8d52c3 # wheel
+  exclude_newer: "2026-09-24T00:00:00Z" # lock cutoff: 7 days of quarantine
+
+# The server does not filter by area: every call runs as the central user who asked, with a
+# session assumed through the Billing broker (SourceIdentity = user).
+data_tier: account_data
+identity_mode: central_only
+
+# Ceiling of every call's session, not permissions of the pack role (it has none). All of
+# them are granted to the role behind the broker (BILLING_READER_DATA_ACTIONS), all of them
+# read-only: every operation of the tools below maps to one of these actions.
+iam:
+  # cost-explorer, cost-anomaly, sp-performance, ri-performance, cost-comparison.
+  - actions:
+      - ce:GetCostAndUsage
+      - ce:GetCostAndUsageWithResources
+      - ce:GetCostForecast
+      - ce:GetUsageForecast
+      - ce:GetDimensionValues
+      - ce:GetTags
+      - ce:GetCostCategories
+      - ce:GetAnomalies
+      - ce:GetSavingsPlansCoverage
+      - ce:GetSavingsPlansUtilization
+      - ce:GetSavingsPlansUtilizationDetails
+      - ce:GetReservationCoverage
+      - ce:GetReservationUtilization
+      - ce:GetCostAndUsageComparisons
+      - ce:GetCostComparisonDrivers
+    resources: ["*"]
+    reason: The organization's cost data is not a resource with an ARN; these actions only work on "*".
+  # compute-optimizer (it checks the enrollment before every operation), cost-optimization.
+  - actions:
+      - compute-optimizer:GetEnrollmentStatus
+      - compute-optimizer:GetEC2InstanceRecommendations
+      - compute-optimizer:GetAutoScalingGroupRecommendations
+      - compute-optimizer:GetEBSVolumeRecommendations
+      - compute-optimizer:GetLambdaFunctionRecommendations
+      - compute-optimizer:GetRDSDatabaseRecommendations
+      - compute-optimizer:GetECSServiceRecommendations
+      - compute-optimizer:GetIdleRecommendations
+      - cost-optimization-hub:ListRecommendations
+      - cost-optimization-hub:GetRecommendation
+      - cost-optimization-hub:ListRecommendationSummaries
+      - cost-optimization-hub:ListEfficiencyMetrics
+    resources: ["*"]
+    reason: Compute Optimizer and Cost Optimization Hub define no resource types.
+  # compute-optimizer: to return the recommendations of a kind of resource, AWS also checks
+  # the caller against the action that lists that kind of resource (IAM service reference).
+  # Inventory of the payer account; nothing here reads the content of data.
+  # lambda:ListFunctions is one of them and is left out on purpose: it returns the environment
+  # variables of every function of the account. Without it get_lambda_function_recommendations
+  # may answer AccessDenied (threat model, TM-BL11).
+  - actions:
+      - ec2:DescribeInstances
+      - ec2:DescribeVolumes
+      - autoscaling:DescribeAutoScalingGroups
+      - lambda:ListProvisionedConcurrencyConfigs
+      - rds:DescribeDBInstances
+      - rds:DescribeDBClusters
+      - ecs:ListClusters
+      - ecs:ListServices
+    resources: ["*"]
+    reason: They list every resource of a kind in the account; Compute Optimizer checks them on behalf of the caller.
+  # budgets, budget-notifications. The role behind the broker narrows it to the payer account.
+  - actions:
+      - budgets:ViewBudget
+    resources: ["arn:aws:budgets::*:budget/*"]
+
+# What the Runtime reaches (R6), each through its VPC endpoint: STS to assume the broker and
+# the role behind it, and the APIs the tools below call. The inventory actions above (ec2,
+# autoscaling, lambda, rds, ecs) are checked by Compute Optimizer, never called by the pack.
+egress:
+  aws: [sts, ce, budgets, compute-optimizer, cost-optimization-hub]
+
+# Known limits of the tools served:
+#   compute-optimizer, cost-optimization: answer an error until the service is enrolled in the
+#     payer account. Mango never enrolls it.
+#   compute-optimizer: no tool of the pack calls the inventory actions above itself. Whether
+#     they are enough is only seen with the service enrolled (threat model, TM-BL13).
+#   budgets, budget-notifications: only the payer account's own budgets; another `account_id`
+#     answers AccessDenied.
+#
+# Upstream tools left out on purpose (the entry point hides them):
+#   session-sql: reads a SQLite database shared by every caller of the process.
+#   storage-lens: runs Athena queries and writes their results to S3.
+#   sp-recommendation, sp-purchase-analyzer: include an operation that starts a job in the
+#     payer account (a recommendation generation, a purchase analysis).
+#   aws-pricing: public data, already served by the aws-pricing pack.
+#   every other tool: read-only, but it needs actions the role behind the broker does not
+#     have. budget-actions (budgets:DescribeBudgetActionsFor*), rec-details
+#     (ce:GetReservationPurchaseRecommendation; it also picks the Region of a Compute Optimizer
+#     call from the data it reads), sp-explorer (savingsplans:Describe*),
+#     compute-optimizer-automation (fans out to the Regions the model names),
+#     bcm-pricing-calc, free-tier-usage, billing-conductor, billing views, cost allocation
+#     tags, cost categories, invoicing, credits, enterprise support, preferences.
+tools:
+  - { name: cost-explorer, access: read }
+  - { name: cost-anomaly, access: read }
+  - { name: sp-performance, access: read }
+  - { name: ri-performance, access: read }
+  - { name: cost-comparison, access: read }
+  - { name: budgets, access: read }
+  - { name: budget-notifications, access: read }
+  - { name: compute-optimizer, access: read }
+  - { name: cost-optimization, access: read }
+tools_hash: "sha256:9f5cb1b9cda31389dc927dbe4d165dc2248e4d731ace3263e85d17322a5a8438"
+
+config: []

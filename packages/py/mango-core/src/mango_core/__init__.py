@@ -1,0 +1,1 @@
+"""Shared Mango domain primitives."""

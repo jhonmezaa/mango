@@ -1,0 +1,1852 @@
+[
+  {
+    "description": "Analyzes CloudWatch metric data to determine seasonality, trend, data density and statistical properties.\n\nThis tool provides RAW DATA ONLY about historical metric data and performs analysis including:\n- Seasonality detection\n- Trend analysis\n- Data density and publishing period\n- Advanced statistical measures (min/max/median, std dev, noise)\n\nUsage: Use this tool to get objective metric analysis data.\n\nArgs:\n    ctx: The MCP context object for error handling and logging.\n    namespace: The metric namespace (e.g., \"AWS/EC2\", \"AWS/Lambda\")\n    metric_name: The name of the metric (e.g., \"CPUUtilization\", \"Duration\")\n    dimensions: List of dimensions with name and value pairs\n    region: AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.\n    profile_name: AWS CLI Profile Name to use for AWS access. Falls back to AWS_PROFILE environment variable if not specified, or uses default AWS credential chain.\n    statistic: The statistic to use for metric analysis. For guidance on choosing the correct statistic, refer to the get_recommended_metric_alarms tool.\n\nReturns:\n    Dict[str, Any]: Analysis results including:\n        - message: Status message indicating success or reason for empty result\n        - seasonality_seconds: Detected seasonality period in seconds\n        - trend: Trend direction (INCREASING, DECREASING, or NONE)\n        - statistics: Statistical measures (std_deviation, variance, etc.)\n        - data_quality: Data density and publishing period information\n\nExample:\n    analysis = await analyze_metric(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\",\n        dimensions=[\n            Dimension(name=\"InstanceId\", value=\"i-1234567890abcdef0\")\n        ]\n    )\n    print(f\"Status: {analysis['message']}\")\n    print(f\"Seasonality: {analysis['seasonality_seconds']} seconds\")\n    print(f\"Trend: {analysis['trend']}\")\n",
+    "inputSchema": {
+      "$defs": {
+        "Dimension": {
+          "description": "Represents a CloudWatch metric dimension for input parameters.",
+          "properties": {
+            "name": {
+              "description": "The name of the dimension",
+              "title": "Name",
+              "type": "string"
+            },
+            "value": {
+              "description": "The value of the dimension",
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "title": "Dimension",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "dimensions": {
+          "description": "List of dimensions that identify the metric, each with name and value",
+          "items": {
+            "$ref": "#/$defs/Dimension"
+          },
+          "title": "Dimensions",
+          "type": "array"
+        },
+        "metric_name": {
+          "description": "The name of the metric (e.g., 'CPUUtilization', 'Duration')",
+          "title": "Metric Name",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The namespace of the metric (e.g., 'AWS/EC2', 'AWS/Lambda')",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.",
+          "title": "Region"
+        },
+        "statistic": {
+          "default": "AVG",
+          "description": "The statistic to use for the metric analysis",
+          "enum": [
+            "AVG",
+            "COUNT",
+            "MAX",
+            "MIN",
+            "SUM",
+            "Average",
+            "Sum",
+            "Maximum",
+            "Minimum",
+            "SampleCount"
+          ],
+          "title": "Statistic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "namespace",
+        "metric_name"
+      ],
+      "title": "analyze_metricArguments",
+      "type": "object"
+    },
+    "name": "analyze_metric",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "analyze_metricOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Lists AWS CloudWatch log groups and saved queries associated with them, optionally filtering by a name prefix.\n\nThis tool retrieves information about log groups in the account, or log groups in accounts linked to this account as a monitoring account.\nIf a prefix is provided, only log groups with names starting with the specified prefix are returned.\n\nAdditionally returns any user saved queries that are associated with any of the returned log groups.\n\nUsage: Use this tool to discover log groups that you'd retrieve or query logs from and queries that have been saved by the user.\n\nReturns:\n--------\nList of log group metadata dictionaries and saved queries associated with them\n   Each log group metadata contains details such as:\n        - logGroupName: The name of the log group.\n        - creationTime: Timestamp when the log group was created\n        - retentionInDays: Retention period, if set\n        - storedBytes: The number of bytes stored.\n        - kmsKeyId: KMS Key Id used for data encryption, if set\n        - dataProtectionStatus: Displays whether this log group has a protection policy, or whether it had one in the past, if set\n        - logGroupClass: Type of log group class\n        - logGroupArn: The Amazon Resource Name (ARN) of the log group. This version of the ARN doesn't include a trailing :* after the log group name.\n    Any saved queries that are applicable to the returned log groups are also included.\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "log_group_class": {
+          "anyOf": [
+            {
+              "enum": [
+                "STANDARD",
+                "INFREQUENT_ACCESS"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "If specified, filters for only log groups of the specified class.",
+          "title": "Log Group Class"
+        },
+        "log_group_name_prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "An exact prefix to filter log groups by name. IMPORTANT: Only log groups with names starting with this prefix will be returned.",
+          "title": "Log Group Name Prefix"
+        },
+        "max_items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The maximum number of log groups to return.",
+          "title": "Max Items"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "describe_log_groupsArguments",
+      "type": "object"
+    },
+    "name": "describe_log_groups",
+    "outputSchema": {
+      "$defs": {
+        "LogGroupMetadata": {
+          "description": "Represents metadata for a CloudWatch log group.",
+          "properties": {
+            "creationTime": {
+              "description": "ISO 8601 timestamp when the log group was created",
+              "title": "Creationtime",
+              "type": "string"
+            },
+            "dataProtectionStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Displays whether this log group has a protection policy, or whether it had one in the past",
+              "title": "Dataprotectionstatus"
+            },
+            "inheritedProperties": {
+              "default": [],
+              "description": "List of inherited properties for the log group",
+              "items": {
+                "type": "string"
+              },
+              "title": "Inheritedproperties",
+              "type": "array"
+            },
+            "kmsKeyId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "KMS Key Id used for data encryption, if set",
+              "title": "Kmskeyid"
+            },
+            "logGroupArn": {
+              "description": "The Amazon Resource Name (ARN) of the log group. This version of the ARN doesn't include a trailing :* after the log group name",
+              "title": "Loggrouparn",
+              "type": "string"
+            },
+            "logGroupClass": {
+              "default": "STANDARD",
+              "description": "Type of log group class either STANDARD or INFREQUENT_ACCESS",
+              "title": "Loggroupclass",
+              "type": "string"
+            },
+            "logGroupName": {
+              "description": "The name of the log group",
+              "title": "Loggroupname",
+              "type": "string"
+            },
+            "metricFilterCount": {
+              "description": "Number of metric filters",
+              "title": "Metricfiltercount",
+              "type": "integer"
+            },
+            "retentionInDays": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Retention period, if set",
+              "title": "Retentionindays"
+            },
+            "storedBytes": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The number of bytes stored",
+              "title": "Storedbytes"
+            }
+          },
+          "required": [
+            "logGroupName",
+            "creationTime",
+            "metricFilterCount",
+            "logGroupArn"
+          ],
+          "title": "LogGroupMetadata",
+          "type": "object"
+        },
+        "SavedLogsInsightsQuery": {
+          "description": "Represents a saved CloudWatch Logs Insights query.",
+          "properties": {
+            "logGroupNames": {
+              "description": "Log groups associated with the query, optional.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Loggroupnames",
+              "type": "array",
+              "uniqueItems": true
+            },
+            "logGroupPrefixes": {
+              "description": "Prefixes of log groups associated with the query, optional.",
+              "items": {
+                "type": "string"
+              },
+              "title": "Loggroupprefixes",
+              "type": "array",
+              "uniqueItems": true
+            },
+            "name": {
+              "description": "Name of the saved query",
+              "title": "Name",
+              "type": "string"
+            },
+            "queryString": {
+              "description": "The query string in the Cloudwatch Log Insights Query Language.",
+              "title": "Querystring",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "queryString"
+          ],
+          "title": "SavedLogsInsightsQuery",
+          "type": "object"
+        }
+      },
+      "description": "Represents information about a CloudWatch log.",
+      "properties": {
+        "log_group_metadata": {
+          "description": "List of metadata about log groups",
+          "items": {
+            "$ref": "#/$defs/LogGroupMetadata"
+          },
+          "title": "Log Group Metadata",
+          "type": "array"
+        },
+        "saved_queries": {
+          "description": "Saved queries associated with the log",
+          "items": {
+            "$ref": "#/$defs/SavedLogsInsightsQuery"
+          },
+          "title": "Saved Queries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "log_group_metadata",
+        "saved_queries"
+      ],
+      "title": "LogsMetadata",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Gets all CloudWatch Alarms currently in ALARM state.\n\nThis tool retrieves all CloudWatch Alarms that are currently in the ALARM state,\nincluding both metric alarms and composite alarms. Results are optimized for\nLLM reasoning with summary-level information.\n\nUsage: Use this tool to get an overview of all active alarms in your AWS account\nfor troubleshooting, monitoring, and operational awareness.\n\nArgs:\n    ctx: The MCP context object for error handling and logging.\n    max_items: Maximum number of alarms to return (default: 50).\n    region: AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.\n    profile_name: AWS CLI Profile Name to use for AWS access. Falls back to AWS_PROFILE environment variable if not specified, or uses default AWS credential chain.\n\nReturns:\n    ActiveAlarmsResponse: Response containing active alarms.\n\nExample:\n    result = await get_active_alarms(ctx, max_items=25)\n    if isinstance(result, ActiveAlarmsResponse):\n        print(f\"Found {len(result.metric_alarms + result.composite_alarms)} active alarms\")\n        for alarm in result.metric_alarms:\n            print(f\"Metric Alarm: {alarm.alarm_name}\")\n        for alarm in result.composite_alarms:\n            print(f\"Composite Alarm: {alarm.alarm_name}\")\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 50,
+          "description": "Maximum number of alarms to return (default: 50). Large values may cause context window overflow and impact LLM performance.",
+          "title": "Max Items"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "get_active_alarmsArguments",
+      "type": "object"
+    },
+    "name": "get_active_alarms",
+    "outputSchema": {
+      "$defs": {
+        "CompositeAlarmSummary": {
+          "description": "Summary information for a CloudWatch composite alarm in ALARM state.",
+          "properties": {
+            "alarm_description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Description of the alarm",
+              "title": "Alarm Description"
+            },
+            "alarm_name": {
+              "description": "Name of the composite alarm",
+              "title": "Alarm Name",
+              "type": "string"
+            },
+            "alarm_rule": {
+              "description": "Rule expression for the composite alarm",
+              "title": "Alarm Rule",
+              "type": "string"
+            },
+            "alarm_type": {
+              "default": "CompositeAlarm",
+              "description": "Type of alarm",
+              "title": "Alarm Type",
+              "type": "string"
+            },
+            "state_reason": {
+              "description": "Reason for the current state",
+              "title": "State Reason",
+              "type": "string"
+            },
+            "state_updated_timestamp": {
+              "description": "When the alarm state was last updated",
+              "format": "date-time",
+              "title": "State Updated Timestamp",
+              "type": "string"
+            },
+            "state_value": {
+              "description": "Current state of the alarm",
+              "title": "State Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "alarm_name",
+            "state_value",
+            "state_reason",
+            "alarm_rule",
+            "state_updated_timestamp"
+          ],
+          "title": "CompositeAlarmSummary",
+          "type": "object"
+        },
+        "MetricAlarmSummary": {
+          "description": "Summary information for a CloudWatch metric alarm in ALARM state.",
+          "properties": {
+            "alarm_description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Description of the alarm",
+              "title": "Alarm Description"
+            },
+            "alarm_name": {
+              "description": "Name of the alarm",
+              "title": "Alarm Name",
+              "type": "string"
+            },
+            "alarm_type": {
+              "default": "MetricAlarm",
+              "description": "Type of alarm",
+              "title": "Alarm Type",
+              "type": "string"
+            },
+            "comparison_operator": {
+              "description": "Comparison operator used",
+              "title": "Comparison Operator",
+              "type": "string"
+            },
+            "dimensions": {
+              "description": "Key dimensions for the metric",
+              "items": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "title": "Dimensions",
+              "type": "array"
+            },
+            "metric_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Name of the metric being monitored",
+              "title": "Metric Name"
+            },
+            "namespace": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Namespace of the metric",
+              "title": "Namespace"
+            },
+            "state_reason": {
+              "description": "Reason for the current state",
+              "title": "State Reason",
+              "type": "string"
+            },
+            "state_updated_timestamp": {
+              "description": "When the alarm state was last updated",
+              "format": "date-time",
+              "title": "State Updated Timestamp",
+              "type": "string"
+            },
+            "state_value": {
+              "description": "Current state of the alarm (ALARM)",
+              "title": "State Value",
+              "type": "string"
+            },
+            "threshold": {
+              "description": "Threshold value for the alarm",
+              "title": "Threshold",
+              "type": "number"
+            }
+          },
+          "required": [
+            "alarm_name",
+            "state_value",
+            "state_reason",
+            "threshold",
+            "comparison_operator",
+            "state_updated_timestamp"
+          ],
+          "title": "MetricAlarmSummary",
+          "type": "object"
+        }
+      },
+      "description": "Response containing active CloudWatch Alarms.",
+      "properties": {
+        "composite_alarms": {
+          "description": "List of active composite alarms",
+          "items": {
+            "$ref": "#/$defs/CompositeAlarmSummary"
+          },
+          "title": "Composite Alarms",
+          "type": "array"
+        },
+        "has_more_results": {
+          "default": false,
+          "description": "Whether more alarms are available than the requested max_items",
+          "title": "Has More Results",
+          "type": "boolean"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Informational message about the results",
+          "title": "Message"
+        },
+        "metric_alarms": {
+          "description": "List of active metric alarms",
+          "items": {
+            "$ref": "#/$defs/MetricAlarmSummary"
+          },
+          "title": "Metric Alarms",
+          "type": "array"
+        }
+      },
+      "title": "ActiveAlarmsResponse",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Gets the history for a CloudWatch alarm with time range suggestions for investigation.\n\nThis tool retrieves the history for a specified CloudWatch alarm, focusing primarily\non state transitions to ALARM state. It also provides suggested time ranges for\ninvestigation based on the alarm's configuration and history.\n\nUsage: Use this tool to understand when an alarm fired and get useful time ranges\nfor investigating the underlying issue using other CloudWatch tools. The tool is\nparticularly useful for identifying patterns like alarm flapping (going in and out\nof alarm state frequently).\n\nArgs:\n    ctx: The MCP context object for error handling and logging.\n    region: AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.\n    alarm_name: Name of the alarm to retrieve history for.\n    start_time: Optional start time for the history query. Defaults to 24 hours ago.\n    end_time: Optional end time for the history query. Defaults to current time.\n    history_item_type: Optional type of history items to retrieve. Defaults to 'StateUpdate'.\n    max_items: Maximum number of history items to return. Defaults to 50.\n    include_component_alarms: For composite alarms, whether to include details about component alarms.\n    profile_name: AWS CLI Profile Name to use for AWS access. Falls back to AWS_PROFILE environment variable if not specified, or uses default AWS credential chain.\n\nReturns:\n    Union[AlarmHistoryResponse, CompositeAlarmComponentResponse]: Either a response containing\n    alarm history with time range suggestions, or component alarm details for composite alarms.\n\nExample:\n    result = await get_alarm_history(\n        ctx,\n        alarm_name=\"my-cpu-alarm\",\n        start_time=\"2025-06-18T00:00:00Z\",\n        end_time=\"2025-06-19T00:00:00Z\"\n    )\n    if isinstance(result, AlarmHistoryResponse):\n        print(f\"Found {len(result.history_items)} history items\")\n        for suggestion in result.time_range_suggestions:\n            print(f\"Suggested investigation time range: {suggestion.start_time} to {suggestion.end_time}\")\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "alarm_name": {
+          "description": "Name of the alarm to retrieve history for",
+          "title": "Alarm Name",
+          "type": "string"
+        },
+        "end_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The end time for the history query in ISO format (e.g., '2023-01-01T00:00:00Z') or as a datetime object. Defaults to current time.",
+          "title": "End Time"
+        },
+        "history_item_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Type of history items to retrieve. Possible values: 'ConfigurationUpdate', 'StateUpdate', 'Action'. Defaults to 'StateUpdate'.",
+          "title": "History Item Type"
+        },
+        "include_component_alarms": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": false,
+          "description": "For composite alarms, whether to include details about component alarms. Defaults to false.",
+          "title": "Include Component Alarms"
+        },
+        "max_items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 50,
+          "description": "Maximum number of history items to return (default: 50). Large values may cause context window overflow and impact LLM performance. Adjust time-range to limit responses.",
+          "title": "Max Items"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.",
+          "title": "Region"
+        },
+        "start_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The start time for the history query in ISO format (e.g., '2023-01-01T00:00:00Z') or as a datetime object. Defaults to 24 hours ago.",
+          "title": "Start Time"
+        }
+      },
+      "required": [
+        "account_id",
+        "alarm_name"
+      ],
+      "title": "get_alarm_historyArguments",
+      "type": "object"
+    },
+    "name": "get_alarm_history",
+    "outputSchema": {
+      "$defs": {
+        "AlarmDetails": {
+          "description": "Represents key details about a CloudWatch alarm.",
+          "properties": {
+            "alarm_description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Description of the alarm",
+              "title": "Alarm Description"
+            },
+            "alarm_name": {
+              "description": "Name of the alarm",
+              "title": "Alarm Name",
+              "type": "string"
+            },
+            "alarm_rule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Rule expression (for CompositeAlarm)",
+              "title": "Alarm Rule"
+            },
+            "alarm_type": {
+              "description": "Type of alarm (MetricAlarm or CompositeAlarm)",
+              "title": "Alarm Type",
+              "type": "string"
+            },
+            "comparison_operator": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Comparison operator (for MetricAlarm)",
+              "title": "Comparison Operator"
+            },
+            "current_state": {
+              "description": "Current state of the alarm",
+              "title": "Current State",
+              "type": "string"
+            },
+            "dimensions": {
+              "description": "Dimensions of the metric (for MetricAlarm)",
+              "items": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "title": "Dimensions",
+              "type": "array"
+            },
+            "evaluation_periods": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Number of evaluation periods (for MetricAlarm)",
+              "title": "Evaluation Periods"
+            },
+            "metric_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Name of the metric (for MetricAlarm)",
+              "title": "Metric Name"
+            },
+            "namespace": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Namespace of the metric (for MetricAlarm)",
+              "title": "Namespace"
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Period in seconds (for MetricAlarm)",
+              "title": "Period"
+            },
+            "statistic": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Statistic used (for MetricAlarm)",
+              "title": "Statistic"
+            },
+            "threshold": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Threshold value (for MetricAlarm)",
+              "title": "Threshold"
+            }
+          },
+          "required": [
+            "alarm_name",
+            "alarm_type",
+            "current_state"
+          ],
+          "title": "AlarmDetails",
+          "type": "object"
+        },
+        "AlarmHistoryItem": {
+          "description": "Represents a processed CloudWatch alarm history item.",
+          "properties": {
+            "alarm_name": {
+              "description": "Name of the alarm",
+              "title": "Alarm Name",
+              "type": "string"
+            },
+            "alarm_type": {
+              "description": "Type of alarm (MetricAlarm or CompositeAlarm)",
+              "title": "Alarm Type",
+              "type": "string"
+            },
+            "history_item_type": {
+              "description": "Type of history item (StateUpdate, ConfigurationUpdate, Action)",
+              "title": "History Item Type",
+              "type": "string"
+            },
+            "history_summary": {
+              "description": "Human-readable summary of the history item",
+              "title": "History Summary",
+              "type": "string"
+            },
+            "new_state": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "New state of the alarm (for StateUpdate items)",
+              "title": "New State"
+            },
+            "old_state": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Previous state of the alarm (for StateUpdate items)",
+              "title": "Old State"
+            },
+            "state_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Reason for the state change (for StateUpdate items)",
+              "title": "State Reason"
+            },
+            "timestamp": {
+              "description": "Timestamp of the history item",
+              "format": "date-time",
+              "title": "Timestamp",
+              "type": "string"
+            }
+          },
+          "required": [
+            "alarm_name",
+            "alarm_type",
+            "timestamp",
+            "history_item_type",
+            "history_summary"
+          ],
+          "title": "AlarmHistoryItem",
+          "type": "object"
+        },
+        "AlarmHistoryResponse": {
+          "description": "Response containing alarm history and related information.",
+          "properties": {
+            "alarm_details": {
+              "$ref": "#/$defs/AlarmDetails",
+              "description": "Details about the alarm"
+            },
+            "has_more_results": {
+              "default": false,
+              "description": "Whether more history items are available",
+              "title": "Has More Results",
+              "type": "boolean"
+            },
+            "history_items": {
+              "description": "List of alarm history items",
+              "items": {
+                "$ref": "#/$defs/AlarmHistoryItem"
+              },
+              "title": "History Items",
+              "type": "array"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Informational message about the results",
+              "title": "Message"
+            },
+            "time_range_suggestions": {
+              "description": "Suggested time ranges for investigation",
+              "items": {
+                "$ref": "#/$defs/TimeRangeSuggestion"
+              },
+              "title": "Time Range Suggestions",
+              "type": "array"
+            }
+          },
+          "required": [
+            "alarm_details"
+          ],
+          "title": "AlarmHistoryResponse",
+          "type": "object"
+        },
+        "CompositeAlarmComponentResponse": {
+          "description": "Response containing component alarm details for a composite alarm.",
+          "properties": {
+            "alarm_rule": {
+              "description": "Rule expression for the composite alarm",
+              "title": "Alarm Rule",
+              "type": "string"
+            },
+            "component_alarms": {
+              "description": "Names of component alarms",
+              "items": {
+                "type": "string"
+              },
+              "title": "Component Alarms",
+              "type": "array"
+            },
+            "component_details": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/$defs/AlarmDetails"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Details about component alarms",
+              "title": "Component Details"
+            },
+            "composite_alarm_name": {
+              "description": "Name of the composite alarm",
+              "title": "Composite Alarm Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "composite_alarm_name",
+            "alarm_rule"
+          ],
+          "title": "CompositeAlarmComponentResponse",
+          "type": "object"
+        },
+        "TimeRangeSuggestion": {
+          "description": "Represents a suggested time range for investigation.",
+          "properties": {
+            "end_time": {
+              "description": "End time for investigation",
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Reason for this time range suggestion",
+              "title": "Reason",
+              "type": "string"
+            },
+            "start_time": {
+              "description": "Start time for investigation",
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "reason"
+          ],
+          "title": "TimeRangeSuggestion",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AlarmHistoryResponse"
+            },
+            {
+              "$ref": "#/$defs/CompositeAlarmComponentResponse"
+            }
+          ],
+          "title": "Result"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "get_alarm_historyOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Retrieves CloudWatch metric data for a specific metric.\n\nThis tool retrieves metric data from CloudWatch for a specific metric identified by its\nnamespace, metric name, and dimensions, within a specified time range. It can use either\nstandard GetMetricData API or CloudWatch Metrics Insights for more advanced querying.\n\nThe function automatically determines whether to use standard GetMetricData or Metrics Insights\nbased on the parameters provided. If any Metrics Insights specific parameters are provided\n(group_by_dimension, schema_dimension_keys, limit, sort_order, or order_by_statistic), it will use Metrics Insights.\n\nWhen using group_by_dimension, you must include that dimension in schema_dimension_keys.\n\nFor advanced use cases, the optional `queries` parameter accepts a list of `MetricDataQueryInput`\nobjects and unlocks capabilities that the single-metric path cannot express: percentile statistics\n(p50, p90, p99...), metric math expressions (e.g. `errors / invocations`), and multi-metric\nbatching (retrieving many metrics in a single API call). When `queries` is provided,\n`namespace`, `metric_name`, `dimensions`, and `statistic` are not used.\n\n`start_time` is optional; when omitted, it defaults to 3 hours before `end_time`\n(which itself defaults to the current UTC time).\n\nUsage: Use this tool to get actual metric data from CloudWatch for analysis or visualization.\n\nReturns:\n    GetMetricDataResponse: An object containing the metric data results\n\nExample 1 (Standard GetMetricData):\n    result = await get_metric_data(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\",\n        start_time=\"2023-01-01T00:00:00Z\",\n        dimensions=[\n            Dimension(name=\"InstanceId\", value=\"i-1234567890abcdef0\")\n        ],\n        statistic=\"Average\"\n        # Period will be auto-calculated based on time window and target_datapoints\n    )\n\nExample 2 (Metrics Insights with group by):\n    result = await get_metric_data(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\",\n        start_time=\"2023-01-01T00:00:00Z\",\n        end_time=\"2023-01-02T00:00:00Z\",\n        statistic=\"AVG\",\n        schema_dimension_keys=[\"InstanceType\"],\n        group_by_dimension=\"InstanceType\"\n        # This will generate a query like: SELECT AVG(\"CPUUtilization\") FROM SCHEMA(\"AWS/EC2\", \"InstanceType\") GROUP BY \"InstanceType\"\n    )\n\nExample 3 (Metrics Insights with schema dimension keys):\n    result = await get_metric_data(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\",\n        start_time=\"2023-01-01T00:00:00Z\",\n        end_time=\"2023-01-02T00:00:00Z\",\n        statistic=\"AVG\",\n        schema_dimension_keys=[\"InstanceId\", \"InstanceType\"],\n        group_by_dimension=\"InstanceId\"\n        # This will generate a query like: SELECT AVG(\"CPUUtilization\") FROM SCHEMA(\"AWS/EC2\", \"InstanceId\", \"InstanceType\") GROUP BY \"InstanceId\"\n    )\n\nExample 4 (Metrics Insights with ORDER BY and LIMIT to find the top 5 EC2 instances with the highest CPU utilization):\n    result = await get_metric_data(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\",\n        start_time=\"2023-01-01T00:00:00Z\",\n        end_time=\"2023-01-02T00:00:00Z\",\n        statistic=\"AVG\",\n        schema_dimension_keys=[\"InstanceId\"],\n        group_by_dimension=\"InstanceId\",\n        sort_order=\"DESC\",\n        limit=5,\n        order_by_statistic=\"MAX\"\n        # This will generate a query like: SELECT AVG(\"CPUUtilization\") FROM SCHEMA(\"AWS/EC2\", \"InstanceId\") GROUP BY \"InstanceId\" ORDER BY MAX() DESC LIMIT 5\n    )\n\nExample 5 (Metrics Insights with ORDER BY without sort direction to find the EC2 instances with the highest CPU utilization ordered by default ASC):\n    result = await get_metric_data(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\",\n        start_time=\"2023-01-01T00:00:00Z\",\n        end_time=\"2023-01-02T00:00:00Z\",\n        statistic=\"AVG\",\n        schema_dimension_keys=[\"InstanceId\"],\n        group_by_dimension=\"InstanceId\",\n        order_by_statistic=\"MAX\"\n        # This will generate a query like: SELECT AVG(\"CPUUtilization\") FROM SCHEMA(\"AWS/EC2\", \"InstanceId\") GROUP BY \"InstanceId\" ORDER BY MAX()\n    )\n\nExample 6 (Metrics Insights without ORDER BY clause to find the EC2 instances with the highest CPU utilization in no specific order):\n    result = await get_metric_data(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\",\n        start_time=\"2023-01-01T00:00:00Z\",\n        end_time=\"2023-01-02T00:00:00Z\",\n        statistic=\"AVG\",\n        schema_dimension_keys=[\"InstanceId\"],\n        group_by_dimension=\"InstanceId\"\n        # This will generate a query like: SELECT AVG(\"CPUUtilization\") FROM SCHEMA(\"AWS/EC2\", \"InstanceId\") GROUP BY \"InstanceId\"\n        # No ORDER BY clause is added since neither order_by_statistic nor sort_order is specified\n    )\n\nFor each result:\n    for metric_result in result.metricDataResults:\n        print(f\"Metric: {metric_result.label}\")\n        for datapoint in metric_result.datapoints:\n            print(f\"  {datapoint.timestamp}: {datapoint.value}\")\n\nExample 7 (Advanced queries - Lambda Latency Percentiles):\n    Use the queries parameter for percentile statistics (p50, p90, p99).\n\n    result = await get_metric_data(\n        ctx,\n        start_time=\"2025-12-21T00:00:00Z\",\n        queries=[\n            MetricDataQueryInput(\n                id=\"p50\",\n                metric_stat=MetricStatInput(\n                    namespace=\"AWS/Lambda\",\n                    metric_name=\"Duration\",\n                    dimensions=[Dimension(name=\"FunctionName\", value=\"my-api-function\")],\n                    statistic=\"p50\"\n                ),\n                label=\"Median Latency\"\n            ),\n            MetricDataQueryInput(\n                id=\"p99\",\n                metric_stat=MetricStatInput(\n                    namespace=\"AWS/Lambda\",\n                    metric_name=\"Duration\",\n                    dimensions=[Dimension(name=\"FunctionName\", value=\"my-api-function\")],\n                    statistic=\"p99\"\n                ),\n                label=\"p99 Latency\"\n            )\n        ]\n    )\n\nExample 8 (Advanced queries - Error Rate Calculation with Math Expression):\n    Use queries with math expressions to calculate derived metrics.\n\n    result = await get_metric_data(\n        ctx,\n        start_time=\"2025-12-21T00:00:00Z\",\n        queries=[\n            MetricDataQueryInput(\n                id=\"errors\",\n                metric_stat=MetricStatInput(\n                    namespace=\"AWS/Lambda\",\n                    metric_name=\"Errors\",\n                    dimensions=[Dimension(name=\"FunctionName\", value=\"my-api-function\")],\n                    statistic=\"Sum\"\n                ),\n                return_data=False  # Don't include raw errors in results\n            ),\n            MetricDataQueryInput(\n                id=\"invocations\",\n                metric_stat=MetricStatInput(\n                    namespace=\"AWS/Lambda\",\n                    metric_name=\"Invocations\",\n                    dimensions=[Dimension(name=\"FunctionName\", value=\"my-api-function\")],\n                    statistic=\"Sum\"\n                ),\n                return_data=False  # Don't include raw invocations in results\n            ),\n            MetricDataQueryInput(\n                id=\"error_rate\",\n                expression=\"(errors / invocations) * 100\",\n                label=\"Error Rate %\"\n            )\n        ]\n    )\n    # Result contains only the calculated error_rate percentage\n",
+    "inputSchema": {
+      "$defs": {
+        "Dimension": {
+          "description": "Represents a CloudWatch metric dimension for input parameters.",
+          "properties": {
+            "name": {
+              "description": "The name of the dimension",
+              "title": "Name",
+              "type": "string"
+            },
+            "value": {
+              "description": "The value of the dimension",
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "title": "Dimension",
+          "type": "object"
+        },
+        "MetricDataQueryInput": {
+          "description": "Represents a MetricDataQuery for input parameters with validation.",
+          "properties": {
+            "expression": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "A math expression or Metrics Insights query (for expression-based queries)",
+              "title": "Expression"
+            },
+            "id": {
+              "description": "A unique identifier for the query",
+              "title": "Id",
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "A label for the query result",
+              "title": "Label"
+            },
+            "metric_stat": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MetricStatInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The metric stat configuration (for direct metric queries)"
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The period in seconds (overrides metric_stat period and default)",
+              "title": "Period"
+            },
+            "return_data": {
+              "default": true,
+              "description": "Whether to return data for this query or use it only in other expressions",
+              "title": "Return Data",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "title": "MetricDataQueryInput",
+          "type": "object"
+        },
+        "MetricStatInput": {
+          "description": "Represents the MetricStat portion of a MetricDataQuery for input parameters.",
+          "properties": {
+            "dimensions": {
+              "description": "The dimensions for the metric",
+              "items": {
+                "$ref": "#/$defs/Dimension"
+              },
+              "title": "Dimensions",
+              "type": "array"
+            },
+            "metric_name": {
+              "description": "The name of the metric",
+              "title": "Metric Name",
+              "type": "string"
+            },
+            "namespace": {
+              "description": "The namespace of the metric",
+              "title": "Namespace",
+              "type": "string"
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The period in seconds (overrides default if provided)",
+              "title": "Period"
+            },
+            "statistic": {
+              "description": "The statistic to use (e.g., Average, Sum, Maximum, Minimum, SampleCount, or percentile like p50, p90, p99)",
+              "title": "Statistic",
+              "type": "string"
+            }
+          },
+          "required": [
+            "namespace",
+            "metric_name",
+            "statistic"
+          ],
+          "title": "MetricStatInput",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "dimensions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Dimension"
+          },
+          "title": "Dimensions",
+          "type": "array"
+        },
+        "end_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The end time for the metric data query (ISO format or datetime), defaults to current time",
+          "title": "End Time"
+        },
+        "group_by_dimension": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Dimension name to group by in Metrics Insights mode. Must be included in schema_dimension_keys.",
+          "title": "Group By Dimension"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of results to return in Metrics Insights mode (used with LIMIT clause).",
+          "title": "Limit"
+        },
+        "metric_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The name of the metric. Required unless queries parameter is provided.",
+          "title": "Metric Name"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The namespace of the metric. Required unless queries parameter is provided.",
+          "title": "Namespace"
+        },
+        "order_by_statistic": {
+          "anyOf": [
+            {
+              "enum": [
+                "AVG",
+                "COUNT",
+                "MAX",
+                "MIN",
+                "SUM"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Statistic to use in the ORDER BY clause. Required if sort_order is specified.",
+          "title": "Order By Statistic"
+        },
+        "queries": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MetricDataQueryInput"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Advanced queries for percentiles, math expressions, and multi-metric batching. When provided, namespace/metric_name/dimensions/statistic parameters are ignored.",
+          "title": "Queries"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.",
+          "title": "Region"
+        },
+        "schema_dimension_keys": {
+          "default": [],
+          "description": "List of dimension keys to include in the SCHEMA definition for Metrics Insights query.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Schema Dimension Keys",
+          "type": "array"
+        },
+        "sort_order": {
+          "anyOf": [
+            {
+              "enum": [
+                "ASC",
+                "DESC"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sort order for results when using ORDER BY in Metrics Insights. Can be 'ASC', 'DESC', or None.",
+          "title": "Sort Order"
+        },
+        "start_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The start time for the metric data query (ISO format or datetime). Defaults to 3 hours before end_time if not provided.",
+          "title": "Start Time"
+        },
+        "statistic": {
+          "default": "AVG",
+          "description": "The statistic to use for the metric",
+          "enum": [
+            "AVG",
+            "COUNT",
+            "MAX",
+            "MIN",
+            "SUM",
+            "Average",
+            "Sum",
+            "Maximum",
+            "Minimum",
+            "SampleCount"
+          ],
+          "title": "Statistic",
+          "type": "string"
+        },
+        "target_datapoints": {
+          "default": 60,
+          "description": "Target number of data points to return (default: 60). Controls the granularity of the returned data.",
+          "title": "Target Datapoints",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "get_metric_dataArguments",
+      "type": "object"
+    },
+    "name": "get_metric_data",
+    "outputSchema": {
+      "$defs": {
+        "MetricDataPoint": {
+          "description": "Represents a single CloudWatch metric data point.",
+          "properties": {
+            "timestamp": {
+              "description": "The timestamp for the data point",
+              "format": "date-time",
+              "title": "Timestamp",
+              "type": "string"
+            },
+            "value": {
+              "description": "The value of the metric at this timestamp",
+              "title": "Value",
+              "type": "number"
+            }
+          },
+          "required": [
+            "timestamp",
+            "value"
+          ],
+          "title": "MetricDataPoint",
+          "type": "object"
+        },
+        "MetricDataResult": {
+          "description": "Represents the result of a CloudWatch GetMetricData API call for a single metric.",
+          "properties": {
+            "datapoints": {
+              "description": "The data points for the metric",
+              "items": {
+                "$ref": "#/$defs/MetricDataPoint"
+              },
+              "title": "Datapoints",
+              "type": "array"
+            },
+            "id": {
+              "description": "The ID of the metric data query",
+              "title": "Id",
+              "type": "string"
+            },
+            "label": {
+              "description": "The label of the metric",
+              "title": "Label",
+              "type": "string"
+            },
+            "messages": {
+              "description": "Messages related to the metric data query",
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Messages",
+              "type": "array"
+            },
+            "statusCode": {
+              "description": "The status code of the query result",
+              "title": "Statuscode",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "statusCode"
+          ],
+          "title": "MetricDataResult",
+          "type": "object"
+        }
+      },
+      "description": "Represents the response from the GetMetricData API call.",
+      "properties": {
+        "messages": {
+          "description": "Messages related to the GetMetricData operation",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "metricDataResults": {
+          "description": "The results of the metric data queries",
+          "items": {
+            "$ref": "#/$defs/MetricDataResult"
+          },
+          "title": "Metricdataresults",
+          "type": "array"
+        }
+      },
+      "title": "GetMetricDataResponse",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Gets metadata for a CloudWatch metric including description, unit and recommended\nstatistics that can be used for metric data retrieval.\n\nThis tool retrieves comprehensive metadata about a specific CloudWatch metric\nidentified by its namespace and metric name. Note: This function uses local metadata\nand does not make AWS API calls.\n\nUsage: Use this tool to get detailed information about CloudWatch metrics,\nincluding their descriptions, units, and recommended statistics to use.\n\nArgs:\n    ctx: The MCP context object for error handling and logging.\n    namespace: The metric namespace (e.g., \"AWS/EC2\", \"AWS/Lambda\")\n    metric_name: The name of the metric (e.g., \"CPUUtilization\", \"Duration\")\n\nReturns:\n    Optional[MetricMetadata]: An object containing the metric's description,\n                             recommended statistics, and unit if found,\n                             None if no metadata is available.\n\nExample:\n    result = await get_metric_metadata(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"CPUUtilization\"\n    )\n    if result:\n        print(f\"Description: {result.description}\")\n        print(f\"Unit: {result.unit}\")\n        print(f\"Recommended Statistics: {result.recommendedStatistics}\")\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "metric_name": {
+          "description": "The name of the metric (e.g., 'CPUUtilization', 'Duration')",
+          "title": "Metric Name",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The namespace of the metric (e.g., 'AWS/EC2', 'AWS/Lambda')",
+          "title": "Namespace",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "namespace",
+        "metric_name"
+      ],
+      "title": "get_metric_metadataArguments",
+      "type": "object"
+    },
+    "name": "get_metric_metadata",
+    "outputSchema": {
+      "$defs": {
+        "MetricMetadata": {
+          "description": "Represents the metadata of a CloudWatch metric including description, unit and recommended statistics.",
+          "properties": {
+            "description": {
+              "description": "Description of the metric",
+              "title": "Description",
+              "type": "string"
+            },
+            "recommendedStatistics": {
+              "description": "Recommended statistics for the metric (e.g., 'Average, Maximum')",
+              "title": "Recommendedstatistics",
+              "type": "string"
+            },
+            "unit": {
+              "description": "Unit of measurement for the metric",
+              "title": "Unit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "description",
+            "recommendedStatistics",
+            "unit"
+          ],
+          "title": "MetricMetadata",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MetricMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "get_metric_metadataOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Gets recommended alarms for a CloudWatch metric.\n\nThis tool retrieves alarm recommendations for a specific CloudWatch metric\nidentified by its namespace, metric name, and dimensions. The recommendations\nare filtered to match the provided dimensions.\n\nUsage: Use this tool to get recommended alarm configurations for CloudWatch metrics,\nincluding thresholds, evaluation periods, and other alarm settings.\n\nArgs:\n    ctx: The MCP context object for error handling and logging.\n    namespace: The metric namespace (e.g., \"AWS/EC2\", \"AWS/Lambda\")\n    metric_name: The name of the metric (e.g., \"CPUUtilization\", \"Duration\")\n    dimensions: List of dimensions with name and value pairs\n    region: AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.\n    profile_name: AWS CLI Profile Name to use for AWS access. Falls back to AWS_PROFILE environment variable if not specified, or uses default AWS credential chain.\n    statistic: The statistic to use for alarm recommendations. Must match the metric's data type:\n        - Aggregate count metrics (RequestCount, Errors, Faults, Throttles, CacheHits, Connections, EventsProcessed): Use 'Sum'\n        - Event occurrence metrics (Invocations, CacheMisses): Use 'SampleCount'\n        - Utilization metrics (CPUUtilization, MemoryUtilization, DiskUtilization, NetworkUtilization): Use 'Average'\n        - Latency/Time metrics (Duration, Latency, ResponseTime, ProcessingTime, Delay, ExecutionTime, WaitTime): Use 'Average'\n        - Size metrics (PayloadSize, MessageSize, RequestSize, BodySize): Use 'Average'\n        If uncertain about the correct statistic for a custom metric, ask the user\n        to confirm the metric type before generating recommendations. Using the wrong statistic\n        (e.g., 'Average' on Invocations) will produce ineffective alarm thresholds\n\nReturns:\n    AlarmRecommendationResult: A result containing alarm recommendations and optional message.\n                             Empty recommendations list if no recommendations are found.\n\nExample:\n    recommendations = await get_recommended_metric_alarms(\n        ctx,\n        namespace=\"AWS/EC2\",\n        metric_name=\"StatusCheckFailed_Instance\",\n        dimensions=[\n            Dimension(name=\"InstanceId\", value=\"i-1234567890abcdef0\")\n        ]\n    )\n    for alarm in recommendations:\n        print(f\"Alarm: {alarm.alarmDescription}\")\n        print(f\"Threshold: {alarm.threshold.staticValue}\")\n",
+    "inputSchema": {
+      "$defs": {
+        "Dimension": {
+          "description": "Represents a CloudWatch metric dimension for input parameters.",
+          "properties": {
+            "name": {
+              "description": "The name of the dimension",
+              "title": "Name",
+              "type": "string"
+            },
+            "value": {
+              "description": "The value of the dimension",
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "title": "Dimension",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "dimensions": {
+          "description": "List of dimensions that identify the metric, each with name and value",
+          "items": {
+            "$ref": "#/$defs/Dimension"
+          },
+          "title": "Dimensions",
+          "type": "array"
+        },
+        "metric_name": {
+          "description": "The name of the metric (e.g., 'CPUUtilization', 'Duration')",
+          "title": "Metric Name",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The namespace of the metric (e.g., 'AWS/EC2', 'AWS/Lambda')",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS region to query. Defaults to AWS_REGION environment variable or us-east-1 if not set.",
+          "title": "Region"
+        },
+        "statistic": {
+          "default": "AVG",
+          "description": "The statistic to use for alarm recommendations",
+          "enum": [
+            "AVG",
+            "COUNT",
+            "MAX",
+            "MIN",
+            "SUM",
+            "Average",
+            "Sum",
+            "Maximum",
+            "Minimum",
+            "SampleCount"
+          ],
+          "title": "Statistic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "namespace",
+        "metric_name"
+      ],
+      "title": "get_recommended_metric_alarmsArguments",
+      "type": "object"
+    },
+    "name": "get_recommended_metric_alarms",
+    "outputSchema": {
+      "$defs": {
+        "AlarmRecommendation": {
+          "description": "Represents a CloudWatch alarm recommendation.",
+          "properties": {
+            "alarmDescription": {
+              "description": "Description of what the alarm monitors",
+              "title": "Alarmdescription",
+              "type": "string"
+            },
+            "cloudformation_template": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "CloudFormation template (only for anomaly detection alarms)",
+              "title": "Cloudformation Template"
+            },
+            "comparisonOperator": {
+              "description": "The arithmetic operation to use when comparing the statistic and threshold",
+              "title": "Comparisonoperator",
+              "type": "string"
+            },
+            "datapointsToAlarm": {
+              "description": "The number of datapoints that must be breaching to trigger the alarm",
+              "title": "Datapointstoalarm",
+              "type": "integer"
+            },
+            "dimensions": {
+              "description": "List of dimensions for the alarm",
+              "items": {
+                "$ref": "#/$defs/AlarmRecommendationDimension"
+              },
+              "title": "Dimensions",
+              "type": "array"
+            },
+            "evaluationPeriods": {
+              "description": "The number of periods over which data is compared to the threshold",
+              "title": "Evaluationperiods",
+              "type": "integer"
+            },
+            "intent": {
+              "description": "The intent or purpose of the alarm",
+              "title": "Intent",
+              "type": "string"
+            },
+            "period": {
+              "description": "The period in seconds over which the statistic is applied",
+              "title": "Period",
+              "type": "integer"
+            },
+            "statistic": {
+              "description": "The statistic to apply to the alarm's associated metric",
+              "title": "Statistic",
+              "type": "string"
+            },
+            "threshold": {
+              "$ref": "#/$defs/AlarmRecommendationThreshold",
+              "description": "Threshold configuration for the alarm"
+            },
+            "treatMissingData": {
+              "description": "How to treat missing data points",
+              "title": "Treatmissingdata",
+              "type": "string"
+            }
+          },
+          "required": [
+            "alarmDescription",
+            "threshold",
+            "period",
+            "comparisonOperator",
+            "statistic",
+            "evaluationPeriods",
+            "datapointsToAlarm",
+            "treatMissingData",
+            "intent"
+          ],
+          "title": "AlarmRecommendation",
+          "type": "object"
+        },
+        "AlarmRecommendationDimension": {
+          "description": "Represents a dimension for alarm recommendations.",
+          "properties": {
+            "name": {
+              "description": "The name of the dimension",
+              "title": "Name",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "The value of the dimension (if specified)",
+              "title": "Value"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "AlarmRecommendationDimension",
+          "type": "object"
+        },
+        "AlarmRecommendationThreshold": {
+          "description": "Represents an alarm threshold configuration.",
+          "properties": {
+            "justification": {
+              "default": "",
+              "description": "Justification for the threshold value",
+              "title": "Justification",
+              "type": "string"
+            }
+          },
+          "title": "AlarmRecommendationThreshold",
+          "type": "object"
+        }
+      },
+      "description": "Result wrapper for alarm recommendations with a success/failure message to guide the calling LLM.",
+      "properties": {
+        "message": {
+          "description": "Message describing the success/failure of generating alarm recommendation.",
+          "title": "Message",
+          "type": "string"
+        },
+        "recommendations": {
+          "description": "A list of alarm recommendations that match the provided dimensions.",
+          "items": {
+            "$ref": "#/$defs/AlarmRecommendation"
+          },
+          "title": "Recommendations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "AlarmRecommendationResult",
+      "type": "object"
+    }
+  }
+]

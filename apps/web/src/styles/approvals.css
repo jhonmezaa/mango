@@ -1,0 +1,339 @@
+/*
+ * Aprobaciones (design approvals.jsx and policies.jsx: `ap-*`, `pol-*`, `tk-act`, `set-choice`).
+ * Ported from the design (Claude Design styles.css); values are the design's. The layout
+ * shared with Revisión de agentes (`ap-body`, `ap-row`, `ap-detail`…) is in agentReview.css.
+ */
+@layer components {
+  .ap-note {
+    margin: 16px 28px 0;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--row-hover);
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .ap-note.is-inline {
+    margin: 0 0 14px;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+  }
+  .ap-note.is-inline svg {
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+  .ap-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    margin-top: 6px;
+  }
+  .ap-row.is-expired {
+    opacity: 0.6;
+  }
+  .ap-row.is-expired .ap-row-t {
+    font-weight: 500;
+  }
+  .ap-sigs {
+    display: inline-flex;
+    gap: 3px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .ap-sigs i {
+    width: 14px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-strong);
+  }
+  .ap-sigs i.on {
+    background: var(--green);
+  }
+  .ap-call {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .ap-call-t {
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 9px 12px;
+    background: var(--input-bg);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-strong);
+    overflow-wrap: anywhere;
+  }
+  .ap-params > div {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 12px;
+    padding: 7px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .ap-params > div:first-child {
+    border-top: none;
+  }
+  .ap-params > div > span:first-child {
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+  .ap-params > div > span:last-child {
+    overflow-wrap: anywhere;
+    color: var(--text);
+  }
+  .ap-decision {
+    display: grid;
+    gap: 10px;
+  }
+  .ap-decision label {
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .ap-decision .ap-optional {
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+  .ap-decision .input.has-error {
+    border-color: var(--red);
+  }
+  .ap-closed {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+  .ap-closed .badge {
+    margin-right: 8px;
+  }
+  .ap-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .ap-policies {
+    padding: 16px 28px 40px;
+  }
+  .ap-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .ap-hint kbd {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 1px 6px;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    color: var(--text-muted);
+    background: var(--card);
+  }
+  .g-field .g-label {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .tk-activity {
+    display: flex;
+    flex-direction: column;
+  }
+  .tk-act {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .tk-act:first-child {
+    border-top: none;
+  }
+  .tk-act .tk-dot {
+    margin-top: 6px;
+  }
+  .tk-act b {
+    font-weight: 500;
+    color: var(--text);
+  }
+  .tk-act > span:nth-child(2) {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .pol-table {
+    padding: 0;
+    overflow: hidden;
+  }
+  .pol-tr {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) 90px 170px 40px;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .pol-tr.mc-th {
+    border-top: none;
+  }
+  .pol-tool {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-strong);
+    overflow-wrap: anywhere;
+  }
+  .set-choice {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .set-choice button {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--card);
+    color: var(--text-muted);
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .set-choice button.is-on {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .set-choice button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .set-choice button:not(.is-on):not(:disabled):hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+  /* Below the split width the detail replaces the list: it scrolls with the page. */
+  .ap-body:not(.is-split) .ap-detail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  /* Chat cards (design `SelfConfirmCard` and `ApprovalCard`). */
+  .ap-card {
+    margin-bottom: 20px;
+    max-width: 760px;
+    padding: 14px;
+  }
+  .ap-card.is-self {
+    border-color: var(--accent-border);
+  }
+  .ap-card.is-self.is-done {
+    border-color: var(--border);
+  }
+  .ap-card.is-pending {
+    border-color: var(--amber);
+  }
+  .ap-card.is-ok {
+    border-color: var(--green);
+  }
+  .ap-card.is-bad {
+    border-color: var(--red);
+  }
+  .ap-card.is-run {
+    border-color: var(--blue);
+  }
+  .ap-card.is-closed {
+    border-color: var(--border);
+  }
+  .ap-card.is-pending .ap-card-h > svg {
+    color: var(--amber);
+  }
+  .ap-card.is-ok .ap-card-h > svg {
+    color: var(--green);
+  }
+  .ap-card.is-bad .ap-card-h > svg {
+    color: var(--red);
+  }
+  .ap-card.is-run .ap-card-h > svg {
+    color: var(--blue);
+  }
+  .ap-card.is-closed .ap-card-h > svg {
+    color: var(--text-muted);
+  }
+  /* Design: «Tú la pediste…» takes the row and «Cancelar solicitud» wraps under it. */
+  .ap-own {
+    flex: 1 1 220px;
+  }
+  .ap-error-code {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .ap-closed {
+    line-height: 1.5;
+  }
+  .ap-card-h {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .ap-card-id {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+  .ap-card-t {
+    font-size: 13.5px;
+    margin-bottom: 4px;
+  }
+  .ap-card-call {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    overflow-wrap: anywhere;
+  }
+  .ap-card-rule {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  @media (max-width: 900px) {
+    .pol-tr {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+    }
+    .pol-tr > :nth-child(3),
+    .pol-tr > :nth-child(4) {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .ap-note {
+      margin-left: 16px;
+      margin-right: 16px;
+    }
+    .ap-note.is-inline {
+      margin-left: 0;
+      margin-right: 0;
+    }
+    .ap-policies {
+      padding: 12px 16px 32px;
+    }
+    .ap-hint {
+      display: none;
+    }
+  }
+}

@@ -1,0 +1,12 @@
+**/node_modules
+**/.venv
+**/cdk.out
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+.git
+apps/web
+infra
+docs
+**/tests

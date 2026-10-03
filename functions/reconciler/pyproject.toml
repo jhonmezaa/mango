@@ -1,0 +1,17 @@
+[project]
+name = "mango-reconciler"
+version = "0.1.0"
+description = "Daily reconciliation Lambda: read-only drift and quota checks of agents (TM-M6, TM-M9)"
+requires-python = ">=3.13,<3.14"
+# The Lambda runtime's own boto3 may predate the AgentCore harness API: bundle a known version.
+dependencies = ["boto3>=1.43.104", "mango-core[agents]"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_reconciler"]

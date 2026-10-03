@@ -1,0 +1,135 @@
+# MCP packs (D19): build each pack reproducibly, audit it, compare its tools/list with the
+# manifest and sign it. Nothing is deployed or published to a customer account from here.
+#
+# The `build` job runs third-party code (the upstream MCP server), so it has no secrets and
+# no AWS access, and that code runs in a container without network (`docker --network none`). The `sign` job has the signing role but never runs pack code and signs
+# nothing that code could have touched: it builds the zip and the statement again from the
+# commit, requires the zip to be byte for byte the one `build` tested, and only then assumes
+# the role and asks KMS for the signature.
+name: packs
+
+on:
+  pull_request:
+    paths:
+      - packs/**
+      - deployment/build-pack.sh
+      - deployment/pack-builder/**
+      - packages/py/mango-packs/**
+      # Copied into the zip of packs over account data (their common entry point, D37).
+      - packages/py/mango-pack-runtime/**
+      - packages/py/mango-aws/**
+      - .github/workflows/packs.yml
+      - mise.toml
+      - uv.lock
+  push:
+    branches: [main]
+    paths:
+      - packs/**
+      - deployment/build-pack.sh
+      - deployment/pack-builder/**
+      - packages/py/mango-packs/**
+      # Copied into the zip of packs over account data (their common entry point, D37).
+      - packages/py/mango-pack-runtime/**
+      - packages/py/mango-aws/**
+      - .github/workflows/packs.yml
+      - mise.toml
+      - uv.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.pack }}
+    # arm64 is the platform of AgentCore Runtime: the tools snapshot runs the built zip itself,
+    # in a container without network (deployment/build-pack.sh).
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        pack: [aws-pricing, aws-billing, aws-cloudwatch]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          install_args: python uv
+      - run: deployment/build-pack.sh "packs/$PACK" dist/packs
+        env:
+          PACK: ${{ matrix.pack }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pack-${{ matrix.pack }}
+          path: dist/packs/
+          if-no-files-found: error
+          retention-days: 30
+
+  sign:
+    name: Sign ${{ matrix.pack }}
+    needs: build
+    # Only what is merged to main is signed, and only once the provider key exists (U10).
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && vars.PACK_SIGNING_ROLE_ARN != '' && vars.PACK_SIGNING_KEY_ARN != ''
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    # Protected environment: only `main` can deploy to it, and it is the only place the role
+    # trusts. It must carry a required reviewer (D59; see packs/README.md).
+    environment: pack-signing
+    permissions:
+      contents: read
+      id-token: write # OIDC to assume the signing role; no long-lived AWS keys
+    strategy:
+      fail-fast: false
+      matrix:
+        pack: [aws-pricing, aws-billing, aws-cloudwatch]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          install_args: python uv
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pack-${{ matrix.pack }}
+          path: tested
+      - name: Rebuild and compare with the tested zip
+        env:
+          PACK: ${{ matrix.pack }}
+        run: |
+          set -euo pipefail
+          tested="$(find tested -maxdepth 1 -name '*.zip')"
+          deployment/build-pack.sh "packs/$PACK" dist/packs "$tested"
+      # Credentials come last: everything above ran without access to the signing key.
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.PACK_SIGNING_ROLE_ARN }}
+          aws-region: ${{ vars.PACK_SIGNING_REGION || 'us-east-1' }}
+          role-session-name: mango-pack-signing
+          role-duration-seconds: 900
+      # The public key is the one committed to the repository, the same one installations
+      # trust: a signature made with any other key fails here and is never uploaded.
+      - name: Sign and verify
+        env:
+          PACK_SIGNING_KEY_ARN: ${{ vars.PACK_SIGNING_KEY_ARN }}
+        run: |
+          set -euo pipefail
+          statement="$(find dist/packs -maxdepth 1 -name '*.statement.json')"
+          envelope="${statement%.statement.json}.pack.json"
+          builder=(uv run --frozen --no-sync --package mango-pack-builder python -m mango_pack_builder)
+          "${builder[@]}" sign --statement "$statement" --key-id "$PACK_SIGNING_KEY_ARN" \
+            --public-key packs/signing-key.pub --out "$envelope"
+          "${builder[@]}" verify --envelope "$envelope" --public-key packs/signing-key.pub
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pack-${{ matrix.pack }}-signed
+          path: dist/packs/
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,68 @@
+{
+  "id": "cost-explorer",
+  "kind": "connector",
+  "name": "AWS Cost Explorer",
+  "description": "Gasto, pronóstico, anomalías y Savings Plans de las cuentas de AWS que el usuario puede ver.",
+  "provider": "Mango",
+  "data_tier": "account_data",
+  "identity_mode": "per_user",
+  "gateway_target": "finops",
+  "iam": [
+    {
+      "actions": [
+        "ce:GetAnomalies",
+        "ce:GetCostAndUsage",
+        "ce:GetCostForecast",
+        "ce:GetSavingsPlansCoverage",
+        "ce:GetSavingsPlansPurchaseRecommendation",
+        "ce:GetSavingsPlansUtilization"
+      ],
+      "resources": ["*"],
+      "note": "Cost Explorer no admite permisos por recurso. El conector llega a la cuenta payer por el broker, con la identidad del usuario y una session policy por llamada (D10)."
+    }
+  ],
+  "tools": [
+    {
+      "name": "list_accounts_in_scope",
+      "description": "Cuentas de AWS que el usuario puede analizar, con su área y OU.",
+      "access": "read",
+      "audience": "all"
+    },
+    {
+      "name": "get_cost_and_usage",
+      "description": "Gasto real por servicio, cuenta, región o tag.",
+      "access": "read",
+      "audience": "all"
+    },
+    {
+      "name": "get_cost_forecast",
+      "description": "Pronóstico de gasto.",
+      "access": "read",
+      "audience": "all"
+    },
+    {
+      "name": "get_anomalies",
+      "description": "Anomalías de gasto y su causa raíz.",
+      "access": "read",
+      "audience": "all"
+    },
+    {
+      "name": "get_savings_plans_coverage",
+      "description": "Cobertura mensual de Savings Plans.",
+      "access": "read",
+      "audience": "all"
+    },
+    {
+      "name": "get_savings_plans_utilization",
+      "description": "Uso y ahorro neto de Savings Plans de toda la organización.",
+      "access": "read",
+      "audience": "central"
+    },
+    {
+      "name": "get_savings_plans_recommendation",
+      "description": "Recomendación de compra de Savings Plans de toda la organización.",
+      "access": "read",
+      "audience": "central"
+    }
+  ]
+}

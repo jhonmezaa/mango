@@ -1,0 +1,26 @@
+Copyright (c) 2026 Jhon Meza. All rights reserved.
+
+This repository and everything in it (source code, infrastructure templates,
+documentation and design files; together, the "Software") is proprietary. It is
+published for reference only.
+
+No license or other right is granted, expressly or by implication. Without the
+prior written permission of the copyright holder, you may not use, copy, modify,
+merge, publish, distribute, sublicense, sell or deploy the Software, in whole or
+in part, nor create derivative works from it.
+
+Viewing the Software on the platform that hosts it, and forking it there only as
+far as that platform's terms of service require, does not grant any of the
+rights above.
+
+Third-party components keep their own licenses; see the NOTICE file.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Requests for permission: open a discussion with the repository owner on the
+platform that hosts this repository.

@@ -1,0 +1,36 @@
+Mango Hub
+Copyright (c) 2026 Jhon Meza. All rights reserved.
+
+Mango Hub is proprietary software (see LICENSE). This file lists the third-party
+material that is part of this repository or of the artifacts built from it. Each
+item keeps its own license.
+
+1. Third-party material in this repository
+
+   policies/guard/wa-Security-Pillar.guard
+     AWS Guard Rules Registry, "Well-Architected Security Pillar" ruleset,
+     release v1.0.2 (ruleset-build-v1.0.2.zip), unmodified.
+     Source: https://github.com/aws-cloudformation/aws-guard-rules-registry
+     Copyright Amazon.com, Inc. or its affiliates.
+     License: Apache License 2.0 (policies/guard/LICENSE-Apache-2.0.txt).
+
+2. Third-party software in the MCP pack archives
+
+   The pack archives (zip files) built from packs/ are not stored in this
+   repository. Each one bundles an MCP server published by AWS Labs
+   (https://github.com/awslabs/mcp) together with its Python dependencies, at
+   the versions and hashes pinned in the pack's requirements.lock:
+
+     packs/aws-pricing      awslabs.aws-pricing-mcp-server
+     packs/aws-billing      awslabs.billing-cost-management-mcp-server
+     packs/aws-cloudwatch   awslabs.cloudwatch-mcp-server
+
+   The AWS Labs MCP servers are Copyright Amazon.com, Inc. or its affiliates and
+   licensed under the Apache License 2.0. Their dependencies keep their own
+   licenses. Each archive keeps the metadata directory (*.dist-info) of every
+   distribution it bundles, with the license files that distribution ships.
+
+3. Development and runtime dependencies
+
+   Dependencies are not vendored. They are resolved from uv.lock and
+   pnpm-lock.yaml and are distributed under their own licenses.

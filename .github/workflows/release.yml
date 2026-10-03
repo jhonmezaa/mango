@@ -1,0 +1,91 @@
+# Publish a Mango release to the provider account (D58): templates and assets to the release
+# buckets, the mango-api image to the provider's repository, and the signed manifest.
+# Nothing is deployed to a customer account from here: customers install with CloudFormation
+# from what this publishes (docs/runbooks/install.md).
+#
+# It runs for a version tag (`v<version of release.yaml>`) on `main`, or by hand for a build
+# with its own label. Published keys are never overwritten: publishing the same label twice
+# fails.
+#
+# Known gap (customer-distribution-threat-model.md, TM-D2): build and publication share one
+# job, so the dependencies of the build run with the publisher's credentials in reach. They
+# are installed from lockfiles with hashes; splitting the job needs an image digest that is
+# known before pushing.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish
+    # Only what is on main is published, and only once the provider account is configured.
+    if: >-
+      vars.RELEASE_PUBLISHER_ROLE_ARN != '' && vars.RELEASE_BUCKET != ''
+      && vars.PROVIDER_ACCOUNT_ID != ''
+    # arm64: the platform of mango-api and of the Lambda functions.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    # Protected environment: only `main` and version tags can deploy to it, and it is the only
+    # place the publisher role trusts. It must carry a required reviewer (available since the
+    # repository is public, D59; see packs/README.md).
+    environment: release
+    permissions:
+      contents: read
+      actions: read # the signed packs are artifacts of the packs workflow
+      id-token: write # OIDC to assume the publisher role; no long-lived AWS keys
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the label depends on whether HEAD is the version tag
+      - name: Refuse anything that is not on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor HEAD origin/main
+      - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+      - run: pnpm install --frozen-lockfile
+      - run: uv sync --all-packages --frozen
+      # The packs signed for main by the packs workflow: the release verifies every signature
+      # again with packs/signing-key.pub when it synthesizes.
+      - name: Signed packs of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id="$(gh run list --workflow packs --branch main --event push --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId')"
+          test -n "$run_id"
+          gh run download "$run_id" --pattern 'pack-*-signed' --dir signed
+          mkdir -p dist/packs
+          find signed -type f -exec cp {} dist/packs/ \;
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.RELEASE_PUBLISHER_ROLE_ARN }}
+          aws-region: ${{ vars.RELEASE_REGION || 'us-east-1' }}
+          role-session-name: mango-release
+          role-duration-seconds: 3600
+      - name: Build, sign and publish
+        env:
+          MANGO_PROVIDER_ACCOUNT: ${{ vars.PROVIDER_ACCOUNT_ID }}
+          MANGO_DIST_BUCKET: ${{ vars.RELEASE_BUCKET }}
+        run: python3 deployment/dist.py --publish
+      - name: Verify what was published
+        env:
+          MANGO_DIST_BUCKET: ${{ vars.RELEASE_BUCKET }}
+        run: |
+          set -euo pipefail
+          label="$(basename "$(find dist/release -mindepth 1 -maxdepth 1 -type d)")"
+          python3 deployment/verify-release.py --directory "dist/release/$label"
+          echo "Published $label" >> "$GITHUB_STEP_SUMMARY"

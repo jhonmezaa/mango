@@ -1,0 +1,3 @@
+# Single source of truth for the Mango release version (D8, D9).
+name: mango-hub
+version: 0.1.0

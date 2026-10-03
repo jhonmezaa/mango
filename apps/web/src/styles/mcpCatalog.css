@@ -1,0 +1,155 @@
+/*
+ * Catálogo de MCP (design mcp-catalog.jsx). Ported from the design (Claude Design styles.css
+ * `mc-*` and `mt-*`); values are the design's. The classes it shares with other screens
+ * (`mc-body`, `mc-table`, `mc-th`, `mc-ic`, `mc-foot`, `mc-alert`, `ap-filters`) are in
+ * agents.css and brains.css.
+ */
+@layer components {
+  .mc-tr {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) 170px 140px 130px 70px 150px;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: left;
+  }
+  .mc-tr.mc-th {
+    border-top: none;
+  }
+  .mc-tr:hover:not(.mc-th) {
+    background: var(--row-hover);
+  }
+  .mc-ic.pack {
+    background: var(--blue-soft);
+    color: var(--blue);
+  }
+  .mc-req {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 14px 16px;
+  }
+  /* Design: `marginTop: 12` on the second group of requests ("Pediste tú"). */
+  .mc-req-group + .mc-req-group {
+    margin-top: 12px;
+  }
+  .mc-tool-chip {
+    display: inline-block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    margin: 2px 3px;
+    background: var(--row-hover);
+  }
+  .mc-tool-chip.add {
+    background: var(--green-soft);
+    color: var(--green);
+  }
+  .mc-tool-chip.rem {
+    background: var(--red-soft);
+    color: var(--red);
+    text-decoration: line-through;
+  }
+  .mc-perms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .mc-perms code {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: var(--row-hover);
+    overflow-wrap: anywhere;
+  }
+  .mt-tr {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) minmax(140px, 1fr) 170px 140px 170px;
+    gap: 14px;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: left;
+  }
+  .mt-tr.mc-th {
+    border-top: none;
+  }
+  .mt-tr:hover:not(.mc-th) {
+    background: var(--row-hover);
+  }
+  /* The write badge is wider than its 170px column: it is cut instead of covering the next one. */
+  .mt-tr > span {
+    min-width: 0;
+  }
+  .mt-tr .badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Design: inline styles of mcp-catalog.jsx. */
+  .mc-spin {
+    width: 9px;
+    height: 9px;
+    margin-right: 5px;
+  }
+  .mc-soon {
+    font-size: 10.5px;
+    margin-left: 4px;
+  }
+  .mc-check {
+    accent-color: var(--accent);
+  }
+  select.mc-param {
+    width: auto;
+    max-width: 100%;
+  }
+  .input.mc-invalid {
+    border-color: var(--red);
+  }
+
+  @media (max-width: 1100px) {
+    .mc-tr {
+      grid-template-columns: minmax(200px, 2fr) 160px 130px 110px;
+    }
+    .mc-tr > :nth-child(5),
+    .mc-tr > :nth-child(6) {
+      display: none;
+    }
+  }
+  @media (max-width: 1000px) {
+    .mt-tr {
+      grid-template-columns: minmax(0, 1fr) 170px 130px;
+    }
+    .mt-tr > :nth-child(2),
+    .mt-tr > :nth-child(4) {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .mc-tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .mc-tr > :nth-child(3),
+    .mc-tr > :nth-child(4) {
+      display: none;
+    }
+    /* Not in the design: its three columns of the tools table do not fit a phone. */
+    .mt-tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .mt-tr > :nth-child(3) {
+      display: none;
+    }
+    /* Not in the design: the "Próximamente" action keeps its icon and tag, like the search. */
+    .mc-connect-label {
+      display: none;
+    }
+  }
+}

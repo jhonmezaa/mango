@@ -1,0 +1,9 @@
+# Paths where a change alters what gets signed or how (pack pipeline threat model, TM-P2,
+# TM-P7, TM-P8). Branch protection must require a code owner review for this to apply.
+/packs/ @jhonmezaa
+/packages/py/mango-packs/ @jhonmezaa
+# Shipped inside the signed zip of packs over account data (their common entry point, D37).
+/packages/py/mango-pack-runtime/ @jhonmezaa
+/packages/py/mango-aws/ @jhonmezaa
+/deployment/ @jhonmezaa
+/.github/workflows/ @jhonmezaa

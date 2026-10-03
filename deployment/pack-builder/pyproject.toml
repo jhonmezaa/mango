@@ -1,0 +1,18 @@
+[project]
+name = "mango-pack-builder"
+version = "0.1.0"
+description = "Build-time tooling for MCP packs: lock, reproducible zip, tools snapshot and KMS signing (D19)"
+requires-python = ">=3.13,<3.14"
+dependencies = ["mango-packs", "mango-pack-runtime", "mango-aws", "pyyaml>=6.0", "boto3>=1.43.100"]
+
+[tool.uv.sources]
+mango-packs = { workspace = true }
+mango-pack-runtime = { workspace = true }
+mango-aws = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_pack_builder"]

@@ -1,0 +1,261 @@
+/* Settings › General › Autenticación (design settings.jsx Settings, AuthSection, SRow) and the
+   MFA reset (MfaResetBlock + ChangeList). */
+@layer components {
+  .set-grid {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 24px;
+    align-items: flex-start;
+    padding: 20px 32px 40px;
+  }
+  .set-nav {
+    position: sticky;
+    top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .set-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    font-size: 13px;
+    text-align: left;
+    color: var(--text-muted);
+  }
+  .set-nav-item > span {
+    flex: 1;
+  }
+  .set-nav-item.is-on {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+    font-weight: 500;
+    color: var(--accent-ink);
+  }
+  .set-body {
+    min-width: 0;
+    max-width: 760px;
+  }
+  .set-head {
+    margin-bottom: 18px;
+  }
+  .set-title {
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .set-desc {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+  .set-card {
+    margin-bottom: 20px;
+    padding: 4px 16px;
+  }
+  .set-card > .set-row:last-child {
+    border-bottom: none;
+  }
+  .set-row {
+    display: grid;
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+    gap: 20px;
+    align-items: flex-start;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .set-row-label {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .set-row-hint {
+    margin-top: 3px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--text-muted);
+  }
+  .set-row-value {
+    min-width: 0;
+  }
+  .set-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  /* Current value of an installation setting (design v14 `ProposedRow`). */
+  .set-row-current {
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .set-row-actions .ro-field {
+    font-family: var(--font-sans);
+  }
+  .set-row-text {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .ro-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--row-hover);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+  .ro-field > svg {
+    flex-shrink: 0;
+  }
+  @media (max-width: 720px) {
+    .set-grid {
+      grid-template-columns: minmax(0, 1fr);
+      padding: 16px 16px 32px;
+    }
+    .set-nav {
+      position: static;
+    }
+    .set-row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+  }
+  .mfa-reset,
+  .mfa-reset-list {
+    margin-top: 22px;
+  }
+  .mfa-reset .g-sec-t {
+    margin-bottom: 4px;
+  }
+  .mfa-reset .g-sec-meta {
+    margin-bottom: 10px;
+  }
+  .mfa-reset .mfa-reset-list-error-title {
+    margin-bottom: 10px;
+  }
+  .mfa-reset .mfa-reset-action-error {
+    margin-top: 14px;
+  }
+  .mfa-reset-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+  }
+  .mfa-reset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mfa-reset-email {
+    flex: 1 1 220px;
+  }
+  .mfa-reset-reason {
+    flex: 2 1 260px;
+  }
+  .mfa-reset-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .mfa-reset-check input {
+    margin-top: 2px;
+    accent-color: var(--accent-ink);
+  }
+  .mfa-reset-check-hint {
+    color: var(--text-muted);
+  }
+  .mfa-reset-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .chg-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .chg {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+  }
+  .chg-h {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .chg-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .chg-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .chg-t {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+  .chg-m {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 3px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .chg-diff {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 12.5px;
+  }
+  .chg-diff .new {
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+  .chg-why {
+    margin-top: 8px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .chg-act {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .chg-reject {
+    margin-top: 10px;
+  }
+  .chg-reject-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 6px;
+  }
+}

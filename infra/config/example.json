@@ -1,0 +1,100 @@
+{
+  "namespace": "poc",
+  "installationType": "customer",
+  "region": "us-east-1",
+  "mangoAccountId": "111111111111",
+  "managementAccountId": "222222222222",
+  "organizationId": "o-exampleorg1",
+  "orgAccess": {
+    "targets": [
+      "ou-abcd-11111111",
+      "ou-abcd-22222222"
+    ]
+  },
+  "availabilityZoneIds": [
+    "use1-az1",
+    "use1-az2"
+  ],
+  "businessUnits": {
+    "sandbox": [
+      "ou-abcd-11111111"
+    ],
+    "security": [
+      "ou-abcd-22222222"
+    ]
+  },
+  "accessGroups": {
+    "people": {
+      "type": "general",
+      "description": "Personas y Cultura"
+    }
+  },
+  "mfa": "required",
+  "auth": {
+    "signUpDomains": [
+      "example.com"
+    ],
+    "cognitoPlan": "plus",
+    "highRiskAction": "NO_ACTION",
+    "authEventsRetentionDays": 365
+  },
+  "users": [
+    {
+      "email": "finops@example.com",
+      "groups": [
+        "finops-central",
+        "mango-admin"
+      ]
+    },
+    {
+      "email": "security-lead@example.com",
+      "groups": [
+        "bu-lead",
+        "bu-security"
+      ]
+    },
+    {
+      "email": "agent-builder@example.com",
+      "groups": [
+        "mango-agent-creator",
+        "people"
+      ]
+    }
+  ],
+  "models": {
+    "agent": "us.anthropic.claude-sonnet-4-6",
+    "auxiliary": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+  },
+  "modelPrices": {
+    "us.anthropic.claude-sonnet-4-6": {
+      "input": 3.0,
+      "output": 15.0,
+      "cacheRead": 0.3,
+      "cacheWrite": 3.75
+    },
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
+      "input": 1.0,
+      "output": 5.0,
+      "cacheRead": 0.1,
+      "cacheWrite": 1.25
+    }
+  },
+  "budgets": {
+    "userMonthlyUsd": 20,
+    "agentMonthlyUsd": 200
+  },
+  "retainData": true,
+  "audit": {
+    "retentionDays": 2555,
+    "mode": "COMPLIANCE"
+  },
+  "alerts": {
+    "emails": []
+  },
+  "gateway": {
+    "mcpSessions": true
+  },
+  "observability": {
+    "transactionSearch": "stack"
+  }
+}

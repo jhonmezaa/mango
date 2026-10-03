@@ -1,0 +1,18 @@
+[project]
+name = "mango-provisioner"
+version = "0.1.0"
+description = "Provisioner Lambdas: publish an approved agent version and enable a signed MCP pack by SDK (D18, D19, D25, D32)"
+requires-python = ">=3.13,<3.14"
+# The Lambda runtime's own boto3 may predate the AgentCore harness API: bundle a known version.
+dependencies = ["boto3>=1.43.104", "mango-core[agents]", "mango-packs"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
+mango-packs = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_provisioner"]

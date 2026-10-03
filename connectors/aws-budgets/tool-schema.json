@@ -1,0 +1,25 @@
+[
+  {
+    "name": "create_budget",
+    "description": "Create a monthly cost budget in AWS Budgets (payer account). The budget only tracks spend: it stops nothing and notifies nobody. This tool CHANGES resources, so it never runs directly: calling it asks the user to confirm (or other people to approve) the exact arguments, and it runs only afterwards. Call it once with the final values; do not retry it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Short name of the budget: letters, digits and hyphens, up to 40 characters. The installation prefix is added automatically."
+        },
+        "amount_usd": {
+          "type": "number",
+          "description": "Monthly limit in USD, greater than 0."
+        },
+        "account_ids": {
+          "type": "array",
+          "description": "Optional: 12-digit AWS account ids the budget covers. Empty or omitted: the whole organization.",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["name", "amount_usd"]
+    }
+  }
+]

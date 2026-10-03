@@ -1,0 +1,13 @@
+[project]
+name = "mango-packs"
+version = "0.1.0"
+description = "MCP pack format: manifest schema, tools snapshot hash and offline signature verification (D19)"
+requires-python = ">=3.13,<3.14"
+dependencies = ["pydantic>=2.11", "cryptography>=46"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_packs"]

@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# CDK
+cdk.out/
+cdk.out.provider/
+cdk.context.json
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Installation config with real account data (keep only the example in git)
+infra/config/*.json
+!infra/config/example.json
+.cache/
+
+# FinOps evaluation reports (agent answers and account ids of the installation)
+tests/eval/reports/

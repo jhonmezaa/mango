@@ -1,0 +1,26 @@
+{
+  "id": "aws-budgets",
+  "kind": "connector",
+  "name": "AWS Budgets",
+  "description": "Crea presupuestos de costo en la cuenta pagadora. Cada acción se confirma o se aprueba antes de ejecutarse.",
+  "provider": "Mango",
+  "data_tier": "write",
+  "identity_mode": "per_user",
+  "gateway_target": "ops",
+  "iam": [
+    {
+      "actions": ["budgets:ModifyBudget"],
+      "resources": ["arn:aws:budgets::*:budget/Mango-<namespace>-*"],
+      "note": "Solo presupuestos cuyo nombre empieza por el prefijo de la instalación. La acción también permite modificar y borrar esos presupuestos; la tool solo crea. Se ejecuta con la identidad de quien pidió la acción, a través del broker de escritura, y solo con una aprobación válida (D27)."
+    }
+  ],
+  "tools": [
+    {
+      "name": "create_budget",
+      "description": "Crear un presupuesto mensual de costo en AWS Budgets, sin notificaciones.",
+      "access": "write",
+      "audience": "central",
+      "approval": { "amount": "amount_usd" }
+    }
+  ]
+}
