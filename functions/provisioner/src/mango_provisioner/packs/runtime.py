@@ -170,6 +170,23 @@ def _client_token(*parts: str) -> str:
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
 
+def _invalid_tools(reason: str, raw: bytes, content_type: str, code: object = None) -> StepError:
+    """Why a ``tools/list`` answer was refused. Only its shape is logged: the answer is
+    third-party output and never reaches the logs."""
+    logger.warning(
+        json.dumps(
+            {
+                "event": "pack_provisioner.tools_response_invalid",
+                "reason": reason,
+                "bytes": len(raw),
+                "content_type": content_type[:64],
+                "jsonrpc_error_code": code if isinstance(code, int) else None,
+            }
+        )
+    )
+    return StepError("tools_response_invalid")
+
+
 def decode_tools(raw: bytes, content_type: str) -> list[Any]:
     """The ``tools`` array of a ``tools/list`` answer. The answer is third-party output."""
     if len(raw) > MAX_TOOLS_RESPONSE_BYTES:
@@ -181,14 +198,21 @@ def decode_tools(raw: bytes, content_type: str) -> list[Any]:
             text = data[-1] if data else ""
         message = json.loads(text)
     except ValueError:
-        raise StepError("tools_response_invalid") from None
+        raise _invalid_tools(
+            "empty" if not raw.strip() else "not_json", raw, content_type
+        ) from None
     result = message.get("result") if isinstance(message, dict) else None
     if not isinstance(result, dict):
-        raise StepError("tools_response_invalid")
+        error = message.get("error") if isinstance(message, dict) else None
+        if isinstance(error, dict):
+            raise _invalid_tools("jsonrpc_error", raw, content_type, error.get("code"))
+        raise _invalid_tools("no_result", raw, content_type)
     tools = result.get("tools")
     # A paginated listing would hide tools from the comparison.
-    if not isinstance(tools, list) or result.get("nextCursor"):
-        raise StepError("tools_response_invalid")
+    if not isinstance(tools, list):
+        raise _invalid_tools("no_tools", raw, content_type)
+    if result.get("nextCursor"):
+        raise _invalid_tools("paginated", raw, content_type)
     return tools
 
 

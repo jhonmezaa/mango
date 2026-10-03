@@ -257,6 +257,24 @@ def test_malformed_tools_answers_are_refused(raw: bytes) -> None:
         decode_tools(raw, "application/json")
 
 
+def test_a_refused_tools_answer_logs_its_shape_and_never_its_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "text-of-a-third-party-server"
+    raw = json.dumps({"jsonrpc": "2.0", "id": 1, "error": {"code": -32010, "message": secret}})
+    with caplog.at_level("WARNING"), pytest.raises(StepError, match="tools_response_invalid"):
+        decode_tools(raw.encode(), "application/json")
+    logged = json.loads(caplog.records[-1].getMessage())
+    assert logged == {
+        "event": "pack_provisioner.tools_response_invalid",
+        "reason": "jsonrpc_error",
+        "bytes": len(raw),
+        "content_type": "application/json",
+        "jsonrpc_error_code": -32010,
+    }
+    assert secret not in caplog.text
+
+
 def test_oversized_tools_answer_is_refused() -> None:
     with pytest.raises(StepError, match="tools_response_too_large"):
         decode_tools(b" " * (MAX_TOOLS_RESPONSE_BYTES + 1), "application/json")
