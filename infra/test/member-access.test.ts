@@ -297,6 +297,12 @@ describe("OrgAccess (management account or StackSets delegated administrator)", 
     expect(stackSet.Description).toContain(`sha256:${sha256.slice(0, 16)}`);
   });
 
+  it("carries a spoke template of plain ASCII, so the StackSet stores it byte for byte", () => {
+    // CloudFormation replaces any other character with `?`: the hash would never match.
+    // eslint-disable-next-line no-control-regex
+    expect(stackSet.TemplateBody as string).toMatch(/^[\x00-\x7F]*$/);
+  });
+
   it("calls as the management account by default and as a delegated administrator when asked", () => {
     expect(source.Parameters.CallAs).toMatchObject({ Default: "SELF", AllowedValues: ["SELF", "DELEGATED_ADMIN"] });
     expect(stackSet.CallAs).toBe("SELF");

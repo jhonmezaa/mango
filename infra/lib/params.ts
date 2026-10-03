@@ -4,6 +4,9 @@ import { CfnParameter, CfnRule, Fn, Stack, Tags } from "aws-cdk-lib";
  * Stack parameters of an installation (D58): the few values that differ between customers.
  * Everything else is a value of the release or is configured in the app. One declaration per
  * parameter, so every template that asks for it uses the same name, pattern and description.
+ *
+ * Descriptions are plain ASCII: CloudFormation stores any other character of a StackSet
+ * template as `?`, and the deployed spoke template would no longer match its published hash.
  */
 
 const ACCOUNT_ID = "^[0-9]{12}$";
@@ -12,7 +15,7 @@ const ACCOUNT_ID = "^[0-9]{12}$";
 export function namespaceParameter(stack: Stack): string {
   return new CfnParameter(stack, "Namespace", {
     type: "String",
-    description: "3 to 8 lowercase letters or digits, prefixed to every name of this installation (Mango-<namespace>-…).",
+    description: "3 to 8 lowercase letters or digits, prefixed to every name of this installation (Mango-<namespace>-...).",
     allowedPattern: "^[a-z0-9]{3,8}$",
     constraintDescription: "must be 3 to 8 lowercase letters or digits",
   }).valueAsString;
@@ -21,9 +24,9 @@ export function namespaceParameter(stack: Stack): string {
 export function organizationIdParameter(stack: Stack): string {
   return new CfnParameter(stack, "OrganizationId", {
     type: "String",
-    description: "Id of the AWS Organization (o-…): every cross-account trust of Mango is limited to it.",
+    description: "Id of the AWS Organization (o-...): every cross-account trust of Mango is limited to it.",
     allowedPattern: "^o-[a-z0-9]{10,32}$",
-    constraintDescription: "must be an organization id (o-…)",
+    constraintDescription: "must be an organization id (o-...)",
   }).valueAsString;
 }
 
