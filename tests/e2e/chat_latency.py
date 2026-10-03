@@ -109,7 +109,7 @@ def summarize(turns: list[dict[str, Any]]) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--stack", default="Mango-poc-Core")
+    parser.add_argument("--stack", required=True, help="Core stack: Mango-<ns>-Core")
     parser.add_argument("--secrets", required=True, type=Path)
     parser.add_argument("--user", required=True)
     parser.add_argument("--question", default=DEFAULT_QUESTION)

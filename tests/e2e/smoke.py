@@ -1,13 +1,13 @@
-"""End-to-end smoke test for the FinOps PoC against a deployed lab installation.
+"""End-to-end smoke test against an installation (``Mango-<ns>-Core``).
 
-Uses only lab e2e users (config `e2e: true`). Their password is set with the admin API and
+Uses only e2e users of a test installation. Their password is set with the admin API and
 their TOTP secret is enrolled on first sign-in; both are kept in a local secrets file outside
-the repository (never commit it).
+the repository (never commit it). Pool, client and URL come from the outputs of ``--stack``.
 
 Run:
   uv run --no-project --with boto3 --with pycognito --with pyotp --with httpx \
-    python tests/e2e/smoke.py --profile mango-sandbox --secrets <path> --user <email> \
-    --question "¿Cuánto gastamos este mes?"
+    python tests/e2e/smoke.py --profile <mango account> --stack Mango-<ns>-Core \
+    --secrets <path> --user <email> --question "¿Cuánto gastamos este mes?"
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import secrets
 import stat
 import string
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +52,22 @@ def new_password() -> str:
     return f"{core}aA1!"
 
 
+TOTP_STEP_S = 30
+
+
 def sign_in(
+    idp: Any, pool_id: str, client_id: str, email: str, store: dict[str, dict[str, str]]
+) -> str:
+    """Cognito refuses a TOTP code already used in its window (another script, a moment ago):
+    wait for the next code and sign in again, once."""
+    try:
+        return _sign_in(idp, pool_id, client_id, email, store)
+    except (idp.exceptions.CodeMismatchException, idp.exceptions.ExpiredCodeException):
+        time.sleep(TOTP_STEP_S + 1 - time.time() % TOTP_STEP_S)
+        return _sign_in(idp, pool_id, client_id, email, store)
+
+
+def _sign_in(
     idp: Any, pool_id: str, client_id: str, email: str, store: dict[str, dict[str, str]]
 ) -> str:
     entry = store.setdefault(email, {})
@@ -141,7 +157,7 @@ def chat(app_url: str, token: str, question: str, conversation_id: str | None) -
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--stack", default="Mango-poc-Core")
+    parser.add_argument("--stack", required=True, help="Core stack: Mango-<ns>-Core")
     parser.add_argument("--secrets", required=True, type=Path)
     parser.add_argument("--user", required=True)
     parser.add_argument("--question", action="append", default=[])

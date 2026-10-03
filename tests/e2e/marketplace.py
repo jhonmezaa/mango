@@ -397,7 +397,7 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--stack", default="Mango-poc-Core")
+    parser.add_argument("--stack", required=True, help="Core stack: Mango-<ns>-Core")
     parser.add_argument("--secrets", required=True, type=Path)
     parser.add_argument("--creator", required=True, help="an administrator (e2e user)")
     parser.add_argument("--approver", required=True, help="another administrator (e2e user)")

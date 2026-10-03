@@ -25,6 +25,7 @@ REGION = "us-east-1"
 CENTRAL = "central"
 CENTRAL_GROUP = "finops-central"
 PAYMENT_REQUIRED = 402
+HTTP_OK = 200
 TOLERANCE = "±1 % frente a Cost Explorer, o ±0,005 USD cuando el redondeo a 2 decimales es mayor"
 DEFAULT_REPORTS = Path(__file__).resolve().parents[1] / "reports"
 
@@ -39,26 +40,39 @@ class Installation:
     """Profile -> e-mail of its e2e user."""
 
 
-def _load_installation(args: argparse.Namespace, lab: boto3.Session) -> Installation:
-    config = json.loads(args.config.read_text())
+def _outputs(args: argparse.Namespace, lab: boto3.Session) -> dict[str, str]:
     stacks = lab.client("cloudformation").describe_stacks(StackName=args.stack)["Stacks"]
     outputs = {o["OutputKey"]: o["OutputValue"] for o in stacks[0].get("Outputs", [])}
     app_url = (args.app_url or outputs["AppUrl"]).rstrip("/")
     if not app_url.startswith("https://"):
         raise SystemExit("the installation URL must be https (the access token travels in it)")
-    areas = {bu: frozenset(ous) for bu, ous in config["businessUnits"].items()}
+    return {**outputs, "AppUrl": app_url}
+
+
+def _areas(http: httpx.Client, app_url: str, token: str) -> dict[str, frozenset[str]]:
+    """Areas and their OUs as the installation has them (Ajustes > Áreas y OUs). Nothing about
+    the installation is read from the repository."""
+    resp = http.get(
+        f"{app_url}/api/admin/business-units", headers={"Authorization": f"Bearer {token}"}
+    )
+    if resp.status_code != HTTP_OK:
+        raise SystemExit(
+            f"the areas could not be read (HTTP {resp.status_code}): "
+            f"the {CENTRAL} user must be an administrator"
+        )
+    return {area: frozenset(ous) for area, ous in resp.json()["units"].items()}
+
+
+def _users(values: list[str]) -> dict[str, str]:
     users: dict[str, str] = {}
-    for user in config["users"]:
-        if not user.get("e2e"):
-            continue
-        groups = set(user["groups"])
-        profile = CENTRAL if CENTRAL_GROUP in groups else None
-        for area in areas:
-            if {"bu-lead", f"bu-{area}"} <= groups:
-                profile = area
-        if profile:
-            users.setdefault(profile, user["email"])
-    return Installation(app_url, outputs["UserPoolId"], outputs["WebClientId"], areas, users)
+    for value in values:
+        profile, _, email = value.partition("=")
+        if not profile or not email:
+            raise SystemExit(f"--user takes <profile>=<email>, got {value!r}")
+        users[profile] = email
+    if CENTRAL not in users:
+        raise SystemExit(f"--user {CENTRAL}=<email> is required")
+    return users
 
 
 @dataclass(frozen=True)
@@ -137,7 +151,7 @@ class Run:
 def _sign_in(idp: Any, installation: Installation, profile: str, secrets: Path) -> str:
     email = installation.users.get(profile)
     if email is None:
-        raise client.SignInError(f"no e2e user for profile {profile} in the configuration")
+        raise client.SignInError(f"no --user for profile {profile}")
     return client.sign_in(
         idp,
         installation.pool_id,
@@ -153,8 +167,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--payer-profile", required=True, help="AWS profile of the payer (read-only)"
     )
     parser.add_argument("--secrets", required=True, type=Path, help="e2e secrets file (read only)")
-    parser.add_argument("--config", type=Path, default=Path("infra/config/poc.json"))
-    parser.add_argument("--stack", default="Mango-poc-Core")
+    parser.add_argument("--stack", required=True, help="Core stack: Mango-<ns>-Core")
+    parser.add_argument(
+        "--user",
+        action="append",
+        default=[],
+        metavar="PROFILE=EMAIL",
+        help="e2e user of a profile: central (an administrator in finops-central) or the name "
+        "of an area (a lead of that area); repeat per profile",
+    )
     parser.add_argument("--app-url", help="defaults to the AppUrl output of the stack")
     parser.add_argument("--area", help="business unit asked about in Q4 (default: the last one)")
     parser.add_argument("--only", default="", help="comma separated ids, e.g. Q5,Q11/sandbox")
@@ -177,28 +198,47 @@ def main(argv: list[str] | None = None) -> int:
 
     lab = boto3.Session(profile_name=args.profile, region_name=REGION)
     payer = boto3.Session(profile_name=args.payer_profile, region_name=REGION)
-    installation = _load_installation(args, lab)
-    area = args.area or sorted(installation.areas)[-1]
-
-    ce: Any = payer.client("ce")
-    window = (periods.history_start, periods.tomorrow)
-    builder = GroundTruthBuilder(
-        ce=ce,
-        periods=periods,
-        accounts=ground_truth.load_org(payer.client("organizations")),
-        areas=installation.areas,
-        services=ground_truth.fetch_cube(ce, window, "DIMENSION", "SERVICE"),
-        tags=ground_truth.fetch_cube(ce, window, "TAG", ground_truth.TAG_KEY),
-    )
-
+    outputs = _outputs(args, lab)
+    users = _users(args.user)
     idp = lab.client("cognito-idp")
+
     results: list[QuestionResult] = []
     with client.http_client() as http:
+        # The central user signs in once: its token reads the areas and asks its questions (a
+        # TOTP code cannot be used twice in its window).
+        pool_id, client_id = outputs["UserPoolId"], outputs["WebClientId"]
+        central = client.sign_in(
+            idp, pool_id, client_id, client.load_credentials(args.secrets, users[CENTRAL])
+        )
+        installation = Installation(
+            outputs["AppUrl"], pool_id, client_id, _areas(http, outputs["AppUrl"], central), users
+        )
+        if not installation.areas:
+            raise SystemExit("the installation has no areas: create them in Ajustes > Áreas y OUs")
+        area = args.area or sorted(installation.areas)[-1]
+
+        ce: Any = payer.client("ce")
+        window = (periods.history_start, periods.tomorrow)
+        builder = GroundTruthBuilder(
+            ce=ce,
+            periods=periods,
+            accounts=ground_truth.load_org(payer.client("organizations")),
+            areas=installation.areas,
+            services=ground_truth.fetch_cube(ce, window, "DIMENSION", "SERVICE"),
+            tags=ground_truth.fetch_cube(ce, window, "TAG", ground_truth.TAG_KEY),
+        )
         run = Run(installation, builder, http, area)
         for profile in dict.fromkeys(q.profile for q in selected):
             mine = [q for q in selected if q.profile == profile]
+            if profile != CENTRAL and profile not in installation.areas:
+                results += run.skipped(profile, mine, "La instalación no tiene esa área.")
+                continue
             try:
-                token = _sign_in(idp, installation, profile, args.secrets)
+                token = (
+                    central
+                    if profile == CENTRAL
+                    else _sign_in(idp, installation, profile, args.secrets)
+                )
             except (client.SignInError, ClientError, BotoCoreError) as exc:
                 # One profile that cannot sign in must not lose the answers of the others.
                 reason = str(exc) if isinstance(exc, client.SignInError) else type(exc).__name__

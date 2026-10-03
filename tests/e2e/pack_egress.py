@@ -34,7 +34,7 @@ be deleted. ``cleanup`` says what is left; run it again later with the same ``--
 
 Run:
   uv run --no-project --with boto3 python tests/e2e/pack_egress.py \
-    --profile mango-sandbox --state <path>.json [--network temp|stack] [--namespace poc] \
+    --profile mango-sandbox --state <path>.json [--network temp|stack] [--namespace <ns>] \
     [--steps create,probe,cleanup]
 """
 
@@ -624,19 +624,25 @@ class Run:
         raise CheckFailedError("VPC endpoints did not become available")
 
     def use_stack_network(self) -> None:
-        """Subnets and the security group of one release pack, from the stack outputs."""
-        stack = f"Mango-{self.args.namespace}-Core"
-        outputs = self.session.client("cloudformation").describe_stacks(StackName=stack)["Stacks"][
-            0
-        ]["Outputs"]
-        network = json.loads(
-            next(o["OutputValue"] for o in outputs if o["OutputKey"] == "PackNetwork")
-        )
-        group = network["security_groups"].get(self.args.pack)
+        """Subnets and the security group of one release pack, from the exports of the
+        ``Mango-<ns>-PackNetwork`` stack (the ones the Core stack imports)."""
+        prefix = f"Mango-{self.args.namespace}-PackNetwork-"
+        exports = {
+            export["Name"].removeprefix(prefix): export["Value"]
+            for page in self.session.client("cloudformation")
+            .get_paginator("list_exports")
+            .paginate()
+            for export in page["Exports"]
+            if export["Name"].startswith(prefix)
+        }
+        subnets = [exports[name] for name in sorted(exports) if name.startswith("Subnet")]
+        group = exports.get(f"SecurityGroup-{self.args.pack}")
+        if not subnets:
+            raise CheckFailedError(f"no exports named {prefix}Subnet<n>: is the stack installed?")
         if group is None:
             raise CheckFailedError(f"the release has no pack {self.args.pack!r}")
-        self.state.set(subnets=network["subnets"], probe_sg=group)
-        print(f"  network of {stack}: subnets {network['subnets']} pack sg {group}")
+        self.state.set(subnets=subnets, probe_sg=group)
+        print(f"  network of {prefix[:-1]}: subnets {subnets} pack sg {group}")
 
     # --- Probe Runtime --------------------------------------------------------------------
 
@@ -1199,7 +1205,7 @@ def main() -> int:
     )
     parser.add_argument("--network", choices=("temp", "stack"), default="temp")
     parser.add_argument(
-        "--namespace", default="poc", help="installation namespace (--network stack)"
+        "--namespace", help="installation namespace (required with --network stack)"
     )
     parser.add_argument(
         "--pack", default="aws-pricing", help="release pack whose security group is used (stack)"
@@ -1217,6 +1223,8 @@ def main() -> int:
     unknown = set(steps) - {"create", "probe", "cleanup"}
     if unknown or len(args.az_ids) != len(TEMP_SUBNETS):
         parser.error("unknown --steps or --az-ids is not two ids")
+    if args.network == "stack" and not args.namespace:
+        parser.error("--network stack needs --namespace")
 
     run = Run(args)
     if run.state["network"] != args.network:

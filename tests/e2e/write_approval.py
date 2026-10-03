@@ -323,13 +323,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", required=True, help="Mango account (stack outputs, Cognito)")
     parser.add_argument("--payer-profile", required=True, help="payer account: verify and delete")
-    parser.add_argument("--stack", default="Mango-poc-Core")
-    parser.add_argument("--namespace", default="poc")
+    parser.add_argument("--stack", required=True, help="Core stack: Mango-<ns>-Core")
+    parser.add_argument("--namespace", help="default: the middle part of the stack name")
     parser.add_argument("--secrets", required=True, type=Path)
     parser.add_argument("--requester", required=True, help="central FinOps administrator (e2e)")
     parser.add_argument("--approver", required=True, help="another central administrator (e2e)")
     parser.add_argument("--keep", action="store_true", help="keep the agent and the budgets")
     args = parser.parse_args()
+    args.namespace = args.namespace or args.stack.split("-")[1]
 
     session = boto3.Session(profile_name=args.profile, region_name="us-east-1")
     payer_session = boto3.Session(profile_name=args.payer_profile, region_name="us-east-1")

@@ -2,8 +2,9 @@
 
 Run from the repository root:
   uv run --no-project --with boto3 --with pycognito --with pyotp --with httpx \
-    python tests/eval/run.py --profile mango-sandbox --payer-profile mango-mgmt \
-    --secrets ~/.config/mango/lab/e2e-secrets.json
+    python tests/eval/run.py --profile <mango account> --payer-profile <payer account> \
+    --stack Mango-<ns>-Core --secrets <e2e secrets file> \
+    --user central=<email> --user <area>=<email of a lead of that area>
 """
 
 from __future__ import annotations

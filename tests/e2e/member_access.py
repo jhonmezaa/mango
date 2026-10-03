@@ -29,9 +29,16 @@ assumptions that must be refused.
   the spoke role with the ``SourceIdentity`` of this run and a session policy. Events take up
   to 15 minutes to appear.
 
-Run (after ``mise run synth`` with the lab configuration, so the template can be compared):
+The installation is read from AWS, not from a file: the organization from Organizations, the
+targets and exclusions from the parameters of the ``Mango-<ns>-OrgAccess`` stack, and the Mango
+account from ``--profile``. ``--templates`` is the directory with the templates of the installed
+release (``OrgAccess.template.json`` and ``Member.template.json``), so the deployed ones can be
+compared; without it the script looks in ``infra/cdk.out``.
+
+Run:
   uv run --no-project --python 3.13 --with boto3 python tests/e2e/member_access.py \
-    --config infra/config/poc.json --profile mango-sandbox --admin-profile mango-mgmt \
+    --namespace <ns> --profile <mango account> --admin-profile <management account> \
+    --templates <release templates dir> \
     --member-profile <account>=<profile> --member-profile <account>=<profile>
 """
 
@@ -169,9 +176,9 @@ def expected_accounts(run: Run) -> None:
 # --- stackset ------------------------------------------------------------------------------
 
 
-def _local_template_sha256() -> str | None:
-    """sha256 of the spoke template this checkout synthesized, as the StackSet carries it."""
-    path = REPO_ROOT / "infra/cdk.out/OrgAccess.template.json"
+def _local_template_sha256(templates: Path) -> str | None:
+    """sha256 of the spoke template of the release, as the StackSet carries it."""
+    path = templates / "OrgAccess.template.json"
     if not path.exists():
         return None
     outputs = json.loads(path.read_text())["Outputs"]
@@ -189,7 +196,7 @@ def check_stack_set(run: Run) -> None:
     name = f"Mango-{run.namespace}-Member"
     stack_set = cfn.describe_stack_set(StackSetName=name, CallAs=call_as)["StackSet"]
     deployed = hashlib.sha256(stack_set["TemplateBody"].encode()).hexdigest()
-    local = _local_template_sha256()
+    local = _local_template_sha256(run.args.templates)
     facts = {
         "status": stack_set["Status"],
         "permission_model": stack_set["PermissionModel"],
@@ -336,9 +343,9 @@ def check_broker(run: Run) -> None:
     run.report.ok("broker", **facts)
 
 
-def release_data_actions() -> list[str]:
-    """Data actions of the spoke role in the template this checkout synthesized."""
-    path = REPO_ROOT / "infra/cdk.out/Member.template.json"
+def release_data_actions(templates: Path) -> list[str]:
+    """Data actions of the spoke role in the template of the release."""
+    path = templates / "Member.template.json"
     if not path.exists():
         return []
     resources = json.loads(path.read_text())["Resources"].values()
@@ -360,7 +367,7 @@ def check_roles(run: Run) -> None:
         raise run.report.fail(
             "roles", reason="profile for an account that is no target", accounts=unknown
         )
-    allowed = release_data_actions()
+    allowed = release_data_actions(run.args.templates)
     for account in run.expected:
         if account not in sessions:
             run.report.ok("role", account=account, checked=False, reason="no --member-profile")
@@ -547,9 +554,43 @@ def execute(run: Run) -> None:
             steps[name](run)
 
 
+def _parameter_list(parameters: dict[str, str], key: str) -> list[str]:
+    return [value.strip() for value in parameters.get(key, "").split(",") if value.strip()]
+
+
+def load_installation(args: argparse.Namespace) -> dict[str, Any]:
+    """The installation as AWS has it: nothing about it is written in the repository."""
+    mango = boto3.Session(profile_name=args.profile, region_name=args.region)
+    admin = boto3.Session(profile_name=args.admin_profile, region_name=args.region)
+    organization = admin.client("organizations").describe_organization()["Organization"]
+    stack = admin.client("cloudformation").describe_stacks(
+        StackName=f"Mango-{args.namespace}-OrgAccess"
+    )["Stacks"][0]
+    parameters = {p["ParameterKey"]: p["ParameterValue"] for p in stack.get("Parameters", [])}
+    return {
+        "namespace": args.namespace,
+        "region": args.region,
+        "mangoAccountId": mango.client("sts").get_caller_identity()["Account"],
+        "managementAccountId": organization["MasterAccountId"],
+        "organizationId": organization["Id"],
+        "orgAccess": {
+            "targets": _parameter_list(parameters, "Targets"),
+            "excludedAccountIds": _parameter_list(parameters, "ExcludedAccountIds"),
+            "adminAccountId": admin.client("sts").get_caller_identity()["Account"],
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True, type=Path, help="installation config (JSON)")
+    parser.add_argument("--namespace", required=True, help="namespace of the installation")
+    parser.add_argument("--region", default="us-east-1", help="Region of the installation")
+    parser.add_argument(
+        "--templates",
+        type=Path,
+        default=REPO_ROOT / "infra/cdk.out",
+        help="directory with the templates of the installed release",
+    )
     parser.add_argument("--profile", required=True, help="AWS profile of the Mango account")
     parser.add_argument(
         "--admin-profile",
@@ -573,14 +614,14 @@ def main() -> None:
         parser.error(f"unknown steps: {', '.join(unknown)}")
 
     report = Report()
-    run = Run(
-        report=report,
-        args=args,
-        config=json.loads(args.config.read_text()),
-        actor=f"e2e-member-{secrets.token_hex(6)}",
-        started=datetime.now(UTC),
-    )
     try:
+        run = Run(
+            report=report,
+            args=args,
+            config=load_installation(args),
+            actor=f"e2e-member-{secrets.token_hex(6)}",
+            started=datetime.now(UTC),
+        )
         execute(run)
     except CheckFailedError:
         sys.exit(1)

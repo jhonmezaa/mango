@@ -556,7 +556,7 @@ def _arguments() -> argparse.Namespace:
         help="an account of the organization without the member role (e.g. management)",
     )
     parser.add_argument("--region", default="us-east-1", help="Region the questions name")
-    parser.add_argument("--stack", default="Mango-poc-Core")
+    parser.add_argument("--stack", required=True, help="Core stack: Mango-<ns>-Core")
     parser.add_argument("--namespace", help="default: the middle part of the stack name")
     parser.add_argument("--secrets", required=True, type=Path)
     parser.add_argument("--requester", required=True, help="a central administrator (e2e user)")
