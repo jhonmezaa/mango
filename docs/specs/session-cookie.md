@@ -58,7 +58,7 @@ Los tres exigen la cabecera propia `X-Mango-Session: 1`, que `Origin` sea el de 
 | Endpoint | Autenticación | Qué hace |
 |---|---|---|
 | `POST /api/session` | Access token (Bearer) + `refresh_token` en el cuerpo | Comprueba el refresh token contra Cognito y que pertenece al mismo `sub` del access token. Crea el registro, cifra el token y pone la cookie. Si ya había una cookie, cierra esa sesión. Responde 204. |
-| `POST /api/session/refresh` | Solo la cookie | Busca el registro (vigente, no revocado), descifra, renueva contra Cognito (`REFRESH_TOKEN_AUTH`), verifica el access token nuevo y que su `sub` es el del registro. Devuelve `{access_token, id_token, expires_in, federated}`. Si Cognito rechaza (token revocado, persona deshabilitada, vencido), borra el registro y la cookie y responde 401. |
+| `POST /api/session/refresh` | Solo la cookie | Busca el registro (vigente, no revocado), descifra, renueva contra Cognito (`REFRESH_TOKEN_AUTH`), verifica el access token nuevo y que su `sub` es el del registro. Devuelve `{access_token, id_token, expires_in, federated}`. Si no hay sesión, o Cognito rechaza (token revocado, persona deshabilitada, vencido), borra el registro y la cookie y responde **204** sin cuerpo: no es un error, toda primera visita pregunta. |
 | `DELETE /api/session` | Solo la cookie | Revoca el refresh token en Cognito (`RevokeToken`), borra el registro y la cookie. Idempotente. 204. |
 
 - **Autorización declarada:** `POST /api/session` usa una dependencia propia que exige un access token verificado pero **no exige grupo**: una persona sin grupo también tiene sesión (ve «Todavía no tienes acceso») y recargar no debe sacarla. Los otros dos se autorizan con la cookie. No hay decisión de Cedar: cada quien actúa solo sobre su propia sesión.
@@ -67,7 +67,7 @@ Los tres exigen la cabecera propia `X-Mango-Session: 1`, que `Origin` sea el de 
 
 ### 4.4 La SPA
 
-- **Al cargar:** estado `loading` (el «Cargando…» a pantalla completa que ya existe) mientras llama a `POST /api/session/refresh`. Con 200 entra; con 401 muestra el login, sin mensaje de error. El callback de SSO tiene prioridad sobre la recuperación.
+- **Al cargar:** estado `loading` (el «Cargando…» a pantalla completa que ya existe) mientras llama a `POST /api/session/refresh`. Con 200 entra; con 204 (no hay sesión) muestra el login, sin mensaje de error. El callback de SSO tiene prioridad sobre la recuperación.
 - **Al ingresar** (SRP o SSO): con los tokens recibidos llama a `POST /api/session` y **descarta el refresh token** de la memoria. Si esa llamada falla, la sesión sigue como hoy (en memoria) y se pierde al recargar.
 - **Renovar:** `getAccessToken` pide el token nuevo a `POST /api/session/refresh` en vez de a Cognito. Sigue habiendo una sola renovación a la vez.
 - **Cerrar sesión:** `DELETE /api/session`; con SSO, además el redirect de cierre de Cognito, como hoy.

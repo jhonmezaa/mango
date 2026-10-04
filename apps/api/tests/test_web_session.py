@@ -16,9 +16,9 @@ from fastapi.testclient import TestClient
 from mango_api import app as app_module
 from mango_api.probe import RateLimiter
 from mango_api.settings import ModelPrice, Settings
-from mango_api.web import ApiError
 from mango_api.web_session import (
     COOKIE_NAME,
+    NoSessionError,
     RenewedTokens,
     SessionRecord,
     SessionRejectedError,
@@ -368,7 +368,7 @@ def test_starting_again_ends_the_previous_session_of_the_cookie(h: Harness) -> N
     )
     assert second.status_code == 204
     assert [r.sub for r in h.store.sessions.values()] == ["user-2"]
-    assert _renew(client, first).status_code == 401
+    assert _renew(client, first).status_code == 204
 
 
 def test_renew_returns_new_tokens_and_never_the_refresh_token(h: Harness) -> None:
@@ -388,14 +388,16 @@ def test_renew_returns_new_tokens_and_never_the_refresh_token(h: Harness) -> Non
     assert "rt-user-1" not in json.dumps(h.audit.events)
 
 
-def test_renew_without_a_session_is_a_quiet_401_that_clears_the_cookie(h: Harness) -> None:
+def test_renew_without_a_session_is_a_quiet_204_that_clears_the_cookie(h: Harness) -> None:
     client = h.client()
     none = _renew(client, None)
     unknown = _renew(client, f"{COOKIE_NAME}=v1.{'a' * 43}.YWJj")
     malformed = _renew(client, f"{COOKIE_NAME}=garbage")
     for response in (none, unknown, malformed):
-        assert response.status_code == 401
-        assert response.json()["error"]["code"] == "no_session"
+        # No error status: a first visit must not log a failed request in the browser.
+        assert response.status_code == 204
+        assert response.content == b""
+        assert response.headers["cache-control"] == "no-store"
         assert f"{COOKIE_NAME}=;" in response.headers["set-cookie"]
         assert "Max-Age=0" in response.headers["set-cookie"]
     assert h.tokens.calls == 0
@@ -406,8 +408,7 @@ def test_an_expired_session_ends(h: Harness) -> None:
     cookie = _cookie(_start(client))
     h.now = START + timedelta(hours=HOURS)
     response = _renew(client, cookie)
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "session_expired"
+    assert response.status_code == 204
     assert h.store.sessions == {}
     assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "expired"})
 
@@ -420,7 +421,7 @@ def test_revoking_a_user_ends_the_sessions_started_before(h: Harness) -> None:
     h.store.revoke_user("user-1", int(h.now.timestamp()))
     calls = h.tokens.calls
     response = _renew(client, deps_cookie)
-    assert response.status_code == 401
+    assert response.status_code == 204
     assert h.tokens.calls == calls  # ended before asking Cognito
     assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "revoked"})
 
@@ -435,7 +436,7 @@ def test_cognito_refusing_the_token_ends_the_session(h: Harness) -> None:
     cookie = _cookie(_start(client))
     h.tokens.rejected.add("rt-user-1")  # disabled, globally signed out or revoked
     response = _renew(client, cookie)
-    assert response.status_code == 401
+    assert response.status_code == 204
     assert "Max-Age=0" in response.headers["set-cookie"]
     assert h.store.sessions == {}
     assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "rejected"})
@@ -446,7 +447,7 @@ def test_a_ciphertext_moved_to_another_session_does_not_open(h: Harness) -> None
     mine = _cookie(_start(client, "user-2")).split("=", 1)[1].split(".")
     victim = _cookie(_start(client, "user-1")).split("=", 1)[1].split(".")
     forged = f"{COOKIE_NAME}=v1.{mine[1]}.{victim[2]}"
-    assert _renew(client, forged).status_code == 401
+    assert _renew(client, forged).status_code == 204
 
 
 def test_an_outage_keeps_the_session(h: Harness) -> None:
@@ -472,9 +473,8 @@ def test_made_up_session_ids_do_not_touch_the_rate_limiter(h: Harness) -> None:
     deps = h.deps()
     request_cookie = ("0" * 64, b"x")
     for _ in range(3):
-        with pytest.raises(ApiError) as refused:
+        with pytest.raises(NoSessionError):
             renew(deps, request_cookie)
-        assert refused.value.status == 401
     # Nothing was recorded for an id without a session.
     assert deps.renewals.retry_after("0" * 64) == 0
     assert all(deps.renewals.allow("0" * 64) for _ in range(5))
@@ -489,7 +489,7 @@ def test_sign_out_revokes_the_token_and_forgets_the_session(h: Harness) -> None:
     assert h.tokens.revoked == ["rt-user-1"]
     assert h.store.sessions == {}
     assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "sign_out"})
-    assert _renew(client, cookie).status_code == 401
+    assert _renew(client, cookie).status_code == 204
     # Idempotent, also without a cookie.
     again = client.delete("/api/session", headers=SAME_ORIGIN)
     assert again.status_code == 204

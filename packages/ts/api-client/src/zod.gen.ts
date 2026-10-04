@@ -2314,7 +2314,7 @@ export const zStartSessionBody = zSessionInSchema;
  */
 export const zStartSessionResponse = z.void();
 
-/**
- * Successful Response
- */
-export const zRenewSessionResponse = zRenewedOutSchema;
+export const zRenewSessionResponse = z.union([
+    zRenewedOutSchema,
+    z.void()
+]);

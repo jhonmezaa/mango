@@ -24,6 +24,11 @@ async function signOut(page: Page): Promise<void> {
 }
 
 test('a reload keeps the session, and signing out ends it', async ({ page, context }) => {
+  // Asking for a session that does not exist is not an error: nothing reaches the console.
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
   await signIn(page);
 
   await page.reload();
@@ -51,6 +56,7 @@ test('a reload keeps the session, and signing out ends it', async ({ page, conte
   await expect(page.getByLabel('Correo')).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
   expect((await context.cookies()).filter((c) => c.name === '__Host-mango_session')).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
 
 test('a deep link survives the reload', async ({ page }) => {

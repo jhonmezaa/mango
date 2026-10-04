@@ -91,7 +91,7 @@ describe('mock session cookie (D63)', () => {
 
     expect((await call('DELETE', '', { Cookie: cookie })).status).toBe(204);
     const after = await call('POST', '/refresh', { Cookie: cookie });
-    expect(after.status).toBe(401);
+    expect(after.status).toBe(204);
     expect(after.headers.get('set-cookie')).toContain('Max-Age=0');
   });
 
@@ -105,6 +105,6 @@ describe('mock session cookie (D63)', () => {
     ).toBe(403);
     expect((await call('POST', '', {}, body)).status).toBe(401);
     expect((await call('POST', '', auth, { refresh_token: 'made-up' })).status).toBe(401);
-    expect((await call('POST', '/refresh')).status).toBe(401);
+    expect((await call('POST', '/refresh')).status).toBe(204);
   });
 });

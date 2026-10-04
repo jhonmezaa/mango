@@ -9862,6 +9862,9 @@
             },
             "description": "Successful Response"
           },
+          "204": {
+            "description": "No session: nothing to renew"
+          },
           "default": {
             "content": {
               "application/json": {

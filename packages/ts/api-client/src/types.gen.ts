@@ -5641,6 +5641,10 @@ export type RenewSessionResponses = {
      * Successful Response
      */
     200: RenewedOut;
+    /**
+     * No session: nothing to renew
+     */
+    204: void;
 };
 
 export type RenewSessionResponse = RenewSessionResponses[keyof RenewSessionResponses];

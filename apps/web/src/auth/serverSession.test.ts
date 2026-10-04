@@ -56,6 +56,7 @@ describe('server session (D63)', () => {
 
   it('tells no session apart from an unknown answer', async () => {
     const { session } = setup(
+      new Response(null, { status: 204 }),
       json(401),
       json(503),
       json(429),
@@ -63,7 +64,7 @@ describe('server session (D63)', () => {
       json(200, { access_token: '', id_token: 'i', expires_in: 1, federated: false }),
     );
     await expect(session.renew()).resolves.toEqual({ kind: 'none' });
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       await expect(session.renew()).resolves.toEqual({ kind: 'unavailable' });
     }
   });

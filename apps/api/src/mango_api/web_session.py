@@ -354,11 +354,8 @@ def _parse_cookie(request: Request) -> tuple[str, bytes] | None:
     return (_hash(sid), ciphertext) if ciphertext else None
 
 
-def _ended(code: str = "no_session") -> ApiError:
-    """401 that also removes the cookie: the session is over."""
-    return ApiError(
-        401, code, "no active session", headers={**_NO_STORE, "Set-Cookie": _CLEAR_COOKIE}
-    )
+class NoSessionError(Exception):
+    """The cookie renews nothing: there never was a session, or it is over."""
 
 
 def _unavailable() -> ApiError:
@@ -469,13 +466,14 @@ def _claims_of(deps: WebSessionDeps, renewed: RenewedTokens, sub: str) -> dict[s
 
 
 def renew(deps: WebSessionDeps, cookie: tuple[str, bytes] | None) -> RenewedOut:
+    """New tokens for a live session; ``NoSessionError`` when the cookie renews nothing."""
     if cookie is None:
-        raise _ended()
+        raise NoSessionError
     sid_hash, ciphertext = cookie
     try:
         record = deps.store.get(sid_hash)
         if record is None:
-            raise _ended()
+            raise NoSessionError
         # Only sessions that exist are counted: made-up ids cannot fill the limiter and
         # push real sessions out of it (TM-S10).
         if not deps.renewals.allow(sid_hash):
@@ -483,10 +481,10 @@ def renew(deps: WebSessionDeps, cookie: tuple[str, bytes] | None) -> RenewedOut:
         now = int(deps.clock().timestamp())
         if now >= record.expires_at:
             _end(deps, sid_hash, record.sub, "expired")
-            raise _ended("session_expired")
+            raise NoSessionError
         if record.created_at <= deps.store.revoked_before(record.sub):
             _end(deps, sid_hash, record.sub, "revoked")
-            raise _ended("session_expired")
+            raise NoSessionError
         try:
             refresh_token = deps.cipher.decrypt(ciphertext, sid_hash, record.sub)
             renewed = deps.tokens.refresh(refresh_token)
@@ -495,7 +493,7 @@ def renew(deps: WebSessionDeps, cookie: tuple[str, bytes] | None) -> RenewedOut:
             # Revoked or expired in Cognito, the person was disabled, or the cookie was
             # tampered with: the session is over.
             _end(deps, sid_hash, record.sub, "rejected")
-            raise _ended("session_expired") from None
+            raise NoSessionError from None
     except SessionUnavailableError:
         raise _unavailable() from None
     try:
@@ -583,9 +581,17 @@ def web_session_router(deps: WebSessionDeps) -> APIRouter:
             samesite="strict",
         )
 
-    @router.post("/refresh", response_model=RenewedOut)
-    async def renew_session(request: Request, response: Response) -> RenewedOut:
-        renewed = await asyncio.to_thread(renew, deps, _parse_cookie(request))
+    @router.post(
+        "/refresh",
+        response_model=RenewedOut,
+        responses={204: {"description": "No session: nothing to renew"}},
+    )
+    async def renew_session(request: Request, response: Response) -> RenewedOut | Response:
+        try:
+            renewed = await asyncio.to_thread(renew, deps, _parse_cookie(request))
+        except NoSessionError:
+            # Not an error: every first visit asks. The cookie, if any, is removed.
+            return Response(status_code=204, headers={**_NO_STORE, "Set-Cookie": _CLEAR_COOKIE})
         no_store(response)
         return renewed
 

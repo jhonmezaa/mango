@@ -80,8 +80,10 @@ export async function handleSession(
     const renewed = session ? renewFromRefreshToken(originOf(req), session.refreshToken) : null;
     if (!session || !renewed) {
       if (sid) sessions.delete(sid);
+      // Not an error: every first visit asks.
       setCookie(res, '', 0);
-      sendError(res, 401, session ? 'session_expired' : 'no_session', 'no active session');
+      res.statusCode = 204;
+      res.end();
       return true;
     }
     sendJson(res, 200, { ...renewed, federated: session.federated });

@@ -163,9 +163,12 @@ test.describe('Marketplace: create, review and use an agent', () => {
     await expect(retired).toContainText('Retirado');
   });
 
-  test('nothing was logged as an error, and a reload asks to sign in again', async () => {
+  test('nothing was logged as an error, and a reload keeps the session', async () => {
     expect(consoleErrors).toEqual([]);
+    // The session cookie of the server (D63); `sessionReload.spec.ts` covers signing out.
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeVisible();
+    await expect(page.getByRole('navigation').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toHaveCount(0);
+    expect(consoleErrors).toEqual([]);
   });
 });

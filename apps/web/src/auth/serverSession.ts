@@ -86,7 +86,8 @@ export function createServerSession(
       } catch {
         return { kind: 'unavailable' };
       }
-      if (response.status === 401) return { kind: 'none' };
+      // 204: the server holds no session for this browser (it is not an error).
+      if (response.status === 204) return { kind: 'none' };
       if (!response.ok) return { kind: 'unavailable' };
       const parsed = renewedSchema.safeParse(await response.json().catch(() => null));
       if (!parsed.success) return { kind: 'unavailable' };
