@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router'
 import { AuthProvider } from './auth/AuthProvider';
 import type { CognitoAuth } from './auth/cognito/flows';
 import { SessionProvider } from './auth/SessionProvider';
+import { hasAuthCallbackParams } from './auth/ssoUrls';
 import { useAuth } from './auth/useAuth';
 import { FullPageMessage } from './components/FullPageMessage';
 import { SoonView } from './components/SoonView';
@@ -14,6 +15,7 @@ import { AVAILABLE_VIEWS, VIEW_ICONS, type ViewKey } from './layouts/navigation'
 import { SCREENS } from './layouts/screens';
 import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './pages/LoginPage';
+import { RestoringSession } from './pages/login/RestoringSession';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 // Admin screens are only for admins: they load on demand and stay out of the main chunk.
@@ -125,7 +127,14 @@ export function AppRoutes() {
 function AuthGate({ config }: { config: RuntimeConfig }) {
   const { t } = useTranslation();
   const { status } = useAuth();
-  if (status === 'loading') return <FullPageMessage message={t('app.loading')} busy />;
+  if (status === 'loading') {
+    // Coming back from the IdP is a sign-in in progress, not a session being recovered.
+    return hasAuthCallbackParams(window.location.search) ? (
+      <FullPageMessage message={t('app.loading')} busy />
+    ) : (
+      <RestoringSession />
+    );
+  }
   if (status === 'unauthenticated') return <LoginPage config={config} />;
   return (
     <SessionProvider config={config}>

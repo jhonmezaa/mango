@@ -4,6 +4,12 @@ export const app = {
   loading: 'Cargando…',
   skipToContent: 'Saltar al contenido',
   offline: 'Sin conexión · reintentaremos cuando vuelva la conexión',
+  sessionWarning: {
+    title_one: 'Tu sesión vence en {{count}} min.',
+    title_other: 'Tu sesión vence en {{count}} min.',
+    body: 'Guarda lo que estés escribiendo: al vencer vuelves a ingresar con tu contraseña y MFA.',
+    dismiss: 'Entendido',
+  },
 } as const;
 
 export const common = {

@@ -187,10 +187,17 @@ def test_reads_can_be_hidden_but_denials_and_writes_stay(log: Any) -> None:
     # Reading the directory is a read too; inviting someone is not.
     _put(db, t, 6, "directory.list", outcome="applied", returned=7)
     invite = _put(db, t, 7, "directory.invite", outcome="applied")
+    # A session recovered on a page load is a read; its start, end and rejection are not (D64).
+    _put(db, t, 8, "session.renewed")
+    started = _put(db, t, 9, "session.started", federated=False)
+    ended = _put(db, t, 10, "session.ended", reason="sign_out")
+    refused = _put(db, t, 11, "session.rejected", reason="sub_mismatch")
     everything = audit.page(_query(), now=NOW)
-    assert len(everything.items) == 7
+    assert len(everything.items) == 11
     page = audit.page(_query(exclude_reads=True), now=NOW)
-    assert sorted(r["event_id"] for r in page.items) == sorted([denied, chat, write, invite])
+    assert sorted(r["event_id"] for r in page.items) == sorted(
+        [denied, chat, write, invite, started, ended, refused]
+    )
 
 
 def test_event_filter_exact_or_prefix(log: Any) -> None:

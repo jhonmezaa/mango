@@ -61,7 +61,13 @@ export function AuthSettings({ onGoPeople }: { onGoPeople: () => void }) {
           <SettingRow
             key={key}
             label={setting}
-            hint={fixedMfa ? t('settings.auth.mfaFixedHint') : undefined}
+            hint={
+              fixedMfa
+                ? t('settings.auth.mfaFixedHint')
+                : key === 'session'
+                  ? t('settings.auth.sessionHint')
+                  : undefined
+            }
           >
             <div className="set-row-actions">
               <span className="set-row-current">{current[key]}</span>

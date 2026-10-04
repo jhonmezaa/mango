@@ -66,3 +66,18 @@ export function budgetTone(percent: number): BudgetTone {
   if (percent >= 80) return 'warn';
   return 'ok';
 }
+
+/** Characters of the local part that are always shown next to the `@domain` (design). */
+const MAIL_TAIL = 6;
+
+/**
+ * An email split so a narrow column cuts its start, never its end (design `AuActor` and
+ * `PersonChip`): `head` gets the ellipsis; `tail` (the last characters of the local part and
+ * the `@domain`) is always visible. Emails that begin alike stay different on screen.
+ */
+export function splitEmail(email: string): { head: string; tail: string | null } {
+  const at = email.lastIndexOf('@');
+  if (at <= 0) return { head: email, tail: null };
+  const cut = Math.max(0, at - MAIL_TAIL);
+  return { head: email.slice(0, cut), tail: email.slice(cut) };
+}

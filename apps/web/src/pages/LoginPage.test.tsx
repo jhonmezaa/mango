@@ -196,6 +196,23 @@ describe('LoginPage: sign-in', () => {
     expect(screen.getByRole('button', { name: 'Redirigiendo a tu proveedor…' })).toBeDisabled();
   });
 
+  it('says how long the session lasts under «Entrar»', () => {
+    renderLogin();
+    expect(
+      screen.getByText(
+        'Sigues dentro hasta 12 h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says the session was closed in another tab', () => {
+    renderLogin(fakeCognito(), { noticeKey: 'auth.signedOutElsewhere' });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.',
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('shows the session error it was opened with', () => {
     renderLogin(fakeCognito(), { errorKey: 'auth.errors.sessionExpired' });
     expect(screen.getByRole('alert')).toHaveTextContent(

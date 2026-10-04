@@ -783,7 +783,7 @@ describe('Invitar persona', () => {
     await user.type(within(dialog).getByLabelText('Correo'), 'ana@otra.com');
     expect(
       within(dialog).getByText(
-        'Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.',
+        'No es un dominio de la instalación. Si es de otra empresa, se invita como externa; los correos públicos se rechazan al enviar.',
       ),
     ).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Enviar invitación' }));
@@ -1013,6 +1013,20 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
     await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       `No se pudo aprobar cccccccc: ${why}. El cambio ya no aplica: retíralo o recházalo.`,
+    );
+    expect(screen.queryByText('server words')).toBeNull();
+  });
+
+  it('says the person has the maximum of groups and keeps the change pending', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: { items: [change({ group: 'bu-finanzas' })] },
+      approveMemberChange: new ApiError(409, 'too_many_groups', 'server words'),
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No se pudo aprobar cccccccc: la persona ya tiene el máximo de grupos. Quítale uno antes; el cambio sigue pendiente.',
     );
     expect(screen.queryByText('server words')).toBeNull();
   });

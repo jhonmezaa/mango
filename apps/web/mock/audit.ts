@@ -93,6 +93,7 @@ function auditPage(params: URLSearchParams): {
     if (after !== null && keyOf(item) >= after) return false;
     const read =
       item.event === 'directory.list' ||
+      item.event === 'session.renewed' ||
       (item.event === 'policy.decision' &&
         item.detail.allowed === true &&
         item.detail.read_only === true);

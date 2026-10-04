@@ -177,6 +177,22 @@
     font-size: 13px;
     color: var(--red);
   }
+  .login-restoring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 280px;
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  .login-keep {
+    margin: 12px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
   .login-ok-box {
     padding: 10px 12px;
     border: 1px solid color-mix(in oklab, var(--green) 30%, transparent);

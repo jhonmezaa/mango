@@ -35,6 +35,13 @@ test('a reload keeps the session, and signing out ends it', async ({ page, conte
   await expect(page.getByRole('navigation').first()).toBeVisible();
   await expect(page.getByLabel('Correo')).toHaveCount(0);
 
+  // The recovered session is in Auditoría only with «Mostrar lecturas»; its start, always.
+  await page.getByRole('link', { name: 'Audit log', exact: true }).first().click();
+  await expect(page.getByText('Sesión iniciada').first()).toBeVisible();
+  await expect(page.getByText('Sesión recuperada')).toHaveCount(0);
+  await page.getByRole('switch').click();
+  await expect(page.getByText('Sesión recuperada').first()).toBeVisible();
+
   // The cookie is out of reach of the page, and no token is in Web Storage.
   const [cookie] = (await context.cookies()).filter((c) => c.name === '__Host-mango_session');
   expect(cookie).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Strict', path: '/' });
@@ -52,6 +59,10 @@ test('a reload keeps the session, and signing out ends it', async ({ page, conte
   await signOut(page);
   // The other tab follows, and no reload brings the session back.
   await expect(second.getByLabel('Correo')).toBeVisible();
+  await expect(second.getByRole('status')).toHaveText(
+    'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.',
+  );
+  await expect(page.getByText('Cerraste sesión en otra pestaña.')).toHaveCount(0);
   await page.reload();
   await expect(page.getByLabel('Correo')).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);

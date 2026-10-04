@@ -504,7 +504,7 @@ Notas de admin: `reject` es la decisión de otro admin y `withdraw` el retiro po
 | `limit` | 1..200 (por defecto 50) |
 | `cursor` | `next_cursor` de la página anterior (opaco) |
 | `since`, `until` | ISO 8601; rango `[since, until)` aplicado en el servidor. Sin zona = UTC. Se recorta a la vida del índice |
-| `exclude` | `reads`: oculta las `policy.decision` **permitidas** de solo lectura (`ViewAdmin`, `ViewAudit` y las lecturas marcadas `read_only`, como `GET /api/agents/{id}`). También oculta las lecturas del directorio (`directory.list`, D62). Se siguen auditando; solo se filtran. Las denegaciones nunca se ocultan |
+| `exclude` | `reads`: oculta las `policy.decision` **permitidas** de solo lectura (`ViewAdmin`, `ViewAudit` y las lecturas marcadas `read_only`, como `GET /api/agents/{id}`). También oculta las lecturas del directorio (`directory.list`, D62) y las sesiones recuperadas (`session.renewed`, D64). Se siguen auditando; solo se filtran. Las denegaciones nunca se ocultan |
 | `event` | Nombre exacto (`agent.invoke`) o prefijo terminado en punto (`settings.`) |
 
 Respuesta:

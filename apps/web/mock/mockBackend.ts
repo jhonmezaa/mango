@@ -107,7 +107,7 @@ export function middleware(): Connect.NextHandleFunction {
           apiBasePath: '/api',
           signUpDomains: ['example.com', 'empresa.com'],
           aiPolicyUrl: 'https://example.com/politica-uso-ia',
-          auth: { installationType: 'lab', mfa: 'required', sessionHours: 12 },
+          auth: { installationType: 'lab', mfa: 'required', sessionHours: 8 },
           ssoProvider: 'MockIdP',
           issuer: `${origin}/mock-cognito`,
           cognitoIdpEndpoint: `${origin}/mock-cognito-idp`,

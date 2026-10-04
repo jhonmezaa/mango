@@ -129,10 +129,10 @@ describe('AdminAuditPage', () => {
     renderPage({});
     const row = (await screen.findByText('Límite de usuario')).closest('button');
     expect(row).not.toBeNull();
-    // The email is cut in the middle and the badge is short; the tooltip has both in full.
+    // The end of the email is always shown and the badge is short; the tooltip has both in full.
     const actor = within(row as HTMLElement).getByTitle('ana@example.com · FinOps central · Admin');
-    expect(actor.querySelector('.au-local')).toHaveTextContent('ana');
-    expect(actor.querySelector('.au-dom')).toHaveTextContent('@example.com');
+    expect(actor.querySelector('.au-local')).toBeEmptyDOMElement();
+    expect(actor.querySelector('.au-dom')).toHaveTextContent('ana@example.com');
     expect(actor.querySelector('.au-role')).toHaveTextContent('Admin');
     const old = screen.getByText('Cambio de áreas rechazado').closest('button') as HTMLElement;
     expect(old.querySelector('.au-role')).toBeNull();
@@ -660,5 +660,81 @@ describe('AdminAuditPage', () => {
       listAuditEvents: vi.fn(() => Promise.reject(new ApiError(403, 'forbidden', 'x'))),
     });
     expect(await screen.findByText('No tienes acceso a esta sección')).toBeInTheDocument();
+  });
+
+  it('labels the session events, shortens «FinOps central» and gives the reason of an end', async () => {
+    const user = userEvent.setup();
+    const base = { user_id: 'sub-eva', actor_role: 'finops-central', actor_is_admin: false };
+    const mail = 'eva.finops.central@example.com';
+    renderPage({
+      listAuditEvents: vi.fn(() =>
+        page([
+          {
+            ...base,
+            event_id: 's1'.padEnd(32, '0'),
+            ts: iso(1),
+            event: 'session.rejected',
+            actor_email: mail,
+            hash: 'a'.repeat(64),
+            detail: { reason: 'sub_mismatch' },
+          },
+          {
+            ...base,
+            event_id: 's2'.padEnd(32, '0'),
+            ts: iso(2),
+            event: 'session.ended',
+            hash: 'b'.repeat(64),
+            detail: { reason: 'sign_out' },
+          },
+          {
+            ...base,
+            event_id: 's3'.padEnd(32, '0'),
+            ts: iso(3),
+            event: 'session.started',
+            actor_email: mail,
+            hash: 'c'.repeat(64),
+            detail: { federated: false, expires_at: 1 },
+          },
+        ]),
+      ),
+    });
+    const rejected = (await screen.findByText('Sesión rechazada')).closest('button') as HTMLElement;
+    expect(rejected).toHaveTextContent('Intento de renovar con una sesión que ya no sirve');
+    expect(rejected.querySelector('.au-outcome.fail')).toHaveTextContent(
+      'no se aplicó · sub_mismatch',
+    );
+    // The start of the email gets the ellipsis; its end is what tells two people apart.
+    const actor = within(rejected).getByTitle(`${mail} · FinOps central`);
+    expect(actor.querySelector('.au-local')).toHaveTextContent('eva.finops.c');
+    expect(actor.querySelector('.au-dom')).toHaveTextContent('entral@example.com');
+    expect(actor.querySelector('.au-role')).toHaveTextContent('Central');
+    expect(screen.getByText('Sesión iniciada').closest('button')).toHaveTextContent(
+      'Ingresó con contraseña y MFA',
+    );
+
+    // The label and the sentence of the event read the same.
+    await user.click(screen.getAllByText('Sesión cerrada')[0] as HTMLElement);
+    const panel = screen.getByRole('dialog', { name: 'Sesión cerrada' });
+    expect(within(panel).getByText('Motivo')).toBeInTheDocument();
+    expect(within(panel).getByText('La persona cerró sesión')).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
+
+    await user.click(screen.getByText('Sesión iniciada'));
+    const started = screen.getByRole('dialog', { name: 'Sesión iniciada' });
+    expect(within(started).queryByText('Motivo')).toBeNull();
+    // The email may only break before the «@».
+    const email = started.querySelector('.au-mail') as HTMLElement;
+    expect(email).toHaveTextContent(mail);
+    expect(email.querySelector('wbr')).not.toBeNull();
+  });
+
+  it('says what «Mostrar lecturas» adds', async () => {
+    renderPage({});
+    await screen.findByText('Límite de usuario');
+    expect(
+      screen.getByTitle(
+        'Accesos de solo lectura permitidos y sesiones recuperadas al recargar. Los denegados, los rechazos y los cambios se ven siempre.',
+      ),
+    ).toBeInTheDocument();
   });
 });

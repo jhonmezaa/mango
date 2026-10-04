@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { splitEmail } from '../lib/format';
 import { CloseIcon } from './icons';
 
 /** Design `initials`: the first two characters of the email. */
@@ -25,16 +26,16 @@ interface Props {
  */
 export function PersonChip({ email, mono = false, size, you = false, onRemove }: Props) {
   const { t } = useTranslation();
-  // Cut in the middle: the start gets the ellipsis and the `@domain` is always visible.
-  const at = email.lastIndexOf('@');
+  // The start gets the ellipsis; the end of the local part and the `@domain` are always visible.
+  const { head, tail } = splitEmail(email);
   return (
     <span className={size === 'lg' ? 'person-chip is-lg' : 'person-chip'}>
       <span className="person-av" aria-hidden="true">
         {initials(email)}
       </span>
       <span className={mono ? 'person-mail mono' : 'person-mail'} title={email}>
-        <span className="pm-local">{at > 0 ? email.slice(0, at) : email}</span>
-        {at > 0 ? <span className="pm-dom">{email.slice(at)}</span> : null}
+        <span className="pm-local">{head}</span>
+        {tail ? <span className="pm-dom">{tail}</span> : null}
       </span>
       {you ? <span className="person-you">{t('people.you')}</span> : null}
       {onRemove ? (

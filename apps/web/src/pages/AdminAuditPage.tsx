@@ -16,7 +16,6 @@ import {
   mergeRequested,
   outcomeClass,
   outcomeKey,
-  splitActor,
   toAuditRow,
   type AuditCategory,
   type AuditRow,
@@ -28,6 +27,7 @@ import { CloseIcon, DownloadIcon, SearchIcon, ShieldIcon } from '../components/i
 import { Soon } from '../components/Soon';
 import { Topbar } from '../components/Topbar';
 import { copyText } from '../lib/clipboard';
+import { splitEmail } from '../lib/format';
 
 const RANGES = [
   { key: '24h', ms: 86_400_000 },
@@ -73,6 +73,17 @@ const dayFormat = new Intl.DateTimeFormat('es-MX', {
 
 const isCategory = (value: string | null): value is AuditCategory =>
   (AUDIT_CATEGORIES as readonly string[]).includes(value ?? '');
+
+/** The actor of a row: its start gets the ellipsis, its end is always visible (design `AuActor`). */
+function ActorName({ actor }: { actor: string }) {
+  const { head, tail } = splitEmail(actor);
+  return (
+    <>
+      <span className="au-local">{head}</span>
+      {tail ? <span className="au-dom">{tail}</span> : null}
+    </>
+  );
+}
 
 /**
  * Audit log (design audit-budgets.jsx `AuditLog`): events of GET /api/admin/audit grouped by
@@ -244,7 +255,9 @@ export function AdminAuditPage() {
                             ? d.added > 0
                               ? t('audit.detail.catalogSync', { count: d.added })
                               : t('audit.detail.catalogSyncNone')
-                            : d.text;
+                            : d.kind === 'session'
+                              ? t(`audit.detail.${d.action}`)
+                              : d.text;
       return text;
     },
     [t],
@@ -598,12 +611,11 @@ export function AdminAuditPage() {
                       title={[row.actor, roleOf(row)].filter(Boolean).join(' · ') || undefined}
                     >
                       <span className="au-name">
-                        <span className="au-local">
-                          {splitActor(row.actor).local || t('audit.system')}
-                        </span>
-                        {splitActor(row.actor).domain ? (
-                          <span className="au-dom">{splitActor(row.actor).domain}</span>
-                        ) : null}
+                        {row.actor ? (
+                          <ActorName actor={row.actor} />
+                        ) : (
+                          <span className="au-local">{t('audit.system')}</span>
+                        )}
                       </span>
                       {row.role ? <span className="au-role">{roleShortOf(row)}</span> : null}
                     </span>

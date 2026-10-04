@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDuration, formatRelative, initialsFor } from './format';
+import { formatDuration, formatRelative, initialsFor, splitEmail } from './format';
 
 const NOW = Date.parse('2026-09-29T12:00:00Z');
 
@@ -48,5 +48,26 @@ describe('initialsFor', () => {
   it('never returns an empty avatar', () => {
     expect(initialsFor('')).toBe('?');
     expect(initialsFor('@example.com')).toBe('?');
+  });
+});
+
+describe('splitEmail', () => {
+  it('keeps the last six characters of the local part with the domain', () => {
+    expect(splitEmail('ana.finops.central@example.com')).toEqual({
+      head: 'ana.finops.c',
+      tail: 'entral@example.com',
+    });
+  });
+
+  it('tells apart emails that begin alike', () => {
+    const first = splitEmail('equipo.finanzas.norte@example.com');
+    const second = splitEmail('equipo.finanzas.sur@example.com');
+    expect(first.tail).not.toBe(second.tail);
+  });
+
+  it('leaves a short local part and anything that is not an email whole', () => {
+    expect(splitEmail('ana@example.com')).toEqual({ head: '', tail: 'ana@example.com' });
+    expect(splitEmail('sub-123')).toEqual({ head: 'sub-123', tail: null });
+    expect(splitEmail('')).toEqual({ head: '', tail: null });
   });
 });

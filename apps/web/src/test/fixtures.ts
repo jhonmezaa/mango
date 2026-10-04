@@ -32,6 +32,9 @@ export function authValue(overrides: Partial<AuthContextValue> = {}): AuthContex
   return {
     status: 'authenticated',
     errorKey: null,
+    noticeKey: null,
+    restored: false,
+    sessionEndsAt: null,
     cognito: {} as CognitoAuth,
     acceptTokens: vi.fn(),
     ssoAvailable: false,

@@ -62,7 +62,7 @@ Los tres exigen la cabecera propia `X-Mango-Session: 1`, que `Origin` sea el de 
 | `DELETE /api/session` | Solo la cookie | Revoca el refresh token en Cognito (`RevokeToken`), borra el registro y la cookie. Idempotente. 204. |
 
 - **Autorización declarada:** `POST /api/session` usa una dependencia propia que exige un access token verificado pero **no exige grupo**: una persona sin grupo también tiene sesión (ve «Todavía no tienes acceso») y recargar no debe sacarla. Los otros dos se autorizan con la cookie. No hay decisión de Cedar: cada quien actúa solo sobre su propia sesión.
-- **Auditoría:** `session.started`, `session.renewed`, `session.ended` (motivo: cierre, revocada, vencida, rechazada por Cognito) y los rechazos. Nunca llevan tokens, cookie ni el `sid`. Si no se puede auditar el inicio, no se crea la sesión.
+- **Auditoría:** `session.started`, `session.renewed`, `session.ended` (motivo: cierre, revocada, vencida, rechazada por Cognito) y los rechazos. Nunca llevan tokens, cookie ni el `sid`. `session.renewed` cuenta como lectura en Auditoría (D64): se registra siempre y solo se lista con «Mostrar lecturas». Si no se puede auditar el inicio, no se crea la sesión.
 - **Logs:** el cuerpo y la cookie no se registran nunca.
 
 ### 4.4 La SPA

@@ -563,6 +563,29 @@
     color: var(--amber);
   }
 
+  .sess-warn {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 24px 0;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .sess-warn > svg {
+    flex-shrink: 0;
+    color: var(--amber);
+  }
+  @media (max-width: 560px) {
+    .sess-warn {
+      margin: 10px 12px 0;
+    }
+  }
+
   @media (max-width: 900px) {
     .topbar {
       padding: 0 10px;

@@ -9,6 +9,7 @@ import type { RuntimeConfig } from '../config/runtimeConfig';
 import { FullPageMessage } from '../components/FullPageMessage';
 import { LoginLayout } from '../pages/login/LoginLayout';
 import { NoAccess } from '../pages/login/NoAccess';
+import { RestoringSession } from '../pages/login/RestoringSession';
 import { SessionContext, type SessionContextValue } from './SessionContext';
 import { useAuth } from './useAuth';
 
@@ -20,7 +21,8 @@ export function SessionProvider({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const { getAccessToken, expireSession, refreshSession, logout, displayEmail } = useAuth();
+  const { getAccessToken, expireSession, refreshSession, logout, displayEmail, restored } =
+    useAuth();
   const api = useMemo(
     () =>
       createApiClient({
@@ -156,6 +158,9 @@ export function SessionProvider({
     );
   }
   if (meError) return <FullPageMessage message={t('errors.generic')} />;
-  if (!value) return <FullPageMessage message={t('app.loading')} busy />;
+  if (!value) {
+    // A recovered session keeps the sign-in frame until the application is ready (no flash).
+    return restored ? <RestoringSession /> : <FullPageMessage message={t('app.loading')} busy />;
+  }
   return <SessionContext value={value}>{children}</SessionContext>;
 }

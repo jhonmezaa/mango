@@ -9,6 +9,7 @@ export function SignInForm({
   email,
   onEmailChange,
   domain,
+  sessionHours,
   notice,
   error,
   ssoAvailable,
@@ -19,6 +20,8 @@ export function SignInForm({
   email: string;
   onEmailChange: (email: string) => void;
   domain: string;
+  /** Maximum duration of the session (Ajustes › Autenticación), for the help under «Entrar». */
+  sessionHours: number;
   notice: string | null;
   /** Error from a previous attempt or session (e.g. expired). */
   error: string | null;
@@ -118,6 +121,7 @@ export function SignInForm({
           {loading === 'pwd' ? t('auth.signingIn') : t('auth.signIn')}
         </button>
       </form>
+      <p className="login-keep">{t('auth.keep', { count: sessionHours })}</p>
       {ssoAvailable && (
         <>
           <div className="login-divider">

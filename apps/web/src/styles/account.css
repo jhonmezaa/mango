@@ -31,6 +31,21 @@
   .set-nav-item > span {
     flex: 1;
   }
+  /* «Próximamente» goes under the label, not over its text (design `.set-nav-soon`). */
+  .set-nav-soon {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    width: 100%;
+  }
+  .set-nav-soon > .soon-body {
+    width: 100%;
+  }
+  .set-nav-soon > .soon-tag {
+    position: static;
+    margin: -4px 0 4px 36px;
+  }
   .set-nav-item.is-on {
     border-color: var(--accent-border);
     background: var(--accent-soft);

@@ -7,6 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
+import { recordAudit } from './audit.ts';
 import { renewFromRefreshToken, revokeRefreshToken, sessionOf } from './cognito.ts';
 import { originOf, readBody, sendError, sendJson } from './http.ts';
 
@@ -69,6 +70,7 @@ export async function handleSession(
     if (sid) sessions.delete(sid);
     const next = randomBytes(32).toString('base64url');
     sessions.set(next, { refreshToken, federated: body.federated === true });
+    recordAudit('session.started', { federated: body.federated === true });
     setCookie(res, next, SESSION_SECONDS);
     res.statusCode = 204;
     res.end();
@@ -86,6 +88,7 @@ export async function handleSession(
       res.end();
       return true;
     }
+    recordAudit('session.renewed', {});
     sendJson(res, 200, { ...renewed, federated: session.federated });
     return true;
   }
@@ -95,6 +98,7 @@ export async function handleSession(
     if (sid && session) {
       revokeRefreshToken(session.refreshToken);
       sessions.delete(sid);
+      recordAudit('session.ended', { reason: 'sign_out' });
     }
     setCookie(res, '', 0);
     res.statusCode = 204;

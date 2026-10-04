@@ -128,7 +128,7 @@ test('a person of any company domain is invited, never a public address', async 
   await email.fill('persona.nueva@otra-empresa.com');
   await expect(
     dialog.getByText(
-      'Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.',
+      'No es un dominio de la instalación. Si es de otra empresa, se invita como externa; los correos públicos se rechazan al enviar.',
     ),
   ).toBeVisible();
   await dialog.getByRole('button', { name: 'bu-finanzas' }).click();

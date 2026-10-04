@@ -36,6 +36,8 @@ export const settings = {
     readOnlyInstall: 'Solo lectura · se define al instalar',
     mfa: 'MFA (app autenticadora)',
     session: 'Duración de la sesión',
+    sessionHint:
+      'Tiempo máximo que una persona sigue dentro sin volver a ingresar, aunque recargue o cierre el navegador',
     idp: 'Identity provider (SSO)',
     // Current values come from config.json (`auth`, set by the installation).
     values: {

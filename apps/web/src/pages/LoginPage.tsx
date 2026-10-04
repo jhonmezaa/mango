@@ -32,10 +32,12 @@ const SESSION_LOST = 'NotAuthorizedException';
  */
 export function LoginPage({ config }: { config: RuntimeConfig }) {
   const { t } = useTranslation();
-  const { cognito, acceptTokens, ssoAvailable, startSso, errorKey } = useAuth();
+  const { cognito, acceptTokens, ssoAvailable, startSso, errorKey, noticeKey } = useAuth();
   const [step, setStep] = useState<Step>('login');
   const [email, setEmail] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() =>
+    noticeKey ? t(noticeKey as 'auth.signedOutElsewhere') : null,
+  );
   const [error, setError] = useState<string | null>(() =>
     errorKey ? t(errorKey as 'auth.errors.signInFailed') : null,
   );
@@ -151,6 +153,7 @@ export function LoginPage({ config }: { config: RuntimeConfig }) {
           email={email}
           onEmailChange={setEmail}
           domain={domain}
+          sessionHours={config.auth.sessionHours}
           notice={notice}
           error={error}
           ssoAvailable={ssoAvailable}

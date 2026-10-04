@@ -1,0 +1,13 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+
+import { RestoringSession } from './RestoringSession';
+
+describe('RestoringSession', () => {
+  it('shows the sign-in frame with the status, not the form', () => {
+    render(<RestoringSession />);
+    expect(screen.getByRole('status')).toHaveTextContent('Recuperando tu sesión…');
+    expect(screen.getByRole('main')).toHaveTextContent('Mango');
+    expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull();
+  });
+});

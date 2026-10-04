@@ -5,7 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { formatRelative } from '../../lib/format';
 import { ArrowRightIcon, CloseIcon, CopyIcon, FilterIcon, LockIcon, UserIcon } from '../icons';
-import { isPermAction, outcomeClass, TONE_COLOR, type AuditRow, type EventRef } from './auditModel';
+import {
+  isPermAction,
+  isSessionEndReason,
+  outcomeClass,
+  TONE_COLOR,
+  type AuditRow,
+  type EventRef,
+} from './auditModel';
 
 function Sec({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -75,6 +82,8 @@ export function AuditDrawer({
   const permText = perm === null ? null : permLabel(perm);
   const authzText = row.authz ? permLabel(row.authz.action) : null;
   const start = row.turn?.start ?? null;
+  // The email may only break before the «@», never in the middle of a word (design `.au-mail`).
+  const at = row.actor.indexOf('@');
 
   return createPortal(
     <div
@@ -128,8 +137,18 @@ export function AuditDrawer({
           <Sec title={t('audit.drawer.event')}>
             <div className="mk-kv">
               <span>{t('audit.drawer.actor')}</span>
-              <span className="flex items-center gap-2 break-all">
-                {row.actor || t('audit.system')}
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="au-mail">
+                  {at > 0 ? (
+                    <>
+                      {row.actor.slice(0, at)}
+                      <wbr />
+                      {row.actor.slice(at)}
+                    </>
+                  ) : (
+                    row.actor || t('audit.system')
+                  )}
+                </span>
                 {role && <span className="au-role">{role}</span>}
               </span>
             </div>
@@ -160,6 +179,16 @@ export function AuditDrawer({
               <div className="mk-kv">
                 <span>{t('audit.drawer.outcome')}</span>
                 <span className={outcomeClass(row)}>{outcome}</span>
+              </div>
+            )}
+            {row.endReason && (
+              <div className="mk-kv">
+                <span>{t('audit.drawer.reason')}</span>
+                <span className="break-words">
+                  {isSessionEndReason(row.endReason)
+                    ? t(`audit.sessionEnd.${row.endReason}`)
+                    : row.endReason}
+                </span>
               </div>
             )}
             {row.requested && (

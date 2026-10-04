@@ -8,6 +8,15 @@ export interface AuthContextValue {
   status: AuthStatus;
   /** Localizable error key from the last sign-in attempt, if any. */
   errorKey: string | null;
+  /** Localizable notice for the sign-in form (the session ended without an error), if any. */
+  noticeKey: string | null;
+  /** The session came from the session cookie (a reload or a new tab), not from a sign-in. */
+  restored: boolean;
+  /**
+   * Epoch milliseconds when the session reaches its maximum duration, or null when unknown.
+   * Display only (the notice before it ends): mango-api is what ends the session.
+   */
+  sessionEndsAt: number | null;
   /** Own login flows against Cognito (SRP, MFA, sign-up, recovery). */
   cognito: CognitoAuth;
   /** Starts the session with the tokens of a completed sign-in. */

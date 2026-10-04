@@ -22,6 +22,8 @@ export const MOCK_USER_AREA = 'finanzas';
 const codes = new Map<string, { challenge: string; redirectUri: string }>();
 const accessTokens = new Set<string>();
 const refreshTokens = new Set<string>();
+/** When the sign-in of each refresh token happened: Cognito keeps `auth_time` across renewals. */
+const authTimes = new Map<string, number>();
 /** Access and refresh tokens of users without a group (403 `no_group`, D20). */
 const noGroupTokens = new Set<string>();
 const MOCK_CODE = '123456';
@@ -50,6 +52,7 @@ function issueTokens(
   origin: string,
   withRefresh: boolean,
   noGroup = false,
+  authTime?: number,
 ): Record<string, unknown> {
   const now = Math.floor(Date.now() / 1000);
   const issuer = `${origin}/mock-cognito`;
@@ -61,6 +64,7 @@ function issueTokens(
     ...(noGroup ? {} : { mango_role: 'finops-central' }),
     exp: now + 3600,
     iat: now,
+    auth_time: authTime ?? now,
     jti: randomUUID(),
   });
   accessTokens.add(accessToken);
@@ -82,6 +86,7 @@ function issueTokens(
   if (withRefresh) {
     const refreshToken = randomBytes(24).toString('hex');
     refreshTokens.add(refreshToken);
+    authTimes.set(refreshToken, now);
     if (noGroup) noGroupTokens.add(refreshToken);
     tokens.refresh_token = refreshToken;
   }
@@ -118,7 +123,12 @@ const fail = (type: string): MockReply => ({ status: 400, body: { __type: type, 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 function authResult(origin: string, email: string, noGroup: boolean, refreshToken?: string) {
-  const tokens = issueTokens(origin, refreshToken === undefined, noGroup);
+  const tokens = issueTokens(
+    origin,
+    refreshToken === undefined,
+    noGroup,
+    refreshToken === undefined ? undefined : authTimes.get(refreshToken),
+  );
   const now = Math.floor(Date.now() / 1000);
   return {
     AuthenticationResult: {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 const displayClaims = z.object({ email: z.string().max(254).optional() }).loose();
+const authTimeClaims = z.object({ auth_time: z.number().int().positive() }).loose();
 const subjectClaims = z.object({ sub: z.string().min(1).max(256) }).loose();
 
 function payloadOf(token: string): unknown {
@@ -31,4 +32,14 @@ export function displayEmailFromIdToken(idToken: string): string | null {
 export function subjectOf(token: string): string | null {
   const parsed = subjectClaims.safeParse(payloadOf(token));
   return parsed.success ? parsed.data.sub : null;
+}
+
+/**
+ * When the person signed in (`auth_time`, epoch seconds), unverified. Cognito keeps it across
+ * renewals, and mango-api counts the maximum session from it. Display only: it times the notice
+ * before the session ends; the server is what ends it.
+ */
+export function authTimeOf(token: string): number | null {
+  const parsed = authTimeClaims.safeParse(payloadOf(token));
+  return parsed.success ? parsed.data.auth_time : null;
 }

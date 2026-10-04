@@ -4,7 +4,7 @@ import type { RuntimeConfig } from '../config/runtimeConfig';
 import { safeReturnPath } from '../security/safeUrl';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
-import { displayEmailFromIdToken, subjectOf } from './jwt';
+import { authTimeOf, displayEmailFromIdToken, subjectOf } from './jwt';
 import { createServerSession, type RenewResult, type ServerSession } from './serverSession';
 import { hasAuthCallbackParams, logoutUrl } from './ssoUrls';
 
@@ -34,6 +34,7 @@ function restore(serverSession: ServerSession): Promise<RenewResult> {
 
 /** Tells the other tabs that this one signed out. No data travels in the message. */
 const SIGNED_OUT = 'signed-out';
+const SIGNED_OUT_ELSEWHERE = 'auth.signedOutElsewhere';
 const CHANNEL = 'mango-auth';
 
 /**
@@ -80,21 +81,33 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
   // Either the SSO callback or the session cookie decides: nothing is shown before that.
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [errorKey, setErrorKey] = useState<string | null>(null);
+  const [noticeKey, setNoticeKey] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
+  const [sessionEndsAt, setSessionEndsAt] = useState<number | null>(null);
   const [displayEmail, setDisplayEmail] = useState<string | null>(null);
   const tokens = useRef<Session | null>(null);
   const federated = useRef(false);
   const refreshing = useRef<Promise<Session | null> | null>(null);
 
-  const setSession = useCallback((next: Session | null) => {
-    tokens.current = next;
-    setDisplayEmail(next ? displayEmailFromIdToken(next.idToken) : null);
-  }, []);
+  const sessionSeconds = config.auth.sessionHours * 3600;
+  const setSession = useCallback(
+    (next: Session | null) => {
+      tokens.current = next;
+      setDisplayEmail(next ? displayEmailFromIdToken(next.idToken) : null);
+      // Same rule as mango-api: the maximum counts from the sign-in, not from a renewal.
+      const authTime = next ? authTimeOf(next.accessToken) : null;
+      setSessionEndsAt(authTime === null ? null : (authTime + sessionSeconds) * 1000);
+    },
+    [sessionSeconds],
+  );
 
   const endSession = useCallback(
-    (key: string | null) => {
+    (key: string | null, notice: string | null = null) => {
       setSession(null);
       federated.current = false;
       setErrorKey(key);
+      setNoticeKey(notice);
+      setRestored(false);
       setStatus('unauthenticated');
     },
     [setSession],
@@ -106,6 +119,8 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       federated.current = isFederated;
       setSession(next);
       setErrorKey(null);
+      setNoticeKey(null);
+      setRestored(false);
       setStatus('authenticated');
       void serverSession.start(next.accessToken, next.refreshToken, isFederated).then((taken) => {
         // The server holds it now: JavaScript no longer needs the refresh token.
@@ -134,6 +149,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       }
       federated.current = result.session.federated;
       setSession(result.session);
+      setRestored(true);
       setStatus('authenticated');
     });
     return () => {
@@ -148,7 +164,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     const opened = new BroadcastChannel(CHANNEL);
     channel.current = opened;
     opened.onmessage = (event: MessageEvent<unknown>) => {
-      if (event.data === SIGNED_OUT && tokens.current) endSession(null);
+      if (event.data === SIGNED_OUT && tokens.current) endSession(null, SIGNED_OUT_ELSEWHERE);
     };
     return () => {
       channel.current = null;
@@ -277,6 +293,9 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     () => ({
       status,
       errorKey,
+      noticeKey,
+      restored,
+      sessionEndsAt,
       cognito,
       acceptTokens,
       ssoAvailable: Boolean(config.ssoProvider),
@@ -290,6 +309,9 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     [
       status,
       errorKey,
+      noticeKey,
+      restored,
+      sessionEndsAt,
       cognito,
       acceptTokens,
       config.ssoProvider,

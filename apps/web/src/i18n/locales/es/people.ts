@@ -204,7 +204,8 @@ export const people = {
     emailPlaceholder: 'nombre@{{domain}}',
     domains:
       'Se registran solos: {{domains}}. A los demás correos de empresa se les invita aquí; los correos públicos no se aceptan.',
-    external: 'Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.',
+    external:
+      'No es un dominio de la instalación. Si es de otra empresa, se invita como externa; los correos públicos se rechazan al enviar.',
     groups: 'Grupos',
     optional: '· opcional',
     noGroups: 'Sin grupos entra y ve «Todavía no tienes acceso». ',
@@ -283,6 +284,8 @@ export const people = {
         'No se pudo aprobar {{id}}: la persona fue deshabilitada. El cambio sigue pendiente.',
       already_member:
         'No se pudo aprobar {{id}}: la persona ya tiene ese grupo. El cambio sigue pendiente.',
+      too_many_groups:
+        'No se pudo aprobar {{id}}: la persona ya tiene el máximo de grupos. Quítale uno antes; el cambio sigue pendiente.',
       last_admins:
         'No se pudo aprobar {{id}}: quedarían menos de dos administradores. El cambio sigue pendiente.',
       // The change no longer applies: approving it again will not work.

@@ -13,6 +13,8 @@ export type PeopleErrorKey =
 const APPROVE_REFUSALS = [
   'user_disabled',
   'already_member',
+  // The person has the maximum of groups: one has to go first; the change stays pending.
+  'too_many_groups',
   'last_admins',
   // The change no longer applies (design: «retíralo o recházalo»).
   'unknown_group',

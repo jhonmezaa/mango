@@ -7,6 +7,7 @@ import { readPinnedAgents, togglePinnedAgent } from '../agents/pinned';
 import { useSession } from '../auth/useSession';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { SessionWarning } from '../components/SessionWarning';
 import { Sidebar, type SidebarMode } from '../components/Sidebar';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -101,6 +102,7 @@ export function AppLayout() {
         />
         <main id="main" tabIndex={-1} className="main">
           <OfflineBanner />
+          <SessionWarning />
           {/* Every routed page, admin screens included: a crash keeps the shell usable. */}
           <ErrorBoundary resetKey={pathname}>
             <Outlet />

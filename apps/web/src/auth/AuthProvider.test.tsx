@@ -279,5 +279,36 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
     await screen.findByText('unauthenticated');
     other.close();
     expect(auth().errorKey).toBeNull();
+    expect(auth().noticeKey).toBe('auth.signedOutElsewhere');
+  });
+
+  it('says nothing on the sign-in form after signing out in this tab', async () => {
+    const { auth } = await setup();
+    act(() => {
+      auth().acceptTokens(tokens(3600));
+    });
+    await act(async () => {
+      await auth().logout();
+    });
+    expect(auth().noticeKey).toBeNull();
+  });
+
+  it('knows when the session ends from the sign-in time, also after a reload', async () => {
+    const authTime = Math.floor(Date.now() / 1000) - 3600;
+    const access = jwt({ sub: 'ana', auth_time: authTime });
+    const { auth } = await setup({}, { renew: () => Promise.resolve(renewed('ana', access)) });
+    await screen.findByText('authenticated');
+    expect(auth().restored).toBe(true);
+    // 12 h of `sessionHours` from the sign-in, not from the renewal.
+    expect(auth().sessionEndsAt).toBe((authTime + 12 * 3600) * 1000);
+  });
+
+  it('does not guess the end of a session whose token has no sign-in time', async () => {
+    const { auth } = await setup();
+    act(() => {
+      auth().acceptTokens(tokens(3600));
+    });
+    expect(auth().restored).toBe(false);
+    expect(auth().sessionEndsAt).toBeNull();
   });
 });

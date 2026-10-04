@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { es } from '../../i18n/locales/es';
-import {
-  csvCell,
-  groupTurnAuthz,
-  mergeRequested,
-  outcomeKey,
-  splitActor,
-  toAuditRow,
-} from './auditModel';
+import { csvCell, groupTurnAuthz, mergeRequested, outcomeKey, toAuditRow } from './auditModel';
 
 const event = (name: string, detail: Record<string, unknown>) => ({
   event_id: 'e'.repeat(32),
@@ -556,21 +549,57 @@ describe('mergeRequested', () => {
   });
 });
 
-describe('outcomeKey and splitActor', () => {
+describe('sessions', () => {
+  it('labels the session events in «Acceso y grupos»', () => {
+    const started = toAuditRow(event('session.started', { federated: false, expires_at: 1 }), 0);
+    expect(started).toMatchObject({
+      known: 'session.started',
+      category: 'access',
+      tone: 'dim',
+      outcome: null,
+      detail: { kind: 'session', action: 'session.started' },
+    });
+    expect(es.audit.actions.session.started).toBe('Sesión iniciada');
+    expect(toAuditRow(event('session.renewed', {}), 0)).toMatchObject({
+      known: 'session.renewed',
+      category: 'access',
+      detail: { kind: 'session', action: 'session.renewed' },
+    });
+  });
+
+  it('keeps what was recorded for an SSO sign-in', () => {
+    const row = toAuditRow(event('session.started', { federated: true }), 0);
+    expect(row.detail).toEqual({ kind: 'raw', text: 'federated: true' });
+  });
+
+  it('shows a rejected session as a refusal with its reason as the code', () => {
+    const row = toAuditRow(event('session.rejected', { reason: 'sub_mismatch' }), 0);
+    expect(row).toMatchObject({
+      known: 'session.rejected',
+      outcome: 'rejected',
+      error: 'sub_mismatch',
+      tone: 'red',
+      endReason: null,
+    });
+  });
+
+  it('carries the reason a session ended', () => {
+    expect(toAuditRow(event('session.ended', { reason: 'expired' }), 0)).toMatchObject({
+      known: 'session.ended',
+      endReason: 'expired',
+      outcome: null,
+    });
+    expect(toAuditRow(event('session.ended', {}), 0).endReason).toBeNull();
+    expect(toAuditRow(event('directory.disable', { reason: 'x' }), 0).endReason).toBeNull();
+  });
+});
+
+describe('outcomeKey', () => {
   it('reads an applied rejection as recorded', () => {
     expect(outcomeKey({ outcome: 'applied', action: 'directory.member_reject' })).toBe('recorded');
     expect(outcomeKey({ outcome: 'applied', action: 'directory.member_approve' })).toBe('applied');
     expect(outcomeKey({ outcome: 'rejected', action: 'mapping.reject' })).toBe('rejected');
     expect(outcomeKey({ outcome: null, action: 'mapping.reject' })).toBeNull();
-  });
-
-  it('splits an email at its last @ and leaves anything else whole', () => {
-    expect(splitActor('ana.lopez@example.com')).toEqual({
-      local: 'ana.lopez',
-      domain: '@example.com',
-    });
-    expect(splitActor('sub-123')).toEqual({ local: 'sub-123', domain: null });
-    expect(splitActor('')).toEqual({ local: '', domain: null });
   });
 });
 

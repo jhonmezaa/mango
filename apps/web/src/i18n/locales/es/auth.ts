@@ -20,6 +20,9 @@ export const auth = {
   haveAccount: '¿Ya tienes cuenta?',
   signInLink: 'Inicia sesión',
   passwordUpdated: 'Contraseña actualizada. Ya puedes entrar.',
+  restoring: 'Recuperando tu sesión…',
+  keep: 'Sigues dentro hasta {{count}} h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.',
+  signedOutElsewhere: 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.',
   signup: {
     title: 'Crea tu cuenta',
     subtitle:

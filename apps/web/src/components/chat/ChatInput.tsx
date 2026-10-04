@@ -74,7 +74,7 @@ export function ChatInput({ agentName, disabled = false, isStreaming, onSend, on
               </span>
             </Soon>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="ch-send-row flex items-center gap-2">
             <span className="composer-hint">
               <Soon name={t('soon.item', { label: t('chat.composer.commandsLabel') })}>
                 <span>

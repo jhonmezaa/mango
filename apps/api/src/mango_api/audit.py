@@ -29,8 +29,9 @@ _QUERY_LIMIT = 200
 # Allowed read-only authorization decisions (``exclude=reads``). Events emitted since the
 # ``read_only`` flag exists carry it; older ones are recognized by their action.
 READ_ACTIONS = frozenset({"ViewAdmin", "ViewAudit", "ViewGroups", "ViewApprovals"})
-# Events that record a read and nothing else: reading the directory of the people screen.
-READ_EVENTS = frozenset({"directory.list"})
+# Events that record a read and nothing else: reading the directory of the people screen, and
+# a session recovered from its cookie (every page load leaves one; nothing changes).
+READ_EVENTS = frozenset({"directory.list", "session.renewed"})
 _SK_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+00:00#[0-9a-f]{32}$")
 _CURSOR_MAX = 128
 

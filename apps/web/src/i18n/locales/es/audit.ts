@@ -25,7 +25,8 @@ export const audit = {
   count_other: '{{count}} eventos',
   clear: 'Limpiar',
   reads: 'Mostrar lecturas',
-  readsTitle: 'Accesos de solo lectura permitidos. Los denegados y los cambios se ven siempre.',
+  readsTitle:
+    'Accesos de solo lectura permitidos y sesiones recuperadas al recargar. Los denegados, los rechazos y los cambios se ven siempre.',
   categoryLabel: 'Categoría',
   categories: {
     all: 'Todo',
@@ -107,6 +108,12 @@ export const audit = {
       member_reject: 'Cambio de persona rechazado',
       member_withdraw: 'Cambio de persona retirado',
     },
+    session: {
+      started: 'Sesión iniciada',
+      renewed: 'Sesión recuperada',
+      ended: 'Sesión cerrada',
+      rejected: 'Sesión rechazada',
+    },
     approval: {
       request: 'Aprobación solicitada',
       approve: 'Aprobación concedida',
@@ -179,6 +186,20 @@ export const audit = {
     catalogSyncNone: 'Consultó el catálogo de Bedrock · sin modelos nuevos',
     catalogSync_one: 'Consultó el catálogo de Bedrock · {{count}} modelo nuevo',
     catalogSync_other: 'Consultó el catálogo de Bedrock · {{count}} modelos nuevos',
+    session: {
+      started: 'Ingresó con contraseña y MFA',
+      renewed: 'Recuperó la sesión al recargar',
+      ended: 'Sesión cerrada',
+      rejected: 'Intento de renovar con una sesión que ya no sirve',
+    },
+  },
+  // Design `SESSION_END`: why a session ended (the API says `sign_out` for the design's `logout`).
+  sessionEnd: {
+    sign_out: 'La persona cerró sesión',
+    expired: 'Venció: pasó la duración máxima de la sesión',
+    disabled: 'Un administrador deshabilitó su acceso',
+    group_removed: 'Se le quitó un grupo sensible',
+    mfa_reset: 'Se restableció su MFA',
   },
   outcome: {
     requested: 'solicitado',
@@ -208,8 +229,8 @@ export const audit = {
   rolesShort: {
     lead_admin: 'Admin',
     admin: 'Admin',
-    // The API cannot tell a creator from a user of FinOps central: the full role stays.
-    owner: 'FinOps central',
+    // The API cannot tell a creator from a user of FinOps central: the design's «Central».
+    owner: 'Central',
     user: 'Usuario',
   },
   links: {
@@ -227,6 +248,7 @@ export const audit = {
     outcome: 'Resultado',
     requested: 'Solicitado',
     requestedNote: 'se registra antes de aplicar',
+    reason: 'Motivo',
     ago: 'Hace',
     changes: 'Qué cambió',
     field: 'campo',

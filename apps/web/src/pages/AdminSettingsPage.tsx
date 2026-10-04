@@ -67,7 +67,7 @@ function GeneralTab({ onGoPeople }: { onGoPeople: () => void }) {
               <span>{label}</span>
             </button>
           ) : (
-            <Soon key={key} name={label} block>
+            <Soon key={key} name={label} block className="set-nav-soon">
               <button type="button" className="set-nav-item" tabIndex={-1}>
                 <Icon size={14} />
                 <span>{label}</span>
