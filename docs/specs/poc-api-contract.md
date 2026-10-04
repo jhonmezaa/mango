@@ -470,7 +470,7 @@ Límites por administrador: 120 lecturas por minuto, 200 cambios, 20 propuestas 
 | Método | Ruta | Cuerpo → respuesta |
 |---|---|---|
 | POST | `/api/admin/people/search` | `{"prefix"?: str (inicio del correo, 1..64, sin comillas ni espacios), "filter"?: "all"\|"pending"\|"invited"\|"disabled", "cursor"?: str}` → `{"items": [{"user_id": str, "email": str, "status": "active"\|"invited"\|"disabled", "mfa": bool, "groups": [str], "created_at": str}] (20 por página), "next_cursor": str\|null, "pending": int, "admins": int, "with_access": int, "incomplete": bool}`. Primero quien espera acceso (activa y sin grupos), luego por alta descendente. Las cuentas sin correo verificado no aparecen. Es POST para que el prefijo no viaje en la URL |
-| POST | `/api/admin/people/invitations` | `{"email": str, "groups"?: [str] (0..10)}` → 201 `{"user_id": str, "result": "applied"\|"bootstrap"}`. Cognito envía la contraseña temporal. **422 `invalid_email`**, **`public_domain`** (se acepta cualquier dominio que no sea de un proveedor de correo público, D61; el registro abierto sigue limitado a `SignUpDomains`), **`sensitive_group`**, **`unknown_group`**; **409 `already_exists`** |
+| POST | `/api/admin/people/invitations` | `{"email": str, "groups"?: [str] (0..10)}` → 201 `{"user_id": str, "result": "applied"\|"bootstrap"}`. Cognito envía la contraseña temporal. **422 `invalid_email`**, **`public_domain`** (se acepta cualquier dominio que no sea de un proveedor de correo público, D61; qué es público lo dice la lista única de `mango_core.mail_domains`, con variantes por país y correos desechables, D62: lo decide la API, no la pantalla; el registro abierto sigue limitado a `SignUpDomains`), **`sensitive_group`**, **`unknown_group`**; **409 `already_exists`** |
 | POST | `/api/admin/people/{user_id}/groups` | `{"group": str, "reason"?: str (1..500)}` → `{"result": "applied"\|"proposed"\|"bootstrap", "change_id": str\|null}`. **422 `unknown_group`** (solo los cuatro de sistema y los del registro), **`reason_required`**; **409 `already_member`**, **`user_disabled`**, **`already_pending`**, **`too_many_pending`**; **403 `self_change`**; **404 `user_not_found`** |
 | POST | `/api/admin/people/{user_id}/groups/remove` | Igual. **409 `not_member`**, **`last_admins`** |
 | POST | `/api/admin/people/{user_id}/disable` | `{"reason": str}` → igual. **409 `already_disabled`**, **`last_admins`**; **403 `self_change`** |
@@ -504,7 +504,7 @@ Notas de admin: `reject` es la decisión de otro admin y `withdraw` el retiro po
 | `limit` | 1..200 (por defecto 50) |
 | `cursor` | `next_cursor` de la página anterior (opaco) |
 | `since`, `until` | ISO 8601; rango `[since, until)` aplicado en el servidor. Sin zona = UTC. Se recorta a la vida del índice |
-| `exclude` | `reads`: oculta las `policy.decision` **permitidas** de solo lectura (`ViewAdmin`, `ViewAudit` y las lecturas marcadas `read_only`, como `GET /api/agents/{id}`). Se siguen auditando; solo se filtran. Las denegaciones nunca se ocultan |
+| `exclude` | `reads`: oculta las `policy.decision` **permitidas** de solo lectura (`ViewAdmin`, `ViewAudit` y las lecturas marcadas `read_only`, como `GET /api/agents/{id}`). También oculta las lecturas del directorio (`directory.list`, D62). Se siguen auditando; solo se filtran. Las denegaciones nunca se ocultan |
 | `event` | Nombre exacto (`agent.invoke`) o prefijo terminado en punto (`settings.`) |
 
 Respuesta:

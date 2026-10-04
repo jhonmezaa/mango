@@ -1,8 +1,8 @@
-# Gestión de personas (Ajustes › Personas): modelo de amenazas (v0.3)
+# Gestión de personas (Ajustes › Personas): modelo de amenazas (v0.4)
 
 > Fecha: 2026-10-03 · Skill: `security-threat-model`. Decisiones que lo enmarcan: D14 (claims desde grupos de Cognito), D20 (login propio y restablecer MFA), D26 (grupos con doble aprobación), D28 (doble aprobación de 72 h), D58 (instalación como cliente). Amplía TM-L6 y TM-L14 de `login-threat-model.md` y TM-M24 de `marketplace-v1-threat-model.md`.
 > Alcance: el backend nuevo de `apps/api/src/mango_api/people.py` (rutas `/api/admin/people*` y `/api/admin/installation`), sus permisos sobre el user pool (`infra/lib/constructs/identity.ts`), las acciones de Cedar nuevas (`policies/cedar/platform/people.cedar`) y la pantalla `apps/web/src/pages/settingsPeople/`. Diseño de referencia: `docs/design/mango-hub/src/people.jsx`.
-> v0.1 se escribió **antes** de construir; v0.2 recoge las decisiones del usuario del 2026-10-03 (D60) y lo construido. v0.3 (2026-10-03, D61) recoge la primera comprobación en una instalación: las invitaciones aceptan cualquier dominio no público, las invitaciones rechazadas se auditan y `mango-api` suma `AdminSetUserMFAPreference` para saber quién tiene MFA.
+> v0.1 se escribió **antes** de construir; v0.2 recoge las decisiones del usuario del 2026-10-03 (D60) y lo construido. v0.3 (2026-10-03, D61) recoge la primera comprobación en una instalación: las invitaciones aceptan cualquier dominio no público, las invitaciones rechazadas se auditan y `mango-api` suma `AdminSetUserMFAPreference` para saber quién tiene MFA. v0.4 (2026-10-03, D62) recoge la prueba en un navegador real: la lista de proveedores públicos pasa a ser una sola, con variantes por país y correos desechables (TM-P19), el rechazo por correo público lo decide y audita siempre el servidor, y las lecturas del directorio se ocultan en Auditoría junto con las demás lecturas (TM-P20).
 
 ## Executive summary
 
@@ -31,7 +31,7 @@ Además hay un caso de arranque delicado: con un solo administrador nadie puede 
   3. **Listar el directorio a administradores es una excepción registrada** en `AGENTS.md` (TM-P6).
   4. **«Persona registrada» queda pendiente** (TM-P12).
   5. **Rehabilitar a quien tiene un grupo sensible exige doble aprobación** (TM-P16; diferencia con el diseño).
-  6. **Las invitaciones aceptan cualquier dominio que no sea de un proveedor de correo público** (D61): un administrador puede traer a alguien de fuera de la empresa. El registro abierto sigue limitado a `SignUpDomains`. **Riesgo aceptado** con los controles de TM-P17.
+  6. **Las invitaciones aceptan cualquier dominio que no sea de un proveedor de correo público** (D61): un administrador puede traer a alguien de fuera de la empresa. El registro abierto sigue limitado a `SignUpDomains`. **Riesgo aceptado** con los controles de TM-P17. Qué es «público» lo dice una lista cerrada (D62, TM-P19).
 
 ## System model
 
@@ -143,13 +143,15 @@ flowchart LR
 | TM-P14 | Contenido del directorio pintado como HTML (correo o descripción de grupo maliciosos) | Sesión del administrador | React como texto, sin `dangerouslySetInnerHTML`; respuestas validadas con `zod`; CSP vigente | Baja | Alto | Media |
 | TM-P16 | Un administrador rehabilita él solo a un administrador (o central) deshabilitado: le devuelve un privilegio que quitar exigió dos personas | Administración, datos centrales | Rehabilitar a quien pertenece a `mango-admin` o `finops-central` es un cambio con doble aprobación (`kind: enable`), con motivo. El resto se rehabilita al momento. **Decisión del usuario; difiere del diseño** | Baja | Alto | Media |
 | TM-P18 | `mango-api` puede fijar la preferencia de MFA de cualquier usuario del pool (`AdminSetUserMFAPreference`), y lo hace dentro de una lectura (`ViewPeople`) | MFA de las cuentas, integridad del directorio | La acción solo se usa para **activar** TOTP cuando `AdminGetUser` no lista ninguno: Cognito la rechaza si la persona no tiene un TOTP verificado, así que no crea un factor ni cambia cómo entra nadie. El código nunca envía `Enabled: false`. Con MFA obligatorio, una preferencia desactivada no apaga el reto (supuesto 6), y el rol ya podía borrar un TOTP (`AdminDeleteSoftwareToken`, D20): la acción no añade poder real. Recurso: solo el ARN del pool. La escritura es idempotente y no depende de datos del cliente (el nombre de usuario sale de `ListUsers`). Residual: en una instalación con MFA opcional (solo pruebas) el rol comprometido podría desactivar la preferencia de alguien | Baja | Bajo | Baja |
+| TM-P19 | La regla «no proveedores de correo público» depende de una **lista cerrada** (D62): un proveedor que nadie listó, uno nuevo o un dominio propio de una persona (`ana@apellido.dev`) pasa como si fuera de una empresa | Cuentas, datos de área | Una sola lista para el registro y las invitaciones (`mango_core.mail_domains`, datos en `public_mail_domains.json`; también la lee el esquema de infra): familias de proveedores con sus variantes por país (`<marca>.<tld>` y `<marca>.<com\|co\|net\|org…>.<país>`), dominios exactos (proveedores, buzones de operadoras, correos desechables y relevos de alias) y sus subdominios. La decide el servidor: la pantalla no guarda copia y cada rechazo queda auditado con el dominio. Tests de las variantes en los tres consumidores. **Residual:** la lista no puede ser completa (hay miles de dominios desechables y cualquiera registra un dominio propio por pocos dólares), así que la regla baja la probabilidad de dar acceso a una cuenta personal por descuido; **no** prueba que el correo sea de una empresa ni frena a un administrador decidido. Lo que sí acota el daño no cambia: solo invita un administrador, el evento lleva `external_domain`, la persona se ve en Personas, sin grupos no ve nada y los grupos sensibles piden doble aprobación (TM-P17). Falsos positivos posibles: una empresa cuyo dominio sea exactamente una marca de la lista bajo otro país (p. ej. `live.<tld>`) no puede invitarse; se resuelve quitando la marca de la lista en una versión. **Recomendado (no se construye ahora):** lista de dominios permitidos o bloqueados por instalación, e insignia «externa» | Media | Medio | **Media** (residual aceptado con la regla de D61) |
+| TM-P20 | Las lecturas del directorio (`directory.list`) dejan de verse en Auditoría con «Mostrar lecturas» apagado: alguien que recorre el directorio pasa inadvertido en la vista por defecto | Rastro de auditoría | El evento se sigue registrando igual (fail-closed: sin auditoría no hay lectura) y aparece con «Mostrar lecturas», en el CSV de lo cargado y en el almacenamiento de auditoría. Solo cambia la vista por defecto, como ya pasaba con las decisiones de lectura permitidas (`ViewPeople`, `ViewAudit`). Antes ocupaban la mitad de la primera página y escondían los cambios, que son lo que la vista por defecto debe mostrar | Baja | Bajo | **Baja** |
 | TM-P15 | Costo y cuota: cada fila exige leer grupos y MFA; el filtro «Sin acceso» recorre el pool | Disponibilidad del pool (cuota compartida con el login) | Pocas llamadas en paralelo; recorrido acotado y con resultado en caché breve por proceso; contador «al menos N» si el recorrido se corta. Quien no tiene MFA cuesta una llamada más por fila (`AdminSetUserMFAPreference`, rechazada) | Media | Bajo | Baja |
 
 ## Criticality calibration
 
 - **Alta:** cualquier camino por el que una sola persona obtenga `mango-admin` o `finops-central` (TM-P1), o por el que alguien sin ser administrador llegue a estas rutas (TM-P4).
-- **Media:** grupos centrales propios sin aprobación (TM-P2, aceptado), personas de fuera invitadas (TM-P17, aceptado), rehabilitar (TM-P16), arranque (TM-P3), invitaciones (TM-P7), bloqueo (TM-P8), aprobaciones obsoletas (TM-P9), tokens vigentes (TM-P10), poder del rol (TM-P11), enumeración por administradores (TM-P6).
-- **Baja:** rastro del registro (TM-P12), datos de la instalación (TM-P13), cuota (TM-P15), preferencia de MFA (TM-P18).
+- **Media:** grupos centrales propios sin aprobación (TM-P2, aceptado), personas de fuera invitadas (TM-P17, aceptado), lista cerrada de proveedores públicos (TM-P19), rehabilitar (TM-P16), arranque (TM-P3), invitaciones (TM-P7), bloqueo (TM-P8), aprobaciones obsoletas (TM-P9), tokens vigentes (TM-P10), poder del rol (TM-P11), enumeración por administradores (TM-P6).
+- **Baja:** rastro del registro (TM-P12), datos de la instalación (TM-P13), cuota (TM-P15), preferencia de MFA (TM-P18), lecturas del directorio fuera de la vista por defecto (TM-P20).
 
 ## Focus paths for security review
 
@@ -159,6 +161,7 @@ flowchart LR
 | `apps/api/src/mango_api/people.py` (router) | Autorización declarada en cada ruta | TM-P4 |
 | `apps/api/src/mango_api/people.py` (`CognitoPeople.list`) | Filtro de `ListUsers` y cursor | TM-P5, TM-P15 |
 | `apps/api/src/mango_api/people.py` (`invitation_domain`, `invite`) | Qué correo se acepta y qué queda en auditoría de un rechazo | TM-P7, TM-P17 |
+| `packages/py/mango-core/src/mango_core/mail_domains.py` y `public_mail_domains.json` | Qué dominio es de un proveedor público, para el registro, las invitaciones y los parámetros de la instalación | TM-P19 |
 | `apps/api/src/mango_api/people.py` (`CognitoPeople.mfa_registered`) | Única llamada a `AdminSetUserMFAPreference`: solo activa | TM-P18 |
 | `infra/lib/constructs/identity.ts` (`grantPeopleManagement`) | Acciones y recurso exactos | TM-P11 |
 | `policies/cedar/platform/people.cedar` | Solo administradores | TM-P4 |
@@ -196,3 +199,18 @@ Revisión enfocada de `invitation_domain`, `invite` y `CognitoPeople.mfa_registe
 | `MANGO_RELEASE` | La etiqueta se valida con patrón al sintetizar y se sirve solo a administradores, como texto |
 
 Sin hallazgos. Sin `Resource: "*"`, sin acciones con comodín y sin supresiones nuevas de cdk-nag, cfn-guard ni Checkov.
+
+## Revisión `security-audit` del diff de D62 (2026-10-03, modo guía)
+
+Revisión enfocada de `mango_core.mail_domains` y su archivo de datos, `allowed_domains` del trigger *pre sign-up*, `invitation_domain`, `search` y `CognitoPeople.mfa_registered` (`apps/api/src/mango_api/people.py`), `is_read` (`apps/api/src/mango_api/audit.py`), `isPublicMailDomain` (`infra/lib/config/schema.ts`) y el modal de invitar. Lectura de fuente, tests locales y el paquete de la Lambda ya sintetizado; nada desplegado.
+
+| Punto revisado | Resultado |
+|---|---|
+| Qué recibe la regla | El dominio llega ya validado (solo ASCII, patrón anclado, en minúsculas). La comparación es por etiquetas completas: `notgmail.com`, `gmail.com.empresa.io` y `outlook.empresa.com` no coinciden; `mail.yahoo.co.uk` y `x.mailinator.com` sí |
+| Fallo de la lista | Si el archivo de datos faltara, el módulo no carga: el trigger falla y Cognito rechaza el registro, y `mango-api` no arranca. Falla cerrado. El paquete sintetizado de la Lambda lleva el archivo y se importó en un intérprete aislado |
+| Dependencias del trigger | Ahora empaqueta `mango-core` con sus dependencias (`pyjwt`, `cryptography`), que el trigger no importa (comprobado: no se cargan). Más superficie de cadena de suministro en el paquete, sin código nuevo en ejecución. Mejora posible: separar esas dependencias en un extra de `mango-core` |
+| Quién decide | El servidor. La pantalla ya no rechaza correos públicos por su cuenta; el límite de tasa de invitaciones (20 por hora y administrador) y `_require_current_admin` siguen yendo antes de la validación, así que los rechazos auditados están acotados |
+| Persona borrada por fuera | Solo `UserNotFoundException` se trata como «ya no está»; cualquier otro error de Cognito sigue siendo 502. Nada del cliente decide a quién se omite: el nombre de usuario sale de la copia del directorio |
+| Lecturas ocultas | `is_read` solo oculta eventos cuyo nombre fija el servidor (`directory.list`); un cambio o una denegación nunca coinciden. Se siguen registrando (TM-P20) |
+
+Sin hallazgos. Sin cambios de IAM ni de trusts, sin `Resource: "*"`, sin acciones con comodín y sin supresiones nuevas de cdk-nag, cfn-guard ni Checkov.
