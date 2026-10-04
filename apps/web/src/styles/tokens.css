@@ -79,6 +79,8 @@
   --green: #177a35;
   --amber: #a35600;
   --red: #c4213a;
+  /* Background of the danger button: apart from `--red` (texts and marks) to keep 4.5:1. */
+  --danger-bg: #c4213a;
   --blue: #2059d6;
   --violet: #6d28d9;
   --green-soft: #e9f6ec;
@@ -123,6 +125,7 @@
   --green: #34d399;
   --amber: #fbbf24;
   --red: #fc8f8f;
+  --danger-bg: #b91c1c;
   --blue: #60a5fa;
   --violet: #a78bfa;
   --green-soft: rgba(52, 211, 153, 0.12);

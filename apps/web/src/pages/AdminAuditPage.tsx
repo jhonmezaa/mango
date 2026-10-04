@@ -13,7 +13,10 @@ import {
   dayKey,
   groupTurnAuthz,
   isPermAction,
+  mergeRequested,
   outcomeClass,
+  outcomeKey,
+  splitActor,
   toAuditRow,
   type AuditCategory,
   type AuditRow,
@@ -181,13 +184,20 @@ export function AdminAuditPage() {
       });
   };
 
-  const all = useMemo(
+  // Every loaded event (what the CSV exports) and the list, where a request and its result are
+  // one row (design `mergeAudit`).
+  const events = useMemo(
     () => (state.kind === 'ready' ? groupTurnAuthz(state.items.map(toAuditRow)) : []),
     [state],
   );
+  const all = useMemo(() => mergeRequested(events), [events]);
 
   const roleOf = useCallback(
     (row: AuditRow) => (row.role ? t(`audit.roles.${row.role}`) : ''),
+    [t],
+  );
+  const roleShortOf = useCallback(
+    (row: AuditRow) => (row.role ? t(`audit.rolesShort.${row.role}`) : ''),
     [t],
   );
   const labelOf = useCallback(
@@ -241,10 +251,10 @@ export function AdminAuditPage() {
   );
   // Design `auditOutcome`: what the API recorded about the write, plus its error code.
   const outcomeOf = useCallback(
-    (row: AuditRow) =>
-      row.outcome
-        ? `${t(`audit.outcome.${row.outcome}`)}${row.error ? ` · ${row.error}` : ''}`
-        : '',
+    (row: AuditRow) => {
+      const key = outcomeKey(row);
+      return key ? `${t(`audit.outcome.${key}`)}${row.error ? ` · ${row.error}` : ''}` : '';
+    },
     [t],
   );
 
@@ -258,25 +268,25 @@ export function AdminAuditPage() {
   // was applied by the server.
   const now = state.kind === 'ready' ? state.loadedAt : 0;
   const needle = query.trim().toLowerCase();
-  const base = all.filter(
-    (row) =>
-      (actor === null || row.actor === actor) &&
-      (resource === null || row.resourceKey === resource.key) &&
-      (!needle ||
-        [
-          row.raw.event_id,
-          row.actor,
-          row.resource ?? '',
-          detailOf(row),
-          outcomeOf(row),
-          labelOf(row),
-          row.event,
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(needle)),
-  );
-  const rows = base.filter((row) => category === 'all' || row.category === category);
+  const matches = (row: AuditRow) =>
+    (actor === null || row.actor === actor) &&
+    (resource === null || row.resourceKey === resource.key) &&
+    (!needle ||
+      [
+        row.raw.event_id,
+        row.actor,
+        row.resource ?? '',
+        detailOf(row),
+        outcomeOf(row),
+        labelOf(row),
+        row.event,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle));
+  const inCategory = (row: AuditRow) => category === 'all' || row.category === category;
+  const base = all.filter(matches);
+  const rows = base.filter(inCategory);
   const countOf = (key: AuditCategory) => base.filter((row) => row.category === key).length;
   const anyFilter =
     needle !== '' ||
@@ -329,7 +339,9 @@ export function AdminAuditPage() {
 
   const exportCsv = () => {
     const header = t('audit.csvHeader');
-    const lines = rows.map((row) =>
+    // The CSV keeps a request and its result as two events.
+    const exported = events.filter((row) => matches(row) && inCategory(row));
+    const lines = exported.map((row) =>
       [
         row.raw.event_id,
         row.ts,
@@ -357,7 +369,7 @@ export function AdminAuditPage() {
     window.setTimeout(() => {
       URL.revokeObjectURL(url);
     }, 0);
-    notify(t('audit.exported', { count: rows.length }));
+    notify(t('audit.exported', { count: exported.length }));
   };
 
   const linkOf = (row: AuditRow) =>
@@ -581,11 +593,19 @@ export function AdminAuditPage() {
                       <span className="tk-dot" style={{ background: TONE_COLOR[row.tone] }} />
                       {labelOf(row)}
                     </span>
-                    <span className="au-actor">
-                      <span className="au-name" title={row.actor || undefined}>
-                        {row.actor || t('audit.system')}
+                    <span
+                      className="au-actor"
+                      title={[row.actor, roleOf(row)].filter(Boolean).join(' · ') || undefined}
+                    >
+                      <span className="au-name">
+                        <span className="au-local">
+                          {splitActor(row.actor).local || t('audit.system')}
+                        </span>
+                        {splitActor(row.actor).domain ? (
+                          <span className="au-dom">{splitActor(row.actor).domain}</span>
+                        ) : null}
                       </span>
-                      {row.role && <span className="au-role">{roleOf(row)}</span>}
+                      {row.role ? <span className="au-role">{roleShortOf(row)}</span> : null}
                     </span>
                     <span className="mono au-target">{row.resource ?? '—'}</span>
                     <span className="au-detail">

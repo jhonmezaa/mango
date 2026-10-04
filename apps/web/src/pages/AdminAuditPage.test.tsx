@@ -129,8 +129,11 @@ describe('AdminAuditPage', () => {
     renderPage({});
     const row = (await screen.findByText('Límite de usuario')).closest('button');
     expect(row).not.toBeNull();
-    expect(within(row as HTMLElement).getByText('ana@example.com')).toBeInTheDocument();
-    expect(within(row as HTMLElement).getByText('FinOps central · Admin')).toBeInTheDocument();
+    // The email is cut in the middle and the badge is short; the tooltip has both in full.
+    const actor = within(row as HTMLElement).getByTitle('ana@example.com · FinOps central · Admin');
+    expect(actor.querySelector('.au-local')).toHaveTextContent('ana');
+    expect(actor.querySelector('.au-dom')).toHaveTextContent('@example.com');
+    expect(actor.querySelector('.au-role')).toHaveTextContent('Admin');
     const old = screen.getByText('Cambio de áreas rechazado').closest('button') as HTMLElement;
     expect(old.querySelector('.au-role')).toBeNull();
     await user.click(row as HTMLElement);
@@ -290,14 +293,17 @@ describe('AdminAuditPage', () => {
     ];
     renderPage({ listAuditEvents: vi.fn(() => page(events)) });
     const view = (await screen.findByText('Acceso de lectura')).closest('button') as HTMLElement;
-    expect(within(view).getByText('Líder de área · Admin')).toBeInTheDocument();
+    expect(view.querySelector('.au-role')).toHaveTextContent('Admin');
+    expect(view.querySelector('.au-actor')?.getAttribute('title')).toContain(
+      'Líder de área · Admin',
+    );
     expect(within(view).getByText('Ver auditoría · permitido')).toBeInTheDocument();
     const denied = screen.getByText('Acceso denegado').closest('button') as HTMLElement;
     expect(within(denied).getByText('Ver auditoría · denegado (403)')).toBeInTheDocument();
     expect(denied.querySelector('.tk-dot')).toHaveStyle({ background: 'var(--red)' });
     // The actor of a chat query is the user who asked; the agent is the resource.
     const chat = screen.getByText('Consulta del agente').closest('button') as HTMLElement;
-    expect(within(chat).getByText('eva@example.com')).toBeInTheDocument();
+    expect(chat.querySelector('.au-name')).toHaveTextContent('eva@example.com');
     expect(within(chat).getByText('finops')).toBeInTheDocument();
     expect(
       within(chat).getByText('Preguntó a finops · 2 llamadas a tools · costo USD 0,04'),
@@ -579,6 +585,55 @@ describe('AdminAuditPage', () => {
     expect(first).toContain(`"${'e1'.padEnd(32, '0')}"`);
     expect(first).toContain('"FinOps central · Admin"');
     expect(first).toContain(`"${'a'.repeat(64)}"`);
+    click.mockRestore();
+  });
+
+  it('shows a request and its result as one row, and both in the CSV', async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.fn(() => 'blob:x');
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const at = Date.now() - 600_000;
+    const base = {
+      user_id: 'sub-ana',
+      actor_email: 'ana@example.com',
+      hash: 'a'.repeat(64),
+      resource: { type: 'user', id: 'u-4' },
+    };
+    const events: AuditEvent[] = [
+      {
+        ...base,
+        event_id: 'r2'.padEnd(32, '0'),
+        ts: new Date(at + 1000).toISOString(),
+        event: 'directory.member_reject',
+        detail: { change_id: 'x', outcome: 'applied' },
+      },
+      {
+        ...base,
+        event_id: 'r1'.padEnd(32, '0'),
+        ts: new Date(at).toISOString(),
+        event: 'directory.member_reject',
+        detail: { change_id: 'x', outcome: 'requested' },
+      },
+    ];
+    renderPage({ listAuditEvents: vi.fn(() => page(events)) });
+    // One row, and an applied rejection reads «registrado».
+    const row = (await screen.findByText('Cambio de persona rechazado')).closest('button');
+    expect(screen.getAllByText('Cambio de persona rechazado')).toHaveLength(1);
+    expect(within(row as HTMLElement).getByText('· registrado')).toBeInTheDocument();
+    expect(screen.queryByText('· solicitado')).toBeNull();
+    await user.click(row as HTMLElement);
+    const panel = screen.getByRole('dialog');
+    const requested = within(panel).getByText('Solicitado').nextElementSibling;
+    expect(requested).toHaveTextContent('r1'.padEnd(32, '0'));
+    expect(requested).toHaveTextContent('se registra antes de aplicar');
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
+    fireEvent.click(screen.getByRole('button', { name: /Exportar CSV/ }));
+    expect(await screen.findByText('2 eventos exportados')).toBeInTheDocument();
+    const blob = (createObjectURL.mock.calls[0] as unknown as [Blob])[0];
+    expect(await blob.text()).toContain('"solicitado"');
     click.mockRestore();
   });
 

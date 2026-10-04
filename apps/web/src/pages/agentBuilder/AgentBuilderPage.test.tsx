@@ -477,9 +477,9 @@ describe('AgentBuilderPage', () => {
     renderPage(api, { path: `/admin/${AGENT_ID}` });
     const people = (await screen.findByText('Personas')).closest('.ab-field') as HTMLElement;
     // Emails instead of identifiers; one the directory does not know stays as it is.
-    expect(await within(people).findByText('ana@empresa.com')).not.toHaveClass('mono');
+    expect(await within(people).findByTitle('ana@empresa.com')).not.toHaveClass('mono');
     expect(within(people).queryByText('user-7')).toBeNull();
-    expect(within(people).getByText('user-8')).toHaveClass('mono');
+    expect(within(people).getByTitle('user-8')).toHaveClass('mono');
     expect(resolveUsers).toHaveBeenCalledTimes(1);
 
     const input = within(people).getByRole('textbox', { name: 'Agregar persona por correo' });
@@ -493,7 +493,7 @@ describe('AgentBuilderPage', () => {
     await user.clear(input);
     await user.type(input, '  Luis@Empresa.com ');
     await user.click(add);
-    expect(await within(people).findByText('luis@empresa.com')).toBeInTheDocument();
+    expect(await within(people).findByTitle('luis@empresa.com')).toBeInTheDocument();
     expect(resolveUsers).toHaveBeenLastCalledWith({ body: { emails: ['luis@empresa.com'] } });
     expect(input).toHaveValue('');
     // The identifier just added is already known: no second lookup by id.
@@ -502,7 +502,7 @@ describe('AgentBuilderPage', () => {
     // Adding the same person again changes nothing.
     await user.type(input, 'luis@empresa.com{Enter}');
     expect(input).toHaveValue('');
-    expect(within(people).getAllByText('luis@empresa.com')).toHaveLength(1);
+    expect(within(people).getAllByTitle('luis@empresa.com')).toHaveLength(1);
 
     await user.type(input, 'nadie@empresa.com{Enter}');
     expect(await within(people).findByText('Ese correo no está en el directorio')).toHaveClass(

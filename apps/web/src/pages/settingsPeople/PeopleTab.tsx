@@ -314,6 +314,7 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
       setDecisionError(
         t(decisionErrorKey(error, approving !== undefined), {
           id: approving?.change_id.slice(0, 8) ?? '',
+          group: approving?.group ?? '',
         }),
       );
       if (error instanceof ApiError && (error.status === 409 || error.status === 410)) refresh();
@@ -467,10 +468,7 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
                       }}
                     >
                       <span className="pp-person">
-                        <PersonChip email={person.email} />
-                        {isSelf(me, person) ? (
-                          <span className="mk-meta">{t('people.you')}</span>
-                        ) : null}
+                        <PersonChip email={person.email} you={isSelf(me, person)} />
                         {isExternal(person.email, config.signUpDomains) ? (
                           <span className="badge" title={t('people.externalTitle')}>
                             {t('people.external')}

@@ -184,6 +184,8 @@ export const audit = {
     requested: 'solicitado',
     applied: 'aplicado',
     rejected: 'no se aplicó',
+    // The action itself is a rejection: «aplicado» would read as if the change went through.
+    recorded: 'registrado',
   },
   // Design `AUDIT_PERMS`: Cedar actions the API records, with their screen label.
   perms: {
@@ -202,6 +204,14 @@ export const audit = {
     owner: 'FinOps central',
     user: 'Líder de área',
   },
+  // Short badge of the list (design `ROLE_SHORT`); the full role is in the panel and the tooltip.
+  rolesShort: {
+    lead_admin: 'Admin',
+    admin: 'Admin',
+    // The API cannot tell a creator from a user of FinOps central: the full role stays.
+    owner: 'FinOps central',
+    user: 'Usuario',
+  },
   links: {
     budgets: 'Abrir Presupuestos',
     settings: 'Abrir Ajustes',
@@ -215,6 +225,8 @@ export const audit = {
     model: 'Modelo',
     resource: 'Recurso',
     outcome: 'Resultado',
+    requested: 'Solicitado',
+    requestedNote: 'se registra antes de aplicar',
     ago: 'Hace',
     changes: 'Qué cambió',
     field: 'campo',

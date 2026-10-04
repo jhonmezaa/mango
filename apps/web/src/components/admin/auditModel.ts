@@ -36,6 +36,11 @@ import type { AuditEvent, AuditResource } from '../../api/schemas';
 // `directory.list` (reading the directory) is not in the design: «Lectura del directorio». The
 // API counts it as a read, so it is only listed with «Mostrar lecturas».
 //
+// Requested and result (design round of 2026-10-03g, `mergeAudit`): the API writes «solicitado»
+// before it touches anything and the result afterwards. The pair (same event, resource and actor,
+// less than two minutes apart) is one row with the final result; the panel names the request.
+// The CSV keeps both events. When the action itself is a rejection, «aplicado» reads «registrado».
+//
 // Allowed decisions that are not reads (`ManagePeople`, `ApprovePeopleChange`, a chat turn whose
 // query is not loaded) are not in the design either: «Acceso permitido» (`access.allow`), next to
 // its «Acceso de lectura» and «Acceso denegado», instead of the raw `policy.decision`.
@@ -272,6 +277,8 @@ export interface AuditRow {
   model: string | null;
   /** Actor + `conversation_id` + `turn` of a chat query, its `agent.invoke` or allowed `UseAgent`. */
   turnKey: string | null;
+  /** The «solicitado» event of this result, when it was loaded and merged into this row. */
+  requested: EventRef | null;
   raw: AuditEvent;
 }
 
@@ -533,6 +540,7 @@ export function toAuditRow(item: AuditEvent, index: number): AuditRow {
     agentVersion: typeof version === 'number' && Number.isInteger(version) ? version : null,
     model: known === 'chat.query' ? str(detail.model) : null,
     turnKey: turnKeyOf(item),
+    requested: null,
     raw: item,
   };
 }
@@ -570,6 +578,51 @@ export function groupTurnAuthz(rows: AuditRow[]): AuditRow[] {
     const turn = row.turn ? { ...row.turn, start } : null;
     return authz === row.authz && !start ? row : { ...row, authz, turn };
   });
+}
+
+const REQUEST_WINDOW_MS = 120_000;
+
+/**
+ * Shows each «solicitado» event inside the row of its result (design `mergeAudit`): same event,
+ * resource and actor, with the result less than two minutes after the request. A request whose
+ * result is not loaded stays a row, so nothing is hidden.
+ */
+export function mergeRequested(rows: AuditRow[]): AuditRow[] {
+  const pairKey = (row: AuditRow) =>
+    `${row.event}|${row.resourceKey ?? ''}|${row.raw.user_id ?? row.actor}`;
+  const requests = new Map<string, AuditRow[]>();
+  for (const row of rows) {
+    if (row.outcome !== 'requested') continue;
+    const list = requests.get(pairKey(row));
+    if (list) list.push(row);
+    else requests.set(pairKey(row), [row]);
+  }
+  if (requests.size === 0) return rows;
+  const merged = new Set<AuditRow>();
+  const out = rows.map((row) => {
+    if (row.outcome !== 'applied' && row.outcome !== 'rejected') return row;
+    const request = requests.get(pairKey(row))?.find((candidate) => {
+      const gap = row.time - candidate.time;
+      return !merged.has(candidate) && gap >= 0 && gap < REQUEST_WINDOW_MS;
+    });
+    if (!request) return row;
+    merged.add(request);
+    return { ...row, requested: refOf(request) };
+  });
+  return merged.size === 0 ? rows : out.filter((row) => !merged.has(row));
+}
+
+/** Design `auditOutcome`: an applied rejection is «registrado», not «aplicado». */
+export function outcomeKey(row: Pick<AuditRow, 'outcome' | 'action'>): Outcome | 'recorded' | null {
+  return row.outcome === 'applied' && row.action.includes('reject') ? 'recorded' : row.outcome;
+}
+
+/** An actor that is an email, split so the list can cut it in the middle. */
+export function splitActor(actor: string): { local: string; domain: string | null } {
+  const at = actor.lastIndexOf('@');
+  return at > 0
+    ? { local: actor.slice(0, at), domain: actor.slice(at) }
+    : { local: actor, domain: null };
 }
 
 /** Local-midnight timestamp of a date, to group rows by day. */

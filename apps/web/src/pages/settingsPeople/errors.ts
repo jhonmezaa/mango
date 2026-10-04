@@ -10,7 +10,16 @@ export type PeopleErrorKey =
   | `people.errors.approve.${ApproveRefusal}`;
 
 /** The rules the API checks again when a change is approved (design `recheck`). */
-const APPROVE_REFUSALS = ['user_disabled', 'already_member', 'last_admins'] as const;
+const APPROVE_REFUSALS = [
+  'user_disabled',
+  'already_member',
+  'last_admins',
+  // The change no longer applies (design: «retíralo o recházalo»).
+  'unknown_group',
+  'not_member',
+  'already_disabled',
+  'already_enabled',
+] as const;
 type ApproveRefusal = (typeof APPROVE_REFUSALS)[number];
 
 /** The caller stopped being an administrator with the session still open (design `forbidden`). */
@@ -35,6 +44,10 @@ export function peopleErrorKey(error: unknown): PeopleErrorKey {
  * broke a rule that is checked again and the change stays pending.
  */
 export function decisionErrorKey(error: unknown, approving = false): PeopleErrorKey {
+  // `unknown_group` is a 422: the group of the change was removed after it was proposed.
+  if (approving && error instanceof ApiError && error.code === 'unknown_group') {
+    return 'people.errors.approve.unknown_group';
+  }
   if (error instanceof ApiError && (error.status === 409 || error.status === 410)) {
     const refusal = APPROVE_REFUSALS.find((code) => code === error.code);
     if (approving && refusal) return `people.errors.approve.${refusal}`;

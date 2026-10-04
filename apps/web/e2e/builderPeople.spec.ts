@@ -35,9 +35,10 @@ test('people are added by email and shown by email', async ({ page }) => {
   await expect(email).toHaveValue('');
   await expect(page.getByText('Ese correo no está en el directorio')).toHaveCount(0);
   // The chip shows the email; the identifier the API stores is never on screen.
+  await expect(page.getByTitle('usuario3@empresa.com')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Quitar usuario3@empresa.com' })).toBeVisible();
   await expect(page.getByText('00000000-0000-4000-8000-000000000003')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Quitar usuario3@empresa.com' }).click();
-  await expect(page.getByText('usuario3@empresa.com')).toHaveCount(0);
+  await expect(page.getByTitle('usuario3@empresa.com')).toHaveCount(0);
 });

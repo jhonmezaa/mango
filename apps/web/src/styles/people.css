@@ -19,10 +19,21 @@
     vertical-align: middle;
   }
   .person-chip .person-mail {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: flex;
     white-space: nowrap;
     min-width: 0;
+  }
+  .person-chip .pm-local {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 2ch;
+  }
+  .person-chip .pm-dom {
+    flex-shrink: 0;
+  }
+  .person-you {
+    flex-shrink: 0;
+    color: var(--text-muted);
   }
   .person-chip button {
     display: flex;
@@ -473,6 +484,7 @@
   @media (max-width: 560px) {
     .pp-drawer {
       border-left: none;
+      width: 100vw;
     }
     .pp-drawer-h {
       flex-direction: column;

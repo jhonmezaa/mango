@@ -243,8 +243,8 @@ describe('Ajustes › Personas (design people.jsx)', () => {
     });
     const { user } = renderTab(call);
     await user.click(await screen.findByRole('button', { name: 'Mostrar más' }));
-    expect(await screen.findByText(second.email)).toBeInTheDocument();
-    expect(screen.getByText(first.email)).toBeInTheDocument();
+    expect(await screen.findByTitle(second.email)).toBeInTheDocument();
+    expect(screen.getByTitle(first.email)).toBeInTheDocument();
     expect(calls(call, 'searchPeople')[1]).toEqual({
       body: { prefix: null, filter: 'all', cursor: '20' },
     });
@@ -269,7 +269,7 @@ describe('Ajustes › Personas (design people.jsx)', () => {
     expect(screen.queryByText(/arn:aws/)).toBeNull();
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
-    expect(await screen.findByText('ana@example.com')).toBeInTheDocument();
+    expect(await screen.findByTitle('ana@example.com')).toBeInTheDocument();
     expect(onForbidden).not.toHaveBeenCalled();
   });
 
@@ -596,6 +596,14 @@ describe('Panel of a person', () => {
       ),
     ).toBeInTheDocument();
     expect(within(panel).queryByRole('button', { name: 'Rehabilitar acceso' })).toBeNull();
+    // Same pattern as the other forms of the panel: a button opens it and «Cancelar» closes it.
+    expect(within(panel).queryByLabelText('Motivo para rehabilitar')).toBeNull();
+    await user.click(within(panel).getByRole('button', { name: 'Rehabilitar acceso…' }));
+    await user.type(within(panel).getByLabelText('Motivo para rehabilitar'), 'x');
+    await user.click(within(panel).getByRole('button', { name: 'Cancelar' }));
+    expect(within(panel).queryByLabelText('Motivo para rehabilitar')).toBeNull();
+    await user.click(within(panel).getByRole('button', { name: 'Rehabilitar acceso…' }));
+    expect(within(panel).getByLabelText('Motivo para rehabilitar')).toHaveValue('');
     const send = within(panel).getByRole('button', { name: 'Enviar a aprobación' });
     expect(send).toBeDisabled();
     await user.type(within(panel).getByLabelText('Motivo para rehabilitar'), 'Volvió de licencia');
@@ -607,8 +615,10 @@ describe('Panel of a person', () => {
       { path: { user_id: plain.user_id }, body: { reason: undefined } },
       { path: { user_id: central.user_id }, body: { reason: 'Volvió de licencia' } },
     ]);
-    // Still disabled: another administrator decides.
-    expect(within(panel).getByLabelText('Motivo para rehabilitar')).toHaveValue('');
+    // Still disabled: another administrator decides. The form closes.
+    await waitFor(() => {
+      expect(within(panel).queryByLabelText('Motivo para rehabilitar')).toBeNull();
+    });
   });
 
   it('asks for an MFA reset with a reason and the identity check', async () => {
@@ -758,6 +768,8 @@ describe('Invitar persona', () => {
     expect(calls(call, 'invitePerson')).toEqual([
       { body: { email: 'ana@outlook.es', groups: [] } },
     ]);
+    // It is the answer to the submit, not a check of the field.
+    expect(within(dialog).getByLabelText('Correo')).not.toHaveAttribute('aria-invalid');
   });
 
   it('sends an address of another company to the API', async () => {
@@ -984,6 +996,25 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
     );
     expect(screen.queryByText('server words')).toBeNull();
     expect(screen.getByText('Pendiente')).toBeInTheDocument();
+  });
+
+  it.each([
+    [422, 'unknown_group', 'el grupo bu-finanzas ya no existe'],
+    [409, 'not_member', 'la persona ya no tiene ese grupo'],
+    [409, 'already_disabled', 'la persona ya está deshabilitada'],
+    [409, 'already_enabled', 'la persona ya está habilitada'],
+  ])('says a change no longer applies (%s %s)', async (status, code, why) => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: { items: [change({ group: 'bu-finanzas' })] },
+      approveMemberChange: new ApiError(status, code, 'server words'),
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `No se pudo aprobar cccccccc: ${why}. El cambio ya no aplica: retíralo o recházalo.`,
+    );
+    expect(screen.queryByText('server words')).toBeNull();
   });
 
   it('tells an administrator who stopped being one to sign in again', async () => {

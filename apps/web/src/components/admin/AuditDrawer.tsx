@@ -162,6 +162,21 @@ export function AuditDrawer({
                 <span className={outcomeClass(row)}>{outcome}</span>
               </div>
             )}
+            {row.requested && (
+              <div className="mk-kv">
+                <span>{t('audit.drawer.requested')}</span>
+                <span className="au-steps">
+                  {new Date(row.requested.ts).toLocaleTimeString('es-MX', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                  })}{' '}
+                  · <span className="mono break-all">{row.requested.id}</span> ·{' '}
+                  {t('audit.drawer.requestedNote')}
+                </span>
+              </div>
+            )}
             <div className="mk-kv">
               <span>{t('audit.drawer.ago')}</span>
               <span>{formatRelative(row.ts)}</span>

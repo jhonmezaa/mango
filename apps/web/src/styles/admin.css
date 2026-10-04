@@ -1003,6 +1003,14 @@
       display: none;
     }
   }
+  /* The tabs of Ajustes wrap on phones instead of scrolling without a hint. */
+  @media (max-width: 560px) {
+    .g-tabs-wrap .g-tabs {
+      flex-wrap: wrap;
+      column-gap: 18px;
+      row-gap: 0;
+    }
+  }
 
   /* Toasts (design ui.jsx Toast) */
   .g-toasts {
@@ -1501,12 +1509,29 @@
     gap: 6px;
     min-width: 0;
   }
-  .au-name,
   .au-target,
   .au-detail {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* An email is cut in the middle: the start gets the ellipsis, the `@domain` always shows. */
+  .au-name {
+    display: flex;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .au-name .au-local {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 2ch;
+  }
+  .au-name .au-dom {
+    flex-shrink: 0;
+  }
+  .au-steps {
+    font-size: 12px;
+    color: var(--text-muted);
   }
   .au-target {
     font-size: 11.5px;

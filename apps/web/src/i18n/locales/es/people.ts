@@ -28,7 +28,7 @@ export const people = {
   loading: 'Cargando personas',
   loadError: 'No se pudo cargar el directorio.',
   manage: 'Gestionar {{email}}',
-  you: 'tú',
+  you: '· tú',
   external: 'Externa',
   externalTitle: 'Su dominio no es de los que se registran solos',
   pendingChanges_one: 'Cambio pendiente',
@@ -177,8 +177,10 @@ export const people = {
       title: 'Acceso',
       disabledBody: 'No puede entrar. Conserva sus grupos y su historial en Auditoría.',
       enable: 'Rehabilitar acceso',
+      enableOpen: 'Rehabilitar acceso…',
       enableSensitive:
         'No puede entrar. Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.',
+      enableSensitiveForm: 'Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.',
       enablePending: 'Rehabilitación pendiente de aprobación',
       enableReasonLabel: 'Motivo para rehabilitar',
       self: 'No puedes deshabilitar tu propia cuenta.',
@@ -283,6 +285,15 @@ export const people = {
         'No se pudo aprobar {{id}}: la persona ya tiene ese grupo. El cambio sigue pendiente.',
       last_admins:
         'No se pudo aprobar {{id}}: quedarían menos de dos administradores. El cambio sigue pendiente.',
+      // The change no longer applies: approving it again will not work.
+      unknown_group:
+        'No se pudo aprobar {{id}}: el grupo {{group}} ya no existe. El cambio ya no aplica: retíralo o recházalo.',
+      not_member:
+        'No se pudo aprobar {{id}}: la persona ya no tiene ese grupo. El cambio ya no aplica: retíralo o recházalo.',
+      already_disabled:
+        'No se pudo aprobar {{id}}: la persona ya está deshabilitada. El cambio ya no aplica: retíralo o recházalo.',
+      already_enabled:
+        'No se pudo aprobar {{id}}: la persona ya está habilitada. El cambio ya no aplica: retíralo o recházalo.',
     },
   },
   install: {

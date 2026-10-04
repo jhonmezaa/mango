@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { es } from '../../i18n/locales/es';
-import { csvCell, groupTurnAuthz, toAuditRow } from './auditModel';
+import {
+  csvCell,
+  groupTurnAuthz,
+  mergeRequested,
+  outcomeKey,
+  splitActor,
+  toAuditRow,
+} from './auditModel';
 
 const event = (name: string, detail: Record<string, unknown>) => ({
   event_id: 'e'.repeat(32),
@@ -501,6 +508,69 @@ describe('toAuditRow', () => {
       resourceKey: 'agent:finops',
       turn: null,
     });
+  });
+});
+
+describe('mergeRequested', () => {
+  const write = (id: string, ts: string, outcome: string, extra: Record<string, unknown> = {}) =>
+    toAuditRow(
+      {
+        ...event('directory.group_add', { target_user: 'u-4', group: 'bu-x', outcome, ...extra }),
+        event_id: id.padEnd(32, '0'),
+        ts,
+      },
+      0,
+    );
+
+  it('shows a request inside the row of its result', () => {
+    const applied = write('a2', '2026-09-30T10:00:01.000Z', 'applied');
+    const requested = write('a1', '2026-09-30T10:00:00.000Z', 'requested');
+    const rows = mergeRequested([applied, requested]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      key: applied.key,
+      outcome: 'applied',
+      requested: { id: requested.raw.event_id, ts: requested.ts },
+    });
+  });
+
+  it('keeps a request without a loaded result, a late result and another resource apart', () => {
+    const alone = write('b1', '2026-09-30T10:00:00.000Z', 'requested');
+    expect(mergeRequested([alone])).toEqual([alone]);
+    const late = write('b2', '2026-09-30T10:02:00.000Z', 'rejected', { error: 'last_admins' });
+    expect(mergeRequested([late, alone])).toHaveLength(2);
+    const before = write('b3', '2026-09-30T09:59:59.000Z', 'applied');
+    expect(mergeRequested([alone, before])).toHaveLength(2);
+    const other = write('b4', '2026-09-30T10:00:01.000Z', 'applied', { group: 'bu-y' });
+    expect(mergeRequested([other, alone])).toHaveLength(2);
+  });
+
+  it('pairs each result with one request only', () => {
+    const rows = mergeRequested([
+      write('c4', '2026-09-30T10:00:11.000Z', 'applied'),
+      write('c3', '2026-09-30T10:00:10.000Z', 'requested'),
+      write('c2', '2026-09-30T10:00:01.000Z', 'applied'),
+      write('c1', '2026-09-30T10:00:00.000Z', 'requested'),
+    ]);
+    expect(rows.map((row) => row.requested?.id.slice(0, 2))).toEqual(['c3', 'c1']);
+  });
+});
+
+describe('outcomeKey and splitActor', () => {
+  it('reads an applied rejection as recorded', () => {
+    expect(outcomeKey({ outcome: 'applied', action: 'directory.member_reject' })).toBe('recorded');
+    expect(outcomeKey({ outcome: 'applied', action: 'directory.member_approve' })).toBe('applied');
+    expect(outcomeKey({ outcome: 'rejected', action: 'mapping.reject' })).toBe('rejected');
+    expect(outcomeKey({ outcome: null, action: 'mapping.reject' })).toBeNull();
+  });
+
+  it('splits an email at its last @ and leaves anything else whole', () => {
+    expect(splitActor('ana.lopez@example.com')).toEqual({
+      local: 'ana.lopez',
+      domain: '@example.com',
+    });
+    expect(splitActor('sub-123')).toEqual({ local: 'sub-123', domain: null });
+    expect(splitActor('')).toEqual({ local: '', domain: null });
   });
 });
 

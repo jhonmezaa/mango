@@ -494,7 +494,7 @@ describe('General › Instalación', () => {
     expect(screen.getByText('o-exampleorg1')).toBeInTheDocument();
     expect(screen.getByText('111111111111')).toBeInTheDocument();
     expect(screen.getByText('alertas@example.com')).toBeInTheDocument();
-    expect(screen.getByText('<b>ana</b>@example.com')).toBeInTheDocument();
+    expect(screen.getByTitle('<b>ana</b>@example.com')).toBeInTheDocument();
     expect(screen.getByText('Se instaló con uno solo')).toBeInTheDocument();
     expect(container.querySelector('img, b')).toBeNull();
     // Nothing of the section can be edited.

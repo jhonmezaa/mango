@@ -36,7 +36,8 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
   const address = email.trim().toLowerCase();
   const onlyAdmin = admins === 1;
   const local = inviteError(address);
-  const shown = tried ? (local ?? (refused === 'failed' ? null : refused)) : null;
+  // A malformed address stays on the field; the other refusals are the answer to the submit.
+  const shown = tried ? (local ?? (refused === 'format' ? refused : null)) : null;
   const pickable = options.filter(
     (group) => !isSensitive(group.id) || (group.id === ADMIN_GROUP && onlyAdmin),
   );
@@ -144,9 +145,11 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
             : t('people.inviteModal.sensitiveLater')}
         </div>
       </div>
-      {refused === 'failed' ? (
+      {refused !== null && refused !== 'format' ? (
         <div className="g-err" role="alert">
-          {t('people.inviteModal.failed')}
+          {refused === 'failed'
+            ? t('people.inviteModal.failed')
+            : t(`people.inviteModal.errors.${refused}`)}
         </div>
       ) : null}
     </GovModal>

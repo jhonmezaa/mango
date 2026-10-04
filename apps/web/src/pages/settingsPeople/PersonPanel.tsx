@@ -49,7 +49,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Open = null | { kind: 'remove'; group: string } | { kind: 'mfa' | 'disable' };
+type Open = null | { kind: 'remove'; group: string } | { kind: 'mfa' | 'disable' | 'enable' };
 
 function ReasonBox({
   value,
@@ -108,7 +108,6 @@ export function PersonPanel({
   // One form open at a time: its reason does not outlive it.
   const [open, setOpen] = useState<Open>(null);
   const [reason, setReason] = useState('');
-  const [enableReason, setEnableReason] = useState('');
   const [verified, setVerified] = useState(false);
   const [mfaTried, setMfaTried] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -510,27 +509,36 @@ export function PersonPanel({
                     </span>
                     <span className="mk-meta mono">{enablePending.change_id.slice(0, 8)}</span>
                   </div>
+                ) : enableSensitive && open?.kind !== 'enable' ? (
+                  <div className="pp-line">
+                    <span className="mk-meta">{t('people.panel.access.enableSensitive')}</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        show({ kind: 'enable' });
+                      }}
+                    >
+                      {t('people.panel.access.enableOpen')}
+                    </button>
+                  </div>
                 ) : enableSensitive ? (
                   <div className="pp-form">
-                    <span className="mk-meta">{t('people.panel.access.enableSensitive')}</span>
+                    <span className="mk-meta">{t('people.panel.access.enableSensitiveForm')}</span>
                     <ReasonBox
-                      value={enableReason}
-                      onChange={setEnableReason}
+                      value={reason}
+                      onChange={setReason}
                       placeholder={t('people.panel.groups.reasonPlaceholder')}
                       label={t('people.panel.access.enableReasonLabel')}
                     />
                     <div className="pp-form-actions">
+                      {cancel}
                       <button
                         type="button"
                         className="btn btn-sm btn-primary"
-                        disabled={!enableReason.trim() || busy}
+                        disabled={!reason.trim() || busy}
                         onClick={() => {
-                          run(
-                            () => actions.enable(enableReason.trim()),
-                            () => {
-                              setEnableReason('');
-                            },
-                          );
+                          run(() => actions.enable(reason.trim()), close);
                         }}
                       >
                         {t('people.panel.groups.sendToApproval')}
