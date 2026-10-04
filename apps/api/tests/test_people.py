@@ -81,6 +81,8 @@ class FakePeople:
     signed_out: list[str] = field(default_factory=list)
     invited: list[str] = field(default_factory=list)
     fail_writes: bool = False
+    deleted: set[str] = field(default_factory=set)
+    """Usernames deleted from the pool that a list read before still carries."""
 
     def put(self, user: PoolUser, *groups: str) -> None:
         self.by_sub[user.sub] = user
@@ -101,7 +103,9 @@ class FakePeople:
     def exists(self, email: str) -> bool:
         return any(u.email == email for u in self.by_sub.values())
 
-    def mfa_registered(self, username: str) -> bool:
+    def mfa_registered(self, username: str) -> bool | None:
+        if username in self.deleted:
+            return None
         return self._named(username).status == "CONFIRMED"
 
     def groups_of(self, username: str) -> frozenset[str]:
@@ -345,6 +349,22 @@ def test_search_pages_with_a_cursor(env: Env) -> None:
     assert second["next_cursor"] is None
     ids = [p["user_id"] for p in first["items"] + second["items"]]
     assert len(ids) == len(set(ids)) == 37
+
+
+def test_someone_deleted_from_the_pool_after_the_list_was_read_is_left_out(env: Env) -> None:
+    before = [p["user_id"] for p in _post(env, "/search", {}).json()["items"]]
+    assert "new" in before
+    # Deleted with the AWS console: the snapshot of this task still lists them.
+    env.people.deleted.add("name-new")
+    response = _post(env, "/search", {})
+    assert response.status_code == 200
+    assert [p["user_id"] for p in response.json()["items"]] == [u for u in before if u != "new"]
+    # The next read starts from the pool again.
+    del env.people.by_sub["new"]
+    env.people.deleted.clear()
+    again = _post(env, "/search", {}).json()
+    assert [p["user_id"] for p in again["items"]] == [u for u in before if u != "new"]
+    assert again["pending"] == 0
 
 
 @pytest.mark.parametrize(
@@ -773,6 +793,11 @@ def test_an_invitation_creates_the_person_with_access_groups(env: Env) -> None:
     [
         ({"email": "ana@gmail.com"}, 422, "public_domain"),
         ({"email": "ana@GoogleMail.com"}, 422, "public_domain"),
+        ({"email": "ana@outlook.es"}, 422, "public_domain"),
+        ({"email": "ana@hotmail.com.mx"}, 422, "public_domain"),
+        ({"email": "ana@yahoo.co.uk"}, 422, "public_domain"),
+        ({"email": "ana@mail.yahoo.es"}, 422, "public_domain"),
+        ({"email": "ana@mailinator.com"}, 422, "public_domain"),
         ({"email": "ana@localhost"}, 422, "invalid_email"),
         ({"email": "\u0430na@example.com"}, 422, "invalid_email"),
         ({"email": '"a b"@example.com'}, 422, "invalid_email"),
@@ -793,11 +818,6 @@ def test_invitations_that_are_refused(
 
 
 def test_a_refused_address_is_audited_by_its_domain_never_as_typed(env: Env) -> None:
-        ({"email": "ana@outlook.es"}, 422, "public_domain"),
-        ({"email": "ana@hotmail.com.mx"}, 422, "public_domain"),
-        ({"email": "ana@yahoo.co.uk"}, 422, "public_domain"),
-        ({"email": "ana@mail.yahoo.es"}, 422, "public_domain"),
-        ({"email": "ana@mailinator.com"}, 422, "public_domain"),
     _post(env, "/invitations", {"email": "Ana.Perez@gmail.com", "groups": ["devops"]})
     _post(env, "/invitations", {"email": '"hunter2 pasted"@example.com'})
     _post(env, "/invitations", {"email": "ana@not a domain"})
@@ -872,6 +892,8 @@ def test_the_invitation_rule_matches_the_sign_up_trigger() -> None:
         "ana@evilexample.com",
         "a..b@example.com",
         "ana@gmail.com",
+        "ana@outlook.es",
+        "ana@yahoo.com.mx",
         "a@b@example.com",
         "\u0430na@example.com",
     ):
@@ -892,8 +914,6 @@ def test_an_unusable_domain_list_marks_every_invitation_as_external() -> None:
 
 # --- Installation -----------------------------------------------------------------------
 
-        "ana@outlook.es",
-        "ana@yahoo.com.mx",
 
 def test_installation_is_read_only_data_for_administrators(env: Env) -> None:
     response = env.client.get("/api/admin/installation", headers=_h("admin"))
@@ -1005,6 +1025,9 @@ def test_a_totp_enrolled_at_sign_in_counts_as_mfa_and_is_listed_from_then_on() -
         stub.add_client_error("admin_set_user_mfa_preference", "TooManyRequestsException")
         with pytest.raises(DirectoryUnavailableError):
             people.mfa_registered("name-a")
+        # Deleted from the pool after it was listed: not there, and not an outage.
+        stub.add_client_error("admin_get_user", "UserNotFoundException", expected_params=lookup)
+        assert people.mfa_registered("name-a") is None
         stub.assert_no_pending_responses()
 
 

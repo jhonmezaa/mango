@@ -281,8 +281,8 @@ class CognitoPeople:
             raise DirectoryUnavailableError from exc
         return True
 
-    def mfa_registered(self, username: str) -> bool:
-        """Whether the user has a verified TOTP.
+    def mfa_registered(self, username: str) -> bool | None:
+        """Whether the user has a verified TOTP; ``None`` when the user is not in the pool.
 
         A TOTP registered through the ``MFA_SETUP`` challenge (the only way the SPA has: the
         access token cannot call the self-service APIs) is challenged at every sign-in but is
@@ -304,6 +304,9 @@ class CognitoPeople:
             # «User does not have delivery config set to turn on SOFTWARE_TOKEN_MFA».
             if _code(exc) == "InvalidParameterException":
                 return False
+            # Deleted outside Mango after the list was read: one person less, not an outage.
+            if _code(exc) == "UserNotFoundException":
+                return None
             raise DirectoryUnavailableError from exc
         except BotoCoreError as exc:
             raise DirectoryUnavailableError from exc
@@ -811,6 +814,10 @@ def search(deps: PeopleDeps, caller: Caller, body: SearchIn) -> PeopleOut:
         mfa = _directory(
             lambda: list(pool.map(lambda u: deps.people.mfa_registered(u.username), page))
         )
+    if None in mfa:
+        # The snapshot still lists someone the pool no longer has (deleted with the AWS
+        # console or CLI): they are left out and the next read starts from Cognito again.
+        deps.cache.clear()
     admins = sum(1 for u in snapshot.users if u.enabled and GROUP_ADMIN in snapshot.of(u))
     out = PeopleOut(
         items=[
@@ -823,6 +830,7 @@ def search(deps: PeopleDeps, caller: Caller, body: SearchIn) -> PeopleOut:
                 created_at=iso(u.created_at),
             )
             for u, registered in zip(page, mfa, strict=True)
+            if registered is not None
         ],
         next_cursor=str(start + PAGE_SIZE) if start + PAGE_SIZE < len(rows) else None,
         pending=sum(1 for u in snapshot.users if _waiting(snapshot, u)),
