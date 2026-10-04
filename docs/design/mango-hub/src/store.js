@@ -25,6 +25,11 @@
   };
 
   const seedAudit = [
+    { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.renewed', target: 'session', detail: 'Recuperó la sesión al recargar', read: true, at: ago(3) },
+    { actor: 'usuario4@empresa.com', role: 'user', action: 'session.rejected', target: 'session', detail: 'Intento de renovar con una sesión que ya no sirve', outcome: 'rejected', error: 'session_revoked', at: ago(9) },
+    { actor: 'usuario9@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'disabled', at: ago(300) },
+    { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.started', target: 'session', detail: 'Ingresó con contraseña y MFA', at: ago(320) },
+    { actor: 'usuario5@empresa.com', role: 'central', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'expired', at: ago(410) },
     { actor: 'Usuario 1', role: 'admin', action: 'agent.update', target: 'fin-01', detail: 'Cambió el presupuesto de USD 2.500,00 a USD 3.000,00', before: { budgetMax: 2500 }, after: { budgetMax: 3000 }, outcome: 'applied', at: ago(18) },
     { actor: 'Usuario 4', role: 'user', action: 'chat.query', target: 'fin-01', perm: 'agent.invoke', turn: 'TRN-5102', detail: 'Preguntó a FinOps · consultó Cost Explorer (3 llamadas) · costo USD 0,04', after: { llamadas: 3, costo: 'USD 0,04' }, agentVersion: 3, model: 'us.anthropic.claude-sonnet-4-6-v1:0', at: ago(22) },
     { actor: 'Usuario 4', role: 'user', action: 'access.view', target: 'agent.invoke', turn: 'TRN-5102', detail: 'Usar agente fin-01 · permitido', at: ago(22.1) },

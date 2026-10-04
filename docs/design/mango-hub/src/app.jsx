@@ -75,6 +75,8 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
         <Chips label="Estado de la cuenta al entrar" opts={[['active', 'Con grupo'], ['nogroup', 'Sin grupo asignado'], ['temp', 'Contraseña temporal (creada por admin)']]} value={accountState} onPick={(v) => S.set({ accountState: v })} />
         <Chips label="Login · MFA" opts={authCfg.install === 'client' ? [['required', 'Obligatorio']] : [['required', 'Obligatorio'], ['optional', 'Opcional'], ['off', 'Desactivado']]} value={authCfg.mfa} onPick={(v) => S.set({ authCfg: { ...authCfg, mfa: v } })} />
         <Chips label="Login · MFA ya configurado" opts={[[true, 'Sí'], [false, 'Primer ingreso']]} value={!!authCfg.mfaEnrolled} onPick={(v) => S.set({ authCfg: { ...authCfg, mfaEnrolled: v } })} />
+        <Chips label="Login · al abrir la app" opts={[[null, 'Formulario'], ['restoring', 'Recuperando la sesión'], ['otherTab', 'Cerró sesión en otra pestaña']]} value={S.get().simSessionBoot || null} onPick={(v) => { S.set({ simSessionBoot: v }); setView('login'); }} />
+        <Chips label="Sesión · aviso de vencimiento" opts={[[false, 'No'], [true, 'Vence en 10 min']]} value={!!S.get().simSessionWarn} onPick={(v) => S.set({ simSessionWarn: v })} />
         <Chips label="Login · IdP de la empresa" opts={[['none', 'Sin IdP'], ['sso', 'Con IdP']]} value={authCfg.idp} onPick={(v) => S.set({ authCfg: { ...authCfg, idp: v } })} />
         <Chips label="Ajustes · Lista de restablecimientos MFA" opts={[[false, 'Carga'], [true, 'Error al cargar']]} value={!!S.get().mfaListErr} onPick={(v) => S.set({ mfaListErr: v })} />
         <Chips label="Ajustes · Aprobar/rechazar/retirar MFA" opts={[[false, 'Funciona'], ['generic', 'Falla'], ['409', '409 · cambió'], ['410', '410 · venció']]} value={S.get().mfaActErr || false} onPick={(v) => S.set({ mfaActErr: v })} />
@@ -327,6 +329,7 @@ function App() {
   else if (!S.canView(view)) content = <><Topbar crumbs={[viewLabel(view)]} /><window.ErrorState kind="403" view={view} onHome={home} /></>;
   else if (simError === 'crash') { const Boom = () => { throw new Error("Cannot read properties of undefined (reading 'budgetMax')"); }; content = <Boom />; }
   else if (simError) content = <><Topbar crumbs={[viewLabel(view)]} /><window.ErrorState kind={simError} view={view} onHome={home} onRetry={() => S.set({ simError: null })} onLogin={() => { S.set({ simError: null }); setView('login'); }} /></>;
+  const sessWarn = S.get().simSessionWarn;
   const closeTour = () => { setTour(false); localStorage.setItem('mango-onboarded', '1'); };
 
   return (
@@ -336,6 +339,7 @@ function App() {
       <Sidebar view={view} setView={setView} agents={agents} user={user} collapsed={sbCollapsed || isNarrow} setCollapsed={setSbCollapsed} pinnedIds={pinnedIds} setPinnedIds={setPinnedIds} openChat={openChat} threads={threads} mobile={isMobile} mobileOpen={mobileNav} setMobileOpen={setMobileNav} onTour={() => setTour(true)} />
       <main className="main" id="main" tabIndex={-1} data-screen-label={view}>
         <window.OfflineBanner />
+        {sessWarn && <div className="sess-warn" role="status"><window.Icons.Clock size={14} /><span style={{ flex: 1, minWidth: 0 }}><b>Tu sesión vence en 10 min.</b> Guarda lo que estés escribiendo: al vencer vuelves a ingresar con tu contraseña y MFA.</span><button className="btn btn-sm btn-ghost" onClick={() => S.set({ simSessionWarn: false })}>Entendido</button></div>}
         <window.ErrorBoundary resetKey={view + (simError || '')} view={view} onHome={home}>{content}</window.ErrorBoundary>
       </main>
       {view === 'dashboard' && !availNow && <window.SetupGuide onOpenTour={() => setTour(true)} onGo={(v) => v === '__tour' ? setTour(true) : setView(v)} steps={[

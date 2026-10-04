@@ -22,9 +22,11 @@ function Login({ onLogin }) {
   useEffect(() => { if (paused) return; const t = setInterval(() => setSlide(s => (s + 1) % LOGIN_SLIDES.length), 5000); return () => clearInterval(t); }, [paused]);
   const [fresh, setFresh] = useState(false);
   // step: login | newpwd | enroll | mfa | signup | verify | forgot | reset | pending
-  const [step, setStep] = useState('login');
+  const boot = window.MangoStore.get().simSessionBoot;
+  const [step, setStep] = useState(boot === 'restoring' ? 'restoring' : 'login');
   const [email, setEmail] = useState('');
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useState(boot === 'otherTab' ? 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.' : null);
+  useEffect(() => { if (step !== 'restoring') return; const t = setTimeout(() => setStep('login'), 1600); return () => clearTimeout(t); }, [step]);
   const go = (s, n = null) => { setStep(s); setNotice(n); };
   const afterAuth = () => { if (accountState === 'nogroup' || fresh) go('pending'); else onLogin(); };
   const mfaOn = cfg.mfa !== 'off';
@@ -39,6 +41,7 @@ function Login({ onLogin }) {
     <div className="login">
       <div className="login-form-col">
         <div className="login-brand"><span className="sb-ws-logo" aria-hidden="true">m</span><span>Mango</span></div>
+        {step === 'restoring' && <div className="login-form login-restoring" role="status"><span className="mango-spinner" aria-hidden="true" /><span>Recuperando tu sesión…</span></div>}
         {step === 'login' && <SignIn email={email} setEmail={setEmail} notice={notice} idp={cfg.idp} onForgot={() => go('forgot')} onOk={() => accountState === 'temp' ? go('newpwd') : afterPwd()} onSso={afterAuth} />}
         {step === 'newpwd' && <NewPassword email={email || 'usuario1@empresa.com'} onBack={() => go('login')} onOk={() => { window.MangoStore?.log('account.password_set', email || 'usuario1@empresa.com', 'Creó su contraseña en el primer ingreso · la temporal dejó de valer'); afterPwd(); }} />}
         {step === 'enroll' && <MfaEnroll email={email || 'usuario1@empresa.com'} onBack={() => go('login')} onOk={() => { setEnrolled(true); if (wasReset) { const r = { ...(window.MangoStore.get().mfaResets || {}) }; delete r[(email || 'usuario1@empresa.com').trim().toLowerCase()]; window.MangoStore.set({ mfaResets: r }); } window.MangoStore?.log('account.mfa_enroll', email || 'usuario1@empresa.com', 'Configuró MFA con app autenticadora en el primer ingreso'); afterAuth(); }} />}
@@ -107,6 +110,7 @@ function SignIn({ email, setEmail, notice, idp, onForgot, onOk, onSso }) {
         <button type="button" className="login-forgot login-link" onClick={onForgot}>¿Olvidaste tu contraseña?</button>
         <button type="submit" className="login-primary" disabled={!!loading}>{loading === 'pwd' ? 'Entrando…' : 'Entrar'}</button>
       </form>
+      <p className="login-keep">Sigues dentro hasta 8 h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.</p>
       {idp !== 'none' && <>
         <div className="login-divider"><span>o</span></div>
         <button className="login-sso-btn" style={{ width: '100%' }} disabled={!!loading} onClick={sso}>{loading === 'sso' ? 'Redirigiendo a tu proveedor…' : 'Continuar con SSO'}</button>

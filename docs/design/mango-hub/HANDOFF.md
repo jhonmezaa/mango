@@ -324,3 +324,34 @@ Confirmado por el producto (sin cambios): doble aprobación solo para lo sensibl
 - **Pestañas de Ajustes a ≤560 px**: hacen salto de línea en vez de desplazarse sin indicarlo.
 - **«Cambios de personas»**: si la persona ya no está en el directorio, la tarjeta conserva su correo (es historial) y añade «Ya no está en el directorio».
 - Persona borrada del directorio por fuera de Mango: desaparece en la siguiente lectura, sin estado propio (aceptado).
+
+
+## Sesión que se conserva al recargar · Auditoría · detalles (2026-10-04)
+**Sesión** — `login.jsx`, `app.jsx`, `settings.jsx`
+1. **Recuperando la sesión**: no se usa el «Cargando…» genérico. Se muestra el armazón del inicio de sesión (marca + panel) con «Recuperando tu sesión…» y el mango-spinner donde iría el formulario (`.login-restoring`, `role="status"`, misma altura que el formulario). Si hay sesión, entra a la aplicación; si no, aparece el formulario en el mismo lugar, sin parpadeo. Demo: «Login · al abrir la app › Recuperando la sesión».
+2. **Sin «Mantener la sesión en este equipo»**: la sesión se conserva para todos y su duración la fija el admin. Bajo «Entrar» va la ayuda «Sigues dentro hasta 8 h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.» (`.login-keep`; las 8 h salen de Autenticación).
+3. **Duración de la sesión**, ayuda: «Tiempo máximo que una persona sigue dentro sin volver a ingresar, aunque recargue o cierre el navegador».
+4. **Aviso antes de vencer**: 10 min antes, banda bajo la barra superior (`.sess-warn`, `role="status"`, icono de reloj ámbar): «**Tu sesión vence en 10 min.** Guarda lo que estés escribiendo: al vencer vuelves a ingresar con tu contraseña y MFA.» + «Entendido». No hay «Extender»: la duración es un máximo. Se muestra una vez por sesión. Demo: «Sesión · aviso de vencimiento».
+5. **Cierre desde otra pestaña**: las demás pestañas vuelven al inicio de sesión con el aviso «Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.» (`login-ok-box`). Demo: «Login · al abrir la app › Cerró sesión en otra pestaña».
+
+**Auditoría · sesiones**
+- Etiquetas: «Sesión iniciada» (`session.started`), «Sesión recuperada» (`session.renewed`), «Sesión cerrada» (`session.ended`), «Sesión rechazada» (`session.rejected`), en «Acceso y grupos».
+- «Sesión recuperada» es una lectura: solo se ve con «Mostrar lecturas». Las otras tres se ven siempre. «Sesión rechazada» va con resultado «no se aplicó · {código}» en rojo.
+- Motivo de `session.ended` en el panel del evento («Motivo»): `logout` «La persona cerró sesión», `expired` «Venció: pasó la duración máxima de la sesión», `disabled` «Un administrador deshabilitó su acceso», `group_removed` «Se le quitó un grupo sensible», `mfa_reset` «Se restableció su MFA».
+- Ayuda de «Mostrar lecturas»: «Accesos de solo lectura permitidos y sesiones recuperadas al recargar. Los denegados, los rechazos y los cambios se ven siempre.»
+
+**Auditoría · actor**
+- **Fila**: el correo se recorta al principio, no al final. Se conservan siempre los últimos 6 caracteres de la parte local más el `@dominio`, y el resto se corta con «…»: «usuari…ntral@empresa.com». El chip de persona hace lo mismo.
+- **Panel**: el correo puede partirse solo antes de la «@», nunca a mitad de palabra (`.au-mail` + `<wbr>`).
+- Insignia corta de «FinOps central» sin admin: «Central» (no depende de saber si crea agentes).
+- «Sistema» sin insignia; «Agente» no aparece como actor (el actor de una consulta es la persona). Coincide con el producto.
+- Paginación: si el «solicitado» no está cargado, el resultado se ve solo hasta que llegue con «Mostrar más». Aceptado.
+
+**Personas**
+- Rechazo por máximo de grupos al aprobar: «No se pudo aprobar {id}: la persona ya tiene el máximo de grupos. Quítale uno antes; el cambio sigue pendiente.» El máximo lo informa la API (en el prototipo, 10).
+- Invitar, ayuda con un dominio que no es de la instalación (no afirma nada antes de enviar): «No es un dominio de la instalación. Si es de otra empresa, se invita como externa; los correos públicos se rechazan al enviar.» El formato inválido devuelto por la API va bajo el campo. El mensaje al pie se borra al escribir.
+- «Ya no está en el directorio»: queda para cuando el producto lo informe.
+
+**Aspecto**
+- Chat a ≤560 px: la fila de envío tiene 6 px de margen a la derecha y «Cancelar» ya no queda pegado al borde.
+- Menú de Ajustes › General: la insignia «Próximamente» va debajo de la etiqueta (`.set-nav-soon`), no encima del texto.

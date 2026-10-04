@@ -887,7 +887,7 @@ function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attach
             <window.Soon on={soon}><button className="btn btn-ghost btn-sm"><I.Skill size={12} /> Skill</button></window.Soon>
 
           </div>
-          <div className="row gap-2">
+          <div className="row gap-2 ch-send-row">
             <span className="row gap-1" style={{fontSize: 11, color:'var(--text-dim)'}}><window.Soon on={soon}><span><span className="mono">/</span> comandos</span></window.Soon> · <span className="mono">⇧↵</span> nueva línea</span>
             {streaming
               ? <button className="btn btn-sm" onClick={onCancel}><I.Stop size={11} /> Cancelar</button>

@@ -64,7 +64,7 @@ function Settings({ models }) {
         <div className="set-grid" style={{ padding: '20px 32px 40px', display: 'grid', gridTemplateColumns: '220px minmax(0,1fr)', gap: 24, alignItems: 'flex-start' }}>
           <nav style={{ position: 'sticky', top: 20, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {SECTIONS.map(([id, label, icon]) => { const Ic = I[icon] || I.Settings; const active = section === id; const soonS = avail && !['auth', 'install'].includes(id); return soonS ? (
-              <window.Soon key={id} on><button style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid transparent', borderRadius: 7, fontSize: 13, textAlign: 'left', width: '100%' }}><Ic size={14} /><span style={{ flex: 1 }}>{label}</span></button></window.Soon>
+              <window.Soon key={id} on className="set-nav-soon"><button style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid transparent', borderRadius: 7, fontSize: 13, textAlign: 'left', width: '100%' }}><Ic size={14} /><span style={{ flex: 1 }}>{label}</span></button></window.Soon>
             ) : (
               <button key={id} onClick={() => setSection(id)} aria-current={active ? 'page' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: active ? 'var(--accent-soft)' : 'transparent', color: active ? 'var(--accent-ink)' : 'var(--text-muted)', border: active ? '1px solid var(--accent-border)' : '1px solid transparent', borderRadius: 7, fontSize: 13, textAlign: 'left', fontWeight: active ? 500 : 400 }}>
                 <Ic size={14} /><span style={{ flex: 1 }}>{label}</span>
@@ -207,7 +207,7 @@ function ProposedRow({ k, onPropose }) {
   const fixedMfa = k === 'mfa';
   const avail = window.useMango(s => s.avail);
   return (
-    <SRow label={SET_LABELS[k].title} hint={fixedMfa ? 'Siempre obligatorio · viene de la instalación' : null}>
+    <SRow label={SET_LABELS[k].title} hint={fixedMfa ? 'Siempre obligatorio · viene de la instalación' : k === 'session' ? 'Tiempo máximo que una persona sigue dentro sin volver a ingresar, aunque recargue o cierre el navegador' : null}>
       <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 13.5, fontWeight: 500 }}>{setVal(k, cfg[k])}</span>
         {pending && !avail && <span className="badge badge-amber">Cambio pendiente → {setVal(k, pending.to)}</span>}

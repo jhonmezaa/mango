@@ -5,6 +5,7 @@ const SENS = ['mango-admin', 'finops-central'];
 const SYS_ORDER = ['mango-admin', 'mango-agent-creator', 'finops-central', 'bu-lead'];
 const PUBLIC = /@(gmail|googlemail|hotmail|outlook|live|yahoo|icloud|proton|protonmail|aol)\./i;
 const PAGE = 20;
+const MAX_GROUPS = 10; // lo informa la API; solo para simular
 const day = (d) => new Date(Date.now() - d * 864e5).toISOString();
 const P = (n, status, mfa, groups, d) => ({ email: 'usuario' + n + '@empresa.com', status, mfa, groups, at: day(d) });
 const SEED = [
@@ -97,6 +98,7 @@ const recheck = (c) => {
   if (c.key === 'enable' && p.status !== 'disabled') return pre + 'la persona ya está habilitada.' + gone;
   if (c.key === 'add' && p.status === 'disabled') return pre + 'la persona fue deshabilitada.' + post;
   if (c.key === 'add' && p.groups.includes(c.to)) return pre + 'la persona ya tiene ese grupo.' + post;
+  if (c.key === 'add' && p.groups.length >= MAX_GROUPS) return pre + 'la persona ya tiene el máximo de grupos. Quítale uno antes; el cambio sigue pendiente.';
   if ((c.key === 'remove' && c.to === 'mango-admin' || c.key === 'disable') && isAdminP(p) && adminCount() <= 2) return pre + 'quedarían menos de dos administradores.' + post;
   return null;
 };
@@ -109,7 +111,7 @@ function PersonChip({ email, onRemove, size, you }) {
   return (
     <span className={'person-chip' + (size === 'lg' ? ' is-lg' : '')}>
       <span className="person-av" aria-hidden="true">{initials(email)}</span>
-      <span className="person-mail" title={email}>{at > 0 ? <><span className="pm-local">{email.slice(0, at)}</span><span className="pm-dom">{email.slice(at)}</span></> : <span className="pm-local">{email}</span>}</span>{you && <span className="person-you">· tú</span>}
+      <span className="person-mail" title={email}>{at > 0 ? <><span className="pm-local">{email.slice(0, Math.max(0, at - 6))}</span><span className="pm-dom">{email.slice(Math.max(0, at - 6))}</span></> : <span className="pm-local">{email}</span>}</span>{you && <span className="person-you">· tú</span>}
       {onRemove && <button type="button" aria-label={'Quitar ' + email} onClick={onRemove}><I.Close size={10} /></button>}
     </span>
   );
@@ -359,7 +361,7 @@ function InviteModal({ preset, onClose, notify }) {
       <div className="g-field">
         <label htmlFor="pp-inv">Correo</label>
         <input id="pp-inv" className={'input' + (tried && err ? ' has-error' : '')} type="email" autoComplete="off" autoFocus value={email} onChange={ev => { setEmail(ev.target.value); setFail(false); }} placeholder={'nombre@' + doms[0]} />
-        {tried && err ? <div className="g-err" role="alert">{err}</div> : e && !err && isExternal(e) ? <div className="g-hint">Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.</div> : <div className="g-hint">Se registran solos: {doms.join(', ')}. A los demás correos de empresa se les invita aquí; los correos públicos no se aceptan.</div>}
+        {tried && err ? <div className="g-err" role="alert">{err}</div> : e && !err && isExternal(e) ? <div className="g-hint">No es un dominio de la instalación. Si es de otra empresa, se invita como externa; los correos públicos se rechazan al enviar.</div> : <div className="g-hint">Se registran solos: {doms.join(', ')}. A los demás correos de empresa se les invita aquí; los correos públicos no se aceptan.</div>}
       </div>
       <div className="g-field">
         <label>Grupos <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>· opcional</span></label>
