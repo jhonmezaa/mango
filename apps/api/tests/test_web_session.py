@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from mango_api import app as app_module
 from mango_api.probe import RateLimiter
 from mango_api.settings import ModelPrice, Settings
+from mango_api.web import ApiError
 from mango_api.web_session import (
     COOKIE_NAME,
     RenewedTokens,
@@ -25,6 +26,7 @@ from mango_api.web_session import (
     SessionUnavailableError,
     TokenCipher,
     WebSessionDeps,
+    renew,
 )
 from mango_core.identity import IdentityError
 
@@ -464,6 +466,18 @@ def test_renewals_are_rate_limited_per_session(h: Harness) -> None:
     cookie = _cookie(_start(client))
     codes = [_renew(client, cookie).status_code for _ in range(6)]
     assert codes == [200] * 5 + [429]
+
+
+def test_made_up_session_ids_do_not_touch_the_rate_limiter(h: Harness) -> None:
+    deps = h.deps()
+    request_cookie = ("0" * 64, b"x")
+    for _ in range(3):
+        with pytest.raises(ApiError) as refused:
+            renew(deps, request_cookie)
+        assert refused.value.status == 401
+    # Nothing was recorded for an id without a session.
+    assert deps.renewals.retry_after("0" * 64) == 0
+    assert all(deps.renewals.allow("0" * 64) for _ in range(5))
 
 
 def test_sign_out_revokes_the_token_and_forgets_the_session(h: Harness) -> None:

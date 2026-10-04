@@ -1,6 +1,6 @@
 # Sesión que sobrevive a recargar: cookie segura del servidor
 
-> Fecha: 2026-10-03 · Estado: **diseño aprobado por el usuario el 2026-10-03** (opción C; decisiones en §9). Decisión D63.
+> Fecha: 2026-10-03 · Estado: **diseño aprobado por el usuario el 2026-10-03** (opción C; decisiones en §9). Decisión D63. **Construido** en la rama `feat/session-cookie`; sin desplegar.
 > Modelo de amenazas: `docs/security/threat-models/session-cookie-threat-model.md`.
 > Revisa D20 («tokens solo en memoria») y TM-L13 del modelo del login. No cambia D13 (la API valida access tokens de Cognito).
 

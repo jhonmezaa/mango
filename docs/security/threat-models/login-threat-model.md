@@ -205,6 +205,8 @@ flowchart LR
 | TM-L12 | *Pre sign-up* solo registra motivo y dominio (test que lo verifica); los errores de Cognito en la SPA conservan solo el nombre de la excepción | — |
 | TM-L13 | Tokens solo en memoria (`AuthProvider`), refresh bajo demanda y deduplicado, `RevokeToken` al salir | Rotación de refresh tokens de Cognito no activada |
 
+**Actualizado el 2026-10-03 (D63):** TM-L13 recomendaba «recargar = volver a entrar». A pedido del usuario, la sesión se conserva al recargar con una cookie del servidor: el refresh token sale de la memoria de la SPA y viaja cifrado en una cookie `HttpOnly` que solo `mango-api` usa. Access e ID token siguen en memoria. Modelo: `session-cookie-threat-model.md`.
+
 **Nuevo: TM-L15 (low).** El atributo `name` lo elige el usuario al registrarse (el client solo puede escribir `email` y `name`) y viaja como `mango_name` en el access token solo para mostrar. Un atacante con correo del dominio puede registrarse como "Nombre de un directivo". Mitigación: nunca se usa para autorizar; las pantallas de admin que asignan grupos o restablecen MFA deben mostrar el correo (y el proveedor) además del nombre. Sin autoservicio (scope suprimido), no se puede cambiar después.
 
 ## Preguntas para el usuario (respondidas arriba)

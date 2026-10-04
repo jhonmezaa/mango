@@ -472,12 +472,14 @@ def renew(deps: WebSessionDeps, cookie: tuple[str, bytes] | None) -> RenewedOut:
     if cookie is None:
         raise _ended()
     sid_hash, ciphertext = cookie
-    if not deps.renewals.allow(sid_hash):
-        raise rate_limited(deps.renewals.retry_after(sid_hash))
     try:
         record = deps.store.get(sid_hash)
         if record is None:
             raise _ended()
+        # Only sessions that exist are counted: made-up ids cannot fill the limiter and
+        # push real sessions out of it (TM-S10).
+        if not deps.renewals.allow(sid_hash):
+            raise rate_limited(deps.renewals.retry_after(sid_hash))
         now = int(deps.clock().timestamp())
         if now >= record.expires_at:
             _end(deps, sid_hash, record.sub, "expired")

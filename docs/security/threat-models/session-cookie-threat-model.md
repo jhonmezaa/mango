@@ -2,7 +2,7 @@
 
 > Fecha: 2026-10-03 · Skill: `security-threat-model`. Decisión: D63 (revisa D20 y TM-L13).
 > Diseño: `docs/specs/session-cookie.md`. Contexto ya modelado: `login-threat-model.md` (TM-L1, TM-L2, TM-L13, TM-L14), `identity-propagation-threat-model.md` (TM-I5, TM-I6) y `people-management-threat-model.md`.
-> Alcance: diseño (aún sin código). Endpoints `/api/session*` de `mango-api`, la cookie de sesión, la tabla de sesiones, el cambio en `AuthProvider` y el paso de la cookie por CloudFront y el ALB.
+> Alcance: el diseño y su implementación (estado al final del documento). Endpoints `/api/session*` de `mango-api`, la cookie de sesión, la tabla de sesiones, el cambio en `AuthProvider` y el paso de la cookie por CloudFront y el ALB.
 
 ## Executive summary
 
@@ -16,7 +16,7 @@ No se identificó ninguna amenaza crítica. Las altas son el robo de la cookie c
 
 ## Scope and assumptions
 
-- **Dentro:** `POST /api/session`, `POST /api/session/refresh`, `DELETE /api/session` (a crear en `apps/api/src/mango_api/`); cookie `__Host-mango_session`; tabla `Mango-<ns>-WebSessions`; uso de la llave de datos de KMS; `apps/web/src/auth/AuthProvider.tsx`; comportamiento `/api/*` de CloudFront y origen ALB (`infra/lib/constructs/edge.ts`); ganchos de revocación en `people.py` y `mfa_reset.py`.
+- **Dentro:** `POST /api/session`, `POST /api/session/refresh`, `DELETE /api/session` (`apps/api/src/mango_api/web_session.py`); cookie `__Host-mango_session`; tabla `Mango-<ns>-WebSessions`; uso de la llave de datos de KMS; `apps/web/src/auth/AuthProvider.tsx`; comportamiento `/api/*` de CloudFront y origen ALB (`infra/lib/constructs/edge.ts`); ganchos de revocación en `people.py` y `mfa_reset.py`.
 - **Fuera:** el login SRP, el registro y la recuperación (`login-threat-model.md`); la validación de access tokens en `mango-api` y el Gateway (no cambia); el IdP del cliente.
 - **Supuestos que más pesan:**
   1. Opción C del diseño: la cookie lleva id de sesión y refresh token cifrado; el servidor no guarda secretos.
@@ -166,3 +166,19 @@ flowchart LR
 2. **Persistencia:** la cookie sobrevive al cierre del navegador hasta que venza la sesión. TM-S9 queda en medium: en un equipo compartido hay que cerrar sesión.
 3. **SSO:** las sesiones federadas usan el mismo mecanismo.
 4. **Tramo HTTP de la PoC:** aceptado que el refresh token y la cookie pasen por él mientras dure la PoC (TM-S6); la excepción de `AGENTS.md` se amplió.
+
+## Estado de la implementación (2026-10-03, rama `feat/session-cookie`)
+
+| Threat ID | Implementado | Pendiente o residual |
+|---|---|---|
+| TM-S1 | Cookie `__Host-`, `HttpOnly`, `Secure`, `SameSite=Strict`; límite absoluto de 8 h en el registro, contado desde el ingreso (`auth_time`); cierre de sesión que revoca en Cognito y borra el registro; marca por usuario; límite de 30 renovaciones por sesión cada 5 minutos (`web_session.py`) | Sin atadura a equipo ni a IP; no se guarda el `User-Agent`. Una cookie robada sirve hasta que la sesión venza, se cierre o se revoque |
+| TM-S2 | La SPA descarta el refresh token cuando el servidor toma la sesión (`AuthProvider.tsx`, `adopt`); la respuesta de renovación no lo incluye | Mientras corre en la página, un XSS puede pedir access tokens. Si el servidor no toma la sesión, el refresh token sigue en memoria como antes |
+| TM-S3 | Cabecera `X-Mango-Session`, `Origin` exacto (`APP_ORIGIN`) y `Sec-Fetch-Site` en los tres endpoints; solo `POST` y `DELETE`; test de que `/api/me` no acepta la cookie | Sin token sincronizador: no hay dónde entregarlo antes de la primera renovación (ver nota de la skill en el informe) |
+| TM-S4 | Id de 32 bytes generado por el servidor; un campo extra en el cuerpo se rechaza; la SPA recarga si la renovación trae otro `sub` | — |
+| TM-S5 | `people.py` y `mfa_reset.py` escriben la marca antes del cierre de sesión de Cognito; la renovación la comprueba antes de descifrar y siempre pasa por Cognito | El access token ya emitido vale hasta 60 minutos |
+| TM-S6 | Ningún log lleva tokens, cookie ni id (test con `caplog`); auditoría sin ellos; test de CDK: los logs de CloudFront no incluyen cookies | Tramo HTTP de la PoC (excepción ampliada). El WAF no tiene log configurado; si se activa, hay que redactar `cookie` y `authorization` |
+| TM-S7 | `Cache-Control: no-store` en las tres respuestas; tests de CDK fijan `CACHING_DISABLED` en `/api/*` y que el comportamiento por defecto no reenvía cookies | — |
+| TM-S8 | Crear la sesión renueva contra Cognito y exige el mismo `sub`; contexto de cifrado con id y `sub`; el `sub` se vuelve a comprobar en cada renovación | — |
+| TM-S9 | La cookie persiste hasta 8 h (decisión del usuario); cerrar sesión avisa a las demás pestañas (`BroadcastChannel`) | En un equipo compartido hay que cerrar sesión. La casilla «Mantener la sesión en este equipo» espera al diseño |
+| TM-S10 | Un id sin registro se rechaza con una lectura de DynamoDB, sin llamar a Cognito y sin entrar al limitador; límites por sesión y por usuario | Los límites son por tarea de `mango-api` (en memoria). El margen del WAF del user pool no se midió |
+| TM-S11 | La SPA compara el `sub` de la renovación con el suyo y recarga; crear una sesión borra el registro de la cookie anterior | — |
