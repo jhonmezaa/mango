@@ -116,7 +116,7 @@ Respeta las reglas de dependencias:
 | Regla | Excepción en Mango | Motivo | Acordada |
 |---|---|---|---|
 | `security-best-practices`: "avoid recommending HSTS" | **Sí** se usa HSTS en producción (CloudFront, dominio propio) | Despliegue enterprise siempre sobre TLS. En dev queda desactivado por configuración | 2026-09-28 |
-| Cifrado en tránsito (TLS) en todos los tramos | **Solo PoC:** el tramo CloudFront → ALB interno (VPC origin, sin exposición a internet) va en HTTP | Sin dominio propio no hay certificado para el ALB. En producción, HTTPS con certificado del dominio del cliente (D15) | 2026-09-28 |
+| Cifrado en tránsito (TLS) en todos los tramos | **Solo PoC:** el tramo CloudFront → ALB interno (VPC origin, sin exposición a internet) va en HTTP. Desde D63 por ese tramo pasan también el refresh token (una vez por ingreso) y la cookie de sesión | Sin dominio propio no hay certificado para el ALB. En producción, HTTPS con certificado del dominio del cliente (D15) | 2026-09-28 (ampliada: 2026-10-03) |
 | `security-best-practices`: no guardar datos sensibles en Web Storage | El `state` y el `code_verifier` de PKCE van en `sessionStorage` solo durante el redirect a Cognito; los tokens siguen únicamente en memoria | Práctica estándar de OAuth PKCE en SPAs: son de un solo uso, se borran al volver y el verifier sin el code no sirve | 2026-09-29 |
 | cfn-guard `NO_UNRESTRICTED_ROUTE_TO_IGW` | **Solo PoC:** las subnets públicas tienen ruta a internet | Fargate sale a las APIs de AWS con IP pública, sin NAT ni VPC endpoints (D15) | 2026-09-29 |
 | cfn-guard `LAMBDA_INSIDE_VPC` | Las Lambdas no van en la VPC | Solo llaman APIs de AWS; meterlas en la VPC exige NAT o endpoints sin beneficio de seguridad | 2026-09-29 |
