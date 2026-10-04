@@ -212,10 +212,8 @@ export const people = {
       empty: 'Escribe el correo',
       format: 'Escribe un correo válido',
       publicDomain: 'Los correos públicos no se aceptan. Usa el correo de la empresa.',
-      domain: 'Solo se puede invitar a correos de {{domains}}.',
       exists: 'Ese correo ya está en el directorio. Ábrelo en la lista para cambiar sus grupos.',
     },
-    domainsJoin: ' o ',
   },
   changes: {
     title: 'Cambios de personas',
@@ -278,6 +276,7 @@ export const people = {
     version: 'Versión instalada',
     versionValue: 'v{{version}}',
     noVersion: 'Sin versión',
+    release: 'Publicación',
     update: 'Cómo actualizar',
     updateHint: 'Fuera de la aplicación',
     updateBody:

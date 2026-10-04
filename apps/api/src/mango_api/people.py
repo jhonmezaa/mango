@@ -25,7 +25,11 @@ Security notes (security-best-practices, FastAPI):
   bodies, never in a URL.
 * Rate limits per administrator on reads, changes, proposals and invitations (LIMITS-001).
 * Fail-closed audit: ``requested`` is recorded before any write or Cognito call; a read is
-  recorded with counts only, never with the emails or the prefix searched.
+  recorded with counts only, never with the emails or the prefix searched. A refused
+  invitation is recorded too: with the domain only while the address is not a person of the
+  directory, never with what was typed.
+* An invitation may go to any company domain, not only the sign-up ones (decision of
+  2026-10-03): public mail providers stay refused, and the event says ``external_domain``.
 """
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
@@ -95,7 +99,7 @@ _CURSOR_PATTERN = r"^[0-9]{1,5}$"
 _LOOKUP_WORKERS = 4
 _USER_ID_RE = re.compile(USER_ID_PATTERN)
 _MAX_LOCAL_LENGTH = 64
-# Same rule as the pre sign-up trigger (``functions/pre-sign-up``); a test keeps them equal.
+# Same shape as the pre sign-up trigger (``functions/pre-sign-up``); a test keeps them equal.
 _LOCAL_RE = re.compile(r"^[A-Za-z0-9!#$%&*+/=?^_`{|}~-]+(\.[A-Za-z0-9!#$%&*+/=?^_`{|}~-]+)*$")
 _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 PUBLIC_MAIL_DOMAINS = frozenset(
@@ -128,26 +132,29 @@ _HIDDEN_STATUSES = frozenset({"UNCONFIRMED", "ARCHIVED", "UNKNOWN"})
 _INVITED_STATUS = "FORCE_CHANGE_PASSWORD"
 
 
-def invitation_domain(email: str, allowed: frozenset[str]) -> str | None:
-    """Why ``email`` cannot be invited (an error code), or ``None`` when it can.
+def invitation_domain(email: str) -> tuple[str | None, str | None]:
+    """``(error code, domain)``: why ``email`` cannot be invited, or ``None`` when it can.
 
-    ``AdminCreateUser`` skips the pre sign-up trigger, so the same rule is applied here:
-    plain ASCII, exactly one ``@``, and a domain that is exactly one of the installation's.
+    ``AdminCreateUser`` skips the pre sign-up trigger, so its shape rules are applied here:
+    plain ASCII, exactly one ``@``, a well-formed domain. An administrator may invite someone
+    of another company (decision of 2026-10-03), so the domain does not have to be one of the
+    sign-up domains; a public mail provider is refused always. The domain is returned only
+    when it is well formed: it is what a refusal is audited with.
     """
     if not email.isascii() or email.count("@") != 1:
-        return "invalid_email"
+        return "invalid_email", None
     local, domain = email.split("@")
-    if not 0 < len(local) <= _MAX_LOCAL_LENGTH or not _LOCAL_RE.fullmatch(local):
-        return "invalid_email"
     if not _DOMAIN_RE.fullmatch(domain):
-        return "invalid_email"
+        return "invalid_email", None
+    if not 0 < len(local) <= _MAX_LOCAL_LENGTH or not _LOCAL_RE.fullmatch(local):
+        return "invalid_email", domain
     if domain in PUBLIC_MAIL_DOMAINS:
-        return "public_domain"
-    return None if domain in allowed else "domain_not_allowed"
+        return "public_domain", domain
+    return None, domain
 
 
 def parse_domains(raw: str) -> frozenset[str]:
-    """The installation's sign-up domains; an invalid list is unusable (nobody is invited)."""
+    """The installation's sign-up domains; an invalid list is unusable (no domain is its own)."""
     domains = frozenset(d.strip().lower() for d in raw.split(",") if d.strip())
     if not domains or not all(_DOMAIN_RE.fullmatch(d) for d in domains):
         return frozenset()
@@ -293,11 +300,32 @@ class CognitoPeople:
         return True
 
     def mfa_registered(self, username: str) -> bool:
+        """Whether the user has a verified TOTP.
+
+        A TOTP registered through the ``MFA_SETUP`` challenge (the only way the SPA has: the
+        access token cannot call the self-service APIs) is challenged at every sign-in but is
+        not listed in ``UserMFASettingList`` until a preference is set (lab, 2026-10-03). No
+        API reads «has a verified TOTP», so an empty list is settled by asking Cognito to
+        prefer it: that succeeds only with a verified TOTP, changes nothing of how the user
+        signs in, and from then on the list says so. It never turns a factor off.
+        """
         try:
             resp = self._client.admin_get_user(UserPoolId=self._pool, Username=username)
-        except (ClientError, BotoCoreError) as exc:
+            if "SOFTWARE_TOKEN_MFA" in resp.get("UserMFASettingList", []):
+                return True
+            self._client.admin_set_user_mfa_preference(
+                UserPoolId=self._pool,
+                Username=username,
+                SoftwareTokenMfaSettings={"Enabled": True, "PreferredMfa": True},
+            )
+        except ClientError as exc:
+            # «User does not have delivery config set to turn on SOFTWARE_TOKEN_MFA».
+            if _code(exc) == "InvalidParameterException":
+                return False
             raise DirectoryUnavailableError from exc
-        return "SOFTWARE_TOKEN_MFA" in resp.get("UserMFASettingList", [])
+        except BotoCoreError as exc:
+            raise DirectoryUnavailableError from exc
+        return True
 
     def groups_of(self, username: str) -> frozenset[str]:
         found: set[str] = set()
@@ -1302,22 +1330,51 @@ def invite(deps: PeopleDeps, caller: Caller, body: InviteIn) -> InvitedOut:
     actor = caller.user.user_id
     if not deps.invitations.allow(actor):
         raise rate_limited(deps.invitations.retry_after(actor))
-    _require_current_admin(deps, caller, "directory.invite")
-    refused = invitation_domain(body.email, deps.sign_up_domains)
-    if refused:
-        raise ApiError(422, refused, "that email cannot be invited")
+    event = "directory.invite"
+    _require_current_admin(deps, caller, event)
     groups = list(dict.fromkeys(body.groups))
+    refused, domain = invitation_domain(body.email)
+    if refused:
+        # Not a person of the directory: the address typed is not recorded, only its domain
+        # (a public provider, or none when the address is not even well formed).
+        attempt: dict[str, Any] = {"groups": len(groups)}
+        if domain:
+            attempt["target_domain"] = domain
+        _refuse(
+            deps, event, caller, attempt, ApiError(422, refused, "that email cannot be invited")
+        )
+    detail: dict[str, Any] = {"target_email": body.email, "groups": groups}
+    # Someone of another company (decision of 2026-10-03): allowed, and said in the trail.
+    if domain not in deps.sign_up_domains:
+        detail["external_domain"] = True
     assignable = _assignable(deps)
     if any(g not in assignable for g in groups):
-        raise ApiError(422, "unknown_group", "that group cannot be given to people")
+        _refuse(
+            deps,
+            event,
+            caller,
+            detail,
+            ApiError(422, "unknown_group", "that group cannot be given to people"),
+        )
     bootstrap = GROUP_ADMIN in groups and _is_bootstrap(deps, caller, GROUP_ADMIN)
     allowed_sensitive = {GROUP_ADMIN} if bootstrap else set()
     if any(g in SENSITIVE_GROUPS and g not in allowed_sensitive for g in groups):
-        raise ApiError(422, "sensitive_group", "ask for that group after the invitation")
+        _refuse(
+            deps,
+            event,
+            caller,
+            detail,
+            ApiError(422, "sensitive_group", "ask for that group after the invitation"),
+        )
     # Told to administrators only (exception agreed on 2026-10-03).
     if _directory(lambda: deps.people.exists(body.email)):
-        raise ApiError(409, "already_exists", "that email is already in the directory")
-    detail: dict[str, Any] = {"target_email": body.email, "groups": groups}
+        _refuse(
+            deps,
+            event,
+            caller,
+            detail,
+            ApiError(409, "already_exists", "that email is already in the directory"),
+        )
     if bootstrap:
         detail["bootstrap"] = True
 
@@ -1434,6 +1491,9 @@ class InstallationOut(_Strict):
 
     name: str
     version: str | None
+    release: str | None
+    """Label of the release that was installed (``v0.1.0-g1a2b3c4``): what tells two builds
+    of one version apart."""
     organization_id: str | None
     management_account_id: str | None
     alerts_emails: list[str]
@@ -1445,6 +1505,7 @@ class InstallationOut(_Strict):
 class Installation:
     name: str
     version: str = ""
+    release: str = ""
     organization_id: str = ""
     management_account_id: str = ""
     alerts_email: str = ""
@@ -1476,6 +1537,7 @@ def installation_router(
         return InstallationOut(
             name=installation.name,
             version=installation.version or None,
+            release=installation.release or None,
             organization_id=installation.organization_id or None,
             management_account_id=installation.management_account_id or None,
             alerts_emails=_listed(installation.alerts_email),

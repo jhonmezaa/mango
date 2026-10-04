@@ -400,8 +400,9 @@ describe("customer user pool", () => {
       JSON.stringify(s.Action).includes("cognito-idp:"),
     );
     // Exactly what mango-api uses: MFA reset (D20), the group registry (D26), sharing agents
-    // with people (D33) and Settings > People (D60). Nothing deletes a user, sets a password,
-    // changes an attribute or touches the pool's configuration.
+    // with people (D33) and Settings > People (D60, which includes preferring a TOTP the
+    // person already verified). Nothing deletes a user, sets a password, changes an attribute
+    // or touches the pool's configuration.
     expect(
       [...new Set(statements.flatMap((s) => s.Action))].sort(),
     ).toEqual([
@@ -413,6 +414,7 @@ describe("customer user pool", () => {
       "cognito-idp:AdminGetUser",
       "cognito-idp:AdminListGroupsForUser",
       "cognito-idp:AdminRemoveUserFromGroup",
+      "cognito-idp:AdminSetUserMFAPreference",
       "cognito-idp:AdminUserGlobalSignOut",
       "cognito-idp:CreateGroup",
       "cognito-idp:DeleteGroup",

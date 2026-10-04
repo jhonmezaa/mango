@@ -359,8 +359,7 @@ function change(
 function invitationRefusal(email: string): string | null {
   if (!EMAIL.test(email)) return 'invalid_email';
   const domain = email.slice(email.indexOf('@') + 1);
-  if (PUBLIC_DOMAINS.includes(domain)) return 'public_domain';
-  return SIGN_UP_DOMAINS.includes(domain) ? null : 'domain_not_allowed';
+  return PUBLIC_DOMAINS.includes(domain) ? 'public_domain' : null;
 }
 
 function invite(body: Record<string, unknown>): Refusal | object {
@@ -462,6 +461,7 @@ export const handlePeople: ApiHandler = async (req, res, path) => {
     sendJson(res, 200, {
       name: 'mango-example',
       version: '0.1.0',
+      release: 'v0.1.0-g1a2b3c4',
       organization_id: 'o-exampleorg1',
       management_account_id: '111111111111',
       alerts_emails: ['alertas@example.com'],

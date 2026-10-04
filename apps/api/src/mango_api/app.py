@@ -822,6 +822,7 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
             Installation(
                 name=settings.namespace,
                 version=settings.version,
+                release=settings.release,
                 organization_id=settings.organization_id,
                 management_account_id=settings.management_account_id,
                 alerts_email=settings.alerts_email,

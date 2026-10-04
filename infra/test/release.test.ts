@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { loadReleaseDefaults } from "../lib/config/release.js";
 import { releaseConfigJson, spaAuthConfigSchema } from "../lib/constructs/edge.js";
 import { importPackNetwork, packNetworkExports } from "../lib/constructs/pack-network.js";
+import { UNPUBLISHED_TARGET } from "../lib/release-target.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { PackNetworkStack } from "../lib/stacks/pack-network-stack.js";
 import { instantiate, Values } from "./parameters.js";
@@ -157,6 +158,24 @@ describe("Core template of a release", () => {
     expect(text).toContain(`\\"user_monthly_usd\\":{\\"N\\":\\"${defaults.budgets.userMonthlyUsd}\\"}`);
     // No area is mapped to an OU until an administrator does it in the app.
     expect(text).toContain('\\"units\\":{\\"S\\":\\"{}\\"}');
+  });
+
+  it("tells mango-api the label of the release, which is what Settings > Installation shows", () => {
+    const label = "v0.1.0-g1a2b3c4";
+    const published = Template.fromStack(
+      new CoreStack(new App({ context }), "Core", {
+        env: { region: "us-east-1" },
+        release: { ...UNPUBLISHED_TARGET, label },
+      }),
+    ).toJSON() as TemplateJson;
+    const variables = (template: TemplateJson) =>
+      Object.values(template.Resources)
+        .filter((r) => r.Type === "AWS::ECS::TaskDefinition")
+        .flatMap((r) => r.Properties.ContainerDefinitions as { Environment?: { Name: string; Value: unknown }[] }[])
+        .flatMap((c) => c.Environment ?? []);
+    expect(variables(published).filter((v) => v.Name === "MANGO_RELEASE")).toEqual([{ Name: "MANGO_RELEASE", Value: label }]);
+    // Without a published target there is no label to show.
+    expect(variables(source).filter((v) => v.Name === "MANGO_RELEASE")).toEqual([]);
   });
 });
 

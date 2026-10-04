@@ -478,6 +478,7 @@ export const zInstallationOutSchema = z.object({
     management_account_id: z.string().nullable(),
     name: z.string(),
     organization_id: z.string().nullable(),
+    release: z.string().nullable(),
     sign_up_domains: z.array(z.string()),
     version: z.string().nullable()
 });

@@ -196,10 +196,10 @@ describe('mock people', () => {
     expect(errorCode(ownGroup.body)).toBe('self_change');
   });
 
-  it('invites only the domains of the installation, without sensitive groups', async () => {
+  it('invites any company domain, never a public one, without sensitive groups', async () => {
     const invite = (body: object) => call('POST', '/admin/people/invitations', body);
     expect(errorCode((await invite({ email: 'ana@gmail.com' })).body)).toBe('public_domain');
-    expect(errorCode((await invite({ email: 'ana@otra.com' })).body)).toBe('domain_not_allowed');
+    expect((await invite({ email: 'ana@otra.com' })).status).toBe(201);
     expect(errorCode((await invite({ email: 'sin arroba' })).body)).toBe('invalid_email');
     expect(
       errorCode((await invite({ email: 'ana@example.com', groups: ['mango-admin'] })).body),
@@ -222,6 +222,7 @@ describe('mock people', () => {
       (await call('GET', '/admin/installation')).body,
     );
     expect(installation.version).toBe('0.1.0');
+    expect(installation.release).toBe('v0.1.0-g1a2b3c4');
     expect(installation.sign_up_domains).toEqual(['example.com']);
     expect(installation.management_account_id).toBe('111111111111');
   });

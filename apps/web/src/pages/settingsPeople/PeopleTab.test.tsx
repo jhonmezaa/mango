@@ -683,12 +683,6 @@ describe('Invitar persona', () => {
     expect(within(dialog).getByRole('alert')).toHaveTextContent(
       'Los correos públicos no se aceptan. Usa el correo de la empresa.',
     );
-    await user.clear(email);
-    await user.type(email, 'ana@otra.com');
-    await user.click(submit);
-    expect(within(dialog).getByRole('alert')).toHaveTextContent(
-      'Solo se puede invitar a correos de example.com o example.org.',
-    );
     expect(calls(call, 'invitePerson')).toHaveLength(0);
     // The sensitive groups are asked for afterwards, on the person.
     const groups = within(dialog).getByRole('group', { name: /Grupos/ });
@@ -736,6 +730,23 @@ describe('Invitar persona', () => {
       body: { email: 'ana@example.com', groups: ['bu-finanzas'] },
     });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('sends an address of another company to the API: only public providers stop here', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      invitePerson: { user_id: 'new-user', result: 'applied' },
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: /Invitar persona/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Invitar persona' });
+    await user.type(within(dialog).getByLabelText('Correo'), 'ana@otra.com');
+    await user.click(within(dialog).getByRole('button', { name: 'Enviar invitación' }));
+    await waitFor(() => {
+      expect(calls(call, 'invitePerson')).toEqual([
+        { body: { email: 'ana@otra.com', groups: [] } },
+      ]);
+    });
   });
 });
 

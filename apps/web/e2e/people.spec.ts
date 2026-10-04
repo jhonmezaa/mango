@@ -25,7 +25,8 @@ test('General opens on the installation, read-only', async ({ page }) => {
   await page.getByRole('button', { name: 'Ajustes', exact: true }).first().click();
   // The mock has three administrators: the page stays on General.
   await expect(page.getByRole('heading', { name: 'Instalación' })).toBeVisible();
-  await expect(page.getByText('v0.1.0')).toBeVisible();
+  await expect(page.getByText('v0.1.0', { exact: true })).toBeVisible();
+  await expect(page.getByText('v0.1.0-g1a2b3c4')).toBeVisible();
   await expect(page.getByText('mango-example')).toBeVisible();
   await page.getByRole('button', { name: 'Autenticación' }).click();
   await expect(page.getByText('Dominios para registrarse')).toBeVisible();
@@ -106,7 +107,7 @@ test('a normal group is applied at once and mango-admin waits for another admini
   ).toBeVisible();
 });
 
-test('a person is invited with the domains of the installation', async ({ page }) => {
+test('a person of any company domain is invited, never a public address', async ({ page }) => {
   await openPeople(page);
   await page.getByRole('button', { name: 'Invitar persona' }).click();
   const dialog = page.getByRole('dialog', { name: 'Invitar persona' });
@@ -118,12 +119,10 @@ test('a person is invited with the domains of the installation', async ({ page }
   await expect(
     dialog.getByText('Los correos públicos no se aceptan. Usa el correo de la empresa.'),
   ).toBeVisible();
-  await email.fill('ana@otra.com');
-  await expect(dialog.getByText('Solo se puede invitar a correos de example.com.')).toBeVisible();
   // The sensitive groups are not offered: there is more than one administrator.
   await expect(dialog.getByRole('button', { name: 'mango-admin' })).toHaveCount(0);
 
-  await email.fill('persona.nueva@example.com');
+  await email.fill('persona.nueva@otra-empresa.com');
   await dialog.getByRole('button', { name: 'bu-finanzas' }).click();
   await submit.click();
   await expect(
@@ -135,13 +134,13 @@ test('a person is invited with the domains of the installation', async ({ page }
   const invited = page
     .getByRole('list', { name: 'Personas del directorio' })
     .getByRole('listitem')
-    .filter({ hasText: 'persona.nueva@example.com' });
+    .filter({ hasText: 'persona.nueva@otra-empresa.com' });
   await expect(invited).toContainText('Invitada · contraseña temporal');
   await expect(invited).toContainText('bu-finanzas');
 
   // The same email again: the API says it is in the directory (to administrators only).
   await page.getByRole('button', { name: 'Invitar persona' }).click();
-  await dialog.getByLabel('Correo').fill('persona.nueva@example.com');
+  await dialog.getByLabel('Correo').fill('persona.nueva@otra-empresa.com');
   await dialog.getByRole('button', { name: 'Enviar invitación' }).click();
   await expect(
     dialog.getByText(

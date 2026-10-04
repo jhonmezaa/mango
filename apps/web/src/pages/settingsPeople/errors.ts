@@ -22,12 +22,11 @@ export function decisionErrorKey(error: unknown): PeopleErrorKey {
   return peopleErrorKey(error);
 }
 
-export type InviteServerError = 'format' | 'publicDomain' | 'domain' | 'exists';
+export type InviteServerError = 'format' | 'publicDomain' | 'exists';
 
 const INVITE_CODES: Record<string, InviteServerError> = {
   invalid_email: 'format',
   public_domain: 'publicDomain',
-  domain_not_allowed: 'domain',
   already_exists: 'exists',
 };
 

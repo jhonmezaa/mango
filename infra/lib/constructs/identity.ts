@@ -334,7 +334,10 @@ export class Identity extends Construct {
   /**
    * Lets `grantee` run Settings > People (D60) on this pool only: read the directory and who
    * is in each group, give and take groups, invite, disable and re-enable. Nothing deletes a
-   * user, sets a password or changes an attribute. Cognito scopes these actions to the pool,
+   * user, sets a password or changes an attribute. `AdminSetUserMFAPreference` is how the
+   * directory learns that a person has a verified TOTP (Cognito lists none until a preference
+   * is set, and refuses the preference without one); mango-api only ever turns it on, and with
+   * MFA required a preference cannot turn the challenge off. Cognito scopes these actions to the pool,
    * not to a group or a user, so mango-api decides which group may be given and when a second
    * administrator has to approve (people-management-threat-model.md, TM-P11).
    */
@@ -352,6 +355,7 @@ export class Identity extends Construct {
         "cognito-idp:AdminDisableUser",
         "cognito-idp:AdminEnableUser",
         "cognito-idp:AdminUserGlobalSignOut",
+        "cognito-idp:AdminSetUserMFAPreference",
       ],
       resourceArns: [this.userPool.userPoolArn],
     });

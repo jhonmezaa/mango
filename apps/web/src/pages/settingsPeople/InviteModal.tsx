@@ -21,7 +21,7 @@ interface Props {
 
 /**
  * Invites a person by email (design `InviteModal`). The checks here only spare a round trip: the
- * API validates the domain, refuses the sensitive groups and decides whether naming the second
+ * API refuses public mail providers and the sensitive groups, and decides whether naming the second
  * administrator is the bootstrap (REACT-AUTHZ-001).
  */
 export function InviteModal({ preset, admins, options, domains, onClose, onInvite }: Props) {
@@ -34,9 +34,8 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
 
   const address = email.trim().toLowerCase();
   const onlyAdmin = admins === 1;
-  const local = inviteError(address, domains);
+  const local = inviteError(address);
   const shown = tried ? (local ?? (refused === 'failed' ? null : refused)) : null;
-  const allowed = domains.join(t('people.inviteModal.domainsJoin'));
   const pickable = options.filter(
     (group) => !isSensitive(group.id) || (group.id === ADMIN_GROUP && onlyAdmin),
   );
@@ -98,7 +97,7 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
         />
         {shown ? (
           <div id="pp-inv-h" className="g-err" role="alert">
-            {t(`people.inviteModal.errors.${shown}`, { domains: allowed })}
+            {t(`people.inviteModal.errors.${shown}`)}
           </div>
         ) : (
           <div id="pp-inv-h" className="g-hint">

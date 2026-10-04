@@ -22,6 +22,7 @@ function first<T>(list: readonly T[]): T {
 const INSTALLATION = {
   name: 'mango-example',
   version: '0.1.0',
+  release: 'v0.1.0-g1a2b3c4',
   organization_id: 'o-exampleorg1',
   management_account_id: '111111111111',
   alerts_emails: ['alertas@example.com'],
@@ -487,8 +488,8 @@ describe('General › Instalación', () => {
     );
     expect(within(nav).getAllByText('Próximamente')).toHaveLength(7);
     expect(await screen.findByText('v0.1.0')).toBeInTheDocument();
-    // The product has no identifier of the publication.
-    expect(screen.queryByText(/Publicación/)).toBeNull();
+    // The label of the release tells two builds of one version apart.
+    expect(screen.getByText('Publicación')).toHaveTextContent('Publicación v0.1.0-g1a2b3c4');
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
     expect(screen.getByText('o-exampleorg1')).toBeInTheDocument();
     expect(screen.getByText('111111111111')).toBeInTheDocument();

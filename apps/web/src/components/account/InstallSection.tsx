@@ -24,8 +24,8 @@ function ReadOnly({ children, text = false }: { children: ReactNode; text?: bool
  * Ajustes › General › Instalación (design settings.jsx `InstallSection`): what was given when
  * Mango was installed, read only. Account ids and mailboxes are for administrators: they come
  * from `GET /api/admin/installation`, which authorizes the call, never from the public
- * `config.json`. Every value is API data, rendered as text. The product has no identifier of
- * the publication: only the version is shown.
+ * `config.json`. Every value is API data, rendered as text. «Publicación» is the label of the
+ * release that was installed: it tells two builds of one version apart.
  */
 export function InstallSection() {
   const { t } = useTranslation();
@@ -82,11 +82,18 @@ export function InstallSection() {
       ) : (
         <>
           <SettingRow label={t('people.install.version')}>
-            <span className="set-version">
-              {data.version
-                ? t('people.install.versionValue', { version: data.version })
-                : t('people.install.noVersion')}
-            </span>
+            <div className="set-row-link">
+              <span className="set-version">
+                {data.version
+                  ? t('people.install.versionValue', { version: data.version })
+                  : t('people.install.noVersion')}
+              </span>
+              {data.release ? (
+                <span className="mk-meta">
+                  {t('people.install.release')} <span className="mono">{data.release}</span>
+                </span>
+              ) : null}
+            </div>
           </SettingRow>
           <SettingRow label={t('people.install.update')} hint={t('people.install.updateHint')}>
             <div className="set-row-text">{t('people.install.updateBody')}</div>

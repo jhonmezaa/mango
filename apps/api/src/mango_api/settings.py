@@ -80,6 +80,7 @@ class Settings:
     sign_up_domains: str = ""
     """Company email domains of the installation, comma separated: who may be invited."""
     version: str = ""
+    release: str = ""
     """Version of the installed release (``release.yaml``)."""
     organization_id: str = ""
     management_account_id: str = ""
@@ -141,6 +142,7 @@ class Settings:
             approval_key_arn=env.get("APPROVAL_KEY_ARN", ""),
             sign_up_domains=env.get("SIGN_UP_DOMAINS", ""),
             version=env.get("MANGO_VERSION", ""),
+            release=env.get("MANGO_RELEASE", ""),
             organization_id=env.get("ORGANIZATION_ID", ""),
             management_account_id=env.get("MANAGEMENT_ACCOUNT_ID", ""),
             alerts_email=env.get("ALERTS_EMAIL", ""),

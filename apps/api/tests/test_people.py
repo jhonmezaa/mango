@@ -220,6 +220,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
         settings = dataclasses.replace(
             _settings(),
             version="0.1.0",
+            release="v0.1.0-g1a2b3c4",
             organization_id="o-exampleorg1",
             management_account_id="111111111111",
             alerts_email="alerts@example.com",
@@ -771,9 +772,8 @@ def test_an_invitation_creates_the_person_with_access_groups(env: Env) -> None:
     ("body", "status", "code"),
     [
         ({"email": "ana@gmail.com"}, 422, "public_domain"),
-        ({"email": "ana@other.com"}, 422, "domain_not_allowed"),
-        ({"email": "ana@sub.example.com"}, 422, "domain_not_allowed"),
-        ({"email": "ana@example.com.evil.io"}, 422, "domain_not_allowed"),
+        ({"email": "ana@GoogleMail.com"}, 422, "public_domain"),
+        ({"email": "ana@localhost"}, 422, "invalid_email"),
         ({"email": "\u0430na@example.com"}, 422, "invalid_email"),
         ({"email": '"a b"@example.com'}, 422, "invalid_email"),
         ({"email": "lead@example.com"}, 409, "already_exists"),
@@ -788,6 +788,53 @@ def test_invitations_that_are_refused(
     response = _post(env, "/invitations", body)
     assert (response.status_code, _code(response)) == (status, code)
     assert env.people.invited == []
+    # The refusal is in the trail, and nothing else of that invitation is.
+    assert [detail["error"] for _, detail in env.audit.named("directory.invite", None)] == [code]
+
+
+def test_a_refused_address_is_audited_by_its_domain_never_as_typed(env: Env) -> None:
+    _post(env, "/invitations", {"email": "Ana.Perez@gmail.com", "groups": ["devops"]})
+    _post(env, "/invitations", {"email": '"hunter2 pasted"@example.com'})
+    _post(env, "/invitations", {"email": "ana@not a domain"})
+    refused = {"outcome": "rejected", "error": "invalid_email"}
+    assert [detail for _, detail in env.audit.named("directory.invite", "rejected")] == [
+        {
+            "groups": 1,
+            "target_domain": "gmail.com",
+            "outcome": "rejected",
+            "error": "public_domain",
+        },
+        {"groups": 0, "target_domain": "example.com", **refused},
+        {"groups": 0, **refused},
+    ]
+
+
+def test_a_refusal_stands_when_it_cannot_be_audited(env: Env) -> None:
+    env.audit.fail_outcomes = {"rejected"}
+    response = _post(env, "/invitations", {"email": "ana@gmail.com"})
+    assert (response.status_code, _code(response)) == (422, "public_domain")
+
+
+@pytest.mark.parametrize("email", ["ana@other.com", "ana@sub.example.com", "ana@partner.io"])
+def test_someone_of_another_company_may_be_invited_and_the_event_says_so(
+    env: Env, email: str
+) -> None:
+    response = _post(env, "/invitations", {"email": email, "groups": ["devops"]})
+    assert (response.status_code, response.json()["result"]) == (201, "applied")
+    assert env.people.invited == [email]
+    assert [detail for _, detail in env.audit.named("directory.invite", None)] == [
+        {"target_email": email, "groups": ["devops"], "external_domain": True, "outcome": o}
+        for o in ("requested", "applied")
+    ]
+
+
+def test_an_outsider_never_gets_a_sensitive_group_with_the_invitation(env: Env) -> None:
+    for group in ("mango-admin", "finops-central"):
+        response = _post(env, "/invitations", {"email": "ana@other.com", "groups": [group]})
+        assert (response.status_code, _code(response)) == (422, "sensitive_group")
+    assert env.people.invited == []
+    refusals = env.audit.named("directory.invite", "rejected")
+    assert [detail["external_domain"] for _, detail in refusals] == [True, True]
 
 
 def test_the_only_administrator_may_invite_the_second_one(env: Env) -> None:
@@ -821,14 +868,18 @@ def test_the_invitation_rule_matches_the_sign_up_trigger() -> None:
         "\u0430na@example.com",
     ):
         allowed, _, _ = trigger.check_email(email, trigger.allowed_domains(domains))
-        ours = invitation_domain(email.strip().lower(), parse_domains(domains)) is None
+        refused, domain = invitation_domain(email.strip().lower())
+        # The shape of an address and the public providers are the trigger's; an invitation
+        # only differs in accepting a company domain the installation did not list.
+        ours = refused is None and domain in parse_domains(domains)
         assert ours == allowed, email
+    assert invitation_domain("ana@evilexample.com") == (None, "evilexample.com")
 
 
-def test_an_unusable_domain_list_invites_nobody() -> None:
+def test_an_unusable_domain_list_marks_every_invitation_as_external() -> None:
     assert parse_domains("") == frozenset()
     assert parse_domains("example.com,not a domain") == frozenset()
-    assert invitation_domain("ana@example.com", frozenset()) == "domain_not_allowed"
+    assert invitation_domain("ana@example.com") == (None, "example.com")
 
 
 # --- Installation -----------------------------------------------------------------------
@@ -839,6 +890,7 @@ def test_installation_is_read_only_data_for_administrators(env: Env) -> None:
     assert response.json() == {
         "name": "test",
         "version": "0.1.0",
+        "release": "v0.1.0-g1a2b3c4",
         "organization_id": "o-exampleorg1",
         "management_account_id": "111111111111",
         "alerts_emails": ["alerts@example.com"],
@@ -911,6 +963,39 @@ def test_members_of_a_group_the_directory_does_not_have_is_empty() -> None:
         stub.add_client_error("list_users_in_group", "TooManyRequestsException")
         with pytest.raises(DirectoryUnavailableError):
             people.members("devops")
+
+
+def test_a_totp_enrolled_at_sign_in_counts_as_mfa_and_is_listed_from_then_on() -> None:
+    people, stub = _cognito()
+    prefer = {
+        "UserPoolId": POOL,
+        "Username": "name-a",
+        "SoftwareTokenMfaSettings": {"Enabled": True, "PreferredMfa": True},
+    }
+    lookup = {"UserPoolId": POOL, "Username": "name-a"}
+    with stub:
+        # Enrolled through MFA_SETUP: Cognito lists nothing until a preference is set.
+        stub.add_response("admin_get_user", {"Username": "name-a"}, lookup)
+        stub.add_response("admin_set_user_mfa_preference", {}, prefer)
+        assert people.mfa_registered("name-a") is True
+        # Listed: one read, no write.
+        stub.add_response(
+            "admin_get_user",
+            {"Username": "name-a", "UserMFASettingList": ["SOFTWARE_TOKEN_MFA"]},
+            lookup,
+        )
+        assert people.mfa_registered("name-a") is True
+        # No verified TOTP: Cognito refuses the preference.
+        stub.add_response("admin_get_user", {"Username": "name-a"}, lookup)
+        stub.add_client_error(
+            "admin_set_user_mfa_preference", "InvalidParameterException", expected_params=prefer
+        )
+        assert people.mfa_registered("name-a") is False
+        stub.add_response("admin_get_user", {"Username": "name-a"}, lookup)
+        stub.add_client_error("admin_set_user_mfa_preference", "TooManyRequestsException")
+        with pytest.raises(DirectoryUnavailableError):
+            people.mfa_registered("name-a")
+        stub.assert_no_pending_responses()
 
 
 def test_invite_sends_the_email_and_maps_an_existing_user() -> None:

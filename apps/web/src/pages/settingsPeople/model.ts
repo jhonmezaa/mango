@@ -82,15 +82,18 @@ export function searchPrefix(query: string): string | null | undefined {
   return PREFIX.test(value) ? value : undefined;
 }
 
-export type InviteError = 'empty' | 'format' | 'publicDomain' | 'domain';
+export type InviteError = 'empty' | 'format' | 'publicDomain';
 
-/** Design `InviteModal` `err`; the API applies the same rules again (`invitation_domain`). */
-export function inviteError(email: string, domains: readonly string[]): InviteError | null {
+/**
+ * Design `InviteModal` `err`; the API applies the same rules again (`invitation_domain`). Not
+ * the design's «Solo se puede invitar a correos de …»: an administrator may invite someone of
+ * another company (decision of 2026-10-03), so only public mail providers are refused.
+ */
+export function inviteError(email: string): InviteError | null {
   if (email === '') return 'empty';
   if (email.length > EMAIL_MAX || !EMAIL.test(email)) return 'format';
   const domain = email.slice(email.lastIndexOf('@') + 1);
-  if (PUBLIC_MAIL_DOMAINS.has(domain)) return 'publicDomain';
-  return domains.includes(domain) ? null : 'domain';
+  return PUBLIC_MAIL_DOMAINS.has(domain) ? 'publicDomain' : null;
 }
 
 export interface GroupOption {

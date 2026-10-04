@@ -398,6 +398,8 @@ export class CoreStack extends Stack {
         // administrators (served by mango-api, not by the public config.json of the SPA).
         SIGN_UP_DOMAINS: cfg.auth.signUpDomains.join(","),
         MANGO_VERSION: releaseVersion(),
+        // The label tells two builds of one version apart (`v0.1.0-g1a2b3c4`).
+        ...(target ? { MANGO_RELEASE: target.label } : {}),
         ORGANIZATION_ID: cfg.organizationId,
         MANAGEMENT_ACCOUNT_ID: cfg.managementAccountId,
         ALERTS_EMAIL: cfg.alerts.emails.join(","),

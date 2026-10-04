@@ -2508,6 +2508,17 @@
             ],
             "title": "Organization Id"
           },
+          "release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release"
+          },
           "sign_up_domains": {
             "items": {
               "type": "string"
@@ -2530,6 +2541,7 @@
         "required": [
           "name",
           "version",
+          "release",
           "organization_id",
           "management_account_id",
           "alerts_emails",

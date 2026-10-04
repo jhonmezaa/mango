@@ -1358,6 +1358,10 @@ export type InstallationOut = {
      */
     organization_id: string | null;
     /**
+     * Release
+     */
+    release: string | null;
+    /**
      * Sign Up Domains
      */
     sign_up_domains: Array<string>;
