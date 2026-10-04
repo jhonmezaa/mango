@@ -189,7 +189,7 @@ function ApprovalBody({ ap, agent, openChat, onClose }) {
     { t: fmtAgo(ap.at), who: apWho(ap), what: 'pidió la acción a ' + (agent?.name || 'el agente'), tone: 'var(--blue)' },
     { t: '', who: 'Sistema', what: 'la retuvo por la política: ' + ap.policy, tone: 'var(--amber)' },
     ...given.filter(g => g !== ap.decidedBy || st === 'pending').map(g => ({ t: '', who: g, what: 'firmó la aprobación', tone: 'var(--green)' })),
-    ...(approvedOnce && ap.decidedBy && ap.decidedBy !== 'Sistema' ? [{ t: fmtAgo(ap.decidedAt), who: ap.decidedBy, what: 'aprobó · falta que ' + apWho(ap) + ' la ejecute', tone: 'var(--green)' }] : []),
+    ...(approvedOnce && ap.decidedBy && ap.decidedBy !== 'Sistema' ? [{ t: fmtAgo(ap.decidedAt), who: ap.decidedBy, what: st !== 'approved' ? 'aprobó' : ap.requestedBy === window.MangoStore.actor() ? 'aprobó · falta que la ejecutes' : 'aprobó · falta que ' + apWho(ap) + ' la ejecute', tone: 'var(--green)' }] : []),
     ...(st === 'executing' ? [{ t: 'ahora', who: apWho(ap), what: 'la está ejecutando', tone: 'var(--blue)' }] : []),
     ...(st === 'executed' ? [{ t: fmtAgo(ap.executedAt), who: apWho(ap), what: 'la ejecutó', tone: 'var(--green)' }] : []),
     ...(st === 'failed' ? [{ t: fmtAgo(ap.executedAt), who: apWho(ap), what: 'la ejecutó y falló' + (ap.error ? ': ' + ap.error : ''), tone: 'var(--red)' }] : []),
@@ -208,7 +208,6 @@ function ApprovalBody({ ap, agent, openChat, onClose }) {
         <div><span>Pidió</span><span>{apWho(ap)} · {fmtAgo(ap.at)}</span></div>
         <div><span>Política</span><span>{ap.policy}</span></div>
         {!avail && <div><span>Riesgo</span><span><span className={`badge ${RISK[ap.risk][1]}`}>{RISK[ap.risk][0]}</span></span></div>}
-        {env && <div><span>Entorno</span><span className="mono">{env}</span></div>}
         <div><span>Firmas</span><span>
           <span className="ap-sigs">{Array.from({ length: needed }).map((_, i) => <i key={i} className={i < given.length || approvedOnce ? 'on' : ''} />)}</span>
           {Math.min(needed, approvedOnce ? needed : given.length)} de {needed}{needed > 1 && ap.status === 'pending' ? ' · deben ser personas distintas' : ''}
@@ -334,7 +333,7 @@ function ApprovalCard({ id }) {
         <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{apId(ap)}</span>
       </div>
       <div style={{ fontSize: 13.5, marginBottom: 4 }}>{apTitle(ap)}</div>
-      <div className="mono" style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 12, overflowWrap: 'anywhere' }}>{ap.tool} · {ap.policy}</div>
+      <div className="mono" style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 12, overflowWrap: 'anywhere' }}>{ap.tool}{Object.keys(ap.params || {}).length ? ' · ' + Object.entries(ap.params).map(([k, v]) => k + '=' + (Array.isArray(v) ? v.join('|') : v)).join(', ') : ''} · {ap.policy}</div>
       <ApprovalDecision ap={ap} compact />
     </div>
   );

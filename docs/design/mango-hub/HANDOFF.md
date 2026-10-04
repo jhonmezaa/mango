@@ -252,7 +252,6 @@ Ya no hay instalación «de laboratorio»: se quitó el control «Tipo de instal
 
 **Panel de demo**: «Instalación» (en uso / recién instalada: deja solo usuario1 admin y usuario7 sin acceso, grupos de sistema y áreas vacías), «Personas · directorio» (carga / cargando / error), «Personas · al actuar o invitar» (funciona / falla). Para ver la doble aprobación: «Admin que revisa» › Usuario 6.
 
-**Pendiente de la ronda anterior**: el contexto «aprobaciones y progreso del chat ya implementados» quedó tratado en «Cierre de la ronda del 2026-10-03». Si quedan puntos de ese texto que no aparecen ahí, hay que volver a pasarlos.
 
 
 ## Indicador de fase del turno (2026-10-03)
@@ -264,3 +263,42 @@ Ya no hay instalación «de laboratorio»: se quitó el control «Tipo de instal
 - **Reducir movimiento**: sin animación; queda el triángulo de tres puntos con la estela de opacidades.
 - **Costo**: solo `transform` y `opacity`; sin sombras ni desenfoques.
 - **Primera espera**: sin versión grande. La conversación vacía usa la misma línea de fase.
+
+
+## Alineación con el producto · Personas, Instalación y aprobaciones (2026-10-04)
+Confirmado por el producto (sin cambios): doble aprobación solo para lo sensible, arranque con un solo admin, reglas de Personas, directorio, MFA en Personas, Instalación de solo lectura, Grupos disponible y eventos `directory.*`. Indicador `ch-orb` implementado tal cual. «Consultando {n} tools…» usa el ritmo de «Consultando».
+
+**Personas** — `people.jsx`, `settings.jsx`
+- **Rehabilitar** a quien tiene `mango-admin` o `finops-central` lo aprueba otro admin (motivo obligatorio, 72 h). En «Cambios de personas» aparece como «Rehabilitar el acceso de {correo}». Texto: «Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.» El resto se rehabilita al momento.
+- **Primeros pasos**: no hay estado «recién instalada». La tarjeta se ve mientras falte alguno de los cuatro pasos y desaparece cuando están todos (ya no hay «Listo»). Ajustes abre en Personas mientras haya un solo administrador. El control del panel pasa a llamarse «Datos de ejemplo · Instalación nueva · un solo admin».
+- **Al aprobar se comprueban otra vez las reglas**: «No se pudo aprobar CHG-N: la persona fue deshabilitada / ya tiene ese grupo / quedarían menos de dos administradores. El cambio sigue pendiente.» (role="alert" sobre la lista).
+- **Errores nuevos** (panel y lista): «Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.» y «Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.» (demo: «Personas · al actuar o invitar»).
+- **Directorio grande**: aviso «El directorio es más grande de lo que se lee de una vez: los contadores son un mínimo.» (demo: «Personas · directorio › Más grande de lo que se lee»).
+- `directory.list` «Lectura del directorio»: se registra al abrir la lista con el número de filas y sin correos. Es una lectura, así que solo se ve con «Mostrar lecturas».
+- Cuentas sin correo verificado: no aparecen en el directorio. No tienen estado propio.
+- Columna de estado de 190 px. Iniciales del chip: las dos primeras letras del correo (en los datos de ejemplo, «US»).
+- **Invitar**: se acepta cualquier dominio que no sea de un proveedor de correo público. Se quitó «Solo se puede invitar a correos de…». La ayuda dice «Se registran solos: {dominios}. A los demás correos de empresa se les invita aquí; los correos públicos no se aceptan.» Con un dominio externo: «Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.»
+- **Persona de fuera (respuesta a la pregunta)**: sí se marca. La fila lleva la insignia «Externa» y el panel «Externa · invitada de otra empresa» (tooltip «Su dominio no es de los que se registran solos»).
+- Auditoría: «Persona invitada» añade «dominio externo» cuando aplica. Una invitación rechazada queda como «Persona invitada» con resultado «no se aplicó · {código}» (`invalid_email`, `public_email`, `exists`; `sensitive_group` y `unknown_group` no se pueden producir desde la pantalla). Si el correo no pasó la validación, el recurso es solo `@dominio`.
+- «Persona registrada» (`directory.signup`): la etiqueta sigue, pero se quitó el evento de ejemplo porque el producto aún no lo registra.
+
+**Instalación y Autenticación**
+- «Publicación» = etiqueta de la release (`v0.1.0-g1a2b3c4`). Si es igual a la versión o falta, la fila muestra solo la versión.
+- Estados: esqueleto mientras carga, y «No se pudieron cargar los datos de la instalación.» + Reintentar (demo: «Ajustes · datos de la instalación»).
+- Sin cifras de presupuestos en Instalación ni en Primeros pasos: «los presupuestos por defecto de la versión» con enlace a Presupuestos.
+- Autenticación: se quitó «Plan del directorio» (el producto no tiene ese dato). La descripción dice «MFA y dominios de registro vienen de la instalación».
+
+**Aprobaciones** — `policies.jsx`, `approvals.jsx`, `chat.jsx`
+- **Se quitó «todo es Siempre»** (`polEff` ya no transforma nada; el chat usa `approvalTier` también en «Disponible hoy»). En «Disponible hoy» el modal solo deshabilita las condiciones con datos que la tool no informa (tooltip «Esta tool no informa ese dato» y ayuda «Las opciones deshabilitadas dependen de datos que esta tool no informa.»). `TOOL_REPORTS`: `aws-budgets.create_budget` y `sap-s4-hana.release_payment` informan monto. Nueva política de ejemplo `aws-budgets.create_budget`: más de USD 1.000 pide 1 aprobador; hasta ese monto confirma el usuario. Para probarlo en el chat: «crea un presupuesto de 500» (confirma el usuario) o «de 5000» (aprobadores).
+- Textos: «Lo que no se resuelve a tiempo queda «Vencida»», «{h} h · luego vence», «Si nadie la resuelve a tiempo, queda «Vencida» y en Auditoría.»
+- **Historial**: «aprobó · falta que X la ejecute» solo mientras está «Aprobada · sin ejecutar». Si mira quien la pidió: «aprobó · falta que la ejecutes». Después dice «aprobó».
+- Se quitó la fila «Entorno»: los argumentos ya están en «qué va a ejecutar».
+- Ejecución fallida: muestra solo el código de la API en mono (p. ej. `AccessDenied`).
+- Chat: una tool fallida solo dice «Falló», sin motivo (pasos del turno y fila de la tool).
+- **Preguntas de diseño**:
+  1. Pasos del turno mientras corre y grupo «N herramientas» al terminar, abierto con «Observar»: **sí**, es lo que se quiere.
+  2. Tarjeta «Requiere aprobación» con argumentos: **sí**, se adopta `tool · k=v, … · política` en la tarjeta del chat y en la bandeja.
+  3. Mensajes del agente tras confirmar o cancelar: **se quitaron**. El estado lo muestra la tarjeta; tras confirmar sigue apareciendo la fila de la tool ejecutada.
+- Aviso de guardrail: solo en vivo; al releer una conversación cargada no se muestra (en el prototipo solo persiste en la sesión).
+
+**Pendiente de aclarar**: llegó cortado el punto de qué nombre lleva la fase «Consultando…» («el producto tiene … no el del MCP»). Hoy el diseño muestra el nombre del MCP («Cost Explorer»). Falta confirmar qué nombre manda el producto.

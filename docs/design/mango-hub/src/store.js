@@ -25,7 +25,6 @@
   };
 
   const seedAudit = [
-    { actor: 'usuario7@empresa.com', role: 'user', action: 'directory.signup', target: 'usuario7@empresa.com', detail: 'Se registró y verificó su correo · sin grupos', outcome: 'applied', at: ago(12) },
     { actor: 'Usuario 1', role: 'admin', action: 'agent.update', target: 'fin-01', detail: 'Cambió el presupuesto de USD 2.500,00 a USD 3.000,00', before: { budgetMax: 2500 }, after: { budgetMax: 3000 }, outcome: 'applied', at: ago(18) },
     { actor: 'Usuario 4', role: 'user', action: 'chat.query', target: 'fin-01', perm: 'agent.invoke', turn: 'TRN-5102', detail: 'Preguntó a FinOps · consultó Cost Explorer (3 llamadas) · costo USD 0,04', after: { llamadas: 3, costo: 'USD 0,04' }, agentVersion: 3, model: 'us.anthropic.claude-sonnet-4-6-v1:0', at: ago(22) },
     { actor: 'Usuario 4', role: 'user', action: 'access.view', target: 'agent.invoke', turn: 'TRN-5102', detail: 'Usar agente fin-01 · permitido', at: ago(22.1) },
@@ -106,9 +105,10 @@
   let state = {
     avail: ls('mango-avail2', true),
     accountState: 'active',
-    authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta (empresa.okta.com)', convAccess: false, install: 'client', domains: ['empresa.com', 'empresa.mx'], dirPlan: 'Essentials', installName: 'mango-empresa', version: 'v0.1.0', release: 'rel-xxxxxxxx', awsOrg: 'o-xxxxxxxxxx', mgmtAccount: '111111111111', alertEmail: 'alertas@empresa.com', firstAdmins: ['usuario1@empresa.com', 'usuario6@empresa.com'], pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
+    authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta (empresa.okta.com)', convAccess: false, install: 'client', domains: ['empresa.com', 'empresa.mx'], dirPlan: 'Essentials', installName: 'mango-empresa', version: 'v0.1.0', release: 'v0.1.0-g1a2b3c4', awsOrg: 'o-xxxxxxxxxx', mgmtAccount: '111111111111', alertEmail: 'alertas@empresa.com', firstAdmins: ['usuario1@empresa.com', 'usuario6@empresa.com'], pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
     changes, retired: {},
     toolPolicies: {
+      'aws-budgets.create_budget': { cond: 'amount', amount: 1000, approvers: 1, expiresH: 24 },
       'sap-s4-hana.release_payment': { cond: 'amount', amount: 10000, approvers: 2, expiresH: 48 },
       'codepipeline.rollback': { cond: 'env', env: 'prod', approvers: 1, expiresH: 4 },
       'codepipeline.put_approval_result': { cond: 'env', env: 'prod', approvers: 1, expiresH: 4 },
@@ -223,7 +223,7 @@
       const sim = state.simExec;
       setTimeout(() => {
         if (sim === 'not_started') { upd({ status: 'approved', notStarted: true }); store.log('approval.execute_failed', id, 'La acción no llegó a iniciarse: "' + ap.action + '"', { outcome: 'rejected' }); return; }
-        if (sim === 'fail') { upd({ status: 'failed', executedAt: now().toISOString(), error: 'AccessDenied: el rol no tiene permiso para ' + ap.tool }); store.log('approval.execute_failed', id, 'Falló: "' + ap.action + '"', { outcome: 'rejected' }); return; }
+        if (sim === 'fail') { upd({ status: 'failed', executedAt: now().toISOString(), error: 'AccessDenied' }); store.log('approval.execute_failed', id, 'Falló: "' + ap.action + '"', { outcome: 'rejected' }); return; }
         upd({ status: 'executed', executedAt: now().toISOString(), notStarted: false });
         store.log('approval.execute', id, 'Ejecutó "' + ap.action + '"', { outcome: 'applied' });
       }, 1800);

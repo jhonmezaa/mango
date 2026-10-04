@@ -185,18 +185,19 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     if (att.length) window.MangoStore.log('chat.attach', agent.id, att.map(f => f.name).join(', '));
     setMessages(m => [...m, { type: "user_message", text: text || '(archivos adjuntos)', time: "ahora", attachments: att }]);
     setStreaming(true);
-    const isWrite = /\b(elimina|borra|apaga|termina|detén|deten|rollback|aplica|ejecuta|libera|reasigna|delete|terminate)/i.test(text);
+    const isWrite = /\b(elimina|borra|apaga|termina|detén|deten|rollback|aplica|ejecuta|libera|reasigna|delete|terminate)|\bcrea(r)?\s+(un\s+)?presupuesto/i.test(text);
     if (isWrite) {
       setStreamPhase({ k: 'think' }); setTimeout(() => setStreamPhase({ k: 'tool', name: 'políticas de aprobación' }), 400);
       setTimeout(() => {
         const num = (re) => { const m = text.match(re); return m ? Number(m[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')) : null; };
         const env = /\bprod/i.test(text) ? 'prod' : /\bstaging\b/i.test(text) ? 'staging' : null;
-        const call = /pago|libera/i.test(text) ? { tool: 'sap-s4-hana.release_payment', params: { amount: num(/(\d[\d.,]*)/), currency: 'USD' } }
+        const call = /presupuesto/i.test(text) ? { tool: 'aws-budgets.create_budget', params: { amount: num(/(\d[\d.,]*)/), currency: 'USD' } }
+          : /pago|libera/i.test(text) ? { tool: 'sap-s4-hana.release_payment', params: { amount: num(/(\d[\d.,]*)/), currency: 'USD' } }
           : /rollback/i.test(text) ? { tool: 'codepipeline.rollback', params: { env } }
           : /det[eé]n|apaga|stop/i.test(text) ? { tool: 'aws-ec2-ops.stop_instances', params: { count: num(/(\d+)\s*instanc/i), env } }
           : { tool: agent.mcp[0] + '.execute_change', params: { env } };
         Object.keys(call.params).forEach(k => { if (call.params[k] === null || call.params[k] === undefined) delete call.params[k]; });
-        const tier = window.MangoStore.get().avail ? { tier: 'approvers', rule: 'Aprobación siempre' } : window.approvalTier ? window.approvalTier(call.tool, call.params) : { tier: 'approvers', rule: 'Aprobación requerida' };
+        const tier = window.approvalTier ? window.approvalTier(call.tool, call.params) : { tier: 'approvers', rule: 'Aprobación requerida' };
         const action = text.length > 70 ? text.slice(0, 70) + '…' : text;
         setStreaming(false); setStreamPhase(null);
         if (tier.tier === 'self') {
@@ -231,7 +232,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     setStreamSteps([]); setStreamText('');
     setStreamPhase({ k: 'think' }); push({ id: 's0', k: 'think', status: 'run' });
     at(700, () => { done('s0', 'ok'); const run = parallel ? [toolA, toolB] : [toolA]; run.forEach((x, n) => push({ id: 'tA' + n, k: 'tool', name: label(x), tool: x.id, status: 'run', t0: performance.now() })); setStreamPhase(parallel ? { k: 'tool', count: 2 } : { k: 'tool', name: label(toolA) }); });
-    if (parallel) at(700, () => { done('tA1', 'fail', { err: 'Compute Optimizer respondió con error' }); tools.push({ type: 'tool_call', tool: toolB.id, params: toolB.params, ms: 700, measured: true, status: 'error', error: 'Compute Optimizer respondió con error. Sigo con el resto.' }); setStreamPhase({ k: 'tool', name: label(toolA) }); });
+    if (parallel) at(700, () => { done('tA1', 'fail'); tools.push({ type: 'tool_call', tool: toolB.id, params: toolB.params, ms: 700, measured: true, status: 'error' }); setStreamPhase({ k: 'tool', name: label(toolA) }); });
     at(parallel ? 400 : 1000, () => { done('tA0', 'ok'); tools.unshift({ type: 'tool_call', tool: toolA.id, params: toolA.params, ms: parallel ? 1100 : 1000, measured: true, status: 'ok' }); push({ id: 'p1', k: 'process', status: 'run' }); setStreamPhase({ k: 'process' }); });
     at(600, () => { done('p1', 'ok'); push({ id: 'w1', k: 'write', status: 'run' }); setStreamPhase({ k: 'write' });
       write(part1, () => { done('w1', 'ok');
@@ -253,7 +254,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const confirmSelf = (idx, ok) => {
     const S = window.MangoStore; const m0 = messages[idx]; if (!m0 || m0.status !== 'pending') return;
     S.log(ok ? 'approval.self_confirm' : 'approval.self_cancel', m0.tool, (ok ? 'Confirmó en el chat: "' : 'Canceló en el chat: "') + m0.action + '" · ' + m0.rule);
-    setMessages(ms => { const n = ms.map((x, i) => i === idx ? { ...x, status: ok ? 'confirmed' : 'cancelled', by: S.actor() } : x); return ok ? [...n, { type: 'tool_call', tool: m0.tool, params: m0.params, ms: 720, measured: true, status: 'ok' }, { type: 'agent_response', text: 'Listo. Ejecuté `' + m0.tool + '` con tu confirmación; quedó registrado en Auditoría.' }] : [...n, { type: 'agent_response', text: 'Cancelado. No ejecuté ninguna acción.' }]; });
+    setMessages(ms => { const n = ms.map((x, i) => i === idx ? { ...x, status: ok ? 'confirmed' : 'cancelled', by: S.actor() } : x); return ok ? [...n, { type: 'tool_call', tool: m0.tool, params: m0.params, ms: 720, measured: true, status: 'ok' }] : n; });
   };
 
   const cancelStream = () => {

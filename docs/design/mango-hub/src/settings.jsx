@@ -18,7 +18,7 @@ function Settings({ models }) {
     ['billing', 'Billing y límites', 'Money'], ['notifications', 'Notificaciones', 'Chat'], ['observability', 'Observabilidad', 'Activity'], ['branding', 'Marca y tema', 'Sun'],
   ];
   const [section, setSection] = useState('install');
-  const [tab, setTab] = useState(() => S.get().simInstall === 'fresh' ? 'people' : 'general');
+  const [tab, setTab] = useState(() => window.MangoPeople?.adminCount() === 1 ? 'people' : 'general');
   const simConn = window.useMango(x => x.simConn);
   useEffect(() => { if (avail && !['install', 'auth'].includes(section)) setSection('install'); }, [avail]);
   const toastS = window.useToast?.();
@@ -126,10 +126,13 @@ function InstallSection() {
   const cfg = window.useMango(s => s.authCfg);
   const fresh = window.useMango(s => s.simInstall) === 'fresh';
   const admins = fresh ? cfg.firstAdmins.slice(0, 1) : cfg.firstAdmins;
+  const sim = window.useMango(s => s.simInstallLoad);
+  if (sim === 'loading') return <SettingsSection title="Instalación" desc="Datos que se dieron al instalar Mango."><div role="status" aria-label="Cargando datos de la instalación" style={{ display: 'grid', gap: 12 }}>{[0, 1, 2, 3, 4].map(i => <div key={i} className="skeleton" style={{ height: 18, width: i % 2 ? '60%' : '80%', borderRadius: 6 }} />)}</div></SettingsSection>;
+  if (sim === 'error') return <SettingsSection title="Instalación" desc="Datos que se dieron al instalar Mango."><div className="g-err" role="alert" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>No se pudieron cargar los datos de la instalación.<button className="btn btn-sm" onClick={() => window.MangoStore.set({ simInstallLoad: null })}>Reintentar</button></div></SettingsSection>;
   const RO = ({ children, mono }) => <div className="ro-field" style={mono ? null : { fontFamily: 'var(--font-sans)' }}><I.Lock size={12} />{children}</div>;
   return (
     <SettingsSection title="Instalación" desc="Datos que se dieron al instalar Mango. Son de solo lectura: los cambia quien administra AWS, no la aplicación.">
-      <SRow label="Versión instalada"><div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-strong)' }}>{cfg.version}</span><span className="mk-meta">Publicación <span className="mono">{cfg.release}</span></span></div></SRow>
+      <SRow label="Versión instalada"><div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-strong)' }}>{cfg.version}</span>{cfg.release && cfg.release !== cfg.version && <span className="mk-meta">Publicación <span className="mono">{cfg.release}</span></span>}</div></SRow>
       <SRow label="Cómo actualizar" hint="Fuera de la aplicación"><div style={{ fontSize: 13, lineHeight: 1.55 }}>Mango no se actualiza desde aquí. Quien administra AWS despliega las plantillas de una versión publicada más nueva, con los mismos parámetros de instalación.</div></SRow>
       <SRow label="Nombre de la instalación"><RO mono>{cfg.installName}</RO></SRow>
       <SRow label="Organización de AWS"><RO mono>{cfg.awsOrg}</RO></SRow>
@@ -137,7 +140,7 @@ function InstallSection() {
       <SRow label="Correo de alertas"><RO>{cfg.alertEmail}</RO></SRow>
       <SRow label="Dominios para registrarse"><RO>{cfg.domains.join(', ')}</RO></SRow>
       <SRow label="Administradores iniciales" hint={admins.length < 2 ? 'Se instaló con uno solo' : null}><div className="row gap-1" style={{ flexWrap: 'wrap' }}>{admins.map(e => <window.PersonChip key={e} email={e} />)}</div></SRow>
-      <SRow label="Se configura en la aplicación"><div style={{ fontSize: 13, lineHeight: 1.55 }}>Áreas y OUs, grupos, personas, presupuestos, modelos y precios. Arrancan con los valores de la versión: áreas vacías, solo los cuatro grupos de sistema, USD 5 por usuario y USD 30 por agente al mes, y el agente FinOps publicado.</div></SRow>
+      <SRow label="Se configura en la aplicación"><div style={{ fontSize: 13, lineHeight: 1.55 }}>Áreas y OUs, grupos, personas, presupuestos, modelos y precios. Arrancan con los valores de la versión: áreas vacías, solo los cuatro grupos de sistema, los presupuestos por defecto de la versión (<button className="mk-link" onClick={() => window.MangoNav?.('budgets')}>Presupuestos →</button>) y el agente FinOps publicado.</div></SRow>
     </SettingsSection>
   );
 }
@@ -149,14 +152,13 @@ function AuthSection({ goPeople }) {
   const [modal, setModal] = useState(null);
   const client = cfg.install === 'client';
   return (
-    <SettingsSection title="Autenticación" desc={avail ? 'Cognito gestiona las cuentas. MFA, plan del directorio y dominios de registro vienen de la instalación y no se editan aquí.' : 'Cognito gestiona las cuentas. La conexión se define al instalar Mango; ' + (client ? 'sesión e IdP cambian' : 'MFA, sesión e IdP cambian') + ' con la aprobación de otro admin.'}>
+    <SettingsSection title="Autenticación" desc={avail ? 'Cognito gestiona las cuentas. MFA y dominios de registro vienen de la instalación y no se editan aquí.' : 'Cognito gestiona las cuentas. La conexión se define al instalar Mango; ' + (client ? 'sesión e IdP cambian' : 'MFA, sesión e IdP cambian') + ' con la aprobación de otro admin.'}>
       <div className="card" style={{ padding: '4px 16px', marginBottom: 20 }}>
         <SRow label="User Pool ID"><div className="ro-field"><I.Lock size={12} />{cfg.pool}</div></SRow>
         <SRow label="Región"><div className="ro-field"><I.Lock size={12} />{cfg.region}</div></SRow>
         <div style={{ borderBottom: 'none' }}><SRow label="App client ID" hint="Solo lectura · se define al instalar"><div className="ro-field"><I.Lock size={12} />{cfg.client}</div></SRow></div>
       </div>
       {['mfa', 'session', 'idp'].map(k => <ProposedRow key={k} k={k} onPropose={() => setModal(k)} />)}
-      <SRow label="Plan del directorio" hint="Viene de la instalación"><div className="ro-field" style={{ fontFamily: 'var(--font-sans)' }}><I.Lock size={12} />Cognito {cfg.dirPlan}</div></SRow>
       <SRow label="Dominios para registrarse" hint="Viene de la instalación · los correos públicos se rechazan"><div className="ro-field" style={{ fontFamily: 'var(--font-sans)' }}><I.Lock size={12} />{cfg.domains.join(', ')}</div></SRow>
       <SRow label="Política de uso de IA" hint="Se define al instalar · si está vacía, el registro no pide aceptarla">{cfg.aiPolicyUrl ? <a className="ro-field" href={cfg.aiPolicyUrl} target="_blank" rel="noopener noreferrer"><I.Lock size={12} />{cfg.aiPolicyUrl}</a> : <div className="ro-field"><I.Lock size={12} />Sin política configurada</div>}</SRow>
       <SRow label="Política de contraseñas" hint="Cognito · se define al instalar"><div className="ro-field"><I.Lock size={12} />Mínimo 14 caracteres, con mayúsculas, minúsculas, números y símbolos</div></SRow>
@@ -266,7 +268,7 @@ function ChangeList({ keys, kind = 'auth', target, title = 'Cambios propuestos',
   const list = changes.filter(c => c.kind === kind && (keys ? keys.includes(c.key) : true) && (!target || c.target === target));
   const [rej, setRej] = useState(null);
   const [busy, setBusy] = useState(null);
-  const act = (id, fn) => { onActError?.(null); setBusy(id); setTimeout(() => { setBusy(null); const sim = kind === 'mfa_reset' && S.get().mfaActErr; if (sim) { onActError?.(sim === '409' || sim === '410' ? 'La solicitud ya no está pendiente: otro admin la decidió o venció.' : 'No se pudo completar la acción. Inténtalo de nuevo.'); return; } fn(); }, kind === 'mfa_reset' ? 600 : 0); };
+  const act = (id, fn) => { onActError?.(null); setBusy(id); setTimeout(() => { setBusy(null); const sim = kind === 'mfa_reset' && S.get().mfaActErr; if (sim) { onActError?.(sim === '409' || sim === '410' ? 'La solicitud ya no está pendiente: otro admin la decidió o venció.' : 'No se pudo completar la acción. Inténtalo de nuevo.'); return; } const ps = kind === 'member' && S.get().simPeopleAct; if (ps) { onActError?.({ error: 'No se pudo completar la acción. Inténtalo de nuevo.', busy: 'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.', forbidden: 'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.' }[ps]); return; } fn(); }, kind === 'mfa_reset' || kind === 'member' ? 600 : 0); };
   const [note, setNote] = useState('');
   if (!list.length) return null;
   return (
@@ -284,7 +286,7 @@ function ChangeList({ keys, kind = 'auth', target, title = 'Cambios propuestos',
               {status === 'pending' && <div className="chg-act">
                 {mine ? <><K.Reason>Otro admin debe aprobarla</K.Reason><button className="btn btn-sm" disabled={busy === c.id} onClick={() => act(c.id, () => S.withdrawChange(c.id))}>Retirar</button></>
                   : (c.kind === 'mfa_reset' || c.kind === 'member') && c.target === S.actorEmail() ? <K.Reason>Es sobre tu cuenta: la debe aprobar otro admin</K.Reason>
-                  : role === 'admin' ? <><button className="btn btn-sm" disabled={busy === c.id} onClick={() => { setRej(c.id); setNote(''); }}>Rechazar</button><button className="btn btn-sm btn-primary" disabled={busy === c.id} onClick={() => act(c.id, () => S.decideChange(c.id, 'approved'))}>Aprobar</button></> : null}
+                  : role === 'admin' ? <><button className="btn btn-sm" disabled={busy === c.id} onClick={() => { setRej(c.id); setNote(''); }}>Rechazar</button><button className="btn btn-sm btn-primary" disabled={busy === c.id} onClick={() => { const why = c.kind === 'member' && window.MangoPeople?.recheck(c); if (why) { onActError?.(why); return; } act(c.id, () => S.decideChange(c.id, 'approved')); }}>Aprobar</button></> : null}
               </div>}
             </div>
             <div className="chg-diff">{c.kind === 'auth' ? <><span className="old">{setVal(c.key, c.from)}</span><span aria-hidden="true">→</span><span className="new">{setVal(c.key, c.to)}</span></> : <span className="new">{c.summary}</span>}</div>

@@ -26,7 +26,9 @@ const adminCount = () => list().filter(isAdminP).length;
 const noAccess = (p) => p.status === 'active' && !p.groups.length;
 const upd = (email, f) => S.set({ people: list().map(p => p.email === email ? { ...p, ...f(p) } : p) });
 const pendingFor = (email) => (S.get().changes || []).filter(c => (c.kind === 'member' || c.kind === 'mfa_reset') && c.target === email && window.chgStatus(c) === 'pending');
-const initials = (email) => { const m = email.match(/^usuario(\d+)@/); return m ? 'U' + m[1] : email.slice(0, 2).toUpperCase(); };
+const initials = (email) => email.slice(0, 2).toUpperCase();
+const isExternal = (email) => !domains().includes(email.split('@')[1]);
+const hasSens = (p) => p.groups.some(g => SENS.includes(g));
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 
 let saved = null;
@@ -66,19 +68,34 @@ const People = {
     S.log('directory.disable', email, 'Deshabilitó el acceso de ' + email + ' y cerró sus sesiones — "' + reason + '"', { outcome: 'applied' });
     return 'applied';
   },
-  enable(email) { upd(email, () => ({ status: 'active' })); S.log('directory.enable', email, 'Rehabilitó el acceso de ' + email, { outcome: 'applied' }); },
+  enable(email, reason) {
+    if (hasSens(find(email))) { S.propose({ kind: 'member', key: 'enable', target: email, to: null, title: 'Rehabilitar el acceso de ' + email, summary: 'Tiene un grupo sensible: vuelve a poder entrar con sus grupos', reason }); return 'proposed'; }
+    upd(email, () => ({ status: 'active' })); S.log('directory.enable', email, 'Rehabilitó el acceso de ' + email, { outcome: 'applied' }); return 'applied';
+  },
   invite(email, groups) {
     const boot = groups.includes('mango-admin') && adminCount() === 1;
     S.set({ people: [{ email, status: 'invited', mfa: false, groups, at: new Date().toISOString() }, ...list()] });
-    S.log('directory.invite', email, 'Invitó a ' + email + ' · contraseña temporal enviada por correo' + (groups.length ? ' · grupos: ' + groups.join(', ') : '') + (boot ? ' · único administrador: sin segundo aprobador' : ''), { outcome: 'applied' });
+    S.log('directory.invite', email, 'Invitó a ' + email + ' · contraseña temporal enviada por correo' + (isExternal(email) ? ' · dominio externo' : '') + (groups.length ? ' · grupos: ' + groups.join(', ') : '') + (boot ? ' · único administrador: sin segundo aprobador' : ''), { outcome: 'applied' });
   },
 };
 S.onDecide.member = (c, d) => {
   if (d !== 'approved') return;
   if (c.key === 'add') { upd(c.target, p => ({ groups: [...new Set([...p.groups, c.to])] })); S.log('directory.group_add', c.target, 'Agregó a ' + c.target + ' al grupo ' + c.to + ' (' + c.id + ', pedido por ' + c.by + ')', { outcome: 'applied' }); }
   if (c.key === 'remove') { upd(c.target, p => ({ groups: p.groups.filter(x => x !== c.to) })); S.log('directory.group_remove', c.target, 'Quitó a ' + c.target + ' del grupo ' + c.to + ' (' + c.id + ', pedido por ' + c.by + ')', { outcome: 'applied' }); }
+  if (c.key === 'enable') { upd(c.target, () => ({ status: 'active' })); S.log('directory.enable', c.target, 'Rehabilitó el acceso de ' + c.target + ' (' + c.id + ', pedido por ' + c.by + ')', { outcome: 'applied' }); }
   if (c.key === 'disable') { upd(c.target, () => ({ status: 'disabled' })); S.log('directory.disable', c.target, 'Deshabilitó el acceso de ' + c.target + ' (' + c.id + ', pedido por ' + c.by + ')', { outcome: 'applied' }); }
 };
+// Al aprobar se comprueban otra vez las reglas; si no se cumplen, se rechaza la aprobación y el cambio sigue pendiente.
+const recheck = (c) => {
+  const p = find(c.target); if (!p) return null;
+  const pre = 'No se pudo aprobar ' + c.id + ': ';
+  const post = ' El cambio sigue pendiente.';
+  if (c.key === 'add' && p.status === 'disabled') return pre + 'la persona fue deshabilitada.' + post;
+  if (c.key === 'add' && p.groups.includes(c.to)) return pre + 'la persona ya tiene ese grupo.' + post;
+  if ((c.key === 'remove' && c.to === 'mango-admin' || c.key === 'disable') && isAdminP(p) && adminCount() <= 2) return pre + 'quedarían menos de dos administradores.' + post;
+  return null;
+};
+const ACT_ERR = { error: 'No se pudo completar la acción. Inténtalo de nuevo.', busy: 'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.', forbidden: 'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.' };
 S.onDecide.mfa_reset = (c, d) => { if (d === 'approved' && find(c.target)) upd(c.target, () => ({ mfa: false })); };
 
 function PersonChip({ email, onRemove, size }) {
@@ -105,8 +122,9 @@ function PeopleAdmin({ goTab, notify }) {
   const fresh = window.useMango(s => s.simInstall) === 'fresh';
   const sim = window.useMango(s => s.simPeopleList);
   const [q, setQ] = useState(''); const [filter, setFilter] = useState('all'); const [shown, setShown] = useState(PAGE);
-  const [open, setOpen] = useState(null); const [invite, setInvite] = useState(null);
+  const [open, setOpen] = useState(null); const [invite, setInvite] = useState(null); const [actErr, setActErr] = useState(null);
   useEffect(() => setShown(PAGE), [q, filter]);
+  useEffect(() => { if (!sim) S.log('directory.list', 'directory', 'Leyó el directorio · ' + people.length + ' filas', { read: true }); }, [sim]);
   const Q = q.trim().toLowerCase();
   const pend = people.filter(noAccess).length;
   const FILTERS = [['all', 'Todas'], ['pending', 'Sin acceso', pend], ['invited', 'Invitadas'], ['disabled', 'Deshabilitadas']];
@@ -115,7 +133,7 @@ function PeopleAdmin({ goTab, notify }) {
   const page = rows.slice(0, shown);
   return (
     <section>
-      {fresh && <FirstDay goTab={goTab} onInviteAdmin={() => setInvite({ preset: ['mango-admin'] })} onPending={() => setFilter('pending')} />}
+      {<FirstDay goTab={goTab} onInviteAdmin={() => setInvite({ preset: ['mango-admin'] })} onPending={() => setFilter('pending')} />}
       <div className="g-sec-h" style={{ marginBottom: 12 }}>
         <div>
           <div className="g-sec-t">Personas</div>
@@ -123,7 +141,8 @@ function PeopleAdmin({ goTab, notify }) {
         </div>
         <button className="btn btn-sm btn-primary" onClick={() => setInvite({ preset: [] })}><I.Plus size={12} /> Invitar persona</button>
       </div>
-      {pend > 0 && filter !== 'pending' && !sim && <div className="pp-pending" role="status">
+      {sim === 'truncated' && <div className="pp-pending" role="status"><I.Info size={14} /><div style={{ flex: 1, minWidth: 0 }}>El directorio es más grande de lo que se lee de una vez: los contadores son un mínimo.</div></div>}
+      {pend > 0 && filter !== 'pending' && sim !== 'error' && sim !== 'loading' && <div className="pp-pending" role="status">
         <I.Info size={14} /><div style={{ flex: 1, minWidth: 0 }}><b>{pend === 1 ? '1 persona se registró' : pend + ' personas se registraron'} y aún no {pend === 1 ? 'tiene' : 'tienen'} acceso a nada.</b> Al entrar ven «Todavía no tienes acceso» hasta que les asignes un grupo.</div>
         <button className="btn btn-sm" onClick={() => setFilter('pending')}>Ver pendientes</button>
       </div>}
@@ -139,7 +158,7 @@ function PeopleAdmin({ goTab, notify }) {
           {sim === 'loading' ? <div role="status" aria-label="Cargando personas">{[0, 1, 2, 3].map(i => <div key={i} className="pp-tr"><span className="skeleton" style={{ height: 14, width: '70%' }} /><span className="skeleton" style={{ height: 14 }} /><span className="skeleton" style={{ height: 14 }} /><span className="skeleton" style={{ height: 14 }} /><span className="skeleton" style={{ height: 14 }} /><span /></div>)}</div>
             : page.map(p => { const pc = pendingFor(p.email).length; return (
               <button key={p.email} type="button" className="pp-tr pp-row" onClick={() => setOpen(p.email)} aria-label={'Gestionar ' + p.email}>
-                <span style={{ minWidth: 0 }}><PersonChip email={p.email} />{p.email === S.actorEmail() && <span className="mk-meta" style={{ marginLeft: 6 }}>tú</span>}{pc > 0 && <span className="badge badge-amber" style={{ marginLeft: 6 }}>{pc === 1 ? 'Cambio pendiente' : pc + ' cambios pendientes'}</span>}</span>
+                <span style={{ minWidth: 0 }}><PersonChip email={p.email} />{p.email === S.actorEmail() && <span className="mk-meta" style={{ marginLeft: 6 }}>tú</span>}{isExternal(p.email) && <span className="badge" style={{ marginLeft: 6 }} title="Su dominio no es de los que se registran solos">Externa</span>}{pc > 0 && <span className="badge badge-amber" style={{ marginLeft: 6 }}>{pc === 1 ? 'Cambio pendiente' : pc + ' cambios pendientes'}</span>}</span>
                 <span><StatusBadge p={p} /></span>
                 <span className="mk-meta">{p.mfa ? 'Registrado' : 'Sin registrar'}</span>
                 <span className="pp-groups">{p.groups.length ? <>{p.groups.slice(0, 2).map(g => <span key={g} className="pp-g mono">{g}</span>)}{p.groups.length > 2 && <span className="mk-meta">+{p.groups.length - 2}</span>}</> : <span className="mk-meta">Sin grupos</span>}</span>
@@ -147,10 +166,11 @@ function PeopleAdmin({ goTab, notify }) {
                 <span style={{ display: 'flex', justifyContent: 'flex-end', color: 'var(--text-muted)' }}><I.ChevronRight size={14} /></span>
               </button>
             ); })}
-          {!sim && !rows.length && <div className="mk-meta" style={{ padding: 16 }}>{Q ? 'Ningún correo empieza por «' + Q + '».' : filter === 'pending' ? 'Nadie está esperando acceso.' : 'No hay personas en este estado.'}</div>}
+          {sim !== 'loading' && !rows.length && <div className="mk-meta" style={{ padding: 16 }}>{Q ? 'Ningún correo empieza por «' + Q + '».' : filter === 'pending' ? 'Nadie está esperando acceso.' : 'No hay personas en este estado.'}</div>}
         </div>}
-      {!sim && rows.length > shown && <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}><button className="btn btn-sm" onClick={() => setShown(shown + PAGE)}>Mostrar más</button></div>}
-      <window.ChangeList kind="member" title="Cambios de personas" />
+      {sim !== 'loading' && rows.length > shown && <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}><button className="btn btn-sm" onClick={() => setShown(shown + PAGE)}>Mostrar más</button></div>}
+      {actErr && <div className="g-err" role="alert" style={{ marginTop: 14 }}>{actErr}</div>}
+      <window.ChangeList kind="member" title="Cambios de personas" onActError={setActErr} />
       <window.MfaResetList />
       {open && <PersonPanel email={open} onClose={() => setOpen(null)} notify={notify} />}
       {invite && <InviteModal preset={invite.preset} onClose={() => setInvite(null)} notify={notify} />}
@@ -174,10 +194,11 @@ function FirstDay({ goTab, onInviteAdmin, onPending }) {
     { done: withAccess > 0, t: 'Da acceso a las personas', d: 'Quien se registra entra sin grupo y ve «Todavía no tienes acceso». Asígnale un grupo o invítala con uno.', st: withAccess ? withAccess + (withAccess === 1 ? ' persona con acceso' : ' personas con acceso') : pend ? pend + ' esperando acceso' : 'Nadie más tiene acceso', act: pend > 0 && <button className="btn btn-sm" onClick={onPending}>Ver pendientes</button> },
   ];
   const left = steps.filter(s => !s.done).length;
+  if (!left) return null;
   return (
     <div className="card pp-first">
       <div className="row between" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div><div className="g-sec-t">Primeros pasos de esta instalación</div><div className="g-sec-meta">{left ? (left === 1 ? 'Falta 1 paso' : 'Faltan ' + left + ' pasos') + ' para que tu equipo empiece a usar Mango.' : 'Listo: tu equipo ya puede usar Mango.'}</div></div>
+        <div><div className="g-sec-t">Primeros pasos de esta instalación</div><div className="g-sec-meta">{(left === 1 ? 'Falta 1 paso' : 'Faltan ' + left + ' pasos') + ' para que tu equipo empiece a usar Mango. Esta tarjeta desaparece cuando estén todos.'}</div></div>
       </div>
       <ol className="pp-steps">
         {steps.map((s, i) => (
@@ -192,7 +213,7 @@ function FirstDay({ goTab, onInviteAdmin, onPending }) {
           </li>
         ))}
       </ol>
-      <div className="pp-first-foot">Ya viene con la instalación: el agente FinOps publicado; presupuestos por defecto de USD 5 por usuario y USD 30 por agente al mes (<button className="sr-link" onClick={() => window.MangoNav?.('budgets')}>Presupuestos</button>); MFA obligatorio y registro solo con {domains().join(', ')}.</div>
+      <div className="pp-first-foot">Ya viene con la instalación: el agente FinOps publicado; los presupuestos por defecto de la versión (<button className="sr-link" onClick={() => window.MangoNav?.('budgets')}>Presupuestos</button>); MFA obligatorio y registro solo con {domains().join(', ')}.</div>
     </div>
   );
 }
@@ -207,7 +228,7 @@ function PersonPanel({ email, onClose, notify }) {
   const [add, setAdd] = useState(''); const [reason, setReason] = useState(''); const [tried, setTried] = useState(false);
   const [rm, setRm] = useState(null); const [rmWhy, setRmWhy] = useState('');
   const [mfaOpen, setMfaOpen] = useState(false); const [mfaWhy, setMfaWhy] = useState(''); const [verified, setVerified] = useState(false); const [mfaTried, setMfaTried] = useState(false);
-  const [dis, setDis] = useState(false); const [disWhy, setDisWhy] = useState('');
+  const [dis, setDis] = useState(false); const [disWhy, setDisWhy] = useState(''); const [enWhy, setEnWhy] = useState('');
   const [err, setErr] = useState(null); const [busy, setBusy] = useState(false);
   useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
   if (!p) return null;
@@ -217,13 +238,14 @@ function PersonPanel({ email, onClose, notify }) {
   const avail = defs.filter(g => !p.groups.includes(g.id) && !pendingG(g.id, 'add')).sort((a, b) => order(a) - order(b) || a.id.localeCompare(b.id));
   const sens = SENS.includes(add); const boot = bootstrap(add);
   const lastAdmins = (g) => g === 'mango-admin' && adminCount() <= 2;
-  const run = (fn) => { setErr(null); setBusy(true); setTimeout(() => { setBusy(false); if (S.get().simPeopleAct === 'error') { setErr('No se pudo completar la acción. Inténtalo de nuevo.'); return; } fn(); }, 500); };
+  const run = (fn) => { setErr(null); setBusy(true); setTimeout(() => { setBusy(false); const sim = S.get().simPeopleAct; if (sim) { setErr(ACT_ERR[sim]); return; } fn(); }, 500); };
   const doAdd = () => { setTried(true); if (!add || (sens && !boot && !reason.trim())) return; run(() => { const r = People.addGroup(email, add, reason.trim()); notify?.(r === 'proposed' ? 'Propuesta enviada · la debe aprobar otro admin' : 'Grupo agregado'); setAdd(''); setReason(''); setTried(false); }); };
   const doRm = (g) => { if (SENS.includes(g) && !rmWhy.trim()) return; run(() => { const r = People.removeGroup(email, g, rmWhy.trim()); notify?.(r === 'proposed' ? 'Propuesta enviada · la debe aprobar otro admin' : 'Grupo quitado'); setRm(null); setRmWhy(''); }); };
   const mfaPending = pend.find(c => c.kind === 'mfa_reset');
   const mfaErr = !mfaWhy.trim() ? 'Escribe el motivo' : !verified ? 'Confirma que verificaste la identidad por otro canal' : null;
   const doMfa = () => { setMfaTried(true); if (mfaErr) return; run(() => { S.propose({ kind: 'mfa_reset', key: 'mfa_reset', target: email, from: null, to: null, title: 'Restablecer MFA de ' + email, summary: 'Borra su MFA y cierra todas sus sesiones · identidad verificada por otro canal', reason: mfaWhy.trim(), verified: true }); notify?.('Solicitud enviada · la debe aprobar otro admin'); setMfaOpen(false); setMfaWhy(''); setVerified(false); setMfaTried(false); }); };
   const disPending = pend.find(c => c.kind === 'member' && c.key === 'disable');
+  const enPending = pend.find(c => c.kind === 'member' && c.key === 'enable');
   const doDis = () => { if (!disWhy.trim()) return; run(() => { const r = People.disable(email, disWhy.trim()); notify?.(r === 'proposed' ? 'Propuesta enviada · la debe aprobar otro admin' : 'Acceso deshabilitado'); setDis(false); setDisWhy(''); }); };
   const TONE = { central: 'badge-violet', area: 'badge-amber', general: 'badge' };
   const gType = (id) => { const d = L.groupDef(id); return d ? <span className={'badge ' + TONE[d.type]}>{d.system ? 'Sistema · ' : ''}{L.GROUP_TYPES[d.type][0]}</span> : null; };
@@ -232,7 +254,7 @@ function PersonPanel({ email, onClose, notify }) {
       <aside className="pp-drawer" role="dialog" aria-modal="true" aria-label={'Persona ' + email} onClick={e => e.stopPropagation()}>
         <div className="pp-drawer-h">
           <button className="btn btn-sm btn-ghost pp-back" onClick={onClose}><I.ChevronLeft size={12} /> Volver</button>
-          <div style={{ minWidth: 0, flex: 1 }}><PersonChip email={email} size="lg" /><div className="row gap-2" style={{ marginTop: 8, flexWrap: 'wrap' }}><StatusBadge p={p} /><span className="mk-meta">MFA {p.mfa ? 'registrado' : 'sin registrar'}</span><span className="mk-meta">Alta {fmtDate(p.at)}</span>{self && <span className="badge">Tu cuenta</span>}</div></div>
+          <div style={{ minWidth: 0, flex: 1 }}><PersonChip email={email} size="lg" /><div className="row gap-2" style={{ marginTop: 8, flexWrap: 'wrap' }}><StatusBadge p={p} /><span className="mk-meta">MFA {p.mfa ? 'registrado' : 'sin registrar'}</span><span className="mk-meta">Alta {fmtDate(p.at)}</span>{self && <span className="badge">Tu cuenta</span>}{isExternal(email) && <span className="badge" title="Su dominio no es de los que se registran solos">Externa · invitada de otra empresa</span>}</div></div>
           <button className="btn btn-ghost btn-icon pp-x" aria-label="Cerrar" onClick={onClose}><I.Close size={14} /></button>
         </div>
         <div className="pp-drawer-b">
@@ -293,7 +315,9 @@ function PersonPanel({ email, onClose, notify }) {
           </section>
           <section>
             <div className="pp-sec-t">Acceso</div>
-            {disabled ? <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span className="mk-meta" style={{ flex: 1, minWidth: 200 }}>No puede entrar. Conserva sus grupos y su historial en Auditoría.</span><button className="btn btn-sm" disabled={busy} onClick={() => run(() => { People.enable(email); notify?.('Acceso rehabilitado'); })}>Rehabilitar acceso</button></div>
+            {disabled ? (enPending ? <div className="row gap-2" style={{ alignItems: 'center' }}><span className="badge badge-amber">Rehabilitación pendiente de aprobación</span><span className="mk-meta mono">{enPending.id}</span></div>
+              : !hasSens(p) ? <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span className="mk-meta" style={{ flex: 1, minWidth: 200 }}>No puede entrar. Conserva sus grupos y su historial en Auditoría.</span><button className="btn btn-sm" disabled={busy} onClick={() => run(() => { People.enable(email); notify?.('Acceso rehabilitado'); })}>Rehabilitar acceso</button></div>
+              : <div style={{ display: 'grid', gap: 8 }}><span className="mk-meta">No puede entrar. Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.</span><textarea className="input" rows={2} value={enWhy} onChange={e => setEnWhy(e.target.value)} placeholder="Motivo (obligatorio) · lo verá el admin que lo apruebe" aria-label="Motivo para rehabilitar" /><div className="row gap-2" style={{ justifyContent: 'flex-end' }}><button className="btn btn-sm btn-primary" disabled={!enWhy.trim() || busy} onClick={() => run(() => { People.enable(email, enWhy.trim()); notify?.('Propuesta enviada · la debe aprobar otro admin'); setEnWhy(''); })}>Enviar a aprobación</button></div></div>)
               : self ? <K.Reason>No puedes deshabilitar tu propia cuenta.</K.Reason>
               : disPending ? <div className="row gap-2" style={{ alignItems: 'center' }}><span className="badge badge-amber">Deshabilitación pendiente de aprobación</span><span className="mk-meta mono">{disPending.id}</span></div>
               : !dis ? <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span className="mk-meta" style={{ flex: 1, minWidth: 200 }}>Cierra sus sesiones y no puede volver a entrar. No se borra: su historial queda en Auditoría.{isAdminP(p) ? ' Es administrador: lo aprueba otro.' : ''}</span><button className="btn btn-sm mk-danger" disabled={isAdminP(p) && adminCount() <= 2} title={isAdminP(p) && adminCount() <= 2 ? 'Nombra otro administrador antes' : undefined} onClick={() => setDis(true)}>Deshabilitar acceso…</button></div>
@@ -316,17 +340,18 @@ function InviteModal({ preset, onClose, notify }) {
   const [fail, setFail] = useState(false); const [busy, setBusy] = useState(false);
   const e = email.trim().toLowerCase(); const doms = domains();
   const boot = adminCount() === 1;
-  const err = !e ? 'Escribe el correo' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? 'Escribe un correo válido' : PUBLIC.test(e) ? 'Los correos públicos no se aceptan. Usa el correo de la empresa.' : !doms.includes(e.split('@')[1]) ? 'Solo se puede invitar a correos de ' + doms.join(' o ') + '.' : find(e) ? 'Ese correo ya está en el directorio. Ábrelo en la lista para cambiar sus grupos.' : null;
+  const err = !e ? 'Escribe el correo' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? 'Escribe un correo válido' : PUBLIC.test(e) ? 'Los correos públicos no se aceptan. Usa el correo de la empresa.' : find(e) ? 'Ese correo ya está en el directorio. Ábrelo en la lista para cambiar sus grupos.' : null;
   const pickable = defs.filter(g => !SENS.includes(g.id) || (g.id === 'mango-admin' && boot));
   const toggle = (g) => setGroups(groups.includes(g) ? groups.filter(x => x !== g) : [...groups, g]);
-  const submit = () => { setTried(true); setFail(false); if (err) return; setBusy(true); setTimeout(() => { setBusy(false); if (S.get().simPeopleAct === 'error') { setFail(true); return; } People.invite(e, groups); notify?.('Invitación enviada · recibirá una contraseña temporal por correo'); onClose(); }, 500); };
+  const code = !e ? null : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? 'invalid_email' : PUBLIC.test(e) ? 'public_email' : find(e) ? 'exists' : null;
+  const submit = () => { setTried(true); setFail(false); if (err) { if (code) { const dom = e.includes('@') ? '@' + e.split('@').pop() : '—'; S.log('directory.invite', code === 'exists' ? e : dom, 'Invitación rechazada', { outcome: 'rejected', error: code }); } return; } setBusy(true); setTimeout(() => { setBusy(false); if (S.get().simPeopleAct === 'error') { setFail(true); return; } People.invite(e, groups); notify?.('Invitación enviada · recibirá una contraseña temporal por correo'); onClose(); }, 500); };
   return (
     <K.Modal title={preset?.includes('mango-admin') ? 'Invitar al segundo administrador' : 'Invitar persona'} sub="Recibe una contraseña temporal por correo; al entrar crea la suya y configura MFA. Queda en Auditoría." onClose={onClose} autoFocus={false}
       footer={<><button className="btn btn-sm" onClick={onClose}>Cancelar</button><button className="btn btn-sm btn-primary" disabled={busy} onClick={submit}>{busy ? 'Enviando…' : 'Enviar invitación'}</button></>}>
       <div className="g-field">
         <label htmlFor="pp-inv">Correo</label>
         <input id="pp-inv" className={'input' + (tried && err ? ' has-error' : '')} type="email" autoComplete="off" autoFocus value={email} onChange={ev => { setEmail(ev.target.value); setFail(false); }} placeholder={'nombre@' + doms[0]} />
-        {tried && err ? <div className="g-err" role="alert">{err}</div> : <div className="g-hint">Dominios permitidos: {doms.join(', ')}.</div>}
+        {tried && err ? <div className="g-err" role="alert">{err}</div> : e && !err && isExternal(e) ? <div className="g-hint">Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.</div> : <div className="g-hint">Se registran solos: {doms.join(', ')}. A los demás correos de empresa se les invita aquí; los correos públicos no se aceptan.</div>}
       </div>
       <div className="g-field">
         <label>Grupos <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>· opcional</span></label>
@@ -338,5 +363,5 @@ function InviteModal({ preset, onClose, notify }) {
   );
 }
 
-Object.assign(window, { PeopleAdmin, PersonChip, MangoPeople: { setInstall, adminCount } });
+Object.assign(window, { PeopleAdmin, PersonChip, MangoPeople: { setInstall, adminCount, recheck } });
 })();
