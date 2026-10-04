@@ -71,7 +71,9 @@ describe("Core template of a release", () => {
 
   it("writes no customer, account, organization, zone name or person into the template", () => {
     // The only account ids are AWS's own: Elastic Load Balancing log delivery in us-east-1.
-    expect([...new Set(text.match(/(?<![0-9])[0-9]{12}(?![0-9])/g))]).toEqual(["127311923021"]);
+    // Twelve digits inside a longer token are not an account id: asset hashes are hex and now
+    // and then contain such a run, which made this assertion fail by chance.
+    expect([...new Set(text.match(/(?<![0-9A-Za-z])[0-9]{12}(?![0-9A-Za-z])/g))]).toEqual(["127311923021"]);
     expect(text).not.toMatch(/o-[a-z0-9]{10,32}"/);
     expect(text).not.toMatch(/"(ou|r)-[0-9a-z]{4,}/);
     expect(text).not.toMatch(/us-east-1[a-f]\b/);
