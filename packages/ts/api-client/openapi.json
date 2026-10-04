@@ -4122,6 +4122,34 @@
         "title": "ReasonIn",
         "type": "object"
       },
+      "RenewedOut": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "federated": {
+            "title": "Federated",
+            "type": "boolean"
+          },
+          "id_token": {
+            "title": "Id Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "id_token",
+          "expires_in",
+          "federated"
+        ],
+        "title": "RenewedOut",
+        "type": "object"
+      },
       "ResetCreatedOut": {
         "additionalProperties": false,
         "properties": {
@@ -4827,6 +4855,27 @@
           }
         },
         "title": "SearchIn",
+        "type": "object"
+      },
+      "SessionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "federated": {
+            "default": false,
+            "title": "Federated",
+            "type": "boolean"
+          },
+          "refresh_token": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "SessionIn",
         "type": "object"
       },
       "SetChange": {
@@ -9747,6 +9796,84 @@
           }
         },
         "summary": "Get Models"
+      }
+    },
+    "/session": {
+      "delete": {
+        "operationId": "end_session",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "End Session"
+      },
+      "post": {
+        "operationId": "start_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Start Session"
+      }
+    },
+    "/session/refresh": {
+      "post": {
+        "operationId": "renew_session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenewedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Renew Session"
       }
     }
   },

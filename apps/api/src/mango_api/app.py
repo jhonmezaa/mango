@@ -118,6 +118,13 @@ from mango_api.tool_policies import (
 )
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
 from mango_api.web import ApiError, Caller, error_response
+from mango_api.web_session import (
+    CognitoTokens,
+    SessionStore,
+    TokenCipher,
+    WebSessionDeps,
+    web_session_router,
+)
 from mango_core import invocation
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN, VersionStatus
 from mango_core.identity import (
@@ -334,6 +341,8 @@ class Services:
     # Write tools with approval (D27); set in production once the approvals table exists.
     approvals: ApprovalDeps | None = None
     tool_policies: ToolPolicyDeps | None = None
+    # Web session cookie (D63); set in production once its table and origin are configured.
+    web_sessions: WebSessionDeps | None = None
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -416,9 +425,22 @@ def build_services(settings: Settings) -> Services:
         if settings.approvals_table
         else None
     )
+    verifier = AccessTokenVerifier(settings.cognito_issuer, settings.cognito_client_id)
+    web_sessions = None
+    if settings.web_sessions_table and settings.app_origin and settings.session_hours > 0:
+        web_sessions = WebSessionDeps(
+            store=SessionStore(dynamodb, settings.web_sessions_table),
+            cipher=TokenCipher(boto3.client("kms", region_name=region), settings.data_key_arn),
+            tokens=CognitoTokens(cognito, settings.cognito_client_id),
+            verifier=verifier,
+            audit=audit,
+            clock=now_utc,
+            app_origin=settings.app_origin,
+            session_seconds=settings.session_hours * 3600,
+        )
     return Services(
         settings=settings,
-        verifier=AccessTokenVerifier(settings.cognito_issuer, settings.cognito_client_id),
+        verifier=verifier,
         authorizer=authorizer,
         budgets=BudgetService(dynamodb, settings.budgets_table),
         conversations=ConversationRepository(rls.for_user, settings.conversations_table),
@@ -513,6 +535,7 @@ def build_services(settings: Settings) -> Services:
             clock=now_utc,
         ),
         invocation_key=invocation_key,
+        web_sessions=web_sessions,
     )
 
 
@@ -800,6 +823,11 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
         )
     )
 
+    if services.web_sessions is not None:
+        app.include_router(web_session_router(services.web_sessions))
+        if services.people is not None:
+            services.people.end_sessions = services.web_sessions.revoke_user
+
     if services.cognito_users is not None and services.mfa_reset_store is not None:
         app.include_router(
             mfa_reset_router(
@@ -809,6 +837,9 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                     audit=services.audit,
                     rate_limiter=RateLimiter(limit=5, window_seconds=3600),
                     clock=now_utc,
+                    end_sessions=(
+                        services.web_sessions.revoke_user if services.web_sessions else None
+                    ),
                 ),
                 current_user,
                 require,

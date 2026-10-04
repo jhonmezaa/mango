@@ -2201,6 +2201,28 @@ export type ReasonIn = {
 };
 
 /**
+ * RenewedOut
+ */
+export type RenewedOut = {
+    /**
+     * Access Token
+     */
+    access_token: string;
+    /**
+     * Expires In
+     */
+    expires_in: number;
+    /**
+     * Federated
+     */
+    federated: boolean;
+    /**
+     * Id Token
+     */
+    id_token: string;
+};
+
+/**
  * ResetCreatedOut
  */
 export type ResetCreatedOut = {
@@ -2541,6 +2563,20 @@ export type SearchIn = {
      * Prefix
      */
     prefix?: string | null;
+};
+
+/**
+ * SessionIn
+ */
+export type SessionIn = {
+    /**
+     * Federated
+     */
+    federated?: boolean;
+    /**
+     * Refresh Token
+     */
+    refresh_token: string;
 };
 
 /**
@@ -5533,3 +5569,78 @@ export type GetModelsResponses = {
 };
 
 export type GetModelsResponse = GetModelsResponses[keyof GetModelsResponses];
+
+export type EndSessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/session';
+};
+
+export type EndSessionErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type EndSessionError = EndSessionErrors[keyof EndSessionErrors];
+
+export type EndSessionResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type EndSessionResponse = EndSessionResponses[keyof EndSessionResponses];
+
+export type StartSessionData = {
+    body: SessionIn;
+    path?: never;
+    query?: never;
+    url: '/session';
+};
+
+export type StartSessionErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type StartSessionError = StartSessionErrors[keyof StartSessionErrors];
+
+export type StartSessionResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type StartSessionResponse = StartSessionResponses[keyof StartSessionResponses];
+
+export type RenewSessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/session/refresh';
+};
+
+export type RenewSessionErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RenewSessionError = RenewSessionErrors[keyof RenewSessionErrors];
+
+export type RenewSessionResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenewedOut;
+};
+
+export type RenewSessionResponse = RenewSessionResponses[keyof RenewSessionResponses];

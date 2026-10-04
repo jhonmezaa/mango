@@ -140,6 +140,7 @@ import {
     zRemoveGroupBody,
     zRemoveGroupPath,
     zRemoveGroupResponse,
+    zRenewSessionResponse,
     zReopenVersionBody,
     zReopenVersionPath,
     zReopenVersionResponse,
@@ -192,7 +193,7 @@ import {
  * Every route of mango-api that answers JSON: how to call it and the zod schemas of its path
  * parameters, query, body and response. Paths are relative to the API base path.
  *
- * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat.
+ * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, POST /session, DELETE /session.
  */
 export const operations = {
     addGroup: {
@@ -770,6 +771,15 @@ export const operations = {
         query: null,
         body: zRemoveGroupBody,
         response: zRemoveGroupResponse,
+    },
+    renewSession: {
+        method: 'POST',
+        path: '/session/refresh',
+        status: 200,
+        pathParams: null,
+        query: null,
+        body: null,
+        response: zRenewSessionResponse,
     },
     reopenVersion: {
         method: 'POST',

@@ -428,6 +428,8 @@ class MfaResetDeps:
     audit: AuditLog
     rate_limiter: RateLimiter
     clock: Callable[[], datetime]
+    end_sessions: Callable[[str], None] | None = None
+    """Ends the web sessions of a user id (D63), next to the Cognito sign-out."""
 
 
 def new_change_id() -> str:
@@ -611,6 +613,11 @@ def approve(deps: MfaResetDeps, caller: Caller, change_id: str) -> None:
         except ConflictError as exc:
             raise ApiError(409, "version_conflict", "the request changed; reload") from exc
         try:
+            if deps.end_sessions is not None:
+                try:
+                    deps.end_sessions(request.target_user)
+                except Exception as exc:
+                    raise CognitoUnavailableError from exc
             deps.users.reset_mfa(request.target_username)
         except CognitoUnavailableError as exc:
             deps.store.transition(request, to="pending", expected="applying", now=now)

@@ -24,6 +24,7 @@ from mango_api.mfa_reset import (
     UserNotFoundError,
 )
 from mango_api.settings_store import BudgetLimits, SettingsStore
+from mango_api.web_session import WebSessionDeps
 
 from .test_admin import (
     TOKENS,
@@ -71,6 +72,12 @@ class FakeCognito:
             raise CognitoUnavailableError
         self.resets.append(username)
 
+    # The web sessions table, as far as a reset uses it (D63).
+    ended: list[str] = field(default_factory=list)
+
+    def revoke_user(self, sub: str, _now: int) -> None:
+        self.ended.append(sub)
+
 
 @dataclass
 class Env:
@@ -111,6 +118,16 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
                 invocation_key=b"k" * 32,
                 cognito_users=cognito,  # type: ignore[arg-type]
                 mfa_reset_store=ResetStore(db, "settings"),
+                web_sessions=WebSessionDeps(
+                    store=cognito,  # type: ignore[arg-type]
+                    cipher=None,  # type: ignore[arg-type]
+                    tokens=None,  # type: ignore[arg-type]
+                    verifier=None,  # type: ignore[arg-type]
+                    audit=audit,  # type: ignore[arg-type]
+                    clock=lambda: clock[0],
+                    app_origin="https://app.example.com",
+                    session_seconds=8 * 3600,
+                ),
             )
 
         asgi = app_module.create_app(_settings(), services_factory=factory)
@@ -175,6 +192,8 @@ def test_dual_approval_resets_mfa_and_signs_out(env: Env) -> None:
     assert (item["status"], item["decided_by"]) == ("approved", "admin-2")
     # Cognito is called with the username returned by AdminGetUser, never the typed email.
     assert env.cognito.resets == ["uuid-target"]
+    # The web sessions of the person end too (D63), by user id.
+    assert env.cognito.ended == [DIRECTORY["target@example.com"].sub]
     applied = env.audit.named("account.mfa_reset")
     assert applied == [
         (

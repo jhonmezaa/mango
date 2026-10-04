@@ -954,6 +954,16 @@ export const zReasonInSchema = z.object({
 });
 
 /**
+ * RenewedOut
+ */
+export const zRenewedOutSchema = z.object({
+    access_token: z.string(),
+    expires_in: z.int(),
+    federated: z.boolean(),
+    id_token: z.string()
+});
+
+/**
  * ResetCreatedOut
  */
 export const zResetCreatedOutSchema = z.object({
@@ -1114,6 +1124,14 @@ export const zSearchInSchema = z.object({
         'disabled'
     ]).optional().default('all'),
     prefix: z.string().nullish()
+});
+
+/**
+ * SessionIn
+ */
+export const zSessionInSchema = z.object({
+    federated: z.boolean().optional().default(false),
+    refresh_token: z.string().min(1).max(4096)
 });
 
 /**
@@ -2283,3 +2301,20 @@ export const zMeResponse = zMeResponseSchema;
  * Successful Response
  */
 export const zGetModelsResponse = zModelsOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zEndSessionResponse = z.void();
+
+export const zStartSessionBody = zSessionInSchema;
+
+/**
+ * Successful Response
+ */
+export const zStartSessionResponse = z.void();
+
+/**
+ * Successful Response
+ */
+export const zRenewSessionResponse = zRenewedOutSchema;

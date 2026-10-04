@@ -742,6 +742,25 @@ def test_two_bootstraps_at_once_do_not_both_apply(env: Env) -> None:
 # --- Disable and enable -----------------------------------------------------------------
 
 
+def test_signing_a_person_out_ends_their_web_sessions_too(env: Env) -> None:
+    ended: list[str] = []
+    env.deps.end_sessions = ended.append
+    assert _post(env, "/lead/disable", {"reason": "left the company"}).json()["result"] == "applied"
+    # By user id (the sessions table), next to the Cognito sign-out by username (D63).
+    assert ended == ["lead"]
+    assert env.people.signed_out == ["name-lead"]
+
+
+def test_a_sessions_outage_fails_the_change_before_the_cognito_sign_out(env: Env) -> None:
+    def down(_sub: str) -> None:
+        raise RuntimeError("table unavailable")
+
+    env.deps.end_sessions = down
+    response = _post(env, "/lead/disable", {"reason": "left the company"})
+    assert response.status_code == 502
+    assert env.people.signed_out == []
+
+
 def test_disabling_a_person_closes_their_sessions(env: Env) -> None:
     assert _post(env, "/lead/disable", {"reason": "left the company"}).json()["result"] == "applied"
     assert env.people.by_sub["lead"].enabled is False

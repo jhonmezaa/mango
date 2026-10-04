@@ -87,6 +87,11 @@ class Settings:
     alerts_email: str = ""
     first_admin_emails: str = ""
     """Administrators named by the installation, comma separated (display only)."""
+    app_origin: str = ""
+    """Public origin of the application (``https://host``); the web session needs it (D63)."""
+    web_sessions_table: str = ""
+    session_hours: int = 0
+    """Maximum length of a web session: the refresh token validity of the web client."""
 
     @staticmethod
     def from_env() -> Settings:
@@ -147,6 +152,9 @@ class Settings:
             management_account_id=env.get("MANAGEMENT_ACCOUNT_ID", ""),
             alerts_email=env.get("ALERTS_EMAIL", ""),
             first_admin_emails=env.get("FIRST_ADMIN_EMAILS", ""),
+            app_origin=env.get("APP_ORIGIN", ""),
+            web_sessions_table=env.get("WEB_SESSIONS_TABLE", ""),
+            session_hours=int(env.get("SESSION_HOURS", "0")),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),
