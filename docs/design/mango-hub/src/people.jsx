@@ -111,7 +111,7 @@ function PersonChip({ email, onRemove, size, you }) {
   return (
     <span className={'person-chip' + (size === 'lg' ? ' is-lg' : '')}>
       <span className="person-av" aria-hidden="true">{initials(email)}</span>
-      <span className="person-mail" title={email}>{at > 0 ? <><span className="pm-local">{email.slice(0, Math.max(0, at - 6))}</span><span className="pm-dom">{email.slice(Math.max(0, at - 6))}</span></> : <span className="pm-local">{email}</span>}</span>{you && <span className="person-you">· tú</span>}
+      <span className="person-mail" title={email}>{at > 8 ? <><span className="pm-local">{email.slice(0, at - 6)}</span><span className="pm-dom">{email.slice(at - 6)}</span></> : <span className="pm-whole">{email}</span>}</span>{you && <span className="person-you">· tú</span>}
       {onRemove && <button type="button" aria-label={'Quitar ' + email} onClick={onRemove}><I.Close size={10} /></button>}
     </span>
   );

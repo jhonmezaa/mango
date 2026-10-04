@@ -26,7 +26,9 @@
 
   const seedAudit = [
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.renewed', target: 'session', detail: 'Recuperó la sesión al recargar', read: true, at: ago(3) },
-    { actor: 'usuario4@empresa.com', role: 'user', action: 'session.rejected', target: 'session', detail: 'Intento de renovar con una sesión que ya no sirve', outcome: 'rejected', error: 'session_revoked', at: ago(9) },
+    { actor: 'usuario4@empresa.com', role: 'user', action: 'session.rejected', target: 'session', detail: 'No se pudo crear la sesión tras el ingreso', outcome: 'rejected', error: 'invalid_refresh_token', at: ago(9) },
+    { actor: 'usuario6@empresa.com', role: 'admin', action: 'session.started', target: 'session', detail: 'Ingresó con el SSO de la empresa · Okta (empresa.okta.com)', at: ago(150) },
+    { actor: 'usuario8@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'rejected', at: ago(200) },
     { actor: 'usuario9@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'disabled', at: ago(300) },
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.started', target: 'session', detail: 'Ingresó con contraseña y MFA', at: ago(320) },
     { actor: 'usuario5@empresa.com', role: 'central', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'expired', at: ago(410) },

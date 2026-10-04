@@ -320,16 +320,28 @@ function OrgAgentFacts({ agent, kids, agents }) {
   const rev = (S.get().agentRevs || []).find(r => r.agentId === agent.id && ['review', 'draft'].includes(r.status));
   const kidsWrite = kids.filter(k => { const a = agents.find(x => x.id === k.id); return (a?.mcp || []).some(id => L?.serverOf(id)?.tools.some(t => t.write)); });
   const Row = ({ k, children }) => <div className="mk-kv" style={{ fontSize: 12.5 }}><span>{k}</span><span>{children}</span></div>;
+  const sh = window.sharesOf ? window.sharesOf(agent) : { groups: [] };
+  const myG = S.ROLES[S.get().role]?.groups || []; const meMail = S.actorEmail();
+  const canUse = !!sh.everyone || (sh.groups || []).some(g => myG.includes(g.id)) || (sh.users || []).some(u => (u.email || u) === meMail);
+  const noUse = !canUse && (
+    <div className="oc-nouse" role="note">
+      <div className="oc-nouse-t"><I.Lock size={13} />No puedes usar este agente</div>
+      <div>No estás en ninguno de los grupos que lo usan, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos, también para quien lo creó y para administradores.</div>
+      {(sh.groups || []).length > 0 && <div><div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>Lo usan</div><div className="oc-nouse-g">{sh.groups.map(g => <span key={g.id}>{g.id}</span>)}</div></div>}
+      <div style={{ color: 'var(--text-muted)' }}>{S.can('agent.edit') ? 'Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.' : 'Para usarlo, pide a un administrador que te agregue a uno de esos grupos.'}</div>
+    </div>
+  );
   if (S.get().avail) return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {agent.desc && <div style={{ fontSize: 13, lineHeight: 1.5 }}>{agent.desc}</div>}
+      {noUse}
       <div>
         <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 500, marginBottom: 4 }}>Agente</div>
         <Row k="Categoría">{agent.cat}</Row>
         {[['Estado'], ['Modelo'], ['Compartido con'], ['Presupuesto del mes'], ['Datos y permisos']].map(([k]) => <Row key={k} k={k}><span className="row gap-2" style={{ alignItems: 'center' }}><span className="mk-meta">—</span><window.SoonTag /></span></Row>)}
       </div>
       <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
-        <button className="btn btn-sm" onClick={() => window.MangoNav?.('marketplace')}>Ver en Marketplace</button>
+        {canUse && <button className="btn btn-sm" onClick={() => window.MangoNav?.('marketplace')}>Ver en Marketplace</button>}
         {S.can('agent.edit') && <button className="btn btn-sm" onClick={() => window.MangoNav?.('admin', agent.id)}><I.Edit size={12} /> Editar</button>}
         <window.Soon on><button className="btn btn-sm btn-ghost">Costos</button></window.Soon>
       </div>
@@ -337,6 +349,7 @@ function OrgAgentFacts({ agent, kids, agents }) {
   );
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {noUse}
       <div>
         <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 500, marginBottom: 4 }}>Estado</div>
         <Row k="Estado"><span className={'badge ' + (ST[agent.status] || ST.offline)[1]}>{(ST[agent.status] || ST.offline)[0]}</span></Row>

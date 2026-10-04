@@ -881,14 +881,14 @@ function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attach
           style={{width:'100%', border:'none', background:'transparent', resize:'none', outline:'none', color:'var(--text)', fontSize: 14, fontFamily:'inherit', minHeight: 44, lineHeight: 1.55}}
           rows={2}
         />
-        <div className="row between">
+        <div className="row between ch-compose-bar">
           <div className="row gap-1">
             <window.Soon on={soon}><button className="btn btn-ghost btn-icon" title="Adjuntar archivos" aria-label="Adjuntar archivos" onClick={() => fileRef.current?.click()}><I.Paperclip size={14} /></button></window.Soon>
             <window.Soon on={soon}><button className="btn btn-ghost btn-sm"><I.Skill size={12} /> Skill</button></window.Soon>
 
           </div>
           <div className="row gap-2 ch-send-row">
-            <span className="row gap-1" style={{fontSize: 11, color:'var(--text-dim)'}}><window.Soon on={soon}><span><span className="mono">/</span> comandos</span></window.Soon> · <span className="mono">⇧↵</span> nueva línea</span>
+            <span className="row gap-1 ch-send-hint" style={{fontSize: 11, color:'var(--text-dim)'}}><window.Soon on={soon}><span><span className="mono">/</span> comandos</span></window.Soon> · <span className="mono">⇧↵</span> nueva línea</span>
             {streaming
               ? <button className="btn btn-sm" onClick={onCancel}><I.Stop size={11} /> Cancelar</button>
               : <button className="btn btn-sm btn-primary" disabled={over} onClick={send}>Enviar <I.Send size={11} /></button>}

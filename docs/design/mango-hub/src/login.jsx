@@ -23,7 +23,7 @@ function Login({ onLogin }) {
   const [fresh, setFresh] = useState(false);
   // step: login | newpwd | enroll | mfa | signup | verify | forgot | reset | pending
   const boot = window.MangoStore.get().simSessionBoot;
-  const [step, setStep] = useState(boot === 'restoring' ? 'restoring' : 'login');
+  const [step, setStep] = useState(boot === 'restoring' || boot === 'ssoReturn' ? 'restoring' : 'login');
   const [email, setEmail] = useState('');
   const [notice, setNotice] = useState(boot === 'otherTab' ? 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.' : null);
   useEffect(() => { if (step !== 'restoring') return; const t = setTimeout(() => setStep('login'), 1600); return () => clearTimeout(t); }, [step]);
@@ -41,7 +41,7 @@ function Login({ onLogin }) {
     <div className="login">
       <div className="login-form-col">
         <div className="login-brand"><span className="sb-ws-logo" aria-hidden="true">m</span><span>Mango</span></div>
-        {step === 'restoring' && <div className="login-form login-restoring" role="status"><span className="mango-spinner" aria-hidden="true" /><span>Recuperando tu sesión…</span></div>}
+        {step === 'restoring' && <div className="login-form login-restoring" role="status"><span className="mango-spinner" aria-hidden="true" /><span>{boot === 'ssoReturn' ? 'Completando el ingreso…' : 'Recuperando tu sesión…'}</span></div>}
         {step === 'login' && <SignIn email={email} setEmail={setEmail} notice={notice} idp={cfg.idp} onForgot={() => go('forgot')} onOk={() => accountState === 'temp' ? go('newpwd') : afterPwd()} onSso={afterAuth} />}
         {step === 'newpwd' && <NewPassword email={email || 'usuario1@empresa.com'} onBack={() => go('login')} onOk={() => { window.MangoStore?.log('account.password_set', email || 'usuario1@empresa.com', 'Creó su contraseña en el primer ingreso · la temporal dejó de valer'); afterPwd(); }} />}
         {step === 'enroll' && <MfaEnroll email={email || 'usuario1@empresa.com'} onBack={() => go('login')} onOk={() => { setEnrolled(true); if (wasReset) { const r = { ...(window.MangoStore.get().mfaResets || {}) }; delete r[(email || 'usuario1@empresa.com').trim().toLowerCase()]; window.MangoStore.set({ mfaResets: r }); } window.MangoStore?.log('account.mfa_enroll', email || 'usuario1@empresa.com', 'Configuró MFA con app autenticadora en el primer ingreso'); afterAuth(); }} />}

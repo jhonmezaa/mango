@@ -55,7 +55,7 @@ window.MangoData = {
       caps: ["Changelog", "Release Notes", "Slack Post"],
       mcp: ["github", "slack"],
       status: "online", budget: 210, budgetMax: 500, tickets: 55, model: "Haiku 4.5", availableModels: ["Sonnet 4.6", "Sonnet 4.5", "Haiku 4.5", "Opus 4"] },
-    { id: "sap-02", name: "SAP Invoicer", cat: "ERP", icon: "Database", iconBg: "#f59e0b22", iconColor: "#fbbf24", manager: "sap-01", role: "Invoicing analyst",
+    { id: "sap-02", groups: ["bu-retail"], name: "SAP Invoicer", cat: "ERP", icon: "Database", iconBg: "#f59e0b22", iconColor: "#fbbf24", manager: "sap-01", role: "Invoicing analyst",
       desc: "Estado de facturación, aging reports y pagos pendientes.",
       caps: ["Invoice Status", "Aging", "Payment Runs"],
       mcp: ["sap-s4-hana"],

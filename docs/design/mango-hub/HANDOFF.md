@@ -355,3 +355,22 @@ Confirmado por el producto (sin cambios): doble aprobación solo para lo sensibl
 **Aspecto**
 - Chat a ≤560 px: la fila de envío tiene 6 px de margen a la derecha y «Cancelar» ya no queda pegado al borde.
 - Menú de Ajustes › General: la insignia «Próximamente» va debajo de la etiqueta (`.set-nav-soon`), no encima del texto.
+
+
+## Después de implementar la sesión (2026-10-04)
+**Correcciones**
+- **Chat a ≤560 px**: la barra del compositor (`.ch-compose-bar`) hace salto de línea y se oculta la ayuda de teclado («/ comandos · ⇧↵»), que no sirve en pantallas táctiles. «Cancelar»/«Enviar» van a la derecha (`margin-left:auto`); si aun así no caben con «Skill» y sus «Próximamente», bajan a una segunda línea alineados a la derecha. Ya no se sale del cuadro.
+- **Actor de Auditoría**: la columna del actor (la 3.ª: hora, evento, actor…) pasa a 230 px como mínimo (210 px a ≤1100 px). Así caben «…» + los últimos 6 caracteres + `@dominio` + la insignia con dominios normales (`mock-user@example.com` + «Admin»). Con un dominio muy largo se ve el correo completo al pasar el cursor y en el panel.
+- **Chip y actor con poca parte local**: si al quitar los 6 caracteres quedarían 1 o 2 letras, el correo no se divide en dos partes: va en un solo tramo que, si no cabe, se recorta al final con «…» (nunca pasa bajo la insignia). La parte que se recorta tiene un ancho mínimo de 1ch (solo «…»). Se acabó el hueco «us uario1@…».
+- **Aviso de vencimiento**: dice los minutos que quedan al aparecer («Tu sesión vence en 4 min.»). Se acepta lo que hace el producto: tras «Entendido», una recarga dentro de los últimos 10 min lo vuelve a mostrar, y sin hora de vencimiento no hay aviso. Con SSO el texto termina en «al vencer vuelves a ingresar» (sin «contraseña y MFA»). Demo: «Sesión · aviso de vencimiento › Abrió con 4 min».
+- **Motivos de «Sesión cerrada»**: `rejected` «El proveedor de identidad no la renovó: se revocó o venció allí, o la cuenta se deshabilitó fuera de Mango»; `revoked` «Un administrador cerró sus sesiones (sin detalle del motivo)». Con dos cambios seguidos vale el más reciente (aceptado). Para `disabled`, `group_removed`, `mfa_reset`, `rejected` y `revoked` el panel añade bajo el motivo: «Se registra cuando su navegador intenta renovar la sesión, no en el momento del cambio. Si tenía la aplicación cerrada, puede no aparecer.»
+- **«Sesión rechazada»**: como pasa al crear la sesión y no al renovar, la frase pasa a «No se pudo crear la sesión tras el ingreso». *Cambio para el producto.* El panel añade «Motivo»: `invalid_refresh_token` «El ingreso no sirve para crear la sesión», `sub_mismatch` «El ingreso es de otra persona». Otros códigos se ven solo en «Resultado».
+- **«Sesión iniciada» con SSO**: «Ingresó con el SSO de la empresa · {authCfg.idpName}». «Ingresó con contraseña y MFA» queda para el ingreso propio.
+- **Pantalla de carga**: se acepta que «Recuperando tu sesión…» dure hasta que la app esté lista. Al volver del SSO no se usa el «Cargando…» genérico: es el mismo armazón con «Completando el ingreso…». *Cambio para el producto.* Demo: «Login · al abrir la app › Vuelve del SSO».
+
+**Caso nuevo: quien crea un agente y no está en sus grupos**
+- **Agent Builder › Acceso**: se comprueba contra los grupos de quien edita y su correo en Personas.
+  - Si no está en ninguno: aviso ámbar «No estás en ninguno de estos grupos. Cuando se publique no lo verás en el Marketplace ni podrás usarlo en el chat, aunque lo hayas creado: el uso va por grupos, también para administradores. Lo verás en el Org Chart y podrás editarlo. Para usarlo, elige también un grupo tuyo o agrega tu correo en Personas.» No bloquea el envío: compartir con otra área es válido.
+  - Si está en alguno pero no en todos: nota gris «No estás en {grupos}. Lo usarás por otro de tus grupos.»
+- **Org Chart › detalle**, cuando quien lo abre no puede usar el agente: caja «No puedes usar este agente» con la explicación, «Lo usan» y la lista de grupos (mono), más qué hacer: quien puede editar, «agrega uno de tus grupos en su Acceso (va con una versión nueva)»; el resto, «pide a un administrador que te agregue». Se quita «Ver en Marketplace»; «Editar» sigue para quien puede editar.
+- Demo: SAP Invoicer (`sap-02`) se comparte solo con `bu-retail`. Abrirlo en el Org Chart con la cuenta Admin muestra la caja. El Marketplace del prototipo sigue mostrando todo a los admins (simplificación): en el producto no lo ve.

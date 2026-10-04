@@ -349,6 +349,12 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                   <div className="row gap-1" style={{ flexWrap: 'wrap' }}>{groups.map(g => { const on = snap.groups.includes(g); const area = L.isRestricted(g); return (
                     <button key={g} type="button" className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} onClick={() => toggleGroup(g)} aria-pressed={on} title={L.groupDef(g)?.desc}>{on && <I.Check size={10} />}{g}{area && <span className="ab-area">{L.groupDef(g)?.type === 'area' ? 'área · ' + L.groupDef(g).area : 'sin datos de cuentas'}</span>}</button>
                   ); })}</div>
+                  {(() => { const MS = window.MangoStore; const mine = MS.ROLES[MS.get().role]?.groups || []; const meMail = MS.actorEmail(); const sel = snap.groups.filter(g => !mine.includes(g)); const inAny = snap.groups.some(g => mine.includes(g)) || usersSel.includes(meMail);
+                    if (!snap.groups.length || !sel.length) return null;
+                    return inAny
+                      ? <div className="mk-meta ab-self" style={{ lineHeight: 1.5 }}>No estás en {sel.map((g, i) => <React.Fragment key={g}>{i ? ', ' : ''}<span className="mono">{g}</span></React.Fragment>)}. Lo usarás por {snap.groups.some(g => mine.includes(g)) ? 'otro de tus grupos' : 'tu correo en Personas'}.</div>
+                      : <div className="mc-alert amber ab-self"><I.Warn size={14} /><div><b>No estás en ninguno de estos grupos.</b> Cuando se publique no lo verás en el Marketplace ni podrás usarlo en el chat, aunque lo hayas creado: el uso va por grupos, también para administradores. Lo verás en el Org Chart y podrás editarlo. Para usarlo, elige también un grupo tuyo{avail ? ' o agrega tu correo en Personas' : ''}.</div></div>;
+                  })()}
                 </ABField>
                 {avail && <ABField label="Personas" hint="Opcional" error={(userErr && userQ) || lookupErr || (errors?.some(e => e.code === 'accounts-users') && 'Quita a las personas o las tools solo para grupos centrales')}>
                   {usersSel.length > 0 && <div className="row gap-1" style={{ flexWrap: 'wrap', marginBottom: 8 }}>{usersSel.map(u => <window.PersonChip key={u} email={u} onRemove={() => set({ users: usersSel.filter(x => x !== u) })} />)}</div>}
