@@ -1772,7 +1772,24 @@ input[type="range"],input[type="checkbox"],input[type="radio"]{accent-color:var(
 @media (max-width:760px){.mv-status-f{overflow-x:auto;flex-wrap:nowrap;max-width:100%;scrollbar-width:none}.mv-status-f>button{flex-shrink:0}}
 
 .ap-narrow{display:grid;gap:10px}.ap-narrow .ap-detail{display:flex;flex-direction:column}
-.ch-phase{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted);margin-top:8px;min-height:20px}
+.ch-phase{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted);margin-top:8px;min-height:20px;height:20px}
+.ch-phase-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-live{font-size:10.5px;color:var(--blue);margin-left:auto;display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
+/* Indicador de fase del turno: tres puntos en órbita (solo transform y opacidad). Misma figura en todas las fases; cambia el ritmo. */
+.ch-orb{position:relative;width:16px;height:16px;flex-shrink:0;animation:orb-spin 1.6s linear infinite}
+.ch-orb i{position:absolute;left:50%;top:50%;width:0;height:0}
+.ch-orb i:nth-child(2){transform:rotate(120deg)}.ch-orb i:nth-child(3){transform:rotate(240deg)}
+.ch-orb b{position:absolute;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--accent-ink);transform:translateY(-5px)}
+.ch-orb i:nth-child(2) b{opacity:.7}.ch-orb i:nth-child(3) b{opacity:.42}
+.ch-orb[data-k="think"]{animation-duration:2.8s}
+.ch-orb[data-k="think"] b{animation:orb-breathe 1.4s ease-in-out infinite}
+.ch-orb[data-k="think"] i:nth-child(2) b{animation-delay:-.47s}.ch-orb[data-k="think"] i:nth-child(3) b{animation-delay:-.93s}
+.ch-orb[data-k="tool"]{animation-duration:.9s}
+.ch-orb[data-k="process"] b{animation:orb-gather 1.6s ease-in-out infinite}
+@keyframes orb-spin{to{transform:rotate(360deg)}}
+@keyframes orb-breathe{0%,100%{transform:translateY(-5px) scale(.55)}50%{transform:translateY(-5px) scale(1)}}
+@keyframes orb-gather{0%,100%{transform:translateY(-5px)}50%{transform:translateY(-2.5px)}}
+@media (prefers-reduced-motion:reduce){.ch-orb,.ch-orb b{animation:none !important}}
 .ch-steps{margin-bottom:10px;font-size:12.5px;color:var(--text-muted)}
 .ch-steps-t{display:inline-flex;align-items:center;gap:6px;padding:3px 0;color:var(--text-muted);font-size:12.5px}
 .ch-steps-t:hover{color:var(--text)}

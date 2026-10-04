@@ -253,3 +253,14 @@ Ya no hay instalación «de laboratorio»: se quitó el control «Tipo de instal
 **Panel de demo**: «Instalación» (en uso / recién instalada: deja solo usuario1 admin y usuario7 sin acceso, grupos de sistema y áreas vacías), «Personas · directorio» (carga / cargando / error), «Personas · al actuar o invitar» (funciona / falla). Para ver la doble aprobación: «Admin que revisa» › Usuario 6.
 
 **Pendiente de la ronda anterior**: el contexto «aprobaciones y progreso del chat ya implementados» quedó tratado en «Cierre de la ronda del 2026-10-03». Si quedan puntos de ese texto que no aparecen ahí, hay que volver a pasarlos.
+
+
+## Indicador de fase del turno (2026-10-03)
+`ch-orb` en `styles.css` reemplaza al mango-spinner solo en la línea de fase (`ch-phase`, `chat.jsx` › `StreamingMessage`). mango-spinner y g-spin siguen en el resto (pasos del turno, filas de tools, botones, login, administración).
+- **Figura**: tres puntos de 4 px en órbita, a 120°, dentro de una caja de 16 × 16 px (la línea reserva 20 px fijos: no mueve el contenido al aparecer, cambiar o irse). Color `--accent-ink` con opacidad 1 / .7 / .42 (efecto de estela); sigue los dos temas sin valores propios.
+- **Una figura, ritmo por fase** (`data-k`): Pensando = órbita lenta (2,8 s) y los puntos respiran (escala .55→1, 1,4 s, desfasados); Consultando = órbita rápida (0,9 s); Procesando resultados = órbita de 1,6 s y los puntos se juntan hacia el centro y vuelven; Escribiendo (sin texto aún) = órbita de 1,6 s. Con texto, «Escribiendo» sigue siendo el cursor.
+- **Cambio de fase**: sin transición propia; cambia el ritmo y el texto. El texto sigue siendo el `role="status"` que se anuncia; el indicador va con `aria-hidden`.
+- **Observar**: indicador a la izquierda, texto (se recorta con «…» si no cabe, a 420 px), «LIVE» con su punto azul fijo a la derecha. Solo se mueve el indicador.
+- **Reducir movimiento**: sin animación; queda el triángulo de tres puntos con la estela de opacidades.
+- **Costo**: solo `transform` y `opacity`; sin sombras ni desenfoques.
+- **Primera espera**: sin versión grande. La conversación vacía usa la misma línea de fase.

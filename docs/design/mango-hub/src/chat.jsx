@@ -815,9 +815,9 @@ function StreamingMessage({ phase, steps = [], text, agent, observe }) {
       )}
       {phase && !(phase.k === 'write' && text) && (
         <div className="ch-phase" role="status" aria-live="polite">
-          <span className="mango-spinner" />
-          <span>{PHASE_TXT(phase)}…</span>
-          {observe && <span className="mono" style={{fontSize: 10.5, color:'var(--blue)', marginLeft: 'auto', display:'inline-flex', alignItems:'center', gap: 4}}><span className="dot" style={{background:'var(--blue)'}} /> LIVE</span>}
+          <span className="ch-orb" data-k={phase.k} aria-hidden="true"><i><b /></i><i><b /></i><i><b /></i></span>
+          <span className="ch-phase-t">{PHASE_TXT(phase)}…</span>
+          {observe && <span className="ch-live mono"><span className="dot" style={{background:'var(--blue)'}} /> LIVE</span>}
         </div>
       )}
       {phase?.k === 'write' && text && <span className="sr-only" role="status">Escribiendo…</span>}
