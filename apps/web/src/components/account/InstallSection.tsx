@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 import type { OperationOutput } from '../../api/operations';
 import { useSession } from '../../auth/useSession';
@@ -25,7 +26,8 @@ function ReadOnly({ children, text = false }: { children: ReactNode; text?: bool
  * Mango was installed, read only. Account ids and mailboxes are for administrators: they come
  * from `GET /api/admin/installation`, which authorizes the call, never from the public
  * `config.json`. Every value is API data, rendered as text. «Publicación» is the label of the
- * release that was installed: it tells two builds of one version apart.
+ * release that was installed: it tells two builds of one version apart, and is left out when it
+ * says the same as the version.
  */
 export function InstallSection() {
   const { t } = useTranslation();
@@ -50,11 +52,16 @@ export function InstallSection() {
 
   const none = t('people.install.none');
   const data = state.kind === 'ready' ? state.data : null;
+  const version = data?.version
+    ? t('people.install.versionValue', { version: data.version })
+    : null;
   return (
     <div>
       <div className="set-head">
         <h2 className="set-title">{t('people.install.title')}</h2>
-        <p className="set-desc">{t('people.install.desc')}</p>
+        <p className="set-desc">
+          {data ? t('people.install.desc') : t('people.install.descShort')}
+        </p>
       </div>
       {state.kind === 'error' ? (
         <div className="g-err pp-load-error" role="alert">
@@ -71,24 +78,17 @@ export function InstallSection() {
           </button>
         </div>
       ) : data === null ? (
-        <div role="status" aria-label={t('people.install.loading')}>
-          {[0, 1, 2, 3].map((index) => (
-            <div key={index} className="set-row">
-              <Skel w={140} h={14} />
-              <Skel w="60%" h={14} />
-            </div>
+        <div className="set-install-skel" role="status" aria-label={t('people.install.loading')}>
+          {[0, 1, 2, 3, 4].map((index) => (
+            <Skel key={index} w={index % 2 ? '60%' : '80%'} h={18} />
           ))}
         </div>
       ) : (
         <>
           <SettingRow label={t('people.install.version')}>
             <div className="set-row-link">
-              <span className="set-version">
-                {data.version
-                  ? t('people.install.versionValue', { version: data.version })
-                  : t('people.install.noVersion')}
-              </span>
-              {data.release ? (
+              <span className="set-version">{version ?? t('people.install.noVersion')}</span>
+              {data.release && data.release !== version ? (
                 <span className="mk-meta">
                   {t('people.install.release')} <span className="mono">{data.release}</span>
                 </span>
@@ -130,7 +130,13 @@ export function InstallSection() {
             )}
           </SettingRow>
           <SettingRow label={t('people.install.inApp')}>
-            <div className="set-row-text">{t('people.install.inAppBody')}</div>
+            <div className="set-row-text">
+              {t('people.install.inAppBody.lead')}
+              <Link className="mk-link" to="/budgets">
+                {t('people.install.inAppBody.budgets')}
+              </Link>
+              {t('people.install.inAppBody.tail')}
+            </div>
           </SettingRow>
         </>
       )}

@@ -224,7 +224,7 @@ describe('mock people', () => {
     );
     expect(installation.version).toBe('0.1.0');
     expect(installation.release).toBe('v0.1.0-g1a2b3c4');
-    expect(installation.sign_up_domains).toEqual(['example.com']);
+    expect(installation.sign_up_domains).toEqual(['example.com', 'empresa.com']);
     expect(installation.management_account_id).toBe('111111111111');
   });
 });

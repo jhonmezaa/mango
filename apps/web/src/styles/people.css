@@ -98,8 +98,7 @@
   }
   .pp-tr {
     display: grid;
-    /* The design gives the status 150px, which «Invitada · contraseña temporal» overflows. */
-    grid-template-columns: minmax(220px, 2fr) 190px 100px minmax(140px, 1.4fr) 100px 24px;
+    grid-template-columns: minmax(0, 2fr) 190px 100px minmax(0, 1.4fr) 100px 24px;
     gap: 14px;
     align-items: center;
     padding: 10px 16px;
@@ -166,8 +165,14 @@
     gap: 8px;
     margin-top: 12px;
   }
-  .pp-note {
-    margin-top: 10px;
+  @media (max-width: 1240px) {
+    .pp-tr {
+      grid-template-columns: minmax(0, 1.6fr) 190px minmax(0, 1fr) 24px;
+    }
+    .pp-tr > :nth-child(3),
+    .pp-tr > :nth-child(5) {
+      display: none;
+    }
   }
   @media (max-width: 900px) {
     .pp-tr {
@@ -306,7 +311,7 @@
     align-items: center;
     margin-top: 8px;
   }
-  .pp-drawer .pp-back {
+  .pp-drawer .pp-drawer-h .pp-back {
     display: none;
   }
   .pp-drawer-b {
@@ -452,6 +457,13 @@
     font-weight: 600;
     color: var(--text-strong);
   }
+  .set-install-skel {
+    display: grid;
+    gap: 12px;
+  }
+  .set-install-skel .g-skel {
+    border-radius: 6px;
+  }
   .set-row-link {
     display: flex;
     gap: 8px;
@@ -466,10 +478,10 @@
       flex-direction: column;
       padding: 12px 16px;
     }
-    .pp-drawer .pp-back {
+    .pp-drawer .pp-drawer-h .pp-back {
       display: inline-flex;
     }
-    .pp-drawer .pp-x {
+    .pp-drawer .pp-drawer-h .pp-x {
       display: none;
     }
     .pp-drawer-b {

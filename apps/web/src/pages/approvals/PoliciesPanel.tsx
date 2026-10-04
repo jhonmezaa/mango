@@ -139,6 +139,9 @@ function PolicyModal({
             );
           })}
         </div>
+        {CONDITIONS.some((condition) => !tool.conditions.includes(condition)) ? (
+          <div className="g-hint">{t('approvals.policies.modal.conditionsHint')}</div>
+        ) : null}
         {form.condition === 'always' ? (
           <div className="g-hint">
             {t('approvals.policies.modal.alwaysHint', { count: form.approvers })}

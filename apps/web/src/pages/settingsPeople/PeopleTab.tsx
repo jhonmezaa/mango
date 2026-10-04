@@ -22,6 +22,7 @@ import {
   formatJoined,
   groupOptions,
   hasFirstDaySteps,
+  isExternal,
   isSelf,
   pendingOf,
   searchPrefix,
@@ -302,12 +303,19 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
     return null;
   };
 
-  const decide = async (action: () => Promise<{ items: MemberChange[] }>): Promise<boolean> => {
+  const decide = async (
+    action: () => Promise<{ items: MemberChange[] }>,
+    approving?: MemberChange,
+  ): Promise<boolean> => {
     setDecisionError(null);
     try {
       setChanges((await action()).items);
     } catch (error) {
-      setDecisionError(t(decisionErrorKey(error)));
+      setDecisionError(
+        t(decisionErrorKey(error, approving !== undefined), {
+          id: approving?.change_id.slice(0, 8) ?? '',
+        }),
+      );
       if (error instanceof ApiError && (error.status === 409 || error.status === 410)) refresh();
       return false;
     }
@@ -354,6 +362,12 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           {t('people.invite')}
         </button>
       </div>
+      {totals?.incomplete ? (
+        <div className="pp-pending" role="status">
+          <InfoIcon size={14} />
+          <div>{t('people.incomplete')}</div>
+        </div>
+      ) : null}
       {waiting > 0 && filter !== 'pending' && !loading && !failed ? (
         <div className="pp-pending" role="status">
           <InfoIcon size={14} />
@@ -457,6 +471,11 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
                         {isSelf(me, person) ? (
                           <span className="mk-meta">{t('people.you')}</span>
                         ) : null}
+                        {isExternal(person.email, config.signUpDomains) ? (
+                          <span className="badge" title={t('people.externalTitle')}>
+                            {t('people.external')}
+                          </span>
+                        ) : null}
                         {waitingChanges > 0 ? (
                           <span className="badge badge-amber">
                             {t('people.pendingChanges', { count: waitingChanges })}
@@ -523,7 +542,6 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           </button>
         </div>
       ) : null}
-      {totals?.incomplete ? <div className="mk-meta pp-note">{t('people.incomplete')}</div> : null}
       <MemberChangeList
         changes={changes}
         me={me}
@@ -532,7 +550,10 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           decide(() => api.call('withdrawMemberChange', { path: changePath(change), body: {} }))
         }
         onApprove={(change) =>
-          decide(() => api.call('approveMemberChange', { path: changePath(change), body: {} }))
+          decide(
+            () => api.call('approveMemberChange', { path: changePath(change), body: {} }),
+            change,
+          )
         }
         onReject={(change, reason) =>
           decide(() =>
@@ -559,6 +580,7 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           me={me}
           admins={totals?.admins ?? 0}
           options={options}
+          external={isExternal(shown.email, config.signUpDomains)}
           pending={pendingOf(changes, shown.user_id)}
           mfaPending={resets.find(
             (reset) => reset.status === 'pending' && reset.target_email === shown.email,

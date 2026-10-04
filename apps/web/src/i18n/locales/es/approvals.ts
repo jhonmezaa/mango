@@ -198,7 +198,7 @@ export const approvals = {
   },
   policies: {
     intro:
-      'Ninguna tool de escritura se ejecuta sin confirmación. Por debajo del umbral, la confirma el propio usuario en el chat («¿Ejecutar esta acción?», queda auditada); por encima, la aprueban personas distintas de quien la pidió. Si falta el monto, la cantidad o el entorno, o no se puede interpretar, se piden aprobadores. Lo vencido se rechaza solo. Cambiar una política lo aprueba otro admin.',
+      'Ninguna tool de escritura se ejecuta sin confirmación. Por debajo del umbral, la confirma el propio usuario en el chat («¿Ejecutar esta acción?», queda auditada); por encima, la aprueban personas distintas de quien la pidió. Si falta el monto, la cantidad o el entorno, o no se puede interpretar, se piden aprobadores. Lo que no se resuelve a tiempo queda «Vencida». Cambiar una política lo aprueba otro admin.',
     loading: 'Cargando políticas',
     loadError: 'No se pudieron cargar las políticas',
     empty: 'Esta instalación no tiene tools de escritura.',
@@ -211,7 +211,7 @@ export const approvals = {
     pendingBadge: 'Cambio pendiente',
     userConfirms: '{{when}}: confirma el usuario',
     needsApproval: '{{when}}: aprobación',
-    expires: '{{hours}} h · luego se rechaza',
+    expires: '{{hours}} h · luego vence',
     edit: 'Editar política de {{tool}}',
     editPending: 'Tiene un cambio pendiente',
     editTitle: 'Proponer cambio',
@@ -232,6 +232,7 @@ export const approvals = {
         environment: 'Según entorno',
       },
       conditionUnsupported: 'Esta tool no informa ese dato',
+      conditionsHint: 'Las opciones deshabilitadas dependen de datos que esta tool no informa.',
       amount: 'Monto',
       amountHint_one:
         'Hasta este monto, la acción pide la confirmación del propio usuario en el chat (queda auditada). Por encima, requiere {{count}} aprobador distinto de quien la pidió.',
@@ -249,7 +250,7 @@ export const approvals = {
       approversHint: 'Personas distintas de quien pidió la acción; esa persona no puede aprobarla.',
       expires: 'La solicitud vence en',
       expiresOption: '{{hours}} h',
-      expiresHint: 'Si nadie la resuelve a tiempo, se rechaza sola y queda en Auditoría.',
+      expiresHint: 'Si nadie la resuelve a tiempo, queda «Vencida» y en Auditoría.',
       reason: 'Motivo',
       reasonPlaceholder: 'Lo verá el admin que lo revise',
       cancel: 'Cancelar',

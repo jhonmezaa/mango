@@ -29,7 +29,7 @@ export const settings = {
   },
   auth: {
     title: 'Autenticación',
-    desc: 'Cognito gestiona las cuentas. MFA, plan del directorio y dominios de registro vienen de la instalación y no se editan aquí.',
+    desc: 'Cognito gestiona las cuentas. MFA y dominios de registro vienen de la instalación y no se editan aquí.',
     userPool: 'User Pool ID',
     region: 'Región',
     clientId: 'App client ID',

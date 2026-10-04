@@ -102,7 +102,7 @@ export function middleware(): Connect.NextHandleFunction {
           userPoolId: 'us-east-1_MockPool',
           clientId: 'mockclient',
           apiBasePath: '/api',
-          signUpDomains: ['example.com'],
+          signUpDomains: ['example.com', 'empresa.com'],
           aiPolicyUrl: 'https://example.com/politica-uso-ia',
           auth: { installationType: 'lab', mfa: 'required', sessionHours: 12 },
           ssoProvider: 'MockIdP',

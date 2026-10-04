@@ -2,24 +2,45 @@ import { apiErrorCode } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
 
 export type PeopleErrorKey =
-  'people.errors.generic' | 'people.errors.last_admins' | 'people.errors.notPending';
+  | 'people.errors.generic'
+  | 'people.errors.last_admins'
+  | 'people.errors.notPending'
+  | 'people.errors.busy'
+  | 'people.errors.forbidden'
+  | `people.errors.approve.${ApproveRefusal}`;
+
+/** The rules the API checks again when a change is approved (design `recheck`). */
+const APPROVE_REFUSALS = ['user_disabled', 'already_member', 'last_admins'] as const;
+type ApproveRefusal = (typeof APPROVE_REFUSALS)[number];
+
+/** The caller stopped being an administrator with the session still open (design `forbidden`). */
+function isForbidden(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403 && error.code === 'forbidden';
+}
 
 /**
  * Message key of a refusal of the people API. The server's `message` is never shown: the codes
- * the design has a text for pick it, and anything else is the design's generic failure.
+ * the design has a text for pick it, and anything else is the design's generic failure. On a
+ * change applied at once, `version_conflict` is another change of administrators in progress.
  */
 export function peopleErrorKey(error: unknown): PeopleErrorKey {
-  return apiErrorCode(error) === 'last_admins'
-    ? 'people.errors.last_admins'
-    : 'people.errors.generic';
+  const code = apiErrorCode(error);
+  if (code === 'last_admins') return 'people.errors.last_admins';
+  if (code === 'version_conflict') return 'people.errors.busy';
+  return isForbidden(error) ? 'people.errors.forbidden' : 'people.errors.generic';
 }
 
-/** Deciding on a change that is closed already (design `ChangeList`: 409 and 410). */
-export function decisionErrorKey(error: unknown): PeopleErrorKey {
+/**
+ * Deciding on a change: it is closed already (design `ChangeList`: 409 and 410), or approving it
+ * broke a rule that is checked again and the change stays pending.
+ */
+export function decisionErrorKey(error: unknown, approving = false): PeopleErrorKey {
   if (error instanceof ApiError && (error.status === 409 || error.status === 410)) {
+    const refusal = APPROVE_REFUSALS.find((code) => code === error.code);
+    if (approving && refusal) return `people.errors.approve.${refusal}`;
     return error.code === 'last_admins' ? 'people.errors.last_admins' : 'people.errors.notPending';
   }
-  return peopleErrorKey(error);
+  return isForbidden(error) ? 'people.errors.forbidden' : 'people.errors.generic';
 }
 
 export type InviteServerError = 'format' | 'publicDomain' | 'exists';

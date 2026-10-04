@@ -22,8 +22,7 @@ const PROPOSABLE = ['mfa', 'session', 'idp'] as const;
  * Ajustes › General › Autenticación (design settings.jsx `AuthSection`/`ProposedRow`).
  * Everything comes from the installation (`config.json`) and is read-only: MFA, session and IdP
  * show their current value. "Proponer cambio" is "Próximamente": D21 has no backend yet, so there
- * are no sample proposals (D24). The design's «Plan del directorio» is not shown: `config.json`
- * does not carry it. An MFA reset is asked for on the person, in Ajustes › Personas.
+ * are no sample proposals (D24). An MFA reset is asked for on the person, in Ajustes › Personas.
  */
 export function AuthSettings({ onGoPeople }: { onGoPeople: () => void }) {
   const { t } = useTranslation();

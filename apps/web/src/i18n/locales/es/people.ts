@@ -29,6 +29,8 @@ export const people = {
   loadError: 'No se pudo cargar el directorio.',
   manage: 'Gestionar {{email}}',
   you: 'tú',
+  external: 'Externa',
+  externalTitle: 'Su dominio no es de los que se registran solos',
   pendingChanges_one: 'Cambio pendiente',
   pendingChanges_other: '{{count}} cambios pendientes',
   mfa: { registered: 'Registrado', missing: 'Sin registrar' },
@@ -59,8 +61,10 @@ export const people = {
   chip: { remove: 'Quitar {{email}}' },
   firstDay: {
     title: 'Primeros pasos de esta instalación',
-    left_one: 'Falta 1 paso para que tu equipo empiece a usar Mango.',
-    left_other: 'Faltan {{count}} pasos para que tu equipo empiece a usar Mango.',
+    left_one:
+      'Falta 1 paso para que tu equipo empiece a usar Mango. Esta tarjeta desaparece cuando estén todos.',
+    left_other:
+      'Faltan {{count}} pasos para que tu equipo empiece a usar Mango. Esta tarjeta desaparece cuando estén todos.',
     done: 'Hecho · ',
     needsSecond: 'Necesita un segundo administrador',
     unknown: '—',
@@ -98,7 +102,7 @@ export const people = {
       action: 'Ver pendientes',
     },
     foot: {
-      lead: 'Ya viene con la instalación: el agente FinOps publicado; presupuestos por defecto de USD 5 por usuario y USD 30 por agente al mes (',
+      lead: 'Ya viene con la instalación: el agente FinOps publicado; los presupuestos por defecto de la versión (',
       budgets: 'Presupuestos',
       tail: '); MFA obligatorio y registro solo con {{domains}}.',
     },
@@ -110,6 +114,7 @@ export const people = {
     mfaMissing: 'MFA sin registrar',
     created: 'Alta {{date}}',
     yours: 'Tu cuenta',
+    external: 'Externa · invitada de otra empresa',
     invited: 'Recibió una contraseña temporal por correo. Al entrar crea la suya y configura MFA.',
     limits:
       'Desde Mango no se cambia el correo ni la contraseña de otra persona, ni se ven sus conversaciones.',
@@ -172,9 +177,8 @@ export const people = {
       title: 'Acceso',
       disabledBody: 'No puede entrar. Conserva sus grupos y su historial en Auditoría.',
       enable: 'Rehabilitar acceso',
-      // Product rule (decided 2026-10-03; not in the design).
-      enableSensitive: 'Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.',
-      enableOpen: 'Rehabilitar acceso…',
+      enableSensitive:
+        'No puede entrar. Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.',
       enablePending: 'Rehabilitación pendiente de aprobación',
       enableReasonLabel: 'Motivo para rehabilitar',
       self: 'No puedes deshabilitar tu propia cuenta.',
@@ -196,7 +200,9 @@ export const people = {
     sub: 'Recibe una contraseña temporal por correo; al entrar crea la suya y configura MFA. Queda en Auditoría.',
     email: 'Correo',
     emailPlaceholder: 'nombre@{{domain}}',
-    domains: 'Dominios permitidos: {{domains}}.',
+    domains:
+      'Se registran solos: {{domains}}. A los demás correos de empresa se les invita aquí; los correos públicos no se aceptan.',
+    external: 'Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.',
     groups: 'Grupos',
     optional: '· opcional',
     noGroups: 'Sin grupos entra y ve «Todavía no tienes acceso». ',
@@ -228,8 +234,7 @@ export const people = {
       add: 'Agrega a {{email}} al grupo {{group}}',
       remove: 'Quita a {{email}} del grupo {{group}}',
       disable: 'Es administrador: cierra sus sesiones y no puede volver a entrar',
-      // Product rule (decided 2026-10-03; not in the design).
-      enable: 'Tiene un grupo sensible: vuelve a poder entrar',
+      enable: 'Tiene un grupo sensible: vuelve a poder entrar con sus grupos',
     },
     status: {
       pending: 'Pendiente',
@@ -267,11 +272,24 @@ export const people = {
     generic: 'No se pudo completar la acción. Inténtalo de nuevo.',
     last_admins: 'Nombra otro administrador antes de quitar o deshabilitar a este.',
     notPending: 'La solicitud ya no está pendiente: otro admin la decidió o venció.',
+    busy: 'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.',
+    forbidden:
+      'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.',
+    // Design `recheck`: the rules are checked again when a change is approved.
+    approve: {
+      user_disabled:
+        'No se pudo aprobar {{id}}: la persona fue deshabilitada. El cambio sigue pendiente.',
+      already_member:
+        'No se pudo aprobar {{id}}: la persona ya tiene ese grupo. El cambio sigue pendiente.',
+      last_admins:
+        'No se pudo aprobar {{id}}: quedarían menos de dos administradores. El cambio sigue pendiente.',
+    },
   },
   install: {
     title: 'Instalación',
     desc: 'Datos que se dieron al instalar Mango. Son de solo lectura: los cambia quien administra AWS, no la aplicación.',
-    loading: 'Cargando la instalación',
+    descShort: 'Datos que se dieron al instalar Mango.',
+    loading: 'Cargando datos de la instalación',
     loadError: 'No se pudieron cargar los datos de la instalación.',
     version: 'Versión instalada',
     versionValue: 'v{{version}}',
@@ -289,8 +307,12 @@ export const people = {
     firstAdmins: 'Administradores iniciales',
     firstAdminsOne: 'Se instaló con uno solo',
     inApp: 'Se configura en la aplicación',
-    inAppBody:
-      'Áreas y OUs, grupos, personas, presupuestos, modelos y precios. Arrancan con los valores de la versión: áreas vacías, solo los cuatro grupos de sistema, USD 5 por usuario y USD 30 por agente al mes, y el agente FinOps publicado.',
+    // The sentence is split around the link to Presupuestos.
+    inAppBody: {
+      lead: 'Áreas y OUs, grupos, personas, presupuestos, modelos y precios. Arrancan con los valores de la versión: áreas vacías, solo los cuatro grupos de sistema, los presupuestos por defecto de la versión (',
+      budgets: 'Presupuestos →',
+      tail: ') y el agente FinOps publicado.',
+    },
     none: '—',
   },
 } as const;

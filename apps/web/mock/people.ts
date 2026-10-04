@@ -52,7 +52,8 @@ const MIN_ADMINS = 2;
 const ADMIN = 'mango-admin';
 const SYSTEM_GROUPS = [ADMIN, 'mango-agent-creator', 'finops-central', 'bu-lead'];
 const SENSITIVE: readonly string[] = [ADMIN, 'finops-central'];
-const SIGN_UP_DOMAINS = ['example.com'];
+// The domains of the mock administrator and of the people of the directory.
+const SIGN_UP_DOMAINS = ['example.com', 'empresa.com'];
 /** A sample of the API's rule (`mango_core.mail_domains`): a provider under any country domain. */
 const PUBLIC_DOMAIN = /^(gmail|googlemail|hotmail|outlook|live|yahoo|icloud)(\.[a-z]{2,3}){1,2}$/;
 const PREFIX = /^[a-z0-9._%+@-]{1,64}$/;

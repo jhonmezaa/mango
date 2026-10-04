@@ -126,6 +126,11 @@ test('a person of any company domain is invited, never a public address', async 
   await expect(dialog.getByRole('button', { name: 'mango-admin' })).toHaveCount(0);
 
   await email.fill('persona.nueva@otra-empresa.com');
+  await expect(
+    dialog.getByText(
+      'Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.',
+    ),
+  ).toBeVisible();
   await dialog.getByRole('button', { name: 'bu-finanzas' }).click();
   await submit.click();
   await expect(
@@ -140,6 +145,8 @@ test('a person of any company domain is invited, never a public address', async 
     .filter({ hasText: 'persona.nueva@otra-empresa.com' });
   await expect(invited).toContainText('Invitada · contraseña temporal');
   await expect(invited).toContainText('bu-finanzas');
+  // Her domain is not one of those that sign up alone.
+  await expect(invited.getByText('Externa', { exact: true })).toBeVisible();
 
   // The same email again: the API says it is in the directory (to administrators only).
   await page.getByRole('button', { name: 'Invitar persona' }).click();

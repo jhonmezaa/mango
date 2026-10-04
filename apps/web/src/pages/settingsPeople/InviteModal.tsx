@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { GovModal } from '../../components/admin/govKit';
 import { CheckIcon } from '../../components/icons';
 import type { InviteServerError } from './errors';
-import { ADMIN_GROUP, inviteError, isSensitive, type GroupOption } from './model';
+import { ADMIN_GROUP, inviteError, isExternal, isSensitive, type GroupOption } from './model';
 
 interface Props {
   /** Groups already chosen: `mango-admin` when the first-day card invites the second admin. */
@@ -102,7 +102,9 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
           </div>
         ) : (
           <div id="pp-inv-h" className="g-hint">
-            {t('people.inviteModal.domains', { domains: domains.join(', ') })}
+            {local === null && isExternal(address, domains)
+              ? t('people.inviteModal.external')
+              : t('people.inviteModal.domains', { domains: domains.join(', ') })}
           </div>
         )}
       </div>

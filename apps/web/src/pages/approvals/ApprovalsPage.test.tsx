@@ -406,7 +406,7 @@ describe('Políticas', () => {
     ).toBeVisible();
     expect(screen.getByText('aws-budgets.create_budget')).toBeVisible();
     expect(screen.getByText('Siempre: aprobación')).toBeVisible();
-    expect(screen.getByText('24 h · luego se rechaza')).toBeVisible();
+    expect(screen.getByText('24 h · luego vence')).toBeVisible();
     // Only administrators propose changes (the API enforces it).
     expect(screen.queryByRole('button', { name: /Editar política/ })).toBeNull();
   });
@@ -430,6 +430,11 @@ describe('Políticas', () => {
       within(dialog).getByRole('button', { name: 'Según cantidad de recursos' }),
     ).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: 'Según entorno' })).toBeDisabled();
+    expect(
+      within(dialog).getByText(
+        'Las opciones deshabilitadas dependen de datos que esta tool no informa.',
+      ),
+    ).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Enviar propuesta' })).toBeDisabled();
     await user.click(within(dialog).getByRole('button', { name: 'Según monto' }));
     await user.click(within(dialog).getByRole('button', { name: 'Enviar propuesta' }));

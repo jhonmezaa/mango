@@ -525,6 +525,18 @@ describe('General › Instalación', () => {
     expect(screen.queryByText('Se instaló con uno solo')).toBeNull();
   });
 
+  it('leaves «Publicación» out when it says the same as the version, and links to Presupuestos without amounts', async () => {
+    renderPage({}, true, null, {}, { installation: { ...INSTALLATION, release: 'v0.1.0' } });
+    expect(await screen.findByText('v0.1.0')).toBeInTheDocument();
+    expect(screen.queryByText('Publicación')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Presupuestos →' })).toHaveAttribute(
+      'href',
+      '/budgets',
+    );
+    expect(screen.getByText(/los presupuestos por defecto de la versión/)).toBeInTheDocument();
+    expect(screen.queryByText(/USD/)).toBeNull();
+  });
+
   it('says the installation could not be loaded and retries', async () => {
     const user = userEvent.setup();
     const { call } = renderPage(
@@ -570,7 +582,7 @@ describe('General › Autenticación', () => {
     // Current values come from config.json; a customer installation always requires MFA.
     expect(
       screen.getByText(
-        'Cognito gestiona las cuentas. MFA, plan del directorio y dominios de registro vienen de la instalación y no se editan aquí.',
+        'Cognito gestiona las cuentas. MFA y dominios de registro vienen de la instalación y no se editan aquí.',
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('Obligatorio')).toBeInTheDocument();

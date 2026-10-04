@@ -37,6 +37,14 @@ export function isSensitive(group: string): boolean {
   return SENSITIVE_GROUPS.has(group);
 }
 
+/**
+ * Design `isExternal`: the domain is not one of those that sign up alone, so the person was
+ * invited from another company. Only a label: without the list of domains nobody is marked.
+ */
+export function isExternal(email: string, domains: readonly string[]): boolean {
+  return domains.length > 0 && !domains.includes(email.slice(email.lastIndexOf('@') + 1));
+}
+
 /** Signed up, can sign in and belongs to no group (design `noAccess`). */
 export function hasNoAccess(person: Person): boolean {
   return person.status === 'active' && person.groups.length === 0;
@@ -67,11 +75,11 @@ export type InviteError = 'empty' | 'format';
 
 /**
  * Design `InviteModal` `err`, for what the screen can tell by itself: an empty or malformed
- * address. Whether the domain is a public mail provider is the API's to say
- * (`invitation_domain`, the list of `mango_core.mail_domains`): the screen keeps no copy of
- * that list, and a refusal there is in the audit trail. Not the design's «Solo se puede invitar
- * a correos de …»: an administrator may invite someone of another company (decision of
- * 2026-10-03).
+ * address. An administrator may invite someone of another company; whether the domain is a
+ * public mail provider is the API's to say (`invitation_domain`, the list of
+ * `mango_core.mail_domains`): the screen keeps no copy of that list, and a refusal there is in
+ * the audit trail. The design checks the public providers in the modal; the text shown is the
+ * same one.
  */
 export function inviteError(email: string): InviteError | null {
   if (email === '') return 'empty';
@@ -151,8 +159,8 @@ export interface FirstDayFacts {
 }
 
 /**
- * Whether a step of the first day is still missing. The product has no «just installed» flag:
- * the card is shown while any step is, and not at all once they are done. A count that could
+ * Whether a step of the first day is still missing (design `FirstDay`): the card is shown
+ * while any step is, and not at all once they are done. A count that could
  * not be read does not show the card by itself.
  */
 export function hasFirstDaySteps(facts: FirstDayFacts): boolean {

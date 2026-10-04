@@ -39,6 +39,8 @@ interface Props {
   /** Enabled administrators, as the directory counted them. */
   admins: number;
   options: readonly GroupOption[];
+  /** Invited from another company: the domain is not one of those that sign up alone. */
+  external: boolean;
   /** Open changes of this person. */
   pending: readonly MemberChange[];
   /** The open MFA reset of this person, if any. */
@@ -47,7 +49,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Open = null | { kind: 'remove'; group: string } | { kind: 'mfa' | 'disable' | 'enable' };
+type Open = null | { kind: 'remove'; group: string } | { kind: 'mfa' | 'disable' };
 
 function ReasonBox({
   value,
@@ -89,6 +91,7 @@ export function PersonPanel({
   me,
   admins,
   options,
+  external,
   pending,
   mfaPending,
   actions,
@@ -105,6 +108,7 @@ export function PersonPanel({
   // One form open at a time: its reason does not outlive it.
   const [open, setOpen] = useState<Open>(null);
   const [reason, setReason] = useState('');
+  const [enableReason, setEnableReason] = useState('');
   const [verified, setVerified] = useState(false);
   const [mfaTried, setMfaTried] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,6 +229,11 @@ export function PersonPanel({
                   {t('people.panel.created', { date: formatJoined(person.created_at) })}
                 </span>
                 {self ? <span className="badge">{t('people.panel.yours')}</span> : null}
+                {external ? (
+                  <span className="badge" title={t('people.externalTitle')}>
+                    {t('people.panel.external')}
+                  </span>
+                ) : null}
               </div>
             </div>
             {narrow ? null : (
@@ -501,22 +510,27 @@ export function PersonPanel({
                     </span>
                     <span className="mk-meta mono">{enablePending.change_id.slice(0, 8)}</span>
                   </div>
-                ) : open?.kind === 'enable' ? (
+                ) : enableSensitive ? (
                   <div className="pp-form">
+                    <span className="mk-meta">{t('people.panel.access.enableSensitive')}</span>
                     <ReasonBox
-                      value={reason}
-                      onChange={setReason}
+                      value={enableReason}
+                      onChange={setEnableReason}
                       placeholder={t('people.panel.groups.reasonPlaceholder')}
                       label={t('people.panel.access.enableReasonLabel')}
                     />
                     <div className="pp-form-actions">
-                      {cancel}
                       <button
                         type="button"
                         className="btn btn-sm btn-primary"
-                        disabled={!reason.trim() || busy}
+                        disabled={!enableReason.trim() || busy}
                         onClick={() => {
-                          run(() => actions.enable(reason.trim()), close);
+                          run(
+                            () => actions.enable(enableReason.trim()),
+                            () => {
+                              setEnableReason('');
+                            },
+                          );
                         }}
                       >
                         {t('people.panel.groups.sendToApproval')}
@@ -525,22 +539,16 @@ export function PersonPanel({
                   </div>
                 ) : (
                   <div className="pp-line">
-                    <span className="mk-meta">
-                      {t('people.panel.access.disabledBody')}
-                      {enableSensitive ? ` ${t('people.panel.access.enableSensitive')}` : ''}
-                    </span>
+                    <span className="mk-meta">{t('people.panel.access.disabledBody')}</span>
                     <button
                       type="button"
                       className="btn btn-sm"
                       disabled={busy}
                       onClick={() => {
-                        if (enableSensitive) show({ kind: 'enable' });
-                        else run(() => actions.enable(undefined), close);
+                        run(() => actions.enable(undefined), close);
                       }}
                     >
-                      {enableSensitive
-                        ? t('people.panel.access.enableOpen')
-                        : t('people.panel.access.enable')}
+                      {t('people.panel.access.enable')}
                     </button>
                   </div>
                 )

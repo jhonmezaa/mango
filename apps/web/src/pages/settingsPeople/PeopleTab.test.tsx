@@ -536,26 +536,36 @@ describe('Panel of a person', () => {
   });
 
   it.each([
-    [new ApiError(502, 'upstream_error', 'the directory could not be changed')],
-    // An administrator who stopped being one, and another change in progress.
-    [new ApiError(403, 'forbidden', 'not allowed')],
-    [new ApiError(409, 'version_conflict', 'another change is in progress')],
-  ])('shows the generic failure for any other refusal (%s)', async (failure) => {
-    const ana = person({ email: 'ana@example.com' });
-    const call = apiWith({
-      searchPeople: directory([ana]),
-      removeGroup: () => {
-        throw failure;
-      },
-    });
-    const { user } = renderTab(call);
-    const panel = await openPanel(user, ana.email);
-    await user.click(within(panel).getByRole('button', { name: 'Quitar people' }));
-    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+    [
+      new ApiError(502, 'upstream_error', 'the directory could not be changed'),
       'No se pudo completar la acción. Inténtalo de nuevo.',
-    );
-    expect(within(panel).queryByText(failure.message)).toBeNull();
-  });
+    ],
+    // An administrator who stopped being one, and another change in progress.
+    [
+      new ApiError(403, 'forbidden', 'not allowed'),
+      'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.',
+    ],
+    [
+      new ApiError(409, 'version_conflict', 'another change is in progress'),
+      'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.',
+    ],
+  ])(
+    'shows a refusal with a text of the design, never the server message (%s)',
+    async (failure, text) => {
+      const ana = person({ email: 'ana@example.com' });
+      const call = apiWith({
+        searchPeople: directory([ana]),
+        removeGroup: () => {
+          throw failure;
+        },
+      });
+      const { user } = renderTab(call);
+      const panel = await openPanel(user, ana.email);
+      await user.click(within(panel).getByRole('button', { name: 'Quitar people' }));
+      expect(await within(panel).findByRole('alert')).toHaveTextContent(text);
+      expect(within(panel).queryByText(failure.message)).toBeNull();
+    },
+  );
 
   it('re-enables at once, or with a reason when the person holds a sensitive group', async () => {
     const plain = person({ email: 'ana@example.com', status: 'disabled' });
@@ -582,10 +592,10 @@ describe('Panel of a person', () => {
     panel = await openPanel(user, central.email);
     expect(
       within(panel).getByText(
-        /Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador\./,
+        'No puede entrar. Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.',
       ),
     ).toBeInTheDocument();
-    await user.click(within(panel).getByRole('button', { name: 'Rehabilitar acceso…' }));
+    expect(within(panel).queryByRole('button', { name: 'Rehabilitar acceso' })).toBeNull();
     const send = within(panel).getByRole('button', { name: 'Enviar a aprobación' });
     expect(send).toBeDisabled();
     await user.type(within(panel).getByLabelText('Motivo para rehabilitar'), 'Volvió de licencia');
@@ -598,7 +608,7 @@ describe('Panel of a person', () => {
       { path: { user_id: central.user_id }, body: { reason: 'Volvió de licencia' } },
     ]);
     // Still disabled: another administrator decides.
-    expect(within(panel).getByRole('button', { name: 'Rehabilitar acceso…' })).toBeInTheDocument();
+    expect(within(panel).getByLabelText('Motivo para rehabilitar')).toHaveValue('');
   });
 
   it('asks for an MFA reset with a reason and the identity check', async () => {
@@ -670,7 +680,9 @@ describe('Invitar persona', () => {
     await user.click(await screen.findByRole('button', { name: /Invitar persona/ }));
     const dialog = screen.getByRole('dialog', { name: 'Invitar persona' });
     expect(
-      within(dialog).getByText('Dominios permitidos: example.com, example.org.'),
+      within(dialog).getByText(
+        'Se registran solos: example.com, example.org. A los demás correos de empresa se les invita aquí; los correos públicos no se aceptan.',
+      ),
     ).toBeInTheDocument();
     const email = within(dialog).getByLabelText('Correo');
     const submit = within(dialog).getByRole('button', { name: 'Enviar invitación' });
@@ -757,6 +769,11 @@ describe('Invitar persona', () => {
     await user.click(await screen.findByRole('button', { name: /Invitar persona/ }));
     const dialog = screen.getByRole('dialog', { name: 'Invitar persona' });
     await user.type(within(dialog).getByLabelText('Correo'), 'ana@otra.com');
+    expect(
+      within(dialog).getByText(
+        'Dominio externo: se invita como persona de otra empresa y queda así en Auditoría.',
+      ),
+    ).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Enviar invitación' }));
     await waitFor(() => {
       expect(calls(call, 'invitePerson')).toEqual([
@@ -779,7 +796,9 @@ describe('Primeros pasos de esta instalación', () => {
     });
     const card = title.closest('.pp-first') as HTMLElement;
     expect(
-      within(card).getByText('Faltan 4 pasos para que tu equipo empiece a usar Mango.'),
+      within(card).getByText(
+        'Faltan 4 pasos para que tu equipo empiece a usar Mango. Esta tarjeta desaparece cuando estén todos.',
+      ),
     ).toBeInTheDocument();
     expect(within(card).getByText('Solo tú')).toBeInTheDocument();
     expect(within(card).getByText('Sin áreas')).toBeInTheDocument();
@@ -816,7 +835,9 @@ describe('Primeros pasos de esta instalación', () => {
     });
     const card = title.closest('.pp-first') as HTMLElement;
     expect(
-      await within(card).findByText('Falta 1 paso para que tu equipo empiece a usar Mango.'),
+      await within(card).findByText(
+        'Falta 1 paso para que tu equipo empiece a usar Mango. Esta tarjeta desaparece cuando estén todos.',
+      ),
     ).toBeInTheDocument();
     expect(within(card).getByText('Hecho · 2 administradores')).toBeInTheDocument();
     expect(within(card).getByText('Hecho · 2 grupos propios')).toBeInTheDocument();
@@ -940,6 +961,68 @@ describe('Cambios de personas', () => {
     await waitFor(() => {
       expect(calls(call, 'getMemberChanges')).toHaveLength(2);
     });
+  });
+});
+
+describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () => {
+  const pending = [change()];
+
+  it.each([
+    ['user_disabled', 'la persona fue deshabilitada'],
+    ['already_member', 'la persona ya tiene ese grupo'],
+    ['last_admins', 'quedarían menos de dos administradores'],
+  ])('says why %s kept the change pending', async (code, why) => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: { items: pending },
+      approveMemberChange: new ApiError(409, code, 'server words'),
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `No se pudo aprobar cccccccc: ${why}. El cambio sigue pendiente.`,
+    );
+    expect(screen.queryByText('server words')).toBeNull();
+    expect(screen.getByText('Pendiente')).toBeInTheDocument();
+  });
+
+  it('tells an administrator who stopped being one to sign in again', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: { items: pending },
+      approveMemberChange: new ApiError(403, 'forbidden', 'not allowed'),
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.',
+    );
+  });
+});
+
+describe('Personas de otra empresa', () => {
+  it('marks them «Externa» in the list and in the panel', async () => {
+    const own = person({ email: 'ana@example.org' });
+    const other = person({ email: 'luis@otra.com' });
+    const call = apiWith({ searchPeople: directory([own, other]) });
+    const { user } = renderTab(call);
+    const row = await screen.findByRole('button', { name: `Gestionar ${other.email}` });
+    expect(within(row).getByText('Externa')).toHaveAttribute(
+      'title',
+      'Su dominio no es de los que se registran solos',
+    );
+    expect(
+      within(screen.getByRole('button', { name: `Gestionar ${own.email}` })).queryByText('Externa'),
+    ).toBeNull();
+    const panel = await openPanel(user, other.email);
+    expect(within(panel).getByText('Externa · invitada de otra empresa')).toBeInTheDocument();
+  });
+
+  it('marks nobody when the installation has no list of domains', async () => {
+    const call = apiWith({ searchPeople: directory([person({ email: 'luis@otra.com' })]) });
+    renderTab(call, {}, { domains: [] });
+    await screen.findByRole('button', { name: 'Gestionar luis@otra.com' });
+    expect(screen.queryByText('Externa')).toBeNull();
   });
 });
 

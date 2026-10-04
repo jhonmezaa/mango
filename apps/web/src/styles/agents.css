@@ -146,4 +146,11 @@
     font-size: 12px;
     color: var(--accent-ink);
   }
+  .mk-link {
+    color: var(--accent-ink);
+    font-size: 13px;
+  }
+  .mk-link:hover {
+    text-decoration: underline;
+  }
 }
