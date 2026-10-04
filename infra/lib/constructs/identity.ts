@@ -307,9 +307,8 @@ export class Identity extends Construct {
 
   /**
    * Lets `grantee` create and delete groups of this pool when a change of the registry is
-   * approved (D26, dual approval in mango-api). Membership is not included: members are
-   * assigned in the directory. Cognito scopes these actions to the pool, not to a group name,
-   * so mango-api itself refuses the groups Mango depends on (`mango-*` and the role groups).
+   * approved (D26, dual approval in mango-api). Membership is `grantPeopleManagement`. Cognito
+   * scopes these actions to the pool, not to a group name, so mango-api itself refuses the groups Mango depends on (`mango-*` and the role groups).
    */
   grantGroupManagement(grantee: iam.IGrantable): void {
     iam.Grant.addToPrincipal({
@@ -326,6 +325,32 @@ export class Identity extends Construct {
       actions: [
         "cognito-idp:AdminGetUser",
         "cognito-idp:AdminDeleteSoftwareToken",
+        "cognito-idp:AdminUserGlobalSignOut",
+      ],
+      resourceArns: [this.userPool.userPoolArn],
+    });
+  }
+
+  /**
+   * Lets `grantee` run Settings > People (D60) on this pool only: read the directory and who
+   * is in each group, give and take groups, invite, disable and re-enable. Nothing deletes a
+   * user, sets a password or changes an attribute. Cognito scopes these actions to the pool,
+   * not to a group or a user, so mango-api decides which group may be given and when a second
+   * administrator has to approve (people-management-threat-model.md, TM-P11).
+   */
+  grantPeopleManagement(grantee: iam.IGrantable): void {
+    iam.Grant.addToPrincipal({
+      grantee,
+      actions: [
+        "cognito-idp:ListUsers",
+        "cognito-idp:ListUsersInGroup",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminListGroupsForUser",
+        "cognito-idp:AdminAddUserToGroup",
+        "cognito-idp:AdminRemoveUserFromGroup",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDisableUser",
+        "cognito-idp:AdminEnableUser",
         "cognito-idp:AdminUserGlobalSignOut",
       ],
       resourceArns: [this.userPool.userPoolArn],

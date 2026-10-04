@@ -2,18 +2,21 @@
 export const settings = {
   crumb: 'Ajustes',
   title: 'Ajustes',
-  subtitle: 'Preferencias globales, autenticación, áreas de negocio y conectividad con AWS.',
+  subtitle:
+    'Instalación, autenticación, personas y grupos, áreas de negocio y conectividad con AWS.',
   tabsLabel: 'Secciones de ajustes',
   tabs: {
     general: 'General',
+    people: 'Personas',
     groups: 'Grupos',
     areas: 'Áreas y OUs',
     conn: 'Conectividad',
   },
-  // General (design settings.jsx in availability mode: only "Autenticación" is available).
+  // General (design settings.jsx in availability mode: "Instalación" and "Autenticación").
   general: {
     sectionsLabel: 'Secciones de General',
     sections: {
+      install: 'Instalación',
       org: 'Organización',
       auth: 'Autenticación',
       conv: 'Acceso a conversaciones',
@@ -26,8 +29,7 @@ export const settings = {
   },
   auth: {
     title: 'Autenticación',
-    // D21 (changes with dual approval) has no backend yet: MFA, session and IdP are set at install.
-    desc: 'Cognito gestiona las cuentas. MFA, sesión e IdP se definen al instalar Mango.',
+    desc: 'Cognito gestiona las cuentas. MFA, plan del directorio y dominios de registro vienen de la instalación y no se editan aquí.',
     userPool: 'User Pool ID',
     region: 'Región',
     clientId: 'App client ID',
@@ -42,7 +44,9 @@ export const settings = {
       idpNone: 'Sin IdP · solo correo y contraseña',
     },
     mfaFixed: 'Fijo',
-    mfaFixedHint: 'Instalación de cliente: siempre obligatorio',
+    mfaFixedHint: 'Siempre obligatorio · viene de la instalación',
+    domains: 'Dominios para registrarse',
+    domainsHint: 'Viene de la instalación · los correos públicos se rechazan',
     propose: 'Proponer cambio',
     proposeSoon: 'Proponer cambio de {{setting}}',
     aiPolicy: 'Política de uso de IA',
@@ -54,6 +58,10 @@ export const settings = {
     perUserHint: 'No se cambian desde la cuenta',
     perUserBody:
       'Para cambiar su contraseña, el usuario usa «Olvidé mi contraseña» en el login. Para restablecer su MFA, se lo pide a un admin.',
+    mfaReset: 'Restablecer MFA de una persona',
+    mfaResetHint: 'Solo admins · lo aprueba otro admin',
+    mfaResetBody: 'Se pide sobre la persona, en Ajustes › Personas.',
+    goPeople: 'Ir a Personas →',
   },
   areas: {
     loading: 'Cargando áreas',
@@ -252,7 +260,7 @@ export const settings = {
     // Design `MemberAccounts`: fixed texts; the API only reports closed values.
     members: {
       title: 'Cuentas miembro',
-      meta: 'Para leer datos de cada cuenta de la organización (sin la cuenta de Mango) hace falta un rol de lectura en cada cuenta, y que el rol intermedio de Mango exija la identidad del usuario que pregunta.',
+      meta: 'Para leer datos de cada cuenta de la organización (sin la cuenta de Mango) hace falta un rol de lectura en cada cuenta, y que el rol intermedio de Mango exija la identidad del usuario que pregunta. Se comprueban las cuentas de las OUs objetivo que se dieron al instalar.',
       failed: 'No se pudieron comprobar las cuentas miembro',
       failedBody:
         'La conexión principal está bien, pero la comprobación de las cuentas miembro no respondió. Vuelve a intentarlo en unos segundos.',

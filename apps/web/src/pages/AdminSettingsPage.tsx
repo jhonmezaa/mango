@@ -1,8 +1,9 @@
-import { useCallback, useState, type ComponentType, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useState, type ComponentType, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useSession } from '../auth/useSession';
 import { AuthSettings } from '../components/account/AuthSettings';
+import { InstallSection } from '../components/account/InstallSection';
 import { AreasTab } from '../components/admin/AreasTab';
 import { ConnectivityTab } from '../components/admin/ConnectivityTab';
 import { Denied } from '../components/admin/govKit';
@@ -11,6 +12,7 @@ import {
   BotIcon,
   ChatIcon,
   EyeIcon,
+  InfoIcon,
   LockIcon,
   MoneyIcon,
   OrgIcon,
@@ -21,13 +23,15 @@ import { useToasts } from '../components/admin/useToasts';
 import { Soon } from '../components/Soon';
 import { Topbar } from '../components/Topbar';
 import { GroupsTab } from './settingsGroups/GroupsTab';
+import { PeopleTab } from './settingsPeople/PeopleTab';
 
 // Design order.
-const TABS = ['general', 'groups', 'areas', 'conn'] as const;
+const TABS = ['general', 'people', 'groups', 'areas', 'conn'] as const;
 type Tab = (typeof TABS)[number];
 
-// General sections (design order). Only "Autenticación" is available today.
-const SECTIONS: readonly { key: string; Icon: ComponentType<IconProps> }[] = [
+// General sections (design order). "Instalación" and "Autenticación" are available today.
+const SECTIONS = [
+  { key: 'install', Icon: InfoIcon },
   { key: 'org', Icon: OrgIcon },
   { key: 'auth', Icon: LockIcon },
   { key: 'conv', Icon: EyeIcon },
@@ -36,17 +40,29 @@ const SECTIONS: readonly { key: string; Icon: ComponentType<IconProps> }[] = [
   { key: 'notifications', Icon: ChatIcon },
   { key: 'observability', Icon: ActivityIcon },
   { key: 'branding', Icon: SunIcon },
-];
+] as const satisfies readonly { key: string; Icon: ComponentType<IconProps> }[];
+type Section = 'install' | 'auth';
+const isAvailable = (key: string): key is Section => key === 'install' || key === 'auth';
 
-function GeneralTab({ notify }: { notify: (message: string) => void }) {
+function GeneralTab({ onGoPeople }: { onGoPeople: () => void }) {
   const { t } = useTranslation();
+  // Design: General opens on "Instalación".
+  const [section, setSection] = useState<Section>('install');
   return (
     <div className="set-grid">
       <nav className="set-nav" aria-label={t('settings.general.sectionsLabel')}>
         {SECTIONS.map(({ key, Icon }) => {
-          const label = t(`settings.general.sections.${key}` as 'settings.general.sections.auth');
-          return key === 'auth' ? (
-            <button key={key} type="button" className="set-nav-item is-on" aria-current="page">
+          const label = t(`settings.general.sections.${key}`);
+          return isAvailable(key) ? (
+            <button
+              key={key}
+              type="button"
+              className={section === key ? 'set-nav-item is-on' : 'set-nav-item'}
+              aria-current={section === key ? 'page' : undefined}
+              onClick={() => {
+                setSection(key);
+              }}
+            >
               <Icon size={14} />
               <span>{label}</span>
             </button>
@@ -61,29 +77,53 @@ function GeneralTab({ notify }: { notify: (message: string) => void }) {
         })}
       </nav>
       <div className="set-body">
-        <AuthSettings notify={notify} />
+        {section === 'install' ? <InstallSection /> : <AuthSettings onGoPeople={onGoPeople} />}
       </div>
     </div>
   );
 }
 
 /**
- * Ajustes (design settings.jsx in "disponibilidad actual"): General (only Autenticación),
- * Grupos, Áreas y OUs and Conectividad. Every call is authorized by the API; `is_admin` only picks what
- * to render.
+ * Ajustes (design settings.jsx in "disponibilidad actual"): General (Instalación and
+ * Autenticación), Personas, Grupos, Áreas y OUs and Conectividad. Every call is authorized by
+ * the API; `is_admin` only picks what to render.
  */
 export function AdminSettingsPage() {
   const { t } = useTranslation();
-  const { me } = useSession();
+  const { api, me } = useSession();
   const { notify, stack } = useToasts();
-  const [tab, setTab] = useState<Tab>('general');
+  // `null` until the person picks a tab: the page opens on General, or on Personas while the
+  // installation has a single administrator (design: «recién instalada»).
+  const [picked, setPicked] = useState<Tab | null>(null);
+  const [onlyAdmin, setOnlyAdmin] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+  const tab: Tab = picked ?? (onlyAdmin ? 'people' : 'general');
+  const setTab = setPicked;
   const onForbidden = useCallback(() => {
     setForbidden(true);
   }, []);
   const goAreas = useCallback(() => {
-    setTab('areas');
+    setPicked('areas');
   }, []);
+  const goPeople = useCallback(() => {
+    setPicked('people');
+  }, []);
+  const isAdmin = me.is_admin;
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const controller = new AbortController();
+    // Only the count of administrators is used; a failure leaves the page on General.
+    api.call('searchPeople', { body: {} }, { signal: controller.signal }).then(
+      (people) => {
+        if (!controller.signal.aborted) setOnlyAdmin(people.admins === 1);
+      },
+      () => undefined,
+    );
+    return () => {
+      controller.abort();
+    };
+  }, [api, isAdmin]);
 
   const crumbs = [t('settings.crumb')];
   if (!me.is_admin || forbidden) {
@@ -146,7 +186,7 @@ export function AdminSettingsPage() {
         </div>
         {tab === 'general' ? (
           <div id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-general">
-            <GeneralTab notify={notify} />
+            <GeneralTab onGoPeople={goPeople} />
           </div>
         ) : (
           <div className="g-frame g-embed">
@@ -156,7 +196,9 @@ export function AdminSettingsPage() {
               role="tabpanel"
               aria-labelledby={`settings-tab-${tab}`}
             >
-              {tab === 'groups' ? (
+              {tab === 'people' ? (
+                <PeopleTab notify={notify} onForbidden={onForbidden} onGoTab={setTab} />
+              ) : tab === 'groups' ? (
                 <GroupsTab notify={notify} onForbidden={onForbidden} onGoAreas={goAreas} />
               ) : tab === 'areas' ? (
                 <AreasTab notify={notify} onForbidden={onForbidden} />

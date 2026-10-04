@@ -363,7 +363,8 @@ export function AdminAuditPage() {
   const linkOf = (row: AuditRow) =>
     row.category === 'budgets'
       ? { to: '/budgets', label: t('audit.links.budgets') }
-      : row.category === 'config'
+      : // Design `AUDIT_LINK`: the people of the directory are managed in Ajustes too.
+        row.category === 'config' || row.action.startsWith('directory.')
         ? { to: '/settings', label: t('audit.links.settings') }
         : null;
 

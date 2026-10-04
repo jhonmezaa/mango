@@ -32,6 +32,7 @@ import { originOf, sendError, sendJson, type ApiHandler } from './http.ts';
 import { handleMarketplace } from './marketplace.ts';
 import { handleMcpCatalog } from './mcpCatalog.ts';
 import { handleOrgChart } from './orgChart.ts';
+import { handlePeople } from './people.ts';
 
 /**
  * Tried in order until one answers. The screens of the marketplace go before `handleAgents`,
@@ -42,6 +43,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleApprovals,
   handleGroups,
   handleDirectory,
+  handlePeople,
   handleAdmin,
   handleAudit,
   handleBrains,

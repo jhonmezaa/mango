@@ -457,6 +457,30 @@ Al aprobarse, `mango-api` llama `AdminDeleteSoftwareToken` (borra el TOTP regist
 | POST | `/api/admin/mfa-resets/{change_id}/reject` | `{"reason": str (1..500)}` → el GET. Otro admin distinto del proponente y del afectado (`same_approver`, `self_reset`) |
 | POST | `/api/admin/mfa-resets/{change_id}/withdraw` | `{}` → el GET. Solo el proponente (403 si no) |
 
+### Personas e instalación (D60)
+
+Ajustes › Personas: el directorio, los grupos de cada persona, invitaciones y acceso. Modelo de amenazas: `docs/security/threat-models/people-management-threat-model.md`. Todas las rutas requieren `is_admin` y su acción de Verified Permissions: `ViewPeople` (lecturas), `ManagePeople` (cambios, invitaciones y retirar) y `ApprovePeopleChange` (aprobar y rechazar). Listar el directorio a administradores es una excepción acordada a «sin revelar si un usuario existe» (`AGENTS.md`, 2026-10-03).
+
+Qué exige un segundo administrador lo decide el servidor: dar o quitar `mango-admin` o `finops-central`, deshabilitar a un administrador y rehabilitar a quien tiene uno de esos dos grupos. Lo demás se aplica al momento. Reglas: nadie decide un cambio de ese tipo sobre su propia cuenta, ni se quita él solo un grupo sensible, ni se deshabilita; nunca quedan menos de dos administradores habilitados; mientras quien llama sea el único administrador habilitado, nombrar al segundo se aplica sin aprobador (`result: "bootstrap"`). Al quitar un grupo sensible o deshabilitar se revocan los refresh tokens; el access token vigente dura hasta 60 minutos. Por eso toda ruta que cambia algo comprueba además en el directorio que quien llama **sigue siendo** un administrador habilitado (403 `forbidden` si no), y los cambios que tocan quién es administrador se aplican de uno en uno (409 `version_conflict` si hay otro en curso).
+
+Auditoría fail-closed. Eventos: `directory.list` (solo conteos: nunca correos ni el prefijo buscado), `directory.invite`, `directory.group_add`, `directory.group_remove`, `directory.disable`, `directory.enable`, `directory.member_propose`, `directory.member_approve`, `directory.member_reject`, `directory.member_withdraw`. El evento aplicado tras una aprobación lleva `change_id`, `proposed_by` y `approved_by`; el del arranque, `bootstrap: true`.
+
+Límites por administrador: 120 lecturas por minuto, 200 cambios, 20 propuestas y 20 invitaciones por hora; 20 cambios pendientes a la vez.
+
+| Método | Ruta | Cuerpo → respuesta |
+|---|---|---|
+| POST | `/api/admin/people/search` | `{"prefix"?: str (inicio del correo, 1..64, sin comillas ni espacios), "filter"?: "all"\|"pending"\|"invited"\|"disabled", "cursor"?: str}` → `{"items": [{"user_id": str, "email": str, "status": "active"\|"invited"\|"disabled", "mfa": bool, "groups": [str], "created_at": str}] (20 por página), "next_cursor": str\|null, "pending": int, "admins": int, "with_access": int, "incomplete": bool}`. Primero quien espera acceso (activa y sin grupos), luego por alta descendente. Las cuentas sin correo verificado no aparecen. Es POST para que el prefijo no viaje en la URL |
+| POST | `/api/admin/people/invitations` | `{"email": str, "groups"?: [str] (0..10)}` → 201 `{"user_id": str, "result": "applied"\|"bootstrap"}`. Cognito envía la contraseña temporal. **422 `invalid_email`**, **`public_domain`**, **`domain_not_allowed`** (la misma regla de dominio que el registro), **`sensitive_group`**, **`unknown_group`**; **409 `already_exists`** |
+| POST | `/api/admin/people/{user_id}/groups` | `{"group": str, "reason"?: str (1..500)}` → `{"result": "applied"\|"proposed"\|"bootstrap", "change_id": str\|null}`. **422 `unknown_group`** (solo los cuatro de sistema y los del registro), **`reason_required`**; **409 `already_member`**, **`user_disabled`**, **`already_pending`**, **`too_many_pending`**; **403 `self_change`**; **404 `user_not_found`** |
+| POST | `/api/admin/people/{user_id}/groups/remove` | Igual. **409 `not_member`**, **`last_admins`** |
+| POST | `/api/admin/people/{user_id}/disable` | `{"reason": str}` → igual. **409 `already_disabled`**, **`last_admins`**; **403 `self_change`** |
+| POST | `/api/admin/people/{user_id}/enable` | `{"reason"?: str}` → igual. **409 `already_enabled`**; **422 `reason_required`** si exige aprobación |
+| GET | `/api/admin/people/changes` | → `{"items": [{"change_id": str, "kind": "add"\|"remove"\|"disable"\|"enable", "group": str\|null, "status": "pending"\|"approved"\|"rejected"\|"withdrawn"\|"expired", "target_user": str, "target_email": str, "proposed_by": str, "proposed_by_email": str\|null, "reason": str, "created_at", "expires_at", "decided_by": str\|null, "decided_by_email": str\|null, "decided_at": str\|null, "note": str\|null}]}` (últimos 30 días; vencen a las 72 h) |
+| POST | `/api/admin/people/changes/{change_id}/approve` | `{}` → el GET. Se vuelven a comprobar todas las reglas antes de aplicar. **403 `same_approver`**, **`self_change`**; **410 `expired`**; **409 `version_conflict`** o el código de la regla que ya no se cumple; **502 `upstream_error`** (el cambio sigue pendiente) |
+| POST | `/api/admin/people/changes/{change_id}/reject` | `{"reason": str}` → el GET |
+| POST | `/api/admin/people/changes/{change_id}/withdraw` | `{}` → el GET. Solo quien lo propuso |
+| GET | `/api/admin/installation` | (`ViewAdmin`) → `{"name": str, "version": str\|null, "organization_id": str\|null, "management_account_id": str\|null, "alerts_emails": [str], "sign_up_domains": [str], "first_admins": [str]}`. Solo lectura; no va en el `config.json` público |
+
 Errores: `{"error": {"code": str, "message": str}}` con el status HTTP correspondiente:
 - 401 si no hay token o es inválido;
 - 403 si el usuario no tiene permiso; 403 `no_group` si el token es válido pero el usuario aún no tiene grupo (D20);

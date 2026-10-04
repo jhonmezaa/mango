@@ -102,7 +102,7 @@ export const auth = {
     subtitle:
       'Tu cuenta <b>{{email}}</b> está creada y verificada, pero aún no pertenece a ningún grupo. Mientras tanto no puedes ver agentes ni abrir conversaciones.',
     nextTitle: 'Qué sigue',
-    next: 'Un admin de Mango tiene que asignarte a un grupo. Cuando lo haga, vuelve a entrar y verás los agentes de ese grupo. Si lo necesitas antes, pídeselo al equipo que administra Mango en tu empresa.',
+    next: 'Un administrador de Mango tiene que agregarte a un grupo: ya te ve en su lista como pendiente. Cuando lo haga, vuelve a comprobar y verás los agentes de ese grupo. Si lo necesitas antes, pídeselo al equipo que administra Mango en tu empresa.',
     stillNoGroup: 'Aún no tienes un grupo asignado.',
     recheck: 'Volver a comprobar',
     checking: 'Comprobando…',
@@ -154,19 +154,8 @@ export const auth = {
       floatBody: 'Nadie puede editar ni borrar eventos',
     },
   },
-  // Settings › General › Autenticación (design `MfaResetBlock`, `ChangeList`).
+  // Ajustes › Personas: the list of MFA resets (design `MfaResetList`, `ChangeList`).
   mfaReset: {
-    title: 'Restablecer MFA de un usuario',
-    desc: 'Lo propone un admin y lo aprueba otro distinto. Al aplicarse se borra su MFA y se cierran todas sus sesiones; en su próximo ingreso lo configura de nuevo. Nadie puede restablecer el suyo. Si nadie la aprueba en {{hours}} h, vence.',
-    email: 'Correo del usuario',
-    emailPlaceholder: 'Correo del usuario · usuario3@{{domain}}',
-    reason: 'Motivo',
-    reasonPlaceholder: 'Motivo (obligatorio)',
-    verified: 'Verifiqué la identidad del usuario por otro canal',
-    verifiedHint: '· llamada, videollamada o en persona; no por el mismo correo',
-    submit: 'Proponer restablecimiento',
-    ownHint: 'Es tu propia cuenta: otro admin debe restablecer tu MFA.',
-    sent: 'Solicitud enviada · la debe aprobar otro admin',
     listTitle: 'Restablecimientos de MFA',
     listMeta: 'Los propone un admin y los aprueba otro distinto.',
     itemTitle: 'Restablecer MFA de {{email}}',
@@ -196,13 +185,6 @@ export const auth = {
       expired: 'Vencido',
     },
     errors: {
-      email: 'Escribe el correo del usuario',
-      emailFormat: 'Escribe un correo válido',
-      notFound: 'Ese correo no está en el directorio',
-      self: 'No puedes restablecer tu propio MFA: pídeselo a otro admin',
-      pending: 'Ya hay una solicitud pendiente para este correo',
-      reason: 'Escribe el motivo',
-      verified: 'Confirma que verificaste la identidad del usuario por otro canal',
       generic: 'No se pudo completar la acción. Inténtalo de nuevo.',
       notPending: 'La solicitud ya no está pendiente: otro admin la decidió o venció.',
     },

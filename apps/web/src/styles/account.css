@@ -1,5 +1,5 @@
 /* Settings › General › Autenticación (design settings.jsx Settings, AuthSection, SRow) and the
-   MFA reset (MfaResetBlock + ChangeList). */
+   MFA resets (MfaResetList + ChangeList). */
 @layer components {
   .set-grid {
     display: grid;
@@ -149,41 +149,6 @@
   }
   .mfa-reset .mfa-reset-action-error {
     margin-top: 14px;
-  }
-  .mfa-reset-card {
-    display: grid;
-    gap: 10px;
-    padding: 14px;
-  }
-  .mfa-reset-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .mfa-reset-email {
-    flex: 1 1 220px;
-  }
-  .mfa-reset-reason {
-    flex: 2 1 260px;
-  }
-  .mfa-reset-check {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .mfa-reset-check input {
-    margin-top: 2px;
-    accent-color: var(--accent-ink);
-  }
-  .mfa-reset-check-hint {
-    color: var(--text-muted);
-  }
-  .mfa-reset-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
   }
   .chg-list {
     display: flex;

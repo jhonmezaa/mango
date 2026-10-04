@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { es } from '../../i18n/locales/es';
 import { csvCell, groupTurnAuthz, toAuditRow } from './auditModel';
 
 const event = (name: string, detail: Record<string, unknown>) => ({
@@ -362,6 +363,46 @@ describe('toAuditRow', () => {
     expect(toAuditRow(event('agent.version.published', {}), 0).tone).toBe('green');
   });
 
+  it('labels the events of Ajustes › Personas, in «Acceso y grupos»', () => {
+    const tones = {
+      'directory.list': 'dim',
+      'directory.signup': 'dim',
+      'directory.invite': 'dim',
+      'directory.group_add': 'dim',
+      'directory.group_remove': 'dim',
+      'directory.disable': 'red',
+      'directory.enable': 'green',
+      'directory.member_propose': 'amber',
+      'directory.member_approve': 'green',
+      'directory.member_reject': 'red',
+      'directory.member_withdraw': 'dim',
+    } as const;
+    for (const [name, tone] of Object.entries(tones)) {
+      const row = toAuditRow(event(name, { target_user: 'user-9', outcome: 'applied' }), 0);
+      expect(row).toMatchObject({ known: name, action: name, category: 'access', tone });
+      expect(row.resource).toBe('user-9');
+    }
+    // Every one of them has a label of the app (the raw event name is never the title).
+    for (const name of Object.keys(tones)) {
+      expect(es.audit.actions.directory).toHaveProperty(name.replace('directory.', ''));
+    }
+    // A read records counts only: neither the emails nor the prefix searched.
+    expect(
+      toAuditRow(
+        event('directory.list', {
+          filter: 'all',
+          searched: true,
+          returned: 20,
+          outcome: 'applied',
+        }),
+        0,
+      ).detail,
+    ).toEqual({
+      kind: 'raw',
+      text: 'filter: all · searched: true · returned: 20 · outcome: applied',
+    });
+  });
+
   it('labels a directory lookup and never shows more than the API recorded', () => {
     const row = toAuditRow(
       event('directory.lookup', {
@@ -377,7 +418,8 @@ describe('toAuditRow', () => {
     expect(row).toMatchObject({
       known: 'directory.lookup',
       action: 'directory.lookup',
-      category: 'system',
+      // Design round of 2026-10-03: the directory is «Acceso y grupos».
+      category: 'access',
       tone: 'dim',
       outcome: 'applied',
     });

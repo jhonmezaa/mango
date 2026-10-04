@@ -304,7 +304,7 @@ function NoAccess({ email, onLogout }) {
       <p className="login-sub">Tu cuenta <b>{email}</b> está creada y verificada, pero aún no pertenece a ningún grupo. Mientras tanto no puedes ver agentes ni abrir conversaciones.</p>
       <div className="login-note">
         <div style={{ fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Qué sigue</div>
-        Un admin de Mango tiene que asignarte a un grupo. Cuando lo haga, vuelve a entrar y verás los agentes de ese grupo. Si lo necesitas antes, pídeselo al equipo que administra Mango en tu empresa.
+        Un administrador de Mango tiene que agregarte a un grupo: ya te ve en su lista como pendiente. Cuando lo haga, vuelve a comprobar y verás los agentes de ese grupo. Si lo necesitas antes, pídeselo al equipo que administra Mango en tu empresa.
       </div>
       {checked && <div className="login-err-box" role="status" style={{ marginTop: 12 }}>Aún no tienes un grupo asignado.</div>}
       <div className="row gap-2" style={{ marginTop: 16 }}>

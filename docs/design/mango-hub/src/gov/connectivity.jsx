@@ -89,7 +89,7 @@ const MEMBER_ACCTS = [['prod-main', '210987654321'], ['prod-data', '310987654321
 function MemberAccounts({ sim }) {
   const Ic = window.Icons;
   if (sim === 'member-none') return null;
-  const head = <div className="g-sec-h" style={{ marginBottom: 8 }}><div><div className="g-sec-t" style={{ fontSize: 13.5 }}>Cuentas miembro</div><div className="g-sec-meta">Para leer datos de cada cuenta de la organización (sin la cuenta de Mango) hace falta un rol de lectura en cada cuenta, y que el rol intermedio de Mango exija la identidad del usuario que pregunta.</div></div></div>;
+  const head = <div className="g-sec-h" style={{ marginBottom: 8 }}><div><div className="g-sec-t" style={{ fontSize: 13.5 }}>Cuentas miembro</div><div className="g-sec-meta">Para leer datos de cada cuenta de la organización (sin la cuenta de Mango) hace falta un rol de lectura en cada cuenta, y que el rol intermedio de Mango exija la identidad del usuario que pregunta. Se comprueban las cuentas de las OUs objetivo que se dieron al instalar.</div></div></div>;
   if (sim === 'member-fail') return <div style={{ marginTop: 16 }}>{head}<K.Banner tone="error" title="No se pudieron comprobar las cuentas miembro">La conexión principal está bien, pero la comprobación de las cuentas miembro no respondió. Vuelve a intentarlo en unos segundos.</K.Banner></div>;
   const identity = sim !== 'connerr';
   const rows = MEMBER_ACCTS.map(([n, id], i) => ({ n, id, role: !(sim === 'connerr' && i === 3) }));

@@ -77,6 +77,15 @@ class Settings:
     """Requests to confirm write tool calls (D27); empty until write tools are deployed."""
     approval_key_arn: str = ""
     """KMS key that signs approval tokens; only mango-api can sign with it."""
+    sign_up_domains: str = ""
+    """Company email domains of the installation, comma separated: who may be invited."""
+    version: str = ""
+    """Version of the installed release (``release.yaml``)."""
+    organization_id: str = ""
+    management_account_id: str = ""
+    alerts_email: str = ""
+    first_admin_emails: str = ""
+    """Administrators named by the installation, comma separated (display only)."""
 
     @staticmethod
     def from_env() -> Settings:
@@ -130,6 +139,12 @@ class Settings:
             agent_session_max_seconds=int(env.get("AGENT_SESSION_MAX_SECONDS", "0")),
             approvals_table=env.get("APPROVALS_TABLE", ""),
             approval_key_arn=env.get("APPROVAL_KEY_ARN", ""),
+            sign_up_domains=env.get("SIGN_UP_DOMAINS", ""),
+            version=env.get("MANGO_VERSION", ""),
+            organization_id=env.get("ORGANIZATION_ID", ""),
+            management_account_id=env.get("MANAGEMENT_ACCOUNT_ID", ""),
+            alerts_email=env.get("ALERTS_EMAIL", ""),
+            first_admin_emails=env.get("FIRST_ADMIN_EMAILS", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

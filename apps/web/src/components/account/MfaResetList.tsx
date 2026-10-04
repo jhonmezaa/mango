@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ApiClient } from '../../api/client';
@@ -6,7 +6,6 @@ import { ApiError } from '../../api/errors';
 import type { MfaReset } from '../../api/mfaResetSchemas';
 import type { Me } from '../../api/schemas';
 import { formatRelative } from '../../lib/format';
-import { isEmail } from '../../pages/login/validation';
 import { Reason } from '../admin/govKit';
 
 /** Must match `REQUEST_LIFETIME` in `apps/api/src/mango_api/mfa_reset.py` (D28). */
@@ -21,9 +20,6 @@ const STATUS_BADGE: Record<MfaReset['status'], string> = {
 };
 
 const ERROR_KEYS = {
-  user_not_found: 'auth.mfaReset.errors.notFound',
-  self_reset: 'auth.mfaReset.errors.self',
-  already_pending: 'auth.mfaReset.errors.pending',
   // Approve, reject or withdraw on a request that is closed already (design `ChangeList`).
   version_conflict: 'auth.mfaReset.errors.notPending',
   expired: 'auth.mfaReset.errors.notPending',
@@ -207,98 +203,35 @@ function ResetItem({
 }
 
 /**
- * Settings › General › Autenticación: reset another user's MFA with dual approval (design
- * `MfaResetBlock` + `ChangeList kind="mfa_reset"`, D20). The server enforces every rule,
- * including the out-of-band identity declaration; the UI only mirrors them (REACT-AUTHZ-001).
- * Withdrawn and expired requests stay in the list with their status.
+ * Ajustes › Personas: the MFA resets with dual approval (design `MfaResetList` +
+ * `ChangeList kind="mfa_reset"`, D20). A reset is asked for on the person, in their panel; here
+ * another administrator decides. The server enforces every rule; the UI only mirrors them
+ * (REACT-AUTHZ-001). Withdrawn and expired requests stay in the list with their status.
  */
-export function MfaResetBlock({
+export function MfaResetList({
   api,
   me,
-  notify,
-  exampleDomain,
+  items,
+  listError,
+  onItems,
 }: {
   api: ApiClient;
   me: Me;
-  notify: (message: string) => void;
-  /** Company domain for the example in the email placeholder (design: "usuario3@empresa.com"). */
-  exampleDomain?: string | undefined;
+  items: readonly MfaReset[];
+  /** The list could not be loaded. */
+  listError: boolean;
+  /** The list as the API answered after a decision. */
+  onItems: (items: MfaReset[]) => void;
 }) {
   const { t } = useTranslation();
-  const [items, setItems] = useState<MfaReset[]>([]);
-  const [email, setEmail] = useState('');
-  const [reason, setReason] = useState('');
-  const [verified, setVerified] = useState(false);
-  const [tried, setTried] = useState(false);
-  const [serverError, setServerError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // Design `ChangeList`: one reject note for the whole list; opening another closes this one.
   const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const own = Boolean(me.email) && email.trim().toLowerCase() === me.email?.toLowerCase();
-
-  const [listError, setListError] = useState(false);
-
-  const load = useCallback(() => {
-    api.listMfaResets().then(
-      (list) => {
-        setItems(list);
-        setListError(false);
-      },
-      () => {
-        setListError(true);
-      },
-    );
-  }, [api]);
-
-  useEffect(load, [load]);
-
-  const target = email.trim().toLowerCase();
-  const pending = items.some((i) => i.status === 'pending' && i.target_email === target);
-  const localError = !target
-    ? t('auth.mfaReset.errors.email')
-    : !isEmail(target)
-      ? t('auth.mfaReset.errors.emailFormat')
-      : own
-        ? t('auth.mfaReset.errors.self')
-        : pending
-          ? t('auth.mfaReset.errors.pending')
-          : !reason.trim()
-            ? t('auth.mfaReset.errors.reason')
-            : !verified
-              ? t('auth.mfaReset.errors.verified')
-              : null;
-  const shownError = tried ? (localError ?? serverError) : null;
-
-  const submit = () => {
-    setTried(true);
-    setServerError(null);
-    if (localError || sending) return;
-    setSending(true);
-    api
-      .proposeMfaReset(email, reason, true)
-      .then(
-        () => {
-          notify(t('auth.mfaReset.sent'));
-          setEmail('');
-          setReason('');
-          setVerified(false);
-          setTried(false);
-          load();
-        },
-        (error: unknown) => {
-          setServerError(t(errorKey(error)));
-        },
-      )
-      .finally(() => {
-        setSending(false);
-      });
-  };
 
   const act = (action: () => Promise<MfaReset[]>) => async () => {
     setActionError(null);
     try {
-      setItems(await action());
+      onItems(await action());
       return true;
     } catch (error) {
       setActionError(t(errorKey(error)));
@@ -308,77 +241,13 @@ export function MfaResetBlock({
 
   return (
     <section className="mfa-reset">
-      <div className="g-sec-t">{t('auth.mfaReset.title')}</div>
-      <div className="g-sec-meta">{t('auth.mfaReset.desc', { hours: MFA_RESET_TTL_HOURS })}</div>
-      <div className="card mfa-reset-card">
-        <div className="mfa-reset-row">
-          <input
-            className="input mfa-reset-email"
-            type="email"
-            autoComplete="off"
-            spellCheck={false}
-            value={email}
-            onChange={(e) => {
-              // Design `MfaResetBlock`: editing the email clears whatever error is showing.
-              setEmail(e.target.value);
-              setServerError(null);
-              setTried(false);
-            }}
-            placeholder={
-              exampleDomain
-                ? t('auth.mfaReset.emailPlaceholder', { domain: exampleDomain })
-                : t('auth.mfaReset.email')
-            }
-            aria-label={t('auth.mfaReset.email')}
-          />
-          <input
-            className="input mfa-reset-reason"
-            maxLength={500}
-            value={reason}
-            onChange={(e) => {
-              setReason(e.target.value);
-            }}
-            placeholder={t('auth.mfaReset.reasonPlaceholder')}
-            aria-label={t('auth.mfaReset.reason')}
-          />
-        </div>
-        <label className="mfa-reset-check">
-          <input
-            type="checkbox"
-            checked={verified}
-            onChange={(e) => {
-              setVerified(e.target.checked);
-            }}
-          />
-          <span>
-            {t('auth.mfaReset.verified')}{' '}
-            <span className="mfa-reset-check-hint">{t('auth.mfaReset.verifiedHint')}</span>
-          </span>
-        </label>
-        <div className="mfa-reset-actions">
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            onClick={submit}
-            disabled={sending}
-          >
-            {t('auth.mfaReset.submit')}
-          </button>
-        </div>
-        {shownError && (
-          <div className="g-err" role="alert">
-            {shownError}
-          </div>
-        )}
-        {!tried && own && <Reason>{t('auth.mfaReset.ownHint')}</Reason>}
-      </div>
       {actionError && (
         <div className="g-err mfa-reset-action-error" role="alert">
           {actionError}
         </div>
       )}
       {listError ? (
-        // Design `MfaResetBlock`: the list could not load, so its section shows the error instead.
+        // Design `MfaResetList`: the list could not load, so its section shows the error instead.
         <section className="mfa-reset-list">
           <div className="g-sec-t mfa-reset-list-error-title">{t('auth.mfaReset.listTitle')}</div>
           <div className="g-err" role="alert">

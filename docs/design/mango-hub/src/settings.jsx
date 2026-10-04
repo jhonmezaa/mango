@@ -8,36 +8,34 @@ const SET_LABELS = {
 const setVal = (key, v) => { const L = SET_LABELS[key]; if (key === 'idp' && v !== 'none') return window.MangoStore.get().authCfg.idpName; return L.fmt ? L.fmt(v) : L.v[String(v)]; };
 const CHG_STATUS = { pending: ['Pendiente', 'badge-amber'], approved: ['Aprobado', 'badge-green'], rejected: ['Rechazado', 'badge-red'], withdrawn: ['Retirado', 'badge'], expired: ['Vencido', 'badge'] };
 const MFA_RESET_TTL = 72 * 36e5;
-const chgStatus = (c) => c.status === 'pending' && c.kind === 'mfa_reset' && Date.now() - new Date(c.at).getTime() > MFA_RESET_TTL ? 'expired' : c.status;
+const chgStatus = (c) => c.status === 'pending' && (c.kind === 'mfa_reset' || c.kind === 'member') && Date.now() - new Date(c.at).getTime() > MFA_RESET_TTL ? 'expired' : c.status;
 
 function Settings({ models }) {
   const I = window.Icons; const S = window.MangoStore;
   const avail = window.useMango(s => s.avail);
   const SECTIONS = [
-    ['org', 'Organización', 'Org'], ['auth', 'Autenticación', 'Lock'], ['conv', 'Acceso a conversaciones', 'Eye'], ['defaults', 'Defaults de agentes', 'Bot'],
+    ['install', 'Instalación', 'Info'], ['org', 'Organización', 'Org'], ['auth', 'Autenticación', 'Lock'], ['conv', 'Acceso a conversaciones', 'Eye'], ['defaults', 'Defaults de agentes', 'Bot'],
     ['billing', 'Billing y límites', 'Money'], ['notifications', 'Notificaciones', 'Chat'], ['observability', 'Observabilidad', 'Activity'], ['branding', 'Marca y tema', 'Sun'],
   ];
-  const [section, setSection] = useState('auth');
-  const [tab, setTab] = useState('general');
+  const [section, setSection] = useState('install');
+  const [tab, setTab] = useState(() => S.get().simInstall === 'fresh' ? 'people' : 'general');
   const simConn = window.useMango(x => x.simConn);
-  useEffect(() => { if (avail && tab === 'groups') setTab('general'); if (avail) setSection('auth'); }, [avail]);
+  useEffect(() => { if (avail && !['install', 'auth'].includes(section)) setSection('install'); }, [avail]);
   const toastS = window.useToast?.();
   const notifyS = (msg, tone) => toastS?.({ tone: tone === 'info' ? 'info' : 'success', msg });
   const [dirty, setDirty] = useState(false);
   const [s, setS] = useState({ orgName: 'Empresa', orgDomain: 'empresa.com', timezone: 'America/Mexico_City', language: 'es-MX', contact: 'usuario1@empresa.com', defaultModel: 'Claude Sonnet 4.6', defaultMaxTokens: 4096, defaultTemp: 0.3, alertAt80: true, billingEmail: 'usuario5@empresa.com', emailDigest: 'daily', accentColor: '#f97316', darkMode: 'auto' });
   const set = (k, v) => { setS({ ...s, [k]: v }); setDirty(true); };
   const save = () => { setDirty(false); S.log('settings.update', 'general', 'Guardó preferencias generales'); notifyS('Cambios guardados'); };
-  const TABS = [['general', 'General'], ['groups', 'Grupos'], ['areas', 'Áreas y OUs'], ['conn', 'Conectividad']];
+  const TABS = [['general', 'General'], ['people', 'Personas'], ['groups', 'Grupos'], ['areas', 'Áreas y OUs'], ['conn', 'Conectividad']];
   const HEAD = (
     <>
       <div className="page-head">
         <h1 className="page-title">Ajustes</h1>
-        <p className="page-subtitle">Preferencias globales, autenticación, áreas de negocio y conectividad con AWS.</p>
+        <p className="page-subtitle">Instalación, autenticación, personas y grupos, áreas de negocio y conectividad con AWS.</p>
       </div>
       <div className="g-frame g-embed g-tabs-wrap"><div className="g-tabs" role="tablist">
-        {TABS.map(([k, l]) => { const soon = avail && k === 'groups'; return soon
-          ? <window.Soon key={k} on><button role="tab" aria-selected={false}>{l}</button></window.Soon>
-          : <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'is-on' : ''} onClick={() => setTab(k)}>{l}</button>; })}
+        {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'is-on' : ''} onClick={() => setTab(k)}>{l}</button>)}
       </div></div>
     </>
   );
@@ -47,14 +45,14 @@ function Settings({ models }) {
       <div className="content" style={{ overflow: 'auto' }}>
         {HEAD}
         <div className="g-frame g-embed"><div className="g-embed-body">
-          {tab === 'groups' ? <window.GroupsAdmin goAreas={() => setTab('areas')} notify={notifyS} /> : tab === 'areas'
+          {tab === 'people' ? <window.PeopleAdmin goTab={setTab} notify={notifyS} /> : tab === 'groups' ? <window.GroupsAdmin goAreas={() => setTab('areas')} notify={notifyS} /> : tab === 'areas'
             ? <window.GovAreas state="normal" sim="none" retry={() => {}} notify={notifyS} mobile={window.innerWidth < 720} />
             : <window.GovConnectivity state="normal" sim={simConn || 'none'} retry={() => {}} />}
         </div></div>
       </div>
     </>
   );
-  const plain = !['auth', 'conv'].includes(section);
+  const plain = !['auth', 'conv', 'install'].includes(section);
   return (
     <>
       <Topbar crumbs={['Ajustes']} actions={plain && <>
@@ -65,7 +63,7 @@ function Settings({ models }) {
         {HEAD}
         <div className="set-grid" style={{ padding: '20px 32px 40px', display: 'grid', gridTemplateColumns: '220px minmax(0,1fr)', gap: 24, alignItems: 'flex-start' }}>
           <nav style={{ position: 'sticky', top: 20, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {SECTIONS.map(([id, label, icon]) => { const Ic = I[icon] || I.Settings; const active = section === id; const soonS = avail && id !== 'auth'; return soonS ? (
+            {SECTIONS.map(([id, label, icon]) => { const Ic = I[icon] || I.Settings; const active = section === id; const soonS = avail && !['auth', 'install'].includes(id); return soonS ? (
               <window.Soon key={id} on><button style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid transparent', borderRadius: 7, fontSize: 13, textAlign: 'left', width: '100%' }}><Ic size={14} /><span style={{ flex: 1 }}>{label}</span></button></window.Soon>
             ) : (
               <button key={id} onClick={() => setSection(id)} aria-current={active ? 'page' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: active ? 'var(--accent-soft)' : 'transparent', color: active ? 'var(--accent-ink)' : 'var(--text-muted)', border: active ? '1px solid var(--accent-border)' : '1px solid transparent', borderRadius: 7, fontSize: 13, textAlign: 'left', fontWeight: active ? 500 : 400 }}>
@@ -82,7 +80,8 @@ function Settings({ models }) {
               <SRow label="Contacto de plataforma" hint="Correo que aparece en avisos"><input className="input" value={s.contact} onChange={e => set('contact', e.target.value)} /></SRow>
             </SettingsSection>}
 
-            {section === 'auth' && <AuthSection />}
+            {section === 'install' && <InstallSection />}
+            {section === 'auth' && <AuthSection goPeople={() => setTab('people')} />}
             {section === 'conv' && <ConvAccessSection />}
 
             {section === 'defaults' && <SettingsSection title="Defaults de agentes" desc="Valores que se aplican al crear un agente nuevo.">
@@ -122,24 +121,47 @@ function Settings({ models }) {
   );
 }
 
-function AuthSection() {
+function InstallSection() {
+  const I = window.Icons;
+  const cfg = window.useMango(s => s.authCfg);
+  const fresh = window.useMango(s => s.simInstall) === 'fresh';
+  const admins = fresh ? cfg.firstAdmins.slice(0, 1) : cfg.firstAdmins;
+  const RO = ({ children, mono }) => <div className="ro-field" style={mono ? null : { fontFamily: 'var(--font-sans)' }}><I.Lock size={12} />{children}</div>;
+  return (
+    <SettingsSection title="Instalación" desc="Datos que se dieron al instalar Mango. Son de solo lectura: los cambia quien administra AWS, no la aplicación.">
+      <SRow label="Versión instalada"><div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-strong)' }}>{cfg.version}</span><span className="mk-meta">Publicación <span className="mono">{cfg.release}</span></span></div></SRow>
+      <SRow label="Cómo actualizar" hint="Fuera de la aplicación"><div style={{ fontSize: 13, lineHeight: 1.55 }}>Mango no se actualiza desde aquí. Quien administra AWS despliega las plantillas de una versión publicada más nueva, con los mismos parámetros de instalación.</div></SRow>
+      <SRow label="Nombre de la instalación"><RO mono>{cfg.installName}</RO></SRow>
+      <SRow label="Organización de AWS"><RO mono>{cfg.awsOrg}</RO></SRow>
+      <SRow label="Cuenta de gestión"><RO mono>{cfg.mgmtAccount}</RO></SRow>
+      <SRow label="Correo de alertas"><RO>{cfg.alertEmail}</RO></SRow>
+      <SRow label="Dominios para registrarse"><RO>{cfg.domains.join(', ')}</RO></SRow>
+      <SRow label="Administradores iniciales" hint={admins.length < 2 ? 'Se instaló con uno solo' : null}><div className="row gap-1" style={{ flexWrap: 'wrap' }}>{admins.map(e => <window.PersonChip key={e} email={e} />)}</div></SRow>
+      <SRow label="Se configura en la aplicación"><div style={{ fontSize: 13, lineHeight: 1.55 }}>Áreas y OUs, grupos, personas, presupuestos, modelos y precios. Arrancan con los valores de la versión: áreas vacías, solo los cuatro grupos de sistema, USD 5 por usuario y USD 30 por agente al mes, y el agente FinOps publicado.</div></SRow>
+    </SettingsSection>
+  );
+}
+
+function AuthSection({ goPeople }) {
   const I = window.Icons;
   const cfg = window.useMango(s => s.authCfg);
   const avail = window.useMango(s => s.avail);
   const [modal, setModal] = useState(null);
   const client = cfg.install === 'client';
   return (
-    <SettingsSection title="Autenticación" desc={avail ? 'Cognito gestiona las cuentas. MFA, sesión e IdP se definen al instalar Mango.' : 'Cognito gestiona las cuentas. La conexión se define al instalar Mango; ' + (client ? 'sesión e IdP cambian' : 'MFA, sesión e IdP cambian') + ' con la aprobación de otro admin.'}>
+    <SettingsSection title="Autenticación" desc={avail ? 'Cognito gestiona las cuentas. MFA, plan del directorio y dominios de registro vienen de la instalación y no se editan aquí.' : 'Cognito gestiona las cuentas. La conexión se define al instalar Mango; ' + (client ? 'sesión e IdP cambian' : 'MFA, sesión e IdP cambian') + ' con la aprobación de otro admin.'}>
       <div className="card" style={{ padding: '4px 16px', marginBottom: 20 }}>
         <SRow label="User Pool ID"><div className="ro-field"><I.Lock size={12} />{cfg.pool}</div></SRow>
         <SRow label="Región"><div className="ro-field"><I.Lock size={12} />{cfg.region}</div></SRow>
         <div style={{ borderBottom: 'none' }}><SRow label="App client ID" hint="Solo lectura · se define al instalar"><div className="ro-field"><I.Lock size={12} />{cfg.client}</div></SRow></div>
       </div>
       {['mfa', 'session', 'idp'].map(k => <ProposedRow key={k} k={k} onPropose={() => setModal(k)} />)}
+      <SRow label="Plan del directorio" hint="Viene de la instalación"><div className="ro-field" style={{ fontFamily: 'var(--font-sans)' }}><I.Lock size={12} />Cognito {cfg.dirPlan}</div></SRow>
+      <SRow label="Dominios para registrarse" hint="Viene de la instalación · los correos públicos se rechazan"><div className="ro-field" style={{ fontFamily: 'var(--font-sans)' }}><I.Lock size={12} />{cfg.domains.join(', ')}</div></SRow>
       <SRow label="Política de uso de IA" hint="Se define al instalar · si está vacía, el registro no pide aceptarla">{cfg.aiPolicyUrl ? <a className="ro-field" href={cfg.aiPolicyUrl} target="_blank" rel="noopener noreferrer"><I.Lock size={12} />{cfg.aiPolicyUrl}</a> : <div className="ro-field"><I.Lock size={12} />Sin política configurada</div>}</SRow>
       <SRow label="Política de contraseñas" hint="Cognito · se define al instalar"><div className="ro-field"><I.Lock size={12} />Mínimo 14 caracteres, con mayúsculas, minúsculas, números y símbolos</div></SRow>
       <SRow label="Contraseña y MFA de cada usuario" hint="No se cambian desde la cuenta"><div style={{ fontSize: 13, lineHeight: 1.5 }}>Para cambiar su contraseña, el usuario usa «Olvidé mi contraseña» en el login. Para restablecer su MFA, se lo pide a un admin.</div></SRow>
-      <MfaResetBlock />
+      <SRow label="Restablecer MFA de una persona" hint="Solo admins · lo aprueba otro admin"><div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 13, lineHeight: 1.5 }}>Se pide sobre la persona, en Ajustes › Personas.</span><button className="mk-link" onClick={goPeople}>Ir a Personas →</button></div></SRow>
       {!avail && <ChangeList keys={['mfa', 'session', 'idp']} />}
       {modal && <ProposeSetting k={modal} onClose={() => setModal(null)} />}
     </SettingsSection>
@@ -162,41 +184,11 @@ function ConvAccessSection() {
   );
 }
 
-function MfaResetBlock() {
-  const I = window.Icons; const S = window.MangoStore; const K = window.GovKit;
-  const role = window.useMango(s => s.role);
-  window.useMango(s => s.actorOverride); window.useMango(s => s.changes);
-  const toast = window.useToast?.();
-  const [q, setQ] = useState(''); const [reason, setReason] = useState(''); const [verified, setVerified] = useState(false); const [tried, setTried] = useState(false);
-  const me = S.actorEmail();
-  const target = q.trim().toLowerCase();
-  const pending = (S.get().changes || []).find(c => c.kind === 'mfa_reset' && c.target === target && chgStatus(c) === 'pending');
-  const err = !target ? 'Escribe el correo del usuario' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target) ? 'Escribe un correo válido' : target === me ? 'No puedes restablecer tu propio MFA: pídeselo a otro admin' : pending ? 'Ya hay una solicitud pendiente para este correo' : !reason.trim() ? 'Escribe el motivo' : !verified ? 'Confirma que verificaste la identidad del usuario por otro canal' : null;
-  const [failed, setFailed] = useState(false);
-  const [notFound, setNotFound] = useState(false);
+function MfaResetList() {
   const [actErr, setActErr] = useState(null);
   const listErr = window.useMango(s => s.mfaListErr);
-  const submit = () => { setTried(true); setFailed(false); setNotFound(false); if (err) return; if (!/^usuario[1-9]@empresa\.com$/.test(target)) { setNotFound(true); return; } try { S.propose({ kind: 'mfa_reset', key: 'mfa_reset', target, from: null, to: null, title: 'Restablecer MFA de ' + target, summary: 'Borra su MFA y cierra todas sus sesiones · identidad verificada por otro canal', reason: reason.trim(), verified: true }); } catch (e) { setFailed(true); return; } toast?.({ tone: 'success', msg: 'Solicitud enviada · la debe aprobar otro admin' }); setQ(''); setReason(''); setVerified(false); setTried(false); };
-  if (role !== 'admin') return null;
   return (
-    <section style={{ marginTop: 22 }}>
-      <div className="g-sec-t" style={{ marginBottom: 4 }}>Restablecer MFA de un usuario</div>
-      <div className="g-sec-meta" style={{ marginBottom: 10 }}>Lo propone un admin y lo aprueba otro distinto. Al aplicarse se borra su MFA y se cierran todas sus sesiones; en su próximo ingreso lo configura de nuevo. Nadie puede restablecer el suyo. Si nadie la aprueba en 72 h, vence.</div>
-      <div className="card" style={{ padding: 14, display: 'grid', gap: 10 }}>
-        <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
-          <input className="input" type="email" autoComplete="off" style={{ flex: '1 1 220px' }} value={q} onChange={e => { setQ(e.target.value); setNotFound(false); setFailed(false); setTried(false); }} placeholder="Correo del usuario · usuario3@empresa.com" aria-label="Correo del usuario" />
-          <input className="input" style={{ flex: '2 1 260px' }} value={reason} onChange={e => setReason(e.target.value)} placeholder="Motivo (obligatorio)" aria-label="Motivo" />
-        </div>
-        <label className="row gap-2" style={{ fontSize: 13, cursor: 'pointer', alignItems: 'flex-start' }}>
-          <input type="checkbox" checked={verified} onChange={e => setVerified(e.target.checked)} style={{ accentColor: 'var(--accent-ink)', marginTop: 2 }} />
-          <span>Verifiqué la identidad del usuario por otro canal <span style={{ color: 'var(--text-muted)' }}>· llamada, videollamada o en persona; no por el mismo correo</span></span>
-        </label>
-        <div className="row gap-2" style={{ justifyContent: 'flex-end' }}><button className="btn btn-sm btn-primary" onClick={submit}>Proponer restablecimiento</button></div>
-        {tried && err && <div className="g-err" role="alert">{err}</div>}
-        {notFound && !err && <div className="g-err" role="alert">Ese correo no está en el directorio</div>}
-        {failed && !err && <div className="g-err" role="alert">No se pudo completar la acción. Inténtalo de nuevo.</div>}
-        {!tried && q.trim().toLowerCase() === me && <K.Reason>Es tu propia cuenta: otro admin debe restablecer tu MFA.</K.Reason>}
-      </div>
+    <section>
       {actErr && <div className="g-err" role="alert" style={{ marginTop: 14 }}>{actErr}</div>}
       {listErr ? <section style={{ marginTop: 22 }}><div className="g-sec-t" style={{ marginBottom: 10 }}>Restablecimientos de MFA</div><div className="g-err" role="alert">No se pudo completar la acción. Inténtalo de nuevo.</div></section>
         : <ChangeList kind="mfa_reset" title="Restablecimientos de MFA" onActError={setActErr} />}
@@ -210,10 +202,10 @@ function ProposedRow({ k, onPropose }) {
   const changes = window.useMango(s => s.changes);
   const role = window.useMango(s => s.role);
   const pending = changes.find(c => c.kind === 'auth' && c.key === k && c.status === 'pending');
-  const fixedMfa = k === 'mfa' && cfg.install === 'client';
+  const fixedMfa = k === 'mfa';
   const avail = window.useMango(s => s.avail);
   return (
-    <SRow label={SET_LABELS[k].title} hint={fixedMfa ? 'Instalación de cliente: siempre obligatorio' : null}>
+    <SRow label={SET_LABELS[k].title} hint={fixedMfa ? 'Siempre obligatorio · viene de la instalación' : null}>
       <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 13.5, fontWeight: 500 }}>{setVal(k, cfg[k])}</span>
         {pending && !avail && <span className="badge badge-amber">Cambio pendiente → {setVal(k, pending.to)}</span>}
@@ -291,7 +283,7 @@ function ChangeList({ keys, kind = 'auth', target, title = 'Cambios propuestos',
               </div>
               {status === 'pending' && <div className="chg-act">
                 {mine ? <><K.Reason>Otro admin debe aprobarla</K.Reason><button className="btn btn-sm" disabled={busy === c.id} onClick={() => act(c.id, () => S.withdrawChange(c.id))}>Retirar</button></>
-                  : c.kind === 'mfa_reset' && c.target === S.actorEmail() ? <K.Reason>Es sobre tu cuenta: la debe aprobar otro admin</K.Reason>
+                  : (c.kind === 'mfa_reset' || c.kind === 'member') && c.target === S.actorEmail() ? <K.Reason>Es sobre tu cuenta: la debe aprobar otro admin</K.Reason>
                   : role === 'admin' ? <><button className="btn btn-sm" disabled={busy === c.id} onClick={() => { setRej(c.id); setNote(''); }}>Rechazar</button><button className="btn btn-sm btn-primary" disabled={busy === c.id} onClick={() => act(c.id, () => S.decideChange(c.id, 'approved'))}>Aprobar</button></> : null}
               </div>}
             </div>
@@ -347,4 +339,4 @@ function SToggle({ label, desc, checked, onChange }) {
   );
 }
 
-Object.assign(window, { Settings, ChangeList, SET_LABELS });
+Object.assign(window, { Settings, ChangeList, SET_LABELS, MfaResetList, chgStatus });

@@ -1,6 +1,36 @@
 {
   "components": {
     "schemas": {
+      "ActionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Id"
+          },
+          "result": {
+            "enum": [
+              "applied",
+              "proposed",
+              "bootstrap"
+            ],
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ActionOut",
+        "type": "object"
+      },
       "AdminModelOut": {
         "additionalProperties": false,
         "properties": {
@@ -1190,7 +1220,7 @@
         "properties": {
           "pending": {
             "items": {
-              "$ref": "#/components/schemas/ChangeOut"
+              "$ref": "#/components/schemas/mango_api__admin__ChangeOut"
             },
             "title": "Pending",
             "type": "array"
@@ -1425,66 +1455,21 @@
         "title": "ChangeKind",
         "type": "string"
       },
-      "ChangeOut": {
+      "ChangeListOut": {
         "additionalProperties": false,
         "properties": {
-          "base_version": {
-            "title": "Base Version",
-            "type": "integer"
-          },
-          "change_id": {
-            "title": "Change Id",
-            "type": "string"
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "expires_at": {
-            "title": "Expires At",
-            "type": "string"
-          },
-          "proposed_by": {
-            "title": "Proposed By",
-            "type": "string"
-          },
-          "proposed_by_email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Proposed By Email"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "units": {
-            "additionalProperties": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/mango_api__people__ChangeOut"
             },
-            "title": "Units",
-            "type": "object"
+            "title": "Items",
+            "type": "array"
           }
         },
         "required": [
-          "change_id",
-          "proposed_by",
-          "proposed_by_email",
-          "created_at",
-          "expires_at",
-          "base_version",
-          "units",
-          "reason"
+          "items"
         ],
-        "title": "ChangeOut",
+        "title": "ChangeListOut",
         "type": "object"
       },
       "ChatRequest": {
@@ -2284,6 +2269,34 @@
         "title": "GroupChangeOut",
         "type": "object"
       },
+      "GroupIn": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+            "title": "Group",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "group"
+        ],
+        "title": "GroupIn",
+        "type": "object"
+      },
       "GroupList": {
         "additionalProperties": false,
         "properties": {
@@ -2449,6 +2462,130 @@
           "content_hash"
         ],
         "title": "HashIn",
+        "type": "object"
+      },
+      "InstallationOut": {
+        "additionalProperties": false,
+        "description": "What was given when Mango was installed. Read only: whoever runs AWS changes it.",
+        "properties": {
+          "alerts_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alerts Emails",
+            "type": "array"
+          },
+          "first_admins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "First Admins",
+            "type": "array"
+          },
+          "management_account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Management Account Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "sign_up_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sign Up Domains",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "organization_id",
+          "management_account_id",
+          "alerts_emails",
+          "sign_up_domains",
+          "first_admins"
+        ],
+        "title": "InstallationOut",
+        "type": "object"
+      },
+      "InviteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "groups": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "InviteIn",
+        "type": "object"
+      },
+      "InvitedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "result": {
+            "enum": [
+              "applied",
+              "bootstrap"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "result"
+        ],
+        "title": "InvitedOut",
         "type": "object"
       },
       "LimitsOut": {
@@ -2889,6 +3026,26 @@
           "items"
         ],
         "title": "ModelsOut",
+        "type": "object"
+      },
+      "OptionalReasonIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "OptionalReasonIn",
         "type": "object"
       },
       "OrgNode": {
@@ -3525,6 +3682,102 @@
         "title": "ParamsIn",
         "type": "object"
       },
+      "PeopleOut": {
+        "additionalProperties": false,
+        "properties": {
+          "admins": {
+            "title": "Admins",
+            "type": "integer"
+          },
+          "incomplete": {
+            "title": "Incomplete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PersonOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "with_access": {
+            "title": "With Access",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "pending",
+          "admins",
+          "with_access",
+          "incomplete"
+        ],
+        "title": "PeopleOut",
+        "type": "object"
+      },
+      "PersonOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "mfa": {
+            "title": "Mfa",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "invited",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "status",
+          "mfa",
+          "groups",
+          "created_at"
+        ],
+        "title": "PersonOut",
+        "type": "object"
+      },
       "PoliciesOut": {
         "additionalProperties": false,
         "properties": {
@@ -3839,6 +4092,22 @@
           "max_submissions_per_day"
         ],
         "title": "QuotasOut",
+        "type": "object"
+      },
+      "ReasonIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReasonIn",
         "type": "object"
       },
       "ResetCreatedOut": {
@@ -4505,6 +4774,47 @@
           "definition"
         ],
         "title": "SaveDraftIn",
+        "type": "object"
+      },
+      "SearchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,5}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "filter": {
+            "default": "all",
+            "enum": [
+              "all",
+              "pending",
+              "invited",
+              "disabled"
+            ],
+            "title": "Filter",
+            "type": "string"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          }
+        },
+        "title": "SearchIn",
         "type": "object"
       },
       "SetChange": {
@@ -5198,6 +5508,68 @@
         "title": "ViolationOut",
         "type": "object"
       },
+      "mango_api__admin__ChangeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "integer"
+          },
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "proposed_by": {
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "proposed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By Email"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "units": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Units",
+            "type": "object"
+          }
+        },
+        "required": [
+          "change_id",
+          "proposed_by",
+          "proposed_by_email",
+          "created_at",
+          "expires_at",
+          "base_version",
+          "units",
+          "reason"
+        ],
+        "title": "ChangeOut",
+        "type": "object"
+      },
       "mango_api__admin__RejectIn": {
         "additionalProperties": false,
         "properties": {
@@ -5408,6 +5780,145 @@
           "reason"
         ],
         "title": "RejectIn",
+        "type": "object"
+      },
+      "mango_api__people__ChangeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "kind": {
+            "enum": [
+              "add",
+              "remove",
+              "disable",
+              "enable"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "proposed_by": {
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "proposed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By Email"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "withdrawn",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_email": {
+            "title": "Target Email",
+            "type": "string"
+          },
+          "target_user": {
+            "title": "Target User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "change_id",
+          "kind",
+          "group",
+          "status",
+          "target_user",
+          "target_email",
+          "proposed_by",
+          "proposed_by_email",
+          "reason",
+          "created_at",
+          "expires_at",
+          "decided_by",
+          "decided_by_email",
+          "decided_at",
+          "note"
+        ],
+        "title": "ChangeOut",
         "type": "object"
       },
       "mango_api__tool_policies__ProposeIn": {
@@ -6289,6 +6800,34 @@
         "summary": "Put Group Description"
       }
     },
+    "/admin/installation": {
+      "get": {
+        "operationId": "get_installation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Installation"
+      }
+    },
     "/admin/member-access-check": {
       "post": {
         "operationId": "member_access_check",
@@ -6683,6 +7222,460 @@
           }
         },
         "summary": "Get Organization"
+      }
+    },
+    "/admin/people/changes": {
+      "get": {
+        "operationId": "get_member_changes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Member Changes"
+      }
+    },
+    "/admin/people/changes/{change_id}/approve": {
+      "post": {
+        "operationId": "approve_member_change",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve Member Change"
+      }
+    },
+    "/admin/people/changes/{change_id}/reject": {
+      "post": {
+        "operationId": "reject_member_change",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reject Member Change"
+      }
+    },
+    "/admin/people/changes/{change_id}/withdraw": {
+      "post": {
+        "operationId": "withdraw_member_change",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Withdraw Member Change"
+      }
+    },
+    "/admin/people/invitations": {
+      "post": {
+        "operationId": "invite_person",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Invite Person"
+      }
+    },
+    "/admin/people/search": {
+      "post": {
+        "operationId": "search_people",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Search People"
+      }
+    },
+    "/admin/people/{user_id}/disable": {
+      "post": {
+        "operationId": "disable_person",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9-]{1,64}$",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Disable Person"
+      }
+    },
+    "/admin/people/{user_id}/enable": {
+      "post": {
+        "operationId": "enable_person",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9-]{1,64}$",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptionalReasonIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Enable Person"
+      }
+    },
+    "/admin/people/{user_id}/groups": {
+      "post": {
+        "operationId": "add_group",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9-]{1,64}$",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Add Group"
+      }
+    },
+    "/admin/people/{user_id}/groups/remove": {
+      "post": {
+        "operationId": "remove_group",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9-]{1,64}$",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Remove Group"
       }
     },
     "/agents": {

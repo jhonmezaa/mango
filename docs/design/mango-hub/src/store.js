@@ -25,6 +25,7 @@
   };
 
   const seedAudit = [
+    { actor: 'usuario7@empresa.com', role: 'user', action: 'directory.signup', target: 'usuario7@empresa.com', detail: 'Se registró y verificó su correo · sin grupos', outcome: 'applied', at: ago(12) },
     { actor: 'Usuario 1', role: 'admin', action: 'agent.update', target: 'fin-01', detail: 'Cambió el presupuesto de USD 2.500,00 a USD 3.000,00', before: { budgetMax: 2500 }, after: { budgetMax: 3000 }, outcome: 'applied', at: ago(18) },
     { actor: 'Usuario 4', role: 'user', action: 'chat.query', target: 'fin-01', perm: 'agent.invoke', turn: 'TRN-5102', detail: 'Preguntó a FinOps · consultó Cost Explorer (3 llamadas) · costo USD 0,04', after: { llamadas: 3, costo: 'USD 0,04' }, agentVersion: 3, model: 'us.anthropic.claude-sonnet-4-6-v1:0', at: ago(22) },
     { actor: 'Usuario 4', role: 'user', action: 'access.view', target: 'agent.invoke', turn: 'TRN-5102', detail: 'Usar agente fin-01 · permitido', at: ago(22.1) },
@@ -48,7 +49,7 @@
     { actor: 'Usuario 6', role: 'lead_admin', action: 'agent.invoke', target: 'fin-01', turn: 'TRN-5090', detail: 'Inició un turno con FinOps', at: ago(190.2) },
     { actor: 'Sistema', role: 'system', action: 'budget.alert', target: 'fin-01', detail: 'FinOps llegó al 80% del límite por defecto (USD 24,00 de USD 30,00)', at: ago(220) },
     { actor: 'Usuario 3', role: 'owner', action: 'agent.rollback', target: 'dev-01', detail: 'Restauró versión v6 del system prompt', before: { version: 7 }, after: { version: 6 }, outcome: 'applied', at: ago(410) },
-    { actor: 'Usuario 1', role: 'admin', action: 'role.assign', target: 'usuario4', detail: 'Asignó el grupo finops', outcome: 'applied', at: ago(640) },
+    { actor: 'Usuario 1', role: 'admin', action: 'directory.group_add', target: 'usuario4@empresa.com', detail: 'Agregó a usuario4@empresa.com al grupo bu-finanzas', outcome: 'applied', at: ago(640) },
     { actor: 'Sec Guardian', role: 'agent', action: 'tool.execute', target: 'ec2.modify_security_group', detail: 'Bloqueó una IP externa tras la aprobación de Usuario 1', outcome: 'applied', at: ago(900) },
     { actor: 'Usuario 2', role: 'owner', action: 'approval.reject', target: 'APR-201', detail: 'Rechazó terminar instancias i-0a8b* — "falta ventana de mantenimiento"', at: ago(1300) },
     { actor: 'Usuario 1', role: 'admin', action: 'settings.update', target: 'auth', detail: 'Activó MFA obligatorio para admins', outcome: 'applied', at: ago(2100) },
@@ -99,13 +100,13 @@
     { id: 'CHG-11', kind: 'auth', key: 'mfa', from: 'optional', to: 'required', by: 'Usuario 6', at: ago(2200), reason: 'Requisito de la política de seguridad.', status: 'approved', decidedBy: 'Usuario 1', decidedAt: ago(2100) },
     { id: 'CHG-10', kind: 'auth', key: 'idp', from: 'none', to: 'sso', by: 'Usuario 1', at: ago(5000), reason: 'Entrar con la cuenta corporativa.', status: 'rejected', decidedBy: 'Usuario 6', decidedAt: ago(4900), note: 'Falta el metadata del IdP.' },
   ];
-  const CHG_PREFIX = { mfa_reset: 'account.mfa_reset_', share: 'agent.share_', group: 'group.', skill: 'skill.', policy: 'policy.', auth: 'settings.' };
+  const CHG_PREFIX = { member: 'directory.member_', mfa_reset: 'account.mfa_reset_', share: 'agent.share_', group: 'group.', skill: 'skill.', policy: 'policy.', auth: 'settings.' };
   const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp'];
 
   let state = {
     avail: ls('mango-avail2', true),
     accountState: 'active',
-    authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta (empresa.okta.com)', convAccess: false, install: 'client', pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
+    authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta (empresa.okta.com)', convAccess: false, install: 'client', domains: ['empresa.com', 'empresa.mx'], dirPlan: 'Essentials', installName: 'mango-empresa', version: 'v0.1.0', release: 'rel-xxxxxxxx', awsOrg: 'o-xxxxxxxxxx', mgmtAccount: '111111111111', alertEmail: 'alertas@empresa.com', firstAdmins: ['usuario1@empresa.com', 'usuario6@empresa.com'], pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
     changes, retired: {},
     toolPolicies: {
       'sap-s4-hana.release_payment': { cond: 'amount', amount: 10000, approvers: 2, expiresH: 48 },
@@ -155,6 +156,7 @@
       const c = state.changes.find(x => x.id === id);
       if (!c || c.status !== 'pending' || c.by === store.actor()) return;
       if (c.kind === 'mfa_reset' && (c.target === store.actorEmail() || Date.now() - new Date(c.at).getTime() > 72 * 36e5)) return;
+      if (c.kind === 'member' && (c.target === store.actorEmail() || Date.now() - new Date(c.at).getTime() > 72 * 36e5)) return;
       if (c.kind === 'group' && state.avail && Date.now() - new Date(c.at).getTime() > 72 * 36e5) return;
       if (decision === 'approved' && c.kind === 'auth' && c.key === 'mfa' && state.authCfg.install === 'client' && c.to !== 'required') {
         const why = 'Instalación de cliente: MFA solo puede ser obligatorio';

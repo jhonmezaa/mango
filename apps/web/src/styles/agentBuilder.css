@@ -660,13 +660,6 @@
   .ab-people {
     margin-bottom: 8px;
   }
-  .ab-person {
-    cursor: default;
-  }
-  .ab-person > button {
-    display: flex;
-    margin-left: 2px;
-  }
   .ab-person-add {
     display: flex;
     align-items: center;

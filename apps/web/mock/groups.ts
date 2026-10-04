@@ -84,6 +84,11 @@ const groups = new Map<string, MockGroup>(
   ).map((group) => [group.id, { ...group, version: 0 }]),
 );
 
+/** Ids of the registry: the groups a person can be given, besides the system ones. */
+export function registeredGroupIds(): string[] {
+  return [...groups.keys()];
+}
+
 function seed(
   hoursAgo: number,
   change: Pick<MockGroupChange, 'kind' | 'group_id' | 'reason'> & Partial<MockGroupChange>,

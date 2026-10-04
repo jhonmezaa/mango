@@ -60,6 +60,11 @@
       "ApproveMfaReset": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "ViewPeople": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ManagePeople": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ApprovePeopleChange": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ViewApprovals": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },

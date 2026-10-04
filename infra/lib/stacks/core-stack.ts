@@ -33,7 +33,7 @@ import {
 import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-provisioner.js";
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
-import { ReleaseAgents, releaseAgents } from "../constructs/release-agents.js";
+import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
 import { Tools } from "../constructs/tools.js";
 import { UninstallGuard } from "../constructs/uninstall-guard.js";
 import { WriteTools } from "../constructs/write-tools.js";
@@ -313,6 +313,8 @@ export class CoreStack extends Stack {
     identity.grantGroupManagement(apiTaskRole);
     // D33: emails of the people an agent is shared with, for agent creators and admins.
     identity.grantDirectoryLookup(apiTaskRole);
+    // D60: Settings > People (the directory, group membership, invitations) for administrators.
+    identity.grantPeopleManagement(apiTaskRole);
     apiTaskRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "InvokeAdminProbe",
@@ -392,6 +394,17 @@ export class CoreStack extends Stack {
         ...packPlatform.apiEnvironment,
         ...writeTools.apiEnvironment,
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
+        // D60: who may be invited, and what Settings > General > Installation shows to
+        // administrators (served by mango-api, not by the public config.json of the SPA).
+        SIGN_UP_DOMAINS: cfg.auth.signUpDomains.join(","),
+        MANGO_VERSION: releaseVersion(),
+        ORGANIZATION_ID: cfg.organizationId,
+        MANAGEMENT_ACCOUNT_ID: cfg.managementAccountId,
+        ALERTS_EMAIL: cfg.alerts.emails.join(","),
+        FIRST_ADMIN_EMAILS: [
+          ...cfg.users.filter((u) => !u.e2e && u.groups.includes("mango-admin")).map((u) => u.email),
+          ...(release ? [release.secondAdminEmail] : []),
+        ].join(","),
       },
     });
     // New tasks only start once the release agents are in the table.

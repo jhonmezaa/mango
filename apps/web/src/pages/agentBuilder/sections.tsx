@@ -4,7 +4,8 @@ import { Link } from 'react-router';
 
 import { Alert } from '../../components/Alert';
 import { Badge, type BadgeTone } from '../../components/Badge';
-import { CheckIcon, CloseIcon, LockIcon, PlusIcon, WarnIcon } from '../../components/icons';
+import { CheckIcon, LockIcon, PlusIcon, WarnIcon } from '../../components/icons';
+import { PersonChip } from '../../components/PersonChip';
 import { isEmail, type LookupResult, type People } from '../../directory/usePeople';
 import { formatUsd } from '../../lib/format';
 import { AgentIcon } from './AgentIcon';
@@ -1063,23 +1064,20 @@ export const AccessSection = memo(function AccessSection({
         {({ labelId, errorId }) => (
           <>
             {users.length > 0 && (
-              <ul className="ab-chips ab-people" aria-labelledby={labelId}>
+              <ul className="person-chips ab-people" aria-labelledby={labelId}>
                 {users.map((user) => {
                   // The email from the directory, or the identifier when there is none: both
                   // are API data, rendered as text.
                   const known = emailOf(user);
                   return (
-                    <li key={user} className="ab-chip is-on ab-person">
-                      <span className={known ? undefined : 'mono'}>{known ?? user}</span>
-                      <button
-                        type="button"
-                        aria-label={t('agentBuilder.access.usersRemove', { user: known ?? user })}
-                        onClick={() => {
+                    <li key={user}>
+                      <PersonChip
+                        email={known ?? user}
+                        mono={!known}
+                        onRemove={() => {
                           onChange({ users: users.filter((other) => other !== user) });
                         }}
-                      >
-                        <CloseIcon size={10} />
-                      </button>
+                      />
                     </li>
                   );
                 })}

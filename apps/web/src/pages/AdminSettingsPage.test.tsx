@@ -18,15 +18,49 @@ function first<T>(list: readonly T[]): T {
   return item;
 }
 
+/** What the page itself asks for through the generated client, whatever the tab under test. */
+const INSTALLATION = {
+  name: 'mango-example',
+  version: '0.1.0',
+  organization_id: 'o-exampleorg1',
+  management_account_id: '111111111111',
+  alerts_emails: ['alertas@example.com'],
+  sign_up_domains: ['example.com'],
+  first_admins: ['ana.perez@example.com', 'otra.admin@example.com'],
+};
+const directory = (admins: number) => ({
+  items: [],
+  next_cursor: null,
+  pending: 0,
+  admins,
+  with_access: 3,
+  incomplete: false,
+});
+
 function renderPage(
   api: Partial<ApiClient>,
   isAdmin = true,
   tab: string | null = 'Áreas y OUs',
   config: Partial<RuntimeConfig> = {},
+  page: { admins?: number; installation?: typeof INSTALLATION | Error } = {},
 ) {
   const units = businessUnitsFixture();
   // Far-future expiry so the fixtures stay "pending" whatever today's date is.
   units.pending = units.pending.map((change) => ({ ...change, expires_at: FUTURE }));
+  const { call: tabCall = vi.fn(memberAccess([])), ...rest } = api;
+  const installation = page.installation ?? INSTALLATION;
+  // The page reads the directory (to open on Personas with a single administrator) and the
+  // installation; everything else goes to the `call` of the test.
+  const call = vi.fn((operation: string, ...args: unknown[]) => {
+    if (operation === 'searchPeople') return Promise.resolve(directory(page.admins ?? 2));
+    if (operation === 'getMemberChanges') return Promise.resolve({ items: [] });
+    if (operation === 'getInstallation') {
+      return installation instanceof Error
+        ? Promise.reject(installation)
+        : Promise.resolve(installation);
+    }
+    return (tabCall as (...all: unknown[]) => Promise<unknown>)(operation, ...args);
+  });
   const result = render(
     <TestProviders
       session={sessionValue({
@@ -39,9 +73,9 @@ function renderPage(
           getBusinessUnits: vi.fn(() => Promise.resolve(units)),
           getOrganization: vi.fn(() => Promise.resolve(ORGANIZATION)),
           listMfaResets: vi.fn(() => Promise.resolve([])),
-          call: vi.fn(memberAccess([])),
-          ...api,
-        } as ApiClient,
+          ...rest,
+          call,
+        } as unknown as ApiClient,
         me: { ...baseMe, user_id: ADMIN_ID, business_unit: 'finanzas', is_admin: isAdmin },
       })}
     >
@@ -50,7 +84,7 @@ function renderPage(
   );
   // The design opens on General; most tests exercise another tab.
   if (isAdmin && tab) fireEvent.click(screen.getByRole('tab', { name: tab }));
-  return result;
+  return { ...result, call };
 }
 
 type MemberAccount = { account_id: string; name: string; status: string };
@@ -86,10 +120,48 @@ describe('AdminSettingsPage', () => {
       'aria-selected',
       'true',
     );
-    expect(screen.getByRole('tab', { name: 'Áreas y OUs' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Conectividad' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Grupos' })).toBeInTheDocument();
+    // Design order: Personas sits between General and Grupos.
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'General',
+      'Personas',
+      'Grupos',
+      'Áreas y OUs',
+      'Conectividad',
+    ]);
     expect(within(screen.getByRole('tablist')).queryByText('Próximamente')).toBeNull();
+    expect(
+      screen.getByText(
+        'Instalación, autenticación, personas y grupos, áreas de negocio y conectividad con AWS.',
+      ),
+    ).toBeInTheDocument();
+    // More than one administrator: the page stays on General.
+    expect(await screen.findByRole('heading', { name: 'Instalación' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('opens on Personas while the installation has a single administrator', async () => {
+    renderPage({}, true, null, {}, { admins: 1 });
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Personas' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'Primeros pasos de esta instalación' }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the tab the person picked when the directory answers later', async () => {
+    renderPage({}, true, 'Conectividad', {}, { admins: 1 });
+    expect(await screen.findByText('Conexión con AWS')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Conectividad' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+    });
+    expect(screen.getByRole('tab', { name: 'Personas' })).toHaveAttribute('aria-selected', 'false');
   });
 
   it('renders the mapping and untrusted text (OU names, reasons, emails) as text', async () => {
@@ -386,12 +458,99 @@ describe('AdminSettingsPage', () => {
   });
 });
 
-describe('General › Autenticación', () => {
-  it('shows the installation read-only and only Autenticación as available', async () => {
-    const listMfaResets = vi.fn(() => Promise.resolve([]));
-    renderPage({ listMfaResets }, true, null);
-    expect(await screen.findByRole('heading', { name: 'Autenticación' })).toBeInTheDocument();
+async function openAuth() {
+  const nav = await screen.findByRole('navigation', { name: 'Secciones de General' });
+  fireEvent.click(within(nav).getByRole('button', { name: 'Autenticación' }));
+  return nav;
+}
+
+describe('General › Instalación', () => {
+  it('opens General on the installation, read-only and as text', async () => {
+    const { container } = renderPage(
+      {},
+      true,
+      null,
+      {},
+      {
+        installation: {
+          ...INSTALLATION,
+          name: '<img src=x onerror=alert(1)>',
+          first_admins: ['<b>ana</b>@example.com'],
+        },
+      },
+    );
+    expect(await screen.findByRole('heading', { name: 'Instalación' })).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Secciones de General' });
+    expect(within(nav).getByRole('button', { name: 'Instalación' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(nav).getAllByText('Próximamente')).toHaveLength(7);
+    expect(await screen.findByText('v0.1.0')).toBeInTheDocument();
+    // The product has no identifier of the publication.
+    expect(screen.queryByText(/Publicación/)).toBeNull();
+    expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
+    expect(screen.getByText('o-exampleorg1')).toBeInTheDocument();
+    expect(screen.getByText('111111111111')).toBeInTheDocument();
+    expect(screen.getByText('alertas@example.com')).toBeInTheDocument();
+    expect(screen.getByText('<b>ana</b>@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Se instaló con uno solo')).toBeInTheDocument();
+    expect(container.querySelector('img, b')).toBeNull();
+    // Nothing of the section can be edited.
+    expect(
+      container.querySelector('.set-body input, .set-body select, .set-body textarea'),
+    ).toBeNull();
+  });
+
+  it('shows what the installation did not give as «—» and a missing version as «Sin versión»', async () => {
+    renderPage(
+      {},
+      true,
+      null,
+      {},
+      {
+        installation: {
+          ...INSTALLATION,
+          version: null,
+          organization_id: null,
+          management_account_id: null,
+          alerts_emails: [],
+          first_admins: [],
+        } as unknown as typeof INSTALLATION,
+      },
+    );
+    expect(await screen.findByText('Sin versión')).toBeInTheDocument();
+    expect(screen.getAllByText('—')).toHaveLength(4);
+    expect(screen.queryByText('Se instaló con uno solo')).toBeNull();
+  });
+
+  it('says the installation could not be loaded and retries', async () => {
+    const user = userEvent.setup();
+    const { call } = renderPage(
+      {},
+      true,
+      null,
+      {},
+      {
+        installation: new ApiError(502, 'upstream_error', 'arn:aws:iam::1:role/x'),
+      },
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No se pudieron cargar los datos de la instalación.',
+    );
+    expect(screen.queryByText(/arn:aws/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+    await waitFor(() => {
+      expect(call.mock.calls.filter(([name]) => name === 'getInstallation')).toHaveLength(2);
+    });
+  });
+});
+
+describe('General › Autenticación', () => {
+  it('shows the authentication of the installation read-only', async () => {
+    renderPage({}, true, null);
+    const nav = await openAuth();
+    expect(await screen.findByRole('heading', { name: 'Autenticación' })).toBeInTheDocument();
     expect(within(nav).getByRole('button', { name: 'Autenticación' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -410,14 +569,21 @@ describe('General › Autenticación', () => {
     // Current values come from config.json; a customer installation always requires MFA.
     expect(
       screen.getByText(
-        'Cognito gestiona las cuentas. MFA, sesión e IdP se definen al instalar Mango.',
+        'Cognito gestiona las cuentas. MFA, plan del directorio y dominios de registro vienen de la instalación y no se editan aquí.',
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('Obligatorio')).toBeInTheDocument();
     expect(screen.getByText('Fijo')).toBeInTheDocument();
-    expect(screen.getByText('Instalación de cliente: siempre obligatorio')).toBeInTheDocument();
+    expect(screen.getByText('Siempre obligatorio · viene de la instalación')).toBeInTheDocument();
     expect(screen.getByText('12 h')).toBeInTheDocument();
     expect(screen.getByText('Sin IdP · solo correo y contraseña')).toBeInTheDocument();
+    expect(screen.getByText('Dominios para registrarse')).toBeInTheDocument();
+    expect(
+      screen.getByText('Viene de la instalación · los correos públicos se rechazan'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+    // `config.json` does not carry the plan of the directory: the row is not shown.
+    expect(screen.queryByText('Plan del directorio')).toBeNull();
     // D21 has no backend: "Proponer cambio" is "Próximamente" and there are no sample proposals.
     expect(screen.queryByText('Proponer cambio de MFA (app autenticadora)')).toBeNull();
     for (const setting of ['Duración de la sesión', 'Identity provider (SSO)']) {
@@ -425,9 +591,21 @@ describe('General › Autenticación', () => {
     }
     expect(screen.queryByRole('button', { name: 'Proponer cambio' })).toBeNull();
     expect(screen.queryByText('Cambios propuestos')).toBeNull();
-    // The MFA reset block is mounted.
-    expect(screen.getByRole('button', { name: 'Proponer restablecimiento' })).toBeInTheDocument();
-    expect(listMfaResets).toHaveBeenCalled();
+  });
+
+  it('sends an MFA reset to Personas: the form by email is gone', async () => {
+    renderPage({}, true, null);
+    await openAuth();
+    expect(await screen.findByText('Restablecer MFA de una persona')).toBeInTheDocument();
+    expect(screen.getByText('Solo admins · lo aprueba otro admin')).toBeInTheDocument();
+    expect(
+      screen.getByText('Se pide sobre la persona, en Ajustes › Personas.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Proponer restablecimiento' })).toBeNull();
+    expect(screen.queryByLabelText('Correo del usuario')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a Personas →' }));
+    expect(screen.getByRole('tab', { name: 'Personas' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('button', { name: /Invitar persona/ })).toBeInTheDocument();
   });
 });
 
@@ -437,9 +615,10 @@ describe('General › Autenticación in the lab', () => {
       auth: { installationType: 'lab', mfa: 'off', sessionHours: 8 },
       ssoProvider: 'EntraID',
     });
+    await openAuth();
     expect(await screen.findByText('Desactivado')).toBeInTheDocument();
     expect(screen.queryByText('Fijo')).toBeNull();
-    expect(screen.queryByText('Instalación de cliente: siempre obligatorio')).toBeNull();
+    expect(screen.queryByText('Siempre obligatorio · viene de la instalación')).toBeNull();
     expect(screen.getByText('Proponer cambio de MFA (app autenticadora)')).toBeInTheDocument();
     expect(screen.getByText('8 h')).toBeInTheDocument();
     expect(screen.getByText('EntraID')).toBeInTheDocument();

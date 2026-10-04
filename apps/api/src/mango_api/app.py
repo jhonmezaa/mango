@@ -98,6 +98,15 @@ from mango_api.model_catalog import (
 )
 from mango_api.models import BedrockCatalog, ModelsDeps, models_router
 from mango_api.pack_release import ReleasePacks, parse_catalog
+from mango_api.people import (
+    CognitoPeople,
+    Installation,
+    MemberChangeStore,
+    PeopleDeps,
+    installation_router,
+    parse_domains,
+    people_router,
+)
 from mango_api.pricing import Usage, cost, estimate_max_cost
 from mango_api.probe import AdminProbe, OrganizationCache, RateLimiter
 from mango_api.provisioner import DeprovisionerClient, PackProvisionerClient, ProvisionerClient
@@ -320,6 +329,8 @@ class Services:
     # Emails of the people an agent is shared with (D33); set in production (build_services).
     directory: CognitoDirectory | None = None
     directory_quota: LookupQuota | None = None
+    # Settings > People (D60); set in production (build_services).
+    people: PeopleDeps | None = None
     # Write tools with approval (D27); set in production once the approvals table exists.
     approvals: ApprovalDeps | None = None
     tool_policies: ToolPolicyDeps | None = None
@@ -423,6 +434,14 @@ def build_services(settings: Settings) -> Services:
         mfa_reset_store=ResetStore(dynamodb, settings.settings_table),
         directory=CognitoDirectory(cognito, settings.cognito_user_pool_id),
         directory_quota=LookupQuota(dynamodb, settings.settings_table),
+        people=PeopleDeps(
+            people=CognitoPeople(cognito, settings.cognito_user_pool_id),
+            store=MemberChangeStore(dynamodb, settings.settings_table),
+            registry=group_registry,
+            audit=audit,
+            clock=now_utc,
+            sign_up_domains=parse_domains(settings.sign_up_domains),
+        ),
         approvals=approvals,
         tool_policies=ToolPolicyDeps(
             store=policy_store,
@@ -795,6 +814,24 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                 require,
             )
         )
+
+    if services.people is not None:
+        app.include_router(people_router(services.people, current_user, require))
+    app.include_router(
+        installation_router(
+            Installation(
+                name=settings.namespace,
+                version=settings.version,
+                organization_id=settings.organization_id,
+                management_account_id=settings.management_account_id,
+                alerts_email=settings.alerts_email,
+                sign_up_domains=settings.sign_up_domains,
+                first_admin_emails=settings.first_admin_emails,
+            ),
+            current_user,
+            require,
+        )
+    )
 
     if services.group_registry is not None:
         app.include_router(groups_router(services.group_registry, current_user, require))

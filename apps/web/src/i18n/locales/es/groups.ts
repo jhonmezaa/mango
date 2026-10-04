@@ -46,7 +46,7 @@ export const groups = {
   modal: {
     newTitle: 'Nuevo grupo',
     editTitle: 'Editar {{id}}',
-    sub: 'Se sincroniza con Cognito. Los miembros se asignan desde el directorio.',
+    sub: 'Se sincroniza con Cognito. Las personas se agregan en Ajustes › Personas.',
     name: 'Nombre',
     namePlaceholder: 'p. ej. finanzas-lideres',
     nameFixed: 'El nombre no se puede cambiar porque lo usan agentes y Cognito.',

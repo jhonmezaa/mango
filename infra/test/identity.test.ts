@@ -395,23 +395,29 @@ describe("customer user pool", () => {
     });
   });
 
-  it("lets mango-api reset MFA, manage groups and look users up only on its own user pool", () => {
+  it("lets mango-api reset MFA, manage groups and people only on its own user pool", () => {
     const statements = statementsOf(template, "Mango-poc-ApiTask").filter((s) =>
       JSON.stringify(s.Action).includes("cognito-idp:"),
     );
-    // Never membership (AdminAddUserToGroup) or anything broader: members are assigned in
-    // the directory, and group changes need dual approval in mango-api (D26). The only reads
-    // of users are one by email (`AdminGetUser`) and one by `sub` (`ListUsers`), to share
-    // agents with people (D33).
+    // Exactly what mango-api uses: MFA reset (D20), the group registry (D26), sharing agents
+    // with people (D33) and Settings > People (D60). Nothing deletes a user, sets a password,
+    // changes an attribute or touches the pool's configuration.
     expect(
       [...new Set(statements.flatMap((s) => s.Action))].sort(),
     ).toEqual([
+      "cognito-idp:AdminAddUserToGroup",
+      "cognito-idp:AdminCreateUser",
       "cognito-idp:AdminDeleteSoftwareToken",
+      "cognito-idp:AdminDisableUser",
+      "cognito-idp:AdminEnableUser",
       "cognito-idp:AdminGetUser",
+      "cognito-idp:AdminListGroupsForUser",
+      "cognito-idp:AdminRemoveUserFromGroup",
       "cognito-idp:AdminUserGlobalSignOut",
       "cognito-idp:CreateGroup",
       "cognito-idp:DeleteGroup",
       "cognito-idp:ListUsers",
+      "cognito-idp:ListUsersInGroup",
     ]);
     for (const statement of statements) {
       expect(statement.Effect).toBe("Allow");

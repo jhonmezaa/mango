@@ -21,7 +21,7 @@ src/
   dashboard.jsx marketplace.jsx share-agent.jsx chat.jsx tickets.jsx admin.jsx (Agent Builder)
   agent-review.jsx mcp-catalog.jsx models-view.jsx skills.jsx knowledge.jsx schedules.jsx
   evals.jsx eval-create.jsx playground.jsx observability2.jsx costs2.jsx activity.jsx search.jsx
-  approvals.jsx policies.jsx audit-budgets.jsx groups-admin.jsx settings.jsx other-views.jsx
+  approvals.jsx policies.jsx audit-budgets.jsx groups-admin.jsx people.jsx settings.jsx other-views.jsx
   gov/                   kit.jsx, data.js, mango-data.js, budgets.jsx (usuarios y valores por defecto), areas.jsx, propose.jsx, connectivity.jsx
 ```
 
@@ -223,3 +223,33 @@ Decisiones del usuario: mandan los límites del producto (100 grupos, precio de 
 - Primer mensaje: el mismo progreso en una conversación vacía.
 - Panel de demo: «Chat · progreso del turno» (normal / tool sin nombre / paralelo con fallo / guardrail).
 - 420 px y modo oscuro: solo tokens de color; los pasos hacen salto de línea.
+
+
+## Mango instalado como cliente · Personas (2026-10-03)
+Ya no hay instalación «de laboratorio»: se quitó el control «Tipo de instalación»; MFA es siempre «Fijo · obligatorio».
+
+**Ajustes › Personas** (nueva pestaña, entre General y Grupos; solo admins) — `people.jsx`
+- Directorio: persona (chip con iniciales + correo, el mismo `window.PersonChip` que usa ahora Agent Builder › Acceso › Personas), estado (Activa · Invitada · contraseña temporal · Deshabilitada · **Sin acceso** = activa sin grupos), MFA registrado o no, grupos, fecha de alta. Búsqueda por inicio del correo (filtro de prefijo del directorio), filtros Todas / Sin acceso (con contador) / Invitadas / Deshabilitadas, «Mostrar más» de 20 en 20 sin total (cursor). Las personas sin acceso van primero y hay un aviso «N personas se registraron y aún no tienen acceso a nada».
+- Panel de la persona (drawer; ≤560 px a pantalla completa con «Volver»): grupos con su tipo, agregar (De sistema / De acceso) y quitar; restablecer MFA (motivo + «Verifiqué su identidad por otro canal», lo aprueba otro admin); deshabilitar / rehabilitar acceso con motivo. Nota fija: no se cambia el correo ni la contraseña de otra persona ni se ven sus conversaciones.
+- **Doble aprobación** (`kind: 'member'`, vence a las 72 h, lista «Cambios de personas»): dar o quitar `mango-admin` y `finops-central`, y deshabilitar a un administrador. **Decisión de diseño: el resto de los grupos se aplica al momento y queda en Auditoría** (los permisos que dan ya pasan por revisión: publicar exige aprobación, y los datos de cuentas solo los usan grupos centrales). Avisar si el producto quiere aprobación para `mango-agent-creator` o los grupos centrales propios.
+- Reglas: nadie se quita a sí mismo un grupo sensible ni se deshabilita; no se aprueba un cambio sobre la propia cuenta; no se puede quitar `mango-admin` ni deshabilitar a un admin si quedarían menos de dos administradores.
+- **Arranque (pregunta para el producto)**: con un solo administrador nadie puede aprobar. Diseño propuesto: mientras haya uno solo, nombrar al segundo (`mango-admin`, desde la persona o invitándolo) se aplica sin segundo aprobador y el evento lo dice («único administrador: sin segundo aprobador»). Alternativa si el producto no la acepta: solo vía el parámetro opcional de la instalación.
+- Invitar: correo de los dominios permitidos (los públicos se rechazan con su propio texto; «Ese correo ya está en el directorio» se puede mostrar porque es solo para admins), grupos opcionales sin los sensibles (salvo el arranque). Recibe contraseña temporal y configura MFA al entrar.
+- Restablecer MFA se movió aquí: Autenticación ya no tiene el formulario por correo, solo un enlace «Ir a Personas»; la lista de restablecimientos (con sus errores 409/410 y de carga) vive al final de Personas. Al aprobarse, la persona queda «MFA sin registrar».
+- **Primer día** (instalación recién hecha): tarjeta «Primeros pasos de esta instalación»: 1) segundo administrador, 2) áreas y OUs, 3) grupos de acceso (solo existen los 4 de sistema), 4) dar acceso (con «Ver pendientes»). Los pasos 2 y 3 llevan «Necesita un segundo administrador» mientras falte. Pie: lo que ya trae la instalación (FinOps publicado, USD 5 / USD 30, MFA obligatorio, dominios). Con la instalación recién hecha, Ajustes abre en Personas.
+- La persona sin grupo sigue viendo «Todavía no tienes acceso» al entrar; el texto ahora dice que un administrador ya la ve como pendiente.
+- **Necesita del backend**: listar usuarios con estado, MFA, grupos y alta; filtro por prefijo de correo; contador y filtro «Sin acceso» (activas sin grupos: el directorio no lo filtra solo); invitar, agregar/quitar de grupo, deshabilitar/rehabilitar.
+
+**Auditoría**: `directory.signup` «Persona registrada», `directory.invite` «Persona invitada», `directory.group_add` / `group_remove` «Grupo asignado / quitado a persona», `directory.disable` / `enable`, `directory.member_propose/approve/reject/withdraw`. Categoría «Acceso y grupos», enlace «Abrir Ajustes». El evento aplicado tras una aprobación dice el id del cambio y quién lo pidió; el de aprobación dice quién aprobó.
+
+**Ajustes › General › Instalación** (nueva sección, disponible y por defecto): versión (v0.1.0) e identificador de la publicación, «Cómo actualizar» (lo hace quien administra AWS desplegando las plantillas de una versión más nueva; la app no se actualiza), nombre de la instalación, organización de AWS, cuenta de gestión, correo de alertas, dominios, administradores iniciales y qué se configura en la app. Todo de solo lectura. Modelos por defecto, Notificaciones y Observabilidad siguen Próximamente.
+
+**Autenticación**: descripción «MFA, plan del directorio y dominios de registro vienen de la instalación y no se editan aquí»; filas nuevas de solo lectura «Plan del directorio» y «Dominios para registrarse».
+
+**Grupos**: ya no es Próximamente en «Disponible hoy» (existe en el producto). El modal dice «Las personas se agregan en Ajustes › Personas».
+
+**Conectividad › Cuentas miembro**: se mantiene la lista de las OUs objetivo de la instalación (lo dice el texto). No se agregó «elegir la cuenta a probar»: la lista ya cubre todas y una prueba suelta añade un campo más sin resolver lo de las OUs; avisar si el producto la quiere.
+
+**Panel de demo**: «Instalación» (en uso / recién instalada: deja solo usuario1 admin y usuario7 sin acceso, grupos de sistema y áreas vacías), «Personas · directorio» (carga / cargando / error), «Personas · al actuar o invitar» (funciona / falla). Para ver la doble aprobación: «Admin que revisa» › Usuario 6.
+
+**Pendiente de la ronda anterior**: el contexto «aprobaciones y progreso del chat ya implementados» quedó tratado en «Cierre de la ronda del 2026-10-03». Si quedan puntos de ese texto que no aparecen ahí, hay que volver a pasarlos.

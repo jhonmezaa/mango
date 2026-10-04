@@ -11,6 +11,7 @@ import { groups } from './es/groups';
 import { marketplace } from './es/marketplace';
 import { mcpCatalog } from './es/mcpCatalog';
 import { orgChart } from './es/orgChart';
+import { people } from './es/people';
 import { settings } from './es/settings';
 import { app, common, config, errors, nav, notFound, roles, soon } from './es/shell';
 
@@ -40,6 +41,7 @@ export const es = {
   orgChart,
   brains,
   groups,
+  people,
   mcpCatalog,
   approvals,
 } as const;

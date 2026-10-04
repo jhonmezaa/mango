@@ -30,6 +30,10 @@ import type { AuditEvent, AuditResource } from '../../api/schemas';
 // Directory (design closing round, 2026-10-02): `directory.lookup` is «Búsqueda en el directorio».
 // The design's detail names the email that was looked up; the API never records the emails asked
 // for (only how many, and who was found), so the detail stays the generic summary of the event.
+//
+// People (design round of 2026-10-03): the `directory.*` events of Ajustes › Personas keep their
+// name in the API and get the design's labels, in «Acceso y grupos», with «Abrir Ajustes».
+// `directory.list` (reading the directory) is not in the design: «Lectura del directorio».
 
 /** Design categories (AUDIT_CATS), in the design's order. */
 export const AUDIT_CATEGORIES = [
@@ -60,6 +64,26 @@ const ACCOUNT_ACTIONS = [
 type AccountAction = (typeof ACCOUNT_ACTIONS)[number];
 const ACCOUNT_ACTION_SET: ReadonlySet<string> = new Set(ACCOUNT_ACTIONS);
 const isAccountAction = (event: string): event is AccountAction => ACCOUNT_ACTION_SET.has(event);
+
+/** Directory events the API records with the name of their design action (AUDIT_ACTIONS). */
+const DIRECTORY_ACTIONS = [
+  'directory.lookup',
+  'directory.list',
+  'directory.signup',
+  'directory.invite',
+  'directory.group_add',
+  'directory.group_remove',
+  'directory.disable',
+  'directory.enable',
+  'directory.member_propose',
+  'directory.member_approve',
+  'directory.member_reject',
+  'directory.member_withdraw',
+] as const;
+type DirectoryAction = (typeof DIRECTORY_ACTIONS)[number];
+const DIRECTORY_ACTION_SET: ReadonlySet<string> = new Set(DIRECTORY_ACTIONS);
+const isDirectoryAction = (event: string): event is DirectoryAction =>
+  DIRECTORY_ACTION_SET.has(event);
 
 /** Approval events the API records with the name of their design action (AUDIT_ACTIONS). */
 const APPROVAL_ACTIONS = [
@@ -158,7 +182,7 @@ export type KnownAction =
   | 'access.denied'
   | 'chat.query'
   | 'agent.invoke'
-  | 'directory.lookup'
+  | DirectoryAction
   | EventAction
   | PackRequestAction
   | ApprovalAction
@@ -274,8 +298,6 @@ function knownAction(event: string, detail: Record<string, unknown>): KnownActio
       return 'chat.query';
     case 'agent.invoke':
       return 'agent.invoke';
-    case 'directory.lookup':
-      return 'directory.lookup';
     case 'settings.budget.updated':
       return detail.scope === 'defaults' ? 'budget.default' : 'budget.user';
     case 'settings.bu_mapping.proposed':
@@ -293,6 +315,7 @@ function knownAction(event: string, detail: Record<string, unknown>): KnownActio
         return isPackRequestKind(detail.kind) ? PACK_REQUEST_ACTIONS[event][detail.kind] : null;
       }
       if (isApprovalAction(event)) return event;
+      if (isDirectoryAction(event)) return event;
       return isAccountAction(event) ? event : null;
   }
 }
@@ -301,7 +324,7 @@ function categoryOf(action: string): AuditCategory {
   if (/^agent\./.test(action)) return 'agents';
   if (/^(approval|policy)\./.test(action)) return 'approvals';
   if (/^budget\./.test(action)) return 'budgets';
-  if (/^(role|group|access|account|conversation)\./.test(action)) return 'access';
+  if (/^(role|group|access|account|conversation|directory)\./.test(action)) return 'access';
   if (/^(mcp|tool|model)\./.test(action)) return 'mcp';
   if (/^(settings|mapping|kb|schedule)\./.test(action)) return 'config';
   if (action === 'chat.query') return 'chat';

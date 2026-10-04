@@ -3,6 +3,18 @@
 import * as z from 'zod';
 
 /**
+ * ActionOut
+ */
+export const zActionOutSchema = z.object({
+    change_id: z.string().nullish(),
+    result: z.enum([
+        'applied',
+        'proposed',
+        'bootstrap'
+    ])
+});
+
+/**
  * AgentBudgetOut
  */
 export const zAgentBudgetOutSchema = z.object({
@@ -204,29 +216,6 @@ export const zChangeKindSchema = z.enum([
 ]);
 
 /**
- * ChangeOut
- */
-export const zChangeOutSchema = z.object({
-    base_version: z.int(),
-    change_id: z.string(),
-    created_at: z.string(),
-    expires_at: z.string(),
-    proposed_by: z.string(),
-    proposed_by_email: z.string().nullable(),
-    reason: z.string(),
-    units: z.record(z.string(), z.array(z.string()))
-});
-
-/**
- * BusinessUnitsOut
- */
-export const zBusinessUnitsOutSchema = z.object({
-    pending: z.array(zChangeOutSchema),
-    units: z.record(z.string(), z.array(z.string())),
-    version: z.int()
-});
-
-/**
  * ChatRequest
  *
  * A turn. Besides the message the client only picks the agent of a new conversation and
@@ -382,6 +371,14 @@ export const zGroupAdminOutSchema = z.object({
 });
 
 /**
+ * GroupIn
+ */
+export const zGroupInSchema = z.object({
+    group: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/),
+    reason: z.string().min(1).max(500).nullish()
+});
+
+/**
  * GroupOut
  */
 export const zGroupOutSchema = z.object({
@@ -468,6 +465,37 @@ export const zGroupsAdminOutSchema = z.object({
  */
 export const zHashInSchema = z.object({
     content_hash: z.string().regex(/^[0-9a-f]{64}$/)
+});
+
+/**
+ * InstallationOut
+ *
+ * What was given when Mango was installed. Read only: whoever runs AWS changes it.
+ */
+export const zInstallationOutSchema = z.object({
+    alerts_emails: z.array(z.string()),
+    first_admins: z.array(z.string()),
+    management_account_id: z.string().nullable(),
+    name: z.string(),
+    organization_id: z.string().nullable(),
+    sign_up_domains: z.array(z.string()),
+    version: z.string().nullable()
+});
+
+/**
+ * InviteIn
+ */
+export const zInviteInSchema = z.object({
+    email: z.string().min(3).max(254),
+    groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).max(10).optional().default([])
+});
+
+/**
+ * InvitedOut
+ */
+export const zInvitedOutSchema = z.object({
+    result: z.enum(['applied', 'bootstrap']),
+    user_id: z.string()
 });
 
 /**
@@ -640,6 +668,13 @@ export const zModelsOutSchema = z.object({
 });
 
 /**
+ * OptionalReasonIn
+ */
+export const zOptionalReasonInSchema = z.object({
+    reason: z.string().min(1).max(500).nullish()
+});
+
+/**
  * OrgNode
  */
 export const zOrgNodeSchema = z.object({
@@ -801,6 +836,34 @@ export const zParamsInSchema = z.object({
 });
 
 /**
+ * PersonOut
+ */
+export const zPersonOutSchema = z.object({
+    created_at: z.string(),
+    email: z.string(),
+    groups: z.array(z.string()),
+    mfa: z.boolean(),
+    status: z.enum([
+        'active',
+        'invited',
+        'disabled'
+    ]),
+    user_id: z.string()
+});
+
+/**
+ * PeopleOut
+ */
+export const zPeopleOutSchema = z.object({
+    admins: z.int(),
+    incomplete: z.boolean(),
+    items: z.array(zPersonOutSchema),
+    next_cursor: z.string().nullable(),
+    pending: z.int(),
+    with_access: z.int()
+});
+
+/**
  * PolicyRule
  *
  * A policy as shown: only the threshold of its condition is set.
@@ -880,6 +943,13 @@ export const zQuotasOutSchema = z.object({
     max_drafts: z.int(),
     max_submissions_per_day: z.int(),
     submissions_today: z.int()
+});
+
+/**
+ * ReasonIn
+ */
+export const zReasonInSchema = z.object({
+    reason: z.string().min(1).max(500)
 });
 
 /**
@@ -1029,6 +1099,20 @@ export const zRuleOutSchema = z.object({
 export const zSaveDraftInSchema = z.object({
     definition: zAgentDefinitionSchema,
     revision: z.int().gte(1).lte(1000000)
+});
+
+/**
+ * SearchIn
+ */
+export const zSearchInSchema = z.object({
+    cursor: z.string().regex(/^[0-9]{1,5}$/).nullish(),
+    filter: z.enum([
+        'all',
+        'pending',
+        'invited',
+        'disabled'
+    ]).optional().default('all'),
+    prefix: z.string().nullish()
 });
 
 /**
@@ -1290,6 +1374,29 @@ export const zVersionOutSchema = z.object({
 });
 
 /**
+ * ChangeOut
+ */
+export const zMangoApiAdminChangeOutSchema = z.object({
+    base_version: z.int(),
+    change_id: z.string(),
+    created_at: z.string(),
+    expires_at: z.string(),
+    proposed_by: z.string(),
+    proposed_by_email: z.string().nullable(),
+    reason: z.string(),
+    units: z.record(z.string(), z.array(z.string()))
+});
+
+/**
+ * BusinessUnitsOut
+ */
+export const zBusinessUnitsOutSchema = z.object({
+    pending: z.array(zMangoApiAdminChangeOutSchema),
+    units: z.record(z.string(), z.array(z.string())),
+    version: z.int()
+});
+
+/**
  * RejectIn
  */
 export const zMangoApiAdminRejectInSchema = z.object({
@@ -1359,6 +1466,45 @@ export const zMangoApiMfaResetProposeInSchema = z.object({
  */
 export const zMangoApiMfaResetRejectInSchema = z.object({
     reason: z.string().min(1).max(500)
+});
+
+/**
+ * ChangeOut
+ */
+export const zMangoApiPeopleChangeOutSchema = z.object({
+    change_id: z.string(),
+    created_at: z.string(),
+    decided_at: z.string().nullable(),
+    decided_by: z.string().nullable(),
+    decided_by_email: z.string().nullable(),
+    expires_at: z.string(),
+    group: z.string().nullable(),
+    kind: z.enum([
+        'add',
+        'remove',
+        'disable',
+        'enable'
+    ]),
+    note: z.string().nullable(),
+    proposed_by: z.string(),
+    proposed_by_email: z.string().nullable(),
+    reason: z.string(),
+    status: z.enum([
+        'pending',
+        'approved',
+        'rejected',
+        'withdrawn',
+        'expired'
+    ]),
+    target_email: z.string(),
+    target_user: z.string()
+});
+
+/**
+ * ChangeListOut
+ */
+export const zChangeListOutSchema = z.object({
+    items: z.array(zMangoApiPeopleChangeOutSchema)
 });
 
 /**
@@ -1538,6 +1684,11 @@ export const zPutGroupDescriptionPath = z.object({
  */
 export const zPutGroupDescriptionResponse = zGroupsAdminOutSchema;
 
+/**
+ * Successful Response
+ */
+export const zGetInstallationResponse = zInstallationOutSchema;
+
 export const zMemberAccessCheckBody = zEmptyInSchema;
 
 /**
@@ -1617,6 +1768,102 @@ export const zPutAdminModelResponse = zAdminModelsOutSchema;
  * Successful Response
  */
 export const zGetOrganizationResponse = zOrganizationOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zGetMemberChangesResponse = zChangeListOutSchema;
+
+export const zApproveMemberChangeBody = zEmptyInSchema;
+
+export const zApproveMemberChangePath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zApproveMemberChangeResponse = zChangeListOutSchema;
+
+export const zRejectMemberChangeBody = zReasonInSchema;
+
+export const zRejectMemberChangePath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRejectMemberChangeResponse = zChangeListOutSchema;
+
+export const zWithdrawMemberChangeBody = zEmptyInSchema;
+
+export const zWithdrawMemberChangePath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zWithdrawMemberChangeResponse = zChangeListOutSchema;
+
+export const zInvitePersonBody = zInviteInSchema;
+
+/**
+ * Successful Response
+ */
+export const zInvitePersonResponse = zInvitedOutSchema;
+
+export const zSearchPeopleBody = zSearchInSchema;
+
+/**
+ * Successful Response
+ */
+export const zSearchPeopleResponse = zPeopleOutSchema;
+
+export const zDisablePersonBody = zReasonInSchema;
+
+export const zDisablePersonPath = z.object({
+    user_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDisablePersonResponse = zActionOutSchema;
+
+export const zEnablePersonBody = zOptionalReasonInSchema;
+
+export const zEnablePersonPath = z.object({
+    user_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zEnablePersonResponse = zActionOutSchema;
+
+export const zAddGroupBody = zGroupInSchema;
+
+export const zAddGroupPath = z.object({
+    user_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zAddGroupResponse = zActionOutSchema;
+
+export const zRemoveGroupBody = zGroupInSchema;
+
+export const zRemoveGroupPath = z.object({
+    user_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveGroupResponse = zActionOutSchema;
 
 /**
  * Successful Response

@@ -5,31 +5,11 @@ import { useSession } from '../../auth/useSession';
 import { safeHttpsHref } from '../../security/safeUrl';
 import { LockIcon } from '../icons';
 import { Soon } from '../Soon';
-import { MfaResetBlock } from './MfaResetBlock';
+import { SettingRow } from './SettingRow';
 
-function SettingRow({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string | undefined;
-  children: ReactNode;
-}) {
+function ReadOnly({ children, text = false }: { children: ReactNode; text?: boolean }) {
   return (
-    <div className="set-row">
-      <div>
-        <div className="set-row-label">{label}</div>
-        {hint && <div className="set-row-hint">{hint}</div>}
-      </div>
-      <div className="set-row-value">{children}</div>
-    </div>
-  );
-}
-
-function ReadOnly({ children }: { children: ReactNode }) {
-  return (
-    <div className="ro-field">
+    <div className={text ? 'ro-field is-text' : 'ro-field'}>
       <LockIcon size={12} />
       {children}
     </div>
@@ -39,14 +19,15 @@ function ReadOnly({ children }: { children: ReactNode }) {
 const PROPOSABLE = ['mfa', 'session', 'idp'] as const;
 
 /**
- * Ajustes › General › Autenticación (design v14 settings.jsx `AuthSection`/`ProposedRow`).
+ * Ajustes › General › Autenticación (design settings.jsx `AuthSection`/`ProposedRow`).
  * Everything comes from the installation (`config.json`) and is read-only: MFA, session and IdP
  * show their current value. "Proponer cambio" is "Próximamente": D21 has no backend yet, so there
- * are no sample proposals (D24).
+ * are no sample proposals (D24). The design's «Plan del directorio» is not shown: `config.json`
+ * does not carry it. An MFA reset is asked for on the person, in Ajustes › Personas.
  */
-export function AuthSettings({ notify }: { notify: (message: string) => void }) {
+export function AuthSettings({ onGoPeople }: { onGoPeople: () => void }) {
   const { t } = useTranslation();
-  const { api, config, me } = useSession();
+  const { config } = useSession();
   const policyHref = safeHttpsHref(config.aiPolicyUrl);
   const { auth } = config;
   const current: Record<(typeof PROPOSABLE)[number], string> = {
@@ -74,7 +55,8 @@ export function AuthSettings({ notify }: { notify: (message: string) => void }) 
       </div>
       {PROPOSABLE.map((key) => {
         const setting = t(`settings.auth.${key}`);
-        // Customer installations always require MFA (installation schema): shown as fixed.
+        // Customer installations always require MFA (installation schema): shown as fixed. A lab
+        // one may have it off, so «siempre obligatorio» is only said where it is true.
         const fixedMfa = key === 'mfa' && auth.installationType === 'customer';
         return (
           <SettingRow
@@ -86,7 +68,7 @@ export function AuthSettings({ notify }: { notify: (message: string) => void }) 
               <span className="set-row-current">{current[key]}</span>
               <div className="flex-1" />
               {fixedMfa ? (
-                <ReadOnly>{t('settings.auth.mfaFixed')}</ReadOnly>
+                <ReadOnly text>{t('settings.auth.mfaFixed')}</ReadOnly>
               ) : (
                 <Soon name={t('settings.auth.proposeSoon', { setting })}>
                   <button type="button" className="btn btn-sm" tabIndex={-1}>
@@ -98,6 +80,9 @@ export function AuthSettings({ notify }: { notify: (message: string) => void }) 
           </SettingRow>
         );
       })}
+      <SettingRow label={t('settings.auth.domains')} hint={t('settings.auth.domainsHint')}>
+        <ReadOnly text>{config.signUpDomains.join(', ')}</ReadOnly>
+      </SettingRow>
       <SettingRow label={t('settings.auth.aiPolicy')} hint={t('settings.auth.aiPolicyHint')}>
         {policyHref ? (
           <a className="ro-field" href={policyHref} target="_blank" rel="noopener noreferrer">
@@ -117,7 +102,14 @@ export function AuthSettings({ notify }: { notify: (message: string) => void }) 
       <SettingRow label={t('settings.auth.perUser')} hint={t('settings.auth.perUserHint')}>
         <div className="set-row-text">{t('settings.auth.perUserBody')}</div>
       </SettingRow>
-      <MfaResetBlock api={api} me={me} notify={notify} exampleDomain={config.signUpDomains[0]} />
+      <SettingRow label={t('settings.auth.mfaReset')} hint={t('settings.auth.mfaResetHint')}>
+        <div className="set-row-link">
+          <span className="set-row-text">{t('settings.auth.mfaResetBody')}</span>
+          <button type="button" className="sr-link" onClick={onGoPeople}>
+            {t('settings.auth.goPeople')}
+          </button>
+        </div>
+      </SettingRow>
     </div>
   );
 }

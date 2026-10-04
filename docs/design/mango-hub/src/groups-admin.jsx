@@ -89,7 +89,7 @@ function GroupModal({ g, defs, onClose, goAreas, notify }) {
     <div className="drawer-backdrop" onClick={onClose} style={{ alignItems: 'center', justifyContent: 'center', zIndex: 130 }}>
       <div className="card" role="dialog" aria-modal="true" aria-label={g.isNew ? 'Nuevo grupo' : 'Editar grupo'} onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '94vw', padding: 0, display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
         <div className="row between" style={{ padding: '18px 20px 4px', alignItems: 'flex-start' }}>
-          <div><div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-strong)' }}>{g.isNew ? 'Nuevo grupo' : 'Editar ' + g.id}</div><div className="mk-meta" style={{ marginTop: 2 }}>Se sincroniza con Cognito. Los miembros se asignan desde el directorio.</div></div>
+          <div><div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-strong)' }}>{g.isNew ? 'Nuevo grupo' : 'Editar ' + g.id}</div><div className="mk-meta" style={{ marginTop: 2 }}>Se sincroniza con Cognito. Las personas se agregan en Ajustes › Personas.</div></div>
           <button className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}><I.Close size={14} /></button>
         </div>
         <div style={{ padding: '14px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>

@@ -92,6 +92,18 @@ export const audit = {
     },
     directory: {
       lookup: 'Búsqueda en el directorio',
+      // Not in the design: the API records who read the directory in Ajustes › Personas.
+      list: 'Lectura del directorio',
+      signup: 'Persona registrada',
+      invite: 'Persona invitada',
+      group_add: 'Grupo asignado a persona',
+      group_remove: 'Grupo quitado a persona',
+      disable: 'Acceso deshabilitado',
+      enable: 'Acceso rehabilitado',
+      member_propose: 'Cambio de persona propuesto',
+      member_approve: 'Cambio de persona aprobado',
+      member_reject: 'Cambio de persona rechazado',
+      member_withdraw: 'Cambio de persona retirado',
     },
     approval: {
       request: 'Aprobación solicitada',

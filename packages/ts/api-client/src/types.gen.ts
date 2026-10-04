@@ -5,6 +5,20 @@ export type ClientOptions = {
 };
 
 /**
+ * ActionOut
+ */
+export type ActionOut = {
+    /**
+     * Change Id
+     */
+    change_id?: string | null;
+    /**
+     * Result
+     */
+    result: 'applied' | 'proposed' | 'bootstrap';
+};
+
+/**
  * AdminModelOut
  */
 export type AdminModelOut = {
@@ -615,7 +629,7 @@ export type BusinessUnitsOut = {
     /**
      * Pending
      */
-    pending: Array<ChangeOut>;
+    pending: Array<MangoApiAdminChangeOut>;
     /**
      * Units
      */
@@ -765,43 +779,13 @@ export type ChangeCreatedOut = {
 export type ChangeKind = 'enable' | 'params' | 'update';
 
 /**
- * ChangeOut
+ * ChangeListOut
  */
-export type ChangeOut = {
+export type ChangeListOut = {
     /**
-     * Base Version
+     * Items
      */
-    base_version: number;
-    /**
-     * Change Id
-     */
-    change_id: string;
-    /**
-     * Created At
-     */
-    created_at: string;
-    /**
-     * Expires At
-     */
-    expires_at: string;
-    /**
-     * Proposed By
-     */
-    proposed_by: string;
-    /**
-     * Proposed By Email
-     */
-    proposed_by_email: string | null;
-    /**
-     * Reason
-     */
-    reason: string;
-    /**
-     * Units
-     */
-    units: {
-        [key: string]: Array<string>;
-    };
+    items: Array<MangoApiPeopleChangeOut>;
 };
 
 /**
@@ -1246,6 +1230,20 @@ export type GroupChangeOut = {
 };
 
 /**
+ * GroupIn
+ */
+export type GroupIn = {
+    /**
+     * Group
+     */
+    group: string;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
  * GroupList
  */
 export type GroupList = {
@@ -1331,6 +1329,70 @@ export type HashIn = {
      * Content Hash
      */
     content_hash: string;
+};
+
+/**
+ * InstallationOut
+ *
+ * What was given when Mango was installed. Read only: whoever runs AWS changes it.
+ */
+export type InstallationOut = {
+    /**
+     * Alerts Emails
+     */
+    alerts_emails: Array<string>;
+    /**
+     * First Admins
+     */
+    first_admins: Array<string>;
+    /**
+     * Management Account Id
+     */
+    management_account_id: string | null;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Organization Id
+     */
+    organization_id: string | null;
+    /**
+     * Sign Up Domains
+     */
+    sign_up_domains: Array<string>;
+    /**
+     * Version
+     */
+    version: string | null;
+};
+
+/**
+ * InviteIn
+ */
+export type InviteIn = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Groups
+     */
+    groups?: Array<string>;
+};
+
+/**
+ * InvitedOut
+ */
+export type InvitedOut = {
+    /**
+     * Result
+     */
+    result: 'applied' | 'bootstrap';
+    /**
+     * User Id
+     */
+    user_id: string;
 };
 
 /**
@@ -1583,6 +1645,16 @@ export type ModelsOut = {
      * Version
      */
     version: number;
+};
+
+/**
+ * OptionalReasonIn
+ */
+export type OptionalReasonIn = {
+    /**
+     * Reason
+     */
+    reason?: string | null;
 };
 
 /**
@@ -1897,6 +1969,66 @@ export type ParamsIn = {
 };
 
 /**
+ * PeopleOut
+ */
+export type PeopleOut = {
+    /**
+     * Admins
+     */
+    admins: number;
+    /**
+     * Incomplete
+     */
+    incomplete: boolean;
+    /**
+     * Items
+     */
+    items: Array<PersonOut>;
+    /**
+     * Next Cursor
+     */
+    next_cursor: string | null;
+    /**
+     * Pending
+     */
+    pending: number;
+    /**
+     * With Access
+     */
+    with_access: number;
+};
+
+/**
+ * PersonOut
+ */
+export type PersonOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Mfa
+     */
+    mfa: boolean;
+    /**
+     * Status
+     */
+    status: 'active' | 'invited' | 'disabled';
+    /**
+     * User Id
+     */
+    user_id: string;
+};
+
+/**
  * PoliciesOut
  */
 export type PoliciesOut = {
@@ -2052,6 +2184,16 @@ export type QuotasOut = {
      * Submissions Today
      */
     submissions_today: number;
+};
+
+/**
+ * ReasonIn
+ */
+export type ReasonIn = {
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -2377,6 +2519,24 @@ export type SaveDraftIn = {
      * Revision
      */
     revision: number;
+};
+
+/**
+ * SearchIn
+ */
+export type SearchIn = {
+    /**
+     * Cursor
+     */
+    cursor?: string | null;
+    /**
+     * Filter
+     */
+    filter?: 'all' | 'pending' | 'invited' | 'disabled';
+    /**
+     * Prefix
+     */
+    prefix?: string | null;
 };
 
 /**
@@ -2725,6 +2885,46 @@ export type ViolationOut = {
 };
 
 /**
+ * ChangeOut
+ */
+export type MangoApiAdminChangeOut = {
+    /**
+     * Base Version
+     */
+    base_version: number;
+    /**
+     * Change Id
+     */
+    change_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Proposed By
+     */
+    proposed_by: string;
+    /**
+     * Proposed By Email
+     */
+    proposed_by_email: string | null;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Units
+     */
+    units: {
+        [key: string]: Array<string>;
+    };
+};
+
+/**
  * RejectIn
  */
 export type MangoApiAdminRejectIn = {
@@ -2834,6 +3034,72 @@ export type MangoApiMfaResetRejectIn = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * ChangeOut
+ */
+export type MangoApiPeopleChangeOut = {
+    /**
+     * Change Id
+     */
+    change_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Decided At
+     */
+    decided_at: string | null;
+    /**
+     * Decided By
+     */
+    decided_by: string | null;
+    /**
+     * Decided By Email
+     */
+    decided_by_email: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Group
+     */
+    group: string | null;
+    /**
+     * Kind
+     */
+    kind: 'add' | 'remove' | 'disable' | 'enable';
+    /**
+     * Note
+     */
+    note: string | null;
+    /**
+     * Proposed By
+     */
+    proposed_by: string;
+    /**
+     * Proposed By Email
+     */
+    proposed_by_email: string | null;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Status
+     */
+    status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'expired';
+    /**
+     * Target Email
+     */
+    target_email: string;
+    /**
+     * Target User
+     */
+    target_user: string;
 };
 
 /**
@@ -3349,6 +3615,31 @@ export type PutGroupDescriptionResponses = {
 
 export type PutGroupDescriptionResponse = PutGroupDescriptionResponses[keyof PutGroupDescriptionResponses];
 
+export type GetInstallationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/installation';
+};
+
+export type GetInstallationErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetInstallationError = GetInstallationErrors[keyof GetInstallationErrors];
+
+export type GetInstallationResponses = {
+    /**
+     * Successful Response
+     */
+    200: InstallationOut;
+};
+
+export type GetInstallationResponse = GetInstallationResponses[keyof GetInstallationResponses];
+
 export type MemberAccessCheckData = {
     body: EmptyIn;
     path?: never;
@@ -3618,6 +3909,291 @@ export type GetOrganizationResponses = {
 };
 
 export type GetOrganizationResponse = GetOrganizationResponses[keyof GetOrganizationResponses];
+
+export type GetMemberChangesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/people/changes';
+};
+
+export type GetMemberChangesErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetMemberChangesError = GetMemberChangesErrors[keyof GetMemberChangesErrors];
+
+export type GetMemberChangesResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChangeListOut;
+};
+
+export type GetMemberChangesResponse = GetMemberChangesResponses[keyof GetMemberChangesResponses];
+
+export type ApproveMemberChangeData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/admin/people/changes/{change_id}/approve';
+};
+
+export type ApproveMemberChangeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ApproveMemberChangeError = ApproveMemberChangeErrors[keyof ApproveMemberChangeErrors];
+
+export type ApproveMemberChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChangeListOut;
+};
+
+export type ApproveMemberChangeResponse = ApproveMemberChangeResponses[keyof ApproveMemberChangeResponses];
+
+export type RejectMemberChangeData = {
+    body: ReasonIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/admin/people/changes/{change_id}/reject';
+};
+
+export type RejectMemberChangeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RejectMemberChangeError = RejectMemberChangeErrors[keyof RejectMemberChangeErrors];
+
+export type RejectMemberChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChangeListOut;
+};
+
+export type RejectMemberChangeResponse = RejectMemberChangeResponses[keyof RejectMemberChangeResponses];
+
+export type WithdrawMemberChangeData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/admin/people/changes/{change_id}/withdraw';
+};
+
+export type WithdrawMemberChangeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type WithdrawMemberChangeError = WithdrawMemberChangeErrors[keyof WithdrawMemberChangeErrors];
+
+export type WithdrawMemberChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChangeListOut;
+};
+
+export type WithdrawMemberChangeResponse = WithdrawMemberChangeResponses[keyof WithdrawMemberChangeResponses];
+
+export type InvitePersonData = {
+    body: InviteIn;
+    path?: never;
+    query?: never;
+    url: '/admin/people/invitations';
+};
+
+export type InvitePersonErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type InvitePersonError = InvitePersonErrors[keyof InvitePersonErrors];
+
+export type InvitePersonResponses = {
+    /**
+     * Successful Response
+     */
+    201: InvitedOut;
+};
+
+export type InvitePersonResponse = InvitePersonResponses[keyof InvitePersonResponses];
+
+export type SearchPeopleData = {
+    body: SearchIn;
+    path?: never;
+    query?: never;
+    url: '/admin/people/search';
+};
+
+export type SearchPeopleErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SearchPeopleError = SearchPeopleErrors[keyof SearchPeopleErrors];
+
+export type SearchPeopleResponses = {
+    /**
+     * Successful Response
+     */
+    200: PeopleOut;
+};
+
+export type SearchPeopleResponse = SearchPeopleResponses[keyof SearchPeopleResponses];
+
+export type DisablePersonData = {
+    body: ReasonIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/admin/people/{user_id}/disable';
+};
+
+export type DisablePersonErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DisablePersonError = DisablePersonErrors[keyof DisablePersonErrors];
+
+export type DisablePersonResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActionOut;
+};
+
+export type DisablePersonResponse = DisablePersonResponses[keyof DisablePersonResponses];
+
+export type EnablePersonData = {
+    body: OptionalReasonIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/admin/people/{user_id}/enable';
+};
+
+export type EnablePersonErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type EnablePersonError = EnablePersonErrors[keyof EnablePersonErrors];
+
+export type EnablePersonResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActionOut;
+};
+
+export type EnablePersonResponse = EnablePersonResponses[keyof EnablePersonResponses];
+
+export type AddGroupData = {
+    body: GroupIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/admin/people/{user_id}/groups';
+};
+
+export type AddGroupErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type AddGroupError = AddGroupErrors[keyof AddGroupErrors];
+
+export type AddGroupResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActionOut;
+};
+
+export type AddGroupResponse = AddGroupResponses[keyof AddGroupResponses];
+
+export type RemoveGroupData = {
+    body: GroupIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/admin/people/{user_id}/groups/remove';
+};
+
+export type RemoveGroupErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RemoveGroupError = RemoveGroupErrors[keyof RemoveGroupErrors];
+
+export type RemoveGroupResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActionOut;
+};
+
+export type RemoveGroupResponse = RemoveGroupResponses[keyof RemoveGroupResponses];
 
 export type GetAgentsData = {
     body?: never;
