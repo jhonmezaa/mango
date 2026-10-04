@@ -166,6 +166,16 @@ Las supresiones de cfn-guard viven en `infra/lib/guard.ts` (una por recurso, con
 
 **CI (`.github/workflows/ci.yml`):** en cada pull request y push a `main` corre lint, tipos y tests (Python, web, infra), `cdk synth` con cdk-nag, `cfn-guard`, Checkov, auditoría de dependencias (`mise run audit`) y búsqueda de secretos (gitleaks). Solo verifica: nunca despliega. No se hace merge a `main` con el CI en rojo. Las actions se fijan por SHA.
 
+### Repositorio público (D59)
+
+Este repositorio es público. Todo lo que se versiona, cada mensaje de commit y cada PR lo puede leer cualquiera, para siempre.
+
+- **Nada real en archivos versionados, commits ni PR:** ids de cuentas de AWS, de organización u OU, ARNs, correos de personas, dominios o URLs de una instalación, ids de user pools o de llaves. Se usan marcadores (`111122223333`, `o-ejemplo`, `nombre@empresa.com`). Los valores reales de una instalación viven en una carpeta local fuera del repo.
+- **Commits a nombre del dueño del repositorio,** con su correo `noreply` de GitHub, **sin líneas de atribución** (`Co-Authored-By`, enlaces de sesión). Tampoco en la descripción de los PR.
+- **Las ramas salen de `main`** y entran por PR con el CI en verde. La integración se hace por fast-forward desde local (`git push <remoto> <rama>:main`), no con el botón de merge de GitHub, que firma el commit con el correo de la cuenta.
+- **Firma y publicación** (`pack-signing`, `release`) corren solo desde `main`, en entornos protegidos que exigen la aprobación del dueño.
+- Antes de subir una rama: búsqueda de secretos (`mise run secrets`) y revisión de que el diff no trae datos reales.
+
 ### Entorno local
 
 Los builds de packs, las síntesis de CDK y las pruebas e2e dejan mucho en disco y en carpetas temporales. Quien trabaje en el repo (persona o agente) lo limpia al terminar:
