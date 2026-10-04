@@ -51,7 +51,7 @@ Parámetros opcionales de `Core`:
 
 | Parámetro | Por defecto | Para qué |
 |---|---|---|
-| `SecondAdminEmail` | vacío | Segundo administrador. Recomendado: hoy la aplicación no asigna personas a grupos |
+| `SecondAdminEmail` | vacío | Segundo administrador. Recomendado: los cambios con doble aprobación necesitan dos. Si se deja vacío, el primero lo nombra desde Ajustes › Personas (queda marcado en Auditoría como arranque) |
 | `MemberAccessTargets`, `MemberAccessExcludedAccountIds` | vacío | Los mismos valores que diste a `OrgAccess`, para que Ajustes › Conectividad compruebe las cuentas miembro |
 | `AvailabilityZoneIds` | `use1-az1,use1-az2` | Dos zonas, por **id** |
 | `AiPolicyUrl` | vacío | URL `https` de la política de uso de IA; el registro pide aceptarla |
@@ -67,9 +67,12 @@ Parámetros opcionales de `Core`:
    1. Ajustes › Áreas y OUs: crear las áreas y asignarles sus OU.
    2. Ajustes › Grupos: crear el grupo de cada área (`bu-<área>`, tipo «área»). No existe hasta que alguien lo crea, y hay que crear antes el área.
    3. Presupuestos y modelos, si los valores de la versión no sirven (por defecto USD 5 al mes por usuario y USD 30 por agente).
-4. **Personas: todavía fuera de la aplicación.** No hay pantalla para dar de alta personas ni para asignarlas a grupos. Quien administra la cuenta de AWS lo hace en Cognito (el id del directorio es el output `UserPoolId`):
-   - Alta: las personas con correo de un dominio de `SignUpDomains` se registran solas. A las demás se las crea con `aws cognito-idp admin-create-user` (Cognito les envía la contraseña temporal).
-   - Grupos: `aws cognito-idp admin-add-user-to-group`. Un líder de área necesita `bu-lead` y `bu-<área>`; un administrador, `mango-admin`; quien ve toda la organización, `finops-central`; quien crea agentes, `mango-agent-creator`. El cambio se ve en el siguiente ingreso de la persona.
+4. **Personas: en Ajustes › Personas** (solo administradores).
+   - Alta: las personas con correo de un dominio de `SignUpDomains` se registran solas; entran sin acceso hasta que un administrador les da un grupo. A las demás se las invita desde Personas: reciben una contraseña temporal por correo y registran MFA al entrar. Se puede invitar a alguien de otra empresa (cualquier dominio que no sea de un proveedor de correo público, como `gmail.com`); queda marcado en Auditoría.
+   - Grupos: se dan y se quitan sobre la persona. Un líder de área necesita `bu-lead` y `bu-<área>`; quien crea agentes, `mango-agent-creator`. `mango-admin` y `finops-central` los propone un administrador y los aprueba otro. El cambio se ve en el siguiente ingreso de la persona.
+   - Deshabilitar y rehabilitar el acceso, y pedir que se restablezca el MFA de alguien.
+   - **Sigue fuera de la aplicación** (lo hace quien administra la cuenta de AWS, en Cognito; el id del directorio es el output `UserPoolId`): dar de alta a alguien con correo de un proveedor público (`aws cognito-idp admin-create-user`), renovar una contraseña temporal vencida, cambiar un correo y borrar una cuenta.
+   - Ajustes › General › Instalación muestra la versión y la etiqueta de la release instalada («Publicación `v0.1.0-g…`»): sirve para confirmar qué se desplegó después de una actualización.
 5. Ajustes › Conectividad: comprobar la cuenta pagadora y las cuentas miembro.
 6. Catálogo de MCP: habilitar los packs que se vayan a usar (doble aprobación; la instalación de cada uno tarda unos 5 minutos). Si un pack queda en error, «Reintentar» repite la instalación sin pedir otra aprobación.
 

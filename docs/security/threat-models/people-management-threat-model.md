@@ -1,8 +1,8 @@
-# Gestión de personas (Ajustes › Personas): modelo de amenazas (v0.2)
+# Gestión de personas (Ajustes › Personas): modelo de amenazas (v0.3)
 
 > Fecha: 2026-10-03 · Skill: `security-threat-model`. Decisiones que lo enmarcan: D14 (claims desde grupos de Cognito), D20 (login propio y restablecer MFA), D26 (grupos con doble aprobación), D28 (doble aprobación de 72 h), D58 (instalación como cliente). Amplía TM-L6 y TM-L14 de `login-threat-model.md` y TM-M24 de `marketplace-v1-threat-model.md`.
 > Alcance: el backend nuevo de `apps/api/src/mango_api/people.py` (rutas `/api/admin/people*` y `/api/admin/installation`), sus permisos sobre el user pool (`infra/lib/constructs/identity.ts`), las acciones de Cedar nuevas (`policies/cedar/platform/people.cedar`) y la pantalla `apps/web/src/pages/settingsPeople/`. Diseño de referencia: `docs/design/mango-hub/src/people.jsx`.
-> v0.1 se escribió **antes** de construir; v0.2 recoge las decisiones del usuario del 2026-10-03 (D60) y lo construido. Nada de esto está desplegado.
+> v0.1 se escribió **antes** de construir; v0.2 recoge las decisiones del usuario del 2026-10-03 (D60) y lo construido. v0.3 (2026-10-03, D61) recoge la primera comprobación en una instalación: las invitaciones aceptan cualquier dominio no público, las invitaciones rechazadas se auditan y `mango-api` suma `AdminSetUserMFAPreference` para saber quién tiene MFA.
 
 ## Executive summary
 
@@ -23,6 +23,7 @@ Además hay un caso de arranque delicado: con un solo administrador nadie puede 
   2. Quien tiene acceso de administrador de IAM a la cuenta de AWS ya puede todo sobre el user pool: está fuera del modelo.
   3. El access token dura como máximo 60 minutos y sus claims (`cognito:groups`, `mango_admin`, `mango_central`) no cambian hasta que se renueva (D14). Quitar un grupo no tiene efecto inmediato sobre un token ya emitido.
   4. `PreSignUp_AdminCreateUser` no valida el dominio (`functions/pre-sign-up`): lo que invite `mango-api` solo lo valida `mango-api`.
+  6. Con MFA obligatorio en el pool (toda instalación de cliente), la preferencia de MFA de un usuario no decide si se le pide el TOTP: Cognito lo pide siempre que haya uno registrado (comprobado en el laboratorio el 2026-09-30 y el 2026-10-03).
   5. Una instalación de cliente tiene decenas o cientos de personas, no decenas de miles.
 - **Decisiones del usuario (2026-10-03, registradas en D60):**
   1. **Doble aprobación tal cual el diseño:** `mango-admin`, `finops-central` y deshabilitar a un administrador. Los grupos propios de tipo `central` se asignan al momento: **riesgo aceptado** (TM-P2).
@@ -30,6 +31,7 @@ Además hay un caso de arranque delicado: con un solo administrador nadie puede 
   3. **Listar el directorio a administradores es una excepción registrada** en `AGENTS.md` (TM-P6).
   4. **«Persona registrada» queda pendiente** (TM-P12).
   5. **Rehabilitar a quien tiene un grupo sensible exige doble aprobación** (TM-P16; diferencia con el diseño).
+  6. **Las invitaciones aceptan cualquier dominio que no sea de un proveedor de correo público** (D61): un administrador puede traer a alguien de fuera de la empresa. El registro abierto sigue limitado a `SignUpDomains`. **Riesgo aceptado** con los controles de TM-P17.
 
 ## System model
 
@@ -100,10 +102,10 @@ flowchart LR
 
 | Ruta (todas exigen administrador) | Acción de Cedar | Efecto |
 |---|---|---|
-| `POST /api/admin/people/search` | `ViewPeople` | Lista del directorio: correo, estado, MFA, grupos, alta |
+| `POST /api/admin/people/search` | `ViewPeople` | Lista del directorio: correo, estado, MFA, grupos, alta. Para saber el MFA de quien Cognito no lo lista, fija la preferencia de TOTP de esa persona (TM-P18) |
 | `POST /api/admin/people/{user_id}/groups` | `ManagePeople` | Agrega a un grupo, o crea un cambio pendiente si el grupo es sensible |
 | `POST /api/admin/people/{user_id}/groups/remove` | `ManagePeople` | Quita de un grupo, o crea un cambio pendiente |
-| `POST /api/admin/people/invitations` | `ManagePeople` | `AdminCreateUser` + grupos no sensibles |
+| `POST /api/admin/people/invitations` | `ManagePeople` | `AdminCreateUser` + grupos no sensibles, a cualquier dominio no público |
 | `POST /api/admin/people/{user_id}/disable` · `/enable` | `ManagePeople` | Deshabilita (o propone, si es administrador) y cierra sesiones; rehabilita (o propone, si tiene un grupo sensible) |
 | `GET /api/admin/people/changes` | `ViewPeople` | Cambios con doble aprobación |
 | `POST /api/admin/people/changes/{id}/approve` · `/reject` | `ApprovePeopleChange` | Decide un cambio de otro administrador |
@@ -115,7 +117,7 @@ flowchart LR
 1. **Administrador único de facto.** Un administrador se agrega a sí mismo (o a un cómplice recién invitado) a `mango-admin` o `finops-central` → controla la plataforma o ve los costos de toda la organización.
 2. **Quedarse solo para usar el arranque.** Un administrador deshabilita o le quita el grupo al otro, queda como único administrador y nombra a quien quiera sin segundo aprobador.
 3. **Escalada lateral por un grupo «no sensible».** Agregarse a un grupo propio de tipo `central` da el claim `mango_central` igual que `finops-central`, sin aprobación.
-4. **Invitación como puerta trasera.** Invitar un correo que el atacante controla, ya con grupos, salta el registro (y su verificación de dominio).
+4. **Invitación como puerta trasera.** Invitar un correo que el atacante controla, ya con grupos, salta el registro (y su verificación de dominio). Desde D61 basta un dominio propio cualquiera: un administrador malicioso, o quien robó su sesión, crea una cuenta que controla y le da grupos de acceso; para `mango-admin` o `finops-central` sigue necesitando a otro administrador.
 5. **Bloqueo.** Deshabilitar a los demás administradores, o a muchas personas, deja la instalación sin gobierno o sin servicio.
 6. **Aprobación obsoleta.** Un cambio aprobado días después se aplica sobre un estado distinto: el grupo cambió de tipo, la persona fue deshabilitada o solo queda un administrador.
 7. **Enumeración.** Recorrer la lista o el buscador por prefijo para sacar todos los correos de la empresa.
@@ -130,7 +132,8 @@ flowchart LR
 | TM-P4 | Usuario sin privilegios llama a las rutas (IDOR sobre `user_id`, o falta de autorización en una ruta) | Todo | Cada ruta declara su dependencia (Cedar + `is_admin`); deny por defecto; test que recorre todas las rutas del router sin ser administrador; `user_id` validado como UUID y resuelto contra el pool, nunca usado como filtro sin validar | Baja | Alto | **Alta** (control obligatorio) |
 | TM-P5 | Inyección en el filtro de `ListUsers` (`email ^= "…"`) o en el cursor | Directorio | Prefijo con patrón estricto (sin comillas, barras invertidas ni espacios), longitud máxima; cursor opaco con longitud y alfabeto acotados; nombre de grupo validado contra el registro y los cuatro de sistema, nunca pasado tal cual | Baja | Medio | Media |
 | TM-P6 | Enumeración del directorio por un administrador o por su sesión robada | Directorio | **Excepción nueva** a «sin revelar si un usuario existe», solo para administradores (como restablecer MFA): se registra en `AGENTS.md`. Límite de tasa por administrador en lecturas; auditoría de cada lectura con cuántas filas, **nunca** los correos ni el prefijo buscado; página máxima de 20; sin exportar | Media | Medio | Media |
-| TM-P7 | Invitación abusiva: correo fuera de la empresa, bombardeo de correos, o cuenta con grupos sensibles desde el alta | Cuentas, reputación del remitente | `mango-api` aplica la misma regla de dominio que el registro (dominios de la instalación, proveedores públicos rechazados, solo ASCII); límite por administrador y por día; los grupos sensibles no se aceptan en la invitación (salvo el arranque, si se acepta); la contraseña temporal caduca según el pool; MFA se configura en el primer ingreso | Media | Medio | Media |
+| TM-P7 | Invitación abusiva: bombardeo de correos, correo mal formado o de un proveedor público, o cuenta con grupos sensibles desde el alta | Cuentas, reputación del remitente | `mango-api` aplica las reglas de forma del registro (solo ASCII, un `@`, dominio bien formado) y rechaza siempre los proveedores públicos; límite por administrador (20 por hora); los grupos sensibles no se aceptan en la invitación (salvo el arranque); la contraseña temporal caduca según el pool; MFA se configura en el primer ingreso. **Cada invitación rechazada queda en auditoría** con su código; si el correo no pasó la validación se registra solo el dominio, nunca lo escrito | Media | Medio | Media |
+| TM-P17 | Persona de fuera de la empresa invitada por un administrador (D61): una cuenta en un dominio que la empresa no controla, que puede recibir grupos de acceso (áreas, `mango-agent-creator`, grupos `central` propios, TM-P2) por decisión de una sola persona | Datos de área y centrales, cuentas | **Decisión del usuario; riesgo aceptado.** Controles: solo administradores, con `_require_current_admin` y límite de tasa; el evento `directory.invite` lleva `external_domain: true` (pedido, aplicado o rechazado) para poder filtrarlo; la persona aparece en Personas con su correo completo, a la vista de todos los administradores; `mango-admin` y `finops-central` nunca viajan en la invitación y después exigen doble aprobación; sin grupos no ve nada; MFA obligatorio; se deshabilita desde Personas. En el arranque (un solo administrador) puede nombrar segundo administrador a alguien externo: es el mismo riesgo ya aceptado en TM-P3, y el evento lleva `bootstrap` y `external_domain`. El registro abierto no cambia: nadie de otro dominio entra sin que un administrador lo invite. Residual: quien pierde el control de su dominio o deja la otra empresa conserva la cuenta hasta que se la deshabilite. **Recomendado (no se construye ahora):** insignia «externa» en la lista y revisión periódica de cuentas externas | Media | Medio (alto si recibe un grupo `central` propio, TM-P2) | **Media** (aceptado) |
 | TM-P8 | Bloqueo: deshabilitar a otros administradores o a muchas personas; deshabilitarse a sí mismo | Disponibilidad | Nadie se deshabilita a sí mismo; deshabilitar a un administrador exige doble aprobación y respeta la invariante; límite de tasa; todo es reversible (rehabilitar) y queda en auditoría | Baja | Medio | Media |
 | TM-P9 | Aprobación obsoleta o carrera entre dos aprobaciones | Integridad | Reclamo condicional (`pending → applying`) antes de tocar Cognito; los cambios que tocan quién es administrador se aplican de uno en uno (`MEMBER_LOCK`/`admins`) y el recuento se vuelve a leer con el reclamo tomado; al aplicar se vuelve a comprobar que la persona existe y está habilitada, que el grupo existe y sigue siendo asignable, y la invariante de administradores; un solo cambio abierto por persona y grupo; vence a las 72 h | Baja | Medio | Media |
 | TM-P10 | El privilegio quitado sigue vivo en el token ya emitido (hasta 60 min) | Administración, datos | Al deshabilitar y al quitar un grupo sensible se revocan los refresh tokens (`AdminUserGlobalSignOut`). El access token vigente no se puede revocar, así que **las rutas que cambian personas comprueban en el directorio que quien llama sigue siendo un administrador habilitado** (`_require_current_admin`): un administrador recién retirado no puede aprobar, invitar ni cambiar grupos con su token viejo. Residual: hasta 60 minutos en el resto de la aplicación | Media | Medio | Media |
@@ -139,13 +142,14 @@ flowchart LR
 | TM-P13 | Datos de la instalación expuestos (organización, cuenta de gestión, correos) | Confidencialidad | Se sirven por `GET /api/admin/installation` (solo administradores), **no** en el `config.json` público de la SPA | Baja | Bajo | Baja |
 | TM-P14 | Contenido del directorio pintado como HTML (correo o descripción de grupo maliciosos) | Sesión del administrador | React como texto, sin `dangerouslySetInnerHTML`; respuestas validadas con `zod`; CSP vigente | Baja | Alto | Media |
 | TM-P16 | Un administrador rehabilita él solo a un administrador (o central) deshabilitado: le devuelve un privilegio que quitar exigió dos personas | Administración, datos centrales | Rehabilitar a quien pertenece a `mango-admin` o `finops-central` es un cambio con doble aprobación (`kind: enable`), con motivo. El resto se rehabilita al momento. **Decisión del usuario; difiere del diseño** | Baja | Alto | Media |
-| TM-P15 | Costo y cuota: cada fila exige leer grupos y MFA; el filtro «Sin acceso» recorre el pool | Disponibilidad del pool (cuota compartida con el login) | Pocas llamadas en paralelo; recorrido acotado y con resultado en caché breve por proceso; contador «al menos N» si el recorrido se corta | Media | Bajo | Baja |
+| TM-P18 | `mango-api` puede fijar la preferencia de MFA de cualquier usuario del pool (`AdminSetUserMFAPreference`), y lo hace dentro de una lectura (`ViewPeople`) | MFA de las cuentas, integridad del directorio | La acción solo se usa para **activar** TOTP cuando `AdminGetUser` no lista ninguno: Cognito la rechaza si la persona no tiene un TOTP verificado, así que no crea un factor ni cambia cómo entra nadie. El código nunca envía `Enabled: false`. Con MFA obligatorio, una preferencia desactivada no apaga el reto (supuesto 6), y el rol ya podía borrar un TOTP (`AdminDeleteSoftwareToken`, D20): la acción no añade poder real. Recurso: solo el ARN del pool. La escritura es idempotente y no depende de datos del cliente (el nombre de usuario sale de `ListUsers`). Residual: en una instalación con MFA opcional (solo pruebas) el rol comprometido podría desactivar la preferencia de alguien | Baja | Bajo | Baja |
+| TM-P15 | Costo y cuota: cada fila exige leer grupos y MFA; el filtro «Sin acceso» recorre el pool | Disponibilidad del pool (cuota compartida con el login) | Pocas llamadas en paralelo; recorrido acotado y con resultado en caché breve por proceso; contador «al menos N» si el recorrido se corta. Quien no tiene MFA cuesta una llamada más por fila (`AdminSetUserMFAPreference`, rechazada) | Media | Bajo | Baja |
 
 ## Criticality calibration
 
 - **Alta:** cualquier camino por el que una sola persona obtenga `mango-admin` o `finops-central` (TM-P1), o por el que alguien sin ser administrador llegue a estas rutas (TM-P4).
-- **Media:** grupos centrales propios sin aprobación (TM-P2, aceptado), rehabilitar (TM-P16), arranque (TM-P3), invitaciones (TM-P7), bloqueo (TM-P8), aprobaciones obsoletas (TM-P9), tokens vigentes (TM-P10), poder del rol (TM-P11), enumeración por administradores (TM-P6).
-- **Baja:** rastro del registro (TM-P12), datos de la instalación (TM-P13), cuota (TM-P15).
+- **Media:** grupos centrales propios sin aprobación (TM-P2, aceptado), personas de fuera invitadas (TM-P17, aceptado), rehabilitar (TM-P16), arranque (TM-P3), invitaciones (TM-P7), bloqueo (TM-P8), aprobaciones obsoletas (TM-P9), tokens vigentes (TM-P10), poder del rol (TM-P11), enumeración por administradores (TM-P6).
+- **Baja:** rastro del registro (TM-P12), datos de la instalación (TM-P13), cuota (TM-P15), preferencia de MFA (TM-P18).
 
 ## Focus paths for security review
 
@@ -154,6 +158,8 @@ flowchart LR
 | `apps/api/src/mango_api/people.py` (clasificación de grupo sensible, `_apply`) | Es la única barrera entre un administrador y `mango-admin` | TM-P1, TM-P2, TM-P3, TM-P9 |
 | `apps/api/src/mango_api/people.py` (router) | Autorización declarada en cada ruta | TM-P4 |
 | `apps/api/src/mango_api/people.py` (`CognitoPeople.list`) | Filtro de `ListUsers` y cursor | TM-P5, TM-P15 |
+| `apps/api/src/mango_api/people.py` (`invitation_domain`, `invite`) | Qué correo se acepta y qué queda en auditoría de un rechazo | TM-P7, TM-P17 |
+| `apps/api/src/mango_api/people.py` (`CognitoPeople.mfa_registered`) | Única llamada a `AdminSetUserMFAPreference`: solo activa | TM-P18 |
 | `infra/lib/constructs/identity.ts` (`grantPeopleManagement`) | Acciones y recurso exactos | TM-P11 |
 | `policies/cedar/platform/people.cedar` | Solo administradores | TM-P4 |
 | `apps/web/src/pages/settingsPeople/` | Texto, no HTML; la UI no decide qué es sensible | TM-P1, TM-P14 |
@@ -176,3 +182,17 @@ Revisión enfocada de `apps/api/src/mango_api/people.py`, `infra/lib/constructs/
 | Límites de tasa en memoria por tarea de `mango-api` | Residual: con N tareas el límite efectivo es N veces mayor, como en restablecer MFA |
 
 Sin `Resource: "*"`, sin acciones con comodín y sin supresiones nuevas de cdk-nag, cfn-guard ni Checkov.
+
+## Revisión `security-audit` del diff de D61 (2026-10-03, modo guía)
+
+Revisión enfocada de `invitation_domain`, `invite` y `CognitoPeople.mfa_registered` (`apps/api/src/mango_api/people.py`), `grantPeopleManagement` (`infra/lib/constructs/identity.ts`) y la variable `MANGO_RELEASE` (`infra/lib/stacks/core-stack.ts`). Lectura de fuente y tests locales; el comportamiento de Cognito se comprobó en el laboratorio con una cuenta desechable.
+
+| Punto revisado | Resultado |
+|---|---|
+| Qué correo se acepta | Solo ASCII, un `@`, dominio con el mismo patrón anclado del trigger; los proveedores públicos se comparan por igualdad exacta sobre el valor ya en minúsculas. Lo decide el servidor; la validación del cliente solo ahorra un viaje |
+| Qué se registra de un rechazo | El límite de tasa y `_require_current_admin` van antes: los rechazos auditados están acotados por administrador. De un correo que no pasó la validación solo se guarda el dominio (ya validado por patrón), nunca el texto escrito |
+| Grupos sensibles en una invitación externa | Se rechazan igual que antes; test `test_an_outsider_never_gets_a_sensitive_group_with_the_invitation` |
+| `AdminSetUserMFAPreference` | Una sola llamada en el código, siempre con `Enabled: true`; el nombre de usuario sale de `ListUsers`, no del cliente; `InvalidParameterException` se trata como «sin MFA» (falla hacia el valor seguro). Recurso: el ARN del pool |
+| `MANGO_RELEASE` | La etiqueta se valida con patrón al sintetizar y se sirve solo a administradores, como texto |
+
+Sin hallazgos. Sin `Resource: "*"`, sin acciones con comodín y sin supresiones nuevas de cdk-nag, cfn-guard ni Checkov.
