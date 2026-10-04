@@ -26,6 +26,8 @@ import os
 import re
 from typing import Any
 
+from mango_core.mail_domains import is_public_mail_domain
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -43,30 +45,6 @@ _DOMAIN = re.compile(rf"^(?=.{{1,253}}$)(?:{_LABEL}\.)+[a-z]{{2,63}}$")
 
 REJECTED_MESSAGE = "Sign-up is not allowed for this email address."
 
-# Public mail providers: open sign-up from one of these would admit anyone (D28). The list of
-# an installation is a stack parameter (D58), so the trigger itself refuses them: a public
-# domain in the parameter is ignored, never honored.
-PUBLIC_MAIL_DOMAINS = frozenset(
-    {
-        "aol.com",
-        "gmail.com",
-        "gmx.com",
-        "googlemail.com",
-        "hotmail.com",
-        "icloud.com",
-        "live.com",
-        "mail.com",
-        "me.com",
-        "msn.com",
-        "outlook.com",
-        "proton.me",
-        "protonmail.com",
-        "yahoo.com",
-        "yandex.com",
-        "zoho.com",
-    }
-)
-
 
 class SignUpRejectedError(Exception):
     """Raised to make Cognito reject the sign-up. The message is shown to the caller."""
@@ -75,12 +53,15 @@ class SignUpRejectedError(Exception):
 def allowed_domains(raw: str | None) -> frozenset[str]:
     """Parse the comma-separated allowlist. Invalid entries make the whole list unusable.
 
-    Public mail providers are dropped from it: with nothing else left, nobody can register.
+    Public mail providers are dropped from it (D28): the list of an installation is a stack
+    parameter (D58), so a public domain in it is ignored, never honored. With nothing else
+    left, nobody can register. The providers are ``mango_core.mail_domains``, the same list an
+    invitation is checked against.
     """
     domains = frozenset(d.strip().lower() for d in (raw or "").split(",") if d.strip())
     if not domains or not all(_DOMAIN.fullmatch(d) for d in domains):
         return frozenset()
-    return domains - PUBLIC_MAIL_DOMAINS
+    return frozenset(d for d in domains if not is_public_mail_domain(d))
 
 
 def email_domain(email: object) -> str | None:

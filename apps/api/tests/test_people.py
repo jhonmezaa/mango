@@ -793,6 +793,11 @@ def test_invitations_that_are_refused(
 
 
 def test_a_refused_address_is_audited_by_its_domain_never_as_typed(env: Env) -> None:
+        ({"email": "ana@outlook.es"}, 422, "public_domain"),
+        ({"email": "ana@hotmail.com.mx"}, 422, "public_domain"),
+        ({"email": "ana@yahoo.co.uk"}, 422, "public_domain"),
+        ({"email": "ana@mail.yahoo.es"}, 422, "public_domain"),
+        ({"email": "ana@mailinator.com"}, 422, "public_domain"),
     _post(env, "/invitations", {"email": "Ana.Perez@gmail.com", "groups": ["devops"]})
     _post(env, "/invitations", {"email": '"hunter2 pasted"@example.com'})
     _post(env, "/invitations", {"email": "ana@not a domain"})
@@ -854,8 +859,11 @@ def test_invitations_are_rate_limited(env: Env) -> None:
 
 def test_the_invitation_rule_matches_the_sign_up_trigger() -> None:
     trigger = pytest.importorskip("mango_pre_sign_up.handler")
-    assert people_module.PUBLIC_MAIL_DOMAINS == trigger.PUBLIC_MAIL_DOMAINS
-    domains = "example.com,gmail.com"
+    # One list (``mango_core.mail_domains``): neither module keeps a copy of its own.
+    assert not hasattr(people_module, "PUBLIC_MAIL_DOMAINS")
+    assert not hasattr(trigger, "PUBLIC_MAIL_DOMAINS")
+    assert trigger.is_public_mail_domain is people_module.is_public_mail_domain
+    domains = "example.com,gmail.com,outlook.es"
     assert parse_domains(domains) == trigger.allowed_domains(domains)
     for email in (
         "ana@example.com",
@@ -884,6 +892,8 @@ def test_an_unusable_domain_list_marks_every_invitation_as_external() -> None:
 
 # --- Installation -----------------------------------------------------------------------
 
+        "ana@outlook.es",
+        "ana@yahoo.com.mx",
 
 def test_installation_is_read_only_data_for_administrators(env: Env) -> None:
     response = env.client.get("/api/admin/installation", headers=_h("admin"))

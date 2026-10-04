@@ -61,6 +61,7 @@ from mango_core.groups import (
     is_group_name,
 )
 from mango_core.identity import MAX_EMAIL_LENGTH
+from mango_core.mail_domains import is_public_mail_domain
 
 if TYPE_CHECKING:
     from mypy_boto3_cognito_idp import CognitoIdentityProviderClient
@@ -102,26 +103,6 @@ _MAX_LOCAL_LENGTH = 64
 # Same shape as the pre sign-up trigger (``functions/pre-sign-up``); a test keeps them equal.
 _LOCAL_RE = re.compile(r"^[A-Za-z0-9!#$%&*+/=?^_`{|}~-]+(\.[A-Za-z0-9!#$%&*+/=?^_`{|}~-]+)*$")
 _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
-PUBLIC_MAIL_DOMAINS = frozenset(
-    {
-        "aol.com",
-        "gmail.com",
-        "gmx.com",
-        "googlemail.com",
-        "hotmail.com",
-        "icloud.com",
-        "live.com",
-        "mail.com",
-        "me.com",
-        "msn.com",
-        "outlook.com",
-        "proton.me",
-        "protonmail.com",
-        "yahoo.com",
-        "yandex.com",
-        "zoho.com",
-    }
-)
 
 Kind = Literal["add", "remove", "disable", "enable"]
 Status = Literal["pending", "applying", "approved", "rejected", "withdrawn"]
@@ -138,8 +119,9 @@ def invitation_domain(email: str) -> tuple[str | None, str | None]:
     ``AdminCreateUser`` skips the pre sign-up trigger, so its shape rules are applied here:
     plain ASCII, exactly one ``@``, a well-formed domain. An administrator may invite someone
     of another company (decision of 2026-10-03), so the domain does not have to be one of the
-    sign-up domains; a public mail provider is refused always. The domain is returned only
-    when it is well formed: it is what a refusal is audited with.
+    sign-up domains; a public mail provider is refused always, by the list the trigger uses
+    (``mango_core.mail_domains``). The domain is returned only when it is well formed: it is
+    what a refusal is audited with.
     """
     if not email.isascii() or email.count("@") != 1:
         return "invalid_email", None
@@ -148,7 +130,7 @@ def invitation_domain(email: str) -> tuple[str | None, str | None]:
         return "invalid_email", None
     if not 0 < len(local) <= _MAX_LOCAL_LENGTH or not _LOCAL_RE.fullmatch(local):
         return "invalid_email", domain
-    if domain in PUBLIC_MAIL_DOMAINS:
+    if is_public_mail_domain(domain):
         return "public_domain", domain
     return None, domain
 
@@ -158,7 +140,7 @@ def parse_domains(raw: str) -> frozenset[str]:
     domains = frozenset(d.strip().lower() for d in raw.split(",") if d.strip())
     if not domains or not all(_DOMAIN_RE.fullmatch(d) for d in domains):
         return frozenset()
-    return domains - PUBLIC_MAIL_DOMAINS
+    return frozenset(d for d in domains if not is_public_mail_domain(d))
 
 
 # --- Cognito ----------------------------------------------------------------------------

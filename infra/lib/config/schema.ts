@@ -41,25 +41,50 @@ const groupName = z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/);
  * `infra/config/<env>.json`, which is git-ignored; `infra/config/example.json` documents
  * the shape.
  */
-/** Public mail providers: open sign-up from these would admit anyone (D28). */
-const PUBLIC_MAIL_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "outlook.com",
-  "hotmail.com",
-  "live.com",
-  "msn.com",
-  "yahoo.com",
-  "icloud.com",
-  "me.com",
-  "aol.com",
-  "proton.me",
-  "protonmail.com",
-  "gmx.com",
-  "zoho.com",
-  "yandex.com",
-  "mail.com",
-]);
+/**
+ * Public mail providers: open sign-up from these would admit anyone (D28). The list is the one
+ * the pre sign-up trigger and the invitations use (`mango_core.mail_domains`), read from its
+ * data file so there is no copy to keep equal.
+ */
+const publicMail = z
+  .object({
+    families: z.array(z.string()),
+    secondLevels: z.array(z.string()),
+    domains: z.array(z.string()),
+  })
+  .parse(
+    JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../packages/py/mango-core/src/mango_core/public_mail_domains.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ),
+  );
+const PUBLIC_MAIL_FAMILIES = new Set(publicMail.families);
+const PUBLIC_MAIL_SECOND_LEVELS = new Set(publicMail.secondLevels);
+const PUBLIC_MAIL_DOMAINS = new Set(publicMail.domains);
+
+/** Same rule as `is_public_mail_domain` in `mango_core.mail_domains`. */
+export function isPublicMailDomain(domain: string): boolean {
+  const labels = domain.trim().toLowerCase().replace(/\.$/, "").split(".");
+  for (let start = 0; start < labels.length - 1; start += 1) {
+    const suffix = labels.slice(start);
+    if (PUBLIC_MAIL_DOMAINS.has(suffix.join("."))) return true;
+    if (!PUBLIC_MAIL_FAMILIES.has(suffix[0] ?? "")) continue;
+    if (suffix.length === 2) return true;
+    if (
+      suffix.length === 3 &&
+      PUBLIC_MAIL_SECOND_LEVELS.has(suffix[1] ?? "") &&
+      suffix[2]?.length === 2
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * CloudWatch Logs retention periods (days) accepted for the exported Cognito sign-in activity:
@@ -404,7 +429,7 @@ export const installationSchema = z
     if (cfg.installationType !== "customer") return;
     // Open sign-up is only for the company's own domains (D28): never a public mail provider.
     for (const domain of cfg.auth.signUpDomains) {
-      if (PUBLIC_MAIL_DOMAINS.has(domain)) {
+      if (isPublicMailDomain(domain)) {
         ctx.addIssue({
           code: "custom",
           path: ["auth", "signUpDomains"],

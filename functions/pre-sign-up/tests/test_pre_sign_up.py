@@ -91,6 +91,9 @@ def test_public_mail_domains_are_never_allowed() -> None:
     # The list is a stack parameter (D58): a public provider in it is ignored.
     assert allowed_domains("empresa.com,gmail.com,Outlook.com") == frozenset({"empresa.com"})
     assert allowed_domains("gmail.com") == frozenset()
+    # Country variants and disposable inboxes are public providers too.
+    variants = "empresa.com,outlook.es,yahoo.co.uk,live.com.mx,mailinator.com"
+    assert allowed_domains(variants) == frozenset({"empresa.com"})
     rejected = (False, "allowlist_unavailable", None)
     assert check_email("anyone@gmail.com", allowed_domains("gmail.com")) == rejected
 

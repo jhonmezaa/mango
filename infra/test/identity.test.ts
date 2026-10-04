@@ -6,6 +6,7 @@ import { accessGroupRegistry } from "../lib/config/groups.js";
 import {
   Installation,
   installationSchema,
+  isPublicMailDomain,
   loadInstallation,
 } from "../lib/config/schema.js";
 import { Edge, spaAuthConfigSchema } from "../lib/constructs/edge.js";
@@ -136,6 +137,21 @@ describe("installation schema (D20)", () => {
   it("forbids public mail domains in customer installations but allows them in the lab", () => {
     const gmail = { ...base.auth, signUpDomains: ["gmail.com"] };
     expect(parse({ auth: gmail }).success).toBe(false);
+    // Country variants and disposable inboxes: the list of `mango_core.mail_domains`.
+    for (const domain of [
+      "outlook.es",
+      "yahoo.co.uk",
+      "live.com.mx",
+      "mail.yahoo.es",
+      "mailinator.com",
+    ]) {
+      expect(isPublicMailDomain(domain), domain).toBe(true);
+      const auth = { ...base.auth, signUpDomains: [domain] };
+      expect(parse({ auth }).success, domain).toBe(false);
+    }
+    for (const domain of ["example.com", "outlook.example.com", "notgmail.com"]) {
+      expect(isPublicMailDomain(domain), domain).toBe(false);
+    }
     expect(
       installationSchema.safeParse({
         ...lab,

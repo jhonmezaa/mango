@@ -3,7 +3,11 @@ name = "mango-pre-sign-up"
 version = "0.1.0"
 description = "Cognito pre sign-up trigger: only company email domains may register (D20, TM-L4)"
 requires-python = ">=3.13,<3.14"
-dependencies = []
+# Only `mango_core.mail_domains` (standard library) is imported: the public mail providers.
+dependencies = ["mango-core"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
 
 [build-system]
 requires = ["hatchling>=1.27"]

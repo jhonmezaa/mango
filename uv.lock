@@ -995,6 +995,12 @@ requires-dist = [
 name = "mango-pre-sign-up"
 version = "0.1.0"
 source = { editable = "functions/pre-sign-up" }
+dependencies = [
+    { name = "mango-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mango-core", editable = "packages/py/mango-core" }]
 
 [[package]]
 name = "mango-pre-token"
