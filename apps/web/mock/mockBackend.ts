@@ -33,6 +33,7 @@ import { handleMarketplace } from './marketplace.ts';
 import { handleMcpCatalog } from './mcpCatalog.ts';
 import { handleOrgChart } from './orgChart.ts';
 import { handlePeople } from './people.ts';
+import { handleSession } from './session.ts';
 
 /**
  * Tried in order until one answers. The screens of the marketplace go before `handleAgents`,
@@ -61,6 +62,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     sendJson(res, 200, { status: 'ok' });
     return;
   }
+  // The session cookie routes authenticate on their own (a cookie, or a token without group).
+  if (await handleSession(req, res, path)) return;
   const session = sessionOf(req);
   if (session === null) {
     sendError(res, 401, 'unauthorized', 'Missing or invalid token');

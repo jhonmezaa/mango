@@ -4,7 +4,8 @@ import type { RuntimeConfig } from '../config/runtimeConfig';
 import { safeReturnPath } from '../security/safeUrl';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
-import { displayEmailFromIdToken } from './jwt';
+import { displayEmailFromIdToken, subjectOf } from './jwt';
+import { createServerSession, type RenewResult, type ServerSession } from './serverSession';
 import { hasAuthCallbackParams, logoutUrl } from './ssoUrls';
 
 /** mango-api rejects tokens with less than timeoutSeconds + 60 s left (TM-I5); renew before that. */
@@ -19,6 +20,33 @@ async function runSsoCallback(config: RuntimeConfig, url: string) {
   return completeSsoCallback(createUserManager(config), url);
 }
 
+// The same for the session cookie: one restore per page load, shared by both effect runs.
+const restorePromises = new WeakMap<ServerSession, Promise<RenewResult>>();
+
+function restore(serverSession: ServerSession): Promise<RenewResult> {
+  let promise = restorePromises.get(serverSession);
+  if (!promise) {
+    promise = serverSession.renew();
+    restorePromises.set(serverSession, promise);
+  }
+  return promise;
+}
+
+/** Tells the other tabs that this one signed out. No data travels in the message. */
+const SIGNED_OUT = 'signed-out';
+const CHANNEL = 'mango-auth';
+
+/**
+ * Tokens in memory. `refreshToken` is only there while the server does not hold the session
+ * (right after the sign-in, or when the session cookie could not be set).
+ */
+interface Session {
+  accessToken: string;
+  idToken: string;
+  expiresAt: number;
+  refreshToken?: string;
+}
+
 function currentPath(): string {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
@@ -26,29 +54,38 @@ function currentPath(): string {
 interface Props {
   config: RuntimeConfig;
   cognito: CognitoAuth;
+  /** The session cookie of mango-api; tests pass a double. */
+  serverSession?: ServerSession;
   children: ReactNode;
 }
 
 /**
- * In-memory session for the own login (SRP) and for SSO (D20, REACT-AUTH-001).
+ * Session for the own login (SRP) and for SSO (D20, D63, REACT-AUTH-001).
  *
- * - Access, ID and refresh tokens live only in a ref: a reload means signing in again (with MFA).
- * - Tokens are refreshed on demand with `REFRESH_TOKEN_AUTH`; the pre-token trigger runs again,
- *   so group changes apply without a new sign-in.
- * - Signing out revokes the refresh token (and the access tokens issued from it). SSO sessions
- *   also end the Cognito managed-login session.
+ * - Access and ID tokens live only in a ref. The refresh token goes to mango-api right after
+ *   the sign-in, which keeps it in an `HttpOnly` cookie this code cannot read; from then on
+ *   new tokens come from `POST /api/session/refresh`, also after a reload.
+ * - If the server cannot take the session, the refresh token stays in memory and the session
+ *   works as before: it renews against Cognito and ends with the page.
+ * - Every renewal runs the pre-token trigger again, so group changes apply without a new
+ *   sign-in.
+ * - Signing out ends the server session (which revokes the refresh token) in every tab. SSO
+ *   sessions also end the Cognito managed-login session.
  */
-export function AuthProvider({ config, cognito, children }: Props) {
-  const [status, setStatus] = useState<AuthStatus>(() =>
-    hasAuthCallbackParams(window.location.search) ? 'loading' : 'unauthenticated',
+export function AuthProvider({ config, cognito, serverSession: injected, children }: Props) {
+  const serverSession = useMemo(
+    () => injected ?? createServerSession(config.apiBasePath),
+    [injected, config.apiBasePath],
   );
+  // Either the SSO callback or the session cookie decides: nothing is shown before that.
+  const [status, setStatus] = useState<AuthStatus>('loading');
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [displayEmail, setDisplayEmail] = useState<string | null>(null);
-  const tokens = useRef<TokenSet | null>(null);
+  const tokens = useRef<Session | null>(null);
   const federated = useRef(false);
-  const refreshing = useRef<Promise<TokenSet | null> | null>(null);
+  const refreshing = useRef<Promise<Session | null> | null>(null);
 
-  const setSession = useCallback((next: TokenSet | null) => {
+  const setSession = useCallback((next: Session | null) => {
     tokens.current = next;
     setDisplayEmail(next ? displayEmailFromIdToken(next.idToken) : null);
   }, []);
@@ -62,6 +99,62 @@ export function AuthProvider({ config, cognito, children }: Props) {
     },
     [setSession],
   );
+
+  /** Starts the session with the tokens of a completed sign-in and hands it to the server. */
+  const adopt = useCallback(
+    (next: TokenSet, isFederated: boolean) => {
+      federated.current = isFederated;
+      setSession(next);
+      setErrorKey(null);
+      setStatus('authenticated');
+      void serverSession.start(next.accessToken, next.refreshToken, isFederated).then((taken) => {
+        // The server holds it now: JavaScript no longer needs the refresh token.
+        if (taken && tokens.current === next) {
+          tokens.current = {
+            accessToken: next.accessToken,
+            idToken: next.idToken,
+            expiresAt: next.expiresAt,
+          };
+        }
+      });
+    },
+    [serverSession, setSession],
+  );
+
+  // A reload (or a new tab) recovers the session from the cookie, without a new sign-in.
+  useEffect(() => {
+    if (hasAuthCallbackParams(window.location.search)) return;
+    let cancelled = false;
+    void restore(serverSession).then((result) => {
+      // A sign-in that finished meanwhile wins.
+      if (cancelled || tokens.current) return;
+      if (result.kind !== 'ok') {
+        setStatus('unauthenticated');
+        return;
+      }
+      federated.current = result.session.federated;
+      setSession(result.session);
+      setStatus('authenticated');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverSession, setSession]);
+
+  // Signing out in one tab signs out the others: they share the cookie that just ended.
+  const channel = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const opened = new BroadcastChannel(CHANNEL);
+    channel.current = opened;
+    opened.onmessage = (event: MessageEvent<unknown>) => {
+      if (event.data === SIGNED_OUT && tokens.current) endSession(null);
+    };
+    return () => {
+      channel.current = null;
+      opened.close();
+    };
+  }, [endSession]);
 
   useEffect(() => {
     if (!hasAuthCallbackParams(window.location.search)) return;
@@ -78,9 +171,7 @@ export function AuthProvider({ config, cognito, children }: Props) {
         // from our own sign-in state is honored (REACT-REDIRECT-001).
         window.history.replaceState(null, '', safeReturnPath(state));
         if (cancelled) return;
-        federated.current = true;
-        setSession(next);
-        setStatus('authenticated');
+        adopt(next, true);
       },
       () => {
         window.history.replaceState(null, '', '/');
@@ -90,39 +181,57 @@ export function AuthProvider({ config, cognito, children }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [config, endSession, setSession]);
+  }, [adopt, config, endSession]);
 
   const acceptTokens = useCallback(
     (next: TokenSet) => {
-      federated.current = false;
-      setSession(next);
-      setErrorKey(null);
-      setStatus('authenticated');
+      adopt(next, false);
     },
-    [setSession],
+    [adopt],
   );
 
-  const refresh = useCallback((): Promise<TokenSet | null> => {
+  /** New tokens from Cognito (session in memory) or from the session cookie. */
+  const renew = useCallback(
+    async (current: Session): Promise<Session | null> => {
+      if (current.refreshToken !== undefined) {
+        try {
+          return await cognito.refresh(current.refreshToken);
+        } catch {
+          endSession('auth.errors.sessionExpired');
+          return null;
+        }
+      }
+      const result = await serverSession.renew();
+      if (result.kind === 'none') {
+        endSession('auth.errors.sessionExpired');
+        return null;
+      }
+      // An outage says nothing about the session: keep it and let the caller retry.
+      if (result.kind === 'unavailable') return null;
+      if (subjectOf(result.session.accessToken) !== subjectOf(current.accessToken)) {
+        // Somebody else signed in from another tab: nothing of this tab's state is theirs.
+        window.location.reload();
+        return null;
+      }
+      return result.session;
+    },
+    [cognito, endSession, serverSession],
+  );
+
+  const refresh = useCallback((): Promise<Session | null> => {
     const current = tokens.current;
     if (!current) return Promise.resolve(null);
     // One refresh at a time: parallel API calls share it.
-    refreshing.current ??= cognito
-      .refresh(current.refreshToken)
-      .then(
-        (next) => {
-          if (tokens.current === current) setSession(next);
-          return next;
-        },
-        () => {
-          endSession('auth.errors.sessionExpired');
-          return null;
-        },
-      )
+    refreshing.current ??= renew(current)
+      .then((next) => {
+        if (next && tokens.current === current) setSession(next);
+        return next;
+      })
       .finally(() => {
         refreshing.current = null;
       });
     return refreshing.current;
-  }, [cognito, endSession, setSession]);
+  }, [renew, setSession]);
 
   const getAccessToken = useCallback(async () => {
     const current = tokens.current;
@@ -137,15 +246,18 @@ export function AuthProvider({ config, cognito, children }: Props) {
     const current = tokens.current;
     const wasFederated = federated.current;
     endSession(null);
-    if (current) {
+    channel.current?.postMessage(SIGNED_OUT);
+    if (current?.refreshToken !== undefined) {
       try {
         await cognito.revoke(current.refreshToken);
       } catch {
         // Best effort: the tokens are already gone from memory.
       }
     }
+    // Always: a cookie may exist even when this tab never learned that it was set.
+    await serverSession.end();
     if (wasFederated) window.location.assign(logoutUrl(config));
-  }, [cognito, config, endSession]);
+  }, [cognito, config, endSession, serverSession]);
 
   const expireSession = useCallback(() => {
     endSession('auth.errors.sessionExpired');

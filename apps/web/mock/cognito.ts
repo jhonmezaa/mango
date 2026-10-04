@@ -94,6 +94,25 @@ interface MockReply {
   status: number;
   body: unknown;
 }
+/** What mango-api does with a refresh token for the session cookie (D63). */
+export function renewFromRefreshToken(
+  origin: string,
+  refreshToken: string,
+): { access_token: string; id_token: string; expires_in: number } | null {
+  if (!refreshTokens.has(refreshToken)) return null;
+  const result = authResult(
+    origin,
+    MOCK_USER,
+    noGroupTokens.has(refreshToken),
+    refreshToken,
+  ).AuthenticationResult;
+  return { access_token: str(result.AccessToken), id_token: result.IdToken, expires_in: 3600 };
+}
+
+export function revokeRefreshToken(refreshToken: string): void {
+  refreshTokens.delete(refreshToken);
+}
+
 const ok = (body: unknown): MockReply => ({ status: 200, body });
 const fail = (type: string): MockReply => ({ status: 400, body: { __type: type, message: type } });
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');

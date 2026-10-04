@@ -10,7 +10,7 @@ export interface AuthContextValue {
   errorKey: string | null;
   /** Own login flows against Cognito (SRP, MFA, sign-up, recovery). */
   cognito: CognitoAuth;
-  /** Starts the in-memory session with the tokens of a completed sign-in. */
+  /** Starts the session with the tokens of a completed sign-in. */
   acceptTokens: (tokens: TokenSet) => void;
   /** Whether the installation has an IdP ("Continuar con SSO"). */
   ssoAvailable: boolean;
@@ -23,7 +23,7 @@ export interface AuthContextValue {
   getAccessToken: () => Promise<string | null>;
   /** Gets new tokens now (e.g. after a group assignment); false if the session ended. */
   refreshSession: () => Promise<boolean>;
-  /** Drops the in-memory session (e.g. after a 401 from the API). */
+  /** Drops the tokens in memory (e.g. after a 401 from the API). */
   expireSession: () => void;
 }
 
