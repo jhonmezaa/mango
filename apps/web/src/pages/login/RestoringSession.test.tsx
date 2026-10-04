@@ -12,8 +12,15 @@ describe('RestoringSession', () => {
   });
 
   it('says the sign-in is being completed when coming back from the SSO', () => {
-    render(<RestoringSession ssoReturn />);
+    render(<RestoringSession step="ssoReturn" />);
     expect(screen.getByRole('status')).toHaveTextContent('Completando el ingreso…');
     expect(screen.getByRole('main')).toHaveTextContent('Mango');
+  });
+
+  it('says «Entrando…» after the own sign-in form, in the same frame', () => {
+    render(<RestoringSession step="signingIn" />);
+    expect(screen.getByRole('status')).toHaveTextContent('Entrando…');
+    expect(screen.getByRole('main')).toHaveTextContent('Mango');
+    expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull();
   });
 });

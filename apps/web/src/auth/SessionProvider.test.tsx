@@ -80,7 +80,8 @@ describe('SessionProvider: what is shown until the application is ready', () => 
     [{ restored: true, federated: false }, 'Recuperando tu sesión…'],
     // Back from the IdP: the same frame, not the generic loading screen.
     [{ restored: false, federated: true }, 'Completando el ingreso…'],
-    [{ restored: false, federated: false }, 'Cargando…'],
+    // After the own sign-in form: the same frame too, never the generic «Cargando…».
+    [{ restored: false, federated: false }, 'Entrando…'],
   ])('%o → %s', (auth, text) => {
     // The profile never answers: the screen in between stays.
     vi.stubGlobal(
@@ -95,6 +96,8 @@ describe('SessionProvider: what is shown until the application is ready', () => 
       </AuthContext>,
     );
     expect(screen.getByRole('status')).toHaveTextContent(text);
+    expect(screen.getByRole('main')).toHaveTextContent('Mango');
+    expect(screen.queryByText('Cargando…')).toBeNull();
     expect(screen.queryByText('app')).toBeNull();
   });
 });

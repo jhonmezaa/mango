@@ -87,13 +87,23 @@ export function ChatInput({ agentName, disabled = false, isStreaming, onSend, on
               </span>
             </span>
             {isStreaming ? (
-              <button type="button" onClick={onStop} className="btn btn-sm">
+              <button
+                type="button"
+                onClick={onStop}
+                className="btn btn-sm ch-send-btn"
+                aria-label={t('chat.stopLabel')}
+              >
                 <StopIcon size={11} />
-                {t('chat.stop')}
+                <span className="ch-send-lbl">{t('chat.stop')}</span>
               </button>
             ) : (
-              <button type="submit" disabled={!canSend} className="btn btn-sm btn-primary">
-                {t('chat.send')}
+              <button
+                type="submit"
+                disabled={!canSend}
+                className="btn btn-sm btn-primary ch-send-btn"
+                aria-label={t('chat.send')}
+              >
+                <span className="ch-send-lbl">{t('chat.send')}</span>
                 <SendIcon size={11} />
               </button>
             )}

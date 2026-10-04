@@ -834,7 +834,8 @@
     justify-content: space-between;
     gap: 8px;
   }
-  /* Narrow: the bar wraps, the keyboard hint goes, and send/cancel stay inside on the right. */
+  /* Narrow: send/cancel are icon only, so they fit on the line of attach and «Skill»; the wrap
+     stays as a fallback. The keyboard hint goes. */
   @media (max-width: 560px) {
     .ch-compose-bar {
       flex-wrap: wrap;
@@ -845,6 +846,15 @@
     }
     .ch-send-row {
       margin-left: auto;
+    }
+    .ch-send-lbl {
+      display: none;
+    }
+    .ch-send-btn {
+      min-width: 36px;
+      min-height: 36px;
+      justify-content: center;
+      padding: 0 10px;
     }
   }
   .composer-hint {

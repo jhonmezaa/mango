@@ -83,6 +83,7 @@ export const chat = {
     'Algunas tools de {{name}} no están disponibles ahora porque se deshabilitó su MCP. Responderá sin ellas hasta que se vuelva a habilitar.',
   send: 'Enviar',
   stop: 'Cancelar',
+  stopLabel: 'Cancelar respuesta',
   retry: 'Reintentar',
   you: 'Tú',
   assistant: 'Agente',

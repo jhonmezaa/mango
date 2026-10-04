@@ -192,7 +192,9 @@ describe('ChatPage', () => {
     expect(streamChat).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: null, message: 'Hola' }),
     );
-    expect(await screen.findByRole('button', { name: 'Cancelar' })).toBeInTheDocument();
+    // The visible word stays «Cancelar» (hidden when narrow, where the button is icon only).
+    const cancel = await screen.findByRole('button', { name: 'Cancelar respuesta' });
+    expect(cancel.querySelector('.ch-send-lbl')).toHaveTextContent('Cancelar');
     // While the turn runs, its steps are listed; the tool group comes once it ends.
     const steps = screen.getByRole('button', { name: '2 pasos' });
     expect(steps).toHaveAttribute('aria-expanded', 'true');
@@ -202,7 +204,8 @@ describe('ChatPage', () => {
     act(() => {
       pending.finish();
     });
-    expect(await screen.findByRole('button', { name: /Enviar/ })).toBeInTheDocument();
+    const send = await screen.findByRole('button', { name: 'Enviar' });
+    expect(send.querySelector('.ch-send-lbl')).toHaveTextContent('Enviar');
     expect(screen.queryByRole('button', { name: /pasos/ })).toBeNull();
     expect(screen.getByRole('button', { name: /1 herramienta/ })).toBeInTheDocument();
     const answer = screen.getAllByRole('article').at(-1) as HTMLElement;
@@ -251,7 +254,7 @@ describe('ChatPage', () => {
     const { api, pending } = streamingApi([{ type: 'conversation', conversation_id: 'c1' }]);
     renderChat(api);
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
-    expect(await screen.findByRole('button', { name: 'Cancelar' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Cancelar respuesta' })).toBeInTheDocument();
     expect(screen.queryByText('Respuesta completa')).toBeNull();
 
     act(() => {
@@ -277,7 +280,7 @@ describe('ChatPage', () => {
     );
     renderChat({ streamChat } as unknown as ApiClient);
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
-    await user.click(await screen.findByRole('button', { name: 'Cancelar' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancelar respuesta' }));
     expect(await screen.findByText('Respuesta detenida.')).toBeInTheDocument();
     expect(screen.queryByText('Respuesta completa')).toBeNull();
   });

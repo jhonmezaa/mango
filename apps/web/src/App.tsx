@@ -127,7 +127,11 @@ function AuthGate({ config }: { config: RuntimeConfig }) {
   const { status } = useAuth();
   if (status === 'loading') {
     // Coming back from the IdP is a sign-in in progress, not a session being recovered.
-    return <RestoringSession ssoReturn={hasAuthCallbackParams(window.location.search)} />;
+    return (
+      <RestoringSession
+        step={hasAuthCallbackParams(window.location.search) ? 'ssoReturn' : 'restoring'}
+      />
+    );
   }
   if (status === 'unauthenticated') return <LoginPage config={config} />;
   return (

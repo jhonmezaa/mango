@@ -166,14 +166,10 @@ export function SessionProvider({
   }
   if (meError) return <FullPageMessage message={t('errors.generic')} />;
   if (!value) {
-    // A recovered session, and a sign-in that came back from the IdP, keep the sign-in frame
-    // until the application is ready (no flash).
+    // Every way in keeps the sign-in frame until the application is ready (no flash, no generic
+    // loading): a recovered session, the return from the IdP and the own sign-in form.
     if (restored) return <RestoringSession />;
-    return federated ? (
-      <RestoringSession ssoReturn />
-    ) : (
-      <FullPageMessage message={t('app.loading')} busy />
-    );
+    return <RestoringSession step={federated ? 'ssoReturn' : 'signingIn'} />;
   }
   return <SessionContext value={value}>{children}</SessionContext>;
 }

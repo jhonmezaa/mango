@@ -210,7 +210,7 @@ describe('OrgChartPage', () => {
       const box = within(panel).getByRole('note');
       expect(box).toHaveTextContent('No puedes usar este agente');
       expect(box).toHaveTextContent(
-        'No estás en ninguno de los grupos que lo usan, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos, también para quien lo creó y para administradores.',
+        'No estás en sus grupos ni entre sus personas, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos y personas, también para quien lo creó y para administradores.',
       );
       // The groups are API text: never markup.
       expect(
