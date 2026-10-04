@@ -8,9 +8,9 @@ import { SessionWarning } from './SessionWarning';
 const NOW = Date.parse('2026-10-04T12:00:00Z');
 const MIN = 60_000;
 
-function renderWarning(sessionEndsAt: number | null) {
+function renderWarning(sessionEndsAt: number | null, federated = false) {
   return render(
-    <AuthContext value={authValue({ sessionEndsAt })}>
+    <AuthContext value={authValue({ sessionEndsAt, federated })}>
       <SessionWarning />
     </AuthContext>,
   );
@@ -59,6 +59,16 @@ describe('SessionWarning', () => {
       vi.advanceTimersByTime(0);
     });
     expect(screen.getByRole('status')).toHaveTextContent('Tu sesión vence en 4 min.');
+  });
+
+  it('does not name the password and MFA after a sign-in with the SSO of the company', () => {
+    renderWarning(NOW + 4 * MIN, true);
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(screen.getByRole('status').textContent).toBe(
+      'Tu sesión vence en 4 min. Guarda lo que estés escribiendo: al vencer vuelves a ingresar.Entendido',
+    );
   });
 
   it('shows nothing when the end of the session is unknown or already passed', () => {

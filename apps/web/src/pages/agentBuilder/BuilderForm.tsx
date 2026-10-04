@@ -588,6 +588,8 @@ export function BuilderForm({ data }: { data: BuilderData }) {
                 onLookup={people.lookup}
                 usersError={has('accountDataUsers', 'serverAccountDataUsers')}
                 canSeeSettings={me.is_admin}
+                myGroups={me.groups}
+                myId={me.user_id}
                 onChange={change}
               />
             </fieldset>

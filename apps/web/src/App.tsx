@@ -7,7 +7,6 @@ import type { CognitoAuth } from './auth/cognito/flows';
 import { SessionProvider } from './auth/SessionProvider';
 import { hasAuthCallbackParams } from './auth/ssoUrls';
 import { useAuth } from './auth/useAuth';
-import { FullPageMessage } from './components/FullPageMessage';
 import { SoonView } from './components/SoonView';
 import type { RuntimeConfig } from './config/runtimeConfig';
 import { AppLayout } from './layouts/AppLayout';
@@ -125,15 +124,10 @@ export function AppRoutes() {
 }
 
 function AuthGate({ config }: { config: RuntimeConfig }) {
-  const { t } = useTranslation();
   const { status } = useAuth();
   if (status === 'loading') {
     // Coming back from the IdP is a sign-in in progress, not a session being recovered.
-    return hasAuthCallbackParams(window.location.search) ? (
-      <FullPageMessage message={t('app.loading')} busy />
-    ) : (
-      <RestoringSession />
-    );
+    return <RestoringSession ssoReturn={hasAuthCallbackParams(window.location.search)} />;
   }
   if (status === 'unauthenticated') return <LoginPage config={config} />;
   return (

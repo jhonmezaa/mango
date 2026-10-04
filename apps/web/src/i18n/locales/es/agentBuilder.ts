@@ -294,6 +294,12 @@ export const agentBuilder = {
       rate_limited: 'Hiciste demasiadas búsquedas. Espera un momento e inténtalo de nuevo.',
       failed: 'No se pudo buscar el correo. Inténtalo de nuevo.',
     },
+    selfSomeBefore: 'No estás en ',
+    selfSomeByGroup: '. Lo usarás por otro de tus grupos.',
+    selfSomeByEmail: '. Lo usarás por tu correo en Personas.',
+    selfNoneTitle: 'No estás en ninguno de estos grupos.',
+    selfNoneBody:
+      'Cuando se publique no lo verás en el Marketplace ni podrás usarlo en el chat, aunque lo hayas creado: el uso va por grupos, también para administradores. Lo verás en el Org Chart y podrás editarlo. Para usarlo, elige también un grupo tuyo o agrega tu correo en Personas.',
     noteBefore: 'Las tools marcadas ',
     noteCentral: 'Solo grupos centrales',
     noteAfter:

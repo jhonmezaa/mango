@@ -77,7 +77,8 @@ const MAIL_TAIL = 6;
  */
 export function splitEmail(email: string): { head: string; tail: string | null } {
   const at = email.lastIndexOf('@');
-  if (at <= 0) return { head: email, tail: null };
-  const cut = Math.max(0, at - MAIL_TAIL);
+  // Design: with one or two letters left at the start, the email stays in one piece.
+  if (at <= MAIL_TAIL + 2) return { head: email, tail: null };
+  const cut = at - MAIL_TAIL;
   return { head: email.slice(0, cut), tail: email.slice(cut) };
 }

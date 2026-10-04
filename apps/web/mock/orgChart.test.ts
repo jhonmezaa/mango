@@ -3,7 +3,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { zGetOrgResponse } from '@mango/api-client/schemas';
 import { describe, expect, it } from 'vitest';
 
-import { agents, publishedVersion, ROOT_SUPERVISOR } from './agents.ts';
+import { agents, publishedVersion, ROOT_SUPERVISOR, type MockAgent } from './agents.ts';
+import { MOCK_USER } from './cognito.ts';
+import { MOCK_USER_GROUPS } from './marketplace.ts';
 import { handleOrgChart } from './orgChart.ts';
 
 async function call(method: string, path: string) {
@@ -48,6 +50,17 @@ describe('mock org chart', () => {
       role: 'Analista FinOps',
       reports_to: ROOT_SUPERVISOR,
     });
+  });
+
+  it('says which agents the mock user cannot use, and who uses them', async () => {
+    const org = zGetOrgResponse.parse(JSON.parse((await call('GET', '/agents/org')).body));
+    for (const node of org.nodes) {
+      const definition = publishedVersion(agents.get(node.id) as MockAgent)?.definition;
+      const mine = definition?.groups.some((group) => MOCK_USER_GROUPS.includes(group)) ?? false;
+      expect(node.can_use).toBe(mine || (definition?.users.includes(MOCK_USER) ?? false));
+      // The groups only come with an agent that cannot be used.
+      expect(node.groups).toEqual(node.can_use ? [] : definition?.groups.toSorted());
+    }
   });
 
   it('leaves every other route to the next handler', async () => {

@@ -660,6 +660,12 @@
   .ab-people {
     margin-bottom: 8px;
   }
+  .ab-self {
+    margin-top: 10px;
+  }
+  .ab-self-note {
+    line-height: 1.5;
+  }
   .ab-person-add {
     display: flex;
     align-items: center;

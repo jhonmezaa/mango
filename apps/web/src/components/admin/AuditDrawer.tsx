@@ -7,7 +7,9 @@ import { formatRelative } from '../../lib/format';
 import { ArrowRightIcon, CloseIcon, CopyIcon, FilterIcon, LockIcon, UserIcon } from '../icons';
 import {
   isPermAction,
+  isLateSessionEnd,
   isSessionEndReason,
+  isSessionRejectCode,
   outcomeClass,
   TONE_COLOR,
   type AuditRow,
@@ -188,9 +190,18 @@ export function AuditDrawer({
                   {isSessionEndReason(row.endReason)
                     ? t(`audit.sessionEnd.${row.endReason}`)
                     : row.endReason}
+                  {isLateSessionEnd(row.endReason) ? (
+                    <span className="au-reason-note">{t('audit.sessionEndLate')}</span>
+                  ) : null}
                 </span>
               </div>
             )}
+            {row.event === 'session.rejected' && row.error && isSessionRejectCode(row.error) ? (
+              <div className="mk-kv">
+                <span>{t('audit.drawer.reason')}</span>
+                <span className="break-words">{t(`audit.sessionReject.${row.error}`)}</span>
+              </div>
+            ) : null}
             {row.requested && (
               <div className="mk-kv">
                 <span>{t('audit.drawer.requested')}</span>

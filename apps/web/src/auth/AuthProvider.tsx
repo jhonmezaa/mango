@@ -87,6 +87,12 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
   const [displayEmail, setDisplayEmail] = useState<string | null>(null);
   const tokens = useRef<Session | null>(null);
   const federated = useRef(false);
+  // Same value as the ref, for what is shown (the ref is for callbacks that must not change).
+  const [isFederatedSession, setIsFederatedSession] = useState(false);
+  const setFederated = useCallback((value: boolean) => {
+    federated.current = value;
+    setIsFederatedSession(value);
+  }, []);
   const refreshing = useRef<Promise<Session | null> | null>(null);
 
   const sessionSeconds = config.auth.sessionHours * 3600;
@@ -104,19 +110,19 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
   const endSession = useCallback(
     (key: string | null, notice: string | null = null) => {
       setSession(null);
-      federated.current = false;
+      setFederated(false);
       setErrorKey(key);
       setNoticeKey(notice);
       setRestored(false);
       setStatus('unauthenticated');
     },
-    [setSession],
+    [setSession, setFederated],
   );
 
   /** Starts the session with the tokens of a completed sign-in and hands it to the server. */
   const adopt = useCallback(
     (next: TokenSet, isFederated: boolean) => {
-      federated.current = isFederated;
+      setFederated(isFederated);
       setSession(next);
       setErrorKey(null);
       setNoticeKey(null);
@@ -133,7 +139,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
         }
       });
     },
-    [serverSession, setSession],
+    [serverSession, setSession, setFederated],
   );
 
   // A reload (or a new tab) recovers the session from the cookie, without a new sign-in.
@@ -147,7 +153,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
         setStatus('unauthenticated');
         return;
       }
-      federated.current = result.session.federated;
+      setFederated(result.session.federated);
       setSession(result.session);
       setRestored(true);
       setStatus('authenticated');
@@ -155,7 +161,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     return () => {
       cancelled = true;
     };
-  }, [serverSession, setSession]);
+  }, [serverSession, setSession, setFederated]);
 
   // Signing out in one tab signs out the others: they share the cookie that just ended.
   const channel = useRef<BroadcastChannel | null>(null);
@@ -295,6 +301,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       errorKey,
       noticeKey,
       restored,
+      federated: isFederatedSession,
       sessionEndsAt,
       cognito,
       acceptTokens,
@@ -311,6 +318,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       errorKey,
       noticeKey,
       restored,
+      isFederatedSession,
       sessionEndsAt,
       cognito,
       acceptTokens,

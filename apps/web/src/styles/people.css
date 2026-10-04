@@ -26,7 +26,12 @@
   .person-chip .pm-local {
     overflow: hidden;
     text-overflow: ellipsis;
-    min-width: 2ch;
+    min-width: 1ch;
+  }
+  .person-chip .pm-whole {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .person-chip .pm-dom {
     flex-shrink: 0;

@@ -34,8 +34,14 @@ export function PersonChip({ email, mono = false, size, you = false, onRemove }:
         {initials(email)}
       </span>
       <span className={mono ? 'person-mail mono' : 'person-mail'} title={email}>
-        <span className="pm-local">{head}</span>
-        {tail ? <span className="pm-dom">{tail}</span> : null}
+        {tail ? (
+          <>
+            <span className="pm-local">{head}</span>
+            <span className="pm-dom">{tail}</span>
+          </>
+        ) : (
+          <span className="pm-whole">{head}</span>
+        )}
       </span>
       {you ? <span className="person-you">{t('people.you')}</span> : null}
       {onRemove ? (

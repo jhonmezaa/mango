@@ -8,7 +8,7 @@ import { MOCK_USER } from './cognito.ts';
 import { readObject, sendError, sendJson, type ApiHandler } from './http.ts';
 
 /** Mango groups of the mock user (the ones `GET /me` answers). */
-const MOCK_USER_GROUPS: readonly string[] = ['finops-central', 'mango-admin'];
+export const MOCK_USER_GROUPS: readonly string[] = ['finops-central', 'mango-admin'];
 const OPEN_STATUSES: readonly string[] = ['draft', 'in_review', 'approved', 'failed'];
 const MAX_DRAFTS = 20;
 const MAX_SUBMISSIONS_PER_DAY = 5;

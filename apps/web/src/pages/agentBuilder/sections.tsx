@@ -953,6 +953,9 @@ interface AccessProps {
   usersError: boolean;
   /** Ajustes is an admin screen; others are told an administrator manages the groups. */
   canSeeSettings: boolean;
+  /** Groups and identifier of who is editing, from the session: only to explain (a hint). */
+  myGroups: readonly string[];
+  myId: string;
   onChange: Change;
 }
 
@@ -965,6 +968,8 @@ export const AccessSection = memo(function AccessSection({
   onLookup,
   usersError,
   canSeeSettings,
+  myGroups,
+  myId,
   onChange,
 }: AccessProps) {
   const { t } = useTranslation();
@@ -991,6 +996,12 @@ export const AccessSection = memo(function AccessSection({
   // A group the agent already has but the registry lost stays visible, so it can be removed.
   const known = new Set(registry.map((group) => group.id));
   const stale = groups.filter((id) => !known.has(id));
+  // Use goes by groups, also for who creates the agent: say so when they pick groups they are
+  // not in (design `ab-self`). It never blocks: sharing with another area is valid.
+  const mine = new Set(myGroups);
+  const notMine = groups.filter((id) => !mine.has(id));
+  const byGroup = notMine.length < groups.length;
+  const inAny = byGroup || users.includes(myId);
   return (
     <BuilderSection
       id="access"
@@ -1002,50 +1013,76 @@ export const AccessSection = memo(function AccessSection({
         error={groupsError && t('agentBuilder.access.groupsError')}
       >
         {({ labelId }) => (
-          <div className="ab-chips" role="group" aria-labelledby={labelId}>
-            {registry.length + stale.length === 0 && (
-              <span className="mk-meta">{t('agentBuilder.access.noGroups')}</span>
-            )}
-            {registry.map((group) => {
-              const on = groups.includes(group.id);
-              return (
+          <>
+            <div className="ab-chips" role="group" aria-labelledby={labelId}>
+              {registry.length + stale.length === 0 && (
+                <span className="mk-meta">{t('agentBuilder.access.noGroups')}</span>
+              )}
+              {registry.map((group) => {
+                const on = groups.includes(group.id);
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    className={on ? 'ab-chip is-on' : 'ab-chip'}
+                    aria-pressed={on}
+                    title={group.description || undefined}
+                    onClick={() => {
+                      onChange({ groups: toggled(groups, group.id) });
+                    }}
+                  >
+                    {on && <CheckIcon size={10} />}
+                    {group.id}
+                    {group.type !== 'central' && (
+                      <span className="ab-area">
+                        {group.type === 'area' && group.area
+                          ? t('agentBuilder.access.area', { area: group.area })
+                          : t('agentBuilder.access.noAccountData')}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {stale.map((id) => (
                 <button
-                  key={group.id}
+                  key={id}
                   type="button"
-                  className={on ? 'ab-chip is-on' : 'ab-chip'}
-                  aria-pressed={on}
-                  title={group.description || undefined}
+                  className="ab-chip is-on"
+                  aria-pressed
                   onClick={() => {
-                    onChange({ groups: toggled(groups, group.id) });
+                    onChange({ groups: toggled(groups, id) });
                   }}
                 >
-                  {on && <CheckIcon size={10} />}
-                  {group.id}
-                  {group.type !== 'central' && (
-                    <span className="ab-area">
-                      {group.type === 'area' && group.area
-                        ? t('agentBuilder.access.area', { area: group.area })
-                        : t('agentBuilder.access.noAccountData')}
-                    </span>
-                  )}
+                  <CheckIcon size={10} />
+                  {id}
                 </button>
-              );
-            })}
-            {stale.map((id) => (
-              <button
-                key={id}
-                type="button"
-                className="ab-chip is-on"
-                aria-pressed
-                onClick={() => {
-                  onChange({ groups: toggled(groups, id) });
-                }}
-              >
-                <CheckIcon size={10} />
-                {id}
-              </button>
-            ))}
-          </div>
+              ))}
+            </div>
+            {notMine.length === 0 ? null : inAny ? (
+              <div className="mk-meta ab-self ab-self-note">
+                {t('agentBuilder.access.selfSomeBefore')}
+                {notMine.map((id, index) => (
+                  <Fragment key={id}>
+                    {index > 0 ? ', ' : ''}
+                    <span className="mono">{id}</span>
+                  </Fragment>
+                ))}
+                {t(
+                  byGroup
+                    ? 'agentBuilder.access.selfSomeByGroup'
+                    : 'agentBuilder.access.selfSomeByEmail',
+                )}
+              </div>
+            ) : (
+              <div className="mc-alert amber ab-self" role="note">
+                <WarnIcon size={14} />
+                <div>
+                  <b>{t('agentBuilder.access.selfNoneTitle')}</b>{' '}
+                  {t('agentBuilder.access.selfNoneBody')}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </BuilderField>
       <BuilderField

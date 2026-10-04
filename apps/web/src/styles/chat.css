@@ -834,9 +834,17 @@
     justify-content: space-between;
     gap: 8px;
   }
+  /* Narrow: the bar wraps, the keyboard hint goes, and send/cancel stay inside on the right. */
   @media (max-width: 560px) {
+    .ch-compose-bar {
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .ch-compose-bar .ch-send-hint {
+      display: none;
+    }
     .ch-send-row {
-      padding-right: 6px;
+      margin-left: auto;
     }
   }
   .composer-hint {

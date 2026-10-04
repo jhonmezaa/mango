@@ -12,6 +12,8 @@ export interface AuthContextValue {
   noticeKey: string | null;
   /** The session came from the session cookie (a reload or a new tab), not from a sign-in. */
   restored: boolean;
+  /** The sign-in was with the IdP of the company (SSO), not with the own login. Display only. */
+  federated: boolean;
   /**
    * Epoch milliseconds when the session reaches its maximum duration, or null when unknown.
    * Display only (the notice before it ends): mango-api is what ends the session.

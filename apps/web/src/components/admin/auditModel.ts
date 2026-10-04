@@ -44,7 +44,8 @@ import type { AuditEvent, AuditResource } from '../../api/schemas';
 // Sessions (design round of 2026-10-04): `session.*` keep their name in the API and get the
 // design's labels, in «Acceso y grupos». `session.renewed` is a read for the API (only listed with
 // «Mostrar lecturas»). `session.rejected` has no `outcome`: it is shown as «no se aplicó · {reason}».
-// `session.ended` names its reason in the panel («Motivo»).
+// `session.ended` names its reason in the panel («Motivo»), and so does a `session.rejected` with
+// a known code. A sign-in with the IdP of the company has its own sentence (`federated`).
 //
 // Allowed decisions that are not reads (`ManagePeople`, `ApprovePeopleChange`, a chat turn whose
 // query is not loaded) are not in the design either: «Acceso permitido» (`access.allow`), next to
@@ -114,8 +115,9 @@ const isSessionAction = (event: string): event is SessionAction => SESSION_ACTIO
 /**
  * Design `SESSION_END`: reasons of `session.ended` with a text (`audit.sessionEnd.*`). The API
  * says `sign_out` for the design's `logout`, and names what revoked a session with the design's
- * words (`RevocationCause` in mango_api.web_session). Any other reason is shown as recorded:
- * `revoked` (the cause was not recorded) and `rejected` (the identity provider refused).
+ * words (`RevocationCause` in mango_api.web_session); `revoked` is a revocation whose cause was
+ * not recorded and `rejected` a renewal the identity provider refused. Any other reason is shown
+ * as recorded.
  */
 export const SESSION_END_REASONS = [
   'sign_out',
@@ -123,11 +125,33 @@ export const SESSION_END_REASONS = [
   'disabled',
   'group_removed',
   'mfa_reset',
+  'rejected',
+  'revoked',
 ] as const;
 export type SessionEndReason = (typeof SESSION_END_REASONS)[number];
 const SESSION_END_SET: ReadonlySet<string> = new Set(SESSION_END_REASONS);
 export const isSessionEndReason = (reason: string): reason is SessionEndReason =>
   SESSION_END_SET.has(reason);
+
+/**
+ * Design `SESSION_LATE`: endings the API records when the browser of the person next tries to
+ * renew, not when the change was made; the panel says so under the reason.
+ */
+const SESSION_LATE_SET: ReadonlySet<string> = new Set<SessionEndReason>([
+  'disabled',
+  'group_removed',
+  'mfa_reset',
+  'rejected',
+  'revoked',
+]);
+export const isLateSessionEnd = (reason: string): boolean => SESSION_LATE_SET.has(reason);
+
+/** Design `SESSION_REJECT`: codes of `session.rejected` with a text (`audit.sessionReject.*`). */
+export const SESSION_REJECT_CODES = ['invalid_refresh_token', 'sub_mismatch'] as const;
+export type SessionRejectCode = (typeof SESSION_REJECT_CODES)[number];
+const SESSION_REJECT_SET: ReadonlySet<string> = new Set(SESSION_REJECT_CODES);
+export const isSessionRejectCode = (code: string): code is SessionRejectCode =>
+  SESSION_REJECT_SET.has(code);
 
 /** Approval events the API records with the name of their design action (AUDIT_ACTIONS). */
 const APPROVAL_ACTIONS = [
@@ -280,7 +304,7 @@ export type DetailText =
   | { kind: 'access'; action: string; allowed: boolean }
   | { kind: 'chat'; agent: string; tools: number; cost: string | null }
   | { kind: 'catalogSync'; added: number }
-  | { kind: 'session'; action: SessionAction }
+  | { kind: 'session'; action: SessionAction; sso: boolean }
   | { kind: 'raw'; text: string };
 
 export interface AuditRow {
@@ -471,14 +495,12 @@ function detailOf(
         added: typeof detail.added_count === 'number' ? detail.added_count : 0,
       };
     case 'session.started':
-      // The design's sentence is about the own login; an SSO sign-in keeps what was recorded.
-      return detail.federated === true
-        ? { kind: 'raw', text: summarize(detail) }
-        : { kind: 'session', action: known };
+      // A sign-in with the IdP of the company has its own sentence in the design.
+      return { kind: 'session', action: known, sso: detail.federated === true };
     case 'session.renewed':
     case 'session.ended':
     case 'session.rejected':
-      return { kind: 'session', action: known };
+      return { kind: 'session', action: known, sso: false };
     default:
       // Any other decision (e.g. the chat's `UseAgent` of a turn that did not complete).
       return event === 'policy.decision' && typeof detail.action === 'string'

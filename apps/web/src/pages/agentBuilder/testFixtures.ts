@@ -130,6 +130,8 @@ const node = (id: string, name: string, reportsTo: string): OrgNode => ({
   icon: 'Bot',
   color: 0,
   reports_to: reportsTo,
+  can_use: true,
+  groups: [],
 });
 
 /** platform → finops → savings → forecast; platform → tagging. */

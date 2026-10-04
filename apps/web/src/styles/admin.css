@@ -1470,7 +1470,7 @@
   .au-tr {
     display: grid;
     grid-template-columns:
-      52px minmax(170px, 1.1fr) minmax(150px, 0.9fr) minmax(110px, 0.7fr)
+      52px minmax(170px, 1.1fr) minmax(230px, 0.9fr) minmax(110px, 0.7fr)
       minmax(0, 2fr) 20px;
     gap: 14px;
     align-items: center;
@@ -1524,10 +1524,21 @@
   .au-name .au-local {
     overflow: hidden;
     text-overflow: ellipsis;
-    min-width: 2ch;
+    min-width: 1ch;
+  }
+  .au-name .au-whole {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .au-name .au-dom {
     flex-shrink: 0;
+  }
+  .au-reason-note {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--text-muted);
   }
   .au-mail {
     overflow-wrap: normal;
@@ -1613,7 +1624,7 @@
   }
   @media (max-width: 1100px) {
     .au-tr {
-      grid-template-columns: 52px minmax(150px, 1fr) minmax(130px, 0.9fr) minmax(0, 1.6fr) 20px;
+      grid-template-columns: 52px minmax(150px, 1fr) minmax(210px, 0.9fr) minmax(0, 1.6fr) 20px;
     }
     .au-tr > .au-target {
       display: none;

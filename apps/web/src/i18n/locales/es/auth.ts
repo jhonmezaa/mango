@@ -21,6 +21,7 @@ export const auth = {
   signInLink: 'Inicia sesión',
   passwordUpdated: 'Contraseña actualizada. Ya puedes entrar.',
   restoring: 'Recuperando tu sesión…',
+  completingSignIn: 'Completando el ingreso…',
   keep: 'Sigues dentro hasta {{count}} h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.',
   signedOutElsewhere: 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.',
   signup: {

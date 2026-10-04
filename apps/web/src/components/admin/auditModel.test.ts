@@ -4,10 +4,13 @@ import { es } from '../../i18n/locales/es';
 import {
   csvCell,
   groupTurnAuthz,
+  isLateSessionEnd,
   isSessionEndReason,
+  isSessionRejectCode,
   mergeRequested,
   outcomeKey,
   SESSION_END_REASONS,
+  SESSION_REJECT_CODES,
   toAuditRow,
 } from './auditModel';
 
@@ -575,9 +578,12 @@ describe('sessions', () => {
     });
   });
 
-  it('keeps what was recorded for an SSO sign-in', () => {
-    const row = toAuditRow(event('session.started', { federated: true }), 0);
-    expect(row.detail).toEqual({ kind: 'raw', text: 'federated: true' });
+  it('tells a sign-in with the SSO of the company from the own login', () => {
+    const sso = toAuditRow(event('session.started', { federated: true }), 0);
+    expect(sso.detail).toEqual({ kind: 'session', action: 'session.started', sso: true });
+    const own = toAuditRow(event('session.started', { federated: false }), 0);
+    expect(own.detail).toEqual({ kind: 'session', action: 'session.started', sso: false });
+    expect(es.audit.detail.session.startedSso).toBe('Ingresó con el SSO de la empresa');
   });
 
   it('shows a rejected session as a refusal with its reason as the code', () => {
@@ -602,13 +608,16 @@ describe('sessions', () => {
   });
 
   it('has a text for every reason of the design, with the names the API records', () => {
-    // `sign_out`, `expired` and the three causes of a revocation (mango_api.web_session).
+    // `sign_out`, `expired`, the three causes of a revocation, a renewal the identity provider
+    // refused and a revocation without a recorded cause (mango_api.web_session).
     expect([...SESSION_END_REASONS]).toEqual([
       'sign_out',
       'expired',
       'disabled',
       'group_removed',
       'mfa_reset',
+      'rejected',
+      'revoked',
     ]);
     for (const reason of SESSION_END_REASONS) {
       expect(toAuditRow(event('session.ended', { reason }), 0).endReason).toBe(reason);
@@ -621,10 +630,31 @@ describe('sessions', () => {
       disabled: 'Un administrador deshabilitó su acceso',
       group_removed: 'Se le quitó un grupo sensible',
       mfa_reset: 'Se restableció su MFA',
+      rejected:
+        'El proveedor de identidad no la renovó: se revocó o venció allí, o la cuenta se deshabilitó fuera de Mango',
+      revoked: 'Un administrador cerró sus sesiones (sin detalle del motivo)',
     });
-    // Recorded when the cause is not known; the design has no text for them.
-    expect(isSessionEndReason('revoked')).toBe(false);
-    expect(isSessionEndReason('rejected')).toBe(false);
+    // A reason the design does not know is shown as recorded.
+    expect(isSessionEndReason('other')).toBe(false);
+  });
+
+  it('knows which endings are recorded late and which rejections have a text', () => {
+    // Design `SESSION_LATE`: recorded when the browser of the person next tries to renew.
+    expect(SESSION_END_REASONS.filter(isLateSessionEnd)).toEqual([
+      'disabled',
+      'group_removed',
+      'mfa_reset',
+      'rejected',
+      'revoked',
+    ]);
+    // Design `SESSION_REJECT`, word for word; the codes are the ones mango-api records.
+    expect(es.audit.sessionReject).toEqual({
+      invalid_refresh_token: 'El ingreso no sirve para crear la sesión',
+      sub_mismatch: 'El ingreso es de otra persona',
+    });
+    expect([...SESSION_REJECT_CODES].every(isSessionRejectCode)).toBe(true);
+    expect(isSessionRejectCode('session_revoked')).toBe(false);
+    expect(es.audit.detail.session.rejected).toBe('No se pudo crear la sesión tras el ingreso');
   });
 
   it('names the person of a session that ended like the one that started', () => {

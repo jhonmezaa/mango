@@ -21,8 +21,15 @@ export function SessionProvider({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const { getAccessToken, expireSession, refreshSession, logout, displayEmail, restored } =
-    useAuth();
+  const {
+    getAccessToken,
+    expireSession,
+    refreshSession,
+    logout,
+    displayEmail,
+    restored,
+    federated,
+  } = useAuth();
   const api = useMemo(
     () =>
       createApiClient({
@@ -159,8 +166,14 @@ export function SessionProvider({
   }
   if (meError) return <FullPageMessage message={t('errors.generic')} />;
   if (!value) {
-    // A recovered session keeps the sign-in frame until the application is ready (no flash).
-    return restored ? <RestoringSession /> : <FullPageMessage message={t('app.loading')} busy />;
+    // A recovered session, and a sign-in that came back from the IdP, keep the sign-in frame
+    // until the application is ready (no flash).
+    if (restored) return <RestoringSession />;
+    return federated ? (
+      <RestoringSession ssoReturn />
+    ) : (
+      <FullPageMessage message={t('app.loading')} busy />
+    );
   }
   return <SessionContext value={value}>{children}</SessionContext>;
 }

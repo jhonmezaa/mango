@@ -77,11 +77,13 @@ const isCategory = (value: string | null): value is AuditCategory =>
 /** The actor of a row: its start gets the ellipsis, its end is always visible (design `AuActor`). */
 function ActorName({ actor }: { actor: string }) {
   const { head, tail } = splitEmail(actor);
-  return (
+  return tail ? (
     <>
       <span className="au-local">{head}</span>
-      {tail ? <span className="au-dom">{tail}</span> : null}
+      <span className="au-dom">{tail}</span>
     </>
+  ) : (
+    <span className="au-whole">{head}</span>
   );
 }
 
@@ -94,7 +96,8 @@ function ActorName({ actor }: { actor: string }) {
  */
 export function AdminAuditPage() {
   const { t } = useTranslation();
-  const { api, me } = useSession();
+  const { api, me, config } = useSession();
+  const idpName = config.ssoProvider ?? null;
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { notify, stack } = useToasts();
@@ -256,11 +259,17 @@ export function AdminAuditPage() {
                               ? t('audit.detail.catalogSync', { count: d.added })
                               : t('audit.detail.catalogSyncNone')
                             : d.kind === 'session'
-                              ? t(`audit.detail.${d.action}`)
+                              ? d.sso
+                                ? // The name comes from `config.json`, shown as text.
+                                  [
+                                    t('audit.detail.session.startedSso'),
+                                    ...(idpName ? [idpName] : []),
+                                  ].join(' · ')
+                                : t(`audit.detail.${d.action}`)
                               : d.text;
       return text;
     },
-    [t],
+    [t, idpName],
   );
   // Design `auditOutcome`: what the API recorded about the write, plus its error code.
   const outcomeOf = useCallback(

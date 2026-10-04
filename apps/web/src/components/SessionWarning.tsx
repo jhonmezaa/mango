@@ -16,7 +16,7 @@ const MAX_DELAY_MS = 2_147_483_647;
  */
 export function SessionWarning() {
   const { t } = useTranslation();
-  const { sessionEndsAt } = useAuth();
+  const { sessionEndsAt, federated } = useAuth();
   // Minutes left when the notice came up, for the session it came up for.
   const [shown, setShown] = useState<{ endsAt: number; minutes: number } | null>(null);
   const [dismissed, setDismissed] = useState<number | null>(null);
@@ -44,7 +44,7 @@ export function SessionWarning() {
           <ClockIcon size={14} />
           <span className="min-w-0 flex-1">
             <b>{t('app.sessionWarning.title', { count: shown.minutes })}</b>{' '}
-            {t('app.sessionWarning.body')}
+            {t(federated ? 'app.sessionWarning.bodySso' : 'app.sessionWarning.body')}
           </span>
           <button
             type="button"

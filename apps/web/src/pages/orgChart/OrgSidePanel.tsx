@@ -105,6 +105,29 @@ export function OrgSidePanel({ node, canEdit, onClose }: Props) {
         {node.isRoot || node.ghost ? null : (
           <div className="flex flex-col gap-3.5">
             {node.description ? <p className="oc-panel-desc">{node.description}</p> : null}
+            {node.canUse ? null : (
+              <div className="oc-nouse" role="note">
+                <div className="oc-nouse-t">
+                  <LockIcon size={13} />
+                  {t('orgChart.noUse.title')}
+                </div>
+                <div>{t('orgChart.noUse.body')}</div>
+                {node.groups.length > 0 ? (
+                  <div>
+                    <div className="oc-nouse-l">{t('orgChart.noUse.usedBy')}</div>
+                    {/* Group ids from the API, rendered as text. */}
+                    <div className="oc-nouse-g">
+                      {node.groups.map((group) => (
+                        <span key={group}>{group}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="oc-nouse-how">
+                  {t(canEdit ? 'orgChart.noUse.howEditor' : 'orgChart.noUse.howOther')}
+                </div>
+              </div>
+            )}
             <div>
               <div className="oc-panel-t">{t('orgChart.panel.agent')}</div>
               <div className="mk-kv oc-kv">
@@ -122,9 +145,11 @@ export function OrgSidePanel({ node, canEdit, onClose }: Props) {
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Link className="btn btn-sm" to="/marketplace">
-                {t('orgChart.panel.marketplace')}
-              </Link>
+              {node.canUse ? (
+                <Link className="btn btn-sm" to="/marketplace">
+                  {t('orgChart.panel.marketplace')}
+                </Link>
+              ) : null}
               {canEdit && node.version !== null ? (
                 // The id comes from the API: it only fills one encoded path segment. The
                 // version is named too: without it the Builder needs `UseAgent` to find it.

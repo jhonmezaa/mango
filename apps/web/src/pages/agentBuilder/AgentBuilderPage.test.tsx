@@ -9,6 +9,7 @@ import { budgetsFixture } from '../../test/adminFixtures';
 import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { AgentBuilderPage } from './AgentBuilderPage';
+import { AccessSection } from './sections';
 import type { Version } from './model';
 import { AGENT_ID, context, definition, orgNodes, quotas, version } from './testFixtures';
 
@@ -858,5 +859,55 @@ describe('AgentBuilderPage', () => {
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByRole('heading', { name: 'Nuevo agente' })).toBeInTheDocument();
+  });
+});
+
+describe('Agent Builder › Acceso: groups of who is editing', () => {
+  // `baseMe` is in `finops-central` only.
+  const access = () => screen.getByText('Grupos').closest('.ab-field') as HTMLElement;
+
+  it('warns, without blocking, when the creator is in none of the groups they pick', async () => {
+    const user = userEvent.setup();
+    renderPage(fakeApi({}));
+    await user.click(await screen.findByRole('button', { name: /^bu-retail/ }));
+    const alert = within(access()).getByRole('note');
+    expect(alert).toHaveClass('mc-alert', 'amber');
+    expect(alert.textContent).toBe(
+      'No estás en ninguno de estos grupos. Cuando se publique no lo verás en el Marketplace ni podrás usarlo en el chat, aunque lo hayas creado: el uso va por grupos, también para administradores. Lo verás en el Org Chart y podrás editarlo. Para usarlo, elige también un grupo tuyo o agrega tu correo en Personas.',
+    );
+    expect(screen.getByRole('button', { name: 'Enviar a aprobación' })).toBeEnabled();
+
+    // In one of them: a quiet note names the others.
+    await user.click(screen.getByRole('button', { name: 'finops-central' }));
+    expect(within(access()).queryByRole('note')).toBeNull();
+    const note = access().querySelector('.ab-self') as HTMLElement;
+    expect(note.textContent).toBe('No estás en bu-retail. Lo usarás por otro de tus grupos.');
+    expect(note.querySelector('.mono')).toHaveTextContent('bu-retail');
+
+    // Only own groups: nothing to say.
+    await user.click(screen.getByRole('button', { name: /^bu-retail/ }));
+    expect(access().querySelector('.ab-self')).toBeNull();
+  });
+
+  it('says the creator will use it by their email when they are among the people', () => {
+    render(
+      <AccessSection
+        groups={['bu-retail', 'todos']}
+        registry={[]}
+        groupsError={false}
+        users={['user-1', 'me-1']}
+        emailOf={() => undefined}
+        onLookup={() => Promise.resolve({ kind: 'not_found' })}
+        usersError={false}
+        canSeeSettings={false}
+        myGroups={['finops-central']}
+        myId="me-1"
+        onChange={() => undefined}
+      />,
+    );
+    expect(document.querySelector('.ab-self')?.textContent).toBe(
+      'No estás en bu-retail, todos. Lo usarás por tu correo en Personas.',
+    );
+    expect(screen.queryByRole('note')).toBeNull();
   });
 });

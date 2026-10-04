@@ -8,6 +8,7 @@ export const app = {
     title_one: 'Tu sesión vence en {{count}} min.',
     title_other: 'Tu sesión vence en {{count}} min.',
     body: 'Guarda lo que estés escribiendo: al vencer vuelves a ingresar con tu contraseña y MFA.',
+    bodySso: 'Guarda lo que estés escribiendo: al vencer vuelves a ingresar.',
     dismiss: 'Entendido',
   },
 } as const;

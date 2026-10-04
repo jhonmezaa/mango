@@ -26,6 +26,8 @@ function agent(id: string, reportsTo: string | null, overrides: Partial<OrgNode>
     icon: 'Bot',
     color: 0,
     reports_to: reportsTo,
+    can_use: true,
+    groups: [],
     ...overrides,
   };
 }

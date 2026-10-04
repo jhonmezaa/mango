@@ -66,7 +66,16 @@ describe('splitEmail', () => {
   });
 
   it('leaves a short local part and anything that is not an email whole', () => {
-    expect(splitEmail('ana@example.com')).toEqual({ head: '', tail: 'ana@example.com' });
+    expect(splitEmail('ana@example.com')).toEqual({ head: 'ana@example.com', tail: null });
+    // One or two letters would be left at the start: no cut (design `i > 8`).
+    expect(splitEmail('usuario1@empresa.com')).toEqual({
+      head: 'usuario1@empresa.com',
+      tail: null,
+    });
+    expect(splitEmail('mock-user@example.com')).toEqual({
+      head: 'moc',
+      tail: 'k-user@example.com',
+    });
     expect(splitEmail('sub-123')).toEqual({ head: 'sub-123', tail: null });
     expect(splitEmail('')).toEqual({ head: '', tail: null });
   });

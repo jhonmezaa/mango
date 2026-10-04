@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiClient, AuditListOptions } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { AuditEvent } from '../api/schemas';
-import { baseMe, sessionValue } from '../test/fixtures';
+import { baseMe, sessionValue, testConfig } from '../test/fixtures';
 import { TestProviders } from '../test/TestProviders';
 import { AdminAuditPage } from './AdminAuditPage';
 
@@ -131,8 +131,9 @@ describe('AdminAuditPage', () => {
     expect(row).not.toBeNull();
     // The end of the email is always shown and the badge is short; the tooltip has both in full.
     const actor = within(row as HTMLElement).getByTitle('ana@example.com · FinOps central · Admin');
-    expect(actor.querySelector('.au-local')).toBeEmptyDOMElement();
-    expect(actor.querySelector('.au-dom')).toHaveTextContent('ana@example.com');
+    // A short local part is not cut in two: one piece that ends in an ellipsis if it must.
+    expect(actor.querySelector('.au-local')).toBeNull();
+    expect(actor.querySelector('.au-whole')).toHaveTextContent('ana@example.com');
     expect(actor.querySelector('.au-role')).toHaveTextContent('Admin');
     const old = screen.getByText('Cambio de áreas rechazado').closest('button') as HTMLElement;
     expect(old.querySelector('.au-role')).toBeNull();
@@ -699,7 +700,7 @@ describe('AdminAuditPage', () => {
       ),
     });
     const rejected = (await screen.findByText('Sesión rechazada')).closest('button') as HTMLElement;
-    expect(rejected).toHaveTextContent('Intento de renovar con una sesión que ya no sirve');
+    expect(rejected).toHaveTextContent('No se pudo crear la sesión tras el ingreso');
     expect(rejected.querySelector('.au-outcome.fail')).toHaveTextContent(
       'no se aplicó · sub_mismatch',
     );
@@ -712,11 +713,21 @@ describe('AdminAuditPage', () => {
       'Ingresó con contraseña y MFA',
     );
 
+    // A rejection with a known code says why in the panel; the code stays in «Resultado».
+    await user.click(rejected);
+    const refused = screen.getByRole('dialog', { name: 'Sesión rechazada' });
+    expect(within(refused).getByText('Motivo').parentElement).toHaveTextContent(
+      'MotivoEl ingreso es de otra persona',
+    );
+    await user.click(within(refused).getByRole('button', { name: 'Cerrar' }));
+
     // The label and the sentence of the event read the same.
     await user.click(screen.getAllByText('Sesión cerrada')[0] as HTMLElement);
     const panel = screen.getByRole('dialog', { name: 'Sesión cerrada' });
     expect(within(panel).getByText('Motivo')).toBeInTheDocument();
     expect(within(panel).getByText('La persona cerró sesión')).toBeInTheDocument();
+    // The person closed it: it was recorded at that moment.
+    expect(panel).not.toHaveTextContent('Se registra cuando su navegador');
     await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
 
     await user.click(screen.getByText('Sesión iniciada'));
@@ -728,15 +739,22 @@ describe('AdminAuditPage', () => {
     expect(email.querySelector('wbr')).not.toBeNull();
   });
 
+  const LATE =
+    'Se registra cuando su navegador intenta renovar la sesión, no en el momento del cambio. Si tenía la aplicación cerrada, puede no aparecer.';
   it.each([
     ['sign_out', 'La persona cerró sesión'],
     ['expired', 'Venció: pasó la duración máxima de la sesión'],
-    ['disabled', 'Un administrador deshabilitó su acceso'],
-    ['group_removed', 'Se le quitó un grupo sensible'],
-    ['mfa_reset', 'Se restableció su MFA'],
-    // Recorded when the cause is not known: the design has no text, so they are shown as is.
-    ['revoked', 'revoked'],
-    ['rejected', 'rejected'],
+    // Recorded when the browser of the person next tries to renew: the panel says so.
+    ['disabled', `Un administrador deshabilitó su acceso${LATE}`],
+    ['group_removed', `Se le quitó un grupo sensible${LATE}`],
+    ['mfa_reset', `Se restableció su MFA${LATE}`],
+    ['revoked', `Un administrador cerró sus sesiones (sin detalle del motivo)${LATE}`],
+    [
+      'rejected',
+      `El proveedor de identidad no la renovó: se revocó o venció allí, o la cuenta se deshabilitó fuera de Mango${LATE}`,
+    ],
+    // A reason the design does not know is shown as recorded.
+    ['other', 'other'],
   ])('shows why a session ended (%s) and who it was', async (reason, text) => {
     const user = userEvent.setup();
     const mail = 'ana.ruiz@example.com';
@@ -765,8 +783,45 @@ describe('AdminAuditPage', () => {
     expect(row).not.toHaveTextContent('sub-ana');
     await user.click(row);
     const panel = screen.getByRole('dialog', { name: 'Sesión cerrada' });
-    expect(within(panel).getByText('Motivo').parentElement).toHaveTextContent(`Motivo${text}`);
+    expect(within(panel).getByText('Motivo').parentElement?.textContent).toBe(`Motivo${text}`);
     expect(panel.querySelector('.au-mail')).toHaveTextContent(mail);
+  });
+
+  it.each([
+    ['Okta', 'Ingresó con el SSO de la empresa · Okta'],
+    [undefined, 'Ingresó con el SSO de la empresa'],
+  ])('names a sign-in with the SSO of the company (%s)', async (ssoProvider, sentence) => {
+    render(
+      <TestProviders
+        path="/audit"
+        session={sessionValue({
+          api: {
+            listAuditEvents: vi.fn(() =>
+              page([
+                {
+                  event_id: 'e1'.padEnd(32, '0'),
+                  ts: iso(1),
+                  event: 'session.started',
+                  user_id: 'sub-ana',
+                  actor_email: 'ana.ruiz@example.com',
+                  actor_role: null,
+                  actor_is_admin: false,
+                  hash: 'a'.repeat(64),
+                  detail: { federated: true, expires_at: 1 },
+                },
+              ]),
+            ),
+          } as Partial<ApiClient> as ApiClient,
+          me: { ...baseMe, is_admin: true },
+          config: { ...testConfig, ...(ssoProvider ? { ssoProvider } : {}) },
+        })}
+      >
+        <AdminAuditPage />
+      </TestProviders>,
+    );
+    const row = (await screen.findByText('Sesión iniciada')).closest('button') as HTMLElement;
+    expect(row.querySelector('.au-detail')?.textContent).toBe(sentence);
+    expect(row).not.toHaveTextContent('federated');
   });
 
   it('says what «Mostrar lecturas» adds', async () => {

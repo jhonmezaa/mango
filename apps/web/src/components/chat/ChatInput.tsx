@@ -61,7 +61,7 @@ export function ChatInput({ agentName, disabled = false, isStreaming, onSend, on
           aria-invalid={tooLong}
           {...(tooLong ? { 'aria-describedby': 'chat-input-error' } : {})}
         />
-        <div className="composer-row">
+        <div className="composer-row ch-compose-bar">
           <div className="flex items-center gap-1">
             <Soon name={t('soon.item', { label: t('chat.composer.attach') })}>
               <span className="btn btn-ghost btn-icon">
@@ -75,7 +75,7 @@ export function ChatInput({ agentName, disabled = false, isStreaming, onSend, on
             </Soon>
           </div>
           <div className="ch-send-row flex items-center gap-2">
-            <span className="composer-hint">
+            <span className="composer-hint ch-send-hint">
               <Soon name={t('soon.item', { label: t('chat.composer.commandsLabel') })}>
                 <span>
                   <span className="mono">/</span> {t('chat.composer.commands')}

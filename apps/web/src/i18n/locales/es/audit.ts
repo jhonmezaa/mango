@@ -188,9 +188,10 @@ export const audit = {
     catalogSync_other: 'Consultó el catálogo de Bedrock · {{count}} modelos nuevos',
     session: {
       started: 'Ingresó con contraseña y MFA',
+      startedSso: 'Ingresó con el SSO de la empresa',
       renewed: 'Recuperó la sesión al recargar',
       ended: 'Sesión cerrada',
-      rejected: 'Intento de renovar con una sesión que ya no sirve',
+      rejected: 'No se pudo crear la sesión tras el ingreso',
     },
   },
   // Design `SESSION_END`: why a session ended (the API says `sign_out` for the design's `logout`).
@@ -200,6 +201,16 @@ export const audit = {
     disabled: 'Un administrador deshabilitó su acceso',
     group_removed: 'Se le quitó un grupo sensible',
     mfa_reset: 'Se restableció su MFA',
+    rejected:
+      'El proveedor de identidad no la renovó: se revocó o venció allí, o la cuenta se deshabilitó fuera de Mango',
+    revoked: 'Un administrador cerró sus sesiones (sin detalle del motivo)',
+  },
+  sessionEndLate:
+    'Se registra cuando su navegador intenta renovar la sesión, no en el momento del cambio. Si tenía la aplicación cerrada, puede no aparecer.',
+  // Design `SESSION_REJECT`: why the session could not be created after the sign-in.
+  sessionReject: {
+    invalid_refresh_token: 'El ingreso no sirve para crear la sesión',
+    sub_mismatch: 'El ingreso es de otra persona',
   },
   outcome: {
     requested: 'solicitado',

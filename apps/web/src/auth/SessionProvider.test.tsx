@@ -73,3 +73,28 @@ describe('SessionProvider: account without a group (D20)', () => {
     expect(auth.logout).toHaveBeenCalledOnce();
   });
 });
+
+describe('SessionProvider: what is shown until the application is ready', () => {
+  it.each([
+    [{ restored: true, federated: true }, 'Recuperando tu sesión…'],
+    [{ restored: true, federated: false }, 'Recuperando tu sesión…'],
+    // Back from the IdP: the same frame, not the generic loading screen.
+    [{ restored: false, federated: true }, 'Completando el ingreso…'],
+    [{ restored: false, federated: false }, 'Cargando…'],
+  ])('%o → %s', (auth, text) => {
+    // The profile never answers: the screen in between stays.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    render(
+      <AuthContext value={authValue(auth)}>
+        <SessionProvider config={config}>
+          <p>app</p>
+        </SessionProvider>
+      </AuthContext>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(text);
+    expect(screen.queryByText('app')).toBeNull();
+  });
+});

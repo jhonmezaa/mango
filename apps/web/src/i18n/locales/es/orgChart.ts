@@ -76,4 +76,13 @@ export const orgChart = {
     edit: 'Editar',
     costs: 'Costos',
   },
+  // Design `oc-nouse`: who opens the agent sees it in the tree but is in none of its groups.
+  noUse: {
+    title: 'No puedes usar este agente',
+    body: 'No estás en ninguno de los grupos que lo usan, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos, también para quien lo creó y para administradores.',
+    usedBy: 'Lo usan',
+    howEditor:
+      'Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.',
+    howOther: 'Para usarlo, pide a un administrador que te agregue a uno de esos grupos.',
+  },
 } as const;

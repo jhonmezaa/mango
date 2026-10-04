@@ -20,6 +20,8 @@ function agent(id: string, name: string, role: string, reportsTo: string | null)
     icon: 'Money',
     color: 2,
     reports_to: reportsTo,
+    can_use: true,
+    groups: [],
   };
 }
 
@@ -164,6 +166,8 @@ describe('OrgChartPage', () => {
       'href',
       '/marketplace',
     );
+    // An agent the person may use has no notice.
+    expect(within(panel).queryByRole('note')).toBeNull();
     // Without the creator permission there is no "Editar" (the API decides anyway).
     expect(within(panel).queryByRole('link', { name: 'Editar' })).toBeNull();
 
@@ -187,6 +191,51 @@ describe('OrgChartPage', () => {
       }),
     );
     expect(screen.queryByRole('complementary')).toBeNull();
+  });
+
+  it.each([
+    [true, 'agrega uno de tus grupos en su Acceso (va con una versión nueva)'],
+    [false, 'pide a un administrador que te agregue a uno de esos grupos.'],
+  ])(
+    'tells who sees an agent they cannot use why, and who uses it (creator: %s)',
+    async (canCreate, how) => {
+      const locked: OrgNode = {
+        ...agent('p2ys6ke4c7dq3hzo', 'Etiquetado', 'Auditor de etiquetas', 'platform'),
+        can_use: false,
+        groups: ['bu-retail', '<b>x</b>'],
+      };
+      renderPage(() => Promise.resolve({ root: 'platform', nodes: [locked] }), canCreate);
+      await userEvent.click(await nodeButton('Etiquetado, Auditor de etiquetas'));
+      const panel = screen.getByRole('complementary', { name: 'Detalle de Etiquetado' });
+      const box = within(panel).getByRole('note');
+      expect(box).toHaveTextContent('No puedes usar este agente');
+      expect(box).toHaveTextContent(
+        'No estás en ninguno de los grupos que lo usan, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos, también para quien lo creó y para administradores.',
+      );
+      // The groups are API text: never markup.
+      expect(
+        [...box.querySelectorAll('.oc-nouse-g span')].map((group) => group.textContent),
+      ).toEqual(['bu-retail', '<b>x</b>']);
+      expect(box.querySelector('b')).toBeNull();
+      expect(box).toHaveTextContent(how);
+      // Nothing to open in the Marketplace; editing stays for who may edit.
+      expect(within(panel).queryByRole('link', { name: 'Ver en Marketplace' })).toBeNull();
+      expect(within(panel).queryAllByRole('link', { name: 'Editar' })).toHaveLength(
+        canCreate ? 1 : 0,
+      );
+    },
+  );
+
+  it('has no «Lo usan» list when the agent is only shared with people', async () => {
+    const locked: OrgNode = {
+      ...agent('p2ys6ke4c7dq3hzo', 'Etiquetado', 'Auditor de etiquetas', 'platform'),
+      can_use: false,
+    };
+    renderPage(() => Promise.resolve({ root: 'platform', nodes: [locked] }));
+    await userEvent.click(await nodeButton('Etiquetado, Auditor de etiquetas'));
+    const box = screen.getByRole('note');
+    expect(box).toHaveTextContent('No puedes usar este agente');
+    expect(box).not.toHaveTextContent('Lo usan');
   });
 
   it('offers "Nuevo agente" and "Editar" only to creators', async () => {

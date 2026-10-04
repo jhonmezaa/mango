@@ -14,6 +14,10 @@ export interface TreeNode {
   description: string;
   category: string;
   icon: string;
+  /** Whether who is signed in may use the agent (a hint from the API; true for non-agents). */
+  canUse: boolean;
+  /** Groups that use an agent the caller cannot use; empty otherwise. */
+  groups: readonly string[];
   isRoot: boolean;
   /** Design `ghost`: stands for supervisors that are retired or not visible to the caller. */
   ghost: boolean;
@@ -45,7 +49,14 @@ export interface OrgTree {
  * ids are dropped and a cycle is cut by hanging one of its agents from the root instead of looping.
  */
 export function buildTree(org: OrgOut, labels: { root: NodeLabel; hidden: NodeLabel }): OrgTree {
-  const base = { version: null, description: '', category: '', depth: 0 };
+  const base = {
+    version: null,
+    description: '',
+    category: '',
+    depth: 0,
+    canUse: true,
+    groups: [],
+  };
   const root: TreeNode = {
     ...base,
     ...labels.root,
@@ -77,6 +88,8 @@ export function buildTree(org: OrgOut, labels: { root: NodeLabel; hidden: NodeLa
       description: agent.description,
       category: agent.category,
       icon: agent.icon,
+      canUse: agent.can_use,
+      groups: agent.groups,
       isRoot: false,
       ghost: false,
       depth: 0,
