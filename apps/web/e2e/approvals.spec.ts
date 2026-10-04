@@ -124,6 +124,8 @@ test('the chat shows the phase and the steps of the turn, a failed tool and a gu
   await composer.press('Enter');
   const turn = page.getByRole('article').last();
   await expect(turn.getByText('Consultando 2 tools…')).toBeVisible();
+  // The phase line carries its own indicator (decoration: the text is what gets announced).
+  await expect(turn.locator('.ch-phase .ch-orb')).toHaveAttribute('aria-hidden', 'true');
   await turn.getByRole('button', { name: /pasos/ }).click();
   await expect(turn.getByText('Falló get_rightsizing_recommendations')).toBeVisible();
   await expect(turn.getByRole('button', { name: /pasos · 1 con error/ })).toBeVisible();

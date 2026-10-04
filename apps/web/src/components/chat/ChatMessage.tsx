@@ -57,6 +57,24 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
+/**
+ * Dots of the phase indicator (design: chat.jsx `ch-orb`). Static decoration: the figure and its
+ * rhythm per phase live in the stylesheet (the CSP allows no runtime style tags).
+ */
+const ORB_DOTS = (
+  <>
+    <i>
+      <b />
+    </i>
+    <i>
+      <b />
+    </i>
+    <i>
+      <b />
+    </i>
+  </>
+);
+
 /** Phase line of a turn in flight (design: chat.jsx `PHASE_TXT`). */
 function useProgressLabel(progress: TurnProgress | undefined, running: number): string {
   const { t } = useTranslation();
@@ -218,10 +236,16 @@ export const ChatMessage = memo(function ChatMessage({
             is on its way; while it writes, the cursor says so. */}
         {streaming && !(writing && message.content) ? (
           <p className="msg-thinking ch-phase" role="status" aria-live="polite">
-            <span className="spinner" aria-hidden="true" />
-            <span>{progressLabel}</span>
+            <span
+              className="ch-orb"
+              data-k={message.progress?.phase ?? 'thinking'}
+              aria-hidden="true"
+            >
+              {ORB_DOTS}
+            </span>
+            <span className="ch-phase-t">{progressLabel}</span>
             {observe ? (
-              <span className="msg-live mono">
+              <span className="ch-live mono">
                 <span className="dot dot-blue" aria-hidden="true" />
                 {t('chat.live')}
               </span>

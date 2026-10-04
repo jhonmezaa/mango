@@ -539,6 +539,108 @@
   .ch-phase {
     margin-top: 8px;
     min-height: 20px;
+    height: 20px;
+  }
+  .ch-phase-t {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ch-live {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: 10.5px;
+    color: var(--blue);
+  }
+  /* Design styles.css `ch-orb`: three dots in orbit, only on the phase line. Same figure in every
+     phase; the rhythm changes with `data-k` (the phase the API reports). Only transform and
+     opacity are animated. */
+  .ch-orb {
+    position: relative;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    animation: orb-spin 1.6s linear infinite;
+  }
+  .ch-orb i {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+  }
+  .ch-orb i:nth-child(2) {
+    transform: rotate(120deg);
+  }
+  .ch-orb i:nth-child(3) {
+    transform: rotate(240deg);
+  }
+  .ch-orb b {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    margin: -2px 0 0 -2px;
+    border-radius: 50%;
+    background: var(--accent-ink);
+    transform: translateY(-5px);
+  }
+  .ch-orb i:nth-child(2) b {
+    opacity: 0.7;
+  }
+  .ch-orb i:nth-child(3) b {
+    opacity: 0.42;
+  }
+  .ch-orb[data-k='thinking'] {
+    animation-duration: 2.8s;
+  }
+  .ch-orb[data-k='thinking'] b {
+    animation: orb-breathe 1.4s ease-in-out infinite;
+  }
+  .ch-orb[data-k='thinking'] i:nth-child(2) b {
+    animation-delay: -0.47s;
+  }
+  .ch-orb[data-k='thinking'] i:nth-child(3) b {
+    animation-delay: -0.93s;
+  }
+  .ch-orb[data-k='tool'] {
+    animation-duration: 0.9s;
+  }
+  .ch-orb[data-k='tool_result'] b {
+    animation: orb-gather 1.6s ease-in-out infinite;
+  }
+  @keyframes orb-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes orb-breathe {
+    0%,
+    100% {
+      transform: translateY(-5px) scale(0.55);
+    }
+    50% {
+      transform: translateY(-5px) scale(1);
+    }
+  }
+  @keyframes orb-gather {
+    0%,
+    100% {
+      transform: translateY(-5px);
+    }
+    50% {
+      transform: translateY(-2.5px);
+    }
+  }
+  /* Reduced motion: the triangle of three dots stays still, with its trail of opacities. */
+  @media (prefers-reduced-motion: reduce) {
+    .ch-orb,
+    .ch-orb b {
+      animation: none !important;
+    }
   }
   .ch-steps {
     margin-bottom: 10px;
@@ -587,14 +689,6 @@
   }
   .msg-guardrail {
     margin-top: 10px;
-  }
-  .msg-live {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    font-size: 10.5px;
-    color: var(--blue);
   }
   .msg-notice {
     margin: 12px 0 14px;

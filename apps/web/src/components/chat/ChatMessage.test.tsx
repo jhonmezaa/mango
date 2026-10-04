@@ -147,7 +147,32 @@ describe('ChatMessage: progress of a turn in flight (design chat.jsx StreamingMe
       'FallóFalló get_rightsizing_recommendations',
       'En cursoProcesó resultados',
     ]);
-    expect(container.querySelector('b')).toBeNull();
+    // The only <b> elements are the dots of the phase indicator, never the tool name.
+    expect(container.querySelector('.ch-steps b')).toBeNull();
+    expect(container.querySelectorAll('b')).toHaveLength(3);
+  });
+
+  it('draws the phase indicator as decoration, with one rhythm per phase and the text intact', () => {
+    const phases = [
+      [undefined, 'thinking', 'Pensando…'],
+      [{ phase: 'tool', tool: 'get_cost_forecast' }, 'tool', 'Consultando get_cost_forecast…'],
+      [{ phase: 'tool_result' }, 'tool_result', 'Procesando resultados…'],
+      [{ phase: 'writing' }, 'writing', 'Escribiendo…'],
+    ] as const;
+    for (const [progress, rhythm, text] of phases) {
+      const { container, unmount } = renderMessage({
+        ...streaming([]),
+        ...(progress ? { progress } : {}),
+      });
+      const orb = container.querySelector('.ch-phase .ch-orb');
+      expect(orb).toHaveAttribute('data-k', rhythm);
+      expect(orb).toHaveAttribute('aria-hidden', 'true');
+      expect(orb?.querySelectorAll('i > b')).toHaveLength(3);
+      // The spinner of other waits is not used here, and the status still announces the phase.
+      expect(container.querySelector('.ch-phase .spinner')).toBeNull();
+      expect(screen.getByRole('status')).toHaveTextContent(text);
+      unmount();
+    }
   });
 
   it('opens the steps in observe mode, with the LIVE marker', () => {
