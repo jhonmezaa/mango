@@ -307,6 +307,7 @@ export class CoreStack extends Stack {
     );
     // Marketplace v1 (D18): agent definitions as data.
     governance.grantAgents(apiTaskRole);
+    governance.grantWebSessions(apiTaskRole);
     // D20: MFA reset (dual approval in mango-api) on this installation's user pool only.
     identity.grantMfaReset(apiTaskRole);
     // D26: approved changes of the group registry create or delete the Cognito group.
@@ -397,6 +398,11 @@ export class CoreStack extends Stack {
         // D60: who may be invited, and what Settings > General > Installation shows to
         // administrators (served by mango-api, not by the public config.json of the SPA).
         SIGN_UP_DOMAINS: cfg.auth.signUpDomains.join(","),
+        // D63: the web session cookie. The only `Origin` its endpoints accept, where the
+        // session records live and how long a session may last (the refresh token validity).
+        APP_ORIGIN: edge.origin,
+        WEB_SESSIONS_TABLE: governance.webSessions.tableName,
+        SESSION_HOURS: String(SESSION_HOURS),
         MANGO_VERSION: releaseVersion(),
         // The label tells two builds of one version apart (`v0.1.0-g1a2b3c4`).
         ...(target ? { MANGO_RELEASE: target.label } : {}),

@@ -63,6 +63,12 @@ export class Governance extends Construct {
    * `packages/py/mango-core/src/mango_core/agents_table.py`.
    */
   readonly agents: dynamodb.TableV2;
+  /**
+   * Web sessions (D63): the hash of each session id, who it belongs to and when it ends, plus
+   * a mark per user that ends their sessions. Never a token: the refresh token travels
+   * encrypted in the cookie.
+   */
+  readonly webSessions: dynamodb.TableV2;
   readonly dataKey: kms.Key;
   /** Role assumed per request with a `dynamodb:LeadingKeys` session policy (RLS). */
   readonly dataAccessRole: iam.Role;
@@ -113,6 +119,12 @@ export class Governance extends Construct {
       ...tableProps,
       tableName: mangoName(cfg.namespace, "Settings"),
       // Closed change requests expire from the table; the audit trail keeps the evidence.
+      timeToLiveAttribute: "ttl",
+    });
+    this.webSessions = new dynamodb.TableV2(this, "WebSessions", {
+      ...tableProps,
+      tableName: mangoName(cfg.namespace, "WebSessions"),
+      // A session expires with its limit; a revocation mark, two days later.
       timeToLiveAttribute: "ttl",
     });
     this.seedSettings(cfg);
@@ -262,6 +274,17 @@ export class Governance extends Construct {
       reason:
         "bedrock:ListFoundationModels and bedrock:ListInferenceProfiles do not support resource-level permissions; a test keeps them as the only `*` statement of the role.",
     });
+  }
+
+  /** mango-api reads, writes and deletes session records by key (D63): no `Query`, no `Scan`. */
+  grantWebSessions(grantee: iam.IGrantable): void {
+    grantee.grantPrincipal.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: "WebSessionsTable",
+        actions: ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem"],
+        resources: [this.webSessions.tableArn],
+      }),
+    );
   }
 
   /**

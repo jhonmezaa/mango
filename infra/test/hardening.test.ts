@@ -127,3 +127,70 @@ describe("hardening (Checkov)", () => {
     }
   });
 });
+
+describe("web session cookie (D63)", () => {
+  const distribution = Object.values(template.findResources("AWS::CloudFront::Distribution"))[0]!.Properties
+    .DistributionConfig as {
+    DefaultCacheBehavior: Record<string, unknown>;
+    CacheBehaviors: Record<string, unknown>[];
+    Logging: { IncludeCookies?: boolean };
+  };
+  // Managed policies of CloudFront (fixed ids).
+  const CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad";
+  const CACHING_OPTIMIZED = "658327ea-f89d-4fab-a63d-7e88639e58f6";
+
+  it("never caches /api/*, where tokens and Set-Cookie travel (TM-S7)", () => {
+    const api = distribution.CacheBehaviors.find((b) => b.PathPattern === "/api/*");
+    expect(api?.CachePolicyId).toBe(CACHING_DISABLED);
+    expect(api?.ViewerProtocolPolicy).toBe("https-only");
+  });
+
+  it("does not send the cookie to the SPA bucket", () => {
+    // The managed policy forwards no cookies, and no origin request policy adds them.
+    expect(distribution.DefaultCacheBehavior.CachePolicyId).toBe(CACHING_OPTIMIZED);
+    expect(distribution.DefaultCacheBehavior.OriginRequestPolicyId).toBeUndefined();
+  });
+
+  it("keeps cookies out of the CloudFront access logs (TM-S6)", () => {
+    expect(distribution.Logging.IncludeCookies ?? false).toBe(false);
+  });
+
+  it("keeps session records in a protected table that expires them, without a stream", () => {
+    template.hasResourceProperties("AWS::DynamoDB::GlobalTable", {
+      TableName: `Mango-${cfg.namespace}-WebSessions`,
+      TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
+      SSESpecification: { SSEEnabled: true, SSEType: "KMS" },
+      Replicas: [
+        Match.objectLike({
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
+          DeletionProtectionEnabled: cfg.retainData,
+        }),
+      ],
+    });
+  });
+
+  it("lets mango-api reach session records by key only", () => {
+    const statements = Object.values(template.findResources("AWS::IAM::Policy")).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as { Sid?: string; Action: string[]; Resource: unknown }[],
+    );
+    const sessions = statements.filter((s) => s.Sid === "WebSessionsTable");
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.Action).toEqual(["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem"]);
+    expect(JSON.stringify(sessions[0]!.Resource)).not.toContain('"*"');
+  });
+
+  it("tells mango-api its public origin, the sessions table and the session length", () => {
+    const tasks = Object.values(template.findResources("AWS::ECS::TaskDefinition"));
+    const env = tasks.flatMap(
+      (t) => (t.Properties.ContainerDefinitions[0].Environment ?? []) as { Name: string; Value: unknown }[],
+    );
+    const value = (name: string) => env.find((e) => e.Name === name)?.Value;
+    expect(value("SESSION_HOURS")).toBe("8");
+    expect(value("WEB_SESSIONS_TABLE")).toBeDefined();
+    expect(JSON.stringify(value("APP_ORIGIN"))).toContain("https://");
+  });
+
+  it("limits the session to 8 hours in Cognito as well", () => {
+    template.hasResourceProperties("AWS::Cognito::UserPoolClient", { RefreshTokenValidity: 8 * 60 });
+  });
+});

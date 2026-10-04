@@ -25,8 +25,11 @@ export interface IdentityProps {
 /** Cognito public API operations, as sent in `X-Amz-Target` by the SPA (TM-L3, TM-L11). */
 const TARGET_PREFIX = "AWSCognitoIdentityProviderService.";
 
-/** Web session length (refresh token validity); also shown in Ajustes › Autenticación. */
-export const SESSION_HOURS = 12;
+/**
+ * Web session length (refresh token validity); also shown in Ajustes › Autenticación and the
+ * limit of the session cookie of mango-api (D63: 8 h, decided by the user).
+ */
+export const SESSION_HOURS = 8;
 /** Operations that send an email: tight limit against bombing and quota exhaustion. */
 export const EMAIL_OPERATIONS = ["SignUp", "ResendConfirmationCode", "ForgotPassword"];
 /** Operations that check a secret (password, code or TOTP): limit against brute force. */
