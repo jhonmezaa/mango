@@ -29,25 +29,6 @@ export const CHANGE_TTL_HOURS = 72;
 export const REASON_MAX_LENGTH = 500;
 /** Must match `_PREFIX_PATTERN` in `people.py`: what a search prefix may contain. */
 const PREFIX = /^[a-z0-9._%+@-]{1,64}$/;
-/** Must match `PUBLIC_MAIL_DOMAINS` in `people.py`; the API refuses them again. */
-const PUBLIC_MAIL_DOMAINS: ReadonlySet<string> = new Set([
-  'aol.com',
-  'gmail.com',
-  'gmx.com',
-  'googlemail.com',
-  'hotmail.com',
-  'icloud.com',
-  'live.com',
-  'mail.com',
-  'me.com',
-  'msn.com',
-  'outlook.com',
-  'proton.me',
-  'protonmail.com',
-  'yahoo.com',
-  'yandex.com',
-  'zoho.com',
-]);
 /** Design `InviteModal`. */
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const EMAIL_MAX = 254;
@@ -82,18 +63,19 @@ export function searchPrefix(query: string): string | null | undefined {
   return PREFIX.test(value) ? value : undefined;
 }
 
-export type InviteError = 'empty' | 'format' | 'publicDomain';
+export type InviteError = 'empty' | 'format';
 
 /**
- * Design `InviteModal` `err`; the API applies the same rules again (`invitation_domain`). Not
- * the design's «Solo se puede invitar a correos de …»: an administrator may invite someone of
- * another company (decision of 2026-10-03), so only public mail providers are refused.
+ * Design `InviteModal` `err`, for what the screen can tell by itself: an empty or malformed
+ * address. Whether the domain is a public mail provider is the API's to say
+ * (`invitation_domain`, the list of `mango_core.mail_domains`): the screen keeps no copy of
+ * that list, and a refusal there is in the audit trail. Not the design's «Solo se puede invitar
+ * a correos de …»: an administrator may invite someone of another company (decision of
+ * 2026-10-03).
  */
 export function inviteError(email: string): InviteError | null {
   if (email === '') return 'empty';
-  if (email.length > EMAIL_MAX || !EMAIL.test(email)) return 'format';
-  const domain = email.slice(email.lastIndexOf('@') + 1);
-  return PUBLIC_MAIL_DOMAINS.has(domain) ? 'publicDomain' : null;
+  return email.length > EMAIL_MAX || !EMAIL.test(email) ? 'format' : null;
 }
 
 export interface GroupOption {

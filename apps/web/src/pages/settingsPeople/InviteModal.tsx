@@ -20,9 +20,10 @@ interface Props {
 }
 
 /**
- * Invites a person by email (design `InviteModal`). The checks here only spare a round trip: the
- * API refuses public mail providers and the sensitive groups, and decides whether naming the second
- * administrator is the bootstrap (REACT-AUTHZ-001).
+ * Invites a person by email (design `InviteModal`). The checks here only spare a round trip for
+ * an empty or malformed address: the API refuses public mail providers (and audits the refusal)
+ * and the sensitive groups, and decides whether naming the second administrator is the
+ * bootstrap (REACT-AUTHZ-001).
  */
 export function InviteModal({ preset, admins, options, domains, onClose, onInvite }: Props) {
   const { t } = useTranslation();

@@ -114,11 +114,14 @@ test('a person of any company domain is invited, never a public address', async 
   const email = dialog.getByLabel('Correo');
   const submit = dialog.getByRole('button', { name: 'Enviar invitación' });
 
-  await email.fill('ana@gmail.com');
-  await submit.click();
-  await expect(
-    dialog.getByText('Los correos públicos no se aceptan. Usa el correo de la empresa.'),
-  ).toBeVisible();
+  // The API refuses a public provider, country variants included; the screen keeps no list.
+  for (const address of ['ana@gmail.com', 'ana@outlook.es']) {
+    await email.fill(address);
+    await submit.click();
+    await expect(
+      dialog.getByText('Los correos públicos no se aceptan. Usa el correo de la empresa.'),
+    ).toBeVisible();
+  }
   // The sensitive groups are not offered: there is more than one administrator.
   await expect(dialog.getByRole('button', { name: 'mango-admin' })).toHaveCount(0);
 

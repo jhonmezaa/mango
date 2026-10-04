@@ -53,7 +53,8 @@ const ADMIN = 'mango-admin';
 const SYSTEM_GROUPS = [ADMIN, 'mango-agent-creator', 'finops-central', 'bu-lead'];
 const SENSITIVE: readonly string[] = [ADMIN, 'finops-central'];
 const SIGN_UP_DOMAINS = ['example.com'];
-const PUBLIC_DOMAINS = ['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com'];
+/** A sample of the API's rule (`mango_core.mail_domains`): a provider under any country domain. */
+const PUBLIC_DOMAIN = /^(gmail|googlemail|hotmail|outlook|live|yahoo|icloud)(\.[a-z]{2,3}){1,2}$/;
 const PREFIX = /^[a-z0-9._%+@-]{1,64}$/;
 const CURSOR = /^[0-9]{1,5}$/;
 const GROUP_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
@@ -359,7 +360,7 @@ function change(
 function invitationRefusal(email: string): string | null {
   if (!EMAIL.test(email)) return 'invalid_email';
   const domain = email.slice(email.indexOf('@') + 1);
-  return PUBLIC_DOMAINS.includes(domain) ? 'public_domain' : null;
+  return PUBLIC_DOMAIN.test(domain) ? 'public_domain' : null;
 }
 
 function invite(body: Record<string, unknown>): Refusal | object {

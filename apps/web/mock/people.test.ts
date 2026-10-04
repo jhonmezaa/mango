@@ -199,6 +199,7 @@ describe('mock people', () => {
   it('invites any company domain, never a public one, without sensitive groups', async () => {
     const invite = (body: object) => call('POST', '/admin/people/invitations', body);
     expect(errorCode((await invite({ email: 'ana@gmail.com' })).body)).toBe('public_domain');
+    expect(errorCode((await invite({ email: 'ana@outlook.es' })).body)).toBe('public_domain');
     expect((await invite({ email: 'ana@otra.com' })).status).toBe(201);
     expect(errorCode((await invite({ email: 'sin arroba' })).body)).toBe('invalid_email');
     expect(

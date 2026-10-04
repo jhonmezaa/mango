@@ -678,11 +678,6 @@ describe('Invitar persona', () => {
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Escribe el correo');
     await user.type(email, 'sin-arroba');
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Escribe un correo válido');
-    await user.clear(email);
-    await user.type(email, 'ana@gmail.com');
-    expect(within(dialog).getByRole('alert')).toHaveTextContent(
-      'Los correos públicos no se aceptan. Usa el correo de la empresa.',
-    );
     expect(calls(call, 'invitePerson')).toHaveLength(0);
     // The sensitive groups are asked for afterwards, on the person.
     const groups = within(dialog).getByRole('group', { name: /Grupos/ });
@@ -732,7 +727,28 @@ describe('Invitar persona', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('sends an address of another company to the API: only public providers stop here', async () => {
+  it('asks the API whether a domain is a public provider, so the refusal is audited', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      invitePerson: () => {
+        throw new ApiError(422, 'public_domain', 'that email cannot be invited');
+      },
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: /Invitar persona/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Invitar persona' });
+    // The screen keeps no list of providers: a country variant goes to the API like any other.
+    await user.type(within(dialog).getByLabelText('Correo'), 'ana@outlook.es');
+    await user.click(within(dialog).getByRole('button', { name: 'Enviar invitación' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Los correos públicos no se aceptan. Usa el correo de la empresa.',
+    );
+    expect(calls(call, 'invitePerson')).toEqual([
+      { body: { email: 'ana@outlook.es', groups: [] } },
+    ]);
+  });
+
+  it('sends an address of another company to the API', async () => {
     const call = apiWith({
       searchPeople: directory([person()]),
       invitePerson: { user_id: 'new-user', result: 'applied' },
