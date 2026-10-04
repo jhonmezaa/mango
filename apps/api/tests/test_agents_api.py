@@ -1107,6 +1107,27 @@ def test_the_organization_chart_is_filtered_for_users(env: Env) -> None:
     )
 
 
+def test_the_organization_chart_says_who_uses_an_agent_the_caller_cannot_use(env: Env) -> None:
+    _published(env, name="Jefe", groups=["ops", "hr"])
+
+    def node(token: str) -> dict[str, object]:
+        nodes = env.client.get("/api/agents/org", headers=_h(token)).json()["nodes"]
+        return {key: nodes[0][key] for key in ("can_use", "groups")}
+
+    can = {"can_use": True, "groups": []}
+    assert node("member") == can
+    assert node("outsider") == can
+    # Whoever sees the whole tree without being in its groups learns which groups use it.
+    cannot = {"can_use": False, "groups": ["hr", "ops"]}
+    assert node("creator2") == cannot
+    # Use goes by groups for administrators too.
+    assert node("admin") == cannot
+    # A user outside its groups does not get the node at all.
+    assert env.client.get("/api/agents/org", headers=_h("lead")).json()["nodes"] == []
+    # People it is shared with are never named.
+    assert "users" not in env.client.get("/api/agents/org", headers=_h("admin")).json()["nodes"][0]
+
+
 def test_a_new_version_shows_its_diff_against_the_published_one(env: Env) -> None:
     live = _published(env)
     opened = env.client.post(

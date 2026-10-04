@@ -383,6 +383,13 @@ class OrgNode(_Strict):
     reports_to: str | None
     """An agent id, the root, or ``None`` when the supervisor is retired or not visible to
     the caller."""
+    can_use: bool
+    """Whether the caller may use the agent (``UseAgent``). Display only: the chat and the
+    Marketplace authorize on their own."""
+    groups: list[str]
+    """Groups the published version is shared with, only on an agent the caller sees and
+    cannot use (administrators and creators, D38): it tells them who does (D65). Empty
+    otherwise; never the people it is shared with."""
 
 
 class OrgOut(_Strict):
@@ -856,13 +863,11 @@ def organization(deps: AgentsDeps, caller: Caller) -> OrgOut:
     they may use (D38, TM-M17)."""
     versions = deps.store.by_status(VersionStatus.PUBLISHED)
     full = deps.authorizer.is_allowed(caller.user, "CreateAgent", *PLATFORM)
-    visible = (
-        frozenset(v.agent_id for v in versions)
-        if full
-        else deps.authorizer.allowed_agents(
-            caller.user, "UseAgent", [_use_resource(v) for v in versions]
-        )
+    # Seeing an agent is not using it: use goes by groups, also for who sees the whole tree.
+    usable = deps.authorizer.allowed_agents(
+        caller.user, "UseAgent", [_use_resource(v) for v in versions]
     )
+    visible = frozenset(v.agent_id for v in versions) if full else usable
     scope = "organization" if full else "organization_filtered"
     _audit_list(deps, caller.user, scope, len(visible))
     nodes: list[OrgNode] = []
@@ -882,6 +887,8 @@ def organization(deps: AgentsDeps, caller: Caller) -> OrgOut:
                 icon=v.definition.icon,
                 color=v.definition.color,
                 reports_to=supervisor if shown else None,
+                can_use=v.agent_id in usable,
+                groups=[] if v.agent_id in usable else sorted(v.definition.groups),
             )
         )
     nodes.sort(key=lambda n: (n.name.casefold(), n.id))

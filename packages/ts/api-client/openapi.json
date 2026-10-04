@@ -3063,6 +3063,10 @@
       "OrgNode": {
         "additionalProperties": false,
         "properties": {
+          "can_use": {
+            "title": "Can Use",
+            "type": "boolean"
+          },
           "category": {
             "title": "Category",
             "type": "string"
@@ -3074,6 +3078,13 @@
           "description": {
             "title": "Description",
             "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
           },
           "icon": {
             "title": "Icon",
@@ -3116,7 +3127,9 @@
           "category",
           "icon",
           "color",
-          "reports_to"
+          "reports_to",
+          "can_use",
+          "groups"
         ],
         "title": "OrgNode",
         "type": "object"

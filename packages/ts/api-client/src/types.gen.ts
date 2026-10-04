@@ -1666,6 +1666,10 @@ export type OptionalReasonIn = {
  */
 export type OrgNode = {
     /**
+     * Can Use
+     */
+    can_use: boolean;
+    /**
      * Category
      */
     category: string;
@@ -1677,6 +1681,10 @@ export type OrgNode = {
      * Description
      */
     description: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
     /**
      * Icon
      */
