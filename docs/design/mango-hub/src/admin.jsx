@@ -353,7 +353,7 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                     if (!snap.groups.length || !sel.length) return null;
                     return inAny
                       ? <div className="mk-meta ab-self" style={{ lineHeight: 1.5 }}>No estás en {sel.map((g, i) => <React.Fragment key={g}>{i ? ', ' : ''}<span className="mono">{g}</span></React.Fragment>)}. Lo usarás por {snap.groups.some(g => mine.includes(g)) ? 'otro de tus grupos' : 'tu correo en Personas'}.</div>
-                      : <div className="mc-alert amber ab-self"><I.Warn size={14} /><div><b>No estás en ninguno de estos grupos.</b> Cuando se publique no lo verás en el Marketplace ni podrás usarlo en el chat, aunque lo hayas creado: el uso va por grupos, también para administradores. Lo verás en el Org Chart y podrás editarlo. Para usarlo, elige también un grupo tuyo{avail ? ' o agrega tu correo en Personas' : ''}.</div></div>;
+                      : <div className="mc-alert amber ab-self"><I.Warn size={14} /><div><b>No estás en ninguno de estos grupos.</b> Cuando se publique no lo verás en el Marketplace ni podrás usarlo en el chat, aunque lo hayas creado: el uso va por grupos, también para administradores. Lo verás en el Org Chart y podrás editarlo. Para usarlo, elige también un grupo tuyo o agrega tu correo en Personas.</div></div>;
                   })()}
                 </ABField>
                 {avail && <ABField label="Personas" hint="Opcional" error={(userErr && userQ) || lookupErr || (errors?.some(e => e.code === 'accounts-users') && 'Quita a las personas o las tools solo para grupos centrales')}>

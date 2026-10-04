@@ -27,7 +27,7 @@
   const seedAudit = [
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.renewed', target: 'session', detail: 'Recuperó la sesión al recargar', read: true, at: ago(3) },
     { actor: 'usuario4@empresa.com', role: 'user', action: 'session.rejected', target: 'session', detail: 'No se pudo crear la sesión tras el ingreso', outcome: 'rejected', error: 'invalid_refresh_token', at: ago(9) },
-    { actor: 'usuario6@empresa.com', role: 'admin', action: 'session.started', target: 'session', detail: 'Ingresó con el SSO de la empresa · Okta (empresa.okta.com)', at: ago(150) },
+    { actor: 'usuario6@empresa.com', role: 'admin', action: 'session.started', target: 'session', detail: 'Ingresó con el SSO de la empresa · Okta', at: ago(150) },
     { actor: 'usuario8@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'rejected', at: ago(200) },
     { actor: 'usuario9@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'disabled', at: ago(300) },
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.started', target: 'session', detail: 'Ingresó con contraseña y MFA', at: ago(320) },
@@ -115,7 +115,7 @@
   let state = {
     avail: ls('mango-avail2', true),
     accountState: 'active',
-    authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta (empresa.okta.com)', convAccess: false, install: 'client', domains: ['empresa.com', 'empresa.mx'], dirPlan: 'Essentials', installName: 'mango-empresa', version: 'v0.1.0', release: 'v0.1.0-g1a2b3c4', awsOrg: 'o-xxxxxxxxxx', mgmtAccount: '111111111111', alertEmail: 'alertas@empresa.com', firstAdmins: ['usuario1@empresa.com', 'usuario6@empresa.com'], pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
+    authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta', convAccess: false, install: 'client', domains: ['empresa.com', 'empresa.mx'], dirPlan: 'Essentials', installName: 'mango-empresa', version: 'v0.1.0', release: 'v0.1.0-g1a2b3c4', awsOrg: 'o-xxxxxxxxxx', mgmtAccount: '111111111111', alertEmail: 'alertas@empresa.com', firstAdmins: ['usuario1@empresa.com', 'usuario6@empresa.com'], pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
     changes, retired: {},
     toolPolicies: {
       'aws-budgets.create_budget': { cond: 'amount', amount: 1000, approvers: 1, expiresH: 24 },

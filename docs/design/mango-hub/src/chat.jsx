@@ -890,8 +890,8 @@ function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attach
           <div className="row gap-2 ch-send-row">
             <span className="row gap-1 ch-send-hint" style={{fontSize: 11, color:'var(--text-dim)'}}><window.Soon on={soon}><span><span className="mono">/</span> comandos</span></window.Soon> · <span className="mono">⇧↵</span> nueva línea</span>
             {streaming
-              ? <button className="btn btn-sm" onClick={onCancel}><I.Stop size={11} /> Cancelar</button>
-              : <button className="btn btn-sm btn-primary" disabled={over} onClick={send}>Enviar <I.Send size={11} /></button>}
+              ? <button className="btn btn-sm ch-send-btn" onClick={onCancel} aria-label="Cancelar respuesta"><I.Stop size={11} /><span className="ch-send-lbl">Cancelar</span></button>
+              : <button className="btn btn-sm btn-primary ch-send-btn" disabled={over} onClick={send} aria-label="Enviar"><span className="ch-send-lbl">Enviar</span><I.Send size={11} /></button>}
           </div>
         </div>
         {over && <div id="ci-err" role="alert" style={{ fontSize: 12, color: 'var(--red)', marginTop: 8 }}>El mensaje supera el máximo de 4.000 caracteres. Acórtalo para enviarlo.</div>}

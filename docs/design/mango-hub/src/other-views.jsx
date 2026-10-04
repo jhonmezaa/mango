@@ -326,7 +326,7 @@ function OrgAgentFacts({ agent, kids, agents }) {
   const noUse = !canUse && (
     <div className="oc-nouse" role="note">
       <div className="oc-nouse-t"><I.Lock size={13} />No puedes usar este agente</div>
-      <div>No estás en ninguno de los grupos que lo usan, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos, también para quien lo creó y para administradores.</div>
+      <div>No estás en sus grupos ni entre sus personas, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos y personas, también para quien lo creó y para administradores.</div>
       {(sh.groups || []).length > 0 && <div><div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>Lo usan</div><div className="oc-nouse-g">{sh.groups.map(g => <span key={g.id}>{g.id}</span>)}</div></div>}
       <div style={{ color: 'var(--text-muted)' }}>{S.can('agent.edit') ? 'Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.' : 'Para usarlo, pide a un administrador que te agregue a uno de esos grupos.'}</div>
     </div>
