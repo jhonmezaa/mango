@@ -92,9 +92,10 @@ function auditPage(params: URLSearchParams): {
     if (!Number.isNaN(until) && time >= until) return false;
     if (after !== null && keyOf(item) >= after) return false;
     const read =
-      item.event === 'policy.decision' &&
-      item.detail.allowed === true &&
-      item.detail.read_only === true;
+      item.event === 'directory.list' ||
+      (item.event === 'policy.decision' &&
+        item.detail.allowed === true &&
+        item.detail.read_only === true);
     if (excludeReads && read) return false;
     if (event) return event.endsWith('.') ? item.event.startsWith(event) : item.event === event;
     return true;

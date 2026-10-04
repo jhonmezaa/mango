@@ -151,13 +151,18 @@ describe('toAuditRow', () => {
       tone: 'red',
       detail: { kind: 'access', action: 'ViewAudit', allowed: false },
     });
-    // An allowed write decision is not a read: it keeps its API name.
-    expect(decision({ allowed: true, read_only: false, action: 'UseAgent' })).toMatchObject({
-      known: null,
-      action: 'policy.decision',
-      category: 'approvals',
-      detail: { kind: 'access', action: 'UseAgent', allowed: true },
-    });
+    // An allowed write decision is not a read: «Acceso permitido», never the raw event name.
+    for (const action of ['UseAgent', 'ManagePeople', 'ApprovePeopleChange']) {
+      expect(decision({ allowed: true, read_only: false, action })).toMatchObject({
+        known: 'access.allow',
+        action: 'access.allow',
+        category: 'access',
+        tone: 'dim',
+        detail: { kind: 'access', action, allowed: true },
+      });
+    }
+    // A decision without a result is not guessed.
+    expect(decision({ action: 'ManagePeople' }).known).toBeNull();
   });
 
   it('shows an allowed chat decision inside its turn and keeps the rest as rows', () => {

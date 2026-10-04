@@ -33,7 +33,12 @@ import type { AuditEvent, AuditResource } from '../../api/schemas';
 //
 // People (design round of 2026-10-03): the `directory.*` events of Ajustes › Personas keep their
 // name in the API and get the design's labels, in «Acceso y grupos», with «Abrir Ajustes».
-// `directory.list` (reading the directory) is not in the design: «Lectura del directorio».
+// `directory.list` (reading the directory) is not in the design: «Lectura del directorio». The
+// API counts it as a read, so it is only listed with «Mostrar lecturas».
+//
+// Allowed decisions that are not reads (`ManagePeople`, `ApprovePeopleChange`, a chat turn whose
+// query is not loaded) are not in the design either: «Acceso permitido» (`access.allow`), next to
+// its «Acceso de lectura» and «Acceso denegado», instead of the raw `policy.decision`.
 
 /** Design categories (AUDIT_CATS), in the design's order. */
 export const AUDIT_CATEGORIES = [
@@ -179,6 +184,7 @@ export type KnownAction =
   | 'mapping.reject'
   | 'mapping.withdraw'
   | 'access.view'
+  | 'access.allow'
   | 'access.denied'
   | 'chat.query'
   | 'agent.invoke'
@@ -189,7 +195,16 @@ export type KnownAction =
   | AccountAction;
 
 /** Design `AUDIT_PERMS`: Cedar actions with a Spanish label (`audit.perms.*`). */
-export const PERM_ACTIONS = ['ViewAudit', 'ViewAdmin', 'UseAgent', 'ViewGroups'] as const;
+export const PERM_ACTIONS = [
+  'ViewAudit',
+  'ViewAdmin',
+  'UseAgent',
+  'ViewGroups',
+  // Not in the design's `AUDIT_PERMS`: the actions of Ajustes › Personas.
+  'ViewPeople',
+  'ManagePeople',
+  'ApprovePeopleChange',
+] as const;
 export type PermAction = (typeof PERM_ACTIONS)[number];
 const PERM_SET: ReadonlySet<string> = new Set(PERM_ACTIONS);
 export const isPermAction = (action: string): action is PermAction => PERM_SET.has(action);
@@ -293,7 +308,8 @@ function knownAction(event: string, detail: Record<string, unknown>): KnownActio
   switch (event) {
     case 'policy.decision':
       if (detail.allowed === false) return 'access.denied';
-      return isRead(detail) ? 'access.view' : null;
+      if (isRead(detail)) return 'access.view';
+      return detail.allowed === true ? 'access.allow' : null;
     case 'agent.completed':
       return 'chat.query';
     case 'agent.invoke':
@@ -392,8 +408,13 @@ function detailOf(
     case 'mapping.withdraw':
       return { kind: 'withdraw', changeId: str(detail.change_id) ?? '' };
     case 'access.view':
+    case 'access.allow':
     case 'access.denied':
-      return { kind: 'access', action: str(detail.action) ?? '', allowed: known === 'access.view' };
+      return {
+        kind: 'access',
+        action: str(detail.action) ?? '',
+        allowed: known !== 'access.denied',
+      };
     case 'chat.query': {
       const tools = Array.isArray(detail.tools) ? detail.tools.length : 0;
       return { kind: 'chat', agent: str(detail.agent) ?? '', tools, cost: str(detail.cost_usd) };

@@ -29,6 +29,8 @@ _QUERY_LIMIT = 200
 # Allowed read-only authorization decisions (``exclude=reads``). Events emitted since the
 # ``read_only`` flag exists carry it; older ones are recognized by their action.
 READ_ACTIONS = frozenset({"ViewAdmin", "ViewAudit", "ViewGroups", "ViewApprovals"})
+# Events that record a read and nothing else: reading the directory of the people screen.
+READ_EVENTS = frozenset({"directory.list"})
 _SK_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+00:00#[0-9a-f]{32}$")
 _CURSOR_MAX = 128
 
@@ -92,7 +94,10 @@ def resource_of(event: str, detail: dict[str, Any]) -> dict[str, str] | None:
 
 
 def is_read(record: dict[str, Any]) -> bool:
-    """An allowed, read-only authorization decision (hidden with ``exclude=reads``)."""
+    """An allowed, read-only authorization decision or a read event (hidden with
+    ``exclude=reads``). Still recorded, and listed when reads are asked for."""
+    if record.get("event") in READ_EVENTS:
+        return True
     detail = record.get("detail")
     if record.get("event") != "policy.decision" or not isinstance(detail, dict):
         return False

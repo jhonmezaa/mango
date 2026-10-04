@@ -582,7 +582,9 @@ export function AdminAuditPage() {
                       {labelOf(row)}
                     </span>
                     <span className="au-actor">
-                      <span className="au-name">{row.actor || t('audit.system')}</span>
+                      <span className="au-name" title={row.actor || undefined}>
+                        {row.actor || t('audit.system')}
+                      </span>
                       {row.role && <span className="au-role">{roleOf(row)}</span>}
                     </span>
                     <span className="mono au-target">{row.resource ?? '—'}</span>

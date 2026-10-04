@@ -71,6 +71,8 @@ export const audit = {
     },
     access: {
       view: 'Acceso de lectura',
+      // Not in the design: an allowed decision that is not a read (e.g. `ManagePeople`).
+      allow: 'Acceso permitido',
       denied: 'Acceso denegado',
     },
     chat: {
@@ -189,6 +191,10 @@ export const audit = {
     ViewAdmin: 'Ver administración',
     UseAgent: 'Usar agente',
     ViewGroups: 'Ver grupos',
+    // Not in the design: the actions of Ajustes › Personas.
+    ViewPeople: 'Ver personas',
+    ManagePeople: 'Gestionar personas',
+    ApprovePeopleChange: 'Decidir cambio de persona',
   },
   roles: {
     lead_admin: 'Líder de área · Admin',

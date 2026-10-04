@@ -184,10 +184,13 @@ def test_reads_can_be_hidden_but_denials_and_writes_stay(log: Any) -> None:
     denied = _put(db, t, 3, "policy.decision", action="ViewAudit", allowed=False)
     chat = _put(db, t, 4, "policy.decision", action="UseAgent", allowed=True, read_only=False)
     write = _put(db, t, 5, "settings.budget.updated", outcome="applied")
+    # Reading the directory is a read too; inviting someone is not.
+    _put(db, t, 6, "directory.list", outcome="applied", returned=7)
+    invite = _put(db, t, 7, "directory.invite", outcome="applied")
     everything = audit.page(_query(), now=NOW)
-    assert len(everything.items) == 5
+    assert len(everything.items) == 7
     page = audit.page(_query(exclude_reads=True), now=NOW)
-    assert sorted(r["event_id"] for r in page.items) == sorted([denied, chat, write])
+    assert sorted(r["event_id"] for r in page.items) == sorted([denied, chat, write, invite])
 
 
 def test_event_filter_exact_or_prefix(log: Any) -> None:
