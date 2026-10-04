@@ -528,6 +528,19 @@ Respuesta:
 ```
 
 - `actor_email`, `actor_role` y `actor_is_admin` salen del access token verificado **al emitir** (sin consultas a Cognito). El correo es solo para mostrar. Los eventos anteriores no los tienen (`null`).
+- **Eventos de sesión (D63, D64):** `session.started` (`federated`, `expires_at`), `session.renewed`, `session.rejected` (`reason`: `invalid_refresh_token` o `sub_mismatch`) y `session.ended`. El `reason` de `session.ended` es uno de:
+
+  | `reason` | Cuándo |
+  |---|---|
+  | `sign_out` | La persona cerró sesión |
+  | `expired` | Pasó la duración máxima de la sesión |
+  | `disabled` | Un administrador deshabilitó a la persona |
+  | `group_removed` | Se le quitó un grupo sensible |
+  | `mfa_reset` | Se restableció su MFA |
+  | `revoked` | La marca de revocación no dice la causa (marcas escritas antes del 2026-10-04, que viven dos días) |
+  | `rejected` | Cognito rechazó renovar y `mango-api` no tiene una marca que cubra esa sesión: Cognito no dice por qué (token revocado o vencido allí, persona deshabilitada fuera de Mango, cookie alterada) |
+
+  Si dos cambios cierran las sesiones de la misma persona antes de que su navegador vuelva a renovar, el evento nombra el más reciente. `session.ended` se emite sin token a la vista (la sesión venció, se revocó o se cerró solo con la cookie): su `actor_email`, `actor_role` y `actor_is_admin` son los del **ingreso**, guardados en el registro de la sesión. Una persona sin grupo no los tiene en ningún evento de sesión, y las sesiones iniciadas antes de este cambio tampoco en su cierre.
 - `resource` se normaliza al escribir: `budget_defaults`, `user_budget`, `bu_change`, `conversation`, `agent`, `user`, `change` o el tipo Cedar (`Mango::Platform`) en `policy.decision`. Los eventos anteriores no lo tienen.
 - `hash` es el SHA-256 del evento sin el campo `hash` (JSON canónico). No es una cadena: la verificación de integridad encadenada del diseño sigue pendiente.
 - `next_cursor` es `null` cuando no hay más. Con filtros, una página puede traer menos de `limit` (o ninguno) y aun así tener `next_cursor`: el servidor examina como máximo 2000 eventos por request. El servidor no sabe cuántos quedan.

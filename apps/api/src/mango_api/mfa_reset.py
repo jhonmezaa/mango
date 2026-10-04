@@ -38,6 +38,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 from mango_api.audit import AuditLog
 from mango_api.probe import RateLimiter
 from mango_api.web import ApiError, Caller
+from mango_api.web_session import RevocationCause
 
 if TYPE_CHECKING:
     from mypy_boto3_cognito_idp import CognitoIdentityProviderClient
@@ -428,8 +429,9 @@ class MfaResetDeps:
     audit: AuditLog
     rate_limiter: RateLimiter
     clock: Callable[[], datetime]
-    end_sessions: Callable[[str], None] | None = None
-    """Ends the web sessions of a user id (D63), next to the Cognito sign-out."""
+    end_sessions: Callable[[str, RevocationCause], None] | None = None
+    """Ends the web sessions of a user id (D63), next to the Cognito sign-out, and records
+    why: the reason of their ``session.ended``."""
 
 
 def new_change_id() -> str:
@@ -615,7 +617,7 @@ def approve(deps: MfaResetDeps, caller: Caller, change_id: str) -> None:
         try:
             if deps.end_sessions is not None:
                 try:
-                    deps.end_sessions(request.target_user)
+                    deps.end_sessions(request.target_user, "mfa_reset")
                 except Exception as exc:
                     raise CognitoUnavailableError from exc
             deps.users.reset_mfa(request.target_username)

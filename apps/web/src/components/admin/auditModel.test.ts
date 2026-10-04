@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { es } from '../../i18n/locales/es';
-import { csvCell, groupTurnAuthz, mergeRequested, outcomeKey, toAuditRow } from './auditModel';
+import {
+  csvCell,
+  groupTurnAuthz,
+  isSessionEndReason,
+  mergeRequested,
+  outcomeKey,
+  SESSION_END_REASONS,
+  toAuditRow,
+} from './auditModel';
 
 const event = (name: string, detail: Record<string, unknown>) => ({
   event_id: 'e'.repeat(32),
@@ -591,6 +599,40 @@ describe('sessions', () => {
     });
     expect(toAuditRow(event('session.ended', {}), 0).endReason).toBeNull();
     expect(toAuditRow(event('directory.disable', { reason: 'x' }), 0).endReason).toBeNull();
+  });
+
+  it('has a text for every reason of the design, with the names the API records', () => {
+    // `sign_out`, `expired` and the three causes of a revocation (mango_api.web_session).
+    expect([...SESSION_END_REASONS]).toEqual([
+      'sign_out',
+      'expired',
+      'disabled',
+      'group_removed',
+      'mfa_reset',
+    ]);
+    for (const reason of SESSION_END_REASONS) {
+      expect(toAuditRow(event('session.ended', { reason }), 0).endReason).toBe(reason);
+      expect(isSessionEndReason(reason)).toBe(true);
+    }
+    // The design's `SESSION_END`, word for word.
+    expect(es.audit.sessionEnd).toEqual({
+      sign_out: 'La persona cerró sesión',
+      expired: 'Venció: pasó la duración máxima de la sesión',
+      disabled: 'Un administrador deshabilitó su acceso',
+      group_removed: 'Se le quitó un grupo sensible',
+      mfa_reset: 'Se restableció su MFA',
+    });
+    // Recorded when the cause is not known; the design has no text for them.
+    expect(isSessionEndReason('revoked')).toBe(false);
+    expect(isSessionEndReason('rejected')).toBe(false);
+  });
+
+  it('names the person of a session that ended like the one that started', () => {
+    const who = { actor_email: 'eva@example.com', actor_role: 'finops-central' };
+    const started = toAuditRow({ ...event('session.started', {}), ...who }, 0);
+    const ended = toAuditRow({ ...event('session.ended', { reason: 'disabled' }), ...who }, 1);
+    expect(ended.actor).toBe('eva@example.com');
+    expect([ended.actor, ended.role]).toEqual([started.actor, started.role]);
   });
 });
 

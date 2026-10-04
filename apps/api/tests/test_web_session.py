@@ -20,6 +20,9 @@ from mango_api.web_session import (
     COOKIE_NAME,
     NoSessionError,
     RenewedTokens,
+    Revocation,
+    RevocationCause,
+    SessionActor,
     SessionRecord,
     SessionRejectedError,
     SessionStore,
@@ -118,7 +121,7 @@ class FakeCipher:
 @dataclass
 class FakeStore:
     sessions: dict[str, SessionRecord] = field(default_factory=dict)
-    marks: dict[str, int] = field(default_factory=dict)
+    marks: dict[str, Revocation] = field(default_factory=dict)
 
     def put(self, sid_hash: str, record: SessionRecord) -> None:
         self.sessions[sid_hash] = record
@@ -129,22 +132,24 @@ class FakeStore:
     def delete(self, sid_hash: str) -> None:
         self.sessions.pop(sid_hash, None)
 
-    def revoke_user(self, sub: str, now: int) -> None:
-        self.marks[sub] = now
+    def revoke_user(self, sub: str, now: int, cause: RevocationCause) -> None:
+        self.marks[sub] = Revocation(now, cause)
 
-    def revoked_before(self, sub: str) -> int:
-        return self.marks.get(sub, 0)
+    def revocation(self, sub: str) -> Revocation:
+        return self.marks.get(sub, Revocation(0))
 
 
 @dataclass
 class FakeAudit:
     events: list[tuple[str, str, dict[str, Any]]] = field(default_factory=list)
+    actors: list[Any] = field(default_factory=list)
     fail: bool = False
 
-    def emit(self, event: str, user: str, detail: dict[str, Any], _actor: Any = None) -> None:
+    def emit(self, event: str, user: str, detail: dict[str, Any], actor: Any = None) -> None:
         if self.fail:
             raise RuntimeError("audit down")
         self.events.append((event, user, detail))
+        self.actors.append(actor)
 
     def names(self) -> list[str]:
         return [e[0] for e in self.events]
@@ -248,6 +253,8 @@ def test_start_sets_a_hardened_cookie_and_keeps_no_secret(h: Harness) -> None:
         created_at=int(START.timestamp()),
         expires_at=int((START + timedelta(hours=HOURS)).timestamp()),
         federated=False,
+        # Who signed in, for the audit event of the end; no token and no secret.
+        actor=SessionActor(email="one@example.com", role="finops-central", is_admin=False),
     )
     assert sid not in h.store.sessions
     assert h.audit.events == [
@@ -413,22 +420,103 @@ def test_an_expired_session_ends(h: Harness) -> None:
     assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "expired"})
 
 
-def test_revoking_a_user_ends_the_sessions_started_before(h: Harness) -> None:
+@pytest.mark.parametrize("cause", ["disabled", "group_removed", "mfa_reset"])
+def test_revoking_a_user_ends_the_sessions_started_before(
+    h: Harness, cause: RevocationCause
+) -> None:
     client = h.client()
     deps_cookie = _cookie(_start(client))
     h.now = START + timedelta(minutes=5)
     # What People and the MFA reset call (see app.py).
-    h.store.revoke_user("user-1", int(h.now.timestamp()))
+    h.deps().revoke_user("user-1", cause)
     calls = h.tokens.calls
     response = _renew(client, deps_cookie)
     assert response.status_code == 204
     assert h.tokens.calls == calls  # ended before asking Cognito
-    assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "revoked"})
+    # The event says which change ended the session, not just that it was revoked.
+    assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": cause})
 
     # A sign-in after the mark works.
     h.now = START + timedelta(minutes=6)
     h.tokens.auth_time = int(h.now.timestamp())
     assert _renew(client, _cookie(_start(client))).status_code == 200
+
+
+@pytest.mark.parametrize("cause", [None, "made_up"])
+def test_a_mark_without_a_known_cause_stays_revoked(h: Harness, cause: str | None) -> None:
+    client = h.client()
+    cookie = _cookie(_start(client))
+    # A mark written before the cause was recorded, or one this code never writes.
+    h.store.marks["user-1"] = Revocation(int(START.timestamp()), cause)
+    assert _renew(client, cookie).status_code == 204
+    assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "revoked"})
+
+
+def test_the_latest_mark_names_the_cause(h: Harness) -> None:
+    client = h.client()
+    cookie = _cookie(_start(client))
+    deps = h.deps()
+    deps.revoke_user("user-1", "group_removed")
+    h.now = START + timedelta(minutes=1)
+    deps.revoke_user("user-1", "disabled")
+    assert _renew(client, cookie).status_code == 204
+    assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "disabled"})
+
+
+def _end_by(h: Harness, client: TestClient, cookie: str, reason: str) -> None:
+    if reason == "sign_out":
+        client.delete("/api/session", headers={**SAME_ORIGIN, "Cookie": cookie})
+        return
+    if reason == "expired":
+        h.now = START + timedelta(hours=HOURS)
+    elif reason == "rejected":
+        h.tokens.rejected.add("rt-user-1")
+    else:
+        h.deps().revoke_user("user-1", "disabled")
+    _renew(client, cookie)
+
+
+@pytest.mark.parametrize("reason", ["sign_out", "expired", "disabled", "rejected"])
+def test_the_end_of_a_session_names_the_person_like_its_start(h: Harness, reason: str) -> None:
+    client = h.client()
+    cookie = _cookie(_start(client))
+    started = h.audit.actors[-1]
+    _end_by(h, client, cookie, reason)
+    assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": reason})
+    ended = h.audit.actors[-1]
+    # No token is at hand when a session ends: the actor comes from the session record.
+    assert (ended.user_id, ended.email, ended.role, ended.is_admin) == (
+        "user-1",
+        "one@example.com",
+        "finops-central",
+        False,
+    )
+    assert (ended.email, ended.role, ended.is_admin) == (
+        started.email,
+        started.role,
+        started.is_admin,
+    )
+
+
+def test_the_end_of_a_session_without_a_recorded_actor_has_none(h: Harness) -> None:
+    client = h.client()
+    # A person without a group: the start has no actor either.
+    cookie = _cookie(_start(client, "user-4"))
+    assert h.audit.actors[-1] is None
+    client.delete("/api/session", headers={**SAME_ORIGIN, "Cookie": cookie})
+    assert h.audit.events[-1] == ("session.ended", "user-4", {"reason": "sign_out"})
+    assert h.audit.actors[-1] is None
+
+    # A record written before the actor was kept.
+    cookie = _cookie(_start(client))
+    (sid_hash,) = h.store.sessions
+    record = h.store.sessions[sid_hash]
+    h.store.sessions[sid_hash] = SessionRecord(
+        record.sub, record.created_at, record.expires_at, record.federated
+    )
+    client.delete("/api/session", headers={**SAME_ORIGIN, "Cookie": cookie})
+    assert h.audit.events[-1] == ("session.ended", "user-1", {"reason": "sign_out"})
+    assert h.audit.actors[-1] is None
 
 
 def test_cognito_refusing_the_token_ends_the_session(h: Harness) -> None:
@@ -515,7 +603,8 @@ def test_tokens_never_reach_the_logs(h: Harness, caplog: pytest.LogCaptureFixtur
     _renew(client, cookie)
     client.delete("/api/session", headers={**SAME_ORIGIN, "Cookie": cookie})
     assert caplog.records
-    for needle in ("rt-user-1", "at:user-1", sid, cookie):
+    # Nor the email of the person: it goes to the audit trail only.
+    for needle in ("rt-user-1", "at:user-1", sid, cookie, "one@example.com"):
         assert needle not in caplog.text
 
 
@@ -569,8 +658,29 @@ def test_the_store_round_trips_records_and_marks() -> None:
     store.put("hash", record)
     assert store.get("hash") == record
     assert store.get("other") is None
-    assert store.revoked_before("user-1") == 0
-    store.revoke_user("user-1", 15)
-    assert store.revoked_before("user-1") == 15
+    assert store.revocation("user-1") == Revocation(0)
+    store.revoke_user("user-1", 15, "mfa_reset")
+    assert store.revocation("user-1") == Revocation(15, "mfa_reset")
     store.delete("hash")
     assert store.get("hash") is None
+
+
+def test_the_store_keeps_the_actor_and_reads_items_written_before_it() -> None:
+    dynamo = _Dynamo()
+    store = SessionStore(dynamo, "sessions")  # type: ignore[arg-type]
+    actor = SessionActor(email="one@example.com", role=None, is_admin=True)
+    record = SessionRecord(sub="user-1", created_at=10, expires_at=20, federated=False, actor=actor)
+    store.put("hash", record)
+    assert store.get("hash") == record
+    item = dynamo.items[("SESSION#hash", "SESSION")]
+    assert item["actor_email"] == {"S": "one@example.com"}
+    assert "actor_role" not in item
+
+    # Items of the previous version: a session without an actor, a mark without a cause.
+    for name in ("actor_email", "actor_is_admin"):
+        del item[name]
+    assert store.get("hash") == SessionRecord(
+        sub="user-1", created_at=10, expires_at=20, federated=False
+    )
+    dynamo.items[("USER#user-2", "REVOKED")] = {"revoked_before": {"N": "7"}}
+    assert store.revocation("user-2") == Revocation(7)

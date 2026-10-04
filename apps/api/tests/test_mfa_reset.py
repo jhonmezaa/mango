@@ -73,10 +73,10 @@ class FakeCognito:
         self.resets.append(username)
 
     # The web sessions table, as far as a reset uses it (D63).
-    ended: list[str] = field(default_factory=list)
+    ended: list[tuple[str, str]] = field(default_factory=list)
 
-    def revoke_user(self, sub: str, _now: int) -> None:
-        self.ended.append(sub)
+    def revoke_user(self, sub: str, _now: int, cause: str) -> None:
+        self.ended.append((sub, cause))
 
 
 @dataclass
@@ -193,7 +193,7 @@ def test_dual_approval_resets_mfa_and_signs_out(env: Env) -> None:
     # Cognito is called with the username returned by AdminGetUser, never the typed email.
     assert env.cognito.resets == ["uuid-target"]
     # The web sessions of the person end too (D63), by user id.
-    assert env.cognito.ended == [DIRECTORY["target@example.com"].sub]
+    assert env.cognito.ended == [(DIRECTORY["target@example.com"].sub, "mfa_reset")]
     applied = env.audit.named("account.mfa_reset")
     assert applied == [
         (

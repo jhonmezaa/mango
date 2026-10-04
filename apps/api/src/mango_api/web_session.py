@@ -20,9 +20,11 @@ Security notes (security-best-practices, FastAPI):
 * A session is created only when Cognito renews the refresh token and the result belongs to
   the caller of the access token (TM-S8); the session id is always generated here (TM-S4).
 * Disabling a person, taking a sensitive group or resetting MFA writes a mark that ends
-  every session started before it (TM-S5), besides the Cognito sign-out.
+  every session started before it (TM-S5), besides the Cognito sign-out. The mark names
+  which of the three it was, and ``session.ended`` repeats it.
 * Responses are ``no-store`` (TM-S7). Tokens, the cookie and the session id never reach logs
-  or the audit trail (TM-S6).
+  or the audit trail (TM-S6). The email of the person is kept in the session record only to
+  name the actor of ``session.ended``; it goes to the audit trail, never to logs.
 """
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
@@ -34,7 +36,7 @@ import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Any, Protocol
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, get_args
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, Request, Response
@@ -69,6 +71,13 @@ WINDOW_SECONDS = 300
 REVOCATION_MARK_SECONDS = 2 * 24 * 3600
 """Longer than any session (at most 24 h): the mark outlives every session it ends."""
 
+RevocationCause = Literal["disabled", "group_removed", "mfa_reset"]
+"""Why an administrator's change ended the sessions of a person; the ``reason`` of
+``session.ended``, with the names the audit screen has a text for."""
+_REVOCATION_CAUSES: frozenset[str] = frozenset(get_args(RevocationCause))
+REVOKED = "revoked"
+"""Reason of a session ended by a mark that does not name its cause."""
+
 _NO_STORE = {"Cache-Control": "no-store"}
 _CLEAR_COOKIE = f"{COOKIE_NAME}=; HttpOnly; Max-Age=0; Path=/; SameSite=strict; Secure"
 
@@ -89,11 +98,30 @@ class RenewedTokens:
 
 
 @dataclass(frozen=True)
+class SessionActor:
+    """Who signed in, as the verified token said then: the actor of ``session.ended``."""
+
+    email: str | None
+    role: str | None
+    is_admin: bool
+
+
+@dataclass(frozen=True)
 class SessionRecord:
     sub: str
     created_at: int
     expires_at: int
     federated: bool
+    actor: SessionActor | None = None
+    """Missing for a person without a group, and in records written before it existed."""
+
+
+@dataclass(frozen=True)
+class Revocation:
+    """The mark of a user: sessions started up to ``before`` are over, and why."""
+
+    before: int
+    cause: str | None = None
 
 
 class TokenRenewer(Protocol):
@@ -198,17 +226,24 @@ class SessionStore:
         return {"PK": {"S": f"USER#{sub}"}, "SK": {"S": "REVOKED"}}
 
     def put(self, sid_hash: str, record: SessionRecord) -> None:
+        item: dict[str, Any] = {
+            **self._session_key(sid_hash),
+            "sub": {"S": record.sub},
+            "created_at": {"N": str(record.created_at)},
+            "expires_at": {"N": str(record.expires_at)},
+            "federated": {"BOOL": record.federated},
+            "ttl": {"N": str(record.expires_at)},
+        }
+        if record.actor is not None:
+            item["actor_is_admin"] = {"BOOL": record.actor.is_admin}
+            if record.actor.email:
+                item["actor_email"] = {"S": record.actor.email}
+            if record.actor.role:
+                item["actor_role"] = {"S": record.actor.role}
         try:
             self._client.put_item(
                 TableName=self._table,
-                Item={
-                    **self._session_key(sid_hash),
-                    "sub": {"S": record.sub},
-                    "created_at": {"N": str(record.created_at)},
-                    "expires_at": {"N": str(record.expires_at)},
-                    "federated": {"BOOL": record.federated},
-                    "ttl": {"N": str(record.expires_at)},
-                },
+                Item=item,
                 # A session id is never reused.
                 ConditionExpression="attribute_not_exists(PK)",
             )
@@ -231,9 +266,20 @@ class SessionStore:
                 created_at=int(item["created_at"]["N"]),
                 expires_at=int(item["expires_at"]["N"]),
                 federated=bool(item["federated"]["BOOL"]),
+                actor=self._actor(item),
             )
         except (KeyError, ValueError):
             return None
+
+    @staticmethod
+    def _actor(item: dict[str, Any]) -> SessionActor | None:
+        if "actor_is_admin" not in item:
+            return None
+        return SessionActor(
+            email=item.get("actor_email", {}).get("S"),
+            role=item.get("actor_role", {}).get("S"),
+            is_admin=bool(item["actor_is_admin"]["BOOL"]),
+        )
 
     def delete(self, sid_hash: str) -> None:
         try:
@@ -241,39 +287,47 @@ class SessionStore:
         except (ClientError, BotoCoreError):
             raise SessionUnavailableError from None
 
-    def revoke_user(self, sub: str, now: int) -> None:
-        """End every session of ``sub`` that started up to ``now``."""
+    def revoke_user(self, sub: str, now: int, cause: RevocationCause) -> None:
+        """End every session of ``sub`` that started up to ``now``.
+
+        One mark per user: a later one replaces it, so a session that two changes ended
+        before it came back is reported with the cause of the latest.
+        """
         try:
             self._client.put_item(
                 TableName=self._table,
                 Item={
                     **self._user_key(sub),
                     "revoked_before": {"N": str(now)},
+                    "cause": {"S": cause},
                     "ttl": {"N": str(now + REVOCATION_MARK_SECONDS)},
                 },
             )
         except (ClientError, BotoCoreError):
             raise SessionUnavailableError from None
 
-    def revoked_before(self, sub: str) -> int:
+    def revocation(self, sub: str) -> Revocation:
         try:
             resp = self._client.get_item(
                 TableName=self._table, Key=self._user_key(sub), ConsistentRead=True
             )
         except (ClientError, BotoCoreError):
             raise SessionUnavailableError from None
+        item = resp.get("Item") or {}
         try:
-            return int(resp["Item"]["revoked_before"]["N"])
+            before = int(item["revoked_before"]["N"])
         except (KeyError, ValueError):
-            return 0
+            return Revocation(0)
+        # A mark written before the cause existed has none.
+        return Revocation(before, item.get("cause", {}).get("S"))
 
 
 class SessionRecords(Protocol):
     def put(self, sid_hash: str, record: SessionRecord) -> None: ...
     def get(self, sid_hash: str) -> SessionRecord | None: ...
     def delete(self, sid_hash: str) -> None: ...
-    def revoke_user(self, sub: str, now: int) -> None: ...
-    def revoked_before(self, sub: str) -> int: ...
+    def revoke_user(self, sub: str, now: int, cause: RevocationCause) -> None: ...
+    def revocation(self, sub: str) -> Revocation: ...
 
 
 class Cipher(Protocol):
@@ -300,9 +354,9 @@ class WebSessionDeps:
         default_factory=lambda: RateLimiter(RENEWALS_PER_SESSION, WINDOW_SECONDS)
     )
 
-    def revoke_user(self, sub: str) -> None:
+    def revoke_user(self, sub: str, cause: RevocationCause) -> None:
         """Hook for the flows that sign a person out everywhere (D60, D20)."""
-        self.store.revoke_user(sub, int(self.clock().timestamp()))
+        self.store.revoke_user(sub, int(self.clock().timestamp()), cause)
 
 
 # --- Schemas ----------------------------------------------------------------------------
@@ -374,13 +428,9 @@ def _actor(claims: dict[str, Any]) -> UserContext | None:
 
 
 def _audit(
-    deps: WebSessionDeps,
-    event: str,
-    sub: str,
-    detail: dict[str, Any],
-    claims: dict[str, Any] | None,
+    deps: WebSessionDeps, event: str, sub: str, detail: dict[str, Any], claims: dict[str, Any]
 ) -> None:
-    deps.audit.emit(event, sub, detail, _actor(claims) if claims else None)
+    deps.audit.emit(event, sub, detail, _actor(claims))
 
 
 def start(
@@ -431,9 +481,18 @@ def start(
             {"federated": body.federated, "expires_at": expires_at},
             renewed_claims,
         )
+        actor = _actor(renewed_claims)
         deps.store.put(
             sid_hash,
-            SessionRecord(sub=sub, created_at=now, expires_at=expires_at, federated=body.federated),
+            SessionRecord(
+                sub=sub,
+                created_at=now,
+                expires_at=expires_at,
+                federated=body.federated,
+                # A session ends without a token (it expired, was revoked, or the person
+                # signed out with the cookie alone): its end is audited with this actor.
+                actor=SessionActor(actor.email, actor.role, actor.is_admin) if actor else None,
+            ),
         )
     except Exception:
         logger.exception("the web session could not be started")
@@ -446,13 +505,24 @@ def start(
     return value, expires_at - now
 
 
-def _end(deps: WebSessionDeps, sid_hash: str, sub: str, reason: str) -> None:
+def _end(deps: WebSessionDeps, sid_hash: str, record: SessionRecord, reason: str) -> None:
     try:
         deps.store.delete(sid_hash)
     except SessionUnavailableError:
         logger.warning("an ended web session could not be deleted")
+    actor = (
+        UserContext(
+            user_id=record.sub,
+            role=record.actor.role,
+            business_unit=None,
+            is_admin=record.actor.is_admin,
+            email=record.actor.email,
+        )
+        if record.actor
+        else None
+    )
     try:
-        _audit(deps, "session.ended", sub, {"reason": reason}, None)
+        deps.audit.emit("session.ended", record.sub, {"reason": reason}, actor)
     except Exception:
         logger.exception("the end of a web session could not be audited")
 
@@ -480,10 +550,15 @@ def renew(deps: WebSessionDeps, cookie: tuple[str, bytes] | None) -> RenewedOut:
             raise rate_limited(deps.renewals.retry_after(sid_hash))
         now = int(deps.clock().timestamp())
         if now >= record.expires_at:
-            _end(deps, sid_hash, record.sub, "expired")
+            _end(deps, sid_hash, record, "expired")
             raise NoSessionError
-        if record.created_at <= deps.store.revoked_before(record.sub):
-            _end(deps, sid_hash, record.sub, "revoked")
+        revocation = deps.store.revocation(record.sub)
+        if record.created_at <= revocation.before:
+            # Only a cause this code writes is repeated; anything else stays ``revoked``.
+            known = revocation.cause in _REVOCATION_CAUSES
+            _end(
+                deps, sid_hash, record, revocation.cause if known and revocation.cause else REVOKED
+            )
             raise NoSessionError
         try:
             refresh_token = deps.cipher.decrypt(ciphertext, sid_hash, record.sub)
@@ -491,8 +566,9 @@ def renew(deps: WebSessionDeps, cookie: tuple[str, bytes] | None) -> RenewedOut:
             claims = _claims_of(deps, renewed, record.sub)
         except (SessionRejectedError, IdentityError):
             # Revoked or expired in Cognito, the person was disabled, or the cookie was
-            # tampered with: the session is over.
-            _end(deps, sid_hash, record.sub, "rejected")
+            # tampered with: the session is over. Cognito does not say which, and no mark
+            # of this server covers the session, so the reason stays ``rejected``.
+            _end(deps, sid_hash, record, "rejected")
             raise NoSessionError from None
     except SessionUnavailableError:
         raise _unavailable() from None
@@ -523,7 +599,7 @@ def end(deps: WebSessionDeps, cookie: tuple[str, bytes] | None) -> None:
         except (SessionRejectedError, SessionUnavailableError):
             # The record goes anyway: without it the cookie renews nothing.
             logger.warning("the refresh token of a closed web session was not revoked")
-        _end(deps, sid_hash, record.sub, "sign_out")
+        _end(deps, sid_hash, record, "sign_out")
     except SessionUnavailableError:
         logger.warning("a web session could not be closed")
 
@@ -608,6 +684,7 @@ __all__ = [
     "COOKIE_NAME",
     "CSRF_HEADER",
     "CognitoTokens",
+    "RevocationCause",
     "SessionStore",
     "TokenCipher",
     "WebSessionDeps",

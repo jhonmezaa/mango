@@ -53,6 +53,7 @@ from mango_api.groups import GroupRegistry, GroupsUnavailableError
 from mango_api.mfa_reset import ConflictError, _conflict, _opt, _s, iso, new_change_id
 from mango_api.probe import RateLimiter
 from mango_api.web import ApiError, Caller, rate_limited
+from mango_api.web_session import RevocationCause
 from mango_core.agents import USER_ID_PATTERN
 from mango_core.groups import (
     GROUP_ADMIN,
@@ -749,8 +750,9 @@ class PeopleDeps:
     invitations: RateLimiter = field(
         default_factory=lambda: RateLimiter(INVITATIONS_PER_HOUR, 3600)
     )
-    end_sessions: Callable[[str], None] | None = None
-    """Ends the web sessions of a user id (D63), next to the Cognito sign-out."""
+    end_sessions: Callable[[str, RevocationCause], None] | None = None
+    """Ends the web sessions of a user id (D63), next to the Cognito sign-out, and records
+    why: the reason of their ``session.ended``."""
 
 
 def _directory[T](call: Callable[[], T]) -> T:
@@ -1055,11 +1057,11 @@ def _apply(
         deps.store.release_admins(actor)
 
 
-def _sign_out(deps: PeopleDeps, target: _Target) -> None:
+def _sign_out(deps: PeopleDeps, target: _Target, cause: RevocationCause) -> None:
     """No session survives: the server ones (D63) and every refresh token in Cognito."""
     if deps.end_sessions is not None:
         try:
-            deps.end_sessions(target.user.sub)
+            deps.end_sessions(target.user.sub, cause)
         except Exception as exc:
             raise DirectoryUnavailableError from exc
     deps.people.sign_out(target.user.username)
@@ -1073,10 +1075,10 @@ def _write(deps: PeopleDeps, kind: Kind, target: _Target, group: str | None) -> 
         elif kind == "remove" and group:
             deps.people.remove_from_group(username, group)
             if group in SENSITIVE_GROUPS:
-                _sign_out(deps, target)
+                _sign_out(deps, target, "group_removed")
         elif kind == "disable":
             deps.people.disable(username)
-            _sign_out(deps, target)
+            _sign_out(deps, target, "disabled")
         elif kind == "enable":
             deps.people.enable(username)
     except DirectoryUnavailableError as exc:

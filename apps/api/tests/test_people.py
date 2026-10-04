@@ -630,6 +630,17 @@ def test_taking_a_sensitive_group_closes_the_sessions(env: Env) -> None:
     assert env.people.signed_out == ["name-admin-1"]
 
 
+def test_taking_a_sensitive_group_names_the_cause_for_the_web_sessions(env: Env) -> None:
+    ended: list[tuple[str, str]] = []
+    env.deps.end_sessions = lambda sub, cause: ended.append((sub, cause))
+    response = _post(
+        env, "/admin-1/groups/remove", {"group": "finops-central", "reason": "moved"}, "admin2"
+    )
+    change_id = response.json()["change_id"]
+    assert _post(env, f"/changes/{change_id}/approve", {}, "people-admin3").status_code == 200
+    assert ended == [("admin-1", "group_removed")]
+
+
 # --- Two administrators, always ----------------------------------------------------------
 
 
@@ -743,16 +754,17 @@ def test_two_bootstraps_at_once_do_not_both_apply(env: Env) -> None:
 
 
 def test_signing_a_person_out_ends_their_web_sessions_too(env: Env) -> None:
-    ended: list[str] = []
-    env.deps.end_sessions = ended.append
+    ended: list[tuple[str, str]] = []
+    env.deps.end_sessions = lambda sub, cause: ended.append((sub, cause))
     assert _post(env, "/lead/disable", {"reason": "left the company"}).json()["result"] == "applied"
-    # By user id (the sessions table), next to the Cognito sign-out by username (D63).
-    assert ended == ["lead"]
+    # By user id (the sessions table), next to the Cognito sign-out by username (D63), with
+    # the cause their ``session.ended`` will name.
+    assert ended == [("lead", "disabled")]
     assert env.people.signed_out == ["name-lead"]
 
 
 def test_a_sessions_outage_fails_the_change_before_the_cognito_sign_out(env: Env) -> None:
-    def down(_sub: str) -> None:
+    def down(_sub: str, _cause: str) -> None:
         raise RuntimeError("table unavailable")
 
     env.deps.end_sessions = down

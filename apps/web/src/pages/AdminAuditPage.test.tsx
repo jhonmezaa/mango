@@ -728,6 +728,47 @@ describe('AdminAuditPage', () => {
     expect(email.querySelector('wbr')).not.toBeNull();
   });
 
+  it.each([
+    ['sign_out', 'La persona cerró sesión'],
+    ['expired', 'Venció: pasó la duración máxima de la sesión'],
+    ['disabled', 'Un administrador deshabilitó su acceso'],
+    ['group_removed', 'Se le quitó un grupo sensible'],
+    ['mfa_reset', 'Se restableció su MFA'],
+    // Recorded when the cause is not known: the design has no text, so they are shown as is.
+    ['revoked', 'revoked'],
+    ['rejected', 'rejected'],
+  ])('shows why a session ended (%s) and who it was', async (reason, text) => {
+    const user = userEvent.setup();
+    const mail = 'ana.ruiz@example.com';
+    renderPage({
+      listAuditEvents: vi.fn(() =>
+        page([
+          {
+            event_id: 'e1'.padEnd(32, '0'),
+            ts: iso(1),
+            event: 'session.ended',
+            user_id: 'sub-ana',
+            actor_email: mail,
+            actor_role: null,
+            actor_is_admin: false,
+            hash: 'a'.repeat(64),
+            detail: { reason },
+          },
+        ]),
+      ),
+    });
+    // The label and the sentence of the event read the same.
+    const [label] = await screen.findAllByText('Sesión cerrada');
+    const row = label?.closest('button') as HTMLElement;
+    // The actor is the person, by email, like in «Sesión iniciada»; never the identifier.
+    expect(row.querySelector('.au-actor')).toHaveTextContent(mail);
+    expect(row).not.toHaveTextContent('sub-ana');
+    await user.click(row);
+    const panel = screen.getByRole('dialog', { name: 'Sesión cerrada' });
+    expect(within(panel).getByText('Motivo').parentElement).toHaveTextContent(`Motivo${text}`);
+    expect(panel.querySelector('.au-mail')).toHaveTextContent(mail);
+  });
+
   it('says what «Mostrar lecturas» adds', async () => {
     renderPage({});
     await screen.findByText('Límite de usuario');

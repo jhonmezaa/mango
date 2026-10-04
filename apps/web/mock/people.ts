@@ -273,6 +273,35 @@ function apply(kind: Kind, target: MockPerson, group: string | null): void {
   else if (kind === 'enable') target.status = target.mfa ? 'active' : 'invited';
 }
 
+/**
+ * Mirror of the revocation mark of mango_api.web_session: disabling a person or taking a
+ * sensitive group ends their sessions, and `session.ended` says which of the two it was, with
+ * the person as the actor. The API writes the event when their browser next tries to renew; the
+ * mock has no other browsers, so it writes it right away for whoever had signed in. Resetting
+ * MFA (`mfa_reset`) is never applied in the mock: another administrator has to approve it.
+ */
+function endSessions(kind: Kind, target: MockPerson, group: string | null): void {
+  const reason =
+    kind === 'disable'
+      ? 'disabled'
+      : kind === 'remove' && group !== null && SENSITIVE.includes(group)
+        ? 'group_removed'
+        : null;
+  // `target.status` is already the new one: a disabled person had a session if they have MFA.
+  const signedIn = kind === 'disable' ? target.mfa : target.status === 'active';
+  if (!reason || !signedIn) return;
+  recordAudit(
+    'session.ended',
+    { reason },
+    {
+      user_id: target.user_id,
+      email: target.email,
+      role: target.groups.includes('finops-central') ? 'finops-central' : null,
+      is_admin: target.groups.includes(ADMIN),
+    },
+  );
+}
+
 const EVENTS: Record<Kind, string> = {
   add: 'directory.group_add',
   remove: 'directory.group_remove',
@@ -354,6 +383,7 @@ function change(
       apply(kind, target, group);
     },
   );
+  endSessions(kind, target, group);
   return { result: bootstrap ? 'bootstrap' : 'applied', change_id: null };
 }
 
@@ -455,6 +485,7 @@ function decide(
     close('approved');
   });
   recordAudit(EVENTS[found.kind], { ...detail, approved_by: MOCK_USER, outcome: 'applied' });
+  endSessions(found.kind, target, found.group);
   return changesView();
 }
 

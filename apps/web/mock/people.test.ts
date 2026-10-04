@@ -10,6 +10,7 @@ import {
 } from '@mango/api-client/schemas';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { handleAudit } from './audit.ts';
 import { MOCK_USER } from './cognito.ts';
 import { handlePeople } from './people.ts';
 
@@ -30,6 +31,13 @@ const search = async (body: object = {}) =>
 const changes = async () =>
   zChangeListOutSchema.parse((await call('GET', '/admin/people/changes')).body);
 
+/** `session.ended` events of the mock's audit log, newest first: who and why. */
+async function endedSessions() {
+  const { body } = await call('GET', '/admin/audit?event=session.ended');
+  const { items } = body as { items: { actor_email: string; detail: { reason: string } }[] };
+  return items.map((item) => [item.actor_email, item.detail.reason]);
+}
+
 async function personByEmail(email: string) {
   const found = (await search({ prefix: email })).items[0];
   if (!found) throw new Error(`seed changed: ${email}`);
@@ -39,7 +47,9 @@ async function personByEmail(email: string) {
 beforeAll(async () => {
   server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    void handlePeople(req, res, url.pathname, url).then((handled) => {
+    void (async () =>
+      (await handlePeople(req, res, url.pathname, url)) ||
+      (await handleAudit(req, res, url.pathname, url)))().then((handled) => {
       if (!handled) {
         res.statusCode = 404;
         res.end('{}');
@@ -163,6 +173,8 @@ describe('mock people', () => {
         .result,
     ).toBe('applied');
     expect((await personByEmail(plain.email)).status).toBe('disabled');
+    // Their session ends, and the event names the person and the cause like the API does.
+    expect((await endedSessions())[0]).toEqual([plain.email, 'disabled']);
     expect(errorCode((await call('POST', `${base}/groups`, { group: 'seguridad' })).body)).toBe(
       'user_disabled',
     );

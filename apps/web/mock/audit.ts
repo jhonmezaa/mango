@@ -54,17 +54,29 @@ function auditResource(
   return undefined;
 }
 
-export function recordAudit(event: string, detail: Record<string, unknown>): void {
+/** Who an event is about when it is not the mock user (the end of somebody else's session). */
+export interface MockActor {
+  user_id: string;
+  email: string;
+  role: string | null;
+  is_admin: boolean;
+}
+
+export function recordAudit(
+  event: string,
+  detail: Record<string, unknown>,
+  actor?: MockActor,
+): void {
   const resource = auditResource(event, detail);
   const record = {
     event_id: randomBytes(16).toString('hex'),
     // Same format as the API (`+00:00`, milliseconds) so cursors compare the same way.
     ts: new Date().toISOString().replace('Z', '+00:00'),
     event,
-    user_id: MOCK_USER,
-    actor_email: MOCK_USER,
-    actor_role: 'finops-central',
-    actor_is_admin: true,
+    user_id: actor ? actor.user_id : MOCK_USER,
+    actor_email: actor ? actor.email : MOCK_USER,
+    actor_role: actor ? actor.role : 'finops-central',
+    actor_is_admin: actor ? actor.is_admin : true,
     ...(resource ? { resource } : {}),
     detail,
   };

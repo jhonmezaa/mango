@@ -48,8 +48,8 @@ Hoy los tres tokens (access, ID y refresh) viven en una variable de la SPA (`app
 
 Tabla nueva `Mango-<ns>-WebSessions` (bajo demanda, CMK de datos, PITR, protección de borrado y `RETAIN` como las demás, TTL).
 
-- `SESSION#<sha256(sid)>`: `sub`, `created_at`, `expires_at`, `federated`, `ttl`. Se guarda el **hash** del id: leer la tabla no da cookies válidas.
-- `USER#<sub>`: `revoked_before`. Una sesión vale solo si empezó después de esa marca: cerrar todas las sesiones de una persona es una sola escritura.
+- `SESSION#<sha256(sid)>`: `sub`, `created_at`, `expires_at`, `federated`, `ttl`. Se guarda el **hash** del id: leer la tabla no da cookies válidas. Desde el 2026-10-04 lleva también quién ingresó, tal como lo dijo el token verificado en ese momento (`actor_email`, `actor_role`, `actor_is_admin`): es lo que nombra al actor de `session.ended`, que se emite sin token. No es un secreto y se borra con el registro (TTL); una persona sin grupo no lo tiene.
+- `USER#<sub>`: `revoked_before` y, desde el 2026-10-04, `cause` (`disabled`, `group_removed` o `mfa_reset`). Una sesión vale solo si empezó después de esa marca: cerrar todas las sesiones de una persona es una sola escritura. Hay una marca por persona: la más reciente reemplaza a la anterior.
 
 ### 4.3 Endpoints
 
@@ -62,7 +62,7 @@ Los tres exigen la cabecera propia `X-Mango-Session: 1`, que `Origin` sea el de 
 | `DELETE /api/session` | Solo la cookie | Revoca el refresh token en Cognito (`RevokeToken`), borra el registro y la cookie. Idempotente. 204. |
 
 - **Autorización declarada:** `POST /api/session` usa una dependencia propia que exige un access token verificado pero **no exige grupo**: una persona sin grupo también tiene sesión (ve «Todavía no tienes acceso») y recargar no debe sacarla. Los otros dos se autorizan con la cookie. No hay decisión de Cedar: cada quien actúa solo sobre su propia sesión.
-- **Auditoría:** `session.started`, `session.renewed`, `session.ended` (motivo: cierre, revocada, vencida, rechazada por Cognito) y los rechazos. Nunca llevan tokens, cookie ni el `sid`. `session.renewed` cuenta como lectura en Auditoría (D64): se registra siempre y solo se lista con «Mostrar lecturas». Si no se puede auditar el inicio, no se crea la sesión.
+- **Auditoría:** `session.started`, `session.renewed`, `session.ended` y los rechazos. Nunca llevan tokens, cookie ni el `sid`. El motivo de `session.ended` es `sign_out`, `expired`, la causa de la revocación (`disabled`, `group_removed`, `mfa_reset`; `revoked` si la marca no la dice) o `rejected` (Cognito rechazó renovar sin que haya marca: no se sabe por qué). Lleva el correo y el rol de la persona como los demás eventos de sesión, tomados del registro (§4.2); el correo va solo a auditoría, nunca a logs. Detalle en `docs/specs/poc-api-contract.md`, «Audit log». `session.renewed` cuenta como lectura en Auditoría (D64): se registra siempre y solo se lista con «Mostrar lecturas». Si no se puede auditar el inicio, no se crea la sesión.
 - **Logs:** el cuerpo y la cookie no se registran nunca.
 
 ### 4.4 La SPA
@@ -79,7 +79,7 @@ Los tres exigen la cabecera propia `X-Mango-Session: 1`, que `Origin` sea el de 
 |---|---|
 | **MFA** | La cookie solo se crea con los tokens de un ingreso completo (contraseña y TOTP). Recargar no salta el segundo factor: reutiliza la sesión que ya lo pasó, igual que hoy hace la renovación dentro de una pestaña. Al vencer la sesión, el ingreso vuelve a pedir MFA. |
 | **Duración** | La sesión dura como máximo `SESSION_HOURS` desde el ingreso (límite absoluto: el refresh token de Cognito no se alarga al usarlo). El registro y la cookie llevan el mismo límite. Cuando Ajustes › Autenticación permita cambiarla (D21), `mango-api` leerá el valor vigente. |
-| **Deshabilitar a una persona, quitarle un grupo sensible, restablecer MFA** | Esos flujos ya llaman a `AdminUserGlobalSignOut`; además escribirán la marca `revoked_before`. La siguiente renovación falla y la sesión termina. El access token ya emitido vale hasta 60 minutos (residual ya aceptado en D60). |
+| **Deshabilitar a una persona, quitarle un grupo sensible, restablecer MFA** | Esos flujos ya llaman a `AdminUserGlobalSignOut`; además escriben la marca `revoked_before` con su causa. La siguiente renovación falla, la sesión termina y `session.ended` dice cuál de los tres fue. El access token ya emitido vale hasta 60 minutos (residual ya aceptado en D60). |
 | **Quitar o dar un grupo no sensible** | Cada renovación pasa por el pre-token: los grupos nuevos aplican en la siguiente renovación, igual que hoy. |
 | **SSO federado** | Mismo mecanismo: tras el callback, la SPA crea la sesión. Si aplica al SSO es decisión del usuario (§9). |
 | **Persona sin grupo** | Conserva la sesión al recargar y sigue en «Todavía no tienes acceso». |

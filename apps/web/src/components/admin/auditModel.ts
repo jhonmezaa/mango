@@ -113,7 +113,9 @@ const isSessionAction = (event: string): event is SessionAction => SESSION_ACTIO
 
 /**
  * Design `SESSION_END`: reasons of `session.ended` with a text (`audit.sessionEnd.*`). The API
- * says `sign_out` for the design's `logout`; any other reason is shown as recorded.
+ * says `sign_out` for the design's `logout`, and names what revoked a session with the design's
+ * words (`RevocationCause` in mango_api.web_session). Any other reason is shown as recorded:
+ * `revoked` (the cause was not recorded) and `rejected` (the identity provider refused).
  */
 export const SESSION_END_REASONS = [
   'sign_out',
