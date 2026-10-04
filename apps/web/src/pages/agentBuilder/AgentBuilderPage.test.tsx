@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -422,7 +422,11 @@ describe('AgentBuilderPage', () => {
       'el agente es visible para personas sueltas',
     );
     // The directory did not answer (no handler): the identifiers stay on screen.
-    expect(api.call).toHaveBeenCalledWith('resolveUsers', { body: { ids: ['user-7', 'user-8'] } });
+    await waitFor(() => {
+      expect(api.call).toHaveBeenCalledWith('resolveUsers', {
+        body: { ids: ['user-7', 'user-8'] },
+      });
+    });
     expect(within(people).queryByText('Próximamente')).toBeNull();
     expect(within(people).getByPlaceholderText('correo@empresa.com')).toBeEnabled();
 
