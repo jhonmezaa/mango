@@ -48,7 +48,10 @@
     { actor: 'Usuario 6', role: 'lead_admin', action: 'agent.invoke', target: 'fin-01', turn: 'TRN-5090', detail: 'Inició un turno con FinOps', at: ago(190.2) },
     { actor: 'Sistema', role: 'system', action: 'budget.alert', target: 'fin-01', detail: 'FinOps llegó al 80% del límite por defecto (USD 24,00 de USD 30,00)', at: ago(220) },
     { actor: 'Usuario 3', role: 'owner', action: 'agent.rollback', target: 'dev-01', detail: 'Restauró versión v6 del system prompt', before: { version: 7 }, after: { version: 6 }, outcome: 'applied', at: ago(410) },
-    { actor: 'Usuario 1', role: 'admin', action: 'directory.group_add', target: 'usuario4@empresa.com', detail: 'Agregó a usuario4@empresa.com al grupo bu-finanzas', outcome: 'applied', at: ago(640) },
+    { actor: 'usuario1@empresa.com', role: 'admin', action: 'directory.group_add', target: 'usuario4@empresa.com', detail: 'Agregó a usuario4@empresa.com al grupo bu-finanzas', outcome: 'applied', at: ago(640) },
+    { actor: 'usuario1@empresa.com', role: 'admin', action: 'policy.decision', target: 'ManagePeople', detail: 'Gestionar personas · permitido', at: ago(640.01) },
+    { actor: 'usuario1@empresa.com', role: 'admin', action: 'directory.group_add', target: 'usuario4@empresa.com', detail: 'Pidió agregar a usuario4@empresa.com al grupo bu-finanzas', outcome: 'requested', at: ago(640.02) },
+    { actor: 'usuario6@empresa.com', role: 'lead_admin', action: 'directory.member_reject', target: 'usuario12@empresa.com', detail: 'Rechazó 18106de3 — "ya no está en el equipo"', outcome: 'applied', at: ago(700) },
     { actor: 'Sec Guardian', role: 'agent', action: 'tool.execute', target: 'ec2.modify_security_group', detail: 'Bloqueó una IP externa tras la aprobación de Usuario 1', outcome: 'applied', at: ago(900) },
     { actor: 'Usuario 2', role: 'owner', action: 'approval.reject', target: 'APR-201', detail: 'Rechazó terminar instancias i-0a8b* — "falta ventana de mantenimiento"', at: ago(1300) },
     { actor: 'Usuario 1', role: 'admin', action: 'settings.update', target: 'auth', detail: 'Activó MFA obligatorio para admins', outcome: 'applied', at: ago(2100) },
@@ -144,9 +147,10 @@
     AVAILABLE, onDecide: {},
     isSoon: (view) => state.avail && !AVAILABLE.includes(view),
     propose: (c) => {
-      const n = Math.max(0, ...state.changes.map(x => parseInt(x.id.slice(4), 10) || 0)) + 1;
+      const n = Math.max(0, ...state.changes.map(x => /^CHG-/.test(x.id) ? parseInt(x.id.slice(4), 10) || 0 : 0)) + 1;
       if (c.kind === 'mfa_reset' && c.target === store.actorEmail()) return null;
-      const item = { id: 'CHG-' + n, status: 'pending', by: store.actor(), at: now().toISOString(), ...c };
+      const rid = () => Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      const item = { id: c.kind === 'member' ? rid() : 'CHG-' + n, status: 'pending', by: store.actor(), at: now().toISOString(), ...c };
       set({ changes: [item, ...state.changes] });
       const pfx = CHG_PREFIX[c.kind] || 'settings.';
       store.log(pfx + 'propose', c.target || c.key, (c.kind === 'auth' ? 'Propuso cambiar ' + c.key + ': ' + JSON.stringify(c.from) + ' → ' + JSON.stringify(c.to) : 'Propuso: ' + (c.summary || c.title || '')) + (c.reason ? ' — "' + c.reason + '"' : ''));

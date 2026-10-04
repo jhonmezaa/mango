@@ -3,7 +3,7 @@ const { useState: useStateAB, useMemo: useMemoAB, useEffect } = React;
 
 const AUDIT_ACTIONS = {
   'agent.create': 'Agente creado', 'agent.update': 'Agente editado', 'agent.clone': 'Agente duplicado', 'agent.rollback': 'Versión restaurada', 'agent.archive': 'Agente archivado', 'agent.restore': 'Agente restaurado', 'agent.delete': 'Agente eliminado', 'agent.share': 'Acceso a agente cambiado',
-  'agent.draft': 'Borrador guardado', 'agent.submit': 'Enviado a aprobación', 'agent.approve': 'Agente aprobado', 'agent.reject': 'Agente rechazado', 'agent.publish': 'Agente publicado', 'agent.retry': 'Publicación reintentada', 'agent.reopen': 'Reabierto como borrador', 'agent.publish_start': 'Publicación iniciada', 'agent.publish_failed': 'Publicación fallida', 'directory.lookup': 'Búsqueda en el directorio', 'directory.signup': 'Persona registrada', 'directory.list': 'Lectura del directorio', 'directory.invite': 'Persona invitada', 'directory.group_add': 'Grupo asignado a persona', 'directory.group_remove': 'Grupo quitado a persona', 'directory.disable': 'Acceso deshabilitado', 'directory.enable': 'Acceso rehabilitado', 'directory.member_propose': 'Cambio de persona propuesto', 'directory.member_approve': 'Cambio de persona aprobado', 'directory.member_reject': 'Cambio de persona rechazado', 'directory.member_withdraw': 'Cambio de persona retirado',
+  'agent.draft': 'Borrador guardado', 'agent.submit': 'Enviado a aprobación', 'agent.approve': 'Agente aprobado', 'agent.reject': 'Agente rechazado', 'agent.publish': 'Agente publicado', 'agent.retry': 'Publicación reintentada', 'agent.reopen': 'Reabierto como borrador', 'agent.publish_start': 'Publicación iniciada', 'agent.publish_failed': 'Publicación fallida', 'directory.lookup': 'Búsqueda en el directorio', 'directory.signup': 'Persona registrada', 'directory.list': 'Lectura del directorio', 'policy.decision': 'Acceso permitido', 'directory.invite': 'Persona invitada', 'directory.group_add': 'Grupo asignado a persona', 'directory.group_remove': 'Grupo quitado a persona', 'directory.disable': 'Acceso deshabilitado', 'directory.enable': 'Acceso rehabilitado', 'directory.member_propose': 'Cambio de persona propuesto', 'directory.member_approve': 'Cambio de persona aprobado', 'directory.member_reject': 'Cambio de persona rechazado', 'directory.member_withdraw': 'Cambio de persona retirado',
   'approval.request': 'Aprobación solicitada', 'approval.execute': 'Acción ejecutada', 'approval.execute_failed': 'La ejecución falló', 'approval.cancel': 'Solicitud cancelada', 'approval.expire': 'Solicitud vencida', 'approval.self_confirm': 'Acción confirmada por el usuario', 'approval.self_cancel': 'Acción cancelada por el usuario', 'policy.propose': 'Cambio de política propuesto', 'policy.approve': 'Política aprobada', 'policy.reject': 'Cambio de política rechazado', 'policy.withdraw': 'Cambio de política retirado', 'group.propose': 'Cambio de grupo propuesto', 'group.approve': 'Cambio de grupo aprobado', 'group.reject': 'Cambio de grupo rechazado', 'group.withdraw': 'Cambio de grupo retirado', 'skill.propose': 'Versión de skill propuesta', 'skill.approve': 'Versión de skill aprobada', 'skill.reject': 'Versión de skill rechazada', 'skill.withdraw': 'Versión de skill retirada', 'eval.real_conversations': 'Evals con conversaciones reales', 'approval.approve': 'Aprobación concedida', 'approval.reject': 'Aprobación rechazada',
   'budget.alert': 'Alerta de presupuesto', 'budget.pause': 'Pausa por presupuesto', 'budget.update': 'Presupuesto editado', 'budget.create': 'Presupuesto creado', 'budget.delete': 'Presupuesto eliminado', 'budget.user': 'Límite de usuario', 'budget.default': 'Límite por defecto',
   'mcp.connect': 'MCP conectado', 'mcp.request': 'MCP solicitado', 'mcp.approve': 'MCP aprobado', 'mcp.reject': 'MCP rechazado', 'mcp.enable': 'MCP habilitado', 'mcp.disable_request': 'Deshabilitación de MCP pedida', 'mcp.disable': 'MCP deshabilitado', 'mcp.retry': 'Instalación reintentada', 'mcp.install_error': 'Instalación fallida', 'mcp.update_approve': 'Actualización de MCP aprobada', 'mcp.params_request': 'Cambio de parámetros pedido', 'mcp.params_approve': 'Parámetros de MCP aprobados', 'mcp.params_reject': 'Parámetros de MCP rechazados', 'mcp.update_reject': 'Actualización de MCP rechazada',
@@ -19,18 +19,23 @@ const AUDIT_ACTIONS = {
   'ticket.comment': 'Comentario en ticket', 'ticket.update': 'Ticket actualizado', 'ticket.create': 'Ticket creado', 'account.create': 'Cuenta creada', 'account.password_set': 'Contraseña creada (primer ingreso)',
 };
 // Acciones de permiso tal como las registra el backend (recurso de access.view / access.denied)
-const AUDIT_PERMS = { 'audit.view': 'Ver auditoría', 'admin.view': 'Ver administración', 'agent.invoke': 'Usar agente', 'groups.view': 'Ver grupos' };
+const AUDIT_PERMS = { 'audit.view': 'Ver auditoría', 'admin.view': 'Ver administración', 'agent.invoke': 'Usar agente', 'groups.view': 'Ver grupos', ViewPeople: 'Ver personas', ManagePeople: 'Gestionar personas', ApprovePeopleChange: 'Decidir cambio de persona' };
 const AUDIT_CATS = [
-  ['agents', 'Agentes', /^agent\./], ['approvals', 'Aprobaciones', /^(approval|policy)\./], ['budgets', 'Presupuestos', /^budget\./],
-  ['access', 'Acceso y grupos', /^(role|group|access|account|conversation|directory)\./], ['mcp', 'MCP, modelos y tools', /^(mcp|tool|model)\./], ['config', 'Ajustes', /^(settings|mapping|kb|schedule)\./],
+  ['agents', 'Agentes', /^agent\./], ['approvals', 'Aprobaciones', /^(approval\.|policy\.(?!decision$))/], ['budgets', 'Presupuestos', /^budget\./],
+  ['access', 'Acceso y grupos', /^((role|group|access|account|conversation|directory)\.|policy\.decision$)/], ['mcp', 'MCP, modelos y tools', /^(mcp|tool|model)\./], ['config', 'Ajustes', /^(settings|mapping|kb|schedule)\./],
   ['chat', 'Chat', /^chat\.query$/], ['tickets', 'Tickets', /^ticket\./], ['system', 'Otros', /^(chat|client|playground|skill)\./],
 ];
 // Con "Ver disponibilidad actual": solo eventos de funciones disponibles hoy (Presupuestos, Áreas y OUs, cuenta, accesos, chat con FinOps)
 const AUDIT_OUTCOME = { requested: 'solicitado', applied: 'aplicado', rejected: 'no se aplicó' };
-const auditOutcome = (r) => !r.outcome ? '' : AUDIT_OUTCOME[r.outcome] + (r.error ? ' · ' + r.error : '');
+// Si la acción misma es un rechazo, «aplicado» se lee como «registrado».
+const auditOutcome = (r) => !r.outcome ? '' : (r.outcome === 'applied' && /reject/.test(r.action) ? 'registrado' : AUDIT_OUTCOME[r.outcome]) + (r.error ? ' · ' + r.error : '');
+// El backend escribe «solicitado» antes de tocar nada y luego el resultado: se muestran como una sola fila con el resultado final.
+const mergeAudit = (list) => { const hide = new Set(); const out = list.map(r => { if (r.outcome !== 'applied' && r.outcome !== 'rejected') return r; const q = list.find(x => x !== r && !hide.has(x.id) && x.outcome === 'requested' && x.action === r.action && x.target === r.target && x.actor === r.actor && new Date(r.at) - new Date(x.at) >= 0 && new Date(r.at) - new Date(x.at) < 120000); if (!q) return r; hide.add(q.id); return { ...r, requestedAt: q.at, requestedId: q.id }; }); return out.filter(r => !hide.has(r.id)); };
+const ROLE_SHORT = { lead_admin: 'Admin', admin: 'Admin', owner: 'Creador', creator: 'Creador', central: 'Usuario', user: 'Usuario', agent: 'Agente', system: 'Sistema' };
+const AuActor = ({ r }) => { const a = String(r.actor); const i = a.lastIndexOf('@'); return <span className="au-actor" title={a + ' · ' + (ROLE_L[r.role] || r.role)}><span className="au-name">{i > 0 ? <><span className="au-local">{a.slice(0, i)}</span><span className="au-dom">{a.slice(i)}</span></> : <span className="au-local">{a}</span>}</span><span className="au-role">{ROLE_SHORT[r.role] || ROLE_L[r.role] || r.role}</span></span>; };
 const AUDIT_AVAILABLE = /^(budget|mapping|account|access|directory|approval)\./;
 // Contraseña y MFA van directo al proveedor de identidad y aún no se registran en Mango
-const auditAvail = (r) => (AUDIT_AVAILABLE.test(r.action) && !/^account\.(password_set|mfa_enroll)$/.test(r.action)) || (/^(chat\.query|agent\.invoke)$/.test(r.action) && r.target === 'fin-01');
+const auditAvail = (r) => r.action === 'policy.decision' || (AUDIT_AVAILABLE.test(r.action) && !/^account\.(password_set|mfa_enroll)$/.test(r.action)) || (/^(chat\.query|agent\.invoke)$/.test(r.action) && r.target === 'fin-01');
 const auditCat = (action) => (AUDIT_CATS.find(c => c[2].test(action)) || AUDIT_CATS[AUDIT_CATS.length - 1])[0];
 const actionTone = (a) => /[._]request$/.test(a) ? 'var(--amber)' : /reject|fail|pause|error|denied|delete|disable|retire/.test(a) ? 'var(--red)' : /alert|request|submit|propose/.test(a) ? 'var(--amber)' : /approve|create|publish|enable|restore/.test(a) ? 'var(--green)' : 'var(--text-dim)';
 const auditHash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8); };
@@ -67,7 +72,8 @@ function AuditLogInner() {
   const RANGES = [['24h', '24 h', 864e5], ['7d', '7 días', 7 * 864e5], ['30d', '30 días', 30 * 864e5], ['all', 'Todo', Infinity]];
   const since = Date.now() - RANGES.find(r => r[0] === range)[2];
   const Q = q.trim().toLowerCase();
-  const base = audit.filter(r => (reads || !r.read) && new Date(r.at).getTime() >= since && (actor === 'all' || r.actor === actor) && (!target || r.target === target)
+  const merged = useMemoAB(() => mergeAudit(audit), [audit]);
+  const base = merged.filter(r => (reads || !r.read) && new Date(r.at).getTime() >= since && (actor === 'all' || r.actor === actor) && (!target || r.target === target)
     && (!Q || [r.id, r.actor, r.target, r.detail, AUDIT_ACTIONS[r.action], r.action, auditOutcome(r)].join(' ').toLowerCase().includes(Q)));
   const rows = base.filter(r => cat === 'all' || auditCat(r.action) === cat);
   const anyFilter = Q || actor !== 'all' || cat !== 'all' || range !== 'all' || target || reads;
@@ -144,7 +150,7 @@ function AuditLogInner() {
                   <button key={r.id} className={'au-tr' + (sel === r.id ? ' is-on' : '')} onClick={() => setSel(r.id)}>
                     <span className="mono au-time" title={new Date(r.at).toLocaleString('es-MX')}>{new Date(r.at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
                     <span className="au-ev"><span className="tk-dot" style={{ background: actionTone(r.action) }} />{AUDIT_ACTIONS[r.action] || r.action}</span>
-                    <span className="au-actor"><span className="au-name">{r.actor}</span><span className="au-role">{ROLE_L[r.role] || r.role}</span></span>
+                    <AuActor r={r} />
                     <span className="mono au-target">{r.target}</span>
                     <span className="au-detail">{r.detail}{r.outcome && <span className={'au-outcome' + (r.outcome === 'rejected' ? ' fail' : '')}> · {auditOutcome(r)}</span>}</span>
                     {(r.before || r.after) && <span className="au-diff" title="Incluye valores antes y después">Δ</span>}
@@ -194,8 +200,9 @@ function AuditDetail({ r, audit, onClose, onActor, onTarget }) {
             <div className="mk-kv"><span>Acción</span><span className="mono" style={{ fontSize: 12 }}>{r.action}</span></div>
             {r.agentVersion && <div className="mk-kv"><span>Versión del agente</span><span className="mono" style={{ fontSize: 12 }}>v{r.agentVersion}</span></div>}
             {r.model && <div className="mk-kv"><span>Modelo</span><span className="mono" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{r.model}</span></div>}
-            <div className="mk-kv"><span>Recurso</span><span className="mono" style={{ fontSize: 12 }}>{r.target}{AUDIT_PERMS[r.target] && /^access\./.test(r.action) ? <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--text-muted)' }}> · {AUDIT_PERMS[r.target]}</span> : null}</span></div>
+            <div className="mk-kv"><span>Recurso</span><span className="mono" style={{ fontSize: 12 }}>{r.target}{AUDIT_PERMS[r.target] && /^(access\.|policy\.decision$)/.test(r.action) ? <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--text-muted)' }}> · {AUDIT_PERMS[r.target]}</span> : null}</span></div>
             {r.outcome && <div className="mk-kv"><span>Resultado</span><span className={'au-outcome' + (r.outcome === 'rejected' ? ' fail' : '')} style={{ color: r.outcome === 'rejected' ? undefined : 'var(--text)' }}>{auditOutcome(r)}</span></div>}
+            {r.requestedAt && <div className="mk-kv"><span>Solicitado</span><span className="au-steps">{new Date(r.requestedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} · <span className="mono">{r.requestedId}</span> · se registra antes de aplicar</span></div>}
             <div className="mk-kv"><span>Hace</span><span>{window.fmtAgo(r.at)}</span></div>
           </MkSec>
           {start && <MkSec title="Inicio del turno">

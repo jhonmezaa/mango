@@ -187,7 +187,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     setStreaming(true);
     const isWrite = /\b(elimina|borra|apaga|termina|detén|deten|rollback|aplica|ejecuta|libera|reasigna|delete|terminate)|\bcrea(r)?\s+(un\s+)?presupuesto/i.test(text);
     if (isWrite) {
-      setStreamPhase({ k: 'think' }); setTimeout(() => setStreamPhase({ k: 'tool', name: 'políticas de aprobación' }), 400);
+      setStreamPhase({ k: 'think' });
       setTimeout(() => {
         const num = (re) => { const m = text.match(re); return m ? Number(m[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')) : null; };
         const env = /\bprod/i.test(text) ? 'prod' : /\bstaging\b/i.test(text) ? 'staging' : null;
@@ -222,7 +222,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     const part2 = avail ? "\n\nCon el pronóstico de los próximos tres meses, el ahorro combinado ronda **USD 2.300/mes**. Te dejo el detalle por servicio para que el equipo responsable lo evalúe." : " El lifecycle de **events-ingest** lo puedo aplicar en staging si confirmas.";
     const parallel = sim === 'parallel';
     const named = sim !== 'unnamed';
-    const label = (t) => named ? srvName(t.srv) : null;
+    const label = (t) => named ? t.id.split('.').pop() : null;
     let steps = []; let txt = ''; const tools = []; let t = 0; const timers = [];
     const at = (ms, fn) => { t += ms; timers.push(setTimeout(fn, t)); };
     const push = (s) => { steps = [...steps, s]; setStreamSteps(steps); };

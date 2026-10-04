@@ -301,4 +301,26 @@ Confirmado por el producto (sin cambios): doble aprobación solo para lo sensibl
   3. Mensajes del agente tras confirmar o cancelar: **se quitaron**. El estado lo muestra la tarjeta; tras confirmar sigue apareciendo la fila de la tool ejecutada.
 - Aviso de guardrail: solo en vivo; al releer una conversación cargada no se muestra (en el prototipo solo persiste en la sesión).
 
-**Pendiente de aclarar**: llegó cortado el punto de qué nombre lleva la fase «Consultando…» («el producto tiene … no el del MCP»). Hoy el diseño muestra el nombre del MCP («Cost Explorer»). Falta confirmar qué nombre manda el producto.
+
+
+## Cierre de detalles (2026-10-04)
+- **«Consultando…» usa el nombre de la tool**, como el producto: «Consultando get_cost_and_usage…», también en los pasos del turno. Con varias tools: «Consultando {n} tools…». No se pide el nombre del MCP. La espera de una escritura ya no muestra una fase «Consultando políticas de aprobación» (no es una tool): solo «Pensando».
+- **Identificador de los cambios de personas**: aleatorio, se muestran 8 caracteres en mono (p. ej. `18106de3`), también en «No se pudo aprobar 18106de3: …». Los demás cambios siguen como CHG-N.
+- **Rechazos al aprobar cuando el cambio ya no aplica**: un texto por caso, todos terminan en «El cambio ya no aplica: retíralo o recházalo.»: «el grupo {g} ya no existe», «la persona ya no tiene ese grupo», «la persona ya está deshabilitada», «la persona ya está habilitada». Los tres anteriores (deshabilitada, ya tiene el grupo, menos de dos admins) siguen con «El cambio sigue pendiente.»
+- **«Externa»**: si la instalación no tiene dominios de registro, no se marca a nadie.
+- **Mismo patrón en los cuatro formularios del panel**: rehabilitar con aprobación ahora también se abre con «Rehabilitar acceso…» y tiene «Cancelar», como quitar grupo, restablecer MFA y deshabilitar. *Cambio para el producto.*
+- «Otro cambio en curso» al aprobar desde la lista: el producto muestra «La solicitud ya no está pendiente…» hasta que la API separe las dos respuestas. Sin cambio de diseño.
+
+
+## Después de la prueba en navegador real (2026-10-04)
+- **Botón de peligro (`.mk-danger`)**: usa el token nuevo `--danger-bg`, separado de `--red` (que sigue para textos e indicadores). Oscuro: `#b91c1c` con texto blanco, 6,5:1. Claro: `#c4213a`, 5,8:1. Aplica a todos los `.mk-danger`.
+- **Auditoría · actor**: insignia corta en la lista («Admin», «Creador», «Usuario», «Agente», «Sistema»). El rol completo va en el panel del evento y en el texto emergente de la fila. Un actor que es un correo se corta por el medio: el inicio se recorta con «…» y el `@dominio` siempre se ve. Así dos admins con el mismo inicio se distinguen por el dominio, y por el resto del inicio cuando hay sitio.
+- **Auditoría · solicitado + resultado en una fila**: el par «solicitado» → «aplicado»/«no se aplicó» (misma acción, recurso y actor, menos de 2 min) se muestra como una sola fila con el resultado final. El panel del evento añade «Solicitado · {hora} · {id} · se registra antes de aplicar». En el CSV siguen las dos filas. Si la acción misma es un rechazo («Cambio de persona rechazado»), el resultado «aplicado» se lee «registrado».
+- **«Acceso permitido»** (`policy.decision`, en «Acceso y grupos», visible sin «Mostrar lecturas»), con el mismo detalle «{permiso} · permitido». Permisos nuevos en `AUDIT_PERMS`: «Ver personas» (`ViewPeople`), «Gestionar personas» (`ManagePeople`), «Decidir cambio de persona» (`ApprovePeopleChange`).
+- «Lectura del directorio» es una lectura: solo se ve con «Mostrar lecturas» (ya era así en el diseño).
+- **Invitar**: el modal solo valida vacío y formato. El correo público y el «ya está en el directorio» llegan como respuesta al envío, tras «Enviando…», y quedan en Auditoría. La lista de proveedores públicos vive solo en el servidor (la del prototipo es solo para simular).
+- **Panel de la persona**: a ≤560 px ocupa todo el ancho (antes quedaban 60 px de la lista a 560 exactos).
+- **Chip de persona**: el correo se corta por el medio (inicio con «…» + `@dominio` fijo). «tú» va dentro del chip, así que ya no baja de línea a 420 px.
+- **Pestañas de Ajustes a ≤560 px**: hacen salto de línea en vez de desplazarse sin indicarlo.
+- **«Cambios de personas»**: si la persona ya no está en el directorio, la tarjeta conserva su correo (es historial) y añade «Ya no está en el directorio».
+- Persona borrada del directorio por fuera de Mango: desaparece en la siguiente lectura, sin estado propio (aceptado).

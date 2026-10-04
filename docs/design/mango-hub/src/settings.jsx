@@ -281,7 +281,7 @@ function ChangeList({ keys, kind = 'auth', target, title = 'Cambios propuestos',
             <div className="chg-h">
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}><span className="chg-t">{c.kind === 'auth' ? SET_LABELS[c.key].title : c.title || 'Acceso al agente'}</span>{c.decidedBy === 'Sistema' && <span className="badge">Rechazado automáticamente</span>}<span className={'badge ' + st[1]}>{st[0]}</span></div>
-                <div className="chg-m"><span>{mine ? 'Tu propuesta' : 'Propuesta de ' + c.by}</span><span>{window.fmtAgo ? window.fmtAgo(c.at) : ''}</span><span className="mono">{c.id}</span>{status === 'expired' && <span>Nadie la aprobó en 72 h</span>}{status === 'withdrawn' && <span>La retiró {c.by}</span>}{c.decidedBy && <span>{c.status === 'approved' ? 'Aprobó' : 'Rechazó'} {c.decidedBy}</span>}</div>
+                <div className="chg-m"><span>{mine ? 'Tu propuesta' : 'Propuesta de ' + c.by}</span><span>{window.fmtAgo ? window.fmtAgo(c.at) : ''}</span><span className="mono">{c.id}</span>{status === 'expired' && <span>Nadie la aprobó en 72 h</span>}{status === 'withdrawn' && <span>La retiró {c.by}</span>}{c.kind === 'member' && window.MangoPeople && !window.MangoPeople.exists(c.target) && <span>Ya no está en el directorio</span>}{c.decidedBy && <span>{c.status === 'approved' ? 'Aprobó' : 'Rechazó'} {c.decidedBy}</span>}</div>
               </div>
               {status === 'pending' && <div className="chg-act">
                 {mine ? <><K.Reason>Otro admin debe aprobarla</K.Reason><button className="btn btn-sm" disabled={busy === c.id} onClick={() => act(c.id, () => S.withdrawChange(c.id))}>Retirar</button></>

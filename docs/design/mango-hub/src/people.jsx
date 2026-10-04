@@ -27,7 +27,7 @@ const noAccess = (p) => p.status === 'active' && !p.groups.length;
 const upd = (email, f) => S.set({ people: list().map(p => p.email === email ? { ...p, ...f(p) } : p) });
 const pendingFor = (email) => (S.get().changes || []).filter(c => (c.kind === 'member' || c.kind === 'mfa_reset') && c.target === email && window.chgStatus(c) === 'pending');
 const initials = (email) => email.slice(0, 2).toUpperCase();
-const isExternal = (email) => !domains().includes(email.split('@')[1]);
+const isExternal = (email) => { const d = S.get().authCfg.domains || []; return d.length > 0 && !d.includes(email.split('@')[1]); };
 const hasSens = (p) => p.groups.some(g => SENS.includes(g));
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -90,6 +90,11 @@ const recheck = (c) => {
   const p = find(c.target); if (!p) return null;
   const pre = 'No se pudo aprobar ' + c.id + ': ';
   const post = ' El cambio sigue pendiente.';
+  const gone = ' El cambio ya no aplica: retíralo o recházalo.';
+  if (c.key === 'add' && !window.Lifecycle?.groupDef(c.to)) return pre + 'el grupo ' + c.to + ' ya no existe.' + gone;
+  if (c.key === 'remove' && !p.groups.includes(c.to)) return pre + 'la persona ya no tiene ese grupo.' + gone;
+  if (c.key === 'disable' && p.status === 'disabled') return pre + 'la persona ya está deshabilitada.' + gone;
+  if (c.key === 'enable' && p.status !== 'disabled') return pre + 'la persona ya está habilitada.' + gone;
   if (c.key === 'add' && p.status === 'disabled') return pre + 'la persona fue deshabilitada.' + post;
   if (c.key === 'add' && p.groups.includes(c.to)) return pre + 'la persona ya tiene ese grupo.' + post;
   if ((c.key === 'remove' && c.to === 'mango-admin' || c.key === 'disable') && isAdminP(p) && adminCount() <= 2) return pre + 'quedarían menos de dos administradores.' + post;
@@ -98,12 +103,13 @@ const recheck = (c) => {
 const ACT_ERR = { error: 'No se pudo completar la acción. Inténtalo de nuevo.', busy: 'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.', forbidden: 'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.' };
 S.onDecide.mfa_reset = (c, d) => { if (d === 'approved' && find(c.target)) upd(c.target, () => ({ mfa: false })); };
 
-function PersonChip({ email, onRemove, size }) {
+function PersonChip({ email, onRemove, size, you }) {
+  const at = email.lastIndexOf('@');
   const I = window.Icons;
   return (
     <span className={'person-chip' + (size === 'lg' ? ' is-lg' : '')}>
       <span className="person-av" aria-hidden="true">{initials(email)}</span>
-      <span className="person-mail">{email}</span>
+      <span className="person-mail" title={email}>{at > 0 ? <><span className="pm-local">{email.slice(0, at)}</span><span className="pm-dom">{email.slice(at)}</span></> : <span className="pm-local">{email}</span>}</span>{you && <span className="person-you">· tú</span>}
       {onRemove && <button type="button" aria-label={'Quitar ' + email} onClick={onRemove}><I.Close size={10} /></button>}
     </span>
   );
@@ -158,7 +164,7 @@ function PeopleAdmin({ goTab, notify }) {
           {sim === 'loading' ? <div role="status" aria-label="Cargando personas">{[0, 1, 2, 3].map(i => <div key={i} className="pp-tr"><span className="skeleton" style={{ height: 14, width: '70%' }} /><span className="skeleton" style={{ height: 14 }} /><span className="skeleton" style={{ height: 14 }} /><span className="skeleton" style={{ height: 14 }} /><span className="skeleton" style={{ height: 14 }} /><span /></div>)}</div>
             : page.map(p => { const pc = pendingFor(p.email).length; return (
               <button key={p.email} type="button" className="pp-tr pp-row" onClick={() => setOpen(p.email)} aria-label={'Gestionar ' + p.email}>
-                <span style={{ minWidth: 0 }}><PersonChip email={p.email} />{p.email === S.actorEmail() && <span className="mk-meta" style={{ marginLeft: 6 }}>tú</span>}{isExternal(p.email) && <span className="badge" style={{ marginLeft: 6 }} title="Su dominio no es de los que se registran solos">Externa</span>}{pc > 0 && <span className="badge badge-amber" style={{ marginLeft: 6 }}>{pc === 1 ? 'Cambio pendiente' : pc + ' cambios pendientes'}</span>}</span>
+                <span style={{ minWidth: 0 }}><PersonChip email={p.email} you={p.email === S.actorEmail()} />{isExternal(p.email) && <span className="badge" style={{ marginLeft: 6 }} title="Su dominio no es de los que se registran solos">Externa</span>}{pc > 0 && <span className="badge badge-amber" style={{ marginLeft: 6 }}>{pc === 1 ? 'Cambio pendiente' : pc + ' cambios pendientes'}</span>}</span>
                 <span><StatusBadge p={p} /></span>
                 <span className="mk-meta">{p.mfa ? 'Registrado' : 'Sin registrar'}</span>
                 <span className="pp-groups">{p.groups.length ? <>{p.groups.slice(0, 2).map(g => <span key={g} className="pp-g mono">{g}</span>)}{p.groups.length > 2 && <span className="mk-meta">+{p.groups.length - 2}</span>}</> : <span className="mk-meta">Sin grupos</span>}</span>
@@ -228,7 +234,7 @@ function PersonPanel({ email, onClose, notify }) {
   const [add, setAdd] = useState(''); const [reason, setReason] = useState(''); const [tried, setTried] = useState(false);
   const [rm, setRm] = useState(null); const [rmWhy, setRmWhy] = useState('');
   const [mfaOpen, setMfaOpen] = useState(false); const [mfaWhy, setMfaWhy] = useState(''); const [verified, setVerified] = useState(false); const [mfaTried, setMfaTried] = useState(false);
-  const [dis, setDis] = useState(false); const [disWhy, setDisWhy] = useState(''); const [enWhy, setEnWhy] = useState('');
+  const [dis, setDis] = useState(false); const [disWhy, setDisWhy] = useState(''); const [enWhy, setEnWhy] = useState(''); const [enOpen, setEnOpen] = useState(false);
   const [err, setErr] = useState(null); const [busy, setBusy] = useState(false);
   useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
   if (!p) return null;
@@ -317,7 +323,8 @@ function PersonPanel({ email, onClose, notify }) {
             <div className="pp-sec-t">Acceso</div>
             {disabled ? (enPending ? <div className="row gap-2" style={{ alignItems: 'center' }}><span className="badge badge-amber">Rehabilitación pendiente de aprobación</span><span className="mk-meta mono">{enPending.id}</span></div>
               : !hasSens(p) ? <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span className="mk-meta" style={{ flex: 1, minWidth: 200 }}>No puede entrar. Conserva sus grupos y su historial en Auditoría.</span><button className="btn btn-sm" disabled={busy} onClick={() => run(() => { People.enable(email); notify?.('Acceso rehabilitado'); })}>Rehabilitar acceso</button></div>
-              : <div style={{ display: 'grid', gap: 8 }}><span className="mk-meta">No puede entrar. Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.</span><textarea className="input" rows={2} value={enWhy} onChange={e => setEnWhy(e.target.value)} placeholder="Motivo (obligatorio) · lo verá el admin que lo apruebe" aria-label="Motivo para rehabilitar" /><div className="row gap-2" style={{ justifyContent: 'flex-end' }}><button className="btn btn-sm btn-primary" disabled={!enWhy.trim() || busy} onClick={() => run(() => { People.enable(email, enWhy.trim()); notify?.('Propuesta enviada · la debe aprobar otro admin'); setEnWhy(''); })}>Enviar a aprobación</button></div></div>)
+              : !enOpen ? <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span className="mk-meta" style={{ flex: 1, minWidth: 200 }}>No puede entrar. Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.</span><button className="btn btn-sm" onClick={() => setEnOpen(true)}>Rehabilitar acceso…</button></div>
+              : <div style={{ display: 'grid', gap: 8 }}><span className="mk-meta">Tiene un grupo sensible: rehabilitarla lo aprueba otro administrador.</span><textarea className="input" rows={2} value={enWhy} onChange={e => setEnWhy(e.target.value)} placeholder="Motivo (obligatorio) · lo verá el admin que lo apruebe" aria-label="Motivo para rehabilitar" autoFocus /><div className="row gap-2" style={{ justifyContent: 'flex-end' }}><button className="btn btn-sm" onClick={() => { setEnOpen(false); setEnWhy(''); }}>Cancelar</button><button className="btn btn-sm btn-primary" disabled={!enWhy.trim() || busy} onClick={() => run(() => { People.enable(email, enWhy.trim()); notify?.('Propuesta enviada · la debe aprobar otro admin'); setEnWhy(''); setEnOpen(false); })}>Enviar a aprobación</button></div></div>)
               : self ? <K.Reason>No puedes deshabilitar tu propia cuenta.</K.Reason>
               : disPending ? <div className="row gap-2" style={{ alignItems: 'center' }}><span className="badge badge-amber">Deshabilitación pendiente de aprobación</span><span className="mk-meta mono">{disPending.id}</span></div>
               : !dis ? <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span className="mk-meta" style={{ flex: 1, minWidth: 200 }}>Cierra sus sesiones y no puede volver a entrar. No se borra: su historial queda en Auditoría.{isAdminP(p) ? ' Es administrador: lo aprueba otro.' : ''}</span><button className="btn btn-sm mk-danger" disabled={isAdminP(p) && adminCount() <= 2} title={isAdminP(p) && adminCount() <= 2 ? 'Nombra otro administrador antes' : undefined} onClick={() => setDis(true)}>Deshabilitar acceso…</button></div>
@@ -340,11 +347,12 @@ function InviteModal({ preset, onClose, notify }) {
   const [fail, setFail] = useState(false); const [busy, setBusy] = useState(false);
   const e = email.trim().toLowerCase(); const doms = domains();
   const boot = adminCount() === 1;
-  const err = !e ? 'Escribe el correo' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? 'Escribe un correo válido' : PUBLIC.test(e) ? 'Los correos públicos no se aceptan. Usa el correo de la empresa.' : find(e) ? 'Ese correo ya está en el directorio. Ábrelo en la lista para cambiar sus grupos.' : null;
+  const err = !e ? 'Escribe el correo' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? 'Escribe un correo válido' : null;
   const pickable = defs.filter(g => !SENS.includes(g.id) || (g.id === 'mango-admin' && boot));
   const toggle = (g) => setGroups(groups.includes(g) ? groups.filter(x => x !== g) : [...groups, g]);
-  const code = !e ? null : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? 'invalid_email' : PUBLIC.test(e) ? 'public_email' : find(e) ? 'exists' : null;
-  const submit = () => { setTried(true); setFail(false); if (err) { if (code) { const dom = e.includes('@') ? '@' + e.split('@').pop() : '—'; S.log('directory.invite', code === 'exists' ? e : dom, 'Invitación rechazada', { outcome: 'rejected', error: code }); } return; } setBusy(true); setTimeout(() => { setBusy(false); if (S.get().simPeopleAct === 'error') { setFail(true); return; } People.invite(e, groups); notify?.('Invitación enviada · recibirá una contraseña temporal por correo'); onClose(); }, 500); };
+  // La lista de correos públicos vive en el servidor: el rechazo llega como respuesta al envío y queda en Auditoría.
+  const SERVER_ERR = { public_email: 'Los correos públicos no se aceptan. Usa el correo de la empresa.', exists: 'Ese correo ya está en el directorio. Ábrelo en la lista para cambiar sus grupos.', generic: 'No se pudo enviar la invitación. Inténtalo de nuevo.' };
+  const submit = () => { setTried(true); setFail(false); if (err) return; setBusy(true); setTimeout(() => { setBusy(false); const code = PUBLIC.test(e) ? 'public_email' : find(e) ? 'exists' : S.get().simPeopleAct === 'error' ? 'generic' : null; if (code) { if (code !== 'generic') S.log('directory.invite', code === 'exists' ? e : '@' + e.split('@').pop(), 'Invitación rechazada', { outcome: 'rejected', error: code }); setFail(code); return; } People.invite(e, groups); notify?.('Invitación enviada · recibirá una contraseña temporal por correo'); onClose(); }, 500); };
   return (
     <K.Modal title={preset?.includes('mango-admin') ? 'Invitar al segundo administrador' : 'Invitar persona'} sub="Recibe una contraseña temporal por correo; al entrar crea la suya y configura MFA. Queda en Auditoría." onClose={onClose} autoFocus={false}
       footer={<><button className="btn btn-sm" onClick={onClose}>Cancelar</button><button className="btn btn-sm btn-primary" disabled={busy} onClick={submit}>{busy ? 'Enviando…' : 'Enviar invitación'}</button></>}>
@@ -358,10 +366,10 @@ function InviteModal({ preset, onClose, notify }) {
         <div className="row gap-1" style={{ flexWrap: 'wrap' }}>{pickable.map(g => { const on = groups.includes(g.id); return <button key={g.id} type="button" className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} aria-pressed={on} title={g.desc} onClick={() => toggle(g.id)}>{on && <I.Check size={10} />}<span className="mono">{g.id}</span></button>; })}</div>
         <div className="g-hint">{groups.length ? '' : 'Sin grupos entra y ve «Todavía no tienes acceso». '}{boot && groups.includes('mango-admin') ? 'Eres el único administrador: mango-admin se aplica sin segundo aprobador y queda marcado en Auditoría.' : 'mango-admin y finops-central se piden después, sobre la persona, con aprobación de otro administrador.'}</div>
       </div>
-      {fail && <div className="g-err" role="alert">No se pudo enviar la invitación. Inténtalo de nuevo.</div>}
+      {fail && <div className="g-err" role="alert">{SERVER_ERR[fail]}</div>}
     </K.Modal>
   );
 }
 
-Object.assign(window, { PeopleAdmin, PersonChip, MangoPeople: { setInstall, adminCount, recheck } });
+Object.assign(window, { PeopleAdmin, PersonChip, MangoPeople: { setInstall, adminCount, recheck, exists: (e) => !!find(e) } });
 })();
