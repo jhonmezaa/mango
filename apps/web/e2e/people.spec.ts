@@ -66,6 +66,12 @@ test('the directory lists, searches and pages the people', async ({ page }) => {
   const changes = page.getByRole('region', { name: 'Cambios de personas' });
   await expect(changes).toContainText('Dar mango-admin a usuario2@empresa.com');
   await expect(changes).toContainText('<script>alert(1)</script> Cubre las aprobaciones');
+  // History of someone deleted from the directory: the card keeps the email and says so.
+  const gone = changes.getByRole('article').filter({ hasText: 'usuario900@empresa.com' });
+  await expect(gone).toContainText('Ya no está en el directorio');
+  await expect(
+    changes.getByRole('article').filter({ hasText: 'Ya no está en el directorio' }),
+  ).toHaveCount(1);
 });
 
 test('a normal group is applied at once and mango-admin waits for another administrator', async ({

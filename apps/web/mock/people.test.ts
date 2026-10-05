@@ -142,6 +142,14 @@ describe('mock people', () => {
     );
   });
 
+  it('says which change is about someone who is no longer in the directory', async () => {
+    const { items } = await changes();
+    expect(items.filter((item) => !item.target_in_directory).map((item) => item.status)).toEqual([
+      'rejected',
+    ]);
+    expect(items.filter((item) => item.target_in_directory).length).toBeGreaterThan(1);
+  });
+
   it('decides what another administrator proposed, and not an expired change', async () => {
     const { items } = await changes();
     const open = items.find((item) => item.status === 'pending' && item.kind === 'add');

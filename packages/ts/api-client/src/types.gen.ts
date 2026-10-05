@@ -3145,6 +3145,10 @@ export type MangoApiPeopleChangeOut = {
      */
     target_email: string;
     /**
+     * Target In Directory
+     */
+    target_in_directory: boolean | null;
+    /**
      * Target User
      */
     target_user: string;

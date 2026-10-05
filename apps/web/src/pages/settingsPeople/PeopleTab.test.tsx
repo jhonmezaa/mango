@@ -63,6 +63,7 @@ function change(overrides: Partial<MemberChange> = {}): MemberChange {
     decided_by_email: null,
     decided_at: null,
     note: null,
+    target_in_directory: true,
     ...overrides,
   };
 }
@@ -977,6 +978,27 @@ describe('Cambios de personas', () => {
     await waitFor(() => {
       expect(calls(call, 'getMemberChanges')).toHaveLength(2);
     });
+  });
+});
+
+describe('Cambios de personas: la persona ya no está en el directorio', () => {
+  it('keeps the email of the card and says the person is gone, only when the API knows', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: {
+        items: [
+          change({ target_in_directory: false, target_email: 'gone@example.com' }),
+          change({ change_id: 'd'.repeat(32), target_in_directory: null }),
+          change({ change_id: 'e'.repeat(32) }),
+        ],
+      },
+    });
+    renderTab(call);
+    const [gone, unknown, present] = await screen.findAllByRole('article');
+    expect(gone).toHaveTextContent('gone@example.com');
+    expect(gone).toHaveTextContent('Ya no está en el directorio');
+    expect(unknown).not.toHaveTextContent('Ya no está en el directorio');
+    expect(present).not.toHaveTextContent('Ya no está en el directorio');
   });
 });
 

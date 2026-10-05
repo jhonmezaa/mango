@@ -16,6 +16,8 @@ second one is decided **here**, never by the client:
 
 Listing the directory tells an administrator who has an account. That is an agreed exception
 (AGENTS.md, 2026-10-03) to «do not reveal whether a user exists», limited to administrators.
+The list of changes says whether the person of each one is still in the directory, under the
+same exception (extended on 2026-10-04) and the same controls of a read.
 
 Security notes (security-best-practices, FastAPI):
 * Every route declares its Cedar action (``ViewPeople``, ``ManagePeople``,
@@ -86,6 +88,9 @@ LIST_WINDOW = timedelta(days=30)
 ADMINS_CLAIM = timedelta(minutes=2)
 ADMINS_LOCK = "admins"
 MAX_PENDING = 20
+MAX_PRESENCE_LOOKUPS = 20
+"""Directory lookups one read of the changes may make, and only when the directory is larger
+than one read covers; a person beyond them is reported as not known."""
 READS_PER_MINUTE = 120
 CHANGES_PER_HOUR = 200
 PROPOSALS_PER_HOUR = 20
@@ -111,6 +116,7 @@ PersonStatus = Literal["active", "invited", "disabled"]
 ListFilter = Literal["all", "pending", "invited", "disabled"]
 # Cognito statuses of an account whose email was never verified: not a person yet.
 _HIDDEN_STATUSES = frozenset({"UNCONFIRMED", "ARCHIVED", "UNKNOWN"})
+_OPEN_STATUSES = frozenset({"pending", "applying"})
 _INVITED_STATUS = "FORCE_CHANGE_PASSWORD"
 
 
@@ -680,6 +686,11 @@ class ChangeOut(_Strict):
     decided_by_email: str | None
     decided_at: str | None
     note: str | None
+    target_in_directory: bool | None
+    """Whether the person of the change is still in the directory (the card keeps the email:
+    it is history). ``None`` when it is not known: the directory could not be read, or it is
+    larger than one read covers. Told to administrators only (exception agreed on
+    2026-10-04)."""
 
 
 class ChangeListOut(_Strict):
@@ -719,6 +730,9 @@ class DirectoryCache:
     clock: Callable[[], float] = time.monotonic
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _value: tuple[float, Snapshot] | None = None
+    _looked_up: dict[str, tuple[float, bool]] = field(default_factory=dict)
+    """People a read did not cover and were looked up one by one: kept as long as the read,
+    so reading the changes again does not ask Cognito again."""
 
     def get(self, load: Callable[[], Snapshot]) -> Snapshot:
         with self._lock:
@@ -727,9 +741,25 @@ class DirectoryCache:
                 self._value = (now, load())
             return self._value[1]
 
+    def looked_up(self, user_id: str) -> bool | None:
+        with self._lock:
+            found = self._looked_up.get(user_id)
+            if found is None or self.clock() - found[0] >= self.ttl_seconds:
+                return None
+            return found[1]
+
+    def remember(self, user_id: str, present: bool) -> None:
+        with self._lock:
+            now = self.clock()
+            self._looked_up = {
+                k: v for k, v in self._looked_up.items() if now - v[0] < self.ttl_seconds
+            }
+            self._looked_up[user_id] = (now, present)
+
     def clear(self) -> None:
         with self._lock:
             self._value = None
+            self._looked_up = {}
 
 
 # --- Use cases --------------------------------------------------------------------------
@@ -864,7 +894,7 @@ def search(deps: PeopleDeps, caller: Caller, body: SearchIn) -> PeopleOut:
     return out
 
 
-def _change_out(change: MemberChange, now: datetime) -> ChangeOut:
+def _change_out(change: MemberChange, now: datetime, present: bool | None = None) -> ChangeOut:
     status = "pending" if change.status == "applying" else change.status
     shown: Any = "expired" if status == "pending" and now >= change.expires_at else status
     return ChangeOut(
@@ -883,12 +913,76 @@ def _change_out(change: MemberChange, now: datetime) -> ChangeOut:
         decided_by_email=change.decided_by_email,
         decided_at=iso(change.decided_at) if change.decided_at else None,
         note=change.note,
+        target_in_directory=present,
     )
+
+
+def _presence(deps: PeopleDeps, changes: list[MemberChange]) -> dict[str, bool | None]:
+    """Whether the person of each change is still in the directory, by user id.
+
+    Answered from the copy of the directory the list of people already shares (30 s): no
+    lookup per change. Only a directory larger than one read falls back to looking a person
+    up, the open changes first and never more than ``MAX_PRESENCE_LOOKUPS`` per read; what was
+    looked up is kept as long as that copy, so the pool is not asked again (TM-P21). When the
+    directory cannot be read nothing is said: the changes are still listed, and decided.
+    """
+    targets = list(
+        dict.fromkeys(
+            c.target_user for c in sorted(changes, key=lambda c: c.status not in _OPEN_STATUSES)
+        )
+    )
+    if not targets:
+        return {}
+    try:
+        snapshot = _snapshot(deps)
+    except ApiError:
+        return {}
+    known = {u.sub for u in snapshot.users}
+    found: dict[str, bool | None] = {t: True for t in targets if t in known}
+    missing = [t for t in targets if t not in known]
+    if not snapshot.incomplete:
+        return found | dict.fromkeys(missing, False)
+    for target in missing:
+        found[target] = deps.cache.looked_up(target)
+    try:
+        for target in [t for t in missing if found[t] is None][:MAX_PRESENCE_LOOKUPS]:
+            user = deps.people.by_id(target)
+            found[target] = user is not None and user.visible
+            deps.cache.remember(target, found[target] is True)
+    except DirectoryUnavailableError:
+        logger.warning("the directory could not say whether the people of the changes exist")
+    return found
 
 
 def changes_view(deps: PeopleDeps) -> ChangeListOut:
     now = deps.clock()
-    return ChangeListOut(items=[_change_out(c, now) for c in deps.store.recent(now)])
+    changes = deps.store.recent(now)
+    present = _presence(deps, changes)
+    return ChangeListOut(items=[_change_out(c, now, present.get(c.target_user)) for c in changes])
+
+
+def changes_read(deps: PeopleDeps, caller: Caller) -> ChangeListOut:
+    """The list of changes as a read of its own. It says who is no longer in the directory,
+    so it has the limit and the audit of a read of the directory (counts, never emails)."""
+    actor = caller.user.user_id
+    if not deps.reads.allow(actor):
+        raise rate_limited(deps.reads.retry_after(actor))
+    out = changes_view(deps)
+    try:
+        deps.audit.emit(
+            "directory.list",
+            actor,
+            {
+                "scope": "changes",
+                "returned": len(out.items),
+                "missing": sum(1 for c in out.items if c.target_in_directory is False),
+                "outcome": "applied",
+            },
+            caller.user,
+        )
+    except Exception as exc:
+        raise ApiError(503, "audit_unavailable", "the read could not be audited; retry") from exc
+    return out
 
 
 _EVENTS: dict[Kind, str] = {
@@ -1444,8 +1538,8 @@ def people_router(
         return await run(invite, deps, caller, body)
 
     @router.get("/changes", response_model=ChangeListOut)
-    async def get_member_changes(_caller: View) -> ChangeListOut:
-        return await run(changes_view, deps)
+    async def get_member_changes(caller: View) -> ChangeListOut:
+        return await run(changes_read, deps, caller)
 
     @router.post("/changes/{change_id}/approve", response_model=ChangeListOut)
     async def approve_member_change(

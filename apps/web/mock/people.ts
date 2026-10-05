@@ -150,6 +150,18 @@ const changes: MockMemberChange[] = [
     reason: '<script>alert(1)</script> Cubre las aprobaciones en vacaciones.',
   }),
   seed(90, { kind: 'remove', n: 5, group: 'finops-central', reason: 'Cambió de equipo.' }),
+  // History of someone who was deleted from the directory since (nobody has that id here).
+  seed(200, {
+    kind: 'add',
+    n: 900,
+    group: 'finops-central',
+    status: 'rejected',
+    reason: 'Apoya el cierre del mes.',
+    decided_by: MOCK_USER,
+    decided_by_email: MOCK_USER,
+    decided_at: new Date(Date.now() - 190 * HOUR_MS).toISOString(),
+    note: 'Ya no trabaja en la empresa.',
+  }),
 ];
 
 const shownStatus = (change: MockMemberChange) =>
@@ -157,9 +169,29 @@ const shownStatus = (change: MockMemberChange) =>
     ? 'expired'
     : change.status;
 const isOpen = (change: MockMemberChange) => shownStatus(change) === 'pending';
-const changesView = () => ({
-  items: changes.map((change) => ({ ...change, status: shownStatus(change) })),
-});
+/** What a decision answers with; the read of its own is `changesRead`. */
+const changesView = () => {
+  const inDirectory = new Set(people.map((who) => who.user_id));
+  return {
+    items: changes.map((change) => ({
+      ...change,
+      status: shownStatus(change),
+      // The API says it from its copy of the directory; `null` there is «not known».
+      target_in_directory: inDirectory.has(change.target_user),
+    })),
+  };
+};
+/** Reading the changes says who is gone: audited like a read of the directory, with counts. */
+function changesRead() {
+  const view = changesView();
+  recordAudit('directory.list', {
+    scope: 'changes',
+    returned: view.items.length,
+    missing: view.items.filter((change) => !change.target_in_directory).length,
+    outcome: 'applied',
+  });
+  return view;
+}
 
 const waiting = (who: MockPerson) => who.status === 'active' && who.groups.length === 0;
 const isAdmin = (who: MockPerson) => who.status !== 'disabled' && who.groups.includes(ADMIN);
@@ -509,7 +541,7 @@ export const handlePeople: ApiHandler = async (req, res, path) => {
     else sendJson(res, status, result);
     return true;
   };
-  if (path === '/admin/people/changes' && req.method === 'GET') return answer(changesView());
+  if (path === '/admin/people/changes' && req.method === 'GET') return answer(changesRead());
   if (req.method !== 'POST') return false;
   if (path === '/admin/people/search') {
     const body = await readJson(req, ['prefix', 'filter', 'cursor']);

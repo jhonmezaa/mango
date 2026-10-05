@@ -1518,6 +1518,7 @@ export const zMangoApiPeopleChangeOutSchema = z.object({
         'expired'
     ]),
     target_email: z.string(),
+    target_in_directory: z.boolean().nullable(),
     target_user: z.string()
 });
 

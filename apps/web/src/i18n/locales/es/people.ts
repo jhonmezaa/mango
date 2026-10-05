@@ -252,6 +252,8 @@ export const people = {
     rejectedBy: 'Rechazó {{who}}',
     withdrawnBy: 'La retiró {{who}}',
     expiredMeta: 'Nadie la aprobó en {{hours}} h',
+    // The person was deleted from the directory; the card keeps the email (it is history).
+    notInDirectory: 'Ya no está en el directorio',
     needsOther: 'Otro admin debe aprobarla',
     aboutYou: 'Es sobre tu cuenta: la debe aprobar otro admin',
     withdraw: 'Retirar',

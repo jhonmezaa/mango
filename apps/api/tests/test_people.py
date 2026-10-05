@@ -83,6 +83,10 @@ class FakePeople:
     fail_writes: bool = False
     deleted: set[str] = field(default_factory=set)
     """Usernames deleted from the pool that a list read before still carries."""
+    listed: int | None = None
+    """How many users one read of the pool returns; ``None`` is all of them."""
+    fail_reads: bool = False
+    lookups: list[str] = field(default_factory=list)
 
     def put(self, user: PoolUser, *groups: str) -> None:
         self.by_sub[user.sub] = user
@@ -92,12 +96,18 @@ class FakePeople:
         return next(u for u in self.by_sub.values() if u.username == username)
 
     def users(self, limit: int = 2000) -> tuple[list[PoolUser], bool]:
-        return list(self.by_sub.values())[:limit], False
+        if self.fail_reads:
+            raise DirectoryUnavailableError
+        everyone = list(self.by_sub.values())
+        if self.listed is not None:
+            return everyone[: self.listed], len(everyone) > self.listed
+        return everyone[:limit], False
 
     def members(self, group: str) -> list[PoolUser]:
         return [u for u in self.by_sub.values() if group in self.memberships[u.username]]
 
     def by_id(self, user_id: str) -> PoolUser | None:
+        self.lookups.append(user_id)
         return self.by_sub.get(user_id)
 
     def exists(self, email: str) -> bool:
@@ -558,7 +568,9 @@ def test_nobody_gives_up_a_sensitive_group_or_disables_themselves_alone(
     response = _post(env, path, body, "admin2")
     assert (response.status_code, _code(response)) == (403, "self_change")
     assert _changes(env) == []
-    outcomes = [d["outcome"] for e, _, d in env.audit.events if e != "policy.decision"]
+    # Reading the changes is audited as a read of the directory; it is not what is checked.
+    reads = {"policy.decision", "directory.list"}
+    outcomes = [d["outcome"] for e, _, d in env.audit.events if e not in reads]
     assert outcomes == ["rejected"]
 
 
@@ -603,6 +615,77 @@ def test_a_directory_failure_leaves_the_change_pending(env: Env) -> None:
     assert (response.status_code, _code(response)) == (502, "upstream_error")
     env.people.fail_writes = False
     assert _post(env, f"/changes/{change_id}/approve", {}, "admin2").status_code == 200
+
+
+def _delete_from_pool(env: Env, sub: str) -> None:
+    """What the AWS console or the CLI does: the person is gone, their changes stay."""
+    user = env.people.by_sub.pop(sub)
+    del env.people.memberships[user.username]
+
+
+def test_the_changes_say_who_is_no_longer_in_the_directory(env: Env) -> None:
+    _propose_admin(env)
+    assert _changes(env)[0]["target_in_directory"] is True
+    _delete_from_pool(env, "lead")
+    env.audit.events.clear()
+    (change,) = _changes(env)
+    # History: the card keeps the email of who it was about.
+    assert (change["target_in_directory"], change["target_email"]) == (False, "lead@example.com")
+    # No lookup per change: the answer comes from the shared copy of the directory.
+    assert env.people.lookups.count("lead") == 1  # the proposal itself
+    ((actor, detail),) = env.audit.named("directory.list")
+    assert actor == "admin-1"
+    assert detail == {"scope": "changes", "returned": 1, "missing": 1, "outcome": "applied"}
+
+
+def test_reading_the_changes_has_the_limit_and_the_audit_of_a_directory_read(env: Env) -> None:
+    change_id = _propose_admin(env)
+    env.audit.fail_outcomes = {"applied"}
+    unaudited = env.client.get(f"{BASE}/changes", headers=_h("admin"))
+    assert (unaudited.status_code, _code(unaudited)) == (503, "audit_unavailable")
+    env.audit.fail_outcomes = set()
+    env.deps.reads = RateLimiter(1, 60)
+    assert env.client.get(f"{BASE}/changes", headers=_h("admin")).status_code == 200
+    limited = env.client.get(f"{BASE}/changes", headers=_h("admin"))
+    assert (limited.status_code, _code(limited)) == (429, "rate_limited")
+    # A decision answers with the list without spending a read: it is audited as itself.
+    decided = _post(env, f"/changes/{change_id}/reject", {"reason": "not now"}, "admin2")
+    assert decided.json()["items"][0]["status"] == "rejected"
+    assert len(env.audit.named("directory.list")) == 1
+
+
+def test_the_changes_are_listed_when_the_directory_cannot_be_read(env: Env) -> None:
+    _propose_admin(env)
+    env.people.fail_reads = True
+    (change,) = _changes(env)
+    assert (change["status"], change["target_in_directory"]) == ("pending", None)
+
+
+def test_a_directory_larger_than_one_read_is_asked_a_bounded_number_of_times(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _propose_admin(env)
+    env.clock[0] = NOW + timedelta(minutes=1)
+    _post(env, "/admin-3b/groups/remove", {"group": "mango-admin", "reason": "moved"})
+    _delete_from_pool(env, "lead")
+    # One read returns the first two people only: nobody else is known from it.
+    env.people.listed = 2
+    env.people.lookups.clear()
+    monkeypatch.setattr(people_module, "MAX_PRESENCE_LOOKUPS", 1)
+    newest, oldest = _changes(env)
+    assert len(env.people.lookups) == 1
+    assert (newest["target_user"], newest["target_in_directory"]) == ("admin-3b", True)
+    assert (oldest["target_user"], oldest["target_in_directory"]) == ("lead", None)
+    env.people.lookups.clear()
+    monkeypatch.setattr(people_module, "MAX_PRESENCE_LOOKUPS", 20)
+    assert [c["target_in_directory"] for c in _changes(env)] == [True, False]
+    assert sorted(env.people.lookups) == ["admin-3b", "lead"]
+    # While the copy of the directory is fresh, reading again does not ask the pool again.
+    env.deps.cache = DirectoryCache(ttl_seconds=30)
+    assert [c["target_in_directory"] for c in _changes(env)] == [True, False]
+    env.people.lookups.clear()
+    assert [c["target_in_directory"] for c in _changes(env)] == [True, False]
+    assert env.people.lookups == []
 
 
 def test_reject_and_withdraw_close_the_change(env: Env) -> None:

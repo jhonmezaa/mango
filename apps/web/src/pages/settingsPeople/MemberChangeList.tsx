@@ -74,6 +74,10 @@ function ChangeItem({
             {change.status === 'withdrawn' ? (
               <span>{t('people.changes.withdrawnBy', { who })}</span>
             ) : null}
+            {/* Only when the API knows it: `null` is «not known» and says nothing. */}
+            {change.target_in_directory === false ? (
+              <span>{t('people.changes.notInDirectory')}</span>
+            ) : null}
             {decidedBy && change.status === 'approved' ? (
               <span>{t('people.changes.approvedBy', { who: decidedBy })}</span>
             ) : null}
