@@ -882,6 +882,7 @@ def search(deps: PeopleDeps, caller: Caller, body: SearchIn) -> PeopleOut:
             "directory.list",
             actor,
             {
+                "scope": "people",
                 "filter": body.filter,
                 "searched": body.prefix is not None,
                 "returned": len(out.items),

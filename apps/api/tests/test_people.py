@@ -398,7 +398,13 @@ def test_a_read_is_audited_without_emails_or_the_prefix(env: Env) -> None:
     _search(env, prefix="admin-")
     ((actor, detail),) = env.audit.named("directory.list")
     assert actor == "admin-1"
-    assert detail == {"filter": "all", "searched": True, "returned": 3, "outcome": "applied"}
+    assert detail == {
+        "scope": "people",
+        "filter": "all",
+        "searched": True,
+        "returned": 3,
+        "outcome": "applied",
+    }
 
 
 def test_a_read_that_cannot_be_audited_returns_nothing(env: Env) -> None:
