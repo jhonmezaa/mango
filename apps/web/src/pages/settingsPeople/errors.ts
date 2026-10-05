@@ -31,19 +31,21 @@ function isForbidden(error: unknown): boolean {
 
 /**
  * Message key of a refusal of the people API. The server's `message` is never shown: the codes
- * the design has a text for pick it, and anything else is the design's generic failure. On a
- * change applied at once, `version_conflict` is another change of administrators in progress.
+ * the design has a text for pick it, and anything else is the design's generic failure. `busy` is
+ * another change of administrators in progress; on a change applied at once, `version_conflict`
+ * is the administrators having changed meanwhile, and trying again is the answer too.
  */
 export function peopleErrorKey(error: unknown): PeopleErrorKey {
   const code = apiErrorCode(error);
   if (code === 'last_admins') return 'people.errors.last_admins';
-  if (code === 'version_conflict') return 'people.errors.busy';
+  if (code === 'busy' || code === 'version_conflict') return 'people.errors.busy';
   return isForbidden(error) ? 'people.errors.forbidden' : 'people.errors.generic';
 }
 
 /**
- * Deciding on a change: it is closed already (design `ChangeList`: 409 and 410), or approving it
- * broke a rule that is checked again and the change stays pending.
+ * Deciding on a change: it is closed already (design `ChangeList`: 409 and 410), another change
+ * of administrators is being applied (`busy`: the change is still pending), or approving it broke
+ * a rule that is checked again and the change stays pending.
  */
 export function decisionErrorKey(error: unknown, approving = false): PeopleErrorKey {
   // `unknown_group` is a 422: the group of the change was removed after it was proposed.
@@ -51,6 +53,7 @@ export function decisionErrorKey(error: unknown, approving = false): PeopleError
     return 'people.errors.approve.unknown_group';
   }
   if (error instanceof ApiError && (error.status === 409 || error.status === 410)) {
+    if (error.code === 'busy') return 'people.errors.busy';
     const refusal = APPROVE_REFUSALS.find((code) => code === error.code);
     if (approving && refusal) return `people.errors.approve.${refusal}`;
     return error.code === 'last_admins' ? 'people.errors.last_admins' : 'people.errors.notPending';

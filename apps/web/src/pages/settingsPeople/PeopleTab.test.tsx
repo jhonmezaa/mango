@@ -546,7 +546,11 @@ describe('Panel of a person', () => {
       'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.',
     ],
     [
-      new ApiError(409, 'version_conflict', 'another change is in progress'),
+      new ApiError(409, 'busy', 'another change of administrators is in progress'),
+      'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.',
+    ],
+    [
+      new ApiError(409, 'version_conflict', 'the administrators changed; reload'),
       'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.',
     ],
   ])(
@@ -978,6 +982,21 @@ describe('Cambios de personas', () => {
 
 describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () => {
   const pending = [change()];
+
+  it('tells another change of administrators in progress from a change already decided', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: { items: pending },
+      approveMemberChange: new ApiError(409, 'busy', 'server words'),
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Otro cambio de administradores está en curso. Inténtalo de nuevo en unos segundos.',
+    );
+    expect(screen.queryByText('server words')).toBeNull();
+    expect(screen.getByText('Pendiente')).toBeInTheDocument();
+  });
 
   it.each([
     ['user_disabled', 'la persona fue deshabilitada'],

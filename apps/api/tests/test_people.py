@@ -620,6 +620,22 @@ def test_reject_and_withdraw_close_the_change(env: Env) -> None:
     assert (closed.status_code, _code(closed)) == (409, "version_conflict")
 
 
+def test_approving_tells_another_change_in_progress_from_one_already_decided(env: Env) -> None:
+    change_id = _propose_admin(env)
+    # Another change of administrators holds the claim: this one is still pending.
+    env.deps.store.claim_admins("someone", NOW)
+    busy = _post(env, f"/changes/{change_id}/approve", {}, "admin2")
+    assert (busy.status_code, _code(busy)) == (409, "busy")
+    assert "mango-admin" not in env.people.memberships["name-lead"]
+    assert _changes(env)[0]["status"] == "pending"
+    assert env.audit.named("directory.member_approve", "rejected")[-1][1]["error"] == "busy"
+    env.clock[0] = NOW + timedelta(minutes=3)
+    assert _post(env, f"/changes/{change_id}/approve", {}, "admin2").status_code == 200
+    # Decided already: approving again is a different refusal.
+    again = _post(env, f"/changes/{change_id}/approve", {}, "admin2")
+    assert (again.status_code, _code(again)) == (409, "version_conflict")
+
+
 def test_taking_a_sensitive_group_closes_the_sessions(env: Env) -> None:
     response = _post(
         env, "/admin-1/groups/remove", {"group": "finops-central", "reason": "moved"}, "admin2"
@@ -738,7 +754,7 @@ def test_two_bootstraps_at_once_do_not_both_apply(env: Env) -> None:
     _alone(env)
     env.deps.store.claim_admins("someone", NOW)
     response = _post(env, "/lead/groups", {"group": "mango-admin"})
-    assert (response.status_code, _code(response)) == (409, "version_conflict")
+    assert (response.status_code, _code(response)) == (409, "busy")
     assert "mango-admin" not in env.people.memberships["name-lead"]
     # The claim expires on its own, and a finished change releases its own.
     env.clock[0] = NOW + timedelta(minutes=3)

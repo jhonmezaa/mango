@@ -1044,7 +1044,9 @@ def _apply(
     try:
         deps.store.claim_admins(actor, deps.clock())
     except ConflictError as exc:
-        raise ApiError(409, "version_conflict", "another change is in progress; retry") from exc
+        # Its own code: the change is still there and trying again in a moment works, unlike
+        # ``version_conflict`` (the change was decided already, or the administrators moved).
+        raise ApiError(409, "busy", "another change of administrators is in progress") from exc
     try:
         admins = _enabled_admins(deps)
         if bootstrap and [u.sub for u in admins] != [actor]:
