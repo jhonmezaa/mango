@@ -213,7 +213,8 @@ function AuditDetail({ r, audit, onClose, onActor, onTarget }) {
           {r.action === 'directory.list' && r.scope && <MkSec title="Lectura">
             <div className="mk-kv"><span>Qué se leyó</span><span>{r.scope === 'changes' ? 'Lista de cambios de personas' : 'Búsqueda de personas'}</span></div>
             <div className="mk-kv"><span>Resultados</span><span>{r.returned ?? '—'}</span></div>
-            {r.scope === 'people' && <div className="mk-kv"><span>Texto buscado</span><span>{r.query ? 'Sí' : 'No · lista completa'}</span></div>}
+            {r.scope === 'people' && <div className="mk-kv"><span>Filtro</span><span>{({ all: 'Todas', pending: 'Sin acceso', invited: 'Invitadas', disabled: 'Deshabilitadas' })[r.filter || 'all'] || r.filter}</span></div>}
+            {r.scope === 'people' && <div className="mk-kv"><span>Texto buscado</span><span>{r.query ? 'Sí' : 'No'}</span></div>}
             {r.scope === 'changes' && <div className="mk-kv"><span>De personas que ya no están</span><span>{r.missing || 0}</span></div>}
           </MkSec>}
           {start && <MkSec title="Inicio del turno">

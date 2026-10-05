@@ -239,7 +239,9 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
         const finish = (cut) => { setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamSteps([]);
           setMessages(m => [...m, ...tools, { type: 'agent_response', text: txt, ...(cut ? { guardrail: true } : {}) }]);
           if (cut) S.log('chat.guardrail', agent.id, 'Respuesta cortada por guardrail');
-          else toast?.({ tone: 'success', title: 'Respuesta completa', msg: agent.name + ' terminó de responder.' }); };
+          else { const el = scrollRef.current; const seen = !document.hidden && !(el && el.scrollHeight - el.scrollTop - el.clientHeight > 80); const msg = agent.name + ' terminó de responder.';
+            if (!seen) toast?.({ tone: 'success', title: 'Respuesta completa', msg });
+            else { let r = document.getElementById('mg-live'); if (!r) { r = document.createElement('div'); r.id = 'mg-live'; r.setAttribute('aria-live', 'polite'); r.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(r); } r.textContent = ''; setTimeout(() => { r.textContent = 'Respuesta completa. ' + msg; }, 60); } } };
         push({ id: 'tC', k: 'tool', name: label(toolC), tool: toolC.id, status: 'run' }); setStreamPhase({ k: 'tool', name: label(toolC) });
         timers.push(setTimeout(() => { done('tC', 'ok'); tools.push({ type: 'tool_call', tool: toolC.id, params: toolC.params, ms: 900, measured: true, status: 'ok' }); push({ id: 'p2', k: 'process', status: 'run' }); setStreamPhase({ k: 'process' });
           timers.push(setTimeout(() => { done('p2', 'ok'); push({ id: 'w2', k: 'write', status: 'run' }); setStreamPhase({ k: 'write' });

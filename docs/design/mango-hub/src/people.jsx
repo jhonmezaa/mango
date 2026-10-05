@@ -117,6 +117,7 @@ function PersonChip({ email, onRemove, size, you }) {
   );
 }
 
+const PP_FILTER_LABEL = { all: 'Todas', pending: 'Sin acceso', invited: 'Invitadas', disabled: 'Deshabilitadas' };
 const STATUS = { active: ['Activa', 'badge'], invited: ['Invitada · contraseña temporal', 'badge-blue'], disabled: ['Deshabilitada', 'badge-red'] };
 function StatusBadge({ p }) {
   if (noAccess(p)) return <span className="badge badge-amber" title="Se registró y aún no tiene ningún grupo">Sin acceso</span>;
@@ -132,7 +133,8 @@ function PeopleAdmin({ goTab, notify }) {
   const [q, setQ] = useState(''); const [filter, setFilter] = useState('all'); const [shown, setShown] = useState(PAGE);
   const [open, setOpen] = useState(null); const [invite, setInvite] = useState(null); const [actErr, setActErr] = useState(null);
   useEffect(() => setShown(PAGE), [q, filter]);
-  useEffect(() => { if (sim) return; S.log('directory.list', 'directory', 'Buscó personas · ' + people.length + ' resultados', { read: true, scope: 'people', returned: people.length, query: false }); const ch = S.get().changes.filter(c => c.kind === 'member'); const miss = ch.filter(c => !find(c.target)).length; S.log('directory.list', 'directory', 'Leyó los cambios de personas · ' + ch.length + ' cambios' + (miss ? ' · ' + miss + ' de personas que ya no están' : ''), { read: true, scope: 'changes', returned: ch.length, missing: miss }); }, [sim]);
+  useEffect(() => { if (sim) return; const ch = S.get().changes.filter(c => c.kind === 'member'); const miss = ch.filter(c => !find(c.target)).length; S.log('directory.list', 'directory', 'Leyó los cambios de personas · ' + ch.length + (ch.length === 1 ? ' cambio' : ' cambios') + (miss ? ' · ' + (miss === 1 ? '1 de una persona que ya no está' : miss + ' de personas que ya no están') : ''), { read: true, scope: 'changes', returned: ch.length, missing: miss }); }, [sim]);
+  useEffect(() => { if (sim) return; const n = rows.length; S.log('directory.list', 'directory', (Q ? 'Buscó por texto' : 'Buscó personas') + (filter !== 'all' ? ' · ' + PP_FILTER_LABEL[filter] : '') + ' · ' + n + (n === 1 ? ' resultado' : ' resultados'), { read: true, scope: 'people', returned: n, query: !!Q, filter }); }, [sim, filter]);
   const Q = q.trim().toLowerCase();
   const pend = people.filter(noAccess).length;
   const FILTERS = [['all', 'Todas'], ['pending', 'Sin acceso', pend], ['invited', 'Invitadas'], ['disabled', 'Deshabilitadas']];
