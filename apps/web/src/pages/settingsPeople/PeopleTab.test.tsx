@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -1131,13 +1131,98 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
       expect(reads).toBe(2);
     });
     expect(screen.getAllByText('Pendiente')).toHaveLength(2);
+    // Meanwhile neither change of administrators can be decided, and each card says why.
+    expect(screen.getAllByText('Otro cambio se está aplicando…')).toHaveLength(2);
+    for (const name of ['Aprobar', 'Rechazar']) {
+      for (const button of screen.getAllByRole('button', { name })) expect(button).toBeDisabled();
+    }
     // A few seconds later, without reloading: the other card is approved, this one still pending.
     expect(
       await screen.findByText('Aprobó admin3@example.com', {}, { timeout: 6000 }),
     ).toBeInTheDocument();
     expect(screen.getAllByText('Pendiente')).toHaveLength(1);
     expect(screen.getByRole('alert')).toHaveTextContent('Otro cambio de administradores');
+    // The other change moved: the wait is over and this one can be decided again.
+    expect(screen.queryByText('Otro cambio se está aplicando…')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Aprobar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Rechazar' })).toBeEnabled();
   }, 12_000);
+
+  it('keeps reading every 3 s for 30 s after «otro cambio en curso», then gives the buttons back', async () => {
+    // Only the interval of the rereads is faked; everything else runs in real time.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      let reads = 0;
+      const items = [
+        change(),
+        change({ change_id: 'e'.repeat(32), proposed_by: ME.user_id }),
+        // Not a change of administrators: it is never held back.
+        change({ change_id: 'f'.repeat(32), kind: 'remove', group: 'finops-central' }),
+        // Its person is gone and nobody knows whether it is an administrator.
+        change({
+          change_id: 'g'.repeat(32),
+          kind: 'disable',
+          group: null,
+          target_in_directory: false,
+        }),
+      ];
+      const call = apiWith({
+        searchPeople: directory([person()]),
+        getMemberChanges: () => {
+          reads += 1;
+          return { items };
+        },
+        approveMemberChange: new ApiError(409, 'busy', 'server words'),
+      });
+      const { user } = renderTab(call);
+      const cards = () => screen.getAllByRole('article') as [HTMLElement, ...HTMLElement[]];
+      const button = (index: number, name: string) =>
+        within(cards()[index] as HTMLElement).getByRole('button', { name });
+      await screen.findAllByRole('article');
+      await user.click(button(0, 'Aprobar'));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Otro cambio de administradores');
+      await waitFor(() => {
+        expect(reads).toBe(2);
+      });
+      const held = () => {
+        expect(cards()[0]).toHaveTextContent('Otro cambio se está aplicando…');
+        expect(button(0, 'Aprobar')).toBeDisabled();
+        expect(button(0, 'Rechazar')).toBeDisabled();
+        // Its own proposal can still be withdrawn.
+        expect(cards()[1]).not.toHaveTextContent('Otro cambio se está aplicando…');
+        expect(button(1, 'Retirar')).toBeEnabled();
+        expect(cards()[2]).not.toHaveTextContent('Otro cambio se está aplicando…');
+        expect(button(2, 'Aprobar')).toBeEnabled();
+        // One reason at a time: the wait, not that its person is gone.
+        expect(cards()[3]).toHaveTextContent('Otro cambio se está aplicando…');
+        expect(cards()[3]).not.toHaveTextContent('No se puede aprobar');
+        expect(button(3, 'Rechazar')).toBeDisabled();
+      };
+      held();
+      for (let tick = 1; tick <= 10; tick += 1) {
+        if (tick === 10) held();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(3000);
+        });
+        expect(reads).toBe(2 + tick);
+      }
+      // 30 s without a change: the buttons come back and nothing else is read.
+      expect(screen.queryByText('Otro cambio se está aplicando…')).toBeNull();
+      expect(button(0, 'Aprobar')).toBeEnabled();
+      expect(button(0, 'Rechazar')).toBeEnabled();
+      expect(cards()[3]).toHaveTextContent('No se puede aprobar: ya no está en el directorio');
+      expect(button(3, 'Rechazar')).toBeEnabled();
+      expect(screen.getByRole('alert')).toHaveTextContent('Otro cambio de administradores');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000);
+      });
+      expect(reads).toBe(12);
+      // Only the list of changes was read again, not the directory.
+      expect(call.mock.calls.filter(([operation]) => operation === 'searchPeople')).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it.each([
     ['user_disabled', 'la persona fue deshabilitada'],

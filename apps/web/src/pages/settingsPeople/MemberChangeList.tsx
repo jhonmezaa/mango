@@ -4,7 +4,13 @@ import { useTranslation } from 'react-i18next';
 import type { Me } from '../../api/schemas';
 import { Reason } from '../../components/admin/govKit';
 import { formatRelative } from '../../lib/format';
-import { CHANGE_TTL_HOURS, REASON_MAX_LENGTH, isSelf, type MemberChange } from './model';
+import {
+  CHANGE_TTL_HOURS,
+  REASON_MAX_LENGTH,
+  isSelf,
+  mayTouchAdmins,
+  type MemberChange,
+} from './model';
 
 const STATUS_BADGE: Record<MemberChange['status'], string> = {
   pending: 'badge-amber',
@@ -17,6 +23,7 @@ const STATUS_BADGE: Record<MemberChange['status'], string> = {
 function ChangeItem({
   change,
   me,
+  held,
   rejecting,
   onRejecting,
   onWithdraw,
@@ -25,6 +32,8 @@ function ChangeItem({
 }: {
   change: MemberChange;
   me: Me;
+  /** Another change of administrators is being applied: this one cannot be decided yet. */
+  held: boolean;
   /** Whether this request shows its reject note; the list keeps a single one open. */
   rejecting: boolean;
   onRejecting: (open: boolean) => void;
@@ -109,11 +118,13 @@ function ChangeItem({
               <Reason>{t('people.changes.aboutYou')}</Reason>
             ) : gone ? (
               <>
-                <Reason>{t('people.changes.cannotApproveGone')}</Reason>
+                <Reason>
+                  {t(held ? 'people.changes.applyingOther' : 'people.changes.cannotApproveGone')}
+                </Reason>
                 <button
                   type="button"
                   className="btn btn-sm"
-                  disabled={busy}
+                  disabled={busy || held}
                   onClick={() => {
                     onRejecting(true);
                     // The reason is already written and can be edited.
@@ -125,10 +136,11 @@ function ChangeItem({
               </>
             ) : (
               <>
+                {held ? <Reason>{t('people.changes.applyingOther')}</Reason> : null}
                 <button
                   type="button"
                   className="btn btn-sm"
-                  disabled={busy}
+                  disabled={busy || held}
                   onClick={() => {
                     onRejecting(true);
                     setNote('');
@@ -139,7 +151,7 @@ function ChangeItem({
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
-                  disabled={busy}
+                  disabled={busy || held}
                   onClick={() => {
                     run(onApprove);
                   }}
@@ -190,7 +202,7 @@ function ChangeItem({
             <button
               type="button"
               className="btn btn-sm btn-primary"
-              disabled={!note.trim() || busy}
+              disabled={!note.trim() || busy || held}
               onClick={() => {
                 run(async () => {
                   // Design `ChangeList`: a failed reject keeps the note open to try again.
@@ -216,6 +228,7 @@ export function MemberChangeList({
   changes,
   me,
   error,
+  applying,
   onWithdraw,
   onApprove,
   onReject,
@@ -224,6 +237,12 @@ export function MemberChangeList({
   me: Me;
   /** Why the last decision was not applied. */
   error: string | null;
+  /**
+   * Another change of administrators is being applied (design round of 2026-10-05b): the
+   * changes of administrators offer neither «Aprobar» nor «Rechazar» until it ends; «Retirar»
+   * stays. Only what is shown: the API answers `busy` anyway.
+   */
+  applying: boolean;
   onWithdraw: (change: MemberChange) => Promise<boolean>;
   onApprove: (change: MemberChange) => Promise<boolean>;
   onReject: (change: MemberChange, note: string) => Promise<boolean>;
@@ -249,6 +268,7 @@ export function MemberChangeList({
             key={change.change_id}
             change={change}
             me={me}
+            held={applying && mayTouchAdmins(change)}
             rejecting={rejectingId === change.change_id}
             onRejecting={(open) => {
               setRejectingId((current) =>

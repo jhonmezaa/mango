@@ -130,7 +130,8 @@ test('the chat shows the phase and the steps of the turn, a failed tool and a gu
   await expect(turn.getByText('Falló get_rightsizing_recommendations')).toBeVisible();
   await expect(turn.getByRole('button', { name: /pasos · 1 con error/ })).toBeVisible();
   // Once the answer ends, the steps give way to the tool group, which marks the failure.
-  await expect(page.getByText('Respuesta completa')).toBeVisible({ timeout: 20_000 });
+  // The end of the answer is on screen, so it is announced and not toasted.
+  await expect(page.getByText(/^Respuesta completa\. /)).toBeAttached({ timeout: 20_000 });
   await expect(turn.getByRole('button', { name: /pasos/ })).toHaveCount(0);
   await turn.getByRole('button', { name: /3 herramientas/ }).click();
   await expect(turn.locator('.tool-row .badge', { hasText: 'Falló' })).toHaveCount(1);

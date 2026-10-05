@@ -258,6 +258,8 @@ export const people = {
     cannotApproveGone: 'No se puede aprobar: ya no está en el directorio',
     goneRejectNote: 'La persona ya no está en el directorio.',
     needsOther: 'Otro admin debe aprobarla',
+    // Round of 2026-10-05b: while another change of administrators is being applied.
+    applyingOther: 'Otro cambio se está aplicando…',
     aboutYou: 'Es sobre tu cuenta: la debe aprobar otro admin',
     withdraw: 'Retirar',
     reject: 'Rechazar',

@@ -150,10 +150,9 @@ test.describe('Shell, chat and Org Chart', () => {
     test(`at ${String(width)}px the toasts go under the top bar, clear of the composer and «Enviar»`, async () => {
       await page.setViewportSize({ width, height: 900 });
       await pushRoute(page, '/');
-      await page.locator('#chat-input').fill('hola');
-      await page.locator('#chat-input').press('Enter');
-      const toast = page.locator('.g-toast-item', { hasText: 'Respuesta completa' });
-      await expect(toast).toBeVisible({ timeout: 30_000 });
+      await page.locator('.topbar-create').click();
+      const toast = page.locator('.g-toast-item', { hasText: 'Nueva conversación iniciada.' });
+      await expect(toast).toBeVisible();
       const toastBox = await toast.boundingBox();
       const composerBox = await page.locator('.composer-box').boundingBox();
       const topbarBox = await page.locator('.topbar').boundingBox();
@@ -180,9 +179,24 @@ test.describe('Shell, chat and Org Chart', () => {
         })()`,
       );
       expect(reachesSend).toBe(true);
+      // The stack takes no clicks outside its toasts.
+      await expect(page.locator('.g-toasts')).toHaveCSS('pointer-events', 'none');
+      await expect(toast).toHaveCSS('pointer-events', 'auto');
       await page.setViewportSize({ width: 1280, height: 720 });
     });
   }
+
+  // Design chat.jsx: no «Respuesta completa» toast for someone who sees the end of the answer;
+  // screen readers still hear it.
+  test('an answer whose end is on screen is announced without a toast', async () => {
+    await pushRoute(page, '/');
+    await page.locator('#chat-input').fill('hola');
+    await page.locator('#chat-input').press('Enter');
+    await expect(
+      page.locator('[aria-live="polite"].sr-only', { hasText: 'Respuesta completa. ' }),
+    ).toHaveText(/^Respuesta completa\. .+ terminó de responder\.$/, { timeout: 30_000 });
+    await expect(page.locator('.g-toast-item')).toHaveCount(0);
+  });
 
   test('leaves no errors in the console', () => {
     expect(consoleErrors).toEqual([]);

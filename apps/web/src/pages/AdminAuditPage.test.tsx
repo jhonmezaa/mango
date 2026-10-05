@@ -647,6 +647,10 @@ describe('AdminAuditPage', () => {
       { scope: 'people', filter: 'all', searched: false, returned: 16, outcome: 'applied' },
       // Written before the API recorded `scope`.
       { filter: 'all', searched: true, returned: 1, outcome: 'applied' },
+      // The filter is named when it is not «Todas»; the text searched is never recorded.
+      { scope: 'people', filter: 'pending', searched: false, returned: 3, outcome: 'applied' },
+      { scope: 'people', filter: 'invited', searched: true, returned: 1, outcome: 'applied' },
+      { scope: 'changes', returned: 2, missing: 1, outcome: 'applied' },
     ].map((detail, index) => ({
       ...base,
       event_id: `d${String(index)}`.padEnd(32, '0'),
@@ -661,7 +665,14 @@ describe('AdminAuditPage', () => {
     expect(screen.getByText('Leyó los cambios de personas · 1 cambio')).toBeInTheDocument();
     const people = screen.getByText('Buscó personas · 16 resultados');
     expect(screen.getByText('Buscó por texto · 1 resultado')).toBeInTheDocument();
-    expect(screen.getAllByText('Lectura del directorio')).toHaveLength(4);
+    const filtered = screen.getByText('Buscó personas · Sin acceso · 3 resultados');
+    expect(screen.getByText('Buscó por texto · Invitadas · 1 resultado')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Leyó los cambios de personas · 2 cambios · 1 de una persona que ya no está',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Lectura del directorio')).toHaveLength(7);
     // Never the raw keys, nor the outcome of a read.
     expect(screen.queryByText(/scope:|returned:|missing:|searched:|filter:/)).toBeNull();
     expect(screen.queryByText('· aplicado')).toBeNull();
@@ -675,6 +686,7 @@ describe('AdminAuditPage', () => {
     expect(kv(panel, 'Resultados')).toHaveTextContent('16');
     expect(kv(panel, 'De personas que ya no están')).toHaveTextContent('14');
     expect(within(panel).queryByText('Texto buscado')).toBeNull();
+    expect(within(panel).queryByText('Filtro')).toBeNull();
     expect(within(panel).queryByText('Resultado')).toBeNull();
     await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
 
@@ -682,8 +694,15 @@ describe('AdminAuditPage', () => {
     panel = screen.getByRole('dialog');
     expect(kv(panel, 'Qué se leyó')).toHaveTextContent('Búsqueda de personas');
     expect(kv(panel, 'Resultados')).toHaveTextContent('16');
-    expect(kv(panel, 'Texto buscado')).toHaveTextContent('No · lista completa');
+    expect(kv(panel, 'Filtro')).toHaveTextContent('Todas');
+    expect(kv(panel, 'Texto buscado')?.textContent).toBe('No');
     expect(within(panel).queryByText('De personas que ya no están')).toBeNull();
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
+
+    await user.click(filtered.closest('button') as HTMLElement);
+    panel = screen.getByRole('dialog');
+    expect(kv(panel, 'Filtro')).toHaveTextContent('Sin acceso');
+    expect(kv(panel, 'Resultados')).toHaveTextContent('3');
   });
 
   it('shows a retry state when the API fails', async () => {

@@ -251,6 +251,8 @@ describe('ChatPage', () => {
 
   it('toasts "Respuesta completa" only once the agent has answered in full', async () => {
     const user = userEvent.setup();
+    // The person is not looking at the end of the conversation: the tab is in the background.
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     const { api, pending } = streamingApi([{ type: 'conversation', conversation_id: 'c1' }]);
     renderChat(api);
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
@@ -266,6 +268,45 @@ describe('ChatPage', () => {
     expect(toast).toHaveTextContent('FinOps terminó de responder.');
     await user.click(within(toast).getByRole('button', { name: 'Cerrar' }));
     expect(screen.queryByText('Respuesta completa')).toBeNull();
+  });
+
+  it('does not toast an answer whose end the person sees, and still announces it', async () => {
+    const user = userEvent.setup();
+    const { api, pending } = streamingApi([{ type: 'conversation', conversation_id: 'c1' }]);
+    renderChat(api);
+    await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
+    expect(await screen.findByRole('button', { name: 'Cancelar respuesta' })).toBeInTheDocument();
+    act(() => {
+      pending.finish();
+    });
+    const said = await screen.findByText('Respuesta completa. FinOps terminó de responder.');
+    expect(said).toHaveAttribute('aria-live', 'polite');
+    expect(said).toHaveClass('sr-only');
+    expect(document.querySelector('.g-toasts')).toBeEmptyDOMElement();
+  });
+
+  it('toasts an answer that ended while the person had scrolled up', async () => {
+    const user = userEvent.setup();
+    const { api, pending } = streamingApi([{ type: 'conversation', conversation_id: 'c1' }]);
+    renderChat(api);
+    await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
+    expect(await screen.findByRole('button', { name: 'Cancelar respuesta' })).toBeInTheDocument();
+    const scroll = document.querySelector('.chat-scroll') as HTMLElement;
+    const metrics = (scrollTop: number) => {
+      for (const [name, value] of Object.entries({
+        scrollHeight: 2000,
+        clientHeight: 600,
+        scrollTop,
+      }))
+        Object.defineProperty(scroll, name, { configurable: true, value });
+    };
+    // 81px from the end: more than the 80px of the design.
+    metrics(1319);
+    act(() => {
+      pending.finish();
+    });
+    expect(await screen.findByText('Respuesta completa')).toBeInTheDocument();
+    expect(screen.queryByText('Respuesta completa. FinOps terminó de responder.')).toBeNull();
   });
 
   it('does not toast a stopped answer', async () => {

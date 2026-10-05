@@ -413,7 +413,10 @@ describe('toAuditRow', () => {
         }),
         0,
       ).detail,
-    ).toEqual({ kind: 'directoryRead', read: { scope: 'people', returned: 20, searched: true } });
+    ).toEqual({
+      kind: 'directoryRead',
+      read: { scope: 'people', returned: 20, searched: true, filter: 'all' },
+    });
   });
 
   it('says what a read of the directory read, with counts and without its outcome', () => {
@@ -429,8 +432,14 @@ describe('toAuditRow', () => {
     );
     expect(people.detail).toEqual({
       kind: 'directoryRead',
-      read: { scope: 'people', returned: 16, searched: false },
+      read: { scope: 'people', returned: 16, searched: false, filter: 'pending' },
     });
+    // No recorded filter is the whole list; a value this build does not know is not shown.
+    const filterOf = (detail: Record<string, unknown>) =>
+      toAuditRow(event('directory.list', { scope: 'people', returned: 1, ...detail }), 0).detail;
+    expect(filterOf({})).toMatchObject({ read: { filter: 'all' } });
+    expect(filterOf({ filter: 'archived' })).toMatchObject({ read: { filter: null } });
+    expect(filterOf({ filter: 7 })).toMatchObject({ read: { filter: null } });
     // Design: the outcome of a read is not shown.
     expect(people).toMatchObject({ outcome: null, tone: 'dim' });
     const changes = toAuditRow(

@@ -187,17 +187,18 @@ export const audit = {
     catalogSync_one: 'Consultó el catálogo de Bedrock · {{count}} modelo nuevo',
     catalogSync_other: 'Consultó el catálogo de Bedrock · {{count}} modelos nuevos',
     // Design round of 2026-10-05: the two reads of Ajustes › Personas, with counts only.
+    // Round of 2026-10-05b: the search names its filter when it is not «Todas» (the labels are
+    // the ones of the screen, `people.filters`), and every count has its singular.
     directoryRead: {
-      people_one: 'Buscó personas · {{count}} resultado',
-      people_other: 'Buscó personas · {{count}} resultados',
-      peopleUnknown: 'Buscó personas',
-      searched_one: 'Buscó por texto · {{count}} resultado',
-      searched_other: 'Buscó por texto · {{count}} resultados',
-      searchedUnknown: 'Buscó por texto',
+      people: 'Buscó personas',
+      searched: 'Buscó por texto',
+      results_one: '{{count}} resultado',
+      results_other: '{{count}} resultados',
       changes_one: 'Leyó los cambios de personas · {{count}} cambio',
       changes_other: 'Leyó los cambios de personas · {{count}} cambios',
       changesUnknown: 'Leyó los cambios de personas',
-      missing: '{{count}} de personas que ya no están',
+      missing_one: '{{count}} de una persona que ya no está',
+      missing_other: '{{count}} de personas que ya no están',
     },
     session: {
       started: 'Ingresó con contraseña y MFA',
@@ -290,9 +291,10 @@ export const audit = {
     readPeople: 'Búsqueda de personas',
     readChanges: 'Lista de cambios de personas',
     readReturned: 'Resultados',
+    readFilter: 'Filtro',
     readSearched: 'Texto buscado',
     readSearchedYes: 'Sí',
-    readSearchedNo: 'No · lista completa',
+    readSearchedNo: 'No',
     readMissing: 'De personas que ya no están',
     turnStart: 'Inicio del turno',
     turn: 'Turno',

@@ -17,6 +17,14 @@ export const FILTERS: readonly ListFilter[] = ['all', 'pending', 'invited', 'dis
 /** Must match `SENSITIVE_GROUPS` in `apps/api/src/mango_api/people.py`. Only labels the UI. */
 const SENSITIVE_GROUPS: ReadonlySet<string> = new Set(['mango-admin', 'finops-central']);
 export const ADMIN_GROUP = 'mango-admin';
+/**
+ * Whether applying the change may touch the administrators, which the API does one at a time
+ * (`_touches_admins` in `people.py`). A change does not say whether its person is one, so
+ * disabling and enabling count: only for what the screen holds back, never for a rule.
+ */
+export function mayTouchAdmins(change: Pick<MemberChange, 'kind' | 'group'>): boolean {
+  return change.group === ADMIN_GROUP || change.kind === 'disable' || change.kind === 'enable';
+}
 /** Design `SYS_ORDER`; must match `SYSTEM_GROUPS` in `people.py`. */
 export const SYSTEM_GROUPS: readonly string[] = [
   'mango-admin',

@@ -1013,7 +1013,7 @@
   }
 
   /* Toasts (design `.toast-stack`): at the top right, under the top bar (64px + 8px), so none
-     covers the composer or «Enviar» at any width. */
+     covers the composer or «Enviar» at any width. The stack takes no clicks outside its toasts. */
   .g-toasts {
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 72px);
@@ -1023,6 +1023,10 @@
     flex-direction: column;
     gap: 8px;
     max-width: 360px;
+    pointer-events: none;
+  }
+  .g-toasts > * {
+    pointer-events: auto;
   }
   @media (max-width: 560px) {
     .g-toasts {

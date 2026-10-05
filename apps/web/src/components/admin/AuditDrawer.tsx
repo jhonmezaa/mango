@@ -242,6 +242,12 @@ export function AuditDrawer({
               </div>
               {read.scope === 'people' ? (
                 <div className="mk-kv">
+                  <span>{t('audit.drawer.readFilter')}</span>
+                  <span>{read.filter ? t(`people.filters.${read.filter}`) : '—'}</span>
+                </div>
+              ) : null}
+              {read.scope === 'people' ? (
+                <div className="mk-kv">
                   <span>{t('audit.drawer.readSearched')}</span>
                   <span>
                     {t(

@@ -24,6 +24,7 @@ import {
   hasFirstDaySteps,
   isExternal,
   isSelf,
+  mayTouchAdmins,
   pendingOf,
   searchPrefix,
   type ActionResult,
@@ -37,10 +38,12 @@ import { PersonStatusBadge } from './PersonStatus';
 
 const SEARCH_DEBOUNCE_MS = 300;
 /**
- * After `busy` the list is read at once and again after this long: the other change of
- * administrators is still being applied, so the first read may still show it pending.
+ * After `busy` the other change of administrators is still being applied. Design round of
+ * 2026-10-05b: the list of changes is read at once and then every 3 s, until a change of
+ * administrators moves or 30 s go by; meanwhile those cards do not offer to decide.
  */
 const BUSY_REREAD_MS = 3000;
+const BUSY_REREADS = 10;
 const NO_PEOPLE: readonly Person[] = [];
 const NO_CHANGES: readonly MemberChange[] = [];
 const NO_RESETS: readonly MfaReset[] = [];
@@ -83,6 +86,8 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
   const [registry, setRegistry] = useState<GroupsAdmin['items'] | null>(null);
   const [areas, setAreas] = useState<number | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  // Another change of administrators is being applied (see `BUSY_REREAD_MS`).
+  const [applying, setApplying] = useState(false);
   // The person whose panel is open, as last seen: it may leave the page that is listed.
   const [open, setOpen] = useState<Person | null>(null);
   const [invite, setInvite] = useState<readonly string[] | null>(null);
@@ -121,6 +126,72 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
     };
   }, [api, prefix, filter, key, refreshToken, onForbidden]);
 
+  /** Reads everything again in the background, keeping the screen. */
+  const refresh = useCallback(() => {
+    setRefreshToken((value) => value + 1);
+  }, []);
+
+  // The watch that follows a `busy`: the states the changes of administrators had, the timer of
+  // the next read and how many are left.
+  const watch = useRef<{
+    seen: ReadonlyMap<string, MemberChange['status']>;
+    timer: number;
+    controller: AbortController;
+    left: number;
+  } | null>(null);
+  const stopWatch = useCallback(() => {
+    if (!watch.current) return;
+    window.clearInterval(watch.current.timer);
+    watch.current.controller.abort();
+    watch.current = null;
+    setApplying(false);
+  }, []);
+  useEffect(() => stopWatch, [stopWatch]);
+  /** Shows a list of changes just read; `true` when it ended the watch (one of them moved). */
+  const showChanges = useCallback(
+    (items: readonly MemberChange[]): boolean => {
+      setChanges(items);
+      const seen = watch.current?.seen;
+      if (!seen) return false;
+      const moved = items.some(
+        (item) => seen.has(item.change_id) && seen.get(item.change_id) !== item.status,
+      );
+      if (moved) stopWatch();
+      return moved;
+    },
+    [stopWatch],
+  );
+  const startWatch = (before: readonly MemberChange[]) => {
+    stopWatch();
+    const controller = new AbortController();
+    const timer = window.setInterval(() => {
+      const current = watch.current;
+      if (!current) return;
+      current.left -= 1;
+      const last = current.left <= 0;
+      api.call('getMemberChanges', {}, { signal: controller.signal }).then(
+        (read) => {
+          if (controller.signal.aborted) return;
+          // The directory changed with it: everything is read again.
+          if (showChanges(read.items)) refresh();
+          else if (last) stopWatch();
+        },
+        () => {
+          if (!controller.signal.aborted) stopWatch();
+        },
+      );
+      // No more reads after the last one, whatever it answers.
+      if (last) window.clearInterval(timer);
+    }, BUSY_REREAD_MS);
+    watch.current = {
+      seen: new Map(before.filter(mayTouchAdmins).map((item) => [item.change_id, item.status])),
+      timer,
+      controller,
+      left: BUSY_REREADS,
+    };
+    setApplying(true);
+  };
+
   // The changes waiting for a second administrator and the MFA resets, with every refresh.
   useEffect(() => {
     const controller = new AbortController();
@@ -129,14 +200,14 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
       api.listMfaResets(),
     ]).then(([memberChanges, mfaResets]) => {
       if (controller.signal.aborted) return;
-      if (memberChanges.status === 'fulfilled') setChanges(memberChanges.value.items);
+      if (memberChanges.status === 'fulfilled') showChanges(memberChanges.value.items);
       setResetsError(mfaResets.status === 'rejected');
       if (mfaResets.status === 'fulfilled') setResets(mfaResets.value);
     });
     return () => {
       controller.abort();
     };
-  }, [api, refreshToken]);
+  }, [api, refreshToken, showChanges]);
 
   // The groups a person can be given and the areas: independent requests, read once.
   useEffect(() => {
@@ -154,17 +225,6 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
     };
   }, [api]);
 
-  /** Reads everything again in the background, keeping the screen. */
-  const refresh = useCallback(() => {
-    setRefreshToken((value) => value + 1);
-  }, []);
-  const rereadTimer = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (rereadTimer.current !== null) window.clearTimeout(rereadTimer.current);
-    },
-    [],
-  );
   const retry = () => {
     setListing(null);
     refresh();
@@ -321,7 +381,7 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
   ): Promise<boolean> => {
     setDecisionError(null);
     try {
-      setChanges((await action()).items);
+      showChanges((await action()).items);
     } catch (error) {
       setDecisionError(
         t(decisionErrorKey(error, approving !== undefined), {
@@ -335,10 +395,7 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
         error instanceof ApiError &&
         (error.status === 409 || error.status === 410 || error.code === 'user_not_found');
       if (stale) refresh();
-      if (error instanceof ApiError && error.code === 'busy') {
-        if (rereadTimer.current !== null) window.clearTimeout(rereadTimer.current);
-        rereadTimer.current = window.setTimeout(refresh, BUSY_REREAD_MS);
-      }
+      if (error instanceof ApiError && error.code === 'busy') startWatch(changes);
       return false;
     }
     refresh();
@@ -565,6 +622,7 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
         changes={changes}
         me={me}
         error={decisionError}
+        applying={applying}
         onWithdraw={(change) =>
           decide(() => api.call('withdrawMemberChange', { path: changePath(change), body: {} }))
         }

@@ -73,14 +73,18 @@ const dayFormat = new Intl.DateTimeFormat('es-MX', {
   month: 'long',
 });
 
-/** Design round of 2026-10-05: the sentence of a read of the directory, from its counts. */
+/**
+ * The sentence of a read of the directory, from what the API recorded (design rounds of
+ * 2026-10-05): what was read, the filter when it is not «Todas», and the count.
+ */
 function directoryReadText(t: TFunction, read: DirectoryRead): string {
   const { returned } = read;
   if (read.scope === 'people') {
-    const key = read.searched ? 'searched' : 'people';
-    return returned === null
-      ? t(`audit.detail.directoryRead.${key}Unknown`)
-      : t(`audit.detail.directoryRead.${key}`, { count: returned });
+    return [
+      t(`audit.detail.directoryRead.${read.searched ? 'searched' : 'people'}`),
+      ...(read.filter && read.filter !== 'all' ? [t(`people.filters.${read.filter}`)] : []),
+      ...(returned === null ? [] : [t('audit.detail.directoryRead.results', { count: returned })]),
+    ].join(' · ');
   }
   const text =
     returned === null

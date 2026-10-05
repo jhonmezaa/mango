@@ -128,6 +128,8 @@ interface ConversationAgent {
 }
 
 const NO_AGENTS: ReadonlyMap<string, Agent> = new Map();
+/** Design chat.jsx: farther than this from the end, the person does not see a new answer. */
+const SEEN_END_PX = 80;
 
 /**
  * Chat with an agent (design chat.jsx). The agent is the one of the conversation; a new
@@ -158,6 +160,9 @@ export function ChatPage() {
   // Outcome of the last conversation fetch, keyed by ID so stale results are ignored.
   const [loadResult, setLoadResult] = useState<LoadResult>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // The end of an answer in words for screen readers, when no toast says it.
+  const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
     // Warm the lazily loaded markdown chunk so the first answer renders formatted.
@@ -257,8 +262,17 @@ export function ChatPage() {
   );
 
   const answeredBy = agent?.name ?? t('chat.agentUnknown');
+  // Design chat.jsx `finish`: the toast only when the person does not see the end of the
+  // conversation (the tab is in the background, or they scrolled up); otherwise the answer itself
+  // says it. Screen readers hear it either way: from the toast, or from the live region.
   const onTurnCompleted = useCallback(() => {
-    notify(t('chat.toast.doneBody', { name: answeredBy }), 'success', t('chat.toast.doneTitle'));
+    const body = t('chat.toast.doneBody', { name: answeredBy });
+    const title = t('chat.toast.doneTitle');
+    const el = scrollRef.current;
+    const awayFromEnd =
+      el !== null && el.scrollHeight - el.scrollTop - el.clientHeight > SEEN_END_PX;
+    if (document.hidden || awayFromEnd) notify(body, 'success', title);
+    else setAnnouncement(`${title}. ${body}`);
   }, [answeredBy, notify, t]);
 
   const { state, isStreaming, send, stop, reset, updateApproval } = useChatStream({
@@ -368,7 +382,10 @@ export function ChatPage() {
 
   const sendText = useCallback(
     (text: string) => {
-      if (agentId && canChat) void send(text, { agentId, model });
+      if (!agentId || !canChat) return;
+      // Emptied first, so the same sentence is announced again after the next answer.
+      setAnnouncement('');
+      void send(text, { agentId, model });
     },
     [agentId, canChat, model, send],
   );
@@ -454,7 +471,7 @@ export function ChatPage() {
               : undefined
           }
         />
-        <div className="chat-scroll">
+        <div ref={scrollRef} className="chat-scroll">
           {isEmpty && agent && canChat && (
             <AgentHero agent={agent} disabled={isStreaming} onPrompt={sendText} />
           )}
@@ -559,6 +576,9 @@ export function ChatPage() {
         )}
       </div>
       {toasts}
+      <div className="sr-only" aria-live="polite">
+        {announcement}
+      </div>
     </div>
   );
 }

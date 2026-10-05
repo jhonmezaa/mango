@@ -38,8 +38,8 @@ import type { AuditEvent, AuditResource } from '../../api/schemas';
 // search of people and the list of changes; each has its own sentence and a «Lectura» section in
 // the panel, never the raw keys, and its `outcome` is not shown. The API never records the text
 // searched (only whether there was one), so the sentence says «Buscó por texto». A search written
-// before the API recorded `scope` is known by its `searched`. `filter` is not in the design and
-// is not shown.
+// before the API recorded `scope` is known by its `searched`. Design round of 2026-10-05b: the
+// filter of the search is named with the label it has on the screen.
 //
 // Requested and result (design round of 2026-10-03g, `mergeAudit`): the API writes «solicitado»
 // before it touches anything and the result afterwards. The pair (same event, resource and actor,
@@ -298,9 +298,19 @@ export type Outcome = 'requested' | 'applied' | 'rejected';
 /** Design `ROLE_L` keys, from the role and admin flag the API recorded with the event. */
 export type ActorRole = 'lead_admin' | 'admin' | 'owner' | 'user';
 
+/** Filters of Ajustes › Personas, as the API records them with a search. */
+const DIRECTORY_FILTERS = ['all', 'pending', 'invited', 'disabled'] as const;
+export type DirectoryFilter = (typeof DIRECTORY_FILTERS)[number];
+
 /** What a `directory.list` read, with the counts the API recorded (never emails or the text). */
 export type DirectoryRead =
-  | { scope: 'people'; returned: number | null; searched: boolean }
+  | {
+      scope: 'people';
+      returned: number | null;
+      searched: boolean;
+      /** Filter of the screen; `null` when the event carries a value this build does not know. */
+      filter: DirectoryFilter | null;
+    }
   | { scope: 'changes'; returned: number | null; missing: number };
 
 export type DetailText =
@@ -471,7 +481,12 @@ function directoryReadOf(detail: Record<string, unknown>): DirectoryRead | null 
     return { scope: 'changes', returned, missing: count(detail.missing) ?? 0 };
   }
   if (detail.scope === 'people' || typeof detail.searched === 'boolean') {
-    return { scope: 'people', returned, searched: detail.searched === true };
+    // A search without a recorded filter listed everyone (design: `filter || 'all'`).
+    const filter =
+      detail.filter === undefined
+        ? 'all'
+        : (DIRECTORY_FILTERS.find((known) => known === detail.filter) ?? null);
+    return { scope: 'people', returned, searched: detail.searched === true, filter };
   }
   return null;
 }
