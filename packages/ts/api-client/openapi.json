@@ -3063,6 +3063,10 @@
       "OrgNode": {
         "additionalProperties": false,
         "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
           "can_use": {
             "title": "Can Use",
             "type": "boolean"
@@ -3129,7 +3133,8 @@
           "color",
           "reports_to",
           "can_use",
-          "groups"
+          "groups",
+          "can_edit"
         ],
         "title": "OrgNode",
         "type": "object"

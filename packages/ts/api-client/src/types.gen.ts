@@ -1666,6 +1666,10 @@ export type OptionalReasonIn = {
  */
 export type OrgNode = {
     /**
+     * Can Edit
+     */
+    can_edit: boolean;
+    /**
      * Can Use
      */
     can_use: boolean;

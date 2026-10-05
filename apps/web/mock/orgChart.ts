@@ -3,7 +3,7 @@
  * The agents live in `agents.ts`; the response follows the generated contract
  * (packages/ts/api-client) and `organization` of mango_api.agents. The mock user is an admin, so
  * they get every published agent (D38); the ones shared with groups they are not in come with
- * `can_use: false` and those groups (D65).
+ * `can_use: false` and those groups (D65). An admin may edit any agent, so `can_edit` is true.
  */
 import { agents, publishedVersion, ROOT_SUPERVISOR } from './agents.ts';
 import { MOCK_USER } from './cognito.ts';
@@ -38,6 +38,8 @@ export const handleOrgChart: ApiHandler = (req, res, path) => {
         reports_to: supervisor === ROOT_SUPERVISOR || visible.has(supervisor) ? supervisor : null,
         can_use: canUse,
         groups: canUse ? [] : definition.groups.toSorted(),
+        // Who created it or an administrator (`EditAgent`); the mock user is an administrator.
+        can_edit: true,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'es') || a.id.localeCompare(b.id));

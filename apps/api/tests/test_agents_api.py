@@ -1128,6 +1128,25 @@ def test_the_organization_chart_says_who_uses_an_agent_the_caller_cannot_use(env
     assert "users" not in env.client.get("/api/agents/org", headers=_h("admin")).json()["nodes"][0]
 
 
+def test_the_organization_chart_says_who_may_edit_an_agent(env: Env) -> None:
+    live = _published(env, name="Jefe", groups=["ops", "hr"])
+
+    def can_edit(token: str) -> bool:
+        (node,) = env.client.get("/api/agents/org", headers=_h(token)).json()["nodes"]
+        return bool(node["can_edit"])
+
+    # The same answer as opening the version in the Builder: who created it or an admin.
+    for token, expected in (("creator", True), ("admin", True), ("creator2", False)):
+        assert can_edit(token) is expected
+        opened = env.client.get(_url(live), headers=_h(token)).status_code
+        assert (opened == 200) is expected
+    # Using an agent is not editing it, and who cannot edit anything is not looked up.
+    asked = len(env.cedar.allowed("EditAgent"))
+    assert can_edit("member") is False
+    assert can_edit("outsider") is False
+    assert len(env.cedar.allowed("EditAgent")) == asked
+
+
 def test_a_new_version_shows_its_diff_against_the_published_one(env: Env) -> None:
     live = _published(env)
     opened = env.client.post(

@@ -131,6 +131,7 @@ const node = (id: string, name: string, reportsTo: string): OrgNode => ({
   color: 0,
   reports_to: reportsTo,
   can_use: true,
+  can_edit: true,
   groups: [],
 });
 

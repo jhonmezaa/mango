@@ -390,6 +390,9 @@ class OrgNode(_Strict):
     """Groups the published version is shared with, only on an agent the caller sees and
     cannot use (administrators and creators, D38): it tells them who does (D65). Empty
     otherwise; never the people it is shared with."""
+    can_edit: bool
+    """Whether the caller may open the agent in the Builder (``EditAgent``: who created it
+    or an administrator). Display only: every route of the Builder authorizes on its own."""
 
 
 class OrgOut(_Strict):
@@ -858,6 +861,20 @@ def list_agents(deps: AgentsDeps, caller: Caller) -> AgentList:
     return AgentList(items=items)
 
 
+def _editable(deps: AgentsDeps, user: UserContext, agent_ids: list[str]) -> frozenset[str]:
+    """Agents ``user`` may edit, by the rule of the routes of the Builder (``agent_action``):
+    the Cedar decision on ``EditAgent`` and, in process, administrator or who created it."""
+    if not (user.is_admin or user.is_agent_creator):
+        return frozenset()
+    metas = {agent_id: deps.store.meta(agent_id) for agent_id in agent_ids}
+    mine = [
+        AgentResource(agent_id, creator=meta.created_by)
+        for agent_id, meta in metas.items()
+        if meta is not None and (user.is_admin or _is_mine(user, meta))
+    ]
+    return deps.authorizer.allowed_agents(user, "EditAgent", mine) if mine else frozenset()
+
+
 def organization(deps: AgentsDeps, caller: Caller) -> OrgOut:
     """«Reports to» tree (D30). Administrators and creators see it all; others, the agents
     they may use (D38, TM-M17)."""
@@ -870,6 +887,10 @@ def organization(deps: AgentsDeps, caller: Caller) -> OrgOut:
     visible = frozenset(v.agent_id for v in versions) if full else usable
     scope = "organization" if full else "organization_filtered"
     _audit_list(deps, caller.user, scope, len(visible))
+    # Only who sees the whole tree can edit anything; nobody else costs a lookup.
+    editable = (
+        _editable(deps, caller.user, [v.agent_id for v in versions]) if full else frozenset[str]()
+    )
     nodes: list[OrgNode] = []
     for v in versions:
         if v.agent_id not in visible:
@@ -889,6 +910,7 @@ def organization(deps: AgentsDeps, caller: Caller) -> OrgOut:
                 reports_to=supervisor if shown else None,
                 can_use=v.agent_id in usable,
                 groups=[] if v.agent_id in usable else sorted(v.definition.groups),
+                can_edit=v.agent_id in editable,
             )
         )
     nodes.sort(key=lambda n: (n.name.casefold(), n.id))

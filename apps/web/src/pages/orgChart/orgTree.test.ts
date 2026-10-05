@@ -27,6 +27,7 @@ function agent(id: string, reportsTo: string | null, overrides: Partial<OrgNode>
     color: 0,
     reports_to: reportsTo,
     can_use: true,
+    can_edit: true,
     groups: [],
     ...overrides,
   };

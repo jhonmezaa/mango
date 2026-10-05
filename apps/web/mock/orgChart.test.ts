@@ -60,6 +60,8 @@ describe('mock org chart', () => {
       expect(node.can_use).toBe(mine || (definition?.users.includes(MOCK_USER) ?? false));
       // The groups only come with an agent that cannot be used.
       expect(node.groups).toEqual(node.can_use ? [] : definition?.groups.toSorted());
+      // The mock user is an administrator: they may edit every agent, used or not.
+      expect(node.can_edit).toBe(true);
     }
   });
 

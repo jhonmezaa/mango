@@ -679,6 +679,7 @@ export const zOptionalReasonInSchema = z.object({
  * OrgNode
  */
 export const zOrgNodeSchema = z.object({
+    can_edit: z.boolean(),
     can_use: z.boolean(),
     category: z.string(),
     color: z.int(),

@@ -21,6 +21,7 @@ function agent(id: string, name: string, role: string, reportsTo: string | null)
     color: 2,
     reports_to: reportsTo,
     can_use: true,
+    can_edit: true,
     groups: [],
   };
 }
