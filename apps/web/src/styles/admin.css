@@ -1012,10 +1012,11 @@
     }
   }
 
-  /* Toasts (design ui.jsx Toast) */
+  /* Toasts (design `.toast-stack`): at the top right, under the top bar (64px + 8px), so none
+     covers the composer or «Enviar» at any width. */
   .g-toasts {
     position: fixed;
-    bottom: 18px;
+    top: calc(env(safe-area-inset-top, 0px) + 72px);
     right: 18px;
     z-index: 2000;
     display: flex;
@@ -1023,11 +1024,8 @@
     gap: 8px;
     max-width: 360px;
   }
-  /* Design `.toast-stack`: on phones the toasts go under the top bar, so none covers the composer. */
   @media (max-width: 560px) {
     .g-toasts {
-      bottom: auto;
-      top: calc(env(safe-area-inset-top, 0px) + 56px);
       left: 12px;
       right: 12px;
       max-width: none;

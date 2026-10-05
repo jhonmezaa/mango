@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -19,6 +20,7 @@ import {
   toAuditRow,
   type AuditCategory,
   type AuditRow,
+  type DirectoryRead,
 } from '../components/admin/auditModel';
 import { usd } from '../components/admin/govFormat';
 import { Denied, GovErrorState, Skel } from '../components/admin/govKit';
@@ -70,6 +72,24 @@ const dayFormat = new Intl.DateTimeFormat('es-MX', {
   day: 'numeric',
   month: 'long',
 });
+
+/** Design round of 2026-10-05: the sentence of a read of the directory, from its counts. */
+function directoryReadText(t: TFunction, read: DirectoryRead): string {
+  const { returned } = read;
+  if (read.scope === 'people') {
+    const key = read.searched ? 'searched' : 'people';
+    return returned === null
+      ? t(`audit.detail.directoryRead.${key}Unknown`)
+      : t(`audit.detail.directoryRead.${key}`, { count: returned });
+  }
+  const text =
+    returned === null
+      ? t('audit.detail.directoryRead.changesUnknown')
+      : t('audit.detail.directoryRead.changes', { count: returned });
+  return read.missing > 0
+    ? `${text} · ${t('audit.detail.directoryRead.missing', { count: read.missing })}`
+    : text;
+}
 
 const isCategory = (value: string | null): value is AuditCategory =>
   (AUDIT_CATEGORIES as readonly string[]).includes(value ?? '');
@@ -258,15 +278,17 @@ export function AdminAuditPage() {
                             ? d.added > 0
                               ? t('audit.detail.catalogSync', { count: d.added })
                               : t('audit.detail.catalogSyncNone')
-                            : d.kind === 'session'
-                              ? d.sso
-                                ? // The name comes from `config.json`, shown as text.
-                                  [
-                                    t('audit.detail.session.startedSso'),
-                                    ...(idpName ? [idpName] : []),
-                                  ].join(' · ')
-                                : t(`audit.detail.${d.action}`)
-                              : d.text;
+                            : d.kind === 'directoryRead'
+                              ? directoryReadText(t, d.read)
+                              : d.kind === 'session'
+                                ? d.sso
+                                  ? // The name comes from `config.json`, shown as text.
+                                    [
+                                      t('audit.detail.session.startedSso'),
+                                      ...(idpName ? [idpName] : []),
+                                    ].join(' · ')
+                                  : t(`audit.detail.${d.action}`)
+                                : d.text;
       return text;
     },
     [t, idpName],

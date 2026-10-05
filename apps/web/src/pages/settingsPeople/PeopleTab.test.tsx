@@ -1002,6 +1002,83 @@ describe('Cambios de personas: la persona ya no está en el directorio', () => {
   });
 });
 
+describe('Cambios de personas: el cambio pendiente de quien ya no está', () => {
+  const gone = change({ target_in_directory: false, target_email: 'gone@example.com' });
+
+  it('offers no «Aprobar», says why, and opens the reject note already written', async () => {
+    let current = [gone];
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: () => ({ items: current }),
+      rejectMemberChange: () => {
+        current = [{ ...gone, status: 'rejected' as const, decided_by: ME.user_id }];
+        return { items: current };
+      },
+    });
+    const { user } = renderTab(call);
+    const card = await screen.findByRole('article');
+    expect(card).toHaveTextContent('No se puede aprobar: ya no está en el directorio');
+    expect(within(card).queryByRole('button', { name: 'Aprobar' })).toBeNull();
+    await user.click(within(card).getByRole('button', { name: 'Rechazar' }));
+    const note = within(card).getByRole('textbox', { name: 'Motivo del rechazo' });
+    expect(note).toHaveValue('La persona ya no está en el directorio.');
+    // The reason can be edited before it is sent.
+    await user.type(note, ' Fue borrada.');
+    const [, confirm] = within(card).getAllByRole('button', { name: 'Rechazar' });
+    await user.click(confirm as HTMLElement);
+    expect(await within(card).findByText('Rechazado')).toBeInTheDocument();
+    expect(calls(call, 'rejectMemberChange')).toEqual([
+      {
+        path: { change_id: gone.change_id },
+        body: { reason: 'La persona ya no está en el directorio. Fue borrada.' },
+      },
+    ]);
+  });
+
+  it('leaves only «Retirar» to who proposed it, and says nothing when the API does not know', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: {
+        items: [
+          { ...gone, proposed_by: ME.user_id },
+          change({ change_id: 'd'.repeat(32), target_in_directory: null }),
+        ],
+      },
+    });
+    renderTab(call);
+    const [mine, unknown] = await screen.findAllByRole('article');
+    expect(mine).toHaveTextContent('Otro admin debe aprobarla');
+    expect(mine).not.toHaveTextContent('No se puede aprobar');
+    expect(within(mine as HTMLElement).getAllByRole('button')).toHaveLength(1);
+    expect(within(mine as HTMLElement).getByRole('button', { name: 'Retirar' })).toBeEnabled();
+    expect(within(unknown as HTMLElement).getByRole('button', { name: 'Aprobar' })).toBeEnabled();
+  });
+
+  it('says the person is gone when it happens between the list and «Aprobar», and reads again', async () => {
+    let current = [change()];
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: () => ({ items: current }),
+      approveMemberChange: () => {
+        current = [change({ target_in_directory: false })];
+        throw new ApiError(404, 'user_not_found', 'server words');
+      },
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No se pudo aprobar cccccccc: la persona ya no está en el directorio. El cambio ya no aplica: retíralo o recházalo.',
+    );
+    expect(screen.queryByText('server words')).toBeNull();
+    // The list is read again without reloading: the card stops offering «Aprobar».
+    expect(
+      await screen.findByText('No se puede aprobar: ya no está en el directorio'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar' })).toBeNull();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+});
+
 describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () => {
   const pending = [change()];
 
@@ -1019,6 +1096,48 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
     expect(screen.queryByText('server words')).toBeNull();
     expect(screen.getByText('Pendiente')).toBeInTheDocument();
   });
+
+  it('reads the list again after «otro cambio en curso», once the other change is applied', async () => {
+    const mine = change();
+    const other = change({ change_id: 'f'.repeat(32), kind: 'disable', group: null });
+    let reads = 0;
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      // The other change is still being applied at the first read after the refusal.
+      getMemberChanges: () => {
+        reads += 1;
+        return {
+          items:
+            reads < 3
+              ? [mine, other]
+              : [
+                  mine,
+                  {
+                    ...other,
+                    status: 'approved' as const,
+                    decided_by: 'admin-3',
+                    decided_by_email: 'admin3@example.com',
+                  },
+                ],
+        };
+      },
+      approveMemberChange: new ApiError(409, 'busy', 'server words'),
+    });
+    const { user } = renderTab(call);
+    const [first] = await screen.findAllByRole('button', { name: 'Aprobar' });
+    await user.click(first as HTMLElement);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Otro cambio de administradores');
+    await waitFor(() => {
+      expect(reads).toBe(2);
+    });
+    expect(screen.getAllByText('Pendiente')).toHaveLength(2);
+    // A few seconds later, without reloading: the other card is approved, this one still pending.
+    expect(
+      await screen.findByText('Aprobó admin3@example.com', {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Pendiente')).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent('Otro cambio de administradores');
+  }, 12_000);
 
   it.each([
     ['user_disabled', 'la persona fue deshabilitada'],

@@ -33,8 +33,13 @@ import type { AuditEvent, AuditResource } from '../../api/schemas';
 //
 // People (design round of 2026-10-03): the `directory.*` events of Ajustes › Personas keep their
 // name in the API and get the design's labels, in «Acceso y grupos», with «Abrir Ajustes».
-// `directory.list` (reading the directory) is not in the design: «Lectura del directorio». The
-// API counts it as a read, so it is only listed with «Mostrar lecturas».
+// `directory.list` («Lectura del directorio») is a read for the API, so it is only listed with
+// «Mostrar lecturas». Design round of 2026-10-05: each load of Ajustes › Personas leaves two, the
+// search of people and the list of changes; each has its own sentence and a «Lectura» section in
+// the panel, never the raw keys, and its `outcome` is not shown. The API never records the text
+// searched (only whether there was one), so the sentence says «Buscó por texto». A search written
+// before the API recorded `scope` is known by its `searched`. `filter` is not in the design and
+// is not shown.
 //
 // Requested and result (design round of 2026-10-03g, `mergeAudit`): the API writes «solicitado»
 // before it touches anything and the result afterwards. The pair (same event, resource and actor,
@@ -293,6 +298,11 @@ export type Outcome = 'requested' | 'applied' | 'rejected';
 /** Design `ROLE_L` keys, from the role and admin flag the API recorded with the event. */
 export type ActorRole = 'lead_admin' | 'admin' | 'owner' | 'user';
 
+/** What a `directory.list` read, with the counts the API recorded (never emails or the text). */
+export type DirectoryRead =
+  | { scope: 'people'; returned: number | null; searched: boolean }
+  | { scope: 'changes'; returned: number | null; missing: number };
+
 export type DetailText =
   | { kind: 'defaults'; user: string | null; agent: string | null }
   | { kind: 'userDefault' }
@@ -305,6 +315,7 @@ export type DetailText =
   | { kind: 'chat'; agent: string; tools: number; cost: string | null }
   | { kind: 'catalogSync'; added: number }
   | { kind: 'session'; action: SessionAction; sso: boolean }
+  | { kind: 'directoryRead'; read: DirectoryRead }
   | { kind: 'raw'; text: string };
 
 export interface AuditRow {
@@ -450,6 +461,21 @@ function summarize(detail: Record<string, unknown>): string {
   return text.length > SUMMARY_MAX ? `${text.slice(0, SUMMARY_MAX - 1)}…` : text;
 }
 
+const count = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+
+/** The read of a `directory.list`, or null when the event does not say what was read. */
+function directoryReadOf(detail: Record<string, unknown>): DirectoryRead | null {
+  const returned = count(detail.returned);
+  if (detail.scope === 'changes') {
+    return { scope: 'changes', returned, missing: count(detail.missing) ?? 0 };
+  }
+  if (detail.scope === 'people' || typeof detail.searched === 'boolean') {
+    return { scope: 'people', returned, searched: detail.searched === true };
+  }
+  return null;
+}
+
 function detailOf(
   event: string,
   known: KnownAction | null,
@@ -494,6 +520,10 @@ function detailOf(
         kind: 'catalogSync',
         added: typeof detail.added_count === 'number' ? detail.added_count : 0,
       };
+    case 'directory.list': {
+      const read = directoryReadOf(detail);
+      return read ? { kind: 'directoryRead', read } : { kind: 'raw', text: summarize(detail) };
+    }
     case 'session.started':
       // A sign-in with the IdP of the company has its own sentence in the design.
       return { kind: 'session', action: known, sso: detail.federated === true };
@@ -581,6 +611,9 @@ export function toAuditRow(item: AuditEvent, index: number): AuditRow {
       : null;
   // A rejected session is a refusal without an `outcome`: its reason is the code.
   const refused = item.event === 'session.rejected' && outcome === null;
+  const rowDetail = detailOf(item.event, known, detail);
+  // Design: the `outcome` of a read of the directory is not shown.
+  const shownOutcome = rowDetail.kind === 'directoryRead' && outcome === 'applied' ? null : outcome;
   const time = Date.parse(item.ts);
   // A chat turn is about the agent that answered (the stored resource is the conversation).
   const agent = known === 'chat.query' || known === 'agent.invoke' ? str(detail.agent) : null;
@@ -596,17 +629,17 @@ export function toAuditRow(item: AuditEvent, index: number): AuditRow {
     event: item.event,
     action,
     known,
-    outcome: refused ? 'rejected' : outcome,
+    outcome: refused ? 'rejected' : shownOutcome,
     error: refused ? str(detail.reason) : str(detail.error),
     actor: item.actor_email ?? item.user_id ?? '',
     role: roleOf(item),
     resource: resource ? resource.id : null,
     resourceKey: resource ? `${resource.type}:${resource.id}` : null,
-    detail: detailOf(item.event, known, detail),
+    detail: rowDetail,
     before: obj(detail.before),
     after: obj(detail.after),
     category: categoryOf(action),
-    tone: toneOf(action, refused ? 'rejected' : outcome),
+    tone: toneOf(action, refused ? 'rejected' : shownOutcome),
     authz: known === 'chat.query' ? authzOf(detail) : null,
     turn: turn ? { id: turn, start: null } : null,
     agentVersion: typeof version === 'number' && Number.isInteger(version) ? version : null,

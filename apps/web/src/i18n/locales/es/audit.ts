@@ -95,7 +95,7 @@ export const audit = {
     },
     directory: {
       lookup: 'Búsqueda en el directorio',
-      // Not in the design: the API records who read the directory in Ajustes › Personas.
+      // The API records who read the directory in Ajustes › Personas.
       list: 'Lectura del directorio',
       signup: 'Persona registrada',
       invite: 'Persona invitada',
@@ -186,6 +186,19 @@ export const audit = {
     catalogSyncNone: 'Consultó el catálogo de Bedrock · sin modelos nuevos',
     catalogSync_one: 'Consultó el catálogo de Bedrock · {{count}} modelo nuevo',
     catalogSync_other: 'Consultó el catálogo de Bedrock · {{count}} modelos nuevos',
+    // Design round of 2026-10-05: the two reads of Ajustes › Personas, with counts only.
+    directoryRead: {
+      people_one: 'Buscó personas · {{count}} resultado',
+      people_other: 'Buscó personas · {{count}} resultados',
+      peopleUnknown: 'Buscó personas',
+      searched_one: 'Buscó por texto · {{count}} resultado',
+      searched_other: 'Buscó por texto · {{count}} resultados',
+      searchedUnknown: 'Buscó por texto',
+      changes_one: 'Leyó los cambios de personas · {{count}} cambio',
+      changes_other: 'Leyó los cambios de personas · {{count}} cambios',
+      changesUnknown: 'Leyó los cambios de personas',
+      missing: '{{count}} de personas que ya no están',
+    },
     session: {
       started: 'Ingresó con contraseña y MFA',
       startedSso: 'Ingresó con el SSO de la empresa',
@@ -272,6 +285,15 @@ export const audit = {
     denied: 'Denegado',
     authzNote:
       'Cada turno del chat registra su inicio y verifica el permiso de uso del agente. Si el turno termina, ambos se agrupan aquí; si falla antes, se ven como filas sueltas.',
+    read: 'Lectura',
+    readWhat: 'Qué se leyó',
+    readPeople: 'Búsqueda de personas',
+    readChanges: 'Lista de cambios de personas',
+    readReturned: 'Resultados',
+    readSearched: 'Texto buscado',
+    readSearchedYes: 'Sí',
+    readSearchedNo: 'No · lista completa',
+    readMissing: 'De personas que ya no están',
     turnStart: 'Inicio del turno',
     turn: 'Turno',
     time: 'Hora',

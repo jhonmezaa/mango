@@ -413,9 +413,44 @@ describe('toAuditRow', () => {
         }),
         0,
       ).detail,
-    ).toEqual({
-      kind: 'raw',
-      text: 'filter: all · searched: true · returned: 20 · outcome: applied',
+    ).toEqual({ kind: 'directoryRead', read: { scope: 'people', returned: 20, searched: true } });
+  });
+
+  it('says what a read of the directory read, with counts and without its outcome', () => {
+    const people = toAuditRow(
+      event('directory.list', {
+        scope: 'people',
+        filter: 'pending',
+        searched: false,
+        returned: 16,
+        outcome: 'applied',
+      }),
+      0,
+    );
+    expect(people.detail).toEqual({
+      kind: 'directoryRead',
+      read: { scope: 'people', returned: 16, searched: false },
+    });
+    // Design: the outcome of a read is not shown.
+    expect(people).toMatchObject({ outcome: null, tone: 'dim' });
+    const changes = toAuditRow(
+      event('directory.list', { scope: 'changes', returned: 16, missing: 14, outcome: 'applied' }),
+      0,
+    );
+    expect(changes.detail).toEqual({
+      kind: 'directoryRead',
+      read: { scope: 'changes', returned: 16, missing: 14 },
+    });
+    expect(changes.outcome).toBeNull();
+    // Counts that are not counts are not shown as such.
+    expect(
+      toAuditRow(event('directory.list', { scope: 'changes', returned: '3', missing: -1 }), 0)
+        .detail,
+    ).toEqual({ kind: 'directoryRead', read: { scope: 'changes', returned: null, missing: 0 } });
+    // An event that does not say what was read keeps the generic summary.
+    expect(toAuditRow(event('directory.list', { outcome: 'applied' }), 0)).toMatchObject({
+      detail: { kind: 'raw', text: 'outcome: applied' },
+      outcome: 'applied',
     });
   });
 

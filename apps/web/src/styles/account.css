@@ -229,6 +229,25 @@
     gap: 6px;
     margin-left: auto;
   }
+  /* Design `.chg-h` on phones: the header is a column; the notice and the buttons go below. */
+  @media (max-width: 560px) {
+    .chg-h {
+      flex-direction: column;
+      gap: 8px;
+    }
+    .chg-h > div:first-child {
+      width: 100%;
+    }
+    .chg-act {
+      width: 100%;
+      margin-left: 0;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    .chg-m {
+      gap: 2px 10px;
+    }
+  }
   .chg-reject {
     margin-top: 10px;
   }

@@ -254,6 +254,9 @@ export const people = {
     expiredMeta: 'Nadie la aprobó en {{hours}} h',
     // The person was deleted from the directory; the card keeps the email (it is history).
     notInDirectory: 'Ya no está en el directorio',
+    // Design `ChangeList`: the pending change of a person who is gone can only be rejected.
+    cannotApproveGone: 'No se puede aprobar: ya no está en el directorio',
+    goneRejectNote: 'La persona ya no está en el directorio.',
     needsOther: 'Otro admin debe aprobarla',
     aboutYou: 'Es sobre tu cuenta: la debe aprobar otro admin',
     withdraw: 'Retirar',
@@ -293,6 +296,8 @@ export const people = {
       // The change no longer applies: approving it again will not work.
       unknown_group:
         'No se pudo aprobar {{id}}: el grupo {{group}} ya no existe. El cambio ya no aplica: retíralo o recházalo.',
+      user_not_found:
+        'No se pudo aprobar {{id}}: la persona ya no está en el directorio. El cambio ya no aplica: retíralo o recházalo.',
       not_member:
         'No se pudo aprobar {{id}}: la persona ya no tiene ese grupo. El cambio ya no aplica: retíralo o recházalo.',
       already_disabled:

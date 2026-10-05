@@ -18,6 +18,7 @@ const APPROVE_REFUSALS = [
   'last_admins',
   // The change no longer applies (design: «retíralo o recházalo»).
   'unknown_group',
+  'user_not_found',
   'not_member',
   'already_disabled',
   'already_enabled',
@@ -51,6 +52,10 @@ export function decisionErrorKey(error: unknown, approving = false): PeopleError
   // `unknown_group` is a 422: the group of the change was removed after it was proposed.
   if (approving && error instanceof ApiError && error.code === 'unknown_group') {
     return 'people.errors.approve.unknown_group';
+  }
+  // A 404: the person was deleted from the directory after the change was proposed.
+  if (approving && error instanceof ApiError && error.code === 'user_not_found') {
+    return 'people.errors.approve.user_not_found';
   }
   if (error instanceof ApiError && (error.status === 409 || error.status === 410)) {
     if (error.code === 'busy') return 'people.errors.busy';

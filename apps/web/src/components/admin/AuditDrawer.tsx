@@ -84,6 +84,8 @@ export function AuditDrawer({
   const permText = perm === null ? null : permLabel(perm);
   const authzText = row.authz ? permLabel(row.authz.action) : null;
   const start = row.turn?.start ?? null;
+  // Design «Lectura»: what a read of the directory read, in words (never the raw keys).
+  const read = row.detail.kind === 'directoryRead' ? row.detail.read : null;
   // The email may only break before the «@», never in the middle of a word (design `.au-mail`).
   const at = row.actor.indexOf('@');
 
@@ -222,6 +224,41 @@ export function AuditDrawer({
               <span>{formatRelative(row.ts)}</span>
             </div>
           </Sec>
+          {read && (
+            <Sec title={t('audit.drawer.read')}>
+              <div className="mk-kv">
+                <span>{t('audit.drawer.readWhat')}</span>
+                <span>
+                  {t(
+                    read.scope === 'changes'
+                      ? 'audit.drawer.readChanges'
+                      : 'audit.drawer.readPeople',
+                  )}
+                </span>
+              </div>
+              <div className="mk-kv">
+                <span>{t('audit.drawer.readReturned')}</span>
+                <span>{read.returned ?? '—'}</span>
+              </div>
+              {read.scope === 'people' ? (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.readSearched')}</span>
+                  <span>
+                    {t(
+                      read.searched
+                        ? 'audit.drawer.readSearchedYes'
+                        : 'audit.drawer.readSearchedNo',
+                    )}
+                  </span>
+                </div>
+              ) : (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.readMissing')}</span>
+                  <span>{read.missing}</span>
+                </div>
+              )}
+            </Sec>
+          )}
           {row.turn && start && (
             <Sec title={t('audit.drawer.turnStart')}>
               <div className="mk-kv">

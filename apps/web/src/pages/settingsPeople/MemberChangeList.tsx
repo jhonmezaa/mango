@@ -44,6 +44,9 @@ function ChangeItem({
   const mine = change.proposed_by === me.user_id;
   // The API refuses it (`self_change`); saying so first spares the round trip. Only a hint.
   const aboutMe = isSelf(me, { user_id: change.target_user, email: change.target_email });
+  // Design `ChangeList`: nothing can be applied to a person who is gone, so «Aprobar» is not
+  // offered. Only when the API knows it (`null` is «not known»); the API refuses it anyway.
+  const gone = change.target_in_directory === false;
   const who = change.proposed_by_email ?? change.proposed_by;
   const decidedBy = change.decided_by_email ?? change.decided_by;
   const values = { email: change.target_email, group: change.group ?? '' };
@@ -104,6 +107,22 @@ function ChangeItem({
               </>
             ) : aboutMe ? (
               <Reason>{t('people.changes.aboutYou')}</Reason>
+            ) : gone ? (
+              <>
+                <Reason>{t('people.changes.cannotApproveGone')}</Reason>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={() => {
+                    onRejecting(true);
+                    // The reason is already written and can be edited.
+                    setNote(t('people.changes.goneRejectNote'));
+                  }}
+                >
+                  {t('people.changes.reject')}
+                </button>
+              </>
             ) : (
               <>
                 <button

@@ -638,6 +638,54 @@ describe('AdminAuditPage', () => {
     click.mockRestore();
   });
 
+  it('words the two reads of Ajustes › Personas and details them in «Lectura»', async () => {
+    const user = userEvent.setup();
+    const base = { user_id: 'sub-ana', actor_email: 'ana@example.com', hash: 'a'.repeat(64) };
+    const events: AuditEvent[] = [
+      { scope: 'changes', returned: 16, missing: 14, outcome: 'applied' },
+      { scope: 'changes', returned: 1, missing: 0, outcome: 'applied' },
+      { scope: 'people', filter: 'all', searched: false, returned: 16, outcome: 'applied' },
+      // Written before the API recorded `scope`.
+      { filter: 'all', searched: true, returned: 1, outcome: 'applied' },
+    ].map((detail, index) => ({
+      ...base,
+      event_id: `d${String(index)}`.padEnd(32, '0'),
+      ts: iso(index + 1),
+      event: 'directory.list',
+      detail,
+    }));
+    renderPage({ listAuditEvents: vi.fn(() => page(events)) });
+    const missing = await screen.findByText(
+      'Leyó los cambios de personas · 16 cambios · 14 de personas que ya no están',
+    );
+    expect(screen.getByText('Leyó los cambios de personas · 1 cambio')).toBeInTheDocument();
+    const people = screen.getByText('Buscó personas · 16 resultados');
+    expect(screen.getByText('Buscó por texto · 1 resultado')).toBeInTheDocument();
+    expect(screen.getAllByText('Lectura del directorio')).toHaveLength(4);
+    // Never the raw keys, nor the outcome of a read.
+    expect(screen.queryByText(/scope:|returned:|missing:|searched:|filter:/)).toBeNull();
+    expect(screen.queryByText('· aplicado')).toBeNull();
+
+    const kv = (panel: HTMLElement, name: string) =>
+      within(panel).getByText(name).nextElementSibling;
+    await user.click(missing.closest('button') as HTMLElement);
+    let panel = screen.getByRole('dialog');
+    expect(within(panel).getByRole('heading', { name: 'Lectura' })).toBeInTheDocument();
+    expect(kv(panel, 'Qué se leyó')).toHaveTextContent('Lista de cambios de personas');
+    expect(kv(panel, 'Resultados')).toHaveTextContent('16');
+    expect(kv(panel, 'De personas que ya no están')).toHaveTextContent('14');
+    expect(within(panel).queryByText('Texto buscado')).toBeNull();
+    expect(within(panel).queryByText('Resultado')).toBeNull();
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
+
+    await user.click(people.closest('button') as HTMLElement);
+    panel = screen.getByRole('dialog');
+    expect(kv(panel, 'Qué se leyó')).toHaveTextContent('Búsqueda de personas');
+    expect(kv(panel, 'Resultados')).toHaveTextContent('16');
+    expect(kv(panel, 'Texto buscado')).toHaveTextContent('No · lista completa');
+    expect(within(panel).queryByText('De personas que ya no están')).toBeNull();
+  });
+
   it('shows a retry state when the API fails', async () => {
     renderPage({ listAuditEvents: vi.fn(() => Promise.reject(new ApiError(500, 'x', 'x'))) });
     expect(await screen.findByText('No pudimos cargar el audit log')).toBeInTheDocument();

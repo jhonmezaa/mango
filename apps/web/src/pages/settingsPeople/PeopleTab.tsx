@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ApiError } from '../../api/errors';
@@ -36,6 +36,11 @@ import { PersonPanel, type PersonActions } from './PersonPanel';
 import { PersonStatusBadge } from './PersonStatus';
 
 const SEARCH_DEBOUNCE_MS = 300;
+/**
+ * After `busy` the list is read at once and again after this long: the other change of
+ * administrators is still being applied, so the first read may still show it pending.
+ */
+const BUSY_REREAD_MS = 3000;
 const NO_PEOPLE: readonly Person[] = [];
 const NO_CHANGES: readonly MemberChange[] = [];
 const NO_RESETS: readonly MfaReset[] = [];
@@ -153,6 +158,13 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
   const refresh = useCallback(() => {
     setRefreshToken((value) => value + 1);
   }, []);
+  const rereadTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (rereadTimer.current !== null) window.clearTimeout(rereadTimer.current);
+    },
+    [],
+  );
   const retry = () => {
     setListing(null);
     refresh();
@@ -317,7 +329,16 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           group: approving?.group ?? '',
         }),
       );
-      if (error instanceof ApiError && (error.status === 409 || error.status === 410)) refresh();
+      // What is on screen is stale: the change was decided, another one is being applied, or
+      // its person is gone. The list is read again and the error stays visible (design).
+      const stale =
+        error instanceof ApiError &&
+        (error.status === 409 || error.status === 410 || error.code === 'user_not_found');
+      if (stale) refresh();
+      if (error instanceof ApiError && error.code === 'busy') {
+        if (rereadTimer.current !== null) window.clearTimeout(rereadTimer.current);
+        rereadTimer.current = window.setTimeout(refresh, BUSY_REREAD_MS);
+      }
       return false;
     }
     refresh();

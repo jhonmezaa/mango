@@ -256,6 +256,7 @@ function search(body: Record<string, unknown>): Refusal | object {
   const items = rows.slice(start, start + PAGE_SIZE);
   // Who read the directory and how much of it; never the emails or the prefix (same as the API).
   recordAudit('directory.list', {
+    scope: 'people',
     filter,
     searched: normalized !== null,
     returned: items.length,
