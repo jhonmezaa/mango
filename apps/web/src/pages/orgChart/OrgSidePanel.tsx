@@ -9,8 +9,8 @@ import type { TreeNode } from './orgTree';
 
 interface Props {
   node: TreeNode;
-  /** UX only: the API decides who may edit an agent. */
-  canEdit: boolean;
+  /** Whether who is signed in may create agents. UX only: the API decides who may edit one. */
+  canCreate: boolean;
   onClose: () => void;
 }
 
@@ -34,9 +34,14 @@ const SOON_FACTS = ['status', 'model', 'sharedWith', 'budget', 'data'] as const;
  * costs have no data here yet ("Próximamente", without example values). The root and the
  * «Supervisor no visible» node are not agents: they say so and have no facts.
  */
-export function OrgSidePanel({ node, canEdit, onClose }: Props) {
+export function OrgSidePanel({ node, canCreate, onClose }: Props) {
   const { t } = useTranslation();
   const kids = node.kids;
+  // Design `canEditThis`: only who created this agent or an administrator; the API says so.
+  const canEdit = node.canEdit;
+  // Design: the creator's name goes in the two "quien lo creó" texts when it is known. The API
+  // does not say who created an agent, so they go without it.
+  const how = canEdit ? 'howEditor' : canCreate ? 'howCreator' : 'howOther';
   return (
     <aside className="card oc-panel" aria-label={t('orgChart.panel.label', { name: node.name })}>
       <div className="oc-panel-h">
@@ -123,9 +128,7 @@ export function OrgSidePanel({ node, canEdit, onClose }: Props) {
                     </div>
                   </div>
                 ) : null}
-                <div className="oc-nouse-how">
-                  {t(canEdit ? 'orgChart.noUse.howEditor' : 'orgChart.noUse.howOther')}
-                </div>
+                <div className="oc-nouse-how">{t(`orgChart.noUse.${how}`)}</div>
               </div>
             )}
             <div>
@@ -166,6 +169,9 @@ export function OrgSidePanel({ node, canEdit, onClose }: Props) {
                   {t('orgChart.panel.costs')}
                 </button>
               </Soon>
+              {canCreate && !canEdit ? (
+                <div className="mk-meta oc-edit-note">{t('orgChart.panel.editNote')}</div>
+              ) : null}
             </div>
           </div>
         )}

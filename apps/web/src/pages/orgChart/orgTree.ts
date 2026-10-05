@@ -18,6 +18,8 @@ export interface TreeNode {
   canUse: boolean;
   /** Groups that use an agent the caller cannot use; empty otherwise. */
   groups: readonly string[];
+  /** Whether who is signed in may edit this agent (a hint from the API; false for non-agents). */
+  canEdit: boolean;
   isRoot: boolean;
   /** Design `ghost`: stands for supervisors that are retired or not visible to the caller. */
   ghost: boolean;
@@ -56,6 +58,7 @@ export function buildTree(org: OrgOut, labels: { root: NodeLabel; hidden: NodeLa
     depth: 0,
     canUse: true,
     groups: [],
+    canEdit: false,
   };
   const root: TreeNode = {
     ...base,
@@ -90,6 +93,7 @@ export function buildTree(org: OrgOut, labels: { root: NodeLabel; hidden: NodeLa
       icon: agent.icon,
       canUse: agent.can_use,
       groups: agent.groups,
+      canEdit: agent.can_edit,
       isRoot: false,
       ghost: false,
       depth: 0,

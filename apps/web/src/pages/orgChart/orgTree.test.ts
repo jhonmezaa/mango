@@ -98,6 +98,17 @@ describe('buildTree', () => {
     expect(tree.root).toMatchObject({ description: '', category: '' });
   });
 
+  it('takes who may edit each agent from the API; the root and the hidden node are not editable', () => {
+    const tree = buildTree(
+      org(agent('a', 'platform'), agent('b', null, { can_edit: false })),
+      LABELS,
+    );
+    expect(node(tree, 'a').canEdit).toBe(true);
+    expect(node(tree, 'b').canEdit).toBe(false);
+    expect(tree.root.canEdit).toBe(false);
+    expect(node(tree, HIDDEN_SUPERVISOR_ID).canEdit).toBe(false);
+  });
+
   it('drops an agent that claims the id of the hidden supervisor', () => {
     const tree = buildTree(
       org(agent(HIDDEN_SUPERVISOR_ID, 'platform'), agent('a', HIDDEN_SUPERVISOR_ID)),

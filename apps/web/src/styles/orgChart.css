@@ -503,6 +503,11 @@
   .oc-nouse-how {
     color: var(--text-muted);
   }
+  /* Design `editNote`: its own line under the buttons of the panel. */
+  .oc-edit-note {
+    flex-basis: 100%;
+    font-size: 12px;
+  }
   .oc-nouse-g {
     display: flex;
     flex-wrap: wrap;

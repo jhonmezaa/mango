@@ -169,8 +169,6 @@ describe('OrgChartPage', () => {
     );
     // An agent the person may use has no notice.
     expect(within(panel).queryByRole('note')).toBeNull();
-    // Without the creator permission there is no "Editar" (the API decides anyway).
-    expect(within(panel).queryByRole('link', { name: 'Editar' })).toBeNull();
 
     await userEvent.click(within(panel).getByRole('button', { name: 'Cerrar' }));
     expect(screen.queryByRole('complementary')).toBeNull();
@@ -194,15 +192,28 @@ describe('OrgChartPage', () => {
     expect(screen.queryByRole('complementary')).toBeNull();
   });
 
+  const EDIT_NOTE = 'Solo quien lo creó o un administrador puede editarlo.';
   it.each([
-    [true, 'agrega uno de tus grupos en su Acceso (va con una versión nueva)'],
-    [false, 'pide a un administrador que te agregue a uno de esos grupos.'],
+    // May edit this agent (who created it or an administrator).
+    [
+      true,
+      true,
+      'Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.',
+    ],
+    // A creator who did not create it.
+    [
+      true,
+      false,
+      'Para usarlo, pide a quien lo creó que agregue uno de tus grupos en su Acceso, o a un administrador que te sume a uno de esos grupos.',
+    ],
+    [false, false, 'Para usarlo, pide a un administrador que te agregue a uno de esos grupos.'],
   ])(
-    'tells who sees an agent they cannot use why, and who uses it (creator: %s)',
-    async (canCreate, how) => {
+    'tells who sees an agent they cannot use why, and who uses it (creator: %s, may edit: %s)',
+    async (canCreate, canEdit, how) => {
       const locked: OrgNode = {
         ...agent('p2ys6ke4c7dq3hzo', 'Etiquetado', 'Auditor de etiquetas', 'platform'),
         can_use: false,
+        can_edit: canEdit,
         groups: ['bu-retail', '<b>x</b>'],
       };
       renderPage(() => Promise.resolve({ root: 'platform', nodes: [locked] }), canCreate);
@@ -218,14 +229,29 @@ describe('OrgChartPage', () => {
         [...box.querySelectorAll('.oc-nouse-g span')].map((group) => group.textContent),
       ).toEqual(['bu-retail', '<b>x</b>']);
       expect(box.querySelector('b')).toBeNull();
-      expect(box).toHaveTextContent(how);
-      // Nothing to open in the Marketplace; editing stays for who may edit.
+      expect(box.querySelector('.oc-nouse-how')?.textContent).toBe(how);
+      // Nothing to open in the Marketplace; "Editar" only for who may edit this agent, and a
+      // creator who may not reads why.
       expect(within(panel).queryByRole('link', { name: 'Ver en Marketplace' })).toBeNull();
       expect(within(panel).queryAllByRole('link', { name: 'Editar' })).toHaveLength(
-        canCreate ? 1 : 0,
+        canEdit ? 1 : 0,
       );
+      expect(within(panel).queryAllByText(EDIT_NOTE)).toHaveLength(canCreate && !canEdit ? 1 : 0);
     },
   );
+
+  it('keeps "Editar" from a creator on an agent they can use and did not create', async () => {
+    const other: OrgNode = {
+      ...agent('p2ys6ke4c7dq3hzo', 'Etiquetado', 'Auditor de etiquetas', 'platform'),
+      can_edit: false,
+    };
+    renderPage(() => Promise.resolve({ root: 'platform', nodes: [other] }), true);
+    await userEvent.click(await nodeButton('Etiquetado, Auditor de etiquetas'));
+    const panel = screen.getByRole('complementary', { name: 'Detalle de Etiquetado' });
+    expect(within(panel).queryByRole('link', { name: 'Editar' })).toBeNull();
+    expect(within(panel).getByText(EDIT_NOTE)).toHaveClass('oc-edit-note');
+    expect(within(panel).getByRole('link', { name: 'Ver en Marketplace' })).toBeInTheDocument();
+  });
 
   it('has no «Lo usan» list when the agent is only shared with people', async () => {
     const locked: OrgNode = {
@@ -239,7 +265,7 @@ describe('OrgChartPage', () => {
     expect(box).not.toHaveTextContent('Lo usan');
   });
 
-  it('offers "Nuevo agente" and "Editar" only to creators', async () => {
+  it('offers "Nuevo agente" only to creators, and "Editar" with the published version', async () => {
     const first = renderPage(undefined, false);
     await nodeButton('FinOps, Analista FinOps');
     expect(screen.queryByRole('button', { name: 'Nuevo agente' })).toBeNull();

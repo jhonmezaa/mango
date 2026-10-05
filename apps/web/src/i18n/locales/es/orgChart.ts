@@ -74,6 +74,7 @@ export const orgChart = {
     data: 'Datos y permisos',
     marketplace: 'Ver en Marketplace',
     edit: 'Editar',
+    editNote: 'Solo quien lo creó o un administrador puede editarlo.',
     costs: 'Costos',
   },
   // Design `oc-nouse`: who opens the agent sees it in the tree but is in none of its groups nor among its people.
@@ -83,6 +84,8 @@ export const orgChart = {
     usedBy: 'Lo usan',
     howEditor:
       'Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.',
+    howCreator:
+      'Para usarlo, pide a quien lo creó que agregue uno de tus grupos en su Acceso, o a un administrador que te sume a uno de esos grupos.',
     howOther: 'Para usarlo, pide a un administrador que te agregue a uno de esos grupos.',
   },
 } as const;

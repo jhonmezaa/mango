@@ -320,7 +320,7 @@ export function OrgChartPage() {
               {selectedNode ? (
                 <OrgSidePanel
                   node={selectedNode}
-                  canEdit={me.can.create_agent}
+                  canCreate={me.can.create_agent}
                   onClose={() => {
                     setSelected(null);
                   }}

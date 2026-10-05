@@ -145,6 +145,34 @@ test.describe('Shell, chat and Org Chart', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
+  test('at 560px and below the toasts go under the top bar, clear of the composer', async () => {
+    await page.setViewportSize({ width: 420, height: 900 });
+    await pushRoute(page, '/');
+    await page.locator('#chat-input').fill('hola');
+    await page.locator('#chat-input').press('Enter');
+    const toast = page.locator('.g-toast-item', { hasText: 'Respuesta completa' });
+    await expect(toast).toBeVisible({ timeout: 30_000 });
+    const toastBox = await toast.boundingBox();
+    const composerBox = await page.locator('.composer-box').boundingBox();
+    expect(toastBox).not.toBeNull();
+    expect(composerBox).not.toBeNull();
+    if (!toastBox || !composerBox) return;
+    expect(toastBox.y + toastBox.height).toBeLessThan(composerBox.y);
+    expect(Math.round(toastBox.x)).toBe(12);
+    expect(Math.round(toastBox.x + toastBox.width)).toBe(408);
+    // While the toast is up, the point at the centre of the send button is the button.
+    const reachesSend = await page.evaluate<boolean>(
+      `(() => {
+        const send = document.querySelector('.ch-send-btn');
+        const box = send.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return document.querySelector('.g-toast-item') !== null && send.contains(hit);
+      })()`,
+    );
+    expect(reachesSend).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 720 });
+  });
+
   test('leaves no errors in the console', () => {
     expect(consoleErrors).toEqual([]);
   });
