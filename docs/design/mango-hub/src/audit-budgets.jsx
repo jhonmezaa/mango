@@ -210,6 +210,12 @@ function AuditDetail({ r, audit, onClose, onActor, onTarget }) {
             {r.requestedAt && <div className="mk-kv"><span>Solicitado</span><span className="au-steps">{new Date(r.requestedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} · <span className="mono">{r.requestedId}</span> · se registra antes de aplicar</span></div>}
             <div className="mk-kv"><span>Hace</span><span>{window.fmtAgo(r.at)}</span></div>
           </MkSec>
+          {r.action === 'directory.list' && r.scope && <MkSec title="Lectura">
+            <div className="mk-kv"><span>Qué se leyó</span><span>{r.scope === 'changes' ? 'Lista de cambios de personas' : 'Búsqueda de personas'}</span></div>
+            <div className="mk-kv"><span>Resultados</span><span>{r.returned ?? '—'}</span></div>
+            {r.scope === 'people' && <div className="mk-kv"><span>Texto buscado</span><span>{r.query ? 'Sí' : 'No · lista completa'}</span></div>}
+            {r.scope === 'changes' && <div className="mk-kv"><span>De personas que ya no están</span><span>{r.missing || 0}</span></div>}
+          </MkSec>}
           {start && <MkSec title="Inicio del turno">
             <div className="mk-kv"><span>Turno</span><span className="mono" style={{ fontSize: 12 }}>{r.turn}</span></div>
             <div className="mk-kv"><span>Evento</span><span className="mono" style={{ fontSize: 12 }}>{start.id} · {start.action}</span></div>

@@ -286,6 +286,7 @@ function ChangeList({ keys, kind = 'auth', target, title = 'Cambios propuestos',
               {status === 'pending' && <div className="chg-act">
                 {mine ? <><K.Reason>Otro admin debe aprobarla</K.Reason><button className="btn btn-sm" disabled={busy === c.id} onClick={() => act(c.id, () => S.withdrawChange(c.id))}>Retirar</button></>
                   : (c.kind === 'mfa_reset' || c.kind === 'member') && c.target === S.actorEmail() ? <K.Reason>Es sobre tu cuenta: la debe aprobar otro admin</K.Reason>
+                  : role === 'admin' && c.kind === 'member' && window.MangoPeople && !window.MangoPeople.exists(c.target) ? <><K.Reason>No se puede aprobar: ya no está en el directorio</K.Reason><button className="btn btn-sm" disabled={busy === c.id} onClick={() => { setRej(c.id); setNote('La persona ya no está en el directorio.'); }}>Rechazar</button></>
                   : role === 'admin' ? <><button className="btn btn-sm" disabled={busy === c.id} onClick={() => { setRej(c.id); setNote(''); }}>Rechazar</button><button className="btn btn-sm btn-primary" disabled={busy === c.id} onClick={() => { const why = c.kind === 'member' && window.MangoPeople?.recheck(c); if (why) { onActError?.(why); return; } act(c.id, () => S.decideChange(c.id, 'approved')); }}>Aprobar</button></> : null}
               </div>}
             </div>

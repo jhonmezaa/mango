@@ -387,7 +387,7 @@ Confirmado por el producto (sin cambios): doble aprobación solo para lo sensibl
 
 
 ## Tras la instalación (2026-10-04)
-- **Avisos a ≤560 px** (`ui.jsx` › `.toast-stack`): van arriba, bajo la barra superior (56 px + safe area), a 12 px de cada borde, en vez de abajo a la derecha. Así ningún aviso («Respuesta completa» incluido) tapa el compositor, «Enviar», adjuntar ni «Skill». Duración y «×» sin cambios. Arriba de 560 px, igual que antes.
+- **Avisos** (`ui.jsx` › `.toast-stack`): *sustituido, ver «Ajustes tras la segunda instalación»*.
 - **Org Chart › detalle · «Editar»**: solo para quien puede editar *ese* agente: administrador o quien lo creó (`canEditThis = agent.edit && (admin || owner === actor)`). El producto debe entregar ese dato con el detalle. Un creador que no lo creó no ve «Editar»; en su lugar, bajo los botones: «Solo quien lo creó ({creador}) o un administrador puede editarlo.» (gris, 12 px). Mismo criterio en Disponible hoy y Diseño completo.
 - **Caja «No puedes usar este agente» · última línea**, tres variantes:
   - Puede editar ese agente: «Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.»
@@ -395,3 +395,16 @@ Confirmado por el producto (sin cambios): doble aprobación solo para lo sensibl
   - Sin permiso de crear agentes (si el producto llega a mostrarle la caja): «Para usarlo, pide a un administrador que te agregue a uno de esos grupos.»
 - Si no se conoce el creador, se omite «({creador})».
 - Pendiente del producto sin cambios de diseño: «Ya no está en el directorio», separar «otro cambio en curso» de «ya se decidió», evento «Persona registrada», motivo en el turno del aviso de AWS Billing solo para usuarios centrales, motivo del fallo de tool y marca de guardrail en el mensaje guardado.
+
+## Ajustes tras la segunda instalación (2026-10-05)
+- **Avisos, todos los anchos:** arriba a la derecha, a 8 px bajo la barra superior (64 px + 8 px + safe area = `top: 72px`), a 18 px del borde derecho, máx. 360 px. A ≤560 px, a 12 px de cada borde y ancho completo. Ya no van abajo: ningún aviso tapa el compositor ni «Enviar» en ningún ancho. Duración y «×» sin cambios.
+- **«({creador})» se retira.** El Org Chart no nombra personas. Textos únicos: «Solo quien lo creó o un administrador puede editarlo.» y «Para usarlo, pide a quien lo creó que agregue uno de tus grupos en su Acceso, o a un administrador que te sume a uno de esos grupos.»
+- **Tercera variante** («pide a un administrador que te agregue…»): queda reservada para cuando la caja se muestre a quien no puede crear agentes. Hoy no aparece y es correcto.
+- **Cambio pendiente de una persona que ya no está en el directorio:** no se ofrece «Aprobar». En su lugar, «No se puede aprobar: ya no está en el directorio» y «Rechazar», que abre el motivo ya escrito: «La persona ya no está en el directorio.» (editable). Si es una propuesta propia, solo «Retirar», como siempre. Si la persona desaparece entre que se carga la lista y se pulsa «Aprobar», el producto responde con este error específico, no con el genérico: «No se pudo aprobar {id}: la persona ya no está en el directorio. El cambio ya no aplica: retíralo o recházalo.» Lo mismo se muestra al pasar la lista de cambios a ese estado.
+- **Tarjeta de cambio a ≤560 px:** cabecera en columna. Título, estado y metadatos usan todo el ancho, y los metadatos se envuelven en línea con un espacio de 2 × 10 px. Debajo, una fila con el aviso («Otro admin debe aprobarla», etc.) y los botones, alineados a la izquierda y envolviéndose si no caben.
+- **Después de «Otro cambio de administradores está en curso…» o de «La solicitud ya no está pendiente…»:** el producto vuelve a leer la lista de cambios y actualiza todas las tarjetas sin recargar la página. El aviso de error se queda visible. Así, la tarjeta que aprobó el otro admin pasa a «Aprobado · Aprobó {admin}» y la propia sigue «Pendiente».
+- **Auditoría · «Lectura del directorio» (`directory.list`):** dos filas por carga de Ajustes › Personas, con un detalle legible y una sección «Lectura» en el panel (nunca las claves crudas):
+  - Búsqueda: detalle «Buscó personas · {n} resultados» o «Buscó «{texto}» · {n} resultados» (el texto solo en el detalle si la instalación lo registra; si no, «Buscó por texto · {n} resultados»). En «Lectura»: Qué se leyó «Búsqueda de personas» · Resultados {n} · Texto buscado «Sí» / «No · lista completa».
+  - Lista de cambios: detalle «Leyó los cambios de personas · {n} cambios», con «· {m} de personas que ya no están» si m > 0. En «Lectura»: Qué se leyó «Lista de cambios de personas» · Resultados {n} · De personas que ya no están {m}.
+  - Campos: `scope` (people|changes), `returned`, `query` (bool, solo people) y `missing` (solo changes). `outcome` no se muestra en lecturas.
+- **Pendiente del producto, sin cambios de diseño:** evento «Persona registrada» en Auditoría; que el turno informe el motivo del aviso «Las tools de AWS Billing son solo para usuarios centrales…»; el motivo del fallo de una tool y la marca «cortado por guardrail» en el mensaje guardado.

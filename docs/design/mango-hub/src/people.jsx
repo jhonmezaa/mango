@@ -88,8 +88,8 @@ S.onDecide.member = (c, d) => {
 };
 // Al aprobar se comprueban otra vez las reglas; si no se cumplen, se rechaza la aprobación y el cambio sigue pendiente.
 const recheck = (c) => {
-  const p = find(c.target); if (!p) return null;
   const pre = 'No se pudo aprobar ' + c.id + ': ';
+  const p = find(c.target); if (!p) return pre + 'la persona ya no está en el directorio. El cambio ya no aplica: retíralo o recházalo.';
   const post = ' El cambio sigue pendiente.';
   const gone = ' El cambio ya no aplica: retíralo o recházalo.';
   if (c.key === 'add' && !window.Lifecycle?.groupDef(c.to)) return pre + 'el grupo ' + c.to + ' ya no existe.' + gone;
@@ -132,7 +132,7 @@ function PeopleAdmin({ goTab, notify }) {
   const [q, setQ] = useState(''); const [filter, setFilter] = useState('all'); const [shown, setShown] = useState(PAGE);
   const [open, setOpen] = useState(null); const [invite, setInvite] = useState(null); const [actErr, setActErr] = useState(null);
   useEffect(() => setShown(PAGE), [q, filter]);
-  useEffect(() => { if (!sim) S.log('directory.list', 'directory', 'Leyó el directorio · ' + people.length + ' filas', { read: true }); }, [sim]);
+  useEffect(() => { if (sim) return; S.log('directory.list', 'directory', 'Buscó personas · ' + people.length + ' resultados', { read: true, scope: 'people', returned: people.length, query: false }); const ch = S.get().changes.filter(c => c.kind === 'member'); const miss = ch.filter(c => !find(c.target)).length; S.log('directory.list', 'directory', 'Leyó los cambios de personas · ' + ch.length + ' cambios' + (miss ? ' · ' + miss + ' de personas que ya no están' : ''), { read: true, scope: 'changes', returned: ch.length, missing: miss }); }, [sim]);
   const Q = q.trim().toLowerCase();
   const pend = people.filter(noAccess).length;
   const FILTERS = [['all', 'Todas'], ['pending', 'Sin acceso', pend], ['invited', 'Invitadas'], ['disabled', 'Deshabilitadas']];
