@@ -322,13 +322,16 @@ function OrgAgentFacts({ agent, kids, agents }) {
   const Row = ({ k, children }) => <div className="mk-kv" style={{ fontSize: 12.5 }}><span>{k}</span><span>{children}</span></div>;
   const sh = window.sharesOf ? window.sharesOf(agent) : { groups: [] };
   const myG = S.ROLES[S.get().role]?.groups || []; const meMail = S.actorEmail();
+  const isAdm = S.get().role === 'admin'; const canEditThis = S.can('agent.edit') && (isAdm || !agent.owner || agent.owner === S.actor());
+  const editBtn = canEditThis ? <button className="btn btn-sm" onClick={() => window.MangoNav?.('admin', agent.id)}><I.Edit size={12} /> Editar</button> : null;
+  const editNote = S.can('agent.edit') && !canEditThis && <div className="mk-meta" style={{ flexBasis: '100%', fontSize: 12 }}>Solo quien lo creó{agent.owner ? ' (' + agent.owner + ')' : ''} o un administrador puede editarlo.</div>;
   const canUse = !!sh.everyone || (sh.groups || []).some(g => myG.includes(g.id)) || (sh.users || []).some(u => (u.email || u) === meMail);
   const noUse = !canUse && (
     <div className="oc-nouse" role="note">
       <div className="oc-nouse-t"><I.Lock size={13} />No puedes usar este agente</div>
       <div>No estás en sus grupos ni entre sus personas, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos y personas, también para quien lo creó y para administradores.</div>
       {(sh.groups || []).length > 0 && <div><div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>Lo usan</div><div className="oc-nouse-g">{sh.groups.map(g => <span key={g.id}>{g.id}</span>)}</div></div>}
-      <div style={{ color: 'var(--text-muted)' }}>{S.can('agent.edit') ? 'Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.' : 'Para usarlo, pide a un administrador que te agregue a uno de esos grupos.'}</div>
+      <div style={{ color: 'var(--text-muted)' }}>{canEditThis ? 'Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.' : S.can('agent.edit') ? 'Para usarlo, pide a quien lo creó' + (agent.owner ? ' (' + agent.owner + ')' : '') + ' que agregue uno de tus grupos en su Acceso, o a un administrador que te sume a uno de esos grupos.' : 'Para usarlo, pide a un administrador que te agregue a uno de esos grupos.'}</div>
     </div>
   );
   if (S.get().avail) return (
@@ -342,8 +345,9 @@ function OrgAgentFacts({ agent, kids, agents }) {
       </div>
       <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
         {canUse && <button className="btn btn-sm" onClick={() => window.MangoNav?.('marketplace')}>Ver en Marketplace</button>}
-        {S.can('agent.edit') && <button className="btn btn-sm" onClick={() => window.MangoNav?.('admin', agent.id)}><I.Edit size={12} /> Editar</button>}
+        {editBtn}
         <window.Soon on><button className="btn btn-sm btn-ghost">Costos</button></window.Soon>
+        {editNote}
       </div>
     </div>
   );
@@ -375,8 +379,9 @@ function OrgAgentFacts({ agent, kids, agents }) {
       {kids.length > 0 && <div className="mk-meta" style={{ lineHeight: 1.5, fontSize: 12 }}>Al delegar, cada subordinado trabaja con sus propios permisos y presupuesto.{kidsWrite.length > 0 ? ' Si la tarea escribe (' + kidsWrite.map(k => k.name).join(', ') + '), queda una aprobación pendiente.' : ''}</div>}
       <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
         <button className="btn btn-sm" onClick={() => window.MangoNav?.('marketplace')}>Ver en Marketplace</button>
-        {S.can('agent.edit') && <button className="btn btn-sm" onClick={() => window.MangoNav?.('admin', agent.id)}><I.Edit size={12} /> Editar</button>}
+        {editBtn}
         <button className="btn btn-sm btn-ghost" onClick={() => window.MangoNav?.('costs')}>Costos</button>
+        {editNote}
       </div>
     </div>
   );

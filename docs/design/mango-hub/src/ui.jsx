@@ -15,7 +15,7 @@ function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div style={{position:'fixed', bottom: 18, right: 18, zIndex: 2000, display:'flex', flexDirection:'column', gap: 8, maxWidth: 360}}>
+      <div className="toast-stack">
         {toasts.map(t => <Toast key={t.id} t={t} onClose={() => setToasts(ts => ts.filter(x => x.id !== t.id))} />)}
       </div>
     </ToastCtx.Provider>

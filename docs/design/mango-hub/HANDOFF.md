@@ -384,3 +384,14 @@ Confirmado por el producto (sin cambios): doble aprobación solo para lo sensibl
 - **Agent Builder › Acceso**: «o agrega tu correo en Personas» va siempre. Se acepta que el aviso cuente los grupos que el agente tenía y ya no están en la instalación.
 - **Org Chart › detalle**: se acepta que la caja solo la vean quienes pueden crear agentes. «Lo usan» lista solo grupos. El texto ya no habla solo de grupos: «No estás en sus grupos ni entre sus personas, así que no aparece en tu Marketplace ni en el chat. El uso va por grupos y personas, también para quien lo creó y para administradores.» Vale también si se comparte solo con personas (sin «Lo usan»). La variante «pide a un administrador…» queda implementada aunque hoy no aparezca.
 - **Datos de ejemplo**: se cambió el ejemplo del recorte del correo a «usuari…ntral@empresa.com». Ningún ejemplo usa dominios reales. La lista de proveedores públicos de `people.jsx` solo simula el rechazo del servidor.
+
+
+## Tras la instalación (2026-10-04)
+- **Avisos a ≤560 px** (`ui.jsx` › `.toast-stack`): van arriba, bajo la barra superior (56 px + safe area), a 12 px de cada borde, en vez de abajo a la derecha. Así ningún aviso («Respuesta completa» incluido) tapa el compositor, «Enviar», adjuntar ni «Skill». Duración y «×» sin cambios. Arriba de 560 px, igual que antes.
+- **Org Chart › detalle · «Editar»**: solo para quien puede editar *ese* agente: administrador o quien lo creó (`canEditThis = agent.edit && (admin || owner === actor)`). El producto debe entregar ese dato con el detalle. Un creador que no lo creó no ve «Editar»; en su lugar, bajo los botones: «Solo quien lo creó ({creador}) o un administrador puede editarlo.» (gris, 12 px). Mismo criterio en Disponible hoy y Diseño completo.
+- **Caja «No puedes usar este agente» · última línea**, tres variantes:
+  - Puede editar ese agente: «Para usarlo, agrega uno de tus grupos en su Acceso (va con una versión nueva) o pide que te sumen a uno de esos grupos.»
+  - Creador que no lo creó: «Para usarlo, pide a quien lo creó ({creador}) que agregue uno de tus grupos en su Acceso, o a un administrador que te sume a uno de esos grupos.»
+  - Sin permiso de crear agentes (si el producto llega a mostrarle la caja): «Para usarlo, pide a un administrador que te agregue a uno de esos grupos.»
+- Si no se conoce el creador, se omite «({creador})».
+- Pendiente del producto sin cambios de diseño: «Ya no está en el directorio», separar «otro cambio en curso» de «ya se decidió», evento «Persona registrada», motivo en el turno del aviso de AWS Billing solo para usuarios centrales, motivo del fallo de tool y marca de guardrail en el mensaje guardado.
