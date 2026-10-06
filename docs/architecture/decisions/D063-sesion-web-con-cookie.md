@@ -25,3 +25,8 @@ Diseño: `docs/specs/session-cookie.md`; modelo de amenazas: `docs/security/thre
 **(7) Interfaz:** sin elementos nuevos; se usa el estado de carga existente. La casilla «Mantener la sesión en este equipo» y el aviso previo al vencimiento esperan a Claude Design (`docs/design/briefs/sync-2026-10-03i.md`).
 
 **Sin verificar contra Cognito real:** el tamaño del refresh token (la cookie debe caber en 4096 bytes) y el margen del límite del WAF del user pool, ahora que las renovaciones salen de las IP de `mango-api`
+
+**(8) Lo que quedó de «sin verificar contra Cognito real» (anotado el 2026-10-06).** Las dos cosas las cierra, en distinta medida, [D72](D072-limites-por-ip-para-una-oficina.md).
+
+- **El margen del límite del WAF del user pool.** D72 lo midió y después quitó la pregunta. Su punto 1 da la cifra: las renovaciones contaban como «operaciones con secreto» de las IP de las tareas, 300 por IP cada 5 minutos (600 con dos tareas), y eso se rompía con unas 500 personas entrando en los mismos 5 minutos. Su punto 2 cambia la operación: `mango-api` crea y renueva la sesión con `AdminInitiateAuth`, firmada con IAM, que no pasa por ese WAF; el techo pasa a ser la cuota de Cognito. Su punto 14 lo comprobó en una instalación de laboratorio: 26 `AdminInitiateAuth` del rol de la tarea, sin errores, y ninguna `InitiateAuth` desde las tareas en las peticiones de muestra del WAF.
+- **El tamaño del refresh token en la cookie.** No se midió. Lo que se vio (D72, punto 14) es que cuatro sesiones de tres personas de prueba se crearon y se renovaron en un navegador, con recargas y una segunda pestaña: con esos tokens, la cookie cabe y el navegador la guarda. No hay una cifra en bytes ni una prueba con el token más largo que Cognito pueda emitir.

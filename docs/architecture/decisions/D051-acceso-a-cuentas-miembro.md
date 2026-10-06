@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** precisa §4.10
-- **Precisada por:** [D55](D055-pack-de-cloudwatch.md) (precisa los puntos 3 y 7)
+- **Precisada por:** [D55](D055-pack-de-cloudwatch.md) (precisa los puntos 3 y 7); [D56](D056-tools-de-escritura-con-aprobacion.md) (precisa el punto 5: el approval executor y el rol `OperateBroker` existen desde D56; los roles `Operator` de las cuentas miembro siguen sin construir)
 - **Tema en el registro original:** Acceso a cuentas miembro (C4, precisa §4.10)
 
 ## Decisión
