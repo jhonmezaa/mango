@@ -268,6 +268,8 @@ def test_proposals_are_rate_limited_per_admin(env: Env) -> None:
         _propose(env, "admin", "nobody@example.com")
     response = _propose(env, "admin")
     assert (response.status_code, _code(response)) == (429, "rate_limited")
+    # Like every other limit: how long until the oldest proposal leaves the hour.
+    assert 1 <= int(response.headers["Retry-After"]) <= 3600
 
 
 def test_unknown_and_federated_users(env: Env) -> None:

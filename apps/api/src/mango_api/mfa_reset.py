@@ -37,7 +37,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from mango_api.audit import AuditLog
 from mango_api.rate_limits import Limiter
-from mango_api.web import ApiError, Caller
+from mango_api.web import ApiError, Caller, rate_limited
 from mango_api.web_session import RevocationCause
 
 if TYPE_CHECKING:
@@ -517,7 +517,7 @@ def propose(deps: MfaResetDeps, caller: Caller, body: ProposeIn) -> str:
     actor = caller.user.user_id
     event = "account.mfa_reset_propose"
     if not deps.rate_limiter.allow(actor):
-        raise ApiError(429, "rate_limited", "too many requests; try again later")
+        raise rate_limited(deps.rate_limiter.retry_after(actor))
     base = {"reason": body.reason, "identity_verified": body.identity_verified}
     if body.email == (caller.user.email or "").lower():
         _refuse(
