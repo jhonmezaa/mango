@@ -1,5 +1,7 @@
 # Runbook: operar y probar una instalación (laboratorio)
 
+> **Obsoleto en parte (2026-10-05).** Este runbook nació para una PoC que se desplegaba con `cdk deploy`, que ya no existe (D58 (6)). El runbook vigente es [`install.md`](install.md). De aquí solo sirven las secciones de operación y de pruebas de punta a punta; cualquier paso que hable de `cdk deploy`, de CDK bootstrap o de `infra/config/<env>.json` no se puede ejecutar tal cual.
+>
 > **Instalar, actualizar y desinstalar ya no se explica aquí:** está en [`install.md`](install.md). Desde D58 el laboratorio se instala como un cliente, con `CreateStack`/`UpdateStack` sobre las plantillas de una versión publicada. No hay `cdk deploy` de desarrollo ni CDK bootstrap.
 >
 > Este documento conserva la operación y las pruebas de punta a punta del laboratorio. Donde una sección diga «desplegar `Core`», léase `UpdateStack` de `Core` a una versión publicada (`install.md`, paso 4).

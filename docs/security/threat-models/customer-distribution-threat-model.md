@@ -1,7 +1,7 @@
 # Distribución para clientes (release, instalación y desinstalación): modelo de amenazas (v0.1)
 
 > Fecha: 2026-10-03 · Skill: `security-threat-model`. Diseño: `docs/specs/customer-distribution.md`. Decisiones: D3, D8, D9, D25, D36, D43, D48.
-> **Antes de construir:** el componente no existe todavía. Los «controles existentes» son los que ya hay en el repo; los del diseño van como mitigaciones recomendadas.
+> **Escrito antes de construir; el componente ya existe (D58).** Están construidos la cuenta del proveedor (`infra/lib/stacks/provider-stack.ts`), la publicación (`deployment/dist.py`, `.github/workflows/release.yml`) y `UninstallGuard` (`infra/lib/constructs/uninstall-guard.ts`). En las tablas, «controles existentes» son los que había en el repo al escribir el modelo, y los del diseño van como mitigaciones recomendadas; cuáles se construyeron está en «Cuenta del proveedor: construida y revisada», al final.
 > Alcance: `infra/` (synthesizer, plantillas con parámetros), `deployment/` (`dist`, `provider/`, scripts), `.github/workflows/` (`release.yml`, `packs.yml`), verificación de firmas (`packages/py/mango-packs`, `functions/provisioner`, `apps/api`), `UninstallGuard`.
 > Decidido por el usuario el 2026-10-03: distribución como Innovation Sandbox (buckets y ECR en una cuenta de AWS del proveedor, fuera de la organización del cliente); firma de packs y del manifiesto con una llave KMS en la cuenta del proveedor (se descarta la firma sin llave); lectura por organización del cliente; red de packs en un stack propio; instalaciones solo de tipo `customer`; parámetros mínimos y el resto en la aplicación.
 
@@ -199,7 +199,7 @@ flowchart LR
 
 Stack `Mango-provider` (`infra/lib/stacks/provider-stack.ts`), desplegado en una cuenta temporal de otra organización. Controles construidos, por amenaza:
 
-- **TM-D1:** cada rol confía en un único `sub` exacto (repo por id y entorno) y `aud`; sin patrones. El rol de publicación solo tiene `s3:PutObject` en `mango/*`, subir la imagen y firmar. Pendiente en GitHub: entornos limitados a `main` y revisores (disponibles con el repositorio público, D59; hay que activarlos, ver `packs/README.md`).
+- **TM-D1:** cada rol confía en un único `sub` exacto (repo por id y entorno) y `aud`; sin patrones. El rol de publicación solo tiene `s3:PutObject` en `mango/*`, subir la imagen y firmar. En GitHub, los entornos `pack-signing` y `release` están limitados por rama y exigen un revisor, y `main` está protegida (D59 (5); comprobado el 2026-10-05).
 - **TM-D3:** deny de `PutObject` a todo principal que no sea el rol de publicación, y a toda escritura sin `If-None-Match`; versionado; en cuenta definitiva, Object Lock y deny de borrado. Alertas sobre cambios de política.
 - **TM-D4:** tags inmutables; el rol de publicación no borra imágenes; alerta sobre `BatchDeleteImage` y cambios de política del repositorio.
 - **TM-D5:** la política de la llave es toda la autorización: solo los dos roles firman, con `ECDSA_SHA_256` sobre un digest; `kms:Sign` y `kms:CreateGrant` negados al resto, administradores incluidos. Alerta de firma por otro principal. **Pendiente:** `payload_type` distinto para el manifiesto (al construir la firma del manifiesto).
@@ -212,7 +212,7 @@ Riesgos que quedan:
 - Un administrador de la cuenta del proveedor puede cambiar la política de la llave o de los buckets. No se puede impedir desde el stack; se detecta (alertas), y exige que la cuenta tenga un trail de CloudTrail y que alguien lea el topic.
 - `LocalPublisherArn` (opcional) deja que un rol humano de la cuenta publique. Solo para releases de laboratorio: vacío en la cuenta definitiva.
 - En la cuenta temporal no hay Object Lock ni deny de borrado: un administrador puede borrar versiones.
-- Reconocimiento de cdk-nag `AwsSolutions-ECR1` en el repositorio (principal `*` con condición de organización): **pendiente de la aprobación del usuario**.
+- Reconocimiento de cdk-nag `AwsSolutions-ECR1` en el repositorio (principal `*` con condición de organización): **aprobado por el usuario el 2026-10-03** y registrado en la tabla de excepciones de `AGENTS.md`.
 
 Comprobado con lecturas y escrituras reales: `deployment/provider/README.md` › «Comprobado».
 

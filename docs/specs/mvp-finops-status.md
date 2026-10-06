@@ -1,5 +1,8 @@
 # PoC FinOps: estado y resultados de verificación
 
+> **Documento histórico (2026-09-29). No describe el estado actual.** Es la foto de la PoC de FinOps de ese día: la instalación `poc` se desplegaba con `cdk deploy`, y varios de sus «pendientes» ya están hechos (los tests de Playwright y la distribución por plantillas, por ejemplo).
+> **Estado vigente:** la tabla «Estado de lo construido» de [`docs/architecture/reference-architecture.md`](../architecture/reference-architecture.md) y el índice de decisiones de su §8. Cómo se instala y se prueba hoy: [`docs/runbooks/install.md`](../runbooks/install.md).
+>
 > Fecha: 2026-09-29.
 > Entorno: laboratorio (organización de pruebas, instalación `poc` en la cuenta Sandbox, us-east-1).
 > Todo desplegado con IaC: stacks `Mango-poc-Core` y `Mango-poc-Payer`, sin pasos en consola.
