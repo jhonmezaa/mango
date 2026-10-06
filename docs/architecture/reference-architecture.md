@@ -1,6 +1,7 @@
-# Mango Hub: arquitectura AWS de referencia (v0.1)
+# Mango Hub: arquitectura AWS de referencia
 
-> Fecha: 2026-09-28 · Estado: **propuesta para discusión**
+> Fecha: 2026-09-28 · Revisión de coherencia: 2026-10-05 · Estado: **adoptada**. Nació como propuesta para discusión; sus decisiones están tomadas y registradas en §8 (las primeras son del mismo 2026-09-28).
+> **Cómo leerla:** §1 a §7 describen la arquitectura objetivo, y no todo está construido. Donde este texto y una decisión de §8 difieran, manda la decisión. Qué existe hoy: la tabla «Estado de lo construido», antes de §1.
 > Base: análisis de [`aws-samples/bedrock-chat`](https://github.com/aws-samples/bedrock-chat) @ `4419d62` y verificación del estado de los servicios AWS a sep-2026.
 > Los reportes de detalle, con referencias `archivo:línea` y URLs, están en [`research/`](./research):
 > - [infra](./research/infra.md): infraestructura y CDK de bedrock-chat
@@ -19,6 +20,49 @@
 > - CloudTrail Lake cerrado a clientes nuevos desde el 31-may-2026.
 >
 > Nota: `research/codebase.md` §8 marca como "preview" servicios que ya son GA; en eso manda `research/runtime.md`.
+
+---
+
+## Estado de lo construido (2026-10-05)
+
+Cada fila se comprobó ese día contra el código de `main`: el archivo citado existe y hace lo que dice. «Hecho» significa que hay código y pruebas, no que esté probado en una instalación de producción. Lo que no está aquí no se comprobó.
+
+| Capacidad | Estado | Dónde está | Decisiones |
+|---|---|---|---|
+| Chat con streaming y fase del turno en vivo | Hecho | `POST /api/chat` en `apps/api/src/mango_api/app.py` | D39, D57 |
+| Agente FinOps de la release | Hecho | `agents/finops/agent.json` | D4, D34, D42 |
+| Marketplace, Agent Builder, Revisión y Org Chart | Hecho | `apps/api/src/mango_api/agents.py`; `apps/web/src/pages/` | D18, D30, D38 |
+| Publicar y retirar agentes por SDK, sin CodeBuild | Hecho | `functions/provisioner`; `infra/lib/constructs/provisioner.ts` y `deprovisioner.ts` | D25, D40, D48 |
+| MCP packs firmados, con egress restringido | Hecho: tres packs de lectura | `packs/aws-pricing`, `packs/aws-billing`, `packs/aws-cloudwatch`; `infra/lib/constructs/pack-network.ts` | D19, D36, D43, D54 |
+| RBAC L1 (Verified Permissions) | Hecho | `policies/cedar/platform/` (15 políticas) | §4.5 |
+| RBAC L2 (Cedar en el Gateway) | Hecho por tool y por tipo de usuario; no por agente | `infra/lib/constructs/tools.ts` y `write-tools.ts`; `functions/provisioner/src/mango_provisioner/packs/gateway.py` | D33, D45 |
+| Identidad del usuario hasta el destino | Hecho: pagadora y cuentas miembro | `packages/py/mango-aws`; `infra/lib/constructs/member-access.ts` | D10, D37, D49, D51, D55 |
+| Presupuesto con reserva previa | **A medias:** solo por usuario y por agente | `apps/api/src/mango_api/budget.py` | §4.5 |
+| Jerarquía de presupuestos instalación → área → equipo → usuario | No hecho | — | §4.5 |
+| Límite de presupuesto por agente editable | No hecho | La API solo edita los valores por defecto y el límite por usuario (`apps/api/src/mango_api/admin.py`) | D17, D22 |
+| Reconciliación del gasto contra CUR | No hecho | — | §4.5 |
+| Aprobación de tools de escritura | Hecho, con una tool | `connectors/aws-budgets` (`create_budget`); `apps/api/src/mango_api/approvals.py`; `functions/approval-executor` | D27, D56 |
+| Tool de escritura en un agente de la release | No hecho | `approval_tools: []` en `infra/lib/constructs/release-agents.ts` | — |
+| Auditoría en S3 con Object Lock | **A medias:** hash por evento, sin cadena ni digest firmado; bucket en la cuenta de la instalación, `GOVERNANCE` por defecto | `apps/api/src/mango_api/audit.py`; `infra/lib/constructs/governance.ts` | §4.5 |
+| Guardrail base compartido | Hecho | `infra/lib/constructs/agent-platform.ts` | D34 |
+| Guardrail por agente y sobre salidas de tools | No hecho | `ApplyGuardrail` solo aparece como permiso de IAM | §4.5, D34 |
+| RAG y bases de conocimiento | No hecho | — | §4.4 |
+| Router «Asistente Mango» | No hecho | — | §4.3 |
+| Memoria de AgentCore | No hecho: desactivada a propósito | `functions/provisioner/src/mango_provisioner/harness.py` | D13 |
+| Skills, tareas programadas y evals | No hecho | Sin pantalla ni API; fuera de `AVAILABLE_VIEWS` (`apps/web/src/layouts/navigation.ts`) | D26, D38 |
+| Delegación entre agentes | No hecho (fase 2) | — | D30 |
+| SSO con el IdP del cliente | No hecho en la infraestructura | El cliente del User Pool solo admite `COGNITO` (`infra/lib/constructs/identity.ts`) | D20, D53 (6) |
+| Editar MFA, duración de sesión e IdP desde la app | No hecho | — | D21 |
+| Gestión de personas y grupos de acceso | Hecho | `apps/api/src/mango_api/people.py` y `group_admin.py` | D44, D60 a D62, D66 |
+| Sesión web que sobrevive a la recarga | Hecho | `apps/api/src/mango_api/web_session.py` | D63, D64 |
+| Distribución por plantillas, con seis parámetros | Hecho | `infra/lib/config/release.ts`; `docs/runbooks/install.md` | D8, D58 |
+| Dominio propio y TLS de punta a punta | No hecho | Certificado por defecto de CloudFront (`infra/lib/constructs/edge.ts`) | D15 |
+| Más de una tarea de `mango-api` | No hecho: una tarea, con IP pública | `infra/lib/constructs/api-service.ts` | D15 |
+| Migraciones de datos y modo mantenimiento | No hecho | — | D9, §4.12 |
+| Diagnóstico exportable y stack de soporte | No hecho | — | D7, §4.11 |
+| Acceso de admins a conversaciones | No hecho | — | D23 |
+| Clientes M2M y MCP remotos del cliente | No hecho | — | §4.5, D19 (3) |
+| Plantilla de SCP y tests de aislamiento | No hecho | No existen `policies/scp` ni `tests/isolation` | D11 |
 
 ---
 
@@ -77,7 +121,7 @@ flowchart TB
     AVP["Verified Permissions<br/>(Cedar L1: usar/crear/publicar/aprobar)"]
     BUD["Budget Service<br/>(DynamoDB reserva→liquidación)"]
     DDB[("DynamoDB<br/>tenants, agentes, conversaciones,<br/>budgets, aprobaciones · RLS LeadingKeys")]
-    SFN["Step Functions<br/>provisioning de agentes/KB<br/>HITL waitForTaskToken"]
+    SFN["Step Functions<br/>provisioning de agentes y packs"]
   end
 
   API --> AVP
@@ -108,7 +152,7 @@ flowchart TB
   KR --> KB1["Bedrock KB → S3 Vectors<br/>(Standard)"]
   KR --> KB2["Bedrock Managed KB<br/>(Premium: Drive/SharePoint ACL)"]
 
-  API & GW & SFN -- "AuditEvent (hash-encadenado)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS CMK<br/>cuenta Log Archive")] --> ATH["Athena"]
+  API & GW & SFN -- "AuditEvent (hash por evento)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS CMK<br/>cuenta de la instalación")] --> ATH["Athena"]
   API -- "UsageEvent" --> FH
 ```
 
@@ -169,8 +213,8 @@ Límites a tener presentes:
   - El router vive fuera de AgentCore para que la decisión sea barata, auditable y posterior al RBAC.
 - **Step Functions** para operaciones largas:
   - Provisioning de agente, KB y guardrail por **llamadas SDK** (nunca CodeBuild + CDK).
-  - Ingesta de KB, reutilizando el lock S3 y la ingesta incremental de bedrock-chat.
-  - Aprobaciones HITL.
+  - Ingesta de KB, reutilizando el lock S3 y la ingesta incremental de bedrock-chat (previsto; no hay KB todavía).
+  - Las aprobaciones HITL **no** pasan por Step Functions (D56 (2)); ver §4.5.
 
 ### 4.4 RAG / Knowledge
 
@@ -219,12 +263,13 @@ Límites a tener presentes:
 
 **HITL en dos niveles:**
 - **Autoconfirmación del usuario** (segundos): `inline_function` del harness o interrupts de Strands; la UI muestra una tarjeta.
-- **Aprobación de terceros** (horas/días): Step Functions `waitForTaskToken`; el aprobador se autoriza por AVP `ApproveToolCall` con separación de funciones.
+- **Aprobación de terceros** (horas/días): la solicitud vive en `mango-api`; el aprobador se autoriza por AVP `ApproveToolCall` con separación de funciones. **Aprobar no ejecuta nada:** quien pidió la acción la ejecuta con su propia sesión antes del vencimiento, y todo pasa por el Gateway y Cedar. No existe una identidad de servicio que escriba (D56 (2), que sustituye al `waitForTaskToken` de Step Functions de la versión original de este texto).
 - **No evadible:** un interceptor del Gateway exige un *approval token* firmado con KMS, de un solo uso y ligado a `hash(tool, args)`.
 
 **Audit:**
-- **Firehose → S3 Object Lock (COMPLIANCE) + KMS CMK** en la cuenta Log Archive.
-- Eventos hash-encadenados con digest diario firmado.
+- **Hoy:** Firehose → S3 con Object Lock + KMS CMK, en un bucket de **la cuenta de la instalación**. El modo es un parámetro (`AuditLockMode`: `GOVERNANCE` por defecto, `COMPLIANCE` a elección del cliente). Un índice en DynamoDB sirve la pantalla de Auditoría.
+- **Hoy:** cada evento lleva el SHA-256 de su propio contenido (`apps/api/src/mango_api/audit.py`). Detecta que un registro cambió; **no** hay cadena entre eventos ni digest firmado, así que no detecta que falte uno.
+- **Previsto, sin construir:** eventos encadenados (cada uno con el hash del anterior) y digest diario firmado; escritura o réplica en la cuenta Log Archive del cliente; `COMPLIANCE` por defecto.
 - CloudTrail organization trail. **No CloudTrail Lake.**
 - Retención: decisiones 7 años; contenido de prompts 30–90 días, separado.
 
@@ -287,9 +332,9 @@ Qué cambia respecto al diseño multi-tenant:
 - **Backend:** Python 3.13, `uv`, ruff, mypy estricto por módulo, pytest con moto en CI. La deuda de bedrock-chat es que no corre tests en CI.
 - **Frontend:** Vitest + Playwright para el flujo de chat.
 
-### 4.9 CDK/CloudFormation vs Terraform (propuesta, pendiente de confirmación)
+### 4.9 CDK/CloudFormation vs Terraform (decidido: D3)
 
-**Recomendación: escribir la infraestructura con AWS CDK (TypeScript) y distribuirla como CloudFormation.** Es decir, la estrategia de bedrock-chat, corrigiendo sus errores.
+**Decisión (D3, 2026-09-28): escribir la infraestructura con AWS CDK (TypeScript) y distribuirla como CloudFormation.** Es decir, la estrategia de bedrock-chat, corrigiendo sus errores. Cómo se distribuye lo fijan D8 y D58. El módulo de Terraform envoltorio no está construido.
 
 Cobertura verificada el 2026-09-28:
 - Terraform (`hashicorp/aws`) tiene 21 recursos `aws_bedrockagentcore_*`, incluidos `harness`, `gateway_target`, `policy_engine` y `registry`.
@@ -316,11 +361,11 @@ Ninguna de las dos herramientas es bloqueante. Además, los harness de cada agen
   - Todo **inmutable por versión**.
   - `generateBootstrapVersionRule: false`, así que **no hace falta bootstrap de CDK** en el cliente.
   - Zip de assets en synth, retirada de `AWS::LanguageExtensions` y alarma al acercarse al límite de 1 MB por plantilla.
-  - **Modo dual:** sin bucket de release se comporta como el synthesizer estándar, para desarrollo con `cdk deploy`.
+  - **Sin modo dual (D58 (6)):** no hay `cdk deploy` de desarrollo; el laboratorio se instala como un cliente. La versión original de este texto preveía un modo dual.
 - **Instalación y upgrade:** el cliente instala y actualiza con **"Launch stack" / `CreateStack` / `UpdateStack`** sobre la URL de una versión concreta.
 - **Imágenes de contenedor** (`mango-api`, runtimes de agentes code-defined):
   - No se usa `DockerImageAsset`, porque exige bootstrap y ECR en el cliente.
-  - Se publican en **ECR Public** o en un ECR del proveedor con lectura por cuenta, y se referencian **por digest**.
+  - Se publican en el **ECR privado de la cuenta del proveedor**, con lectura por organización del cliente (`aws:PrincipalOrgID`), y se referencian **por digest** (D58 (3)).
   - Opción `privateEcrRepo` para clientes que no permiten registries externos.
   - AgentCore Runtime acepta ECR privado de cualquier cuenta, ECR Public y un zip en S3 sin contenedor (verificado en la documentación el 2026-10-01; falta la prueba en el laboratorio). Los MCP packs usan el zip (D36).
 - **Trazabilidad de versión:**
@@ -361,13 +406,14 @@ Mango se instala en **una cuenta dedicada** (`mango`) dentro de la organización
 | `Mango-<ns>-Core` (+ `Edge` en us-east-1 si hay dominio propio) | `mango` | Plataforma completa, roles de ejecución de conectores y **brokers** | Sí |
 | `Mango-<ns>-OrgAccess` | Management **o delegated admin de StackSets** (`callAs: DELEGATED_ADMIN`) | `AWS::CloudFormation::StackSet` **SERVICE_MANAGED** con auto-deployment sobre la raíz u OUs elegidas por parámetro. El template del spoke va **como asset versionado** | Sí (multi-cuenta) |
 | `Mango-<ns>-Payer` | Management | Solo `Mango-<ns>-BillingReader`: Cost Explorer, `organizations:List*/Describe*` y lectura de Data Exports. Los StackSets no llegan a la management | Opcional (alternativa: solo CUR 2.0) |
-| `Mango-<ns>-Support` | Cuenta de Identity Center (management o delegated admin) | Permission sets de soporte acotados a la cuenta `mango`, **sin assignment** (§4.11) | Opcional |
+| `Mango-<ns>-PackNetwork` | `mango` | Red de los Runtimes de packs; `Core` la importa (D54, D58 (8)) | Sí, antes que `Core` |
+| `Mango-<ns>-Support` (**previsto, sin construir:** D7 está pendiente) | Cuenta de Identity Center (management o delegated admin) | Permission sets de soporte acotados a la cuenta `mango`, **sin assignment** (§4.11) | Opcional |
 | `Mango-<ns>-Member` (template spoke) | Cada cuenta miembro, vía StackSet (o CfCT/AFT con la misma plantilla) | `Mango-<ns>-ReadOnly` + `Mango-<ns>-Operator` (desactivado por parámetro) | Vía StackSet |
 
 - **Orden independiente por diseño:**
   - Todos los nombres y ARNs son deterministas (`Mango-<ns>-…`) y se calculan a partir de los *account IDs* que recibe cada stack como parámetros.
   - **Ningún stack lee a otro en deploy-time.** Se descarta el acoplamiento SSM+RAM de ISB.
-  - Orden recomendado: `Core` → `OrgAccess` → `Payer` → `Support`.
+  - Orden de instalación vigente (`docs/runbooks/install.md`): `Payer` → `OrgAccess` → `PackNetwork` → `Core`. `Support` no existe todavía.
   - El **connectivity check** de la consola admin prueba `AssumeRole` contra la payer y una muestra de spokes, lee el estado de las instancias del StackSet y muestra qué falta.
 - **No modificamos la estructura de la organización:** no creamos OUs ni SCPs, a diferencia de ISB.
 - **Prerrequisitos (checklist de la guía de instalación):**
@@ -449,6 +495,8 @@ flowchart LR
 
 ### 4.11 Soporte y diagnóstico
 
+> **Estado (2026-10-05): previsto, sin construir.** D7 está `pendiente`: no existen el botón de diagnóstico ni el stack `Mango-<ns>-Support`. Lo que sigue es el diseño.
+
 **Botón "Exportar diagnóstico"** en la consola admin de Mango, solo para el rol `mango-admin`:
 - **Contenido del paquete:**
   - Versión instalada y estado de los stacks CloudFormation (incluida la detección de *drift*).
@@ -475,7 +523,7 @@ flowchart LR
 ### 4.12 Versionado, canales de actualización y upgrades
 
 **Modelo comercial y técnico:**
-- **Cada instalación queda fijada a una versión** (`vX.Y.Z`): sus stacks apuntan a las plantillas de esa release y no cambian hasta que el equipo de Mango ejecuta una actualización. Es el mismo principio que bedrock-chat (`bin.sh --version`), pero sin CodeBuild.
+- **Cada instalación queda fijada a una versión** (`vX.Y.Z`): sus stacks apuntan a las plantillas de esa release y no cambian hasta que el cliente la actualiza (D58 (2)). Es el mismo principio que bedrock-chat (`bin.sh --version`), pero sin CodeBuild.
 - **Dos canales:**
 
   | Canal | Contenido | Comercial |
@@ -490,13 +538,13 @@ flowchart LR
 **Mecánica de actualización (igual para ambos canales, sin CodeBuild):**
 1. **Build una sola vez por release, en el CI de Mango** (GitHub Actions, en cuentas de Mango): plantillas, Lambdas empaquetadas e imágenes. Se publica todo inmutable en `s3://<mango-releases>-<region>/mango/vX.Y.Z/` y en ECR, con imágenes referenciadas por digest.
 2. **En la cuenta del cliente solo se ejecuta `UpdateStack`** con la URL de la plantilla de la versión destino.
-   - Lo hace el equipo de Mango, con acceso vía IAM Identity Center del cliente (§4.11), desde la consola o la CLI.
+   - Lo hace **el cliente**, desde la consola o la CLI (D58 (2); `docs/runbooks/install.md`, paso 4). D9 decía «el equipo de Mango vía IdC»: ese acceso depende de §4.11, que no está construido.
    - Con la opción "Rollback all stack resources".
    - Futuro: un botón en la consola admin que dispare un Step Functions en la cuenta `mango`.
 3. **CloudFormation descarga los artefactos ya construidos.** En la cuenta del cliente no se compila nada.
-4. **Migraciones de datos:** recurso personalizado de CloudFormation (una Lambda) idempotente, que nunca pisa configuración guardada por un admin y revierte el stack si falla (patrón ISB).
-5. **Modo mantenimiento** en la app durante el upgrade y **validación de compatibilidad de versión/esquema** entre stacks antes de reabrir.
-6. **Orden:** Core concentra casi todos los cambios. `OrgAccess`, `Payer` y `Support` cambian rara vez y se actualizan solo si la release lo indica en sus notas.
+4. **Migraciones de datos (previsto, sin construir):** recurso personalizado de CloudFormation (una Lambda) idempotente, que nunca pisa configuración guardada por un admin y revierte el stack si falla (patrón ISB).
+5. **Modo mantenimiento** en la app durante el upgrade y **validación de compatibilidad de versión/esquema** entre stacks antes de reabrir (previsto, sin construir).
+6. **Orden:** Core concentra casi todos los cambios. `OrgAccess`, `Payer` y `PackNetwork` cambian rara vez y se actualizan solo si la release lo indica en sus notas.
 
 **Reglas de diseño que reducen la necesidad de releases:**
 - **Catálogo de modelos y precios como configuración, no código:** agregar o retirar un modelo no exige una versión nueva.
@@ -550,35 +598,35 @@ mango/
 ├── pnpm-workspace.yaml       # raíz del pnpm workspace
 ├── apps/
 │   ├── api/                  # mango-api (FastAPI): BFF SSE, router, catálogo, admin
-│   └── web/                  # React + Vite + Tailwind
+│   └── web/                  # React + Vite; hojas CSS propias y utilidades de Tailwind; e2e/ con Playwright
 ├── packages/
 │   ├── py/
-│   │   ├── mango-core/       # dominio compartido, errores, contratos de eventos (audit/usage)
-│   │   ├── mango-governance/ # clientes AVP, Budget Service, emisor de auditoría, approval tokens
+│   │   ├── mango-core/       # dominio compartido: contratos de agentes y aprobaciones, grupos, firma de invocación, identidad de packs, dominios de correo público
 │   │   ├── mango-aws/        # broker, session policies, SourceIdentity (D10)
 │   │   ├── mango-packs/      # formato de MCP packs: manifiesto, hash de tools, verificación de firma (D19)
 │   │   └── mango-pack-runtime/ # punto de entrada común de los packs de datos de cuentas; va dentro de su zip (D37)
 │   └── ts/
 │       └── api-client/       # generado desde el OpenAPI de apps/api (no se edita a mano)
 ├── functions/                # Lambdas Python, un paquete por función
-│   ├── provisioner/  approval-executor/  gateway-interceptor/
-│   └── pre-token/  budget-reconciler/  migrations/
-├── connectors/               # tools detrás del Gateway: cost-explorer/, cloudwatch/, knowledge-retrieve/
-├── agents/                   # definiciones incluidas en la release (finops/agent.json + evals) y skills/
+│   ├── provisioner/  approval-executor/  gateway-interceptor/  admin-probe/
+│   └── pre-token/  pre-sign-up/  reconciler/
+├── connectors/               # tools detrás del Gateway: cost-explorer/, aws-budgets/
+├── agents/                   # definiciones incluidas en la release (finops/agent.json)
 ├── policies/
 │   ├── cedar/platform/       # L1 Verified Permissions (schema + policies + tests)
-│   ├── cedar/gateway/        # L2 AgentCore Policy (schema + policies + tests)
-│   └── scp/                  # plantilla de SCPs recomendadas (R8)
+│   └── guard/                # ruleset de cfn-guard (Well-Architected Security Pillar)
 ├── infra/                    # CDK: bin/, lib/{stacks,constructs,synthesizer}/, test/
 ├── packs/                    # MCP packs de la release: manifiesto, lock con hashes, punto de entrada (D19)
 ├── deployment/               # build-dist: synth, empaquetado, firma (R5), publicación
 │   └── pack-builder/         # pipeline de packs: lock, zip reproducible, snapshot de tools, firma KMS
 ├── tests/
-│   ├── e2e/                  # Playwright
-│   └── isolation/            # aislamiento usuario/área y RBAC (R4)
+│   ├── e2e/                  # pruebas de punta a punta contra una instalación (scripts de Python)
+│   └── eval/                 # evaluación del agente FinOps con verdad de referencia
 ├── docs/
 └── .github/workflows/
 ```
+
+Árbol al 2026-10-05. **Previsto en D12 y sin construir:** `packages/py/mango-governance` (AVP, presupuestos y auditoría viven hoy en `apps/api`; los approval tokens, en `mango-core`), `functions/migrations`, los conectores `cloudwatch` (se hizo como pack, D55) y `knowledge-retrieve`, `agents/skills`, `policies/scp` (R8) y `tests/isolation` (R4). Las políticas Cedar L2 del Gateway se generan en `infra/lib/constructs/` y en el provisioner de packs, no en `policies/cedar/gateway`.
 
 Reglas:
 1. **Separación por responsabilidad, no por lenguaje.**
@@ -596,7 +644,7 @@ Reglas:
 
 | Tomar (copiar y adaptar) | Reescribir | Descartar |
 |---|---|---|
-| Capas `routes → usecases → repositories → models`, con excepciones de dominio mapeadas a HTTP | Adaptador Strands (1.9 → ≥1.57, hooks estables, interrupts, MCPClient) | `cdk deploy` en runtime vía CodeBuild (stacks por bot, KB, API y guardrail) |
+| Excepciones de dominio mapeadas a HTTP en un solo sitio. Las capas `routes → usecases → repositories → models` **no se adoptaron**: `mango-api` es un módulo por dominio (`AGENTS.md`) | Adaptador Strands (1.9 → ≥1.57, hooks estables, interrupts, MCPClient) | `cdk deploy` en runtime vía CodeBuild (stacks por bot, KB, API y guardrail) |
 | Modelos pydantic de conversación: contenidos discriminados, árbol, `thinking_log` | Registro de tools en duro → catálogo de `AgentDefinition` y `ToolBinding` apuntando al Gateway | Bot Store en OpenSearch Serverless + 2 pipelines OSIS |
 | RLS DynamoDB con `LeadingKeys` | Persistencia de conversaciones (un item por mensaje) | KB "dedicated" con una colección AOSS por bot |
 | Protocolo de eventos de streaming y máquina XState del front (se añaden `APPROVAL_REQUIRED`, `BUDGET_WARNING` y `POLICY_DENIED`) | RBAC de 3 grupos fijos → Cedar (AVP + AgentCore Policy) | Tool `bedrock_agent` (Agents Classic) y búsqueda web con DuckDuckGo |
@@ -724,8 +772,9 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D67 | Las lecturas del directorio se leen en palabras en Auditoría, y un cambio de quien ya no está no se aprueba | vigente | 2026-10-05 | [D067-lecturas-del-directorio-en-auditoria.md](decisions/D067-lecturas-del-directorio-en-auditoria.md) |
 | D68 | El filtro de la búsqueda de personas se nombra en Auditoría, la pantalla espera al otro cambio de administradores y «Respuesta completa» solo avisa a quien no ve el final | vigente | 2026-10-05 | [D068-filtro-de-busqueda-y-espera-de-cambios.md](decisions/D068-filtro-de-busqueda-y-espera-de-cambios.md) |
 
-Preguntas abiertas:
-- (sin preguntas abiertas por ahora)
+Preguntas abiertas (2026-10-05):
+- **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar y no hay otro plan aprobado.
+- **Usuarios federados (SSO):** cómo recibe sus grupos una persona que entra por el IdP del cliente. D53 (6) lo deja pendiente «antes de habilitar un IdP».
 
 Notas a futuro (no decididas):
 - **SES para correos de Cognito, 2026-09-30.** A evaluar: identidad de SES del dominio del cliente como remitente propio de Cognito, para avisar al usuario afectado por un reset de MFA (pendiente de D28, TM-L14), habilitar las notificaciones de riesgo de Plus (D29; condición para `BLOCK` en riesgo alto, D31), exportar los errores de entrega (`userNotification`, D31) y salir de la cuota del correo por defecto de Cognito (TM-L11).
@@ -742,11 +791,15 @@ Notas a futuro (no decididas):
 
 ---
 
-## 9. Próximos pasos (PoC de 2–3 semanas)
+## 9. Plan original de la PoC (histórico, 2026-09-28)
 
-1. **Esqueleto:** monorepo, CDK `core` + `agents`, Cognito + un IdP de prueba, mango-api en Fargate con SSE.
-2. **Agente FinOps** en harness con Gateway → Cost Explorer (Lambda) + una skill en S3, extremo a extremo con streaming.
-3. **Gobernanza mínima:** AVP (`UseAgent`), Budget Service con reserva/liquidación, AgentCore Policy por rol y AuditEvent a S3 Object Lock.
-4. **HITL:** una tool de escritura simulada con `inline_function` y approval token validado por el interceptor.
-5. **RAG:** S3 Vectors vs Managed KB sobre ~1 GB de documentos reales (recall@5, p95, USD).
-6. **Medir** costo real por conversación y calibrar cuotas con un load test de 50 sesiones concurrentes.
+Estos eran los «próximos pasos (PoC de 2–3 semanas)» de la primera versión del documento. Se conservan con lo que pasó con cada uno. No son el plan vigente: hoy no hay un plan aprobado (ver las preguntas abiertas de §8).
+
+| # | Paso previsto | Qué pasó |
+|---|---|---|
+| 1 | **Esqueleto:** monorepo, CDK `core` + `agents`, Cognito + un IdP de prueba, mango-api en Fargate con SSE | Hecho, sin el IdP de prueba: el login es propio (D20) y el SSO no se puede configurar todavía |
+| 2 | **Agente FinOps** en harness con Gateway → Cost Explorer (Lambda) + una skill en S3, extremo a extremo con streaming | Hecho, sin la skill: no hay skills (D38) |
+| 3 | **Gobernanza mínima:** AVP (`UseAgent`), Budget Service con reserva/liquidación, AgentCore Policy por rol y AuditEvent a S3 Object Lock | Hecho |
+| 4 | **HITL:** una tool de escritura simulada con `inline_function` y approval token validado por el interceptor | Hecho de otra forma: una tool de escritura real (`aws-budgets.create_budget`) con approval token (D56) |
+| 5 | **RAG:** S3 Vectors vs Managed KB sobre ~1 GB de documentos reales (recall@5, p95, USD) | No hecho |
+| 6 | **Medir** costo real por conversación y calibrar cuotas con un load test de 50 sesiones concurrentes | La prueba de carga no se hizo |
