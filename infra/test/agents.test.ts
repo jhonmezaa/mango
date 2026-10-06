@@ -117,7 +117,10 @@ describe("Agents table (Marketplace v1, D18)", () => {
     const grants = agentsGrants().filter((g) => g.roles.includes(apiRoleId));
     expect(grants.map((g) => g.statement.Sid).sort()).toEqual(["AgentsTable", "PublishedPointerIsProvisionerOnly"]);
     const { statement } = grants.find((g) => g.statement.Sid === "AgentsTable")!;
+    // `BatchGetItem` reads by key what `GetItem` already could: the agent records of a list in
+    // one call. Still no `Scan`.
     expect(statement.Action).toEqual([
+      "dynamodb:BatchGetItem",
       "dynamodb:ConditionCheckItem",
       "dynamodb:DeleteItem",
       "dynamodb:GetItem",

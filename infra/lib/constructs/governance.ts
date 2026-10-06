@@ -324,6 +324,7 @@ export class Governance extends Construct {
       new iam.PolicyStatement({
         sid: "AgentsTable",
         actions: [
+          "dynamodb:BatchGetItem",
           "dynamodb:ConditionCheckItem",
           "dynamodb:DeleteItem",
           "dynamodb:GetItem",
