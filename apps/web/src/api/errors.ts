@@ -35,6 +35,20 @@ export class NotAuthenticatedError extends Error {
   override name = 'NotAuthenticatedError';
 }
 
+/**
+ * The session could not be renewed and nothing said it ended (outage, network, rate limit), so
+ * the request was not sent. Same status and code as the answer of `POST /api/session/refresh`
+ * that caused it: every screen shows the error it already has for a 503 or a 429, and the
+ * person stays signed in and can retry.
+ */
+export function sessionUnavailableError(
+  cause: { rateLimited?: boolean; retryAfter?: number | null } = {},
+): ApiError {
+  return cause.rateLimited
+    ? new ApiError(429, 'rate_limited', 'Session renewal rate limited', cause.retryAfter ?? null)
+    : new ApiError(503, 'session_unavailable', 'Session renewal unavailable');
+}
+
 export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
   let body: unknown = null;
   try {

@@ -58,15 +58,33 @@ describe('server session (D63)', () => {
     const { session } = setup(
       new Response(null, { status: 204 }),
       json(401),
+      json(403),
       json(503),
-      json(429),
+      json(504),
       new TypeError('network'),
       json(200, { access_token: '', id_token: 'i', expires_in: 1, federated: false }),
     );
+    // Only the 204 says there is no session; the 403 is what the edge answers when it blocks.
     await expect(session.renew()).resolves.toEqual({ kind: 'none' });
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       await expect(session.renew()).resolves.toEqual({ kind: 'unavailable' });
     }
+  });
+
+  it('reports a rate limit as an unknown answer, with its Retry-After', async () => {
+    const limited = (retryAfter?: string) =>
+      new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'x' } }), {
+        status: 429,
+        headers: retryAfter === undefined ? {} : { 'Retry-After': retryAfter },
+      });
+    const { session } = setup(limited('120'), limited(), limited('soon'));
+    await expect(session.renew()).resolves.toEqual({
+      kind: 'unavailable',
+      rateLimited: true,
+      retryAfter: 120,
+    });
+    await expect(session.renew()).resolves.toEqual({ kind: 'unavailable', rateLimited: true });
+    await expect(session.renew()).resolves.toEqual({ kind: 'unavailable', rateLimited: true });
   });
 
   it('signs out without failing the caller', async () => {

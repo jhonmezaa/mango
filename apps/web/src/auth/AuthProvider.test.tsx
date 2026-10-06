@@ -1,12 +1,14 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from '../api/errors';
+
 import type { RuntimeConfig } from '../config/runtimeConfig';
 import type { AuthContextValue } from './AuthContext';
 import { AuthProvider } from './AuthProvider';
 import { CognitoError } from './cognito/api';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
-import type { RenewResult, ServerSession } from './serverSession';
+import { RESTORE_RETRY_DELAYS_MS, type RenewResult, type ServerSession } from './serverSession';
 import { useAuth } from './useAuth';
 
 const config = {
@@ -72,9 +74,21 @@ async function setup(cognito: Partial<CognitoAuth> = {}, server: Partial<ServerS
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+/** What `getAccessToken` rejects with while the renewal does not answer. */
+async function tokenFailure(auth: () => AuthContextValue): Promise<unknown> {
+  let failure: unknown = null;
+  await act(async () => {
+    failure = await auth()
+      .getAccessToken()
+      .catch((error: unknown) => error);
+  });
+  return failure;
+}
 
 describe('AuthProvider (session in memory: the server did not take it)', () => {
   it('starts signed out and accepts the tokens of a completed sign-in', async () => {
@@ -113,6 +127,45 @@ describe('AuthProvider (session in memory: the server did not take it)', () => {
   it('ends the session when the refresh fails', async () => {
     const { auth } = await setup({
       refresh: vi.fn(() => Promise.reject(new CognitoError('NotAuthorizedException'))),
+    });
+    act(() => {
+      auth().acceptTokens(tokens(10));
+    });
+    await act(async () => {
+      await expect(auth().getAccessToken()).resolves.toBeNull();
+    });
+    expect(screen.getByText('unauthenticated')).toBeInTheDocument();
+    expect(auth().errorKey).toBe('auth.errors.sessionExpired');
+  });
+
+  it.each(['NetworkError', 'TooManyRequestsException', 'InternalErrorException', 'Http503'])(
+    'keeps the session when Cognito does not answer the refresh (%s)',
+    async (code) => {
+      let down = true;
+      const { auth } = await setup({
+        refresh: vi.fn(() =>
+          down ? Promise.reject(new CognitoError(code)) : Promise.resolve(tokens(3600, 'access-2')),
+        ),
+      });
+      act(() => {
+        auth().acceptTokens(tokens(10));
+      });
+      const failure = await tokenFailure(auth);
+      expect(failure).toBeInstanceOf(ApiError);
+      expect(failure).toMatchObject({ status: 503, code: 'session_unavailable' });
+      expect(screen.getByText('authenticated')).toBeInTheDocument();
+      expect(auth().errorKey).toBeNull();
+      // The next call asks again, and the session goes on.
+      down = false;
+      await act(async () => {
+        await expect(auth().getAccessToken()).resolves.toBe('access-2');
+      });
+    },
+  );
+
+  it('ends the session when Cognito says the user is gone', async () => {
+    const { auth } = await setup({
+      refresh: vi.fn(() => Promise.reject(new CognitoError('UserNotFoundException'))),
     });
     act(() => {
       auth().acceptTokens(tokens(10));
@@ -179,14 +232,107 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
     expect(setItem).not.toHaveBeenCalled();
   });
 
-  it.each<RenewResult>([{ kind: 'none' }, { kind: 'unavailable' }])(
-    'goes to the sign-in without an error when there is no session ($kind)',
-    async (result) => {
-      const { auth } = await setup({}, { renew: vi.fn(() => Promise.resolve(result)) });
-      expect(screen.getByText('unauthenticated')).toBeInTheDocument();
+  it('goes to the sign-in without an error when the server says there is no session', async () => {
+    const renew = vi.fn((): Promise<RenewResult> => Promise.resolve({ kind: 'none' }));
+    const { auth } = await setup({}, { renew });
+    expect(screen.getByText('unauthenticated')).toBeInTheDocument();
+    expect(auth().errorKey).toBeNull();
+    expect(renew).toHaveBeenCalledOnce();
+  });
+
+  describe('at load, when the renewal does not answer', () => {
+    const allDelays = RESTORE_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
+    const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+
+    it('asks again a few times before giving up, and never shows the sign-in form', async () => {
+      vi.useFakeTimers();
+      const { auth, session } = await setup(
+        {},
+        { renew: () => Promise.resolve({ kind: 'unavailable' }) },
+      );
+      // Still «Recuperando tu sesión…» while it retries.
+      expect(screen.getByText('loading')).toBeInTheDocument();
+      expect(session.renew).toHaveBeenCalledOnce();
+      await advance(RESTORE_RETRY_DELAYS_MS[0] ?? 0);
+      expect(session.renew).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('loading')).toBeInTheDocument();
+      await advance(allDelays);
+      expect(session.renew).toHaveBeenCalledTimes(1 + RESTORE_RETRY_DELAYS_MS.length);
+      expect(screen.getByText('unavailable')).toBeInTheDocument();
       expect(auth().errorKey).toBeNull();
-    },
-  );
+      // Nothing more goes out until the person retries, and no session was ended.
+      await advance(60_000);
+      expect(session.renew).toHaveBeenCalledTimes(1 + RESTORE_RETRY_DELAYS_MS.length);
+      expect(session.end).not.toHaveBeenCalled();
+    });
+
+    it('recovers the session when the renewal comes back during the retries', async () => {
+      vi.useFakeTimers();
+      const answers: RenewResult[] = [{ kind: 'unavailable' }, { kind: 'unavailable' }, renewed()];
+      const { auth, session } = await setup(
+        {},
+        { renew: () => Promise.resolve(answers.shift() ?? { kind: 'none' }) },
+      );
+      await advance(allDelays);
+      expect(screen.getByText('authenticated')).toBeInTheDocument();
+      expect(auth().restored).toBe(true);
+      expect(session.renew).toHaveBeenCalledTimes(3);
+    });
+
+    it('goes to the sign-in as soon as an answer says there is no session', async () => {
+      vi.useFakeTimers();
+      const answers: RenewResult[] = [{ kind: 'unavailable' }, { kind: 'none' }];
+      const { session } = await setup(
+        {},
+        { renew: () => Promise.resolve(answers.shift() ?? { kind: 'none' }) },
+      );
+      await advance(allDelays);
+      expect(screen.getByText('unauthenticated')).toBeInTheDocument();
+      expect(session.renew).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not ask again on its own after a rate limit', async () => {
+      vi.useFakeTimers();
+      const { session } = await setup(
+        {},
+        {
+          renew: () => Promise.resolve({ kind: 'unavailable', rateLimited: true, retryAfter: 30 }),
+        },
+      );
+      expect(screen.getByText('unavailable')).toBeInTheDocument();
+      await advance(60_000);
+      expect(session.renew).toHaveBeenCalledOnce();
+    });
+
+    it('asks again when the person retries, and then recovers the session', async () => {
+      const { auth, session } = await setup(
+        {},
+        { renew: () => Promise.resolve({ kind: 'unavailable', rateLimited: true }) },
+      );
+      expect(screen.getByText('unavailable')).toBeInTheDocument();
+      session.renew.mockResolvedValue(renewed());
+      await act(async () => {
+        auth().retryRestore();
+        await Promise.resolve();
+      });
+      expect(await screen.findByText('authenticated')).toBeInTheDocument();
+      expect(session.renew).toHaveBeenCalledTimes(2);
+    });
+
+    it('goes to the sign-in when the retry says there is no session', async () => {
+      const { auth, session } = await setup(
+        {},
+        { renew: () => Promise.resolve({ kind: 'unavailable', rateLimited: true }) },
+      );
+      session.renew.mockResolvedValue({ kind: 'none' });
+      await act(async () => {
+        auth().retryRestore();
+        await Promise.resolve();
+      });
+      expect(await screen.findByText('unauthenticated')).toBeInTheDocument();
+      expect(auth().errorKey).toBeNull();
+    });
+  });
 
   it('hands the refresh token to the server and stops using it', async () => {
     const start = vi.fn(() => Promise.resolve(true));
@@ -230,14 +376,61 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
       await Promise.resolve();
     });
     session.renew.mockResolvedValue({ kind: 'unavailable' });
+    // Not null: null is what sends the person to the sign-in.
+    const failure = await tokenFailure(auth);
+    expect(failure).toBeInstanceOf(ApiError);
+    expect(failure).toMatchObject({ status: 503, code: 'session_unavailable' });
+    expect(screen.getByText('authenticated')).toBeInTheDocument();
+    expect(auth().errorKey).toBeNull();
     await act(async () => {
-      await expect(auth().getAccessToken()).resolves.toBeNull();
+      await expect(auth().refreshSession()).resolves.toBe(false);
     });
     expect(screen.getByText('authenticated')).toBeInTheDocument();
     session.renew.mockResolvedValue(renewed());
     await act(async () => {
       await expect(auth().getAccessToken()).resolves.toBe(jwt({ sub: 'ana', n: 2 }));
     });
+  });
+
+  it('keeps the session through a rate limit of the renewal, and passes its wait on', async () => {
+    const { auth, session } = await setup({}, { start: vi.fn(() => Promise.resolve(true)) });
+    await act(async () => {
+      auth().acceptTokens({ ...signedIn(), expiresAt: Date.now() + 10_000 });
+      await Promise.resolve();
+    });
+    session.renew.mockResolvedValue({ kind: 'unavailable', rateLimited: true, retryAfter: 120 });
+    expect(await tokenFailure(auth)).toMatchObject({
+      status: 429,
+      code: 'rate_limited',
+      retryAfter: 120,
+    });
+    expect(screen.getByText('authenticated')).toBeInTheDocument();
+  });
+
+  it('does not sign the other tabs out when its renewal is down', async () => {
+    const { auth, session } = await setup({}, { start: vi.fn(() => Promise.resolve(true)) });
+    await act(async () => {
+      auth().acceptTokens({ ...signedIn(), expiresAt: Date.now() + 10_000 });
+      await Promise.resolve();
+    });
+    const other = new BroadcastChannel('mango-auth');
+    const heard = vi.fn<(event: MessageEvent<unknown>) => void>();
+    other.onmessage = heard;
+    session.renew.mockResolvedValue({ kind: 'unavailable' });
+    await tokenFailure(auth);
+    await tokenFailure(auth);
+    // A message that does go out arrives first: nothing was posted before it.
+    const probe = new BroadcastChannel('mango-auth');
+    probe.postMessage('probe');
+    await vi.waitFor(() => {
+      expect(heard).toHaveBeenCalled();
+    });
+    probe.close();
+    other.close();
+    expect(heard.mock.calls.map(([event]) => event.data)).toEqual(['probe']);
+    // The cookie the tabs share is untouched: no sign-out reached the server.
+    expect(session.end).not.toHaveBeenCalled();
+    expect(screen.getByText('authenticated')).toBeInTheDocument();
   });
 
   it('reloads instead of mixing two people when the cookie changed hands', async () => {

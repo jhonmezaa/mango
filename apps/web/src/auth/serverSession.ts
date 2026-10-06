@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { parseRetryAfter } from '../api/errors';
+
 /**
  * The session cookie of mango-api (D63). The cookie is `HttpOnly`: this code never sees it,
  * and it only buys new tokens. Every other API call keeps sending the access token and no
@@ -32,8 +34,11 @@ export type RenewResult =
   | { kind: 'ok'; session: RenewedSession }
   /** There is no session (never was, expired, signed out or revoked). */
   | { kind: 'none' }
-  /** The answer is unknown (network, outage, rate limit): the session may still exist. */
-  | { kind: 'unavailable' };
+  /**
+   * The answer is unknown (network, outage, rate limit): the session may still exist.
+   * `rateLimited` is a 429; `retryAfter` are the seconds of its `Retry-After`, when usable.
+   */
+  | { kind: 'unavailable'; rateLimited?: true; retryAfter?: number };
 
 export interface ServerSession {
   /** Hands the refresh token of a completed sign-in to the server. False if it did not take. */
@@ -88,6 +93,16 @@ export function createServerSession(
       }
       // 204: the server holds no session for this browser (it is not an error).
       if (response.status === 204) return { kind: 'none' };
+      // Only the 204 says the session is over. A 429 (the API's own limit or the edge), a 5xx
+      // or anything else leaves the question open.
+      if (response.status === 429) {
+        const retryAfter = parseRetryAfter(response.headers.get('Retry-After'));
+        return {
+          kind: 'unavailable',
+          rateLimited: true,
+          ...(retryAfter === null ? {} : { retryAfter }),
+        };
+      }
       if (!response.ok) return { kind: 'unavailable' };
       const parsed = renewedSchema.safeParse(await response.json().catch(() => null));
       if (!parsed.success) return { kind: 'unavailable' };
@@ -110,4 +125,25 @@ export function createServerSession(
       }
     },
   };
+}
+
+/**
+ * Waits before asking again at load when the renewal did not answer (5xx, network): three more
+ * tries in about 7 s, behind «Recuperando tu sesión…». A short outage (a task being replaced)
+ * passes unseen; a longer one ends in the error with «Reintentar». A 429 is not retried: asking
+ * again is what a rate limit must not get.
+ */
+export const RESTORE_RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000];
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** The check at load: `renew`, asked again while the answer stays unknown. */
+export async function renewWithRetries(serverSession: ServerSession): Promise<RenewResult> {
+  let result = await serverSession.renew();
+  for (const delay of RESTORE_RETRY_DELAYS_MS) {
+    if (result.kind !== 'unavailable' || result.rateLimited) break;
+    await wait(delay);
+    result = await serverSession.renew();
+  }
+  return result;
 }

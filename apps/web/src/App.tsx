@@ -7,6 +7,7 @@ import type { CognitoAuth } from './auth/cognito/flows';
 import { SessionProvider } from './auth/SessionProvider';
 import { hasAuthCallbackParams } from './auth/ssoUrls';
 import { useAuth } from './auth/useAuth';
+import { FullPageRetry } from './components/FullPageRetry';
 import { SoonView } from './components/SoonView';
 import type { RuntimeConfig } from './config/runtimeConfig';
 import { AppLayout } from './layouts/AppLayout';
@@ -124,7 +125,7 @@ export function AppRoutes() {
 }
 
 function AuthGate({ config }: { config: RuntimeConfig }) {
-  const { status } = useAuth();
+  const { status, retryRestore } = useAuth();
   if (status === 'loading') {
     // Coming back from the IdP is a sign-in in progress, not a session being recovered.
     return (
@@ -134,6 +135,8 @@ function AuthGate({ config }: { config: RuntimeConfig }) {
     );
   }
   if (status === 'unauthenticated') return <LoginPage config={config} />;
+  // The renewal did not answer: that is not «no session», so no sign-in form.
+  if (status === 'unavailable') return <FullPageRetry onRetry={retryRestore} />;
   return (
     <SessionProvider config={config}>
       <BrowserRouter>

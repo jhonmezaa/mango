@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest';
 
-import { ApiError, apiErrorFromResponse } from './errors';
+import { ApiError, apiErrorFromResponse, sessionUnavailableError } from './errors';
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json', ...headers },
   });
+
+describe('sessionUnavailableError', () => {
+  it('looks like the answer of the renewal that caused it, never like "no session"', () => {
+    expect(sessionUnavailableError()).toBeInstanceOf(ApiError);
+    expect(sessionUnavailableError()).toMatchObject({
+      status: 503,
+      code: 'session_unavailable',
+      retryAfter: null,
+    });
+    expect(sessionUnavailableError({ rateLimited: true, retryAfter: 45 })).toMatchObject({
+      status: 429,
+      code: 'rate_limited',
+      retryAfter: 45,
+    });
+    expect(sessionUnavailableError({ rateLimited: true })).toMatchObject({
+      status: 429,
+      retryAfter: null,
+    });
+  });
+});
 
 describe('apiErrorFromResponse', () => {
   it('keeps the rules of a 422 validation_failed', async () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import i18n from '../i18n';
 import { adminErrorKey, isStaleDataError } from './adminErrors';
-import { ApiError } from './errors';
+import { ApiError, sessionUnavailableError } from './errors';
 
 describe('adminErrorKey', () => {
   it('maps the admin error codes to specific messages', () => {
@@ -35,6 +35,13 @@ describe('adminErrorKey', () => {
     // A 503 without the audit code (load balancer, CDN) is not reported as an audit failure.
     expect(adminErrorKey(new ApiError(503, 'http_503', 'x'))).toBe('admin.errors.unavailable');
     expect(adminErrorKey(new TypeError('Failed to fetch'))).toBe('admin.errors.network');
+  });
+
+  it('shows a session renewal that did not answer like any other outage or limit', () => {
+    expect(adminErrorKey(sessionUnavailableError())).toBe('admin.errors.unavailable');
+    expect(adminErrorKey(sessionUnavailableError({ rateLimited: true }))).toBe(
+      'admin.errors.rate_limited',
+    );
   });
 
   it('has a Spanish message for every key', () => {

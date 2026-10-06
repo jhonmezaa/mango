@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { sessionUnavailableError } from '../api/errors';
 import type { RuntimeConfig } from '../config/runtimeConfig';
 import { safeReturnPath } from '../security/safeUrl';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
+import { CognitoError } from './cognito/api';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
 import { authTimeOf, displayEmailFromIdToken, subjectOf } from './jwt';
-import { createServerSession, type RenewResult, type ServerSession } from './serverSession';
+import {
+  createServerSession,
+  renewWithRetries,
+  type RenewResult,
+  type ServerSession,
+} from './serverSession';
 import { hasAuthCallbackParams, logoutUrl } from './ssoUrls';
 
 /** mango-api rejects tokens with less than timeoutSeconds + 60 s left (TM-I5); renew before that. */
@@ -26,11 +33,17 @@ const restorePromises = new WeakMap<ServerSession, Promise<RenewResult>>();
 function restore(serverSession: ServerSession): Promise<RenewResult> {
   let promise = restorePromises.get(serverSession);
   if (!promise) {
-    promise = serverSession.renew();
+    promise = renewWithRetries(serverSession);
     restorePromises.set(serverSession, promise);
   }
   return promise;
 }
+
+/** Cognito refuses the refresh token: the same two answers that end a session in mango-api. */
+const REFRESH_REJECTED: ReadonlySet<string> = new Set([
+  'NotAuthorizedException',
+  'UserNotFoundException',
+]);
 
 /** Tells the other tabs that this one signed out. No data travels in the message. */
 const SIGNED_OUT = 'signed-out';
@@ -47,6 +60,15 @@ interface Session {
   expiresAt: number;
   refreshToken?: string;
 }
+
+/** What a renewal says about the session. Only `ended` sends the person to the sign-in. */
+type Renewal =
+  | { kind: 'ok'; session: Session }
+  | { kind: 'ended' }
+  /** Nobody said the session ended (outage, network, rate limit): it is kept. */
+  | { kind: 'unavailable'; rateLimited?: true; retryAfter?: number };
+
+const ENDED: Renewal = { kind: 'ended' };
 
 function currentPath(): string {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -93,7 +115,8 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     federated.current = value;
     setIsFederatedSession(value);
   }, []);
-  const refreshing = useRef<Promise<Session | null> | null>(null);
+  const refreshing = useRef<Promise<Renewal> | null>(null);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
 
   const sessionSeconds = config.auth.sessionHours * 3600;
   const setSession = useCallback(
@@ -149,8 +172,13 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     void restore(serverSession).then((result) => {
       // A sign-in that finished meanwhile wins.
       if (cancelled || tokens.current) return;
-      if (result.kind !== 'ok') {
+      if (result.kind === 'none') {
         setStatus('unauthenticated');
+        return;
+      }
+      if (result.kind === 'unavailable') {
+        // Not the sign-in form: the server did not say there is no session.
+        setStatus('unavailable');
         return;
       }
       setFederated(result.session.federated);
@@ -161,7 +189,13 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     return () => {
       cancelled = true;
     };
-  }, [serverSession, setSession, setFederated]);
+  }, [serverSession, setSession, setFederated, restoreAttempt]);
+
+  const retryRestore = useCallback(() => {
+    restorePromises.delete(serverSession);
+    setStatus('loading');
+    setRestoreAttempt((attempt) => attempt + 1);
+  }, [serverSession]);
 
   // Signing out in one tab signs out the others: they share the cookie that just ended.
   const channel = useRef<BroadcastChannel | null>(null);
@@ -214,39 +248,43 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
 
   /** New tokens from Cognito (session in memory) or from the session cookie. */
   const renew = useCallback(
-    async (current: Session): Promise<Session | null> => {
+    async (current: Session): Promise<Renewal> => {
       if (current.refreshToken !== undefined) {
         try {
-          return await cognito.refresh(current.refreshToken);
-        } catch {
+          return { kind: 'ok', session: await cognito.refresh(current.refreshToken) };
+        } catch (error) {
+          // Throttling, an outage or the network say nothing about the session either.
+          if (!(error instanceof CognitoError && REFRESH_REJECTED.has(error.code))) {
+            return { kind: 'unavailable' };
+          }
           endSession('auth.errors.sessionExpired');
-          return null;
+          return ENDED;
         }
       }
       const result = await serverSession.renew();
       if (result.kind === 'none') {
         endSession('auth.errors.sessionExpired');
-        return null;
+        return ENDED;
       }
       // An outage says nothing about the session: keep it and let the caller retry.
-      if (result.kind === 'unavailable') return null;
+      if (result.kind === 'unavailable') return result;
       if (subjectOf(result.session.accessToken) !== subjectOf(current.accessToken)) {
         // Somebody else signed in from another tab: nothing of this tab's state is theirs.
         window.location.reload();
-        return null;
+        return ENDED;
       }
-      return result.session;
+      return result;
     },
     [cognito, endSession, serverSession],
   );
 
-  const refresh = useCallback((): Promise<Session | null> => {
+  const refresh = useCallback((): Promise<Renewal> => {
     const current = tokens.current;
-    if (!current) return Promise.resolve(null);
+    if (!current) return Promise.resolve(ENDED);
     // One refresh at a time: parallel API calls share it.
     refreshing.current ??= renew(current)
       .then((next) => {
-        if (next && tokens.current === current) setSession(next);
+        if (next.kind === 'ok' && tokens.current === current) setSession(next.session);
         return next;
       })
       .finally(() => {
@@ -259,10 +297,13 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     const current = tokens.current;
     if (!current) return null;
     if (current.expiresAt - Date.now() >= MIN_TOKEN_TTL_SECONDS * 1000) return current.accessToken;
-    return (await refresh())?.accessToken ?? null;
+    const renewal = await refresh();
+    // Not null: null means signed out, and the callers send the person to the sign-in.
+    if (renewal.kind === 'unavailable') throw sessionUnavailableError(renewal);
+    return renewal.kind === 'ok' ? renewal.session.accessToken : null;
   }, [refresh]);
 
-  const refreshSession = useCallback(async () => (await refresh()) !== null, [refresh]);
+  const refreshSession = useCallback(async () => (await refresh()).kind === 'ok', [refresh]);
 
   const logout = useCallback(async () => {
     const current = tokens.current;
@@ -309,6 +350,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       startSso,
       displayEmail,
       logout,
+      retryRestore,
       getAccessToken,
       refreshSession,
       expireSession,
@@ -326,6 +368,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       startSso,
       displayEmail,
       logout,
+      retryRestore,
       getAccessToken,
       refreshSession,
       expireSession,

@@ -2,7 +2,12 @@ import { createContext } from 'react';
 
 import type { CognitoAuth, TokenSet } from './cognito/flows';
 
-export type AuthStatus = 'loading' | 'unauthenticated' | 'authenticated';
+/**
+ * `unavailable`: at load, the server could not say whether this browser has a session (outage,
+ * network, rate limit). Neither the sign-in form nor the application is shown; the person
+ * retries.
+ */
+export type AuthStatus = 'loading' | 'unauthenticated' | 'authenticated' | 'unavailable';
 
 export interface AuthContextValue {
   status: AuthStatus;
@@ -30,9 +35,17 @@ export interface AuthContextValue {
   /** Email of the signed-in user, from the ID token; display only. */
   displayEmail: string | null;
   logout: () => Promise<void>;
-  /** Access token with enough lifetime left for a chat turn, or null when signed out. */
+  /** Asks the server again whether this browser has a session (status `unavailable`). */
+  retryRestore: () => void;
+  /**
+   * Access token with enough lifetime left for a chat turn, or null when signed out. Rejects
+   * with an `ApiError` (503 or 429) when the renewal did not answer: the session is kept.
+   */
   getAccessToken: () => Promise<string | null>;
-  /** Gets new tokens now (e.g. after a group assignment); false if the session ended. */
+  /**
+   * Gets new tokens now (e.g. after a group assignment); false if it could not (the session
+   * ended, or the renewal did not answer and the session is kept).
+   */
   refreshSession: () => Promise<boolean>;
   /** Drops the tokens in memory (e.g. after a 401 from the API). */
   expireSession: () => void;

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from './chatEvents';
 import { createApiClient } from './client';
-import { ApiError, NotAuthenticatedError } from './errors';
+import { ApiError, NotAuthenticatedError, sessionUnavailableError } from './errors';
 
 function sseResponse(chunks: string[], status = 200): Response {
   const encoder = new TextEncoder();
@@ -95,6 +95,51 @@ describe('createApiClient', () => {
     await expect(client.getMe()).rejects.toBeInstanceOf(NotAuthenticatedError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['an outage', sessionUnavailableError(), { status: 503, code: 'session_unavailable' }],
+    [
+      'a rate limit',
+      sessionUnavailableError({ rateLimited: true, retryAfter: 90 }),
+      { status: 429, code: 'rate_limited', retryAfter: 90 },
+    ],
+    ['the network', new TypeError('Failed to fetch'), { name: 'TypeError' }],
+  ])(
+    'does not report "no session" when the renewal failed by %s',
+    async (_cause, failure, expected) => {
+      const fetchMock = vi.fn<typeof fetch>();
+      const onUnauthorized = vi.fn();
+      const client = createApiClient({
+        basePath: '/api',
+        getAccessToken: () => Promise.reject(failure),
+        onUnauthorized,
+        fetchImpl: fetchMock,
+      });
+      for (const call of [
+        () => client.getMe(),
+        () =>
+          client.streamChat({ conversationId: null, message: 'hola', onEvent: () => undefined }),
+      ]) {
+        const error = await call().catch((e: unknown) => e);
+        expect(error).not.toBeInstanceOf(NotAuthenticatedError);
+        expect(error).toMatchObject(expected);
+      }
+      // Nothing was sent, and nobody was told to drop the session.
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([503, 429, 403])(
+    'keeps the session when the API answers %i: only a 401 drops it',
+    async (status) => {
+      const { client, onUnauthorized } = setup(() =>
+        Promise.resolve(jsonResponse({ error: { code: 'x', message: 'x' } }, status)),
+      );
+      await expect(client.getMe()).rejects.toMatchObject({ status });
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    },
+  );
 
   it('maps the contract error body to ApiError and signals 401', async () => {
     const { client, onUnauthorized } = setup(() =>

@@ -31,7 +31,11 @@ import { SseParser } from './sse';
 export interface ApiClientOptions {
   /** Same-origin path prefix, already validated by the runtime config (e.g. `/api`). */
   basePath: string;
-  /** Returns a fresh access token (never the ID token), or null when there is no session. */
+  /**
+   * Returns a fresh access token (never the ID token), or null when there is no session.
+   * Rejects (`sessionUnavailableError`) when the session could not be renewed and nothing said
+   * it ended: that failure reaches the caller as it is and no request goes out.
+   */
   getAccessToken: () => Promise<string | null>;
   /** Called when the API answers 401 so the app can drop the session. */
   onUnauthorized?: () => void;

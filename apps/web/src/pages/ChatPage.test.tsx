@@ -7,8 +7,10 @@ import type { Agent } from '../agents/agents';
 
 import type { ChatEvent } from '../api/chatEvents';
 import type { ApiClient } from '../api/client';
+import { ApiError, NotAuthenticatedError, sessionUnavailableError } from '../api/errors';
+import type { AuthContextValue } from '../auth/AuthContext';
 import type { SessionContextValue } from '../auth/SessionContext';
-import { agentFixture, baseMe, finopsAgent, sessionValue } from '../test/fixtures';
+import { agentFixture, authValue, baseMe, finopsAgent, sessionValue } from '../test/fixtures';
 import { TestProviders } from '../test/TestProviders';
 import { ChatPage } from './ChatPage';
 
@@ -41,11 +43,16 @@ function streamingApi(events: ChatEvent[]) {
 function renderChat(
   api: ApiClient,
   isAdmin = false,
-  { path = '/', session = {} }: { path?: string; session?: Partial<SessionContextValue> } = {},
+  {
+    path = '/',
+    session = {},
+    auth,
+  }: { path?: string; session?: Partial<SessionContextValue>; auth?: AuthContextValue } = {},
 ) {
   render(
     <TestProviders
       session={sessionValue({ api, me: { ...baseMe, is_admin: isAdmin }, ...session })}
+      {...(auth ? { auth } : {})}
       path={path}
     >
       <Routes>
@@ -414,6 +421,49 @@ function composerBox(): HTMLElement {
   if (!box) throw new Error('the composer is not blocked');
   return box;
 }
+
+describe('ChatPage: a turn that fails says whether the session ended', () => {
+  const GENERIC = 'Ocurrió un error inesperado. Inténtalo de nuevo.';
+  const NETWORK = 'No se pudo conectar con Mango. Revisa tu conexión.';
+
+  async function sendFailing(failure: Error) {
+    const auth = authValue();
+    const streamChat = vi.fn<ApiClient['streamChat']>(() => Promise.reject(failure));
+    const user = userEvent.setup();
+    renderChat({ streamChat } as unknown as ApiClient, false, { auth });
+    await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
+    return { auth, streamChat, user };
+  }
+
+  it.each([
+    ['the renewal answered 503', sessionUnavailableError(), GENERIC],
+    ['the renewal was rate limited', sessionUnavailableError({ rateLimited: true }), GENERIC],
+    ['the renewal had no network', new TypeError('Failed to fetch'), NETWORK],
+    ['the API answered 503', new ApiError(503, 'http_503', ''), GENERIC],
+    // What the edge answers when it limits an office: the same body as the API's own limit.
+    ['the API or the edge answered 429', new ApiError(429, 'rate_limited', 'x', 60), GENERIC],
+  ])('keeps the session and offers to retry when %s', async (_cause, failure, text) => {
+    const { auth, streamChat, user } = await sendFailing(failure);
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(auth.expireSession).not.toHaveBeenCalled();
+    expect(screen.queryByText('Tu sesión expiró. Vuelve a iniciar sesión.')).toBeNull();
+    // The same question goes out again from the message.
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(streamChat.mock.calls[1]?.[0]).toMatchObject({ message: 'Hola' });
+    expect(auth.expireSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['there is no session', new NotAuthenticatedError('No active session')],
+    ['the API answered 401', new ApiError(401, 'unauthenticated', 'invalid token')],
+  ])('drops the session when %s', async (_cause, failure) => {
+    const { auth } = await sendFailing(failure);
+    await vi.waitFor(() => {
+      expect(auth.expireSession).toHaveBeenCalledOnce();
+    });
+  });
+});
 
 describe('ChatPage with several agents', () => {
   const two = { agents: [finopsAgent, SALES] };

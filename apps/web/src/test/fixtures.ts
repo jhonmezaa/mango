@@ -43,6 +43,7 @@ export function authValue(overrides: Partial<AuthContextValue> = {}): AuthContex
     displayEmail: null,
     refreshSession: vi.fn(() => Promise.resolve(true)),
     logout: vi.fn(() => Promise.resolve()),
+    retryRestore: vi.fn(),
     getAccessToken: vi.fn(() => Promise.resolve('token')),
     expireSession: vi.fn(),
     ...overrides,

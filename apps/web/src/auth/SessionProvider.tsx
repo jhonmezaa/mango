@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import type { Agent } from '../agents/agents';
 import { createApiClient } from '../api/client';
 import { ApiError } from '../api/errors';
 import type { ConversationSummary, Me } from '../api/schemas';
 import type { RuntimeConfig } from '../config/runtimeConfig';
-import { FullPageMessage } from '../components/FullPageMessage';
+import { FullPageRetry } from '../components/FullPageRetry';
 import { LoginLayout } from '../pages/login/LoginLayout';
 import { NoAccess } from '../pages/login/NoAccess';
 import { RestoringSession } from '../pages/login/RestoringSession';
@@ -20,7 +19,6 @@ export function SessionProvider({
   config: RuntimeConfig;
   children: ReactNode;
 }) {
-  const { t } = useTranslation();
   const {
     getAccessToken,
     expireSession,
@@ -42,6 +40,7 @@ export function SessionProvider({
 
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState(false);
+  const [meToken, setMeToken] = useState(0);
   // Verified session without a group (403 `no_group`, D20): deny by default.
   const [noGroup, setNoGroup] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
@@ -66,7 +65,7 @@ export function SessionProvider({
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, meToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +137,12 @@ export function SessionProvider({
     ],
   );
 
+  // A failed profile (outage, rate limit, network) is asked again without reloading the page.
+  const retryMe = useCallback(() => {
+    setMeError(false);
+    setMeToken((value) => value + 1);
+  }, []);
+
   const recheck = useCallback(async () => {
     // New tokens make the pre-token trigger read the current groups.
     if (!(await refreshSession())) return false;
@@ -164,7 +169,7 @@ export function SessionProvider({
       </LoginLayout>
     );
   }
-  if (meError) return <FullPageMessage message={t('errors.generic')} />;
+  if (meError) return <FullPageRetry onRetry={retryMe} />;
   if (!value) {
     // Every way in keeps the sign-in frame until the application is ready (no flash, no generic
     // loading): a recovered session, the return from the IdP and the own sign-in form.

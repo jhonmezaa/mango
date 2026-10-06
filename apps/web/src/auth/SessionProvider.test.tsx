@@ -74,6 +74,40 @@ describe('SessionProvider: account without a group (D20)', () => {
   });
 });
 
+describe('SessionProvider: the profile does not answer', () => {
+  it.each([
+    ['a 503', () => Promise.resolve(json(503, { error: { code: 'unavailable', message: 'x' } }))],
+    ['a 429', () => Promise.resolve(json(429, { error: { code: 'rate_limited', message: 'x' } }))],
+    ['the network', () => Promise.reject(new TypeError('Failed to fetch'))],
+  ])('keeps the session after %s and lets the person retry', async (_cause, failure) => {
+    let down = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (!url.endsWith('/me')) return Promise.resolve(json(200, { items: [] }));
+        return down ? failure() : Promise.resolve(json(200, baseMe));
+      }),
+    );
+    const auth = authValue();
+    const user = userEvent.setup();
+    render(
+      <AuthContext value={auth}>
+        <SessionProvider config={config}>
+          <p>app</p>
+        </SessionProvider>
+      </AuthContext>,
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Ocurrió un error inesperado. Inténtalo de nuevo.',
+    );
+    down = false;
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('app')).toBeInTheDocument();
+    expect(auth.expireSession).not.toHaveBeenCalled();
+    expect(auth.logout).not.toHaveBeenCalled();
+  });
+});
+
 describe('SessionProvider: what is shown until the application is ready', () => {
   it.each([
     [{ restored: true, federated: true }, 'Recuperando tu sesión…'],
