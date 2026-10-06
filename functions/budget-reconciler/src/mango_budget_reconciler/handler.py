@@ -3,14 +3,17 @@
 A chat turn whose end mango-api never knew (it stopped reading the agent, or its task died)
 keeps its budget reservation held and leaves a pending record. This function reads the
 records that are due, asks the AgentCore traces what each turn's session spent and closes
-the turn: the real cost is charged and the rest of the reservation is released. A turn with
-no readable trace 15 minutes after its time limit is charged its whole reservation, and the
-audit event says so.
+the turn: the real cost is charged and the rest of the reservation is released. The real cost
+is the larger of what the invocations and what the model calls of the session add up to: a turn
+the harness cut at its time limit reports nothing in its invocation, and its model call goes
+on and reports later. A turn with no readable trace 15 minutes after its time limit is charged
+its whole reservation, and the audit event says so.
 
-A turn whose traces cannot be read yet is left for the next run: nothing is charged blindly
-before its deadline. Closing is one transaction conditioned on the record, so two runs at
-once, or a run after one that failed halfway, never charge or release twice. The record is
-only deleted after its audit event is written; a run that died in between writes it again.
+A turn whose traces cannot be read yet, or with a model call still to be written, is left for
+the next run: nothing is charged blindly before its deadline. Closing is one transaction
+conditioned on the record, so two runs at once, or a run after one that failed halfway, never
+charge or release twice. The record is only deleted after its audit event is written; a run
+that died in between writes it again.
 
 If the records cannot be read, or an audit event cannot be written, the invocation fails:
 Lambda retries it and then sends the event to the dead-letter queue, which has its own alarm.
@@ -23,6 +26,7 @@ import logging
 import time
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import replace
 from functools import cache
 from typing import Any
 
@@ -31,13 +35,15 @@ from botocore.config import Config
 
 from mango_budget_reconciler.audit import EVENT_RECONCILED, AuditWriter, reconciled_detail
 from mango_budget_reconciler.config import SPANS_LOG_GROUP, Settings
-from mango_budget_reconciler.traces import TraceQueryError, Traces
+from mango_budget_reconciler.traces import TraceQueryError, TraceReading, Traces
 from mango_core import budget_turns
 from mango_core.budget_turns import (
     BASIS_NOT_INVOKED,
     BASIS_PARTIAL,
     BASIS_RESERVATION,
     BASIS_TRACE,
+    SOURCE_INVOCATIONS,
+    SOURCE_MODEL_CALLS,
     STATE_SETTLED,
     Outcome,
     PendingTurn,
@@ -60,10 +66,44 @@ MIN_REMAINING_SECONDS = 30.0
 REASON_NO_TRACE = "no_trace"
 REASON_UNREADABLE = "trace_unreadable"
 REASON_QUERY_FAILED = "trace_query_failed"
+REASON_UNFINISHED = "model_call_unfinished"
+"""A model call the harness opened was never written: what it cost is not known."""
 
 _CLIENT_CONFIG = Config(
     retries={"mode": "standard", "max_attempts": 3}, connect_timeout=3, read_timeout=10
 )
+
+
+def _traced(turn: PendingTurn, reading: TraceReading, expired: bool) -> Outcome | None:
+    """What the traces of ``turn`` say it cost. A ``reservation`` outcome means they cannot
+    tell, and only applies once the turn's deadline has passed (``expired``). None: wait."""
+    if reading.unreadable:
+        return Outcome(BASIS_RESERVATION, reason=REASON_UNREADABLE)
+    # The larger of the two sums: an invocation the harness cut reports less than its model
+    # calls, and model calls report no cache tokens.
+    by_calls = token_cost(reading.model_usage, turn.price)
+    by_invocations = token_cost(reading.usage, turn.price)
+    known = Outcome(
+        BASIS_TRACE,
+        usage=reading.model_usage if by_calls > by_invocations else reading.usage,
+        invocations=reading.invocations,
+        model_calls=reading.model_calls,
+        source=SOURCE_MODEL_CALLS if by_calls > by_invocations else SOURCE_INVOCATIONS,
+    )
+    if reading.unfinished:
+        # "I do not know what it cost" is not "it cost what is written so far".
+        return replace(known, basis=BASIS_RESERVATION, reason=REASON_UNFINISHED)
+    if reading.invocations == 0:
+        if reading.model_calls == 0:
+            return Outcome(BASIS_RESERVATION, reason=REASON_NO_TRACE)
+        if not expired:
+            # The invocation has not ended, or its span is late: its model calls may not be
+            # all. At the deadline, the calls that are written are what is known.
+            return None
+    # mango-api counted more than the traces show: what it charged stands.
+    if max(by_calls, by_invocations) < turn.charged:
+        return replace(known, basis=BASIS_PARTIAL)
+    return known
 
 
 class BudgetReconciler:
@@ -85,18 +125,13 @@ class BudgetReconciler:
             reading = self._traces.read(turn.session_id, turn.started_at, now)
         except TraceQueryError:
             stats["TraceQueryErrors"] += 1
-            return Outcome(BASIS_RESERVATION, reason=REASON_QUERY_FAILED) if expired else None
-        if reading.unreadable:
-            return Outcome(BASIS_RESERVATION, reason=REASON_UNREADABLE) if expired else None
-        if reading.invocations == 0:
-            return Outcome(BASIS_RESERVATION, reason=REASON_NO_TRACE) if expired else None
-        traced = token_cost(reading.usage, turn.price)
-        return Outcome(
-            # mango-api counted more than the traces show: what it charged stands.
-            BASIS_TRACE if traced >= turn.charged else BASIS_PARTIAL,
-            usage=reading.usage,
-            invocations=reading.invocations,
-        )
+            outcome: Outcome | None = Outcome(BASIS_RESERVATION, reason=REASON_QUERY_FAILED)
+        else:
+            outcome = _traced(turn, reading, expired)
+        if outcome is not None and outcome.basis == BASIS_RESERVATION and not expired:
+            # Nothing is charged blindly before the deadline: the next run reads again.
+            return None
+        return outcome
 
     def _finish(self, turn: PendingTurn, stats: Counter[str]) -> None:
         """Audit a settled turn and delete its record, in that order."""

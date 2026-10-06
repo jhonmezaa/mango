@@ -9,7 +9,7 @@ reservation. It is closed exactly once:
 * ``hold``: the end is not known (mango-api stopped reading the agent). What is known is
   charged and the rest of the reservation stays held.
 * ``close``: the budget reconciler charges what the AgentCore traces say (or the whole
-  reservation when there is no trace after the deadline), releases the rest and marks the
+  reservation when they cannot tell by the deadline), releases the rest and marks the
   record ``settled``; it deletes it once the audit event is written.
 
 Each of them is one transaction conditioned on the record, so closing a turn twice neither
@@ -46,7 +46,9 @@ STATE_SETTLED: Final = "settled"
 
 RECONCILE_MARGIN_SECONDS: Final = 90
 """After the turn's time limit, how long until its traces are read: an invocation was seen
-running 28 s past a limit of 120 s, and a trace is only written when its invocation ends."""
+running 28 s past a limit of 120 s, and a trace is only written when its invocation ends. It
+is the earliest look, not a promise: a model call the harness stopped waiting for was seen
+ending 140 s after the limit, and the reconciler waits for it."""
 NO_TRACE_SECONDS: Final = 15 * 60
 """After the turn's time limit, how long a trace is waited for before the whole reservation is
 charged."""
@@ -56,9 +58,16 @@ BASIS_TRACE: Final = "trace"
 BASIS_PARTIAL: Final = "partial"
 """Charged what mango-api had already counted: the traces said less."""
 BASIS_RESERVATION: Final = "reservation"
-"""No readable trace by the deadline: the whole reservation was charged."""
+"""The traces could not tell what the turn cost by the deadline (none, unreadable, or a model
+call never written): the whole reservation was charged."""
 BASIS_NOT_INVOKED: Final = "not_invoked"
 """The turn never reached the agent: everything was released."""
+
+SOURCE_INVOCATIONS: Final = "invocations"
+"""The cost is what the ``invoke_agent`` traces of the turn add up to."""
+SOURCE_MODEL_CALLS: Final = "model_calls"
+"""The cost is what the model call traces add up to: the invocations said less (a turn the
+harness cut at its time limit) or there was none."""
 
 MAX_ATTEMPTS: Final = 4
 _RETRYABLE: Final = frozenset({"TransactionConflict", "None"})
@@ -123,10 +132,17 @@ class Outcome:
     basis: str
     reason: str = ""
     """Why the reservation was charged (``no_trace``, ``trace_unreadable``,
-    ``trace_query_failed``); empty otherwise."""
+    ``trace_query_failed``, ``model_call_unfinished``); empty otherwise."""
     usage: TokenUsage = TokenUsage()
+    """Tokens the traces showed: what was charged, or with ``model_call_unfinished`` what was
+    written when the reservation was charged."""
     invocations: int = 0
     """Invocations of the agent the traces showed for this turn."""
+    model_calls: int = 0
+    """Model calls the traces showed ended in this turn."""
+    source: str = ""
+    """Which of the two sums ``usage`` is (``invocations``, ``model_calls``); empty when no
+    trace was read."""
     known: Decimal = _ZERO
     """What mango-api had already charged when the turn was closed (set by ``close``)."""
     ended: str = ""
@@ -314,6 +330,9 @@ def _outcome_of(item: Mapping[str, Any]) -> Outcome | None:
         reason=item.get("reason", {}).get("S", ""),
         usage=_usage_of(item, prefix="final_"),
         invocations=int(item["invocations"]["N"]),
+        # Absent in a record settled before model calls were summed.
+        model_calls=int(item.get("model_calls", {}).get("N", "0")),
+        source=item.get("source", {}).get("S", ""),
         known=Decimal(item["known"]["N"]),
         ended=item["ended"]["S"],
     )
@@ -518,7 +537,8 @@ def due(
 def final_cost(turn: PendingTurn, outcome: Outcome) -> Decimal:
     """What the turn costs in the end. Never less than what mango-api already counted."""
     if outcome.basis == BASIS_RESERVATION:
-        return turn.charged + turn.retained
+        # The traces written so far may already show more than the reservation.
+        return max(turn.charged + turn.retained, token_cost(outcome.usage, turn.price))
     if outcome.basis == BASIS_NOT_INVOKED:
         return turn.charged
     return max(token_cost(outcome.usage, turn.price), turn.charged)
@@ -544,6 +564,7 @@ def close(
                 "UpdateExpression": (
                     "SET #state = :settled, #charged = :final, #retained = :zero, "
                     "#basis = :basis, #reason = :reason, #invocations = :invocations, "
+                    "#model_calls = :model_calls, #source = :source, "
                     "#known = :charged, #ended = :state, "
                     "#final_input_tokens = :final_input_tokens, "
                     "#final_output_tokens = :final_output_tokens, "
@@ -563,6 +584,8 @@ def close(
                     "basis",
                     "reason",
                     "invocations",
+                    "model_calls",
+                    "source",
                     "known",
                     "ended",
                     *_usage_values(outcome.usage, prefix="final_"),
@@ -577,6 +600,8 @@ def close(
                     ":basis": {"S": outcome.basis},
                     ":reason": {"S": outcome.reason},
                     ":invocations": _n(outcome.invocations),
+                    ":model_calls": _n(outcome.model_calls),
+                    ":source": {"S": outcome.source},
                     **{
                         f":{name}": value
                         for name, value in _usage_values(outcome.usage, prefix="final_").items()

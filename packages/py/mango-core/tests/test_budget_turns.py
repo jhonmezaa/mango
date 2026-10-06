@@ -221,6 +221,66 @@ def test_closing_without_a_trace_charges_the_whole_reservation(db: Any) -> None:
     assert _budget(db) == _amounts("0.337", "0")
 
 
+def test_a_reservation_charge_is_never_less_than_what_the_traces_already_show(db: Any) -> None:
+    # A model call of the turn was never written, and the ones that were add up to more
+    # than the turn reserved.
+    turn = _turn()
+    _reserve(db, turn)
+    held = budget_turns.hold(db, TABLE, turn, TokenUsage())
+    assert held is not None
+    outcome = Outcome(
+        BASIS_RESERVATION,
+        reason="model_call_unfinished",
+        usage=TokenUsage(100, 30_000),
+        model_calls=1,
+        source=budget_turns.SOURCE_MODEL_CALLS,
+    )
+    closed = budget_turns.close(db, TABLE, held, outcome)
+    assert closed is not None
+    assert closed.charged == Decimal("0.450300")
+    assert _budget(db) == _amounts("0.4503", "0")
+
+
+def test_where_the_cost_came_from_is_kept_with_the_settled_record(db: Any) -> None:
+    turn = _turn()
+    _reserve(db, turn)
+    held = budget_turns.hold(db, TABLE, turn, TokenUsage())
+    assert held is not None
+    outcome = Outcome(
+        BASIS_TRACE,
+        usage=TokenUsage(871, 5849),
+        invocations=1,
+        model_calls=1,
+        source=budget_turns.SOURCE_MODEL_CALLS,
+    )
+    assert budget_turns.close(db, TABLE, held, outcome) is not None
+    record = _record(db, turn)
+    assert record is not None
+    assert record.outcome is not None
+    assert (record.outcome.model_calls, record.outcome.source) == (1, "model_calls")
+
+
+def test_a_record_settled_before_model_calls_were_summed_is_still_read(db: Any) -> None:
+    turn = _turn()
+    _reserve(db, turn)
+    outcome = Outcome(BASIS_TRACE, usage=TokenUsage(3030, 250), invocations=1)
+    assert budget_turns.close(db, TABLE, turn, outcome) is not None
+    db.update_item(
+        TableName=TABLE,
+        Key=turn.key,
+        UpdateExpression="REMOVE model_calls, #source",
+        ExpressionAttributeNames={"#source": "source"},
+    )
+    record = _record(db, turn)
+    assert record is not None
+    assert record.outcome is not None
+    assert (record.outcome.invocations, record.outcome.model_calls, record.outcome.source) == (
+        1,
+        0,
+        "",
+    )
+
+
 def test_closing_an_open_turn_whose_task_died(db: Any) -> None:
     turn = _turn(session_id=SESSION)
     _reserve(db, turn)

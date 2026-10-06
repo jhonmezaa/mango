@@ -51,6 +51,10 @@ def reconciled_detail(turn: PendingTurn) -> dict[str, Any]:
         "reserved_usd": _usd(turn.reserved),
         "released_usd": _usd(max(turn.reserved - turn.charged, Decimal(0))),
         "invocations": outcome.invocations,
+        # Where the tokens below come from: how many model calls had ended, and which of the
+        # two sums of the traces they are (``invocations`` or ``model_calls``).
+        "model_calls": outcome.model_calls,
+        "usage_source": outcome.source,
         "input_tokens": outcome.usage.input_tokens,
         "output_tokens": outcome.usage.output_tokens,
         "cache_read_tokens": outcome.usage.cache_read_tokens,

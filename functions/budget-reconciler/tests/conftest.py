@@ -48,6 +48,7 @@ def span(
     status: str = "OK",
     name: str = "invoke_agent Strands Agents",
     span_id: str = "ac5bda4b4f6d0001",
+    parent: str = "",
     **attributes: Any,
 ) -> dict[str, Any]:
     """A span as the managed harness writes it to ``aws/spans`` (shape seen in the lab)."""
@@ -69,6 +70,7 @@ def span(
         "resource": {"attributes": {"service.name": "harness_Mango_lab_a_finops"}},
         "traceId": "6ac52cb76b730000000000000000beef",
         "spanId": span_id,
+        "parentSpanId": parent,
         "name": name,
         "kind": "INTERNAL",
         "startTimeUnixNano": start_ns,
@@ -84,6 +86,74 @@ def span(
         },
         "status": {"code": status},
     }
+
+
+MODEL_CALL = "chat us.anthropic.claude-sonnet-4-6"
+
+
+def model_call(
+    call: str = "c1",
+    *,
+    start: float = START + 1,
+    seconds: float = 6.4,
+    tokens: tuple[int, int] | None = (3030, 250),
+    status: str = "UNSET",
+    recorded: tuple[int, int] | str | None = "same",
+    record_seconds: float | None = None,
+    record_status: str | None = None,
+    written: bool = True,
+    session: str = SESSION,
+) -> list[dict[str, Any]]:
+    """The two spans of one model call, as seen in the lab: ``chat``, the harness's record,
+    and its child ``chat <model id>``, written by the SDK when the call really ends.
+
+    The child reports a count only when it is not zero and never the cache counts; a call
+    that worked ends ``UNSET``. ``recorded`` is what the harness wrote in its own span (the
+    same tokens unless it stopped waiting); ``written=False`` leaves the child out, as while
+    the call is still running.
+    """
+    record_id, call_id = f"{call}a", f"{call}b"
+    failed = status == "ERROR"
+    record = span(
+        session=session,
+        start=start,
+        seconds=seconds + 0.001 if record_seconds is None else record_seconds,
+        tokens=(None if failed else tokens) if recorded == "same" else recorded,  # type: ignore[arg-type]
+        status=record_status or ("ERROR" if failed else "OK"),
+        name="chat",
+        span_id=record_id,
+        **{"gen_ai.operation.name": "chat"},
+    )
+    if not written:
+        return [record]
+    child = span(
+        session=session,
+        start=start,
+        seconds=seconds,
+        tokens=None,
+        status=status,
+        name=MODEL_CALL,
+        span_id=call_id,
+        parent=record_id,
+        **{"gen_ai.operation.name": "chat"},
+        **({"gen_ai.usage.input_tokens": tokens[0]} if tokens and tokens[0] else {}),
+        **({"gen_ai.usage.output_tokens": tokens[1]} if tokens and tokens[1] else {}),
+    )
+    return [record, child]
+
+
+def cut_turn(
+    *, written: bool = True, tokens: tuple[int, int] = (871, 5849)
+) -> list[dict[str, Any]]:
+    """A turn the harness cut at a time limit of 15 s, as seen in the lab: the invocation and
+    the record of its model call end at the limit with zero tokens; the call goes on for 94 s
+    and its span, written then, carries what the model reported."""
+    return [
+        span(seconds=15.1, tokens=(0, 0)),
+        *model_call(
+            seconds=93.7, tokens=tokens, recorded=(0, 0), record_seconds=15.0, written=written
+        ),
+    ]
 
 
 @dataclass

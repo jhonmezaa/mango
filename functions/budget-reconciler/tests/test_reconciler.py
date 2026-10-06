@@ -25,11 +25,15 @@ from .conftest import (
     USER,
     Lab,
     amounts,
+    cut_turn,
+    model_call,
     span,
 )
 
 # 3030 and 250 tokens at 3 and 15 USD per million.
 TRACED = "0.01284"
+# 871 and 5849 tokens: the model call of a turn the harness cut at its time limit.
+CUT = "0.090348"
 
 
 def _details(lab: Lab) -> list[dict[str, Any]]:
@@ -61,6 +65,8 @@ def test_a_cut_turn_is_charged_what_its_trace_says_and_the_rest_is_released(lab:
         "reserved_usd": "0.337000",
         "released_usd": "0.324160",
         "invocations": 1,
+        "model_calls": 0,
+        "usage_source": "invocations",
         "input_tokens": 3030,
         "output_tokens": 250,
         "cache_read_tokens": 0,
@@ -79,6 +85,178 @@ def test_a_turn_that_failed_without_spending_gets_everything_back(lab: Lab) -> N
         "trace",
         "0.000000",
         "0.337000",
+    )
+
+
+def test_a_turn_cut_at_its_time_limit_is_charged_what_its_model_call_spent(lab: Lab) -> None:
+    # Row 6 of D73 as the lab showed it: the invocation ended "OK" with zero tokens and the
+    # model call, which went on for 94 s, reported 871 and 5849.
+    turn = lab.cut()
+    lab.logs.spans = cut_turn()
+    stats = lab.run()
+    for scope in (USER, AGENT):
+        assert lab.budget(scope) == amounts(CUT)
+    assert lab.record(turn) is None
+    assert (stats["ChargedByTrace"], stats["ChargedByReservation"]) == (1, 0)
+    (detail,) = _details(lab)
+    assert (detail["basis"], detail["cost_usd"], detail["released_usd"]) == (
+        "trace",
+        "0.090348",
+        "0.246652",
+    )
+    assert (detail["invocations"], detail["model_calls"], detail["usage_source"]) == (
+        1,
+        1,
+        "model_calls",
+    )
+    assert (detail["input_tokens"], detail["output_tokens"]) == (871, 5849)
+
+
+def test_an_invocation_with_zero_tokens_is_not_a_cost_while_its_model_call_runs(lab: Lab) -> None:
+    turn = lab.cut()
+    lab.logs.spans = cut_turn(written=False)
+    for now in (DUE, DUE + 300, EXPIRED - 1):
+        stats = lab.run(now)
+        assert (stats["Waiting"], stats["Closed"]) == (1, 0)
+    assert lab.record(turn) == turn
+    assert lab.budget() == amounts("0", "0.337", held="0.337")
+    assert lab.firehose.records == []
+    # The call ended: the next run charges it.
+    lab.logs.spans = cut_turn()
+    lab.run(EXPIRED - 1)
+    assert lab.budget() == amounts(CUT)
+
+
+def test_a_model_call_never_written_charges_the_reservation_at_the_deadline(lab: Lab) -> None:
+    lab.cut()
+    lab.logs.spans = cut_turn(written=False)
+    stats = lab.run(EXPIRED)
+    assert (stats["ChargedByReservation"], stats["ChargedByTrace"]) == (1, 0)
+    assert lab.budget() == amounts("0.337")
+    (detail,) = _details(lab)
+    assert (detail["basis"], detail["reason"]) == ("reservation", "model_call_unfinished")
+    assert (detail["cost_usd"], detail["invocations"], detail["model_calls"]) == ("0.337000", 1, 0)
+
+
+def test_what_is_written_at_the_deadline_is_charged_when_it_is_more_than_the_reservation(
+    lab: Lab,
+) -> None:
+    lab.cut()
+    # One call ended with more than the turn reserved; a second one was never written.
+    lab.logs.spans = [
+        span(seconds=15.1, tokens=(0, 0)),
+        *model_call("c1", seconds=10, tokens=(100, 30_000), recorded=(0, 0), record_seconds=9),
+        *model_call("c2", start=START + 12, written=False, recorded=(0, 0), record_seconds=3),
+    ]
+    lab.run(EXPIRED)
+    assert lab.budget() == amounts("0.4503")
+    (detail,) = _details(lab)
+    assert (detail["basis"], detail["reason"]) == ("reservation", "model_call_unfinished")
+    assert (detail["cost_usd"], detail["released_usd"]) == ("0.450300", "0.000000")
+    assert (detail["model_calls"], detail["output_tokens"]) == (1, 30_000)
+
+
+def test_a_model_call_that_cost_more_than_the_reservation_is_charged_in_full(lab: Lab) -> None:
+    # Seen in the lab: one call of 10033 output tokens, more than its turn reserved.
+    lab.cut()
+    lab.logs.spans = cut_turn(tokens=(100, 30_000))
+    lab.run()
+    for scope in (USER, AGENT):
+        assert lab.budget(scope) == amounts("0.4503")
+    (detail,) = _details(lab)
+    assert (detail["basis"], detail["cost_usd"], detail["released_usd"]) == (
+        "trace",
+        "0.450300",
+        "0.000000",
+    )
+
+
+def test_a_guardrail_block_that_was_held_is_closed_at_no_cost(lab: Lab) -> None:
+    # Row 5 of D73 when the harness reported no usage.
+    lab.cut()
+    lab.logs.spans = [
+        span(seconds=0.4, tokens=(0, 0)),
+        *model_call(seconds=0.4, tokens=None, recorded=(0, 0)),
+    ]
+    lab.run()
+    assert lab.budget() == amounts("0")
+    (detail,) = _details(lab)
+    assert (detail["basis"], detail["cost_usd"], detail["model_calls"]) == ("trace", "0.000000", 1)
+
+
+def test_a_harness_error_after_a_model_call_is_charged_that_call(lab: Lab) -> None:
+    # Row 6 of D73: the invocation failed and reports no tokens; its first call was paid.
+    lab.cut()
+    lab.logs.spans = [span(tokens=None, status="ERROR", seconds=140), *model_call()]
+    lab.run()
+    assert lab.budget() == amounts(TRACED)
+    assert _details(lab)[0]["usage_source"] == "model_calls"
+
+
+def test_a_turn_without_an_invocation_span_waits_and_is_charged_its_model_calls(
+    lab: Lab,
+) -> None:
+    # Row 4b of D73: the turn asked to confirm a write tool and its stream was closed; the
+    # harness never wrote the invocation span (seen in the lab), only the model call.
+    turn = lab.cut()
+    lab.logs.spans = model_call(seconds=2.6, tokens=(850, 108))
+    assert lab.run(EXPIRED - 1)["Waiting"] == 1
+    assert lab.record(turn) == turn
+    lab.run(EXPIRED)
+    # 850 and 108 tokens.
+    assert lab.budget() == amounts("0.00417")
+    (detail,) = _details(lab)
+    assert (detail["basis"], detail["reason"], detail["usage_source"]) == (
+        "trace",
+        "",
+        "model_calls",
+    )
+    assert (detail["invocations"], detail["model_calls"]) == (0, 1)
+
+
+def test_model_calls_that_show_less_than_mango_api_counted_never_give_money_back(
+    lab: Lab,
+) -> None:
+    lab.cut(usage=TokenUsage(1000, 100))
+    lab.logs.spans = cut_turn(tokens=(10, 1))
+    lab.run()
+    assert lab.budget() == amounts("0.0045")
+    assert _details(lab)[0]["basis"] == "partial"
+
+
+def test_a_model_call_of_another_turn_is_never_charged_to_this_one(lab: Lab) -> None:
+    lab.cut()
+    lab.logs.spans = [
+        span(),
+        *model_call("c1"),
+        *model_call("c2", session=OTHER_SESSION, tokens=(900_000, 90_000)),
+        # An earlier turn of the same session: it started before this one reserved.
+        *model_call("c3", start=START - 40, seconds=30, tokens=(50_000, 5000)),
+    ]
+    lab.run()
+    assert lab.budget() == amounts(TRACED)
+    assert _details(lab)[0]["model_calls"] == 1
+
+
+def test_a_run_that_dies_before_auditing_a_cut_turn_keeps_where_its_cost_came_from(
+    lab: Lab,
+) -> None:
+    turn = lab.cut()
+    lab.logs.spans = cut_turn()
+    lab.firehose.fail = True
+    with pytest.raises(Exception, match="ServiceUnavailableException"):
+        lab.run()
+    assert lab.budget() == amounts(CUT)
+    lab.firehose.fail = False
+    lab.logs.spans = []
+    lab.run()
+    assert lab.budget() == amounts(CUT)
+    assert lab.record(turn) is None
+    (detail,) = _details(lab)
+    assert (detail["model_calls"], detail["usage_source"], detail["output_tokens"]) == (
+        1,
+        "model_calls",
+        5849,
     )
 
 
