@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Duration, ILocalBundling, RemovalPolicy } from "aws-cdk-lib";
+import { AssetHashType, Duration, ILocalBundling, RemovalPolicy } from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -16,7 +16,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 export interface PythonFunctionProps {
   /** uv workspace package name, e.g. `mango-cost-explorer`. */
   readonly packageName: string;
-  /** Workspace path of the package, used for asset hashing, e.g. `connectors/cost-explorer`. */
+  /** Workspace path of the package, e.g. `connectors/cost-explorer`. */
   readonly packagePath: string;
   /** Handler in `module.function` form. */
   readonly handler: string;
@@ -78,7 +78,10 @@ export class PythonFunction extends Construct {
       architecture: lambda.Architecture.ARM_64,
       handler: props.handler,
       code: lambda.Code.fromAsset(resolve(REPO_ROOT, props.packagePath), {
-        exclude: ["tests", ".venv", "**/__pycache__"],
+        // The asset is named after what the bundle holds, not after the package directory:
+        // the lock file and the shared workspace packages change the zip too. No `exclude`:
+        // it would leave files of the bundle out of the name.
+        assetHashType: AssetHashType.OUTPUT,
         bundling: {
           image: lambda.Runtime.PYTHON_3_13.bundlingImage,
           local: bundler,

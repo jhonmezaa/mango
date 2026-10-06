@@ -32,5 +32,9 @@ for src in $(uv --color never export --project "$root" --package "$package" --no
   cp -R "$root/$src/src/." "$out/"
 done
 
+# The bundle names its asset (hash of this directory): it must be the same in every checkout.
+# Console scripts carry the path of the local interpreter in their first line, and Lambda
+# never runs them.
+rm -rf "$out/bin"
 find "$out" -name '__pycache__' -type d -prune -exec rm -rf {} +
 find "$out" -name '*.dist-info' -type d -path '*/tests/*' -prune -exec rm -rf {} + 2>/dev/null || true
