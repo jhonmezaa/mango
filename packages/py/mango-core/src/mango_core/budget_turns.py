@@ -68,7 +68,8 @@ _TURN_ID: Final = re.compile(r"^[0-9a-f]{32}$")
 _SESSION_ID: Final = re.compile(r"^[0-9a-f]{64}$")
 _SCOPE: Final = re.compile(r"^(USER|AGENT)#[\w.:-]{1,128}$")
 _PERIOD: Final = re.compile(r"^\d{4}-\d{2}$")
-_BUDGET_UPDATE: Final = "ADD committed :committed, reserved :reserved, spent :spent, held :held"
+_BUDGET_COUNTERS: Final = ("committed", "reserved", "spent", "held")
+_BUDGET_UPDATE: Final = "ADD " + ", ".join(f"#{name} :{name}" for name in _BUDGET_COUNTERS)
 
 
 class TurnConflictError(Exception):
@@ -291,6 +292,11 @@ def _usage_values(usage: TokenUsage, *, prefix: str) -> dict[str, Any]:
     }
 
 
+def _names(*attributes: str) -> dict[str, str]:
+    """``#name`` aliases: no expression depends on DynamoDB's list of reserved words."""
+    return {f"#{attribute}": attribute for attribute in attributes}
+
+
 def _usage_of(item: Mapping[str, Any], *, prefix: str) -> TokenUsage:
     return TokenUsage(
         int(item[f"{prefix}input_tokens"]["N"]),
@@ -328,6 +334,7 @@ def _budget_updates(
                 "TableName": table,
                 "Key": {"PK": {"S": scope}, "SK": {"S": turn.period}},
                 "UpdateExpression": _BUDGET_UPDATE,
+                "ExpressionAttributeNames": _names(*_BUDGET_COUNTERS),
                 "ExpressionAttributeValues": {
                     ":committed": _n(committed),
                     ":reserved": _n(reserved),
@@ -379,9 +386,9 @@ def bind_session(dynamodb: DynamoDBClient, table: str, turn: PendingTurn, sessio
     dynamodb.update_item(
         TableName=table,
         Key=turn.key,
-        UpdateExpression="SET session_id = :session",
+        UpdateExpression="SET #session_id = :session",
         ConditionExpression="attribute_exists(PK) AND #state = :open",
-        ExpressionAttributeNames={"#state": "state"},
+        ExpressionAttributeNames=_names("session_id", "state"),
         ExpressionAttributeValues={":session": {"S": session_id}, ":open": {"S": STATE_OPEN}},
     )
 
@@ -434,13 +441,15 @@ def hold(
                 "TableName": table,
                 "Key": turn.key,
                 "UpdateExpression": (
-                    "SET #state = :held, charged = :charged, retained = :retained, "
-                    "input_tokens = :input_tokens, output_tokens = :output_tokens, "
-                    "cache_read_tokens = :cache_read_tokens, "
-                    "cache_write_tokens = :cache_write_tokens"
+                    "SET #state = :held, #charged = :charged, #retained = :retained, "
+                    "#input_tokens = :input_tokens, #output_tokens = :output_tokens, "
+                    "#cache_read_tokens = :cache_read_tokens, "
+                    "#cache_write_tokens = :cache_write_tokens"
                 ),
                 "ConditionExpression": "attribute_exists(PK) AND #state = :open",
-                "ExpressionAttributeNames": {"#state": "state"},
+                "ExpressionAttributeNames": _names(
+                    "state", "charged", "retained", *_usage_values(usage, prefix="")
+                ),
                 "ExpressionAttributeValues": {
                     ":held": {"S": STATE_HELD},
                     ":open": {"S": STATE_OPEN},
@@ -483,7 +492,8 @@ def due(
             request: dict[str, Any] = {
                 "TableName": table,
                 "KeyConditionExpression": "PK = :pk",
-                "FilterExpression": "reconcile_at <= :now",
+                "FilterExpression": "#reconcile_at <= :now",
+                "ExpressionAttributeNames": _names("reconcile_at"),
                 "ExpressionAttributeValues": {
                     ":pk": {"S": TURN_PREFIX + shard},
                     ":now": _n(now),
@@ -532,21 +542,31 @@ def close(
                 "TableName": table,
                 "Key": turn.key,
                 "UpdateExpression": (
-                    "SET #state = :settled, charged = :final, retained = :zero, "
-                    "basis = :basis, reason = :reason, invocations = :invocations, "
-                    "known = :charged, ended = :state, "
-                    "final_input_tokens = :final_input_tokens, "
-                    "final_output_tokens = :final_output_tokens, "
-                    "final_cache_read_tokens = :final_cache_read_tokens, "
-                    "final_cache_write_tokens = :final_cache_write_tokens"
+                    "SET #state = :settled, #charged = :final, #retained = :zero, "
+                    "#basis = :basis, #reason = :reason, #invocations = :invocations, "
+                    "#known = :charged, #ended = :state, "
+                    "#final_input_tokens = :final_input_tokens, "
+                    "#final_output_tokens = :final_output_tokens, "
+                    "#final_cache_read_tokens = :final_cache_read_tokens, "
+                    "#final_cache_write_tokens = :final_cache_write_tokens"
                 ),
                 # The amounts are the ones read: a turn mango-api held in between is not
                 # closed with stale numbers.
                 "ConditionExpression": (
                     "attribute_exists(PK) AND #state = :state "
-                    "AND charged = :charged AND retained = :retained"
+                    "AND #charged = :charged AND #retained = :retained"
                 ),
-                "ExpressionAttributeNames": {"#state": "state"},
+                "ExpressionAttributeNames": _names(
+                    "state",
+                    "charged",
+                    "retained",
+                    "basis",
+                    "reason",
+                    "invocations",
+                    "known",
+                    "ended",
+                    *_usage_values(outcome.usage, prefix="final_"),
+                ),
                 "ExpressionAttributeValues": {
                     ":settled": {"S": STATE_SETTLED},
                     ":state": {"S": turn.state},
