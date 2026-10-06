@@ -1,7 +1,7 @@
 # D71 · La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-06
+- **Estado:** vigente
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** —
 
