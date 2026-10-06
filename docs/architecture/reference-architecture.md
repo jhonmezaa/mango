@@ -494,46 +494,50 @@ Mango se instala en **una cuenta dedicada** (`mango`) dentro de la organización
 
 | Stack | Cuenta | Contenido | Obligatorio |
 |---|---|---|---|
-| `Mango-<ns>-Core` (+ `Edge` en us-east-1 si hay dominio propio) | `mango` | Plataforma completa, roles de ejecución de conectores y **brokers** | Sí |
-| `Mango-<ns>-OrgAccess` | Management **o delegated admin de StackSets** (`callAs: DELEGATED_ADMIN`) | `AWS::CloudFormation::StackSet` **SERVICE_MANAGED** con auto-deployment sobre la raíz u OUs elegidas por parámetro. El template del spoke va **como asset versionado** | Sí (multi-cuenta) |
-| `Mango-<ns>-Payer` | Management | Solo `Mango-<ns>-BillingReader`: Cost Explorer, `organizations:List*/Describe*` y lectura de Data Exports. Los StackSets no llegan a la management | Opcional (alternativa: solo CUR 2.0) |
+| `Mango-<ns>-Core` | `mango` | Plataforma completa (CloudFront incluido: no hay un stack `Edge` aparte), roles de ejecución de conectores y **brokers** | Sí |
+| `Mango-<ns>-OrgAccess` | Management **o delegated admin de StackSets** (`CallAs`) | `AWS::CloudFormation::StackSet` **SERVICE_MANAGED** con auto-deployment sobre la raíz u OUs elegidas por parámetro. La plantilla del spoke va **embebida** (`TemplateBody`) y su sha256 es un output del stack (D51 (1)) | Sí (multi-cuenta) |
+| `Mango-<ns>-Payer` | Management | `Mango-<ns>-BillingReader` (37 acciones de lectura de facturación e inventario, D52, y listados de Organizations) y `Mango-<ns>-BudgetsOperator`, el rol de la única tool de escritura (D56). Los StackSets no llegan a la management | Sí: es el primer paso de la instalación. Operar solo con CUR 2.0 es previsto |
 | `Mango-<ns>-PackNetwork` | `mango` | Red de los Runtimes de packs; `Core` la importa (D54, D58 (8)) | Sí, antes que `Core` |
 | `Mango-<ns>-Support` (**previsto, sin construir:** D7 está pendiente) | Cuenta de Identity Center (management o delegated admin) | Permission sets de soporte acotados a la cuenta `mango`, **sin assignment** (§4.11) | Opcional |
-| `Mango-<ns>-Member` (template spoke) | Cada cuenta miembro, vía StackSet (o CfCT/AFT con la misma plantilla) | `Mango-<ns>-ReadOnly` + `Mango-<ns>-Operator` (desactivado por parámetro) | Vía StackSet |
+| `Mango-<ns>-Member` (template spoke) | Cada cuenta miembro, vía StackSet. La cuenta `mango` se excluye (D51 (2)) | `Mango-<ns>-ReadOnly`. Los roles `Operator` son previstos (D51 (5)) | Vía StackSet |
 
 - **Orden independiente por diseño:**
   - Todos los nombres y ARNs son deterministas (`Mango-<ns>-…`) y se calculan a partir de los *account IDs* que recibe cada stack como parámetros.
-  - **Ningún stack lee a otro en deploy-time.** Se descarta el acoplamiento SSM+RAM de ISB.
+  - **Entre cuentas, ningún stack lee a otro en deploy-time.** Se descarta el acoplamiento SSM+RAM de ISB. Dentro de la cuenta `mango`, `Core` importa de `PackNetwork` las subnets y los security groups de los packs.
   - Orden de instalación vigente (`docs/runbooks/install.md`): `Payer` → `OrgAccess` → `PackNetwork` → `Core`. `Support` no existe todavía.
-  - El **connectivity check** de la consola admin prueba `AssumeRole` contra la payer y una muestra de spokes, lee el estado de las instancias del StackSet y muestra qué falta.
+  - El **connectivity check** (Ajustes › Conectividad) prueba `AssumeRole` contra la pagadora y contra las cuentas miembro objetivo, hasta 50 por comprobación (D53 (4)). Leer el estado de las instancias del StackSet es previsto.
 - **No modificamos la estructura de la organización:** no creamos OUs ni SCPs, a diferencia de ISB.
 - **Prerrequisitos (checklist de la guía de instalación):**
   - Trusted access de StackSets activado.
   - Delegated admin de StackSets (opcional).
   - Cost Explorer habilitado (~24 h).
-  - Región de la instalación definida y OUs objetivo.
-  - Cuotas de STS y Lambda.
+  - OUs objetivo definidas.
+  - Cuota de Bedrock de la cuenta y cupo de políticas de recursos de CloudWatch Logs (`docs/runbooks/install.md`, «Antes de empezar»).
 
 ```mermaid
 flowchart LR
   subgraph MANGO["Cuenta mango (Core)"]
-    C["Roles de ejecución de conectores<br/>(Lambda / MCP en Runtime)"]
+    GW["AgentCore Gateway<br/>interceptor + Policy"]
+    C["Conector Cost Explorer (Lambda)<br/>Runtimes de packs de datos de cuentas"]
+    AP["AdminProbe (Lambda)<br/>comprobación de conectividad"]
+    AE["Approval executor (Lambda)"]
     RB["Mango-ns-ReadBroker"]
     BB["Mango-ns-BillingBroker"]
     OB["Mango-ns-OperateBroker"]
-    GW["AgentCore Gateway + Policy<br/>¿usuario → cuenta permitida?"]
   end
   subgraph MGMT["Management (Payer)"]
     BR["Mango-ns-BillingReader"]
+    BO["Mango-ns-BudgetsOperator"]
   end
   subgraph MEM["Cuentas miembro (StackSet)"]
     RO["Mango-ns-ReadOnly"]
-    OP["Mango-ns-Operator (off por defecto)"]
   end
   GW --> C
+  GW --> AE
+  C --> BB -- "AssumeRole + SourceIdentity<br/>+ tags + session policy" --> BR
   C --> RB -- "AssumeRole + SourceIdentity + tags" --> RO
-  C --> BB --> BR
-  C -. "solo tras aprobación HITL" .-> OB -.-> OP
+  AP --> RB
+  AE -. "solo con un approval token válido" .-> OB -.-> BO
 ```
 
 **Patrón de roles:**
@@ -545,12 +549,13 @@ flowchart LR
   - `Principal: arn:aws:iam::<MANGO>:root`, más la condición `aws:PrincipalArn` = broker correspondiente (no el ARN como `Principal`). Así el spoke puede existir antes que el broker y sobrevive a recreaciones.
   - Además `aws:PrincipalOrgID` y `sts:SetSourceIdentity`/`sts:TagSession`, con **`SourceIdentity` obligatorio**.
   - El trust de cada broker lista ARNs explícitos de conectores. No se usa ABAC con `:root`.
-- **Trazabilidad:** `SourceIdentity` = usuario de Mango, session tags (`mango_user`, `agent_id`, `business_unit`) y nombre de sesión con el usuario. El **CloudTrail de cada cuenta destino muestra qué persona**, vía qué agente, hizo cada llamada.
-  - ⚠️ **Verificar en PoC** que `SourceIdentity` y los tags transitivos se propagan como se espera en el chaining broker → spoke.
+- **Trazabilidad:** `SourceIdentity` = usuario de Mango y session tags (`mango_user`, `mango_agent`, `mango_bu`; en una escritura, `mango_approval`). El **CloudTrail de cada cuenta destino muestra qué persona**, vía qué agente, hizo cada llamada.
+  - Comprobado en una instalación de laboratorio: `SourceIdentity` llega al CloudTrail de cada cuenta miembro a través del broker (D51 (6), D55).
 - **Permisos:**
-  - `ReadOnly`: acciones explícitas por conector (CloudWatch, Cost Explorer, Config, Tagging…), **no** `ReadOnlyAccess`. Se evita leer datos sensibles (S3, Secrets, DynamoDB).
-  - `Operator`: desactivado por defecto; solo tras HITL, acotado por caso de uso, con *permission boundary*.
-  - `BillingReader`: `ce:GetCostAndUsage` sobre `*` (no se puede acotar); documentado.
+  - `ReadOnly`: acciones explícitas por pack, **no** `ReadOnlyAccess`. Hoy son las del pack de CloudWatch: métricas, alarmas y metadatos de log groups (D55 (3)). Se evita leer datos sensibles (S3, Secrets, DynamoDB, eventos de log).
+  - `BillingReader`: 37 acciones exactas de lectura, sin comodines (D52). Las de Cost Explorer van sobre `*` porque la API no admite recurso; documentado.
+  - `BudgetsOperator`: `budgets:ModifyBudget` solo sobre presupuestos `Mango-<ns>-*` (D56 (1)).
+  - `Operator` en las cuentas miembro: previsto; desactivado por defecto, solo tras HITL, acotado por caso de uso y con *permission boundary*.
   - `ExternalId` solo para accesos de terceros, no dentro de la organización.
 - **StackSet:**
   - **Una sola región**, porque los roles IAM son globales y repetir la instancia en varias regiones colisiona por nombre. La multi-región aplica a los *conectores* en runtime (CloudWatch es regional).
@@ -560,33 +565,35 @@ flowchart LR
 
 | Capa | Granularidad | Control |
 |---|---|---|
-| Rol de ejecución del agente (AgentCore, cuenta `mango`) | **Uno por agente**, creado por API al publicar | Solo su inference profile, su Memory y la invocación al Gateway |
+| Rol de ejecución del agente (AgentCore, cuenta `mango`) | **Uno por agente**, creado por API al publicar, con permissions boundary | Solo los modelos de su versión aprobada, el guardrail base y lo que el harness necesita para sí |
 | Rol del conector (Lambda/MCP detrás del Gateway) | **Uno por conector** | Qué agente o usuario usa qué tool lo decide la Policy Cedar L2 del Gateway, no IAM |
-| Roles spoke (`ReadOnly`, `Operator-*`, `BillingReader`) | **Compartidos por nivel**, sin roles por agente | Un rol por agente obligaría a redesplegar el StackSet en todas las cuentas y violaría "nada de IaC en runtime" |
+| Roles spoke (`ReadOnly`, `BillingReader`, `BudgetsOperator`; `Operator-*` previsto) | **Compartidos por nivel**, sin roles por agente | Un rol por agente obligaría a redesplegar el StackSet en todas las cuentas y violaría "nada de IaC en runtime" |
 
-- **Mínimo privilegio por llamada:** el broker genera en cada `AssumeRole` una **session policy** con la acción, el recurso y la cuenta concretos de la tool, más session tags (`mango_user`, `agent_id`, `approval_id`). Los permisos efectivos son la intersección entre el rol y la session policy.
+- **Mínimo privilegio por llamada:** el broker genera en cada `AssumeRole` una **session policy** con la acción, el recurso y la cuenta concretos de la tool, más session tags (`mango_user`, `mango_agent` y, en una escritura, `mango_approval`). Los permisos efectivos son la intersección entre el rol y la session policy.
 - **Escritura:**
-  - `Operator` se **divide por dominio** (p. ej. `Operator-Tagging`, `Operator-Compute`), cada uno deshabilitado por defecto y habilitable por parámetro del StackSet.
+  - Hoy hay un solo rol de escritura, `BudgetsOperator` en la pagadora (D56).
   - Solo el **approval executor** (Lambda dedicado) puede asumir `OperateBroker`, y antes valida el approval token (KMS, un solo uso, ligado a `hash(tool, args)`).
+  - Previsto: `Operator` en las cuentas miembro, **dividido por dominio** (p. ej. `Operator-Tagging`, `Operator-Compute`), cada uno deshabilitado por defecto y habilitable por parámetro del StackSet.
   - Un conector comprometido no puede escribir sin aprobación.
-- **Payer:** el conector de Cost Explorer y CUR **impone el filtro `LINKED_ACCOUNT`** con las cuentas permitidas del usuario, sin depender del LLM.
+- **Payer:** el conector de Cost Explorer **impone el filtro `LINKED_ACCOUNT`** con las cuentas permitidas del usuario, sin depender del LLM.
 - Detalle y justificación: `docs/security/threat-models/mango-architecture-threat-model.md` (TM-003, TM-004).
 
-**Datos de costo a escala:** además de la API de Cost Explorer (≈0,01 USD/request, con cache obligatorio), se recomienda un **Data Export CUR 2.0** hacia un bucket legible por la cuenta `mango` (Athena). Es más barato, más granular y no depende de la payer en cada pregunta.
+**Datos de costo a escala (previsto, sin construir):** hoy cada pregunta de costos llama a la API de Cost Explorer (≈0,01 USD/request). El plan es un **Data Export CUR 2.0** hacia un bucket legible por la cuenta `mango` (Athena): más barato, más granular y sin depender de la pagadora en cada pregunta.
 
 **Gobernanza de "quién ve qué cuenta":**
-- El inventario (cuenta → OU → área) se sincroniza desde Organizations en runtime.
-- **AgentCore Policy (Cedar)** valida que el `account_id` de cada tool call esté dentro de las OUs o áreas permitidas para el usuario.
-- El LLM propone la cuenta; el Gateway decide.
+- El mapeo área ↔ OU vive en `Settings` y cambia con doble aprobación (D17). El inventario de cuentas se lee de Organizations en runtime.
+- **El conector de Cost Explorer** resuelve las cuentas del área de quien pregunta y las impone como filtro: un líder de área solo ve las suyas (D35).
+- **Los packs de datos de cuentas** no filtran por área: solo los usan los usuarios centrales, por Cedar L2 (D49 (4)). En el de CloudWatch, la cuenta que nombra la pregunta se valida por formato y el resto lo decide IAM en la misma llamada (D55 (2)).
+- El LLM propone la cuenta; nunca decide.
 
 **Riesgos:**
-- El stack `Payer` en la management es lo más sensible para el equipo de seguridad del cliente. Debe ser mínimo y opcional, con la alternativa de operar solo con CUR 2.0.
+- El stack `Payer` en la management es lo más sensible para el equipo de seguridad del cliente. Debe ser mínimo. Hoy no es opcional: la alternativa de operar solo con CUR 2.0 no está construida.
 - Las cuotas de STS y Cost Explorer al consultar cientos de cuentas requieren cache de credenciales y resultados, y paralelismo acotado.
 - Instancias del StackSet fallidas en silencio: se mitiga con el monitoreo descrito arriba.
 
 ### 4.11 Soporte y diagnóstico
 
-> **Estado (2026-10-05): previsto, sin construir.** D7 está `pendiente`: no existen el botón de diagnóstico ni el stack `Mango-<ns>-Support`. Lo que sigue es el diseño.
+> **Estado (2026-10-06): previsto, sin construir.** D7 está `pendiente`: no existen el botón de diagnóstico ni el stack `Mango-<ns>-Support`. Lo que sigue es el diseño.
 
 **Botón "Exportar diagnóstico"** en la consola admin de Mango, solo para el rol `mango-admin`:
 - **Contenido del paquete:**
@@ -614,7 +621,7 @@ flowchart LR
 ### 4.12 Versionado, canales de actualización y upgrades
 
 **Modelo comercial y técnico:**
-- **Cada instalación queda fijada a una versión** (`vX.Y.Z`): sus stacks apuntan a las plantillas de esa release y no cambian hasta que el cliente la actualiza (D58 (2)). Es el mismo principio que bedrock-chat (`bin.sh --version`), pero sin CodeBuild.
+- **Cada instalación queda fijada a una versión** (`vX.Y.Z`; la etiqueta de una release es `vX.Y.Z-g<commit>`): sus stacks apuntan a las plantillas de esa release y no cambian hasta que el cliente la actualiza (D58 (2)). Es el mismo principio que bedrock-chat (`bin.sh --version`), pero sin CodeBuild.
 - **Dos canales:**
 
   | Canal | Contenido | Comercial |
@@ -630,12 +637,14 @@ flowchart LR
 1. **Build una sola vez por release, en el CI de Mango** (GitHub Actions, en cuentas de Mango): plantillas, Lambdas empaquetadas e imágenes. Se publica todo inmutable en los buckets del proveedor (plantillas y manifiesto en `mango/vX.Y.Z/`, assets en `mango/assets/`, D69) y en ECR, con imágenes referenciadas por digest.
 2. **En la cuenta del cliente solo se ejecuta `UpdateStack`** con la URL de la plantilla de la versión destino.
    - Lo hace **el cliente**, desde la consola o la CLI (D58 (2); `docs/runbooks/install.md`, paso 4). D9 decía «el equipo de Mango vía IdC»: ese acceso depende de §4.11, que no está construido.
-   - Con la opción "Rollback all stack resources".
+   - Siempre con un change set y a una etiqueta concreta, después de verificar la firma de la versión (`deployment/verify-release.py`). Qué entradas son normales en el change set: `docs/runbooks/install.md`, paso 4.
+   - Un stack cuya plantilla no cambió no se actualiza: una actualización toca solo lo que cambió (D69).
+   - `mango-api` se despliega sin corte: arrancan las tareas nuevas y las anteriores conservan 120 s sus peticiones abiertas (D70 (2), (6)).
    - Futuro: un botón en la consola admin que dispare un Step Functions en la cuenta `mango`.
 3. **CloudFormation descarga los artefactos ya construidos.** En la cuenta del cliente no se compila nada.
 4. **Migraciones de datos (previsto, sin construir):** recurso personalizado de CloudFormation (una Lambda) idempotente, que nunca pisa configuración guardada por un admin y revierte el stack si falla (patrón ISB).
 5. **Modo mantenimiento** en la app durante el upgrade y **validación de compatibilidad de versión/esquema** entre stacks antes de reabrir (previsto, sin construir).
-6. **Orden:** Core concentra casi todos los cambios. `OrgAccess`, `Payer` y `PackNetwork` cambian rara vez y se actualizan solo si la release lo indica en sus notas.
+6. **Orden:** Core concentra casi todos los cambios. `OrgAccess`, `Payer` y `PackNetwork` cambian rara vez y se actualizan solo si la release lo indica en sus notas. `PackNetwork` va antes que `Core` cuando la versión añade un pack o cambia su red, y después cuando lo quita (`docs/runbooks/install.md`).
 
 **Reglas de diseño que reducen la necesidad de releases:**
 - **Catálogo de modelos y precios como configuración, no código:** agregar o retirar un modelo no exige una versión nueva.
@@ -644,7 +653,7 @@ flowchart LR
 
 **Casos borde, todos sin CodeBuild:**
 - Artefactos de AgentCore Runtime: no exige un ECR de la misma cuenta (verificado el 2026-10-01). Los MCP packs van como zip copiado por CloudFormation a un bucket de la instalación (D36); la imagen por digest queda como alternativa.
-- El cliente no permite descargar desde buckets externos: se replica la release a un bucket del cliente con `aws s3 sync` y se instala desde ahí.
+- El cliente no permite descargar desde buckets externos: replicar la release a un bucket del cliente e instalar desde ahí. No es el camino normal (D58 (2)) y no se ha probado.
 
 **Uso de CodeBuild en Mango:** ninguno en la cuenta del cliente, ni para instalar, ni para actualizar, ni para crear agentes. Solo se reconsideraría si algún día hubiera que compilar código dentro de la cuenta del cliente, y el diseño evita ese caso.
 
@@ -654,17 +663,17 @@ flowchart LR
 
 Salen de [`docs/security/threat-models/mango-architecture-threat-model.md`](../security/threat-models/mango-architecture-threat-model.md) v0.1 y son **requisitos de diseño obligatorios** para la implementación:
 
-| # | Requisito | Amenazas |
-|---|---|---|
-| R2 | **Taint de sesión y tools `egress`:** si una sesión leyó contenido no confiable (RAG, tools, web), toda tool con salida externa (correo, web, compartir) exige HITL. El interceptor del Gateway lo aplica | TM-001 |
-| R3 | **UI de aprobación con argumentos canónicos y diff** renderizados por el backend, nunca el resumen del LLM. SoD obligatoria (el aprobador es distinto del solicitante) | TM-002 |
-| R4 | **Namespaces de AgentCore Memory por usuario** (`/{agent}/{user}`). La memoria compartida por área solo con opt-in explícito. Tests de aislamiento usuario↔usuario y área↔área en CI | TM-007 |
-| R5 | **Firma de releases** (manifiesto firmado con KMS o Sigstore), verificada antes de cada `UpdateStack`. Bucket de releases con Object Lock | TM-008 |
-| R6 | **Egress restringido** de la microVM de AgentCore y de los conectores a destinos en allowlist. Bloqueo de rangos privados salvo los hosts declarados (p. ej. SAP). **Construido para los Runtimes de packs (D54, 2026-10-02)**; pendiente para conectores y hosts externos | TM-009, TM-014 |
-| R7 | **Guardrails de recurso por agente de escritura:** allowlists de tipos, AMIs y regiones, tags obligatorios (`mango:agent`, `mango:user`, `mango:approval`) y límites de cantidad. Se aplican en Cedar L2 **y** en la session policy. Estimación de costo en la aprobación, con escalado por umbral | TM-016 |
-| R8 | **Plantilla de SCPs recomendadas** al cliente: protege los roles `Mango-<ns>-*` y restringe lo que `Operator-*` puede crear. Se entrega con la instalación y es opcional | TM-004, TM-016 |
+| # | Requisito | Amenazas | Estado (D11) |
+|---|---|---|---|
+| R2 | **Taint de sesión y tools `egress`:** si una sesión leyó contenido no confiable (RAG, tools, web), toda tool con salida externa (correo, web, compartir) exige HITL. El interceptor del Gateway lo aplica | TM-001 | Falta. Hoy no hay tools con salida externa |
+| R3 | **UI de aprobación con argumentos canónicos y diff** renderizados por el backend, nunca el resumen del LLM. SoD obligatoria (el aprobador es distinto del solicitante) | TM-002 | Construido (D56) |
+| R4 | **Namespaces de AgentCore Memory por usuario** (`/{agent}/{user}`). La memoria compartida por área solo con opt-in explícito. Tests de aislamiento usuario↔usuario y área↔área en CI | TM-007 | Espera a que haya memoria: hoy está desactivada (D13) |
+| R5 | **Firma de releases** (manifiesto firmado con KMS), verificada antes de cada `UpdateStack`. Bucket de releases con Object Lock | TM-008 | Firma construida (D36, D58 (4)). La verificación la corre quien instala (`deployment/verify-release.py`); CloudFormation no la exige |
+| R6 | **Egress restringido** de la microVM de AgentCore y de los conectores a destinos en allowlist. Bloqueo de rangos privados salvo los hosts declarados (p. ej. SAP) | TM-009, TM-014 | **Construido para los Runtimes de packs (D54, 2026-10-02)**; pendiente para conectores y hosts externos |
+| R7 | **Guardrails de recurso por agente de escritura:** allowlists de tipos, AMIs y regiones, tags obligatorios (`mango:agent`, `mango:user`, `mango:approval`) y límites de cantidad. Se aplican en Cedar L2 **y** en la session policy. Estimación de costo en la aprobación, con escalado por umbral | TM-016 | Falta |
+| R8 | **Plantilla de SCPs recomendadas** al cliente: protege los roles `Mango-<ns>-*` y restringe lo que `Operator-*` puede crear. Se entrega con la instalación y es opcional | TM-004, TM-016 | Falta |
 
-Contexto que los motiva:
+Contexto que los motiva (del plan; hoy ningún agente sale a internet y la única escritura crea un presupuesto):
 - Habrá agentes con salida a internet.
 - Las escrituras dependen de la naturaleza de cada agente (p. ej. un agente EC2 crea instancias).
 - Los agentes manejan datos sensibles.
@@ -684,11 +693,11 @@ Monorepo políglota **organizado por dominio**:
 mango/
 ├── AGENTS.md · README.md
 ├── release.yaml              # fuente única de versión
-├── mise.toml                 # versiones (python, node, uv, pnpm, cfn-guard) + tareas lint/test/synth/dist
+├── mise.toml                 # versiones (python, node, uv, pnpm, cfn-guard, checkov) + tareas lint/test/synth/dist/guard/checkov/audit/secrets
 ├── pyproject.toml            # raíz del uv workspace
 ├── pnpm-workspace.yaml       # raíz del pnpm workspace
 ├── apps/
-│   ├── api/                  # mango-api (FastAPI): BFF SSE, router, catálogo, admin
+│   ├── api/                  # mango-api (FastAPI): chat SSE, catálogo, aprobaciones, personas, admin, sesión web
 │   └── web/                  # React + Vite; hojas CSS propias y utilidades de Tailwind; e2e/ con Playwright
 ├── packages/
 │   ├── py/
@@ -708,16 +717,19 @@ mango/
 │   └── guard/                # ruleset de cfn-guard (Well-Architected Security Pillar)
 ├── infra/                    # CDK: bin/, lib/{stacks,constructs,synthesizer}/, test/
 ├── packs/                    # MCP packs de la release: manifiesto, lock con hashes, punto de entrada (D19)
-├── deployment/               # build-dist: synth, empaquetado, firma (R5), publicación
-│   └── pack-builder/         # pipeline de packs: lock, zip reproducible, snapshot de tools, firma KMS
+├── deployment/               # dist.py (synth, empaquetado, firma R5, publicación), verify-release.py,
+│   │                         # check-bedrock-quotas.py, check-real-data.py, purge-retained.sh, tests/
+│   ├── pack-builder/         # pipeline de packs: lock, zip reproducible, snapshot de tools, firma KMS
+│   └── provider/             # la cuenta del proveedor: cómo se despliega y se publica
 ├── tests/
 │   ├── e2e/                  # pruebas de punta a punta contra una instalación (scripts de Python)
-│   └── eval/                 # evaluación del agente FinOps con verdad de referencia
+│   ├── eval/                 # evaluación del agente FinOps con verdad de referencia
+│   └── install/              # recorridos de navegador contra una instalación (Playwright)
 ├── docs/
 └── .github/workflows/
 ```
 
-Árbol al 2026-10-05. **Previsto en D12 y sin construir:** `packages/py/mango-governance` (AVP, presupuestos y auditoría viven hoy en `apps/api`; los approval tokens, en `mango-core`), `functions/migrations`, los conectores `cloudwatch` (se hizo como pack, D55) y `knowledge-retrieve`, `agents/skills`, `policies/scp` (R8) y `tests/isolation` (R4). Las políticas Cedar L2 del Gateway se generan en `infra/lib/constructs/` y en el provisioner de packs, no en `policies/cedar/gateway`.
+Árbol al 2026-10-06. **Previsto en D12 y sin construir:** `packages/py/mango-governance` (AVP, presupuestos y auditoría viven hoy en `apps/api`; los approval tokens, en `mango-core`), `functions/migrations`, los conectores `cloudwatch` (se hizo como pack, D55) y `knowledge-retrieve`, `agents/skills`, `policies/scp` (R8) y `tests/isolation` (R4). Las políticas Cedar L2 del Gateway se generan en `infra/lib/constructs/` y en el provisioner de packs, no en `policies/cedar/gateway`.
 
 Reglas:
 1. **Separación por responsabilidad, no por lenguaje.**
@@ -731,56 +743,129 @@ Reglas:
 
 ---
 
+### 4.15 Capacidad y operación
+
+Lo medido sale de una prueba de carga del 2026-10-06 en una instalación de laboratorio, con las dos tareas de `mango-api` (0,5 vCPU y 1 GB cada una). Está registrado en D70 (9) a (11), D71 (16), D72 (11) y (15) y D73.
+
+**Cuánta gente aguanta una instalación:**
+
+| Qué | Cifra | Origen |
+|---|---|---|
+| Lecturas de la API por segundo, con margen | 80: el 95 % responde en 0,1 s y la tarea más cargada va al 50 % de CPU | Medido (D70 (9)) |
+| Lecturas por segundo, en el límite | 160: sin errores, ya lento (el 95 % en 0,5 s) | Medido (D70 (9)) |
+| Lecturas por segundo, saturada | 200: en 30 s el 95 % pasa de 10 s. Sin reinicios; se recupera en 10 s al bajar la carga | Medido (D70 (9)) |
+| Personas activas a la vez | Unas 330. **Se promete «hasta unas 300»** | Cálculo sobre lo medido, con los supuestos de abajo (D70 (9)) |
+| Turnos de chat abiertos a la vez en `mango-api` | 40 sin efecto medible; no se encontró su techo | Medido (D70 (9)) |
+| Turnos de chat a la vez con una cuota de Bedrock de 10 llamadas por minuto | Unos 5 funcionan bien; con 40, falla más de la mitad | Medido (D70 (9), `docs/runbooks/install.md`) |
+| Personas de una misma dirección IP | Unas 400 trabajando a la vez, o unas 1.000 entrando a la vez; 500 ingresos en 5 minutos | Cálculo sobre los límites por IP (D72 (3)) |
+| Turnos cortados a la vez que caben en un presupuesto de USD 5 | 14 | Cálculo sobre la reserva de un turno (D73 (12)) |
+
+**Supuestos, a la vista.** Una persona activa envía un turno de chat por minuto y navega algo: 15 llamadas a la API cada 5 minutos. Un turno pesa unas 10 lecturas y abrir el Marketplace unas 6 (medido). En una oficina está activo el 30 %, así que 300 personas activas son una empresa de unas 1.000. Son supuestos razonados, **no datos de una empresa** (D72 (10)).
+
+**Qué se agota primero:**
+- **En el chat, la cuota de Bedrock de la cuenta,** mucho antes que `mango-api`. Es un requisito de la instalación: 300 personas con un turno por minuto son al menos 300 llamadas por minuto al modelo, y más si el agente usa tools. Una cuenta nueva puede tenerla muy por debajo del valor por defecto de AWS, y esa cuota no se sube desde Service Quotas sino con un caso de soporte. Se comprueba antes de instalar con `deployment/check-bedrock-quotas.py`.
+- **En las lecturas, la CPU de una tarea.** No la memoria, DynamoDB ni Verified Permissions. Dos tareas iguales no rindieron igual: una gastó 1,8 veces la CPU de la otra por petición. Por eso el balanceador reparte por peticiones abiertas.
+- **En el correo, el remitente por defecto de Cognito:** 50 correos al día por cuenta. Frena un alta de más de 50 personas en un día; pide SES, que no está construido (D72 (9)).
+- **Por encima de la cifra prometida no hay margen.** El tamaño y el número de tareas son de la versión, no parámetros, y no hay autoescalado (D70 (1)).
+
+**Lo que no se ha medido** (D70 (9)): cuánto mejora el reparto por peticiones abiertas; turnos largos de verdad, con tools; muchas personas distintas a la vez (la prueba usó cinco); crear y renovar sesiones bajo carga; un despliegue o la caída de una tarea bajo carga (con una sola tarea la capacidad es la mitad o menos); y las cifras de uso de una empresa real.
+
+**Operación:**
+- **Alarmas.** 30 en `Core` y una en `PackNetwork` (plantilla de ejemplo, 2026-10-06). Notifican al topic `Mango-<ns>-Alerts`, que envía al correo del parámetro `AlertsEmail`; hay que confirmar la suscripción. Cubren lo que deja a la gente sin servicio o un gasto mal contado: la API y su balanceador, la saturación (`Api-slow`, `Bedrock-throttled`), las funciones de ingreso y de tools, las tablas, el borde y los límites por IP, la publicación de agentes, la red de packs y los turnos cobrados por su reserva (D41, D71, D72, D73).
+- **Sin ruido:** solo avisan al pasar a `ALARM`, y los datos ausentes no cuentan, salvo en `Api-no-healthy-targets` (D71 (11)). Los umbrales son constantes de la versión.
+- **Tablero** `Mango-<ns>-Operations`: el estado de todas las alarmas y las señales de las que salen.
+- **Trabajos programados:** la reconciliación de agentes, a las 07:00 UTC (D41), y la conciliación del presupuesto, cada 5 minutos (D73).
+- **Lo que no existe todavía:** autoescalado, modo mantenimiento, migraciones de datos, diagnóstico exportable y acceso de soporte (§4.11), y dominio propio con TLS de punta a punta (D15).
+
+**Runbooks** (qué hacer, paso a paso):
+- [`docs/runbooks/install.md`](../runbooks/install.md): requisitos, la cuota de Bedrock, instalar, comprobar una instalación, actualizar (qué esperar en el change set) y desinstalar.
+- [`docs/runbooks/operations.md`](../runbooks/operations.md): qué significa cada alarma y qué mirar primero, qué hacer cuando la aplicación va lenta, cuando Bedrock rechaza por cuota o cuando un límite por IP bloquea a una oficina, los turnos cortados y el presupuesto, y cómo comprobar que el correo de alertas llega.
+
+---
+
 ## 5. Qué tomamos de bedrock-chat
 
-| Tomar (copiar y adaptar) | Reescribir | Descartar |
-|---|---|---|
-| Excepciones de dominio mapeadas a HTTP en un solo sitio. Las capas `routes → usecases → repositories → models` **no se adoptaron**: `mango-api` es un módulo por dominio (`AGENTS.md`) | Adaptador Strands (1.9 → ≥1.57, hooks estables, interrupts, MCPClient) | `cdk deploy` en runtime vía CodeBuild (stacks por bot, KB, API y guardrail) |
-| Modelos pydantic de conversación: contenidos discriminados, árbol, `thinking_log` | Registro de tools en duro → catálogo de `AgentDefinition` y `ToolBinding` apuntando al Gateway | Bot Store en OpenSearch Serverless + 2 pipelines OSIS |
-| RLS DynamoDB con `LeadingKeys` | Persistencia de conversaciones (un item por mensaje) | KB "dedicated" con una colección AOSS por bot |
-| Protocolo de eventos de streaming y máquina XState del front (se añaden `APPROVAL_REQUIRED`, `BUDGET_WARNING` y `POLICY_DENIED`) | RBAC de 3 grupos fijos → Cedar (AVP + AgentCore Policy) | Tool `bedrock_agent` (Agents Classic) y búsqueda web con DuckDuckGo |
-| `calculate_price` como base del metering | Budgets (inexistentes) y precios hard-coded | Published API que opera como Admin, API keys y usage plans por stack |
-| Citas con `source_id`, extracción de fuentes y páginas (`vector_search.py`) | Validación JWT: ID token y JWKS por request → access token y JWKS cacheado | Logging de cabeceras `Authorization`, bypass `test_user` fuera de Lambda |
-| Ingesta incremental de KB, lock S3 y Step Functions con compensación | Transporte de streaming: WebSocket por mensaje → SSE/AG-UI persistente | `bedrock:*` sobre `*`, `RemovalPolicy.DESTROY` en datos, WAF sin reglas |
-| Frontend (~60 %): auth Amplify/OIDC, chat, markdown/mermaid/katex, i18n `es`, Ladle | Editor de bots → *Agent Builder* (MCP, skills, KB, budget, aprobaciones); Discover → marketplace gobernado; admin → budgets, aprobaciones, auditoría | |
-| Export incremental DDB → S3 → Glue (projection) → Athena para analítica | | |
+La tabla es la del plan original. La última columna dice qué pasó con cada fila (2026-10-06).
+
+| Tomar (copiar y adaptar) | Qué pasó |
+|---|---|
+| Excepciones de dominio mapeadas a HTTP en un solo sitio | Hecho. Las capas `routes → usecases → repositories → models` **no se adoptaron**: `mango-api` es un módulo por dominio (`AGENTS.md`) |
+| Modelos pydantic de conversación: contenidos discriminados, árbol, `thinking_log` | Parcial: un item por mensaje, sin árbol. El razonamiento del modelo no se muestra (D57) |
+| RLS DynamoDB con `LeadingKeys` | Hecho |
+| Protocolo de eventos de streaming y máquina XState del front | No adoptado: SSE con eventos propios (D57), sin XState |
+| `calculate_price` como base del metering | Hecho de otra forma: precios en el catálogo de modelos y reserva por turno (D42, D73) |
+| Citas con `source_id`, extracción de fuentes y páginas (`vector_search.py`) | Previsto: no hay RAG |
+| Ingesta incremental de KB, lock S3 y Step Functions con compensación | Previsto: no hay KB. El patrón de Step Functions con compensación sí se usa en los provisioners |
+| Frontend (~60 %): auth Amplify/OIDC, chat, markdown/mermaid/katex, i18n `es`, Ladle | No adoptado como base: la interfaz es la de Claude Design (D24) y el login es propio, sin Amplify (D20, D28). Quedan la idea del chat, Markdown sin HTML crudo e i18n |
+| Export incremental DDB → S3 → Glue (projection) → Athena para analítica | Previsto |
+
+| Reescribir | Qué pasó |
+|---|---|
+| Adaptador Strands (1.9 → ≥1.57, hooks estables, interrupts, MCPClient) | No hizo falta: los agentes son harness de AgentCore. Strands code-defined es previsto (§4.1) |
+| Registro de tools en duro → catálogo de definiciones de agente apuntando al Gateway | Hecho (D18, D19) |
+| Persistencia de conversaciones (un item por mensaje) | Hecho |
+| RBAC de 3 grupos fijos → Cedar (AVP + AgentCore Policy) | Hecho (D33, D35, D44) |
+| Budgets (inexistentes) y precios hard-coded | Hecho por usuario y por agente (§4.5) |
+| Validación JWT: ID token y JWKS por request → access token y JWKS cacheado | Hecho |
+| Transporte de streaming: WebSocket por mensaje → SSE persistente | Hecho |
+| Editor de bots → *Agent Builder*; Discover → marketplace gobernado; admin → presupuestos, aprobaciones, auditoría | Hecho, sin skills ni KB en el Builder (D38) |
+
+**Descartado, y sigue descartado:** `cdk deploy` en runtime vía CodeBuild (stacks por bot, KB, API y guardrail); Bot Store en OpenSearch Serverless + 2 pipelines OSIS; KB "dedicated" con una colección AOSS por bot; la tool `bedrock_agent` (Agents Classic) y la búsqueda web con DuckDuckGo; la Published API que opera como Admin, las API keys y los usage plans por stack; el logging de cabeceras `Authorization` y el bypass `test_user` fuera de Lambda; `bedrock:*` sobre `*`, `RemovalPolicy.DESTROY` en datos y un WAF sin reglas.
 
 ---
 
 ## 6. Costos orientativos
 
-**Fijo por entorno sin tráfico:**
+Todo son **estimaciones a precios de lista de `us-east-1`**, armadas con lo que dicen las decisiones y las plantillas. Ninguna está contrastada con la factura de una instalación.
 
-| Componente | USD/mes |
-|---|---|
-| mango-api en Fargate (2 × 0,5 vCPU/1 GB) + ALB | ~60–90 |
-| CloudFront + WAF (plan flat-rate Pro o WAF a la carta) | ~15–25 |
-| KMS, Secrets, CloudWatch Logs, PITR | ~10–20 |
-| AgentCore, S3 Vectors, DynamoDB, Lambda, Step Functions, Cognito | ~0 en reposo |
-| **Total** | **~100–150** (dev con 1 tarea: ~50) |
+**Fijo por instalación sin tráfico:**
 
-**NAT:** +~33 USD/mes por AZ, solo si hay conectores privados (SAP).
+| Componente | USD/mes | Origen |
+|---|---|---|
+| `mango-api`: 2 tareas de Fargate (0,5 vCPU, 1 GB, arm64) con IP pública | ~36 | D70 (7) |
+| Balanceador interno | ~16–20 | `docs/runbooks/install.md` |
+| Red de los MCP packs: 8 endpoints de interfaz en 2 zonas, con los tres packs de la release | ~117 | D54 (USD 7,30 por endpoint y zona) |
+| WAF del borde y WAF del user pool: 2 web ACL con 5 reglas cada uno | ~20 | Precio de lista (USD 5 por web ACL y USD 1 por regla); D28 estimó ~8 para el del user pool con menos reglas |
+| KMS: 9 llaves (8 en `Core`, 1 en `PackNetwork`) | ~9 | Recuento de la plantilla de ejemplo (2026-10-06), a USD 1 por llave |
+| Alarmas, tablero y métricas de la función conciliadora | ~8 | D71 (9) y (16), D72 (8), D73 (14); `docs/runbooks/operations.md` |
+| Logs, PITR, Container Insights, flow logs, un secreto | Unos pocos dólares | Sin estimar: dependen del uso |
+| AgentCore, DynamoDB, Lambda, Step Functions, Firehose, CloudFront | ~0 en reposo | Pago por uso |
+| **Total** | **~210–230** | Suma de lo anterior |
 
-**Variable, escenario de referencia** (300 usuarios, 20k conversaciones/mes; ver `research/runtime.md` §4.1):
-- AgentCore: ~225 USD. Memory es la partida mayor, así que la memoria de largo plazo se activa solo donde aporte.
-- Tokens LLM: ~3 000–8 000 USD (orden de magnitud, a validar).
-- Guardrails: ~100–500 USD según volumen.
+- El plan original estimaba ~100–150. La diferencia es casi toda la red cerrada de los packs (D54), que existe aunque no se habilite ningún pack: la crea el stack `PackNetwork` a partir de los packs que trae la release.
+- **Sin NAT.** `mango-api` sale con IP pública (D15) y los packs no tienen salida a internet. Un NAT (+~33 USD/mes por zona) solo entraría con conectores privados (SAP), que son previstos.
+- Subir las tareas a 1 vCPU y 2 GB sumaría unos USD 29 al mes (D70 (9)).
 
-**Conclusión:** optimizar tokens (routing a Haiku, prompt caching, budgets) importa 10× más que optimizar infraestructura.
+**Variable:**
+- **Cognito Plus:** USD 0,020 por usuario activo al mes, sin capa gratuita: unos USD 20 con 1.000 usuarios activos (D29).
+- **Tokens LLM:** la partida mayor. Un turno simple con el modelo por defecto, sin tools, costó USD 0,013 (medido en una instalación de laboratorio el 2026-10-06: unos 3.000 tokens de entrada y 250 de salida). Un turno con tools cuesta varias veces más y no se ha medido. El plan original estimaba ~3 000–8 000 USD/mes para 300 usuarios y 20k conversaciones; sigue sin validar.
+- **AgentCore:** el plan estimaba ~225 USD/mes para ese escenario, con Memory como partida mayor; hoy Memory está desactivada (D13). La sesión del runtime factura memoria mientras espera: 300 s de inactividad por conversación (D39) y 60 s en los packs (D47). Sin medir.
+- **Guardrails:** ~100–500 USD/mes según volumen (estimación del plan, sin medir). No entran en ningún presupuesto (D73 (15)).
+- **Cost Explorer:** ≈0,01 USD por llamada a la API; cada pregunta de costos hace varias.
+- **Presupuestos por defecto de la release:** USD 5 por usuario y USD 30 por agente al mes (D58 (10)). Son el tope de gasto en modelos que la instalación acepta sin que un administrador lo suba.
+
+**Conclusión:** optimizar tokens (modelo por agente, prompt caching, presupuestos) importa mucho más que optimizar infraestructura. El costo real por conversación sigue sin medirse.
 
 ---
 
 ## 7. Riesgos principales
 
-| Riesgo | Mitigación |
-|---|---|
-| **Lock-in y madurez de AgentCore** (harness GA jul-2026, Runtime v2 GA sep-2026) | `AgentInvoker` propio, `AgentDefinition` en DynamoDB exportable a Strands, estándares abiertos (MCP, skills, OTel, Cedar), versiones fijadas y entorno canary |
-| **Budget enforcement es código propio**: un bug causa sobregasto o bloqueos | Reserva por iteración + clamp, límites duros del harness y TPM en el Gateway, reconciliación CUR con alertas de drift, kill-switch por tenant |
-| **Granularidad de hooks del harness** para re-chequear budget en cada llamada al modelo (no confirmada) | PoC temprano. Si no alcanza: límites del harness + Gateway de inferencia con TPM, o agente code-defined con hooks de Strands |
-| **Cuotas** (sesiones AgentCore, Retrieve 20 rps, 100 KBs, TPM Bedrock por cuenta) | Pedir aumentos antes del lanzamiento, load test, KBs compartidas por perfil de indexación. Cada instalación pide sus propios aumentos (checklist de instalación) |
-| **Indirect prompt injection** vía documentos y tool outputs | Guardrails sobre tool outputs, default-deny L2, HITL en escritura, `allowedTools` mínimo |
-| **Regiones**: Runtime v2 y Managed KB no están en sa-east-1 | Decidir la región según residencia de datos (§8). Default us-east-1 |
-| **Conectividad SAP** (on-prem, auth corporativa) | PoC de VPC egress + OBO con el IdP del cliente; fallback con MCP propio en Runtime |
+| Riesgo | Mitigación hoy | Lo que falta |
+|---|---|---|
+| **Lock-in y madurez de AgentCore** | La definición del agente vive en DynamoDB y es exportable a Strands; estándares abiertos (MCP, OTel, Cedar); versiones fijadas | El contrato `AgentInvoker` y un entorno canary |
+| **El presupuesto es código propio**: un bug causa sobregasto o bloqueos | Reserva del peor caso antes de cada turno, límites duros del harness, y un turno cortado nunca cuesta cero (D73), con alarma cuando se cobra una reserva entera | Reconciliación contra la factura (CUR), TPM en el Gateway y un corte general. El guardrail y el título de la conversación quedan fuera del presupuesto |
+| **La conciliación del gasto depende de telemetría** (D73 (8)): AWS no garantiza cada traza y los nombres de sus atributos pueden cambiar con una versión del harness | Plazo de 15 minutos, cobro de la reserva, evento de auditoría y alarma. Se leen dos nombres por dato | Verlo en una instalación (D73 (16)) |
+| **No hay hook antes de cada llamada al modelo** en el harness (confirmado, D13) | Se reserva por turno y el harness corta por tokens, iteraciones y tiempo | — |
+| **Cuota de Bedrock de la cuenta**: es lo primero que se agota en el chat (medido el 2026-10-06, D70 (9)) | Se comprueba antes de instalar (`deployment/check-bedrock-quotas.py`) y la alarma `Bedrock-throttled` avisa (D71 (16)) | Depende de AWS y de cada cuenta: una cuota bajo el valor por defecto exige un caso de soporte |
+| **Capacidad fija**: dos tareas, sin autoescalado; hasta unas 300 personas activas a la vez, y con una sola tarea la mitad o menos (D70 (9)) | Dos zonas, despliegue sin corte, reparto por peticiones abiertas y alarma `Api-slow` | Tareas más grandes o autoescalado, cuando una instalación lo necesite. Las cifras de uso son supuestos |
+| **Límites por IP**: una oficina de más de unas 1.000 personas detrás de una sola dirección los alcanza (D72 (3), (6)) | Límites dimensionados para una oficina, respuesta 429 con espera y alarmas | Redes de confianza |
+| **Red de la PoC** (D15): tramo CloudFront → ALB en HTTP, tareas con IP pública, certificado por defecto de CloudFront | ALB interno, security group que solo acepta al ALB, excepciones registradas en `AGENTS.md` | Dominio propio y TLS de punta a punta |
+| **Indirect prompt injection** vía documentos y tool outputs | Guardrail contra ataques de prompt en la entrada, default-deny en L2, aprobación en toda escritura, `allowedTools` mínimo, packs sin salida a internet (D54) | `ApplyGuardrail` sobre salidas de tools y el taint de sesión (R2) |
+| **Auditoría sin cadena**: un evento que falte no se detecta (§4.5) | Hash por evento y Object Lock | Cadena, digest firmado y copia en Log Archive |
+| **Correo de Cognito**: 50 al día por cuenta con el remitente por defecto (D72 (9)) | — | SES con el dominio del cliente |
+| **Parte de lo construido no se ha visto en una instalación** | Tests; cada fila de «Estado de lo construido» y cada decisión dicen qué falta comprobar | Las validaciones en una instalación |
+| **Regiones**: hoy solo us-east-1 | Sin requisito de residencia (D2) | Otra región exige cambios en la plantilla (D71 (7)) y una red de packs por región (D54 (6)) |
+| **Cuotas de RAG** (Retrieve 20 rps, 100 KBs) y **conectividad SAP** (on-prem, auth corporativa) | No aplican todavía: son de componentes previstos | KBs compartidas por perfil de indexación; PoC de VPC egress + OBO |
 
 ---
 
@@ -869,7 +954,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D73 | Un turno cortado nunca cuesta cero: la reserva se retiene y se concilia con las trazas de AgentCore | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día) | [D073-turno-cortado-nunca-cuesta-cero.md](decisions/D073-turno-cortado-nunca-cuesta-cero.md) |
 
 Preguntas abiertas (2026-10-05):
-- **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar y no hay otro plan aprobado.
+- **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar. Lo aprobado desde entonces es el hito 1, «instalable por una empresa real» (2026-10-05), del que salen D70 a D73.
 - **Usuarios federados (SSO):** cómo recibe sus grupos una persona que entra por el IdP del cliente. D53 (6) lo deja pendiente «antes de habilitar un IdP».
 
 Notas a futuro (no decididas):
@@ -889,7 +974,7 @@ Notas a futuro (no decididas):
 
 ## 9. Plan original de la PoC (histórico, 2026-09-28)
 
-Estos eran los «próximos pasos (PoC de 2–3 semanas)» de la primera versión del documento. Se conservan con lo que pasó con cada uno. No son el plan vigente: hoy no hay un plan aprobado (ver las preguntas abiertas de §8).
+Estos eran los «próximos pasos (PoC de 2–3 semanas)» de la primera versión del documento. Se conservan con lo que pasó con cada uno. No son el plan vigente: la hoja de ruta sigue sin aprobar y el trabajo en curso es el hito 1 (ver las preguntas abiertas de §8).
 
 | # | Paso previsto | Qué pasó |
 |---|---|---|
@@ -898,4 +983,4 @@ Estos eran los «próximos pasos (PoC de 2–3 semanas)» de la primera versión
 | 3 | **Gobernanza mínima:** AVP (`UseAgent`), Budget Service con reserva/liquidación, AgentCore Policy por rol y AuditEvent a S3 Object Lock | Hecho |
 | 4 | **HITL:** una tool de escritura simulada con `inline_function` y approval token validado por el interceptor | Hecho de otra forma: una tool de escritura real (`aws-budgets.create_budget`) con approval token (D56) |
 | 5 | **RAG:** S3 Vectors vs Managed KB sobre ~1 GB de documentos reales (recall@5, p95, USD) | No hecho |
-| 6 | **Medir** costo real por conversación y calibrar cuotas con un load test de 50 sesiones concurrentes | La prueba de carga no se hizo |
+| 6 | **Medir** costo real por conversación y calibrar cuotas con un load test de 50 sesiones concurrentes | Hecho en parte el 2026-10-06, en una instalación de laboratorio: lecturas hasta 200 por segundo y hasta 40 turnos de chat a la vez (§4.15, D70 (9)). El costo real por conversación sigue sin medirse |
