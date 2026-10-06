@@ -21,9 +21,9 @@ describe('createRedactor', () => {
     const text = [
       'otra.persona+x@empresa.com',
       'cuenta 111122223333',
-      'd111abcdef8.cloudfront.net',
-      'us-east-1_AbCdEf123',
-      'o-ab12cd34ef',
+      'd123.cloudfront.net',
+      'us-east-1_AbCdEfGhI',
+      'o-exampleorg1',
       'arn:aws:iam::111122223333:role/Mango-ns-api',
       '14f8d4e8-80d1-702d-3db4-c6ebea3869fd',
       'eyJhbGciOiJ.eyJzdWIiOiIx.c2lnbmF0dXJl',
@@ -42,9 +42,7 @@ describe('createRedactor', () => {
 
 describe('maskUrl', () => {
   it('keeps enough of the host to tell two installations apart, and no path', () => {
-    expect(maskUrl('https://d111abcdef8.cloudfront.net/settings')).toBe(
-      'https://d***.cloudfront.net',
-    );
+    expect(maskUrl('https://d123.cloudfront.net/settings')).toBe('https://d***.cloudfront.net');
     expect(maskUrl('https://mango.empresa.com')).toBe('https://m***.empresa.com');
     expect(maskUrl('https://example.com')).toBe('https://e***');
   });
