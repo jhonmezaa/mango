@@ -54,7 +54,8 @@ Cada fila se comprobó ese día contra el código de `main`: el archivo citado e
 | SSO con el IdP del cliente | No hecho en la infraestructura | El cliente del User Pool solo admite `COGNITO` (`infra/lib/constructs/identity.ts`) | D20, D53 (6) |
 | Editar MFA, duración de sesión e IdP desde la app | No hecho | — | D21 |
 | Gestión de personas y grupos de acceso | Hecho | `apps/api/src/mango_api/people.py` y `group_admin.py` | D44, D60 a D62, D66 |
-| Sesión web que sobrevive a la recarga | Hecho | `apps/api/src/mango_api/web_session.py` | D63, D64 |
+| Sesión web que sobrevive a la recarga | Hecho. Se crea y se renueva con la operación firmada de Cognito, que no pasa por el WAF del user pool | `apps/api/src/mango_api/web_session.py` | D63, D64, D72 |
+| Límites por IP para una oficina detrás de una sola dirección | Hecho en el código, sin validar todavía en una instalación: 6.000 peticiones a `/api/*` y 20.000 en total en el borde, 1.500 operaciones con secreto y 5.000 en total en el user pool, cada 5 minutos; un bloqueo responde 429 y avisa. Sin redes de confianza | `infra/lib/constructs/edge.ts` e `identity.ts`; `operational-alarms.ts` | D72 |
 | Distribución por plantillas, con seis parámetros | Hecho | `infra/lib/config/release.ts`; `docs/runbooks/install.md` | D8, D58 |
 | Dominio propio y TLS de punta a punta | No hecho | Certificado por defecto de CloudFront (`infra/lib/constructs/edge.ts`) | D15 |
 | Más de una tarea de `mango-api` | Hecho: dos tareas en dos zonas, con IP pública y sin autoescalado. Los límites de tasa que sostienen una excepción de seguridad o acotan abuso se cuentan en DynamoDB; tres siguen por tarea | `infra/lib/constructs/api-service.ts`; `apps/api/src/mango_api/limits.py` y `rate_limits.py`; `docs/specs/api-state-inventory.md` | D15, D70 |
@@ -775,6 +776,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D69 | Una actualización toca solo lo que cambió: assets por contenido bajo un prefijo único, sin etiqueta en las descripciones e imagen reproducible | vigente | 2026-10-05 (propuesta por un agente y aceptada por el dueño el mismo día) | [D069-assets-por-contenido-y-prefijo-unico.md](decisions/D069-assets-por-contenido-y-prefijo-unico.md) |
 | D70 | `mango-api` corre con dos tareas y sus límites de tasa se cuentan una sola vez | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día) | [D070-dos-tareas-y-limites-compartidos.md](decisions/D070-dos-tareas-y-limites-compartidos.md) |
 | D71 | La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 a 14) | [D071-alarmas-operativas-y-tablero.md](decisions/D071-alarmas-operativas-y-tablero.md) |
+| D72 | Los límites por IP alcanzan para una oficina detrás de una sola dirección, y `mango-api` renueva la sesión con la operación firmada | propuesta | 2026-10-06 | [D072-limites-por-ip-para-una-oficina.md](decisions/D072-limites-por-ip-para-una-oficina.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar y no hay otro plan aprobado.

@@ -26,7 +26,7 @@ Los compartidos se cuentan en la tabla `Mango-<ns>-RateLimits` (`rate_limits.py`
 | `admin.probe` | 5 por minuto | Árbol de la organización y prueba de conexión | Compartido | Costo: invoca la Lambda de sondeo, que asume roles |
 | `admin.member_access` | 5 por minuto | Comprobación de las cuentas miembro | Compartido | Costo: hasta 50 invocaciones del sondeo por llamada |
 | `models.refreshes` | 5 por minuto | Actualizar el catálogo de modelos | **Por tarea** | Solo frena un bucle de la pantalla: dos listados gratuitos de Bedrock. N veces 5 no hace daño |
-| `session.starts` | 10 cada 5 min | Crear una sesión web | **Por tarea** | Protege el límite del WAF del user pool, que es por IP (por tarea). Entrar no debe depender de una tabla más |
+| `session.starts` | 10 cada 5 min | Crear una sesión web | **Por tarea** | Frena el bucle de una persona antes de que gaste la cuota de Cognito, que es de toda la cuenta. Desde D72 no hay un límite por IP detrás: la renovación es una operación firmada que no pasa por el WAF del user pool. Entrar no debe depender de una tabla más |
 | `session.renewals` | 30 cada 5 min, por sesión | Renovar el access token | **Por tarea** | Igual, y está en el camino de cada recarga de la página |
 
 Ya se contaban en DynamoDB antes de D70, y no cambian: el cupo diario de correos del directorio (200 por día, `Settings`), los envíos a revisión por creador y día (`Agents`), una solicitud abierta por objeto en cada flujo de doble aprobación, y el presupuesto (`Budgets`).

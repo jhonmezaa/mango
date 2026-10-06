@@ -3,7 +3,7 @@
 - **Estado:** parcial. Construida. Quedan los pendientes que la propia fila enumera al final (no se comprobó uno por uno si siguen abiertos) y el tipo de instalación `lab`, que [D58](D058-distribucion-para-clientes.md) (5) retiró.
 - **Fecha:** 2026-09-30
 - **Precisa / reemplaza a:** implementa [D20](D020-login-y-registro.md)
-- **Precisada por:** [D29](D029-plan-de-cognito-en-clientes.md) (revisa); [D58](D058-distribucion-para-clientes.md) (retira sus excepciones de laboratorio); [D60](D060-gestion-de-personas.md) (precisa); [D62](D062-proveedores-de-correo-publico.md) (precisa: lista de dominios públicos); [D63](D063-sesion-web-con-cookie.md) (precisa)
+- **Precisada por:** [D29](D029-plan-de-cognito-en-clientes.md) (revisa); [D58](D058-distribucion-para-clientes.md) (retira sus excepciones de laboratorio); [D60](D060-gestion-de-personas.md) (precisa); [D62](D062-proveedores-de-correo-publico.md) (precisa: lista de dominios públicos); [D63](D063-sesion-web-con-cookie.md) (precisa); [D72](D072-limites-por-ip-para-una-oficina.md) (precisa: los límites por IP del WAF regional del user pool)
 - **Tema en el registro original:** Implementación del login propio ([D20](D020-login-y-registro.md))
 
 ## Decisión

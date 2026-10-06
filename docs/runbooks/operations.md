@@ -52,7 +52,8 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | Alarma | Qué significa | Qué mirar primero |
 |---|---|---|
 | `Edge-errors` | Más del 5 % de las respuestas de CloudFront fueron 5xx, con al menos 100 peticiones en 5 minutos, en 2 de 3 periodos | Si las alarmas `Api-…` están calladas, el fallo está entre CloudFront y sus orígenes: el origen de VPC y el security group del balanceador; después, el bucket de la web |
-| `Edge-rate-limited` | El límite por dirección IP del WAF del borde (1.000 peticiones en 5 minutos) bloqueó 50 o más peticiones en 5 minutos. O una dirección está inundando la aplicación, o **muchas personas salen por la misma dirección** (una oficina, una VPN) y están siendo bloqueadas | En la consola de WAF, las peticiones de muestra de la regla `RateLimitPerIp`: de quién es la dirección |
+| `Edge-rate-limited` | Los dos límites por dirección IP del WAF del borde bloquearon, entre los dos, 50 o más peticiones en 5 minutos: `ApiRateLimitPerIp` (6.000 peticiones a `/api/*` en 5 minutos) y `RateLimitPerIp` (20.000 en total, archivos de la web incluidos). **Las personas de esa dirección reciben respuestas 429.** O una dirección está inundando la aplicación, o **muchas personas salen por la misma dirección** (una oficina, una VPN) y están siendo bloqueadas | En el tablero, cuál de las dos reglas bloqueó. Después, en la consola de WAF, las peticiones de muestra de esa regla: de quién es la dirección |
+| `Cognito-rate-limited` | Los límites por dirección IP del WAF del user pool bloquearon, entre los tres, 50 o más peticiones en 5 minutos: `SecretOperationsPerIp` (1.500 operaciones de ingreso o de código en 5 minutos), `EmailOperationsPerIp` (50 que envían correo) y `RateLimitPerIp` (5.000 en total). **Las personas de esa dirección no pueden ingresar, registrarse ni recuperar su contraseña;** quien ya está dentro no lo nota. O una dirección está probando contraseñas o pidiendo correos, o **muchas personas ingresan a la vez desde la misma dirección** | En el tablero, cuál de las tres reglas bloqueó. Después, en la consola de WAF (web ACL `Mango-<ns>-cognito`, regional), las peticiones de muestra de esa regla: de quién es la dirección y qué operación repite |
 
 **Publicación de agentes, packs y desinstalación**
 
@@ -64,6 +65,8 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `AgentProvisioner-volume` | Más de 30 publicaciones de agentes en una hora | Quién las pidió, en Auditoría |
 | `UninstallGuard-failed` | Durante una desinstalación, la función que borra agentes y packs falló todos sus reintentos | Errores del log group `/aws/lambda/Mango-<ns>-UninstallGuard` y el mensaje en la cola `Mango-<ns>-UninstallGuard-dlq` |
 | `PackDns-blocked` (stack `PackNetwork`) | El DNS Firewall de la red de packs rechazó al menos una consulta de un nombre que no es de sus endpoints ni de los que pide la máquina de AgentCore por su cuenta: **un nombre que nadie esperaba**. No se resolvió nada | El registro de consultas DNS de la red de packs (log group `Mango-<ns>-PackNetwork-dns-queries`): qué nombre fue. Después, qué packs se estaban usando a esa hora |
+
+**Qué hacer cuando un límite por IP bloquea a una oficina** (D72). Los números son constantes de la versión: no hay parámetro que los suba. El bloqueo se levanta solo cuando el recuento de esa dirección en los últimos 5 minutos baja del límite; mientras dura, el WAF rechaza **todas** las peticiones de esa dirección que cuenta la regla, y cada recarga de quien espera vuelve a contar. Si la dirección es de la empresa y el uso es legítimo (una oficina de más de unas 1.000 personas detrás de una sola dirección, o más de 500 ingresos en 5 minutos), avisa al proveedor: es el caso que D72 deja para redes de confianza. Si no lo es, las peticiones de muestra dicen qué repite. `mango-api` no cuenta en los límites del user pool: renueva las sesiones con una operación firmada que no pasa por ese WAF.
 
 **Cuando salta `PackDns-blocked`: qué nombre fue.** La red de packs registra cada consulta DNS de sus Runtimes, con lo que el firewall hizo con ella, durante 30 días (D71, punto 14). En CloudWatch › Logs Insights, sobre el log group `Mango-<ns>-PackNetwork-dns-queries` y el rato de la alarma:
 
@@ -86,7 +89,7 @@ fields @timestamp, query_name, query_type, srcaddr, firewall_domain_list_id
 - **Bloqueos de las reglas gestionadas del WAF** (borde y Cognito): en internet hay escaneos todos los días y cada uno bloquea peticiones. Una alarma sería ruido. Se ven en el tablero de WAF.
 - **Errores del registro** (`PreSignUp`): los provoca cualquiera que intente registrarse con un correo de otro dominio.
 - **Tiempo de respuesta de la API:** una respuesta del chat dura lo que tarda el modelo. Está en el tablero, sin umbral.
-- **Fuera de `us-east-1`** no existirían `Edge-errors` ni `Edge-rate-limited`: CloudFront solo publica sus métricas en esa región. Hoy Mango solo se instala ahí.
+- **Fuera de `us-east-1`** no existirían `Edge-errors` ni `Edge-rate-limited`: CloudFront solo publica sus métricas en esa región. Hoy Mango solo se instala ahí. `Cognito-rate-limited` sí existiría: su web ACL es regional.
 
 ### Comprobar que el correo llega
 
@@ -161,4 +164,4 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ### Cuánto cuesta
 
-Unos USD 6 al mes a precio de lista: USD 0,10 por cada métrica que lee una alarma (unas 33) y USD 3 por el tablero. Los tres primeros tableros de una cuenta son gratis.
+Unos USD 6 al mes a precio de lista: USD 0,10 por cada métrica que lee una alarma (unas 33) y USD 3 por el tablero. Los tres primeros tableros de una cuenta son gratis. Con D72, cuatro métricas más (USD 0,40) y una regla más en el WAF del borde (USD 1).

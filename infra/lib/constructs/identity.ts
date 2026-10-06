@@ -346,7 +346,7 @@ export class Identity extends Construct {
    * every person do not count against a per-IP limit of the addresses of the tasks. mango-api
    * only ever asks for `REFRESH_TOKEN_AUTH`. The same action signs in with a password on a
    * client that allows `ALLOW_ADMIN_USER_PASSWORD_AUTH`: the web client does not, and a test
-   * keeps it so (session-cookie-threat-model.md, TM-S13).
+   * keeps it so (session-cookie-threat-model.md, TM-S12).
    */
   grantSessionRenewal(grantee: iam.IGrantable): void {
     iam.Grant.addToPrincipal({

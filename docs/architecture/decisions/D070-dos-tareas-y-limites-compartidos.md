@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** precisa [D33](D033-autorizacion-de-agentes-y-tools.md), [D60](D060-gestion-de-personas.md) y [D66](D066-cambios-de-personas-fuera-del-directorio.md) (los límites de sus excepciones se cuentan entre todas las tareas) y [D63](D063-sesion-web-con-cookie.md) (los límites de la sesión siguen siendo por tarea, a propósito)
-- **Precisada por:** —
+- **Precisada por:** [D72](D072-limites-por-ip-para-una-oficina.md) (precisa el punto 4: la sesión se renueva con una operación firmada que no pasa por el WAF del user pool, así que sus límites ya no protegen un límite por IP y la nota de la salida compartida queda resuelta)
 
 ## Decisión
 
