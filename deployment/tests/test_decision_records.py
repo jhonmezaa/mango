@@ -23,6 +23,8 @@ FIELDS = ("Estado", "Fecha", "Precisa / reemplaza a", "Precisada por")
 # `[text](target)`, outside code spans; targets with a scheme are not files of the repository.
 LINK = re.compile(r"\[[^\]\n]*\]\(([^)\s]+)\)")
 CODE = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
+BROUGHT_UP_TO_DATE = re.compile(r"Puesta al día con lo construido: (\d{4}-\d{2}-\d{2})")
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _index() -> dict[int, dict[str, str]]:
@@ -139,3 +141,21 @@ def test_an_index_line_is_one_short_row_with_its_link(line: str, ok: bool) -> No
 )
 def test_the_state_is_read_without_its_note(value: str, state: str) -> None:
     assert _state(value) == state
+
+
+def test_the_architecture_is_not_older_than_its_newest_decision() -> None:
+    """AGENTS.md: a change that records or refines a decision also updates the body of the
+    document. A test cannot read whether the body is right; this one makes whoever adds or
+    refines a decision open the document, whose header says when it was last brought up to
+    date. That day cannot be before the newest date of the index."""
+    header = ARCHITECTURE.read_text().split("\n---\n", 1)[0]
+    brought = BROUGHT_UP_TO_DATE.search(header)
+    assert brought is not None, "the header does not say «Puesta al día con lo construido: <date>»"
+    days = {number: DAY.findall(row["date"]) for number, row in _index().items()}
+    undated = sorted(number for number, found in days.items() if not found)
+    assert not undated, f"decisions without a date in the index: {undated}"
+    newest = max(max(found) for found in days.values())
+    assert brought[1] >= newest, (
+        f"the architecture was brought up to date on {brought[1]} and a decision is dated "
+        f"{newest}: update the body of the document in the same change (AGENTS.md)"
+    )

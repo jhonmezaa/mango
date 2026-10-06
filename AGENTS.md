@@ -17,10 +17,10 @@ Plataforma empresarial de orquestación de agentes de IA, 100 % sobre AWS. Se **
 | Capa | Tecnología |
 |---|---|
 | Backend / plano de control | Python 3.13, FastAPI, Pydantic v2, `uv`. Servicio `mango-api` en ECS Fargate |
-| Agentes | Amazon Bedrock AgentCore (harness por defecto; Strands Agents code-defined para casos avanzados). Tools vía MCP detrás de AgentCore Gateway |
+| Agentes | Amazon Bedrock AgentCore (harness gestionado, uno por agente). Strands Agents code-defined para casos avanzados: **previsto**, no existe todavía. Tools vía MCP detrás de AgentCore Gateway |
 | Frontend | React + TypeScript + Vite. Estilos en hojas CSS propias (`apps/web/src/styles/`) que copian las clases del diseño (D24); las utilidades de Tailwind son un complemento. Cliente de API **generado** desde el OpenAPI de FastAPI |
 | IaC | AWS CDK v2 en TypeScript, distribuido como plantillas CloudFormation pre-sintetizadas |
-| Datos | DynamoDB (on-demand), S3, Bedrock KB sobre S3 Vectors |
+| Datos | DynamoDB (on-demand) y S3. Bedrock KB sobre S3 Vectors: **previsto**, no hay bases de conocimiento todavía |
 
 ## Estructura del repositorio (D12)
 
