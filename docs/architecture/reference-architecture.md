@@ -297,7 +297,7 @@ Límites a tener presentes:
 ### 4.5 Gobernanza
 
 **Identidad:**
-- **Cognito Plus** (D29; toda instalación es de tipo cliente, D58 (5)) con **login propio** en la SPA: flujo SRP, MFA con TOTP obligatorio y registro solo con correos de los dominios de la empresa, validados en una Lambda *pre sign-up* (D20). Un WAF regional protege las operaciones públicas del user pool (D28).
+- **Cognito Plus** (D29; toda instalación es de tipo cliente, D58 (5)) con **login propio** en la SPA: flujo SRP, MFA con TOTP obligatorio y registro solo con correos de los dominios de la empresa, validados en una Lambda *pre sign-up* (D20). Un WAF regional protege las operaciones públicas del user pool (D28). Cuando ese WAF, el límite de tasa de Cognito, la red o el servicio rechazan el envío de un código, la pantalla se queda en su formulario con un error genérico en vez de decir que lo envió; lo que depende de la cuenta sigue respondiendo igual exista o no (D20, punto del 2026-10-06).
 - Access tokens de 60 minutos, enriquecidos por una Lambda *pre-token* con el rol, el área y la marca de usuario central (`mango_role`, `mango_business_unit`, `mango_central`), calculados desde los grupos de Cognito y el registro de grupos (D35, D44).
 - **Sesión web con cookie del servidor** (D63): `mango-api` guarda el refresh token cifrado con KMS en una cookie `HttpOnly` y lo usa solo para renovar. La sesión dura 8 h. Crea y renueva con la operación firmada `AdminInitiateAuth`, que no pasa por el WAF del user pool (D72).
 - Las personas y sus grupos se gestionan desde la app, con doble aprobación para los grupos sensibles (D44, D60).
@@ -909,7 +909,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D17 | Administración en la app (Admin v0) | parcial | 2026-09-29 | [D017-admin-v0.md](decisions/D017-admin-v0.md) |
 | D18 | Creación y publicación de agentes | vigente | 2026-09-29 · ajuste del 2026-10-01 | [D018-creacion-y-publicacion-de-agentes.md](decisions/D018-creacion-y-publicacion-de-agentes.md) |
 | D19 | Catálogo de MCP | parcial | 2026-09-29 · ajuste del 2026-10-01 | [D019-catalogo-de-mcp.md](decisions/D019-catalogo-de-mcp.md) |
-| D20 | Login y registro | vigente | 2026-09-30 | [D020-login-y-registro.md](decisions/D020-login-y-registro.md) |
+| D20 | Login y registro | vigente | 2026-09-30 · punto del 2026-10-06 | [D020-login-y-registro.md](decisions/D020-login-y-registro.md) |
 | D21 | Ajustes › Auth | parcial | 2026-09-30 | [D021-ajustes-auth.md](decisions/D021-ajustes-auth.md) |
 | D22 | Marketplace: compartir, retirar, modelos y presupuesto del agente | parcial | 2026-09-30 | [D022-marketplace-compartir-retirar.md](decisions/D022-marketplace-compartir-retirar.md) |
 | D23 | Acceso de admins a conversaciones | pendiente | 2026-09-30 | [D023-acceso-de-admins-a-conversaciones.md](decisions/D023-acceso-de-admins-a-conversaciones.md) |
