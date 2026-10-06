@@ -1,7 +1,7 @@
 # D69 · Una actualización toca solo lo que cambió: assets por contenido bajo un prefijo único, sin etiqueta en las descripciones e imagen reproducible
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-05
+- **Estado:** vigente
+- **Fecha:** 2026-10-05 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** precisa [D58](D058-distribucion-para-clientes.md) y [D8](D008-distribucion.md)
 - **Precisada por:** —
 

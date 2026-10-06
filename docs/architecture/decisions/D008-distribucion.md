@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-28
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa); [D69](D069-assets-por-contenido-y-prefijo-unico.md) (precisa; propuesta)
+- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa); [D69](D069-assets-por-contenido-y-prefijo-unico.md) (precisa)
 
 ## Decisión
 
