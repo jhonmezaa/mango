@@ -1,7 +1,7 @@
 # D70 · `mango-api` corre con dos tareas y sus límites de tasa se cuentan una sola vez
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación: punto 8)
 - **Precisa / reemplaza a:** precisa [D33](D033-autorizacion-de-agentes-y-tools.md), [D60](D060-gestion-de-personas.md) y [D66](D066-cambios-de-personas-fuera-del-directorio.md) (los límites de sus excepciones se cuentan entre todas las tareas) y [D63](D063-sesion-web-con-cookie.md) (los límites de la sesión siguen siendo por tarea, a propósito)
 - **Precisada por:** [D72](D072-limites-por-ip-para-una-oficina.md) (precisa el punto 4: la sesión se renueva con una operación firmada que no pasa por el WAF del user pool, así que sus límites ya no protegen un límite por IP y la nota de la salida compartida queda resuelta)
 
@@ -45,3 +45,5 @@ El cupo diario de correos del directorio (200 por día) y las cuotas de envíos 
 **(6) Turno de chat en un despliegue.** Una tarea que se va a apagar deja de recibir peticiones y conserva las que tiene abiertas durante 120 segundos (antes 30): el límite por defecto de un turno. Un turno más largo (un agente puede configurarse hasta 600 s) se corta al cumplirse ese tiempo: la persona ve el error de red del chat y la respuesta parcial. No se sube más porque cada despliegue espera ese tiempo.
 
 **(7) Costo.** La segunda tarea (0,5 vCPU, 1 GB, arm64, IP pública) suma unos USD 18 al mes a precios de lista de `us-east-1`. La tabla se paga por uso: céntimos.
+
+**(8) Lo que se comprobó del punto 6 (2026-10-06, en una instalación de laboratorio).** Un turno de chat abierto durante una actualización terminó bien. Duró 36 segundos y lo atendía una de las tareas anteriores: siguió abierto 18 segundos después de que ECS empezara a parar su tarea, 8 de ellos con su destino ya drenando en el balanceador, y la persona recibió la respuesta completa, con sus llamadas a tools. No se probó un turno más largo que los 120 segundos de espera: ese sigue cortándose, como dice el punto 6.

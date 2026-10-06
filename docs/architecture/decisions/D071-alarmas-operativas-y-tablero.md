@@ -1,7 +1,7 @@
 # D71 · La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 a 14)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 a 15)
 - **Precisa / reemplaza a:** precisa [D54](D054-egress-de-packs.md) (3): el DNS Firewall de la red de packs tiene una lista más y registro de consultas (puntos 13 y 14)
 - **Precisada por:** [D72](D072-limites-por-ip-para-una-oficina.md) (precisa los puntos 1 y 5: `Edge-rate-limited` suma los bloqueos de las dos reglas por IP del borde, y hay una alarma nueva, `Cognito-rate-limited`, para las reglas por IP del user pool)
 
@@ -55,3 +55,11 @@ Origen: la revisión del proyecto del 2026-10-05 (infraestructura, H6). El usuar
 - **Es un dato sensible.** En un intento de fuga por DNS, los nombres pedidos son justamente los datos que se intentan sacar. Quién puede leerlo: modelo de amenazas `pack-egress`, TM-E13.
 - **La entrega no depende de la cuenta.** El Resolver entrega por el servicio de registros de AWS, que necesita una política de recursos de CloudWatch Logs sobre el log group. La plantilla declara la suya, acotada a ese log group y a la cuenta. Con ella la instalación usa 3 de las 10 políticas de recursos que CloudWatch Logs admite por cuenta y región (las otras dos, en `Core`: eventos de Cognito y trazas de X-Ray), y ese máximo no se puede subir.
 - **Costo.** Céntimos al mes: unas decenas de consultas por sesión de un pack. Sin supresiones nuevas de cdk-nag, cfn-guard ni Checkov.
+
+**(15) Lo que se comprobó de los puntos 11, 13 y 14 (2026-10-06, en una instalación de laboratorio), y lo que no.**
+
+- **La entrega al log group cifrado funciona** (punto 14). El registro de consultas quedó creado y asociado a la VPC de packs, y sus registros llegaron al log group cifrado con la llave de logs de `PackNetwork`. Era lo que no se había visto nunca.
+- **`time.aws.com.` cae en la lista de la plataforma** (punto 13). Con un pack en uso, sus consultas (`A` y `AAAA`) salieron rechazadas por la lista `PackDnsPlatform`, y la lista que bloquea todo no contó ninguna. Los demás nombres pedidos eran endpoints permitidos.
+- **Usar un pack ya no dispara la alarma.** `PackDns-blocked` siguió en `OK`, sin cambios de estado, después de una pregunta que usó el pack `aws-cloudwatch`. La consulta del runbook (rechazadas que no son `time.aws.com.`) no devolvió filas, que es lo correcto.
+- **`Api-no-healthy-targets` no saltó durante una actualización** (punto 11), con el despliegue rodante de las dos tareas.
+- **Sin probar.** Los packs `aws-pricing` y `aws-billing` siguen sin observarse: no había un agente publicado que los usara. No se provocó una consulta de un nombre fuera de las listas, que es lo que debe disparar la alarma. Tampoco se dejó el servicio sin tareas para ver saltar `Api-no-healthy-targets`.
