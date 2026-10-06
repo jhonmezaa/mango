@@ -279,7 +279,9 @@ describe("alarms and the alerts topic", () => {
   );
 
   it("creates these alarms, all named after the installation and all notifying the alerts topic", () => {
-    expect(Object.keys(alarms).sort()).toEqual([
+    // The operational alarms (D71) have their own tests: `operational-alarms.test.ts`.
+    const publication = /-(Reconciler|AgentProvisioner|AgentDeprovisioner)-/;
+    expect(Object.keys(alarms).filter((name) => publication.test(name)).sort()).toEqual([
       `Mango-${ns}-AgentDeprovisioner-failed`,
       `Mango-${ns}-AgentProvisioner-failed`,
       `Mango-${ns}-AgentProvisioner-volume`,

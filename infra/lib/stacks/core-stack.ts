@@ -22,6 +22,7 @@ import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
+import { OperationalAlarms } from "../constructs/operational-alarms.js";
 import { importPackNetwork, PackNetwork, PackNetworkRef } from "../constructs/pack-network.js";
 import {
   accountDataPacks,
@@ -225,7 +226,7 @@ export class CoreStack extends Stack {
     });
     // D58: what the provisioners created by API goes away with the stack, before the
     // boundaries, the Gateway and the policy engine those resources hold on to.
-    new UninstallGuard(this, "UninstallGuard", {
+    const uninstallGuard = new UninstallGuard(this, "UninstallGuard", {
       installation: cfg,
       platform: agentPlatform,
       packs: packPlatform,
@@ -421,6 +422,19 @@ export class CoreStack extends Stack {
     });
     // New tasks only start once the release agents are in the table.
     api.node.addDependency(...releaseAgentSeeds.seeds);
+
+    // D71: what would otherwise fail in silence. Last, so that it sees every table of the stack.
+    new OperationalAlarms(this, "OperationalAlarms", {
+      installation: cfg,
+      alerts,
+      alb: network.alb,
+      service: api.service,
+      distribution: edge.distribution,
+      edgeRateLimit: edge.rateLimitMetric,
+      criticalFunctions: { PreTokenGeneration: identity.preToken, GatewayInterceptor: tools.interceptor },
+      refusingFunctions: { PreSignUp: identity.preSignUp },
+      deadLetterQueues: { UninstallGuard: uninstallGuard.deadLetters },
+    });
 
     // `-c skipSpa=true` allows synthesizing before the SPA is built (CI checks only).
     if (!this.node.tryGetContext("skipSpa")) {

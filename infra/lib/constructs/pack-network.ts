@@ -1,13 +1,16 @@
-import { Fn, Stack, Tags } from "aws-cdk-lib";
+import { Duration, Fn, Stack, Tags } from "aws-cdk-lib";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as route53resolver from "aws-cdk-lib/aws-route53resolver";
+import * as sns from "aws-cdk-lib/aws-sns";
 import { Construct } from "constructs";
 import { ReleasePack } from "../config/pack-release.js";
 import { Installation } from "../config/schema.js";
 import { logsKeyOf } from "../logs.js";
-import { mangoName } from "../names.js";
+import { alertsTopicName, mangoName } from "../names.js";
 
 const AGENTCORE_SERVICE = "bedrock-agentcore.amazonaws.com";
 
@@ -77,6 +80,9 @@ export const packNetworkExports = {
 };
 /** Zones of the pack network: one subnet in each (D54: two at least, in every installation). */
 export const PACK_NETWORK_ZONES = 2;
+
+/** Queries the DNS Firewall of the pack network refuses in 5 minutes before it alarms (TM-E2). */
+export const PACK_DNS_BLOCKED_QUERIES = 1;
 
 /** The pack network of another stack of the same account, by its exports. */
 export function importPackNetwork(ns: string, packs: Pick<ReleasePack, "id">[]): PackNetworkRef {
@@ -282,6 +288,39 @@ export class PackNetwork extends Construct implements PackNetworkRef {
       // delete its own association without a manual step in between.
       mutationProtection: "DISABLED",
     });
+
+    // TM-E2: a pack asked for a name that is not one of its endpoints. Nothing left the
+    // network (the answer was NXDOMAIN); the alarm says that something tried. The topic is
+    // named, not referenced: in a release it belongs to the Core stack, installed afterwards.
+    const stack = Stack.of(this);
+    const blocked = new cloudwatch.Alarm(this, "DnsBlockedAlarm", {
+      alarmName: mangoName(ns, "PackDns-blocked"),
+      alarmDescription:
+        "The DNS Firewall of the pack network refused queries for names outside the allowlist of the VPC " +
+        "endpoints: code in a pack runtime asked for a name it has no reason to reach (TM-E2, DNS tunnel). " +
+        "Nothing was resolved. Look first at which packs were in use at that time and at the rejected " +
+        "connections in the flow logs of the pack VPC.",
+      metric: new cloudwatch.Metric({
+        namespace: "AWS/Route53Resolver",
+        metricName: "FirewallRuleQueryVolume",
+        dimensionsMap: { FirewallRuleGroupId: rules.attrId, FirewallDomainListId: everything.attrId },
+        statistic: cloudwatch.Stats.SUM,
+        period: Duration.minutes(5),
+      }),
+      threshold: PACK_DNS_BLOCKED_QUERIES,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    blocked.addAlarmAction(
+      new cloudwatchActions.SnsAction(
+        sns.Topic.fromTopicArn(
+          this,
+          "AlertsTopic",
+          `arn:${stack.partition}:sns:${stack.region}:${stack.account}:${alertsTopicName(ns)}`,
+        ),
+      ),
+    );
   }
 
   get subnetIds(): string[] {

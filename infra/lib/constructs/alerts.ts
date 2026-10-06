@@ -5,7 +5,7 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import * as subscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
-import { mangoName } from "../names.js";
+import { alertsTopicName, mangoName } from "../names.js";
 
 export interface AlertsProps {
   readonly installation: Installation;
@@ -49,7 +49,7 @@ export class Alerts extends Construct {
     );
 
     this.topic = new sns.Topic(this, "Topic", {
-      topicName: mangoName(cfg.namespace, "Alerts"),
+      topicName: alertsTopicName(cfg.namespace),
       displayName: `Mango ${cfg.namespace} alerts`,
       masterKey: key,
       enforceSSL: true,

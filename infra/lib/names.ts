@@ -3,6 +3,12 @@ export function mangoName(namespace: string, suffix: string): string {
   return `Mango-${namespace}-${suffix}`;
 }
 
+/**
+ * Topic the installation's alarms notify (`Alerts`). The name is fixed so that an alarm of
+ * `Mango-<ns>-PackNetwork`, a stack installed before the one that owns the topic, can name it.
+ */
+export const alertsTopicName = (ns: string) => mangoName(ns, "Alerts");
+
 /** Deterministic role names so stacks in different accounts never read each other (D10). */
 export const roleNames = {
   billingBroker: (ns: string) => mangoName(ns, "BillingBroker"),

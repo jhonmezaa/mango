@@ -43,6 +43,9 @@ export interface UninstallGuardProps {
  * a no-op (TM-D13, TM-D14). Code: `functions/provisioner/src/mango_provisioner/uninstall.py`.
  */
 export class UninstallGuard extends Construct {
+  /** Where an invocation that failed every retry lands (watched by `OperationalAlarms`). */
+  readonly deadLetters: sqs.Queue;
+
   constructor(scope: Construct, id: string, props: UninstallGuardProps) {
     super(scope, id);
     const stack = Stack.of(this);
@@ -122,13 +125,13 @@ export class UninstallGuard extends Construct {
     allow("KeepWaiting", ["lambda:InvokeFunction"], [functionArn]);
 
     // That self-invocation is asynchronous: an event that fails every retry lands here (AGENTS.md).
-    const deadLetters = new sqs.Queue(this, "DeadLetters", {
+    const deadLetters = (this.deadLetters = new sqs.Queue(this, "DeadLetters", {
       queueName: mangoName(ns, "UninstallGuard-dlq"),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: props.alerts.key,
       enforceSSL: true,
       retentionPeriod: Duration.days(14),
-    });
+    }));
     allow("DeadLetterQueueKey", ["kms:Decrypt", "kms:GenerateDataKey"], [props.alerts.key.keyArn], {
       StringEquals: { "kms:ViaService": `sqs.${stack.region}.amazonaws.com` },
     });

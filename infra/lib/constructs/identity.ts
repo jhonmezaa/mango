@@ -66,7 +66,9 @@ export class Identity extends Construct {
    * through CloudFront, so this is their only rate limit. About USD 8/month plus requests.
    */
   readonly webAcl: wafv2.CfnWebACL;
-  private readonly preToken: lambda.Function;
+  /** Cognito triggers: sign-up and every token depend on them (watched by `OperationalAlarms`). */
+  readonly preSignUp: lambda.Function;
+  readonly preToken: lambda.Function;
 
   constructor(scope: Construct, id: string, props: IdentityProps) {
     super(scope, id);
@@ -170,6 +172,7 @@ export class Identity extends Construct {
       memorySize: 256,
     });
     this.userPool.addTrigger(cognito.UserPoolOperation.PRE_SIGN_UP, preSignUp.function);
+    this.preSignUp = preSignUp.function;
 
     const preToken = new PythonFunction(this, "PreToken", {
       packageName: "mango-pre-token",

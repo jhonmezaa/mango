@@ -93,6 +93,8 @@ export function cognitoDomainUrl(namespace: string, account: string, region: str
 export class Edge extends Construct {
   readonly distribution: cloudfront.Distribution;
   readonly spaBucket: s3.Bucket;
+  /** CloudWatch names of the web ACL and of its per-IP rate limit (`AWS/WAFV2` dimensions). */
+  readonly rateLimitMetric: { readonly webAcl: string; readonly rule: string };
 
   constructor(scope: Construct, id: string, props: EdgeProps) {
     super(scope, id);
@@ -113,13 +115,14 @@ export class Edge extends Construct {
       autoDeleteObjects: true,
     });
 
+    this.rateLimitMetric = { webAcl: mangoName(cfg.namespace, "edge"), rule: "RateLimitPerIp" };
     const webAcl = new wafv2.CfnWebACL(this, "WebAcl", {
       name: mangoName(cfg.namespace, "edge"),
       scope: "CLOUDFRONT",
       defaultAction: { allow: {} },
       visibilityConfig: {
         cloudWatchMetricsEnabled: true,
-        metricName: mangoName(cfg.namespace, "edge"),
+        metricName: this.rateLimitMetric.webAcl,
         sampledRequestsEnabled: true,
       },
       rules: [
@@ -143,7 +146,7 @@ export class Edge extends Construct {
           statement: { rateBasedStatement: { limit: 1000, aggregateKeyType: "IP" } },
           visibilityConfig: {
             cloudWatchMetricsEnabled: true,
-            metricName: "RateLimitPerIp",
+            metricName: this.rateLimitMetric.rule,
             sampledRequestsEnabled: true,
           },
         },
