@@ -311,6 +311,8 @@ export class CoreStack extends Stack {
     governance.grantWebSessions(apiTaskRole);
     // D70: the rate limits the tasks of mango-api share.
     governance.grantRateLimits(apiTaskRole);
+    // D72: web sessions are created and renewed with the signed operation of this pool only.
+    identity.grantSessionRenewal(apiTaskRole);
     // D20: MFA reset (dual approval in mango-api) on this installation's user pool only.
     identity.grantMfaReset(apiTaskRole);
     // D26: approved changes of the group registry create or delete the Cognito group.

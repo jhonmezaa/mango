@@ -41,10 +41,18 @@ export const SECRET_OPERATIONS = [
   "AssociateSoftwareToken",
   "VerifySoftwareToken",
 ];
-/** Requests per IP per 5 minutes. Generous for offices behind one NAT address. */
-const EMAIL_RATE_LIMIT = 50;
-const SECRET_RATE_LIMIT = 300;
-const IP_RATE_LIMIT = 1000;
+/**
+ * Requests per IP address per 5 minutes on the public API of the user pool (D72). Constants of
+ * the release. A sign-in is three secret operations: 1,500 lets about 500 people of one office
+ * address sign in within the same 5 minutes (250 on their first sign-in), and one address try
+ * 750 passwords, with the account lockout of Cognito and the required TOTP behind. The total
+ * stays over three times that (preflights, and the redirects of an SSO sign-in). The email
+ * limit does not go up: the default sender of Cognito sends 50 emails a day per account.
+ * mango-api does not count here: it renews sessions with a signed operation.
+ */
+export const EMAIL_RATE_LIMIT = 50;
+export const SECRET_RATE_LIMIT = 1500;
+export const IP_RATE_LIMIT = 5000;
 
 /**
  * Cognito user pool for the own login (D20): SRP sign-in from the SPA, self sign-up restricted
@@ -66,6 +74,8 @@ export class Identity extends Construct {
    * through CloudFront, so this is their only rate limit. About USD 8/month plus requests.
    */
   readonly webAcl: wafv2.CfnWebACL;
+  /** CloudWatch names of that web ACL and of its per-IP rate limits (`AWS/WAFV2` dimensions). */
+  readonly rateLimitMetrics: { readonly webAcl: string; readonly rules: string[] };
   /** Cognito triggers: sign-up and every token depend on them (watched by `OperationalAlarms`). */
   readonly preSignUp: lambda.Function;
   readonly preToken: lambda.Function;
@@ -213,7 +223,9 @@ export class Identity extends Construct {
     this.webClient = this.userPool.addClient("WebClient", {
       userPoolClientName: mangoName(cfg.namespace, "Web"),
       generateSecret: false,
-      // SRP plus refresh only: never USER_PASSWORD_AUTH or USER_AUTH (D20, TM-L9).
+      // SRP plus refresh only: never USER_PASSWORD_AUTH or USER_AUTH (D20, TM-L9), and never
+      // ADMIN_USER_PASSWORD_AUTH: with it, the `AdminInitiateAuth` permission of mango-api
+      // (`grantSessionRenewal`) would sign in with a password from the server (D72).
       authFlows: { userSrp: true },
       // Code + PKCE stays for the SSO redirect to the customer's IdP (D20).
       oAuth: {
@@ -249,6 +261,10 @@ export class Identity extends Construct {
       useCognitoProvidedValues: true,
     });
 
+    this.rateLimitMetrics = {
+      webAcl: mangoName(cfg.namespace, "cognito"),
+      rules: ["EmailOperationsPerIp", "SecretOperationsPerIp", "RateLimitPerIp"],
+    };
     this.webAcl = this.protectUserPool(cfg.namespace);
 
     this.issuer = `https://cognito-idp.${Stack.of(this).region}.amazonaws.com/${this.userPool.userPoolId}`;
@@ -320,6 +336,22 @@ export class Identity extends Construct {
     iam.Grant.addToPrincipal({
       grantee,
       actions: ["cognito-idp:CreateGroup", "cognito-idp:DeleteGroup"],
+      resourceArns: [this.userPool.userPoolArn],
+    });
+  }
+
+  /**
+   * Lets `grantee` create and renew web sessions with the signed operation (D72), on this pool
+   * only: `AdminInitiateAuth` does not go through the WAF of the pool, so the renewals of
+   * every person do not count against a per-IP limit of the addresses of the tasks. mango-api
+   * only ever asks for `REFRESH_TOKEN_AUTH`. The same action signs in with a password on a
+   * client that allows `ALLOW_ADMIN_USER_PASSWORD_AUTH`: the web client does not, and a test
+   * keeps it so (session-cookie-threat-model.md, TM-S13).
+   */
+  grantSessionRenewal(grantee: iam.IGrantable): void {
+    iam.Grant.addToPrincipal({
+      grantee,
+      actions: ["cognito-idp:AdminInitiateAuth"],
       resourceArns: [this.userPool.userPoolArn],
     });
   }

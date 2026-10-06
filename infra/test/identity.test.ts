@@ -12,7 +12,10 @@ import {
 import { Edge, spaAuthConfigSchema } from "../lib/constructs/edge.js";
 import {
   EMAIL_OPERATIONS,
+  EMAIL_RATE_LIMIT,
+  IP_RATE_LIMIT,
   SECRET_OPERATIONS,
+  SECRET_RATE_LIMIT,
   SESSION_HOURS,
 } from "../lib/constructs/identity.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
@@ -348,6 +351,45 @@ describe("customer user pool", () => {
     expect(text).not.toContain("ALLOW_CUSTOM_AUTH");
   });
 
+  it("lets mango-api renew sessions with the signed operation, which cannot sign in with a password (D72)", () => {
+    const renewal = statementsOf(template, "Mango-poc-ApiTask").filter((s) =>
+      JSON.stringify(s.Action).includes("cognito-idp:AdminInitiateAuth"),
+    );
+    // One statement, on the user pool of this installation and nothing else.
+    expect(renewal).toHaveLength(1);
+    expect(renewal[0]).toMatchObject({
+      Effect: "Allow",
+      Resource: { "Fn::GetAtt": [expect.stringMatching(/UserPool/), "Arn"] },
+    });
+    // No other role of the stack may start an auth flow from the server.
+    const holders = Object.values(template.findResources("AWS::IAM::Policy")).filter((p) =>
+      /cognito-idp:Admin(InitiateAuth|RespondToAuthChallenge)|cognito-idp:\*/.test(
+        JSON.stringify(p.Properties.PolicyDocument),
+      ),
+    );
+    expect(holders).toHaveLength(1);
+    expect(JSON.stringify(holders)).not.toContain("AdminRespondToAuthChallenge");
+    // `AdminInitiateAuth` signs in with a password on a client that allows one of these flows:
+    // with any of them, the permission above would let mango-api sign in as anybody whose
+    // password it had, without SRP. The clients of the pool allow SRP and refresh only.
+    // Do not add a flow here without a recorded decision that revisits D72.
+    const clients = Object.values(template.findResources("AWS::Cognito::UserPoolClient"));
+    expect(clients).toHaveLength(1);
+    for (const client of clients) {
+      const flows = client.Properties.ExplicitAuthFlows as string[];
+      expect(flows, "an empty list means the defaults of Cognito, not «none»").toBeDefined();
+      for (const forbidden of [
+        "ALLOW_ADMIN_USER_PASSWORD_AUTH",
+        "ALLOW_USER_PASSWORD_AUTH",
+        "ALLOW_USER_AUTH",
+        "ADMIN_NO_SRP_AUTH",
+        "USER_PASSWORD_AUTH",
+      ])
+        expect(flows, `${forbidden} would turn AdminInitiateAuth into a password sign-in`).not.toContain(forbidden);
+      expect([...flows].sort()).toEqual(["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_SRP_AUTH"]);
+    }
+  });
+
   it("validates sign-up domains server-side with a pre sign-up trigger", () => {
     template.hasResourceProperties("AWS::Lambda::Function", {
       FunctionName: "Mango-poc-PreSignUp",
@@ -380,6 +422,9 @@ describe("customer user pool", () => {
       Name: string;
       Statement: {
         RateBasedStatement?: {
+          Limit: number;
+          AggregateKeyType: string;
+          EvaluationWindowSec: number;
           ScopeDownStatement?: { OrStatement: { Statements: unknown[] } };
         };
       };
@@ -404,6 +449,27 @@ describe("customer user pool", () => {
       expect(scoped("SecretOperationsPerIp")).toContain(
         `service.${op.toLowerCase()}"`,
       );
+    // D72: per IP address every 5 minutes. The email limit is the daily quota of the default
+    // sender of Cognito and does not go up with the others.
+    expect(
+      Object.fromEntries(
+        rules
+          .filter((r) => r.Statement.RateBasedStatement)
+          .map((r) => [r.Name, r.Statement.RateBasedStatement?.Limit]),
+      ),
+    ).toEqual({
+      EmailOperationsPerIp: 50,
+      SecretOperationsPerIp: 1500,
+      RateLimitPerIp: 5000,
+    });
+    expect([EMAIL_RATE_LIMIT, SECRET_RATE_LIMIT, IP_RATE_LIMIT]).toEqual([50, 1500, 5000]);
+    for (const rule of rules.filter((r) => r.Statement.RateBasedStatement))
+      expect(rule.Statement.RateBasedStatement).toMatchObject({
+        AggregateKeyType: "IP",
+        EvaluationWindowSec: 300,
+      });
+    // The only rule without a filter is the total.
+    expect(scoped("RateLimitPerIp")).toBeUndefined();
     template.hasResourceProperties("AWS::WAFv2::WebACLAssociation", {
       ResourceArn: {
         "Fn::GetAtt": [Match.stringLikeRegexp("UserPool"), "Arn"],
@@ -416,9 +482,9 @@ describe("customer user pool", () => {
       JSON.stringify(s.Action).includes("cognito-idp:"),
     );
     // Exactly what mango-api uses: MFA reset (D20), the group registry (D26), sharing agents
-    // with people (D33) and Settings > People (D60, which includes preferring a TOTP the
-    // person already verified). Nothing deletes a user, sets a password, changes an attribute
-    // or touches the pool's configuration.
+    // with people (D33), Settings > People (D60, which includes preferring a TOTP the
+    // person already verified) and renewing web sessions (D72). Nothing deletes a user, sets
+    // a password, changes an attribute or touches the pool's configuration.
     expect(
       [...new Set(statements.flatMap((s) => s.Action))].sort(),
     ).toEqual([
@@ -428,6 +494,7 @@ describe("customer user pool", () => {
       "cognito-idp:AdminDisableUser",
       "cognito-idp:AdminEnableUser",
       "cognito-idp:AdminGetUser",
+      "cognito-idp:AdminInitiateAuth",
       "cognito-idp:AdminListGroupsForUser",
       "cognito-idp:AdminRemoveUserFromGroup",
       "cognito-idp:AdminSetUserMFAPreference",
