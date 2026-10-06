@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-04
 - **Precisa / reemplaza a:** precisa [D60](D060-gestion-de-personas.md) (5) y [D62](D062-proveedores-de-correo-publico.md) (6)
-- **Precisada por:** [D67](D067-lecturas-del-directorio-en-auditoria.md) (precisa)
+- **Precisada por:** [D67](D067-lecturas-del-directorio-en-auditoria.md) (precisa); [D70](D070-dos-tareas-y-limites-compartidos.md) (propuesta: su límite de lecturas se cuenta entre todas las tareas)
 - **Tema en el registro original:** La lista de cambios de personas dice quién ya no está en el directorio (precisa [D60](D060-gestion-de-personas.md) (5) y [D62](D062-proveedores-de-correo-publico.md) (6))
 
 ## Decisión

@@ -46,7 +46,7 @@ Costo medido por turno: **USD 0.02–0.04** (Sonnet 4.6, 1–2 tool calls). Obje
 | Pendiente | Motivo / siguiente paso |
 |---|---|
 | Admin v0 (D17): verificación en vivo | Backend implementado (tabla `Settings`, endpoints `/api/admin/*`, AdminProbe, conector leyendo el mapeo con fail-closed) y probado con moto/Stubber. Falta desplegar y probar en vivo la doble aprobación y el chequeo de conectividad |
-| Admin v0: límite de tasa y caché por tarea | El límite de 5/min y las cachés (organización 1 min, presupuestos 30 s) viven en memoria de cada tarea de `mango-api`; con N tareas el límite efectivo es N×5 |
+| Admin v0: límite de tasa y caché por tarea | Las cachés (organización 1 min, presupuestos 30 s) viven en memoria de cada tarea de `mango-api`. El límite de 5/min dejó de ser por tarea el 2026-10-06 (D70): se cuenta en DynamoDB |
 | Tests Playwright del flujo de chat | Pedido por AGENTS.md; aún no existen |
 | Cliente TS generado desde OpenAPI | `packages/ts/api-client` se genera con `mise run api-client` (D38) y la web lo usa con `client.call`. Falta migrar los endpoints anteriores: siguen con sus esquemas zod a mano, más estrictos que los modelos de respuesta del backend |
 | Prueba de fail-closed del interceptor | No probado en vivo |

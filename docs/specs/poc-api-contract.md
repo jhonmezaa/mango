@@ -146,7 +146,7 @@ Cambios al registro de grupos de acceso con **doble aprobación** (D26, D35; TM-
 | 409 | `version_conflict` | El grupo o la solicitud cambió; hay que recargar |
 | 410 | `expired` | La solicitud venció |
 | 422 | `reserved_name` · `fixed_type` · `system_group` · `unknown_area` · `invalid_request` | Reglas de nombres, tipo, área y forma del cuerpo |
-| 429 | `rate_limited` | Con `Retry-After` |
+| 429 | `rate_limited` | Con `Retry-After`. Los límites compartidos entre tareas (D70) responden igual cuando su tabla no contesta: la llamada se rechaza, con `Retry-After: 5` como mucho |
 | 502 | `upstream_error` | Cognito falló; la solicitud sigue pendiente y se puede reintentar |
 | 503 | `audit_unavailable` · `groups_unavailable` · `agents_unavailable` · `settings_unavailable` | No se pudo auditar o leer lo necesario para decidir: no se aplica nada |
 
@@ -387,7 +387,7 @@ Responde si un correo está en el directorio: es una **excepción acordada el 20
 | POST | `/api/directory/users/resolve` | `{"emails": [str] (0..20), "ids": [str] (0..50)}`, al menos uno de los dos → `{"users": [{"id": str, "email": str}], "emails_not_found": [str], "ids_not_found": [str]}`. Los correos se normalizan (sin espacios, en minúsculas) y se devuelven así. **429 `rate_limited`** con `Retry-After`, **502 `upstream_error`** si Cognito no responde, **503 `audit_unavailable`** |
 
 - **Autorización:** acción `CreateAgent` sobre la plataforma (lectura), más la comprobación del grupo `mango-agent-creator` o admin. Va por `POST` para que los correos no viajen en la URL.
-- **Límites por usuario:** 30 correos por minuto (en proceso, por tarea de `mango-api`), **200 correos por día UTC** (contador `DIRECTORY_LOOKUPS` / `<sub>#<día>` en la tabla `Settings`, compartido por todas las tareas) y 300 identificadores por minuto. Una llamada frenada no consulta nada.
+- **Límites por usuario,** todos compartidos por las tareas de `mango-api` (D70): 30 correos por minuto y 300 identificadores por minuto (tabla `RateLimits`) y **200 correos por día UTC** (contador `DIRECTORY_LOOKUPS` / `<sub>#<día>` en la tabla `Settings`). Una llamada frenada no consulta nada.
 - **Directorio:** un correo se busca con `AdminGetUser` y un identificador con `ListUsers` (filtro por `sub`), solo en el User Pool de la instalación. Un usuario sin confirmar o deshabilitado responde como no encontrado por correo. Los usuarios federados (SSO) no se encuentran por correo.
 - **Auditoría (fail-closed):** evento `directory.lookup` con `emails`, `ids`, `emails_found`, `ids_found`, `found_users` (identificadores encontrados por correo) y `outcome: applied`. Nunca lleva los correos consultados. Una llamada frenada por el límite se audita con `outcome: rejected` y `error: rate_limited`.
 
@@ -465,7 +465,7 @@ Qué exige un segundo administrador lo decide el servidor: dar o quitar `mango-a
 
 Auditoría fail-closed. Eventos: `directory.list` (solo conteos: nunca correos ni el prefijo buscado; también al leer la lista de cambios, con `scope: "changes"`), `directory.invite`, `directory.group_add`, `directory.group_remove`, `directory.disable`, `directory.enable`, `directory.member_propose`, `directory.member_approve`, `directory.member_reject`, `directory.member_withdraw`. El evento aplicado tras una aprobación lleva `change_id`, `proposed_by` y `approved_by`; el del arranque, `bootstrap: true`.
 
-Límites por administrador: 120 lecturas por minuto, 200 cambios, 20 propuestas y 20 invitaciones por hora; 20 cambios pendientes a la vez.
+Límites por administrador: 120 lecturas por minuto, 200 cambios, 20 propuestas y 20 invitaciones por hora; 20 cambios pendientes a la vez. Los cuatro límites de tasa se cuentan una vez entre todas las tareas de `mango-api` (D70).
 
 | Método | Ruta | Cuerpo → respuesta |
 |---|---|---|

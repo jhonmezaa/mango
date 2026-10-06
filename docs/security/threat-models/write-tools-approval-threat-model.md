@@ -189,7 +189,7 @@ Hallazgos corregidos en la misma PR:
 
 1. **Uso único con permisos de más (TM-W7).** La condición del `UpdateItem` del interceptor y del executor comparaba estado, hash, quién pidió y vencimiento. IAM no separa «leer en la condición» de «escribir», así que esos roles habrían podido reescribir esos atributos (por ejemplo, pasar a `approved` una solicitud pendiente de aprobadores). Ahora solo nombran la llave y su marca; lo demás lo prueba el token.
 2. **Nombre de tool en el stream.** El prefijo del servidor se aceptaba también con guion, así que una tool `evil-ops___create_budget` de otro target se habría tomado por la de escritura (sin efecto de seguridad: solo crea una solicitud que el modelo ya podía pedir). El guion ya no es separador.
-3. **Ejecuciones sin límite.** Una solicitud que el Gateway rechaza antes de la tool se puede reintentar; cada intento firma con KMS y llama al Gateway. Límite de 10 ejecuciones por minuto por persona.
+3. **Ejecuciones sin límite.** Una solicitud que el Gateway rechaza antes de la tool se puede reintentar; cada intento firma con KMS y llama al Gateway. Límite de 10 ejecuciones por minuto por persona, contado una vez entre todas las tareas de `mango-api` (D70).
 4. **Redirecciones.** La llamada de `mango-api` al Gateway lleva el token del usuario y la aprobación: no sigue redirecciones.
 
 Sin hallazgos en: orden de las comprobaciones del interceptor, verificación del token antes de leer sus claims, autorización por objeto de la API, separación de funciones (código y condición de DynamoDB), trusts de los roles nuevos y la política de la llave.

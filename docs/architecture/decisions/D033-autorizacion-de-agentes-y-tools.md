@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** ajusta [D18](D018-creacion-y-publicacion-de-agentes.md); en el texto: la firma `X-Mango-Invocation` v2 sustituye a la v1 de [D13](D013-identidad-hasta-las-tools.md)
-- **Precisada por:** —
+- **Precisada por:** [D70](D070-dos-tareas-y-limites-compartidos.md) (propuesta: los límites de la consulta de personas se cuentan entre todas las tareas)
 - **Tema en el registro original:** Autorización de agentes y de sus tools (ajusta [D18](D018-creacion-y-publicacion-de-agentes.md))
 
 ## Decisión

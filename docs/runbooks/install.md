@@ -17,6 +17,8 @@ Diseño: `docs/specs/customer-distribution.md`. Quien publica las versiones: `de
 | Dominio de correo de la empresa | Para el registro. Los proveedores públicos (Gmail, Outlook…) se rechazan |
 | Acceso a modelos de Bedrock | Los modelos por defecto de la versión, habilitados en la cuenta de Mango |
 
+**Qué corre y qué cuesta en reposo.** La API (`mango-api`) corre siempre con **dos tareas de Fargate, una por zona de disponibilidad** (0,5 vCPU y 1 GB cada una, con IP pública), detrás de un balanceador interno: si cae una tarea o una zona, la otra sigue respondiendo. No hay autoescalado ni parámetro para cambiar el número (D70). A precios de lista de `us-east-1`, las dos tareas con sus IP son unos USD 36 al mes y el balanceador unos USD 16 a 20; el resto (CloudFront, WAF, KMS, logs) se detalla en §6 de la arquitectura. Lo demás se paga por uso.
+
 ## 1. Verificar la versión
 
 Con credenciales de cualquier cuenta de tu organización y el repositorio en la etiqueta que vas a instalar:
@@ -106,12 +108,14 @@ Después de instalar y después de cada actualización:
 
 | Entrada | Cuándo aparece |
 |---|---|
-| Task definition de `mango-api` (reemplazo) y su servicio de ECS | Siempre: lleva la etiqueta de la versión. Es un despliegue rodante de la API |
+| Task definition de `mango-api` (reemplazo) y su servicio de ECS | Siempre: lleva la etiqueta de la versión. Es un despliegue rodante de la API: arrancan dos tareas nuevas y las dos anteriores se apagan cuando las nuevas responden, así que el servicio no se corta. Las anteriores conservan hasta 120 s las peticiones abiertas; un turno de chat más largo que eso se corta y la persona lo reenvía |
 | Los dos `Custom::CDKBucketDeployment` de la web | Si cambió la web |
 | Una Lambda (`Code.S3Key`) y los recursos que leen su ARN (aparecen como reevaluación, sin cambio propio) | Si cambió ese paquete o una de sus dependencias |
 | Un `Custom::CDKBucketDeployment` de un pack | Si cambió la versión de ese pack |
 
 Para a revisar si aparece un `Remove`, un `Add` que las notas no explican, un `Replacement: True` fuera de la task definition y de las capas de Lambda, o un cambio directo en un recurso con datos (tablas, directorio de usuarios, buckets).
+
+La primera actualización a una versión con D70 (dos tareas) añade una vez: la tabla `Mango-<ns>-RateLimits` (`Add`), la política del rol de `mango-api` (`Modify`: lectura y escritura de esa tabla), el servicio de ECS (`Modify`: `DesiredCount` de 1 a 2 y reequilibrio entre zonas, sin reemplazo) y el target group del balanceador (`Modify`: espera de 30 a 120 s). Ninguna es un reemplazo ni toca una tabla existente.
 
 La primera actualización desde una versión anterior a D69 (publicada hasta el 2026-10-05) lista además todas las Lambdas, las capas y los `BucketDeployment`, una última vez: sus archivos cambian de ruta.
 

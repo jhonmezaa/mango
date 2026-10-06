@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-03
 - **Precisa / reemplaza a:** revisa [D20](D020-login-y-registro.md) y TM-L13; precisa [D21](D021-ajustes-auth.md) y [D28](D028-implementacion-del-login-propio.md); en el texto: amplía la excepción de [D15](D015-red-de-la-poc.md) (punto 6)
-- **Precisada por:** [D64](D064-interfaz-de-la-sesion-web.md) (precisa el punto 7 y completa el 3)
+- **Precisada por:** [D64](D064-interfaz-de-la-sesion-web.md) (precisa el punto 7 y completa el 3); [D70](D070-dos-tareas-y-limites-compartidos.md) (propuesta: los límites de la sesión siguen siendo por tarea)
 - **Tema en el registro original:** Sesión web con cookie del servidor (revisa [D20](D020-login-y-registro.md) y TM-L13; precisa [D21](D021-ajustes-auth.md) y [D28](D028-implementacion-del-login-propio.md))
 
 ## Decisión

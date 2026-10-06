@@ -3,7 +3,7 @@
 - **Estado:** parcial. Construida. Falta su punto (9): el evento «Persona registrada» (`directory.signup`) y la alarma sobre `AdminAddUserToGroup` (TM-P11).
 - **Fecha:** 2026-10-03 · punto (9) revisado el 2026-10-04
 - **Precisa / reemplaza a:** precisa [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md), [D26](D026-reglas-del-ciclo-de-vida.md), [D28](D028-implementacion-del-login-propio.md) y [D58](D058-distribucion-para-clientes.md)
-- **Precisada por:** [D61](D061-invitaciones-mfa-y-etiqueta.md) (precisa los puntos 6, 7 y 8); [D62](D062-proveedores-de-correo-publico.md) (precisa); [D66](D066-cambios-de-personas-fuera-del-directorio.md) (precisa el punto 5)
+- **Precisada por:** [D61](D061-invitaciones-mfa-y-etiqueta.md) (precisa los puntos 6, 7 y 8); [D62](D062-proveedores-de-correo-publico.md) (precisa); [D66](D066-cambios-de-personas-fuera-del-directorio.md) (precisa el punto 5); [D70](D070-dos-tareas-y-limites-compartidos.md) (propuesta: sus límites se cuentan entre todas las tareas)
 - **Tema en el registro original:** Gestión de personas en la aplicación (precisa [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md), [D26](D026-reglas-del-ciclo-de-vida.md), [D28](D028-implementacion-del-login-propio.md) y [D58](D058-distribucion-para-clientes.md))
 
 ## Decisión
