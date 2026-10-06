@@ -175,6 +175,7 @@ Este repositorio es público. Todo lo que se versiona, cada mensaje de commit y 
 - **Commits a nombre del dueño del repositorio,** con su correo `noreply` de GitHub, **sin líneas de atribución** (`Co-Authored-By`, enlaces de sesión). Tampoco en la descripción de los PR.
 - **Las ramas salen de `main`** y entran por PR con el CI en verde. La integración se hace por fast-forward desde local (`git push <remoto> <rama>:main`), no con el botón de merge de GitHub, que firma el commit con el correo de la cuenta.
 - **Firma y publicación** (`pack-signing`, `release`) corren solo desde `main`, en entornos protegidos que exigen la aprobación del dueño.
+- **En los workflows, todo valor con id de cuenta, ARN o nombre de bucket va en secretos de entorno,** nunca en variables del repositorio: los logs son públicos y Actions imprime las variables (solo enmascara secretos). Lo que acaba en un artefacto tampoco se enmascara. Un test lo vigila (`deployment/pack-builder/tests/test_workflows.py`).
 - Antes de subir una rama: búsqueda de secretos (`mise run secrets`) y revisión de que el diff no trae datos reales.
 
 ### Entorno local

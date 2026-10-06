@@ -270,7 +270,7 @@ Las notas de cada release dan tres enlaces «Launch stack» y sus URL:
 
 - **La llave y el rol se mudan** de la cuenta de gestión del laboratorio (que ahora es la de un cliente) a la cuenta del proveedor, dentro de su plantilla (`deployment/provider/`): llave ECC P-256 de firma, rol OIDC `Mango-provider-pack-signing` que solo confía en este repo y el entorno `pack-signing`, y las reglas de alerta sobre uso indebido y cambios del rol.
 - KMS no exporta llaves privadas: es una **llave nueva**. `packs/signing-key.pub` cambia y los tres packs se firman de nuevo. No hay instalaciones que migrar: el laboratorio está vacío.
-- **Sin cambios de código** en `deployment/pack-builder` (`kms.py`), `mango_packs.signing`, `infra/lib/config/pack-release.ts`, el provisioner ni `mango-api`. Cambian las variables de GitHub `PACK_SIGNING_ROLE_ARN` y `PACK_SIGNING_KEY_ARN`.
+- **Sin cambios de código** en `deployment/pack-builder` (`kms.py`), `mango_packs.signing`, `infra/lib/config/pack-release.ts`, el provisioner ni `mango-api`. Cambia la configuración de GitHub del job de firma. Desde el 2026-10-05 (D59 (6)) es el secreto `PACK_SIGNING_ROLE_ARN` del entorno `pack-signing`, no una variable del repositorio (los logs de un repositorio público son públicos y Actions imprime las variables), y la llave se nombra por su alias.
 - **El manifiesto de la release se firma con la misma llave**, con el mismo formato de sobre y otro `payload_type` (`application/vnd.mango.release.v1+json`), para que una firma de pack no valga como firma de manifiesto ni al revés. Lo firma el workflow `release.yml` con un rol aparte (`Mango-provider-release-publisher`) que puede `kms:Sign` y publicar; el rol de firma de packs no puede publicar.
 - **Verificación:** como hoy (síntesis, provisioner de packs, `mango-api`), más `verify-release.sh` para el manifiesto, con `openssl` y la llave pública del repo.
 - Se elimina `packs.signingPublicKey` de la configuración: una instalación solo confía en la llave de la release.
@@ -278,7 +278,7 @@ Las notas de cada release dan tres enlaces «Launch stack» y sus URL:
 ### 6.3 Migración y borrado
 
 1. Crear la cuenta del proveedor e instalar su plantilla (usuario).
-2. Guardar la llave pública nueva en `packs/signing-key.pub`, actualizar las variables de GitHub y firmar los tres packs con `packs.yml`.
+2. Guardar la llave pública nueva en `packs/signing-key.pub`, actualizar la configuración de GitHub (secretos del entorno, D59 (6)) y firmar los tres packs con `packs.yml`.
 3. Borrar en la cuenta de gestión del laboratorio, creados a mano, sin stack. **Solo con la orden del usuario**, cuando una release firmada con la llave nueva esté verificada:
    - llave KMS `alias/mango-pack-signing`: programar borrado a 7 días y quitar el alias;
    - rol `Mango-pack-signing` y su política inline `pack-signing`;

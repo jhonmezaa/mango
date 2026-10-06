@@ -47,8 +47,9 @@ Las alertas leen eventos de administración de CloudTrail: la cuenta necesita un
 ## Después de instalar
 
 1. Llave pública: `aws kms get-public-key --key-id alias/mango-provider-signing --query PublicKey --output text | base64 -d | openssl pkey -pubin -inform DER -outform PEM` → `packs/signing-key.pub`, por PR.
-2. Variables del repositorio en GitHub: `PACK_SIGNING_ROLE_ARN`, `PACK_SIGNING_KEY_ARN` (outputs `PackSigningRoleArn` y `SigningKeyArn`) y `PACK_SIGNING_REGION`.
-3. Para publicar releases (`.github/workflows/release.yml`): variables `RELEASE_PUBLISHER_ROLE_ARN` (output `ReleasePublisherRoleArn`), `RELEASE_BUCKET` (output `TemplatesBucket`) y `PROVIDER_ACCOUNT_ID`. Sin ellas el workflow no corre. **El workflow no se ha ejecutado todavía**: las releases de prueba se publicaron desde una estación de trabajo con `python3 deployment/dist.py --publish`.
+2. Firma de packs en GitHub: secreto `PACK_SIGNING_ROLE_ARN` (output `PackSigningRoleArn`) en el entorno `pack-signing`, y variables del repositorio `PACK_SIGNING_ENABLED=true` y `PACK_SIGNING_REGION`. La llave no se configura: el workflow la nombra por su alias (`alias/mango-provider-signing`).
+3. Para publicar releases (`.github/workflows/release.yml`): secretos `RELEASE_PUBLISHER_ROLE_ARN` (output `ReleasePublisherRoleArn`), `RELEASE_BUCKET` (output `TemplatesBucket`) y `PROVIDER_ACCOUNT_ID` en el entorno `release`, y variables del repositorio `RELEASE_ENABLED=true` y `RELEASE_REGION`. Sin `RELEASE_ENABLED` el workflow no corre. **El workflow no se ha ejecutado todavía**: las releases de prueba se publicaron desde una estación de trabajo con `python3 deployment/dist.py --publish`.
+   **Secretos del entorno, nunca variables, para todo valor con id de cuenta, ARN o nombre de bucket** (D59): los logs de un repositorio público son públicos y Actions imprime las variables tal cual; solo enmascara los secretos. Se crean con `gh secret set <NOMBRE> --env <entorno>` (pide el valor; no lo pases como argumento), con el entorno ya creado (paso 4). Las variables `…_ENABLED` existen porque un `if:` de job no puede leer secretos.
 4. Entornos `pack-signing` y `release` en GitHub, limitados a la rama `main` (y a las etiquetas de versión, el de `release`), cada uno con un revisor obligatorio, y `main` protegida (`packs/README.md`, «Infraestructura de firma»).
 5. Confirmar la suscripción del correo de alertas.
 
@@ -58,7 +59,7 @@ Los dos roles solo confían en un repositorio, por sus identificadores numérico
 
 1. En el repositorio nuevo, consultar su prefijo: `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (campo `sub_claim_prefix`; si `use_immutable_subject` no está activo, activarlo antes).
 2. Repetir `deployment/provider/deploy.sh` con ese prefijo y la misma lista de clientes. Es un `UpdateStack` que solo cambia el trust de los dos roles; dispara la alerta de cambio de rol, como debe. Desde ese momento el repositorio anterior ya no puede firmar ni publicar.
-3. En el repositorio nuevo: proteger `main`, crear los entornos `pack-signing` y `release` (limitados a `main`, con revisor obligatorio) y las variables `PACK_SIGNING_ROLE_ARN`, `PACK_SIGNING_KEY_ARN` y `PACK_SIGNING_REGION` con los outputs del stack.
+3. En el repositorio nuevo: proteger `main`, crear los entornos `pack-signing` y `release` (limitados a `main`, con revisor obligatorio) y los secretos de entorno y variables de «Después de instalar» (pasos 2 y 3) con los outputs del stack.
 4. La llave no cambia: `packs/signing-key.pub` y los packs ya firmados siguen valiendo.
 
 ## Borrar (solo cuenta temporal)

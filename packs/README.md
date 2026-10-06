@@ -219,11 +219,11 @@ El job `sign` del workflow:
 - asume el rol de firma por OIDC justo antes de firmar, sin llaves de larga duración;
 - verifica la firma con `packs/signing-key.pub` antes de publicar nada.
 
-Mientras no existan las variables `PACK_SIGNING_ROLE_ARN` y `PACK_SIGNING_KEY_ARN`, el job no corre y los packs quedan sin firmar. Sin `packs/signing-key.pub`, además, ninguna instalación puede habilitar un pack.
+Mientras la variable del repositorio `PACK_SIGNING_ENABLED` no valga `true`, el job no corre y los packs quedan sin firmar. Sin `packs/signing-key.pub`, además, ninguna instalación puede habilitar un pack.
 
 ### Infraestructura de firma
 
-Vive en la **cuenta de AWS del proveedor**, fuera de la organización de cualquier cliente (D58), región `us-east-1`, dentro del stack `Mango-provider`. No forma parte de ninguna instalación. Los ARN están en las variables del repositorio, no en el código. Hasta el 2026-10-03 estuvo, creada a mano, en la cuenta de management del laboratorio: esa llave se retiró y los packs se firmaron de nuevo con la actual.
+Vive en la **cuenta de AWS del proveedor**, fuera de la organización de cualquier cliente (D58), región `us-east-1`, dentro del stack `Mango-provider`. No forma parte de ninguna instalación. El ARN del rol es un secreto del entorno `pack-signing`, no está en el código ni en una variable del repositorio: los logs de un repositorio público son públicos, y Actions imprime las variables y solo enmascara los secretos (D59). La llave se nombra por su alias, porque el sobre firmado guarda el id de la llave (`signature.key_id`) y se sube como artefacto, donde nada se enmascara. Hasta el 2026-10-03 estuvo, creada a mano, en la cuenta de management del laboratorio: esa llave se retiró y los packs se firmaron de nuevo con la actual.
 
 | Recurso | Nombre | Qué hace |
 |---|---|---|
@@ -235,13 +235,14 @@ Vive en la **cuenta de AWS del proveedor**, fuera de la organización de cualqui
 | Regla de EventBridge | `Mango-provider-role-change` | Avisa de cambios en el trust o en los permisos del rol de firma |
 | Topic de SNS | `Mango-provider-alerts` | Destino de las reglas. Necesita al menos una suscripción confirmada |
 | Environment de GitHub | `pack-signing` | Solo despliega la rama `main` |
-| Variables del repositorio | `PACK_SIGNING_ROLE_ARN`, `PACK_SIGNING_KEY_ARN`, `PACK_SIGNING_REGION` | Las lee el job `sign` |
+| Secreto del entorno `pack-signing` | `PACK_SIGNING_ROLE_ARN` | Lo lee el job `sign`. Secreto y no variable: lleva el id de la cuenta y los logs son públicos |
+| Variables del repositorio | `PACK_SIGNING_ENABLED` (`true` activa el job), `PACK_SIGNING_REGION` | Sin datos de la cuenta: un `if:` de job no puede leer secretos |
 
 Detalles que no son obvios:
 
 - **`sub` inmutable.** El repositorio emite el `sub` con identificadores numéricos: `repo:<owner>@<owner id>/<repo>@<repo id>:environment:pack-signing`. El trust usa ese valor exacto, no `repo:<owner>/<repo>:…`. Renombrar o recrear el repositorio no hereda la confianza. El prefijo se consulta con `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`.
 - **Sesión.** IAM no admite menos de 3600 s como máximo del rol; el workflow pide 900 s.
-- **Revisores y protección de `main`: hay que activarlos.** El repositorio es público (D59), así que GitHub ofrece ambos sin costo. Deben quedar activos antes de crear las variables de firma: `main` protegida (PR obligatorio, revisión de los dueños de `CODEOWNERS`, checks de CI obligatorios, sin force-push) y el environment `pack-signing` limitado a `main` con un revisor obligatorio. Sin eso, todo `push` a `main` que toque los packs se firma sin aprobación manual.
+- **Revisores y protección de `main`: hay que activarlos.** El repositorio es público (D59), así que GitHub ofrece ambos sin costo. Deben quedar activos antes de crear el secreto de firma y poner `PACK_SIGNING_ENABLED` en `true`: `main` protegida (PR obligatorio, revisión de los dueños de `CODEOWNERS`, checks de CI obligatorios, sin force-push) y el environment `pack-signing` limitado a `main` con un revisor obligatorio. Sin eso, todo `push` a `main` que toque los packs se firma sin aprobación manual.
 - **El trust apunta al repositorio público.** El `sub` del trust de `Mango-provider-pack-signing` es el del repositorio nuevo (D59), con sus identificadores numéricos, y es el único: el del repositorio privado anterior se quita. Cómo cambiarlo: `deployment/provider/README.md`.
 - **Rotar la llave** es crear otra, cambiar la política, las variables y `packs/signing-key.pub` por PR, y volver a firmar los packs. KMS no rota llaves asimétricas.
 
