@@ -1,0 +1,88 @@
+# Dependabot: version updates once a week, grouped, with few pull requests open at a time.
+#
+# - Minor and patch updates of an ecosystem come in one pull request; each major comes alone.
+# - A version is proposed a week after its release (`cooldown`), which leaves time for a bad
+#   release to be noticed and withdrawn. Security updates do not wait.
+# - Not covered here, because Dependabot does not read them: the tool versions of `mise.toml`
+#   (python, node, uv, pnpm, gitleaks, cfn-guard), the Checkov and pip-audit versions of its
+#   tasks, and the MCP packs (`packs/*/requirements.lock`), which change only through their
+#   own reviewed and signed pipeline (D19).
+version: 2
+
+updates:
+  # Python workspace: every `pyproject.toml` and the single `uv.lock` at the root.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+    ignore:
+      # Pinned to the version of `packs/aws-billing/requirements.lock`, so the test of the
+      # pack entry point runs what the pack ships; it moves with the pack.
+      - dependency-name: fastmcp
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  # pnpm workspace (apps/web, infra, packages/ts/*) and its catalog.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+    ignore:
+      # typescript-eslint supports `typescript <6.1.0` (pnpm-workspace.yaml).
+      - dependency-name: typescript
+        versions: [">=6.1.0"]
+    groups:
+      javascript-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Actions are pinned by commit SHA; Dependabot moves the SHA and the version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Base images of the mango-api container.
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+    ignore:
+      # The workspace requires Python 3.13 (`requires-python`, mise.toml).
+      - dependency-name: "*/python"
+        versions: [">=3.14"]
+      - dependency-name: python
+        versions: [">=3.14"]
+      # The same uv as mise.toml: both move together, by hand.
+      - dependency-name: ghcr.io/astral-sh/uv
+      - dependency-name: astral-sh/uv
+    groups:
+      docker:
+        patterns: ["*"]
