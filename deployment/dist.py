@@ -53,6 +53,9 @@ PAYLOAD_TYPE = "application/vnd.mango.release.v1+json"
 ASSETS_PREFIX = "mango/assets/"
 # Zip entries carry this date, so the same sources always give the same bytes.
 ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+# The image is dated the same (seconds since 1970): with the base images pinned by digest and
+# one date for its files (apps/api/Dockerfile), the same sources give the same image digest.
+IMAGE_EPOCH = "315532800"
 UNPUBLISHED = {
     "providerAccount": "000000000000",
     "bucket": "mango-releases-unpublished",
@@ -186,7 +189,12 @@ def publisher_environment(role_arn: str | None) -> dict[str, str]:
 
 
 def publish_image(target: dict[str, str], region: str, env: dict[str, str]) -> str:
-    """Build the mango-api image for arm64, push it and return the digest the registry holds."""
+    """Build the mango-api image for arm64, push it and return the digest the registry holds.
+
+    The image is always built, never taken from the registry by a tag of its inputs: what a
+    release names is what this run built. A build of unchanged inputs gives the digest already
+    published, and pushing it again only adds the tag of the label.
+    """
     registry = f"{target['providerAccount']}.dkr.ecr.{region}.amazonaws.com"
     reference = f"{registry}/{target['imageRepository']}:{target['label']}"
     password = run("aws", "ecr", "get-login-password", "--region", region, env=env)
@@ -201,6 +209,7 @@ def publish_image(target: dict[str, str], region: str, env: dict[str, str]) -> s
         run(
             "docker", "buildx", "build", "--platform", "linux/arm64",
             "--provenance=false", "--sbom=false",
+            "--build-arg", f"SOURCE_DATE_EPOCH={IMAGE_EPOCH}",
             "--file", "apps/api/Dockerfile", "--tag", reference, "--push", ".",
         )  # fmt: skip
     finally:

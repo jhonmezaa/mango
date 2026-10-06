@@ -10,8 +10,10 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -232,6 +234,18 @@ def test_publishing_uploads_only_what_is_new_and_the_manifest_last(
         "mango-releases-example/mango/v1.2.3/manifest.sig.json",
     ]
     assert "1 new, 1 already published" in capsys.readouterr().out
+
+
+def test_the_image_is_built_on_bases_pinned_by_digest_and_dated_like_the_zips() -> None:
+    dockerfile = (REPO / "apps" / "api" / "Dockerfile").read_text()
+    bases = re.findall(r"^FROM (\S+)", dockerfile, re.M)
+    assert len(bases) == 3
+    for base in bases:
+        # The tag stays for people and for Dependabot; the digest is what is pulled.
+        assert re.fullmatch(r"[a-z0-9./-]+:[0-9][a-z0-9.-]*@sha256:[0-9a-f]{64}", base), base
+    epoch = datetime(*dist.ZIP_EPOCH, tzinfo=UTC).timestamp()
+    assert int(dist.IMAGE_EPOCH) == epoch
+    assert f"--date=@{dist.IMAGE_EPOCH}" in dockerfile
 
 
 def _tree(root: Path, files: dict[str, bytes]) -> Path:

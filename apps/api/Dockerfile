@@ -1,7 +1,9 @@
 # mango-api container (linux/arm64). Build context: repository root.
-FROM ghcr.io/astral-sh/uv:0.12.19 AS uv
+# Base images are pinned by digest (the tag is kept for people and for Dependabot): the same
+# commit always builds on the same layers.
+FROM ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 AS uv
 
-FROM public.ecr.aws/docker/library/python:3.13-slim AS build
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:3dd7cc108ec1493442514f5c2a871af6af0ec31d768ff6e378a93340c3b3db5f AS build
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
@@ -23,9 +25,11 @@ RUN uv export --frozen --no-dev --package mango-api --no-emit-workspace --no-hea
       id="$(basename "$(dirname "$manifest")")"; \
       mkdir -p "/app/mcp-catalog/$id" && cp "$manifest" "/app/mcp-catalog/$id/manifest.json"; \
     done \
- && cp models/capabilities.json /app/model-capabilities.json
+ && cp models/capabilities.json /app/model-capabilities.json \
+ # One date for every file: the layer depends on what the files hold, not on when it was built.
+ && find /app -exec touch --no-dereference --date=@315532800 {} +
 
-FROM public.ecr.aws/docker/library/python:3.13-slim
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:3dd7cc108ec1493442514f5c2a871af6af0ec31d768ff6e378a93340c3b3db5f
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app \
     MANGO_MCP_CATALOG_DIR=/app/mcp-catalog \
     MANGO_MODEL_CAPABILITIES=/app/model-capabilities.json
