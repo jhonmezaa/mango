@@ -1,7 +1,7 @@
 # D73 · Un turno cortado nunca cuesta cero: la reserva se retiene y se concilia con las trazas de AgentCore
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 17 a 20: el detalle de la corrección del punto 19 es una propuesta y espera su aceptación)
 - **Precisa / reemplaza a:** precisa [D41](D041-alertas-y-reconciliacion.md) (la reconciliación diaria sigue siendo de solo lectura; esta es otra función), [D71](D071-alarmas-operativas-y-tablero.md) (1: dos alarmas nuevas), [D16](D016-observabilidad-de-agentes.md) (las trazas pasan a ser, además, la fuente del gasto de un turno cortado) y [D70](D070-dos-tareas-y-limites-compartidos.md) (10: su último párrafo dejaba «aparte» el cobro de un turno cortado; es esta decisión)
 - **Precisada por:** —
 
@@ -80,5 +80,47 @@ Un test por fila dice qué se cobra y qué queda retenido (`apps/api/tests/test_
 **(15) Lo que queda fuera.** Parar la sesión del runtime tras un corte (`StopRuntimeSession`): no se pudo confirmar qué hace con un turno a medias, y parar la sesión podría impedir que el harness escriba la traza de la que depende la conciliación. El título de una conversación nueva sigue sin reserva previa. El costo del guardrail sigue fuera de todo presupuesto. La reconciliación del gasto contra la factura (CUR) sigue sin hacer.
 
 **(16) Pendiente de comprobar en una instalación.** Que la condición `dynamodb:LeadingKeys` deja pasar las transacciones de la función; un turno cortado de verdad: la reserva retenida, el evento a los pocos minutos, el gasto final igual al de la traza, y que repetirlo ya no salta el tope; y las dos alarmas.
+
+**(17) Lo que dejó visto la validación del 2026-10-06** (una instalación de laboratorio con esta decisión desplegada; 100 turnos). Del punto 16:
+
+- **El permiso:** la condición `dynamodb:LeadingKeys` deja pasar las 16 consultas de cada pasada y las transacciones. Ningún `AccessDenied`.
+- **Un turno cortado de verdad** (dos, cortados por su límite de tiempo): la reserva quedó retenida, `agent.completed` salió con `settlement: pending`, y el evento `budget.reconciled` llegó 3 min 10 s y 4 min 25 s después del inicio del turno (el límite era de 15 segundos; con el de 120 valen los 3,5 a 8,5 minutos del punto 12). Después no quedó fila pendiente ni nada retenido.
+- **Lo retenido cuenta para el tope:** con USD 0,27 retenidos, el turno siguiente de esa persona recibió 402; tras conciliar, 200.
+- **De la tabla del punto 6:** la fila 4 (la traza de la llamada trae los mismos tokens que `agent.completed`; el turno no deja traza `invoke_agent`), la fila 5 (guardrail: cero tokens, liquidado por `mango-api`) y la fila 8 (el uso real, nada retenido).
+- **No se pudo provocar:** las filas 6, 7, 9 y 10. Ni saturar la cuota de Bedrock (90 turnos, todos terminaron, hasta 192 segundos) ni parar una tarea de `mango-api` (drenó y sus 18 turnos terminaron) cortan ya un turno. Tampoco se vio el cobro por la reserva ni saltó ninguna de las dos alarmas.
+- **«El gasto final igual al de la traza» se cumplió, y la traza estaba mal:** es el punto 18.
+
+**(18) El defecto: un turno que el harness corta por su límite de tiempo se conciliaba con costo cero** (2026-10-06). Es la fila 6 de la tabla, con una forma que el punto 3 no previó.
+
+- Al llegar el límite, el harness cierra la invocación: `invoke_agent` y `chat` (su registro de la llamada al modelo) terminan `OK` con los atributos de tokens presentes y en cero. `mango-api` recibe `timeout_exceeded` sin uso y retiene, como debe.
+- **La llamada al modelo sigue hasta acabar.** Sus tokens solo aparecen en la traza `chat <id del modelo>`, hija de `chat`, que se escribe cuando la llamada termina: entre 69 y 140 segundos después del corte en los turnos vistos.
+- El conciliador leía solo `invoke_agent` y su regla de «ilegible» es para atributos ausentes: leyó cero, cobró cero y liberó toda la reserva.
+- **Cifras:** 6 turnos cortados (2 de la validación y 4 de la investigación del punto 20), con 5.112 a 10.512 tokens de salida cada uno: unos USD 0,77 que Bedrock cobró y Mango anotó como cero. Se provoca a voluntad con un agente de límite corto y una pregunta que pida un texto largo.
+- **El límite de tiempo no limita el gasto**, y la reserva tampoco es un techo: ver el punto 20.
+
+**(19) La corrección.** El dueño eligió el 2026-10-06 **«cobrar lo real»**: el conciliador suma también las llamadas al modelo del turno y espera a que terminen; si al plazo no hay nada legible, cobra la reserva entera. Descartó «cobrar siempre la reserva entera». **El detalle que sigue lo propuso un agente con lo medido y espera la aceptación del dueño.**
+
+- **Qué se lee.** De la sesión del turno, además de `invoke_agent`, las trazas `chat` y `chat <id del modelo>`. Con el mismo filtro por id de sesión y la misma ventana; el mismo permiso.
+- **Qué se suma.** El turno se suma dos veces: por invocaciones (como hasta ahora) y por llamadas al modelo (cada `chat <modelo>`). **Se cobra la mayor.** En los 97 turnos de la validación que terminaron solos las dos sumas son iguales; en uno cortado por tiempo, la de invocaciones es cero; en el que pide confirmar una tool de escritura (fila 4b) no hay invocación. Nunca menos de lo que `mango-api` ya había cobrado (base `partial`, sin cambios).
+- **Cuándo se cierra.** Cuando hay al menos una invocación escrita **y** cada llamada que el harness abrió (`chat`) tiene su traza `chat <modelo>`. Una invocación `OK` con cero tokens que no muestra ninguna llamada tampoco cierra: toda invocación hace al menos una. No se espera un tiempo de silencio: una llamada en curso no escribe nada hasta que acaba, así que el silencio no distingue «terminó» de «sigue».
+- **Cuánto dura la retención.** Un turno retenido que no fue cortado por tiempo, lo mismo que antes: entre 3,5 y 8,5 minutos desde su inicio con el límite por defecto. Uno cortado por tiempo, hasta la primera pasada después de que su llamada termine (las vistas, entre 69 y 140 segundos después del corte: en la práctica, la misma ventana o una pasada más). Como mucho, el plazo: 17 minutos desde el inicio con el límite por defecto.
+- **Qué es ilegible en el caso nuevo.** (a) Una llamada que el harness abrió y cuya traza no llega: al plazo se cobra la reserva, con el motivo nuevo `model_call_unfinished`; si lo ya escrito suma más que la reserva, se cobra eso. (b) Una traza `chat <modelo>` sin tokens que no falló y a la que el harness dejó de esperar (terminó más de un segundo después que su `chat`): `trace_unreadable`. Esa traza omite los contadores que valen cero, así que sin tokens solo se cree si falló (una llamada rechazada por Bedrock no se cobra) o si su `chat` la esperó hasta el final y dice cero, que es como se ve un bloqueo del guardrail.
+- **Al plazo, lo legible si lo hay.** Un turno sin invocación escrita pero con sus llamadas terminadas (fila 4b) se cobra por esas llamadas, con base `trace`; antes se cobraba por la reserva.
+- **El plazo no cambia,** ni la fórmula de la reserva, ni el precio guardado, ni las alarmas.
+- **Solo del turno (punto 5).** Las llamadas que se suman llevan el id de sesión del turno y empezaron después de su reserva, igual que las invocaciones. Un turno anterior de la misma sesión solo dejó la sesión abierta si terminó con todo su uso informado: no tiene llamadas en curso.
+- **Estado nuevo:** dos atributos en la fila del turno ya liquidado (cuántas llamadas se sumaron y cuál de las dos sumas se cobró), para que el evento se pueda volver a escribir igual. No son contenido y caben en los permisos que la función ya tiene.
+- **Auditoría (punto 10).** `budget.reconciled` gana `model_calls` (cuántas llamadas al modelo terminadas se vieron) y `usage_source` (`invocations` o `model_calls`: de cuál de las dos sumas salen los tokens y el costo). Los demás campos no cambian.
+- **Sin permisos, recursos, parámetros ni supresiones nuevas.** En el change set de `Core` solo cambia el código de las funciones que llevan `mango-core`.
+- **Límites.** Las trazas de llamada no traen tokens de caché: los de una llamada cortada no se verían (Mango no usa caché hoy). Si una versión del harness cambia los nombres `chat` o `chat <modelo>`, un turno cortado por tiempo se cobra por la reserva al plazo, no por cero.
+- **Comprobado** con tests (uno por cada fila de las tablas de los puntos 3 y 6 que cambia, con la forma real de las trazas) y, solo lectura, con el lector nuevo sobre las 100 sesiones de la validación y 4 turnos cortados más: 97 iguales por las dos sumas, 3 turnos cortados con su costo real, 1 sin invocación con el de su llamada, y 3 con la sesión parada que quedan sin terminar. **No está desplegado.**
+
+**(20) Parar la sesión tras un corte, y el techo de un turno: lo que encontró la investigación del 2026-10-06** (4 turnos cortados de un agente temporal con límite de 15 segundos, 3 de ellos con la sesión parada, y 3 turnos siguientes). **Sin decidir:** el punto 15 sigue como está.
+
+- **`StopRuntimeSession` se puede llamar** sobre la sesión de un harness gestionado: con el ARN del harness y su endpoint (`live`). Con el ARN del runtime que hay debajo responde que se use el harness. Pediría un permiso nuevo en el rol de `mango-api` o del conciliador (`bedrock-agentcore:StopRuntimeSession` sobre los harness de la instalación).
+- **No detiene el gasto.** Parada unos 4 y 15 segundos después del corte, y una vez a mitad del turno: Bedrock midió 9.895, 9.465 y 10.512 tokens de salida, como en el turno sin parar (10.033). Parada a mitad del turno, el turno siguió entregando texto hasta su límite.
+- **Y pierde la traza.** En las tres sesiones paradas la traza `chat <modelo>` no se escribió nunca. Con la corrección del punto 19 esos turnos se cobrarían por la reserva al plazo (USD 0,134 con USD 0,15 reales), con la alarma.
+- **La conversación sigue funcionando** con o sin parar: el turno siguiente abre una sesión nueva y reenvía el historial, como dice el punto 5.
+- **La reserva no es el techo de un turno.** Las llamadas de un agente del Builder no llevan tope de tokens propio (`max_tokens_per_call` vacío): el `max_tokens` del agente es un límite del harness para el turno y no se envía con la llamada. Una sola llamada generó 10.033 tokens con `max_tokens` 4.096 y costó USD 0,151 con USD 0,134 reservados. Lo gastado de más sí se cobra, así que cuenta para el turno siguiente. Los agentes de la release sí envían su tope en cada llamada (4.000 en las 253 vistas).
+- **Opciones, para el dueño:** (a) no parar la sesión y dejar la conciliación como en el punto 19; (b) además, enviar siempre un tope por llamada, igual al `max_tokens` del agente cuando el Builder no fija otro: no corta la llamada en el límite de tiempo, pero la acota (4.096 tokens son poco más de un minuto) y acerca la reserva a un techo; cambia lo que se envía al modelo y habría que revisar la reserva cuando hay varias iteraciones; (c) parar la sesión solo **después** de conciliar, para liberar el runtime: no ahorra modelo. No se construyó ninguna.
 
 Modelo de amenazas: [`budget-reconciliation-threat-model.md`](../../security/threat-models/budget-reconciliation-threat-model.md).

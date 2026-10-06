@@ -77,7 +77,7 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 
 | Alarma | Qué significa | Qué mirar primero |
 |---|---|---|
-| `BudgetReconciler-reservation-charged` | Un turno de chat cuyo final no se supo se cobró por su reserva entera: no hubo traza legible de AgentCore 15 minutos después de su límite de tiempo. No debería pasar casi nunca | Los eventos `budget.reconciled` de Auditoría con `basis: reservation` y su `reason`. Después, el log group `aws/spans` |
+| `BudgetReconciler-reservation-charged` | Un turno de chat cuyo final no se supo se cobró por su reserva entera: las trazas de AgentCore no dejaron saber lo que costó 15 minutos después de su límite de tiempo. No debería pasar casi nunca | Los eventos `budget.reconciled` de Auditoría con `basis: reservation` y su `reason`. Después, el log group `aws/spans` |
 | `BudgetReconciler-failed` | La conciliación falló todos sus reintentos: las reservas de los turnos cortados siguen retenidas y nadie las recupera | Los errores del log group `/aws/lambda/Mango-<ns>-BudgetReconciler` y el mensaje en la cola `Mango-<ns>-BudgetReconciler-dlq` |
 
 **Cuando la aplicación va lenta** (`Api-slow`; D70, punto 9). Dos tareas sirven con margen unas 80 lecturas por segundo (unas 300 personas activas a la vez) y se saturan hacia las 200.
@@ -150,8 +150,10 @@ fields @timestamp, query_name, query_type, srcaddr, firewall_domain_list_id
 
 Decisión: [D73](../architecture/decisions/D073-turno-cortado-nunca-cuesta-cero.md). Cuando `mango-api` no llega a saber cómo terminó un turno (el agente falló, se cortó la lectura o murió la tarea), cobra lo que ya había contado y **retiene el resto de la reserva**. La función `Mango-<ns>-BudgetReconciler` corre cada 5 minutos, lee en las trazas de AgentCore lo que el agente gastó, lo cobra y libera el resto.
 
-- **Qué ve la persona mientras tanto:** su gasto incluye lo retenido, así que durante unos minutos (entre 3,5 y 8,5 desde que empezó el turno, con el límite de tiempo por defecto) figura como gastado más de lo real. Con varios turnos cortados a la vez puede recibir «presupuesto agotado» hasta la siguiente pasada. El presupuesto del agente, que comparten todos sus usuarios, se ocupa igual.
-- **Dónde se ve:** en Auditoría, `agent.completed` con `settlement: pending` y, minutos después, `budget.reconciled` con lo cobrado, lo liberado y de dónde salió el dato (`basis`).
+- **Un turno cortado por su límite de tiempo** (`stop_reason: timeout_exceeded`): el agente deja de responder, pero la llamada al modelo que estaba en curso sigue hasta acabar y se paga entera. La función espera a que esa llamada termine y cobra lo que gastó (D73 (19)). Puede costar más que la reserva del turno: se cobra entero.
+
+- **Qué ve la persona mientras tanto:** su gasto incluye lo retenido, así que durante unos minutos (entre 3,5 y 8,5 desde que empezó el turno, con el límite de tiempo por defecto; un turno cortado por su límite de tiempo, hasta que su llamada al modelo termine, y como mucho 17) figura como gastado más de lo real. Con varios turnos cortados a la vez puede recibir «presupuesto agotado» hasta la siguiente pasada. El presupuesto del agente, que comparten todos sus usuarios, se ocupa igual.
+- **Dónde se ve:** en Auditoría, `agent.completed` con `settlement: pending` y, minutos después, `budget.reconciled` con lo cobrado, lo liberado y de dónde salió el dato (`basis`; `usage_source` dice si los tokens son la suma de las invocaciones o la de las llamadas al modelo, y `model_calls` cuántas llamadas se vieron terminadas).
 - **Qué dice cada pasada:** una línea `budget_reconciler.summary` en el log de la función, con cuántos turnos cerró, cuántos esperan y cuántas consultas de trazas fallaron.
 
 **Cuando salta `BudgetReconciler-reservation-charged`.** A esa persona se le cobró la reserva entera (el peor caso del turno, unas decenas de veces lo normal) porque no apareció el dato real. El `reason` del evento dice cuál fue el caso:
@@ -159,7 +161,8 @@ Decisión: [D73](../architecture/decisions/D073-turno-cortado-nunca-cuesta-cero.
 | `reason` | Qué pasó | Qué hacer |
 |---|---|---|
 | `no_trace` | No hay ninguna traza de la sesión de ese turno | Si es un caso aislado, nada: la telemetría no garantiza cada traza. Si se repite, comprobar que Transaction Search sigue activo y que el log group `aws/spans` recibe trazas de los harness |
-| `trace_unreadable` | Hay traza, terminó bien y no trae los tokens donde se esperan | Una versión del harness cambió los nombres de los atributos. Avisar al proveedor: se corrige en una versión (`functions/budget-reconciler`, `traces.py`) |
+| `trace_unreadable` | Hay traza, terminó bien y no trae los tokens donde se esperan (también una llamada al modelo que siguió tras el corte del turno y no informó tokens) | Una versión del harness cambió los nombres de los atributos. Avisar al proveedor: se corrige en una versión (`functions/budget-reconciler`, `traces.py`) |
+| `model_call_unfinished` | El agente abrió una llamada al modelo y su traza no llegó: no se sabe lo que costó. Si lo ya escrito suma más que la reserva, se cobró eso | Si es un caso aislado, nada. Es lo esperado si alguien paró la sesión del runtime de ese turno (`StopRuntimeSession`): parar la sesión no detiene la llamada y sí pierde su traza. Si se repite sin eso, avisar al proveedor: puede haber cambiado el nombre de las trazas de llamada |
 | `trace_query_failed` | La consulta al log group falló en cada pasada hasta el plazo | El error en el log de la función. Lo habitual: el log group no existe, o la instalación tiene Transaction Search gestionado por fuera y las trazas no llegan a esta cuenta |
 
 - **No hay forma de corregir un cobro desde la aplicación.** Si hace falta devolverle margen a la persona, sube su límite del mes en Ajustes › Presupuestos por lo cobrado de más (`reserved_usd` menos lo que el turno costó de verdad, si se llega a saber). El presupuesto del agente no se puede editar todavía.
