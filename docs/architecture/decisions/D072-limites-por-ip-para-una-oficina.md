@@ -1,13 +1,13 @@
 # D72 · Los límites por IP alcanzan para una oficina detrás de una sola dirección, y `mango-api` renueva la sesión con la operación firmada
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-06
+- **Estado:** vigente
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (4: los límites de la sesión ya no protegen un límite por IP, y la nota «con una salida compartida, revisar» queda resuelta), [D63](D063-sesion-web-con-cookie.md) (la sesión se crea y se renueva con la operación firmada; el margen del WAF del user pool queda medido), [D28](D028-implementacion-del-login-propio.md) (los números del WAF regional del user pool) y [D71](D071-alarmas-operativas-y-tablero.md) (1 y 5: `Edge-rate-limited` suma dos reglas y hay una alarma nueva para el WAF del user pool)
 - **Precisada por:** —
 
 ## Decisión
 
-Origen: hito 1, «instalable por una empresa real». El 2026-10-06 se midió cuántas peticiones hace una persona (navegador contra una instalación de laboratorio) y se cruzó con los límites por IP de los dos WAF. El dueño vio la propuesta ese día y eligió el diseño de abajo. Queda `propuesta` hasta que acepte este texto.
+Origen: hito 1, «instalable por una empresa real». El 2026-10-06 se midió cuántas peticiones hace una persona (navegador contra una instalación de laboratorio) y se cruzó con los límites por IP de los dos WAF. El dueño vio la propuesta ese día, eligió el diseño de abajo y aceptó este texto.
 
 **(1) Qué se rompía y con cuánta gente.** Tres límites por IP, pensados para frenar a un atacante, los alcanzaba una empresa usando Mango con normalidad:
 
@@ -56,4 +56,4 @@ Una oficina de más de unas 1.000 personas detrás de **una** dirección seguir�
 
 **(9) Lo que queda fuera.** La web deja de sacar a la persona al ingreso cuando la renovación no responde (es un defecto aparte, en otra rama). La cuota de 50 correos al día del remitente por defecto frena un alta de más de 50 personas en un día antes que cualquier WAF: pide SES, como ya decía TM-L11. Los eventos de riesgo de Cognito Plus de las renovaciones registran la IP de la tarea y no la de la persona; la operación firmada permite pasársela (`ContextData`) y no se hace todavía.
 
-**(10) Pendiente de comprobar en una instalación.** Que la sesión se crea y se renueva con la versión instalada; que las llamadas de las tareas ya no aparecen en el WAF del user pool; y que cada bloqueo responde lo previsto y dispara su alarma, provocado desde otra dirección. Las cifras de uso (30 % de la oficina activa, 15 peticiones por persona cada 5 minutos) son supuestos razonados, no datos de una empresa: las métricas por regla darán el dato real con el primer cliente.
+**(10) Pendiente de comprobar en una instalación.** Que la sesión se crea y se renueva con la versión instalada; que las llamadas de las tareas ya no aparecen en el WAF del user pool; y que cada bloqueo responde lo previsto y dispara su alarma, provocado desde otra dirección. Las cifras de uso (30 % de la oficina activa, 15 peticiones por persona cada 5 minutos) son supuestos razonados, no datos de una empresa: las métricas por regla darán el dato real con el primer cliente. Al aceptar la decisión, el dueño preguntó si el límite de la API hacía falta y lo mantuvo en 6.000: protege a dos tareas pequeñas cuya capacidad nadie ha medido, y se revisa con una prueba de carga, que sigue pendiente en este hito.
