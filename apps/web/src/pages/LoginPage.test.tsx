@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -221,6 +221,47 @@ describe('LoginPage: sign-in', () => {
   });
 });
 
+/**
+ * Answers of Cognito to a call that sends an email (`ForgotPassword`, `ResendConfirmationCode`)
+ * with `PreventUserExistenceErrors` on. `null` is the answer of a code that was sent, which is
+ * also what a missing account gets.
+ */
+const SENT_OR_ACCOUNT_DEPENDENT = [
+  null,
+  'UserNotFoundException',
+  'UserNotConfirmedException',
+  'NotAuthorizedException',
+  'InvalidParameterException',
+  'CodeDeliveryFailureException',
+  'InvalidEmailRoleAccessPolicyException',
+  'UserLambdaValidationException',
+  'UnexpectedLambdaException',
+  'InvalidLambdaResponseException',
+  // Per-user attempt limit or daily email quota: not shown, it could tell accounts apart.
+  'LimitExceededException',
+  // Not classified: treated as sent.
+  'ResourceNotFoundException',
+  'InvalidResponse',
+  'Http400',
+];
+/** Decided without looking at the account: WAF block, request rate, network, service. */
+const SEND_REJECTIONS = [
+  'ForbiddenException',
+  'Http403',
+  'TooManyRequestsException',
+  'Http429',
+  'NetworkError',
+  'InternalErrorException',
+  'Http503',
+];
+const ACTION_FAILED = 'No se pudo completar la acción. Inténtalo de nuevo.';
+const EXISTING = 'nombre@empresa.com';
+const MISSING = 'nadie@empresa.com';
+
+function answering(code: string | null) {
+  return vi.fn(() => (code ? Promise.reject(new CognitoError(code)) : Promise.resolve()));
+}
+
 describe('LoginPage: sign-up', () => {
   async function fillSignUp(
     user: ReturnType<typeof userEvent.setup>,
@@ -344,6 +385,52 @@ describe('LoginPage: sign-up', () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    'ForbiddenException',
+    'TooManyRequestsException',
+    'LimitExceededException',
+    'NetworkError',
+    'InternalErrorException',
+  ])('shows the generic error, not a sign-in one, when sign-up is rejected (%s)', async (code) => {
+    const cognito = fakeCognito({
+      signUp: vi.fn(() => Promise.reject(new CognitoError(code))),
+    });
+    const { user } = renderLogin(cognito);
+    await fillSignUp(user, 'nombre@empresa.com');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No se pudo completar la acción. Inténtalo de nuevo.',
+    );
+    expect(screen.queryByText(/inicio de sesión/)).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Crea tu cuenta' })).toBeInTheDocument();
+    expect(screen.queryByText(/te enviamos un código/)).toBeNull();
+  });
+
+  it.each(SEND_REJECTIONS)(
+    'does not say it resent a verification code that was rejected (%s)',
+    async (code) => {
+      const cognito = fakeCognito({ resendCode: answering(code) });
+      const { user } = renderLogin(cognito);
+      await fillSignUp(user, 'nombre@empresa.com');
+      await user.click(await screen.findByRole('button', { name: 'Reenviar código' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(ACTION_FAILED);
+      expect(screen.queryByRole('status')).toBeNull();
+    },
+  );
+
+  it.each(SENT_OR_ACCOUNT_DEPENDENT)(
+    'resends the verification code with a neutral message (%s)',
+    async (code) => {
+      const cognito = fakeCognito({ resendCode: answering(code) });
+      const { user } = renderLogin(cognito);
+      await fillSignUp(user, 'nombre@empresa.com');
+      await user.click(await screen.findByRole('button', { name: 'Reenviar código' }));
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Si corresponde, te enviamos un código nuevo.',
+      );
+      expect(screen.queryByRole('alert')).toBeNull();
+    },
+  );
+
   it('renders the email as text, never as markup', async () => {
     const cognito = fakeCognito({
       signIn: vi.fn(() => Promise.reject(new CognitoError('UserNotConfirmedException'))),
@@ -402,42 +489,127 @@ describe('LoginPage: temporary password (NEW_PASSWORD_REQUIRED)', () => {
   });
 });
 
+/** Runs `flow` once per email and returns what each one sees, without the email itself. */
+async function screensFor(flow: (email: string) => Promise<void>): Promise<string[]> {
+  const screens: string[] = [];
+  for (const email of [EXISTING, MISSING]) {
+    await flow(email);
+    screens.push(screen.getByRole('main').textContent.replaceAll(email, '<email>'));
+    cleanup();
+  }
+  return screens;
+}
+
+async function requestCode(user: ReturnType<typeof userEvent.setup>, email: string) {
+  await user.click(screen.getByRole('button', { name: '¿Olvidaste tu contraseña?' }));
+  await user.type(screen.getByLabelText('Correo'), email);
+  await user.click(screen.getByRole('button', { name: 'Enviar código' }));
+}
+
 describe('LoginPage: password recovery', () => {
-  it('always continues to the code step and then back to sign-in', async () => {
-    const cognito = fakeCognito({
-      forgotPassword: vi.fn(() => Promise.reject(new CognitoError('LimitExceededException'))),
-    });
-    const { user } = renderLogin(cognito);
-    await user.click(screen.getByRole('button', { name: '¿Olvidaste tu contraseña?' }));
-    await user.type(screen.getByLabelText('Correo'), 'nadie@empresa.com');
-    await user.click(screen.getByRole('button', { name: 'Enviar código' }));
+  it('continues to the code step and then back to sign-in', async () => {
+    const { cognito, user } = renderLogin();
+    await requestCode(user, MISSING);
     expect(
       await screen.findByRole('heading', { name: 'Crea una contraseña nueva' }),
     ).toBeInTheDocument();
     await typeCode(user);
     await user.type(screen.getByLabelText('Nueva contraseña'), PASSWORD);
     await user.click(screen.getByRole('button', { name: 'Guardar contraseña' }));
-    expect(cognito.confirmForgotPassword).toHaveBeenCalledWith(
-      'nadie@empresa.com',
-      '123456',
-      PASSWORD,
-    );
+    expect(cognito.confirmForgotPassword).toHaveBeenCalledWith(MISSING, '123456', PASSWORD);
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Contraseña actualizada. Ya puedes entrar.',
     );
   });
 
-  it('resends with a neutral message', async () => {
-    const { cognito, user } = renderLogin();
-    await user.click(screen.getByRole('button', { name: '¿Olvidaste tu contraseña?' }));
-    await user.type(screen.getByLabelText('Correo'), 'u@empresa.com');
+  it.each(SENT_OR_ACCOUNT_DEPENDENT)(
+    'continues to the code step, the same for an existing and a missing account (%s)',
+    async (code) => {
+      const [existing, missing] = await screensFor(async (email) => {
+        const { user } = renderLogin(fakeCognito({ forgotPassword: answering(code) }));
+        await requestCode(user, email);
+        expect(
+          await screen.findByRole('heading', { name: 'Crea una contraseña nueva' }),
+        ).toBeInTheDocument();
+        expect(screen.getByText(/tiene una cuenta, te enviamos un código/)).toBeInTheDocument();
+      });
+      expect(existing).toBe(missing);
+      expect(existing).not.toContain(ACTION_FAILED);
+    },
+  );
+
+  it.each(SEND_REJECTIONS)(
+    'stays on the form with the generic error, the same for an existing and a missing account (%s)',
+    async (code) => {
+      const [existing, missing] = await screensFor(async (email) => {
+        const { user } = renderLogin(fakeCognito({ forgotPassword: answering(code) }));
+        await requestCode(user, email);
+        expect(await screen.findByText(ACTION_FAILED)).toHaveClass('login-err');
+        expect(screen.getByRole('heading', { name: 'Recupera tu contraseña' })).toBeInTheDocument();
+        expect(screen.queryByText(/te enviamos un código/)).toBeNull();
+        expect(screen.getByRole('button', { name: 'Enviar código' })).toBeEnabled();
+      });
+      expect(existing).toBe(missing);
+    },
+  );
+
+  it('clears the error when the email changes and continues once the code is sent', async () => {
+    const forgotPassword = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new CognitoError('ForbiddenException'))
+      .mockResolvedValue();
+    const { user } = renderLogin(fakeCognito({ forgotPassword }));
+    await requestCode(user, EXISTING);
+    expect(await screen.findByText(ACTION_FAILED)).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Correo'), '{backspace}m');
+    expect(screen.queryByText(ACTION_FAILED)).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Enviar código' }));
-    await user.click(await screen.findByRole('button', { name: 'Reenviar código' }));
-    expect(cognito.forgotPassword).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Si corresponde, te enviamos un código nuevo.',
-    );
+    expect(
+      await screen.findByRole('heading', { name: 'Crea una contraseña nueva' }),
+    ).toBeInTheDocument();
   });
+
+  it.each(SENT_OR_ACCOUNT_DEPENDENT)(
+    'resends with a neutral message, the same for an existing and a missing account (%s)',
+    async (code) => {
+      const [existing, missing] = await screensFor(async (email) => {
+        const forgotPassword = vi
+          .fn<() => Promise<void>>()
+          .mockResolvedValueOnce()
+          .mockImplementation(answering(code));
+        const { user } = renderLogin(fakeCognito({ forgotPassword }));
+        await requestCode(user, email);
+        await user.click(await screen.findByRole('button', { name: 'Reenviar código' }));
+        expect(forgotPassword).toHaveBeenCalledTimes(2);
+        expect(await screen.findByRole('status')).toHaveTextContent(
+          'Si corresponde, te enviamos un código nuevo.',
+        );
+        expect(screen.queryByRole('alert')).toBeNull();
+      });
+      expect(existing).toBe(missing);
+    },
+  );
+
+  it.each(SEND_REJECTIONS)(
+    'does not say it resent a code that was rejected, the same for both accounts (%s)',
+    async (code) => {
+      const [existing, missing] = await screensFor(async (email) => {
+        const forgotPassword = vi
+          .fn<() => Promise<void>>()
+          .mockResolvedValueOnce()
+          .mockImplementation(answering(code));
+        const { user } = renderLogin(fakeCognito({ forgotPassword }));
+        await requestCode(user, email);
+        await user.click(await screen.findByRole('button', { name: 'Reenviar código' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(ACTION_FAILED);
+        expect(screen.queryByText('Si corresponde, te enviamos un código nuevo.')).toBeNull();
+        expect(
+          screen.getByRole('heading', { name: 'Crea una contraseña nueva' }),
+        ).toBeInTheDocument();
+      });
+      expect(existing).toBe(missing);
+    },
+  );
 });
 
 function mockReducedMotion(reduce: boolean) {

@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import { isEmail } from './validation';
 
-/** Design `ForgotStep`: the next step is shown whether or not the account exists (TM-L10). */
+/**
+ * Design `ForgotStep`: the next step is shown whether or not the account exists (TM-L10).
+ * `onSubmit` rejects only when the code was not sent for a reason that does not depend on the
+ * account; the form then stays here with the generic error.
+ */
 export function ForgotStep({
   email,
   onEmailChange,
@@ -27,7 +31,9 @@ export function ForgotStep({
     }
     setLoading(true);
     onSubmit(email)
-      .catch(() => undefined)
+      .catch(() => {
+        setErr(t('auth.errors.actionFailed'));
+      })
       .finally(() => {
         setLoading(false);
       });

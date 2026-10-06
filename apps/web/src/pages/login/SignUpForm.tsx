@@ -82,7 +82,7 @@ export function SignUpForm({
             message: t('auth.validation.domain', { domain: domainList }),
           });
         } else {
-          setServerError({ field: 'form', message: t('auth.errors.signInFailed') });
+          setServerError({ field: 'form', message: t('auth.errors.actionFailed') });
         }
       })
       .finally(() => {

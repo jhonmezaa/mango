@@ -195,6 +195,8 @@ export const auth = {
   },
   errors: {
     signInFailed: 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.',
+    // Sign-up and code sending: the generic sentence of the other modules, word for word.
+    actionFailed: 'No se pudo completar la acción. Inténtalo de nuevo.',
     sessionExpired: 'Tu sesión expiró. Vuelve a iniciar sesión.',
     credentials: 'Correo o contraseña incorrectos.',
     code: 'El código no es válido o venció. Pide uno nuevo.',

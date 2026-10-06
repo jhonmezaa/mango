@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { isCodeError } from './errors';
+import { isCodeError, isSendRejection } from './errors';
 import { CODE_LENGTH } from './validation';
 
 const EMPTY = Array.from({ length: CODE_LENGTH }, () => '');
@@ -119,9 +119,18 @@ export function CodeStep({
   const resend = () => {
     setDigits(EMPTY);
     setErr(null);
-    setSent(true);
-    // The outcome is not shown: the message is the same whether or not a code was sent.
-    onResend?.().catch(() => undefined);
+    setSent(false);
+    // The message is the same whether or not the account exists. Only a rejection that does
+    // not depend on the account (WAF block, request rate, network, service) is shown.
+    onResend?.().then(
+      () => {
+        setSent(true);
+      },
+      (e: unknown) => {
+        if (isSendRejection(e)) setErr(t('auth.errors.actionFailed'));
+        else setSent(true);
+      },
+    );
   };
 
   return (

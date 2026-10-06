@@ -5,7 +5,7 @@ import type { Challenge, SignInStep } from '../auth/cognito/flows';
 import { useAuth } from '../auth/useAuth';
 import type { RuntimeConfig } from '../config/runtimeConfig';
 import { CodeStep } from './login/CodeStep';
-import { cognitoCode, isCredentialError } from './login/errors';
+import { cognitoCode, isCredentialError, isSendRejection } from './login/errors';
 import { ForgotStep } from './login/ForgotStep';
 import { LoginLayout } from './login/LoginLayout';
 import { MfaEnroll } from './login/MfaEnroll';
@@ -125,8 +125,13 @@ export function LoginPage({ config }: { config: RuntimeConfig }) {
   const forgot = async (address: string) => {
     const username = normalizeEmail(address);
     setEmail(username);
+    try {
+      await cognito.forgotPassword(username);
+    } catch (e) {
+      // Not sent for a reason that does not depend on the account: the form says so.
+      if (isSendRejection(e)) throw e;
+    }
     // Same next step whether or not the account exists (TM-L10).
-    await cognito.forgotPassword(username).catch(() => undefined);
     go('reset');
   };
 
