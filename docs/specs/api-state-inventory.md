@@ -63,5 +63,6 @@ Ya se contaban en DynamoDB antes de D70, y no cambian: el cupo diario de correos
 | Grupos de hilos para consultar Cognito o el sondeo | `people`, `directory`, `admin` | Se crean y se cierran en cada petición |
 | Sesión web | Cookie cifrada y tabla `WebSessions` | Sin estado en la tarea: cualquier tarea renueva cualquier sesión |
 | Sesión del runtime del agente | Tabla `Conversations` | Sin estado en la tarea: cualquier tarea continúa una conversación |
+| Reserva de presupuesto de un turno en curso (D73) | Fila `TURN#…` de la tabla `Budgets`, escrita con la reserva | Sin estado en la tarea. Si la tarea muere con el turno abierto, la fila queda y la función conciliadora cierra la reserva; antes se quedaba colgada hasta fin de mes. D73 no añade cachés ni contadores en memoria |
 
 El balanceador no fija una persona a una tarea (`stickiness.enabled: false`). Desde el 2026-10-06 manda cada petición a la tarea con menos peticiones abiertas (`least_outstanding_requests`, D70 punto 9); un turno de chat abierto cuenta como una petición abierta de su tarea.

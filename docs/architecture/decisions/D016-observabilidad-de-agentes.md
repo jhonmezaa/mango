@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-29
 - **Precisa / reemplaza a:** —
-- **Precisada por:** —
+- **Precisada por:** [D73](D073-turno-cortado-nunca-cuesta-cero.md) (las trazas de `aws/spans` pasan a ser, además, la fuente del gasto de un turno cortado; el contenido sigue fuera)
 
 ## Decisión
 

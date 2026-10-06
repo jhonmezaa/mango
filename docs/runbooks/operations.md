@@ -73,6 +73,13 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `UninstallGuard-failed` | Durante una desinstalación, la función que borra agentes y packs falló todos sus reintentos | Errores del log group `/aws/lambda/Mango-<ns>-UninstallGuard` y el mensaje en la cola `Mango-<ns>-UninstallGuard-dlq` |
 | `PackDns-blocked` (stack `PackNetwork`) | El DNS Firewall de la red de packs rechazó al menos una consulta de un nombre que no es de sus endpoints ni de los que pide la máquina de AgentCore por su cuenta: **un nombre que nadie esperaba**. No se resolvió nada | El registro de consultas DNS de la red de packs (log group `Mango-<ns>-PackNetwork-dns-queries`): qué nombre fue. Después, qué packs se estaban usando a esa hora |
 
+**Presupuesto: turnos cortados** (D73)
+
+| Alarma | Qué significa | Qué mirar primero |
+|---|---|---|
+| `BudgetReconciler-reservation-charged` | Un turno de chat cuyo final no se supo se cobró por su reserva entera: no hubo traza legible de AgentCore 15 minutos después de su límite de tiempo. No debería pasar casi nunca | Los eventos `budget.reconciled` de Auditoría con `basis: reservation` y su `reason`. Después, el log group `aws/spans` |
+| `BudgetReconciler-failed` | La conciliación falló todos sus reintentos: las reservas de los turnos cortados siguen retenidas y nadie las recupera | Los errores del log group `/aws/lambda/Mango-<ns>-BudgetReconciler` y el mensaje en la cola `Mango-<ns>-BudgetReconciler-dlq` |
+
 **Cuando la aplicación va lenta** (`Api-slow`; D70, punto 9). Dos tareas sirven con margen unas 80 lecturas por segundo (unas 300 personas activas a la vez) y se saturan hacia las 200.
 
 - **Una tarea cerca del 100 % de CPU y mucho tráfico:** la instalación está en su techo. Si es un pico, se recupera sola en segundos al bajar la carga, sin reinicios. Si es el uso normal, la instalación necesita tareas más grandes: es un cambio de versión, avisa al proveedor.
@@ -124,10 +131,42 @@ fields @timestamp, query_name, query_type, srcaddr, firewall_domain_list_id
 - **Los números no coinciden con la alarma.** La métrica del firewall puede contar cerca del doble de consultas que filas tiene el registro, en todas las listas por igual. No falta nada distinto: son repeticiones de los mismos nombres.
 - **El registro es un dato sensible:** en un intento de fuga, los nombres pedidos son los datos. Lo lee quien pueda leer logs en la cuenta de Mango.
 
+### Turnos cortados y presupuesto
+
+Decisión: [D73](../architecture/decisions/D073-turno-cortado-nunca-cuesta-cero.md). Cuando `mango-api` no llega a saber cómo terminó un turno (el agente falló, se cortó la lectura o murió la tarea), cobra lo que ya había contado y **retiene el resto de la reserva**. La función `Mango-<ns>-BudgetReconciler` corre cada 5 minutos, lee en las trazas de AgentCore lo que el agente gastó, lo cobra y libera el resto.
+
+- **Qué ve la persona mientras tanto:** su gasto incluye lo retenido, así que durante unos minutos (entre 3,5 y 8,5 desde que empezó el turno, con el límite de tiempo por defecto) figura como gastado más de lo real. Con varios turnos cortados a la vez puede recibir «presupuesto agotado» hasta la siguiente pasada. El presupuesto del agente, que comparten todos sus usuarios, se ocupa igual.
+- **Dónde se ve:** en Auditoría, `agent.completed` con `settlement: pending` y, minutos después, `budget.reconciled` con lo cobrado, lo liberado y de dónde salió el dato (`basis`).
+- **Qué dice cada pasada:** una línea `budget_reconciler.summary` en el log de la función, con cuántos turnos cerró, cuántos esperan y cuántas consultas de trazas fallaron.
+
+**Cuando salta `BudgetReconciler-reservation-charged`.** A esa persona se le cobró la reserva entera (el peor caso del turno, unas decenas de veces lo normal) porque no apareció el dato real. El `reason` del evento dice cuál fue el caso:
+
+| `reason` | Qué pasó | Qué hacer |
+|---|---|---|
+| `no_trace` | No hay ninguna traza de la sesión de ese turno | Si es un caso aislado, nada: la telemetría no garantiza cada traza. Si se repite, comprobar que Transaction Search sigue activo y que el log group `aws/spans` recibe trazas de los harness |
+| `trace_unreadable` | Hay traza, terminó bien y no trae los tokens donde se esperan | Una versión del harness cambió los nombres de los atributos. Avisar al proveedor: se corrige en una versión (`functions/budget-reconciler`, `traces.py`) |
+| `trace_query_failed` | La consulta al log group falló en cada pasada hasta el plazo | El error en el log de la función. Lo habitual: el log group no existe, o la instalación tiene Transaction Search gestionado por fuera y las trazas no llegan a esta cuenta |
+
+- **No hay forma de corregir un cobro desde la aplicación.** Si hace falta devolverle margen a la persona, sube su límite del mes en Ajustes › Presupuestos por lo cobrado de más (`reserved_usd` menos lo que el turno costó de verdad, si se llega a saber). El presupuesto del agente no se puede editar todavía.
+- **Transaction Search gestionado por fuera** (`observability.transactionSearch: external`): la conciliación solo funciona si las trazas de los harness llegan al log group `aws/spans` de la cuenta de Mango. Si no llegan, todo turno cortado acaba cobrado por su reserva y esta alarma lo dirá.
+- **El permiso de lectura** de la función alcanza todo `aws/spans`, que es de toda la cuenta. En una cuenta dedicada a Mango no hay nada más ahí.
+
+**Cuando salta `BudgetReconciler-failed`.** La función corre cada 5 minutos: una pasada que falla la repite la siguiente, y nada se cobra ni se libera dos veces. La alarma queda en `ALARM` mientras haya mensajes en la cola.
+
+1. Mirar el error en el log group de la función. Un `AccessDenied` sobre la tabla `Mango-<ns>-Budgets` justo después de instalar la versión que trae D73 quiere decir que la condición por clave del rol no deja pasar la transacción: avisar al proveedor.
+2. Cuando las pasadas vuelvan a terminar bien (línea `budget_reconciler.summary`), vaciar la cola para que la alarma vuelva a `OK`: el mensaje es solo el evento programado, sin datos.
+
+   ```sh
+   aws sqs purge-queue --queue-url "$(aws sqs get-queue-url --queue-name Mango-<ns>-BudgetReconciler-dlq --query QueueUrl --output text)"
+   ```
+
+3. Las reservas retenidas mientras tanto se cierran solas en la primera pasada buena. Las que hayan pasado de su plazo se cobran por la reserva.
+
 ### Qué no tiene alarma
 
 - **Bloqueos de las reglas gestionadas del WAF** (borde y Cognito): en internet hay escaneos todos los días y cada uno bloquea peticiones. Una alarma sería ruido. Se ven en el tablero de WAF.
 - **Errores del registro** (`PreSignUp`): los provoca cualquiera que intente registrarse con un correo de otro dominio.
+- **Consultas de trazas que fallan o turnos que esperan su traza** (función conciliadora): están en las métricas `TraceQueryErrors` y `Waiting` de `Mango/BudgetReconciler`, sin umbral. Lo que avisa es el cobro por la reserva, que es su consecuencia.
 - **Cuánto tarda una respuesta del chat:** dura lo que tarda el modelo. `Api-slow` mide solo la espera hasta que `mango-api` empieza a responder.
 - **La CPU de `mango-api`:** está en el tablero (la de la tarea más cargada y la media), sin umbral. Lo que avisa es la lentitud.
 - **Fuera de `us-east-1`** no existirían `Edge-errors` ni `Edge-rate-limited`: CloudFront solo publica sus métricas en esa región. Hoy Mango solo se instala ahí. `Cognito-rate-limited` sí existiría: su web ACL es regional.
@@ -205,4 +244,4 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ### Cuánto cuesta
 
-Unos USD 6 al mes a precio de lista: USD 0,10 por cada métrica que lee una alarma (unas 33) y USD 3 por el tablero. Los tres primeros tableros de una cuenta son gratis. Con D72, cuatro métricas más (USD 0,40) y una regla más en el WAF del borde (USD 1). Con las dos alarmas de saturación (D71, punto 16), tres métricas más (USD 0,30).
+Unos USD 6 al mes a precio de lista: USD 0,10 por cada métrica que lee una alarma (unas 33) y USD 3 por el tablero. Los tres primeros tableros de una cuenta son gratis. Con D72, cuatro métricas más (USD 0,40) y una regla más en el WAF del borde (USD 1). Con las dos alarmas de saturación (D71, punto 16), tres métricas más (USD 0,30). Con D73, dos métricas de alarma más (USD 0,20) y cuatro métricas propias de la función conciliadora (USD 1,20).

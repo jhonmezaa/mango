@@ -365,18 +365,30 @@ def test_nothing_of_a_span_but_its_numbers_reaches_the_audit_event_or_the_log(
     assert "user-1" not in capsys.readouterr().out + caplog.text
 
 
-def test_metrics_are_embedded_in_one_log_line(lab: Lab, capsys: pytest.CaptureFixture[str]) -> None:
+def test_metrics_are_embedded_in_one_log_line(
+    lab: Lab, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
     lab.cut()
-    result = handle(lab.reconciler(), SETTINGS, EXPIRED, lambda: 200.0)
+    with caplog.at_level("INFO"):
+        result = handle(lab.reconciler(), SETTINGS, EXPIRED, lambda: 200.0)
     line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert line == metrics_record("lab", Counter(result), EXPIRED)
     (metrics,) = line["_aws"]["CloudWatchMetrics"]
     assert metrics["Namespace"] == "Mango/BudgetReconciler"
     assert metrics["Dimensions"] == [["Installation"]]
     assert line["Installation"] == "lab"
-    assert (line["Runs"], line["ChargedByReservation"], line["Closed"]) == (1, 1, 1)
-    # Reported even when zero, so the alarm sees a value every run.
-    assert {m["Name"] for m in metrics["Metrics"]} >= {"ChargedByTrace", "Waiting", "Conflicts"}
+    # Reported even when zero, so the alarm sees a value every run. Only these four are
+    # metrics (each is billed); the rest of the counts go to the summary line of the log.
+    assert [m["Name"] for m in metrics["Metrics"]] == [
+        "ChargedByReservation",
+        "ChargedByTrace",
+        "Waiting",
+        "TraceQueryErrors",
+    ]
+    assert (line["ChargedByReservation"], line["ChargedByTrace"]) == (1, 0)
+    summary = json.loads(caplog.records[-1].getMessage())
+    assert summary["event"] == "budget_reconciler.summary"
+    assert (summary["Closed"], summary["Conflicts"], summary["InvalidRecords"]) == (1, 0, 0)
 
 
 def test_a_record_of_another_shape_is_counted_and_never_acted_on(lab: Lab) -> None:

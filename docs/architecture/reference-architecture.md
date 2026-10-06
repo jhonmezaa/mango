@@ -38,6 +38,7 @@ Cada fila se comprobó ese día contra el código de `main`: el archivo citado e
 | RBAC L2 (Cedar en el Gateway) | Hecho por tool y por tipo de usuario; no por agente | `infra/lib/constructs/tools.ts` y `write-tools.ts`; `functions/provisioner/src/mango_provisioner/packs/gateway.py` | D33, D45 |
 | Identidad del usuario hasta el destino | Hecho: pagadora y cuentas miembro | `packages/py/mango-aws`; `infra/lib/constructs/member-access.ts` | D10, D37, D49, D51, D55 |
 | Presupuesto con reserva previa | **A medias:** solo por usuario y por agente | `apps/api/src/mango_api/budget.py` | §4.5 |
+| Un turno cortado nunca cuesta cero (comprobado el 2026-10-06) | Hecho, **sin ver en una instalación:** la reserva y el registro del turno van en una transacción; con final desconocido se cobra lo conocido y el resto queda retenido; una función cada 5 minutos concilia con las trazas de AgentCore y, sin traza 15 minutos después del límite del turno, cobra la reserva. La consulta de trazas sí se comprobó, solo lectura, contra una prueba de carga en una instalación de laboratorio | `packages/py/mango-core/src/mango_core/budget_turns.py`; `apps/api/src/mango_api/budget.py`; `functions/budget-reconciler`; `infra/lib/constructs/budget-reconciler.ts` | D73 (propuesta) |
 | Jerarquía de presupuestos instalación → área → equipo → usuario | No hecho | — | §4.5 |
 | Límite de presupuesto por agente editable | No hecho | La API solo edita los valores por defecto y el límite por usuario (`apps/api/src/mango_api/admin.py`) | D17, D22 |
 | Reconciliación del gasto contra CUR | No hecho | — | §4.5 |
@@ -603,7 +604,7 @@ mango/
 │   └── web/                  # React + Vite; hojas CSS propias y utilidades de Tailwind; e2e/ con Playwright
 ├── packages/
 │   ├── py/
-│   │   ├── mango-core/       # dominio compartido: contratos de agentes y aprobaciones, grupos, firma de invocación, identidad de packs, dominios de correo público
+│   │   ├── mango-core/       # dominio compartido: contratos de agentes y aprobaciones, grupos, firma de invocación, identidad de packs, dominios de correo público, turno pendiente de presupuesto (D73)
 │   │   ├── mango-aws/        # broker, session policies, SourceIdentity (D10)
 │   │   ├── mango-packs/      # formato de MCP packs: manifiesto, hash de tools, verificación de firma (D19)
 │   │   └── mango-pack-runtime/ # punto de entrada común de los packs de datos de cuentas; va dentro de su zip (D37)
@@ -611,7 +612,7 @@ mango/
 │       └── api-client/       # generado desde el OpenAPI de apps/api (no se edita a mano)
 ├── functions/                # Lambdas Python, un paquete por función
 │   ├── provisioner/  approval-executor/  gateway-interceptor/  admin-probe/
-│   └── pre-token/  pre-sign-up/  reconciler/
+│   └── pre-token/  pre-sign-up/  reconciler/  budget-reconciler/
 ├── connectors/               # tools detrás del Gateway: cost-explorer/, aws-budgets/
 ├── agents/                   # definiciones incluidas en la release (finops/agent.json)
 ├── policies/
@@ -777,6 +778,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D70 | `mango-api` corre con dos tareas y sus límites de tasa se cuentan una sola vez | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, punto 8, y tras una prueba de carga, puntos 9 a 11) | [D070-dos-tareas-y-limites-compartidos.md](decisions/D070-dos-tareas-y-limites-compartidos.md) |
 | D71 | La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 15, y tras una prueba de carga, punto 16) | [D071-alarmas-operativas-y-tablero.md](decisions/D071-alarmas-operativas-y-tablero.md) |
 | D72 | Los límites por IP alcanzan para una oficina detrás de una sola dirección, y `mango-api` renueva la sesión con la operación firmada | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 14, y tras una prueba de carga, punto 15) | [D072-limites-por-ip-para-una-oficina.md](decisions/D072-limites-por-ip-para-una-oficina.md) |
+| D73 | Un turno cortado nunca cuesta cero: la reserva se retiene y se concilia con las trazas de AgentCore | propuesta | 2026-10-06 | [D073-turno-cortado-nunca-cuesta-cero.md](decisions/D073-turno-cortado-nunca-cuesta-cero.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar y no hay otro plan aprobado.

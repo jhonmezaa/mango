@@ -50,6 +50,8 @@ logger.setLevel(logging.INFO)
 
 METRIC_NAMESPACE = "Mango/BudgetReconciler"
 METRIC_DIMENSION = "Installation"
+METRICS = ("ChargedByReservation", "ChargedByTrace", "Waiting", "TraceQueryErrors")
+"""What becomes a CloudWatch metric (each one is billed); every count is in the summary line."""
 MAX_TURNS_PER_RUN = 200
 """Turns closed per run, oldest first; the rest wait for the next one."""
 MIN_REMAINING_SECONDS = 30.0
@@ -162,7 +164,7 @@ class BudgetReconciler:
 
 def metrics_record(namespace: str, stats: Counter[str], now: int) -> dict[str, Any]:
     """Embedded metric format: CloudWatch Logs turns this log line into metrics."""
-    values = {"Runs": 1, **stats}
+    values = {name: stats[name] for name in METRICS}
     return {
         "_aws": {
             "Timestamp": now * 1000,
@@ -188,6 +190,7 @@ def handle(
     stats = reconciler.run(now, remaining_seconds)
     # Printed as-is (not through `logging`) so the `_aws` key stays at the root of the line.
     print(json.dumps(metrics_record(settings.namespace, stats, now)))
+    logger.info(json.dumps({"event": "budget_reconciler.summary", **stats}))
     return dict(stats)
 
 

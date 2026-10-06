@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D48](D048-desaprovisionamiento.md) (ajusta: los restos de un agente retirado alarman); [D58](D058-distribucion-para-clientes.md) (resuelve la suscripción pendiente con `AlertsEmail`)
+- **Precisada por:** [D48](D048-desaprovisionamiento.md) (ajusta: los restos de un agente retirado alarman); [D58](D058-distribucion-para-clientes.md) (resuelve la suscripción pendiente con `AlertsEmail`); [D73](D073-turno-cortado-nunca-cuesta-cero.md) (la reconciliación diaria sigue de solo lectura: la del presupuesto es otra función)
 
 ## Decisión
 
