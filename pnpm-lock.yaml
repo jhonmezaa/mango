@@ -170,6 +170,39 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
+  tests/install:
+    devDependencies:
+      '@eslint/js':
+        specifier: 10.0.1
+        version: 10.0.1(eslint@10.11.0(jiti@2.7.0))
+      '@playwright/test':
+        specifier: 1.63.0
+        version: 1.63.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.3
+      eslint:
+        specifier: 10.11.0
+        version: 10.11.0(jiti@2.7.0)
+      globals:
+        specifier: 17.12.0
+        version: 17.12.0
+      prettier:
+        specifier: 3.9.9
+        version: 3.9.9
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      typescript-eslint:
+        specifier: 8.71.0
+        version: 8.71.0(eslint@10.11.0(jiti@2.7.0))(typescript@6.0.3)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.2(@types/node@26.6.3)(jsdom@30.1.1)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
+
 packages:
 
   '@adobe/css-tools@4.5.0':

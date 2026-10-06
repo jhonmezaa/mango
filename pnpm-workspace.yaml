@@ -2,6 +2,7 @@ packages:
   - "apps/web"
   - "infra"
   - "packages/ts/*"
+  - "tests/install"
 
 # Versions shared across workspace packages; reference them as "catalog:".
 # TypeScript stays on 6.0.x: typescript-eslint supports `typescript <6.1.0`.

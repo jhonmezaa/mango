@@ -1,0 +1,20 @@
+{
+  "baseUrl": "https://app.example.com",
+  "secretsFile": "./secrets.json",
+  "outputDir": "./install-check",
+  "release": "v0.1.0-g0000000",
+  "users": {
+    "admin": { "email": "admin-prueba@empresa.com" },
+    "secondAdmin": { "email": "admin2-prueba@empresa.com" },
+    "creator": { "email": "creador-prueba@empresa.com" },
+    "areaMember": { "email": "area-prueba@empresa.com" },
+    "plain": { "email": "nombre@empresa.com" }
+  },
+  "chat": {
+    "role": "areaMember",
+    "agent": "FinOps",
+    "question": "¿Cuánto gastamos ayer en total? Responde en una línea."
+  },
+  "people": { "emailDomain": "pruebas.empresa.invalid" },
+  "aws": { "profile": "mango" }
+}
