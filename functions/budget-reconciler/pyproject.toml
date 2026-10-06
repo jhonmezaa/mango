@@ -1,0 +1,16 @@
+[project]
+name = "mango-budget-reconciler"
+version = "0.1.0"
+description = "Scheduled Lambda that closes the budget reservation of chat turns whose end mango-api never knew (D73)"
+requires-python = ">=3.13,<3.14"
+dependencies = ["boto3>=1.43.104", "mango-core"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_budget_reconciler"]

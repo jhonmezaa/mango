@@ -8,6 +8,7 @@ members = [
     "mango-api",
     "mango-approval-executor",
     "mango-aws",
+    "mango-budget-reconciler",
     "mango-core",
     "mango-cost-explorer",
     "mango-gateway-interceptor",
@@ -887,6 +888,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "boto3", specifier = ">=1.40" }]
+
+[[package]]
+name = "mango-budget-reconciler"
+version = "0.1.0"
+source = { editable = "functions/budget-reconciler" }
+dependencies = [
+    { name = "boto3" },
+    { name = "mango-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.104" },
+    { name = "mango-core", editable = "packages/py/mango-core" },
+]
 
 [[package]]
 name = "mango-core"

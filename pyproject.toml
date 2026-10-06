@@ -54,7 +54,7 @@ python_version = "3.13"
 files = ["packages/py", "connectors", "functions", "apps/api/src", "tests/eval", "deployment/pack-builder"]
 exclude = ["/tests/"]
 explicit_package_bases = true
-mypy_path = ["packages/py/mango-aws/src", "packages/py/mango-core/src", "packages/py/mango-packs/src", "packages/py/mango-pack-runtime/src", "deployment/pack-builder/src", "connectors/cost-explorer/src", "functions/gateway-interceptor/src", "functions/pre-token/src", "functions/pre-sign-up/src", "functions/admin-probe/src", "functions/approval-executor/src", "functions/provisioner/src", "functions/reconciler/src", "apps/api/src", "tests/eval"]
+mypy_path = ["packages/py/mango-aws/src", "packages/py/mango-core/src", "packages/py/mango-packs/src", "packages/py/mango-pack-runtime/src", "deployment/pack-builder/src", "connectors/cost-explorer/src", "functions/gateway-interceptor/src", "functions/pre-token/src", "functions/pre-sign-up/src", "functions/admin-probe/src", "functions/approval-executor/src", "functions/provisioner/src", "functions/reconciler/src", "functions/budget-reconciler/src", "apps/api/src", "tests/eval"]
 
 [[tool.mypy.overrides]]
 # Only installed for live runs of tests/eval (uv run --with ...), not in the workspace.

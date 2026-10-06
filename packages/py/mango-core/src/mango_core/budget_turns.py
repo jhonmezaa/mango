@@ -126,6 +126,11 @@ class Outcome:
     usage: TokenUsage = TokenUsage()
     invocations: int = 0
     """Invocations of the agent the traces showed for this turn."""
+    known: Decimal = _ZERO
+    """What mango-api had already charged when the turn was closed (set by ``close``)."""
+    ended: str = ""
+    """State the turn was closed from (set by ``close``): ``held``, mango-api stopped reading
+    the agent; ``open``, mango-api never said how the turn ended."""
 
 
 @dataclass(frozen=True)
@@ -303,6 +308,8 @@ def _outcome_of(item: Mapping[str, Any]) -> Outcome | None:
         reason=item.get("reason", {}).get("S", ""),
         usage=_usage_of(item, prefix="final_"),
         invocations=int(item["invocations"]["N"]),
+        known=Decimal(item["known"]["N"]),
+        ended=item["ended"]["S"],
     )
 
 
@@ -516,6 +523,7 @@ def close(
 ) -> PendingTurn | None:
     """Reconciler: charge the final cost, release what was retained and mark the record
     ``settled``. None if the turn changed since it was read (someone else closed it)."""
+    outcome = replace(outcome, known=turn.charged, ended=turn.state)
     final = final_cost(turn, outcome)
     delta = final - turn.charged
     items = [
@@ -526,6 +534,7 @@ def close(
                 "UpdateExpression": (
                     "SET #state = :settled, charged = :final, retained = :zero, "
                     "basis = :basis, reason = :reason, invocations = :invocations, "
+                    "known = :charged, ended = :state, "
                     "final_input_tokens = :final_input_tokens, "
                     "final_output_tokens = :final_output_tokens, "
                     "final_cache_read_tokens = :final_cache_read_tokens, "
