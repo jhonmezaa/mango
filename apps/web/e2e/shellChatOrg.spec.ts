@@ -24,6 +24,18 @@ async function pushRoute(page: Page, path: string): Promise<void> {
   );
 }
 
+/**
+ * Resizes the window and waits for the shell of that width. The sidebar becomes a drawer when
+ * React hears the `change` event of a media query, which arrives after `setViewportSize`
+ * returns: a measurement taken at once may still see the sidebar taking its width.
+ */
+async function resize(page: Page, size: { width: number; height: number }): Promise<void> {
+  await page.setViewportSize(size);
+  const app = page.locator('.app');
+  if (size.width <= 900) await expect(app).toHaveClass(/\bapp-mobile\b/);
+  else await expect(app).not.toHaveClass(/\bapp-mobile\b/);
+}
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Shell, chat and Org Chart', () => {
@@ -124,31 +136,32 @@ test.describe('Shell, chat and Org Chart', () => {
   });
 
   test('at 760px and below the panel goes under the chart and the toolbar wraps', async () => {
-    await page.setViewportSize({ width: 420, height: 900 });
+    await resize(page, { width: 420, height: 900 });
     const chart = page.getByRole('region', { name: 'Organigrama' });
     const panel = page.getByRole('complementary', { name: 'Detalle de Platform Admin' });
     await expect(panel).toBeVisible();
-    const chartBox = await chart.boundingBox();
-    const panelBox = await panel.boundingBox();
-    expect(chartBox).not.toBeNull();
-    expect(panelBox).not.toBeNull();
-    if (!chartBox || !panelBox) return;
-    expect(panelBox.y).toBeGreaterThanOrEqual(chartBox.y + chartBox.height);
-    expect(Math.round(panelBox.width)).toBe(Math.round(chartBox.width));
-    // Nothing overflows the viewport: the toolbar wraps.
-    const overflow = await page.evaluate<number>(
-      'document.documentElement.scrollWidth - document.documentElement.clientWidth',
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
-    const tools = await page.locator('.oc-tools').boundingBox();
-    expect(tools && tools.x + tools.width).toBeLessThanOrEqual(420);
-    await page.setViewportSize({ width: 1280, height: 720 });
+    // The boxes are read one by one: retried as a whole, so that they belong to one layout.
+    await expect(async () => {
+      const chartBox = await chart.boundingBox();
+      const panelBox = await panel.boundingBox();
+      if (!chartBox || !panelBox) throw new Error('the chart or the panel has no box');
+      expect(panelBox.y).toBeGreaterThanOrEqual(chartBox.y + chartBox.height);
+      expect(Math.round(panelBox.width)).toBe(Math.round(chartBox.width));
+      // Nothing overflows the viewport: the toolbar wraps.
+      const overflow = await page.evaluate<number>(
+        'document.documentElement.scrollWidth - document.documentElement.clientWidth',
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+      const tools = await page.locator('.oc-tools').boundingBox();
+      expect(tools && tools.x + tools.width).toBeLessThanOrEqual(420);
+    }).toPass({ timeout: 5_000 });
+    await resize(page, { width: 1280, height: 720 });
   });
 
   // Design `.toast-stack`: the toasts go at the top right, 8px under the top bar, at every width.
   for (const width of [420, 1280]) {
     test(`at ${String(width)}px the toasts go under the top bar, clear of the composer and «Enviar»`, async () => {
-      await page.setViewportSize({ width, height: 900 });
+      await resize(page, { width, height: 900 });
       await pushRoute(page, '/');
       // The toast of the width before this one is gone first.
       await expect(page.locator('.g-toast-item')).toHaveCount(0, { timeout: 10_000 });
@@ -190,7 +203,7 @@ test.describe('Shell, chat and Org Chart', () => {
       // The stack takes no clicks outside its toasts.
       await expect(page.locator('.g-toasts')).toHaveCSS('pointer-events', 'none');
       await expect(toast).toHaveCSS('pointer-events', 'auto');
-      await page.setViewportSize({ width: 1280, height: 720 });
+      await resize(page, { width: 1280, height: 720 });
     });
   }
 
