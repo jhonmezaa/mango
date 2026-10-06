@@ -27,6 +27,8 @@ python3 deployment/verify-release.py --bucket <bucket de plantillas> --label <et
 
 Comprueba que el manifiesto está firmado con la llave del proveedor (`packs/signing-key.pub`) y que cada plantilla es la que el manifiesto nombra. Si responde `NOT VERIFIED`, no instales.
 
+Las plantillas, el manifiesto y su firma están en `mango/<etiqueta>/` del bucket de plantillas. Los archivos que las plantillas leen (código de las Lambdas, la web, los packs) están en `mango/assets/` del bucket regional, con el mismo nombre en todas las versiones mientras su contenido no cambie (D69); el manifiesto firmado da el sha256 de cada uno.
+
 ## 2. Instalar
 
 Cuatro stacks, cada uno con `CreateStack` sobre `https://<bucket>.s3.amazonaws.com/mango/<etiqueta>/<Stack>.template.json`. El namespace (3 a 8 letras minúsculas o dígitos) es el mismo en los tres y va en todos los nombres: `Mango-<ns>-…`.
@@ -83,7 +85,22 @@ Parámetros opcionales de `Core`:
 
 ## 4. Actualizar
 
-`UpdateStack` de `Core` con la URL de la versión nueva y los parámetros anteriores (`UsePreviousValue`). `PackNetwork` antes que `Core` cuando la versión añade un pack, y después cuando lo quita. `Payer` y `OrgAccess` solo si las notas de la versión lo piden. Siempre a una etiqueta concreta. Verifica la versión nueva antes (paso 1).
+`UpdateStack` de `Core` con la URL de la versión nueva y los parámetros anteriores (`UsePreviousValue`), siempre con un change set y a una etiqueta concreta. `PackNetwork` antes que `Core` cuando la versión añade un pack, y después cuando lo quita. Verifica la versión nueva antes (paso 1).
+
+**Qué stacks hay que actualizar.** La verificación imprime el sha256 de cada plantilla. Un stack cuya plantilla tiene el mismo sha256 en la versión instalada y en la nueva no cambió: no se actualiza (CloudFormation respondería `didn't contain changes`). Es lo habitual en `Payer`, `OrgAccess` y `PackNetwork`. La descripción de un stack no nombra la versión (D69): la que corre `Core` se ve en Ajustes › General › Instalación.
+
+**Qué esperar en el change set de `Core`.** Solo lo que la versión cambió:
+
+| Entrada | Cuándo aparece |
+|---|---|
+| Task definition de `mango-api` (reemplazo) y su servicio de ECS | Siempre: lleva la etiqueta de la versión. Es un despliegue rodante de la API |
+| Los dos `Custom::CDKBucketDeployment` de la web | Si cambió la web |
+| Una Lambda (`Code.S3Key`) y los recursos que leen su ARN (aparecen como reevaluación, sin cambio propio) | Si cambió ese paquete o una de sus dependencias |
+| Un `Custom::CDKBucketDeployment` de un pack | Si cambió la versión de ese pack |
+
+Para a revisar si aparece un `Remove`, un `Add` que las notas no explican, un `Replacement: True` fuera de la task definition y de las capas de Lambda, o un cambio directo en un recurso con datos (tablas, directorio de usuarios, buckets).
+
+La primera actualización desde una versión anterior a D69 (publicada hasta el 2026-10-05) lista además todas las Lambdas, las capas y los `BucketDeployment`, una última vez: sus archivos cambian de ruta.
 
 ## 5. Desinstalar
 

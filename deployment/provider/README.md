@@ -17,13 +17,14 @@ Diseño: `docs/specs/customer-distribution.md` §5 y §6. Modelo de amenazas: `d
 | Llave de firma | `alias/mango-provider-signing` | `ECC_NIST_P256`, `SIGN_VERIFY`. Firma declaraciones de packs y manifiestos de release |
 | Proveedor OIDC | `token.actions.githubusercontent.com` | Uno por cuenta: si la cuenta ya tiene uno, el stack no se crea |
 | Rol | `Mango-provider-pack-signing` | Lo asume el job `sign` de `packs.yml` (entorno `pack-signing`). Solo firma |
-| Rol | `Mango-provider-release-publisher` | Lo asume el job de publicación (entorno `release`). Firma el manifiesto, escribe en `mango/*` y sube la imagen |
+| Rol | `Mango-provider-release-publisher` | Lo asume el job de publicación (entorno `release`). Firma el manifiesto, escribe en `mango/*`, lee `mango/assets/*` del bucket regional y sube la imagen |
 | Alertas | Topic `Mango-provider-alerts` y cinco reglas de EventBridge | Firma por otro principal, y cambios en la llave, los roles, los buckets o el repositorio |
 
 ## Quién puede qué
 
 - **Leer** (`s3:GetObject` en `mango/*`, pull de la imagen): cualquier principal de las organizaciones de `CustomerOrganizationIds` (`aws:PrincipalOrgID`). Sin listado. Las lecturas las hacen quien llama a `CreateStack`, la identidad con la que Lambda copia su código y los roles de la cuenta del cliente.
-- **Escribir:** solo el rol de publicación, solo bajo `mango/` y solo claves nuevas: la política de los buckets niega todo `PutObject` sin `If-None-Match`. Con `aws s3 cp` hace falta `--no-overwrite`. Ni siquiera un administrador de la cuenta escribe sin cambiar antes la política, y ese cambio dispara una alerta.
+- **Escribir:** solo el rol de publicación, solo bajo `mango/` y solo claves nuevas: la política de los buckets niega todo `PutObject` sin `If-None-Match`. Ni siquiera un administrador de la cuenta escribe sin cambiar antes la política, y ese cambio dispara una alerta.
+- **Qué va en cada clave (D69):** plantillas, manifiesto y firma en `mango/<etiqueta>/`; los assets de todas las releases en `mango/assets/<hash>.zip`, con el nombre sacado de su contenido. `dist.py` sube cada asset con `If-None-Match` y su sha256; si la clave ya existe (412), no la da por buena: lee el sha256 que guarda S3 (o el objeto, si no lo guarda) y termina la release si no es el que construyó. Para eso el rol de publicación lee `mango/assets/*` del bucket regional, y nada más.
 - **Borrar:** el rol de publicación no puede. En una cuenta definitiva la política niega además `DeleteObject` y `DeleteObjectVersion` a todos, y los buckets llevan Object Lock (GOVERNANCE, 365 días).
 - **Firmar:** solo los dos roles, con `ECDSA_SHA_256` sobre un digest. La cuenta administra la llave, pero tiene negados `kms:Sign` y `kms:CreateGrant`.
 
@@ -43,6 +44,8 @@ deployment/provider/deploy.sh 'repo:<owner>@<owner id>/<repo>@<repo id>' 'o-xxxx
 - `MANGO_PROVIDER_TEMPORARY=1`: para una cuenta temporal. Nada se retiene al borrar el stack y los buckets no llevan Object Lock (no se puede quitar después).
 
 Las alertas leen eventos de administración de CloudTrail: la cuenta necesita un trail que los registre.
+
+**Al pasar a una versión con D69 (2026-10-05):** repetir `deploy.sh` antes de publicar. El rol de publicación gana `s3:GetObject` sobre `mango/assets/*` del bucket regional; sin él, la primera release que reutilice un asset falla al compararlo. El cambio dispara la alerta de cambio de rol, como debe.
 
 ## Después de instalar
 

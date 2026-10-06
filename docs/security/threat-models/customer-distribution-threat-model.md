@@ -170,13 +170,16 @@ flowchart LR
 | TM-D16 | Atacante en la red de quien instala o enlace falso | La persona sigue un «Launch stack» que no es el de las notas | `TemplateURL` de un bucket del atacante con nombre parecido | Instalación de una plantilla maliciosa | Plantillas | Ninguno | Enlaces por definir | URL solo en las notas del release del repo; `verify-release.sh`; nombre de bucket publicado en el runbook; `Rules` no puede evitarlo: es educación y verificación | Revisión del `TemplateURL` en el evento `CreateStack` | Baja | Alta | medium |
 | TM-D17 | Secreto en la release | Un valor sensible acaba en plantilla, asset o imagen | Lo leen todos los clientes | Fuga | Secretos | gitleaks en CI; regla «secretos solo en Secrets Manager»; `config.json` de la SPA con esquema estricto (`edge.ts`) | Las plantillas publicadas no se escanean | gitleaks sobre `dist/release/`; test: ninguna plantilla contiene ids de cuenta de 12 dígitos salvo el del proveedor, ni correos | Fallo del job de release | Baja | Media | low |
 | TM-D19 | Cualquiera con cuenta de GitHub | El repositorio es público (D59): los logs de `release.yml` y de `packs.yml` se pueden leer | Lee el id de la cuenta del proveedor, el ARN del rol de publicación o el nombre del bucket de releases | Reconocimiento de la cuenta que distribuye a todos los clientes. No da acceso por sí solo (trust por `sub` y entorno; lectura del bucket por organización) | Identificadores de la cuenta del proveedor | Desde el 2026-10-05 (D59 (6)): rol, bucket y cuenta son secretos del entorno `release`; Actions enmascara cada aparición exacta, también dentro de una URL, del nombre del bucket regional o del registro de ECR; `mask-aws-account-id` en la action de credenciales; test que impide leerlos de `vars` (`test_workflows.py`) | Una forma transformada del valor (base64, otra codificación) no se enmascara. El manifiesto publicado nombra la cuenta y el bucket: lo leen los clientes, es necesario para instalar | No imprimir valores codificados en pasos nuevos; revisar los logs de la primera ejecución real de `release.yml` | Buscar el id de la cuenta y el nombre del bucket en los logs tras cada cambio del workflow | Baja | Baja | low |
+| TM-D20 | Release anterior (fallida, de laboratorio o publicada con el rol robado) | Los assets de todas las releases comparten el prefijo `mango/assets/` y una clave no se sobrescribe (D69) | Deja bajo el nombre de un asset bytes que no son los que la release siguiente construye; la siguiente da la clave por buena | Una release con manifiesto firmado instalaría código que no construyó | Assets | El nombre sale del contenido (`assetHashType: OUTPUT`, bundle igual en todo checkout); `dist.py` sube con `If-None-Match` y, si la clave existe, compara su sha256 con el construido y **termina la release** si difiere, antes de subir plantillas o manifiesto (`put_asset`, tests en `deployment/tests/test_dist.py`); S3 comprueba el cuerpo contra el sha256 declarado al subir; el manifiesto firmado sigue nombrando el sha256 de cada asset | Quien tenga el rol de publicación puede ocupar el nombre de un asset futuro que conozca (el repositorio es público: los nombres se pueden calcular) y bloquear esa release. No instala nada: la release falla. `verify-release.py --bucket` no descarga los assets | Si una clave queda ocupada con otros bytes: publicar con otra sal de nombres (`-c @aws-cdk/core:assetHashSalt=<valor>` al sintetizar), que cambia todos los nombres una vez. Verificación de los assets publicados contra el manifiesto, desde el cliente | El mensaje de `dist.py` nombra la clave y los dos sha256; inventario del bucket de assets comparado con los manifiestos | Baja | Media (disponibilidad de la publicación; la integridad no baja) | medium |
+| TM-D21 | Sesión robada del rol de publicación | El rol lee `mango/assets/*` del bucket regional (`s3:GetObject`, D69) | Descarga assets publicados | Ninguno nuevo: son los archivos que el propio rol sube y que leen las organizaciones cliente | Assets | Solo ese prefijo de ese bucket; sin listado; sin lectura de plantillas ni manifiestos, que se escriben una vez y no se comparan (`provider-stack.ts`, test en `provider.test.ts`) | Ninguno relevante | Ninguna | Access logs del bucket | Baja | Baja | low |
+| TM-D22 | Quien opera una instalación (error) | La descripción de los stacks ya no nombra la release (D69) | Cree que `Payer` u `OrgAccess` corren una versión que no es | Una actualización de permisos que no se aplica, o una que se aplica sin hacer falta | Trusts entre cuentas | El manifiesto firmado da el sha256 de cada plantilla: dos releases con el mismo sha256 de `Payer` no necesitan actualizarlo; `Core` muestra la etiqueta en Ajustes › Instalación (`MANGO_RELEASE`); `MemberTemplateSha256` en `OrgAccess` | No hay un dato en el stack de la cuenta de gestión que diga su release | Runbook: comparar los sha256 de las plantillas entre el manifiesto instalado y el nuevo. Antes la descripción mentía (mostraba etiquetas viejas porque CloudFormation no acepta un cambio solo de descripción): no se pierde un control | Change set vacío al actualizar | Baja | Baja | low |
 
 ## Criticality calibration
 
 - **Critical:** un tercero consigue que una release oficial lleve código o IAM suyos (TM-D1); o lee o escribe en la cuenta de gestión de un cliente a través de un trust mal puesto por la plantilla.
 - **High:** alterar artefactos ya publicados (TM-D3), aceptar firmas de otra identidad (TM-D5), borrar una instalación en producción por una actualización (TM-D13), build envenenado (TM-D2).
-- **Medium:** errores de parámetros que abren confianza acotada por otras condiciones (TM-D10, TM-D11), caída por dependencia del proveedor (TM-D4), borrado por alguien del cliente con permisos de CloudFormation (TM-D15).
-- **Low:** metadatos públicos del repo (TM-D9), identificadores del proveedor en logs públicos (TM-D19), lectura del código por clientes legítimos (TM-D8), registro abierto sin rol (TM-D12).
+- **Medium:** una clave de asset ocupada que bloquea una publicación (TM-D20); errores de parámetros que abren confianza acotada por otras condiciones (TM-D10, TM-D11), caída por dependencia del proveedor (TM-D4), borrado por alguien del cliente con permisos de CloudFormation (TM-D15).
+- **Low:** lectura de assets por el rol que los publica (TM-D21), stacks sin etiqueta en la descripción (TM-D22), metadatos públicos del repo (TM-D9), identificadores del proveedor en logs públicos (TM-D19), lectura del código por clientes legítimos (TM-D8), registro abierto sin rol (TM-D12).
 
 ## Focus paths for security review
 
@@ -193,7 +196,9 @@ flowchart LR
 | `functions/pre-sign-up` | Debe rechazar dominios públicos por sí misma | TM-D12 |
 | `infra/lib/constructs/deprovisioner.ts` y el nuevo `UninstallGuard` | Permisos de borrado y condición de `DELETE_IN_PROGRESS` | TM-D13, TM-D14 |
 | `deployment/purge-retained.sh` (nuevo) | Borra datos y evidencia | TM-D15 |
-| `apps/api/Dockerfile` | Imagen base por tag | TM-D2 |
+| `apps/api/Dockerfile` | Imágenes base por digest y fecha fija de los archivos | TM-D2 |
+| `deployment/dist.py` (`put_asset`, `zip_directory`) y `deployment/bundle-python.sh` | Una clave de asset que ya existe se compara, no se supone; el bundle y el zip no dependen del checkout | TM-D20 |
+| `infra/lib/release-target.ts`, `infra/lib/constructs/python-function.ts` | Prefijo de los assets y de qué sale su nombre | TM-D20 |
 
 ## Cuenta del proveedor: construida y revisada (2026-10-03)
 
@@ -216,6 +221,23 @@ Riesgos que quedan:
 
 Comprobado con lecturas y escrituras reales: `deployment/provider/README.md` › «Comprobado».
 
+## Assets compartidos entre releases e imagen reproducible: construido y revisado (2026-10-05)
+
+D69. Los assets de todas las releases viven en `mango/assets/<hash>.zip` del bucket regional; las plantillas, el manifiesto y su firma siguen en `mango/<etiqueta>/` del bucket de plantillas.
+
+**Qué cambia al compartir el prefijo, y qué no:**
+
+- **No cambia quién lee ni quién escribe.** Las políticas de los buckets ya cubrían `mango/*`: no se tocaron. Ninguna etiqueta puede llamarse `assets` (las etiquetas empiezan por `v`).
+- **No cambia la garantía del manifiesto:** sigue firmado y sigue nombrando clave, sha256 y tamaño de cada asset; `verify-release.py` falla igual ante cualquier diferencia.
+- **Cambia que una clave ya publicada se reutiliza** (TM-D20). Antes cada release escribía todas sus claves; ahora la mayoría ya existen. Por eso `dist.py` dejó de omitir en silencio (`aws s3 cp --no-overwrite`): compara el sha256 y falla. El nombre de un asset garantiza su contenido solo desde D69; antes salía del directorio fuente y cinco assets conservaron el nombre con otros bytes entre dos releases.
+- **Cambia el permiso del rol de publicación:** `s3:GetObject` sobre `mango/assets/*` del bucket regional (TM-D21). **Aprobado por el usuario el 2026-10-05.** Es más estrecho que lo aprobado (`mango/*` de los dos buckets): las plantillas y el manifiesto no se comparan, se escriben una vez.
+- **Retirar una release ya no es borrar su prefijo:** sus assets pueden ser los de otras. En la cuenta definitiva nadie borra (Object Lock y deny); en una temporal, borrar por etiqueta solo quita plantillas y manifiesto.
+- **El zip depende de la herramienta que comprime.** El mismo bundle comprimido con otra versión de zlib daría otros bytes bajo el mismo nombre: la release fallaría (TM-D20, disponibilidad). Las versiones de Python y uv están fijadas en `mise.toml`.
+
+**TM-D2, imagen:** las imágenes base van por digest (`apps/api/Dockerfile`) y la imagen se construye con una fecha fija: las mismas fuentes dan el mismo digest (tres builds sin caché en dos checkouts, 2026-10-05). Un tercero puede reconstruirla y comparar. **No se reutiliza una imagen del registro por un tag derivado de sus entradas:** quien tuviera el rol de publicación una vez podría dejar una imagen bajo el tag de unas entradas futuras, y una release posterior, firmada, la nombraría. Se construye siempre; si nada cambió, el digest es el mismo y el push solo añade el tag de la etiqueta.
+
+Revisión del diff (`security-audit`, modo guía): ver el informe de la tarea; hallazgos y ajustes en la descripción del PR.
+
 ## Desinstalación: construida y revisada (2026-10-03)
 
 `UninstallGuard` (`infra/lib/constructs/uninstall-guard.ts`, `functions/provisioner/src/mango_provisioner/uninstall.py`) y el stack `Mango-<ns>-PackNetwork`.
@@ -237,7 +259,7 @@ Las prioridades reflejan las respuestas del usuario del 2026-10-03 (ver «Scope 
 
 ## Quality check
 
-- Puntos de entrada cubiertos: workflows (TM-D1, D2, D5), buckets y ECR (D3, D4, D8), parámetros (D10–D12), enlace de instalación (D16), verificación (D5–D7), guard y purga (D13–D15), contenido publicado (D17).
+- Puntos de entrada cubiertos: workflows (TM-D1, D2, D5), buckets y ECR (D3, D4, D8), parámetros (D10–D12), enlace de instalación (D16), verificación (D5–D7), guard y purga (D13–D15), contenido publicado (D17), assets compartidos entre releases (D20–D22).
 - Cada frontera aparece en al menos una amenaza: GitHub → proveedor (publicación y firma), proveedor → cliente, persona → CloudFormation, CloudFormation → guard, release → provisioner.
 - CI y publicación separados del runtime: ningún endpoint de la aplicación participa.
 - Supuestos explícitos; las preguntas abiertas las respondió el usuario el 2026-10-03.

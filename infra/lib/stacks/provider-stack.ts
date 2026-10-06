@@ -294,7 +294,7 @@ export class ProviderStack extends Stack {
     // Lambda only loads code from a bucket of its own Region: assets are regional (ISB pattern).
     const assets = releaseBucket("Assets", `${base}-${Aws.REGION}`, "assets/");
     // An asset key that already exists is read back and compared with what was built, never
-    // assumed (D69, TM-D17): the publisher reads assets, and nothing else of the store.
+    // assumed (D69, TM-D20): the publisher reads assets, and nothing else of the store.
     const sharedAssets = assets.arnForObjects(`${RELEASE_ASSETS_PREFIX}*`);
     publisher.addToPolicy(
       new iam.PolicyStatement({ sid: "CompareAssets", actions: ["s3:GetObject"], resources: [sharedAssets] }),

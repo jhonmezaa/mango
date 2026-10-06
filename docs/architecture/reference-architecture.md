@@ -356,7 +356,7 @@ Ninguna de las dos herramientas es bloqueante. Además, los harness de cada agen
 
 **Plantillas pre-sintetizadas desde el MVP.** No hay CodeBuild ni `cdk deploy` en la cuenta del cliente.
 - **Synthesizer propio** (subclase de `DefaultStackSynthesizer`):
-  - Assets en buckets **regionales** del proveedor: `s3://<mango-releases>-<region>/mango/<version>/`.
+  - Assets en buckets **regionales** del proveedor: `s3://<mango-releases>-<region>/mango/assets/`, con el nombre sacado de su contenido y compartidos entre versiones (D69); las plantillas y el manifiesto, en `mango/<version>/` del bucket global.
   - Plantillas principales en un bucket global.
   - Todo **inmutable por versión**.
   - `generateBootstrapVersionRule: false`, así que **no hace falta bootstrap de CDK** en el cliente.
@@ -536,7 +536,7 @@ flowchart LR
 - **Futuro a evaluar:** licencias por feature (archivo firmado, verificado localmente, sin "llamar a casa"), con todos los clientes en una versión reciente, en lugar de cobrar por versión.
 
 **Mecánica de actualización (igual para ambos canales, sin CodeBuild):**
-1. **Build una sola vez por release, en el CI de Mango** (GitHub Actions, en cuentas de Mango): plantillas, Lambdas empaquetadas e imágenes. Se publica todo inmutable en `s3://<mango-releases>-<region>/mango/vX.Y.Z/` y en ECR, con imágenes referenciadas por digest.
+1. **Build una sola vez por release, en el CI de Mango** (GitHub Actions, en cuentas de Mango): plantillas, Lambdas empaquetadas e imágenes. Se publica todo inmutable en los buckets del proveedor (plantillas y manifiesto en `mango/vX.Y.Z/`, assets en `mango/assets/`, D69) y en ECR, con imágenes referenciadas por digest.
 2. **En la cuenta del cliente solo se ejecuta `UpdateStack`** con la URL de la plantilla de la versión destino.
    - Lo hace **el cliente**, desde la consola o la CLI (D58 (2); `docs/runbooks/install.md`, paso 4). D9 decía «el equipo de Mango vía IdC»: ese acceso depende de §4.11, que no está construido.
    - Con la opción "Rollback all stack resources".
@@ -771,6 +771,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D66 | La lista de cambios de personas dice quién ya no está en el directorio | vigente | 2026-10-04 | [D066-cambios-de-personas-fuera-del-directorio.md](decisions/D066-cambios-de-personas-fuera-del-directorio.md) |
 | D67 | Las lecturas del directorio se leen en palabras en Auditoría, y un cambio de quien ya no está no se aprueba | vigente | 2026-10-05 | [D067-lecturas-del-directorio-en-auditoria.md](decisions/D067-lecturas-del-directorio-en-auditoria.md) |
 | D68 | El filtro de la búsqueda de personas se nombra en Auditoría, la pantalla espera al otro cambio de administradores y «Respuesta completa» solo avisa a quien no ve el final | vigente | 2026-10-05 | [D068-filtro-de-busqueda-y-espera-de-cambios.md](decisions/D068-filtro-de-busqueda-y-espera-de-cambios.md) |
+| D69 | Una actualización toca solo lo que cambió: assets por contenido bajo un prefijo único, sin etiqueta en las descripciones e imagen reproducible | propuesta | 2026-10-05 | [D069-assets-por-contenido-y-prefijo-unico.md](decisions/D069-assets-por-contenido-y-prefijo-unico.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar y no hay otro plan aprobado.

@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-03
 - **Precisa / reemplaza a:** precisa [D8](D008-distribucion.md); ajusta §4.9; precisa [D25](D025-recursos-creados-en-runtime.md), [D34](D034-guardrail-y-agentes-de-la-release.md), [D36](D036-artefacto-y-firma-de-packs.md), [D48](D048-desaprovisionamiento.md) y [D54](D054-egress-de-packs.md); retira las excepciones de laboratorio de [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md) y [D28](D028-implementacion-del-login-propio.md). En el texto: el punto (2) reemplaza quién ejecuta la actualización en [D9](D009-versionado-y-upgrades.md) y el parámetro `AlertsEmail` del punto (1) resuelve la suscripción pendiente de [D41](D041-alertas-y-reconciliacion.md)
-- **Precisada por:** [D59](D059-repositorio-publico.md) (precisa el punto 4); [D60](D060-gestion-de-personas.md) (precisa)
+- **Precisada por:** [D59](D059-repositorio-publico.md) (precisa el punto 4); [D60](D060-gestion-de-personas.md) (precisa); [D69](D069-assets-por-contenido-y-prefijo-unico.md) (precisa dónde van los assets y qué nombra la release; propuesta)
 - **Tema en el registro original:** Distribución para clientes (precisa [D8](D008-distribucion.md); ajusta §4.9; precisa [D25](D025-recursos-creados-en-runtime.md), [D34](D034-guardrail-y-agentes-de-la-release.md), [D36](D036-artefacto-y-firma-de-packs.md), [D48](D048-desaprovisionamiento.md) y [D54](D054-egress-de-packs.md); retira las excepciones de laboratorio de [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md) y [D28](D028-implementacion-del-login-propio.md))
 
 ## Decisión

@@ -129,7 +129,7 @@ No se inventa UI. Propuesta:
 5. **`Member`:** recibe `Namespace`, `MangoAccountId` y `OrganizationId` como parámetros del StackSet. El `TemplateBody` pasa a ser **idéntico para todos los clientes**, y su `sha256` es un dato de la release (va en el manifiesto).
 6. **Primer admin:** un `AWS::Cognito::UserPoolUser` con `FirstAdminEmail` en `mango-admin` y `finops-central`. Cognito le envía la contraseña temporal; MFA obligatorio en el primer ingreso.
 7. **Siembras** (`Settings`, agente FinOps): siguen siendo put-if-absent; cambian sus valores de «configuración del cliente» a «valores por defecto de la release».
-8. **Versión visible:** descripción `(Mango) mango-hub vX.Y.Z · <stack>`, y un `Mapping` `Release` con versión, commit y digest de la imagen. `mango-api` la expone en `/api/health` y en el user-agent de los SDK.
+8. **Versión visible:** descripción `(Mango) mango-hub vX.Y.Z · <stack>`, y un `Mapping` `Release` con versión, commit y digest de la imagen. `mango-api` la expone en `/api/health` y en el user-agent de los SDK. **Desde D69 (§13) la descripción no nombra la versión:** la etiqueta solo viaja en `MANGO_RELEASE` (Ajustes › Instalación) y en el manifiesto.
 9. **Tamaño:** test que falla si `Core` supera 800 KB o 450 recursos.
 10. **Sin `AWS::LanguageExtensions`.** Por eso `DeletionPolicy` no puede depender de un parámetro (N7, §9).
 
@@ -161,9 +161,9 @@ Stack propio `Mango-provider` (`infra/lib/stacks/provider-stack.ts`, guía en `d
 | Recurso | Reglas |
 |---|---|
 | Bucket global de plantillas `<nombre>` | Versionado, Object Lock, cifrado, TLS obligatorio. Clave `mango/<versión>/<Stack>.template.json` |
-| Bucket regional de assets `<nombre>-<región>`, uno por región soportada (hoy `us-east-1`) | Ídem. Clave `mango/<versión>/asset.<hash>.zip`. Lambda exige que el bucket esté en la región de la función |
+| Bucket regional de assets `<nombre>-<región>`, uno por región soportada (hoy `us-east-1`) | Ídem. Clave `mango/assets/<hash>.zip`, la misma para todas las versiones (D69, §13; hasta el 2026-10-05, `mango/<versión>/<hash>.zip`). Lambda exige que el bucket esté en la región de la función |
 | Repositorio de la imagen | Ver §5.4 |
-| Proveedor OIDC de GitHub y rol `Mango-provider-release-publisher` | Confianza solo en este repo, rama `main` y entorno `release`. Permisos: `s3:PutObject` en `mango/*` de esos buckets, subir al repositorio de la imagen y `kms:Sign` para el manifiesto. **No puede borrar ni cambiar políticas** |
+| Proveedor OIDC de GitHub y rol `Mango-provider-release-publisher` | Confianza solo en este repo, rama `main` y entorno `release`. Permisos: `s3:PutObject` en `mango/*` de esos buckets, `s3:GetObject` en `mango/assets/*` del regional (D69: compara un asset que ya existe), subir al repositorio de la imagen y `kms:Sign` para el manifiesto. **No puede borrar ni cambiar políticas** |
 | Política de los buckets | Escritura: solo el rol de publicación y solo con `If-None-Match: *` (una clave publicada no se sobrescribe). Lectura: §5.3 |
 | Lista de clientes | Parámetro de la plantilla (ids de organización). Añadir un cliente es un `UpdateStack` en la cuenta del proveedor |
 | Alarmas | Regla de EventBridge sobre cambios de política de los buckets, del repositorio y del rol, a un topic del proveedor |
@@ -209,7 +209,7 @@ Consecuencia: `mango-api` depende del ECR del proveedor cada vez que ECS arranca
 
 `MangoReleaseSynthesizer`, subclase de `DefaultStackSynthesizer`, como el de ISB:
 
-- `fileAssetsBucketName: "<nombre>-${AWS::Region}"`, `bucketPrefix: "mango/<versión>/"`.
+- `fileAssetsBucketName: "<nombre>-${AWS::Region}"`, `bucketPrefix: "mango/assets/"` (D69, §13; antes `mango/<versión>/`).
 - `generateBootstrapVersionRule: false`; sin roles de bootstrap.
 - Los assets de directorio se comprimen al sintetizar, de forma determinista.
 - El nombre del bucket, la cuenta del proveedor y la versión son contexto de CDK (parámetros del pipeline), y quedan en un `Mapping` de la plantilla.
@@ -227,7 +227,7 @@ Consecuencia: `mango-api` depende del ECR del proveedor cada vez que ECS arranca
 5. `cdk synth` con el synthesizer de release → `dist/release/<versión>/` (`global-s3-assets/`, `regional-s3-assets/`).
 6. cdk-nag, cfn-guard y Checkov sobre **esas** plantillas.
 7. Escribe `manifest.json`: versión, commit, sha256 y tamaño de cada plantilla y asset, digest de la imagen, sha256 del `TemplateBody` de `Member`, regiones.
-8. Con `--publish`: sube la imagen y comprueba el digest remoto; sube assets y plantillas con `If-None-Match`; sube el manifiesto y su firma al final.
+8. Con `--publish`: sube la imagen y comprueba el digest remoto; sube assets y plantillas con `If-None-Match`; sube el manifiesto y su firma al final. Un asset cuya clave ya existe no se sube: se compara su sha256 con el construido y, si difiere, la publicación termina sin subir plantillas ni manifiesto (D69, §13).
 
 **Workflow `release.yml`** (GitHub Actions, al crear el tag en `main`): un job construye sin credenciales de AWS; otro, con el entorno `release`, asume `Mango-provider-release-publisher` por OIDC, firma el manifiesto con la llave KMS y publica. El job con credenciales no ejecuta código de terceros, como el de firma de packs.
 
@@ -251,7 +251,7 @@ Las notas de cada release dan tres enlaces «Launch stack» y sus URL:
 ### 5.8 Verificación de integridad
 
 - **Plantillas:** `manifest.json`, firmado con la llave KMS del proveedor (§6), lista su sha256. `deployment/verify-release.sh <versión>` descarga manifiesto y plantillas, verifica la firma con la llave pública del repo y compara hashes. El runbook lo pone antes de `CreateStack`.
-- **Assets:** claves inmutables (`If-None-Match` + Object Lock) y el rol de publicación sin permiso de borrar; el manifiesto lista sus sha256 para auditoría.
+- **Assets:** claves inmutables (`If-None-Match` + Object Lock) y el rol de publicación sin permiso de borrar; el manifiesto lista sus sha256 para auditoría. Las claves se comparten entre versiones (D69): al publicar, cada una se sube nueva o se comprueba que ya tiene esos bytes.
 - **Imagen:** por digest (direccionada por contenido).
 - **Packs:** además, el provisioner verifica firma y hash al habilitar (D43).
 - **Cliente que no permite buckets externos:** copia la release a un bucket propio (`aws s3 sync`) e instala desde ahí; el manifiesto firmado sigue valiendo. Exige que el nombre del bucket de assets sea un parámetro avanzado (`ReleaseBucketPrefix`) con el del proveedor por defecto.
@@ -417,3 +417,38 @@ De `v0.1.0-g58cdf6a` a `v0.1.0-gb557f40`, que saca la red de packs a `PackNetwor
 - Un tropiezo sin consecuencias: al quitar la VPC interna, el custom resource de CDK que restringe su security group por defecto falló al borrarse (`InvalidGroup.NotFound`: la VPC ya no existía). Ocurre en la fase de limpieza, que no revierte la actualización.
 
 Sigue sin probar: la desinstalación con el guard.
+
+## 13. Una actualización toca solo lo que cambió (D69, 2026-10-05)
+
+**El problema.** Cada actualización de `Core` traía 63 entradas en el change set aunque solo cambiara la web: 15 Lambdas (solo `Code.S3Key`), 5 capas reemplazadas, 5 `BucketDeployment`, la task definition y 37 reevaluaciones, el user pool entre ellas. Quien revisa aprende a no leerlo. Cuatro causas, todas comprobadas en el código:
+
+| Causa | Dónde | Qué se hizo |
+|---|---|---|
+| La etiqueta iba en el prefijo de la clave de cada asset (`mango/<etiqueta>/`): 16 o 17 de 19 assets eran idénticos entre releases y solo cambiaba su ruta | `infra/lib/release-target.ts` | Prefijo único `mango/assets/`. Plantillas, manifiesto y firma siguen en `mango/<etiqueta>/` |
+| El nombre de un asset no garantizaba su contenido: salía del directorio fuente del paquete, no de lo que se empaqueta (`uv.lock` y los paquetes compartidos cambian el zip y no el nombre) | `infra/lib/constructs/python-function.ts` | `assetHashType: OUTPUT`: el nombre es el hash del bundle. El bundle es el mismo en todo checkout (`deployment/bundle-python.sh` quita los scripts de consola, que llevan la ruta del intérprete local, y su línea en `RECORD`) y el zip depende solo de rutas y contenidos (`zip_directory`) |
+| `dist.py` subía con «no sobrescribir» y omitía en silencio una clave existente | `deployment/dist.py` | `put_asset`: sube con `If-None-Match` y el sha256 declarado; si la clave existe, compara y **falla** si los bytes son otros |
+| La etiqueta iba en la `Description` de los cuatro stacks: CloudFormation no acepta un cambio solo de descripción, así que `Payer` y `OrgAccess` mostraban etiquetas viejas | `infra/bin/mango.ts` | Descripciones sin etiqueta. `dist.py` falla si una la nombra |
+
+La imagen de `mango-api` salía con otro digest en cada release: bases por tag y fecha de build en la configuración. Ahora las dos bases van por digest y la imagen lleva una fecha fija (`apps/api/Dockerfile`, `SOURCE_DATE_EPOCH` en `dist.py`): las mismas fuentes dan el mismo digest.
+
+**Medido el 2026-10-05** (sin publicar; `mise run dist` sin packs firmados: 16 assets, 155 MB):
+
+| Prueba | Resultado |
+|---|---|
+| Dos builds seguidos del mismo commit | Manifiestos idénticos byte a byte: 16 de 16 nombres y sha256, 5 de 5 plantillas |
+| El mismo commit en un clon limpio, en otra ruta y sin `.venv` | Manifiesto idéntico al anterior |
+| Otro commit sin cambios de contenido (otra etiqueta) | 16 de 16 assets con la misma clave y sha256; `PackNetwork`, `Payer`, `OrgAccess` y `Member` con el mismo sha256; en `Core` difiere 1 recurso de 248 (la task definition, por `MANGO_RELEASE`) |
+| Otro commit que solo cambia la web | 14 de 16 assets iguales y 2 claves nuevas; en `Core` difieren 3 recursos: los dos `BucketDeployment` de la web y la task definition |
+| Imagen: tres builds sin caché, en dos checkouts | El mismo digest las tres veces; sin la fecha fija, uno distinto cada vez (las capas ya coinciden) |
+
+**Qué esperar en el change set de `Core`:**
+
+- **Primera actualización después de D69:** igual de ruidosa que las anteriores, una última vez. Todas las claves pasan de `mango/<etiqueta>/` a `mango/assets/` y los nombres de los ocho paquetes Python cambian (ahora salen del bundle).
+- **Siguientes, si solo cambió la web:** los dos `BucketDeployment` de la web (`Modify`), la task definition (`Replacement: True`, por `MANGO_RELEASE` y, si cambió, el digest de la imagen) y el servicio de ECS que la usa (`Modify`). Ninguna Lambda, ninguna capa, ningún pack, y nada que cuelgue de ellos (ni el user pool ni el Gateway).
+- **Si cambió un paquete Python:** además, las Lambdas que lo empaquetan y las reevaluaciones de lo que lee su ARN.
+- `Payer`, `OrgAccess` y `PackNetwork`: el manifiesto dice si hay algo que actualizar. Si el sha256 de su plantilla es el de la release instalada, no se tocan.
+
+**Lo que sigue igual a propósito:** la task definition cambia en cada release porque lleva la etiqueta en `MANGO_RELEASE` (un despliegue rodante de la API por actualización). Cómo llega la etiqueta a la API no se rediseñó aquí.
+
+**Sin probar en AWS:** dos releases seguidas publicadas e instaladas en el laboratorio, la lectura del rol de publicación (`head-object` con el sha256 que guarda S3) y que el registro conserve el digest al construir desde el runner de GitHub. El stack `Mango-provider` hay que actualizarlo antes de la primera publicación (permiso de lectura nuevo).
+
