@@ -1,0 +1,15 @@
+# D28 · Implementación del login propio
+
+- **Estado:** parcial. Construida. Quedan los pendientes que la propia fila enumera al final (no se comprobó uno por uno si siguen abiertos) y el tipo de instalación `lab`, que [D58](D058-distribucion-para-clientes.md) (5) retiró.
+- **Fecha:** 2026-09-30
+- **Precisa / reemplaza a:** implementa [D20](D020-login-y-registro.md)
+- **Precisada por:** [D29](D029-plan-de-cognito-en-clientes.md) (revisa); [D58](D058-distribucion-para-clientes.md) (retira sus excepciones de laboratorio); [D60](D060-gestion-de-personas.md) (precisa); [D62](D062-proveedores-de-correo-publico.md) (precisa: lista de dominios públicos); [D63](D063-sesion-web-con-cookie.md) (precisa)
+- **Tema en el registro original:** Implementación del login propio ([D20](D020-login-y-registro.md))
+
+## Decisión
+
+**SRP propio** en la SPA (~200 líneas, BigInt + WebCrypto, sin AWS SDK ni Amplify), validado con vectores de una implementación independiente (pycognito); se revisa en el primer login real del laboratorio. Dependencia **`qrcode-generator`** (MIT, sin dependencias, fijada, cargada solo en el alta de MFA; el SVG lo dibuja React).
+
+**WAF regional siempre asociado al User Pool** en toda instalación, laboratorio incluido (buena práctica: las APIs públicas de Cognito no pasan por CloudFront; ~USD 8/mes). Parámetro **`installationType`** (`customer` | `lab`): en clientes fuerza MFA obligatorio, Cognito Plus y retención de datos, y **prohíbe dominios de correo públicos** (Gmail, Outlook, etc.) en el auto-registro; el laboratorio permite `gmail.com` mientras dure la PoC, compensado por el deny por defecto (sin grupo no hay acceso). Cerrar sesión revoca el refresh token (`RevokeToken`); el access token vive hasta su vencimiento (≤ 60 min), porque sin el scope de autoservicio no hay `GlobalSignOut` del usuario. Los usuarios que crea un admin (`AdminCreateUser`, solo IAM) no pasan por el filtro de dominio. El nombre visible lo elige el usuario: solo se muestra, y las pantallas de admin muestran siempre el correo (TM-L15). Reset de MFA: quien propone **declara que verificó la identidad del usuario por otro canal** (`identity_verified: true`, exigido por el servidor y guardado en la solicitud y en la auditoría); la solicitud vence a las **72 h** (alineado con el diseño v13, 2026-09-30; antes 24 h), hay 24 h de espera entre resets del mismo usuario, 5 propuestas por hora por admin y máximo 10 pendientes; no aplica a usuarios federados (422). Parámetro opcional **`auth.aiPolicyUrl`** (solo `https:`, sin credenciales): si existe, el registro pide aceptar la política de uso de IA y Ajustes › Autenticación la muestra; se publica en `config.json` y la SPA lo vuelve a validar antes de ponerlo en un `href`. Ajustes › General › Autenticación queda disponible **en solo lectura** más el reset de MFA; «Proponer cambio» de MFA, sesión e IdP sigue en Próximamente hasta que exista el backend de [D21](D021-ajustes-auth.md).
+
+**Pendientes:** aviso por correo al afectado (requiere SES), reconciliación de un reset que quede en `applying`, limpieza de cuentas sin confirmar
