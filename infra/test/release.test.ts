@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { loadReleaseDefaults } from "../lib/config/release.js";
 import { releaseConfigJson, spaAuthConfigSchema } from "../lib/constructs/edge.js";
 import { importPackNetwork, packNetworkExports } from "../lib/constructs/pack-network.js";
-import { UNPUBLISHED_TARGET } from "../lib/release-target.js";
+import { releaseSynthesizer, UNPUBLISHED_TARGET } from "../lib/release-target.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { PackNetworkStack } from "../lib/stacks/pack-network-stack.js";
 import { instantiate, Values } from "./parameters.js";
@@ -176,6 +176,26 @@ describe("Core template of a release", () => {
     expect(variables(published).filter((v) => v.Name === "MANGO_RELEASE")).toEqual([{ Name: "MANGO_RELEASE", Value: label }]);
     // Without a published target there is no label to show.
     expect(variables(source).filter((v) => v.Name === "MANGO_RELEASE")).toEqual([]);
+  });
+
+  it("changes nothing but that label between two releases of the same code (D69)", () => {
+    const release = (label: string) => {
+      const target = { ...UNPUBLISHED_TARGET, label };
+      const stack = new CoreStack(new App({ context }), "Core", {
+        env: { region: "us-east-1" },
+        synthesizer: releaseSynthesizer(target),
+        release: target,
+      });
+      return JSON.stringify(Template.fromStack(stack).toJSON());
+    };
+    const [first, second] = [release("v0.1.0-g1a2b3c4"), release("v0.1.1")];
+    // Assets are named after their content under one prefix: no key carries the label, so a
+    // Lambda, a layer or a file deployment whose content did not change is not touched.
+    const keys = [...first!.matchAll(/"(?:S3Key|SourceObjectKeys)":(\[[^\]]*\]|"[^"]*")/g)].flatMap((m) => m[1]!.match(/[^"[\],]+/g)!);
+    expect(keys.length).toBeGreaterThan(15);
+    for (const key of keys) expect(key).toMatch(/^mango\/assets\/[0-9a-f]{64}\.zip$/);
+    expect(first!.split("v0.1.0-g1a2b3c4")).toHaveLength(2);
+    expect(first!.replace("v0.1.0-g1a2b3c4", "v0.1.1")).toBe(second);
   });
 });
 

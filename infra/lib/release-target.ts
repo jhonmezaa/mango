@@ -1,7 +1,7 @@
 import { DefaultStackSynthesizer } from "aws-cdk-lib";
 import { Node } from "constructs";
 import { z } from "zod";
-import { RELEASE_KEY_PREFIX } from "./stacks/provider-stack.js";
+import { RELEASE_ASSETS_PREFIX } from "./stacks/provider-stack.js";
 
 /**
  * Where a release is published (D58): the release store and the image repository of the
@@ -17,7 +17,11 @@ const releaseTargetSchema = z
      * Lambda only loads code from a bucket of its own Region.
      */
     bucket: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,50}[a-z0-9]$/),
-    /** `v<version>` for a release, with a build suffix for anything else. Keys never change. */
+    /**
+     * `v<version>` for a release, with a build suffix for anything else. It names where the
+     * templates and the manifest are published; no template carries it, except as the value
+     * mango-api shows in Settings.
+     */
     label: z.string().regex(/^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]{1,40})?$/),
     /** Repository of the mango-api image, in the provider account. */
     imageRepository: z.string().regex(/^[a-z0-9][a-z0-9._/-]{1,200}$/),
@@ -47,11 +51,6 @@ export function releaseTarget(node: Node): ReleaseTarget {
   return releaseTargetSchema.parse(typeof given === "string" ? JSON.parse(given) : given);
 }
 
-/** Key prefix of everything a release publishes: `mango/<label>/`. */
-export function releasePrefix(target: ReleaseTarget): string {
-  return `${RELEASE_KEY_PREFIX}${target.label}/`;
-}
-
 /** Name of the regional assets bucket, with the Region left to CloudFormation. */
 export function assetsBucket(target: ReleaseTarget): string {
   return `${target.bucket}-\${AWS::Region}`;
@@ -59,13 +58,17 @@ export function assetsBucket(target: ReleaseTarget): string {
 
 /**
  * Synthesizer of the release templates (D8, D58; the pattern of Innovation Sandbox): assets
- * are read from the regional bucket of the provider, under the release prefix, and nothing
- * of the CDK bootstrap is needed in the account that installs.
+ * are read from the regional bucket of the provider and nothing of the CDK bootstrap is
+ * needed in the account that installs.
+ *
+ * The key of an asset is its content hash under one prefix for every release (D69), never
+ * the label: a file that did not change keeps its key, so CloudFormation leaves alone the
+ * resources that read it.
  */
 export function releaseSynthesizer(target: ReleaseTarget): DefaultStackSynthesizer {
   return new DefaultStackSynthesizer({
     generateBootstrapVersionRule: false,
     fileAssetsBucketName: assetsBucket(target),
-    bucketPrefix: releasePrefix(target),
+    bucketPrefix: RELEASE_ASSETS_PREFIX,
   });
 }

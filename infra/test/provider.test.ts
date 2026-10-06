@@ -87,7 +87,12 @@ describe("provider stack", () => {
   it("lets the publisher write releases and push the image, and nothing destructive", () => {
     const doc = resources("AWS::IAM::Policy")[0]!.Properties.PolicyDocument as { Statement: Statement[] };
     const all = doc.Statement.flatMap(actions);
-    expect(all.filter((a) => a.startsWith("s3:"))).toEqual(["s3:PutObject", "s3:PutObject"]);
+    expect(all.filter((a) => a.startsWith("s3:")).sort()).toEqual(["s3:GetObject", "s3:PutObject", "s3:PutObject"]);
+    // It reads back only the assets every release shares, to compare a key that already
+    // exists with what it built (D69); templates and manifests are written once and never read.
+    const reads = doc.Statement.filter((s) => actions(s).includes("s3:GetObject"));
+    expect(reads).toHaveLength(1);
+    expect(JSON.stringify(reads[0]!.Resource)).toMatch(/^\{"Fn::Join":\["",\[\{"Fn::GetAtt":\["Assets[0-9A-F]+","Arn"\]\},"\/mango\/assets\/\*"\]\]\}$/);
     for (const action of all) {
       expect(action).not.toMatch(/\*|Delete|Policy|kms:|iam:/);
     }

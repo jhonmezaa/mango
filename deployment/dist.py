@@ -11,6 +11,11 @@ A release is what a customer installs with CloudFormation and nothing else:
 Nothing is built in the customer account (rules 1 and 2). Published keys are never
 overwritten: a build that is not exactly the tagged version gets its own label.
 
+Templates and manifest live under the label (``mango/<label>/``). Assets live under one prefix
+for every release (``mango/assets/``) and are named after their content, so a release only
+uploads what changed and an update only touches what changed (D69). An asset key that is
+already published is compared by sha256 and never assumed: other bytes end the release.
+
 Without ``--publish`` it builds everything but the image and leaves the result in
 ``dist/release/<label>/``: those templates point at a target that does not exist and are only
 good for the checks (cdk-nag, cfn-guard, Checkov).
@@ -29,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -43,6 +49,8 @@ SIGNING_ALGORITHM = "ECDSA_SHA_256"
 # What the signature covers is bound to this type (DSSE): a pack signature is not a release
 # signature, although the same key makes both (TM-D5).
 PAYLOAD_TYPE = "application/vnd.mango.release.v1+json"
+# Assets of every release: keep in sync with `RELEASE_ASSETS_PREFIX` of the provider stack.
+ASSETS_PREFIX = "mango/assets/"
 # Zip entries carry this date, so the same sources always give the same bytes.
 ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 UNPUBLISHED = {
@@ -61,6 +69,13 @@ def run(*command: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> s
     if result.returncode != 0:
         sys.exit(f"{' '.join(command[:4])}… failed:\n{result.stdout}{result.stderr}")
     return result.stdout.strip()
+
+
+def attempt(*command: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a command whose failure the caller reads."""
+    return subprocess.run(  # noqa: S603 - fixed commands, no shell
+        command, cwd=ROOT, env=env, check=False, capture_output=True, text=True
+    )
 
 
 def sha256(path: Path) -> str:
@@ -92,13 +107,14 @@ def release_label(version: str) -> tuple[str, str]:
 
 
 def zip_directory(source: Path, target: Path) -> None:
-    """Deterministic zip: sorted entries, fixed date, only the permission bits that matter."""
+    """Deterministic zip: its bytes depend on the paths and contents of the files, as the name
+    of the asset does. Sorted entries, fixed date and one mode for every entry."""
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted(p for p in source.rglob("*") if p.is_file()):
             info = zipfile.ZipInfo(path.relative_to(source).as_posix(), ZIP_EPOCH)
             info.compress_type = zipfile.ZIP_DEFLATED
-            executable = os.access(path, os.X_OK)
-            info.external_attr = (0o755 if executable else 0o644) << 16
+            info.create_system = 3  # Unix, wherever the release is built
+            info.external_attr = 0o755 << 16
             archive.writestr(info, path.read_bytes())
 
 
@@ -108,10 +124,17 @@ def package(target: dict[str, str], out: Path) -> list[dict[str, Any]]:
     assets = out / "regional-s3-assets"
     templates.mkdir(parents=True)
     assets.mkdir(parents=True)
-    prefix = f"mango/{target['label']}/"
+    prefix = ASSETS_PREFIX
     listed: dict[str, dict[str, Any]] = {}
     for stack in STACKS:
         shutil.copyfile(CDK_OUT / f"{stack}.template.json", templates / f"{stack}.template.json")
+        # A stack whose template did not change must not change with the release: CloudFormation
+        # refuses an update of the description alone (D69).
+        description = json.loads((CDK_OUT / f"{stack}.template.json").read_text()).get(
+            "Description"
+        )
+        if target["label"] in str(description):
+            sys.exit(f"{stack}: the description names the release ({description})")
         manifest = json.loads((CDK_OUT / f"{stack}.assets.json").read_text())
         for asset in manifest.get("files", {}).values():
             source = CDK_OUT / asset["source"]["path"]
@@ -121,7 +144,7 @@ def package(target: dict[str, str], out: Path) -> list[dict[str, Any]]:
             for destination in asset["destinations"].values():
                 key = destination["objectKey"]
                 if not key.startswith(prefix) or "/" in key[len(prefix) :]:
-                    sys.exit(f"{stack}: asset key outside the release prefix: {key}")
+                    sys.exit(f"{stack}: asset key outside the assets prefix: {key}")
                 file = assets / key[len(prefix) :]
                 if not file.exists():
                     if asset["source"]["packaging"] == "zip":
@@ -226,13 +249,60 @@ def put_new(bucket: str, key: str, file: Path, content_type: str, env: dict[str,
     )  # fmt: skip
 
 
+def published_sha256(bucket: str, key: str, env: dict[str, str]) -> str:
+    """sha256 of a published object: the one S3 checked when it was uploaded, else its bytes."""
+    head = json.loads(
+        run(
+            "aws", "s3api", "head-object", "--bucket", bucket, "--key", key,
+            "--checksum-mode", "ENABLED", "--output", "json", env=env,
+        )
+    )  # fmt: skip
+    if head.get("ChecksumType") == "FULL_OBJECT" and head.get("ChecksumSHA256"):
+        return base64.b64decode(head["ChecksumSHA256"], validate=True).hex()
+    with tempfile.TemporaryDirectory() as work:
+        copy = Path(work) / "object"
+        run("aws", "s3api", "get-object", "--bucket", bucket, "--key", key, str(copy), env=env)
+        return sha256(copy)
+
+
+def put_asset(bucket: str, key: str, file: Path, env: dict[str, str]) -> bool:
+    """Publish one asset, or prove it is already published. True when it was uploaded.
+
+    Assets of every release share a prefix and a key is never overwritten, so a key that
+    exists is what installations will read. Its name says it holds these bytes; that is
+    checked, not assumed: with other bytes the release would install code it did not build
+    under a manifest that names the built one.
+    """
+    local = sha256(file)
+    # S3 checks the body against this digest and keeps it: the next release compares with it.
+    result = attempt(
+        "aws", "s3api", "put-object", "--bucket", bucket, "--key", key, "--body", str(file),
+        "--if-none-match", "*", "--checksum-algorithm", "SHA256",
+        "--checksum-sha256", base64.b64encode(bytes.fromhex(local)).decode(), env=env,
+    )  # fmt: skip
+    if result.returncode == 0:
+        return True
+    if "PreconditionFailed" not in result.stderr:
+        sys.exit(f"cannot upload {key}:\n{result.stdout}{result.stderr}")
+    published = published_sha256(bucket, key, env)
+    if published != local:
+        sys.exit(
+            f"{key} is already published with other content:\n"
+            f"  published sha256 {published}\n"
+            f"  built     sha256 {local}\n"
+            "An asset is named after its content, so the same name must be the same bytes: "
+            "this build is not reproducible, or the name leaves part of the content out. "
+            "Nothing was replaced and the release is not published (no templates, no manifest)."
+        )
+    return False
+
+
 def publish(target: dict[str, str], out: Path, region: str, env: dict[str, str]) -> None:
     prefix = f"mango/{target['label']}/"
     regional = f"{target['bucket']}-{region}"
-    for file in sorted((out / "regional-s3-assets").iterdir()):
-        # Asset names are content hashes: an existing key already holds these bytes.
-        run("aws", "s3", "cp", str(file), f"s3://{regional}/{prefix}{file.name}", "--no-overwrite",
-            "--only-show-errors", env=env)  # fmt: skip
+    files = sorted((out / "regional-s3-assets").iterdir())
+    uploaded = sum(put_asset(regional, ASSETS_PREFIX + file.name, file, env) for file in files)
+    print(f"  assets: {uploaded} new, {len(files) - uploaded} already published with these bytes")
     for file in sorted((out / "global-s3-assets").iterdir()):
         put_new(target["bucket"], prefix + file.name, file, "application/json", env)
     # The manifest goes last: a release without it is not complete.

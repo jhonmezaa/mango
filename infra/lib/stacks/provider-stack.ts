@@ -14,8 +14,13 @@ import { acknowledge } from "../nag.js";
 /** Everything of the provider account is named with this prefix, so it can be told apart and removed whole. */
 export const PROVIDER_PREFIX = "Mango-provider";
 const LOWER_PREFIX = "mango-provider";
-/** Key prefix of every published object: `mango/<version>/…` (D8, D58). */
+/** Key prefix of every published object: `mango/<label>/…` and `mango/assets/…` (D8, D58). */
 export const RELEASE_KEY_PREFIX = "mango/";
+/**
+ * Assets of every release, named after their content (D69): a file two releases share is one
+ * object, so an update only touches what changed. No label can be `assets` (labels are `v…`).
+ */
+export const RELEASE_ASSETS_PREFIX = `${RELEASE_KEY_PREFIX}assets/`;
 /** GitHub environments the two roles trust; each job names its own. */
 export const PACK_SIGNING_ENVIRONMENT = "pack-signing";
 export const RELEASE_ENVIRONMENT = "release";
@@ -288,6 +293,16 @@ export class ProviderStack extends Stack {
     const templates = releaseBucket("Templates", base, "templates/");
     // Lambda only loads code from a bucket of its own Region: assets are regional (ISB pattern).
     const assets = releaseBucket("Assets", `${base}-${Aws.REGION}`, "assets/");
+    // An asset key that already exists is read back and compared with what was built, never
+    // assumed (D69, TM-D17): the publisher reads assets, and nothing else of the store.
+    const sharedAssets = assets.arnForObjects(`${RELEASE_ASSETS_PREFIX}*`);
+    publisher.addToPolicy(
+      new iam.PolicyStatement({ sid: "CompareAssets", actions: ["s3:GetObject"], resources: [sharedAssets] }),
+    );
+    acknowledge(publisher, {
+      id: `AwsSolutions-IAM5[Resource::<${this.getLogicalId(assets.node.defaultChild as CfnResource)}.Arn>/${RELEASE_ASSETS_PREFIX}*]`,
+      reason: "Asset keys are content hashes: the mango/assets/ prefix of the assets bucket is the scope.",
+    });
 
     // --- Image of mango-api ------------------------------------------------------------------
     const repository = new ecr.Repository(this, "ApiImage", {
