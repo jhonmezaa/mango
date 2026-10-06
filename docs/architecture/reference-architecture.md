@@ -173,8 +173,8 @@ flowchart TB
   end
 
   CE -- "BillingBroker + SourceIdentity" --> PAY
-  PK -- "BillingBroker o ReadBroker<br/>+ SourceIdentity" --> PAY
-  PK --> MEM
+  PK -- "BillingBroker + SourceIdentity<br/>(aws-billing)" --> PAY
+  PK -- "ReadBroker + SourceIdentity<br/>(aws-cloudwatch)" --> MEM
   AE -- "OperateBroker + SourceIdentity<br/>+ aprobación" --> PAY
 
   API & SFN & BREC -- "AuditEvent (hash por evento)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS<br/>cuenta de la instalación")]
@@ -518,7 +518,8 @@ Mango se instala en **una cuenta dedicada** (`mango`) dentro de la organización
 flowchart LR
   subgraph MANGO["Cuenta mango (Core)"]
     GW["AgentCore Gateway<br/>interceptor + Policy"]
-    C["Conector Cost Explorer (Lambda)<br/>Runtimes de packs de datos de cuentas"]
+    C["Conector Cost Explorer (Lambda)"]
+    PK["Runtimes de packs de datos de cuentas<br/>aws-billing · aws-cloudwatch"]
     AP["AdminProbe (Lambda)<br/>comprobación de conectividad"]
     AE["Approval executor (Lambda)"]
     RB["Mango-ns-ReadBroker"]
@@ -533,10 +534,15 @@ flowchart LR
     RO["Mango-ns-ReadOnly"]
   end
   GW --> C
+  GW --> PK
   GW --> AE
-  C --> BB -- "AssumeRole + SourceIdentity<br/>+ tags + session policy" --> BR
-  C --> RB -- "AssumeRole + SourceIdentity + tags" --> RO
+  C --> BB
+  PK -- "aws-billing" --> BB
+  PK -- "aws-cloudwatch" --> RB
+  AP --> BB
   AP --> RB
+  BB -- "AssumeRole + SourceIdentity<br/>+ tags + session policy" --> BR
+  RB -- "AssumeRole + SourceIdentity + tags" --> RO
   AE -. "solo con un approval token válido" .-> OB -.-> BO
 ```
 
