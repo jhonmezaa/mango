@@ -17,9 +17,13 @@ const RELEASE_REGION = "us-east-1";
 // between installations is a stack parameter. The Region is fixed: some resources (DynamoDB
 // tables with a customer-managed key, ALB access logs) cannot be rendered for an unknown one,
 // so a release carries one Core template per supported Region.
+//
+// No description names the release (D69): CloudFormation refuses an update that only changes
+// the description, so a stack the release did not change could never show the new label. Which
+// release a stack runs is the template the signed manifest names by sha256.
 const target = releaseTarget(app.node);
 const core = new CoreStack(app, "Core", {
-  description: `(Mango) mango-hub ${target.label} core installation`,
+  description: "(Mango) mango-hub core installation",
   env: { region: RELEASE_REGION },
   // Assets and image come from the provider account: no CDK bootstrap where it is installed.
   synthesizer: releaseSynthesizer(target),
@@ -29,7 +33,7 @@ const core = new CoreStack(app, "Core", {
 // Payer, OrgAccess and Member are the same templates for every customer (D58): no assets, no
 // CDK bootstrap and no environment; the installation's values are stack parameters.
 const payer = new PayerStack(app, "Payer", {
-  description: `(Mango) mango-hub ${target.label} billing reader`,
+  description: "(Mango) mango-hub billing reader",
 });
 
 // The spoke template of the member accounts (§4.10). The StackSet of OrgAccess carries the
@@ -37,13 +41,13 @@ const payer = new PayerStack(app, "Payer", {
 // Checkov see it and a customer can deploy it with CfCT/AFT instead.
 const member = new MemberStack(app, "Member");
 const orgAccess = new OrgAccessStack(app, "OrgAccess", {
-  description: `(Mango) mango-hub ${target.label} member account access`,
+  description: "(Mango) mango-hub member account access",
 });
 
 // The network of the pack runtimes, in the Mango account: installed before Core, which
 // imports it, and deleted after it.
 const packNetwork = new PackNetworkStack(app, "PackNetwork", {
-  description: `(Mango) mango-hub ${target.label} pack runtime network`,
+  description: "(Mango) mango-hub pack runtime network",
   env: { region: RELEASE_REGION },
   synthesizer: releaseSynthesizer(target),
 });
