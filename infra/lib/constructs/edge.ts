@@ -92,9 +92,11 @@ export const EDGE_RATE_LIMIT = 20000;
 const RATE_WINDOW_SECONDS = 300;
 /**
  * `Retry-After` of a block. The web ACL cannot say when the count of the address falls under
- * the limit: a minute later the request either passes or gets the same answer.
+ * the limit, so this is a fixed wait. Measured in an installation: a block lifts between 90
+ * and 180 seconds after the traffic drops, and a retry sent earlier is refused and counted
+ * again (D72).
  */
-export const RATE_LIMITED_RETRY_SECONDS = 60;
+export const RATE_LIMITED_RETRY_SECONDS = 180;
 /** The same body mango-api answers a 429 with (`rate_limited` in `web.py`): the SPA reads one format. */
 export const API_RATE_LIMITED_BODY = JSON.stringify({
   error: { code: "rate_limited", message: "too many requests; try again later" },
@@ -107,7 +109,7 @@ export const RATE_LIMITED_PAGE =
   '<!doctype html><html lang="es"><head><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width, initial-scale=1"><title>Mango</title></head>' +
   "<body><h1>Demasiadas solicitudes</h1>" +
-  "<p>Se recibieron demasiadas solicitudes desde tu red. Espera un minuto y vuelve a cargar la p&aacute;gina.</p>" +
+  "<p>Se recibieron demasiadas solicitudes desde tu red. Espera unos minutos y vuelve a cargar la p&aacute;gina.</p>" +
   "</body></html>";
 
 /** Deterministic Cognito managed-login domain (used by CSP before Cognito exists). */
@@ -154,6 +156,10 @@ export class Edge extends Construct {
       sampledRequestsEnabled: true,
     });
     // A block answers 429 instead of the 403 page of CloudFront, which reads as «no permission».
+    // No Content-Security-Policy here: the response headers policy of the distribution (below)
+    // also applies to what the web ACL answers and, with `override`, replaces the value set
+    // here. A browser gets the CSP of the application on a block too (seen in an installation,
+    // D72), so declaring another one would promise a policy that is never delivered.
     const blockWith = (body: string) => ({
       block: {
         customResponse: {
@@ -163,7 +169,6 @@ export class Edge extends Construct {
             { name: "Retry-After", value: String(RATE_LIMITED_RETRY_SECONDS) },
             { name: "Cache-Control", value: "no-store" },
             { name: "X-Content-Type-Options", value: "nosniff" },
-            { name: "Content-Security-Policy", value: "default-src 'none'; frame-ancestors 'none'" },
           ],
         },
       },
@@ -230,6 +235,8 @@ export class Edge extends Construct {
       ],
     });
 
+    // On every behavior, and on the answers of the web ACL as well: it is the only source of
+    // the CSP of a block (see `blockWith`).
     const headers = new cloudfront.ResponseHeadersPolicy(this, "SecurityHeaders", {
       responseHeadersPolicyName: mangoName(cfg.namespace, "security-headers"),
       securityHeadersBehavior: {

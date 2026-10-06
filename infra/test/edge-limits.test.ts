@@ -61,7 +61,9 @@ describe("edge web ACL (D72)", () => {
     expect(all).toEqual({ Limit: 20000, AggregateKeyType: "IP", EvaluationWindowSec: 300 });
   });
 
-  it("answers a block with 429 and Retry-After, not with the 403 page of CloudFront", () => {
+  it("answers a block with 429 and a Retry-After of 3 minutes, not with the 403 page of CloudFront", () => {
+    // A block lifts between 90 and 180 seconds after the traffic drops (measured, D72).
+    expect(RATE_LIMITED_RETRY_SECONDS).toBe(180);
     const bodies = acl.Properties.CustomResponseBodies;
     expect(Object.keys(bodies).sort()).toEqual(["ApiRateLimited", "RateLimited"]);
     for (const [name, body] of [
@@ -76,10 +78,36 @@ describe("edge web ACL (D72)", () => {
         "Retry-After": String(RATE_LIMITED_RETRY_SECONDS),
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
       });
       // Whole seconds, at least 1, as every 429 of mango-api.
       expect(headers["Retry-After"]).toMatch(/^[1-9][0-9]*$/);
+    }
+  });
+
+  it("leaves the CSP of a block to the response headers policy of the distribution", () => {
+    // What this checks is the template. What a browser gets was seen in an installation
+    // (2026-10-06, D72): the 429 of both rules arrived with the CSP of the application, also
+    // while the web ACL still declared one of its own, because the policy of CloudFront
+    // overrides it. So the web ACL declares none, and the policy must stay on every behavior,
+    // with `override` and with its CSP.
+    for (const r of rules.filter((x) => x.Action?.Block)) {
+      const names = r.Action.Block.CustomResponse.ResponseHeaders.map((h: any) => h.Name.toLowerCase());
+      expect(names).not.toContain("content-security-policy");
+    }
+    const policies = template.findResources("AWS::CloudFront::ResponseHeadersPolicy");
+    expect(Object.keys(policies)).toHaveLength(1);
+    const [[policyId, policy]] = Object.entries(policies) as [string, any][];
+    const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy;
+    expect(csp.Override).toBe(true);
+    const directives = (csp.ContentSecurityPolicy as string).split("; ");
+    for (const directive of ["default-src 'self'", "script-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "object-src 'none'"]) {
+      expect(directives).toContain(directive);
+    }
+    expect(csp.ContentSecurityPolicy).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
+    const [distribution] = Object.values(template.findResources("AWS::CloudFront::Distribution")) as any[];
+    const config = distribution.Properties.DistributionConfig;
+    for (const behavior of [config.DefaultCacheBehavior, ...config.CacheBehaviors]) {
+      expect(behavior.ResponseHeadersPolicyId).toEqual({ Ref: policyId });
     }
   });
 
@@ -100,6 +128,8 @@ describe("edge web ACL (D72)", () => {
   it("answers a page load with a minimal page: no script, no style, nothing but ASCII", () => {
     expect(acl.Properties.CustomResponseBodies.RateLimited).toEqual({ ContentType: "TEXT_HTML", Content: RATE_LIMITED_PAGE });
     expect(RATE_LIMITED_PAGE).toMatch(/^<!doctype html><html lang="es">/);
+    // The wait it names agrees with `Retry-After`: minutes, not «un minuto».
+    expect(RATE_LIMITED_PAGE).toContain("Espera unos minutos");
     expect(RATE_LIMITED_PAGE).not.toMatch(/<script|<style|<link|<img|<a |<form|style=|href=|src=|\son[a-z]+=/i);
     // CloudFormation does not keep other characters of a template intact.
     expect(RATE_LIMITED_PAGE).toMatch(/^[\x20-\x7e]+$/);
