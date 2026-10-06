@@ -1,7 +1,7 @@
 # D70 · `mango-api` corre con dos tareas y sus límites de tasa se cuentan una sola vez
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, punto 8, y tras una prueba de carga, puntos 9 y 10)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, punto 8, y tras una prueba de carga, puntos 9 a 11)
 - **Precisa / reemplaza a:** precisa [D33](D033-autorizacion-de-agentes-y-tools.md), [D60](D060-gestion-de-personas.md) y [D66](D066-cambios-de-personas-fuera-del-directorio.md) (los límites de sus excepciones se cuentan entre todas las tareas) y [D63](D063-sesion-web-con-cookie.md) (los límites de la sesión siguen siendo por tarea, a propósito)
 - **Precisada por:** [D72](D072-limites-por-ip-para-una-oficina.md) (precisa el punto 4: la sesión se renueva con una operación firmada que no pasa por el WAF del user pool, así que sus límites ya no protegen un límite por IP y la nota de la salida compartida queda resuelta)
 
@@ -73,3 +73,9 @@ El cupo diario de correos del directorio (200 por día) y las cuotas de envíos 
 - **Conexiones.** Cada tarea guarda hasta 100 conexiones con AgentCore (antes 10). Un turno ocupa una mientras dura: 330 personas activas con turnos de 12 s son unos 66 turnos abiertos, que tienen que caber en una sola tarea mientras la otra se reemplaza. Por encima no falla nada: el turno abre su propia conexión.
 - **Con el apagado de una tarea no cambia nada.** Una tarea que se va conserva sus peticiones 120 s (punto 6). Un turno con el límite por defecto que empiece justo antes termina o lo corta el agente dentro de ese tiempo; uno más largo se corta al apagarse la tarea, como ya decía el punto 6.
 - **Sin cambiar.** Un turno cortado no se cobra al presupuesto aunque el modelo respondiera: necesita su propio diseño y va aparte.
+
+**(11) Un cuarto límite por tarea y una copia más: las listas de agentes (2026-10-06, aprobado por el dueño; precisa los puntos 4 y 5).** Una prueba de carga midió que `GET /api/agents` cuesta unas seis lecturas y que una persona con sesión que la repita satura una tarea sin pasar del límite por IP ([D72](D072-limites-por-ip-para-una-oficina.md)).
+
+- **Límite `agents.lists`:** 30 llamadas por minuto por persona entre `GET /api/agents` y `GET /api/agents/org`, contado en la memoria de cada tarea (con dos tareas, 60; durante un despliegue, 120). Responde 429 con `Retry-After`. Va por tarea porque no sostiene ninguna excepción y contarlo en la tabla añadiría dos llamadas a la ruta que se quiere abaratar. La pantalla pide como mucho cuatro veces por minuto por pestaña. El test que fija los límites por tarea pasa de tres a cuatro.
+- **Copia de 15 s** de las versiones publicadas y retiradas que muestran esas dos listas (`agents_store.ListedVersions`), una por tarea. No depende de la persona ni decide nada: la decisión `UseAgent` se pide en cada llamada y el chat sigue autorizando con el agente publicado. La tarea que retira un agente borra su copia; una publicación tarda hasta 15 s en aparecer en cada tarea. Está en el inventario.
+- **No cambia** qué se audita: cada lectura de esas listas sigue dejando su evento.
