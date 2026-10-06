@@ -48,8 +48,8 @@ jobs:
       # Browser flow (create, review, use an agent) against the local mock: no AWS, no secrets.
       - run: pnpm --filter @mango/web exec playwright install --with-deps chromium
       - run: pnpm --filter @mango/web run e2e
-      # Synthesis runs cdk-nag (AwsSolutions); the example config needs no AWS credentials.
-      - run: pnpm --filter @mango/infra exec cdk synth --quiet -c env=example
+      # Synthesis runs cdk-nag (AwsSolutions); the templates carry no account, so it needs no AWS credentials.
+      - run: pnpm --filter @mango/infra exec cdk synth --quiet
       - run: mise run guard
       - run: mise run checkov
 

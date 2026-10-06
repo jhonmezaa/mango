@@ -30,7 +30,7 @@ if [[ "$(aws cloudformation describe-organizations-access --call-as "$call_as" \
   exit 1
 fi
 
-(cd "$root/infra" && npx cdk synth OrgAccess -c env=example -c skipSpa=true --quiet >/dev/null)
+(cd "$root/infra" && npx cdk synth OrgAccess -c skipSpa=true --quiet >/dev/null)
 
 aws cloudformation deploy \
   --stack-name "$stack" \

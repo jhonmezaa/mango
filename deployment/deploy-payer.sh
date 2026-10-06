@@ -15,7 +15,7 @@ organization="${3:?$usage}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 stack="Mango-$namespace-Payer"
 
-(cd "$root/infra" && npx cdk synth Payer -c env=example -c skipSpa=true --quiet >/dev/null)
+(cd "$root/infra" && npx cdk synth Payer -c skipSpa=true --quiet >/dev/null)
 
 aws cloudformation deploy \
   --stack-name "$stack" \

@@ -1,5 +1,5 @@
 # Checkov: IaC checks complementary to cdk-nag (synth) and cfn-guard (`mise run guard`).
-# Run through `mise run checkov` after `mise run synth` (CI: `-c env=example`).
+# Run through `mise run checkov` after `mise run synth`.
 # Suppressions live in the CDK code (`infra/lib/checkov.ts`, `Metadata.checkov.skip`), never here.
 directory:
   - .
