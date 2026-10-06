@@ -1,3 +1,4 @@
+import contextlib
 import json
 import socket
 import threading
@@ -469,3 +470,76 @@ def test_a_turn_whose_answer_does_not_arrive_is_not_sent_again(
             connection.close()
         server.close()
     assert len(connections) == 1
+
+
+# --- Is the usage everything the turn cost? (D73) ---------------------------------------
+
+
+def _final(events: list[dict[str, Any]], *, fail: bool = False) -> harness.InvocationResult:
+    class _Stream(list[dict[str, Any]]):
+        def close(self) -> None: ...
+
+    class _Refusing:
+        def invoke_harness(self, **_request: Any) -> dict[str, Any]:
+            raise RuntimeError("no answer")
+
+    result = harness.InvocationResult()
+    client = _Refusing() if fail else _Client(_Stream(events))  # type: ignore[arg-type]
+    with contextlib.suppress(RuntimeError):
+        list(harness.run(client, {}, result, frozenset({WRITE})))  # type: ignore[arg-type]
+    return result
+
+
+def test_usage_is_final_when_every_model_call_reported_it() -> None:
+    result = _final(
+        [
+            _text("a"),
+            {"messageStop": {"stopReason": "tool_use"}},
+            _usage(100),
+            _text("b"),
+            {"messageStop": {"stopReason": "end_turn"}},
+            _usage(200),
+        ]
+    )
+    assert result.started and result.usage_final
+    assert result.usage.input_tokens == 300
+
+
+def test_a_turn_closed_on_a_write_tool_is_final_once_its_usage_arrived() -> None:
+    call = [_tool_start(1, WRITE), _stop(1), {"messageStop": {"stopReason": "tool_use"}}]
+    assert _final([*call, _usage(100)]).usage_final
+    # The stream moved on, or ended, without the usage of that message.
+    assert not _final([*call, _text("x")]).usage_final
+    assert not _final(call).usage_final
+
+
+def test_a_guardrail_stop_is_final_only_with_its_usage() -> None:
+    stop = {"messageStop": {"stopReason": "guardrail_intervened"}}
+    assert _final([stop, _usage(50)]).usage_final
+    assert not _final([stop]).usage_final
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        [],
+        [_text("a")],
+        [_text("a"), {"messageStop": {"stopReason": "end_turn"}}],
+        [{"messageStop": {"stopReason": "tool_use"}}, _usage(1), {"internalServerException": {}}],
+        [{"validationException": {}}],
+    ],
+)
+def test_usage_is_not_final_when_a_call_did_not_report_or_the_harness_failed(
+    events: list[dict[str, Any]],
+) -> None:
+    result = _final(events)
+    assert result.started and not result.usage_final
+
+
+def test_a_call_that_raises_started_the_turn_and_knows_nothing() -> None:
+    result = _final([], fail=True)
+    assert result.started and not result.usage_final
+
+
+def test_nothing_started_before_the_harness_is_called() -> None:
+    assert not harness.InvocationResult().started

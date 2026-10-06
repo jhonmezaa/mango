@@ -311,7 +311,7 @@ def _usage(env: Env, user: str, spent: str, email: str | None) -> None:
     budgets = BudgetService(env.db, "budgets")
     period = current_period()
     budgets.reserve([BudgetScope(f"USER#{user}", Decimal(100), label=email)], Decimal(1), period)
-    budgets.settle([BudgetScope(f"USER#{user}", Decimal(100))], Decimal(1), Decimal(spent), period)
+    budgets.charge([BudgetScope(f"USER#{user}", Decimal(100))], Decimal(spent), period)
 
 
 def test_get_budgets_lists_defaults_agents_and_users(env: Env) -> None:
@@ -346,7 +346,7 @@ def test_get_budgets_lists_every_agent_with_spend(
         ("AGENT#<img src=x>", "9"),
     ):
         budgets.reserve([BudgetScope(key, Decimal(200))], Decimal(1), period)
-        budgets.settle([BudgetScope(key, Decimal(200))], Decimal(1), Decimal(spent), period)
+        budgets.charge([BudgetScope(key, Decimal(200))], Decimal(spent), period)
     names = {"qrstuvwxyz234567": "Ahorros", "finops": "FinOps"}
     monkeypatch.setattr(app_module, "_agent_names", lambda _services: names)
 

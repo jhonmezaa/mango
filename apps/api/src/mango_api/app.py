@@ -106,7 +106,7 @@ from mango_api.people import (
     parse_domains,
     people_router,
 )
-from mango_api.pricing import Usage, cost, estimate_max_cost
+from mango_api.pricing import Usage, cost, estimate_max_cost, turn_price
 from mango_api.probe import AdminProbe, OrganizationCache
 from mango_api.provisioner import DeprovisionerClient, PackProvisionerClient, ProvisionerClient
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
@@ -124,6 +124,7 @@ from mango_api.web_session import (
 )
 from mango_core import invocation
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN, VersionStatus
+from mango_core.budget_turns import PendingTurn
 from mango_core.identity import (
     AccessTokenVerifier,
     IdentityError,
@@ -1015,8 +1016,24 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
         period = current_period()
         scopes = await asyncio.to_thread(_budget_scopes, services, user, agent_id)
         turn = {"agent": agent_id, "version": agent.version, "model": model_id}
+        # The turn's pending record, written with the reservation: whatever happens to this
+        # task, the reservation is closed exactly once (D73).
+        pending = PendingTurn.new(
+            turn_id=turn_id,
+            user_id=user.user_id,
+            agent_id=agent_id,
+            agent_version=agent.version,
+            model=model_id,
+            conversation_id=conversation_id,
+            period=period,
+            scopes=tuple(scope.key for scope in scopes),
+            reserved=estimate,
+            price=turn_price(price),
+            started_at=int(time.time()),
+            timeout_seconds=limits.timeout_seconds,
+        )
         try:
-            await asyncio.to_thread(services.budgets.reserve, scopes, estimate, period)
+            await asyncio.to_thread(services.budgets.reserve, scopes, estimate, period, pending)
         except BudgetExceededError:
             await asyncio.to_thread(
                 services.audit.emit,
@@ -1050,19 +1067,23 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                 binding=sessions.session_binding(user, fingerprint),
                 turn_seconds=limits.timeout_seconds,
             )
-        except Exception:
-            # Release the reservation when the turn cannot start (audit finding F2).
-            await asyncio.to_thread(services.budgets.settle, scopes, estimate, Decimal(0), period)
-            raise
-        request = harness.build_request(
-            invocation_request,
-            session_id=sessions.runtime_session_id(
+            session_id = sessions.runtime_session_id(
                 user=user,
                 agent_id=agent_id,
                 conversation_id=conversation_id,
                 generation=session.generation,
                 fingerprint=fingerprint,
-            ),
+            )
+            # Where the reconciler looks for what the turn cost if this task never says.
+            await asyncio.to_thread(services.budgets.bind_session, pending, session_id)
+        except Exception:
+            # Nothing was invoked: release the reservation when the turn cannot start (audit
+            # finding F2). If this fails too, the reconciler releases it.
+            await asyncio.to_thread(_release_turn, services, pending)
+            raise
+        request = harness.build_request(
+            invocation_request,
+            session_id=session_id,
             actor_id=user.user_id,
             access_token=caller.token,
             invocation_signature=signature,
@@ -1080,10 +1101,10 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
         def produce(put: Callable[[bytes | None], None]) -> None:
             put(sse("conversation", {"conversation_id": conversation_id}))
             result = harness.InvocationResult()
-            actual = Decimal(0)
             write_tools = frozenset(name for name, _ in agent.write_tools)
             requested: set[str] = set()
             approval_ids: list[str] = []
+            answered = False
             try:
                 services.audit.emit(
                     "agent.invoke",
@@ -1108,6 +1129,7 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                     if approval is not None:
                         approval_ids.append(approval.approval_id)
                         put(sse("approval", approval.model_dump(mode="json")))
+                # Shown to the person only when it is everything the turn cost.
                 actual = cost(result.usage, price)
                 message_id = repo.add_message(
                     user.user_id,
@@ -1131,21 +1153,18 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                         },
                     )
                 )
-                _complete_session(repo, user.user_id, conversation_id, session, result)
+                answered = True
             except Exception:
                 logger.exception("chat turn failed")
                 put(sse("error", {"code": "upstream_error", "message": "the agent failed"}))
             finally:
-                _settle_turn(
-                    services,
-                    user=user,
-                    scopes=scopes,
-                    period=period,
-                    reserved=estimate,
-                    actual=actual,
-                    detail=detail,
-                    result=result,
+                settled = _settle_turn(
+                    services, user=user, turn=pending, price=price, detail=detail, result=result
                 )
+            # Only a turn whose reservation is closed leaves its session open to the next one:
+            # the traces of a session with a pending turn belong to that turn alone (D73).
+            if answered and settled:
+                _complete_session(repo, user.user_id, conversation_id, session, result)
             if is_new and not result.failed:
                 _generate_title(
                     services,
@@ -1349,20 +1368,48 @@ def _complete_session(
         logger.exception("could not mark the runtime session as reusable")
 
 
+def _release_turn(services: Services, turn: PendingTurn) -> None:
+    """Release the reservation of a turn that never reached the agent; never raises."""
+    try:
+        services.budgets.settle_turn(turn, Decimal(0))
+    except Exception:
+        logger.exception("the reservation of a turn that did not start was not released")
+
+
 def _settle_turn(
     services: Services,
     *,
     user: UserContext,
-    scopes: list[BudgetScope],
-    period: str,
-    reserved: Decimal,
-    actual: Decimal,
+    turn: PendingTurn,
+    price: ModelPrice,
     detail: dict[str, Any],
     result: harness.InvocationResult,
-) -> None:
-    """Replace the reservation with the real cost and audit the turn; never raises."""
+) -> bool:
+    """Close the turn's reservation and audit the turn; never raises.
+
+    "I do not know what it cost" is never recorded as "it cost nothing" (D73). When the end
+    of the turn is known (it never reached the agent, or its stream was read to the end with
+    the usage of every model call) the real cost replaces the reservation. Otherwise the
+    usage counted so far is charged and the rest of the reservation stays held until the
+    budget reconciler reads what the agent really spent. If nothing can be written here the
+    pending record stays and the reconciler closes it.
+
+    True when the reservation was closed here with a known end.
+    """
+    known = cost(result.usage, price)
+    final = result.usage_final or not result.started
+    held = Decimal(0)
     try:
-        services.budgets.settle(scopes, reserved, actual, period)
+        if final:
+            recorded = services.budgets.settle_turn(turn, known)
+        else:
+            held_turn = services.budgets.hold_turn(turn, result.usage.tokens())
+            recorded = held_turn is not None
+            held = held_turn.retained if held_turn is not None else held
+        if not recorded:
+            # The reconciler closed it first (this task took too long): it audits what it
+            # charged, and the amounts of this event are not the ones in the budget.
+            logger.error("turn %s was already closed when it ended here", turn.turn_id)
         services.audit.emit(
             "agent.completed",
             user.user_id,
@@ -1372,7 +1419,11 @@ def _settle_turn(
                 "tools": [t["name"] for t in result.tools if t["status"] == "started"],
                 "input_tokens": result.usage.input_tokens,
                 "output_tokens": result.usage.output_tokens,
-                "cost_usd": str(actual),
+                "cost_usd": str(known),
+                # ``pending``: the cost above is only what was known when the turn was cut;
+                # ``budget.reconciled`` says what it cost in the end.
+                "settlement": ("reconciler" if not recorded else "final" if final else "pending"),
+                "held_usd": str(held),
                 # Only allowed turns reach this point: denied ones stop at ``require``.
                 "authz": {"action": "UseAgent", "allowed": True},
             },
@@ -1380,6 +1431,8 @@ def _settle_turn(
         )
     except Exception:
         logger.exception("post-turn accounting failed")
+        return False
+    return final and recorded
 
 
 def _budget_scopes(services: Services, user: UserContext, agent_id: str) -> list[BudgetScope]:
@@ -1438,7 +1491,7 @@ def _generate_title(
         title = resp["output"]["message"]["content"][0]["text"].strip().strip('"')[:80]
         usage = Usage.from_bedrock(resp.get("usage", {}))
         spend = cost(usage, _auxiliary_price(services))
-        services.budgets.settle(scopes, Decimal(0), spend, period)
+        services.budgets.charge(scopes, spend, period)
         if title:
             services.conversations.set_title(user_id, conversation_id, title)
     except Exception:

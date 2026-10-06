@@ -8,8 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from mango_api.settings import ModelPrice
-
-_MILLION = Decimal(1_000_000)
+from mango_core.budget_turns import TokenUsage, TurnPrice, token_cost
 
 
 @dataclass
@@ -34,15 +33,19 @@ class Usage:
             cache_write_tokens=int(usage.get("cacheWriteInputTokens", 0)),
         )
 
+    def tokens(self) -> TokenUsage:
+        return TokenUsage(
+            self.input_tokens, self.output_tokens, self.cache_read_tokens, self.cache_write_tokens
+        )
+
+
+def turn_price(price: ModelPrice) -> TurnPrice:
+    """The price as a turn's pending record keeps it (D73)."""
+    return TurnPrice(price.input, price.output, price.cache_read, price.cache_write)
+
 
 def cost(usage: Usage, price: ModelPrice) -> Decimal:
-    total = (
-        usage.input_tokens * price.input
-        + usage.output_tokens * price.output
-        + usage.cache_read_tokens * price.cache_read
-        + usage.cache_write_tokens * price.cache_write
-    ) / _MILLION
-    return total.quantize(Decimal("0.000001"))
+    return token_cost(usage.tokens(), turn_price(price))
 
 
 def estimate_max_cost(

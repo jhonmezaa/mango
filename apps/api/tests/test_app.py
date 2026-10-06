@@ -23,6 +23,7 @@ from mango_api.settings_store import SettingsUnavailableError
 from mango_core import invocation
 from mango_core.agents import AgentDefinition, VersionStatus, dumps_definition
 from mango_core.agents import content_hash as hash_content
+from mango_core.budget_turns import PendingTurn, TokenUsage, token_cost
 from mango_core.identity import IdentityError
 
 HOST = "internal-alb.example.com"
@@ -224,18 +225,51 @@ class FakeModelCatalog:
 @dataclass
 class FakeBudgets:
     exceed: bool = False
+    fail_settle: bool = False
+    closed_elsewhere: bool = False
     reserved: list[Decimal] = field(default_factory=list)
     settled: list[tuple[Decimal, Decimal]] = field(default_factory=list)
+    """(reserved, charged) of the turns closed with a known end."""
+    held: list[tuple[Decimal, Decimal]] = field(default_factory=list)
+    """(charged, retained) of the turns left to the reconciler."""
+    charged: list[Decimal] = field(default_factory=list)
+    turns: list[PendingTurn] = field(default_factory=list)
+    sessions: dict[str, str] = field(default_factory=dict)
     scopes: list[Any] = field(default_factory=list)
 
-    def reserve(self, scopes: Any, amount: Decimal, _period: str) -> None:
+    def reserve(
+        self, scopes: Any, amount: Decimal, _period: str, turn: PendingTurn | None = None
+    ) -> None:
         if self.exceed:
             raise BudgetExceededError("x")
         self.scopes = list(scopes)
         self.reserved.append(amount)
+        if turn is not None:
+            self.turns.append(turn)
 
-    def settle(self, _scopes: Any, reserved: Decimal, actual: Decimal, _period: str) -> None:
-        self.settled.append((reserved, actual))
+    def bind_session(self, turn: PendingTurn, session_id: str) -> None:
+        self.sessions[turn.turn_id] = session_id
+
+    def settle_turn(self, turn: PendingTurn, actual: Decimal) -> bool:
+        if self.fail_settle:
+            raise RuntimeError("dynamodb down")
+        if self.closed_elsewhere:
+            return False
+        self.settled.append((turn.reserved, actual))
+        return True
+
+    def hold_turn(self, turn: PendingTurn, usage: TokenUsage) -> PendingTurn | None:
+        if self.fail_settle:
+            raise RuntimeError("dynamodb down")
+        if self.closed_elsewhere:
+            return None
+        known = token_cost(usage, turn.price)
+        retained = max(turn.reserved - known, Decimal(0))
+        self.held.append((known, retained))
+        return replace(turn, state="held", charged=known, retained=retained, usage=usage)
+
+    def charge(self, _scopes: Any, amount: Decimal, _period: str) -> None:
+        self.charged.append(amount)
 
 
 @dataclass
@@ -1046,7 +1080,7 @@ def test_budget_is_reserved_and_settled_with_the_price_of_the_chosen_model(h: Ha
     default, cheap = h.budgets.reserved
     # Same turn, a third of the price (CHEAP costs 1 and 5 USD per million; MODEL 3 and 15).
     assert default == cheap * 3
-    assert [actual for reserved, actual in h.budgets.settled if reserved] == [
+    assert [actual for _, actual in h.budgets.settled] == [
         Decimal("0.004500"),
         Decimal("0.001500"),
     ]

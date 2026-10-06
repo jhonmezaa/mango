@@ -157,6 +157,12 @@ class InvocationResult:
     interrupted: bool = False
     """The turn was ended here while the harness was still working (a write tool waits for a
     person, D27): its runtime session holds a half-finished turn."""
+    started: bool = False
+    """The harness was called (or about to be): from here on the agent may have spent."""
+    usage_final: bool = False
+    """``usage`` is everything the turn cost: the stream was read to its end and every model
+    call reported its usage. False after an error, a cut or a call whose usage never arrived:
+    the cost of the turn is then not known and its budget reservation is held (D73)."""
 
 
 def _display_tool_name(raw: str) -> str:
@@ -329,6 +335,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     # Sent before the call: the first event of the harness only arrives once the guardrail
     # has released the first block of the answer (or the first tool call).
     yield from progress.to(Phase.THINKING)
+    result.started = True
     response = client.invoke_harness(**request)
     tool_names: dict[str, str] = {}
     running: set[str] = set()
@@ -337,6 +344,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     # Write tool calls in flight: the Gateway refuses them, whatever the harness does next.
     refused: set[str] = set()
     asked = False
+    # A model call reports its usage after its message: while one is owed, or none has
+    # arrived at all, what the turn cost is not known.
+    reported = owed = False
     stream = response["stream"]
     for event in stream:
         if result.interrupted:
@@ -344,6 +354,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             # that is still needed from this stream.
             if "metadata" in event:
                 result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
+                result.usage_final = True
             break
         if "contentBlockStart" in event:
             block = event["contentBlockStart"]
@@ -397,8 +408,10 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             yield from write_calls.close()
             result.stop_reason = event["messageStop"].get("stopReason", "")
             result.interrupted = asked
+            owed = True
         elif "metadata" in event:
             result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
+            reported, owed = True, False
         elif any(
             k in event
             for k in ("internalServerException", "validationException", "runtimeClientError")
@@ -406,6 +419,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             result.failed = True
             yield StreamEvent("error", {"code": "upstream_error", "message": "agent error"})
             return
+    if not result.interrupted:
+        result.usage_final = reported and not owed
     if result.interrupted:
         # Dropping the connection is what stops the wait; the harness is not read again.
         close = getattr(stream, "close", None)
