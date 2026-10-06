@@ -1,7 +1,7 @@
 # D71 · La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 15, y tras una prueba de carga, punto 16)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 15, y tras una prueba de carga, punto 16; lo que se vio del punto 16 ya instalado, punto 17)
 - **Precisa / reemplaza a:** precisa [D54](D054-egress-de-packs.md) (3): el DNS Firewall de la red de packs tiene una lista más y registro de consultas (puntos 13 y 14)
 - **Precisada por:** [D72](D072-limites-por-ip-para-una-oficina.md) (precisa los puntos 1 y 5: `Edge-rate-limited` suma los bloqueos de las dos reglas por IP del borde, y hay una alarma nueva, `Cognito-rate-limited`, para las reglas por IP del user pool); [D73](D073-turno-cortado-nunca-cuesta-cero.md) (precisa el punto 1: dos alarmas nuevas, `BudgetReconciler-reservation-charged` y `BudgetReconciler-failed`)
 
@@ -78,3 +78,12 @@ Origen: la revisión del proyecto del 2026-10-05 (infraestructura, H6). El usuar
 - **Con los criterios de siempre.** Datos ausentes no cuentan, descripción en inglés con qué mirar primero, sin filtros de métricas, umbrales en `OPERATIONAL_THRESHOLDS`. El tablero suma dos gráficos: llamadas y rechazos de Bedrock, y la CPU de la tarea más cargada junto a la media.
 - **Costo y tamaño.** Dos alarmas más en `Core` (28; con la de `PackNetwork`, 29) que leen tres métricas: unos USD 0,30 al mes. Sin supresiones nuevas ni cambios de permisos.
 - **Pendiente de comprobar en una instalación.** Que las dos existen con métricas que existen, y verlas saltar: ninguna se ha provocado todavía.
+
+**(17) Lo que se comprobó del punto 16 (2026-10-06, en una instalación de laboratorio, con la versión que lo trae), y lo que no.**
+
+- **`Bedrock-throttled` saltó con rechazos de verdad.** Con la cuota de la cuenta en 10 llamadas por minuto y decenas de turnos a la vez, pasó a `ALARM` con 277 rechazos en 5 minutos, volvió sola a `OK` diez minutos después y saltó otra vez con la tanda siguiente. La métrica sin dimensiones que lee existe.
+- **`Api-slow` tiene datos y no saltó** con 120 lecturas por segundo durante 4 minutos: el 95 % respondió en 0,12 s, lejos de su umbral de 1 s. Es lo esperado.
+- **Las dos alarmas de la conciliación del presupuesto** (`BudgetReconciler-reservation-charged` y `BudgetReconciler-failed`, [D73](D073-turno-cortado-nunca-cuesta-cero.md)) existen y siguieron en `OK`. No se provocaron.
+- **31 alarmas tras la actualización** (30 en `Core` y la de `PackNetwork`), todas en `OK` al terminar.
+- **Las notificaciones salieron.** El topic publicó cuatro avisos (dos de `Bedrock-throttled` y dos de `Edge-rate-limited`) y el servicio de notificaciones los dio por entregados, sin fallos. No está confirmado que llegaran al buzón; que el correo llega se vio con las alarmas de prueba del punto 12.
+- **Sin ver.** `Api-slow` saltando: no se saturó la instalación. Y las dos de la conciliación del presupuesto.

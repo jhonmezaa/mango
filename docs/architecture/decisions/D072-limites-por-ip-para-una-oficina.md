@@ -1,7 +1,7 @@
 # D72 · Los límites por IP alcanzan para una oficina detrás de una sola dirección, y `mango-api` renueva la sesión con la operación firmada
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 14, y tras una prueba de carga, punto 15)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 14, y tras una prueba de carga, punto 15; lo que se vio en un navegador, puntos 16 a 19)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (4: los límites de la sesión ya no protegen un límite por IP, y la nota «con una salida compartida, revisar» queda resuelta), [D63](D063-sesion-web-con-cookie.md) (la sesión se crea y se renueva con la operación firmada; el margen del WAF del user pool queda medido), [D28](D028-implementacion-del-login-propio.md) (los números del WAF regional del user pool) y [D71](D071-alarmas-operativas-y-tablero.md) (1 y 5: `Edge-rate-limited` suma dos reglas y hay una alarma nueva para el WAF del user pool)
 - **Precisada por:** —
 
@@ -96,3 +96,44 @@ Una oficina de más de unas 1.000 personas detrás de **una** dirección seguir�
 - **Por qué no se baja.** Es lo que deja trabajar a unas 400 personas detrás de una dirección (punto 3), que es más o menos lo que la instalación sirve.
 - **Lo que este límite no cubre.** Una persona con sesión que repita una ruta cara: 20 llamadas por segundo al Marketplace (`GET /api/agents`, que cuesta unas 6 lecturas) saturan una tarea sin pasar del límite. No se arregla en el WAF: pide abaratar esa ruta o un límite por persona, y queda fuera de esta decisión.
 - **Siguen pendientes** las cifras de uso de una empresa real.
+
+**(16) Los tres bloqueos del borde, vistos en un navegador (2026-10-06, en una instalación de laboratorio).** El punto 14 dejaba sin probar cómo se ve un bloqueo. Esta vez fueron reales y sobre el propio navegador: las ráfagas salieron de otra pestaña del mismo origen, con una persona de prueba con sesión.
+
+Con la regla de `/api/*` bloqueando:
+
+| Qué hace la persona | Qué ve |
+|---|---|
+| Envía un mensaje en el chat | Su mensaje queda en pantalla y, debajo, «Ocurrió un error inesperado. Inténtalo de nuevo.» con «Reintentar». En el historial, «No se pudo cargar el historial.» con «Reintentar» y la lista que ya tenía |
+| Abre una conversación | «No se pudo cargar la conversación», con «Reintentar» y «Nueva conversación» |
+| Abre el Marketplace | «No se pudieron cargar los agentes», con «Reintentar» |
+| Recarga la página | A pantalla completa, el logo, «Ocurrió un error inesperado. Inténtalo de nuevo.» y «Reintentar» |
+| Recarga la página con la renovación de sesión también rechazada | La misma pantalla. **No aparece el formulario de ingreso** |
+| Pulsa «Reintentar» cuando el bloqueo ya se levantó | Vuelve la aplicación con su sesión, sin pasar por el ingreso |
+
+- **Son los estados de error genéricos de cada pantalla.** Ninguna dice «demasiadas solicitudes» ni cuánto esperar, y «Reintentar» durante el bloqueo vuelve a fallar y vuelve a contar. Un estado propio es asunto del diseño (D24) y va al próximo brief, con los textos provisionales del punto 5.
+- **Lo que llega por la red** es lo declarado: 429 con el JSON de `rate_limited`, `Retry-After: 180`, `Cache-Control: no-store` y `X-Content-Type-Options: nosniff`. La CSP es la de la aplicación, con las demás cabeceras de la política de CloudFront (punto 13). `/api/health`, pedida desde esa dirección, también recibe el 429.
+- **Con la regla general bloqueando,** la aplicación no carga: aparece una página en blanco con el título «Demasiadas solicitudes» y el texto nuevo («Se recibieron demasiadas solicitudes desde tu red. Espera unos minutos y vuelve a cargar la página.»), en la tipografía por defecto del navegador, sin logo ni estilos. Llega con 429, `Retry-After: 180`, `Cache-Control: no-store` y las cabeceras de seguridad y la CSP de la aplicación. Una llamada a `/api/*` por esa conexión recibe esa página, no el JSON.
+
+**(17) Los tiempos, otra vez (2026-10-06, en una instalación de laboratorio).** Coinciden con el punto 11:
+
+| Regla | Ritmo de la ráfaga | Pasaron antes del primer bloqueo | De más | Retraso desde que se cruzó el límite | Se levantó, tras parar |
+|---|---|---|---|---|---|
+| Borde, `ApiRateLimitPerIp` | 40 por segundo | 7.322 | 22 % | 33 s | Sin medir |
+| Borde, `ApiRateLimitPerIp` (segunda vez) | 40 por segundo | 7.673 | 28 % | 42 s | 147 s |
+| Borde, `RateLimitPerIp` | 100 por segundo | 24.749 | 24 % | 48 s | Unos 100 s |
+
+`Edge-rate-limited` avisó dos veces, una por cada regla, y volvió sola a `OK`.
+
+**(18) Un bloqueo puede ser parcial en un mismo navegador (2026-10-06).** El bloqueo es por dirección, y un navegador no siempre sale por una sola.
+
+- **Qué se vio.** Con la regla de `/api/*` bloqueando, el chat, el historial y el Marketplace recibían 429 y, en la misma pestaña, la renovación de sesión respondía 200.
+- **Por qué.** Chrome usa conexiones distintas para las peticiones con credenciales y sin ellas. La web llama a la API con el token en una cabecera y sin cookie; solo la renovación de sesión y la carga de la página llevan la cookie. En una red con más de una salida a internet, cada conexión puede salir por una dirección distinta, y el WAF cuenta cada dirección aparte.
+- **Qué cambia.** Ningún número ni ninguna regla. Cambia cómo se lee una queja: «no carga nada, pero no me sacó» o «a mí sí me funciona» desde la misma oficina son compatibles con un bloqueo por IP. Y una oficina con varias salidas reparte su tráfico entre varios recuentos.
+
+**(19) El user pool: la regla de correos bloqueó de verdad; la regla total sigue sin verse (2026-10-06, en una instalación de laboratorio).** El punto 14 dejaba las dos sin probar.
+
+- **La regla de correos (`EmailOperationsPerIp`).** Sesenta `ForgotPassword` seguidos desde una dirección, con un usuario que no existe: antes que el WAF actuó el límite propio de Cognito por usuario (cinco respuestas normales y después `LimitExceededException`), y las sesenta contaron igual para la regla. El rechazo del WAF llegó en la llamada 62: 403 `ForbiddenException`. Mientras duró, el ingreso (`InitiateAuth`) siguió respondiendo desde la misma dirección. Su métrica de bloqueos ya existe. No se envió ningún correo ni se creó ninguna cuenta.
+- **Lo que mostró la pantalla de ingreso durante ese bloqueo.** «¿Olvidaste tu contraseña?» avanzó al paso siguiente como si hubiera enviado el código («Si … tiene una cuenta, te enviamos un código»), con la llamada rechazada. «Crear cuenta» se quedó en el formulario con «No se pudo completar el inicio de sesión. Inténtalo de nuevo.». Se anota como se vio; no se cambia aquí.
+- **`Cognito-rate-limited` no saltó,** y es lo correcto: fueron 4 bloqueos y su umbral es 50.
+- **La regla total (`RateLimitPerIp`) no se pudo provocar.** 12.800 `GetUser` con un token inválido desde una dirección, a 20 y a 40 por segundo, respondieron todas 400 y ninguna 403: esas llamadas no llegan al web ACL, que en esos minutos contó 64 peticiones. Una petición sin el identificador del cliente ni un token válido no identifica a ningún user pool. Su métrica de bloqueos todavía no existe.
+- **Sin probar.** La regla total y lo que ve una persona al ingresar con ella bloqueando: hace falta una operación que lleve el identificador del cliente y no caiga antes en las reglas de correo o de secretos. Y siguen pendientes las cifras de uso de una empresa real.
