@@ -7,13 +7,18 @@ import { Template } from "aws-cdk-lib/assertions";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadReleasePacks, packCatalog, packSigningKey, PAYLOAD_TYPE } from "../lib/config/pack-release.js";
 import { installationSchema, loadInstallation } from "../lib/config/schema.js";
-import { PACK_EGRESS_SERVICES, packSubnetCidrs } from "../lib/constructs/pack-network.js";
+import {
+  PACK_DNS_PLATFORM_NAMES,
+  PACK_DNS_QUERY_LOG_RETENTION,
+  PACK_EGRESS_SERVICES,
+  packSubnetCidrs,
+} from "../lib/constructs/pack-network.js";
 import { assertPackEgress, PACK_DATA_ACTIONS } from "../lib/constructs/pack-platform.js";
 import { PACK_PROVISIONER_WRITABLE_ATTRIBUTES } from "../lib/constructs/pack-provisioner.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { MEMBER_READ_ONLY_DATA_ACTIONS } from "../lib/stacks/member-stack.js";
 import { BILLING_READER_DATA_ACTIONS } from "../lib/stacks/payer-stack.js";
-import { payerTemplate } from "./parameters.js";
+import { instantiate, payerTemplate } from "./parameters.js";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../..");
 const examplePath = resolve(import.meta.dirname, "../config/example.json");
@@ -1195,6 +1200,17 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
       ].sort(),
     );
     expect(everything[1].Properties.Domains).toEqual(["*."]);
+    // What the AgentCore machine asks for by itself: refused too, by a rule of its own, between
+    // the one that allows and the one that refuses everything. The list is written out here:
+    // a name added to it has to be added to this test.
+    const platform = lists.find(([, r]) => r.Properties.Name === `Mango-${ns}-PackDnsPlatform`)!;
+    expect(platform[1].Properties.Domains).toEqual(["time.aws.com."]);
+    expect(PACK_DNS_PLATFORM_NAMES).toEqual(["time.aws.com"]);
+    for (const name of platform[1].Properties.Domains as string[]) {
+      // Exact names: no wildcard, no variable label a pack could write data into.
+      expect(name).toMatch(/^([a-z0-9-]+\.)+$/);
+    }
+    expect(lists).toHaveLength(3);
     const groups = ofType(shipped, "AWS::Route53Resolver::FirewallRuleGroup");
     expect(groups).toHaveLength(1);
     expect(groups[0]![1].Properties.FirewallRules).toEqual([
@@ -1203,6 +1219,12 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
         Action: "ALLOW",
         FirewallDomainListId: { "Fn::GetAtt": [allowed[0], "Id"] },
         FirewallDomainRedirectionAction: "TRUST_REDIRECTION_DOMAIN",
+      },
+      {
+        Priority: 150,
+        Action: "BLOCK",
+        BlockResponse: "NXDOMAIN",
+        FirewallDomainListId: { "Fn::GetAtt": [platform[0], "Id"] },
       },
       {
         Priority: 200,
@@ -1217,6 +1239,60 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
       VpcId: { Ref: vpcId },
       FirewallRuleGroupId: { "Fn::GetAtt": [groups[0]![0], "Id"] },
     });
+  });
+
+  it("logs every DNS query of the pack VPC to an encrypted log group of the installation", () => {
+    const groups = ofType(shipped, "AWS::Logs::LogGroup").filter(
+      ([, r]) => r.Properties.LogGroupName === `Mango-${ns}-PackNetwork-dns-queries`,
+    );
+    expect(groups).toHaveLength(1);
+    const [groupId, group] = groups[0]!;
+    expect(group.Properties.RetentionInDays).toBe(PACK_DNS_QUERY_LOG_RETENTION);
+    expect(group.Properties.KmsKeyId).toBeDefined();
+    // Like the flow logs of the same network: same key, same retention, kept on uninstall.
+    const [, flowLogGroup] = ofType(shipped, "AWS::Logs::LogGroup").find(([id]) => id.startsWith("PackNetworkFlowLogs"))!;
+    expect(group.Properties.KmsKeyId).toEqual(flowLogGroup.Properties.KmsKeyId);
+    expect(group.Properties.RetentionInDays).toBe(flowLogGroup.Properties.RetentionInDays);
+    expect((group as unknown as { DeletionPolicy: string }).DeletionPolicy).toBe("Retain");
+
+    const arn = `arn:aws:logs:${region}:${account}:log-group:Mango-${ns}-PackNetwork-dns-queries`;
+    const configs = ofType(shipped, "AWS::Route53Resolver::ResolverQueryLoggingConfig");
+    expect(configs).toHaveLength(1);
+    const [configId, config] = configs[0]!;
+    const partition = { "AWS::Partition": "aws" };
+    expect(instantiate(config.Properties, partition)).toEqual({
+      Name: `Mango-${ns}-PackNetwork-dns-queries`,
+      DestinationArn: `${arn}:*`,
+    });
+    const associations = ofType(shipped, "AWS::Route53Resolver::ResolverQueryLoggingConfigAssociation");
+    expect(associations).toHaveLength(1);
+    expect(associations[0]![1].Properties).toEqual({
+      ResolverQueryLogConfigId: { "Fn::GetAtt": [configId, "Id"] },
+      ResourceId: { Ref: vpcId },
+    });
+
+    // The delivery needs a resource policy of CloudWatch Logs. The template brings its own,
+    // for this log group and this account only: an account may have none that covers it.
+    const policies = ofType(shipped, "AWS::Logs::ResourcePolicy").filter(
+      ([, r]) => r.Properties.PolicyName === `Mango-${ns}-PackDnsQueriesDelivery`,
+    );
+    expect(policies).toHaveLength(1);
+    const [policyId, policy] = policies[0]!;
+    expect(JSON.parse(instantiate(policy.Properties.PolicyDocument, partition) as string).Statement).toEqual([
+      {
+        Sid: "PackDnsQueriesDelivery",
+        Effect: "Allow",
+        Principal: { Service: "delivery.logs.amazonaws.com" },
+        Action: ["logs:CreateLogStream", "logs:PutLogEvents"],
+        Resource: `${arn}:log-stream:*`,
+        Condition: {
+          StringEquals: { "aws:SourceAccount": account },
+          ArnLike: { "aws:SourceArn": `arn:aws:logs:${region}:${account}:*` },
+        },
+      },
+    ]);
+    // The configuration is created once the log group and its policy exist.
+    expect((config as unknown as { DependsOn: string[] }).DependsOn.sort()).toEqual([groupId, policyId].sort());
   });
 
   it("tells the provisioner where each pack runs, from the stack and nowhere else", () => {

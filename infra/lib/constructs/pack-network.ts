@@ -84,6 +84,17 @@ export const PACK_NETWORK_ZONES = 2;
 /** Queries the DNS Firewall of the pack network refuses in 5 minutes before it alarms (TM-E2). */
 export const PACK_DNS_BLOCKED_QUERIES = 1;
 
+/**
+ * Names the AgentCore machine asks for by itself when a runtime session starts, before the code
+ * of the pack runs: the public time service of AWS. They are refused like any other name, by a
+ * rule of their own, so that they do not count for the alarm. Exact names only, never a
+ * wildcard: a name with a variable label would be a tunnel nobody watches.
+ */
+export const PACK_DNS_PLATFORM_NAMES = ["time.aws.com"];
+
+/** Days the pack network keeps the DNS queries of its runtimes. */
+export const PACK_DNS_QUERY_LOG_RETENTION = logs.RetentionDays.ONE_MONTH;
+
 /** The pack network of another stack of the same account, by its exports. */
 export function importPackNetwork(ns: string, packs: Pick<ReleasePack, "id">[]): PackNetworkRef {
   return {
@@ -115,7 +126,8 @@ export interface PackNetworkProps {
  *   from anywhere else are refused at the endpoint. The S3 gateway endpoint only lets
  *   AgentCore read its code buckets, so a pack cannot use S3 at all.
  * - A Route 53 Resolver DNS Firewall resolves the names of those endpoints and nothing else
- *   (no DNS tunnel). A VPC fails closed when the firewall cannot answer (the default).
+ *   (no DNS tunnel). A VPC fails closed when the firewall cannot answer (the default). Every
+ *   query of the VPC is logged with its name and what the firewall did with it.
  *
  * Everything is static in the template (D25): the pack provisioner only names these subnets
  * and the pack's security group when it creates a runtime. Not peered with the VPC of
@@ -262,6 +274,13 @@ export class PackNetwork extends Construct implements PackNetworkRef {
         `*.s3.${region}.amazonaws.com.`,
       ].sort(),
     });
+    if (PACK_DNS_PLATFORM_NAMES.some((name) => name.includes("*"))) {
+      throw new Error("the platform names of the pack DNS Firewall are exact names, never wildcards");
+    }
+    const platform = new route53resolver.CfnFirewallDomainList(this, "DnsPlatform", {
+      name: mangoName(ns, "PackDnsPlatform"),
+      domains: PACK_DNS_PLATFORM_NAMES.map((name) => `${name}.`).sort(),
+    });
     const everything = new route53resolver.CfnFirewallDomainList(this, "DnsEverything", {
       name: mangoName(ns, "PackDnsEverything"),
       domains: ["*."],
@@ -276,6 +295,9 @@ export class PackNetwork extends Construct implements PackNetworkRef {
           // S3 answers with CNAME chains: the decision is made on the name that was asked.
           firewallDomainRedirectionAction: "TRUST_REDIRECTION_DOMAIN",
         },
+        // Same answer as the rule below. Apart, because the metric the alarm reads is per list:
+        // what the platform always asks for is not what a pack has no reason to ask for.
+        { priority: 150, action: "BLOCK", blockResponse: "NXDOMAIN", firewallDomainListId: platform.attrId },
         { priority: 200, action: "BLOCK", blockResponse: "NXDOMAIN", firewallDomainListId: everything.attrId },
       ],
     });
@@ -289,17 +311,65 @@ export class PackNetwork extends Construct implements PackNetworkRef {
       mutationProtection: "DISABLED",
     });
 
+    // --- DNS query log: which name was asked, and what the firewall answered --------------
+    // The metric of the alarm below says that a name was refused, not which one. The names a
+    // compromised pack asks for are the data it tries to take out: the log group is encrypted
+    // and kept as long as the flow logs.
+    const stack = Stack.of(this);
+    const queryLogName = mangoName(ns, "PackNetwork-dns-queries");
+    const queryLogArn = `arn:${stack.partition}:logs:${stack.region}:${stack.account}:log-group:${queryLogName}`;
+    const queryLog = new logs.LogGroup(this, "DnsQueries", {
+      logGroupName: queryLogName,
+      retention: PACK_DNS_QUERY_LOG_RETENTION,
+      encryptionKey: logsKeyOf(this),
+    });
+    // The Resolver delivers through CloudWatch vended logs, which need a resource policy on
+    // the log group. Declared here, scoped to this log group and this account: the template
+    // does not rely on a policy the account happens to have, nor on the deploying principal
+    // being allowed `logs:PutResourcePolicy`.
+    const queryLogDelivery = new logs.CfnResourcePolicy(this, "DnsQueriesDeliveryPolicy", {
+      policyName: mangoName(ns, "PackDnsQueriesDelivery"),
+      policyDocument: stack.toJsonString({
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Sid: "PackDnsQueriesDelivery",
+            Effect: "Allow",
+            Principal: { Service: "delivery.logs.amazonaws.com" },
+            Action: ["logs:CreateLogStream", "logs:PutLogEvents"],
+            Resource: `${queryLogArn}:log-stream:*`,
+            Condition: {
+              StringEquals: { "aws:SourceAccount": stack.account },
+              ArnLike: {
+                "aws:SourceArn": `arn:${stack.partition}:logs:${stack.region}:${stack.account}:*`,
+              },
+            },
+          },
+        ],
+      }),
+    });
+    const queryLogging = new route53resolver.CfnResolverQueryLoggingConfig(this, "DnsQueryLogging", {
+      name: queryLogName,
+      destinationArn: `${queryLogArn}:*`,
+    });
+    queryLogging.addDependency(queryLog.node.defaultChild as logs.CfnLogGroup);
+    queryLogging.addDependency(queryLogDelivery);
+    new route53resolver.CfnResolverQueryLoggingConfigAssociation(this, "DnsQueryLoggingAssociation", {
+      resolverQueryLogConfigId: queryLogging.attrId,
+      resourceId: this.vpc.vpcId,
+    });
+
     // TM-E2: a pack asked for a name that is not one of its endpoints. Nothing left the
     // network (the answer was NXDOMAIN); the alarm says that something tried. The topic is
     // named, not referenced: in a release it belongs to the Core stack, installed afterwards.
-    const stack = Stack.of(this);
     const blocked = new cloudwatch.Alarm(this, "DnsBlockedAlarm", {
       alarmName: mangoName(ns, "PackDns-blocked"),
       alarmDescription:
-        "The DNS Firewall of the pack network refused queries for names outside the allowlist of the VPC " +
-        "endpoints: code in a pack runtime asked for a name it has no reason to reach (TM-E2, DNS tunnel). " +
-        "Nothing was resolved. Look first at which packs were in use at that time and at the rejected " +
-        "connections in the flow logs of the pack VPC.",
+        "The DNS Firewall of the pack network refused queries for names that are neither a VPC endpoint " +
+        "nor what the AgentCore machine asks for by itself: code in a pack runtime asked for a name it has " +
+        "no reason to reach (TM-E2, DNS tunnel). Nothing was resolved. Look first at the DNS query log of " +
+        "the pack network (log group Mango-<namespace>-PackNetwork-dns-queries): the names with firewall_rule_action " +
+        "BLOCK outside the PackDnsPlatform list; then at which packs were in use at that time.",
       metric: new cloudwatch.Metric({
         namespace: "AWS/Route53Resolver",
         metricName: "FirewallRuleQueryVolume",

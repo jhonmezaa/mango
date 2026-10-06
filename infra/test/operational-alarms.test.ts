@@ -340,12 +340,18 @@ describe("a release (D58): names come from the Namespace parameter", () => {
     expect(properties.AlarmDescription).toMatch(/Look first at /);
     expect(instantiate(properties.AlarmName, values)).toBe("Mango-acme-PackDns-blocked");
 
-    // The domain list of the rule that blocks, in the rule group associated with the pack VPC.
+    // The list that refuses everything, in the rule group associated with the pack VPC: not
+    // the list of what the AgentCore machine asks for by itself, which is refused before it.
     const [groupId, group] = ofType(network, "AWS::Route53Resolver::FirewallRuleGroup")[0]!;
     const blocking = (group.Properties.FirewallRules as any[]).filter((rule) => rule.Action === "BLOCK");
-    expect(blocking).toHaveLength(1);
+    expect(blocking.map((rule) => rule.Priority)).toEqual([150, 200]);
+    const listOf = (rule: any) => network[rule.FirewallDomainListId["Fn::GetAtt"][0]]!.Properties;
+    expect(listOf(blocking[0]).Domains).toEqual(["time.aws.com."]);
+    expect(listOf(blocking[1]).Domains).toEqual(["*."]);
     expect(dimension(properties.Dimensions, "FirewallRuleGroupId")).toEqual({ "Fn::GetAtt": [groupId, "Id"] });
-    expect(dimension(properties.Dimensions, "FirewallDomainListId")).toEqual(blocking[0].FirewallDomainListId);
+    expect(dimension(properties.Dimensions, "FirewallDomainListId")).toEqual(blocking[1].FirewallDomainListId);
+    // It says where the names are: the flow logs do not carry them.
+    expect(instantiate(properties.AlarmDescription, values)).toContain("Mango-<namespace>-PackNetwork-dns-queries");
   });
 
   it("notifies the alerts topic of Core by its name: the pack network is installed first", () => {
