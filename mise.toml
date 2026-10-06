@@ -77,6 +77,10 @@ run = [
 ]
 
 [tasks.secrets]
-description = "Secret scan of the git history and of uncommitted changes"
-run = ["gitleaks git . --no-banner --redact", "gitleaks git . --pre-commit --no-banner --redact"]
+description = "Secret scan of the git history and of uncommitted changes, and real data by its shape (account ids, hosts, mail addresses) in the versioned files"
+run = [
+  "gitleaks git . --no-banner --redact",
+  "gitleaks git . --pre-commit --no-banner --redact",
+  "python3 deployment/check-real-data.py",
+]
 

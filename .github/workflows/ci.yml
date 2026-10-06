@@ -65,3 +65,6 @@ jobs:
       - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
       - run: mise run audit
       - run: gitleaks git . --no-banner --redact
+      # Not secrets, so gitleaks does not see them: account ids, organization ids, hosts and
+      # mail addresses of a real installation, by their shape (D59).
+      - run: python3 deployment/check-real-data.py

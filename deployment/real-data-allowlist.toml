@@ -1,0 +1,84 @@
+# Invented markers that `deployment/check-real-data.py` lets through (D59).
+#
+# One table per rule of the script. A value here is allowed everywhere in the repository, so:
+# - add a value only after checking that it is not a real one of any installation;
+# - prefer a marker that is already here over a new one;
+# - say what each value is.
+
+[aws-account-id]
+allowed = [
+  # Example ids in the style of the AWS documentation.
+  "123456789012",
+  "111122223333",
+  "444455556666",
+  "999988887777",
+  "999900001111",
+  # One digit repeated: accounts of tests, mocks and the design.
+  "000000000000",
+  "111111111111",
+  "222222222222",
+  "333333333333",
+  "444444444444",
+  "555555555555",
+  "666666666666",
+  "777777777777",
+  "999999999999",
+  # A countdown behind a counter: accounts of the organization in tests and in the mock.
+  "210987654321",
+  "310987654321",
+  "410987654321",
+  "510987654321",
+  # Bases of generated ids (`300000000000 + n`, `600000000000 + index`).
+  "300000000000",
+  "600000000000",
+  # Invented id of an old design mock, quoted by a security review.
+  "719283740192",
+  # Owned by AWS and public: Elastic Load Balancing log delivery in us-east-1, and the
+  # account that publishes the Lambda Web Adapter layer.
+  "127311923021",
+  "753240598075",
+]
+
+[aws-organization-id]
+allowed = [
+  "o-exampleorg1",
+  "o-notthisorg0", # the organization a test expects to be refused
+  "o-xxxxxxxxxx",
+  "o-yyyyyyyyyy",
+]
+
+[aws-ou-id]
+# An OU id starts with the id of its root. These roots are invented, so every OU under them
+# is allowed (`ou-abcd-11111111`, `ou-xxxx-xxxxxxxx`, ...).
+roots = ["abcd", "a1b2", "xxxx", "root"]
+
+[cognito-user-pool-id]
+allowed = [
+  "us-east-1_AbCdEfGhI",
+  "us-east-1_ExAmPle12", # SRP test vectors
+  "us-east-1_XXXXXXXXX",
+]
+
+[cloudfront-host]
+allowed = [
+  "d123.cloudfront.net",
+]
+
+[cognito-domain]
+allowed = [
+  "mango-dev.auth.us-east-1.amazoncognito.com",
+  "mango-acme-111111111111.auth.us-east-1.amazoncognito.com",
+]
+
+[public-email]
+# Addresses of public providers that tests use to prove they are refused or normalized.
+allowed = [
+  "ana@gmail.com",
+  "ana.perez@gmail.com",
+  "ana@googlemail.com",
+  "ana@outlook.es",
+  "ana@hotmail.com.mx",
+  "ana@yahoo.com.mx",
+  "ana@yahoo.co.uk",
+  "anyone@gmail.com",
+]
