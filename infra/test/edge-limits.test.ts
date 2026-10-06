@@ -43,17 +43,14 @@ describe("edge web ACL (D72)", () => {
     expect([API_RATE_LIMIT, EDGE_RATE_LIMIT]).toEqual([6000, 20000]);
     const api = rule("ApiRateLimitPerIp").Statement.RateBasedStatement;
     expect(api).toMatchObject({ Limit: 6000, AggregateKeyType: "IP", EvaluationWindowSec: 300 });
-    // Only what CloudFront sends to mango-api; a path written another way still counts.
+    // What CloudFront sends to mango-api: the same prefix as its `/api/*` behavior, on the path
+    // as it was sent. A transformation would let `/api/%2e%2e/x` reach mango-api uncounted.
     expect(api.ScopeDownStatement).toEqual({
       ByteMatchStatement: {
         FieldToMatch: { UriPath: {} },
         PositionalConstraint: "STARTS_WITH",
         SearchString: "/api/",
-        TextTransformations: [
-          { Priority: 0, Type: "URL_DECODE" },
-          { Priority: 1, Type: "NORMALIZE_PATH" },
-          { Priority: 2, Type: "LOWERCASE" },
-        ],
+        TextTransformations: [{ Priority: 0, Type: "NONE" }],
       },
     });
     expect(Object.keys(template.findResources("AWS::CloudFront::Distribution"))).toHaveLength(1);

@@ -204,13 +204,10 @@ export class Edge extends Construct {
                   fieldToMatch: { uriPath: {} },
                   positionalConstraint: "STARTS_WITH",
                   searchString: "/api/",
-                  // Wider than the `/api/*` behavior of CloudFront on purpose: a path written
-                  // another way counts here too, never less.
-                  textTransformations: [
-                    { priority: 0, type: "URL_DECODE" },
-                    { priority: 1, type: "NORMALIZE_PATH" },
-                    { priority: 2, type: "LOWERCASE" },
-                  ],
+                  // The path as it was sent, which is what the `/api/*` behavior of CloudFront
+                  // matches. Decoding or normalizing it here would let `/api/%2e%2e/x` reach
+                  // mango-api without being counted.
+                  textTransformations: [{ priority: 0, type: "NONE" }],
                 },
               },
             },
