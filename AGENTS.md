@@ -6,9 +6,10 @@ Instrucciones para agentes de código (Claude Code, Codex, etc.) que trabajen en
 
 Plataforma empresarial de orquestación de agentes de IA, 100 % sobre AWS. Se **instala en la cuenta AWS de cada cliente** (single-tenant) y opera sobre todas las cuentas de su AWS Organization/Control Tower mediante roles. Ofrece a usuarios no técnicos un marketplace de agentes con chat, bajo gobernanza: RBAC, budgets, aprobaciones human-in-the-loop y audit trail.
 
-**Fuente de verdad de la arquitectura:** [`docs/architecture/reference-architecture.md`](docs/architecture/reference-architecture.md). Su §8 es el registro de decisiones (D1…Dn).
+**Fuente de verdad de la arquitectura:** [`docs/architecture/reference-architecture.md`](docs/architecture/reference-architecture.md). Su §8 es el índice del registro de decisiones (D1…Dn); cada decisión vive en su archivo, con su estado, en [`docs/architecture/decisions/`](docs/architecture/decisions/README.md).
 - Antes de proponer algo que contradiga una decisión registrada, señálalo explícitamente y pide confirmación. No lo cambies en silencio.
-- Cuando se tome una decisión nueva, regístrala en §8 con fecha.
+- Cuando se tome una decisión nueva, regístrala con fecha: un archivo en `docs/architecture/decisions/` y su línea en el índice de §8, como explica el `README.md` de esa carpeta.
+- Una decisión que añade un agente nace con estado `propuesta`: va en su informe y en la descripción de su PR, y pasa a `vigente` cuando el dueño del repositorio la acepta.
 
 ## Stack
 
@@ -16,7 +17,7 @@ Plataforma empresarial de orquestación de agentes de IA, 100 % sobre AWS. Se **
 |---|---|
 | Backend / plano de control | Python 3.13, FastAPI, Pydantic v2, `uv`. Servicio `mango-api` en ECS Fargate |
 | Agentes | Amazon Bedrock AgentCore (harness por defecto; Strands Agents code-defined para casos avanzados). Tools vía MCP detrás de AgentCore Gateway |
-| Frontend | React + TypeScript + Vite + Tailwind. Cliente de API **generado** desde el OpenAPI de FastAPI |
+| Frontend | React + TypeScript + Vite. Estilos en hojas CSS propias (`apps/web/src/styles/`) que copian las clases del diseño (D24); las utilidades de Tailwind son un complemento. Cliente de API **generado** desde el OpenAPI de FastAPI |
 | IaC | AWS CDK v2 en TypeScript, distribuido como plantillas CloudFormation pre-sintetizadas |
 | Datos | DynamoDB (on-demand), S3, Bedrock KB sobre S3 Vectors |
 
@@ -24,7 +25,7 @@ Plataforma empresarial de orquestación de agentes de IA, 100 % sobre AWS. Se **
 
 Monorepo políglota por dominio. El árbol completo y sus reglas están en `docs/architecture/reference-architecture.md` §4.14.
 - `apps/`: `api`, `web`.
-- `packages/py/`: `mango-core`, `mango-governance`, `mango-aws`, `mango-packs` (formato de MCP packs y verificación de firma), `mango-pack-runtime` (punto de entrada común de los packs de datos de cuentas; viaja dentro de su zip).
+- `packages/py/`: `mango-core` (dominio compartido entre `mango-api` y las Lambdas), `mango-aws`, `mango-packs` (formato de MCP packs y verificación de firma), `mango-pack-runtime` (punto de entrada común de los packs de datos de cuentas; viaja dentro de su zip).
 - `packages/ts/`: `api-client`, **generado, no se edita a mano**.
 - `packs/`: MCP packs de la release (manifiesto, lock con hashes y punto de entrada); ver `packs/README.md`.
 - `functions/`, `connectors/`, `agents/`, `policies/`, `infra/`, `deployment/` (incluye `pack-builder`, el pipeline de packs), `tests/`.
@@ -122,7 +123,7 @@ Respeta las reglas de dependencias:
 | cfn-guard `LAMBDA_INSIDE_VPC` | Las Lambdas no van en la VPC | Solo llaman APIs de AWS; meterlas en la VPC exige NAT o endpoints sin beneficio de seguridad | 2026-09-29 |
 | cfn-guard `IAM_NO_INLINE_POLICY_CHECK` | Roles con políticas inline de los custom resources de CDK | Los genera CDK; no los controlamos | 2026-09-29 |
 | cfn-guard `S3_BUCKET_LOGGING_ENABLED` / `S3_BUCKET_VERSIONING_ENABLED` en los buckets de access logs | Los buckets que reciben logs no se loguean a sí mismos ni se versionan | Evita recursión y duplicar costo sin valor; expiran a los 90 días | 2026-09-29 |
-| Checkov `CKV_AWS_116` (DLQ en Lambda) | Ninguna Lambda lleva DLQ | Todas se invocan de forma síncrona (Cognito, Gateway, mango-api, custom resources); la DLQ solo recibe invocaciones asíncronas. Una Lambda asíncrona nueva debe llevar DLQ | 2026-09-30 |
+| Checkov `CKV_AWS_116` (DLQ en Lambda) | Las Lambdas que se invocan de forma síncrona no llevan DLQ | Se invocan de forma síncrona (Cognito, Gateway, mango-api, custom resources); la DLQ solo recibe invocaciones asíncronas. Las dos asíncronas (el reconciliador diario y `UninstallGuard`) sí la llevan y no se suprimen. Una Lambda asíncrona nueva debe llevar DLQ | 2026-09-30 |
 | Checkov `CKV_AWS_115` (concurrencia reservada) | Sin concurrencia reservada | Se instala en cuentas de clientes con cuotas desconocidas: reservar rompe el despliegue si la cuota es baja. El abuso lo limitan WAF (rate limit) y el Gateway | 2026-09-30 |
 | Checkov `CKV_AWS_174` (TLS ≥ 1.2 en CloudFront) | **Solo PoC:** certificado por defecto `*.cloudfront.net` | Sin dominio propio no se puede fijar la versión mínima de TLS. En producción, certificado ACM del cliente con `TLSv1.2_2021` (D15). La supresión solo aplica sin certificado propio | 2026-09-30 |
 | Checkov `CKV_AWS_107` (exposición de credenciales) | `ecr-public:GetAuthorizationToken` y `sts:GetServiceBearerToken` en el rol de ejecución del agente y en el permissions boundary de los roles de agente (`Mango-<ns>-agent-boundary`) | Los exige el harness gestionado de AgentCore para descargar su imagen; estas APIs no admiten scope por recurso. El boundary debe permitir lo que el rol necesita | 2026-09-30 (boundary: 2026-10-01) |
@@ -140,7 +141,9 @@ Las supresiones de cfn-guard viven en `infra/lib/guard.ts` (una por recurso, con
 **Python:**
 - `uv`, `ruff` (lint + format), `mypy --strict` por módulo, `pytest` con `moto` o DynamoDB Local.
 - Los tests no llaman a AWS real.
-- Capas `routes → usecases → repositories → models`, con excepciones de dominio mapeadas centralmente a HTTP.
+- `mango-api` se organiza **por dominio, no por capas**: un módulo por dominio en `apps/api/src/mango_api/` (`people.py`, `agents.py`, `approvals.py`…), con secciones marcadas (`# --- Models ---`…): esquemas de petición y respuesta, acceso a datos si el módulo lo trae (Cognito, repositorio), casos de uso y, al final, el router.
+- El acceso a datos pasa a `<dominio>_store.py` cuando crece (hoy `agents_store.py`, `approvals_store.py`, `mcp_store.py` y `settings_store.py`).
+- Los errores de dominio son `ApiError` (`web.py`) y se convierten a HTTP en un solo sitio (`app.py`).
 
 **TypeScript/CDK:**
 - Parámetros validados con `zod`.
@@ -157,7 +160,7 @@ Las supresiones de cfn-guard viven en `infra/lib/guard.ts` (una por recurso, con
 - Nunca se cambia el diseño solo en el código. Si algo no cuadra, no es posible o choca con seguridad, se reporta **antes** para corregirlo primero en Claude Design.
 - Las reglas de seguridad ganan sobre el diseño (p. ej. Markdown sin HTML crudo, nada de autorización en el cliente) y la diferencia se reporta.
 
-**Idioma:** código, identificadores, comentarios y mensajes de commit en **inglés**; documentación de arquitectura y de producto en **español**.
+**Idioma:** código, identificadores, comentarios, mensajes de commit y **pull requests (título y descripción)** en **inglés**; documentación de arquitectura y de producto en **español**.
 
 **Cambios:** pequeños y enfocados. No mezclar refactors con features. No añadir dependencias sin justificarlas.
 
@@ -174,6 +177,7 @@ Este repositorio es público. Todo lo que se versiona, cada mensaje de commit y 
 - **Nada real en archivos versionados, commits ni PR:** ids de cuentas de AWS, de organización u OU, ARNs, correos de personas, dominios o URLs de una instalación, ids de user pools o de llaves. Se usan marcadores (`111122223333`, `o-ejemplo`, `nombre@empresa.com`). Los valores reales de una instalación viven en una carpeta local fuera del repo.
 - **Commits a nombre del dueño del repositorio,** con su correo `noreply` de GitHub, **sin líneas de atribución** (`Co-Authored-By`, enlaces de sesión). Tampoco en la descripción de los PR.
 - **Las ramas salen de `main`** y entran por PR con el CI en verde. La integración se hace por fast-forward desde local (`git push <remoto> <rama>:main`), no con el botón de merge de GitHub, que firma el commit con el correo de la cuenta.
+- **Los PR de Dependabot no se integran tal cual:** su commit no es del dueño. El cambio se rehace en una rama propia, con un commit a nombre del dueño, y el PR de Dependabot se cierra.
 - **Firma y publicación** (`pack-signing`, `release`) corren solo desde `main`, en entornos protegidos que exigen la aprobación del dueño.
 - **En los workflows, todo valor con id de cuenta, ARN o nombre de bucket va en secretos de entorno,** nunca en variables del repositorio: los logs son públicos y Actions imprime las variables (solo enmascara secretos). Lo que acaba en un artefacto tampoco se enmascara. Un test lo vigila (`deployment/pack-builder/tests/test_workflows.py`).
 - Antes de subir una rama: búsqueda de secretos (`mise run secrets`) y revisión de que el diff no trae datos reales.
