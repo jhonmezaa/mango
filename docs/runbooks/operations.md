@@ -63,9 +63,23 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `AgentProvisioner-failed`, `AgentDeprovisioner-failed` | Publicar o retirar un agente falló, se agotó o se abortó | La ejecución fallida de la máquina de estados (`AgentProvisionerArn`, `AgentDeprovisionerArn`) |
 | `AgentProvisioner-volume` | Más de 30 publicaciones de agentes en una hora | Quién las pidió, en Auditoría |
 | `UninstallGuard-failed` | Durante una desinstalación, la función que borra agentes y packs falló todos sus reintentos | Errores del log group `/aws/lambda/Mango-<ns>-UninstallGuard` y el mensaje en la cola `Mango-<ns>-UninstallGuard-dlq` |
-| `PackDns-blocked` (stack `PackNetwork`) | El DNS Firewall de la red de packs rechazó consultas de nombres que no son de sus endpoints: código de un pack pidió un nombre que no tiene por qué alcanzar. No se resolvió nada | Qué packs se estaban usando a esa hora y las conexiones rechazadas en los flow logs de la VPC de packs |
+| `PackDns-blocked` (stack `PackNetwork`) | El DNS Firewall de la red de packs rechazó al menos una consulta de un nombre que no es de sus endpoints ni de los que pide la máquina de AgentCore por su cuenta: **un nombre que nadie esperaba**. No se resolvió nada | El registro de consultas DNS de la red de packs (log group `Mango-<ns>-PackNetwork-dns-queries`): qué nombre fue. Después, qué packs se estaban usando a esa hora |
 
-**`PackDns-blocked` puede saltar con el uso normal de los packs, mientras se ajusta.** En una instalación de laboratorio (2026-10-06) el DNS Firewall rechazó consultas en las horas en que hubo packs en uso, sin que nadie hiciera nada raro. Todavía no se sabe qué nombres son; se está investigando, y el umbral (una consulta rechazada en 5 minutos) se ajustará con lo que salga. Hasta entonces, un correo de esta alarma a la hora en que alguien usó un pack no indica por sí solo un pack comprometido: nada se resolvió ni salió de la red. Sí merece atención si llega sin packs en uso.
+**Cuando salta `PackDns-blocked`: qué nombre fue.** La red de packs registra cada consulta DNS de sus Runtimes, con lo que el firewall hizo con ella, durante 30 días (D71, punto 14). En CloudWatch › Logs Insights, sobre el log group `Mango-<ns>-PackNetwork-dns-queries` y el rato de la alarma:
+
+```
+fields @timestamp, query_name, query_type, srcaddr, firewall_domain_list_id
+| filter firewall_rule_action = "BLOCK" and query_name != "time.aws.com."
+| stats count(*) as consultas, min(@timestamp) as primera, max(@timestamp) as ultima by query_name, srcaddr
+| sort consultas desc
+```
+
+- **Lo que sale es lo que disparó la alarma.** `srcaddr` es la interfaz del Runtime que preguntó; su security group dice de qué pack es.
+- **`time.aws.com` no cuenta.** Es el servicio público de hora de AWS. Lo pide la máquina de AgentCore al arrancar cada sesión de un Runtime, antes de que corra el código del pack. Se rechaza igual que cualquier otro nombre (la red no tiene salida a internet), pero en una lista aparte, `Mango-<ns>-PackDnsPlatform`, que la alarma no lee. En el registro aparece con `firewall_rule_action` `BLOCK` en cada uso de un pack: es lo normal.
+- **Un nombre de AWS que se repite en cada sesión y nadie puso en un pack** quiere decir que AWS cambió lo que pide su máquina. La alarma saltará con el uso normal hasta revisarlo, y eso es correcto: es un nombre nuevo, y darle sitio en la lista de la plataforma es un cambio de versión, no un ajuste en la consola.
+- **Muchos nombres distintos bajo un mismo dominio, o nombres largos sin sentido,** son la forma de un intento de sacar datos por DNS (TM-E2). Nada salió, pero ese pack hay que deshabilitarlo y revisarlo.
+- **Los números no coinciden con la alarma.** La métrica del firewall puede contar cerca del doble de consultas que filas tiene el registro, en todas las listas por igual. No falta nada distinto: son repeticiones de los mismos nombres.
+- **El registro es un dato sensible:** en un intento de fuga, los nombres pedidos son los datos. Lo lee quien pueda leer logs en la cuenta de Mango.
 
 ### Qué no tiene alarma
 

@@ -1,8 +1,8 @@
 # D71 · La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 y 12)
-- **Precisa / reemplaza a:** —
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 a 14)
+- **Precisa / reemplaza a:** precisa [D54](D054-egress-de-packs.md) (3): el DNS Firewall de la red de packs tiene una lista más y registro de consultas (puntos 13 y 14)
 - **Precisada por:** —
 
 ## Decisión
@@ -36,4 +36,22 @@ Origen: la revisión del proyecto del 2026-10-05 (infraestructura, H6). El usuar
 - **Servicio sin tareas.** La alarma salta unos minutos después del último dato, cuando ese dato sale de la ventana que CloudWatch evalúa (algo más que los 3 minutos de la alarma). Vale también si alguien deja el servicio en cero tareas a propósito: nadie puede usar la aplicación.
 - **Desinstalación.** La alarma se borra antes que el servicio, así que no avisa al apagarse la última tarea.
 
-**(12) Lo que se comprobó del punto 10 (2026-10-06, en una instalación de laboratorio).** El correo llega: dos alarmas de prueba, una de `Core` y la de `PackNetwork`, llegaron al buzón de alertas y el dueño lo confirmó. Sigue pendiente el nivel normal de consultas rechazadas por el DNS Firewall: con packs en uso no es cero. Se está investigando qué nombres se rechazan; hasta saberlo, el umbral de `PackDns-blocked` no es de fiar y la alarma puede saltar con el uso normal de los packs.
+**(12) Lo que se comprobó del punto 10 (2026-10-06, en una instalación de laboratorio).** El correo llega: dos alarmas de prueba, una de `Core` y la de `PackNetwork`, llegaron al buzón de alertas y el dueño lo confirmó. Sigue pendiente el nivel normal de consultas rechazadas por el DNS Firewall: con packs en uso no es cero. Se está investigando qué nombres se rechazan; hasta saberlo, el umbral de `PackDns-blocked` no es de fiar y la alarma puede saltar con el uso normal de los packs. Cerrado ese mismo día: punto 13.
+
+**(13) Precisión del 2026-10-06: lo que pide la plataforma tiene su propia lista, y no cuenta para la alarma.** La aprobó el dueño ese día, al ver la investigación en una instalación de laboratorio. Con el registro de consultas activado un rato, el único nombre rechazado con el uso normal fue `time.aws.com` (consultas `A` y `AAAA`): el servicio público de hora de AWS, que la máquina de AgentCore pide al arrancar cada sesión de un Runtime, antes de que exista el proceso del pack. El nombre no está en el código de ningún pack. Como una sesión dura poco, `PackDns-blocked` saltaba en casi cada uso de un pack.
+
+- **Qué se hace.** Una lista nueva, `Mango-<ns>-PackDnsPlatform`, con ese nombre exacto y nada más, y una regla que la rechaza con `NXDOMAIN` entre la que permite (prioridad 100) y la que bloquea todo (200). La alarma no cambia: sigue contando solo la lista que bloquea todo, que ya no recibe ese nombre. El pack recibe la misma respuesta que antes y no se abre nada.
+- **Por qué se rechaza en vez de permitirse.** Resolver el nombre no daría la hora: la red de packs no tiene salida a internet. Solo cambiaría una respuesta inofensiva por intentos de conexión rechazados, que ensuciarían los flow logs, la detección de TM-E1.
+- **Por qué no se sube el umbral.** El uso normal crece con las sesiones y no hay un valor estable; cualquier umbral que lo absorba deja pasar sin aviso lo que TM-E2 quiere ver, unas pocas consultas raras. Con la lista aparte, el nivel normal de la lista que bloquea todo es cero y el umbral de una consulta vuelve a significar lo que dice.
+- **Solo nombres exactos.** La lista no admite comodines: un nombre con una etiqueta variable sería un túnel que nadie mira. Un test fija su contenido; añadirle un nombre exige cambiar el test.
+- **Si AWS cambia lo que pide su máquina,** la alarma volverá a saltar con el uso normal. Es correcto: es un nombre nuevo y hay que mirarlo antes de darle sitio en la lista.
+- **Lo comprobado y lo que no.** Visto con el pack `aws-cloudwatch` en dos sesiones. `aws-pricing` y `aws-billing` usan la misma máquina, pero no se observaron.
+
+**(14) Precisión del 2026-10-06: el registro de consultas DNS de la red de packs queda fijo.** La aprobó el dueño ese día, junto con el punto 13. La métrica de la alarma dice que se rechazó un nombre, no cuál, y los flow logs no llevan nombres: sin registro, cada aviso de `PackDns-blocked` obligaba a activarlo a mano y esperar a que se repitiera.
+
+- **Qué guarda.** Cada consulta DNS que sale de la VPC de packs: el nombre, el tipo, la respuesta, la dirección de origen y, en las rechazadas, la regla y la lista que la rechazó. No guarda nada de `mango-api` ni de las personas: esa VPC solo tiene Runtimes de packs.
+- **Para qué.** Para saber qué nombre disparó la alarma. Su descripción manda a mirar ahí primero.
+- **Dónde y cuánto dura.** En el log group `Mango-<ns>-PackNetwork-dns-queries` del stack `PackNetwork`, cifrado con la llave de logs de ese stack, **30 días**, igual que los flow logs de la misma red. Se retiene al desinstalar, como los demás log groups.
+- **Es un dato sensible.** En un intento de fuga por DNS, los nombres pedidos son justamente los datos que se intentan sacar. Quién puede leerlo: modelo de amenazas `pack-egress`, TM-E13.
+- **La entrega no depende de la cuenta.** El Resolver entrega por el servicio de registros de AWS, que necesita una política de recursos de CloudWatch Logs sobre el log group. La plantilla declara la suya, acotada a ese log group y a la cuenta. Con ella la instalación usa 3 de las 10 políticas de recursos que CloudWatch Logs admite por cuenta y región (las otras dos, en `Core`: eventos de Cognito y trazas de X-Ray), y ese máximo no se puede subir.
+- **Costo.** Céntimos al mes: unas decenas de consultas por sesión de un pack. Sin supresiones nuevas de cdk-nag, cfn-guard ni Checkov.

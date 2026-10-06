@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-02
 - **Precisa / reemplaza a:** construye R6 ([D11](D011-requisitos-de-seguridad.md)) para los Runtimes de packs; retira [D49](D049-identidad-en-packs-de-datos.md) (7)
-- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa: red de packs en un stack propio)
+- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa: red de packs en un stack propio); [D71](D071-alarmas-operativas-y-tablero.md) (precisa el punto 3: lista del DNS Firewall para lo que pide la plataforma y registro de consultas fijo)
 - **Tema en el registro original:** Egress restringido de los Runtimes de packs (R6; retira [D49](D049-identidad-en-packs-de-datos.md) (7))
 
 ## Decisión
