@@ -89,6 +89,7 @@ describe("operational alarms of Core", () => {
         "Api-tasks-below-desired",
         "Api-unhealthy-targets",
         "Api-unreachable",
+        "Cognito-rate-limited",
         "DynamoDB-system-errors",
         "Edge-errors",
         "Edge-rate-limited",
@@ -279,20 +280,75 @@ describe("edge", () => {
     }
   });
 
-  it("alarms on the per-IP rate limit of the edge web ACL, not on every block of the managed rules", () => {
-    const acl = ofType(resources, "AWS::WAFv2::WebACL").find(([, r]) => r.Properties.Scope === "CLOUDFRONT")![1].Properties;
-    const rule = (acl.Rules as any[]).find((r) => r.Statement.RateBasedStatement !== undefined);
+  /** The per-IP rules of a web ACL, and the `Rule` dimension of every metric an alarm adds up. */
+  const rateRulesOf = (scope: string) => {
+    const acl = ofType(resources, "AWS::WAFv2::WebACL").find(([, r]) => r.Properties.Scope === scope)![1].Properties;
+    const rules = (acl.Rules as any[]).filter((r) => r.Statement.RateBasedStatement !== undefined);
+    return { acl, rules, names: rules.map((r) => r.VisibilityConfig.MetricName as string).sort() };
+  };
+  const expectSumOfBlocks = (properties: any, rules: number) => {
+    const ids = queries(properties)
+      .filter((q) => q.MetricStat !== undefined)
+      .map((q) => q.Id);
+    expect(ids).toHaveLength(rules);
+    // A rule that never blocked reports nothing: it adds zero instead of hiding the others.
+    expect(expressionOf(properties)).toBe(ids.map((id) => `FILL(${id}, 0)`).join(" + "));
+    expect(properties).toMatchObject({
+      Threshold: OPERATIONAL_THRESHOLDS.rateLimited,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      EvaluationPeriods: 1,
+      TreatMissingData: "notBreaching",
+    });
+    expect(properties.AlarmDescription).toMatch(/Look first at /);
+  };
+
+  it("alarms on the blocks of the two per-IP rate limits of the edge web ACL, not of the managed rules", () => {
+    const { acl, rules, names } = rateRulesOf("CLOUDFRONT");
+    expect(names).toEqual(["ApiRateLimitPerIp", "RateLimitPerIp"]);
     const properties = alarm("Edge-rate-limited");
-    const [metric] = metricsOf(properties);
-    expect(metric).toMatchObject({ namespace: "AWS/WAFV2", name: "BlockedRequests", stat: "Sum" });
-    // A CloudFront web ACL has no `Region` dimension.
-    expect(metric!.dimensions).toEqual([
-      { Name: "Rule", Value: rule.VisibilityConfig.MetricName },
-      { Name: "WebACL", Value: acl.VisibilityConfig.MetricName },
-    ]);
-    expect(rule.Action).toEqual({ Block: {} });
-    expect(properties.Threshold).toBe(OPERATIONAL_THRESHOLDS.rateLimited);
-    expect(Object.keys(alarms).filter((name) => /waf|cognito/i.test(name))).toEqual([]);
+    const metrics = metricsOf(properties);
+    for (const metric of metrics) {
+      expect(metric).toMatchObject({ namespace: "AWS/WAFV2", name: "BlockedRequests", stat: "Sum", period: 300 });
+      // A CloudFront web ACL has no `Region` dimension.
+      expect(metric.dimensions.map((d) => d.Name).sort()).toEqual(["Rule", "WebACL"]);
+      expect(dimension(metric.dimensions, "WebACL")).toBe(acl.VisibilityConfig.MetricName);
+    }
+    expect(metrics.map((m) => dimension(m.dimensions, "Rule")).sort()).toEqual(names);
+    for (const rule of rules) expect(Object.keys(rule.Action)).toEqual(["Block"]);
+    expectSumOfBlocks(properties, 2);
+    for (const name of names) expect(properties.AlarmDescription).toContain(name);
+  });
+});
+
+describe("user pool web ACL (D72)", () => {
+  it("alarms on the blocks of its three per-IP rate limits, under the Region of the web ACL", () => {
+    const acl = ofType(resources, "AWS::WAFv2::WebACL").find(([, r]) => r.Properties.Scope === "REGIONAL")![1].Properties;
+    const names = (acl.Rules as any[])
+      .filter((r) => r.Statement.RateBasedStatement !== undefined)
+      .map((r) => r.VisibilityConfig.MetricName as string)
+      .sort();
+    expect(names).toEqual(["EmailOperationsPerIp", "RateLimitPerIp", "SecretOperationsPerIp"]);
+    const properties = alarm("Cognito-rate-limited");
+    const metrics = metricsOf(properties);
+    expect(metrics).toHaveLength(3);
+    for (const metric of metrics) {
+      expect(metric).toMatchObject({ namespace: "AWS/WAFV2", name: "BlockedRequests", stat: "Sum", period: 300 });
+      // A regional web ACL reports under `Region` too; without it the alarm would see nothing.
+      expect(metric.dimensions.map((d) => d.Name).sort()).toEqual(["Region", "Rule", "WebACL"]);
+      expect(dimension(metric.dimensions, "WebACL")).toBe(acl.VisibilityConfig.MetricName);
+      expect(dimension(metric.dimensions, "Region")).toBe(cfg.region);
+    }
+    expect(metrics.map((m) => dimension(m.dimensions, "Rule")).sort()).toEqual(names);
+    const ids = queries(properties).filter((q) => q.MetricStat !== undefined).map((q) => q.Id);
+    expect(expressionOf(properties)).toBe(ids.map((id) => `FILL(${id}, 0)`).join(" + "));
+    expect(properties).toMatchObject({
+      Threshold: OPERATIONAL_THRESHOLDS.rateLimited,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      EvaluationPeriods: 1,
+      TreatMissingData: "notBreaching",
+    });
+    expect(properties.AlarmDescription).toMatch(/Look first at /);
+    for (const name of names) expect(properties.AlarmDescription).toContain(name);
   });
 });
 

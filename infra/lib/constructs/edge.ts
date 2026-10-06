@@ -81,6 +81,35 @@ export function releaseConfigJson(config: ReleaseSpaConfig): string {
   return `{${members.join(",")}${config.deployTime.aiPolicyUrlMember}}`;
 }
 
+/**
+ * Requests per IP address per 5 minutes at the edge (D72). Constants of the release, sized for
+ * an office behind one egress address: the first one only counts what reaches mango-api
+ * (about 1,000 people of one address arriving at once), the second one is the ceiling of
+ * everything, files of the web application included.
+ */
+export const API_RATE_LIMIT = 6000;
+export const EDGE_RATE_LIMIT = 20000;
+const RATE_WINDOW_SECONDS = 300;
+/**
+ * `Retry-After` of a block. The web ACL cannot say when the count of the address falls under
+ * the limit: a minute later the request either passes or gets the same answer.
+ */
+export const RATE_LIMITED_RETRY_SECONDS = 60;
+/** The same body mango-api answers a 429 with (`rate_limited` in `web.py`): the SPA reads one format. */
+export const API_RATE_LIMITED_BODY = JSON.stringify({
+  error: { code: "rate_limited", message: "too many requests; try again later" },
+});
+/**
+ * What a browser shows when the ceiling blocks a page load. Provisional text (D24: the design
+ * has no screen for this state yet). No script, no style, ASCII only.
+ */
+export const RATE_LIMITED_PAGE =
+  '<!doctype html><html lang="es"><head><meta charset="utf-8">' +
+  '<meta name="viewport" content="width=device-width, initial-scale=1"><title>Mango</title></head>' +
+  "<body><h1>Demasiadas solicitudes</h1>" +
+  "<p>Se recibieron demasiadas solicitudes desde tu red. Espera un minuto y vuelve a cargar la p&aacute;gina.</p>" +
+  "</body></html>";
+
 /** Deterministic Cognito managed-login domain (used by CSP before Cognito exists). */
 export function cognitoDomainUrl(namespace: string, account: string, region: string): string {
   return `https://mango-${namespace}-${account}.auth.${region}.amazoncognito.com`;
@@ -93,8 +122,8 @@ export function cognitoDomainUrl(namespace: string, account: string, region: str
 export class Edge extends Construct {
   readonly distribution: cloudfront.Distribution;
   readonly spaBucket: s3.Bucket;
-  /** CloudWatch names of the web ACL and of its per-IP rate limit (`AWS/WAFV2` dimensions). */
-  readonly rateLimitMetric: { readonly webAcl: string; readonly rule: string };
+  /** CloudWatch names of the web ACL and of its per-IP rate limits (`AWS/WAFV2` dimensions). */
+  readonly rateLimitMetrics: { readonly webAcl: string; readonly rules: string[] };
 
   constructor(scope: Construct, id: string, props: EdgeProps) {
     super(scope, id);
@@ -115,15 +144,38 @@ export class Edge extends Construct {
       autoDeleteObjects: true,
     });
 
-    this.rateLimitMetric = { webAcl: mangoName(cfg.namespace, "edge"), rule: "RateLimitPerIp" };
+    this.rateLimitMetrics = {
+      webAcl: mangoName(cfg.namespace, "edge"),
+      rules: ["ApiRateLimitPerIp", "RateLimitPerIp"],
+    };
+    const visibility = (metricName: string) => ({
+      cloudWatchMetricsEnabled: true,
+      metricName,
+      sampledRequestsEnabled: true,
+    });
+    // A block answers 429 instead of the 403 page of CloudFront, which reads as «no permission».
+    const blockWith = (body: string) => ({
+      block: {
+        customResponse: {
+          responseCode: 429,
+          customResponseBodyKey: body,
+          responseHeaders: [
+            { name: "Retry-After", value: String(RATE_LIMITED_RETRY_SECONDS) },
+            { name: "Cache-Control", value: "no-store" },
+            { name: "X-Content-Type-Options", value: "nosniff" },
+            { name: "Content-Security-Policy", value: "default-src 'none'; frame-ancestors 'none'" },
+          ],
+        },
+      },
+    });
     const webAcl = new wafv2.CfnWebACL(this, "WebAcl", {
       name: mangoName(cfg.namespace, "edge"),
       scope: "CLOUDFRONT",
       defaultAction: { allow: {} },
-      visibilityConfig: {
-        cloudWatchMetricsEnabled: true,
-        metricName: this.rateLimitMetric.webAcl,
-        sampledRequestsEnabled: true,
+      visibilityConfig: visibility(this.rateLimitMetrics.webAcl),
+      customResponseBodies: {
+        ApiRateLimited: { contentType: "APPLICATION_JSON", content: API_RATE_LIMITED_BODY },
+        RateLimited: { contentType: "TEXT_HTML", content: RATE_LIMITED_PAGE },
       },
       rules: [
         ...["AWSManagedRulesCommonRuleSet", "AWSManagedRulesKnownBadInputsRuleSet", "AWSManagedRulesAmazonIpReputationList"].map(
@@ -132,23 +184,51 @@ export class Edge extends Construct {
             priority: i,
             overrideAction: { none: {} },
             statement: { managedRuleGroupStatement: { vendorName: "AWS", name } },
-            visibilityConfig: {
-              cloudWatchMetricsEnabled: true,
-              metricName: name,
-              sampledRequestsEnabled: true,
-            },
+            visibilityConfig: visibility(name),
           }),
         ),
+        // First, so that mango-api's clients get the JSON answer. Only what reaches mango-api
+        // counts: the files of the web application are two of every three requests of a
+        // first load and CloudFront serves them from its cache (D72).
+        {
+          name: "ApiRateLimitPerIp",
+          priority: 10,
+          action: blockWith("ApiRateLimited"),
+          statement: {
+            rateBasedStatement: {
+              limit: API_RATE_LIMIT,
+              aggregateKeyType: "IP",
+              evaluationWindowSec: RATE_WINDOW_SECONDS,
+              scopeDownStatement: {
+                byteMatchStatement: {
+                  fieldToMatch: { uriPath: {} },
+                  positionalConstraint: "STARTS_WITH",
+                  searchString: "/api/",
+                  // Wider than the `/api/*` behavior of CloudFront on purpose: a path written
+                  // another way counts here too, never less.
+                  textTransformations: [
+                    { priority: 0, type: "URL_DECODE" },
+                    { priority: 1, type: "NORMALIZE_PATH" },
+                    { priority: 2, type: "LOWERCASE" },
+                  ],
+                },
+              },
+            },
+          },
+          visibilityConfig: visibility("ApiRateLimitPerIp"),
+        },
         {
           name: "RateLimitPerIp",
-          priority: 10,
-          action: { block: {} },
-          statement: { rateBasedStatement: { limit: 1000, aggregateKeyType: "IP" } },
-          visibilityConfig: {
-            cloudWatchMetricsEnabled: true,
-            metricName: this.rateLimitMetric.rule,
-            sampledRequestsEnabled: true,
+          priority: 11,
+          action: blockWith("RateLimited"),
+          statement: {
+            rateBasedStatement: {
+              limit: EDGE_RATE_LIMIT,
+              aggregateKeyType: "IP",
+              evaluationWindowSec: RATE_WINDOW_SECONDS,
+            },
           },
+          visibilityConfig: visibility("RateLimitPerIp"),
         },
       ],
     });

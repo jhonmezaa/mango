@@ -30,7 +30,11 @@ export const OPERATIONAL_THRESHOLDS = {
   edgeMinimumRequests: 100,
   /** Errors plus throttles of a function people depend on, per 5 minutes. One is a blip. */
   functionFailures: 2,
-  /** Requests the per-IP rate limit of the edge blocked, per 5 minutes. */
+  /**
+   * Requests the per-IP rate limits of a web ACL blocked, per 5 minutes: the edge and the user
+   * pool each have their alarm. An address over a limit is blocked on every request, so a real
+   * block passes this in seconds and a stray one does not reach it.
+   */
   rateLimited: 50,
 };
 
@@ -47,8 +51,10 @@ export interface OperationalAlarmsProps {
   /** mango-api. The number of tasks it should run is read from its metrics, never written here. */
   readonly service: ecs.FargateService;
   readonly distribution: cloudfront.Distribution;
-  /** CloudWatch names of the edge web ACL and of its per-IP rate limit. */
-  readonly edgeRateLimit: { readonly webAcl: string; readonly rule: string };
+  /** CloudWatch names of the edge web ACL and of its per-IP rate limits. */
+  readonly edgeRateLimits: { readonly webAcl: string; readonly rules: string[] };
+  /** The same of the regional web ACL of the user pool. */
+  readonly userPoolRateLimits: { readonly webAcl: string; readonly rules: string[] };
   /** Functions every sign-in or tool call goes through: their errors and throttles alarm. */
   readonly criticalFunctions: Record<string, lambda.IFunction>;
   /**
@@ -63,7 +69,7 @@ export interface OperationalAlarmsProps {
 /**
  * Alarms for what would otherwise fail in silence (D71), and one dashboard with the same
  * signals: mango-api and its load balancer, the Cognito triggers and the Gateway interceptor,
- * the DynamoDB tables, CloudFront and the edge rate limit. Every alarm notifies the alerts
+ * the DynamoDB tables, CloudFront and the per-IP rate limits of the two web ACLs. Every alarm notifies the alerts
  * topic and says in its description what to look at first.
  *
  * Missing data does not breach: an installation nobody is using stays quiet. The one exception
@@ -96,6 +102,7 @@ export class OperationalAlarms extends Construct {
     // An alarm only reads metrics of its own Region. A template for another Region goes
     // without these two; the load balancer alarms still see what reaches the API.
     const edge = global ? this.edgeAlarms(props) : [];
+    const userPool = this.userPoolAlarms(props, stack.region);
 
     // Every alarm of the stack, the ones of the publication path included.
     const alarms = stack.node.findAll().filter((c): c is cloudwatch.Alarm => c instanceof cloudwatch.Alarm);
@@ -106,7 +113,7 @@ export class OperationalAlarms extends Construct {
         [new cloudwatch.AlarmStatusWidget({ title: "Alarms", alarms, width: 24, height: 4 })],
         api,
         [...functions, ...data],
-        edge,
+        [...edge, ...userPool],
       ].filter((row) => row.length > 0),
     });
   }
@@ -408,26 +415,72 @@ export class OperationalAlarms extends Construct {
     );
 
     // A CloudFront web ACL has no Region dimension.
-    const rateLimited = new cloudwatch.Metric({
-      namespace: "AWS/WAFV2",
-      metricName: "BlockedRequests",
-      dimensionsMap: { WebACL: props.edgeRateLimit.webAcl, Rule: props.edgeRateLimit.rule },
-      statistic: cloudwatch.Stats.SUM,
-      period: FIVE_MINUTES,
-      label: "Blocked by the per-IP rate limit",
-    });
+    const rateLimited = this.blockedBy(props.edgeRateLimits, {}, "Edge");
     this.alarm(
       "EdgeRateLimited",
       "Edge-rate-limited",
-      `The per-IP rate limit of the edge web ACL blocked at least ${OPERATIONAL_THRESHOLDS.rateLimited} requests ` +
-        "in 5 minutes. Either one address is flooding the application or many people share one address (an " +
-        "office behind one egress IP) and are being blocked. Look first at the sampled requests of the rule " +
-        "RateLimitPerIp in the WAF console: whose address it is.",
-      { metric: rateLimited, threshold: OPERATIONAL_THRESHOLDS.rateLimited, comparisonOperator: AT_LEAST, evaluationPeriods: 1 },
+      `The per-IP rate limits of the edge web ACL blocked at least ${OPERATIONAL_THRESHOLDS.rateLimited} requests ` +
+        "in 5 minutes: people get 429 answers. Either one address is flooding the application or many people " +
+        "share one address (an office behind one egress IP) and are being blocked. Look first at the dashboard " +
+        "for which rule blocked (ApiRateLimitPerIp counts what reaches mango-api, RateLimitPerIp everything), " +
+        "then at the sampled requests of that rule in the WAF console: whose address it is.",
+      { metric: rateLimited.total, threshold: OPERATIONAL_THRESHOLDS.rateLimited, comparisonOperator: AT_LEAST, evaluationPeriods: 1 },
     );
     return [
-      new cloudwatch.GraphWidget({ title: "CloudFront: requests and 5xx (%)", left: [requests], right: [errorRate], width: 12 }),
-      new cloudwatch.GraphWidget({ title: "Edge web ACL: blocked by the rate limit", left: [rateLimited], width: 12 }),
+      new cloudwatch.GraphWidget({ title: "CloudFront: requests and 5xx (%)", left: [requests], right: [errorRate], width: 8 }),
+      new cloudwatch.GraphWidget({ title: "Edge web ACL: blocked by the rate limits", left: rateLimited.perRule, width: 8 }),
     ];
+  }
+
+  /**
+   * The web ACL of the user pool: sign-in, sign-up and recovery go from the browser to Cognito
+   * and never reach mango-api, so a block here shows nowhere else (D72).
+   */
+  private userPoolAlarms(props: OperationalAlarmsProps, region: string): cloudwatch.IWidget[] {
+    // A regional web ACL reports under its Region too.
+    const rateLimited = this.blockedBy(props.userPoolRateLimits, { Region: region }, "User pool");
+    this.alarm(
+      "CognitoRateLimited",
+      "Cognito-rate-limited",
+      `The per-IP rate limits of the user pool web ACL blocked at least ${OPERATIONAL_THRESHOLDS.rateLimited} ` +
+        "requests in 5 minutes: people of that address cannot sign in, sign up or recover a password. Either " +
+        "one address is guessing passwords or sending emails, or many people share one address (an office " +
+        "behind one egress IP). Look first at the dashboard for which rule blocked (SecretOperationsPerIp, " +
+        "EmailOperationsPerIp or RateLimitPerIp), then at the sampled requests of that rule in the WAF " +
+        "console: whose address it is and which operation it repeats.",
+      { metric: rateLimited.total, threshold: OPERATIONAL_THRESHOLDS.rateLimited, comparisonOperator: AT_LEAST, evaluationPeriods: 1 },
+    );
+    return [
+      new cloudwatch.GraphWidget({ title: "User pool web ACL: blocked by the rate limits", left: rateLimited.perRule, width: 8 }),
+    ];
+  }
+
+  /** Requests each per-IP rule of a web ACL blocked, and their sum. Managed rules are left out. */
+  private blockedBy(
+    acl: { readonly webAcl: string; readonly rules: string[] },
+    extraDimensions: Record<string, string>,
+    label: string,
+  ): { perRule: cloudwatch.Metric[]; total: cloudwatch.MathExpression } {
+    const perRule = acl.rules.map(
+      (rule) =>
+        new cloudwatch.Metric({
+          namespace: "AWS/WAFV2",
+          metricName: "BlockedRequests",
+          dimensionsMap: { WebACL: acl.webAcl, Rule: rule, ...extraDimensions },
+          statistic: cloudwatch.Stats.SUM,
+          period: FIVE_MINUTES,
+          label: `Blocked by ${rule}`,
+        }),
+    );
+    const usingMetrics = Object.fromEntries(perRule.map((metric, index) => [`rule${index}`, metric]));
+    return {
+      perRule,
+      total: new cloudwatch.MathExpression({
+        expression: Object.keys(usingMetrics).map((id) => `FILL(${id}, 0)`).join(" + "),
+        usingMetrics,
+        label: `${label}: blocked by the per-IP rate limits`,
+        period: FIVE_MINUTES,
+      }),
+    };
   }
 }
