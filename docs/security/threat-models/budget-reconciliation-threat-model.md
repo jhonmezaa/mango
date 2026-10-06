@@ -1,6 +1,6 @@
 # Conciliación del presupuesto de un turno cortado: modelo de amenazas (v0.1)
 
-> Fecha: 2026-10-06 · Skill: `security-threat-model`. Decisión que lo enmarca: D73 (propuesta). Amplía TM-006 (gasto descontrolado) de `mango-architecture-threat-model.md`.
+> Fecha: 2026-10-06 · Skill: `security-threat-model`. Decisión que lo enmarca: D73. Amplía TM-006 (gasto descontrolado) de `mango-architecture-threat-model.md`.
 > Alcance: `packages/py/mango-core/src/mango_core/budget_turns.py`, `apps/api/src/mango_api/budget.py`, el camino del turno en `apps/api/src/mango_api/app.py` (`chat`, `produce`, `_settle_turn`) y `harness.py`, `functions/budget-reconciler/` e `infra/lib/constructs/budget-reconciler.ts`.
 > Comprobado con tests locales y, solo lectura, contra las trazas del laboratorio de una prueba de carga (76 invocaciones). **No está desplegado:** ningún turno cortado se ha conciliado todavía en una instalación.
 

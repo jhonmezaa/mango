@@ -1,7 +1,7 @@
 # D73 · Un turno cortado nunca cuesta cero: la reserva se retiene y se concilia con las trazas de AgentCore
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-06
+- **Estado:** vigente
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** precisa [D41](D041-alertas-y-reconciliacion.md) (la reconciliación diaria sigue siendo de solo lectura; esta es otra función), [D71](D071-alarmas-operativas-y-tablero.md) (1: dos alarmas nuevas) y [D16](D016-observabilidad-de-agentes.md) (las trazas pasan a ser, además, la fuente del gasto de un turno cortado)
 - **Precisada por:** —
 
