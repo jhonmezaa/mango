@@ -25,6 +25,20 @@ export const OPERATIONAL_THRESHOLDS = {
   /** Percentage of mango-api responses that are 5xx, and the requests it takes to judge. */
   apiErrorPercent: 5,
   apiMinimumRequests: 20,
+  /**
+   * Seconds mango-api takes to start answering 95 % of the requests of a minute, and the
+   * requests that minute needs to be judged. Measured with two tasks: 0.03 s with room to
+   * spare, 0.5 s at the limit, 5 to 11 s saturated; creating a session takes 0.5 s, so a quiet
+   * minute already shows 0.4 s. Under one request per second, two slow administration calls
+   * would be the percentile.
+   */
+  apiSlowSeconds: 1,
+  apiSlowMinimumRequests: 60,
+  /**
+   * Model calls Bedrock refused for a quota of the account, per 5 minutes. The agent runtime
+   * retries each one after a wait of about 30 s: a few are people already waiting.
+   */
+  bedrockThrottles: 5,
   /** Percentage of CloudFront responses that are 5xx, and the requests it takes to judge. */
   edgeErrorPercent: 5,
   edgeMinimumRequests: 100,
@@ -69,8 +83,9 @@ export interface OperationalAlarmsProps {
 /**
  * Alarms for what would otherwise fail in silence (D71), and one dashboard with the same
  * signals: mango-api and its load balancer, the Cognito triggers and the Gateway interceptor,
- * the DynamoDB tables, CloudFront and the per-IP rate limits of the two web ACLs. Every alarm notifies the alerts
- * topic and says in its description what to look at first.
+ * the DynamoDB tables, the model calls Bedrock refuses, CloudFront and the per-IP rate limits of
+ * the two web ACLs. Every alarm notifies the alerts topic and says in its description what to
+ * look at first.
  *
  * Missing data does not breach: an installation nobody is using stays quiet. The one exception
  * is `Api-no-healthy-targets`, whose metric stops exactly when the failure is worst. The tables
@@ -98,6 +113,7 @@ export class OperationalAlarms extends Construct {
     const api = this.apiAlarms(props, targetGroups);
     const functions = this.functionAlarms(props);
     const data = this.tableAlarms(tables);
+    const models = this.modelAlarms(props);
     this.queueAlarms(props.deadLetterQueues);
     // An alarm only reads metrics of its own Region. A template for another Region goes
     // without these two; the load balancer alarms still see what reaches the API.
@@ -114,6 +130,7 @@ export class OperationalAlarms extends Construct {
         api,
         [...functions, ...data],
         [...edge, ...userPool],
+        models,
       ].filter((row) => row.length > 0),
     });
   }
@@ -205,7 +222,33 @@ export class OperationalAlarms extends Construct {
       );
       health.push(healthy, unhealthy);
       traffic.push(requests, errors);
-      latency.push(group.metrics.targetResponseTime({ statistic: "p95", period: FIVE_MINUTES }));
+      // What this metric times is the wait for the response headers. A chat turn answers
+      // them at once and then streams for as long as the model works: 40 open turns of up to
+      // 110 s left its maximum at 0.4 s. So a slow model does not show here; a slow task does.
+      const p95 = group.metrics.targetResponseTime({ statistic: "p95", period: MINUTE });
+      this.alarm(
+        `ApiSlow${suffix}`,
+        `Api-slow${suffix}`,
+        `mango-api took more than ${OPERATIONAL_THRESHOLDS.apiSlowSeconds} s to start answering 5 % of its ` +
+          `requests, in 2 of the last 3 minutes with at least ${OPERATIONAL_THRESHOLDS.apiSlowMinimumRequests} ` +
+          "requests: the application feels slow to everybody, without errors. A chat answer that takes long " +
+          "does not count: only the wait for the first byte does. Look first at the dashboard for the CPU of " +
+          "the busiest task (its maximum, not the average of the service: one task near 100 % slows every " +
+          "request it gets), then at the requests per minute and at the DynamoDB alarms.",
+        {
+          metric: new cloudwatch.MathExpression({
+            expression: `IF(FILL(requests, 0) >= ${OPERATIONAL_THRESHOLDS.apiSlowMinimumRequests}, FILL(p95, 0), 0)`,
+            usingMetrics: { requests: group.metrics.requestCount({ statistic: cloudwatch.Stats.SUM, period: MINUTE }), p95 },
+            label: "mango-api time to first byte p95 (s)",
+            period: MINUTE,
+          }),
+          threshold: OPERATIONAL_THRESHOLDS.apiSlowSeconds,
+          comparisonOperator: ABOVE,
+          evaluationPeriods: 3,
+          datapointsToAlarm: 2,
+        },
+      );
+      latency.push(p95);
     });
 
     // Container Insights reports what the service wants and what it has: the alarm follows
@@ -356,6 +399,46 @@ export class OperationalAlarms extends Construct {
     return [
       new cloudwatch.GraphWidget({ title: "DynamoDB: throttle events", left: graphed, width: 8 }),
       new cloudwatch.GraphWidget({ title: "DynamoDB: internal errors", left: [systemErrors], width: 8 }),
+    ];
+  }
+
+  /**
+   * Bedrock refusing model calls for a quota of the account: what slows and fails the chat
+   * long before mango-api runs out of anything. Bedrock reports the throttles of every model
+   * together when the metric is read without dimensions, so no model is named here (rule 7:
+   * the models are configuration). It is the whole account and Region, like the internal
+   * errors of DynamoDB: in a shared account it also counts calls that are not Mango's.
+   */
+  private modelAlarms(props: OperationalAlarmsProps): cloudwatch.IWidget[] {
+    const ofBedrock = (metricName: string) =>
+      new cloudwatch.Metric({
+        namespace: "AWS/Bedrock",
+        metricName,
+        statistic: cloudwatch.Stats.SUM,
+        period: FIVE_MINUTES,
+        label: `Bedrock ${metricName}`,
+      });
+    const throttles = ofBedrock("InvocationThrottles");
+    this.alarm(
+      "BedrockThrottled",
+      "Bedrock-throttled",
+      `Bedrock refused at least ${OPERATIONAL_THRESHOLDS.bedrockThrottles} model calls in 5 minutes because a ` +
+        "quota of the account was reached (requests or tokens per minute of a model): chat turns wait and " +
+        "retry, and fail when the wait outlasts the turn. It counts every model of the account in this Region, " +
+        "also calls that are not from Mango. Look first at the applied quotas of the models in use " +
+        "(deployment/check-bedrock-quotas.py, or Service Quotas, Amazon Bedrock, model inference requests per " +
+        "minute): a value under the AWS default is raised with a support case, not from Service Quotas.",
+      { metric: throttles, threshold: OPERATIONAL_THRESHOLDS.bedrockThrottles, comparisonOperator: AT_LEAST, evaluationPeriods: 1 },
+    );
+    // The busiest task, not the average: with one task at 93 % the average said 70 %.
+    const cpu = (statistic: string) => props.service.metricCpuUtilization({ statistic, period: MINUTE, label: `CPU ${statistic} (%)` });
+    return [
+      new cloudwatch.GraphWidget({ title: "Bedrock: model calls and throttles (account)", left: [ofBedrock("Invocations"), throttles], width: 8 }),
+      new cloudwatch.GraphWidget({
+        title: "mango-api: CPU of the busiest task and average (%)",
+        left: [cpu(cloudwatch.Stats.MAXIMUM), cpu(cloudwatch.Stats.AVERAGE)],
+        width: 8,
+      }),
     ];
   }
 

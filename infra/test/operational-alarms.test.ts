@@ -86,9 +86,11 @@ describe("operational alarms of Core", () => {
       [
         "Api-errors",
         "Api-no-healthy-targets",
+        "Api-slow",
         "Api-tasks-below-desired",
         "Api-unhealthy-targets",
         "Api-unreachable",
+        "Bedrock-throttled",
         "Cognito-rate-limited",
         "DynamoDB-system-errors",
         "Edge-errors",
@@ -189,6 +191,33 @@ describe("mango-api and its load balancer", () => {
     });
   });
 
+  it("alarms when mango-api is slow to start answering, judged by a percentile above a minimum of requests", () => {
+    const properties = alarm("Api-slow");
+    expect(expressionOf(properties)).toBe(
+      `IF(FILL(requests, 0) >= ${OPERATIONAL_THRESHOLDS.apiSlowMinimumRequests}, FILL(p95, 0), 0)`,
+    );
+    const metrics = metricsOf(properties);
+    expect(metrics.map((m) => [m.name, m.stat, m.period]).sort()).toEqual([
+      ["RequestCount", "Sum", 60],
+      // Time to the response headers: a chat turn that streams for two minutes is not slow here.
+      ["TargetResponseTime", "p95", 60],
+    ]);
+    for (const metric of metrics) {
+      expect(metric.namespace).toBe("AWS/ApplicationELB");
+      expect(dimension(metric.dimensions, "TargetGroup")).toEqual({ "Fn::GetAtt": [groupId, "TargetGroupFullName"] });
+    }
+    expect(properties).toMatchObject({
+      Threshold: OPERATIONAL_THRESHOLDS.apiSlowSeconds,
+      ComparisonOperator: "GreaterThanThreshold",
+      EvaluationPeriods: 3,
+      DatapointsToAlarm: 2,
+    });
+    // Creating a session takes half a second: the threshold has to stay clear of it.
+    expect(OPERATIONAL_THRESHOLDS.apiSlowSeconds).toBeGreaterThanOrEqual(1);
+    // Not the average CPU of the service, which hid a saturated task.
+    expect(Object.values(operational).flatMap(metricsOf).map((m) => m.name)).not.toContain("CPUUtilization");
+  });
+
   it("alarms on the 5xx the load balancer answers itself", () => {
     expect(alarm("Api-unreachable")).toMatchObject({
       Namespace: "AWS/ApplicationELB",
@@ -256,6 +285,28 @@ describe("DynamoDB", () => {
         ReturnData: true,
       }),
     ]);
+  });
+});
+
+describe("Bedrock", () => {
+  it("alarms on the model calls refused for a quota, without naming a model", () => {
+    const properties = alarm("Bedrock-throttled");
+    expect(properties).toMatchObject({
+      Threshold: OPERATIONAL_THRESHOLDS.bedrockThrottles,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      EvaluationPeriods: 1,
+    });
+    // Without dimensions Bedrock adds up every model: the catalog is configuration (rule 7),
+    // so the template names none. The description says it is the whole account.
+    expect(metricsOf(properties)).toEqual([
+      { namespace: "AWS/Bedrock", name: "InvocationThrottles", dimensions: [], stat: "Sum", period: 300 },
+    ]);
+    expect(properties.AlarmDescription).toMatch(/every model of the account/);
+    expect(JSON.stringify(properties)).not.toMatch(/anthropic|claude|nova/i);
+  });
+
+  it("uses no metric filter: nothing measures on its own (D71)", () => {
+    expect(ofType(resources, "AWS::Logs::MetricFilter")).toHaveLength(0);
   });
 });
 
