@@ -308,6 +308,7 @@ class Services:
     conversations: ConversationRepository
     audit: AuditLog
     agentcore: Any
+    """``harness.TurnClients`` in production: one client per turn limit. Tests give a client."""
     bedrock: Any
     settings_store: SettingsStore
     budget_limits: BudgetLimits
@@ -452,7 +453,7 @@ def build_services(settings: Settings) -> Services:
         budgets=BudgetService(dynamodb, settings.budgets_table),
         conversations=ConversationRepository(rls.for_user, settings.conversations_table),
         audit=audit,
-        agentcore=boto3.client("bedrock-agentcore", region_name=region),
+        agentcore=harness.TurnClients(region),
         bedrock=boto3.client("bedrock-runtime", region_name=region),
         settings_store=settings_store,
         budget_limits=BudgetLimits(settings_store),
@@ -1068,6 +1069,11 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
             history=history[-1:] if session.reused else history,
         )
         detail = {**turn, "conversation_id": conversation_id, "turn": turn_id}
+        agentcore = (
+            services.agentcore.for_turn(limits.timeout_seconds)
+            if isinstance(services.agentcore, harness.TurnClients)
+            else services.agentcore
+        )
 
         def produce(put: Callable[[bytes | None], None]) -> None:
             put(sse("conversation", {"conversation_id": conversation_id}))
@@ -1083,7 +1089,7 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                     {**detail, "session": "reused" if session.reused else "new"},
                     user,
                 )
-                for event in harness.run(services.agentcore, request, result, write_tools):
+                for event in harness.run(agentcore, request, result, write_tools):
                     if event.kind != harness.WRITE_CALL:
                         put(sse(event.kind, event.data))
                         continue

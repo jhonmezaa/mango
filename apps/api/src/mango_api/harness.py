@@ -9,11 +9,16 @@ only as the Authorization header of the ``remote_mcp`` tool pointing at the Gate
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import threading
+from collections import OrderedDict
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
+
+import boto3
+from botocore.config import Config
 
 from mango_api.pricing import Usage
 from mango_core import invocation
@@ -30,9 +35,72 @@ MAX_TOOL_INPUT_CHARS = 16 * 1024
 WRITE_CALL = "write_call"
 """Internal event: a write tool was called. mango-api turns it into an approval request and
 never forwards it to the client as it is."""
+READ_MARGIN_SECONDS = 30
+"""How much longer than the limit of a turn mango-api waits in silence for the harness. The
+harness ends the turn itself when the limit is up: the margin lets its answer arrive first."""
+CONNECT_TIMEOUT_SECONDS = 10
+POOL_CONNECTIONS = 100
+"""Connections kept open to AgentCore, per client. A turn holds one for as long as it lasts.
+Sized for one task holding every open turn of the installation while the other is replaced:
+about 330 active people, a turn a minute each, 12 s a turn, are 66 at once. Beyond it nothing
+fails: a turn opens a connection of its own and closes it at the end."""
+MAX_TURN_CLIENTS = 8
+"""Clients kept, one per turn limit in use. Agents share a few limits (120 s unless changed)."""
 _NAME_BOUNDARIES = "/_.: "
 """What may come before a Gateway tool name in the name the harness reports (its server
 prefix). Never a hyphen: `evil-ops___x` is a tool of another target, not `ops___x`."""
+
+
+def _agentcore_client(region: str, config: Config) -> BedrockAgentCoreClient:
+    return boto3.client("bedrock-agentcore", region_name=region, config=config)
+
+
+class TurnClients:
+    """AgentCore clients whose read timeout follows the limit of the turn they serve.
+
+    The harness may stay silent for most of a turn (a slow tool, a model call it retries after
+    a throttle). botocore gives up after 60 s without a byte by default, and cut turns that
+    still had half of their time. A timeout belongs to a client, so there is one per limit.
+
+    The SDK never sends an invocation twice. Its default retries a request whose answer did
+    not arrive, and the first one may be running: the turn would repeat on its own, in the same
+    runtime session, with one budget reservation for two model bills. A turn that fails is
+    retried by the person.
+    """
+
+    def __init__(
+        self,
+        region: str,
+        *,
+        read_margin_seconds: int = READ_MARGIN_SECONDS,
+        factory: Callable[[str, Config], BedrockAgentCoreClient] = _agentcore_client,
+    ) -> None:
+        self._region = region
+        self._margin = read_margin_seconds
+        self._factory = factory
+        self._clients: OrderedDict[int, BedrockAgentCoreClient] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def config(self, turn_seconds: int) -> Config:
+        return Config(
+            read_timeout=turn_seconds + self._margin,
+            connect_timeout=CONNECT_TIMEOUT_SECONDS,
+            retries={"total_max_attempts": 1, "mode": "standard"},
+            max_pool_connections=POOL_CONNECTIONS,
+        )
+
+    def for_turn(self, turn_seconds: int) -> BedrockAgentCoreClient:
+        with self._lock:
+            client = self._clients.get(turn_seconds)
+            if client is None:
+                client = self._factory(self._region, self.config(turn_seconds))
+                self._clients[turn_seconds] = client
+                if len(self._clients) > MAX_TURN_CLIENTS:
+                    # A turn in flight keeps its own reference: dropping the entry cuts nothing.
+                    self._clients.popitem(last=False)
+            else:
+                self._clients.move_to_end(turn_seconds)
+            return client
 
 
 @dataclass(frozen=True)

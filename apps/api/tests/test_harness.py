@@ -1,8 +1,12 @@
 import json
+import socket
+import threading
 from collections.abc import Iterator
 from typing import Any
 
+import boto3
 import pytest
+from botocore.exceptions import ReadTimeoutError
 
 from mango_api import harness
 
@@ -370,3 +374,98 @@ def test_a_turn_without_write_calls_is_read_to_its_end() -> None:
     assert (result.stop_reason, result.interrupted) == ("end_turn", False)
     assert result.text.endswith("Listo") and result.usage.input_tokens == 20
     assert [e.data["status"] for e in events if e.kind == "tool"] == ["started", "completed"]
+
+
+# --- The client of a turn ---------------------------------------------------------------
+
+
+def test_the_read_timeout_of_a_turn_client_follows_the_limit_of_the_turn() -> None:
+    seen: list[tuple[str, Any]] = []
+
+    def factory(region: str, config: Any) -> Any:
+        seen.append((region, config))
+        return object()
+
+    clients = harness.TurnClients("us-east-1", factory=factory)
+    default, long = clients.for_turn(120), clients.for_turn(600)
+    assert default is not long
+    # One client per limit, reused: its connections are what a pool is for.
+    assert clients.for_turn(120) is default
+    assert [region for region, _ in seen] == ["us-east-1", "us-east-1"]
+    for turn_seconds, (_, config) in zip((120, 600), seen, strict=True):
+        # botocore's 60 s cut turns that still had time left.
+        assert config.read_timeout == turn_seconds + harness.READ_MARGIN_SECONDS
+        assert config.connect_timeout == harness.CONNECT_TIMEOUT_SECONDS
+        assert config.retries == {"total_max_attempts": 1, "mode": "standard"}
+        # More than the 10 of botocore: 20 turns at once in a task filled it.
+        assert config.max_pool_connections == harness.POOL_CONNECTIONS >= 66
+
+
+def test_turn_clients_are_bounded() -> None:
+    made: list[int] = []
+
+    def factory(_region: str, config: Any) -> Any:
+        made.append(config.read_timeout)
+        return object()
+
+    clients = harness.TurnClients("us-east-1", factory=factory)
+    limits = list(range(10, 10 + harness.MAX_TURN_CLIENTS + 3))
+    for seconds in limits:
+        clients.for_turn(seconds)
+    assert len(made) == len(limits)
+    # The last ones are still there; the three oldest were dropped and are made again.
+    for seconds in limits[-harness.MAX_TURN_CLIENTS :]:
+        clients.for_turn(seconds)
+    assert len(made) == len(limits)
+    clients.for_turn(limits[0])
+    assert len(made) == len(limits) + 1
+
+
+def test_a_turn_whose_answer_does_not_arrive_is_not_sent_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Against a real socket: the harness accepts the invocation and stays silent."""
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    server = socket.create_server(("127.0.0.1", 0))
+    server.settimeout(0.2)
+    stop = threading.Event()
+    connections: list[socket.socket] = []
+
+    def accept() -> None:
+        while not stop.is_set():
+            try:
+                connections.append(server.accept()[0])
+            except TimeoutError:
+                continue
+
+    thread = threading.Thread(target=accept, daemon=True)
+    thread.start()
+    port = server.getsockname()[1]
+
+    def factory(region: str, config: Any) -> Any:
+        return boto3.client(
+            "bedrock-agentcore",
+            region_name=region,
+            config=config,
+            endpoint_url=f"http://127.0.0.1:{port}",
+        )
+
+    clients = harness.TurnClients("us-east-1", read_margin_seconds=0, factory=factory)
+    try:
+        with pytest.raises(ReadTimeoutError):
+            clients.for_turn(1).invoke_harness(
+                harnessArn="arn:aws:bedrock-agentcore:us-east-1:111122223333:harness/a-0123456789",
+                runtimeSessionId="s" * 40,
+                messages=[{"role": "user", "content": [{"text": "hi"}]}],
+            )
+        # Time for a retry to show up, if the SDK made one.
+        stop.wait(0.5)
+    finally:
+        stop.set()
+        thread.join()
+        for connection in connections:
+            connection.close()
+        server.close()
+    assert len(connections) == 1
