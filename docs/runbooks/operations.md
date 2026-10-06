@@ -45,7 +45,7 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 
 | Alarma | Qué significa | Qué mirar primero |
 |---|---|---|
-| `Bedrock-throttled` | Bedrock rechazó 5 o más llamadas a un modelo en 5 minutos porque se alcanzó una cuota de la cuenta (peticiones o tokens por minuto). **Los turnos de chat esperan y reintentan, y fallan si la espera dura más que el turno.** Mira **todos los modelos de la cuenta** en esa región, también las llamadas que no son de Mango | La cuota aplicada de los modelos en uso: `python3 deployment/check-bedrock-quotas.py --namespace <ns>`. Qué hacer: abajo, «Cuando Bedrock rechaza por cuota» |
+| `Bedrock-throttled` | Bedrock rechazó 5 o más llamadas a un modelo en 5 minutos porque se alcanzó una cuota de la cuenta (peticiones o tokens por minuto). **Los turnos de chat esperan y reintentan: tardan minutos en vez de segundos.** Mira **todos los modelos de la cuenta** en esa región, también las llamadas que no son de Mango | La cuota aplicada de los modelos en uso: `python3 deployment/check-bedrock-quotas.py --namespace <ns>`. Qué hacer: abajo, «Cuando Bedrock rechaza por cuota» |
 
 **Datos**
 
@@ -87,14 +87,29 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 - **CPU baja y aun así lenta:** es una dependencia. Mira las alarmas de DynamoDB y las de las funciones de ingreso.
 - **Las dos tareas no rinden igual.** Es normal: se midió una que gastaba 1,8 veces la CPU de la otra con el mismo trabajo. El balanceador manda más a la que responde antes, así que la media de CPU del servicio no dice nada: mira el máximo.
 
-**Cuando Bedrock rechaza por cuota** (`Bedrock-throttled`; D71, punto 16). Cada cuenta de AWS tiene, por modelo, un máximo de llamadas y de tokens por minuto. Cada turno de chat es al menos una llamada, y una más por cada vuelta de tools. Al pasarse, Bedrock rechaza; el agente espera unos 30 segundos y reintenta, y las personas ven turnos que tardan 40 o 70 segundos, o «the agent failed».
+**Cuando Bedrock rechaza por cuota** (`Bedrock-throttled`; D71, punto 16). Cada cuenta de AWS tiene, por modelo, un máximo de llamadas y de tokens por minuto. Cada turno de chat es al menos una llamada, y una más por cada vuelta de tools. Al pasarse, Bedrock rechaza; el agente espera unos 30 segundos y reintenta.
+
+**Qué ve la gente: turnos que se alargan, no que fallan** (D70, punto 14). Medido en una instalación de laboratorio el 2026-10-06, con una cuota de 10 llamadas por minuto: 90 turnos terminaron todos con su respuesta. Con 20 a la vez, el más largo tardó 72 segundos; con 35 a la vez, cerca de la mitad tardó más de un minuto, hasta uno de cada cuatro más de tres, y el más largo 192 segundos. Un turno puede durar más que su límite de tiempo, porque el límite cuenta desde que la invocación del agente empieza y no la espera anterior. En versiones anteriores a D70 (punto 10) esos turnos fallaban a los 60 segundos.
+
 
 1. Ver qué cuota hay: `python3 deployment/check-bedrock-quotas.py --namespace <ns>` (solo lectura, con credenciales de la cuenta de Mango). Dice, por cada modelo habilitado, la cuota aplicada, el valor por defecto de AWS y para cuántas personas alcanza.
 2. **Si la cuota aplicada está por debajo del valor por defecto** (pasa en cuentas nuevas o con poco uso: 10 por minuto donde el valor por defecto es 10.000): Service Quotas **rechaza la solicitud de aumento** (visto por API: solo admite valores por encima del valor por defecto). Hay que abrir un caso en la consola de Support Center (Create case › Service limit increase › Amazon Bedrock) y pedir que se restablezca el valor por defecto de esa cuota. El plan básico de soporte permite ese caso; su API no.
 3. **Si ya está en el valor por defecto y no alcanza:** Service Quotas › Amazon Bedrock › la cuota del modelo › solicitar un aumento a nivel de cuenta.
-4. Mientras tanto: con 10 llamadas por minuto funcionan bien unos 5 turnos a la vez. Si las llamadas no son de Mango (la alarma cuenta toda la cuenta), el tablero de Bedrock en CloudWatch dice de qué modelo.
+4. Mientras tanto: con 10 llamadas por minuto responden en segundos unos 5 turnos a la vez; los demás esperan. Si las llamadas no son de Mango (la alarma cuenta toda la cuenta), el tablero de Bedrock en CloudWatch dice de qué modelo.
 
 **Qué hacer cuando un límite por IP bloquea a una oficina** (D72). Los números son constantes de la versión: no hay parámetro que los suba. El bloqueo se levanta solo cuando el recuento de esa dirección en los últimos 5 minutos baja del límite; mientras dura, el WAF rechaza **todas** las peticiones de esa dirección que cuenta la regla, y cada recarga de quien espera vuelve a contar. Si la dirección es de la empresa y el uso es legítimo (una oficina de más de unas 1.000 personas detrás de una sola dirección, o más de 500 ingresos en 5 minutos), avisa al proveedor: es el caso que D72 deja para redes de confianza. Si no lo es, las peticiones de muestra dicen qué repite. `mango-api` no cuenta en los límites del user pool: renueva las sesiones con una operación firmada que no pasa por ese WAF.
+
+**Qué ve la gente durante un bloqueo** (visto en un navegador en una instalación de laboratorio el 2026-10-06; D72, puntos 16 a 19). Ninguna pantalla dice que es un límite ni cuánto esperar: quien llama a soporte dirá «da error», no «demasiadas solicitudes».
+
+| Qué bloquea | Qué ve la persona |
+|---|---|
+| Borde, `ApiRateLimitPerIp` (`/api/*`) | La aplicación sigue abierta y cada pantalla muestra su error genérico con «Reintentar»: en el chat, «Ocurrió un error inesperado. Inténtalo de nuevo.» bajo su mensaje; «No se pudo cargar el historial.»; «No se pudo cargar la conversación»; «No se pudieron cargar los agentes». Si recarga, el logo con ese mismo error y «Reintentar». **No vuelve al formulario de ingreso** y no pierde la sesión: cuando el bloqueo se levanta, «Reintentar» la recupera |
+| Borde, `RateLimitPerIp` (todo) | La aplicación no carga: una página en blanco con el título «Demasiadas solicitudes» y «Espera unos minutos y vuelve a cargar la página», sin logo ni estilos |
+| User pool, `EmailOperationsPerIp` | Quien ya está dentro no nota nada, y se puede ingresar. «¿Olvidaste tu contraseña?» avanza como si hubiera enviado el código, **pero no lo envía**. «Crear cuenta» se queda en el formulario con «No se pudo completar el inicio de sesión. Inténtalo de nuevo.» |
+| User pool, `SecretOperationsPerIp` y `RateLimitPerIp` | Sin ver en un navegador. La regla total no se ha podido provocar |
+
+- **«Reintentar» durante el bloqueo vuelve a fallar y vuelve a contar.** Lo que hay que decirle a la gente es que espere unos minutos sin recargar.
+- **Puede ser parcial.** El bloqueo es por dirección. Una red con más de una salida a internet reparte las conexiones de un mismo navegador entre varias direcciones: se vio la API bloqueada mientras la sesión se renovaba con normalidad, en la misma pestaña. «A mí me funciona» y «a mí no», desde la misma oficina o el mismo equipo, son compatibles con un bloqueo por IP.
 
 **A quién se bloqueó.** Lo dicen las peticiones de muestra **de la regla** que bloqueó (las de las últimas 3 horas): la dirección, el país, la acción `BLOCK` y el código que se respondió. En la consola de WAF, en el web ACL, eligiendo la regla; o con la CLI, con el nombre de métrica de la regla (`ApiRateLimitPerIp` o `RateLimitPerIp` en el borde; `SecretOperationsPerIp`, `EmailOperationsPerIp` o `RateLimitPerIp` en el user pool). Las peticiones permitidas salen bajo el nombre de métrica del web ACL, no bajo el de la regla.
 
@@ -110,8 +125,8 @@ aws wafv2 get-sampled-requests --scope CLOUDFRONT --region us-east-1 \
 
 **Cuánto dura un bloqueo de verdad.** No hay un tiempo fijo, y los números son aproximados (D72, punto 11):
 
-- **Empieza tarde.** El WAF empieza a bloquear entre medio minuto y un minuto después de que una dirección cruza el límite (34, 41 y 52 segundos en las tres reglas probadas) y hasta entonces deja pasar todo: entre un 23 % y un 33 % más que el límite con las ráfagas probadas, y más a un ritmo mayor. Con un ritmo apenas por encima del límite puede no bloquear nunca.
-- **Se levanta entre 90 y 180 segundos después de que baja el tráfico** de esa dirección (90, 150 y 180 segundos en las pruebas), no al minuto. Si el tráfico no baja, no se levanta.
+- **Empieza tarde.** El WAF empieza a bloquear entre medio minuto y un minuto después de que una dirección cruza el límite (entre 33 y 52 segundos en seis pruebas, en dos días) y hasta entonces deja pasar todo: entre un 22 % y un 33 % más que el límite con las ráfagas probadas, y más a un ritmo mayor. Con un ritmo apenas por encima del límite puede no bloquear nunca.
+- **Se levanta entre 90 y 180 segundos después de que baja el tráfico** de esa dirección (90, 100, 147, 150 y 180 segundos en las pruebas), no al minuto. Si el tráfico no baja, no se levanta.
 - **La respuesta del borde pide esperar 180 segundos** (`Retry-After`), y la página dice «Espera unos minutos». Quien reintenta antes vuelve a recibir el 429 y su intento vuelve a contar. El 403 del user pool no trae espera.
 - **La alarma** pasa a `ALARM` cerca de un minuto después del primer bloqueo y vuelve sola a `OK` unos 5 minutos después del último.
 
@@ -244,4 +259,15 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ### Cuánto cuesta
 
-Unos USD 6 al mes a precio de lista: USD 0,10 por cada métrica que lee una alarma (unas 33) y USD 3 por el tablero. Los tres primeros tableros de una cuenta son gratis. Con D72, cuatro métricas más (USD 0,40) y una regla más en el WAF del borde (USD 1). Con las dos alarmas de saturación (D71, punto 16), tres métricas más (USD 0,30). Con D73, dos métricas de alarma más (USD 0,20) y cuatro métricas propias de la función conciliadora (USD 1,20).
+**Unos USD 9 al mes** a precio de lista de `us-east-1`, con todas las alarmas de hoy (D71, D72 y D73):
+
+| Qué | Cuánto | USD al mes |
+|---|---|---|
+| Métricas que leen las alarmas, a USD 0,10 cada una | 51 en la plantilla de ejemplo (2026-10-06): 50 en las 30 alarmas de `Core` y una en la de `PackNetwork` | 5,10 |
+| Tablero `Mango-<ns>-Operations` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
+| Métricas propias de la función conciliadora (D73), a USD 0,30 cada una | Cuatro | 1,20 |
+| **Total** | | **9,30** |
+
+- **Fuera de la suma:** `DynamoDB-system-errors` no lee una métrica fija, sino una consulta sobre todas las tablas de la cuenta. CloudWatch la cobra por las métricas que la consulta analiza, que dependen de cuántas tablas y operaciones tenga la cuenta. Ninguna cifra de esta tabla está contrastada con una factura.
+- **El número de métricas crece con las tablas:** cada tabla nueva suma una alarma con dos métricas.
+- La regla del WAF del borde que añadió D72 (USD 1 al mes) va en el costo del WAF, no aquí: §6 de la [arquitectura](../architecture/reference-architecture.md).
