@@ -13,7 +13,10 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
+  // The retry keeps the trace of a failure; it no longer hides it. A test that passes only
+  // when retried is reported as flaky and makes the run fail.
   retries: process.env.CI ? 1 : 0,
+  failOnFlakyTests: !!process.env.CI,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   timeout: 60_000,
   use: {
