@@ -150,9 +150,17 @@ test.describe('Shell, chat and Org Chart', () => {
     test(`at ${String(width)}px the toasts go under the top bar, clear of the composer and «Enviar»`, async () => {
       await page.setViewportSize({ width, height: 900 });
       await pushRoute(page, '/');
+      // The toast of the width before this one is gone first.
+      await expect(page.locator('.g-toast-item')).toHaveCount(0, { timeout: 10_000 });
       await page.locator('.topbar-create').click();
       const toast = page.locator('.g-toast-item', { hasText: 'Nueva conversación iniciada.' });
       await expect(toast).toBeVisible();
+      // It slides in: measured once it rests.
+      await page.evaluate<undefined>(
+        `Promise.all(
+          document.querySelector('.g-toast-item').getAnimations().map((a) => a.finished),
+        ).then(() => undefined)`,
+      );
       const toastBox = await toast.boundingBox();
       const composerBox = await page.locator('.composer-box').boundingBox();
       const topbarBox = await page.locator('.topbar').boundingBox();
