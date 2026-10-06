@@ -43,6 +43,7 @@ from mango_api.probe import (
     ProbeError,
     RateLimiter,
 )
+from mango_api.rate_limits import Limiter
 from mango_api.settings_store import (
     USER_PREFIX,
     BudgetLimits,
@@ -253,12 +254,12 @@ class AdminDeps:
     audit: AuditLog
     probe: AdminProbe
     agent_id: str
-    rate_limiter: RateLimiter
+    rate_limiter: Limiter
     organization_cache: OrganizationCache
     clock: Callable[[], datetime]
     agent_names: Callable[[], Mapping[str, str]] | None = None
     """Names of the published and retired agents by id, for the budget list."""
-    member_rate_limiter: RateLimiter = field(
+    member_rate_limiter: Limiter = field(
         default_factory=lambda: RateLimiter(limit=PROBE_CALLS_PER_MINUTE, window_seconds=60)
     )
     """Own window of the member account check, which the screen runs after connectivity."""

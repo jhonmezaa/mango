@@ -132,7 +132,9 @@ class AdminProbe:
 
 
 class RateLimiter:
-    """Sliding window per key, in process (one limit per mango-api task)."""
+    """Sliding window per key, in process: one limit per mango-api task, lost when the task
+    restarts. Only for the limits ``mango_api.limits`` says may be per task; the others are
+    shared (``rate_limits.SharedRateLimiter``)."""
 
     MAX_KEYS = 10_000
 

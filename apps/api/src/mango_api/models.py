@@ -54,7 +54,7 @@ from mango_api.model_catalog import (
     ModelCatalogUnavailableError,
     ModelEntry,
 )
-from mango_api.probe import RateLimiter
+from mango_api.rate_limits import Limiter
 from mango_api.settings import ModelPrice
 from mango_api.settings_store import VersionConflictError, iso
 from mango_api.web import ApiError, Caller, rate_limited
@@ -272,7 +272,7 @@ class ModelsDeps:
     bedrock: BedrockCatalog
     agents: AgentsStore
     audit: AuditLog
-    rate_limiter: RateLimiter
+    rate_limiter: Limiter
     region: str
     default_model: str
     list_prices: dict[str, ModelPrice]

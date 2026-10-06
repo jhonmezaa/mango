@@ -62,6 +62,7 @@ from mango_api.mcp_store import (
 )
 from mango_api.probe import RateLimiter
 from mango_api.provisioner import PackProvisionerClient, ProvisionerError
+from mango_api.rate_limits import Limiter
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core.agents import InvalidDefinitionError, VersionStatus
 from mango_packs.enablement import MAX_PACK_ID_CHARS, PACK_ID_PATTERN, PackStatus, iso
@@ -272,7 +273,7 @@ class McpDeps:
     """``None`` until the installation has the Settings table of packs wired (503)."""
     provisioner: PackProvisionerClient | None = None
     """Until the pack provisioner is deployed nothing can be approved (503)."""
-    rate_limiter: RateLimiter = field(
+    rate_limiter: Limiter = field(
         default_factory=lambda: RateLimiter(limit=WRITES_PER_MINUTE, window_seconds=60)
     )
 

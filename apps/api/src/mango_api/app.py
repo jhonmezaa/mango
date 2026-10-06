@@ -18,7 +18,7 @@ import re
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import cache
@@ -75,17 +75,16 @@ from mango_api.directory import (
     CognitoDirectory,
     DirectoryDeps,
     LookupQuota,
-    default_limiters,
     directory_router,
 )
 from mango_api.group_admin import (
-    PROPOSALS_PER_HOUR,
     CognitoGroups,
     GroupAdminDeps,
     GroupStore,
     group_admin_router,
 )
 from mango_api.groups import GroupRegistry, groups_router
+from mango_api.limits import Limits
 from mango_api.mcp import McpDeps, mcp_router
 from mango_api.mcp_catalog import CatalogSource, McpCatalog
 from mango_api.mcp_store import PackStore
@@ -108,14 +107,12 @@ from mango_api.people import (
     people_router,
 )
 from mango_api.pricing import Usage, cost, estimate_max_cost
-from mango_api.probe import AdminProbe, OrganizationCache, RateLimiter
+from mango_api.probe import AdminProbe, OrganizationCache
 from mango_api.provisioner import DeprovisionerClient, PackProvisionerClient, ProvisionerClient
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
+from mango_api.rate_limits import RateLimitStore
 from mango_api.settings import ModelPrice, Settings
 from mango_api.settings_store import BudgetLimits, SettingsStore, SettingsUnavailableError
-from mango_api.tool_policies import (
-    PROPOSALS_PER_HOUR as POLICY_PROPOSALS_PER_HOUR,
-)
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
 from mango_api.web import ApiError, Caller, error_response
 from mango_api.web_session import (
@@ -343,6 +340,9 @@ class Services:
     tool_policies: ToolPolicyDeps | None = None
     # Web session cookie (D63); set in production once its table and origin are configured.
     web_sessions: WebSessionDeps | None = None
+    limits: Limits = field(default_factory=Limits)
+    """Where every rate limit comes from (D70). In production the shared ones count in
+    DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -352,6 +352,8 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 def build_services(settings: Settings) -> Services:
     region = settings.region
     dynamodb = boto3.client("dynamodb", region_name=region)
+    # Without the table the shared limits would fall back to one per task: do not start.
+    limits = Limits(RateLimitStore(dynamodb, settings.rate_limits_table))
     rls = RlsClientFactory(
         boto3.client("sts", region_name=region),
         role_arn=settings.data_access_role_arn,
@@ -421,6 +423,7 @@ def build_services(settings: Settings) -> Services:
             )
             if settings.approval_key_arn
             else None,
+            run_limiter=limits.limiter("approvals.runs"),
         )
         if settings.approvals_table
         else None
@@ -437,6 +440,8 @@ def build_services(settings: Settings) -> Services:
             clock=now_utc,
             app_origin=settings.app_origin,
             session_seconds=settings.session_hours * 3600,
+            starts=limits.limiter("session.starts"),
+            renewals=limits.limiter("session.renewals"),
         )
     return Services(
         settings=settings,
@@ -463,13 +468,17 @@ def build_services(settings: Settings) -> Services:
             audit=audit,
             clock=now_utc,
             sign_up_domains=parse_domains(settings.sign_up_domains),
+            reads=limits.limiter("people.reads"),
+            changes=limits.limiter("people.changes"),
+            proposals=limits.limiter("people.proposals"),
+            invitations=limits.limiter("people.invitations"),
         ),
         approvals=approvals,
         tool_policies=ToolPolicyDeps(
             store=policy_store,
             catalog=mcp_catalog,
             audit=audit,
-            rate_limiter=RateLimiter(limit=POLICY_PROPOSALS_PER_HOUR, window_seconds=3600),
+            rate_limiter=limits.limiter("tool_policies.proposals"),
             clock=now_utc,
         ),
         group_registry=group_registry,
@@ -480,7 +489,7 @@ def build_services(settings: Settings) -> Services:
             agents=agents_store,
             catalog=mcp_catalog,
             audit=audit,
-            rate_limiter=RateLimiter(limit=PROPOSALS_PER_HOUR, window_seconds=3600),
+            rate_limiter=limits.limiter("group_admin.proposals"),
             clock=now_utc,
         ),
         agents=AgentsDeps(
@@ -519,6 +528,7 @@ def build_services(settings: Settings) -> Services:
             )
             if settings.pack_provisioner_state_machine_arn
             else None,
+            rate_limiter=limits.limiter("mcp.writes"),
         ),
         models=ModelsDeps(
             store=model_catalog,
@@ -526,7 +536,7 @@ def build_services(settings: Settings) -> Services:
             bedrock=BedrockCatalog(boto3.client("bedrock", region_name=region)),
             agents=agents_store,
             audit=audit,
-            rate_limiter=RateLimiter(limit=5, window_seconds=60),
+            rate_limiter=limits.limiter("models.refreshes"),
             region=region,
             default_model=settings.agent_model,
             list_prices=settings.model_prices,
@@ -536,6 +546,7 @@ def build_services(settings: Settings) -> Services:
         ),
         invocation_key=invocation_key,
         web_sessions=web_sessions,
+        limits=limits,
     )
 
 
@@ -813,10 +824,11 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                 audit=services.audit,
                 probe=services.probe,
                 agent_id=settings.agent_id,
-                rate_limiter=RateLimiter(limit=5, window_seconds=60),
+                rate_limiter=services.limits.limiter("admin.probe"),
                 organization_cache=OrganizationCache(ttl_seconds=60),
                 clock=now_utc,
                 agent_names=lambda: _agent_names(services),
+                member_rate_limiter=services.limits.limiter("admin.member_access"),
             ),
             current_user,
             require,
@@ -835,7 +847,7 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                     store=services.mfa_reset_store,
                     users=services.cognito_users,
                     audit=services.audit,
-                    rate_limiter=RateLimiter(limit=5, window_seconds=3600),
+                    rate_limiter=services.limits.limiter("mfa_reset.proposals"),
                     clock=now_utc,
                     end_sessions=(
                         services.web_sessions.revoke_user if services.web_sessions else None
@@ -881,15 +893,14 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
         app.include_router(models_router(services.models, current_user, require))
 
     if services.directory is not None and services.directory_quota is not None:
-        emails_per_minute, ids_per_minute = default_limiters()
         app.include_router(
             directory_router(
                 DirectoryDeps(
                     directory=services.directory,
                     quota=services.directory_quota,
                     audit=services.audit,
-                    emails_per_minute=emails_per_minute,
-                    ids_per_minute=ids_per_minute,
+                    emails_per_minute=services.limits.limiter("directory.emails"),
+                    ids_per_minute=services.limits.limiter("directory.ids"),
                     clock=now_utc,
                 ),
                 current_user,

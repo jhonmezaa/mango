@@ -19,7 +19,6 @@ from mango_api import app as app_module
 from mango_api.authz import Authorizer
 from mango_api.directory import (
     EMAILS_PER_DAY,
-    EMAILS_PER_MINUTE,
     IDS_PER_MINUTE,
     MAX_EMAILS_PER_CALL,
     MAX_IDS_PER_CALL,
@@ -28,6 +27,7 @@ from mango_api.directory import (
     LookupQuota,
     QuotaExceededError,
 )
+from mango_api.limits import Limits
 from mango_api.probe import RateLimiter
 
 from .cedar_fake import CedarPolicyStore
@@ -83,14 +83,6 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
     now = [datetime(2026, 10, 2, 15, 0, tzinfo=UTC)]
     limiter_clock = [0.0]
     monkeypatch.setattr(app_module, "now_utc", lambda: now[0])
-    monkeypatch.setattr(
-        app_module,
-        "default_limiters",
-        lambda: (
-            RateLimiter(EMAILS_PER_MINUTE, 60, clock=lambda: limiter_clock[0]),
-            RateLimiter(IDS_PER_MINUTE, 60, clock=lambda: limiter_clock[0]),
-        ),
-    )
     with mock_aws():
         db = boto3.client("dynamodb", region_name="us-east-1")
         _table(db, "settings")
@@ -114,6 +106,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
                 invocation_key=b"k" * 32,
                 directory=directory,  # type: ignore[arg-type]
                 directory_quota=LookupQuota(db, "settings"),
+                limits=Limits(clock=lambda: limiter_clock[0]),
             )
 
         asgi = app_module.create_app(_settings(), services_factory=factory)

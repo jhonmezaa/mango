@@ -44,6 +44,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from mango_api.audit import AuditLog
 from mango_api.probe import RateLimiter
+from mango_api.rate_limits import Limiter
 from mango_api.web import ApiError, rate_limited
 from mango_core.identity import IdentityError, UserContext, user_from_claims
 
@@ -347,10 +348,8 @@ class WebSessionDeps:
     """Public origin of the application (``https://host``): the only ``Origin`` accepted."""
     session_seconds: int
     """Maximum length of a session, from sign-in (the refresh token validity of Cognito)."""
-    starts: RateLimiter = field(
-        default_factory=lambda: RateLimiter(STARTS_PER_USER, WINDOW_SECONDS)
-    )
-    renewals: RateLimiter = field(
+    starts: Limiter = field(default_factory=lambda: RateLimiter(STARTS_PER_USER, WINDOW_SECONDS))
+    renewals: Limiter = field(
         default_factory=lambda: RateLimiter(RENEWALS_PER_SESSION, WINDOW_SECONDS)
     )
 

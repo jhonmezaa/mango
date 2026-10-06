@@ -15,8 +15,8 @@ Security notes (security-best-practices, FastAPI):
 * Nobody resets their own MFA, proposes and approves the same request, or decides on a request
   about themselves. A refused attempt is audited (``outcome: rejected``).
 * Fail-closed audit: ``requested`` is recorded before any write or Cognito call.
-* Rate limits: proposals per administrator (in process), one open request per user and a
-  cooldown after a reset (both persisted in the Settings table).
+* Rate limits: proposals per administrator (shared by every task, D70), one open request per
+  user and a cooldown after a reset (both persisted in the Settings table).
 * The target is identified by email only to look it up; everything afterwards uses the Cognito
   ``sub`` and username returned by ``AdminGetUser``.
 * Bodies forbid extra fields and responses use explicit models (VALID-001, RESP-001).
@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, Path
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from mango_api.audit import AuditLog
-from mango_api.probe import RateLimiter
+from mango_api.rate_limits import Limiter
 from mango_api.web import ApiError, Caller
 from mango_api.web_session import RevocationCause
 
@@ -427,7 +427,7 @@ class MfaResetDeps:
     store: ResetStore
     users: CognitoUsers
     audit: AuditLog
-    rate_limiter: RateLimiter
+    rate_limiter: Limiter
     clock: Callable[[], datetime]
     end_sessions: Callable[[str, RevocationCause], None] | None = None
     """Ends the web sessions of a user id (D63), next to the Cognito sign-out, and records

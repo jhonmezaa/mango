@@ -15,9 +15,9 @@ Security notes (security-best-practices, FastAPI):
 * Strict body: emails and identifiers are validated and normalized before they reach Cognito,
   with a maximum per call (VALID-001). The response carries the identifier and the email of
   each match and the inputs without one, nothing else of the user (RESP-001).
-* Rate limits per caller (LIMITS-001): emails per minute (in process, one limit per mango-api
-  task) and per day (persisted in the Settings table, shared by all tasks); identifiers per
-  minute. Identifiers are random, so they are not an oracle the way emails are.
+* Rate limits per caller (LIMITS-001), all shared by every mango-api task (D70): emails per
+  minute and identifiers per minute (``mango_api.limits``) and emails per day (a counter in
+  the Settings table). Identifiers are random, so they are not an oracle the way emails are.
 * Fail-closed audit: nothing is returned unless the lookup was recorded (who, how many emails
   and identifiers, how many matched, and the identifiers matched by email). The emails asked
   for are never written to the audit trail or to operational logs.
@@ -39,7 +39,7 @@ from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Fie
 
 from mango_api.audit import AuditLog
 from mango_api.authz import PLATFORM
-from mango_api.probe import RateLimiter
+from mango_api.rate_limits import Limiter
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core.agents import MAX_USERS, USER_ID_PATTERN
 from mango_core.identity import MAX_EMAIL_LENGTH
@@ -235,17 +235,9 @@ class DirectoryDeps:
     directory: Directory
     quota: Quota
     audit: AuditLog
-    emails_per_minute: RateLimiter
-    ids_per_minute: RateLimiter
+    emails_per_minute: Limiter
+    ids_per_minute: Limiter
     clock: Callable[[], datetime]
-
-
-def default_limiters() -> tuple[RateLimiter, RateLimiter]:
-    """``(emails per minute, identifiers per minute)`` with the documented limits."""
-    return (
-        RateLimiter(limit=EMAILS_PER_MINUTE, window_seconds=60),
-        RateLimiter(limit=IDS_PER_MINUTE, window_seconds=60),
-    )
 
 
 def _seconds_to_next_utc_day(now: datetime) -> int:

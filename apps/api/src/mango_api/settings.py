@@ -92,6 +92,9 @@ class Settings:
     web_sessions_table: str = ""
     session_hours: int = 0
     """Maximum length of a web session: the refresh token validity of the web client."""
+    rate_limits_table: str = ""
+    """Counters of the rate limits every task shares (D70); mango-api does not start without
+    it."""
 
     @staticmethod
     def from_env() -> Settings:
@@ -155,6 +158,7 @@ class Settings:
             app_origin=env.get("APP_ORIGIN", ""),
             web_sessions_table=env.get("WEB_SESSIONS_TABLE", ""),
             session_hours=int(env.get("SESSION_HOURS", "0")),
+            rate_limits_table=env["RATE_LIMITS_TABLE"],
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

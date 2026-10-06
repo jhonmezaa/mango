@@ -41,7 +41,7 @@ from mango_api.approval_policy import (
 )
 from mango_api.audit import AuditLog
 from mango_api.mcp_catalog import CatalogTool, InvalidCatalogError, McpCatalog
-from mango_api.probe import RateLimiter
+from mango_api.rate_limits import Limiter
 from mango_api.web import ApiError, Caller, rate_limited
 
 if TYPE_CHECKING:
@@ -492,7 +492,7 @@ class ToolPolicyDeps:
     store: PolicyStore
     catalog: Callable[[], McpCatalog]
     audit: AuditLog
-    rate_limiter: RateLimiter
+    rate_limiter: Limiter
     clock: Callable[[], datetime]
 
 

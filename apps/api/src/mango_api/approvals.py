@@ -50,6 +50,7 @@ from mango_api.audit import AuditLog
 from mango_api.mcp_catalog import CatalogTool, InvalidCatalogError, McpCatalog
 from mango_api.probe import RateLimiter
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
+from mango_api.rate_limits import Limiter
 from mango_api.tool_policies import PolicyStore, PolicyUnavailableError, governed, tier_inputs
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core.approval import APPROVAL_ID_PATTERN, InvalidArgumentsError, call_hash
@@ -63,7 +64,7 @@ MAX_REQUESTS_PER_TURN = 3
 MAX_OPEN_PER_USER = 20
 MAX_EXPIRED_PER_READ = 20
 RUNS_PER_MINUTE = 10
-"""Each run signs with KMS and calls the Gateway: bounded per person (in process)."""
+"""Each run signs with KMS and calls the Gateway: bounded per person, in every task (D70)."""
 CONVERSATION_ID_PATTERN = r"^[0-9a-f]{32}$"
 _WAITING = frozenset({Status.PENDING, Status.APPROVED, Status.EXECUTING})
 """Still waiting for someone: to be signed, to be run by who asked, or to finish running."""
@@ -174,7 +175,7 @@ class ApprovalDeps:
     clock: Callable[[], datetime]
     executor: Executor | None = None
     """``None`` until the approval key is deployed: nothing can be run (503)."""
-    run_limiter: RateLimiter = field(
+    run_limiter: Limiter = field(
         default_factory=lambda: RateLimiter(limit=RUNS_PER_MINUTE, window_seconds=60)
     )
 

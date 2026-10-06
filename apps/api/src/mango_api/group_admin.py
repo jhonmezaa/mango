@@ -49,7 +49,7 @@ from mango_api.agents_store import AgentVersion
 from mango_api.audit import AuditLog
 from mango_api.groups import PK_GROUPS
 from mango_api.mcp_catalog import InvalidCatalogError, McpCatalog
-from mango_api.probe import RateLimiter
+from mango_api.rate_limits import Limiter
 from mango_api.settings_store import SettingsStore
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core.agents import InvalidDefinitionError, VersionStatus
@@ -768,7 +768,7 @@ class GroupAdminDeps:
     agents: LiveAgents
     catalog: Callable[[], McpCatalog]
     audit: AuditLog
-    rate_limiter: RateLimiter
+    rate_limiter: Limiter
     clock: Callable[[], datetime]
 
 
