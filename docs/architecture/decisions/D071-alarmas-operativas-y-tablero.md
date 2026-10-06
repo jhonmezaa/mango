@@ -1,7 +1,7 @@
 # D71 · La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 y 12)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** —
 
@@ -28,3 +28,12 @@ Origen: la revisión del proyecto del 2026-10-05 (infraestructura, H6). El usuar
 **(9) Costo y tamaño.** 20 alarmas y un tablero en `Core` (de 249 a 270 recursos con la síntesis de ejemplo, ya con la tabla de [D70](D070-dos-tareas-y-limites-compartidos.md); el máximo es 500) y una alarma en `PackNetwork`. Unos USD 6 al mes a precio de lista. Sin supresiones nuevas de cdk-nag, cfn-guard ni Checkov, y sin cambios de permisos.
 
 **(10) Pendiente de comprobar en una instalación.** Que una alarma de prueba llega al correo, y cuál es el nivel normal de consultas rechazadas por el DNS Firewall: si el propio AgentCore pide nombres fuera de la lista, el umbral de `PackDns-blocked` (una consulta en 5 minutos) habrá que subirlo.
+
+**(11) Precisión del 2026-10-06 al punto 2: en `Api-no-healthy-targets`, y solo en ella, la falta de datos cuenta como incumplimiento.** La aprobó el dueño ese día, al ver la validación en una instalación de laboratorio. El motivo: el balanceador solo publica `HealthyHostCount` mientras tiene algún destino registrado. Con tareas que fallan la comprobación de salud publica 0 y la alarma ya saltaba; con el servicio sin ninguna tarea no publica nada, y la alarma callaba justo en el peor caso. En las demás alarmas los datos ausentes siguen sin contar: sus métricas solo existen cuando hay tráfico o cuando ocurre el fallo. Un test nombra esta única excepción y falla si aparece otra. Qué cambia en cada momento:
+
+- **Instalación nueva.** La alarma se crea después del servicio de ECS (depende de él), y CloudFormation da el servicio por creado cuando sus tareas ya están registradas y sanas: no existe mientras todavía no hay una primera tarea. Si aun así el primer dato tardara en publicarse, saltaría una vez y volvería sola a `OK`; a esa hora lo normal es que la suscripción del correo siga sin confirmar.
+- **Actualización o despliegue.** No falta el dato mientras haya tareas: en la validación hubo un dato por minuto durante dos paradas de tarea y un despliegue. Una actualización de una instalación existente cambia la alarma sin recrearla.
+- **Servicio sin tareas.** La alarma salta unos minutos después del último dato, cuando ese dato sale de la ventana que CloudWatch evalúa (algo más que los 3 minutos de la alarma). Vale también si alguien deja el servicio en cero tareas a propósito: nadie puede usar la aplicación.
+- **Desinstalación.** La alarma se borra antes que el servicio, así que no avisa al apagarse la última tarea.
+
+**(12) Lo que se comprobó del punto 10 (2026-10-06, en una instalación de laboratorio).** El correo llega: dos alarmas de prueba, una de `Core` y la de `PackNetwork`, llegaron al buzón de alertas y el dueño lo confirmó. Sigue pendiente el nivel normal de consultas rechazadas por el DNS Firewall: con packs en uso no es cero. Se está investigando qué nombres se rechazan; hasta saberlo, el umbral de `PackDns-blocked` no es de fiar y la alarma puede saltar con el uso normal de los packs.

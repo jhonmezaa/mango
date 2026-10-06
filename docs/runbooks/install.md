@@ -105,7 +105,7 @@ Después de instalar y después de cada actualización:
 
 **Qué stacks hay que actualizar.** La verificación imprime el sha256 de cada plantilla. Un stack cuya plantilla tiene el mismo sha256 en la versión instalada y en la nueva no cambió: no se actualiza (CloudFormation respondería `didn't contain changes`). Es lo habitual en `Payer`, `OrgAccess` y `PackNetwork`. La descripción de un stack no nombra la versión (D69): la que corre `Core` se ve en Ajustes › General › Instalación.
 
-**Qué esperar en el change set de `Core`.** Solo lo que la versión cambió:
+**Qué esperar en el change set.** Solo lo que la versión cambió. Estas entradas son normales en cualquier versión:
 
 | Entrada | Cuándo aparece |
 |---|---|
@@ -113,12 +113,24 @@ Después de instalar y después de cada actualización:
 | Los dos `Custom::CDKBucketDeployment` de la web | Si cambió la web |
 | Una Lambda (`Code.S3Key`) y los recursos que leen su ARN (aparecen como reevaluación, sin cambio propio) | Si cambió ese paquete o una de sus dependencias |
 | Un `Custom::CDKBucketDeployment` de un pack | Si cambió la versión de ese pack |
+| `CDKMetadata` (`AWS::CDK::Metadata`), `Modify` de la propiedad `Analytics`, con `Replacement: Conditional` | Si la versión usa en ese stack un tipo de recurso que antes no tenía (su primera alarma, su primer tablero). En cualquier stack, también en `PackNetwork`. Es la lista de tipos que CDK anota en la plantilla: **no crea ni toca ningún recurso** |
+| Un `Add`, o un `Modify` sin reemplazo, que nombran las notas de la versión | Si la versión añade o ajusta un recurso. Los de las versiones publicadas están en la tabla de abajo |
 
-Para a revisar si aparece un `Remove`, un `Add` que las notas no explican, un `Replacement: True` fuera de la task definition y de las capas de Lambda, o un cambio directo en un recurso con datos (tablas, directorio de usuarios, buckets).
+**Para a revisar** si aparece cualquiera de estas, en la versión que sea:
 
-La primera actualización a una versión con D70 (dos tareas) añade una vez: la tabla `Mango-<ns>-RateLimits` (`Add`), la política del rol de `mango-api` (`Modify`: lectura y escritura de esa tabla), el servicio de ECS (`Modify`: `DesiredCount` de 1 a 2 y reequilibrio entre zonas, sin reemplazo) y el target group del balanceador (`Modify`: espera de 30 a 120 s). Ninguna es un reemplazo ni toca una tabla existente.
+- un `Remove`;
+- un `Add` o un `Modify` que ni las notas de la versión ni la tabla de abajo explican;
+- un `Replacement: True` fuera de la task definition y de las capas de Lambda;
+- un cambio directo en un recurso con datos (tablas, directorio de usuarios, buckets).
 
-La primera actualización desde una versión anterior a D69 (publicada hasta el 2026-10-05) lista además todas las Lambdas, las capas y los `BucketDeployment`, una última vez: sus archivos cambian de ruta.
+**Lo que trajo cada versión, una sola vez.** Aparece en la primera actualización que pasa por esa versión y no vuelve a salir. Quien salta varias versiones ve juntas las filas de todas. Cada versión que añada o ajuste recursos suma aquí su fila; lo de arriba no cambia.
+
+| Versión con | Entradas que añade, una vez |
+|---|---|
+| D69 (assets por contenido), al venir de una versión publicada hasta el 2026-10-05 | Todas las Lambdas, las capas y los `BucketDeployment`, una última vez: sus archivos cambian de ruta |
+| D70 (dos tareas) | En `Core`: la tabla `Mango-<ns>-RateLimits` (`Add`), la política del rol de `mango-api` (`Modify`: lectura y escritura de esa tabla), el servicio de ECS (`Modify`: `DesiredCount` de 1 a 2 y reequilibrio entre zonas, sin reemplazo) y el target group del balanceador (`Modify`: espera de 30 a 120 s). Ninguna es un reemplazo ni toca una tabla existente |
+| D71 (alarmas y tablero) | En `Core`: 20 alarmas (`AWS::CloudWatch::Alarm`) y el tablero `Mango-<ns>-Operations` (`AWS::CloudWatch::Dashboard`), todos `Add`, más el `Modify` de `CDKMetadata`. **Esta vez también hay que actualizar `PackNetwork`**, antes que `Core`: un `Add` (la alarma `PackDns-blocked`) y el `Modify` de su `CDKMetadata` |
+| D71, punto 11 (`Api-no-healthy-targets` avisa sin datos) | En `Core`: un `Modify` sin reemplazo de esa alarma (`TreatMissingData`, y su descripción). `PackNetwork` no cambia |
 
 ## 5. Desinstalar
 

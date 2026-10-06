@@ -58,7 +58,7 @@ Cada fila se comprobó ese día contra el código de `main`: el archivo citado e
 | Distribución por plantillas, con seis parámetros | Hecho | `infra/lib/config/release.ts`; `docs/runbooks/install.md` | D8, D58 |
 | Dominio propio y TLS de punta a punta | No hecho | Certificado por defecto de CloudFront (`infra/lib/constructs/edge.ts`) | D15 |
 | Más de una tarea de `mango-api` | Hecho: dos tareas en dos zonas, con IP pública y sin autoescalado. Los límites de tasa que sostienen una excepción de seguridad o acotan abuso se cuentan en DynamoDB; tres siguen por tarea | `infra/lib/constructs/api-service.ts`; `apps/api/src/mango_api/limits.py` y `rate_limits.py`; `docs/specs/api-state-inventory.md` | D15, D70 |
-| Alarmas operativas y tablero (comprobado el 2026-10-06) | Hecho; falta probar en una instalación que el correo llega | `infra/lib/constructs/operational-alarms.ts`; la del DNS Firewall, en `pack-network.ts`; `docs/runbooks/operations.md` | D71 |
+| Alarmas operativas y tablero (comprobado el 2026-10-06) | Hecho; el correo llega (dos alarmas de prueba, 2026-10-06, en una instalación de laboratorio). Pendiente: el umbral de `PackDns-blocked`, porque con packs en uso el DNS Firewall rechaza consultas y se está investigando cuáles | `infra/lib/constructs/operational-alarms.ts`; la del DNS Firewall, en `pack-network.ts`; `docs/runbooks/operations.md` | D71 |
 | Migraciones de datos y modo mantenimiento | No hecho | — | D9, §4.12 |
 | Diagnóstico exportable y stack de soporte | No hecho | — | D7, §4.11 |
 | Acceso de admins a conversaciones | No hecho | — | D23 |
@@ -774,7 +774,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D68 | El filtro de la búsqueda de personas se nombra en Auditoría, la pantalla espera al otro cambio de administradores y «Respuesta completa» solo avisa a quien no ve el final | vigente | 2026-10-05 | [D068-filtro-de-busqueda-y-espera-de-cambios.md](decisions/D068-filtro-de-busqueda-y-espera-de-cambios.md) |
 | D69 | Una actualización toca solo lo que cambió: assets por contenido bajo un prefijo único, sin etiqueta en las descripciones e imagen reproducible | vigente | 2026-10-05 (propuesta por un agente y aceptada por el dueño el mismo día) | [D069-assets-por-contenido-y-prefijo-unico.md](decisions/D069-assets-por-contenido-y-prefijo-unico.md) |
 | D70 | `mango-api` corre con dos tareas y sus límites de tasa se cuentan una sola vez | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día) | [D070-dos-tareas-y-limites-compartidos.md](decisions/D070-dos-tareas-y-limites-compartidos.md) |
-| D71 | La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día) | [D071-alarmas-operativas-y-tablero.md](decisions/D071-alarmas-operativas-y-tablero.md) |
+| D71 | La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero | vigente | 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 y 12) | [D071-alarmas-operativas-y-tablero.md](decisions/D071-alarmas-operativas-y-tablero.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar y no hay otro plan aprobado.
