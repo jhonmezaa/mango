@@ -78,10 +78,23 @@ Parámetros opcionales de `Core`:
 5. Ajustes › Conectividad: comprobar la cuenta pagadora y las cuentas miembro.
 6. Catálogo de MCP: habilitar los packs que se vayan a usar (doble aprobación; la instalación de cada uno tarda unos 5 minutos). Si un pack queda en error, «Reintentar» repite la instalación sin pedir otra aprobación.
 
-### Comprobar la instalación
+### Comprobar una instalación
 
-- `Mango-<ns>-OrgAccess` publica en el output `MemberTemplateSha256` el sha256 de la plantilla que despliega en las cuentas miembro. Debe ser el de la `TemplateBody` del StackSet `Mango-<ns>-Member` (`aws cloudformation describe-stack-set`, sin el salto de línea final que añade la CLI).
-- Las pruebas de punta a punta del repositorio (`tests/e2e/`, `tests/eval/`) corren contra cualquier instalación de prueba: toman todo de los outputs de `Mango-<ns>-Core` (`--stack`), de los parámetros de `Mango-<ns>-OrgAccess` y de la propia aplicación. Necesitan usuarios de prueba con su contraseña y su secreto TOTP en un archivo fuera del repositorio. **No se corren contra una instalación con datos reales**: crean agentes, habilitan packs y fijan contraseñas.
+Después de instalar y después de cada actualización:
+
+1. **Plantilla de las cuentas miembro.** `Mango-<ns>-OrgAccess` publica en el output `MemberTemplateSha256` el sha256 de la plantilla que despliega en las cuentas miembro. Debe ser el de la `TemplateBody` del StackSet `Mango-<ns>-Member` (`aws cloudformation describe-stack-set`, sin el salto de línea final que añade la CLI).
+2. **Recorridos en el navegador** (`tests/install`, con el repositorio en la etiqueta instalada). Ingresan como usuarios de prueba y comprueban lo que una persona ve: ingreso con MFA y sesión, cabeceras de seguridad, qué ve cada papel en el Marketplace y el Org Chart, Auditoría y que Ajustes › Instalación muestra la release.
+
+   ```sh
+   export MANGO_INSTALL_CONFIG=<archivo local, fuera del repositorio>
+   mise run install-check
+   ```
+
+   - Son de **solo lectura**: se pueden correr contra cualquier instalación que tenga usuarios de prueba. Dejan eventos de ingreso y de lectura en Auditoría.
+   - El archivo de configuración da la URL, un usuario de prueba por papel y dónde están sus contraseñas y secretos TOTP. Su forma, en `tests/install/config.example.json`; el detalle, en `tests/install/README.md`.
+   - El informe queda fuera del repositorio (por defecto en `~/.config/mango/install-check/<fecha>/informe.md`), con la URL enmascarada, la release que muestra la instalación, qué pasó y qué se saltó. No guarda trazas ni video, y enmascara correos e ids.
+   - Con `MANGO_INSTALL_EFFECTS=chat`, `people` o `all` corren además los recorridos **con efecto**: una pregunta al agente (gasta presupuesto) y un cambio de persona con doble aprobación sobre una persona desechable que la propia prueba invita y cierra. Para borrarla al final hace falta un perfil de AWS con acceso al directorio; sin él queda deshabilitada y el informe lo dice.
+3. **Batería por la API** (`tests/e2e/`, `tests/eval/`). Toma todo de los outputs de `Mango-<ns>-Core` (`--stack`), de los parámetros de `Mango-<ns>-OrgAccess` y de la propia aplicación, con los mismos usuarios de prueba y su archivo de secretos. **No se corre contra una instalación con datos reales**: crea agentes, habilita packs y fija contraseñas.
 
 ## 4. Actualizar
 

@@ -37,6 +37,13 @@ run = [
   "pnpm --filter @mango/web run e2e",
 ]
 
+[tasks.install-check]
+description = "Browser journeys against a real installation, read-only (MANGO_INSTALL_CONFIG=<file outside the repo>). MANGO_INSTALL_EFFECTS=chat,people or all adds the journeys with effect. See tests/install/README.md"
+run = [
+  "pnpm --filter @mango/install-check exec playwright install chromium",
+  "pnpm --filter @mango/install-check run check",
+]
+
 [tasks.api-client]
 description = "Regenerate packages/ts/api-client from the OpenAPI of mango-api (commit the result)"
 run = [
