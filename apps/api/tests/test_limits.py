@@ -39,7 +39,7 @@ SECURITY_EXCEPTION_LIMITS = {
     # The row of the MFA reset names no number: the one of the code is kept.
     "mfa_reset.proposals": (5, HOUR, None),
 }
-PER_TASK = {"models.refreshes", "session.starts", "session.renewals"}
+PER_TASK = {"models.refreshes", "session.starts", "session.renewals", "agents.lists"}
 """Limits accepted as one per task. Adding a name here is a decision: record it (D70)."""
 
 
@@ -141,6 +141,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
     assert services.group_admin is not None
     assert services.models is not None
     assert services.web_sessions is not None
+    assert services.agents is not None
     held = {
         "people.reads": services.people.reads,
         "people.changes": services.people.changes,
@@ -153,6 +154,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
         "models.refreshes": services.models.rate_limiter,
         "session.starts": services.web_sessions.starts,
         "session.renewals": services.web_sessions.renewals,
+        "agents.lists": services.agents.list_limiter,
     }
     for name, limiter in held.items():
         assert limiter is issued[name], f"{name} is not the limiter of the registry"

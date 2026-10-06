@@ -28,7 +28,7 @@ FastAPI):
 import asyncio
 import difflib
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from typing import Annotated, Any, Literal
@@ -49,8 +49,10 @@ from mango_api.agents_store import (
     AgentMeta,
     AgentNotFoundError,
     AgentsStore,
+    AgentsUnavailableError,
     AgentVersion,
     DraftLimitError,
+    ListedVersions,
     SelfApprovalError,
     SubmissionLimitError,
 )
@@ -67,7 +69,8 @@ from mango_api.provisioner import (
     ProvisionerError,
 )
 from mango_api.published import AgentUnavailableError, PublishedAgents
-from mango_api.web import ApiError, Caller
+from mango_api.rate_limits import Limiter
+from mango_api.web import ApiError, Caller, rate_limited
 from mango_core.agents import (
     AGENT_ID_PATTERN,
     ROOT_SUPERVISOR,
@@ -467,6 +470,8 @@ def _api_error(exc: Exception, now: datetime) -> ApiError | None:
         error = ApiError(503, "groups_unavailable", "please try again")
     elif isinstance(exc, InvalidCatalogError):
         error = ApiError(503, "catalog_unavailable", "please try again")
+    elif isinstance(exc, AgentsUnavailableError):
+        error = ApiError(503, "agent_unavailable", "please try again")
     elif isinstance(exc, InvalidDefinitionError):
         # A stored definition that no longer parses: fail closed, without its content.
         error = ApiError(500, "error", "the agent could not be read")
@@ -491,6 +496,12 @@ class AgentsDeps:
     """What each agent serves (the provisioner's pointer, D40); set in production."""
     deprovisioner: DeprovisionerClient | None = None
     """Removes the harness and the role of a retired agent (D48); set in production."""
+    listed: ListedVersions | None = None
+    """Copy of the versions the lists show, kept a few seconds; set in production. Without
+    it every list reads the table."""
+    list_limiter: Limiter | None = None
+    """Lists of agents a person may ask for per minute (``limits.LIMITS``); set in
+    production."""
 
 
 class _PendingOrg:
@@ -828,11 +839,18 @@ def _require_version(deps: AgentsDeps, agent_id: str, number: int) -> AgentVersi
     return version
 
 
+def _listed(deps: AgentsDeps, status: VersionStatus) -> Sequence[AgentVersion]:
+    """Versions in ``status`` for a list: the task's copy when it keeps one."""
+    if deps.listed is None:
+        return deps.store.by_status(status)
+    return deps.listed.get(status)
+
+
 def list_agents(deps: AgentsDeps, caller: Caller) -> AgentList:
     """Marketplace: published and retired agents the caller may use."""
     versions = [
-        *deps.store.by_status(VersionStatus.PUBLISHED),
-        *deps.store.by_status(VersionStatus.RETIRED),
+        *_listed(deps, VersionStatus.PUBLISHED),
+        *_listed(deps, VersionStatus.RETIRED),
     ]
     allowed = deps.authorizer.allowed_agents(
         caller.user, "UseAgent", [_use_resource(v) for v in versions]
@@ -843,11 +861,14 @@ def list_agents(deps: AgentsDeps, caller: Caller) -> AgentList:
     visible = [v for v in versions if v.agent_id in allowed]
     retired = any(v.status is VersionStatus.RETIRED for v in visible)
     removals = _removals(deps, user) if retired else None
+    # Who created an agent only matters to a creator; everyone else gets `false`.
+    metas = deps.store.metas(
+        [v.agent_id for v in visible if v.status is VersionStatus.RETIRED or user.is_agent_creator]
+    )
     items: list[AgentOut] = []
     for v in visible:
         is_retired = v.status is VersionStatus.RETIRED
-        # Who created an agent only matters to a creator; everyone else gets `false`.
-        meta = deps.store.meta(v.agent_id) if is_retired or user.is_agent_creator else None
+        meta = metas.get(v.agent_id)
         items.append(
             _agent_out(
                 v,
@@ -866,11 +887,10 @@ def _editable(deps: AgentsDeps, user: UserContext, agent_ids: list[str]) -> froz
     the Cedar decision on ``EditAgent`` and, in process, administrator or who created it."""
     if not (user.is_admin or user.is_agent_creator):
         return frozenset()
-    metas = {agent_id: deps.store.meta(agent_id) for agent_id in agent_ids}
     mine = [
         AgentResource(agent_id, creator=meta.created_by)
-        for agent_id, meta in metas.items()
-        if meta is not None and (user.is_admin or _is_mine(user, meta))
+        for agent_id, meta in deps.store.metas(agent_ids).items()
+        if user.is_admin or _is_mine(user, meta)
     ]
     return deps.authorizer.allowed_agents(user, "EditAgent", mine) if mine else frozenset()
 
@@ -878,7 +898,7 @@ def _editable(deps: AgentsDeps, user: UserContext, agent_ids: list[str]) -> froz
 def organization(deps: AgentsDeps, caller: Caller) -> OrgOut:
     """«Reports to» tree (D30). Administrators and creators see it all; others, the agents
     they may use (D38, TM-M17)."""
-    versions = deps.store.by_status(VersionStatus.PUBLISHED)
+    versions = _listed(deps, VersionStatus.PUBLISHED)
     full = deps.authorizer.is_allowed(caller.user, "CreateAgent", *PLATFORM)
     # Seeing an agent is not using it: use goes by groups, also for who sees the whole tree.
     usable = deps.authorizer.allowed_agents(
@@ -1446,6 +1466,8 @@ def retire(deps: AgentsDeps, caller: Caller, meta: AgentMeta, body: RetireIn) ->
     # This task stops serving it at once; the others within ``published.CACHE_SECONDS``.
     if deps.published is not None:
         deps.published.invalidate(meta.agent_id)
+    if deps.listed is not None:
+        deps.listed.invalidate()
     cleanup = _start_deprovisioner(deps, caller, meta.agent_id, meta.published_version)
     retired = _require_version(deps, meta.agent_id, meta.published_version)
     return _agent_out(
@@ -1533,6 +1555,15 @@ def agents_router(  # noqa: PLR0915 - router factory registering route closures
 
         return dependency
 
+    async def list_reader(caller: CallerDep) -> Caller:
+        # Both lists cost several reads and anyone signed in may ask for them: one person's
+        # loop is stopped here, before anything is read or audited.
+        limiter, user_id = deps.list_limiter, caller.user.user_id
+        if limiter is not None and not limiter.allow(user_id):
+            raise rate_limited(limiter.retry_after(user_id))
+        return caller
+
+    Lists = Annotated[Caller, Depends(list_reader)]  # noqa: N806
     Create = Annotated[Caller, Depends(platform_action("CreateAgent"))]  # noqa: N806
     CreateRead = Annotated[  # noqa: N806
         Caller, Depends(platform_action("CreateAgent", read_only=True))
@@ -1551,7 +1582,7 @@ def agents_router(  # noqa: PLR0915 - router factory registering route closures
     # release agent may use those slugs.
 
     @router.get("/agents", response_model=AgentList)
-    async def get_agents(caller: CallerDep) -> AgentList:
+    async def get_agents(caller: Lists) -> AgentList:
         return await run(list_agents, deps, caller)
 
     @router.get("/agents/mine", response_model=MineOut)
@@ -1563,7 +1594,7 @@ def agents_router(  # noqa: PLR0915 - router factory registering route closures
         return await run(reviews, deps, caller)
 
     @router.get("/agents/org", response_model=OrgOut)
-    async def get_org(caller: CallerDep) -> OrgOut:
+    async def get_org(caller: Lists) -> OrgOut:
         return await run(organization, deps, caller)
 
     @router.post("/agents", response_model=VersionOut, status_code=201)

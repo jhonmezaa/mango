@@ -21,8 +21,11 @@ Invariants enforced with DynamoDB conditions, not only in Python (threat model
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
+from time import monotonic, sleep
 from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import ClientError
@@ -62,6 +65,11 @@ if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
 
 MAX_PAGES = 20
+BATCH_GET_KEYS = 100
+"""Keys DynamoDB takes in one ``BatchGetItem``."""
+BATCH_GET_ATTEMPTS = 3
+LISTED_CACHE_SECONDS = 15
+"""How long a task keeps the versions its lists show; the same delay as ``published``."""
 COUNTER_RETENTION = timedelta(days=2)
 MAX_REASON_CHARS = 500
 START_STEP = "start_provisioner"
@@ -84,6 +92,10 @@ class DraftLimitError(Exception):
 
 class SubmissionLimitError(Exception):
     """The creator already sent the maximum number of versions to review today."""
+
+
+class AgentsUnavailableError(Exception):
+    """The table did not return everything that was asked for; nothing partial is used."""
 
 
 class SelfApprovalError(Exception):
@@ -258,9 +270,12 @@ def _raise_conflict(exc: ClientError) -> None:
 
 
 class AgentsStore:
-    def __init__(self, dynamodb: DynamoDBClient, table: str) -> None:
+    def __init__(
+        self, dynamodb: DynamoDBClient, table: str, sleep: Callable[[float], None] = sleep
+    ) -> None:
         self._db = dynamodb
         self._table = table
+        self._sleep = sleep
 
     def _transact(self, items: Any) -> None:
         self._db.transact_write_items(TransactItems=items)
@@ -274,6 +289,33 @@ class AgentsStore:
             TableName=self._table, Key=meta_key(agent_id), ConsistentRead=True
         ).get("Item")
         return _meta_from(item) if item else None
+
+    def metas(self, agent_ids: Sequence[str]) -> dict[str, AgentMeta]:
+        """The agents of ``agent_ids`` that exist, read together (a list reads one per card).
+
+        All or nothing: keys DynamoDB leaves unprocessed are asked again, and if some remain
+        the read fails instead of answering as if those agents did not exist.
+        """
+        ids = [agent_id for agent_id in dict.fromkeys(agent_ids) if is_agent_id(agent_id)]
+        found: dict[str, AgentMeta] = {}
+        for start in range(0, len(ids), BATCH_GET_KEYS):
+            keys: list[Any] = [meta_key(a) for a in ids[start : start + BATCH_GET_KEYS]]
+            for attempt in range(1, BATCH_GET_ATTEMPTS + 1):
+                response = self._db.batch_get_item(
+                    RequestItems={self._table: {"Keys": keys, "ConsistentRead": True}}
+                )
+                for item in response.get("Responses", {}).get(self._table, []):
+                    meta = _meta_from(item)
+                    found[meta.agent_id] = meta
+                pending: Any = response.get("UnprocessedKeys", {}).get(self._table, {})
+                keys = list(pending.get("Keys", []))
+                if not keys:
+                    break
+                if attempt < BATCH_GET_ATTEMPTS:
+                    self._sleep(0.05 * 2**attempt)
+            if keys:
+                raise AgentsUnavailableError("agents not read")
+        return found
 
     def version(self, agent_id: str, number: int) -> AgentVersion | None:
         if not is_agent_id(agent_id) or not 1 <= number <= MAX_VERSION:
@@ -992,3 +1034,44 @@ class AgentsStore:
             self._transact(items)
         except ClientError as exc:
             _raise_conflict(exc)
+
+
+class ListedVersions:
+    """Published and retired versions as the lists of agents read them (marketplace and
+    organization chart), kept ``LISTED_CACHE_SECONDS`` in each task.
+
+    What is kept does not depend on who asks: every request still asks for its own
+    ``UseAgent`` decision over these versions with the groups of its token. It decides
+    nothing by itself either: a turn is authorized on what ``published.PublishedAgents``
+    serves. A list may show a publication or a retirement made elsewhere up to
+    ``LISTED_CACHE_SECONDS`` late. A read error is never kept and no older copy is used in
+    its place.
+    """
+
+    def __init__(self, store: AgentsStore, clock: Callable[[], float] = monotonic) -> None:
+        self._store = store
+        self._clock = clock
+        self._cache: dict[VersionStatus, tuple[float, tuple[AgentVersion, ...]]] = {}
+        self._generation = 0
+        self._lock = threading.Lock()
+
+    def get(self, status: VersionStatus) -> tuple[AgentVersion, ...]:
+        now = self._clock()
+        with self._lock:
+            cached = self._cache.get(status)
+            if cached and now - cached[0] < LISTED_CACHE_SECONDS:
+                return cached[1]
+            self._cache.pop(status, None)
+            generation = self._generation
+        versions = tuple(self._store.by_status(status))
+        with self._lock:
+            # A read that started before ``invalidate`` may hold what it was called to drop.
+            if generation == self._generation:
+                self._cache[status] = (now, versions)
+        return versions
+
+    def invalidate(self) -> None:
+        """Forget everything: this task changed what the lists show."""
+        with self._lock:
+            self._cache.clear()
+            self._generation += 1

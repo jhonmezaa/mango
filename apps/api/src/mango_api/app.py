@@ -35,7 +35,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from mango_api import harness, sessions
 from mango_api.admin import AdminDeps, admin_router, now_utc
 from mango_api.agents import AgentsDeps, agents_router
-from mango_api.agents_store import AgentsStore
+from mango_api.agents_store import AgentsStore, ListedVersions
 from mango_api.approval_executor import GatewayExecutor
 from mango_api.approvals import (
     ApprovalDeps,
@@ -503,6 +503,8 @@ def build_services(settings: Settings) -> Services:
             models=model_catalog,
             catalog=mcp_catalog,
             published=published,
+            listed=ListedVersions(agents_store),
+            list_limiter=limits.limiter("agents.lists"),
             # Until the provisioner is deployed nothing can be approved (503).
             provisioner=ProvisionerClient(
                 boto3.client("stepfunctions", region_name=region),

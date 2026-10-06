@@ -32,6 +32,7 @@ from mango_api.probe import RateLimiter
 from mango_api.rate_limits import Limiter, RateLimitStore, SharedRateLimiter
 
 MODEL_REFRESHES_PER_MINUTE = 5
+AGENT_LISTS_PER_MINUTE = 30
 
 MINUTE = 60
 HOUR = 3600
@@ -135,6 +136,19 @@ LIMITS: dict[str, LimitSpec] = {
         why=(
             "Stops a loop of the screen. Each refresh is two free list calls to Bedrock by an "
             "administrator and writes nothing by itself; N times five a minute is harmless."
+        ),
+    ),
+    "agents.lists": LimitSpec(
+        AGENT_LISTS_PER_MINUTE,
+        MINUTE,
+        shared=False,
+        why=(
+            "Stops one person's loop over the lists of agents (marketplace and organization "
+            "chart), which anyone signed in may read, cost several reads and write an audit "
+            "event each. It holds no exception, and counting it in the table would add two "
+            "calls to the very route it makes cheaper. The page asks at most four times a "
+            "minute per tab; N times thirty a minute per person is still far below what a "
+            "task serves."
         ),
     ),
     "session.starts": LimitSpec(
