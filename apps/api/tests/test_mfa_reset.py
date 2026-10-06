@@ -259,7 +259,11 @@ def test_one_open_request_per_user_and_cooldown_after_a_reset(env: Env) -> None:
     env.client.post(f"{BASE}/{change_id}/approve", headers=_h("admin2"), json={})
     cooldown = _propose(env, "admin2")
     assert (cooldown.status_code, _code(cooldown)) == (429, "rate_limited")
-    env.clock[0] += timedelta(hours=25)
+    # What is left of the 24 hours since the reset, in whole seconds.
+    assert cooldown.headers["Retry-After"] == str(24 * 3600)
+    env.clock[0] += timedelta(hours=1, seconds=30, milliseconds=500)
+    assert _propose(env, "admin2").headers["Retry-After"] == str(23 * 3600 - 30)
+    env.clock[0] += timedelta(hours=24)
     assert _propose(env, "admin2").status_code == 201
 
 

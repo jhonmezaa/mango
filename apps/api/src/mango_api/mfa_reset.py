@@ -25,6 +25,7 @@ Security notes (security-best-practices, FastAPI):
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
 import asyncio
 import logging
+import math
 import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -541,7 +542,15 @@ def propose(deps: MfaResetDeps, caller: Caller, body: ProposeIn) -> str:
     if open_request:
         raise ApiError(409, "already_pending", "there is already an open request for this user")
     if last_reset and now - last_reset < RESET_COOLDOWN:
-        raise ApiError(429, "rate_limited", "this user's MFA was reset recently")
+        # What is left of the cooldown. An administrator already sees when the reset was
+        # approved in the list of requests, so the wait tells them nothing new.
+        wait = math.ceil((last_reset + RESET_COOLDOWN - now).total_seconds())
+        raise ApiError(
+            429,
+            "rate_limited",
+            "this user's MFA was reset recently",
+            headers={"Retry-After": str(max(1, wait))},
+        )
     if sum(1 for r in deps.store.recent(now) if _out(r, now).status == "pending") >= MAX_PENDING:
         raise ApiError(409, "too_many_pending", "too many pending requests; resolve some first")
     request = ResetRequest(
