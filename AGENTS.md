@@ -10,6 +10,7 @@ Plataforma empresarial de orquestación de agentes de IA, 100 % sobre AWS. Se **
 - Antes de proponer algo que contradiga una decisión registrada, señálalo explícitamente y pide confirmación. No lo cambies en silencio.
 - Cuando se tome una decisión nueva, regístrala con fecha: un archivo en `docs/architecture/decisions/` y su línea en el índice de §8, como explica el `README.md` de esa carpeta.
 - Una decisión que añade un agente nace con estado `propuesta`: va en su informe y en la descripción de su PR, y pasa a `vigente` cuando el dueño del repositorio la acepta.
+- **El cuerpo del documento se actualiza en el mismo cambio** que registra o precisa una decisión: las secciones, el diagrama de §3 y la fila de «Estado de lo construido» que esa decisión toque, no solo su archivo y el índice de §8. Un cambio que deja el cuerpo contando algo que una decisión ya cambió no está terminado. El informe del trabajo dice qué partes del documento se actualizaron.
 
 ## Stack
 

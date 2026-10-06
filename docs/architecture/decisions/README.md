@@ -42,7 +42,8 @@ El estado dice si la decisión rige, no si el código está terminado al detalle
 2. **Archivo:** se crea con la cabecera de arriba y la fecha del día.
 3. **Índice:** se añade su línea a la tabla de §8 (número, tema, estado, fecha y enlace). Tema, estado y fecha son los mismos del archivo.
 4. **Decisiones que toca:** si precisa, ajusta, reemplaza o retira algo de otra, se dice en su línea «Precisa / reemplaza a» y se actualiza la otra: su línea «Precisada por» y, si deja de regir en todo o en parte, su estado. No se añaden párrafos «precisa Dn» al texto de la decisión anterior.
-5. **Comprobación:** `uv run pytest deployment/tests/test_decision_records.py` (también corre con `mise run test` y en CI). Falla si un archivo no está en el índice o al revés, si se repite un número, si tema, estado o fecha no coinciden, o si un enlace no existe.
+5. **Cuerpo de la arquitectura:** en el mismo cambio se actualiza lo que la decisión toque en [`reference-architecture.md`](../reference-architecture.md): las secciones de §1 a §7, el diagrama de §3 y su fila de «Estado de lo construido». Un cambio que deja el cuerpo contando algo que la decisión ya cambió no está terminado, y el informe del trabajo dice qué partes se actualizaron (`AGENTS.md`). Vale igual al precisar una decisión que ya rige.
+6. **Comprobación:** `uv run pytest deployment/tests/test_decision_records.py` (también corre con `mise run test` y en CI). Falla si un archivo no está en el índice o al revés, si se repite un número, si tema, estado o fecha no coinciden, o si un enlace no existe.
 
 Corregir una decisión que ya rige:
 
