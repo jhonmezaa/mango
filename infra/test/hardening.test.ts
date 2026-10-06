@@ -251,6 +251,16 @@ describe("mango-api on two tasks with shared rate limits (D70)", () => {
     });
   });
 
+  it("sends a request to the task with fewer requests open, not to each task in turn", () => {
+    const [group] = Object.values(template.findResources("AWS::ElasticLoadBalancingV2::TargetGroup"));
+    const attributes = Object.fromEntries(
+      (group!.Properties.TargetGroupAttributes as { Key: string; Value: string }[]).map((a) => [a.Key, a.Value]),
+    );
+    expect(attributes["load_balancing.algorithm.type"]).toBe("least_outstanding_requests");
+    // The load balancer refuses this algorithm together with slow start.
+    expect(attributes["slow_start.duration_seconds"] ?? "0").toBe("0");
+  });
+
   it("keeps the counters in a table with the guarantees of the others", () => {
     template.hasResource("AWS::DynamoDB::GlobalTable", {
       Properties: {

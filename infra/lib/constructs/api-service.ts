@@ -151,6 +151,11 @@ export class ApiService extends Construct {
       targets: [this.service],
       healthCheck: { path: "/api/health", healthyHttpCodes: "200", interval: Duration.seconds(30) },
       deregistrationDelay: Duration.seconds(API_DRAIN_SECONDS),
+      // Two tasks of the same size do not answer at the same speed (one measured at 1.8 times
+      // the CPU of the other per request). Taking turns, the slower one sets the capacity of
+      // both; this sends each request to the task with fewer requests still open (D70).
+      // Slow start cannot be combined with it, and is not set.
+      loadBalancingAlgorithmType: elbv2.TargetGroupLoadBalancingAlgorithmType.LEAST_OUTSTANDING_REQUESTS,
       priority: 10,
       conditions: [elbv2.ListenerCondition.pathPatterns(["/api/*"])],
     });
