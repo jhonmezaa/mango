@@ -175,7 +175,7 @@ def _parser() -> argparse.ArgumentParser:
 
     sub = command("sign", _sign, "sign a statement with the KMS key")
     sub.add_argument("--statement", type=Path, required=True)
-    sub.add_argument("--key-id", required=True, help="ARN of the asymmetric KMS key")
+    sub.add_argument("--key-id", required=True, help="alias, id or ARN of the asymmetric KMS key")
     sub.add_argument("--public-key", type=Path, required=True, help="trusted public key (PEM)")
     sub.add_argument("--out", type=Path, required=True)
 

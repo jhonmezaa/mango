@@ -6,6 +6,13 @@
 # nothing that code could have touched: it builds the zip and the statement again from the
 # commit, requires the zip to be byte for byte the one `build` tested, and only then assumes
 # the role and asks KMS for the signature.
+#
+# The repository is public, and so are these logs and artifacts (D59). The ARN of the signing
+# role is a secret of the `pack-signing` environment, which the runner masks, never a
+# repository variable, which it prints. The key is named by its alias, because the envelope
+# records the key id and is uploaded as an artifact, where nothing is masked.
+# `PACK_SIGNING_ENABLED` is a variable because a job `if:` cannot read secrets; it carries no
+# data.
 name: packs
 
 on:
@@ -76,7 +83,7 @@ jobs:
     # Only what is merged to main is signed, and only once the provider key exists (U10).
     if: >-
       github.event_name == 'push' && github.ref == 'refs/heads/main'
-      && vars.PACK_SIGNING_ROLE_ARN != '' && vars.PACK_SIGNING_KEY_ARN != ''
+      && vars.PACK_SIGNING_ENABLED == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     # Protected environment: only `main` can deploy to it, and it is the only place the role
@@ -107,24 +114,41 @@ jobs:
           set -euo pipefail
           tested="$(find tested -maxdepth 1 -name '*.zip')"
           deployment/build-pack.sh "packs/$PACK" dist/packs "$tested"
+      # The runner masks the ARN of the role as it is; the account id alone (in an error of STS
+      # or KMS, in another ARN of the account) is masked here, before anything can print it.
+      - name: Require the signing configuration
+        env:
+          PACK_SIGNING_ROLE_ARN: ${{ secrets.PACK_SIGNING_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PACK_SIGNING_ROLE_ARN" ]; then
+            echo "::error::PACK_SIGNING_ENABLED is true but the pack-signing environment has no PACK_SIGNING_ROLE_ARN secret"
+            exit 1
+          fi
+          IFS=: read -r _ _ _ _ account _ <<<"$PACK_SIGNING_ROLE_ARN"
+          if [[ "$account" =~ ^[0-9]{12}$ ]]; then
+            echo "::add-mask::$account"
+          fi
       # Credentials come last: everything above ran without access to the signing key.
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.PACK_SIGNING_ROLE_ARN }}
+          role-to-assume: ${{ secrets.PACK_SIGNING_ROLE_ARN }}
           aws-region: ${{ vars.PACK_SIGNING_REGION || 'us-east-1' }}
           role-session-name: mango-pack-signing
           role-duration-seconds: 900
+          mask-aws-account-id: true
       # The public key is the one committed to the repository, the same one installations
       # trust: a signature made with any other key fails here and is never uploaded.
       - name: Sign and verify
         env:
-          PACK_SIGNING_KEY_ARN: ${{ vars.PACK_SIGNING_KEY_ARN }}
+          # The alias, never the ARN: this value ends up in the envelope (`signature.key_id`).
+          PACK_SIGNING_KEY: alias/mango-provider-signing
         run: |
           set -euo pipefail
           statement="$(find dist/packs -maxdepth 1 -name '*.statement.json')"
           envelope="${statement%.statement.json}.pack.json"
           builder=(uv run --frozen --no-sync --package mango-pack-builder python -m mango_pack_builder)
-          "${builder[@]}" sign --statement "$statement" --key-id "$PACK_SIGNING_KEY_ARN" \
+          "${builder[@]}" sign --statement "$statement" --key-id "$PACK_SIGNING_KEY" \
             --public-key packs/signing-key.pub --out "$envelope"
           "${builder[@]}" verify --envelope "$envelope" --public-key packs/signing-key.pub
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

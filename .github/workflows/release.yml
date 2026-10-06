@@ -11,6 +11,12 @@
 # job, so the dependencies of the build run with the publisher's credentials in reach. They
 # are installed from lockfiles with hashes; splitting the job needs an image digest that is
 # known before pushing.
+#
+# The repository is public and so are these logs (D59): the publisher role, the bucket and the
+# provider account are secrets of the `release` environment, which the runner masks wherever
+# they appear (also inside a URL or a registry name), never repository variables, which it
+# prints. `RELEASE_ENABLED` is a variable because a job `if:` cannot read secrets; it carries
+# no data.
 name: release
 
 on:
@@ -30,9 +36,7 @@ jobs:
   publish:
     name: Build and publish
     # Only what is on main is published, and only once the provider account is configured.
-    if: >-
-      vars.RELEASE_PUBLISHER_ROLE_ARN != '' && vars.RELEASE_BUCKET != ''
-      && vars.PROVIDER_ACCOUNT_ID != ''
+    if: vars.RELEASE_ENABLED == 'true'
     # arm64: the platform of mango-api and of the Lambda functions.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
@@ -70,20 +74,32 @@ jobs:
           gh run download "$run_id" --pattern 'pack-*-signed' --dir signed
           mkdir -p dist/packs
           find signed -type f -exec cp {} dist/packs/ \;
+      - name: Require the release configuration
+        env:
+          RELEASE_PUBLISHER_ROLE_ARN: ${{ secrets.RELEASE_PUBLISHER_ROLE_ARN }}
+          RELEASE_BUCKET: ${{ secrets.RELEASE_BUCKET }}
+          PROVIDER_ACCOUNT_ID: ${{ secrets.PROVIDER_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_PUBLISHER_ROLE_ARN" ] || [ -z "$RELEASE_BUCKET" ] || [ -z "$PROVIDER_ACCOUNT_ID" ]; then
+            echo "::error::RELEASE_ENABLED is true but the release environment lacks RELEASE_PUBLISHER_ROLE_ARN, RELEASE_BUCKET or PROVIDER_ACCOUNT_ID"
+            exit 1
+          fi
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.RELEASE_PUBLISHER_ROLE_ARN }}
+          role-to-assume: ${{ secrets.RELEASE_PUBLISHER_ROLE_ARN }}
           aws-region: ${{ vars.RELEASE_REGION || 'us-east-1' }}
           role-session-name: mango-release
           role-duration-seconds: 3600
+          mask-aws-account-id: true
       - name: Build, sign and publish
         env:
-          MANGO_PROVIDER_ACCOUNT: ${{ vars.PROVIDER_ACCOUNT_ID }}
-          MANGO_DIST_BUCKET: ${{ vars.RELEASE_BUCKET }}
+          MANGO_PROVIDER_ACCOUNT: ${{ secrets.PROVIDER_ACCOUNT_ID }}
+          MANGO_DIST_BUCKET: ${{ secrets.RELEASE_BUCKET }}
         run: python3 deployment/dist.py --publish
       - name: Verify what was published
         env:
-          MANGO_DIST_BUCKET: ${{ vars.RELEASE_BUCKET }}
+          MANGO_DIST_BUCKET: ${{ secrets.RELEASE_BUCKET }}
         run: |
           set -euo pipefail
           label="$(basename "$(find dist/release -mindepth 1 -maxdepth 1 -type d)")"
