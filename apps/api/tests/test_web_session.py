@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError, EndpointConnectionError
 from fastapi.testclient import TestClient
 
 from mango_api import app as app_module
+from mango_api import web_session as web_session_module
 from mango_api.probe import RateLimiter
 from mango_api.settings import ModelPrice, Settings
 from mango_api.web_session import (
     COOKIE_NAME,
+    CognitoTokens,
     NoSessionError,
     RenewedTokens,
     Revocation,
@@ -609,6 +614,121 @@ def test_tokens_never_reach_the_logs(h: Harness, caplog: pytest.LogCaptureFixtur
 
 
 # --- AWS adapters -----------------------------------------------------------------------
+
+
+class _Cognito:
+    """The user pool as the probe of the lab saw it answer (D72)."""
+
+    def __init__(self, answer: Any = None) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.answer = answer or {
+            "ChallengeParameters": {},
+            "AuthenticationResult": {
+                "AccessToken": "at",
+                "IdToken": "it",
+                "ExpiresIn": 3600,
+                "TokenType": "Bearer",
+            },
+        }
+
+    def admin_initiate_auth(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("admin_initiate_auth", kwargs))
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return dict(self.answer)
+
+    def revoke_token(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(("revoke_token", kwargs))
+        return {}
+
+
+def _cognito_error(code: str) -> ClientError:
+    return ClientError({"Error": {"Code": code, "Message": "x"}}, "AdminInitiateAuth")
+
+
+def test_the_session_is_renewed_with_the_signed_operation_on_this_pool_and_client() -> None:
+    cognito = _Cognito()
+    tokens = CognitoTokens(cognito, "pool-1", "client-1")  # type: ignore[arg-type]
+    assert tokens.refresh("rt") == RenewedTokens("at", "it", 3600)
+    # The public ``initiate_auth`` does not exist on the double: calling it would fail here.
+    assert cognito.calls == [
+        (
+            "admin_initiate_auth",
+            {
+                "UserPoolId": "pool-1",
+                "ClientId": "client-1",
+                "AuthFlow": "REFRESH_TOKEN_AUTH",
+                "AuthParameters": {"REFRESH_TOKEN": "rt"},
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        # What the lab answered to a token that is not one, a tampered one and a revoked one.
+        (_cognito_error("NotAuthorizedException"), SessionRejectedError),
+        (_cognito_error("UserNotFoundException"), SessionRejectedError),
+        # Anything else says nothing about the session: it is kept.
+        (_cognito_error("TooManyRequestsException"), SessionUnavailableError),
+        (_cognito_error("AccessDeniedException"), SessionUnavailableError),
+        (_cognito_error("ForbiddenException"), SessionUnavailableError),
+        (_cognito_error("InvalidParameterException"), SessionUnavailableError),
+        (_cognito_error("InternalErrorException"), SessionUnavailableError),
+        (EndpointConnectionError(endpoint_url="https://cognito"), SessionUnavailableError),
+        # A challenge or an incomplete answer is not a session either.
+        ({"ChallengeName": "SOFTWARE_TOKEN_MFA", "Session": "s"}, SessionUnavailableError),
+        (
+            {"AuthenticationResult": {"AccessToken": "at", "ExpiresIn": 3600}},
+            SessionUnavailableError,
+        ),
+        (
+            {"AuthenticationResult": {"AccessToken": "at", "IdToken": "it", "ExpiresIn": 0}},
+            SessionUnavailableError,
+        ),
+    ],
+)
+def test_the_signed_renewal_keeps_the_map_of_rejected_and_unavailable(
+    answer: Any, expected: type[Exception]
+) -> None:
+    tokens = CognitoTokens(_Cognito(answer), "pool-1", "client-1")  # type: ignore[arg-type]
+    with pytest.raises(expected) as raised:
+        tokens.refresh("rt-secret")
+    # Neither the token nor the answer of Cognito travels with the error.
+    assert raised.value.__cause__ is None
+    assert "rt-secret" not in repr(raised.value)
+
+
+def test_the_renewer_needs_the_pool_and_the_client() -> None:
+    for pool, client in (("", "client-1"), ("pool-1", "")):
+        with pytest.raises(ValueError, match="required"):
+            CognitoTokens(_Cognito(), pool, client)  # type: ignore[arg-type]
+
+
+def test_the_server_never_starts_another_auth_flow() -> None:
+    """The task role may call ``AdminInitiateAuth`` on the user pool (D72). That operation
+    also signs in with a password where the client allows it: the only flow any code of
+    mango-api may name is the renewal, and only the signed operation starts it."""
+    sources = Path(app_module.__file__).parent
+    flows: list[tuple[str, str]] = []
+    starters: set[tuple[str, str]] = set()
+    for path in sources.rglob("*.py"):
+        text = path.read_text()
+        assert "PASSWORD_AUTH" not in text and "USER_AUTH" not in text, path.name
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.keyword) and node.arg == "AuthFlow":
+                flows.append((path.name, ast.unparse(node.value)))
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "initiate_auth",
+                "admin_initiate_auth",
+                "respond_to_auth_challenge",
+                "admin_respond_to_auth_challenge",
+            }:
+                starters.add((path.name, node.attr))
+    assert flows == [("web_session.py", "REFRESH_FLOW")]
+    assert starters == {("web_session.py", "admin_initiate_auth")}
+    assert web_session_module.REFRESH_FLOW == "REFRESH_TOKEN_AUTH"
 
 
 class _Kms:

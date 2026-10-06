@@ -434,7 +434,9 @@ def build_services(settings: Settings) -> Services:
         web_sessions = WebSessionDeps(
             store=SessionStore(dynamodb, settings.web_sessions_table),
             cipher=TokenCipher(boto3.client("kms", region_name=region), settings.data_key_arn),
-            tokens=CognitoTokens(cognito, settings.cognito_client_id),
+            tokens=CognitoTokens(
+                cognito, settings.cognito_user_pool_id, settings.cognito_client_id
+            ),
             verifier=verifier,
             audit=audit,
             clock=now_utc,

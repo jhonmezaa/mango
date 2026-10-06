@@ -134,18 +134,36 @@ class AccessVerifier(Protocol):
     def verify(self, token: str) -> dict[str, Any]: ...
 
 
-class CognitoTokens:
-    """Renews and revokes refresh tokens with the public Cognito API of the web client."""
+REFRESH_FLOW: Literal["REFRESH_TOKEN_AUTH"] = "REFRESH_TOKEN_AUTH"
+"""The only flow this server ever starts. ``AdminInitiateAuth`` can also sign in with a
+password if the web client allowed that flow: it does not (a test of the infrastructure
+keeps it so), and nothing here may ask for it (D72)."""
 
-    def __init__(self, client: "CognitoIdentityProviderClient", client_id: str) -> None:
+
+class CognitoTokens:
+    """Renews refresh tokens of the web client with the IAM-signed operation, and revokes them.
+
+    ``AdminInitiateAuth`` instead of the public ``InitiateAuth`` (D72): a signed operation
+    does not go through the WAF of the user pool, so the renewals of the whole installation
+    no longer count against the per-IP limits of the addresses of the tasks. What Cognito
+    answers is the same: same tokens, same pre-token trigger, same errors.
+    """
+
+    def __init__(
+        self, client: "CognitoIdentityProviderClient", user_pool_id: str, client_id: str
+    ) -> None:
+        if not user_pool_id or not client_id:
+            raise ValueError("the user pool and the web client are required")
         self._client = client
+        self._user_pool_id = user_pool_id
         self._client_id = client_id
 
     def refresh(self, refresh_token: str) -> RenewedTokens:
         try:
-            resp = self._client.initiate_auth(
-                AuthFlow="REFRESH_TOKEN_AUTH",
+            resp = self._client.admin_initiate_auth(
+                UserPoolId=self._user_pool_id,
                 ClientId=self._client_id,
+                AuthFlow=REFRESH_FLOW,
                 AuthParameters={"REFRESH_TOKEN": refresh_token},
             )
         except ClientError as exc:
@@ -155,6 +173,9 @@ class CognitoTokens:
             raise SessionUnavailableError from None
         except BotoCoreError:
             raise SessionUnavailableError from None
+        if resp.get("ChallengeName"):
+            # A renewal never asks for anything else; a challenge is not a session.
+            raise SessionUnavailableError
         result = resp.get("AuthenticationResult") or {}
         access, id_token, expires = (
             result.get("AccessToken"),

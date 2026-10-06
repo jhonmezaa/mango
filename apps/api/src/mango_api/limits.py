@@ -142,10 +142,12 @@ LIMITS: dict[str, LimitSpec] = {
         web_session.WINDOW_SECONDS,
         shared=False,
         why=(
-            "Protects the user pool from one person's loop (TM-S10). What it protects, the "
-            "limit of the pool's WAF, is per IP address and so per task while each task has "
-            "its own public address (D15); with a shared egress, review it. Signing in must "
-            "not depend on one more table."
+            "Stops one person's loop from spending the request quota of Cognito, which is "
+            "per account (TM-S10). No per-IP limit is behind it any more: the server renews "
+            "with a signed operation that does not go through the WAF of the user pool "
+            "(D72), so the number of tasks and their egress do not matter. N times ten "
+            "every five minutes is far from that quota, and signing in must not depend on "
+            "one more table."
         ),
     ),
     "session.renewals": LimitSpec(
