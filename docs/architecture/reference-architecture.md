@@ -1,7 +1,7 @@
 # Mango Hub: arquitectura AWS de referencia
 
-> Fecha: 2026-09-28 · Revisión de coherencia: 2026-10-05 · Estado: **adoptada**. Nació como propuesta para discusión; sus decisiones están tomadas y registradas en §8 (las primeras son del mismo 2026-09-28).
-> **Cómo leerla:** §1 a §7 describen la arquitectura objetivo, y no todo está construido. Donde este texto y una decisión de §8 difieran, manda la decisión. Qué existe hoy: la tabla «Estado de lo construido», antes de §1.
+> Fecha: 2026-09-28 · Revisión de coherencia: 2026-10-05 · Puesta al día con lo construido: 2026-10-06 · Estado: **adoptada**. Nació como propuesta para discusión; sus decisiones están tomadas y registradas en §8 (las primeras son del mismo 2026-09-28).
+> **Cómo leerla:** §1 a §7 describen el sistema que existe y la parte del plan que sigue sin construir. Lo que no está construido lleva la marca **previsto**. Donde este texto y una decisión de §8 difieran, manda la decisión. El resumen de qué existe: la tabla «Estado de lo construido», antes de §1.
 > Base: análisis de [`aws-samples/bedrock-chat`](https://github.com/aws-samples/bedrock-chat) @ `4419d62` y verificación del estado de los servicios AWS a sep-2026.
 > Los reportes de detalle, con referencias `archivo:línea` y URLs, están en [`research/`](./research):
 > - [infra](./research/infra.md): infraestructura y CDK de bedrock-chat
@@ -11,7 +11,7 @@
 > - [governance](./research/governance.md): identidad, RBAC, budgets, HITL, auditoría
 > - [isb-multiaccount](./research/isb-multiaccount.md): despliegue multi-cuenta de Innovation Sandbox on AWS
 >
-> Diagramas en draw.io: [`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio). Tiene 4 páginas: Overview, Request flow, Multi-account access y Release & upgrade.
+> Diagramas en draw.io: [`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio). Tiene 4 páginas: Overview, Request flow, Multi-account access y Release & upgrade. **Son los del plan del 2026-09-28 y no están al día:** el diagrama vigente es el Mermaid de §3.
 > Modelo de amenazas: [`../security/threat-models/mango-architecture-threat-model.md`](../security/threat-models/mango-architecture-threat-model.md).
 >
 > Hechos críticos verificados en fuentes primarias de AWS el 2026-09-28:
@@ -23,9 +23,9 @@
 
 ---
 
-## Estado de lo construido (2026-10-05)
+## Estado de lo construido (2026-10-06)
 
-Cada fila se comprobó ese día contra el código de `main`: el archivo citado existe y hace lo que dice. «Hecho» significa que hay código y pruebas, no que esté probado en una instalación de producción. Lo que no está aquí no se comprobó.
+Cada fila se comprobó contra el código de `main`: el archivo citado existe y hace lo que dice. La tabla se armó el 2026-10-05 y se repasó entera el 2026-10-06, al poner al día el cuerpo del documento; las filas que nombran otra fecha se comprobaron ese día. «Hecho» significa que hay código y pruebas, no que esté probado en una instalación de producción. Lo que no está aquí no se comprobó.
 
 | Capacidad | Estado | Dónde está | Decisiones |
 |---|---|---|---|
@@ -59,8 +59,13 @@ Cada fila se comprobó ese día contra el código de `main`: el archivo citado e
 | Límites por IP para una oficina detrás de una sola dirección | Hecho; los tres bloqueos y las dos alarmas se vieron el 2026-10-06 en una instalación de laboratorio: 6.000 peticiones a `/api/*` y 20.000 en total en el borde, 1.500 operaciones con secreto y 5.000 en total en el user pool, cada 5 minutos. Los números son aproximados: el WAF tarda entre 34 y 52 segundos en empezar a bloquear y hasta entonces deja pasar todo. Un bloqueo del borde responde 429 con una espera de 180 segundos y avisa. Falta ver un bloqueo en un navegador y provocar las reglas de correo y total del user pool. Sin redes de confianza | `infra/lib/constructs/edge.ts` e `identity.ts`; `operational-alarms.ts` | D72 |
 | Distribución por plantillas, con seis parámetros | Hecho | `infra/lib/config/release.ts`; `docs/runbooks/install.md` | D8, D58 |
 | Dominio propio y TLS de punta a punta | No hecho | Certificado por defecto de CloudFront (`infra/lib/constructs/edge.ts`) | D15 |
-| Más de una tarea de `mango-api` | Hecho: dos tareas en dos zonas, con IP pública y sin autoescalado. Los límites de tasa que sostienen una excepción de seguridad o acotan abuso se cuentan en DynamoDB; cuatro siguen por tarea (el cuarto, el de las listas de agentes, desde D70 (11)). Un turno de chat abierto durante una actualización terminó bien (2026-10-06, en una instalación de laboratorio) | `infra/lib/constructs/api-service.ts`. Un turno de chat abierto durante una actualización terminó bien (2026-10-06, en una instalación de laboratorio). Medido ese día con una prueba de carga: 80 lecturas por segundo con margen y 160 en el límite, unas 330 personas activas a la vez; se promete «hasta unas 300», si la cuota de Bedrock de la cuenta acompaña (`deployment/check-bedrock-quotas.py`). El balanceador reparte por peticiones abiertas, `mango-api` espera a un turno lo que dura su límite y suelta los clientes de datos por persona que caducan: hecho, sin probar todavía en una instalación | `infra/lib/constructs/api-service.ts`; `apps/api/src/mango_api/harness.py` (`TurnClients`); `apps/api/src/mango_api/limits.py` y `rate_limits.py`; `docs/specs/api-state-inventory.md` | D15, D70 |
+| Más de una tarea de `mango-api` | Hecho: dos tareas en dos zonas, con IP pública y sin autoescalado. Los límites de tasa que sostienen una excepción de seguridad o acotan abuso se cuentan en DynamoDB; cuatro siguen por tarea (el cuarto, el de las listas de agentes, desde D70 (11)). Un turno de chat abierto durante una actualización terminó bien (2026-10-06, en una instalación de laboratorio). Medido ese día con una prueba de carga: 80 lecturas por segundo con margen y 160 en el límite, unas 330 personas activas a la vez; se promete «hasta unas 300», si la cuota de Bedrock de la cuenta acompaña (`deployment/check-bedrock-quotas.py`). El balanceador reparte por peticiones abiertas, `mango-api` espera a un turno lo que dura su límite y suelta los clientes de datos por persona que caducan: hecho, sin probar todavía en una instalación | `infra/lib/constructs/api-service.ts`; `apps/api/src/mango_api/harness.py` (`TurnClients`); `apps/api/src/mango_api/limits.py` y `rate_limits.py`; `docs/specs/api-state-inventory.md` | D15, D70 |
 | Alarmas operativas y tablero (comprobado el 2026-10-06) | Hecho; el correo llega (dos alarmas de prueba, 2026-10-06, en una instalación de laboratorio). `PackDns-blocked` ya no cuenta lo que pide la máquina de AgentCore (`time.aws.com`, lista aparte) y la red de packs registra sus consultas DNS: visto desplegado el 2026-10-06 con el pack `aws-cloudwatch`; faltan `aws-pricing` y `aws-billing`. Dos alarmas de saturación desde el 2026-10-06, sin ver todavía en una instalación: `Api-slow` (la aplicación responde lento) y `Bedrock-throttled` (Bedrock rechaza llamadas por la cuota de la cuenta) | `infra/lib/constructs/operational-alarms.ts`; la del DNS Firewall, en `pack-network.ts`; `docs/runbooks/operations.md` | D71 |
+| Firma de la release y verificación antes de instalar (comprobado el 2026-10-06) | Hecho: manifiesto firmado con la llave de KMS del proveedor; quien instala lo verifica con un guion | `deployment/dist.py`; `deployment/verify-release.py`; `infra/lib/stacks/provider-stack.ts` | D36, D58 (4), D69 |
+| Reconciliación diaria de agentes, solo lectura (comprobado el 2026-10-06) | Hecho | `functions/reconciler`; `infra/lib/constructs/reconciler.ts` | D41, D48 |
+| Desinstalación que borra lo creado por API (comprobado el 2026-10-06) | Hecho | `infra/lib/constructs/uninstall-guard.ts`; `deployment/purge-retained.sh` | D58 (7), (9) |
+| Trazas de agentes sin contenido (comprobado el 2026-10-06) | Hecho | `infra/lib/constructs/observability.ts`; `functions/provisioner/src/mango_provisioner/harness.py` | D16 |
+| Otra región que `us-east-1` | No hecho: la configuración solo admite esa región | `infra/lib/config/schema.ts` | D2, D71 (7) |
 | Migraciones de datos y modo mantenimiento | No hecho | — | D9, §4.12 |
 | Diagnóstico exportable y stack de soporte | No hecho | — | D7, §4.11 |
 | Acceso de admins a conversaciones | No hecho | — | D23 |
@@ -71,21 +76,23 @@ Cada fila se comprobó ese día contra el código de `main`: el archivo citado e
 
 ## 1. Resumen ejecutivo
 
-1. **bedrock-chat se usa como cantera, no como fork.** Aporta buenos patrones de dominio y un buen frontend de chat. Su esqueleto choca con Mango en tres puntos:
+1. **bedrock-chat se usa como cantera, no como fork.** Aporta buenos patrones de dominio. Su esqueleto choca con Mango en tres puntos:
    - Aprovisiona con `cdk deploy` en runtime vía CodeBuild, un stack por bot.
    - Usa OpenSearch Serverless y OSIS, que suman ~550 USD/mes fijos sin usuarios.
    - Ejecuta el agente dentro de una Lambda WebSocket, con el mismo rol IAM para todos los bots, sin MCP, sin HITL y sin budgets.
 2. **El plano de ejecución de agentes es Amazon Bedrock AgentCore:**
-   - Runtime v2 con microVM por sesión.
+   - Runtime con microVM por sesión.
    - *Harness* declarativo: agente = configuración.
-   - Gateway MCP como única superficie de tools.
-   - Identity para OBO/3LO, más Memory, Policy (Cedar), Observability y Evaluations.
-   - Cubre ~80 % de la necesidad. **EKS se descarta por ahora**: exige 1–2 FTE de plataforma para reconstruir lo que AgentCore ya trae, y el cómputo del runtime es solo el 3–8 % del gasto en tokens.
-3. **El plano de control lo construimos nosotros, y es el producto.** Incluye marketplace, RBAC, **budgets en dólares con enforcement en tiempo real**, bandeja de aprobaciones, audit trail, historial de conversaciones y el router que elige el agente. AgentCore no trae nada de esto.
-4. **RAG sin OpenSearch Serverless:**
-   - Default: Bedrock KB sobre **S3 Vectors**, compartidas por perfil de indexación, con filtros de metadata por unidad de negocio, KB y ACL. Cuesta ~0 en reposo.
+   - Gateway MCP como única superficie de tools, con Policy (Cedar).
+   - Observability: trazas sin contenido (D16).
+   - **Previsto, sin usar todavía:** Identity para OBO/3LO, Memory (desactivada a propósito, D13) y Evaluations.
+   - **EKS se descarta por ahora**: exige 1–2 FTE de plataforma para reconstruir lo que AgentCore ya trae.
+3. **El plano de control lo construimos nosotros, y es el producto.** Incluye marketplace y Agent Builder, RBAC, **presupuestos en dólares con reserva antes de cada turno**, aprobaciones, gestión de personas, audit trail e historial de conversaciones. AgentCore no trae nada de esto. El router que elige el agente es **previsto**.
+4. **RAG sin OpenSearch Serverless (previsto, sin construir):**
+   - Default: Bedrock KB sobre **S3 Vectors**, compartidas por perfil de indexación, con filtros de metadata por área, KB y ACL.
    - Tier premium: **Bedrock Managed Knowledge Base**, con conectores Drive/SharePoint/Confluence, ACL por usuario, hybrid search y rerank.
-5. **Costo fijo por entorno sin tráfico: ~100–150 USD/mes**, frente a ~550–900 de bedrock-chat. Todo lo demás se paga por consumo. **La palanca de costo real son los tokens**; por eso los budgets son la pieza propia más importante.
+5. **Costo fijo por instalación sin tráfico: entre 210 y 230 USD/mes** a precios de lista, estimado y sin contrastar con una factura (§6). Más que los ~100–150 del plan original: la red cerrada de los MCP packs (D54) es hoy la partida mayor. Todo lo demás se paga por consumo. **La palanca de costo real son los tokens**; por eso los presupuestos son la pieza propia más importante.
+6. **Una instalación sirve hasta unas 300 personas activas a la vez** (D70 (9)), si la cuota de Bedrock de la cuenta deja pasar sus turnos. De dónde sale la cifra y cómo se opera: §4.15.
 
 ---
 
@@ -93,71 +100,110 @@ Cada fila se comprobó ese día contra el código de `main`: el archivo citado e
 
 | # | Principio | Consecuencia |
 |---|---|---|
-| P1 | **Serverless y pago por uso por defecto** | Nada con costo fijo relevante salvo el BFF. Sin VPC ni NAT salvo para conectores privados |
-| P2 | **Un solo punto de paso para tools** | Toda tool, MCP propio o de terceros, va detrás de AgentCore Gateway. Ahí se aplican policy, identidad, guardrails, rate limits y auditoría, fuera del alcance del LLM |
-| P3 | **El agente es configuración, no un despliegue** | Crear o publicar un agente es una llamada a API, que tarda segundos. **Nunca build ni `cdk deploy` en runtime** (lección de bedrock-chat); stacks de CloudFormation solo desde plantillas de la release (D25) |
-| P4 | **Gobernanza preventiva, no reactiva** | Autorizar y reservar budget *antes* de gastar. El reporte a posteriori (Athena/CUR) sirve solo para reconciliar |
-| P5 | **Identidad del usuario hasta el sistema destino** | OBO/3LO o AssumeRole con `SourceIdentity`. Prohibido que una tool use el rol del runtime para datos de usuario |
-| P6 | **Estándares abiertos en los bordes** | MCP (tools), AgentSkills.io (skills), A2A, OTel GenAI, Cedar. Mitiga el lock-in con AgentCore |
-| P7 | **Contexto organizacional en todo** | Como la instalación es por cliente (D1), el aislamiento principal es la cuenta. Dentro de ella, `business_unit`/`team`/`user` viajan en el token, en las claves DynamoDB (`LeadingKeys` por usuario), en la metadata vectorial, en las políticas Cedar y en los eventos de auditoría. Se reserva un `tenant_id` fijo por instalación por si en el futuro hay un modo SaaS |
+| P1 | **Serverless y pago por uso por defecto** | Lo que tiene costo fijo es lo que no admite otra forma: `mango-api` con su balanceador, los dos WAF y la red de los MCP packs. Sin NAT: `mango-api` sale con IP pública (D15) y los packs solo alcanzan endpoints de VPC (D54) |
+| P2 | **Un solo punto de paso para tools** | Toda tool, MCP propio o de terceros, va detrás de AgentCore Gateway. Ahí se aplican identidad, policy, la firma de la invocación y el token de aprobación, fuera del alcance del LLM |
+| P3 | **El agente es configuración, no un despliegue** | Crear o publicar un agente es una llamada a API. **Nunca build ni `cdk deploy` en runtime** (lección de bedrock-chat); stacks de CloudFormation solo desde plantillas de la release (D25) |
+| P4 | **Gobernanza preventiva, no reactiva** | Autorizar y reservar presupuesto *antes* de gastar. Lo que se hace después solo reconcilia: hoy, la conciliación de turnos cortados con las trazas (D73); la reconciliación contra la factura (CUR) es prevista |
+| P5 | **Identidad del usuario hasta el sistema destino** | AssumeRole con `SourceIdentity` (hoy); OBO/3LO para sistemas externos (previsto). Prohibido que una tool use el rol del runtime para datos de usuario |
+| P6 | **Estándares abiertos en los bordes** | En uso: MCP (tools), OTel GenAI y Cedar. Previstos: AgentSkills.io (skills) y A2A (delegación). Mitiga el lock-in con AgentCore |
+| P7 | **Contexto organizacional en todo** | Como la instalación es de un solo cliente (D1), el aislamiento principal es la cuenta. Dentro de ella, el área (`business_unit`), los grupos de acceso y el usuario viajan en el token, en las claves de DynamoDB (`LeadingKeys` por usuario), en las políticas Cedar y en los eventos de auditoría. No existe un identificador de cliente: el `tenant_id` que el plan original reservaba para un modo SaaS no se construyó |
 
 ---
 
 ## 3. Vista general
 
-> Versión detallada con iconos AWS, flujo de una petición, acceso multi-cuenta y release: [`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio). Se abre en draw.io o diagrams.net.
+> Este diagrama es el que está al día (2026-10-06): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) conserva el plan del 2026-09-28 y **no está actualizado**.
 
 ```mermaid
 flowchart TB
-  subgraph Edge["Edge (us-east-1)"]
-    CF["CloudFront + WAF<br/>(managed rules, rate-based)"]
+  U(("Persona<br/>(navegador)"))
+
+  subgraph EDGE["Borde"]
+    CF["CloudFront + WAF<br/>reglas gestionadas y límites por IP (D72)<br/>CSP y HSTS"]
     SPA[("S3: SPA React")]
   end
 
-  U(("Usuario no técnico")) --> CF --> SPA
-  U -- "SSO SAML/OIDC<br/>(Entra/Okta/Google)" --> COG["Cognito Essentials<br/>broker de identidad<br/>pre-token Lambda → tenant/teams/roles"]
-
-  CF -- "JWT · SSE/AG-UI" --> ALB["ALB"] --> API
-
-  subgraph CP["PLANO DE CONTROL MANGO (nuestro) · ECS Fargate"]
-    API["mango-api (FastAPI)<br/>• BFF de streaming<br/>• Router de agentes (Haiku)<br/>• Catálogo/Marketplace<br/>• Admin: budgets, aprobaciones, auditoría"]
-    AVP["Verified Permissions<br/>(Cedar L1: usar/crear/publicar/aprobar)"]
-    BUD["Budget Service<br/>(DynamoDB reserva→liquidación)"]
-    DDB[("DynamoDB<br/>tenants, agentes, conversaciones,<br/>budgets, aprobaciones · RLS LeadingKeys")]
-    SFN["Step Functions<br/>provisioning de agentes y packs"]
+  subgraph IDN["Identidad"]
+    COG["Cognito Plus<br/>login propio: SRP + TOTP (D20)<br/>WAF regional con límites por IP (D72)"]
+    TRG["Lambdas pre sign-up y pre-token<br/>dominio del correo · rol, área y grupos"]
   end
 
+  U --> CF --> SPA
+  U -- "ingreso y registro" --> COG --> TRG
+  CF -- "VPC origin (HTTP en la PoC, D15)<br/>access token · SSE · cookie de sesión (D63)" --> ALB["ALB interno<br/>reparto por peticiones abiertas (D70)"]
+
+  subgraph CP["PLANO DE CONTROL MANGO (nuestro)"]
+    API["mango-api (FastAPI)<br/>2 tareas de Fargate en 2 zonas (D70)<br/>chat SSE · Marketplace y Builder · aprobaciones<br/>personas y grupos · presupuestos · auditoría"]
+    AVP["Verified Permissions<br/>(Cedar L1)"]
+    DDB[("DynamoDB, 8 tablas<br/>Conversations (RLS LeadingKeys) · Budgets · Agents<br/>Settings · Approvals · AuditIndex<br/>WebSessions · RateLimits")]
+    SFN["Step Functions + Lambda<br/>provisioner y deprovisioner de agentes<br/>provisioner de packs (por SDK, D25)"]
+    BREC["BudgetReconciler<br/>Lambda cada 5 min (D73)"]
+    REC["Reconciler<br/>Lambda diaria, solo lectura (D41)"]
+  end
+
+  ALB --> API
+  API -- "renueva la sesión con una operación firmada (D72)" --> COG
   API --> AVP
-  API --> BUD --> DDB
-  API --> DDB
+  API -- "reserva y turno pendiente, luego liquidación" --> DDB
   API --> SFN
+  BREC -- "cierra los turnos cortados" --> DDB
+  REC -. "compara con los harness" .-> DDB
 
-  API -- "InvokeHarness / InvokeAgentRuntime<br/>(sessionId, actorId, JWT usuario)" --> RT
-
-  subgraph AC["AMAZON BEDROCK AGENTCORE (cuenta workloads)"]
-    RT["Runtime v2 (microVM/sesión)<br/>harness: finops · devops · sap · docs<br/>Strands code-defined: supervisor"]
-    MEM["Memory<br/>(actor=usuario, ns=tenant/agente)"]
-    GW["Gateway MCP<br/>+ Policy (Cedar L2) + Guardrails<br/>+ interceptors + rate limits por jwt.sub"]
-    ID["Identity<br/>OBO · 3LO token vault"]
-    OBS["Observability (OTel→CloudWatch)<br/>Evaluations"]
+  subgraph AC["AMAZON BEDROCK AGENTCORE (misma cuenta)"]
+    RT["Un harness por agente (D32)<br/>microVM por sesión · memoria desactivada (D13)"]
+    GW["Gateway MCP<br/>JWT de Cognito · interceptor: firma de la invocación,<br/>tools del agente y approval token · Policy (Cedar L2)"]
+    PK["Runtimes de MCP packs (D36)<br/>aws-pricing · aws-billing · aws-cloudwatch"]
   end
 
-  RT --> MEM
+  API -- "InvokeHarness<br/>(sesión calculada en el servidor, token del usuario, firma)" --> RT
+  API -- "ejecuta una escritura aprobada (D56)" --> GW
+  SFN -- "crea y borra harness, roles,<br/>Runtimes y targets" --> RT
+  SFN --> PK
   RT -- "tools/call" --> GW
-  GW --> ID
-  RT --> BR["Bedrock models<br/>app inference profiles por tenant/agente<br/>Guardrail base enforced (cuenta)"]
+  RT --> BR["Bedrock: modelos del catálogo<br/>guardrail base compartido (D34)"]
 
-  GW --> T1["Lambda/MCP: Cost Explorer<br/>(AssumeRole read-only + SourceIdentity)"]
-  GW --> T2["MCP awslabs: CloudWatch"]
-  GW --> T3["SAP (OpenAPI/MCP)<br/>VPC egress + OBO"]
-  GW --> T4["Google Drive MCP (3LO)"]
-  GW --> KR["knowledge-retrieve (MCP propio)<br/>filtro RBAC obligatorio"]
-  KR --> KB1["Bedrock KB → S3 Vectors<br/>(Standard)"]
-  KR --> KB2["Bedrock Managed KB<br/>(Premium: Drive/SharePoint ACL)"]
+  GW --> CE["Lambda: conector Cost Explorer"]
+  GW --> AE["Lambda: approval executor<br/>(aws-budgets.create_budget)"]
+  GW --> PK
+  PK -- "solo sale por" --> PN["Red de packs (stack PackNetwork, D54)<br/>endpoints de VPC por servicio declarado<br/>DNS Firewall con registro de consultas (D71)<br/>sin internet ni NAT"]
 
-  API & GW & SFN -- "AuditEvent (hash por evento)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS CMK<br/>cuenta de la instalación")] --> ATH["Athena"]
-  API -- "UsageEvent" --> FH
+  subgraph ORG["Otras cuentas de la organización"]
+    PAY["Pagadora<br/>BillingReader · BudgetsOperator"]
+    MEM["Cuentas miembro<br/>ReadOnly (StackSet)"]
+  end
+
+  CE -- "BillingBroker + SourceIdentity" --> PAY
+  PK -- "BillingBroker o ReadBroker<br/>+ SourceIdentity" --> PAY
+  PK --> MEM
+  AE -- "OperateBroker + SourceIdentity<br/>+ aprobación" --> PAY
+
+  API & SFN & BREC -- "AuditEvent (hash por evento)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS<br/>cuenta de la instalación")]
+
+  RT -. "trazas sin contenido (D16)" .-> SP[("CloudWatch<br/>aws/spans")]
+  BREC -- "lee los tokens de un turno cortado" --> SP
+
+  subgraph OPS["Operación (D71)"]
+    AL["30 alarmas en Core y 1 en PackNetwork<br/>tablero Operations"] --> SNS["SNS Alerts, por correo"]
+  end
+
+  subgraph PLAN["PREVISTO, SIN CONSTRUIR"]
+    SSO["SSO con el IdP del cliente"]
+    ROUTER["Router «Asistente Mango»"]
+    KB["RAG: knowledge-retrieve<br/>Bedrock KB (S3 Vectors) y Managed KB"]
+    EXT["Sistemas externos: SAP, Google Drive<br/>(OBO / 3LO con AgentCore Identity)"]
+    MEMO["Memory y Evaluations de AgentCore"]
+    CUR["Reconciliación del gasto contra CUR"]
+  end
+
+  COG -.-> SSO
+  API -.-> ROUTER
+  GW -.-> KB
+  GW -.-> EXT
+  RT -.-> MEMO
+  DDB -.-> CUR
 ```
+
+Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no hay router; el Gateway tiene tres clases de target (un conector, el ejecutor de escrituras aprobadas y los packs); los packs corren en una red cerrada propia; `mango-api` son dos tareas con sesión por cookie y límites de tasa compartidos; y hay dos funciones de conciliación, alarmas y un tablero. Las cifras de alarmas son las de la plantilla sintetizada con la configuración de ejemplo el 2026-10-06.
 
 ---
 
