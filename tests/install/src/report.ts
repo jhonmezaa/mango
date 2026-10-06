@@ -139,7 +139,7 @@ export default class InstallReporter implements Reporter {
       title: this.#redact(test.titlePath().slice(3).join(' › ')),
       file: test.location.file.split('/').slice(-1)[0] ?? '',
       status: result.status,
-      seconds: result.duration / 1000,
+      seconds: Math.round(result.duration / 100) / 10,
       errors: result.errors.map((error) => describeError(error, this.#redact)),
       skipped: [...new Set(of('skip'))],
       leaves: [...new Set(of('leaves'))],
@@ -197,7 +197,7 @@ export default class InstallReporter implements Reporter {
     const summary = {
       url: maskUrl(config.baseUrl),
       startedAt: this.#startedAt.toISOString(),
-      seconds: result.duration / 1000,
+      seconds: Math.round(result.duration / 100) / 10,
       outcome: result.status === 'passed' ? 'pasó' : `no pasó (${result.status})`,
       release,
       roles: Object.fromEntries(ROLES.map((role) => [role, config.users[role] !== undefined])),
