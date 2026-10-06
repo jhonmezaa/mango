@@ -66,7 +66,7 @@ Parámetros opcionales de `Core`:
 ## 3. Después de instalar
 
 1. **Primer ingreso de los administradores.** Reciben una contraseña temporal por correo (vence en 3 días) y registran MFA (TOTP) al entrar; MFA es obligatorio. La URL está en el output `AppUrl` de `Core`. Si la contraseña temporal venció, quien administra la cuenta de AWS la renueva con `aws cognito-idp admin-create-user --message-action RESEND` o fija una con `admin-set-user-password`.
-2. Confirmar la suscripción del correo de alertas.
+2. Confirmar la suscripción del correo de alertas y comprobar que una alarma de prueba llega: [`operations.md`](operations.md#comprobar-que-el-correo-llega).
 3. **En la aplicación, con los dos administradores** (cada cambio lo propone uno y lo aprueba el otro):
    1. Ajustes › Áreas y OUs: crear las áreas y asignarles sus OU.
    2. Ajustes › Grupos: crear el grupo de cada área (`bu-<área>`, tipo «área»). No existe hasta que alguien lo crea, y hay que crear antes el área.
@@ -97,6 +97,7 @@ Después de instalar y después de cada actualización:
    - El informe queda fuera del repositorio (por defecto en `~/.config/mango/install-check/<fecha>/informe.md`), con la URL enmascarada, la release que muestra la instalación, qué pasó y qué se saltó. No guarda trazas ni video, y enmascara correos e ids.
    - Con `MANGO_INSTALL_EFFECTS=chat`, `people` o `all` corren además los recorridos **con efecto**: una pregunta al agente (gasta presupuesto) y un cambio de persona con doble aprobación sobre una persona desechable que la propia prueba invita y cierra. Para borrarla al final hace falta un perfil de AWS con acceso al directorio; sin él queda deshabilitada y el informe lo dice.
 3. **Batería por la API** (`tests/e2e/`, `tests/eval/`). Toma todo de los outputs de `Mango-<ns>-Core` (`--stack`), de los parámetros de `Mango-<ns>-OrgAccess` y de la propia aplicación, con los mismos usuarios de prueba y su archivo de secretos. **No se corre contra una instalación con datos reales**: crea agentes, habilita packs y fija contraseñas.
+4. **Alarmas.** Ninguna en `ALARM` sin motivo, y el correo de alertas recibe una de prueba: [`operations.md`](operations.md#alarmas).
 
 ## 4. Actualizar
 

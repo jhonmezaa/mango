@@ -21,6 +21,7 @@ Las versiones se publican en una cuenta de AWS del proveedor y solo las pueden l
 | Arquitectura, estado de lo construido e índice de decisiones | [`docs/architecture/reference-architecture.md`](docs/architecture/reference-architecture.md) |
 | Decisiones, una por archivo | [`docs/architecture/decisions/`](docs/architecture/decisions/README.md) |
 | Instalar, actualizar y desinstalar | [`docs/runbooks/install.md`](docs/runbooks/install.md) |
+| Operar una instalación: alarmas y tablero | [`docs/runbooks/operations.md`](docs/runbooks/operations.md) |
 | Cómo se publican las versiones | [`deployment/provider/README.md`](deployment/provider/README.md) |
 | Operación y pruebas de punta a punta del laboratorio | Vigente: [`docs/runbooks/install.md`](docs/runbooks/install.md). Anterior a D58 y obsoleto en parte: [`docs/runbooks/poc-deploy.md`](docs/runbooks/poc-deploy.md) |
 | Especificaciones y hoja de ruta | [`docs/specs/`](docs/specs/) |
