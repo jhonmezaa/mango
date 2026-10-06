@@ -110,11 +110,15 @@ describe("operational alarms of Core", () => {
     }
   });
 
-  it("never takes missing data for a breach, and says what to look at first", () => {
+  it("does not take missing data for a breach, with one exception, and says what to look at first", () => {
+    // The load balancer stops reporting HealthyHostCount when no target is registered: for
+    // this alarm, no data is the worst case (a service without tasks), not a quiet installation.
+    const breachesWithoutData = [`Mango-${ns}-Api-no-healthy-targets`];
     for (const [name, properties] of Object.entries(operational)) {
-      expect(properties.TreatMissingData, name).toBe("notBreaching");
+      expect(properties.TreatMissingData, name).toBe(breachesWithoutData.includes(name) ? "breaching" : "notBreaching");
       expect(properties.AlarmDescription, name).toMatch(/Look first at /);
     }
+    for (const name of breachesWithoutData) expect(operational[name], name).toBeDefined();
   });
 
   it("reads periods of one or five minutes, so that an alarm is evaluated at most 15 minutes late", () => {
@@ -161,6 +165,13 @@ describe("mango-api and its load balancer", () => {
     for (const properties of [none, some]) {
       expect(dimension(properties.Dimensions, "TargetGroup")).toEqual({ "Fn::GetAtt": [groupId, "TargetGroupFullName"] });
     }
+  });
+
+  it("creates the alarm that breaches without data after the service, so that it never waits for a first task", () => {
+    const [, resource] = ofType(resources, "AWS::CloudWatch::Alarm").find(
+      ([, r]) => r.Properties.AlarmName === `Mango-${ns}-Api-no-healthy-targets`,
+    )!;
+    expect((resource as Resource & { DependsOn?: string[] }).DependsOn).toContain(serviceId);
   });
 
   it("judges the 5xx rate of the API only above a minimum of requests", () => {

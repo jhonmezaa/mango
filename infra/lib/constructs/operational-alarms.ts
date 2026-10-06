@@ -66,8 +66,10 @@ export interface OperationalAlarmsProps {
  * the DynamoDB tables, CloudFront and the edge rate limit. Every alarm notifies the alerts
  * topic and says in its description what to look at first.
  *
- * Missing data never breaches: an installation nobody is using stays quiet. The tables and the
- * target groups are the ones the stack holds when this construct is created, so it goes last.
+ * Missing data does not breach: an installation nobody is using stays quiet. The one exception
+ * is `Api-no-healthy-targets`, whose metric stops exactly when the failure is worst. The tables
+ * and the target groups are the ones the stack holds when this construct is created, so it goes
+ * last.
  * The alarms of the publication path live in `Reconciler`; the one of the pack network, in
  * `PackNetwork`.
  */
@@ -114,11 +116,12 @@ export class OperationalAlarms extends Construct {
     name: string,
     description: string,
     options: Omit<cloudwatch.AlarmProps, "alarmName" | "alarmDescription" | "treatMissingData">,
+    treatMissingData = cloudwatch.TreatMissingData.NOT_BREACHING,
   ): cloudwatch.Alarm {
     const created = new cloudwatch.Alarm(this, id, {
       alarmName: mangoName(this.ns, name),
       alarmDescription: description,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      treatMissingData,
       ...options,
     });
     created.addAlarmAction(this.notify);
@@ -167,18 +170,25 @@ export class OperationalAlarms extends Construct {
       );
       const healthy = group.metrics.healthyHostCount({ statistic: cloudwatch.Stats.MAXIMUM, period: MINUTE });
       const unhealthy = group.metrics.unhealthyHostCount({ statistic: cloudwatch.Stats.MAXIMUM, period: MINUTE });
-      this.alarm(
+      // The load balancer only reports this metric while a target is registered. A service left
+      // without tasks reports nothing, so here, and only here, missing data breaches (D71).
+      const noHealthy = this.alarm(
         `NoHealthyTargets${suffix}`,
         `Api-no-healthy-targets${suffix}`,
-        "No task of mango-api passes the health check of the load balancer: nobody can use the application. " +
-          "Look first at the events of the ECS service and at the last lines of the mango-api log group.",
+        "No task of mango-api passes the health check of the load balancer, or none is registered with it: " +
+          "nobody can use the application. Look first at the events of the ECS service and at the last lines " +
+          "of the mango-api log group.",
         {
           metric: healthy,
           threshold: 1,
           comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
           evaluationPeriods: 3,
         },
+        cloudwatch.TreatMissingData.BREACHING,
       );
+      // Created once the service is stable and deleted before it: the alarm does not exist
+      // while an installation has no first task yet, nor after an uninstall stops the last one.
+      noHealthy.node.addDependency(props.service);
       this.alarm(
         `UnhealthyTargets${suffix}`,
         `Api-unhealthy-targets${suffix}`,
