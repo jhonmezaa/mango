@@ -2,7 +2,7 @@
 
 - **Estado:** vigente
 - **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
-- **Precisa / reemplaza a:** precisa [D41](D041-alertas-y-reconciliacion.md) (la reconciliación diaria sigue siendo de solo lectura; esta es otra función), [D71](D071-alarmas-operativas-y-tablero.md) (1: dos alarmas nuevas) y [D16](D016-observabilidad-de-agentes.md) (las trazas pasan a ser, además, la fuente del gasto de un turno cortado)
+- **Precisa / reemplaza a:** precisa [D41](D041-alertas-y-reconciliacion.md) (la reconciliación diaria sigue siendo de solo lectura; esta es otra función), [D71](D071-alarmas-operativas-y-tablero.md) (1: dos alarmas nuevas), [D16](D016-observabilidad-de-agentes.md) (las trazas pasan a ser, además, la fuente del gasto de un turno cortado) y [D70](D070-dos-tareas-y-limites-compartidos.md) (10: su último párrafo dejaba «aparte» el cobro de un turno cortado; es esta decisión)
 - **Precisada por:** —
 
 ## Decisión
