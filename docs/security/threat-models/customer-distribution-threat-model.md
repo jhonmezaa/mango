@@ -1,6 +1,6 @@
 # Distribución para clientes (release, instalación y desinstalación): modelo de amenazas (v0.1)
 
-> Fecha: 2026-10-03 · Skill: `security-threat-model`. Diseño: `docs/specs/customer-distribution.md`. Decisiones: D3, D8, D9, D25, D36, D43, D48.
+> Fecha: 2026-10-03 · Skill: `security-threat-model`. Diseño: `docs/specs/customer-distribution.md`. Decisiones: D3, D8, D9, D25, D36, D43, D48; D69 (2026-10-05: assets compartidos entre releases, TM-D20 a TM-D22).
 > **Escrito antes de construir; el componente ya existe (D58).** Están construidos la cuenta del proveedor (`infra/lib/stacks/provider-stack.ts`), la publicación (`deployment/dist.py`, `.github/workflows/release.yml`) y `UninstallGuard` (`infra/lib/constructs/uninstall-guard.ts`). En las tablas, «controles existentes» son los que había en el repo al escribir el modelo, y los del diseño van como mitigaciones recomendadas; cuáles se construyeron está en «Cuenta del proveedor: construida y revisada», al final.
 > Alcance: `infra/` (synthesizer, plantillas con parámetros), `deployment/` (`dist`, `provider/`, scripts), `.github/workflows/` (`release.yml`, `packs.yml`), verificación de firmas (`packages/py/mango-packs`, `functions/provisioner`, `apps/api`), `UninstallGuard`.
 > Decidido por el usuario el 2026-10-03: distribución como Innovation Sandbox (buckets y ECR en una cuenta de AWS del proveedor, fuera de la organización del cliente); firma de packs y del manifiesto con una llave KMS en la cuenta del proveedor (se descarta la firma sin llave); lectura por organización del cliente; red de packs en un stack propio; instalaciones solo de tipo `customer`; parámetros mínimos y el resto en la aplicación.
@@ -236,7 +236,7 @@ D69. Los assets de todas las releases viven en `mango/assets/<hash>.zip` del buc
 
 **TM-D2, imagen:** las imágenes base van por digest (`apps/api/Dockerfile`) y la imagen se construye con una fecha fija: las mismas fuentes dan el mismo digest (tres builds sin caché en dos checkouts, 2026-10-05). Un tercero puede reconstruirla y comparar. **No se reutiliza una imagen del registro por un tag derivado de sus entradas:** quien tuviera el rol de publicación una vez podría dejar una imagen bajo el tag de unas entradas futuras, y una release posterior, firmada, la nombraría. Se construye siempre; si nada cambió, el digest es el mismo y el push solo añade el tag de la etiqueta.
 
-Revisión del diff (`security-audit`, modo guía): ver el informe de la tarea; hallazgos y ajustes en la descripción del PR.
+Revisión del diff (`security-audit`, modo guía, 2026-10-05): sin hallazgos confirmados. Se siguieron cuatro caminos: una clave ocupada con otros bytes (termina la release antes de subir plantillas y manifiesto), un sha256 de S3 que no sea el del objeto entero (solo se cree el de tipo `FULL_OBJECT`; si no, se descarga y se calcula), un fallo de subida que no sea «la clave existe» (termina la release) y el alcance del permiso nuevo (un prefijo de un bucket, sin listado ni versiones). Queda anotado, sin cambio: `verify-release.py --bucket` sigue sin descargar los assets (ya era así), y quien tenga el rol de publicación puede bloquear una release ocupando un nombre (TM-D20).
 
 ## Desinstalación: construida y revisada (2026-10-03)
 
