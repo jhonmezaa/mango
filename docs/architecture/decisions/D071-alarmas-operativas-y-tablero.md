@@ -1,7 +1,7 @@
 # D71 · La instalación avisa: alarmas operativas sobre lo que fallaba en silencio y un tablero
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 a 15)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 15, y tras una prueba de carga, punto 16)
 - **Precisa / reemplaza a:** precisa [D54](D054-egress-de-packs.md) (3): el DNS Firewall de la red de packs tiene una lista más y registro de consultas (puntos 13 y 14)
 - **Precisada por:** [D72](D072-limites-por-ip-para-una-oficina.md) (precisa los puntos 1 y 5: `Edge-rate-limited` suma los bloqueos de las dos reglas por IP del borde, y hay una alarma nueva, `Cognito-rate-limited`, para las reglas por IP del user pool)
 
@@ -63,3 +63,18 @@ Origen: la revisión del proyecto del 2026-10-05 (infraestructura, H6). El usuar
 - **Usar un pack ya no dispara la alarma.** `PackDns-blocked` siguió en `OK`, sin cambios de estado, después de una pregunta que usó el pack `aws-cloudwatch`. La consulta del runbook (rechazadas que no son `time.aws.com.`) no devolvió filas, que es lo correcto.
 - **`Api-no-healthy-targets` no saltó durante una actualización** (punto 11), con el despliegue rodante de las dos tareas.
 - **Sin probar.** Los packs `aws-pricing` y `aws-billing` siguen sin observarse: no había un agente publicado que los usara. No se provocó una consulta de un nombre fuera de las listas, que es lo que debe disparar la alarma. Tampoco se dejó el servicio sin tareas para ver saltar `Api-no-healthy-targets`.
+
+**(16) Precisión del 2026-10-06 a los puntos 1 y 5: dos alarmas de saturación.** Las aprobó el dueño ese día, al ver una prueba de carga en una instalación de laboratorio: hubo un minuto con respuestas de 10 segundos, y Bedrock rechazó cientos de llamadas, y ninguna de las alarmas saltó.
+
+- **`Api-slow`: la aplicación responde lento.** `mango-api` tarda más de 1 s en empezar a responder el 5 % de sus peticiones (percentil 95 del tiempo de respuesta del balanceador), en 2 de 3 minutos con al menos 60 peticiones cada uno.
+  - **Precisa el punto 5 (c),** que descartaba el tiempo de respuesta porque «una respuesta del chat dura lo que tarda el modelo». La métrica mide la espera hasta las cabeceras de la respuesta, y un turno de chat las envía enseguida y después transmite: con 40 turnos abiertos de hasta 110 s, su máximo fue de 0,4 s. El chat no la dispara.
+  - **Por qué la latencia y no la CPU.** Es lo que nota la gente, sea cual sea la causa (procesador, hilos o una dependencia lenta). La media de CPU del servicio engaña: marcaba 70 % con una tarea al 93 %. La CPU de la tarea más cargada queda en el tablero (el máximo, no la media), y la descripción de la alarma manda a mirarla primero.
+  - **Por qué 1 s.** Medido: 0,03 s con margen, 0,5 s en el límite, de 5 a 11 s con el servicio saturado. Crear o renovar una sesión tarda 0,5 s, así que un minuto tranquilo ya muestra 0,4 s: el umbral tiene que quedar por encima. En la prueba habría saltado en la saturación (dos minutos seguidos con 4,9 y 11,1 s) y no en el escalón «en el límite».
+  - **Por qué 60 peticiones.** Con menos de una por segundo, dos llamadas lentas de administración serían el percentil. Una instalación con muy poco uso no tiene esta alarma en la práctica: la lentitud por saturación exige tráfico.
+- **`Bedrock-throttled`: Bedrock rechaza llamadas por la cuota de la cuenta.** 5 o más rechazos en 5 minutos (`InvocationThrottles`). El agente reintenta cada rechazo tras unos 30 s: cada uno es alguien esperando. En la prueba, el primer minuto con gente afectada tuvo 8.
+  - **Sin nombrar modelos** (regla 7 de `AGENTS.md`). Bedrock publica esa métrica por modelo y también sin dimensiones, sumando todos; la alarma lee la segunda. No hace falta una consulta.
+  - **Es de toda la cuenta y región,** como `DynamoDB-system-errors`: en una cuenta compartida cuenta también llamadas que no son de Mango. La descripción lo dice.
+  - **Qué hacer** no es esperar: es revisar la cuota aplicada (`deployment/check-bedrock-quotas.py`). Una cuota por debajo del valor por defecto de AWS no se sube desde Service Quotas, sino con un caso de soporte.
+- **Con los criterios de siempre.** Datos ausentes no cuentan, descripción en inglés con qué mirar primero, sin filtros de métricas, umbrales en `OPERATIONAL_THRESHOLDS`. El tablero suma dos gráficos: llamadas y rechazos de Bedrock, y la CPU de la tarea más cargada junto a la media.
+- **Costo y tamaño.** Dos alarmas más en `Core` (28; con la de `PackNetwork`, 29) que leen tres métricas: unos USD 0,30 al mes. Sin supresiones nuevas ni cambios de permisos.
+- **Pendiente de comprobar en una instalación.** Que las dos existen con métricas que existen, y verlas saltar: ninguna se ha provocado todavía.

@@ -25,6 +25,7 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `Api-errors` | Más del 5 % de las respuestas de `mango-api` fueron 5xx, con al menos 20 peticiones en 5 minutos, en 2 de 3 periodos | Los errores del log group `/mango/<ns>/api`; después, las alarmas de DynamoDB |
 | `Api-unhealthy-targets` | Una tarea lleva 5 minutos fallando la comprobación de salud. La aplicación puede seguir respondiendo desde otra tarea | Las tareas detenidas del servicio y su motivo |
 | `Api-tasks-below-desired` | Durante 5 minutos corren menos tareas de las que pide el servicio: se detienen o no logran arrancar | Eventos del servicio: descarga de la imagen, comprobación de salud, memoria |
+| `Api-slow` | `mango-api` tardó más de 1 segundo en empezar a responder el 5 % de sus peticiones, en 2 de 3 minutos con al menos 60 peticiones cada uno. **La aplicación va lenta para todos, sin errores.** Una respuesta del chat que tarda no cuenta: se mide la espera hasta el primer byte | En el tablero, la CPU de la tarea más cargada (el máximo, no la media): una tarea cerca del 100 % frena todo lo que le llega. Después, las peticiones por minuto y las alarmas de DynamoDB. Qué hacer: abajo, «Cuando la aplicación va lenta» |
 
 `Api-no-healthy-targets` es la única alarma en la que **no tener datos también avisa** (D71, punto 11). El balanceador solo publica el número de tareas sanas mientras tiene alguna registrada: si el servicio se queda sin tareas deja de publicar, y ese silencio es el peor caso.
 
@@ -39,6 +40,12 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `PreTokenGeneration-failing` | La función que arma los permisos de cada token falló o fue limitada 2 o más veces en 5 minutos. **Quien intentó entrar o renovar su sesión no pudo** | Errores del log group `/aws/lambda/Mango-<ns>-PreTokenGeneration`; después, la tabla `Mango-<ns>-Settings` (de ahí lee el registro de grupos) |
 | `GatewayInterceptor-failing` | La función por la que pasa toda llamada a una tool falló o fue limitada 2 o más veces en 5 minutos. **Los agentes no pueden usar tools** | Errores del log group `/aws/lambda/Mango-<ns>-GatewayInterceptor`; después, el secreto y las llaves que usa |
 | `PreSignUp-throttled` | Lambda limitó la función del registro. Sus errores no alarman: rechaza un registro lanzando un error, y eso lo puede provocar cualquiera desde internet | La concurrencia de Lambda de la cuenta |
+
+**Modelos**
+
+| Alarma | Qué significa | Qué mirar primero |
+|---|---|---|
+| `Bedrock-throttled` | Bedrock rechazó 5 o más llamadas a un modelo en 5 minutos porque se alcanzó una cuota de la cuenta (peticiones o tokens por minuto). **Los turnos de chat esperan y reintentan, y fallan si la espera dura más que el turno.** Mira **todos los modelos de la cuenta** en esa región, también las llamadas que no son de Mango | La cuota aplicada de los modelos en uso: `python3 deployment/check-bedrock-quotas.py --namespace <ns>`. Qué hacer: abajo, «Cuando Bedrock rechaza por cuota» |
 
 **Datos**
 
@@ -65,6 +72,20 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `AgentProvisioner-volume` | Más de 30 publicaciones de agentes en una hora | Quién las pidió, en Auditoría |
 | `UninstallGuard-failed` | Durante una desinstalación, la función que borra agentes y packs falló todos sus reintentos | Errores del log group `/aws/lambda/Mango-<ns>-UninstallGuard` y el mensaje en la cola `Mango-<ns>-UninstallGuard-dlq` |
 | `PackDns-blocked` (stack `PackNetwork`) | El DNS Firewall de la red de packs rechazó al menos una consulta de un nombre que no es de sus endpoints ni de los que pide la máquina de AgentCore por su cuenta: **un nombre que nadie esperaba**. No se resolvió nada | El registro de consultas DNS de la red de packs (log group `Mango-<ns>-PackNetwork-dns-queries`): qué nombre fue. Después, qué packs se estaban usando a esa hora |
+
+**Cuando la aplicación va lenta** (`Api-slow`; D70, punto 9). Dos tareas sirven con margen unas 80 lecturas por segundo (unas 300 personas activas a la vez) y se saturan hacia las 200.
+
+- **Una tarea cerca del 100 % de CPU y mucho tráfico:** la instalación está en su techo. Si es un pico, se recupera sola en segundos al bajar la carga, sin reinicios. Si es el uso normal, la instalación necesita tareas más grandes: es un cambio de versión, avisa al proveedor.
+- **Mucho tráfico de una sola persona o dirección:** una persona con sesión que repite una ruta cara (el Marketplace) puede saturar una tarea sin llegar al límite por IP. El log de acceso del balanceador dice qué ruta y desde dónde.
+- **CPU baja y aun así lenta:** es una dependencia. Mira las alarmas de DynamoDB y las de las funciones de ingreso.
+- **Las dos tareas no rinden igual.** Es normal: se midió una que gastaba 1,8 veces la CPU de la otra con el mismo trabajo. El balanceador manda más a la que responde antes, así que la media de CPU del servicio no dice nada: mira el máximo.
+
+**Cuando Bedrock rechaza por cuota** (`Bedrock-throttled`; D71, punto 16). Cada cuenta de AWS tiene, por modelo, un máximo de llamadas y de tokens por minuto. Cada turno de chat es al menos una llamada, y una más por cada vuelta de tools. Al pasarse, Bedrock rechaza; el agente espera unos 30 segundos y reintenta, y las personas ven turnos que tardan 40 o 70 segundos, o «the agent failed».
+
+1. Ver qué cuota hay: `python3 deployment/check-bedrock-quotas.py --namespace <ns>` (solo lectura, con credenciales de la cuenta de Mango). Dice, por cada modelo habilitado, la cuota aplicada, el valor por defecto de AWS y para cuántas personas alcanza.
+2. **Si la cuota aplicada está por debajo del valor por defecto** (pasa en cuentas nuevas o con poco uso: 10 por minuto donde el valor por defecto es 10.000): Service Quotas **rechaza la solicitud por API y por su consola**, porque solo admite valores por encima del valor por defecto. Hay que abrir un caso en la consola de Support Center (Create case › Service limit increase › Amazon Bedrock) y pedir que se restablezca el valor por defecto de esa cuota. El plan básico de soporte permite ese caso; su API no.
+3. **Si ya está en el valor por defecto y no alcanza:** Service Quotas › Amazon Bedrock › la cuota del modelo › solicitar un aumento a nivel de cuenta.
+4. Mientras tanto: con 10 llamadas por minuto funcionan bien unos 5 turnos a la vez. Si las llamadas no son de Mango (la alarma cuenta toda la cuenta), el tablero de Bedrock en CloudWatch dice de qué modelo.
 
 **Qué hacer cuando un límite por IP bloquea a una oficina** (D72). Los números son constantes de la versión: no hay parámetro que los suba. El bloqueo se levanta solo cuando el recuento de esa dirección en los últimos 5 minutos baja del límite; mientras dura, el WAF rechaza **todas** las peticiones de esa dirección que cuenta la regla, y cada recarga de quien espera vuelve a contar. Si la dirección es de la empresa y el uso es legítimo (una oficina de más de unas 1.000 personas detrás de una sola dirección, o más de 500 ingresos en 5 minutos), avisa al proveedor: es el caso que D72 deja para redes de confianza. Si no lo es, las peticiones de muestra dicen qué repite. `mango-api` no cuenta en los límites del user pool: renueva las sesiones con una operación firmada que no pasa por ese WAF.
 
@@ -107,7 +128,8 @@ fields @timestamp, query_name, query_type, srcaddr, firewall_domain_list_id
 
 - **Bloqueos de las reglas gestionadas del WAF** (borde y Cognito): en internet hay escaneos todos los días y cada uno bloquea peticiones. Una alarma sería ruido. Se ven en el tablero de WAF.
 - **Errores del registro** (`PreSignUp`): los provoca cualquiera que intente registrarse con un correo de otro dominio.
-- **Tiempo de respuesta de la API:** una respuesta del chat dura lo que tarda el modelo. Está en el tablero, sin umbral.
+- **Cuánto tarda una respuesta del chat:** dura lo que tarda el modelo. `Api-slow` mide solo la espera hasta que `mango-api` empieza a responder.
+- **La CPU de `mango-api`:** está en el tablero (la de la tarea más cargada y la media), sin umbral. Lo que avisa es la lentitud.
 - **Fuera de `us-east-1`** no existirían `Edge-errors` ni `Edge-rate-limited`: CloudFront solo publica sus métricas en esa región. Hoy Mango solo se instala ahí. `Cognito-rate-limited` sí existiría: su web ACL es regional.
 
 ### Comprobar que el correo llega
@@ -183,4 +205,4 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ### Cuánto cuesta
 
-Unos USD 6 al mes a precio de lista: USD 0,10 por cada métrica que lee una alarma (unas 33) y USD 3 por el tablero. Los tres primeros tableros de una cuenta son gratis. Con D72, cuatro métricas más (USD 0,40) y una regla más en el WAF del borde (USD 1).
+Unos USD 6 al mes a precio de lista: USD 0,10 por cada métrica que lee una alarma (unas 33) y USD 3 por el tablero. Los tres primeros tableros de una cuenta son gratis. Con D72, cuatro métricas más (USD 0,40) y una regla más en el WAF del borde (USD 1). Con las dos alarmas de saturación (D71, punto 16), tres métricas más (USD 0,30).

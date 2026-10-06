@@ -16,9 +16,34 @@ Diseño: `docs/specs/customer-distribution.md`. Quien publica las versiones: `de
 | Dos administradores | Los cambios con doble aprobación necesitan dos personas desde el primer día |
 | Dominio de correo de la empresa | Para el registro. Los proveedores públicos (Gmail, Outlook…) se rechazan |
 | Acceso a modelos de Bedrock | Los modelos por defecto de la versión, habilitados en la cuenta de Mango |
+| Cuota de Bedrock de la cuenta | Es lo que decide cuánta gente puede chatear a la vez, y una cuenta nueva puede tenerla muy por debajo del valor por defecto de AWS. Comprobarla **antes de instalar**: abajo, «La cuota de Bedrock» |
 | Cupo de políticas de recursos de CloudWatch Logs | La instalación usa **3**: una en `PackNetwork` (registro de consultas DNS de los packs) y dos en `Core` (eventos de Cognito y trazas; una sola con `TransactionSearch` en `external`). El máximo es **10 por cuenta y región y AWS no lo amplía**. Cuántas hay: `aws logs describe-resource-policies --query 'length(resourcePolicies)'`. Deben quedar libres las que falten por crear. Sin cupo, el stack falla al crear su política (`AWS::Logs::ResourcePolicy`, límite excedido) y CloudFormation lo revierte: hay que borrar o unir políticas de la cuenta antes de reintentar |
 
 **Qué corre y qué cuesta en reposo.** La API (`mango-api`) corre siempre con **dos tareas de Fargate, una por zona de disponibilidad** (0,5 vCPU y 1 GB cada una, con IP pública), detrás de un balanceador interno: si cae una tarea o una zona, la otra sigue respondiendo. No hay autoescalado ni parámetro para cambiar el número (D70). A precios de lista de `us-east-1`, las dos tareas con sus IP son unos USD 36 al mes y el balanceador unos USD 16 a 20; el resto (CloudFront, WAF, KMS, logs) se detalla en §6 de la arquitectura. Lo demás se paga por uso.
+
+**Cuánta gente aguanta.** Una instalación sirve **hasta unas 300 personas activas a la vez** (D70, punto 9). De dónde sale la cifra, y con qué condiciones:
+
+- **Medido** en una instalación de laboratorio el 2026-10-06, con las dos tareas: 80 lecturas de la API por segundo con margen (el 95 % en 0,1 s), 160 en el límite (ya lento) y 200 saturada.
+- **Supuestos de uso, no datos de una empresa:** una persona activa envía un turno de chat por minuto y navega algo (15 llamadas a la API cada 5 minutos). Pesando cada llamada por lo que cuesta, 80 lecturas por segundo son unas 330 personas. Si en una oficina está activo el 30 %, es una empresa de unas 1.000 personas.
+- **Condicionada a la cuota de Bedrock de la cuenta.** 300 personas con un turno por minuto son al menos 300 llamadas por minuto al modelo, y más si los agentes usan tools. Con la cuota baja, el techo del chat es la cuota, no Mango.
+- **Por encima no hay margen.** Si hace falta más, avisa al proveedor: el tamaño de las tareas es de la versión, no un parámetro.
+
+### La cuota de Bedrock
+
+Cada cuenta de AWS tiene, por modelo y región, un máximo de llamadas y de tokens por minuto. Un turno de chat es al menos una llamada al modelo, y una más por cada vuelta de tools del agente. Con las credenciales de quien instala, en la cuenta y región de Mango, y el repositorio en la etiqueta que vas a instalar:
+
+```sh
+python3 deployment/check-bedrock-quotas.py                    # antes de instalar: los modelos por defecto de la versión
+python3 deployment/check-bedrock-quotas.py --namespace <ns>   # después: los modelos habilitados en la instalación
+```
+
+- Es de **solo lectura**: lista los modelos de Bedrock y las cuotas de Service Quotas (y, con `--namespace`, lee el catálogo de modelos de la tabla `Mango-<ns>-Settings`). Con `--model <id>` comprueba cualquier otro modelo.
+- Por cada modelo dice la cuota **aplicada** a la cuenta, el valor por defecto de AWS y para cuántas personas alcanza. Termina con error si alguna está por debajo del valor por defecto o no se pudo leer.
+- **Una cuota aplicada puede estar muy por debajo del valor por defecto** (se vio 10 llamadas por minuto donde el valor por defecto es 10.000, en una cuenta nueva). Con 10 por minuto funcionan bien unos 5 turnos a la vez; con 40 a la vez falló más de la mitad.
+- **Esa cuota no se sube desde Service Quotas.** La solicitud se rechaza, por API y en su consola, porque solo admite valores por encima del valor por defecto. Hay que abrir un caso en la consola de Support Center (Create case › Service limit increase › Amazon Bedrock) y pedir que se restablezca el valor por defecto. El plan básico de soporte permite ese caso; su API no. Puede tardar días: conviene pedirlo antes de instalar.
+- **Si ya está en el valor por defecto y no alcanza:** Service Quotas › Amazon Bedrock › la cuota del modelo › solicitar un aumento a nivel de cuenta.
+- La cuota se relaciona con el modelo por su nombre (Service Quotas no lleva el id). Si el guion dice que no encontró la de un modelo, búscala a mano en Service Quotas › Amazon Bedrock.
+- Después de instalar, la alarma `Bedrock-throttled` avisa cuando Bedrock rechaza llamadas: [`operations.md`](operations.md#alarmas).
 
 ## 1. Verificar la versión
 
@@ -99,6 +124,7 @@ Después de instalar y después de cada actualización:
    - Con `MANGO_INSTALL_EFFECTS=chat`, `people` o `all` corren además los recorridos **con efecto**: una pregunta al agente (gasta presupuesto) y un cambio de persona con doble aprobación sobre una persona desechable que la propia prueba invita y cierra. Para borrarla al final hace falta un perfil de AWS con acceso al directorio; sin él queda deshabilitada y el informe lo dice.
 3. **Batería por la API** (`tests/e2e/`, `tests/eval/`). Toma todo de los outputs de `Mango-<ns>-Core` (`--stack`), de los parámetros de `Mango-<ns>-OrgAccess` y de la propia aplicación, con los mismos usuarios de prueba y su archivo de secretos. **No se corre contra una instalación con datos reales**: crea agentes, habilita packs y fija contraseñas.
 4. **Alarmas.** Ninguna en `ALARM` sin motivo, y el correo de alertas recibe una de prueba: [`operations.md`](operations.md#alarmas).
+5. **Cuota de Bedrock,** con los modelos que la instalación tiene habilitados: `python3 deployment/check-bedrock-quotas.py --namespace <ns>` ([La cuota de Bedrock](#la-cuota-de-bedrock)).
 
 ## 4. Actualizar
 
@@ -137,6 +163,7 @@ Después de instalar y después de cada actualización:
 | D71, punto 11 (`Api-no-healthy-targets` avisa sin datos) | En `Core`: un `Modify` sin reemplazo de esa alarma (`TreatMissingData`, y su descripción). `PackNetwork` no cambia |
 | D71, puntos 13 y 14 (lista del DNS Firewall para lo que pide la plataforma y registro de consultas) | **Hay que actualizar `PackNetwork`**, antes que `Core`. Cinco `Add`: la lista `Mango-<ns>-PackDnsPlatform` (`AWS::Route53Resolver::FirewallDomainList`), el log group `Mango-<ns>-PackNetwork-dns-queries`, su política de recursos (`AWS::Logs::ResourcePolicy`), la configuración del registro de consultas (`ResolverQueryLoggingConfig`) y su asociación a la VPC. Tres `Modify` de la plantilla: el grupo de reglas del DNS Firewall (`FirewallRules`: una regla más) y la alarma `PackDns-blocked` (su descripción), sin reemplazo, y `CDKMetadata` (`Replacement: Conditional`, como siempre). Y un cuarto `Modify` que es una reevaluación: la asociación del grupo de reglas con la VPC (`AWS::Route53Resolver::FirewallRuleGroupAssociation`, `Replacement: Conditional`), que lee el id del grupo; el id no cambia y al ejecutar no tiene eventos. Nueve entradas en total. En `Core`, nada por esto. La política nueva es la tercera de la instalación y necesita cupo: comprobarlo antes, como dice «Antes de empezar» (`aws logs describe-resource-policies`). Si la cuenta ya tiene las 10 que CloudWatch Logs admite por región, ese `Add` falla y la actualización se revierte; hay que liberar una, porque el máximo no se sube |
 | D72 (límites por IP y renovación firmada) | En `Core`, todos sin reemplazo: los dos web ACL (`AWS::WAFv2::WebACL`), `Modify` de `Rules` (y de `CustomResponseBodies` en el del borde, `Mango-<ns>-edge`); la política del rol de `mango-api` (`Modify`: una acción más, `cognito-idp:AdminInitiateAuth`, sobre el user pool); la alarma `Mango-<ns>-Cognito-rate-limited` (`Add`); la alarma `Mango-<ns>-Edge-rate-limited` (`Modify`: ahora suma dos métricas) y el tablero (`Modify`). **El user pool, su cliente y la distribución de CloudFront no cambian en la plantilla.** Aparecen tres reevaluaciones, sin eventos al ejecutar: la distribución (lee el ARN del web ACL del borde), el cliente del user pool (`CallbackURLs` y `LogoutURLs`, que leen el dominio de la distribución) y la asociación del web ACL del user pool (`AWS::WAFv2::WebACLAssociation`, `Replacement: Conditional`). El user pool no aparece; si apareciera, o si el cliente trajera un detalle `Static`, hay que parar. `PackNetwork`, `Payer` y `OrgAccess` no cambian |
+| D70, puntos 9 y 10, y D71, punto 16 (reparto por peticiones abiertas, dos alarmas de saturación, espera de un turno de chat) | En `Core`: el target group del balanceador (`Modify` sin reemplazo de `TargetGroupAttributes`: `load_balancing.algorithm.type` pasa a `least_outstanding_requests`; el cambio se aplica al momento, sin cortar conexiones); dos alarmas, `Mango-<ns>-Api-slow` y `Mango-<ns>-Bedrock-throttled` (`Add`); y el tablero (`Modify`: dos gráficos más). Sin cambios de permisos, de tablas ni de parámetros. El resto del cambio va dentro de la imagen de `mango-api` (la task definition y el servicio de siempre). `PackNetwork`, `Payer` y `OrgAccess` no cambian |
 | D72, puntos 12 y 13 (la espera de un bloqueo pasa a 180 segundos y el web ACL del borde deja de declarar una CSP) | En `Core`: un `Modify` sin reemplazo del web ACL del borde (`Mango-<ns>-edge`): `Rules` (las cabeceras de sus dos respuestas) y `CustomResponseBodies` (el texto de la página). Pueden acompañarlo las mismas reevaluaciones de la distribución y del cliente del user pool. El web ACL del user pool, las alarmas y `PackNetwork` no cambian |
 
 ## 5. Desinstalar

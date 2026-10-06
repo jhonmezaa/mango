@@ -1,7 +1,7 @@
 # D72 · Los límites por IP alcanzan para una oficina detrás de una sola dirección, y `mango-api` renueva la sesión con la operación firmada
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 a 14)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 14, y tras una prueba de carga, punto 15)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (4: los límites de la sesión ya no protegen un límite por IP, y la nota «con una salida compartida, revisar» queda resuelta), [D63](D063-sesion-web-con-cookie.md) (la sesión se crea y se renueva con la operación firmada; el margen del WAF del user pool queda medido), [D28](D028-implementacion-del-login-propio.md) (los números del WAF regional del user pool) y [D71](D071-alarmas-operativas-y-tablero.md) (1 y 5: `Edge-rate-limited` suma dos reglas y hay una alarma nueva para el WAF del user pool)
 - **Precisada por:** —
 
@@ -87,3 +87,12 @@ Una oficina de más de unas 1.000 personas detrás de **una** dirección seguir�
 - **Los tres bloqueos, provocados desde otra dirección.** La regla de `/api/*` respondió 429 con el JSON de `rate_limited`; la regla general, 429 con la página (también en `/api/*`, cuando es ella la que bloquea); el user pool, 403 `ForbiddenException`. Las dos respuestas del borde llevaban `Retry-After`, `Cache-Control: no-store` y `X-Content-Type-Options: nosniff` como se declaran. Mientras duró el bloqueo de la regla de `/api/*`, la regla general no saltó y otra dirección siguió usando la aplicación; con el del user pool, una persona ingresó desde otra dirección.
 - **Las dos alarmas y sus métricas.** `Edge-rate-limited` avisó dos veces (una por cada regla del borde) y `Cognito-rate-limited` una, cerca de un minuto después del primer bloqueo; las tres volvieron solas a `OK` a los 5 minutos. Las métricas de bloqueos existen con las dimensiones exactas que leen las alarmas (sin `Region` las del borde, con `Region` la del user pool) y sus sumas cuadraron con lo que contó quien hacía las peticiones. La suma de `Cognito-rate-limited` dio valor con una sola de sus tres reglas con datos.
 - **Sin probar.** Cómo se ve un bloqueo en un navegador, con la página y dentro de la aplicación: solo se vio como respuesta HTTP. Las reglas de correo y total del user pool (`EmailOperationsPerIp` y `RateLimitPerIp`): no se provocaron y sus métricas todavía no existen. Y siguen pendientes, como decía el punto 10, las cifras de uso de una empresa real y la prueba de carga.
+
+**(15) Precisión del 2026-10-06 al punto 10: el límite de la API quedó revisado con una prueba de carga, y se queda en 6.000.** Lo decidió el dueño ese día. El punto 10 dejaba pendiente medir lo que aguantan dos tareas pequeñas ([D70](D070-dos-tareas-y-limites-compartidos.md), punto 9).
+
+- **Lo que deja pasar frente a lo que aguantan las tareas.** 6.000 peticiones cada 5 minutos son 20 por segundo desde una dirección: la cuarta parte de las 80 lecturas por segundo que dos tareas sirven con margen, y la octava parte de su límite.
+- **Sin token no hace daño.** Una petición que se rechaza con 401 cuesta la quinta parte de una lectura. Incluso con lo que el WAF deja pasar de más antes de bloquear (punto 11), una dirección al límite son unos 8 puntos de CPU.
+- **Por qué no se sube.** Cuatro direcciones al límite a la vez ya son esas 80 por segundo.
+- **Por qué no se baja.** Es lo que deja trabajar a unas 400 personas detrás de una dirección (punto 3), que es más o menos lo que la instalación sirve.
+- **Lo que este límite no cubre.** Una persona con sesión que repita una ruta cara: 20 llamadas por segundo al Marketplace (`GET /api/agents`, que cuesta unas 6 lecturas) saturan una tarea sin pasar del límite. No se arregla en el WAF: pide abaratar esa ruta o un límite por persona, y queda fuera de esta decisión.
+- **Siguen pendientes** las cifras de uso de una empresa real.
