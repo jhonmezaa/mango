@@ -841,7 +841,7 @@ Todo son **estimaciones a precios de lista de `us-east-1`**, armadas con lo que 
 - **Tokens LLM:** la partida mayor. Un turno simple con el modelo por defecto, sin tools, costó USD 0,013 (medido en una instalación de laboratorio el 2026-10-06: unos 3.000 tokens de entrada y 250 de salida). Un turno con tools cuesta varias veces más y no se ha medido. El plan original estimaba ~3 000–8 000 USD/mes para 300 usuarios y 20k conversaciones; sigue sin validar.
 - **AgentCore:** el plan estimaba ~225 USD/mes para ese escenario, con Memory como partida mayor; hoy Memory está desactivada (D13). La sesión del runtime factura memoria mientras espera: 300 s de inactividad por conversación (D39) y 60 s en los packs (D47). Sin medir.
 - **Guardrails:** ~100–500 USD/mes según volumen (estimación del plan, sin medir). No entran en ningún presupuesto (D73 (15)).
-- **Cost Explorer:** ≈0,01 USD por llamada a la API; cada pregunta de costos hace varias.
+- **Cost Explorer:** ≈0,01 USD por llamada a la API.
 - **Presupuestos por defecto de la release:** USD 5 por usuario y USD 30 por agente al mes (D58 (10)). Son el tope de gasto en modelos que la instalación acepta sin que un administrador lo suba.
 
 **Conclusión:** optimizar tokens (modelo por agente, prompt caching, presupuestos) importa mucho más que optimizar infraestructura. El costo real por conversación sigue sin medirse.
