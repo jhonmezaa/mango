@@ -724,7 +724,7 @@ def test_a_change_that_was_refused_does_not_spend_the_copies(env: Env) -> None:
     assert people_module._snapshot(other) is before
 
 
-def test_without_the_generation_the_directory_is_read_afresh(
+def test_without_the_generation_the_copy_lasts_its_own_time(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     other = _other_task(env)
@@ -734,7 +734,11 @@ def test_without_the_generation_the_directory_is_read_afresh(
         raise ClientError({"Error": {"Code": "InternalServerError"}}, "GetItem")
 
     monkeypatch.setattr(other.store, "generation", unreadable)
-    # Nothing says the copy is still good: it is not served.
+    # Reading the whole directory on every call would spend the quota of the user pool:
+    # the copy is served for its 30 seconds, as before there were two tasks.
+    assert people_module._snapshot(other) is before
+    monkeypatch.undo()
+    assert _post(env, "/new/groups", {"group": "devops"}).json()["result"] == "applied"
     assert people_module._snapshot(other) is not before
 
 

@@ -762,10 +762,11 @@ class DirectoryCache:
 
     def get(self, load: Callable[[], Snapshot], generation: int | None = None) -> Snapshot:
         """``generation`` is read before the directory: a copy is never newer than it says.
-        ``None`` (it could not be read) never matches, so nothing cached is served."""
+        ``None`` (it could not be read) leaves the copy to its own time: reading the whole
+        directory on every call would spend the read quota of the user pool."""
         with self._lock:
             now = self.clock()
-            if generation is None or generation != self._generation:
+            if generation is not None and generation != self._generation:
                 self._value = None
                 self._looked_up = {}
                 self._generation = generation
@@ -850,7 +851,7 @@ def _snapshot(deps: PeopleDeps) -> Snapshot:
     try:
         generation: int | None = deps.store.generation()
     except (ClientError, BotoCoreError, KeyError, ValueError):
-        logger.warning("the generation of the directory could not be read; reading it afresh")
+        logger.warning("the generation of the directory could not be read")
         generation = None
     return _directory(lambda: deps.cache.get(load, generation))
 
