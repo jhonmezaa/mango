@@ -36,6 +36,8 @@ Un test de infraestructura fija el número; cambiarlo es revisar esta decisión.
 | Inicios de sesión web (10 cada 5 min por persona) y renovaciones (30 cada 5 min por sesión) | Protegen el límite del WAF del user pool, que es por IP y por lo tanto por tarea. La renovación está en el camino de cada recarga, y entrar no debe depender de una tabla más. No sostienen ninguna excepción |
 | Actualizar el catálogo de modelos (5 por minuto por administrador) | Solo frena un bucle de la pantalla: son dos listados gratuitos de Bedrock |
 
+Lo de «por IP y por lo tanto por tarea» vale mientras cada tarea salga a internet con su propia IP pública, que es la red de la PoC ([D15](D015-red-de-la-poc.md)). Con una salida compartida (un NAT), todas las tareas gastarían el mismo límite del WAF del user pool (300 operaciones cada 5 minutos por IP): quien cambie la red revisa este punto.
+
 El cupo diario de correos del directorio (200 por día) y las cuotas de envíos de agentes ya se contaban en DynamoDB.
 
 **(5) Cachés.** Cada tarea guarda copias de pocos segundos (agente publicado y packs 15 s; presupuestos, modelos y directorio 30 s; organización 60 s). Con dos tareas, un cambio hecho en una tarda como mucho ese tiempo en verse en la otra; las comprobaciones que deciden (quién es administrador, el mínimo de dos administradores, la reserva de presupuesto) ya leían el dato directo. Solo se corrige una: la copia del directorio de personas lleva un número de generación guardado en `Settings`, que avanza con cada cambio aplicado, para que la lista que la pantalla vuelve a leer tras un cambio no muestre el estado anterior si cae en la otra tarea. El inventario completo está en `docs/specs/api-state-inventory.md`.

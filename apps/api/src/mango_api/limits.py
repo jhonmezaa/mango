@@ -143,8 +143,9 @@ LIMITS: dict[str, LimitSpec] = {
         shared=False,
         why=(
             "Protects the user pool from one person's loop (TM-S10). What it protects, the "
-            "limit of the pool's WAF, is per IP address and so per task. Signing in must not "
-            "depend on one more table."
+            "limit of the pool's WAF, is per IP address and so per task while each task has "
+            "its own public address (D15); with a shared egress, review it. Signing in must "
+            "not depend on one more table."
         ),
     ),
     "session.renewals": LimitSpec(
