@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación: puntos 11 a 14)
 - **Precisa / reemplaza a:** precisa [D54](D054-egress-de-packs.md) (3): el DNS Firewall de la red de packs tiene una lista más y registro de consultas (puntos 13 y 14)
-- **Precisada por:** —
+- **Precisada por:** [D72](D072-limites-por-ip-para-una-oficina.md) (precisa los puntos 1 y 5: `Edge-rate-limited` suma los bloqueos de las dos reglas por IP del borde, y hay una alarma nueva, `Cognito-rate-limited`, para las reglas por IP del user pool)
 
 ## Decisión
 

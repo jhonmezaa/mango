@@ -2,7 +2,7 @@
 
 - **Estado:** propuesta
 - **Fecha:** 2026-10-06
-- **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (4: los límites de la sesión ya no protegen un límite por IP, y la nota «con una salida compartida, revisar» queda resuelta), [D63](D063-sesion-web-con-cookie.md) (la sesión se crea y se renueva con la operación firmada; el margen del WAF del user pool queda medido) y [D28](D028-implementacion-del-login-propio.md) (los números del WAF regional del user pool)
+- **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (4: los límites de la sesión ya no protegen un límite por IP, y la nota «con una salida compartida, revisar» queda resuelta), [D63](D063-sesion-web-con-cookie.md) (la sesión se crea y se renueva con la operación firmada; el margen del WAF del user pool queda medido), [D28](D028-implementacion-del-login-propio.md) (los números del WAF regional del user pool) y [D71](D071-alarmas-operativas-y-tablero.md) (1 y 5: `Edge-rate-limited` suma dos reglas y hay una alarma nueva para el WAF del user pool)
 - **Precisada por:** —
 
 ## Decisión
