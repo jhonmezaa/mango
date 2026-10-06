@@ -160,9 +160,13 @@ def models_of_installation(run: Run, namespace: str, region: str) -> list[str]:
     )
     try:
         catalog = json.loads(json.loads(out)["Item"]["models"]["S"])
-        return [str(m["id"]) for m in catalog if m.get("enabled")]
+        models = [str(m["id"]) for m in catalog if m.get("enabled")]
     except (KeyError, TypeError, ValueError) as error:
         raise QuotaError(f"no model catalog in Mango-{namespace}-Settings") from error
+    # What is read from the table is printed: only ids shaped like ids.
+    if any(not MODEL_ID.fullmatch(model) for model in models):
+        raise QuotaError(f"a model id of Mango-{namespace}-Settings has another shape")
+    return models
 
 
 def check(run: Run, models: Sequence[str], region: str) -> list[Report]:

@@ -202,6 +202,15 @@ def test_an_installation_without_catalog_is_an_error_not_an_empty_pass(
     assert "NOT CHECKED: no model catalog in Mango-acme-Settings" in capsys.readouterr().err
 
 
+def test_a_catalog_id_that_is_not_shaped_like_one_is_not_printed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    catalog: list[dict[str, object]] = [{"id": "x\x1b[2J", "enabled": True}]
+    assert quotas.main(["--namespace", "acme"], run=FakeAws({}, catalog)) == 1
+    captured = capsys.readouterr()
+    assert "\x1b" not in captured.out + captured.err
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
