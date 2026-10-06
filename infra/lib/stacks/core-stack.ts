@@ -308,6 +308,8 @@ export class CoreStack extends Stack {
     // Marketplace v1 (D18): agent definitions as data.
     governance.grantAgents(apiTaskRole);
     governance.grantWebSessions(apiTaskRole);
+    // D70: the rate limits the tasks of mango-api share.
+    governance.grantRateLimits(apiTaskRole);
     // D20: MFA reset (dual approval in mango-api) on this installation's user pool only.
     identity.grantMfaReset(apiTaskRole);
     // D26: approved changes of the group registry create or delete the Cognito group.
@@ -403,6 +405,8 @@ export class CoreStack extends Stack {
         APP_ORIGIN: edge.origin,
         WEB_SESSIONS_TABLE: governance.webSessions.tableName,
         SESSION_HOURS: String(SESSION_HOURS),
+        // D70: mango-api does not start without it.
+        RATE_LIMITS_TABLE: governance.rateLimits.tableName,
         MANGO_VERSION: releaseVersion(),
         // The label tells two builds of one version apart (`v0.1.0-g1a2b3c4`).
         ...(target ? { MANGO_RELEASE: target.label } : {}),

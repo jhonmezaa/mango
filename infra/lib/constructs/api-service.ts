@@ -27,6 +27,19 @@ export interface ApiServiceProps {
 }
 
 /**
+ * Tasks mango-api runs on, one per Availability Zone (D70). A fixed number, not autoscaling:
+ * the limits mango-api still counts per task are multiplied by it, and it is what the
+ * installer pays for. Keep `infra/test/hardening.test.ts` and D70 in step with it.
+ */
+export const API_TASKS = 2;
+/**
+ * How long a task being replaced keeps answering the requests it already has. A chat turn is
+ * one request that lasts as long as the agent works: this covers the default limit of a turn
+ * (120 s). A longer turn is cut when the time is up (D70).
+ */
+export const API_DRAIN_SECONDS = 120;
+
+/**
  * mango-api on ECS Fargate (arm64). A release runs the image published in the provider's
  * repository, by digest (D8, D58): nothing is built in or pushed to the customer account.
  */
@@ -117,11 +130,16 @@ export class ApiService extends Construct {
       serviceName: mangoName(cfg.namespace, "api"),
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 1,
+      desiredCount: API_TASKS,
       assignPublicIp: true,
+      // One public subnet per zone: ECS spreads the tasks between them and puts them back
+      // when a zone returns.
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      availabilityZoneRebalancing: ecs.AvailabilityZoneRebalancing.ENABLED,
       securityGroups: [serviceSg],
       circuitBreaker: { rollback: true },
+      // A deployment starts the new tasks first and stops the old ones only once the new
+      // ones are healthy: the service never has fewer than `API_TASKS` healthy tasks.
       minHealthyPercent: 100,
       maxHealthyPercent: 200,
       enableExecuteCommand: false,
@@ -132,7 +150,7 @@ export class ApiService extends Construct {
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [this.service],
       healthCheck: { path: "/api/health", healthyHttpCodes: "200", interval: Duration.seconds(30) },
-      deregistrationDelay: Duration.seconds(30),
+      deregistrationDelay: Duration.seconds(API_DRAIN_SECONDS),
       priority: 10,
       conditions: [elbv2.ListenerCondition.pathPatterns(["/api/*"])],
     });

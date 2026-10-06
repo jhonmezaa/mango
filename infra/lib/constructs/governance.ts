@@ -69,6 +69,11 @@ export class Governance extends Construct {
    * encrypted in the cookie.
    */
   readonly webSessions: dynamodb.TableV2;
+  /**
+   * Counters of the rate limits every mango-api task shares (D70): the hits of each limit and
+   * caller inside its window. Each item expires shortly after its window.
+   */
+  readonly rateLimits: dynamodb.TableV2;
   readonly dataKey: kms.Key;
   /** Role assumed per request with a `dynamodb:LeadingKeys` session policy (RLS). */
   readonly dataAccessRole: iam.Role;
@@ -125,6 +130,11 @@ export class Governance extends Construct {
       ...tableProps,
       tableName: mangoName(cfg.namespace, "WebSessions"),
       // A session expires with its limit; a revocation mark, two days later.
+      timeToLiveAttribute: "ttl",
+    });
+    this.rateLimits = new dynamodb.TableV2(this, "RateLimits", {
+      ...tableProps,
+      tableName: mangoName(cfg.namespace, "RateLimits"),
       timeToLiveAttribute: "ttl",
     });
     this.seedSettings(cfg);
@@ -283,6 +293,22 @@ export class Governance extends Construct {
         sid: "WebSessionsTable",
         actions: ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem"],
         resources: [this.webSessions.tableArn],
+      }),
+    );
+  }
+
+  /**
+   * mango-api counts its shared rate limits by key (D70): a consistent read and a conditional
+   * put. No `UpdateItem`, `DeleteItem`, `Query` or `Scan`: nothing lists who was counted, and
+   * a counter only leaves through the table TTL.
+   */
+  grantRateLimits(grantee: iam.IGrantable): void {
+    grantee.grantPrincipal.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: "RateLimitsTable",
+        actions: ["dynamodb:GetItem", "dynamodb:PutItem"],
+        resources: [this.rateLimits.tableArn],
+        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#*"] } },
       }),
     );
   }

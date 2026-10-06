@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { CHECKOV_EXCEPTIONS } from "../lib/checkov.js";
 import { GUARD_EXCEPTIONS } from "../lib/guard.js";
+import { API_DRAIN_SECONDS, API_TASKS } from "../lib/constructs/api-service.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
@@ -192,5 +193,109 @@ describe("web session cookie (D63)", () => {
 
   it("limits the session to 8 hours in Cognito as well", () => {
     template.hasResourceProperties("AWS::Cognito::UserPoolClient", { RefreshTokenValidity: 8 * 60 });
+  });
+});
+
+describe("mango-api on two tasks with shared rate limits (D70)", () => {
+  type Statement = { Sid?: string; Effect: string; Action: string | string[]; Resource: unknown; Condition?: unknown };
+  const statements = Object.values(template.findResources("AWS::IAM::Policy")).flatMap(
+    (p) => p.Properties.PolicyDocument.Statement as Statement[],
+  );
+  const [service] = Object.values(template.findResources("AWS::ECS::Service"));
+  const [rateLimitsId] = Object.entries(template.findResources("AWS::DynamoDB::GlobalTable"))
+    .filter(([, table]) => JSON.stringify(table.Properties.TableName).includes("-RateLimits"))
+    .map(([id]) => id);
+
+  it("runs two tasks, one subnet per zone, and puts them back in balance", () => {
+    // The limits mango-api still counts per task are multiplied by this number: changing it
+    // is a decision (D70), not a tuning knob.
+    expect(API_TASKS).toBe(2);
+    expect(service!.Properties.DesiredCount).toBe(API_TASKS);
+    expect(service!.Properties.AvailabilityZoneRebalancing).toBe("ENABLED");
+    const subnets = service!.Properties.NetworkConfiguration.AwsvpcConfiguration.Subnets as { Ref: string }[];
+    expect(subnets).toHaveLength(cfg.availabilityZoneIds.length);
+    const zones = subnets.map(
+      (subnet) => template.findResources("AWS::EC2::Subnet")[subnet.Ref]!.Properties.AvailabilityZoneId,
+    );
+    expect(new Set(zones).size).toBe(2);
+  });
+
+  it("does not scale the service on its own", () => {
+    template.resourceCountIs("AWS::ApplicationAutoScaling::ScalableTarget", 0);
+  });
+
+  it("never drops below two healthy tasks during a deployment, and rolls a failed one back", () => {
+    expect(service!.Properties.DeploymentConfiguration).toMatchObject({
+      MinimumHealthyPercent: 100,
+      MaximumPercent: 200,
+      DeploymentCircuitBreaker: { Enable: true, Rollback: true },
+    });
+  });
+
+  it("lets a task being replaced finish the chat turns it has", () => {
+    expect(API_DRAIN_SECONDS).toBe(120);
+    template.hasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", {
+      TargetGroupAttributes: Match.arrayWith([
+        { Key: "deregistration_delay.timeout_seconds", Value: String(API_DRAIN_SECONDS) },
+      ]),
+    });
+    // The heartbeat of a turn (15 s) keeps it under the idle timeout of the load balancer.
+    template.hasResourceProperties("AWS::ElasticLoadBalancingV2::LoadBalancer", {
+      LoadBalancerAttributes: Match.arrayWith([{ Key: "idle_timeout.timeout_seconds", Value: "120" }]),
+    });
+  });
+
+  it("does not pin a request to a task: any of them answers", () => {
+    template.hasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", {
+      TargetGroupAttributes: Match.arrayWith([{ Key: "stickiness.enabled", Value: "false" }]),
+    });
+  });
+
+  it("keeps the counters in a table with the guarantees of the others", () => {
+    template.hasResource("AWS::DynamoDB::GlobalTable", {
+      Properties: {
+        TableName: `Mango-${cfg.namespace}-RateLimits`,
+        BillingMode: "PAY_PER_REQUEST",
+        TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
+        SSESpecification: { SSEEnabled: true, SSEType: "KMS" },
+        Replicas: [
+          Match.objectLike({
+            PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
+            DeletionProtectionEnabled: cfg.retainData,
+            SSESpecification: { KMSMasterKeyId: Match.anyValue() },
+          }),
+        ],
+      },
+      DeletionPolicy: cfg.retainData ? "Retain" : "Delete",
+    });
+    const table = template.findResources("AWS::DynamoDB::GlobalTable")[rateLimitsId!]!;
+    expect(table.Metadata?.guard).toBeUndefined();
+    expect(table.Metadata?.checkov).toBeUndefined();
+    expect(table.Properties.StreamSpecification).toBeUndefined();
+  });
+
+  it("lets mango-api read and put its own counters, and nothing else of that table", () => {
+    const onTable = statements.filter((s) => JSON.stringify(s.Resource).includes(rateLimitsId!));
+    expect(onTable).toHaveLength(1);
+    expect(onTable[0]).toEqual({
+      Sid: "RateLimitsTable",
+      Effect: "Allow",
+      Action: ["dynamodb:GetItem", "dynamodb:PutItem"],
+      Resource: { "Fn::GetAtt": [rateLimitsId, "Arn"] },
+      Condition: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#*"] } },
+    });
+  });
+
+  it("gives the table to the task role of mango-api only", () => {
+    const policies = Object.entries(template.findResources("AWS::IAM::Policy")).filter(([, p]) =>
+      JSON.stringify(p.Properties.PolicyDocument).includes(rateLimitsId!),
+    );
+    expect(policies.map(([id]) => id)).toEqual([expect.stringMatching(/^ApiTaskRoleDefaultPolicy/)]);
+  });
+
+  it("tells mango-api where the counters are", () => {
+    const [task] = Object.values(template.findResources("AWS::ECS::TaskDefinition"));
+    const env = task!.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
+    expect(env.find((e) => e.Name === "RATE_LIMITS_TABLE")?.Value).toEqual({ Ref: rateLimitsId });
   });
 });
