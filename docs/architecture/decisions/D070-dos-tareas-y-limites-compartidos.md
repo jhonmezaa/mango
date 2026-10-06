@@ -1,7 +1,7 @@
 # D70 · `mango-api` corre con dos tareas y sus límites de tasa se cuentan una sola vez
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-06
+- **Estado:** vigente
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** precisa [D33](D033-autorizacion-de-agentes-y-tools.md), [D60](D060-gestion-de-personas.md) y [D66](D066-cambios-de-personas-fuera-del-directorio.md) (los límites de sus excepciones se cuentan entre todas las tareas) y [D63](D063-sesion-web-con-cookie.md) (los límites de la sesión siguen siendo por tarea, a propósito)
 - **Precisada por:** —
 
