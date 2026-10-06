@@ -91,6 +91,8 @@ describe("operational alarms of Core", () => {
         "Api-unhealthy-targets",
         "Api-unreachable",
         "Bedrock-throttled",
+        "BudgetReconciler-failed",
+        "BudgetReconciler-reservation-charged",
         "Cognito-rate-limited",
         "DynamoDB-system-errors",
         "Edge-errors",

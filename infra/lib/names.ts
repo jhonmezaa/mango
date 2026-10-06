@@ -18,6 +18,8 @@ export const roleNames = {
   provisioner: (ns: string) => mangoName(ns, "Provisioner"),
   deprovisioner: (ns: string) => mangoName(ns, "Deprovisioner"),
   reconciler: (ns: string) => mangoName(ns, "Reconciler"),
+  /** Closes the budget reservation of chat turns whose end is unknown (D73). */
+  budgetReconciler: (ns: string) => mangoName(ns, "BudgetReconciler"),
   packProvisioner: (ns: string) => mangoName(ns, "PackProvisioner"),
   /** Broker to the member accounts, in the Mango account (§4.10). */
   readBroker: (ns: string) => mangoName(ns, "ReadBroker"),

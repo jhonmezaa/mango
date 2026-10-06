@@ -35,6 +35,7 @@ const apiRoleId = logicalId("AWS::IAM::Role", { RoleName: "Mango-poc-ApiTask" })
 const brokerId = logicalId("AWS::IAM::Role", { RoleName: "Mango-poc-BillingBroker" });
 
 interface Statement {
+  Sid?: string;
   Effect: string;
   Action: string | string[];
   Resource?: unknown;
@@ -174,6 +175,9 @@ describe("Admin v0 infrastructure (D17)", () => {
     const seedKms = grants().filter(
       (g) =>
         actions(g.statement).includes("kms:GenerateDataKey") &&
+        // The budget reconciler also writes with PutItem (the audit index) and uses the alerts
+        // key through SQS for its dead-letter queue (budget-reconciler.test.ts).
+        g.statement.Sid !== "DeadLetterQueueKey" &&
         grants().some((o) => o.roles.join() === g.roles.join() && actions(o.statement).includes("dynamodb:PutItem")),
     );
     expect(seedKms.length).toBeGreaterThan(0);

@@ -224,9 +224,12 @@ describe("reconciler function and schedule", () => {
     expect((guards[0]![1].Metadata?.checkov?.skip ?? []).map((s: { id: string }) => s.id)).not.toContain(
       CHECKOV_EXCEPTIONS.lambdaDlq.id,
     );
+    // So is the budget reconciler (D73); details in budget-reconciler.test.ts.
+    const budgetReconcilerId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-BudgetReconciler` });
+    expect(resources[budgetReconcilerId]!.Properties.DeadLetterConfig).toBeDefined();
     // Every other function is invoked synchronously and keeps the agreed exception.
     for (const [id, other] of ofType("AWS::Lambda::Function")) {
-      if (id === functionId || id.startsWith("UninstallGuard")) continue;
+      if (id === functionId || id === budgetReconcilerId || id.startsWith("UninstallGuard")) continue;
       expect(other.Properties.DeadLetterConfig).toBeUndefined();
       expect((other.Metadata?.checkov?.skip ?? []).map((s: { id: string }) => s.id)).toContain(
         CHECKOV_EXCEPTIONS.lambdaDlq.id,
@@ -238,7 +241,9 @@ describe("reconciler function and schedule", () => {
     const queue = resources[queueId]!.Properties;
     expect(resources[alertsKeyId]!.Type).toBe("AWS::KMS::Key");
     expect(queue.MessageRetentionPeriod).toBe(14 * 24 * 3600);
-    const [policy] = ofType("AWS::SQS::QueuePolicy").map(([, r]) => r.Properties);
+    const [policy] = ofType("AWS::SQS::QueuePolicy")
+      .map(([, r]) => r.Properties)
+      .filter((p) => JSON.stringify(p.Queues) === JSON.stringify([{ Ref: queueId }]));
     expect(policy.Queues).toEqual([{ Ref: queueId }]);
     expect(policy.PolicyDocument.Statement).toEqual([
       expect.objectContaining({ Effect: "Deny", Condition: { Bool: { "aws:SecureTransport": "false" } } }),

@@ -15,6 +15,7 @@ import { Installation } from "../config/schema.js";
 import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "../constructs/agent-platform.js";
 import { Alerts } from "../constructs/alerts.js";
 import { ApiService } from "../constructs/api-service.js";
+import { BudgetReconciler } from "../constructs/budget-reconciler.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
@@ -181,6 +182,18 @@ export class CoreStack extends Stack {
       deprovisioner: deprovisioner.stateMachine,
       alerts,
       releaseAgents: releaseHashes,
+    });
+    // A chat turn whose end mango-api never knew keeps its budget reservation held; this
+    // function closes it from the AgentCore traces (D73). The daily reconciler above stays
+    // read-only (D41).
+    new BudgetReconciler(this, "BudgetReconciler", {
+      installation: cfg,
+      budgetsTable: governance.budgets,
+      auditIndex: governance.auditIndex,
+      auditStream: governance.auditStream,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+      alerts,
     });
     // Marketplace v1 (D19, D36): MCP packs are enabled by SDK from the release's signed zips.
     const packPlatform = new PackPlatform(this, "PackPlatform", {
