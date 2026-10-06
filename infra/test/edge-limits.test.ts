@@ -96,7 +96,7 @@ describe("edge web ACL (D72)", () => {
     }
     const policies = template.findResources("AWS::CloudFront::ResponseHeadersPolicy");
     expect(Object.keys(policies)).toHaveLength(1);
-    const [[policyId, policy]] = Object.entries(policies) as [string, any][];
+    const [policyId, policy] = Object.entries(policies)[0] as [string, any];
     const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy;
     expect(csp.Override).toBe(true);
     const directives = (csp.ContentSecurityPolicy as string).split("; ");
