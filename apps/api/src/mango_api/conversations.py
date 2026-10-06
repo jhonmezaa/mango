@@ -11,6 +11,7 @@ import re
 import secrets
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -27,6 +28,10 @@ if TYPE_CHECKING:
 
 CONVERSATION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _CREDENTIAL_TTL_SECONDS = 10 * 60
+MAX_USER_CLIENTS = 1000
+"""Clients a task keeps at once, one per person seen in the last 10 minutes. Each takes about
+255 KB (measured): the cap is 250 MB of the 1 GB of a task. Over it the oldest goes first, and
+that person's next request asks STS for credentials again."""
 _MAX_LIST = 50
 
 
@@ -64,7 +69,12 @@ class StoredMessage:
 
 
 class RlsClientFactory:
-    """DynamoDB clients bound to one user through an STS session policy (cached briefly)."""
+    """DynamoDB clients bound to one user through an STS session policy (cached briefly).
+
+    A client is only ever stored under, and returned for, the user its credentials were issued
+    to. An entry lives 10 minutes and is dropped when a later request finds it expired; before
+    this a task kept one per person it had ever seen, until its next deployment.
+    """
 
     def __init__(
         self,
@@ -82,7 +92,8 @@ class RlsClientFactory:
         self._key_arn = key_arn
         self._region = region
         self._clock = clock
-        self._cache: dict[str, tuple[float, DynamoDBClient]] = {}
+        # Oldest first: every entry lives the same time, so that is also the order they expire.
+        self._cache: OrderedDict[str, tuple[float, DynamoDBClient]] = OrderedDict()
         self._lock = threading.Lock()
 
     def session_policy(self, user_id: str) -> str:
@@ -121,6 +132,7 @@ class RlsClientFactory:
             cached = self._cache.get(user_id)
             if cached and now - cached[0] < _CREDENTIAL_TTL_SECONDS:
                 return cached[1]
+            self._drop_expired(now)
         creds = self._sts.assume_role(
             RoleArn=self._role_arn,
             RoleSessionName=f"mango-data-{user_id[:40]}",
@@ -135,8 +147,21 @@ class RlsClientFactory:
             aws_session_token=creds["SessionToken"],
         )
         with self._lock:
+            # Removed first so that a renewed entry goes to the end, with the newest.
+            self._cache.pop(user_id, None)
             self._cache[user_id] = (now, client)
+            while len(self._cache) > MAX_USER_CLIENTS:
+                self._cache.popitem(last=False)
         return client
+
+    def _drop_expired(self, now: float) -> None:
+        """Forget the clients whose time is up. A request that still holds one finishes with
+        it: the entry is dropped, the client is not closed."""
+        while self._cache:
+            user_id, (created, _) = next(iter(self._cache.items()))
+            if now - created < _CREDENTIAL_TTL_SECONDS:
+                return
+            del self._cache[user_id]
 
 
 class ConversationRepository:

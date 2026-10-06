@@ -1,4 +1,7 @@
+import gc
 import json
+import threading
+import weakref
 from decimal import Decimal
 from typing import Any
 
@@ -6,6 +9,7 @@ import boto3
 import pytest
 from botocore.stub import ANY, Stubber
 
+from mango_api import conversations
 from mango_api.budget import (
     BudgetExceededError,
     BudgetScope,
@@ -107,3 +111,109 @@ def test_rls_session_policy_is_bound_to_the_user() -> None:
     }
     assert "dynamodb:Scan" not in statement["Action"]
     assert "dynamodb:DeleteItem" not in statement["Action"]
+
+
+# --- Clients per person: bounded, and never shared ---------------------------------------
+
+
+class _Sts:
+    """Issues credentials that name the person of the session policy they were asked with."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def assume_role(self, **request: Any) -> dict[str, Any]:
+        policy = json.loads(request["Policy"])
+        (key,) = policy["Statement"][0]["Condition"]["ForAllValues:StringEquals"][
+            "dynamodb:LeadingKeys"
+        ]
+        user_id = key.removeprefix("USER#")
+        self.calls.append(user_id)
+        return {
+            "Credentials": {
+                "AccessKeyId": f"key-{user_id}-{len(self.calls)}",
+                "SecretAccessKey": "secret",
+                "SessionToken": "token",
+            }
+        }
+
+
+def _factory(sts: _Sts, now: list[float]) -> RlsClientFactory:
+    return RlsClientFactory(
+        sts,  # type: ignore[arg-type]
+        role_arn="arn:aws:iam::111111111111:role/data",
+        table_arn="arn:aws:dynamodb:us-east-1:111111111111:table/conv",
+        key_arn="arn:aws:kms:us-east-1:111111111111:key/k",
+        region="us-east-1",
+        clock=lambda: now[0],
+    )
+
+
+def _access_key(client: Any) -> str:
+    return str(client._request_signer._credentials.access_key)
+
+
+def test_rls_client_is_reused_for_its_user_and_never_for_another() -> None:
+    sts, now = _Sts(), [0.0]
+    factory = _factory(sts, now)
+    first = factory.for_user("user-1")
+    other = factory.for_user("user-2")
+    assert factory.for_user("user-1") is first
+    assert other is not first
+    assert _access_key(first).startswith("key-user-1-")
+    assert _access_key(other).startswith("key-user-2-")
+    assert sts.calls == ["user-1", "user-2"]
+
+
+def test_rls_clients_are_released_once_their_credentials_are_old() -> None:
+    sts, now = _Sts(), [0.0]
+    factory = _factory(sts, now)
+    released = [weakref.ref(factory.for_user(f"user-{n}")) for n in range(5)]
+    now[0] = 9 * 60
+    kept = factory.for_user("user-late")
+    assert len(factory._cache) == 6
+    # Ten minutes after the first five: the next person to arrive clears them out.
+    now[0] = 10 * 60 + 1
+    factory.for_user("user-new")
+    assert list(factory._cache) == ["user-late", "user-new"]
+    gc.collect()
+    assert [ref() for ref in released] == [None] * 5
+    assert factory.for_user("user-late") is kept
+    # Someone who comes back gets new credentials, asked for under their own id.
+    again = factory.for_user("user-0")
+    assert sts.calls[-1] == "user-0"
+    assert _access_key(again).startswith("key-user-0-")
+
+
+def test_rls_clients_have_a_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(conversations, "MAX_USER_CLIENTS", 3)
+    sts, now = _Sts(), [0.0]
+    factory = _factory(sts, now)
+    for n in range(5):
+        now[0] += 1
+        factory.for_user(f"user-{n}")
+    # The oldest went first; nobody was handed the client of somebody else on the way.
+    assert list(factory._cache) == ["user-2", "user-3", "user-4"]
+    for user_id, (_, client) in factory._cache.items():
+        assert _access_key(client).startswith(f"key-{user_id}-")
+    assert _access_key(factory.for_user("user-0")).startswith("key-user-0-")
+
+
+def test_rls_clients_stay_bound_to_their_user_under_concurrency() -> None:
+    sts, now = _Sts(), [0.0]
+    factory = _factory(sts, now)
+    wrong: list[str] = []
+
+    def work(worker: int) -> None:
+        for n in range(40):
+            user_id = f"user-{(worker + n) % 7}"
+            if not _access_key(factory.for_user(user_id)).startswith(f"key-{user_id}-"):
+                wrong.append(user_id)
+
+    threads = [threading.Thread(target=work, args=(worker,)) for worker in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert wrong == []
+    assert len(factory._cache) == 7
