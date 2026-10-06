@@ -337,7 +337,9 @@ describe("a release (D58): names come from the Namespace parameter", () => {
       ComparisonOperator: "GreaterThanOrEqualToThreshold",
       TreatMissingData: "notBreaching",
     });
-    expect(properties.AlarmDescription).toMatch(/Look first at /);
+    // With the name of the installation in it, the description is no longer a plain string.
+    const description = instantiate(properties.AlarmDescription, values);
+    expect(description).toMatch(/Look first at /);
     expect(instantiate(properties.AlarmName, values)).toBe("Mango-acme-PackDns-blocked");
 
     // The list that refuses everything, in the rule group associated with the pack VPC: not
@@ -350,8 +352,13 @@ describe("a release (D58): names come from the Namespace parameter", () => {
     expect(listOf(blocking[1]).Domains).toEqual(["*."]);
     expect(dimension(properties.Dimensions, "FirewallRuleGroupId")).toEqual({ "Fn::GetAtt": [groupId, "Id"] });
     expect(dimension(properties.Dimensions, "FirewallDomainListId")).toEqual(blocking[1].FirewallDomainListId);
-    // It says where the names are: the flow logs do not carry them.
-    expect(instantiate(properties.AlarmDescription, values)).toContain("Mango-<namespace>-PackNetwork-dns-queries");
+    // It says where the names are, by the real name of the log group of this installation:
+    // whoever reads the alert email can open it. The flow logs do not carry names.
+    const [queryLog] = ofType(network, "AWS::Logs::LogGroup").filter(([id]) => id.includes("DnsQueries"));
+    const logGroupName = instantiate(queryLog![1].Properties.LogGroupName, values);
+    expect(logGroupName).toBe("Mango-acme-PackNetwork-dns-queries");
+    expect(description).toContain(`(log group ${logGroupName})`);
+    expect(description).not.toMatch(/[<>{}]|\$\{/);
   });
 
   it("notifies the alerts topic of Core by its name: the pack network is installed first", () => {

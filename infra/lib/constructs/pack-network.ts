@@ -368,8 +368,8 @@ export class PackNetwork extends Construct implements PackNetworkRef {
         "The DNS Firewall of the pack network refused queries for names that are neither a VPC endpoint " +
         "nor what the AgentCore machine asks for by itself: code in a pack runtime asked for a name it has " +
         "no reason to reach (TM-E2, DNS tunnel). Nothing was resolved. Look first at the DNS query log of " +
-        "the pack network (log group Mango-<namespace>-PackNetwork-dns-queries): the names with firewall_rule_action " +
-        "BLOCK outside the PackDnsPlatform list; then at which packs were in use at that time.",
+        `the pack network (log group ${queryLogName}): the names with firewall_rule_action BLOCK outside ` +
+        "the PackDnsPlatform list; then at which packs were in use at that time.",
       metric: new cloudwatch.Metric({
         namespace: "AWS/Route53Resolver",
         metricName: "FirewallRuleQueryVolume",
