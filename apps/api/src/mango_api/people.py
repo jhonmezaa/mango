@@ -54,6 +54,7 @@ from mango_api.audit import AuditLog
 from mango_api.groups import GroupRegistry, GroupsUnavailableError
 from mango_api.mfa_reset import ConflictError, _conflict, _opt, _s, iso, new_change_id
 from mango_api.probe import RateLimiter
+from mango_api.rate_limits import Limiter
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_api.web_session import RevocationCause
 from mango_core.agents import USER_ID_PATTERN
@@ -98,6 +99,8 @@ INVITATIONS_PER_HOUR = 20
 MAX_INVITE_GROUPS = 10
 PK_CHANGE = "MEMBER_CHANGE"
 PK_LOCK = "MEMBER_LOCK"
+PK_DIRECTORY = "MEMBER_DIRECTORY"
+SK_GENERATION = "GENERATION"
 CHANGE_ID_PATTERN = r"^[0-9a-f]{32}$"
 # No quotes, backslashes or spaces: the value goes into a ListUsers filter as is.
 _PREFIX_PATTERN = r"^[A-Za-z0-9._%+@-]{1,64}$"
@@ -568,6 +571,24 @@ class MemberChangeStore:
         except ClientError as exc:
             _conflict(exc)
 
+    def generation(self) -> int:
+        """How many changes mango-api has applied to the directory. Every task reads it, so a
+        copy of the directory taken before a change of another task is not served (D70)."""
+        item = self._db.get_item(
+            TableName=self._table,
+            Key={"PK": _s(PK_DIRECTORY), "SK": _s(SK_GENERATION)},
+            ConsistentRead=True,
+        ).get("Item")
+        return int(item["n"]["N"]) if item else 0
+
+    def bump_generation(self) -> None:
+        self._db.update_item(
+            TableName=self._table,
+            Key={"PK": _s(PK_DIRECTORY), "SK": _s(SK_GENERATION)},
+            UpdateExpression="ADD n :one",
+            ExpressionAttributeValues={":one": {"N": "1"}},
+        )
+
     def claim_admins(self, actor: str, now: datetime) -> None:
         """One change of who is an administrator at a time: two concurrent ones would both
         count the administrators before either had applied (bootstrap, the two-admin floor)."""
@@ -724,19 +745,30 @@ class Snapshot:
 @dataclass
 class DirectoryCache:
     """The directory as one read, shared by the administrators of this task for a few
-    seconds: Cognito cannot filter by group membership nor sort, and the list needs both."""
+    seconds: Cognito cannot filter by group membership nor sort, and the list needs both.
+
+    Each copy remembers the generation of the directory it was read at
+    (``MemberChangeStore.generation``): a change applied by any task makes the copies of all
+    of them old at once, not only the one of the task that applied it."""
 
     ttl_seconds: float = SNAPSHOT_TTL_SECONDS
     clock: Callable[[], float] = time.monotonic
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _value: tuple[float, Snapshot] | None = None
+    _generation: int | None = None
     _looked_up: dict[str, tuple[float, bool]] = field(default_factory=dict)
     """People a read did not cover and were looked up one by one: kept as long as the read,
     so reading the changes again does not ask Cognito again."""
 
-    def get(self, load: Callable[[], Snapshot]) -> Snapshot:
+    def get(self, load: Callable[[], Snapshot], generation: int | None = None) -> Snapshot:
+        """``generation`` is read before the directory: a copy is never newer than it says.
+        ``None`` (it could not be read) never matches, so nothing cached is served."""
         with self._lock:
             now = self.clock()
+            if generation is None or generation != self._generation:
+                self._value = None
+                self._looked_up = {}
+                self._generation = generation
             if self._value is None or now - self._value[0] >= self.ttl_seconds:
                 self._value = (now, load())
             return self._value[1]
@@ -774,12 +806,10 @@ class PeopleDeps:
     clock: Callable[[], datetime]
     sign_up_domains: frozenset[str]
     cache: DirectoryCache = field(default_factory=DirectoryCache)
-    reads: RateLimiter = field(default_factory=lambda: RateLimiter(READS_PER_MINUTE, 60))
-    changes: RateLimiter = field(default_factory=lambda: RateLimiter(CHANGES_PER_HOUR, 3600))
-    proposals: RateLimiter = field(default_factory=lambda: RateLimiter(PROPOSALS_PER_HOUR, 3600))
-    invitations: RateLimiter = field(
-        default_factory=lambda: RateLimiter(INVITATIONS_PER_HOUR, 3600)
-    )
+    reads: Limiter = field(default_factory=lambda: RateLimiter(READS_PER_MINUTE, 60))
+    changes: Limiter = field(default_factory=lambda: RateLimiter(CHANGES_PER_HOUR, 3600))
+    proposals: Limiter = field(default_factory=lambda: RateLimiter(PROPOSALS_PER_HOUR, 3600))
+    invitations: Limiter = field(default_factory=lambda: RateLimiter(INVITATIONS_PER_HOUR, 3600))
     end_sessions: Callable[[str, RevocationCause], None] | None = None
     """Ends the web sessions of a user id (D63), next to the Cognito sign-out, and records
     why: the reason of their ``session.ended``."""
@@ -817,7 +847,12 @@ def _snapshot(deps: PeopleDeps) -> Snapshot:
             incomplete=incomplete,
         )
 
-    return _directory(lambda: deps.cache.get(load))
+    try:
+        generation: int | None = deps.store.generation()
+    except (ClientError, BotoCoreError, KeyError, ValueError):
+        logger.warning("the generation of the directory could not be read; reading it afresh")
+        generation = None
+    return _directory(lambda: deps.cache.get(load, generation))
 
 
 def _waiting(snapshot: Snapshot, user: PoolUser) -> bool:
@@ -1010,6 +1045,16 @@ def _refuse(
     raise err
 
 
+def _directory_changed(deps: PeopleDeps) -> None:
+    """Drop this task's copy of the directory and tell the other tasks theirs is old. Best
+    effort: without the mark they serve their copy for at most ``SNAPSHOT_TTL_SECONDS``."""
+    deps.cache.clear()
+    try:
+        deps.store.bump_generation()
+    except (ClientError, BotoCoreError):
+        logger.warning("the generation of the directory could not be advanced")
+
+
 def _audited[T](
     deps: PeopleDeps, event: str, caller: Caller, detail: dict[str, Any], write: Callable[[], T]
 ) -> T:
@@ -1040,7 +1085,7 @@ def _audited[T](
         deps.audit.emit(event, actor, {**detail, "outcome": "applied"}, caller.user)
     except Exception:
         logger.exception("audit emit failed after an applied people change")
-    deps.cache.clear()
+    _directory_changed(deps)
     return result
 
 

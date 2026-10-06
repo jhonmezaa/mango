@@ -12,6 +12,7 @@ from typing import Any
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from botocore.stub import Stubber
 from fastapi.testclient import TestClient
 from moto import mock_aws
@@ -692,6 +693,60 @@ def test_a_directory_larger_than_one_read_is_asked_a_bounded_number_of_times(
     env.people.lookups.clear()
     assert [c["target_in_directory"] for c in _changes(env)] == [True, False]
     assert env.people.lookups == []
+
+
+# --- Two tasks (D70) ---------------------------------------------------------------------
+
+
+def _other_task(env: Env) -> PeopleDeps:
+    """Another mango-api task: its own copy of the directory, the same table and pool."""
+    return dataclasses.replace(env.deps, cache=DirectoryCache(ttl_seconds=30))
+
+
+def test_a_change_applied_by_one_task_is_seen_by_the_others_at_once(env: Env) -> None:
+    other = _other_task(env)
+    before = people_module._snapshot(other)
+    assert "devops" not in before.groups.get("new", frozenset())
+    # Nothing changed: the other task keeps serving its copy.
+    assert people_module._snapshot(other) is before
+    # This task gives a group. The screen reads the list again, and that read may land on
+    # the other task: it must not answer with the copy from before the change.
+    assert _post(env, "/new/groups", {"group": "devops"}).json()["result"] == "applied"
+    after = people_module._snapshot(other)
+    assert "devops" in after.groups["new"]
+    assert people_module._snapshot(other) is after
+
+
+def test_a_change_that_was_refused_does_not_spend_the_copies(env: Env) -> None:
+    other = _other_task(env)
+    before = people_module._snapshot(other)
+    assert _post(env, "/lead/groups", {"group": "bu-lead"}).status_code == 409
+    assert people_module._snapshot(other) is before
+
+
+def test_without_the_generation_the_directory_is_read_afresh(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = _other_task(env)
+    before = people_module._snapshot(other)
+
+    def unreadable() -> int:
+        raise ClientError({"Error": {"Code": "InternalServerError"}}, "GetItem")
+
+    monkeypatch.setattr(other.store, "generation", unreadable)
+    # Nothing says the copy is still good: it is not served.
+    assert people_module._snapshot(other) is not before
+
+
+def test_a_change_stands_when_the_other_tasks_cannot_be_told(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unwritable() -> None:
+        raise ClientError({"Error": {"Code": "InternalServerError"}}, "UpdateItem")
+
+    monkeypatch.setattr(env.deps.store, "bump_generation", unwritable)
+    assert _post(env, "/new/groups", {"group": "devops"}).json()["result"] == "applied"
+    assert "devops" in env.people.memberships["name-new"]
 
 
 def test_reject_and_withdraw_close_the_change(env: Env) -> None:
