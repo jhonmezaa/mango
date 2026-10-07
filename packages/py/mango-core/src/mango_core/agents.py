@@ -160,9 +160,23 @@ class AgentLimits(_Frozen):
     max_tokens: Annotated[StrictInt, Field(ge=256, le=8192)] = 4096
     max_iterations: Annotated[StrictInt, Field(ge=1, le=25)] = 8
     timeout_seconds: Annotated[StrictInt, Field(ge=10, le=600)] = 120
-    # Not editable in the Builder; release agents (FinOps) set them.
+    # Optional: a version that does not set them stores nothing.
     max_tokens_per_call: Annotated[StrictInt, Field(ge=256, le=8192)] | None = None
     temperature: Annotated[float | None, Field(ge=0, le=1), AfterValidator(_temperature)] = None
+
+    @property
+    def call_max_tokens(self) -> int:
+        """Output cap sent with every model call: the version's own, else ``max_tokens`` (D74).
+
+        The harness does not stop a call at its own ``maxTokens``: only the cap that travels
+        with the call bounds what one call can generate.
+        """
+        return self.max_tokens if self.max_tokens_per_call is None else self.max_tokens_per_call
+
+    @property
+    def reserved_output_tokens(self) -> int:
+        """Output tokens a turn's budget reservation counts: never less than one whole call."""
+        return max(self.max_tokens, self.call_max_tokens)
 
 
 class AgentDefinition(_Frozen):

@@ -52,7 +52,8 @@ def test_a_user_of_the_agents_group_chats_with_it(env: Env) -> None:  # noqa: F8
         4096,
         120,
     )
-    assert "maxTokens" not in request["model"]["bedrockModelConfig"]
+    # A version without a cap of its own sends its `max_tokens` with every model call (D74).
+    assert request["model"]["bedrockModelConfig"]["maxTokens"] == 4096
     headers = request["tools"][0]["config"]["remoteMcp"]["headers"]
     signed = invocation.verify(KEY, "member-1", headers[invocation.HEADER])
     assert signed is not None
@@ -65,6 +66,28 @@ def test_a_user_of_the_agents_group_chats_with_it(env: Env) -> None:  # noqa: F8
         True,
     )
     assert env.budgets.scopes[1].key == f"AGENT#{agent_id}"
+
+
+def test_each_model_call_is_capped_and_the_reservation_covers_it(env: Env) -> None:  # noqa: F811
+    # (max_tokens, max_tokens_per_call) -> the cap sent with each model call (D74).
+    cases = (((4096, None), 4096), ((4096, 2048), 2048), ((1024, 8192), 8192), ((8192, None), 8192))
+    reserved = {}
+    for (max_tokens, per_call), cap in cases:
+        agent = _published(
+            env,
+            name=f"Tope {max_tokens} {per_call}",
+            groups=["hr"],
+            limits={"max_tokens": max_tokens, "max_tokens_per_call": per_call},
+        )
+        assert _chat(env, "member", agent_id=agent["agent_id"]).status_code == 200
+        request = env.agentcore.requests[-1]
+        assert request["model"]["bedrockModelConfig"]["maxTokens"] == cap
+        # The harness limit of the turn is still the version's `max_tokens`.
+        assert request["maxTokens"] == max_tokens
+        reserved[max_tokens, per_call] = env.budgets.reserved[-1]
+    # A lower cap of its own does not lower the reservation; a higher one raises it to a call.
+    assert reserved[4096, 2048] == reserved[4096, None]
+    assert reserved[1024, 8192] == reserved[8192, None] > reserved[4096, None]
 
 
 def test_users_outside_the_agents_groups_are_denied(env: Env) -> None:  # noqa: F811

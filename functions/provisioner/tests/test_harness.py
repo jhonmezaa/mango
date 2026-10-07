@@ -130,6 +130,24 @@ def test_config_is_complete_and_has_no_builtin_tools() -> None:
     assert "headers" not in CONFIG["tools"][0]["config"]["remoteMcp"]  # tokens only per invocation
 
 
+def test_a_version_without_a_cap_per_call_stores_its_max_tokens_as_the_cap() -> None:
+    # D74: every model call carries an output cap, also for a version made in the Builder.
+    for limits, cap in (
+        ({}, 4096),
+        ({"max_tokens": 1024}, 1024),
+        ({"max_tokens": 1024, "max_tokens_per_call": 8192}, 8192),
+    ):
+        config = harness_config(
+            SETTINGS,
+            agent_id=AGENT,
+            version=1,
+            content_hash="a" * 64,
+            definition=make_definition(limits=limits),
+        )
+        assert config["model"]["bedrockModelConfig"]["maxTokens"] == cap
+        assert config["maxTokens"] == limits.get("max_tokens", 4096)
+
+
 def test_agent_without_tools_gets_an_empty_allow_list() -> None:
     config = harness_config(
         SETTINGS,

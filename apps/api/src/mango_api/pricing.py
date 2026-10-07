@@ -51,10 +51,13 @@ def cost(usage: Usage, price: ModelPrice) -> Decimal:
 def estimate_max_cost(
     price: ModelPrice, history_chars: int, max_iterations: int, max_output_tokens: int
 ) -> Decimal:
-    """Conservative upper bound reserved before invoking the agent (rule 4).
+    """What a turn reserves before invoking the agent (rule 4). An estimate, not a ceiling.
 
     Input grows with every loop iteration (history, system prompt and tool results are
-    re-sent), so the bound assumes each iteration re-reads the history plus a fixed overhead.
+    re-sent), so the estimate assumes each iteration re-reads the history plus a fixed
+    overhead. Output is counted once: ``max_output_tokens`` is never less than the cap of one
+    model call (D74), so one call cannot outrun it; a turn of several long calls can, and
+    what it spends above the reservation is charged all the same.
     """
     history_tokens = history_chars // 3 + 1
     per_iteration_input = history_tokens + 6_000

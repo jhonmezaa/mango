@@ -1011,7 +1011,7 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
             price,
             sum(len(t.text) for t in history),
             limits.max_iterations,
-            limits.max_tokens,
+            limits.reserved_output_tokens,
         )
         period = current_period()
         scopes = await asyncio.to_thread(_budget_scopes, services, user, agent_id)

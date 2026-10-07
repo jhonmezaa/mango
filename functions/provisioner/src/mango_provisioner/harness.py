@@ -128,8 +128,9 @@ def harness_config(
     tools = allowed_tools(settings, definition, pack_tools)
     limits = definition.limits
     model: dict[str, Any] = {"modelId": definition.model}
-    if limits.max_tokens_per_call is not None:
-        model["maxTokens"] = limits.max_tokens_per_call
+    # Every model call carries an output cap (D74): without it one call can outrun the turn's
+    # budget reservation.
+    model["maxTokens"] = limits.call_max_tokens
     if limits.temperature is not None:
         model["temperature"] = limits.temperature
     model["additionalParams"] = {

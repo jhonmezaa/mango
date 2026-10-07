@@ -96,6 +96,34 @@ def test_cost_and_estimate() -> None:
     assert Decimal("0.2") < estimate < Decimal("0.5")
 
 
+def test_what_the_reservation_guarantees_and_what_it_does_not() -> None:
+    # Default limits of the Builder (4,096 tokens, 8 iterations), a short question, D74.
+    cap, iterations = 4096, 8
+    reserved = estimate_max_cost(
+        PRICE, history_chars=300, max_iterations=iterations, max_output_tokens=cap
+    )
+    assert reserved == Decimal("0.207864")
+    reserved_output = cost(Usage(output_tokens=cap), PRICE)
+    assert reserved_output == Decimal("0.061440")
+
+    # Guaranteed: no model call generates more than its cap, so the output of one call never
+    # costs more than the output the reservation counts.
+    one_call = Usage(input_tokens=10_161, output_tokens=cap)
+    assert cost(Usage(output_tokens=one_call.output_tokens), PRICE) <= reserved_output
+    assert cost(one_call, PRICE) == Decimal("0.091923") < reserved
+
+    # Before D74 a call had no cap: 10,033 output tokens were seen with these limits.
+    assert cost(Usage(output_tokens=10_033), PRICE) > reserved_output
+
+    # Not guaranteed: a turn that calls tools makes up to `max_iterations` calls, each one up
+    # to the cap, and the reservation counts the output once. The excess is still charged.
+    worst_output = cost(Usage(output_tokens=cap * iterations), PRICE)
+    assert worst_output == Decimal("0.491520") > reserved
+    # Not guaranteed either: the input of a call is estimated (6,000 tokens plus the history),
+    # not capped. 14,525 were seen in one call.
+    assert 14_525 > 6_000 + 300 // 3 + 1
+
+
 def test_rls_session_policy_is_bound_to_the_user() -> None:
     factory = RlsClientFactory(
         boto3.client("sts", region_name="us-east-1"),

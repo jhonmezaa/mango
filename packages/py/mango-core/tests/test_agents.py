@@ -179,3 +179,18 @@ def test_invalid_stored_definition_fails_closed_without_echoing_content() -> Non
         loads_definition(stored)
     assert "sk-secreto" not in str(error.value)
     assert error.value.__cause__ is None
+
+
+def test_every_version_has_a_cap_per_model_call() -> None:
+    # D74: the version's own cap, else its `max_tokens`. The reservation counts a whole call.
+    for limits, cap, reserved in (
+        ({}, 4096, 4096),
+        ({"max_tokens": 1024}, 1024, 1024),
+        ({"max_tokens": 8000, "max_tokens_per_call": 4000}, 4000, 8000),
+        ({"max_tokens": 1024, "max_tokens_per_call": 8192}, 8192, 8192),
+    ):
+        got = _definition(limits=limits).limits
+        assert (got.call_max_tokens, got.reserved_output_tokens) == (cap, reserved)
+    # Derived, never stored: the content hash of a version does not change.
+    assert "call_max_tokens" not in _definition().limits.model_dump()
+    assert content_hash(dumps_definition(_definition())) == BASE_HASH
