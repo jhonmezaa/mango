@@ -335,7 +335,7 @@ def test_the_turn_ends_with_the_message_that_calls_a_write_tool() -> None:
         {"tool": WRITE, "arguments": '{"n":1}'}
     ]
     assert (result.text, result.stop_reason) == ("Lo preparo.\n\n", "tool_use")
-    assert result.interrupted and not result.failed
+    assert result.interrupted
     assert result.usage.input_tokens == 100
     # The call is shown as refused, not left running.
     assert [e.data for e in events if e.kind == "tool"] == [
@@ -612,7 +612,7 @@ def _capped(
 def test_a_message_cut_at_its_cap_with_its_usage_ends_the_turn_as_known() -> None:
     events, result = _capped(_text("Una guía larga que se cor"), CAP, _usage(10_169))
     assert (result.text, result.stop_reason) == ("Una guía larga que se cor", "max_tokens")
-    assert result.usage_final and not result.failed and not result.interrupted
+    assert result.usage_final and not result.interrupted
     assert result.usage.input_tokens == 10_169
     assert "error" not in [event.kind for event in events]
 
@@ -670,16 +670,18 @@ def test_the_text_of_the_error_does_not_decide_the_end() -> None:
 
 
 def test_the_cap_error_as_an_event_of_the_stream_ends_the_turn_the_same_way() -> None:
-    # The shape an installation does not produce (see the last section of this file).
+    # The shape an installation does not produce (see the next section).
     cut = _final([_text("a"), CAP, _usage(7), {"runtimeClientError": {"message": "x"}}])
-    assert cut.usage_final and not cut.failed
+    assert cut.usage_final and cut.stop_reason == "max_tokens"
     for events in (
         [_text("a"), CAP, {"runtimeClientError": {}}],
         [_text("a"), CAP, _usage(7), {"internalServerException": {}}],
         [END_TURN, _usage(7), {"runtimeClientError": {}}],
     ):
-        failed = _final(events)
-        assert failed.failed and not failed.usage_final
+        result = harness.InvocationResult()
+        with pytest.raises(EventStreamError):
+            list(harness.run(_Client(events), {}, result))  # type: ignore[arg-type]
+        assert not result.usage_final
 
 
 def test_a_write_call_cut_at_the_cap_still_ends_the_turn_on_that_message() -> None:
@@ -738,8 +740,7 @@ def test_an_error_of_the_harness_is_raised_and_never_arrives_as_an_event(code: s
     # What is known when it is raised: the text and the usage counted so far, not final.
     assert (result.text, result.usage.input_tokens) == ("ab", 7)
     assert result.started and not result.usage_final
-    # ``failed`` is only set by the branch for errors that arrive as events.
-    assert not result.failed and not result.interrupted
+    assert not result.interrupted
 
 
 @pytest.mark.parametrize("code", ERROR_CODES)
@@ -749,42 +750,68 @@ def test_an_error_before_anything_else_leaves_an_empty_result(code: str) -> None
     assert [event.kind for event in sent] == ["status"]
     assert (result.text, result.stop_reason) == ("", "")
     assert (result.usage.input_tokens, result.usage.output_tokens) == (0, 0)
-    assert result.started and not result.usage_final and not result.failed
+    assert result.started and not result.usage_final
 
 
 def test_the_cap_end_over_the_real_stream() -> None:
     sent, result, raised = _wired(_text("a"), CAP, _usage(7), error="runtimeClientError")
     assert raised is None and "error" not in [event.kind for event in sent]
-    assert result.usage_final and not result.failed and result.stop_reason == "max_tokens"
+    assert result.usage_final and result.stop_reason == "max_tokens"
+
+
+# One way to fail. The service declares its errors as exceptions and botocore raises them.
+# Should one ever arrive framed as an event (``:message-type: event``), ``harness.run``
+# raises it as the same exception: the turn ends as it does with the real error.
+
+AS_EVENT = "the harness reported an error as an event"
 
 
 @pytest.mark.parametrize("code", ERROR_CODES)
-def test_the_branch_for_errors_as_events_needs_a_frame_the_service_does_not_send(
-    code: str,
-) -> None:
-    """``harness.run`` has a branch for an error that arrives as an event of the stream. It
-    only runs if the service framed the error as an event (``:message-type: event``); the
-    service model declares it an exception, and that is what was seen in an installation.
-    This pins what the branch does, so whoever removes or keeps it knows what changes."""
-    sent, result, raised = _wired(_text("a"), frames=event_frame({code: {"message": "x"}}))
-    assert raised is None
-    assert result.failed and not result.usage_final
-    assert sent[-1].kind == "error" and sent[-1].data["code"] == "upstream_error"
+def test_an_error_that_arrives_as_an_event_is_raised_like_the_real_one(code: str) -> None:
+    before = (_text("a"), TOOL_USE, _usage(7), _text("b"))
+    real_sent, real, real_raised = _wired(*before, error=code)
+    sent, result, raised = _wired(*before, frames=event_frame({code: {"message": "secret"}}))
+    assert raised is not None and real_raised is not None
+    assert raised.response["Error"]["Code"] == real_raised.response["Error"]["Code"] == code
+    # The same events before it, the same result, and no error event of its own.
+    assert sent == real_sent and result == real
+    assert "error" not in [event.kind for event in sent]
+    assert result.started and not result.usage_final
+    # Nothing of the event but its name is carried by the exception (it is logged).
+    assert raised.response["Error"]["Message"] == AS_EVENT and "secret" not in str(raised)
 
 
-@pytest.mark.parametrize(
-    "events",
-    [
-        [{"messageStop": {"stopReason": "tool_use"}}, _usage(1), {"internalServerException": {}}],
-        [{"validationException": {}}],
-    ],
-)
-def test_usage_is_not_final_after_an_error_that_came_as_an_event(
-    events: list[dict[str, Any]],
-) -> None:
-    # The shape an installation does not produce: kept while the branch exists.
-    result = _final(events)
-    assert result.started and result.failed and not result.usage_final
+@pytest.mark.parametrize("code", ERROR_CODES)
+def test_nothing_is_read_after_an_error_that_arrived_as_an_event(code: str) -> None:
+    events = [_text("a"), {code: {}}, _text("never"), END_TURN, _usage(1)]
+    result = harness.InvocationResult()
+    with pytest.raises(EventStreamError):
+        list(harness.run(_Client(events), {}, result))  # type: ignore[arg-type]
+    assert (result.text, result.usage_final) == ("a", False)
+
+
+def test_the_cap_end_is_the_same_when_its_error_arrives_as_an_event() -> None:
+    frames = event_frame({"runtimeClientError": {"message": "x"}})
+    real_sent, real, real_raised = _wired(_text("a"), CAP, _usage(7), error="runtimeClientError")
+    sent, result, raised = _wired(_text("a"), CAP, _usage(7), frames=frames)
+    assert raised is None and real_raised is None
+    assert sent == real_sent and result == real
+    assert result.usage_final and result.stop_reason == "max_tokens"
+    # Any other error after that usage, or the cap error before it, is a failure.
+    for events, code in (
+        ((_text("a"), CAP, _usage(7)), "internalServerException"),
+        ((_text("a"), CAP), "runtimeClientError"),
+    ):
+        _sent, failed, raised = _wired(*events, frames=event_frame({code: {}}))
+        assert raised is not None and not failed.usage_final
+
+
+def test_an_error_as_an_event_after_a_write_call_fails_the_turn_like_the_real_one() -> None:
+    call = (*_cut_call(ARGUMENTS), TOOL_USE)
+    _real_sent, real, real_raised = _wired(*call, error="internalServerException")
+    _sent, result, raised = _wired(*call, frames=event_frame({"internalServerException": {}}))
+    assert raised is not None and real_raised is not None
+    assert result == real and result.interrupted and not result.usage_final
 
 
 # --- A tool call cut by the token cap (D74) -------------------------------------------------
@@ -954,7 +981,7 @@ def test_a_read_call_cut_at_the_cap_ends_the_turn_as_a_known_end(pieces: tuple[s
     # No write tool: the stream is read to the error, which is the cap end (D74 (13)).
     assert raised is None and "error" not in [event.kind for event in sent]
     assert _write_call_events(sent) == []
-    assert result.usage_final and not result.interrupted and not result.failed
+    assert result.usage_final and not result.interrupted
     assert (result.stop_reason, result.usage.input_tokens) == ("max_tokens", 100)
     # The tool never ran (the harness stops at the cap): it is left as started, with no
     # result. Nothing of its input is kept or sent.
@@ -971,4 +998,4 @@ def test_a_read_call_cut_at_the_cap_whose_usage_never_arrives_is_a_failure() -> 
     _sent, result, raised = _wired(
         *_cut_call('{"start"', name=READ), CAP, error="runtimeClientError"
     )
-    assert raised is not None and not result.usage_final and not result.failed
+    assert raised is not None and not result.usage_final

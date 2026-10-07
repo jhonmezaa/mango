@@ -22,7 +22,6 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 
 from mango_api import app as app_module
-from mango_api import harness as harness_module
 from mango_api.budget import BudgetService, current_period
 from mango_api.settings import Settings
 from mango_core import budget_turns
@@ -54,6 +53,7 @@ CALL_COST = Decimal("0.0045")
 TEXT = {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "Hola"}}}
 END = {"messageStop": {"stopReason": "end_turn"}}
 TOOL_USE = {"messageStop": {"stopReason": "tool_use"}}
+CAP = {"messageStop": {"stopReason": "max_tokens"}}
 
 
 def _cut(*events: dict[str, Any]) -> Iterator[dict[str, Any]]:
@@ -356,79 +356,75 @@ def test_the_turn_after_an_error_starts_a_session_and_resends_the_history(env: E
     assert len(second["messages"]) > 1
 
 
-def _results(monkeypatch: pytest.MonkeyPatch) -> list[harness_module.InvocationResult]:
-    """The result each turn was settled with."""
-    seen: list[harness_module.InvocationResult] = []
-    settle = app_module._settle_turn
-
-    def spy(*args: Any, **kwargs: Any) -> bool:
-        seen.append(kwargs["result"])
-        return settle(*args, **kwargs)
-
-    monkeypatch.setattr(app_module, "_settle_turn", spy)
-    return seen
-
-
-@pytest.mark.parametrize("code", HARNESS_ERRORS)
-def test_failed_stays_false_after_an_error_and_nothing_of_the_turn_reads_it(
-    env: Env, monkeypatch: pytest.MonkeyPatch, code: str
-) -> None:
-    results = _results(monkeypatch)
-    env.agentcore.stream = lambda: wire_stream(TEXT, TOOL_USE, CALL, error=code)
-    env.chat()
-    (result,) = results
-    # ``failed`` is only set for an error that arrives as an event: after a real one it
-    # stays false. The turn is told to have failed by the exception, not by this flag.
-    assert not result.failed
-    assert result.started and not result.usage_final and not result.interrupted
-    # The settlement goes by ``usage_final``: held. The audit has no field for ``failed``.
-    assert env.records()[0].state == STATE_HELD
-    assert "failed" not in env.completed()
-    # The session goes by the turn having been answered and settled: not continued.
-    assert not _session_reusable(env)
-
-
-def test_a_new_conversation_gets_its_title_although_its_first_turn_failed(env: Env) -> None:
-    """The one thing that reads ``failed``: the title is skipped for a failed first turn.
-    After a real error the flag is false, so the title is written and charged."""
+def test_a_new_conversation_whose_first_turn_failed_gets_no_title(env: Env) -> None:
     env.agentcore.stream = lambda: wire_stream(TEXT, error="internalServerException")
     sent = _events(env.chat(conversation_id=None).text)
     assert sent[-1] == FAILED
-    assert env.bedrock.calls == 1
-    (record,) = env.records()
-    reserved = env.seen[0].reserved
-    # The title is charged on top of a turn that is held whole.
-    assert (record.state, record.charged, record.retained) == (STATE_HELD, Decimal(0), reserved)
-    assert env.budget() == _amounts(TITLE_COST, reserved, reserved)
-
-
-def test_the_title_is_the_same_for_every_turn_that_fails_with_an_exception(env: Env) -> None:
-    # Row 7 has always behaved this way: a cut turn of a new conversation gets its title.
-    env.agentcore.stream = lambda: _cut(TEXT)
-    env.chat(conversation_id=None)
-    assert env.bedrock.calls == 1
-
-
-def test_an_error_that_came_as_an_event_would_end_the_turn_in_another_way(env: Env) -> None:
-    """The shape an installation does not produce, next to the real one above. The budget is
-    the same; what the person gets and what is stored are not: with the event the turn goes
-    on to store the half answer and to send ``done`` after the error."""
-    env.agentcore.stream = lambda: [TEXT, TOOL_USE, CALL, {"internalServerException": {}}]
-    sent = _events(env.chat(conversation_id=None).text)
-    kinds = [kind for kind, _ in sent]
-    assert ("error", {"code": "upstream_error", "message": "agent error"}) in sent
-    assert kinds[-1] == "done" and kinds.index("error") < kinds.index("done")
-    assert _assistant_rows(env) == [("user-1", "assistant", "Hola")]
-    # No title: here ``failed`` is true.
+    # The auxiliary model is not called: no title, and nothing charged for one.
     assert env.bedrock.calls == 0
     (record,) = env.records()
-    assert (record.state, record.charged) == (STATE_HELD, CALL_COST)
-    assert env.completed()["settlement"] == "pending"
+    reserved = env.seen[0].reserved
+    assert (record.state, record.charged, record.retained) == (STATE_HELD, Decimal(0), reserved)
+    assert env.budget() == _amounts(Decimal(0), reserved, reserved)
+
+
+def test_the_title_is_not_written_later_for_that_conversation(env: Env) -> None:
+    env.agentcore.stream = lambda: wire_stream(TEXT, error="internalServerException")
+    sent = _events(env.chat(conversation_id=None).text)
+    conversation = next(data for kind, data in sent if kind == "conversation")["conversation_id"]
+    env.agentcore.stream = lambda: [TEXT, END, CALL]
+    assert "done" in [kind for kind, _ in _events(env.chat(conversation).text)]
+    # It keeps the start of the question as its title (the owner's choice).
+    assert env.bedrock.calls == 0
+
+
+@pytest.mark.parametrize("code", HARNESS_ERRORS)
+def test_an_error_that_came_as_an_event_ends_the_turn_like_the_real_one(
+    env: Env, caplog: pytest.LogCaptureFixture, code: str
+) -> None:
+    """The shape an installation does not produce, next to the real one: row 6 either way."""
+    turns = []
+    for shape in ("raised", "event"):
+        env.agentcore.requests.clear()
+        env.audit.events.clear()
+        env.audit.details.clear()
+        env.conversations.stored.clear()
+        if shape == "raised":
+            env.agentcore.stream = lambda: wire_stream(TEXT, TOOL_USE, CALL, TEXT, error=code)
+        else:
+            env.agentcore.stream = lambda: [TEXT, TOOL_USE, CALL, TEXT, {code: {"message": "x"}}]
+        sent = _events(env.chat(conversation_id=None).text)
+        kinds = [kind for kind, _ in sent]
+        # One error, no ``done``; only the question is stored; no title.
+        assert sent[-1] == FAILED and kinds.count("error") == 1 and "done" not in kinds
+        assert env.conversations.stored == [("user-1", "user", "hola")]
+        completed = env.completed()
+        record = env.records()[-1]
+        turns.append(
+            (
+                [item for item in sent if item[0] != "conversation"],
+                (record.state, record.charged, record.retained),
+                {k: completed[k] for k in ("settlement", "stop_reason", "cost_usd", "held_usd")},
+            )
+        )
+    assert turns[0] == turns[1]
+    assert turns[0][1][:2] == (STATE_HELD, CALL_COST) and turns[0][2]["settlement"] == "pending"
+    assert env.bedrock.calls == 0
+    assert caplog.text.count("chat turn failed") == 2
+
+
+def test_the_cap_end_whose_error_came_as_an_event_is_still_a_known_end(env: Env) -> None:
+    env.agentcore.stream = lambda: [TEXT, CAP, CALL, {"runtimeClientError": {}}]
+    sent = _events(env.chat(conversation_id=None).text)
+    kinds = [kind for kind, _ in sent]
+    assert "error" not in kinds and kinds[-1] == "done"
+    assert _assistant_rows(env) == [("user-1", "assistant", "Hola")]
+    assert env.records() == [] and env.completed()["settlement"] == "final"
+    # An answered first turn, cut at its cap or not, gets its title.
+    assert env.bedrock.calls == 1
 
 
 # --- 6, one case out of it: a model call reaches its token cap (D74) --------------------
-
-CAP = {"messageStop": {"stopReason": "max_tokens"}}
 
 
 def _capped(*events: dict[str, Any], code: str = "runtimeClientError") -> Iterator[dict[str, Any]]:
@@ -758,3 +754,57 @@ def test_the_title_is_charged_without_a_reservation(env: Env) -> None:
     assert budget["spent"] > CALL_COST
     assert budget == _amounts(budget["spent"], Decimal(0))
     assert env.records() == []
+
+
+def _titled(env: Env, stream: Callable[[], Any]) -> bool:
+    env.agentcore.stream = stream
+    env.chat(conversation_id=None)
+    return env.bedrock.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("stream", "titled"),
+    [
+        # 1: it ends well.
+        (lambda: [TEXT, END, CALL], True),
+        # 4b: the stream ends, or is cut, before the usage of the message that asks.
+        (lambda: [TEXT, TOOL_USE], True),
+        (lambda: _cut(TEXT, TOOL_USE), False),
+        # 5: the guardrail ends it, with or without its usage.
+        (lambda: [{"messageStop": {"stopReason": "guardrail_intervened"}}, CALL], True),
+        (lambda: [{"messageStop": {"stopReason": "guardrail_intervened"}}], True),
+        # 6: the harness reports an error; and its one known end, the cap (D74 (13)).
+        (lambda: wire_stream(TEXT, TOOL_USE, CALL, error="validationException"), False),
+        (lambda: wire_stream(TEXT, CAP, CALL, error="runtimeClientError"), True),
+        (lambda: wire_stream(TEXT, CAP, error="runtimeClientError"), False),
+        # 7: mango-api stops reading.
+        (lambda: _cut(TEXT), False),
+    ],
+)
+def test_only_an_answered_first_turn_gets_a_title(
+    env: Env, stream: Callable[[], Any], titled: bool
+) -> None:
+    assert _titled(env, stream) is titled
+
+
+def test_a_first_turn_that_ends_on_a_write_call_gets_its_title(write_env: Env) -> None:
+    # 4: it asks to confirm a write tool and the usage of that message arrived.
+    assert _titled(write_env, lambda: [TEXT, *_tool_call(GATEWAY_TOOL, "{}"), TOOL_USE, CALL])
+    assert _assistant_rows(write_env) == [("user-1", "assistant", TEXT_STORED)]
+
+
+def test_a_first_turn_whose_call_to_the_agent_fails_gets_no_title(env: Env) -> None:
+    # Rows 2 and 3 never get as far as the turn: they answer before anything is streamed.
+    env.agentcore.refuse = True
+    env.chat(conversation_id=None)
+    assert env.bedrock.calls == 0
+
+
+def test_a_first_turn_whose_settlement_fails_was_answered_and_gets_its_title(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*_a: Any, **_k: Any) -> bool:
+        raise RuntimeError("DynamoDB is down")
+
+    monkeypatch.setattr(env.budgets, "settle_turn", broken)
+    assert _titled(env, lambda: [TEXT, END, CALL])

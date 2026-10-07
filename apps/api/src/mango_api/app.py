@@ -1165,7 +1165,9 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
             # the traces of a session with a pending turn belong to that turn alone (D73).
             if answered and settled:
                 _complete_session(repo, user.user_id, conversation_id, session, result)
-            if is_new and not result.failed:
+            # A conversation whose first turn was not answered keeps the start of the
+            # question as its title: nothing is charged on top of a turn that failed.
+            if is_new and answered:
                 _generate_title(
                     services,
                     user_id=user.user_id,

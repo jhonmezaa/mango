@@ -178,17 +178,16 @@ def test_binding_changes_with_the_fingerprint_and_with_the_users_access() -> Non
 
 
 @pytest.mark.parametrize(
-    ("failed", "stop_reason", "ok"),
+    ("stop_reason", "ok"),
     [
-        (False, "end_turn", True),
+        ("end_turn", True),
         # The harness ends an invocation that reached its token cap as an error (D74).
-        (False, "max_tokens", False),
-        (True, "", False),
-        (False, "guardrail_intervened", False),
+        ("max_tokens", False),
+        ("guardrail_intervened", False),
     ],
 )
-def test_can_continue(failed: bool, stop_reason: str, ok: bool) -> None:
-    result = harness.InvocationResult(stop_reason=stop_reason, failed=failed)
+def test_can_continue(stop_reason: str, ok: bool) -> None:
+    result = harness.InvocationResult(stop_reason=stop_reason)
     assert sessions.can_continue(result) is ok
 
 

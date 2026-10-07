@@ -141,13 +141,14 @@ def runtime_session_id(
 def can_continue(result: InvocationResult) -> bool:
     """Whether the next turn may continue the session this turn ran in.
 
-    After a failure the session may hold a half-finished turn, and after a guardrail
-    intervention it holds content that would be evaluated again on every later call. A turn
-    that ended on a write tool call left the harness waiting for that tool. A turn cut at
-    its token cap (D74) ended as an error in the harness: what its session kept of the cut
+    Only asked of a turn that was answered: one that failed never gets here, and its session,
+    which may hold a half-finished turn, is not continued. After a guardrail intervention the
+    session holds content that would be evaluated again on every later call. A turn that
+    ended on a write tool call left the harness waiting for that tool. A turn cut at its
+    token cap (D74) ended as an error in the harness: what its session kept of the cut
     message is not known, and the stored history is.
     """
-    return not (result.failed or result.interrupted) and result.stop_reason not in (
+    return not result.interrupted and result.stop_reason not in (
         GUARDRAIL_STOP,
         CAP_STOP,
     )

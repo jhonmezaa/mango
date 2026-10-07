@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -56,6 +56,8 @@ CAP_ERROR = "runtimeClientError"
 """Error the harness ends an invocation with once a model call reached its cap: it treats
 the cap as an exception, after delivering the message and its usage."""
 _STREAM_ERRORS = ("internalServerException", "validationException", CAP_ERROR)
+"""Errors the harness ends an invocation with. The service sends them as exceptions, and
+botocore raises them while the stream is read."""
 _NAME_BOUNDARIES = "/_.: "
 """What may come before a Gateway tool name in the name the harness reports (its server
 prefix). Never a hyphen: `evil-ops___x` is a tool of another target, not `ops___x`."""
@@ -121,7 +123,7 @@ class ChatTurn:
 
 @dataclass
 class StreamEvent:
-    kind: str  # "delta" | "tool" | "status" | "error" | "write_call" (internal)
+    kind: str  # "delta" | "tool" | "status" | "write_call" (internal)
     data: dict[str, str] = field(default_factory=dict)
 
 
@@ -163,7 +165,6 @@ class InvocationResult:
     stop_reason: str = ""
     usage: Usage = field(default_factory=Usage)
     tools: list[dict[str, str]] = field(default_factory=list)
-    failed: bool = False
     interrupted: bool = False
     """The turn was ended here while the harness was still working (a write tool waits for a
     person, D27): its runtime session holds a half-finished turn."""
@@ -342,7 +343,19 @@ class _WriteCalls:
         self._open, self._complete = {}, []
 
 
-def _events[Event](
+def _raised[Event: Mapping[str, object]](stream: Iterable[Event]) -> Iterator[Event]:
+    """The stream, with an error that arrived as one of its events raised as botocore raises
+    the errors the service sends as exceptions. Nothing of the event goes into the exception
+    but its name."""
+    for event in stream:
+        code = next((name for name in _STREAM_ERRORS if name in event), None)
+        if code is not None:
+            message = "the harness reported an error as an event"
+            raise EventStreamError({"Error": {"Code": code, "Message": message}}, "InvokeHarness")
+        yield event
+
+
+def _events[Event: Mapping[str, object]](
     stream: Iterable[Event], ended_at_its_cap: Callable[[], bool]
 ) -> Iterator[Event]:
     """The events of the harness stream.
@@ -350,9 +363,13 @@ def _events[Event](
     botocore raises an error the harness reports instead of yielding it. The one that follows
     a message cut at its cap whose usage arrived is the end of that turn, not a failure: the
     stream ends there. Any other error is raised as it came.
+
+    The service declares those errors as exceptions. Should one ever arrive as an event, it
+    is raised here all the same (``_raised``): a turn fails in one way, whatever the shape
+    of the error.
     """
     try:
-        yield from stream
+        yield from _raised(stream)
     except EventStreamError as error:
         if error.response.get("Error", {}).get("Code") != CAP_ERROR or not ended_at_its_cap():
             raise
@@ -415,7 +432,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
                 result.usage_final = True
             break
-        ended_at_its_cap, at_cap = at_cap, False
+        at_cap = False
         if "contentBlockStart" in event:
             block = event["contentBlockStart"]
             start = block.get("start", {})
@@ -474,13 +491,6 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
             at_cap = owed and result.stop_reason == CAP_STOP
             reported, owed = True, False
-        elif any(k in event for k in _STREAM_ERRORS):
-            if CAP_ERROR in event and ended_at_its_cap:
-                # The same end, had the error come as an event: the turn is over.
-                break
-            result.failed = True
-            yield StreamEvent("error", {"code": "upstream_error", "message": "agent error"})
-            return
     if not result.interrupted:
         result.usage_final = reported and not owed
     if result.interrupted:
