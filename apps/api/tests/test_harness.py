@@ -7,7 +7,7 @@ from typing import Any
 
 import boto3
 import pytest
-from botocore.exceptions import ReadTimeoutError
+from botocore.exceptions import EventStreamError, ReadTimeoutError
 
 from mango_api import harness
 
@@ -543,3 +543,107 @@ def test_a_call_that_raises_started_the_turn_and_knows_nothing() -> None:
 
 def test_nothing_started_before_the_harness_is_called() -> None:
     assert not harness.InvocationResult().started
+
+
+# --- A model call that reaches its token cap (D74) --------------------------------------
+
+CAP = {"messageStop": {"stopReason": "max_tokens"}}
+END_TURN = {"messageStop": {"stopReason": "end_turn"}}
+
+
+def _harness_error(code: str = "runtimeClientError") -> EventStreamError:
+    """The error as botocore raises it from the stream: the harness treats the cap as an
+    exception after delivering the message and its usage."""
+    message = "Model stopped generating due to maximum token limit."
+    return EventStreamError({"Error": {"Code": code, "Message": message}}, "InvokeHarness")
+
+
+def _raising(*events: dict[str, Any], error: Exception) -> Iterator[dict[str, Any]]:
+    yield from events
+    raise error
+
+
+def _capped(
+    *events: dict[str, Any], error: Exception | None = None
+) -> tuple[list[harness.StreamEvent], harness.InvocationResult]:
+    result = harness.InvocationResult()
+    client = _Client(_raising(*events, error=error or _harness_error()))  # type: ignore[arg-type]
+    return list(harness.run(client, {}, result)), result  # type: ignore[arg-type]
+
+
+def test_a_message_cut_at_its_cap_with_its_usage_ends_the_turn_as_known() -> None:
+    events, result = _capped(_text("Una guía larga que se cor"), CAP, _usage(10_169))
+    assert (result.text, result.stop_reason) == ("Una guía larga que se cor", "max_tokens")
+    assert result.usage_final and not result.failed and not result.interrupted
+    assert result.usage.input_tokens == 10_169
+    assert "error" not in [event.kind for event in events]
+
+
+def test_a_cap_in_a_later_call_of_a_turn_with_tools_keeps_the_usage_of_the_earlier_ones() -> None:
+    _sent, result = _capped(
+        _tool("t1"),
+        {"messageStop": {"stopReason": "tool_use"}},
+        _usage(100),
+        _tool_result("t1"),
+        _text("b"),
+        CAP,
+        _usage(200),
+    )
+    assert result.usage_final
+    assert (result.usage.input_tokens, result.usage.output_tokens) == (300, 2)
+
+
+@pytest.mark.parametrize(
+    ("events", "code"),
+    [
+        # The cap, and the error before the usage of that message.
+        ([_text("a"), CAP], "runtimeClientError"),
+        # An error with no cap before it, with and without usage.
+        ([_text("a"), END_TURN, _usage(1)], "runtimeClientError"),
+        ([{"messageStop": {"stopReason": "tool_use"}}, _usage(1)], "runtimeClientError"),
+        ([_text("a")], "runtimeClientError"),
+        ([], "runtimeClientError"),
+        # The cap with its usage, and another kind of error.
+        ([_text("a"), CAP, _usage(1)], "internalServerException"),
+        ([_text("a"), CAP, _usage(1)], "validationException"),
+        # The cap with its usage, and the harness went on before failing.
+        ([_text("a"), CAP, _usage(1), _text("b")], "runtimeClientError"),
+        ([CAP, _usage(1), {"messageStop": {"stopReason": "max_tokens"}}], "runtimeClientError"),
+        # A usage that belongs to no message.
+        ([CAP, _usage(1), _usage(1)], "runtimeClientError"),
+    ],
+)
+def test_any_other_error_of_the_harness_is_still_a_failure(
+    events: list[dict[str, Any]], code: str
+) -> None:
+    result = harness.InvocationResult()
+    client = _Client(_raising(*events, error=_harness_error(code)))  # type: ignore[arg-type]
+    with pytest.raises(EventStreamError):
+        list(harness.run(client, {}, result))  # type: ignore[arg-type]
+    assert result.started and not result.usage_final
+
+
+def test_the_text_of_the_error_does_not_decide_the_end() -> None:
+    error = EventStreamError({"Error": {"Code": "runtimeClientError"}}, "InvokeHarness")
+    assert _capped(_text("a"), CAP, _usage(1), error=error)[1].usage_final
+    # The same words with no cap before them are a failure.
+    with pytest.raises(EventStreamError):
+        _capped(_text("a"), END_TURN, _usage(1))
+
+
+def test_the_cap_error_as_an_event_of_the_stream_ends_the_turn_the_same_way() -> None:
+    cut = _final([_text("a"), CAP, _usage(7), {"runtimeClientError": {"message": "x"}}])
+    assert cut.usage_final and not cut.failed
+    for events in (
+        [_text("a"), CAP, {"runtimeClientError": {}}],
+        [_text("a"), CAP, _usage(7), {"internalServerException": {}}],
+        [END_TURN, _usage(7), {"runtimeClientError": {}}],
+    ):
+        failed = _final(events)
+        assert failed.failed and not failed.usage_final
+
+
+def test_a_write_call_cut_at_the_cap_still_ends_the_turn_on_that_message() -> None:
+    # Unchanged: the turn closes on the message that calls a write tool, before any error.
+    _sent, result, stream = _turn([_tool_start(1, WRITE), CAP, _usage(5), _text("never")])
+    assert result.interrupted and result.usage_final and stream.closed

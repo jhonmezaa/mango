@@ -181,7 +181,8 @@ def test_binding_changes_with_the_fingerprint_and_with_the_users_access() -> Non
     ("failed", "stop_reason", "ok"),
     [
         (False, "end_turn", True),
-        (False, "max_tokens", True),
+        # The harness ends an invocation that reached its token cap as an error (D74).
+        (False, "max_tokens", False),
         (True, "", False),
         (False, "guardrail_intervened", False),
     ],

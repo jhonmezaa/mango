@@ -17,7 +17,7 @@ from typing import Any
 
 import boto3
 import pytest
-from botocore.exceptions import ReadTimeoutError
+from botocore.exceptions import EventStreamError, ReadTimeoutError
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
@@ -304,6 +304,96 @@ def test_an_error_before_any_usage_holds_the_whole_reservation(env: Env) -> None
     reserved = env.seen[0].reserved
     assert (record.state, record.charged, record.retained) == (STATE_HELD, Decimal(0), reserved)
     assert env.budget() == _amounts(Decimal(0), reserved, reserved)
+
+
+# --- 6, one case out of it: a model call reaches its token cap (D74) --------------------
+
+CAP = {"messageStop": {"stopReason": "max_tokens"}}
+
+
+def _capped(*events: dict[str, Any], code: str = "runtimeClientError") -> Iterator[dict[str, Any]]:
+    """The harness treats the cap as an exception: botocore raises it from the stream, after
+    the message and (when it arrived) its usage."""
+    yield from events
+    message = "Model stopped generating due to maximum token limit."
+    raise EventStreamError({"Error": {"Code": code, "Message": message}}, "InvokeHarness")
+
+
+def test_an_answer_cut_at_its_cap_is_stored_and_settled_at_once(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    env.agentcore.stream = lambda: _capped(TEXT, CAP, CALL)
+    events = _events(env.chat().text)
+    kinds = [kind for kind, _ in events]
+    assert "error" not in kinds
+    done = next(data for kind, data in events if kind == "done")
+    assert done["stop_reason"] == "max_tokens"
+    assert done["usage"] == {"input_tokens": 1000, "output_tokens": 100}
+    # The text up to the cut is the stored answer.
+    assert ("user-1", "assistant", "Hola") in env.conversations.stored
+    assert env.records() == []
+    for scope in (USER, AGENT):
+        assert env.budget(scope) == _amounts(CALL_COST, Decimal(0))
+    completed = env.completed()
+    assert (completed["settlement"], completed["stop_reason"]) == ("final", "max_tokens")
+    assert (completed["cost_usd"], completed["held_usd"]) == ("0.004500", "0")
+    assert "chat turn failed" not in caplog.text
+
+
+def test_a_cap_in_the_second_call_of_a_turn_charges_every_call(env: Env) -> None:
+    env.agentcore.stream = lambda: _capped(TEXT, TOOL_USE, CALL, TEXT, CAP, CALL)
+    assert "done" in [kind for kind, _ in _events(env.chat().text)]
+    assert env.records() == []
+    assert env.budget() == _amounts(2 * CALL_COST, Decimal(0))
+    assert env.completed()["settlement"] == "final"
+
+
+def test_the_turn_after_one_cut_at_its_cap_starts_a_session_and_resends_the_history(
+    env: Env,
+) -> None:
+    env.agentcore.stream = lambda: _capped(TEXT, CAP, CALL)
+    env.chat()
+    # The harness ended that invocation as an error: its session is not continued.
+    assert not _session_reusable(env)
+    env.agentcore.stream = lambda: [TEXT, END, CALL]
+    env.chat()
+    first, second = env.agentcore.requests
+    assert second["runtimeSessionId"] != first["runtimeSessionId"]
+    assert len(second["messages"]) > 1
+
+
+@pytest.mark.parametrize(
+    ("events", "code", "charged"),
+    [
+        # The cap, and the usage of that call never arrived.
+        ((TEXT, CAP), "runtimeClientError", Decimal(0)),
+        ((TEXT, TOOL_USE, CALL, TEXT, CAP), "runtimeClientError", CALL_COST),
+        # An error with no cap before it.
+        ((TEXT, TOOL_USE, CALL), "runtimeClientError", CALL_COST),
+        ((TEXT, END, CALL), "runtimeClientError", CALL_COST),
+        # The cap with its usage, and another kind of error.
+        ((TEXT, CAP, CALL), "internalServerException", CALL_COST),
+    ],
+)
+def test_any_other_error_of_the_harness_is_held_as_before(
+    env: Env,
+    caplog: pytest.LogCaptureFixture,
+    events: tuple[dict[str, Any], ...],
+    code: str,
+    charged: Decimal,
+) -> None:
+    env.agentcore.stream = lambda: _capped(*events, code=code)
+    sent = _events(env.chat().text)
+    assert ("error", {"code": "upstream_error", "message": "the agent failed"}) in sent
+    assert "done" not in [kind for kind, _ in sent]
+    assert not [row for row in env.conversations.stored if row[1] == "assistant"]
+    (record,) = env.records()
+    reserved = env.seen[0].reserved
+    assert (record.state, record.charged) == (STATE_HELD, charged)
+    assert env.budget() == _amounts(charged, reserved - charged, reserved - charged)
+    assert env.completed()["settlement"] == "pending"
+    assert not _session_reusable(env)
+    assert "chat turn failed" in caplog.text
 
 
 # --- 7. mango-api stops reading ---------------------------------------------------------

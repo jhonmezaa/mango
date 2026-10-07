@@ -353,4 +353,18 @@ describe('chatReducer · steps of a turn in flight (design chat.jsx streamSteps)
     const stopped = chatReducer(running, { type: 'finish', assistantId: 'a', status: 'stopped' });
     expect(stepsOf(stopped)).toEqual([]);
   });
+
+  it('shows an answer cut at its token cap as any finished answer', () => {
+    const written = feed(start(), [event({ type: 'delta', text: 'Una guía que se cor' })]);
+    const done = {
+      type: 'done',
+      message_id: 'm',
+      usage: { input_tokens: 1, output_tokens: 1 },
+      cost_usd: '0',
+    } as const;
+    const ended = chatReducer(written, event({ ...done, stop_reason: 'end_turn' })).messages[1];
+    const capped = chatReducer(written, event({ ...done, stop_reason: 'max_tokens' })).messages[1];
+    expect(capped).toEqual(ended);
+    expect([capped?.status, capped?.content]).toEqual(['done', 'Una guía que se cor']);
+  });
 });

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import EventStreamError
 
 from mango_api.pricing import Usage
 from mango_core import invocation
@@ -46,6 +47,12 @@ about 330 active people, a turn a minute each, 12 s a turn, are 66 at once. Beyo
 fails: a turn opens a connection of its own and closes it at the end."""
 MAX_TURN_CLIENTS = 8
 """Clients kept, one per turn limit in use. Agents share a few limits (120 s unless changed)."""
+CAP_STOP = "max_tokens"
+"""Stop reason of a model call that reached its output cap (D74): its message ends there."""
+CAP_ERROR = "runtimeClientError"
+"""Error the harness ends an invocation with once a model call reached its cap: it treats
+the cap as an exception, after delivering the message and its usage."""
+_STREAM_ERRORS = ("internalServerException", "validationException", CAP_ERROR)
 _NAME_BOUNDARIES = "/_.: "
 """What may come before a Gateway tool name in the name the harness reports (its server
 prefix). Never a hyphen: `evil-ops___x` is a tool of another target, not `ops___x`."""
@@ -162,7 +169,9 @@ class InvocationResult:
     usage_final: bool = False
     """``usage`` is everything the turn cost: the stream was read to its end and every model
     call reported its usage. False after an error, a cut or a call whose usage never arrived:
-    the cost of the turn is then not known and its budget reservation is held (D73)."""
+    the cost of the turn is then not known and its budget reservation is held (D73). The
+    error the harness ends with right after the usage of a message cut at its token cap is
+    that end of the stream, not a failure (D74)."""
 
 
 def _display_tool_name(raw: str) -> str:
@@ -311,6 +320,22 @@ class _WriteCalls:
                 yield StreamEvent(WRITE_CALL, {"tool": entry[0], "arguments": "".join(entry[1])})
 
 
+def _events[Event](
+    stream: Iterable[Event], ended_at_its_cap: Callable[[], bool]
+) -> Iterator[Event]:
+    """The events of the harness stream.
+
+    botocore raises an error the harness reports instead of yielding it. The one that follows
+    a message cut at its cap whose usage arrived is the end of that turn, not a failure: the
+    stream ends there. Any other error is raised as it came.
+    """
+    try:
+        yield from stream
+    except EventStreamError as error:
+        if error.response.get("Error", {}).get("Code") != CAP_ERROR or not ended_at_its_cap():
+            raise
+
+
 def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     client: BedrockAgentCoreClient,
     request: dict[str, Any],
@@ -348,8 +373,16 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     # A model call reports its usage after its message: while one is owed, or none has
     # arrived at all, what the turn cost is not known.
     reported = owed = False
+    # The last thing the stream delivered is the usage of a message cut at its cap: no model
+    # call is in flight and every one is counted. Told by those events, never by the text
+    # of the error that follows them (D74).
+    at_cap = False
+
+    def ends_at_its_cap() -> bool:
+        return at_cap
+
     stream = response["stream"]
-    for event in stream:
+    for event in _events(stream, ends_at_its_cap):
         if result.interrupted:
             # The event after the message that called a write tool: its usage, which is all
             # that is still needed from this stream.
@@ -357,6 +390,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
                 result.usage_final = True
             break
+        ended_at_its_cap, at_cap = at_cap, False
         if "contentBlockStart" in event:
             block = event["contentBlockStart"]
             start = block.get("start", {})
@@ -412,11 +446,12 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             owed = True
         elif "metadata" in event:
             result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
+            at_cap = owed and result.stop_reason == CAP_STOP
             reported, owed = True, False
-        elif any(
-            k in event
-            for k in ("internalServerException", "validationException", "runtimeClientError")
-        ):
+        elif any(k in event for k in _STREAM_ERRORS):
+            if CAP_ERROR in event and ended_at_its_cap:
+                # The same end, had the error come as an event: the turn is over.
+                break
             result.failed = True
             yield StreamEvent("error", {"code": "upstream_error", "message": "agent error"})
             return
