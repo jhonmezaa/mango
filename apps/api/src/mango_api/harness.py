@@ -47,6 +47,9 @@ about 330 active people, a turn a minute each, 12 s a turn, are 66 at once. Beyo
 fails: a turn opens a connection of its own and closes it at the end."""
 MAX_TURN_CLIENTS = 8
 """Clients kept, one per turn limit in use. Agents share a few limits (120 s unless changed)."""
+TOOL_STOP = "tool_use"
+"""Stop reason of a model message that ended as a tool call: the only end after which its
+write tool calls are asked to be confirmed."""
 CAP_STOP = "max_tokens"
 """Stop reason of a model call that reached its output cap (D74): its message ends there."""
 CAP_ERROR = "runtimeClientError"
@@ -283,13 +286,19 @@ class _WriteCalls:
     """Inputs of the write tool calls in flight, by content block (D27).
 
     The Gateway refuses a write tool without an approval, so the call itself changes nothing;
-    its input is what mango-api shows to whoever confirms it. It comes in pieces and is only
-    reported once the block is complete.
+    its input is what mango-api shows to whoever confirms it. It comes in pieces, and whether
+    the model finished writing it is only known when its message ends: a message that ends
+    any other way than as a tool call (its token cap, the time limit, the guardrail, an end
+    not known today) may hold a call that stops anywhere, even before its first piece, where
+    it reads as a call with no arguments. So a call is reported when its message ends as a
+    tool call, and otherwise never (D74). Once its block stops its input takes no more
+    pieces.
     """
 
     def __init__(self, capture: frozenset[str]) -> None:
         self._capture = capture
         self._open: dict[int, tuple[str, list[str], int]] = {}
+        self._complete: list[tuple[str, str]] = []
 
     def start(self, index: int, raw_name: str) -> bool:
         """Whether the call is to a write tool."""
@@ -311,13 +320,26 @@ class _WriteCalls:
         pieces.append(piece)
         self._open[index] = (name, pieces, size + len(piece))
 
-    def close(self, index: int | None = None) -> Iterator[StreamEvent]:
-        """Report the call of ``index``, or every call still open."""
-        indexes = list(self._open) if index is None else [index]
-        for key in indexes:
-            entry = self._open.pop(key, None)
-            if entry is not None:
-                yield StreamEvent(WRITE_CALL, {"tool": entry[0], "arguments": "".join(entry[1])})
+    def stop(self, index: int) -> None:
+        """The block of the call of ``index`` stopped: its input is what arrived so far."""
+        entry = self._open.pop(index, None)
+        if entry is not None:
+            self._complete.append((entry[0], "".join(entry[1])))
+
+    def end(self, stop_reason: str) -> Iterator[StreamEvent]:
+        """The message ended: report its calls, those whose block stopped and then those
+        still open, only if it ended as a tool call. Its calls are forgotten either way."""
+        for index in list(self._open):
+            self.stop(index)
+        calls, self._complete = self._complete, []
+        if stop_reason != TOOL_STOP:
+            return
+        for name, arguments in calls:
+            yield StreamEvent(WRITE_CALL, {"tool": name, "arguments": arguments})
+
+    def drop(self) -> None:
+        """Forget the calls of a message whose end never arrived: they are never asked."""
+        self._open, self._complete = {}, []
 
 
 def _events[Event](
@@ -345,7 +367,10 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
 
     ``capture`` names the write tools of the agent (Gateway names): each call to one of them
-    is also reported as a ``write_call`` event with its input.
+    is also reported as a ``write_call`` event with its input, once its message has ended as
+    a tool call (``tool_use``). A message that ended any other way, or whose end never
+    arrived, reports none (D74): nothing is asked of a message the model may not have
+    finished.
 
     A turn ends with the model message that calls a write tool. The Gateway refuses that call
     (it carries no approval) and the harness does not get past the refusal: its stream goes
@@ -414,7 +439,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 yield StreamEvent("tool", {"name": name, "status": "started"})
                 yield from progress.to(Phase.TOOL, name if name in known_tools else "")
             elif "toolResult" in start:
-                yield from write_calls.close()
+                # The message before this result never reported its end: nothing is asked.
+                write_calls.drop()
                 tool_id = start["toolResult"].get("toolUseId", "")
                 name = tool_names.get(tool_id, "tool")
                 status = "completed" if start["toolResult"].get("status") != "error" else "error"
@@ -438,10 +464,10 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             if isinstance(piece, str):
                 write_calls.add(event["contentBlockDelta"].get("contentBlockIndex", -1), piece)
         elif "contentBlockStop" in event:
-            yield from write_calls.close(event["contentBlockStop"].get("contentBlockIndex", -1))
+            write_calls.stop(event["contentBlockStop"].get("contentBlockIndex", -1))
         elif "messageStop" in event:
-            yield from write_calls.close()
             result.stop_reason = event["messageStop"].get("stopReason", "")
+            yield from write_calls.end(result.stop_reason)
             result.interrupted = asked
             owed = True
         elif "metadata" in event:

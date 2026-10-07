@@ -167,15 +167,10 @@ class WriteAgentCore:
                     for piece in (arguments[:half], arguments[half:])
                 ),
                 {"contentBlockStop": {"contentBlockIndex": n}},
-                {
-                    "contentBlockStart": {
-                        "contentBlockIndex": 50 + n,
-                        "start": {"toolResult": {"toolUseId": f"t{n}", "status": "error"}},
-                    }
-                },
             ]
+        # A request is only made for a message that ended as a tool call (D74 (18)).
         stream += [
-            {"messageStop": {"stopReason": "end_turn"}},
+            {"messageStop": {"stopReason": "tool_use"}},
             {"metadata": {"usage": {"inputTokens": 100, "outputTokens": 10}}},
         ]
         return {"stream": stream}
@@ -1237,10 +1232,12 @@ def _turn_with(env: Env, *events: dict[str, Any], stop_reason: str) -> list[tupl
 
 
 @pytest.mark.parametrize("stop", [True, False])
-@pytest.mark.parametrize("cut", [1, 9, len(WHOLE) // 2, len(WHOLE) - 1])
-def test_a_write_call_cut_mid_arguments_asks_for_no_confirmation(
+@pytest.mark.parametrize("cut", [1, 9, len(WHOLE) // 2, len(WHOLE) - 1, len(WHOLE)])
+def test_a_write_call_of_a_message_cut_at_the_cap_asks_for_no_confirmation(
     env: Env, cut: int, stop: bool
 ) -> None:
+    """Wherever the cap fell, the last case being a whole call in a message that still ended
+    at its cap: nothing of a message the model did not finish is asked (D74 (18))."""
     stored: list[dict[str, Any]] = []
     add_message = env.conversations.add_message
 
@@ -1292,7 +1289,8 @@ def test_no_cut_of_the_arguments_but_the_empty_one_can_become_a_request(env: Env
         assert made is None, WHOLE[:cut]
     assert env.store.by_requester("user-10") == []
     assert env.audit.named("approval.request") == []
-    # The whole input and the empty one are the only two that become a request.
+    # The whole input and the empty one are the only two that become a request: the stop
+    # reason of the message, not the input, is what keeps a cut call from being asked.
     for arguments, shown in ((WHOLE, '{"amount_usd":100,"name":"team-a"}'), ("", "{}")):
         call = approvals_module.WriteCall(GATEWAY_TOOL, arguments)
         made = approvals_module.request_call(
@@ -1301,28 +1299,93 @@ def test_no_cut_of_the_arguments_but_the_empty_one_can_become_a_request(env: Env
         assert made is not None and made.arguments == shown
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Defect, reported and not fixed here: a write call the cap cut before any piece of its "
-        "input arrives with an empty input, which request_call reads as a call with no "
-        "arguments ({}). A request is created, with its card, for a call the model never "
-        "finished writing. See the report m1-harness-error-paths-2026-10-07."
-    ),
-)
 @pytest.mark.parametrize("stop", [True, False])
 def test_a_write_call_cut_before_any_argument_asks_for_no_confirmation(
     env: Env, stop: bool
 ) -> None:
+    """The one cut whose input reads as a call (no arguments, ``{}``)."""
     events = _turn_with(env, *_write_call(stop=stop), stop_reason="max_tokens")
     assert [data for kind, data in events if kind == "approval"] == []
     assert env.audit.named("approval.request") == []
     assert env.store.by_requester("user-10") == []
+    assert env.client.get(URL, headers=_h("requester")).json()["items"] == []
+    assert env.client.get(URL, headers=_h("approver")).json()["items"] == []
+    assert [kind for kind, _ in events][-1] == "done"
+    assert events[-1][1]["stop_reason"] == "max_tokens"
+
+
+def test_a_whole_write_call_and_a_cut_one_in_the_same_message(env: Env) -> None:
+    whole = _write_call(WHOLE)
+    start = {"toolUse": {"toolUseId": "t2", "name": f"mango___{GATEWAY_TOOL}"}}
+    cut = [{"contentBlockStart": {"contentBlockIndex": 2, "start": start}}]
+    events = _turn_with(env, *whole, *cut, stop_reason="max_tokens")
+    # Neither is asked: the person repeats the request.
+    assert [data for kind, data in events if kind == "approval"] == []
+    assert env.audit.named("approval.request") == []
+    assert env.store.by_requester("user-10") == []
+    # The same message ending on its own asks for both calls, in the order they were made.
+    events = _turn_with(env, *whole, *cut, stop_reason="tool_use")
+    asked = [data["arguments"] for kind, data in events if kind == "approval"]
+    assert asked == [{"name": "team-a", "amount_usd": 100}, {}]
+
+
+@pytest.mark.parametrize("stop", [True, False])
+@pytest.mark.parametrize(
+    ("stop_reason", "pieces"),
+    [
+        # The guardrail intervened in a message that held a whole write call.
+        ("guardrail_intervened", (WHOLE,)),
+        # The time limit fell with the call open and no argument written.
+        ("timeout_exceeded", ()),
+        ("timeout_exceeded", (WHOLE[:9],)),
+        ("end_turn", (WHOLE,)),
+        ("a_reason_of_tomorrow", ()),
+        ("", ()),
+    ],
+)
+def test_a_message_that_did_not_end_as_a_tool_call_asks_for_no_confirmation(
+    env: Env, stop_reason: str, pieces: tuple[str, ...], stop: bool
+) -> None:
+    events = _turn_with(env, *_write_call(*pieces, stop=stop), stop_reason=stop_reason)
+    kinds = [kind for kind, _ in events]
+    assert "approval" not in kinds
+    assert env.audit.named("approval.request") == []
+    assert env.store.by_requester("user-10") == []
+    assert env.client.get(URL, headers=_h("requester")).json()["items"] == []
+    assert env.client.get(URL, headers=_h("approver")).json()["items"] == []
+    assert env.executor.calls == []
+    # The turn ends on that message, with its usage: answered, and nothing of the input.
+    assert "error" not in kinds and kinds[-1] == "done"
+    assert events[-1][1]["stop_reason"] == stop_reason
+    assert "team" not in json.dumps(events) and "team" not in json.dumps(env.audit.events)
+    ((_user, completed),) = env.audit.named("agent.completed", outcome=None)
+    assert (completed["stop_reason"], completed["settlement"]) == (stop_reason, "final")
+    conversation = next(data for kind, data in events if kind == "conversation")
+    assert env.conversations.sessions[("user-10", conversation["conversation_id"])].used_at == 0
+
+
+def test_a_tool_result_does_not_make_up_for_a_message_end_that_never_came(env: Env) -> None:
+    def invoke_harness(**request: Any) -> dict[str, Any]:
+        env.agentcore.requests.append(request)
+        result = {"toolResult": {"toolUseId": "t1", "status": "error"}}
+        return {
+            "stream": [
+                *_write_call(WHOLE),
+                {"contentBlockStart": {"contentBlockIndex": 51, "start": result}},
+                {"messageStop": {"stopReason": "end_turn"}},
+                {"metadata": {"usage": {"inputTokens": 100, "outputTokens": 10}}},
+            ]
+        }
+
+    env.agentcore.invoke_harness = invoke_harness  # type: ignore[method-assign]
+    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "crea uno"})
+    assert "approval" not in [kind for kind, _ in _events(response.text)]
+    assert env.store.by_requester("user-10") == []
 
 
 def test_a_call_without_arguments_is_shown_empty_and_runs_exactly_that(env: Env) -> None:
-    """The chain a request with no arguments goes through: the one a model makes on purpose
-    and, today, the one left by a call cut before its input (the test above)."""
+    """The chain a request with no arguments goes through. Only a model that calls so on
+    purpose starts it: a call cut before its input is never asked (the tests above)."""
     env.set_policy(condition=Condition.AMOUNT, amount_usd=Decimal(500))
     events = _turn_with(env, *_write_call(), stop_reason="tool_use")
     (shown,) = [data for kind, data in events if kind == "approval"]

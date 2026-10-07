@@ -153,8 +153,12 @@ def test_reasoning_of_the_model_is_never_forwarded() -> None:
 
 
 # --- Write tool calls are reported with their input (D27) -----------------------------------
+# A call is reported when its message ends as a tool call (``tool_use``): only then is it
+# known that the model finished writing it. Any other end reports none (see the last
+# sections).
 
 WRITE = "ops___create_budget"
+MESSAGE_END = {"messageStop": {"stopReason": "tool_use"}}
 
 
 def _tool_start(index: int, name: str, tool_id: str = "t1") -> dict[str, Any]:
@@ -185,14 +189,45 @@ def _write_calls(
 
 
 @pytest.mark.parametrize("name", [WRITE, f"mango___{WRITE}", f"@mango/{WRITE}", f"mango.{WRITE}"])
-def test_a_write_call_is_reported_once_its_input_is_complete(name: str) -> None:
+def test_a_write_call_is_reported_once_its_message_ends(name: str) -> None:
     stream = [
         _tool_start(1, name),
         _input(1, '{"name":"a",'),
         _input(1, '"amount_usd":5}'),
         _stop(1),
     ]
-    assert _write_calls(stream) == [{"tool": WRITE, "arguments": '{"name":"a","amount_usd":5}'}]
+    # The block is complete, but how its message ends is not known yet.
+    assert _write_calls(stream) == []
+    assert _write_calls([*stream, MESSAGE_END]) == [
+        {"tool": WRITE, "arguments": '{"name":"a","amount_usd":5}'}
+    ]
+
+
+def test_write_calls_are_reported_in_the_order_their_blocks_stopped() -> None:
+    stream = [
+        _tool_start(1, WRITE, "t1"),
+        _tool_start(2, WRITE, "t2"),
+        _tool_start(3, WRITE, "t3"),
+        _input(3, '{"n":3}'),
+        _input(2, '{"n":2}'),
+        _stop(2),
+        _input(1, '{"n":1}'),
+        _stop(1),
+        MESSAGE_END,
+    ]
+    # As before the request moved to the end of the message; the call left open comes last.
+    assert [c["arguments"] for c in _write_calls(stream)] == ['{"n":2}', '{"n":1}', '{"n":3}']
+
+
+def test_the_input_of_a_call_takes_no_more_pieces_once_its_block_stopped() -> None:
+    stream = [_tool_start(1, WRITE), _input(1, '{"n":1}'), _stop(1), _input(1, "x"), MESSAGE_END]
+    assert _write_calls(stream) == [{"tool": WRITE, "arguments": '{"n":1}'}]
+
+
+def test_a_block_index_used_again_in_the_message_does_not_replace_a_call() -> None:
+    call = [_tool_start(1, WRITE), _input(1, '{"n":1}'), _stop(1)]
+    again = [_tool_start(1, WRITE, "t2"), _input(1, '{"n":2}'), _stop(1)]
+    assert len(_write_calls([*call, *again, MESSAGE_END])) == 2
 
 
 def test_inputs_of_parallel_calls_do_not_mix() -> None:
@@ -206,13 +241,15 @@ def test_inputs_of_parallel_calls_do_not_mix() -> None:
     assert sorted(c["arguments"] for c in _write_calls(stream)) == ['{"n":1}', '{"n":2}']
 
 
-def test_a_call_without_a_stop_is_reported_before_its_result() -> None:
-    stream = [
-        _tool_start(1, WRITE),
-        _input(1, "{}"),
-        {"contentBlockStart": {"start": {"toolResult": {"toolUseId": "t1", "status": "error"}}}},
-    ]
-    assert _write_calls(stream) == [{"tool": WRITE, "arguments": "{}"}]
+@pytest.mark.parametrize("stop", [True, False])
+def test_a_call_whose_message_end_never_came_is_not_reported_with_its_result(stop: bool) -> None:
+    result = {
+        "contentBlockStart": {"start": {"toolResult": {"toolUseId": "t1", "status": "error"}}}
+    }
+    stream = [_tool_start(1, WRITE), _input(1, "{}"), *([_stop(1)] if stop else []), result]
+    assert _write_calls(stream) == []
+    # Nor later, with the end of another message.
+    assert _write_calls([*stream, _text("x"), MESSAGE_END]) == []
 
 
 @pytest.mark.parametrize(
@@ -231,17 +268,20 @@ def test_nothing_is_reported_for_an_agent_without_write_tools() -> None:
 def test_an_input_too_large_to_show_is_dropped() -> None:
     piece = "x" * (harness.MAX_TOOL_INPUT_CHARS // 2 + 1)
     stream = [_tool_start(1, WRITE), _input(1, piece), _input(1, piece), _input(1, "}"), _stop(1)]
-    assert _write_calls(stream) == []
+    assert _write_calls([*stream, MESSAGE_END]) == []
 
 
 def test_write_calls_are_still_shown_as_tools_and_never_as_text() -> None:
     result = harness.InvocationResult()
-    stream = [_tool_start(1, WRITE), _input(1, '{"secret":1}'), _stop(1)]
+    stream = [_tool_start(1, WRITE), _input(1, '{"secret":1}'), _stop(1), MESSAGE_END]
     events = list(harness.run(_Client(stream), {}, result, frozenset({WRITE})))  # type: ignore[arg-type]
     # Progress events (`status`) carry phases and tool names of the version, never input.
-    assert [e.kind for e in events if e.kind != "status"] == ["tool", harness.WRITE_CALL]
+    assert [e.kind for e in events if e.kind != "status"] == ["tool", harness.WRITE_CALL, "tool"]
     assert all("secret" not in json.dumps(e.data) for e in events if e.kind != harness.WRITE_CALL)
-    assert result.text == "" and result.tools == [{"name": "create_budget", "status": "started"}]
+    assert result.text == "" and result.tools == [
+        {"name": "create_budget", "status": "started"},
+        {"name": "create_budget", "status": "error"},
+    ]
 
 
 # --- A turn ends with the message that calls a write tool -----------------------------------
@@ -764,12 +804,15 @@ def _write_call_events(sent: list[harness.StreamEvent]) -> list[dict[str, str]]:
     return [event.data for event in sent if event.kind == harness.WRITE_CALL]
 
 
+CUTS = [0, 1, 9, len(ARGUMENTS) // 2, len(ARGUMENTS) - 1, len(ARGUMENTS)]
+"""Where the cap falls in the input: before its first piece, in the middle, and after its
+last one (a whole call in a message that still ended at its cap)."""
+
+
 @pytest.mark.parametrize("stop", [True, False])
-@pytest.mark.parametrize("cut", [1, 9, len(ARGUMENTS) // 2, len(ARGUMENTS) - 1])
-def test_a_write_call_cut_at_the_cap_is_reported_with_the_input_that_arrived(
-    cut: int, stop: bool
-) -> None:
-    pieces = (ARGUMENTS[: cut // 2], ARGUMENTS[cut // 2 : cut])
+@pytest.mark.parametrize("cut", CUTS)
+def test_no_write_call_of_a_message_cut_at_the_cap_is_reported(cut: int, stop: bool) -> None:
+    pieces = [piece for piece in (ARGUMENTS[: cut // 2], ARGUMENTS[cut // 2 : cut]) if piece]
     sent, result, raised = _wired(
         _text("Lo preparo."),
         *_cut_call(*pieces, stop=stop),
@@ -779,32 +822,82 @@ def test_a_write_call_cut_at_the_cap_is_reported_with_the_input_that_arrived(
     )
     # The turn ends on that message, as with any write call: the error is never read.
     assert raised is None and "error" not in [event.kind for event in sent]
-    assert result.interrupted and result.usage_final and not result.failed
+    assert result.interrupted and result.usage_final
     assert (result.stop_reason, result.usage.input_tokens) == ("max_tokens", 100)
-    # The input is reported as it arrived, cut: it is not valid JSON, and ``harness.run``
-    # does not judge it (``request_call`` does).
-    (call,) = _write_call_events(sent)
-    assert call == {"tool": WRITE, "arguments": ARGUMENTS[:cut]}
-    with pytest.raises(json.JSONDecodeError):
-        json.loads(call["arguments"])
+    # Nothing is asked of a message the model did not finish, wherever the cut fell.
+    assert _write_call_events(sent) == []
     # The chat is told the tool started and failed; the input never goes to it.
     assert [event.data for event in sent if event.kind == "tool"] == [
         {"name": "create_budget", "status": "started"},
         {"name": "create_budget", "status": "error"},
     ]
+    assert all("team" not in json.dumps(event.data) for event in sent)
     assert result.text == "Lo preparo.\n\n"
 
 
 @pytest.mark.parametrize("stop", [True, False])
-def test_a_write_call_cut_before_its_input_is_reported_with_an_empty_input(stop: bool) -> None:
-    sent, result, raised = _wired(
-        *_cut_call(stop=stop), CAP, _usage(100), error="runtimeClientError"
-    )
+@pytest.mark.parametrize("cut", CUTS)
+def test_the_same_call_in_a_message_that_ended_on_its_own_is_reported(cut: int, stop: bool) -> None:
+    # What tells the two apart is the stop reason of the message, never the input:
+    # ``harness.run`` does not judge it (``request_call`` does).
+    sent, result, raised = _wired(*_cut_call(*ARGUMENTS[:cut], stop=stop), TOOL_USE, _usage(100))
     assert raised is None and result.interrupted and result.usage_final
-    # Indistinguishable here from a call the model made with no arguments, but for the stop
-    # reason of the message.
-    assert _write_call_events(sent) == [{"tool": WRITE, "arguments": ""}]
-    assert result.stop_reason == "max_tokens"
+    assert _write_call_events(sent) == [{"tool": WRITE, "arguments": ARGUMENTS[:cut]}]
+
+
+# --- Only a message that ended as a tool call asks (D74 (18)) -------------------------------
+# The stop reason of a message is not a closed list: the service model declares some, and an
+# installation showed one it does not declare (``guardrail_intervened``). So the rule is an
+# allow-list of one, and whatever a later version adds is covered here without a change.
+
+
+def _declared_stop_reasons() -> list[str]:
+    client = boto3.client("bedrock-agentcore", region_name="us-east-1")
+    stream = client.meta.service_model.operation_model("InvokeHarness").output_shape.members[
+        "stream"
+    ]
+    return list(stream.members["messageStop"].members["stopReason"].enum)
+
+
+def test_the_service_model_declares_the_stop_reasons_this_file_goes_through() -> None:
+    declared = _declared_stop_reasons()
+    assert len(declared) >= 15
+    assert {"tool_use", "end_turn", "max_tokens", "timeout_exceeded"} <= set(declared)
+    # Seen in an installation and not declared: the list is not a contract.
+    assert "guardrail_intervened" not in declared
+
+
+@pytest.mark.parametrize("stop", [True, False])
+@pytest.mark.parametrize("pieces", [(), (ARGUMENTS[:12],), (ARGUMENTS,)])
+def test_only_a_message_that_ended_as_a_tool_call_reports_its_write_calls(
+    pieces: tuple[str, ...], stop: bool
+) -> None:
+    call = _cut_call(*pieces, stop=stop)
+    reasons = [*_declared_stop_reasons(), "guardrail_intervened", "a_reason_of_tomorrow", ""]
+    reported = {}
+    for reason in reasons:
+        events = [*call, {"messageStop": {"stopReason": reason}}, _usage(1)]
+        reported[reason] = _write_calls(events)
+    # With no stop reason at all, and with no end of the message.
+    reported["(none)"] = _write_calls([*call, {"messageStop": {}}, _usage(1)])
+    reported["(no end)"] = _write_calls(call)
+    asked = {reason: calls for reason, calls in reported.items() if calls}
+    assert asked == {"tool_use": [{"tool": WRITE, "arguments": "".join(pieces)}]}
+
+
+def test_a_write_call_before_a_message_that_did_not_end_as_a_tool_call_is_not_reported_late() -> (
+    None
+):
+    # The calls of a message are forgotten with it: they are not asked with a later one.
+    sent, _result, raised = _wired(
+        *_cut_call(ARGUMENTS, index=1),
+        {"messageStop": {"stopReason": "timeout_exceeded"}},
+        _usage(1),
+        *_cut_call('{"n":2}', index=2),
+        TOOL_USE,
+        _usage(1),
+    )
+    assert raised is None and _write_call_events(sent) == []
 
 
 def test_a_whole_write_call_and_a_cut_one_in_the_same_message() -> None:
@@ -816,17 +909,36 @@ def test_a_whole_write_call_and_a_cut_one_in_the_same_message() -> None:
         error="runtimeClientError",
     )
     assert raised is None and result.interrupted and result.usage_final
-    assert _write_call_events(sent) == [
-        {"tool": WRITE, "arguments": ARGUMENTS},
-        {"tool": WRITE, "arguments": ARGUMENTS[:12]},
+    # Neither is asked: the person repeats the request (the owner's choice, D74 (18)).
+    assert _write_call_events(sent) == []
+    assert [event.data["status"] for event in sent if event.kind == "tool"] == [
+        "started",
+        "started",
+        "error",
+        "error",
     ]
+
+
+def test_a_write_call_before_the_message_cut_at_the_cap_is_still_reported() -> None:
+    # Only the message that ended at its cap is silenced, not the turn.
+    sent, _result, raised = _wired(
+        *_cut_call(ARGUMENTS, index=1),
+        TOOL_USE,
+        _usage(100),
+        *_cut_call(ARGUMENTS[:12], index=2),
+        CAP,
+        _usage(100),
+        error="runtimeClientError",
+    )
+    assert raised is None
+    assert _write_call_events(sent) == [{"tool": WRITE, "arguments": ARGUMENTS}]
 
 
 def test_a_write_call_cut_at_the_cap_whose_usage_never_arrives_is_not_a_known_end() -> None:
     sent, result, raised = _wired(*_cut_call(ARGUMENTS[:12]), CAP, error="runtimeClientError")
-    # The call was already reported when the error is raised: the turn fails after it.
+    # The turn fails, and nothing was asked before it did.
     assert raised is not None
-    assert _write_call_events(sent) == [{"tool": WRITE, "arguments": ARGUMENTS[:12]}]
+    assert _write_call_events(sent) == []
     assert result.interrupted and not result.usage_final
 
 
