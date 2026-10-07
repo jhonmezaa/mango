@@ -1,6 +1,6 @@
 # Distribución para clientes: instalación «one-click» (v0.1, diseño)
 
-> Fecha: 2026-10-03 · Estado: **diseño aprobado por el usuario el 2026-10-03**, con las decisiones de §9. Pasos 1 a 7 construidos (rama `feat/customer-distribution`); 1 a 5 probados en el laboratorio (§12). Falta probar en AWS la desinstalación (guard y `purge-retained.sh --confirm`) y el workflow `release.yml`, y construir el paso 8 (usuarios de prueba con MFA y batería e2e) y el retiro del agente de la release.
+> Fecha: 2026-10-03 · Estado: **diseño aprobado por el usuario el 2026-10-03**, con las decisiones de §9. Pasos 1 a 7 construidos (rama `feat/customer-distribution`); 1 a 5 probados en el laboratorio (§12). La desinstalación se vio en AWS el 2026-10-07 (§8.1 y D58, puntos 12 y 13); faltan por ver en una instalación la plantilla corregida del guard y el guion de purga corregido. Falta probar el workflow `release.yml`, y construir el paso 8 (usuarios de prueba con MFA y batería e2e) y el retiro del agente de la release.
 > Decisiones que desarrolla o cambia: D3, D8, D9, D25, D36, D43, D54 (`reference-architecture.md` §4.9, §4.12, §8).
 > Modelo de amenazas: `docs/security/threat-models/customer-distribution-threat-model.md`.
 > Origen: prueba «one-click», parte 1 (desmantelar el laboratorio, 2026-10-03) y el pedido del usuario del mismo día: trabajar como cliente de aquí en adelante.
@@ -310,6 +310,8 @@ Reglas:
 - Reutiliza el código del deprovisioner (`functions/provisioner`), con un rol propio que solo borra y solo por prefijo de namespace.
 - **Solo actúa si el stack está en `DELETE_IN_PROGRESS`** (lo comprueba con `DescribeStacks`). Un `Delete` causado por un reemplazo del recurso en un `UpdateStack` no borra nada. Su id físico es fijo y no tiene propiedades que cambien entre releases.
 - Solo lo invoca CloudFormation.
+- **Las políticas de packs (2026-10-07, D58 (13)):** el paso 2 borra también la política Cedar de cada pack (`Mango_<ns>_mcp_*`). AgentCore autoriza ese borrado contra el motor de políticas, contra la política y contra el Gateway al que está ligada: el rol lleva `bedrock-agentcore:ManageResourceScopedPolicy` sobre el Gateway, sin `GetGateway` ni `InvokeGateway`. Sin ese permiso el guard fallaba y `Core` quedaba a medio borrar (visto en una instalación de laboratorio).
+- Si una llamada falla, responde a CloudFormation con la operación y el código del error, sin argumentos ni identificadores.
 
 ### 8.2 Red de packs en un stack propio (usuario, 2026-10-03)
 
@@ -383,7 +385,7 @@ Sale de documentación o del código, no de una prueba.
 1. Que el enlace «Launch stack» de la consola acepte una `templateURL` de un bucket no público. Por API funciona.
 2. Cómo se comporta la importación de la red de packs al añadir o quitar un pack entre releases (la importación en sí funciona).
 4. Cuánto tardan de verdad las ENI de AgentCore en soltarse: se vieron 8–9 h una vez.
-5. El `UninstallGuard` en una desinstalación real, y que termine dentro de la hora de un custom resource con muchos agentes y packs.
+5. Que el `UninstallGuard` termine dentro de la hora de un custom resource con muchos agentes y packs. Con dos agentes y un pack tardó unos 9 minutos (2026-10-07, con el permiso de D58 (13) puesto a mano); la plantilla que ya lo trae no se ha visto en una instalación.
 6. Habilitar un pack y chatear con el agente en la instalación hecha desde la release: faltan los usuarios de prueba con MFA (paso 8).
 7. `PackVpcCidr` como parámetro (`Fn::Cidr`): hoy el rango de la red de packs es un valor fijo de la release.
 8. El workflow `release.yml`: la release de prueba se publicó desde una estación de trabajo.
