@@ -1,7 +1,7 @@
 # D73 · Un turno cortado nunca cuesta cero: la reserva se retiene y se concilia con las trazas de AgentCore
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 17 a 20; el dueño aceptó ese día la corrección del punto 19 y decidió no parar la sesión, punto 20; lo que una instalación mostró ese día de esa corrección, puntos 21 a 23)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 17 a 20; el dueño aceptó ese día la corrección del punto 19 y decidió no parar la sesión, punto 20; lo que una instalación mostró ese día de esa corrección, puntos 21 a 23; la fila 6 con el error como lo lanza el SDK, un solo camino de error y el título de un primer turno fallido, decididos por el dueño el 2026-10-07, puntos 24 a 26, con el detalle de los puntos 25 y 26 propuesto por un agente y aceptado por el dueño ese día)
 - **Precisa / reemplaza a:** precisa [D41](D041-alertas-y-reconciliacion.md) (la reconciliación diaria sigue siendo de solo lectura; esta es otra función), [D71](D071-alarmas-operativas-y-tablero.md) (1: dos alarmas nuevas), [D16](D016-observabilidad-de-agentes.md) (las trazas pasan a ser, además, la fuente del gasto de un turno cortado) y [D70](D070-dos-tareas-y-limites-compartidos.md) (10: su último párrafo dejaba «aparte» el cobro de un turno cortado; es esta decisión)
 - **Precisada por:** [D74](D074-tope-de-tokens-en-cada-llamada.md) (20: el tope por llamada de su opción (b); 19: la salida que cuenta la reserva; 6: de la fila 6 de la tabla sale un caso, el error con el que el harness cierra un turno justo después del uso de un mensaje cortado en su tope, que es un final conocido: su punto 13, aceptado por delegación del dueño el 2026-10-06, que lo confirmó el 2026-10-07. El resto de la fila queda como la decidió el dueño)
 
@@ -139,5 +139,44 @@ Un test por fila dice qué se cobra y qué queda retenido (`apps/api/tests/test_
 - **Las filas 6, 7, 9 y 10 de la tabla del punto 6.** De la fila 6 solo se vio una forma, el error con el que el harness cierra un turno que llegó a su tope (D74 (12): se cobró lo conocido, el resto quedó retenido y lo cerró el conciliador), y es justo el caso que D74 (13) sacó de esa fila. Un error del harness de otra clase, `mango-api` dejando de leer, una tarea que muere con el turno abierto y una liquidación que falla siguen sin provocarse.
 - **Las dos alarmas** (`BudgetReconciler-reservation-charged` y `BudgetReconciler-failed`): ninguna saltó, y ninguna debía.
 - Lo visto son turnos sueltos: uno cortado por tiempo y uno retenido dos pasadas. El punto 19 sigue comprobado, además, con sus tests y con el lector sobre las sesiones de la primera validación.
+
+**(24) La fila 6 llega como una excepción del SDK (2026-10-07).** «El harness informa un error» no es un evento del stream: el modelo del servicio declara sus tres errores (`internalServerException`, `validationException`, `runtimeClientError`) como excepciones, y el SDK las lanza mientras `mango-api` lee el stream. Es lo que se vio en una instalación (D74 (12)).
+
+- **Los tests de la fila lo usan así** desde el 2026-10-07: leen el stream con el cliente real del SDK a partir de tramas, sin red, y el error es la excepción que ese cliente lanza. Un test fija además que el modelo del servicio declara esos tres errores, y solo esos, como excepciones.
+- **Lo que hace la fila, comprobado así con los tres códigos:** un solo `error` al navegador, sin `done`; se guarda solo la pregunta, no la respuesta a medias; se cobra lo conocido y el resto queda retenido (`settlement: pending`); la auditoría trae el motivo de fin del último mensaje que terminó, no el error; la sesión no se continúa.
+- **Sin ver en una instalación:** un error de otra clase que el del tope (punto 23).
+
+**(25) Un solo camino de error (2026-10-07).** `mango-api` tenía además una rama para un error que llegara como evento del stream. Ninguna instalación la alcanza, y hacía otra cosa que la fila 6: el turno seguía, guardaba la respuesta a medias y enviaba `done` después del error. El dueño eligió ese día, por menú, **conservarla como defensa y que termine el turno igual que el error real**; descartó quitarla. La marca interna de «turno fallido» que solo esa rama ponía deja de existir: nada más la leía que el título (punto 26).
+
+- **Lo que queda:** un error que llegara como evento termina el turno como dice la fila 6, con cualquiera de los tres códigos.
+- **El caso del tope se conserva** en las dos formas: el error `runtimeClientError` justo después del uso de un mensaje cortado en su tope es el final conocido de [D74](D074-tope-de-tokens-en-cada-llamada.md) (13), no un fallo.
+- **Detalle propuesto por un agente y aceptado por el dueño el 2026-10-07:**
+  - El error como evento se convierte en la misma excepción que lanza el SDK, con el nombre del error y un texto fijo: nada más del evento llega al log.
+  - Vale también después de una llamada a una tool de escritura: si en vez del uso de ese mensaje llegara un error como evento, el turno falla (fila 6), igual que con el error real. Antes terminaba respondido y retenido (fila 4b).
+- **Comprobado con tests, sin ver en una instalación.** Los tests comparan las dos formas: los mismos eventos al navegador, lo mismo guardado, la misma liquidación y la misma auditoría.
+
+**(26) Una conversación nueva cuyo primer turno no se respondió no recibe título (2026-10-07).** Precisa la fila 11. Hasta ahora la recibía, y se cobraba (USD 0,00075 en el test) encima de un turno retenido: el código quería evitarlo con la marca del punto 25, que en una instalación nunca se ponía. El dueño eligió ese día, por menú, **«no titular si el turno falló»**: no se llama al modelo auxiliar ni se cobra nada por el título, y la conversación queda con el inicio de la pregunta como título.
+
+- **«Respondido»** (detalle propuesto por un agente y aceptado por el dueño el 2026-10-07): la respuesta se guardó y el navegador recibió `done`. Es una de las dos condiciones que ya exige continuar la sesión (la otra es que el turno se haya liquidado).
+- **Fila por fila de la tabla del punto 6:**
+
+| # | Cómo termina el primer turno | ¿Recibe título? |
+|---|---|---|
+| 1 | Termina bien | Sí |
+| 2 | Presupuesto insuficiente (402) | No, como antes: no hay turno |
+| 3 | No puede empezar | No, como antes |
+| 4 | Pide confirmar una tool de escritura y llegó el uso de ese mensaje | Sí |
+| 4b | Lo mismo, sin ese uso | Sí si el stream terminó sin él (respondido, con el resto retenido). **No, antes sí,** si la lectura se cortó con un error |
+| 5 | El guardrail interviene | Sí, con o sin su uso |
+| 6 | El harness informa un error | **No; antes sí.** El caso que D74 (13) sacó de la fila (una respuesta cortada en su tope, guardada) sí |
+| 7 | `mango-api` deja de leer | **No; antes sí** |
+| 8 | La persona cierra la pestaña | Sí: el turno sigue en el servidor y se responde |
+| 9 | La tarea muere con el turno abierto | No, como antes |
+| 10 | La liquidación falla | Sí: el turno se respondió y lo que falla es su liquidación |
+
+Las filas 1, 4, 4b, 5, 6, 7 y 10 tienen su test; las filas 2, 3, 8 y 9 salen de cómo está construido el turno y no cambian.
+
+- **El título no se genera más tarde** para esa conversación: es lo que eligió el dueño. Anotado, sin construir: titular en el primer turno respondido.
+- **Comprobado con tests, sin ver en una instalación.**
 
 Modelo de amenazas: [`budget-reconciliation-threat-model.md`](../../security/threat-models/budget-reconciliation-threat-model.md).
