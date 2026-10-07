@@ -178,7 +178,10 @@ export class Governance extends Construct {
       description: `Mango ${cfg.namespace} platform authorization (L1)`,
       validationSettings: { mode: "STRICT" },
       schema: { cedarJson: JSON.stringify(JSON.parse(schema)) },
-      deletionProtection: { mode: cfg.retainData ? "ENABLED" : "DISABLED" },
+      // No deletion protection, said explicitly so an update turns it off (D58 (14)): the store
+      // holds no data, only the schema and the policies of this template, and nothing writes
+      // to it at runtime. With protection, deleting the stack failed here every time.
+      deletionProtection: { mode: "DISABLED" },
     });
     for (const file of readdirSync(PLATFORM_POLICIES).filter((f) => f.endsWith(".cedar"))) {
       new avp.CfnPolicy(this, `Policy-${file.replace(/\.cedar$/, "")}`, {

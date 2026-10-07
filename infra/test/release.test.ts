@@ -93,6 +93,22 @@ describe("Core template of a release", () => {
     }
   });
 
+  it("lets the stack delete the policy store: it holds nothing but this template's schema and policies (D58 (14))", () => {
+    const stores = Object.values(source.Resources).filter((r) => r.Type === "AWS::VerifiedPermissions::PolicyStore") as (Resource & {
+      DeletionPolicy?: string;
+      UpdateReplacePolicy?: string;
+    })[];
+    expect(stores).toHaveLength(1);
+    // Explicit, so that updating an installation that has it enabled turns it off.
+    expect(stores[0]!.Properties.DeletionProtection).toEqual({ Mode: "DISABLED" });
+    expect(stores[0]!.DeletionPolicy).toBeUndefined();
+    expect(stores[0]!.UpdateReplacePolicy).toBeUndefined();
+    // Why it needs no protection: no role of the stack can write to it, only ask it.
+    const onStore = text.match(/verifiedpermissions:\w+/g) ?? [];
+    expect([...new Set(onStore)]).toEqual(["verifiedpermissions:IsAuthorized"]);
+    expect(ofType("AWS::VerifiedPermissions::Policy").length).toBeGreaterThan(0);
+  });
+
   it("refuses the management account and another Region before creating anything", () => {
     expect(source.Rules.ManagementAccountIsAnother!.Assertions[0]!.Assert).toEqual({
       "Fn::Not": [{ "Fn::Equals": [{ Ref: "ManagementAccountId" }, { Ref: "AWS::AccountId" }] }],
