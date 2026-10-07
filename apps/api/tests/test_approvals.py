@@ -48,7 +48,9 @@ from mango_api.tool_policies import (
     ToolPolicyDeps,
 )
 from mango_core.approval import call_hash
+from mango_core.identity import UserContext
 
+from .harness_wire import wire_stream
 from .test_admin import RecordingAudit, _code, _table
 from .test_app import (
     HOST,
@@ -1190,3 +1192,152 @@ def test_running_is_rate_limited_per_person(env: Env) -> None:
     assert (limited.status_code, _code(limited)) == (429, "rate_limited")
     assert limited.headers["Retry-After"].isdigit()
     assert len(env.executor.calls) == 1
+
+
+# --- A write tool call cut by the token cap (D74) ---------------------------------------------
+# The cap may fall while the model writes the input of the write tool. The stream is
+# botocore's own (``harness_wire``): the pieces of ``toolUse`` that arrived, ``messageStop``
+# with ``max_tokens``, the usage and the error the harness ends the invocation with.
+
+WHOLE = '{"name":"team-a","amount_usd":100}'
+
+
+def _write_call(*pieces: str, stop: bool = True) -> list[dict[str, Any]]:
+    start = {"toolUse": {"toolUseId": "t1", "name": f"mango___{GATEWAY_TOOL}"}}
+    return [
+        {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": "Lo preparo."}}},
+        {"contentBlockStart": {"contentBlockIndex": 1, "start": start}},
+        *(
+            {"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"toolUse": {"input": piece}}}}
+            for piece in pieces
+        ),
+        *([{"contentBlockStop": {"contentBlockIndex": 1}}] if stop else []),
+    ]
+
+
+def _turn_with(env: Env, *events: dict[str, Any], stop_reason: str) -> list[tuple[str, Any]]:
+    """A chat turn whose model message is ``events`` and ends with ``stop_reason``. After a
+    cap the harness ends the invocation with its error, as it does in an installation."""
+
+    def invoke_harness(**request: Any) -> dict[str, Any]:
+        env.agentcore.requests.append(request)
+        return {
+            "stream": wire_stream(
+                *events,
+                {"messageStop": {"stopReason": stop_reason}},
+                {"metadata": {"usage": {"inputTokens": 100, "outputTokens": 10}}},
+                error="runtimeClientError" if stop_reason == "max_tokens" else None,
+            )
+        }
+
+    env.agentcore.invoke_harness = invoke_harness  # type: ignore[method-assign]
+    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "crea uno"})
+    assert response.status_code == 200, response.text
+    return _events(response.text)
+
+
+@pytest.mark.parametrize("stop", [True, False])
+@pytest.mark.parametrize("cut", [1, 9, len(WHOLE) // 2, len(WHOLE) - 1])
+def test_a_write_call_cut_mid_arguments_asks_for_no_confirmation(
+    env: Env, cut: int, stop: bool
+) -> None:
+    stored: list[dict[str, Any]] = []
+    add_message = env.conversations.add_message
+
+    def record(*args: Any, **kwargs: Any) -> str:
+        stored.append({"args": args, **kwargs})
+        return add_message(*args, **kwargs)
+
+    env.conversations.add_message = record  # type: ignore[method-assign]
+    pieces = (WHOLE[: cut // 2], WHOLE[cut // 2 : cut])
+    events = _turn_with(env, *_write_call(*pieces, stop=stop), stop_reason="max_tokens")
+    kinds = [kind for kind, _ in events]
+    # No request exists: nothing to show, to sign or to run.
+    assert "approval" not in kinds
+    assert env.audit.named("approval.request") == []
+    assert env.store.by_requester("user-10") == []
+    assert env.client.get(URL, headers=_h("requester")).json()["items"] == []
+    assert env.executor.calls == []
+    # What the person gets: the text, the tool as started and failed, and a normal end. No
+    # error, and nothing of the half-written input.
+    assert "error" not in kinds and kinds[-1] == "done"
+    assert [data for kind, data in events if kind == "tool"] == [
+        {"name": GATEWAY_TOOL, "status": "started"},
+        {"name": GATEWAY_TOOL, "status": "error"},
+    ]
+    done = events[-1][1]
+    assert done["stop_reason"] == "max_tokens"
+    assert done["usage"] == {"input_tokens": 100, "output_tokens": 10}
+    assert "team" not in json.dumps(events) and "team" not in json.dumps(env.audit.events)
+    # The stored answer: the text up to the call, the tool, and no request.
+    answer = stored[-1]
+    assert answer["args"][2:4] == ("assistant", "Lo preparo.\n\n")
+    assert answer["approvals"] == []
+    # Audited as a turn that ended at its cap, with the usage of that call.
+    ((_user, completed),) = env.audit.named("agent.completed", outcome=None)
+    assert (completed["stop_reason"], completed["input_tokens"]) == ("max_tokens", 100)
+    assert completed["tools"] == [GATEWAY_TOOL]
+    # The session of that turn is not continued.
+    conversation = next(data for kind, data in events if kind == "conversation")
+    assert env.conversations.sessions[("user-10", conversation["conversation_id"])].used_at == 0
+
+
+def test_no_cut_of_the_arguments_but_the_empty_one_can_become_a_request(env: Env) -> None:
+    user = UserContext("user-10", "finops-central", None, False, email="r@x.co")
+    for cut in range(1, len(WHOLE)):
+        call = approvals_module.WriteCall(GATEWAY_TOOL, WHOLE[:cut])
+        made = approvals_module.request_call(
+            env.deps, user, write_agent(), "c" * 32, call=call, seen=set()
+        )
+        assert made is None, WHOLE[:cut]
+    assert env.store.by_requester("user-10") == []
+    assert env.audit.named("approval.request") == []
+    # The whole input and the empty one are the only two that become a request.
+    for arguments, shown in ((WHOLE, '{"amount_usd":100,"name":"team-a"}'), ("", "{}")):
+        call = approvals_module.WriteCall(GATEWAY_TOOL, arguments)
+        made = approvals_module.request_call(
+            env.deps, user, write_agent(), "c" * 32, call=call, seen=set()
+        )
+        assert made is not None and made.arguments == shown
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Defect, reported and not fixed here: a write call the cap cut before any piece of its "
+        "input arrives with an empty input, which request_call reads as a call with no "
+        "arguments ({}). A request is created, with its card, for a call the model never "
+        "finished writing. See the report m1-harness-error-paths-2026-10-07."
+    ),
+)
+@pytest.mark.parametrize("stop", [True, False])
+def test_a_write_call_cut_before_any_argument_asks_for_no_confirmation(
+    env: Env, stop: bool
+) -> None:
+    events = _turn_with(env, *_write_call(stop=stop), stop_reason="max_tokens")
+    assert [data for kind, data in events if kind == "approval"] == []
+    assert env.audit.named("approval.request") == []
+    assert env.store.by_requester("user-10") == []
+
+
+def test_a_call_without_arguments_is_shown_empty_and_runs_exactly_that(env: Env) -> None:
+    """The chain a request with no arguments goes through: the one a model makes on purpose
+    and, today, the one left by a call cut before its input (the test above)."""
+    env.set_policy(condition=Condition.AMOUNT, amount_usd=Decimal(500))
+    events = _turn_with(env, *_write_call(), stop_reason="tool_use")
+    (shown,) = [data for kind, data in events if kind == "approval"]
+    # The card shows the tool and no arguments: that is the call.
+    assert shown["arguments"] == {} and shown["tool"] == TOOL
+    # Its value cannot be read, so it is never below a threshold: who asked cannot confirm
+    # it alone (fail closed).
+    assert (shown["tier"], shown["rule"]["reason"]) == ("approvers", "unknown")
+    assert env.post("requester", f"{shown['approval_id']}/confirm").status_code != 200
+    assert env.executor.calls == []
+    assert env.post("approver", f"{shown['approval_id']}/approve").json()["status"] == "approved"
+    assert env.post("requester", f"{shown['approval_id']}/execute").json()["status"] == "executed"
+    # What runs is what was shown and signed: the same tool, the same (empty) arguments.
+    ((call, _token),) = env.executor.calls
+    assert (call.gateway_tool, call.arguments) == (GATEWAY_TOOL, "{}")
+    assert call.args_hash == call_hash(GATEWAY_TOOL, shown["arguments"])
+    ((_user, detail),) = env.audit.named("approval.request")
+    assert detail["args_hash"] == call.args_hash
