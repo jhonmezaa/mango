@@ -1,7 +1,7 @@
 # D72 · Los límites por IP alcanzan para una oficina detrás de una sola dirección, y `mango-api` renueva la sesión con la operación firmada
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 14, y tras una prueba de carga, punto 15; lo que se vio en un navegador, puntos 16 a 19)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 11 a 14, y tras una prueba de carga, punto 15; lo que se vio en un navegador, puntos 16 a 20)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (4: los límites de la sesión ya no protegen un límite por IP, y la nota «con una salida compartida, revisar» queda resuelta), [D63](D063-sesion-web-con-cookie.md) (la sesión se crea y se renueva con la operación firmada; el margen del WAF del user pool queda medido), [D28](D028-implementacion-del-login-propio.md) (los números del WAF regional del user pool) y [D71](D071-alarmas-operativas-y-tablero.md) (1 y 5: `Edge-rate-limited` suma dos reglas y hay una alarma nueva para el WAF del user pool)
 - **Precisada por:** —
 
@@ -137,3 +137,5 @@ Con la regla de `/api/*` bloqueando:
 - **`Cognito-rate-limited` no saltó,** y es lo correcto: fueron 4 bloqueos y su umbral es 50.
 - **La regla total (`RateLimitPerIp`) no se pudo provocar.** 12.800 `GetUser` con un token inválido desde una dirección, a 20 y a 40 por segundo, respondieron todas 400 y ninguna 403: esas llamadas no llegan al web ACL, que en esos minutos contó 64 peticiones. Una petición sin el identificador del cliente ni un token válido no identifica a ningún user pool. Su métrica de bloqueos todavía no existe.
 - **Sin probar.** La regla total y lo que ve una persona al ingresar con ella bloqueando: hace falta una operación que lleve el identificador del cliente y no caiga antes en las reglas de correo o de secretos. Y siguen pendientes las cifras de uso de una empresa real.
+
+**(20) La regla de correos, otra vez (2026-10-06, en una instalación de laboratorio).** Esta vez el rechazo del WAF llegó en la llamada 59 (en el punto 19, en la 62), unos 50 segundos después de empezar la ráfaga, y se había levantado 11 min 28 s después de ese rechazo (una sola comprobación). `Cognito-rate-limited` tampoco saltó: fueron 5 bloqueos. Lo que mostraron las pantallas de ingreso, ya corregidas: [D20](D020-login-y-registro.md), punto del 2026-10-06.

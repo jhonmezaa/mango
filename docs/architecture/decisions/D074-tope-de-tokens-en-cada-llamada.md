@@ -1,7 +1,7 @@
 # D74 · Toda llamada al modelo lleva un tope de tokens, y la reserva cubre una llamada entera
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, pendiente de su revisión)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, pendiente de su revisión; lo que una instalación mostró ese día de ese arreglo, puntos 15 y 16)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20: construye su opción (b); 19: la salida que cuenta la reserva cambia para los agentes cuyo tope por llamada supera su máximo de tokens; 6: saca un caso de la fila 6 de su tabla, punto 13 de esta decisión)
 - **Precisada por:** —
 
@@ -86,5 +86,24 @@ Origen: hito 1, «instalable por una empresa real». [D73](D073-turno-cortado-nu
 
 - La secuencia se vio en **un** turno, de un agente sin tools. Sin ver: el tope en la segunda o tercera llamada de un turno con tools; una llamada a una tool cortada a medias por el tope; que el error llegue alguna vez antes que el uso (ese turno queda retenido, como antes).
 - **Cómo comprobarlo tras actualizar:** la misma pregunta larga a un agente del Builder. El texto queda en el chat sin aviso de error y sigue ahí al recargar; `agent.completed` trae `stop_reason: max_tokens`, `settlement: final` y `held_usd: 0`, con los mismos tokens que la traza `chat <modelo>`; no queda fila pendiente ni `budget.reconciled` de ese turno; el log de `mango-api` no trae «chat turn failed»; y un mensaje siguiente en esa conversación se responde con la respuesta cortada a la vista del agente.
+
+**(15) Lo que una instalación mostró del arreglo del punto 13 (2026-10-06, en una instalación de laboratorio).** El punto 14 lo daba por no desplegado. Se desplegó ese día, en una versión que solo cambia `mango-api`, y se repitió la prueba del punto 12: la misma pregunta, letra por letra, al mismo agente del Builder, sin republicarlo. Un turno, a la primera.
+
+- **El final.** El chat mostró el texto hasta el corte (unos 14.300 caracteres, cortados a media frase), sin aviso de error.
+- **Quedó guardada.** La conversación tiene en su tabla la pregunta y la respuesta, que termina en el punto del corte, y el turno siguiente la tuvo a la vista. En la instalación del punto 12 quedaba solo la pregunta.
+- **La liquidación.** `agent.completed` salió con `stop_reason: max_tokens`, `settlement: final` y `held_usd: 0`, con 10.169 tokens de entrada y 4.096 de salida: los mismos que la traza `chat <modelo>`, que termina en `finish_reasons: max_tokens`. No quedó fila pendiente, ni a los 34 segundos de terminar ni después de la pasada siguiente del conciliador; no hubo `budget.reconciled` de ese turno, y el log de `mango-api` no trae «chat turn failed». Se cobró lo mismo que en el punto 12 (USD 0,092) y no se retuvo nada (allí, USD 0,116 durante 8 min 27 s).
+- **La secuencia de eventos es la que el arreglo esperaba:** el fin del mensaje con `max_tokens`, su uso y el error, sin nada entre el uso y el error.
+- **El mensaje siguiente.** `agent.invoke` salió con sesión nueva, y su traza es de otra sesión que la del turno cortado. La entrada fue de 14.311 tokens: los 10.169 de antes más la respuesta cortada, una sola vez. El agente citó el punto exacto en el que se había cortado y terminó normal (`end_turn`, `settlement: final`).
+- **La traza `invoke_agent` de ese turno sigue saliendo con error y sin tokens.** La escribe el harness, que sigue cerrando esa invocación con su error; lo que cambió es cómo lo lee `mango-api`. Las trazas `chat` y `chat <modelo>` sí traen los tokens. Quien mire las trazas no debe leerlo como un fallo del agente.
+- **El resto, igual.** Un turno normal del agente de la release respondió como antes, con su tope de 4.000.
+- **Del punto 10:** la llamada que sigue tras un corte por tiempo paró en su tope (4.096 tokens, 47,6 segundos después del corte): [D73](D073-turno-cortado-nunca-cuesta-cero.md) (21).
+- **Lo que la persona sigue sin saber,** como decía el punto 13: nada le dice que la respuesta se cortó. Debajo queda «Reintentar», como en cualquier respuesta, y el anuncio para lector de pantalla dice que la respuesta está completa. Va al próximo brief de diseño (D24).
+
+**(16) Lo que sigue sin verse en una instalación, tras el punto 15 (2026-10-06).** Lo visto es **un** turno, de un agente que no llamó a ninguna tool.
+
+- **El tope en una llamada posterior a la primera** de un turno con tools, y **una llamada a una tool cortada a medias** por el tope.
+- **Los finales que deben seguir retenidos** (un tope cuyo uso no llega, otro código de error, un evento entre el uso y el error, el error antes que el uso): no se pueden provocar desde fuera y están en los tests.
+- **Un turno de varias llamadas que pase de su reserva** (punto 6).
+- **Sin comprobar todavía: que la reconciliación diaria ([D41](D041-alertas-y-reconciliacion.md)) no marque desvíos por esta decisión.** El punto 3 dice que no cambia ni avisa de nada nuevo; su resultado posterior a estos despliegues no se ha mirado.
 
 Modelo de amenazas: [`budget-reconciliation-threat-model.md`](../../security/threat-models/budget-reconciliation-threat-model.md) (TM-BR16, TM-BR17 y TM-BR18).
