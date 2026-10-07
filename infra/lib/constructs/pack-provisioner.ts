@@ -232,6 +232,22 @@ export class PackProvisioner extends Construct {
     );
     role.addToPolicy(
       new iam.PolicyStatement({
+        sid: "AgentCoreRuntimeIdentityServiceRole",
+        // Whoever creates the first runtime of the account, of a pack or of an agent harness,
+        // creates this service-linked role too (AWS documentation). A pack installed before any
+        // agent was published must not depend on the agent provisioner. This role and no other.
+        actions: ["iam:CreateServiceLinkedRole"],
+        resources: [
+          `arn:aws:iam::${stack.account}:role/aws-service-role/runtime-identity.bedrock-agentcore.amazonaws.com/` +
+            "AWSServiceRoleForBedrockAgentCoreRuntimeIdentity",
+        ],
+        conditions: {
+          StringEquals: { "iam:AWSServiceName": "runtime-identity.bedrock-agentcore.amazonaws.com" },
+        },
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
         sid: "ListPackTools",
         // Only to compare `tools/list` with the signed `tools_hash` before a runtime version
         // is exposed. Besides this role, only the Gateway role can invoke a pack runtime.

@@ -109,8 +109,10 @@ export interface ProvisionerProps {
  *
  * Its role is the most sensitive of the installation (TM-M1): it creates IAM roles. It can
  * only create them under `Mango-<ns>-agent-*` and only with the agent permissions boundary,
- * pass them only to AgentCore, and manage only harnesses named `Mango_<ns>_a_*`. It cannot
- * invoke a harness (TM-M11) and writes only publication state in the Agents table.
+ * pass them only to AgentCore, and manage only harnesses named `Mango_<ns>_a_*`. The one
+ * role outside that prefix is AgentCore's own runtime identity service-linked role, which it
+ * can only create. It cannot invoke a harness (TM-M11) and writes only publication state in
+ * the Agents table.
  */
 export class Provisioner extends Construct {
   readonly function: lambda.Function;
@@ -247,6 +249,24 @@ export class Provisioner extends Construct {
           workloadIdentities,
           `${workloadIdentities}/workload-identity/${agentNames.runtimePrefix(ns)}*`,
         ],
+      }),
+    );
+
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "AgentCoreRuntimeIdentityServiceRole",
+        // Whoever creates the first runtime of the account creates this service-linked role,
+        // with the caller's permissions: without it the first harness of a new account fails
+        // (seen in a first installation; the lab account already had the role). This role and
+        // no other: only AgentCore's runtime identity service can assume it.
+        actions: ["iam:CreateServiceLinkedRole"],
+        resources: [
+          `arn:aws:iam::${stack.account}:role/aws-service-role/runtime-identity.bedrock-agentcore.amazonaws.com/` +
+            "AWSServiceRoleForBedrockAgentCoreRuntimeIdentity",
+        ],
+        conditions: {
+          StringEquals: { "iam:AWSServiceName": "runtime-identity.bedrock-agentcore.amazonaws.com" },
+        },
       }),
     );
 

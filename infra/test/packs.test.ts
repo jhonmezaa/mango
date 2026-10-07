@@ -126,6 +126,7 @@ describe("pack provisioner role: IAM (TM-M1, TM-B4)", () => {
     expect(iamActions).toEqual([
       "iam:CreateRole",
       "iam:CreateServiceLinkedRole",
+      "iam:CreateServiceLinkedRole",
       "iam:DeleteRole",
       "iam:DeleteRolePolicy",
       "iam:GetRole",
@@ -133,10 +134,11 @@ describe("pack provisioner role: IAM (TM-M1, TM-B4)", () => {
       "iam:PutRolePolicy",
       "iam:TagRole",
     ]);
-    // Pack roles only; the one exception is AgentCore's own network service role (R6), which
-    // has its own test below.
+    // Pack roles only; the exceptions are AgentCore's own service roles (network, R6, and
+    // runtime identity), which have their own tests below.
+    const serviceRoles = ["AgentCoreNetworkServiceRole", "AgentCoreRuntimeIdentityServiceRole"];
     for (const s of provisioner.filter((x) => actions(x).some((a) => a.startsWith("iam:")))) {
-      if (s.Sid !== "AgentCoreNetworkServiceRole") expect(s.Resource).toBe(packRoles);
+      if (!serviceRoles.includes(s.Sid ?? "")) expect(s.Resource).toBe(packRoles);
     }
     expect(provisioner.flatMap(actions).some((a) => a.startsWith("sts:"))).toBe(false);
   });
@@ -1360,9 +1362,27 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
     expect(slr.Condition).toEqual({
       StringEquals: { "iam:AWSServiceName": "network.bedrock-agentcore.amazonaws.com" },
     });
-    expect(provisioner.filter((s) => actions(s).includes("iam:CreateServiceLinkedRole"))).toHaveLength(1);
     // It names subnets and security groups; it can never change them.
     expect(provisioner.flatMap(actions).filter((a) => /^(ec2|route53resolver):/.test(a))).toEqual([]);
+  });
+
+  it("lets the provisioner create AgentCore's runtime identity service role, and no third service-linked role", () => {
+    const slr = bySid(provisioner, "AgentCoreRuntimeIdentityServiceRole");
+    expect(slr.Effect).toBe("Allow");
+    expect(actions(slr)).toEqual(["iam:CreateServiceLinkedRole"]);
+    expect(slr.Resource).toBe(
+      `arn:aws:iam::${account}:role/aws-service-role/runtime-identity.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`,
+    );
+    expect(slr.Condition).toEqual({
+      StringEquals: { "iam:AWSServiceName": "runtime-identity.bedrock-agentcore.amazonaws.com" },
+    });
+    expect(
+      provisioner
+        .filter((s) => actions(s).includes("iam:CreateServiceLinkedRole"))
+        .map((s) => s.Sid)
+        .sort(),
+    ).toEqual(["AgentCoreNetworkServiceRole", "AgentCoreRuntimeIdentityServiceRole"]);
+    expect(provisioner.flatMap(actions)).not.toContain("iam:DeleteServiceLinkedRole");
   });
 
   it("does not synthesize a release with a pack the pack network cannot serve (TM-E6)", () => {

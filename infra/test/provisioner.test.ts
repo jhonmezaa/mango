@@ -100,6 +100,7 @@ describe("provisioner role: IAM (TM-M1)", () => {
     const granted = [...new Set(iamStatements.flatMap(actions))].sort();
     expect(granted).toEqual([
       "iam:CreateRole",
+      "iam:CreateServiceLinkedRole",
       "iam:DeleteRole",
       "iam:DeleteRolePolicy",
       "iam:GetRole",
@@ -107,7 +108,64 @@ describe("provisioner role: IAM (TM-M1)", () => {
       "iam:PutRolePolicy",
       "iam:TagRole",
     ]);
-    for (const statement of iamStatements) expect(statement.Resource).toBe(agentRoles);
+    // Agent roles only; the one exception is AgentCore's own runtime identity service role,
+    // which has its own test below.
+    for (const statement of iamStatements) {
+      if (statement.Sid !== "AgentCoreRuntimeIdentityServiceRole") expect(statement.Resource).toBe(agentRoles);
+    }
+  });
+
+  it("can create AgentCore's runtime identity service role and no other service-linked role", () => {
+    const slr = bySid(provisioner, "AgentCoreRuntimeIdentityServiceRole");
+    expect(slr.Effect).toBe("Allow");
+    expect(actions(slr)).toEqual(["iam:CreateServiceLinkedRole"]);
+    expect(slr.Resource).toBe(
+      `arn:aws:iam::${account}:role/aws-service-role/runtime-identity.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`,
+    );
+    expect(slr.Condition).toEqual({
+      StringEquals: { "iam:AWSServiceName": "runtime-identity.bedrock-agentcore.amazonaws.com" },
+    });
+    expect(provisioner.filter((s) => actions(s).includes("iam:CreateServiceLinkedRole"))).toHaveLength(1);
+    // Creating it is all: nothing to delete it or to change what it can do.
+    const granted = provisioner.flatMap(actions);
+    for (const forbidden of ["iam:DeleteServiceLinkedRole", "iam:UpdateRoleDescription"]) {
+      expect(granted).not.toContain(forbidden);
+    }
+  });
+
+  it("is, with the pack provisioner, the only role of the template that can create a service-linked role", () => {
+    const grants = (r: Resource): Statement[] => {
+      if (r.Type === "AWS::IAM::Policy" || r.Type === "AWS::IAM::ManagedPolicy") {
+        return r.Properties.PolicyDocument.Statement as Statement[];
+      }
+      if (r.Type === "AWS::IAM::Role") {
+        return ((r.Properties.Policies ?? []) as { PolicyDocument: { Statement: Statement[] } }[]).flatMap(
+          (p) => p.PolicyDocument.Statement,
+        );
+      }
+      return [];
+    };
+    // IAM action patterns are case-insensitive and may use `*` and `?`.
+    const matches = (a: string) => {
+      const pattern = a.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+      return new RegExp(`^${pattern}$`, "i").test("iam:CreateServiceLinkedRole");
+    };
+    const found = Object.values(resources).flatMap((r) =>
+      grants(r)
+        .filter((s) => s.Effect === "Allow" && actions(s).some(matches))
+        .map((s) => ({ sid: s.Sid, roles: r.Properties.Roles as unknown })),
+    );
+    const packProvisionerRoleId = logicalId("AWS::IAM::Role", { RoleName: `Mango-${ns}-PackProvisioner` });
+    const key = (f: { sid?: string; roles: unknown }) => `${JSON.stringify(f.roles)} ${f.sid}`;
+    expect(found.map(key).sort()).toEqual(
+      [
+        { sid: "AgentCoreRuntimeIdentityServiceRole", roles: [{ Ref: provisionerRoleId }] },
+        { sid: "AgentCoreNetworkServiceRole", roles: [{ Ref: packProvisionerRoleId }] },
+        { sid: "AgentCoreRuntimeIdentityServiceRole", roles: [{ Ref: packProvisionerRoleId }] },
+      ]
+        .map(key)
+        .sort(),
+    );
   });
 
   it("cannot attach managed policies, change boundaries or trust policies", () => {
