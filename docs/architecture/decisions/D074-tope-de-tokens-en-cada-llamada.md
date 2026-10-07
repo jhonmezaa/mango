@@ -1,13 +1,13 @@
 # D74 · Toda llamada al modelo lleva un tope de tokens, y la reserva cubre una llamada entera
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-06
+- **Estado:** vigente
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20: construye su opción (b); 19: la salida que cuenta la reserva cambia para los agentes cuyo tope por llamada supera su máximo de tokens)
 - **Precisada por:** —
 
 ## Decisión
 
-Origen: hito 1, «instalable por una empresa real». [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20) dejó visto que la reserva de un turno no era su techo: una sola llamada de un agente del Builder generó 10.033 tokens con un máximo de 4.096 y costó USD 0,151 con USD 0,134 reservados. El dueño eligió el 2026-10-06 **«enviar siempre un tope»**, igual al máximo de tokens del agente cuando no tenga otro, y, ante las opciones para la reserva, **«cubrir una llamada entera»**. El detalle que sigue lo propuso un agente con lo medido y **espera la aceptación del dueño**.
+Origen: hito 1, «instalable por una empresa real». [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20) dejó visto que la reserva de un turno no era su techo: una sola llamada de un agente del Builder generó 10.033 tokens con un máximo de 4.096 y costó USD 0,151 con USD 0,134 reservados. El dueño eligió el 2026-10-06 **«enviar siempre un tope»**, igual al máximo de tokens del agente cuando no tenga otro, y, ante las opciones para la reserva, **«cubrir una llamada entera»**. El detalle que sigue lo propuso un agente con lo medido y **el dueño lo aceptó el 2026-10-06**.
 
 **(1) La regla.** Ninguna llamada al modelo sale sin tope de tokens de salida.
 
