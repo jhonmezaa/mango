@@ -328,6 +328,7 @@ AgentCore puede tardar horas en soltar las ENI. Para que `Core` se borre limpio,
 - **Agente de la release:** «retirar» deja de ser un no-op en el deprovisioner; borra harness y rol como en cualquier agente (N9, §9).
 - **Log groups de AgentCore:** el deprovisioner y el provisioner de packs los borran al retirar o deshabilitar.
 - **Llaves KMS:** `PendingWindowInDays: 7`.
+- **Almacén de políticas de Verified Permissions (2026-10-07, D58 (14)):** sin protección de borrado. Solo guarda el esquema y las políticas de la plantilla; con protección, `Core` fallaba siempre su primer borrado.
 - **Flow logs:** misma política de borrado que el resto de los logs.
 
 ### 8.4 Datos retenidos

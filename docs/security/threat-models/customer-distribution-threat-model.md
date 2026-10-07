@@ -249,6 +249,16 @@ Revisión del diff (`security-audit`, modo guía, 2026-10-05): sin hallazgos con
 
 **Sin probar en AWS:** que cuatro invocaciones encadenadas quepan en la hora de CloudFormation. La desinstalación con agentes y packs vivos se vio el 2026-10-07 (abajo): terminó en unos 9 minutos, menos de lo que dura una invocación.
 
+### El almacén de políticas sin protección de borrado (2026-10-07)
+
+El almacén de Verified Permissions deja de nacer con protección de borrado (D58, punto 14; decidido por el dueño): con ella, `Core` fallaba siempre su primer borrado.
+
+- **Qué guarda.** El esquema y las políticas estáticas de la plantilla. Ningún rol del stack puede escribir en él: la única acción de Verified Permissions de la plantilla es `IsAuthorized`, y un test lo fija.
+- **Qué cambia para un atacante.** Nada para quien usa la aplicación: no hay camino desde `mango-api` para borrar o cambiar el almacén. Una persona de la cuenta con `verifiedpermissions:DeletePolicyStore` puede ahora borrarlo en un paso en vez de dos (antes: quitar la protección y borrar). El efecto es disponibilidad, no acceso: sin almacén, `mango-api` deniega todo (falla cerrado). Es la persona de TM-D14 y de «Desinstalación como ataque»: quien puede eso puede borrar el stack.
+- **Qué no cambia.** Los datos (tablas, directorio, auditoría, llaves) siguen con `RETAIN` y su protección; el almacén no se añade a la purga porque no queda nada que purgar.
+- **Sin permisos nuevos.** Se descartó que el guard quitara la protección al desinstalar: le habría dado `UpdatePolicyStore`, una escritura sobre el almacén de autorización.
+- Revisión del diff (`security-audit`, modo guía, 2026-10-07): sin hallazgos confirmados. Se miró si algún principal de menor confianza gana algo: ningún rol de la instalación (ni `mango-api`, ni los provisioners, ni el guard, ni los roles de agentes y packs con sus boundaries) tiene acciones de escritura o borrado sobre Verified Permissions, así que la protección no era lo que los frenaba. Quitarla no abre ninguna frontera: cambia un paso para quien ya administra la cuenta.
+
 ### El guard y las políticas de packs (2026-10-07)
 
 La primera desinstalación con agentes y un pack vivos (instalación de laboratorio, `v0.1.0-g5bf4346`) mostró que el guard no podía borrar la política Cedar de un pack: AgentCore autoriza ese borrado también contra el Gateway al que la política está ligada. `Core` quedó a medio borrar (D58, punto 13).
