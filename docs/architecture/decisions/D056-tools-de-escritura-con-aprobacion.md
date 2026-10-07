@@ -1,9 +1,9 @@
 # D56 · Tools de escritura con aprobación
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-02
+- **Fecha:** 2026-10-02 (precisada el 2026-10-07: solo un mensaje que terminó como llamada a tool pide confirmar una escritura)
 - **Precisa / reemplaza a:** construye [D27](D027-confirmacion-de-escritura-por-tramos.md); precisa [D43](D043-provisioner-de-packs.md) (3); en el texto: ajusta §4.5 (punto 2). Con [D27](D027-confirmacion-de-escritura-por-tramos.md) construido deja de regir [D40](D040-provisioner-de-agentes.md) (3), que esta fila no cita
-- **Precisada por:** —
+- **Precisada por:** [D74](D074-tope-de-tokens-en-cada-llamada.md) (18 y 19: cuándo se crea la solicitud, punto 6)
 - **Tema en el registro original:** Tools de escritura con aprobación ([D27](D027-confirmacion-de-escritura-por-tramos.md) construido; precisa [D43](D043-provisioner-de-packs.md) (3))
 
 ## Decisión
@@ -17,6 +17,8 @@
 **(4)** El tramo lo calcula `mango-api` con los argumentos del stream del harness y la política; qué argumento es monto, cantidad o entorno lo declara el manifiesto del conector. Una solicitud conserva la política con la que nació.
 
 **(5)** Solo se abren tools de escritura de **conectores de Mango** marcadas en `approval_tools`; los packs de terceros con escritura siguen rechazados. Aprueban admins y FinOps central (`ApproveToolCall`); las políticas las cambian solo admins, con doble aprobación.
+
+**(6) Cuándo se crea la solicitud (2026-10-07).** Al terminar el mensaje del modelo que trae la llamada, y solo si terminó como llamada a tool (`tool_use`): lo decidió el dueño ese día ([D74](D074-tope-de-tokens-en-cada-llamada.md) (18)). El detalle de [D74](D074-tope-de-tokens-en-cada-llamada.md) (19) lo propuso un agente y el dueño lo aceptó ese día. Comprobado con tests, sin ver en una instalación.
 
 **Riesgo aceptado (TM-W13):** partir una acción grande en varias por debajo del umbral (cada confirmación queda auditada; una política «Siempre» lo cierra).
 

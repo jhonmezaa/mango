@@ -1,8 +1,8 @@
 # D74 · Toda llamada al modelo lleva un tope de tokens, y la reserva cubre una llamada entera
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, que lo confirmó el 2026-10-07; lo que una instalación mostró ese día de ese arreglo, puntos 15 y 16; la reconciliación diaria, comprobada el 2026-10-07, punto 17)
-- **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20: construye su opción (b); 19: la salida que cuenta la reserva cambia para los agentes cuyo tope por llamada supera su máximo de tokens; 6: saca un caso de la fila 6 de su tabla, punto 13 de esta decisión)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, que lo confirmó el 2026-10-07; lo que una instalación mostró ese día de ese arreglo, puntos 15 y 16; la reconciliación diaria, comprobada el 2026-10-07, punto 17; solo un mensaje que terminó como llamada a tool pide confirmar una escritura, decidido por el dueño el 2026-10-07, punto 18, con el detalle del punto 19 propuesto por un agente y aceptado por el dueño ese día)
+- **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20: construye su opción (b); 19: la salida que cuenta la reserva cambia para los agentes cuyo tope por llamada supera su máximo de tokens; 6: saca un caso de la fila 6 de su tabla, punto 13 de esta decisión), [D27](D027-confirmacion-de-escritura-por-tramos.md) y [D56](D056-tools-de-escritura-con-aprobacion.md) (4) (cuándo se pide una confirmación: solo de un mensaje que terminó como llamada a tool, punto 18)
 - **Precisada por:** —
 
 ## Decisión
@@ -111,4 +111,31 @@ Origen: hito 1, «instalable por una empresa real». [D73](D073-turno-cortado-nu
 - **Lo que comprueba:** que enviar el tope en cada invocación no altera lo que la reconciliación compara de los agentes ya publicados (punto 3).
 - **Sin ver todavía:** un harness creado ya con el tope guardado que siga vivo a la hora de la reconciliación. Los agentes publicados en esa instalación son anteriores a esta decisión, y el agente temporal publicado después se retiró antes de esa ejecución.
 
-Modelo de amenazas: [`budget-reconciliation-threat-model.md`](../../security/threat-models/budget-reconciliation-threat-model.md) (TM-BR16, TM-BR17 y TM-BR18).
+**(18) Solo un mensaje que terminó como llamada a tool pide confirmar una escritura (2026-10-07).** Lo decidió el dueño ese día, por menú, en dos pasos.
+
+- **El defecto de origen.** Los tests de una tool de escritura cortada por el tope (el punto 16 lo dejaba sin ver) encontraron un defecto de gravedad baja. Si el tope cortaba el mensaje justo después de que el modelo abriera la llamada y antes del primer trozo de sus argumentos, `mango-api` creaba una solicitud de confirmación con argumentos `{}`: una entrada vacía es también como llega una llamada que el modelo hace sin argumentos a propósito. Cortada en cualquier otro punto no se creaba nada, porque ningún corte de un objeto JSON es JSON válido. Lo mostrado y lo que se habría ejecutado coincidían (`{}`, con su hash) y esa solicitud caía siempre en el tramo de aprobadores: el riesgo era que otra persona aprobara una tarjeta vacía.
+- **Primer paso: el tope.** El dueño eligió no pedir nada de un mensaje que terminó en su tope (`stopReason: max_tokens`), ni la llamada cortada ni otra completa del mismo mensaje.
+- **Lo que mostró la revisión de ese arreglo.** El tope no es el único final en el que una llamada puede quedar a medias:
+  - El modelo del servicio en el SDK lista 15 finales de un mensaje, entre ellos `timeout_exceeded`, `model_context_window_exceeded`, `max_output_tokens_exceeded`, `malformed_tool_use`, `malformed_model_output`, `interrupted` y `partial_turn`.
+  - En la auditoría de una instalación de laboratorio (339 turnos en 9 días, hasta el 2026-10-07) se vieron: `end_turn` 297, sin motivo 23, `timeout_exceeded` 7, `tool_use` 7, `guardrail_intervened` 3 y `max_tokens` 2. `guardrail_intervened` no está en la lista del SDK y llega: la lista no es un contrato.
+  - Las 7 solicitudes de confirmación de esos días salieron, las 7, de mensajes que terminaron en `tool_use`.
+  - Con el primer paso, una llamada de escritura abierta y sin argumentos se seguía pidiendo con cualquier final que no fuera el tope (probado con los otros 14 de la lista, con y sin el cierre de su bloque). El corte por tiempo es un final real.
+- **Segundo paso: la regla.** El dueño la amplió ese mismo día: **solo se pide confirmar una llamada de escritura cuando su mensaje terminó como llamada a tool (`stopReason: tool_use`). Sin excepciones.** Cualquier otro final no pide nada: el tope, el límite de tiempo, una intervención del guardrail, el contexto agotado, una llamada mal formada, un final que hoy no se conoce, o ningún final. Ni solicitud, ni tarjeta en el chat, ni fila, ni `approval.request` en auditoría, ni nada en la bandeja; con la llamada sin argumentos, a medias o completa, y con o sin el cierre de su bloque.
+- **Por qué una lista de permitidos.** Falla cerrado ante un final nuevo; «solo el tope es un corte» no.
+- **Lo que el dueño aceptó con ella:**
+  - Si el mensaje traía además una llamada completa, tampoco se pide: la persona repite la petición.
+  - Un mensaje intervenido por el guardrail deja de pedir confirmación.
+  - Si el fin del mensaje no llega, no se pide nada, llegue o no después un resultado de la tool.
+- **Lo que no cambia.** Una llamada sin argumentos de un mensaje que terminó en `tool_use` se sigue pidiendo, con su tarjeta vacía y en el tramo de aprobadores. Y el turno termina y se liquida como antes: en ese mensaje, como final conocido si llegó su uso ([D73](D073-turno-cortado-nunca-cuesta-cero.md) (6), fila 4, y el punto 13), con el texto guardado y la sesión sin continuar. Nada de unos argumentos a medias llega al navegador, a auditoría ni a los logs.
+- **Descartado:** conservar una llamada completa del mismo mensaje descartando solo la que no cerró su bloque (depende de que el harness entregue ese cierre para un bloque cortado, que no se ha visto).
+- **Anotado como mejora aparte, sin construir:** validar los argumentos contra el esquema de la tool al crear la solicitud. Cubriría un `{}` que el modelo envíe por error en un mensaje que terminó en `tool_use`; no cubre una tool cuyos argumentos sean todos opcionales.
+- **Comprobado con tests, sin ver en una instalación.** Un test recorre todos los finales que el modelo del SDK declara, más `guardrail_intervened`, uno desconocido y el motivo vacío. Sigue sin verse si el harness puede entregar uno de esos finales a mitad de una llamada, y si entrega el cierre de un bloque cortado; los tests cubren las dos formas.
+
+**(19) Cómo queda construido el punto 18 (2026-10-07; propuesto por un agente y aceptado por el dueño ese día).**
+
+- **La solicitud se crea al terminar el mensaje, no al cerrarse el bloque de la llamada.** El motivo de fin solo se conoce ahí. En un mensaje que termina en `tool_use` se piden las mismas llamadas, con los mismos argumentos y en el mismo orden que antes; la tarjeta llega al navegador después de que la tool figure como iniciada, igual que antes, y los topes por turno y por persona y la deduplicación no dependen del momento.
+- **Una llamada sigue sin admitir más argumentos una vez cerrado su bloque.**
+- **Un mensaje cuyo fin no llega no pide nada.** Antes, una llamada con su bloque cerrado se pedía aunque el stream fallara antes del fin del mensaje, y la solicitud quedaba sin mensaje al que pertenecer. Las llamadas de un mensaje se olvidan con él: no se piden con el fin de otro posterior.
+- **El turno sigue terminando en ese mensaje**, como todo el que abre una llamada a una tool de escritura, sea cual sea su final: la persona ve la tool iniciada y después fallida, y la respuesta terminada, sin tarjeta. Nada le dice por qué: es el mismo aviso que falta para una respuesta cortada (punto 15) y va al brief de diseño (D24).
+
+Modelo de amenazas: [`budget-reconciliation-threat-model.md`](../../security/threat-models/budget-reconciliation-threat-model.md) (TM-BR16, TM-BR17 y TM-BR18) y [`write-tools-approval-threat-model.md`](../../security/threat-models/write-tools-approval-threat-model.md) (TM-W14).

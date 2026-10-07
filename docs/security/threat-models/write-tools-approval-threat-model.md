@@ -4,6 +4,7 @@
 > Amplía TM-002 y TM-016 de `mango-architecture-threat-model.md` y TM-M12 de `marketplace-v1-threat-model.md`.
 > Alcance: `packages/py/mango-core/src/mango_core/approval.py` (hash canónico y approval token), `functions/gateway-interceptor/` (exige el token), `functions/approval-executor/` (única pieza que escribe en AWS), `packages/py/mango-aws/` (cadena de escritura), `apps/api/src/mango_api/approvals*.py`, `tool_policies*.py`, `harness.py`, `published.py`, `app.py` (chat), `functions/provisioner/src/mango_provisioner/harness.py`, `policies/cedar/platform/approvals.cedar`, `infra/lib/constructs/{governance,tools}.ts`, `infra/lib/stacks/payer-stack.ts` y `apps/web` (Aprobaciones, Políticas y tarjetas del chat).
 > v0.1 se escribió **antes** de construir (regla de AGENTS.md). v0.2 (mismo día) recoge las dos decisiones del usuario y lo que encontró la revisión `security-audit` del diff. Nada de esto está desplegado: lo que solo se puede ver en el laboratorio está en «Supuestos sin validar».
+> 2026-10-07: se añade TM-W14 (una llamada de escritura en un mensaje que no terminó como llamada a tool, D74 (18)) y la revisión de ese diff, al final. Comprobado con tests, sin ver en una instalación.
 
 ## Executive summary
 
@@ -153,13 +154,14 @@ flowchart LR
 | TM-W11 | Cualquiera con acceso a logs | — | Leer argumentos o tokens en logs o auditoría | Fuga de datos del cliente | Argumentos | Regla de logging de AGENTS.md; `_reject` solo registra el motivo | — | Auditoría con `args_hash`, nunca argumentos ni token; el interceptor sigue registrando solo el motivo | Revisión de `security-audit` | Baja | Media | Baja |
 | TM-W13 | Usuario que puede pedir la acción | Política con umbral | Partir una acción grande en varias por debajo del umbral, cada una con su propia confirmación | Evita a los aprobadores para un total grande | Política | Cada confirmación queda auditada con quién y el hash; 3 solicitudes por turno | No hay acumulado por persona ni por periodo | **Riesgo aceptado en esta fase.** Si importa, una política «Siempre» lo cierra; un acumulado por ventana es trabajo futuro (R7) | Varias `approval.self_confirm` de la misma persona y tool en poco tiempo | Media | Media | Media |
 | TM-W12 | Salida de la tool de escritura | Ejecución hecha | Texto de la respuesta que intenta dirigir al modelo | Inyección indirecta en el siguiente turno | Conversación | Salidas de tools tratadas como no confiables | — | Al agente solo se le informa el estado (ejecutada, fallida, cancelada), nunca la salida de la tool; la SPA la muestra como texto plano | — | Baja | Media | Baja |
+| TM-W14 | Un mensaje del modelo que no terminó como llamada a tool: lo cortó su tope de tokens (D74) o el límite de tiempo, intervino el guardrail, u otro final; sin atacante: no se provoca con precisión y no da nada a quien lo intente | Agente con tool de escritura; el mensaje termina mientras el modelo escribe la llamada | Se pide confirmar una llamada que el modelo no terminó de escribir: cortada antes de su primer argumento se lee como una llamada sin argumentos (`{}`) | Otra persona aprueba una tarjeta vacía y la tool corre con `{}`; grave en una tool cuyos argumentos sean todos opcionales y «vacío» signifique «todo» | Solicitud, recursos | Ningún corte de un objeto JSON es JSON válido salvo el vacío; lo mostrado y lo ejecutado salen del mismo registro con su hash (TM-W2); `{}` cae siempre en el tramo de aprobadores (TM-W4) | `mango-api` no valida los argumentos contra el esquema de la tool al crear la solicitud: un `{}` que el modelo envíe por error en un mensaje que terminó en `tool_use` se sigue pidiendo. Los finales de un mensaje no son una lista cerrada: el SDK declara 15 y una instalación mostró uno que no declara | Lista de permitidos de un solo valor: solo se pide una llamada de escritura de un mensaje que terminó en `tool_use`; cualquier otro final, o ninguno, no pide nada, tampoco de una llamada completa (D74 (18), decidido por el dueño el 2026-10-07; `harness.py`). Mejora anotada, sin construir: validar los argumentos contra el esquema de la tool | `agent.completed` con un `stop_reason` distinto de `tool_use` y una tool de escritura entre las del turno, sin `approval.request` | Baja | Media | Baja |
 
 ## Criticality calibration
 
 - **Crítico:** ejecutar una escritura que nadie confirmó (TM-W1).
 - **Alto:** ejecutar algo distinto de lo confirmado, reutilizar una aprobación, bajar el tramo, aprobarse a sí mismo (TM-W2 a TM-W5).
 - **Medio:** debilitar una política con un solo admin, fabricar tokens tras comprometer una Lambda, salirse del alcance del rol de escritura, ver solicitudes ajenas, partir una acción para quedar bajo el umbral (TM-W6 a TM-W9, TM-W13).
-- **Bajo:** inundar la bandeja, argumentos en logs, inyección por la salida de la tool (TM-W10 a TM-W12).
+- **Bajo:** inundar la bandeja, argumentos en logs, inyección por la salida de la tool (TM-W10 a TM-W12); pedir confirmar una llamada que el modelo no terminó de escribir (TM-W14).
 
 ## Focus paths for security review
 
@@ -170,7 +172,7 @@ flowchart LR
 | `functions/approval-executor/` | Segunda verificación y única escritura | TM-W3, TM-W8 |
 | `apps/api/src/mango_api/approvals.py` | Tramo, firmas distintas, autorización por objeto | TM-W4, TM-W5, TM-W9 |
 | `apps/api/src/mango_api/tool_policies.py` | Doble aprobación de la política | TM-W6 |
-| `apps/api/src/mango_api/harness.py` | Captura de los argumentos del `toolUse` | TM-W1, TM-W10 |
+| `apps/api/src/mango_api/harness.py` | Captura de los argumentos del `toolUse`; qué llamadas se piden y cuándo | TM-W1, TM-W10, TM-W14 |
 | `infra/lib/constructs/tools.ts`, `governance.ts`, `stacks/payer-stack.ts` | Quién firma, quién asume el broker, alcance del rol | TM-W7, TM-W8 |
 | `policies/cedar/platform/approvals.cedar` | Quién puede aprobar | TM-W5 |
 
@@ -194,3 +196,17 @@ Hallazgos corregidos en la misma PR:
 
 Sin hallazgos en: orden de las comprobaciones del interceptor, verificación del token antes de leer sus claims, autorización por objeto de la API, separación de funciones (código y condición de DynamoDB), trusts de los roles nuevos y la política de la llave.
 
+## Revisión `security-audit` del diff (2026-10-07, modo guía): solo un mensaje que terminó como llamada a tool pide
+
+Diff revisado, dos veces ese día (primero con la regla del tope, después con la regla ampliada): `apps/api/src/mango_api/harness.py` (`_WriteCalls` y `run`), el camino stream → `_WriteCalls` → `request_call` → registro → ejecución. Pregunta: ¿queda algún camino en el que se pida confirmar, o se ejecute, algo distinto de lo que el modelo terminó de escribir y la persona vio?
+
+**No se encontró ninguno.** Comprobado con tests, sin ver en una instalación.
+
+1. **Qué se pide.** Una llamada de escritura solo se informa al terminar su mensaje, y solo si terminó en `tool_use` (TM-W14). La comparación es con ese valor exacto: un motivo vacío, ausente, desconocido o escrito de otra manera no pide. Un test recorre los finales que el modelo del SDK declara, más `guardrail_intervened`, uno desconocido, el vacío y ningún fin.
+2. **La primera versión del arreglo dejaba un hueco:** silenciaba solo el tope, y una llamada abierta y sin argumentos se seguía pidiendo con cualquier otro final (el límite de tiempo es uno real). La regla ampliada lo cierra.
+3. **Las llamadas de un mensaje se olvidan con él.** No se piden con el fin de un mensaje posterior, ni cuando llega el resultado de la tool sin que el fin de su mensaje haya llegado.
+4. **Una llamada no admite más trozos una vez cerrado su bloque,** y un índice de bloque repetido en el mismo mensaje no sustituye a una llamada ya cerrada.
+5. **Qué se muestra y qué se ejecuta.** No cambia: la tarjeta muestra los argumentos canónicos guardados y la ejecución sale de ese mismo registro, con su hash (TM-W2). Nada del stream se vuelve a usar después de crear la solicitud.
+6. **Nada de unos argumentos a medias** va al navegador, a auditoría ni a los logs: de un mensaje que no terminó en `tool_use` no sale el evento interno que los lleva.
+
+Lo que queda, anotado y sin construir: `mango-api` no valida los argumentos contra el esquema de la tool (TM-W14, «Gaps»). Lo que la regla cuesta, aceptado por el dueño: una llamada completa de un mensaje que terminó de otra manera (por ejemplo, intervenido por el guardrail) no se pide, y la persona repite la petición.
