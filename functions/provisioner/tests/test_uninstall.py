@@ -32,8 +32,8 @@ EVENT = {
 }
 
 
-def error(code: str) -> ClientError:
-    return ClientError({"Error": {"Code": code, "Message": "x"}}, "Op")
+def error(code: str, operation: str = "Op", message: str = "x") -> ClientError:
+    return ClientError({"Error": {"Code": code, "Message": message}}, operation)
 
 
 class Paginator:
@@ -312,6 +312,43 @@ def test_busy_or_gone_is_not_an_error_and_anything_else_fails_closed(
     [(status, reason)] = Run().answers
     assert status == "FAILED"
     assert "AccessDeniedException" in reason
+
+
+def test_a_denied_call_is_named_by_operation_and_code_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    arn = "arn:aws:bedrock-agentcore:us-east-1:111111111111:gateway/mango-acme-tools-abc123"
+    message = f"User is not authorized to perform ManageResourceScopedPolicy on {arn}"
+
+    def denied(self: AgentCore, policyEngineId: str, policyId: str) -> None:  # noqa: N803
+        raise error("AccessDeniedException", "DeletePolicy", message)
+
+    monkeypatch.setattr(AgentCore, "delete_policy", denied)
+    with caplog.at_level("ERROR", logger=uninstall.logger.name):
+        run = Run()
+    assert run.answers == [
+        (
+            "FAILED",
+            "Uninstall guard failed (DeletePolicy: AccessDeniedException). Delete the stack again.",
+        )
+    ]
+    assert [record.getMessage() for record in caplog.records] == [
+        "uninstall_guard failed: operation=DeletePolicy code=AccessDeniedException"
+    ]
+    # Neither the message of AWS nor any identifier: not the Gateway, the policy or the account.
+    said = caplog.text + run.answers[0][1]
+    for leaked in (arn, "mango-acme-tools-abc123", "p1", "111111111111", "not authorized"):
+        assert leaked not in said
+    # It stopped there: nothing after the policy was touched.
+    assert run.iam.deleted == []
+
+
+def test_a_failure_that_is_not_an_aws_call_names_only_its_kind() -> None:
+    assert uninstall.failed_call(KeyError("Stacks")) == ("-", "KeyError")
+    assert uninstall.failed_call(error("ThrottlingException", "arn:aws:iam::1:role/x")) == (
+        "-",
+        "ThrottlingException",
+    )
 
 
 def test_settings_reject_anything_but_well_formed_names() -> None:

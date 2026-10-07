@@ -39,6 +39,7 @@ logger.setLevel(logging.INFO)
 _NS_RE = re.compile(r"^[a-z0-9]{3,8}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _ARN_RE = re.compile(r"^arn:aws:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_-]{1,128}$")
+_OPERATION_RE = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _GONE = frozenset({"ResourceNotFoundException", "NoSuchEntity", "NoSuchEntityException"})
 _BUSY = frozenset({"ConflictException", "DeleteConflict", "DeleteConflictException"})
 _DEFAULT_ENDPOINT = "DEFAULT"
@@ -251,6 +252,18 @@ class Sweep:
         return remaining
 
 
+def failed_call(exc: Exception) -> tuple[str, str]:
+    """The API operation that failed and its error code, and nothing else of the call.
+
+    Never arguments, identifiers or the AWS message, which may quote ARNs or content. The
+    operation is what tells a missing permission apart without searching CloudTrail.
+    """
+    if not isinstance(exc, ClientError):
+        return "-", type(exc).__name__
+    operation = str(getattr(exc, "operation_name", ""))
+    return (operation if _OPERATION_RE.fullmatch(operation) else "-"), error_code(exc)
+
+
 def stack_is_being_deleted(cloudformation: Any, stack_id: str) -> bool:
     stacks = cloudformation.describe_stacks(StackName=stack_id)["Stacks"]
     return len(stacks) == 1 and stacks[0]["StackStatus"] == DELETING_STACK
@@ -318,10 +331,11 @@ def handle(
             f"Agents or packs are still being deleted ({left}). Delete the stack again.",
         )
     except (ClientError, BotoCoreError, KeyError, ValueError) as exc:
-        code = error_code(exc) if isinstance(exc, ClientError) else type(exc).__name__
-        # The code only: AWS messages may quote ARNs or content.
-        logger.error("uninstall_guard failed: %s", code)  # noqa: TRY400
-        answer(event, "FAILED", f"Uninstall guard failed ({code}). Delete the stack again.")
+        operation, code = failed_call(exc)
+        # The operation and the code only: AWS messages may quote ARNs or content.
+        logger.error("uninstall_guard failed: operation=%s code=%s", operation, code)  # noqa: TRY400
+        failure = code if operation == "-" else f"{operation}: {code}"
+        answer(event, "FAILED", f"Uninstall guard failed ({failure}). Delete the stack again.")
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> None:
