@@ -78,7 +78,7 @@ Los Runtimes de packs corren en una VPC propia sin internet gateway ni NAT (`Man
     --query '{version: agentRuntimeVersion, network: networkConfiguration}'
   ```
   Debe decir `networkMode: VPC`, con las subnets y el security group de la salida `PackNetwork` del stack. Mientras un pack siga en otra red, la reconciliación diaria lo reporta (`pack_runtime_not_in_vpc`) y dispara la alarma `Mango-<ns>-Reconciler-findings`: ver «Reconciliación diaria y alarmas».
-- **Rol vinculado al servicio.** El primer Runtime en modo VPC de la cuenta crea `AWSServiceRoleForBedrockAgentCoreNetwork`; el provisioner de packs tiene permiso solo para ese rol.
+- **Rol vinculado al servicio.** El primer Runtime en modo VPC de la cuenta crea `AWSServiceRoleForBedrockAgentCoreNetwork`; el provisioner de packs tiene permiso para crear ese rol. El primer Runtime de la cuenta, de un pack o de un agente, crea además `AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`; los dos provisioners pueden crearlo (D40 (5), D43 (4)). No pueden crear ningún otro rol vinculado a un servicio.
 - **Quitar un pack de la release.** Deshabilitarlo y esperar hasta 8 horas antes de desplegar la release que ya no lo trae: AgentCore tarda eso en soltar sus interfaces de red y CloudFormation no puede borrar el security group mientras tanto.
 - **CloudWatch solo en `us-east-1`.** El pack `aws-cloudwatch` rechaza otra región con un mensaje que lo dice.
 

@@ -1,7 +1,7 @@
 # D40 · Provisioner de agentes: quién publica y con qué permisos
 
-- **Estado:** parcial. Rigen (1), (2) y (4). El punto (3) ya no rige: con [D56](D056-tools-de-escritura-con-aprobacion.md) el provisioner publica agentes con tools de escritura de conectores de Mango marcadas en `approval_tools` (`functions/provisioner/src/mango_provisioner/harness.py`).
-- **Fecha:** 2026-10-01
+- **Estado:** parcial. Rigen (1), (2), (4) y (5). El punto (3) ya no rige: con [D56](D056-tools-de-escritura-con-aprobacion.md) el provisioner publica agentes con tools de escritura de conectores de Mango marcadas en `approval_tools` (`functions/provisioner/src/mango_provisioner/harness.py`).
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (deja sin efecto el punto 3)
 
@@ -14,3 +14,12 @@
 **(3) Tools de escritura.** El provisioner no publica agentes con tools de escritura ni con `approval_tools` (`write_tools_unsupported`) hasta que exista la aprobación por llamada ([D27](D027-confirmacion-de-escritura-por-tramos.md)).
 
 **(4) Trust de los roles de agente.** Solo AgentCore, de la cuenta de la instalación y con `aws:SourceArn` limitado al harness y al Runtime de ese agente (el ARN del harness es obligatorio: sin él `CreateHarness` rechaza el rol)
+
+**(5) El rol vinculado de identidad de AgentCore (2026-10-07).** El provisioner de agentes puede crear un rol más, fuera del prefijo de agentes: `iam:CreateServiceLinkedRole` sobre `arn:aws:iam::<cuenta>:role/aws-service-role/runtime-identity.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`, con la condición `iam:AWSServiceName` = `runtime-identity.bedrock-agentcore.amazonaws.com` (sentencia `AgentCoreRuntimeIdentityServiceRole` de `infra/lib/constructs/provisioner.ts`). Ese rol y ningún otro, y solo crearlo: ni borrarlo ni cambiarlo.
+
+- **Qué mostró una primera instalación (2026-10-07).** En una cuenta que nunca había usado AgentCore los stacks terminaron bien y el agente de la versión no se publicó: el harness quedó `CREATE_FAILED` con «Failed creating service linked role. Please verify that the calling role has sufficient permissions to create a service linked role», y la versión quedó `failed` en `check_harness`. AgentCore crea ese rol al crear o actualizar el primer Runtime de la cuenta (un harness es un Runtime gestionado), con las credenciales de quien llama, y el provisioner no tenía el permiso. Fuente: «Using service-linked roles for Amazon Bedrock AgentCore», de la guía de AgentCore, que da esa sentencia tal cual y no pide ninguna otra acción de IAM a quien llama.
+- **Por qué el laboratorio no lo vio.** Su cuenta tenía el rol desde antes de Mango, de otros usos de AgentCore. Solo falta en una cuenta nueva.
+- **Por qué no sirve para escalar.** El nombre, la confianza y la política del rol los fija AWS: solo lo asume el servicio de identidad de Runtimes de AgentCore y solo permite pedir tokens de workload identity (`GetWorkloadAccessToken` y sus dos variantes). Quien lo crea no elige nada de eso, no puede pasarlo ni asumirlo, y crearlo dos veces no cambia nada.
+- **Quién lo decidió.** El dueño, el 2026-10-07, por menú: arreglar el producto con una versión nueva en lugar de crear el rol a mano, y dar el permiso limitado a ese rol y a ese servicio, como el que el provisioner de packs ya tenía para su rol de red. El mismo día decidió darlo también al provisioner de packs ([D43](D043-provisioner-de-packs.md) (4)).
+- **Sin ver en una instalación.** Comprobado con tests de la plantilla (la sentencia exacta, y que ningún otro rol de `Core` puede crear un rol vinculado a un servicio) y con la síntesis. Se verá en una instalación desde cero con la versión que lo traiga.
+- **Propuesto por un agente y aceptado por el dueño el 2026-10-07:** el nombre de la sentencia, igual en los dos provisioners; el test que fija que ninguno de los dos tiene `iam:DeleteServiceLinkedRole` (ni, el de agentes, `iam:UpdateRoleDescription`); y la fila de §7 de la arquitectura que dice que la cuenta del laboratorio no es una cuenta nueva.

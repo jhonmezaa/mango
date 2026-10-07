@@ -1,7 +1,7 @@
 # D43 · Provisioner de packs: qué se instala, quién lo registra y qué packs entran
 
-- **Estado:** parcial. Rigen (1) y (2). El punto (3) ya no rige como está: los packs de datos de cuentas se instalan desde [D49](D049-identidad-en-packs-de-datos.md), [D52](D052-pack-de-billing-ampliado.md), [D54](D054-egress-de-packs.md) y [D55](D055-pack-de-cloudwatch.md); los packs con tools de escritura siguen rechazados ([D56](D056-tools-de-escritura-con-aprobacion.md) (5)).
-- **Fecha:** 2026-10-01
+- **Estado:** parcial. Rigen (1), (2) y (4). El punto (3) ya no rige como está: los packs de datos de cuentas se instalan desde [D49](D049-identidad-en-packs-de-datos.md), [D52](D052-pack-de-billing-ampliado.md), [D54](D054-egress-de-packs.md) y [D55](D055-pack-de-cloudwatch.md); los packs con tools de escritura siguen rechazados ([D56](D056-tools-de-escritura-con-aprobacion.md) (5)).
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D46](D046-api-del-catalogo-de-mcp.md) (amplía, punto 3); [D49](D049-identidad-en-packs-de-datos.md) (precisa, punto 2); [D52](D052-pack-de-billing-ampliado.md) (precisa); [D56](D056-tools-de-escritura-con-aprobacion.md) (precisa el punto 3)
 
@@ -12,5 +12,11 @@
 **(2) Puntero de instalación y segundo escritor de `Settings`.** Qué está instalado lo dice el ítem `MCP_INSTALLED#<pack>` de la tabla `Settings`, que solo escribe el provisioner de packs (`mango-api` tiene un `Deny` explícito); la compensación y las actualizaciones deciden a partir de él. El provisioner de packs escribe además el estado de la habilitación (`MCP#<pack>` / `ENABLEMENT`: estado, fallo y su bloqueo), como prevé el spec §8. **Esto ajusta la mitigación de TM-A6 (Admin v0), que decía que solo el rol de `mango-api` escribe en `Settings`:** el usuario aceptó el 2026-10-01 que el provisioner de packs escriba en la tabla, acotado por IAM a las particiones `MCP#*` (`UpdateItem` sobre una lista cerrada de atributos, nunca `config` ni `approved_by`) y `MCP_INSTALLED#*` (`PutItem` y `DeleteItem`). No alcanza el mapeo área↔OU, los grupos, los modelos ni los presupuestos (comprobado en el laboratorio con la política sintetizada). El provisioner de packs tiene rol y Lambda propios, separados del provisioner de agentes.
 
 **(3) Solo packs `public` con tools de lectura por ahora.** El provisioner rechaza (`data_tier_unsupported`) los packs de datos de cuentas, que necesitan la identidad por llamada ([D37](D037-packs-de-datos-de-cuentas.md), fase C) y la allowlist de egress (R6), y los que tienen tools de escritura, que necesitan la aprobación por llamada ([D27](D027-confirmacion-de-escritura-por-tramos.md)). Las acciones IAM de un pack deben estar en la lista cerrada del permissions boundary de packs (`Mango-<ns>-mcp-boundary`); un manifiesto firmado que pida otra se rechaza.
+
+**(4) El rol vinculado de identidad de AgentCore (2026-10-07).** El provisioner de packs puede crear `AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`: la misma sentencia que el provisioner de agentes ([D40](D040-provisioner-de-agentes.md) (5)), sobre ese único rol y con `iam:AWSServiceName` = `runtime-identity.bedrock-agentcore.amazonaws.com` (sentencia `AgentCoreRuntimeIdentityServiceRole` de `infra/lib/constructs/pack-provisioner.ts`). Se suma al que ya tenía para el rol de red de AgentCore ([D54](D054-egress-de-packs.md)); no gana ningún otro.
+
+- **Por qué.** La guía de AgentCore dice que ese rol se crea al crear o actualizar un Runtime, sea de un pack o de un harness. Con el permiso solo en el provisioner de agentes, instalar un pack dependería de que antes se hubiera creado el harness de algún agente: en una cuenta nueva donde eso no llegó a pasar, el Runtime del pack fallaría igual que falló el primer harness.
+- **Quién lo decidió.** El dueño, el 2026-10-07, por menú, al saber que un Runtime de pack también necesita el rol.
+- **Sin ver en una instalación.** Comprobado con tests de la plantilla y con la síntesis. Ninguna instalación ha creado todavía un Runtime de pack sin que el rol existiera.
 
 Modelo de amenazas: `docs/security/threat-models/mcp-pack-provisioner-threat-model.md`

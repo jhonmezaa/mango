@@ -175,7 +175,7 @@ flowchart LR
 | `functions/provisioner/src/mango_provisioner/packs/config.py` | `PACK_NETWORK` | TM-E9 |
 | `functions/reconciler/src/mango_reconciler/inventory.py` (`PackRuntimes`), `checks.py` (`pack_runtimes`) | Detección de un Runtime de pack fuera de la red de packs | TM-E7 |
 | `infra/lib/constructs/reconciler.ts` (`ReadPackRuntimeNetwork`) | Permiso de solo lectura del reconciliador sobre `runtime/Mango_<ns>_mcp_*` | TM-E7 |
-| `infra/lib/constructs/pack-provisioner.ts` | `iam:CreateServiceLinkedRole` acotado; condiciones de red en `CreatePackRuntime` y `UpdatePackRuntime` | TM-E9 |
+| `infra/lib/constructs/pack-provisioner.ts` | `iam:CreateServiceLinkedRole` acotado al rol de red (y, desde D43 (4), al de identidad de Runtimes); condiciones de red en `CreatePackRuntime` y `UpdatePackRuntime` | TM-E9 |
 | `packages/py/mango-pack-runtime/src/mango_pack_runtime/guard.py` (`RegionError`) | Región única, solo dicha a un llamador verificado | Decisión 3 |
 
 ## Comprobado en el laboratorio (2026-10-02)

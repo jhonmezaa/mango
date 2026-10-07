@@ -32,8 +32,8 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | Chat con streaming y fase del turno en vivo | Hecho | `POST /api/chat` en `apps/api/src/mango_api/app.py` | D39, D57 |
 | Agente FinOps de la release | Hecho | `agents/finops/agent.json` | D4, D34, D42 |
 | Marketplace, Agent Builder, Revisión y Org Chart | Hecho | `apps/api/src/mango_api/agents.py`; `apps/web/src/pages/` | D18, D30, D38 |
-| Publicar y retirar agentes por SDK, sin CodeBuild | Hecho | `functions/provisioner`; `infra/lib/constructs/provisioner.ts` y `deprovisioner.ts` | D25, D40, D48 |
-| MCP packs firmados, con egress restringido | Hecho: tres packs de lectura | `packs/aws-pricing`, `packs/aws-billing`, `packs/aws-cloudwatch`; `infra/lib/constructs/pack-network.ts` | D19, D36, D43, D54 |
+| Publicar y retirar agentes por SDK, sin CodeBuild | Hecho. En una cuenta que nunca usó AgentCore la primera publicación fallaba: el provisioner no podía crear el rol vinculado de identidad de AgentCore (visto en una primera instalación el 2026-10-07). Desde D40 (5) puede crear ese rol y solo ese (comprobado con tests, sin ver en una instalación) | `functions/provisioner`; `infra/lib/constructs/provisioner.ts` y `deprovisioner.ts` | D25, D40, D48 |
+| MCP packs firmados, con egress restringido | Hecho: tres packs de lectura. El provisioner de packs también puede crear el rol vinculado de identidad de AgentCore (D43 (4), del 2026-10-07; comprobado con tests, sin ver en una instalación) | `packs/aws-pricing`, `packs/aws-billing`, `packs/aws-cloudwatch`; `infra/lib/constructs/pack-network.ts` | D19, D36, D43, D54 |
 | RBAC L1 (Verified Permissions) | Hecho | `policies/cedar/platform/` (15 políticas) | §4.5 |
 | RBAC L2 (Cedar en el Gateway) | Hecho por tool y por tipo de usuario; no por agente | `infra/lib/constructs/tools.ts` y `write-tools.ts`; `functions/provisioner/src/mango_provisioner/packs/gateway.py` | D33, D45 |
 | Identidad del usuario hasta el destino | Hecho: pagadora y cuentas miembro | `packages/py/mango-aws`; `infra/lib/constructs/member-access.ts` | D10, D37, D49, D51, D55 |
@@ -213,7 +213,7 @@ Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no
 
 | Decisión | Detalle | Estado |
 |---|---|---|
-| **AgentCore Runtime + harness por defecto** | Cada agente del marketplace es un *harness* con modelo, prompt, tools (referencias al Gateway) y límites. Hay **un harness por agente**: cada versión aprobada es un `UpdateHarness` y `mango-api` invoca el endpoint `live` (D32). Lo crea el provisioner (Step Functions + Lambda) por SDK, sin contenedor. Memoria desactivada (D13) y sin skills (D38) | Hecho |
+| **AgentCore Runtime + harness por defecto** | Cada agente del marketplace es un *harness* con modelo, prompt, tools (referencias al Gateway) y límites. Hay **un harness por agente**: cada versión aprobada es un `UpdateHarness` y `mango-api` invoca el endpoint `live` (D32). Lo crea el provisioner (Step Functions + Lambda) por SDK, sin contenedor. El primer Runtime de una cuenta hace que AgentCore cree su rol vinculado de identidad con los permisos de quien llama: los dos provisioners pueden crear ese rol y ningún otro de ese tipo, salvo el de red en el de packs (D40 (5), D43 (4)). Memoria desactivada (D13) y sin skills (D38) | Hecho |
 | **Fuente de verdad = definición del agente en DynamoDB** | Tabla `Agents`. Qué versión sirve un agente lo dice el puntero `PUBLISHED#<id>`, que solo escribe el provisioner (D40). `mango-api` arma cada invocación desde la versión publicada. Como el harness exporta a Strands, la misma definición podría correr en un runtime propio si hiciera falta salir de AgentCore | Hecho |
 | **Strands code-defined en Runtime para casos avanzados** | Supervisor multi-dominio y prompts por etapa. El harness solo soporta *agent-as-tool* y no *routing* multi-agente | Previsto |
 | **Claude Agent SDK en Runtime** solo para agentes "trabajador de archivos/código" | Necesitan filesystem y skills estilo Claude Code | Previsto |
@@ -269,6 +269,7 @@ Límites a tener presentes:
   - Plan: si el usuario no elige ("Asistente Mango"), un clasificador Haiku con structured output elige entre las Agent Cards *ya filtradas por RBAC*, con umbral de confianza. Viviría fuera de AgentCore para que la decisión sea barata, auditable y posterior al RBAC.
 - **Step Functions** para operaciones largas, siempre por **llamadas SDK** (nunca CodeBuild + CDK):
   - Publicar un agente (`AgentProvisioner`), retirarlo (`AgentDeprovisioner`, D48) e instalar un pack (`PackProvisioner`, D43).
+  - Cada una tiene su rol. Los dos que crean Runtimes crean roles solo bajo su prefijo y con su permissions boundary; fuera de eso solo pueden crear los roles vinculados al servicio que AgentCore necesita en la cuenta: el de identidad (los dos; D40 (5), D43 (4)) y el de red (el de packs, D54).
   - Ingesta de KB, reutilizando el lock S3 y la ingesta incremental de bedrock-chat (previsto; no hay KB todavía).
   - Las aprobaciones HITL **no** pasan por Step Functions (D56 (2)); ver §4.5.
 - **Trabajos programados:** la reconciliación diaria de agentes, de solo lectura (D41), y la conciliación del presupuesto cada 5 minutos (D73). Las dos son Lambdas con cola de mensajes fallidos.
@@ -878,6 +879,7 @@ Todo son **estimaciones a precios de lista de `us-east-1`**, armadas con lo que 
 | **Indirect prompt injection** vía documentos y tool outputs | Guardrail contra ataques de prompt en la entrada, default-deny en L2, aprobación en toda escritura, `allowedTools` mínimo, packs sin salida a internet (D54) | `ApplyGuardrail` sobre salidas de tools y el taint de sesión (R2) |
 | **Auditoría sin cadena**: un evento que falte no se detecta (§4.5) | Hash por evento y Object Lock | Cadena, digest firmado y copia en Log Archive |
 | **Correo de Cognito**: 50 al día por cuenta con el remitente por defecto (D72 (9)) | — | SES con el dominio del cliente |
+| **La cuenta del laboratorio no es una cuenta nueva**: trae roles vinculados a servicios, acuerdos de modelos y cuotas de usos anteriores, y lo que una cuenta nueva no tiene no falla ahí (así pasó con el rol de identidad de AgentCore, D40 (5)) | Una instalación desde cero en una cuenta nueva (2026-10-07), que encontró ese fallo; el runbook dice qué comprobar antes de instalar | Repetirla con la versión que trae el arreglo, y con cada cambio de la instalación |
 | **Parte de lo construido no se ha visto en una instalación** | Tests; cada fila de «Estado de lo construido» y cada decisión dicen qué falta comprobar | Las validaciones en una instalación |
 | **Regiones**: hoy solo us-east-1 | Sin requisito de residencia (D2) | Otra región exige cambios en la plantilla (D71 (7)) y una red de packs por región (D54 (6)) |
 | **Cuotas de RAG** (Retrieve 20 rps, 100 KBs) y **conectividad SAP** (on-prem, auth corporativa) | No aplican todavía: son de componentes previstos | KBs compartidas por perfil de indexación; PoC de VPC egress + OBO |
@@ -933,10 +935,10 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D37 | Packs de datos de cuentas: identidad y primer pack | vigente | 2026-10-01 | [D037-packs-de-datos-de-cuentas.md](decisions/D037-packs-de-datos-de-cuentas.md) |
 | D38 | Alcance de Marketplace v1 por fase | vigente | 2026-10-01 | [D038-alcance-de-marketplace-v1.md](decisions/D038-alcance-de-marketplace-v1.md) |
 | D39 | Sesión del runtime por conversación y latencia del chat | vigente | 2026-10-01 | [D039-sesion-del-runtime-y-latencia.md](decisions/D039-sesion-del-runtime-y-latencia.md) |
-| D40 | Provisioner de agentes: quién publica y con qué permisos | parcial | 2026-10-01 | [D040-provisioner-de-agentes.md](decisions/D040-provisioner-de-agentes.md) |
+| D40 | Provisioner de agentes: quién publica y con qué permisos | parcial | 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día) | [D040-provisioner-de-agentes.md](decisions/D040-provisioner-de-agentes.md) |
 | D41 | Alertas operativas y reconciliación diaria | vigente | 2026-10-01 | [D041-alertas-y-reconciliacion.md](decisions/D041-alertas-y-reconciliacion.md) |
 | D42 | Chat con varios agentes y agentes de la release | vigente | 2026-10-01 | [D042-chat-con-varios-agentes.md](decisions/D042-chat-con-varios-agentes.md) |
-| D43 | Provisioner de packs: qué se instala, quién lo registra y qué packs entran | parcial | 2026-10-01 | [D043-provisioner-de-packs.md](decisions/D043-provisioner-de-packs.md) |
+| D43 | Provisioner de packs: qué se instala, quién lo registra y qué packs entran | parcial | 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4) | [D043-provisioner-de-packs.md](decisions/D043-provisioner-de-packs.md) |
 | D44 | Cambios de grupos de acceso y claim de «central» | vigente | 2026-10-01 | [D044-cambios-de-grupos-y-claim-central.md](decisions/D044-cambios-de-grupos-y-claim-central.md) |
 | D45 | Cierre de la fase A de Marketplace v1 | vigente | 2026-10-01 | [D045-cierre-fase-a-marketplace.md](decisions/D045-cierre-fase-a-marketplace.md) |
 | D46 | API del catálogo de MCP: quién decide, qué lee `mango-api` y qué pasa con los agentes | vigente | 2026-10-01 | [D046-api-del-catalogo-de-mcp.md](decisions/D046-api-del-catalogo-de-mcp.md) |
