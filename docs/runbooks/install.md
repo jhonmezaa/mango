@@ -201,10 +201,63 @@ Después de instalar y después de cada actualización:
 ## 5. Desinstalar
 
 1. `delete-stack` de `Core`. El stack borra primero, por su cuenta, los agentes y los packs que Mango creó (harness, Runtimes, targets, políticas, roles y sus log groups) y espera a que desaparezcan; puede tardar hasta una hora. Si responde que todavía se están borrando, repetir el `delete-stack`.
+   - **Ese primer borrado termina en `DELETE_FAILED` por un solo recurso:** el almacén de políticas de Verified Permissions (`AWS::VerifiedPermissions::PolicyStore`), con «The policy store cannot be deleted because deletion protection is enabled». El almacén nace con protección de borrado y la plantilla manda borrarlo; la plantilla no se ha corregido. Todo lo demás ya se borró o quedó retenido.
+   - **La salida:** quitarle la protección y repetir el `delete-stack`. El id del almacén es el id físico de ese recurso en los eventos del stack; el modo de validación hay que repetirlo tal como está (`aws verifiedpermissions get-policy-store --policy-store-id <id> --query validationSettings.mode`):
+
+     ```bash
+     aws verifiedpermissions update-policy-store --policy-store-id <id> \
+       --validation-settings mode=<el que tenga> --deletion-protection DISABLED
+     aws cloudformation delete-stack --stack-name Mango-<ns>-Core
+     ```
+
+   - Si el recurso que falla es otro, parar y mirar su mensaje: esta salida es solo para el almacén de políticas.
+   - Una suscripción del correo de alertas rehecha fuera del stack (baja y alta de la misma dirección; [`operations.md`](operations.md#el-enlace-de-baja-del-correo)) no estorba: el topic se borra con sus suscripciones.
+   - Al borrarse `Core`, CloudWatch Transaction Search vuelve a quedar apagado en la cuenta (el destino de las trazas vuelve a `XRay`), salvo que la cuenta lo gestione por fuera (`TransactionSearch` = `external`).
 2. `delete-stack` de `PackNetwork`. AgentCore puede retener interfaces de red en esas subnets durante horas después de borrar los Runtimes: si el stack queda en `DELETE_FAILED`, repetir el borrado más tarde. Nada más depende de él.
 3. `delete-stack` de `OrgAccess` y después de `Payer`, en la cuenta de gestión.
 
-**Qué queda** (los datos se retienen a propósito): las tablas de DynamoDB, el directorio de usuarios, el bucket de auditoría (con Object Lock), los buckets de logs y de packs, los log groups y las llaves KMS (se pueden borrar a los 7 días). **No se puede reinstalar con el mismo namespace mientras existan**: los nombres son fijos. Borrarlos es un acto aparte y deliberado: `deployment/purge-retained.sh <namespace>` lista lo retenido y, con `--confirm`, lo borra (quita la protección de las tablas y del directorio, vacía los buckets con todas sus versiones, programa las llaves a 7 días). No tiene vuelta atrás. Con `AuditLockMode` `COMPLIANCE`, el bucket de auditoría no se puede vaciar hasta que venza la retención.
+**Cuánto tarda.** Visto en una instalación de laboratorio el 2026-10-07, sin agentes publicados ni packs habilitados; con ellos, `Core` y `PackNetwork` tardan más, como dicen los pasos 1 y 2:
+
+| Stack | Tiempo |
+|---|---|
+| `Core` | 18 min hasta el fallo del almacén de políticas; 15 s el segundo borrado |
+| `PackNetwork` | 3 min 35 s |
+| `OrgAccess` | 54 s |
+| `Payer` | 19 s |
+
+### Qué queda y cómo se borra
+
+Los datos se retienen a propósito. **No se puede reinstalar con el mismo namespace mientras existan:** los nombres son fijos. Borrarlos es un acto aparte y deliberado, sin vuelta atrás:
+
+```bash
+deployment/purge-retained.sh <namespace>            # solo lista
+deployment/purge-retained.sh <namespace> --confirm  # borra lo listado
+```
+
+Se ejecuta en la cuenta de Mango y en la región de la instalación, con `Core` y `PackNetwork` ya borrados. **Mientras exista cualquiera de los dos, se niega,** con y sin `--confirm`. Solo sigue si CloudFormation responde que no existen: si no puede comprobarlo (sin permiso para consultar los stacks, credenciales caducadas, un límite de tasa, sin red, sin región configurada), se detiene con el error de AWS y no lista ni borra nada. Hay que corregir eso y repetir. Si `PackNetwork` sigue en `DELETE_FAILED` por las interfaces de red de AgentCore (paso 2), la purga espera a que ese borrado termine. Necesita `aws` y `jq`. Las cantidades son las de la instalación de laboratorio del 2026-10-07:
+
+| Qué queda | Visto | Qué hace la purga |
+|---|---|---|
+| Tablas de DynamoDB `Mango-<ns>-…` | 8 | Les quita la protección de borrado y las borra |
+| Directorio de usuarios `Mango-<ns>-Users` | 1 | Borra su dominio, le quita la protección y lo borra |
+| Buckets `mango-<ns>-core-…` y `mango-<ns>-packnetwork-…` | 4: el de auditoría (con Object Lock), dos de logs de acceso y el de packs | Borra todas las versiones y después el bucket. Solo pide saltar la retención en el que tiene Object Lock; la lista dice cuál es |
+| Log groups de la instalación | 27 | Los borra |
+| Llaves KMS de `Core` y de `PackNetwork` | 7 activas y sin alias (6 de `Core`, 1 de `PackNetwork`): los alias se borran con los stacks. Cada una cuesta USD 1 al mes, el precio de lista de KMS, hasta que se borra | Las encuentra por la etiqueta `mango:namespace` de la instalación y programa su borrado a 7 días, el mínimo de AWS. Nunca toca una llave de otro namespace ni una sin esa etiqueta. La lista da el id, el componente (`mango:component`) y la descripción de cada una |
+| Alias `alias/Mango-<ns>-…` | Ninguno | Si quedara alguno, lo borra. La llave a la que apunta solo se programa si lleva la etiqueta |
+
+**Lo que la purga no toca,** y nombra al final de la lista («Not touched by this script»):
+
+| Qué | Visto | Por qué |
+|---|---|---|
+| Llaves KMS que el stack ya dejó en espera de borrado | 2 | Se borran solas a los 7 días. En espera no cuestan |
+| Log group `aws/spans` | 1 | Lo crea Transaction Search para toda la cuenta, no Mango: puede tener trazas de otros. Si nadie más lo usa, se borra a mano (`aws logs delete-log-group --log-group-name aws/spans`) |
+| Revisiones inactivas de la task definition `Mango-<ns>-api` | 3 | No cuestan y no impiden reinstalar |
+| Un bucket con nombre de la instalación en otra región | Ninguno | Los stacks solo se comprobaron en la región configurada. Si aparece, la purga se corrió en la región equivocada |
+
+- **Las llaves tardan 7 días en desaparecer.** Mientras tanto no cuestan, no se pueden usar y no impiden reinstalar con el mismo namespace.
+- **Con `AuditLockMode` `COMPLIANCE`,** el bucket de auditoría no se puede vaciar hasta que venza la retención: la purga lo dice con el error de S3, sigue con lo demás y termina con error.
+- **Si algo de lo listado no se pudo borrar,** la purga con `--confirm` termina con error y nombra lo que sigue en la cuenta («Could not be deleted, and still in the account»). Un final sin error significa que no quedó nada de lo listado.
+- **Con qué se ha comprobado.** El guion de esta versión, con tests (`deployment/tests/test_purge_retained.py`, contra un `aws` simulado): todavía no se ha corrido en una instalación. Lo visto en una instalación es del 2026-10-07 y con el guion anterior, que borró las tablas, el directorio, el bucket de auditoría y los log groups, dejó los otros 3 buckets y las 7 llaves, y terminó sin error (ver «Problemas conocidos»).
 
 ## Problemas conocidos
 
@@ -215,4 +268,6 @@ Después de instalar y después de cada actualización:
 | Un pack queda en error con `verify_tools` / `tools_response_invalid` justo al habilitarlo | Visto una vez al instalar dos packs a la vez: el Runtime recién creado respondió algo que no era la lista de tools. «Reintentar» lo resolvió. El log de `Mango-<ns>-PackProvisioner` registra la forma de la respuesta (`pack_provisioner.tools_response_invalid`) |
 | El sha256 de la plantilla del StackSet no coincide con `MemberTemplateSha256` | Versiones hasta `v0.1.0-gb557f40`: una descripción con un carácter fuera de ASCII, que CloudFormation guarda como `?`. No cambia permisos. Se corrige actualizando `OrgAccess` a una versión posterior |
 | Los cuatro stacks terminan bien y el agente de la versión no aparece en el Marketplace. La alarma `Mango-<ns>-AgentProvisioner-failed` está en `ALARM`; la versión del agente quedó fallida en el paso `check_harness`; el log `/aws/lambda/Mango-<ns>-Provisioner` trae `provisioner.harness_failed` con el motivo «Failed creating service linked role…» | Versiones hasta `v0.1.0-g998eb03`, instaladas en una cuenta que nunca usó AgentCore: el primer Runtime de la cuenta crea el rol vinculado al servicio `AWSServiceRoleForBedrockAgentCoreRuntimeIdentity` con los permisos de quien llama, y el provisioner no podía crearlo (D40, punto 5). Con una versión posterior no hay que hacer nada. En una anterior, quien administra la cuenta lo crea una vez, `aws iam create-service-linked-role --aws-service-name runtime-identity.bedrock-agentcore.amazonaws.com`, y un administrador de Mango reintenta la publicación desde la aplicación. Visto en una instalación de laboratorio el 2026-10-07; el arreglo está comprobado con tests, sin ver todavía en una instalación |
+| `delete-stack` de `Core` termina en `DELETE_FAILED` y el único recurso fallido es `AWS::VerifiedPermissions::PolicyStore`: «The policy store cannot be deleted because deletion protection is enabled» | El almacén de políticas nace con protección de borrado y la plantilla manda borrarlo. Quitarle la protección (`aws verifiedpermissions update-policy-store … --deletion-protection DISABLED`, con su modo de validación) y repetir el `delete-stack`: paso 5. Visto en una instalación de laboratorio el 2026-10-07; la plantilla no se ha corregido |
+| `purge-retained.sh --confirm` deja buckets con «objects still locked (COMPLIANCE retention)» y antes el error «x-amz-bypass-governance-retention is only applicable to Object Lock enabled buckets»; el apartado de llaves KMS sale vacío; termina sin error | El guion publicado hasta `v0.1.0-g5bf4346`: pedía saltar la retención en todos los buckets, y S3 lo rechaza donde no hay Object Lock; buscaba las llaves por alias, y los alias se borran con los stacks. Visto en una instalación de laboratorio el 2026-10-07: dejó 3 de 4 buckets y 7 llaves activas. Usar el guion de una versión posterior (comprobado con tests, sin correr todavía en una instalación). Con el anterior, a mano: vaciar cada bucket sin esa opción y borrarlo, y programar el borrado de cada llave activa que lleve la etiqueta `mango:namespace` de la instalación (`aws kms schedule-key-deletion --pending-window-in-days 7`) |
 | `CannotPullContainerError` en `mango-api` | La cuenta no puede leer el repositorio de imágenes del proveedor (misma lista de clientes) |

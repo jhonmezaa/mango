@@ -330,9 +330,9 @@ AgentCore puede tardar horas en soltar las ENI. Para que `Core` se borre limpio,
 
 ### 8.4 Datos retenidos
 
-Con `RETAIN` (clientes) quedan: 6 tablas, user pool, bucket de auditoría (Object Lock), buckets de logs y packs, llaves KMS y log groups. **Reinstalar con el mismo namespace falla** mientras existan, porque los nombres son fijos.
+Con `RETAIN` (clientes) quedan: 8 tablas, user pool, bucket de auditoría (Object Lock), buckets de logs y packs, llaves KMS (sin alias: los alias se borran con los stacks) y log groups. **Reinstalar con el mismo namespace falla** mientras existan, porque los nombres son fijos.
 
-`purge-retained.sh <namespace>` (publicado con la release) los lista y, con `--confirm`, los borra: quita la protección de borrado, vacía buckets (con bypass de governance) y programa las llaves. En modo `COMPLIANCE` el bucket de auditoría no se puede vaciar hasta que venza la retención: el script lo dice y sigue.
+`purge-retained.sh <namespace>` (publicado con la release) los lista y, con `--confirm`, los borra. Se niega mientras exista `Core` o `PackNetwork`, y también si no puede comprobar que no existen. Al borrar: quita la protección de borrado, vacía buckets (con bypass de governance solo donde hay Object Lock) y programa a 7 días las llaves que llevan la etiqueta `mango:namespace` de la instalación. En modo `COMPLIANCE` el bucket de auditoría no se puede vaciar hasta que venza la retención: el script lo dice, sigue con lo demás y termina con error, como cada vez que algo de lo listado no se pudo borrar. No toca las llaves que el stack ya dejó en espera de borrado, el log group `aws/spans` ni las revisiones inactivas de la task definition, y lo dice en la lista (D58 (12); el detalle, en `docs/runbooks/install.md`, paso 5).
 
 Orden de desinstalación: `Core` → `PackNetwork` → `purge-retained.sh` (si se quiere borrar los datos) → `OrgAccess` → `Payer`.
 
