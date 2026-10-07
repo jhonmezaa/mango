@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras validarla en una instalación, puntos 17 a 20; el dueño aceptó ese día la corrección del punto 19 y decidió no parar la sesión, punto 20; lo que una instalación mostró ese día de esa corrección, puntos 21 a 23)
 - **Precisa / reemplaza a:** precisa [D41](D041-alertas-y-reconciliacion.md) (la reconciliación diaria sigue siendo de solo lectura; esta es otra función), [D71](D071-alarmas-operativas-y-tablero.md) (1: dos alarmas nuevas), [D16](D016-observabilidad-de-agentes.md) (las trazas pasan a ser, además, la fuente del gasto de un turno cortado) y [D70](D070-dos-tareas-y-limites-compartidos.md) (10: su último párrafo dejaba «aparte» el cobro de un turno cortado; es esta decisión)
-- **Precisada por:** [D74](D074-tope-de-tokens-en-cada-llamada.md) (20: el tope por llamada de su opción (b); 19: la salida que cuenta la reserva; 6: de la fila 6 de la tabla sale un caso, el error con el que el harness cierra un turno justo después del uso de un mensaje cortado en su tope, que es un final conocido: su punto 13, aceptado por delegación del dueño el 2026-10-06. El resto de la fila queda como la decidió el dueño)
+- **Precisada por:** [D74](D074-tope-de-tokens-en-cada-llamada.md) (20: el tope por llamada de su opción (b); 19: la salida que cuenta la reserva; 6: de la fila 6 de la tabla sale un caso, el error con el que el harness cierra un turno justo después del uso de un mensaje cortado en su tope, que es un final conocido: su punto 13, aceptado por delegación del dueño el 2026-10-06, que lo confirmó el 2026-10-07. El resto de la fila queda como la decidió el dueño)
 
 ## Decisión
 

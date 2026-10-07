@@ -1,7 +1,7 @@
 # D74 · Toda llamada al modelo lleva un tope de tokens, y la reserva cubre una llamada entera
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, pendiente de su revisión; lo que una instalación mostró ese día de ese arreglo, puntos 15 y 16; la reconciliación diaria, comprobada el 2026-10-07, punto 17)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, que lo confirmó el 2026-10-07; lo que una instalación mostró ese día de ese arreglo, puntos 15 y 16; la reconciliación diaria, comprobada el 2026-10-07, punto 17)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20: construye su opción (b); 19: la salida que cuenta la reserva cambia para los agentes cuyo tope por llamada supera su máximo de tokens; 6: saca un caso de la fila 6 de su tabla, punto 13 de esta decisión)
 - **Precisada por:** —
 
@@ -72,7 +72,7 @@ Origen: hito 1, «instalable por una empresa real». [D73](D073-turno-cortado-nu
 - La conciliación cerró bien ese turno, por sus llamadas al modelo ([D73](D073-turno-cortado-nunca-cuesta-cero.md) (19)). La traza `invoke_agent` de un turno así sale con error y sin tokens.
 - Un turno cortado por su límite de tiempo no pasa por aquí: su llamada también acaba en `max_tokens`, pero después del corte, y su texto sí quedaba guardado.
 
-**(13) El arreglo.** El dueño eligió el 2026-10-06 **«arreglarlo ahora»**: `mango-api` trata ese final como conocido, guarda el texto cortado y liquida al momento, sin aviso de error, que es lo que los puntos 7 y 8 decían. Descartó dejarlo para otro día y quitar el tope. El detalle que sigue lo propuso un agente con lo visto y **se aceptó el 2026-10-06 por delegación del dueño**: esa noche encargó tomar la opción recomendada en lo que hubiera que preguntarle. **Queda pendiente de su revisión.**
+**(13) El arreglo.** El dueño eligió el 2026-10-06 **«arreglarlo ahora»**: `mango-api` trata ese final como conocido, guarda el texto cortado y liquida al momento, sin aviso de error, que es lo que los puntos 7 y 8 decían. Descartó dejarlo para otro día y quitar el tope. El detalle que sigue lo propuso un agente con lo visto y **se aceptó el 2026-10-06 por delegación del dueño**: esa noche encargó tomar la opción recomendada en lo que hubiera que preguntarle. **El dueño lo confirmó el 2026-10-07**, incluido que la sesión de ese turno no se continúa.
 
 - **Qué final es.** Lo último que entregó el stream es el uso de un mensaje cuyo motivo de fin es `max_tokens`, y lo que sigue es un error del harness con el código `runtimeClientError`. Se decide por esos datos, que pone AgentCore; no se lee el texto del error.
 - **Qué pasa entonces.** El turno termina como final conocido ([D73](D073-turno-cortado-nunca-cuesta-cero.md) (2)): se guarda el mensaje con el texto hasta el corte, el chat recibe el final normal con `stop_reason: max_tokens`, se cobra el uso real de todas las llamadas del turno, se libera el resto de la reserva y `agent.completed` sale con `settlement: final`. Sin error para la persona ni en el log.
