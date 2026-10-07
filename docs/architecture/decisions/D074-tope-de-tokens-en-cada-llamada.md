@@ -1,7 +1,7 @@
 # D74 · Toda llamada al modelo lleva un tope de tokens, y la reserva cubre una llamada entera
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, pendiente de su revisión; lo que una instalación mostró ese día de ese arreglo, puntos 15 y 16)
+- **Fecha:** 2026-10-06 (propuesta por un agente y aceptada por el dueño el mismo día; precisada ese día tras verla en una instalación, puntos 12 a 14; el detalle del punto 13 lo propuso un agente y se aceptó ese día por delegación del dueño, pendiente de su revisión; lo que una instalación mostró ese día de ese arreglo, puntos 15 y 16; la reconciliación diaria, comprobada el 2026-10-07, punto 17)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (20: construye su opción (b); 19: la salida que cuenta la reserva cambia para los agentes cuyo tope por llamada supera su máximo de tokens; 6: saca un caso de la fila 6 de su tabla, punto 13 de esta decisión)
 - **Precisada por:** —
 
@@ -105,5 +105,10 @@ Origen: hito 1, «instalable por una empresa real». [D73](D073-turno-cortado-nu
 - **Los finales que deben seguir retenidos** (un tope cuyo uso no llega, otro código de error, un evento entre el uso y el error, el error antes que el uso): no se pueden provocar desde fuera y están en los tests.
 - **Un turno de varias llamadas que pase de su reserva** (punto 6).
 - **Sin comprobar todavía: que la reconciliación diaria ([D41](D041-alertas-y-reconciliacion.md)) no marque desvíos por esta decisión.** El punto 3 dice que no cambia ni avisa de nada nuevo; su resultado posterior a estos despliegues no se ha mirado.
+
+**(17) La reconciliación diaria no marcó desvíos (2026-10-07, en una instalación de laboratorio).** El punto 16 lo dejaba sin comprobar. La primera ejecución de la reconciliación diaria ([D41](D041-alertas-y-reconciliacion.md)) posterior a los dos despliegues, el del tope y el de su arreglo, corrió una vez y sin errores, y terminó con **cero hallazgos y cero limpiezas**, igual que las de los tres días anteriores. Su alarma de hallazgos y la de fallos no cambiaron de estado, y su cola de fallos quedó vacía. Los agentes temporales de las validaciones no dejaron harness ni roles huérfanos.
+
+- **Lo que comprueba:** que enviar el tope en cada invocación no altera lo que la reconciliación compara de los agentes ya publicados (punto 3).
+- **Sin ver todavía:** un harness creado ya con el tope guardado que siga vivo a la hora de la reconciliación. Los agentes publicados en esa instalación son anteriores a esta decisión, y el agente temporal publicado después se retiró antes de esa ejecución.
 
 Modelo de amenazas: [`budget-reconciliation-threat-model.md`](../../security/threat-models/budget-reconciliation-threat-model.md) (TM-BR16, TM-BR17 y TM-BR18).
