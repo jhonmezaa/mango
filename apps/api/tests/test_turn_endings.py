@@ -22,11 +22,13 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 
 from mango_api import app as app_module
+from mango_api import harness as harness_module
 from mango_api.budget import BudgetService, current_period
 from mango_api.settings import Settings
 from mango_core import budget_turns
 from mango_core.budget_turns import STATE_HELD, STATE_OPEN, PendingTurn
 
+from .harness_wire import wire_stream
 from .test_app import (
     HOST,
     KEY,
@@ -41,6 +43,7 @@ from .test_app import (
     _events,
     _settings,
 )
+from .test_approvals import GATEWAY_TOOL, write_agent
 
 TABLE = "budgets"
 USER, AGENT = "USER#user-1", "AGENT#finops"
@@ -76,7 +79,10 @@ class ScriptedAgentCore:
 
 @dataclass
 class ScriptedBedrock:
+    calls: int = 0
+
     def converse(self, **_kw: Any) -> dict[str, Any]:
+        self.calls += 1
         return {
             "output": {"message": {"content": [{"text": "Título"}]}},
             "usage": {"inputTokens": 200, "outputTokens": 10},
@@ -91,6 +97,9 @@ class Env:
     conversations: FakeConversations = field(default_factory=FakeConversations)
     audit: FakeAudit = field(default_factory=FakeAudit)
     limits: FakeLimits = field(default_factory=FakeLimits)
+    published: FakePublished = field(default_factory=FakePublished)
+    bedrock: ScriptedBedrock = field(default_factory=ScriptedBedrock)
+    """The auxiliary model: only the title of a new conversation calls it."""
     seen: list[PendingTurn] = field(default_factory=list)
     """The pending records as they were when the agent was invoked."""
 
@@ -107,11 +116,11 @@ class Env:
                 conversations=self.conversations,  # type: ignore[arg-type]
                 audit=self.audit,  # type: ignore[arg-type]
                 agentcore=self.agentcore,
-                bedrock=ScriptedBedrock(),
+                bedrock=self.bedrock,
                 settings_store=None,  # type: ignore[arg-type]
                 budget_limits=self.limits,  # type: ignore[arg-type]
                 probe=None,  # type: ignore[arg-type]
-                published=FakePublished(),  # type: ignore[arg-type]
+                published=self.published,  # type: ignore[arg-type]
                 model_catalog=FakeModelCatalog(),  # type: ignore[arg-type]
                 invocation_key=KEY,
             )
@@ -276,13 +285,34 @@ def test_a_turn_whose_last_message_never_reported_its_usage_is_held(env: Env) ->
 
 
 # --- 6. The harness reports an error ----------------------------------------------------
+# The error arrives as it does in an installation: the stream is botocore's own
+# (``harness_wire``) and the error is the exception it raises while the stream is read. It
+# leaves ``harness.run`` and is caught by the chat turn.
+
+HARNESS_ERRORS = ("internalServerException", "validationException", "runtimeClientError")
+FAILED = ("error", {"code": "upstream_error", "message": "the agent failed"})
+TITLE_COST = Decimal("0.00075")
+"""200 and 10 tokens of the auxiliary model (3 and 15 USD per million)."""
 
 
+def _assistant_rows(env: Env) -> list[tuple[str, str, str]]:
+    return [row for row in env.conversations.stored if row[1] == "assistant"]
+
+
+@pytest.mark.parametrize("code", HARNESS_ERRORS)
 def test_an_error_reported_by_the_harness_charges_what_is_known_and_holds_the_rest(
-    env: Env,
+    env: Env, caplog: pytest.LogCaptureFixture, code: str
 ) -> None:
-    env.agentcore.stream = lambda: [TEXT, TOOL_USE, CALL, {"internalServerException": {}}]
-    env.chat()
+    # Two model calls; the error comes while the second one writes its answer.
+    env.agentcore.stream = lambda: wire_stream(TEXT, TOOL_USE, CALL, TEXT, error=code)
+    sent = _events(env.chat().text)
+    # The browser: the text that arrived, then the error. No ``done``.
+    kinds = [kind for kind, _ in sent]
+    assert [data["text"] for kind, data in sent if kind == "delta"] == ["Hola", "Hola"]
+    assert sent[-1] == FAILED and kinds.count("error") == 1 and "done" not in kinds
+    # Stored: the question. The half answer is not kept.
+    assert env.conversations.stored == [("user-1", "user", "hola")]
+    # Charged: the call whose usage arrived. Held: the rest of the reservation.
     (record,) = env.records()
     reserved = env.seen[0].reserved
     assert record.state == STATE_HELD
@@ -294,16 +324,106 @@ def test_an_error_reported_by_the_harness_charges_what_is_known_and_holds_the_re
     completed = env.completed()
     assert (completed["settlement"], completed["cost_usd"]) == ("pending", "0.004500")
     assert completed["held_usd"] == str(reserved - CALL_COST)
+    # The audit keeps the stop reason of the last message that ended, not the error.
+    assert (completed["stop_reason"], completed["input_tokens"]) == ("tool_use", 1000)
     assert not _session_reusable(env)
+    assert "chat turn failed" in caplog.text
 
 
-def test_an_error_before_any_usage_holds_the_whole_reservation(env: Env) -> None:
-    env.agentcore.stream = lambda: [{"internalServerException": {}}]
-    env.chat()
+@pytest.mark.parametrize("code", HARNESS_ERRORS)
+def test_an_error_before_any_usage_holds_the_whole_reservation(env: Env, code: str) -> None:
+    env.agentcore.stream = lambda: wire_stream(error=code)
+    sent = _events(env.chat().text)
+    assert sent[-1] == FAILED and "done" not in [kind for kind, _ in sent]
+    assert _assistant_rows(env) == []
     (record,) = env.records()
     reserved = env.seen[0].reserved
     assert (record.state, record.charged, record.retained) == (STATE_HELD, Decimal(0), reserved)
     assert env.budget() == _amounts(Decimal(0), reserved, reserved)
+    completed = env.completed()
+    assert (completed["settlement"], completed["stop_reason"]) == ("pending", "")
+    assert (Decimal(completed["cost_usd"]), completed["held_usd"]) == (0, str(reserved))
+    assert not _session_reusable(env)
+
+
+def test_the_turn_after_an_error_starts_a_session_and_resends_the_history(env: Env) -> None:
+    env.agentcore.stream = lambda: wire_stream(TEXT, error="internalServerException")
+    env.chat()
+    env.agentcore.stream = lambda: [TEXT, END, CALL]
+    env.chat()
+    first, second = env.agentcore.requests
+    assert second["runtimeSessionId"] != first["runtimeSessionId"]
+    assert len(second["messages"]) > 1
+
+
+def _results(monkeypatch: pytest.MonkeyPatch) -> list[harness_module.InvocationResult]:
+    """The result each turn was settled with."""
+    seen: list[harness_module.InvocationResult] = []
+    settle = app_module._settle_turn
+
+    def spy(*args: Any, **kwargs: Any) -> bool:
+        seen.append(kwargs["result"])
+        return settle(*args, **kwargs)
+
+    monkeypatch.setattr(app_module, "_settle_turn", spy)
+    return seen
+
+
+@pytest.mark.parametrize("code", HARNESS_ERRORS)
+def test_failed_stays_false_after_an_error_and_nothing_of_the_turn_reads_it(
+    env: Env, monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    results = _results(monkeypatch)
+    env.agentcore.stream = lambda: wire_stream(TEXT, TOOL_USE, CALL, error=code)
+    env.chat()
+    (result,) = results
+    # ``failed`` is only set for an error that arrives as an event: after a real one it
+    # stays false. The turn is told to have failed by the exception, not by this flag.
+    assert not result.failed
+    assert result.started and not result.usage_final and not result.interrupted
+    # The settlement goes by ``usage_final``: held. The audit has no field for ``failed``.
+    assert env.records()[0].state == STATE_HELD
+    assert "failed" not in env.completed()
+    # The session goes by the turn having been answered and settled: not continued.
+    assert not _session_reusable(env)
+
+
+def test_a_new_conversation_gets_its_title_although_its_first_turn_failed(env: Env) -> None:
+    """The one thing that reads ``failed``: the title is skipped for a failed first turn.
+    After a real error the flag is false, so the title is written and charged."""
+    env.agentcore.stream = lambda: wire_stream(TEXT, error="internalServerException")
+    sent = _events(env.chat(conversation_id=None).text)
+    assert sent[-1] == FAILED
+    assert env.bedrock.calls == 1
+    (record,) = env.records()
+    reserved = env.seen[0].reserved
+    # The title is charged on top of a turn that is held whole.
+    assert (record.state, record.charged, record.retained) == (STATE_HELD, Decimal(0), reserved)
+    assert env.budget() == _amounts(TITLE_COST, reserved, reserved)
+
+
+def test_the_title_is_the_same_for_every_turn_that_fails_with_an_exception(env: Env) -> None:
+    # Row 7 has always behaved this way: a cut turn of a new conversation gets its title.
+    env.agentcore.stream = lambda: _cut(TEXT)
+    env.chat(conversation_id=None)
+    assert env.bedrock.calls == 1
+
+
+def test_an_error_that_came_as_an_event_would_end_the_turn_in_another_way(env: Env) -> None:
+    """The shape an installation does not produce, next to the real one above. The budget is
+    the same; what the person gets and what is stored are not: with the event the turn goes
+    on to store the half answer and to send ``done`` after the error."""
+    env.agentcore.stream = lambda: [TEXT, TOOL_USE, CALL, {"internalServerException": {}}]
+    sent = _events(env.chat(conversation_id=None).text)
+    kinds = [kind for kind, _ in sent]
+    assert ("error", {"code": "upstream_error", "message": "agent error"}) in sent
+    assert kinds[-1] == "done" and kinds.index("error") < kinds.index("done")
+    assert _assistant_rows(env) == [("user-1", "assistant", "Hola")]
+    # No title: here ``failed`` is true.
+    assert env.bedrock.calls == 0
+    (record,) = env.records()
+    assert (record.state, record.charged) == (STATE_HELD, CALL_COST)
+    assert env.completed()["settlement"] == "pending"
 
 
 # --- 6, one case out of it: a model call reaches its token cap (D74) --------------------
@@ -394,6 +514,112 @@ def test_any_other_error_of_the_harness_is_held_as_before(
     assert env.completed()["settlement"] == "pending"
     assert not _session_reusable(env)
     assert "chat turn failed" in caplog.text
+
+
+# --- A tool call cut by the token cap (D74): what is charged and what is stored ----------
+# What is asked to confirm, and what would run, is in ``test_approvals.py``.
+
+TEXT_STORED = "Hola\n\n"
+"""The text before a tool call is closed as a paragraph."""
+
+
+def _tool_call(name: str, *pieces: str) -> list[dict[str, Any]]:
+    start = {"toolUse": {"toolUseId": "t1", "name": name}}
+    return [
+        {"contentBlockStart": {"contentBlockIndex": 1, "start": start}},
+        *(
+            {"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"toolUse": {"input": piece}}}}
+            for piece in pieces
+        ),
+    ]
+
+
+WRITE_CUT = _tool_call(GATEWAY_TOOL, '{"name":"team-a","amo')
+READ_CUT = _tool_call("finops___get_cost_and_usage", '{"start":"2026-')
+
+
+@pytest.fixture
+def write_env(env: Env) -> Env:
+    env.published = FakePublished(agents={"finops": write_agent()})
+    return env
+
+
+def test_a_write_call_cut_at_the_cap_is_settled_at_once(
+    write_env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    env = write_env
+    env.agentcore.stream = lambda: wire_stream(
+        TEXT, *WRITE_CUT, CAP, CALL, error="runtimeClientError"
+    )
+    sent = _events(env.chat().text)
+    kinds = [kind for kind, _ in sent]
+    assert "error" not in kinds and "approval" not in kinds
+    done = next(data for kind, data in sent if kind == "done")
+    assert done["stop_reason"] == "max_tokens" and done["cost_usd"] == "0.0045"
+    # Row 4 of the table: the usage of that message arrived, so the end is known.
+    assert env.records() == []
+    for scope in (USER, AGENT):
+        assert env.budget(scope) == _amounts(CALL_COST, Decimal(0))
+    completed = env.completed()
+    assert (completed["settlement"], completed["held_usd"]) == ("final", "0")
+    assert completed["stop_reason"] == "max_tokens"
+    # Stored: the text before the call. Nothing of its input.
+    assert _assistant_rows(env) == [("user-1", "assistant", TEXT_STORED)]
+    assert not _session_reusable(env)
+    assert "chat turn failed" not in caplog.text
+
+
+def test_a_write_call_cut_at_the_cap_without_its_usage_is_held(write_env: Env) -> None:
+    env = write_env
+    env.agentcore.stream = lambda: wire_stream(TEXT, *WRITE_CUT, CAP, error="runtimeClientError")
+    sent = _events(env.chat().text)
+    # Row 6: the error is raised before the usage of that message.
+    assert sent[-1] == FAILED and "done" not in [kind for kind, _ in sent]
+    assert _assistant_rows(env) == []
+    (record,) = env.records()
+    reserved = env.seen[0].reserved
+    assert (record.state, record.charged, record.retained) == (STATE_HELD, Decimal(0), reserved)
+    assert env.completed()["settlement"] == "pending"
+    assert not _session_reusable(env)
+
+
+def test_a_read_call_cut_at_the_cap_is_settled_at_once(
+    write_env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    env = write_env
+    env.agentcore.stream = lambda: wire_stream(
+        TEXT, *READ_CUT, CAP, CALL, error="runtimeClientError"
+    )
+    sent = _events(env.chat().text)
+    kinds = [kind for kind, _ in sent]
+    assert "error" not in kinds and "approval" not in kinds
+    # The tool is shown as started and never gets a result: it did not run.
+    assert [data for kind, data in sent if kind == "tool"] == [
+        {"name": "get_cost_and_usage", "status": "started"}
+    ]
+    assert next(data for kind, data in sent if kind == "done")["stop_reason"] == "max_tokens"
+    # The end of D74 (13): known, charged and released.
+    assert env.records() == []
+    assert env.budget() == _amounts(CALL_COST, Decimal(0))
+    completed = env.completed()
+    assert (completed["settlement"], completed["stop_reason"]) == ("final", "max_tokens")
+    # The audit lists the tool among the ones of the turn although it never ran.
+    assert completed["tools"] == ["get_cost_and_usage"]
+    assert _assistant_rows(env) == [("user-1", "assistant", TEXT_STORED)]
+    assert not _session_reusable(env)
+    assert "chat turn failed" not in caplog.text
+
+
+def test_a_tool_call_cut_at_the_cap_in_a_later_call_charges_every_call(write_env: Env) -> None:
+    env = write_env
+    for cut in (READ_CUT, WRITE_CUT):
+        env.agentcore.stream = lambda cut=cut: wire_stream(  # type: ignore[misc]
+            TEXT, TOOL_USE, CALL, *cut, CAP, CALL, error="runtimeClientError"
+        )
+        env.chat(conversation_id=None)
+        assert env.records() == []
+    # Two turns of two calls each, and the title of each new conversation.
+    assert env.budget() == _amounts(4 * CALL_COST + 2 * TITLE_COST, Decimal(0))
 
 
 # --- 7. mango-api stops reading ---------------------------------------------------------

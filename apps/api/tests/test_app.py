@@ -26,6 +26,8 @@ from mango_core.agents import content_hash as hash_content
 from mango_core.budget_turns import PendingTurn, TokenUsage, token_cost
 from mango_core.identity import IdentityError
 
+from .harness_wire import wire_stream
+
 HOST = "internal-alb.example.com"
 KEY = b"k" * 32
 MODEL = "us.anthropic.claude-sonnet-4-6"
@@ -405,7 +407,8 @@ class FakeAgentCore:
     def invoke_harness(self, **request: Any) -> dict[str, Any]:
         self.requests.append(request)
         if self.fail:
-            return {"stream": [{"internalServerException": {"message": "boom"}}]}
+            # As the harness reports an error in an installation: botocore raises it.
+            return {"stream": wire_stream(error="internalServerException")}
         return {
             "stream": [
                 {"contentBlockStart": {"contentBlockIndex": 0, "start": {}}},
