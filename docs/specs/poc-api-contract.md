@@ -575,6 +575,7 @@ data: {"code": "budget_exceeded" | "upstream_error" | ..., "message": "..."}
 ```
 
 - Llegan heartbeats como comentarios SSE (`: ping`) cada 15 s; se ignoran.
+- `done.stop_reason` es el motivo de fin que informa el harness. `max_tokens`: la respuesta se cortó en el tope de tokens de la llamada (D74); el mensaje guardado es el texto hasta el corte y el turno termina con `done`, no con `error`. `guardrail_intervened`: la cortó el guardrail.
 - `approval` (D27): el agente llamó una tool de escritura. El Gateway no la ejecutó; el evento trae la solicitud que la interfaz muestra como tarjeta («¿Ejecutar esta acción?» o «Requiere aprobación»). El mensaje del asistente guarda sus ids (`messages[].approvals`) y `GET /api/conversations/{id}` devuelve las solicitudes en `approvals`.
 - **`status`: progreso en vivo del turno.** Lo calcula `mango-api` a partir del stream del harness; **nunca lleva texto del modelo** (ni respuesta ni razonamiento), así que no depende del guardrail (D39). Se envía solo cuando la fase cambia, varias veces por turno:
   - `thinking`: el turno ya corre y el modelo trabaja. Es el primer evento después de `conversation`, antes de llamar al harness: con el guardrail síncrono el harness no entrega nada hasta que hay un bloque revisado o una llamada a una tool.
