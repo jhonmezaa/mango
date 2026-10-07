@@ -15,7 +15,7 @@ Diseño: `docs/specs/customer-distribution.md`. Quien publica las versiones: `de
 | StackSets | Acceso de confianza de CloudFormation StackSets con Organizations activo (solo para `OrgAccess`) |
 | Dos administradores | Los cambios con doble aprobación necesitan dos personas desde el primer día |
 | Dominio de correo de la empresa | Para el registro. Los proveedores públicos (Gmail, Outlook…) se rechazan |
-| Acceso a modelos de Bedrock | Los modelos por defecto de la versión, habilitados en la cuenta de Mango |
+| Acceso a modelos de Bedrock | Los modelos por defecto de la versión, habilitados en la cuenta de Mango **y con su acuerdo de Marketplace aceptado**. En una cuenta nueva puede faltar solo el acuerdo. Comprobarlo **antes de instalar**: abajo, «El acceso a los modelos» |
 | Cuota de Bedrock de la cuenta | Es lo que decide cuánta gente puede chatear a la vez, y una cuenta nueva puede tenerla muy por debajo del valor por defecto de AWS. Comprobarla **antes de instalar**: abajo, «La cuota de Bedrock» |
 | Cupo de políticas de recursos de CloudWatch Logs | La instalación usa **3**: una en `PackNetwork` (registro de consultas DNS de los packs) y dos en `Core` (eventos de Cognito y trazas; una sola con `TransactionSearch` en `external`). El máximo es **10 por cuenta y región y AWS no lo amplía**. Cuántas hay: `aws logs describe-resource-policies --query 'length(resourcePolicies)'`. Deben quedar libres las que falten por crear. Sin cupo, el stack falla al crear su política (`AWS::Logs::ResourcePolicy`, límite excedido) y CloudFormation lo revierte: hay que borrar o unir políticas de la cuenta antes de reintentar |
 
@@ -28,6 +28,25 @@ Diseño: `docs/specs/customer-distribution.md`. Quien publica las versiones: `de
 - **Condicionada a la cuota de Bedrock de la cuenta.** 300 personas con un turno por minuto son al menos 300 llamadas por minuto al modelo, y más si los agentes usan tools. Con la cuota baja, el techo del chat es la cuota, no Mango.
 - **Por encima no hay margen.** Si hace falta más, avisa al proveedor: el tamaño de las tareas es de la versión, no un parámetro.
 
+### El acceso a los modelos
+
+En una cuenta nueva un modelo puede estar autorizado y disponible en la región y faltarle el acuerdo de Marketplace de su proveedor. Sin el acuerdo, el primer turno de chat falla: el rol del agente no puede aceptarlo. Con las credenciales de quien instala, en la cuenta y región de Mango, por cada modelo por defecto de la versión:
+
+```sh
+aws bedrock get-foundation-model-availability --model-id <id del modelo>
+```
+
+- `agreementAvailability.status` debe decir `AVAILABLE`. En una cuenta nueva se vio `NOT_AVAILABLE` con todo lo demás en orden (instalación de laboratorio, 2026-10-07).
+- **Aceptarlo:** en la consola de Bedrock (acceso a modelos), o por API:
+
+  ```sh
+  aws bedrock list-foundation-model-agreement-offers --model-id <id del modelo>
+  aws bedrock create-foundation-model-agreement --model-id <id del modelo> --offer-token <offerToken de la oferta>
+  ```
+
+- Tarda: pasó de `PENDING` a `AVAILABLE` en unos 50 s (visto en una instalación de laboratorio el 2026-10-07). Repetir la primera consulta hasta que diga `AVAILABLE`.
+- El acuerdo es de la cuenta, no de Mango: desinstalar no lo deshace.
+
 ### La cuota de Bedrock
 
 Cada cuenta de AWS tiene, por modelo y región, un máximo de llamadas y de tokens por minuto. Un turno de chat es al menos una llamada al modelo, y una más por cada vuelta de tools del agente. Con las credenciales de quien instala, en la cuenta y región de Mango, y el repositorio en la etiqueta que vas a instalar:
@@ -38,7 +57,7 @@ python3 deployment/check-bedrock-quotas.py --namespace <ns>   # después: los mo
 ```
 
 - Es de **solo lectura**: lista los modelos de Bedrock y las cuotas de Service Quotas (y, con `--namespace`, lee el catálogo de modelos de la tabla `Mango-<ns>-Settings`). Con `--model <id>` comprueba cualquier otro modelo.
-- Por cada modelo dice la cuota **aplicada** a la cuenta, el valor por defecto de AWS y para cuántas personas alcanza. Termina con error si alguna está por debajo del valor por defecto o no se pudo leer.
+- Por cada modelo dice la cuota **aplicada** a la cuenta, el valor por defecto de AWS y para cuántas personas alcanza. Termina con error si alguna está por debajo del valor por defecto o no se pudo leer. **Ese error no impide instalar:** avisa de que el chat tendrá ese techo hasta que la cuota suba. En una cuenta nueva se vieron 50 llamadas por minuto, y el guion terminó con error (instalación de laboratorio, 2026-10-07).
 - **Una cuota aplicada puede estar muy por debajo del valor por defecto** (se vio 10 llamadas por minuto donde el valor por defecto es 10.000, en una cuenta nueva). Con 10 por minuto responden en segundos unos 5 turnos a la vez. Con más no fallan, esperan: con 35 a la vez terminaron todos, cerca de la mitad en más de un minuto y hasta uno de cada cuatro en más de tres (medido el 2026-10-06; D70, punto 14).
 - **Esa cuota no se sube desde Service Quotas.** La solicitud de aumento se rechaza (visto por API), porque solo admite valores por encima del valor por defecto. Hay que abrir un caso en la consola de Support Center (Create case › Service limit increase › Amazon Bedrock) y pedir que se restablezca el valor por defecto. El plan básico de soporte permite ese caso; su API no. Puede tardar días: conviene pedirlo antes de instalar.
 - **Si ya está en el valor por defecto y no alcanza:** Service Quotas › Amazon Bedrock › la cuota del modelo › solicitar un aumento a nivel de cuenta.
@@ -61,14 +80,19 @@ Las plantillas, el manifiesto y su firma están en `mango/<etiqueta>/` del bucke
 
 Cuatro stacks, cada uno con `CreateStack` sobre `https://<bucket>.s3.amazonaws.com/mango/<etiqueta>/<Stack>.template.json`. El namespace (3 a 8 letras minúsculas o dígitos) es el mismo en los cuatro y va en todos los nombres: `Mango-<ns>-…`.
 
-| Orden | Cuenta | Stack | Plantilla | Parámetros |
-|---|---|---|---|---|
-| 1 | Gestión | `Mango-<ns>-Payer` | `Payer` | `Namespace`, `MangoAccountId`, `OrganizationId` |
-| 2 | Gestión (o administrador delegado de StackSets) | `Mango-<ns>-OrgAccess` | `OrgAccess` | Los tres anteriores, `Targets` (la raíz, o las OU), `ExcludedAccountIds` (debe incluir la cuenta de Mango). Opcional: `CallAs` |
-| 3 | Mango | `Mango-<ns>-PackNetwork` | `PackNetwork` | `Namespace`, `OrganizationId`. Antes que `Core`, que la importa |
-| 4 | Mango | `Mango-<ns>-Core` | `Core` | `Namespace`, `OrganizationId`, `ManagementAccountId`, `FirstAdminEmail`, `AlertsEmail`, `SignUpDomains` |
+| Orden | Cuenta | Stack | Plantilla | Parámetros | `--capabilities` | Etiqueta `mango:component` |
+|---|---|---|---|---|---|---|
+| 1 | Gestión | `Mango-<ns>-Payer` | `Payer` | `Namespace`, `MangoAccountId`, `OrganizationId` | `CAPABILITY_NAMED_IAM` | `payer` |
+| 2 | Gestión (o administrador delegado de StackSets) | `Mango-<ns>-OrgAccess` | `OrgAccess` | Los tres anteriores, `Targets` (la raíz, o las OU), `ExcludedAccountIds` (debe incluir la cuenta de Mango). Opcional: `CallAs` | Ninguna | `org-access` |
+| 3 | Mango | `Mango-<ns>-PackNetwork` | `PackNetwork` | `Namespace`, `OrganizationId`. Antes que `Core`, que la importa | `CAPABILITY_IAM` | `pack-network` |
+| 4 | Mango | `Mango-<ns>-Core` | `Core` | `Namespace`, `OrganizationId`, `ManagementAccountId`, `FirstAdminEmail`, `AlertsEmail`, `SignUpDomains` | `CAPABILITY_NAMED_IAM` | `core` |
 
-`Payer` y `Core` crean roles con nombre: hace falta `CAPABILITY_NAMED_IAM`. Entre cuentas ningún stack lee a otro. En la cuenta de Mango, `Core` importa de `PackNetwork` las subnets y los security groups de los packs.
+- **Capacidades.** `Payer` y `Core` crean roles con nombre: piden `CAPABILITY_NAMED_IAM`. `PackNetwork` crea un rol sin nombre fijo: pide `CAPABILITY_IAM` (`CAPABILITY_NAMED_IAM` también vale). Sin ella, `create-stack` responde `InsufficientCapabilitiesException: Requires capabilities : [CAPABILITY_IAM]` y no crea nada: se repite el comando con la capacidad. `OrgAccess` no pide ninguna.
+- **Etiquetas del stack: opcionales.** Nada de Mango depende de ellas: los recursos ya salen de la plantilla con `mango:namespace` y `mango:component`. Sirven para encontrar los stacks y agrupar su costo. Si se ponen, `mango:namespace` = `<ns>` en los cuatro y `mango:component` con el valor de la tabla.
+- **Cuánto tarda cada uno** (visto en una instalación de laboratorio en una cuenta nueva, el 2026-10-07): `Payer` 62 s, `OrgAccess` 122 s, `PackNetwork` 154 s y `Core` 20 min 44 s.
+- Entre cuentas ningún stack lee a otro. En la cuenta de Mango, `Core` importa de `PackNetwork` las subnets y los security groups de los packs.
+- **El correo de confirmación de las alertas llega al empezar `Core`,** no al terminar: en el mismo minuto del `create-stack` (visto el 2026-10-07). **No pulses su enlace.** Antes de lanzar `Core`, lee cómo confirmarlo para que la baja exija credenciales: [`operations.md`](operations.md#el-enlace-de-baja-del-correo). Quien recibe ese correo (`AlertsEmail`) tiene que saberlo de antemano.
+- **El agente de la versión se publica solo,** mientras `Core` termina de crearse. Al terminar, la alarma `Mango-<ns>-AgentProvisioner-failed` debe estar en `OK`; si está en `ALARM`, ver «Problemas conocidos».
 
 ```sh
 aws cloudformation create-stack --stack-name Mango-<ns>-Core \
@@ -92,7 +116,7 @@ Parámetros opcionales de `Core`:
 ## 3. Después de instalar
 
 1. **Primer ingreso de los administradores.** Reciben una contraseña temporal por correo (vence en 3 días) y registran MFA (TOTP) al entrar; MFA es obligatorio. La URL está en el output `AppUrl` de `Core`. Si la contraseña temporal venció, quien administra la cuenta de AWS la renueva con `aws cognito-idp admin-create-user --message-action RESEND` o fija una con `admin-set-user-password`.
-2. Confirmar la suscripción del correo de alertas y comprobar que una alarma de prueba llega: [`operations.md`](operations.md#comprobar-que-el-correo-llega).
+2. Confirmar la suscripción del correo de alertas, si no se hizo al llegar el correo (llega al empezar `Core`), y comprobar que una alarma de prueba llega: [`operations.md`](operations.md#comprobar-que-el-correo-llega).
 3. **En la aplicación, con los dos administradores** (cada cambio lo propone uno y lo aprueba el otro):
    1. Ajustes › Áreas y OUs: crear las áreas y asignarles sus OU.
    2. Ajustes › Grupos: crear el grupo de cada área (`bu-<área>`, tipo «área»). No existe hasta que alguien lo crea, y hay que crear antes el área.
@@ -190,4 +214,5 @@ Después de instalar y después de cada actualización:
 | El stack falla en una regla antes de crear nada | `ManagementAccountId` es la cuenta donde se instala `Core`; la región no es `us-east-1`; `ExcludedAccountIds` no incluye la cuenta de Mango |
 | Un pack queda en error con `verify_tools` / `tools_response_invalid` justo al habilitarlo | Visto una vez al instalar dos packs a la vez: el Runtime recién creado respondió algo que no era la lista de tools. «Reintentar» lo resolvió. El log de `Mango-<ns>-PackProvisioner` registra la forma de la respuesta (`pack_provisioner.tools_response_invalid`) |
 | El sha256 de la plantilla del StackSet no coincide con `MemberTemplateSha256` | Versiones hasta `v0.1.0-gb557f40`: una descripción con un carácter fuera de ASCII, que CloudFormation guarda como `?`. No cambia permisos. Se corrige actualizando `OrgAccess` a una versión posterior |
+| Los cuatro stacks terminan bien y el agente de la versión no aparece en el Marketplace. La alarma `Mango-<ns>-AgentProvisioner-failed` está en `ALARM`; la versión del agente quedó fallida en el paso `check_harness`; el log `/aws/lambda/Mango-<ns>-Provisioner` trae `provisioner.harness_failed` con el motivo «Failed creating service linked role…» | Versiones hasta `v0.1.0-g998eb03`, instaladas en una cuenta que nunca usó AgentCore: el primer Runtime de la cuenta crea el rol vinculado al servicio `AWSServiceRoleForBedrockAgentCoreRuntimeIdentity` con los permisos de quien llama, y el provisioner no podía crearlo (D40, punto 5). Con una versión posterior no hay que hacer nada. En una anterior, quien administra la cuenta lo crea una vez, `aws iam create-service-linked-role --aws-service-name runtime-identity.bedrock-agentcore.amazonaws.com`, y un administrador de Mango reintenta la publicación desde la aplicación. Visto en una instalación de laboratorio el 2026-10-07; el arreglo está comprobado con tests, sin ver todavía en una instalación |
 | `CannotPullContainerError` en `mango-api` | La cuenta no puede leer el repositorio de imágenes del proveedor (misma lista de clientes) |

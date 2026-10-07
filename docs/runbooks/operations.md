@@ -237,9 +237,9 @@ aws sns list-subscriptions-by-topic --topic-arn <AlertsTopicArn> \
 
 Debe aparecer el correo de alertas con un ARN completo. Si no aparece, alguien se dio de baja; si dice `PendingConfirmation`, nunca se confirmó. En los dos casos no llega nada.
 
-**Confirmar de forma que la baja exija credenciales de AWS.** Al instalar, o al cambiar el correo de alertas, llega un correo de confirmación. En lugar de pulsar su enlace:
+**Confirmar de forma que la baja exija credenciales de AWS.** Al instalar, o al cambiar el correo de alertas, llega un correo de confirmación. Al instalar llega **al empezar** la creación de `Core`, no al terminar. En lugar de pulsar su enlace:
 
-1. Copiar la dirección del enlace «Confirm subscription» y sacar de ella el token: el texto largo entre `Token=` y `&Endpoint=`. Es de vida corta: conviene hacerlo al recibir el correo.
+1. Copiar la dirección del enlace «Confirm subscription» y sacar de ella el token: el texto largo entre `Token=` y `&Endpoint=`. Es de vida corta: conviene hacerlo al recibir el correo. **Mejor desde un ordenador:** en un teléfono, copiar la dirección del enlace lo visitó y la suscripción quedó confirmada sin credenciales (visto en una instalación de laboratorio el 2026-10-07). Si pasa, el token copiado sigue sirviendo: el paso 2 es el mismo.
 2. Confirmar con credenciales de la cuenta:
 
    ```sh
@@ -256,7 +256,7 @@ Debe aparecer el correo de alertas con un ARN completo. Si no aparece, alguien s
 
 Con eso solo pueden dar de baja la suscripción el dueño del topic y el de la suscripción, con una petición firmada de AWS; el enlace del pie del correo deja de servir. Fuente: la referencia de [`confirm-subscription`](https://docs.aws.amazon.com/cli/latest/reference/sns/confirm-subscription.html) y la guía de AWS para [evitar bajas no deseadas](https://repost.aws/knowledge-center/prevent-unsubscribe-all-sns-topic).
 
-Una suscripción que ya se confirmó pulsando el enlace sigue admitiendo la baja sin credenciales (`ConfirmationWasAuthenticated` dice `false`). AWS documenta este camino para confirmar por primera vez; cómo pasar a él una suscripción ya confirmada no está comprobado en una instalación de Mango.
+**Si la suscripción ya se confirmó con el enlace,** sigue admitiendo la baja sin credenciales (`ConfirmationWasAuthenticated` dice `false`). Se pasa a «baja con credenciales» repitiendo el paso 2 con el mismo token, mientras siga vigente: no hace falta borrarla ni volver a suscribir el correo. Visto en una instalación de laboratorio el 2026-10-07: `ConfirmationWasAuthenticated` pasó de `false` a `true`. Con el token vencido, ese camino no está comprobado.
 
 ### Ver el estado de todas
 
