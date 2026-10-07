@@ -112,6 +112,16 @@ export class UninstallGuard extends Construct {
       ["bedrock-agentcore:ListPolicies", "bedrock-agentcore:DeletePolicy"],
       [policyEngineArn, `${policyEngineArn}/policy/${packNames.policyPrefix(ns)}*`],
     );
+    // A pack's Cedar policy is scoped to this Gateway, and AgentCore authorizes deleting it
+    // against the Gateway too: without this, DeletePolicy is denied and the stack deletion
+    // fails with the installation half deleted (seen on 2026-10-07, D58 (13)). It is not an
+    // API call of its own: with no CreatePolicy or UpdatePolicy in this role, all it lets
+    // through is the deletion above. Neither GetGateway nor InvokeGateway was needed.
+    allow(
+      "DeletePackPoliciesScopedToGateway",
+      ["bedrock-agentcore:ManageResourceScopedPolicy"],
+      [props.gateway.attrGatewayArn],
+    );
     const roles = [platform.agentRoleArns, packs.roleArns];
     allow("FindRoles", ["iam:ListRoles"], ["*"]);
     allow("ReadProvisionedRoles", ["iam:GetRole", "iam:ListRolePolicies"], roles);

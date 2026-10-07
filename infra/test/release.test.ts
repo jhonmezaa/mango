@@ -325,12 +325,44 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
   it("only deletes, lists names and checks its own stack: it reads no data of the installation", () => {
     for (const action of actions) {
       expect(action).toMatch(
-        /^(bedrock-agentcore:(Delete|List|GetAgentRuntime)|iam:(Delete|GetRole|ListRole)|logs:(Delete|Describe|CreateLogStream|PutLogEvents)|cloudformation:DescribeStacks|lambda:InvokeFunction|kms:(Decrypt|GenerateDataKey)|xray:|sqs:SendMessage)/,
+        /^(bedrock-agentcore:(Delete|List|GetAgentRuntime|ManageResourceScopedPolicy$)|iam:(Delete|GetRole|ListRole)|logs:(Delete|Describe|CreateLogStream|PutLogEvents)|cloudformation:DescribeStacks|lambda:InvokeFunction|kms:(Decrypt|GenerateDataKey)|xray:|sqs:SendMessage)/,
       );
     }
     for (const forbidden of ["dynamodb", "s3:", "secretsmanager", "bedrock-agentcore:GetHarness", "bedrock-agentcore:Invoke", "iam:Create", "iam:Put", "iam:Attach", "iam:PassRole"]) {
       expect(actions.some((a) => a.startsWith(forbidden))).toBe(false);
     }
+  });
+
+  it("may delete a pack's policy scoped to the Gateway, and gains nothing else on the Gateway (D58 (13))", () => {
+    const gatewayArn = { "Fn::GetAtt": [expect.stringMatching(/Gateway/), "GatewayArn"] };
+    expect(statements.find((s) => s.Sid === "DeletePackPoliciesScopedToGateway")).toEqual({
+      Sid: "DeletePackPoliciesScopedToGateway",
+      Effect: "Allow",
+      Action: "bedrock-agentcore:ManageResourceScopedPolicy",
+      Resource: gatewayArn,
+    });
+    // Everything the role may do on the Gateway: its pack targets, and that one authorization.
+    const onGateway = statements.filter((s) => JSON.stringify(s.Resource).includes('"GatewayArn"'));
+    expect(onGateway.map((s) => s.Sid).sort()).toEqual(["DeletePackPoliciesScopedToGateway", "DeletePackTargets"]);
+    expect(onGateway.flatMap((s) => s.Action).sort()).toEqual([
+      "bedrock-agentcore:DeleteGatewayTarget",
+      "bedrock-agentcore:ListGatewayTargets",
+      "bedrock-agentcore:ManageResourceScopedPolicy",
+    ]);
+    for (const statement of onGateway) expect(statement.Resource).toEqual(gatewayArn);
+    // No policy can be written with it: the only policy operations are listing and deleting,
+    // and deleting only policies named after a pack of this installation.
+    expect(actions.filter((a) => /Polic/.test(a) && a.startsWith("bedrock-agentcore:")).sort()).toEqual([
+      "bedrock-agentcore:DeletePolicy",
+      "bedrock-agentcore:ListPolicies",
+      "bedrock-agentcore:ManageResourceScopedPolicy",
+    ]);
+    for (const forbidden of ["bedrock-agentcore:GetGateway", "bedrock-agentcore:ManageAdminPolicy", "bedrock-agentcore:CreatePolicy", "bedrock-agentcore:UpdatePolicy"]) {
+      expect(actions).not.toContain(forbidden);
+    }
+    const deletes = statements.find((s) => s.Sid === "DeletePackPolicies")!;
+    expect(JSON.stringify(deletes.Resource)).toContain("/policy/Mango_");
+    expect(JSON.stringify(deletes.Resource)).toContain("_mcp_*");
   });
 
   it("deletes roles only when they carry a Mango permissions boundary", () => {
