@@ -8,7 +8,14 @@ import type { CognitoAuth, SignInStep } from '../auth/cognito/flows';
 import { SLIDE_INTERVAL_MS } from '../components/LoginCarousel';
 import type { RuntimeConfig } from '../config/runtimeConfig';
 import { authValue } from '../test/fixtures';
+import * as totp from './login/totp';
 import { LoginPage } from './LoginPage';
+
+// The real QR, behind a spy so one test can hold it back.
+vi.mock('./login/totp', async (importOriginal) => {
+  const actual = await importOriginal<typeof totp>();
+  return { ...actual, qrMatrix: vi.fn(actual.qrMatrix) };
+});
 
 const config = {
   region: 'us-east-1',
@@ -29,6 +36,7 @@ const tokens = {
 };
 const challenge = { username: 'uuid-1', session: 's1' };
 const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+const QR_NAME = 'Código QR para la app autenticadora';
 
 function fakeCognito(overrides: Partial<Record<keyof CognitoAuth, unknown>> = {}) {
   return {
@@ -172,9 +180,10 @@ describe('LoginPage: sign-in', () => {
       await screen.findByRole('heading', { name: 'Configura la verificación en dos pasos' }),
     ).toBeInTheDocument();
     expect(await screen.findByText('JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP')).toBeInTheDocument();
-    const qr = await screen.findByRole('img', { name: 'Código QR para la app autenticadora' });
+    // The placeholder and the QR are different elements with the same role and name: query on
+    // every attempt, a node kept from before the swap never becomes the <svg>.
     await waitFor(() => {
-      expect(qr.tagName.toLowerCase()).toBe('svg');
+      expect(screen.getByRole('img', { name: QR_NAME }).tagName.toLowerCase()).toBe('svg');
     });
     await user.click(screen.getByRole('button', { name: 'Copiar secreto' }));
     expect(writeText).toHaveBeenCalledWith(SECRET);
@@ -186,6 +195,32 @@ describe('LoginPage: sign-in', () => {
       '123456',
     );
     expect(auth.acceptTokens).toHaveBeenCalledWith(tokens);
+  });
+
+  it('swaps the placeholder for the QR when it is drawn after the secret', async () => {
+    let draw!: () => void;
+    const drawn = new Promise<void>((resolve) => {
+      draw = resolve;
+    });
+    const { qrMatrix: realQrMatrix } = await vi.importActual<typeof totp>('./login/totp');
+    vi.mocked(totp.qrMatrix).mockImplementation(async (text) => {
+      await drawn;
+      return realQrMatrix(text);
+    });
+    const cognito = fakeCognito({
+      signIn: vi.fn(() => Promise.resolve<SignInStep>({ kind: 'mfaSetup', challenge })),
+    });
+    const { user } = renderLogin(cognito);
+    await signIn(user);
+    expect(await screen.findByText('JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP')).toBeInTheDocument();
+    const placeholder = screen.getByRole('img', { name: QR_NAME });
+    expect(placeholder.tagName.toLowerCase()).toBe('div');
+    expect(placeholder).toHaveAttribute('aria-busy', 'true');
+    draw();
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: QR_NAME }).tagName.toLowerCase()).toBe('svg');
+    });
+    expect(placeholder).not.toBeInTheDocument();
   });
 
   it('offers SSO only when the installation has an IdP', async () => {
