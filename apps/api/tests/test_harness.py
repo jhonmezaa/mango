@@ -7,7 +7,7 @@ from typing import Any
 
 import boto3
 import pytest
-from botocore.exceptions import EventStreamError, ReadTimeoutError
+from botocore.exceptions import ClientError, EventStreamError, ReadTimeoutError
 
 from mango_api import harness
 
@@ -999,3 +999,42 @@ def test_a_read_call_cut_at_the_cap_whose_usage_never_arrives_is_a_failure() -> 
         *_cut_call('{"start"', name=READ), CAP, error="runtimeClientError"
     )
     assert raised is not None and not result.usage_final
+
+
+# --- The harness of the agent does not exist (D75 (10)) -----------------------------------
+
+
+class _Refusing:
+    def __init__(self, code: str) -> None:
+        self._code = code
+
+    def invoke_harness(self, **_request: Any) -> dict[str, Any]:
+        raise ClientError({"Error": {"Code": self._code, "Message": "x"}}, "InvokeHarness")
+
+
+@pytest.mark.parametrize(
+    ("code", "missing"),
+    [
+        ("ResourceNotFoundException", True),
+        ("AccessDeniedException", False),
+        ("ValidationException", False),
+        ("ThrottlingException", False),
+    ],
+)
+def test_only_a_harness_that_does_not_exist_is_a_turn_that_never_started(
+    code: str, missing: bool
+) -> None:
+    result = harness.InvocationResult()
+    with pytest.raises(ClientError):
+        list(harness.run(_Refusing(code), {}, result))  # type: ignore[arg-type]
+    assert (result.harness_missing, result.started) == (missing, not missing)
+    assert not result.usage_final
+
+
+def test_an_error_while_the_stream_is_read_is_never_a_missing_harness() -> None:
+    # The same code once the stream is open: the agent was running, the turn is held.
+    error = _harness_error("ResourceNotFoundException")
+    result = harness.InvocationResult()
+    with pytest.raises(EventStreamError):
+        list(harness.run(_Client(_raising(_text("a"), error=error)), {}, result))  # type: ignore[arg-type]
+    assert (result.harness_missing, result.started) == (False, True)

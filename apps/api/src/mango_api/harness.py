@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import EventStreamError
+from botocore.exceptions import ClientError, EventStreamError
 
 from mango_api.pricing import Usage
 from mango_core import invocation
@@ -58,6 +58,10 @@ the cap as an exception, after delivering the message and its usage."""
 _STREAM_ERRORS = ("internalServerException", "validationException", CAP_ERROR)
 """Errors the harness ends an invocation with. The service sends them as exceptions, and
 botocore raises them while the stream is read."""
+HARNESS_NOT_FOUND = "ResourceNotFoundException"
+"""Error of an invocation whose harness, or its endpoint, does not exist: deleted outside
+Mango, or by an uninstall that stopped halfway. AgentCore answers it instead of opening the
+stream, so nothing ran."""
 _NAME_BOUNDARIES = "/_.: "
 """What may come before a Gateway tool name in the name the harness reports (its server
 prefix). Never a hyphen: `evil-ops___x` is a tool of another target, not `ops___x`."""
@@ -170,6 +174,9 @@ class InvocationResult:
     person, D27): its runtime session holds a half-finished turn."""
     started: bool = False
     """The harness was called (or about to be): from here on the agent may have spent."""
+    harness_missing: bool = False
+    """AgentCore answered that the harness does not exist: the agent never ran, so the turn
+    is one that never started (D75 (10))."""
     usage_final: bool = False
     """``usage`` is everything the turn cost: the stream was read to its end and every model
     call reported its usage. False after an error, a cut or a call whose usage never arrived:
@@ -404,7 +411,14 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     # has released the first block of the answer (or the first tool call).
     yield from progress.to(Phase.THINKING)
     result.started = True
-    response = client.invoke_harness(**request)
+    try:
+        response = client.invoke_harness(**request)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") == HARNESS_NOT_FOUND:
+            # Answered before any stream: no model call was made, nothing was spent.
+            result.started = False
+            result.harness_missing = True
+        raise
     tool_names: dict[str, str] = {}
     running: set[str] = set()
     text_blocks: set[int] = set()

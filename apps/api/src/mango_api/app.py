@@ -1155,7 +1155,14 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
                 )
                 answered = True
             except Exception:
-                logger.exception("chat turn failed")
+                if result.harness_missing:
+                    # Not a failure of this turn: the agent cannot answer anybody until it
+                    # is published again.
+                    logger.exception(
+                        "agent %s is published but its harness does not exist", agent_id
+                    )
+                else:
+                    logger.exception("chat turn failed")
                 put(sse("error", {"code": "upstream_error", "message": "the agent failed"}))
             finally:
                 settled = _settle_turn(
@@ -1426,6 +1433,8 @@ def _settle_turn(
                 # ``budget.reconciled`` says what it cost in the end.
                 "settlement": ("reconciler" if not recorded else "final" if final else "pending"),
                 "held_usd": str(held),
+                # The harness of the agent does not exist (D75 (10)): the turn never ran.
+                **({"failure": "harness_missing"} if result.harness_missing else {}),
                 # Only allowed turns reach this point: denied ones stop at ``require``.
                 "authz": {"action": "UseAgent", "allowed": True},
             },

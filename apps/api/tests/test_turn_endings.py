@@ -17,7 +17,7 @@ from typing import Any
 
 import boto3
 import pytest
-from botocore.exceptions import EventStreamError, ReadTimeoutError
+from botocore.exceptions import ClientError, EventStreamError, ReadTimeoutError
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
@@ -66,12 +66,16 @@ def _cut(*events: dict[str, Any]) -> Iterator[dict[str, Any]]:
 class ScriptedAgentCore:
     stream: Callable[[], Any] = lambda: [TEXT, END, CALL]
     refuse: bool = False
+    error: Exception | None = None
+    """What the call itself raises, before any stream."""
     before: Callable[[], None] = lambda: None
     requests: list[dict[str, Any]] = field(default_factory=list)
 
     def invoke_harness(self, **request: Any) -> dict[str, Any]:
         self.requests.append(request)
         self.before()
+        if self.error is not None:
+            raise self.error
         if self.refuse:
             raise RuntimeError("could not reach AgentCore")
         return {"stream": self.stream()}
@@ -650,6 +654,47 @@ def test_a_call_to_the_agent_that_fails_is_not_known_to_have_cost_nothing(env: E
     (record,) = env.records()
     assert record.state == STATE_HELD
     assert record.retained == record.reserved
+
+
+def _refused(code: str) -> ClientError:
+    """An error AgentCore answers to the call, as botocore raises it."""
+    return ClientError({"Error": {"Code": code, "Message": "from the service"}}, "InvokeHarness")
+
+
+def test_a_turn_whose_harness_does_not_exist_releases_everything(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    # D75 (10): AgentCore answers it instead of opening the stream, so the agent never ran.
+    env.agentcore.error = _refused("ResourceNotFoundException")
+    events = _events(env.chat().text)
+    # The person reads what any failed turn says, and nothing of the error.
+    assert ("error", {"code": "upstream_error", "message": "the agent failed"}) in events
+    assert "done" not in [kind for kind, _ in events]
+    assert env.records() == []
+    assert env.budget() == _amounts(Decimal(0), Decimal(0))
+    completed = env.completed()
+    assert (completed["failure"], completed["settlement"]) == ("harness_missing", "final")
+    assert (completed["cost_usd"], completed["held_usd"]) == ("0.000000", "0")
+    assert "its harness does not exist" in caplog.text
+    assert not _session_reusable(env)
+
+
+@pytest.mark.parametrize(
+    "code", ["AccessDeniedException", "ThrottlingException", "InternalServerException"]
+)
+def test_any_other_error_of_the_call_is_still_held(env: Env, code: str) -> None:
+    env.agentcore.error = _refused(code)
+    env.chat()
+    (record,) = env.records()
+    assert (record.state, record.retained) == (STATE_HELD, record.reserved)
+    assert "failure" not in env.completed()
+
+
+def test_messages_to_an_agent_without_harness_do_not_use_up_the_budget(env: Env) -> None:
+    env.agentcore.error = _refused("ResourceNotFoundException")
+    codes = [env.chat(conversation_id=None).status_code for _ in range(80)]
+    assert set(codes) == {200}
+    assert env.budget() == _amounts(Decimal(0), Decimal(0))
 
 
 def test_cutting_turns_does_not_give_the_budget_back(env: Env) -> None:
