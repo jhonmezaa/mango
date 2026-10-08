@@ -329,13 +329,55 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     expect(Object.keys(guard.Properties).sort()).toEqual(["ServiceTimeout", "ServiceToken"]);
   });
 
-  it("is deleted before what the agents and packs hold on to", () => {
-    const types = guard.DependsOn.map((id) => source.Resources[id]!.Type);
-    // Both permissions boundaries, the Gateway and the policy engine outlive it.
-    expect(types.filter((t) => t === "AWS::IAM::ManagedPolicy")).toHaveLength(2);
-    expect(types).toContain("AWS::BedrockAgentCore::Gateway");
-    expect(types).toContain("AWS::BedrockAgentCore::PolicyEngine");
+  // D58 (16): CloudFormation does not delete what a resource that failed to delete depends on.
+  // With every other resource as a dependency, a guard that fails leaves the installation
+  // standing; on 2026-10-07 it depended on 58 resources and the other 194 were deleted.
+  const others = Object.entries(source.Resources).filter(([id, r]) => id !== guardId && r.Type !== "AWS::CDK::Metadata");
+  const conditional = others.filter(([, r]) => r.Condition !== undefined);
+
+  it("depends on every other resource of the stack: a new one cannot be left out", () => {
+    const expected = others.filter(([, r]) => r.Condition === undefined).map(([id]) => id);
+    expect(expected.length).toBeGreaterThan(250);
+    expect([...guard.DependsOn].sort()).toEqual(expected.sort());
+    // What agents and packs hold on to, the application, its provisioners, the directory,
+    // the edge and the alarms: all of it outlives a guard that fails.
+    const types = new Set(guard.DependsOn.map((id) => source.Resources[id]!.Type));
+    for (const type of [
+      "AWS::IAM::ManagedPolicy",
+      "AWS::BedrockAgentCore::Gateway",
+      "AWS::BedrockAgentCore::PolicyEngine",
+      "AWS::ECS::Service",
+      "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "AWS::StepFunctions::StateMachine",
+      "AWS::Cognito::UserPoolDomain",
+      "AWS::Cognito::UserPoolUser",
+      "AWS::CloudFront::Distribution",
+      "AWS::CloudWatch::Alarm",
+      "AWS::VerifiedPermissions::Policy",
+    ]) {
+      expect(types, type).toContain(type);
+    }
     expect(guard.DependsOn).toContain(role[0]);
+  });
+
+  it("leaves out only the resources with a condition, and these are all of them", () => {
+    // What depends on a resource its condition leaves out is not created either, and the
+    // guard must always exist. A new conditional resource has to be added here on purpose.
+    expect(conditional.map(([, r]) => `${r.Condition} ${r.Type}`).sort()).toEqual([
+      "HasSecondAdmin AWS::Cognito::UserPoolUser",
+      "HasSecondAdmin AWS::Cognito::UserPoolUserToGroupAttachment",
+      "HasSecondAdmin AWS::Cognito::UserPoolUserToGroupAttachment",
+      "OwnsTransactionSearch AWS::Logs::ResourcePolicy",
+      "OwnsTransactionSearch AWS::XRay::TransactionSearchConfig",
+    ]);
+    for (const [id] of conditional) expect(guard.DependsOn).not.toContain(id);
+    expect(guard.Condition).toBeUndefined();
+  });
+
+  it("is a dependency of nothing: no cycle, and nothing waits for it to be created", () => {
+    const { [guardId]: _guard, ...rest } = source.Resources;
+    expect(JSON.stringify(rest)).not.toContain(`"${guardId}"`);
+    expect(JSON.stringify((source as unknown as { Outputs: unknown }).Outputs)).not.toContain(guardId);
   });
 
   it("only deletes, lists names and checks its own stack: it reads no data of the installation", () => {

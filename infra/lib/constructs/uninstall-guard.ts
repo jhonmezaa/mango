@@ -1,9 +1,9 @@
-import { CustomResource, Duration, Stack } from "aws-cdk-lib";
+import { Aspects, CfnResource, CustomResource, Duration, Stack } from "aws-cdk-lib";
 import * as agentcoreL1 from "aws-cdk-lib/aws-bedrockagentcore";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import { Construct, IDependable } from "constructs";
+import { Construct, IConstruct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { acknowledge, REASONS } from "../nag.js";
 import { agentNames, mangoName, packNames, roleNames } from "../names.js";
@@ -23,12 +23,6 @@ export interface UninstallGuardProps {
   /** Key encrypting the function's environment. */
   readonly configKey: kms.IKey;
   readonly alerts: Alerts;
-  /**
-   * What must outlive the guard when the stack is deleted: everything the agents and packs
-   * it removes hold on to (boundaries, Gateway, policy engine, the pack network imports).
-   * The guard is created after them and so deleted before them.
-   */
-  readonly before: IDependable[];
 }
 
 /**
@@ -36,6 +30,12 @@ export interface UninstallGuardProps {
  * what the provisioners created by API (agent harnesses, pack runtimes, their Gateway targets,
  * Cedar policies, roles and log groups) and waits until it is gone. Without it the stack
  * deletion fails: those roles carry permissions boundaries of the stack.
+ *
+ * It depends on **every other resource of the stack** (D58 (16)), so it is created last and
+ * deleted first. CloudFormation does not delete what a resource that failed to delete depends
+ * on: if the guard fails, the stack ends in `DELETE_FAILED` with the installation still
+ * standing, instead of half deleted (seen on 2026-10-07, when it depended only on what agents
+ * and packs hold on to). Resources with a condition stay out: see `dependsOnTheRestOfTheStack`.
  *
  * Its role only deletes, only by the name prefixes of the installation, and roles only with
  * one of the two boundaries. It reads no data of the installation. Only CloudFormation (and
@@ -176,7 +176,7 @@ export class UninstallGuard extends Construct {
       // CloudFormation waits this long for the answer; the function gives up a little earlier.
       serviceTimeout: Duration.minutes(60),
     });
-    resource.node.addDependency(role, deadLetters, guard, ...props.before);
+    dependsOnTheRestOfTheStack(resource.node.defaultChild as CfnResource);
 
     acknowledge(
       role,
@@ -207,4 +207,22 @@ export class UninstallGuard extends Construct {
       })),
     );
   }
+}
+
+/**
+ * Makes `guard` depend on every other resource of its stack, whenever it is declared: an aspect,
+ * so that what the stack adds after the guard, or in a later release, is included without
+ * anyone remembering to list it. A test fails if a resource is left out (`release.test.ts`).
+ *
+ * A resource with a condition is not included: CloudFormation documents that what depends on
+ * a resource its condition leaves out is not created either, and the guard must always exist.
+ */
+function dependsOnTheRestOfTheStack(guard: CfnResource): void {
+  Aspects.of(guard.stack).add({
+    visit(node: IConstruct): void {
+      if (!CfnResource.isCfnResource(node) || node === guard || node.stack !== guard.stack) return;
+      if (node.cfnOptions.condition !== undefined) return;
+      guard.addResourceDependency(node);
+    },
+  });
 }

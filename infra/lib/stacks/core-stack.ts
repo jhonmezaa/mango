@@ -237,8 +237,8 @@ export class CoreStack extends Stack {
       packIdentityKey: tools.packIdentityKey,
       ...(packNetwork ? { network: packNetwork } : {}),
     });
-    // D58: what the provisioners created by API goes away with the stack, before the
-    // boundaries, the Gateway and the policy engine those resources hold on to.
+    // D58: what the provisioners created by API goes away with the stack, before anything
+    // else of it: the guard depends on every other resource (D58 (16)).
     const uninstallGuard = new UninstallGuard(this, "UninstallGuard", {
       installation: cfg,
       platform: agentPlatform,
@@ -248,7 +248,6 @@ export class CoreStack extends Stack {
       connectorTargets: tools.connectorTargets,
       configKey: tools.configKey,
       alerts,
-      before: [agentPlatform, packPlatform, tools, writeTools, alerts],
     });
     new Observability(this, "Observability", {
       installation: cfg,
