@@ -226,8 +226,9 @@ export class UninstallGuard extends Construct {
  * resource that creates nothing, with no condition and no properties, whose `Metadata` names
  * each of them inside `Fn::If` under its own condition. CloudFormation then makes the anchor
  * depend on them only when they exist, and the guard depends on the anchor like on any other
- * resource. Tried on 2026-10-08 with filler stacks: with the guard failing to delete, the
- * anchored conditional resource survived. The guard itself still has no property (TM-D13).
+ * resource. Tried on 2026-10-08 with filler stacks, also in this exact shape (five conditional
+ * resources under two conditions, keyed by path): with the guard failing to delete, the
+ * anchored resources survived. The guard itself still has no property (TM-D13).
  *
  * `AWS::CDK::Metadata` is left out of both: it is not a resource of AWS, and CDK adds it after
  * the aspects ran. A condition set by a raw override is not seen here (`cfnOptions.condition`
