@@ -389,8 +389,8 @@ Sale de documentación o del código, no de una prueba.
 
 1. Que el enlace «Launch stack» de la consola acepte una `templateURL` de un bucket no público. Por API funciona.
 2. Cómo se comporta la importación de la red de packs al añadir o quitar un pack entre releases (la importación en sí funciona).
-4. Cuánto tardan de verdad las ENI de AgentCore en soltarse: se vieron 8–9 h una vez.
-5. Que el `UninstallGuard` termine dentro de la hora de un custom resource con muchos agentes y packs. Con dos agentes y un pack tardó unos 9 minutos (2026-10-07, con el permiso de D58 (13) puesto a mano); la plantilla que ya lo trae no se ha visto en una instalación.
+4. Cuánto tardan de verdad las ENI de AgentCore en soltarse: se vieron 8–9 h una vez. (Medido dos veces más, el 2026-10-07 y el 2026-10-08: unas 8 horas desde que se borra el Runtime del pack; §8.2.)
+5. Que el `UninstallGuard` termine dentro de la hora de un custom resource con muchos agentes y packs. Con dos agentes y un pack tardó unos 9 minutos (2026-10-07, con el permiso de D58 (13) puesto a mano); la plantilla que ya lo trae no se ha visto en una instalación. (Vista el 2026-10-07 con `v0.1.0-g5c86ad2`, con dos agentes y un pack: `Core` se borró a la primera en 23 min 34 s. Con muchos agentes y packs sigue sin verse.)
 6. Habilitar un pack y chatear con el agente en la instalación hecha desde la release: faltan los usuarios de prueba con MFA (paso 8).
 7. `PackVpcCidr` como parámetro (`Fn::Cidr`): hoy el rango de la red de packs es un valor fijo de la release.
 8. El workflow `release.yml`: la release de prueba se publicó desde una estación de trabajo.

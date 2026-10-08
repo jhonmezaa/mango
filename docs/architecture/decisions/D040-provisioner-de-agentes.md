@@ -1,7 +1,7 @@
 # D40 · Provisioner de agentes: quién publica y con qué permisos
 
 - **Estado:** parcial. Rigen (1), (2), (4) y (5). El punto (3) ya no rige: con [D56](D056-tools-de-escritura-con-aprobacion.md) el provisioner publica agentes con tools de escritura de conectores de Mango marcadas en `approval_tools` (`functions/provisioner/src/mango_provisioner/harness.py`).
-- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día)
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día; ese permiso, visto en una instalación, 2026-10-08, punto 6)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (deja sin efecto el punto 3)
 
@@ -23,3 +23,8 @@
 - **Quién lo decidió.** El dueño, el 2026-10-07, por menú: arreglar el producto con una versión nueva en lugar de crear el rol a mano, y dar el permiso limitado a ese rol y a ese servicio, como el que el provisioner de packs ya tenía para su rol de red. El mismo día decidió darlo también al provisioner de packs ([D43](D043-provisioner-de-packs.md) (4)).
 - **Sin ver en una instalación.** Comprobado con tests de la plantilla (la sentencia exacta, y que ningún otro rol de `Core` puede crear un rol vinculado a un servicio) y con la síntesis. Se verá en una instalación desde cero con la versión que lo traiga.
 - **Propuesto por un agente y aceptado por el dueño el 2026-10-07:** el nombre de la sentencia, igual en los dos provisioners; el test que fija que ninguno de los dos tiene `iam:DeleteServiceLinkedRole` (ni, el de agentes, `iam:UpdateRoleDescription`); y la fila de §7 de la arquitectura que dice que la cuenta del laboratorio no es una cuenta nueva.
+
+**(6) El permiso del punto (5), visto en una instalación (nota del 2026-10-08).** No cambia lo decidido: dice con qué se ha comprobado.
+
+- **En una instalación desde cero (2026-10-07).** La segunda instalación del ensayo de ciclo de vida, en una cuenta que seguía sin el rol: CloudTrail muestra al provisioner creando `AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`, sin error, y el agente de la versión se publicó.
+- **En una instalación que se actualiza (2026-10-08).** Una instalación de laboratorio con datos pasó de `v0.1.0-g998eb03` a `v0.1.0-g5c86ad2`: la política del rol del provisioner apareció como `Modify` sin reemplazo, con una sentencia más. Lo que trae ese change set está en `docs/runbooks/install.md`, «Lo que trajo cada versión».

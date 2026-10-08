@@ -1,7 +1,7 @@
 # D43 · Provisioner de packs: qué se instala, quién lo registra y qué packs entran
 
 - **Estado:** parcial. Rigen (1), (2) y (4). El punto (3) ya no rige como está: los packs de datos de cuentas se instalan desde [D49](D049-identidad-en-packs-de-datos.md), [D52](D052-pack-de-billing-ampliado.md), [D54](D054-egress-de-packs.md) y [D55](D055-pack-de-cloudwatch.md); los packs con tools de escritura siguen rechazados ([D56](D056-tools-de-escritura-con-aprobacion.md) (5)).
-- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4)
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4; lo que se ha visto de ese permiso en una instalación, 2026-10-08, punto 5)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D46](D046-api-del-catalogo-de-mcp.md) (amplía, punto 3); [D49](D049-identidad-en-packs-de-datos.md) (precisa, punto 2); [D52](D052-pack-de-billing-ampliado.md) (precisa); [D56](D056-tools-de-escritura-con-aprobacion.md) (precisa el punto 3)
 
@@ -18,5 +18,10 @@
 - **Por qué.** La guía de AgentCore dice que ese rol se crea al crear o actualizar un Runtime, sea de un pack o de un harness. Con el permiso solo en el provisioner de agentes, instalar un pack dependería de que antes se hubiera creado el harness de algún agente: en una cuenta nueva donde eso no llegó a pasar, el Runtime del pack fallaría igual que falló el primer harness.
 - **Quién lo decidió.** El dueño, el 2026-10-07, por menú, al saber que un Runtime de pack también necesita el rol.
 - **Sin ver en una instalación.** Comprobado con tests de la plantilla y con la síntesis. Ninguna instalación ha creado todavía un Runtime de pack sin que el rol existiera.
+
+**(5) Lo que se ha visto del punto (4) en una instalación (nota del 2026-10-08).** No cambia lo decidido.
+
+- **El permiso sigue sin ejercitarse.** En el ensayo de ciclo de vida (2026-10-07) el rol de identidad lo creó el provisioner de agentes al publicar el agente de la versión ([D40](D040-provisioner-de-agentes.md) (6)); cuando se habilitó el primer pack ya existía. Lo que sí se vio ese día fue al provisioner de packs crear el rol de red de AgentCore ([D54](D054-egress-de-packs.md)), por primera vez en una cuenta nueva.
+- **En una instalación que se actualiza (2026-10-08).** Una instalación de laboratorio con datos pasó de `v0.1.0-g998eb03` a `v0.1.0-g5c86ad2`: la política del rol del provisioner de packs apareció como `Modify` sin reemplazo, con una sentencia más, y el change set trajo un `Add`, una política administrada adjunta al mismo rol. Con la sentencia nueva la política ya no cabe en una sola y CDK pasa una sentencia a esa política: 29 en la de siempre y 1 en la nueva, 30 en total (eran 29). Los mismos permisos.
 
 Modelo de amenazas: `docs/security/threat-models/mcp-pack-provisioner-threat-model.md`
