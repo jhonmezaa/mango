@@ -76,7 +76,7 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
 
 - **Con el harness en su sitio,** recién instalada: 12 recorridos pasaron, ninguno falló y 8 se saltaron; «FinOps publicado y servido; su harness existe en AgentCore».
 - **Cómo se llegó al caso.** Se borraron a mano en AgentCore el endpoint `live` del harness del agente de la versión y después el harness.
-- **La comprobación de solo lectura falló.** 11 pasaron, 1 falló (`06-agents`) y 8 se saltaron. Su mensaje: «"FinOps" is published and the application serves it, but AgentCore has no harness for it: nobody can get an answer from it.», seguido de qué mirar. En el informe: «AgentCore no tiene listo el harness de alguno». Los demás recorridos pasaron: la aplicación sigue sirviendo al agente, como dice «Lo que no cubre».
+- **La comprobación de solo lectura falló.** 11 pasaron, 1 falló (`06-agents`) y 8 se saltaron. Su mensaje: `«FinOps» is published and the application serves it, but AgentCore has no harness for it: nobody can get an answer from it.`, seguido de qué mirar. En el informe: «AgentCore no tiene listo el harness de alguno». Los demás recorridos pasaron: la aplicación sigue sirviendo al agente, como dice «Lo que no cubre».
 - **Un turno de chat a ese agente** (una llamada a la API como administrador de prueba): el stream trajo `conversation`, `status` y un `error` con código `upstream_error`, en 1,2 s.
   - Auditoría: `agent.invoke` y `agent.completed` con `failure: harness_missing`, costo 0, `held_usd` 0, 0 tokens y `settlement: final`.
   - Presupuesto: las filas de la persona y del agente, con gastado, comprometido, retenido y reservado en 0. Ninguna fila de turno pendiente.
