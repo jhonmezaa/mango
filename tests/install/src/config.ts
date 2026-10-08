@@ -53,10 +53,21 @@ const schema = z.strictObject({
     })
     .optional(),
   /**
-   * To delete the disposable person at the end with the AWS CLI. The user pool and the region
-   * are read from the installation (`/config.json`). Without it the person stays disabled.
+   * What the suite does with the AWS CLI. The user pool and the region are read from the
+   * installation (`/config.json`). `profile`: to delete the disposable person at the end;
+   * without credentials the person stays disabled. `namespace` (the `<ns>` of
+   * `Mango-<ns>-Core`): the read-only run also asks AgentCore whether the harness of each
+   * agent of the release exists; without it that question is not asked and the report says so.
    */
-  aws: z.strictObject({ profile: z.string().min(1).optional() }).optional(),
+  aws: z
+    .strictObject({
+      profile: z.string().min(1).optional(),
+      namespace: z
+        .string()
+        .regex(/^[a-z0-9]{3,8}$/)
+        .optional(),
+    })
+    .optional(),
 });
 
 const secretsSchema = z.record(

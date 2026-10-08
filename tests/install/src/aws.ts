@@ -5,9 +5,10 @@ import { z } from 'zod';
 
 import type { InstallConfig } from './config.ts';
 
-// The one thing the suite does outside the application: deleting, in the user pool, the
-// disposable person its own run invited. With the AWS CLI and the credentials of who runs the
-// suite. The output of the CLI is parsed and never echoed.
+// What the suite does outside the application, with the AWS CLI and the credentials of who
+// runs the suite: deleting, in the user pool, the disposable person its own run invited, and
+// reading from AgentCore whether the harness of an agent exists (`harness.ts`). The output of
+// the CLI is parsed and never echoed.
 
 const run = promisify(execFile);
 
@@ -18,13 +19,16 @@ const user = z.object({
 
 export type Deleted = 'deleted' | 'no-credentials' | 'not-the-disposable-person';
 
-interface Target {
+export interface Account {
   profile: string | undefined;
   region: string;
+}
+
+interface Target extends Account {
   userPoolId: string;
 }
 
-async function aws(target: Target, args: string[]): Promise<string> {
+export async function aws(target: Account, args: string[]): Promise<string> {
   const { stdout } = await run(
     'aws',
     [

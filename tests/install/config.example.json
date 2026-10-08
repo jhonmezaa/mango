@@ -16,5 +16,5 @@
     "question": "¿Cuánto gastamos ayer en total? Responde en una línea."
   },
   "people": { "emailDomain": "pruebas.empresa.invalid" },
-  "aws": { "profile": "mango" }
+  "aws": { "profile": "mango", "namespace": "acme" }
 }

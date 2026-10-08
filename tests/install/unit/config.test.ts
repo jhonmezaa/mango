@@ -35,6 +35,17 @@ describe('parseInstallFile', () => {
     );
   });
 
+  it('takes the namespace of the installation only in the shape a namespace has', () => {
+    expect(parseInstallFile(example).aws).toEqual({ profile: 'mango', namespace: 'acme' });
+    expect(parseInstallFile({ ...example, aws: { namespace: 'acme' } }).aws?.profile).toBe(
+      undefined,
+    );
+    // It ends up in the name of a harness the AWS CLI is asked for.
+    for (const namespace of ['Acme', 'a', 'acme-prod', 'acme_a_x', '']) {
+      expect(() => parseInstallFile({ ...example, aws: { namespace } })).toThrow('aws.namespace');
+    }
+  });
+
   it('only lets a disposable person live under .invalid', () => {
     expect(() => parseInstallFile({ ...example, people: { emailDomain: 'gmail.com' } })).toThrow(
       'people.emailDomain',
