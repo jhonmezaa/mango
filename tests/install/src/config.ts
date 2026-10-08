@@ -81,7 +81,7 @@ export interface Credentials {
   totp: string;
 }
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /** A path of the configuration never points inside the repository: it would end up in a commit. */
 export function assertOutsideRepo(path: string, what: string, repoRoot = REPO_ROOT): void {

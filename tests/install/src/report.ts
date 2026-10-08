@@ -49,6 +49,8 @@ export function renderReport(input: {
   seconds: number;
   outcome: string;
   release: string | null;
+  /** What the journey of the agents found, or `null` if it did not get to say. */
+  agents: string | null;
   roles: Record<string, boolean>;
   effects: Record<string, boolean>;
   lines: readonly Line[];
@@ -61,6 +63,7 @@ export function renderReport(input: {
     '',
     `- **Instalación:** ${input.url}`,
     `- **Release que muestra:** ${input.release ?? 'no se leyó (el recorrido de Instalación no corrió o falló)'}`,
+    `- **Agentes de la versión:** ${input.agents ?? 'no se comprobaron (el recorrido de los agentes no corrió o falló antes de leerlos)'}`,
     `- **Inicio:** ${input.startedAt} · **Duración:** ${input.seconds.toFixed(0)} s`,
     `- **Resultado:** ${input.outcome} · ${count('passed')} pasaron, ${failed.length} fallaron, ${skipped.length} se saltaron`,
     `- **Papeles con usuario:** ${Object.entries(input.roles)
@@ -174,11 +177,13 @@ export default class InstallReporter implements Reporter {
       process.stdout.write(`install-check: ${this.#broken ?? 'no configuration'}\n`);
       return;
     }
-    const release =
+    const noted = (fact: RegExp) =>
       this.#lines
         .flatMap((line) => line.notes)
-        .map((text) => /^release: (.+)$/.exec(text)?.[1])
+        .map((text) => fact.exec(text)?.[1])
         .find((value) => value !== undefined) ?? null;
+    const release = noted(/^release: (.+)$/);
+    const agents = noted(/^agents: (.+)$/);
     const lines = this.#loose.length
       ? [
           ...this.#lines,
@@ -200,6 +205,7 @@ export default class InstallReporter implements Reporter {
       seconds: Math.round(result.duration / 100) / 10,
       outcome: result.status === 'passed' ? 'pasó' : `no pasó (${result.status})`,
       release,
+      agents,
       roles: Object.fromEntries(ROLES.map((role) => [role, config.users[role] !== undefined])),
       effects: Object.fromEntries(EFFECTS.map((effect) => [effect, config.effects.has(effect)])),
       lines,

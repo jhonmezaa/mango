@@ -19,6 +19,7 @@ describe('renderReport', () => {
     seconds: 42,
     outcome: 'pasó',
     release: 'v0.1.0-g0000000',
+    agents: '«FinOps» publicado y servido (visto como «areaMember»)',
     roles: { admin: true, plain: false },
     effects: { chat: false, people: true },
     lines: [
@@ -43,6 +44,9 @@ describe('renderReport', () => {
   it('says the masked URL, the release, what passed, what was skipped and why', () => {
     expect(report).toContain('**Instalación:** https://d***.example.net');
     expect(report).toContain('**Release que muestra:** v0.1.0-g0000000');
+    expect(report).toContain(
+      '**Agentes de la versión:** «FinOps» publicado y servido (visto como «areaMember»)',
+    );
     expect(report).toContain('1 pasaron, 1 fallaron, 1 se saltaron');
     expect(report).toContain('- as plain: sin usuario');
     expect(report).toContain('admin sí, plain no');
