@@ -32,7 +32,14 @@ Origen: hito 1, «instalable por una empresa real». En el ensayo de ciclo de vi
 
 - **La corrida de solo lectura:** 14 recorridos pasaron, ninguno falló y 6 se saltaron, en 53 s. `06-agents` pasó en 1,0 s y el informe dijo «Agentes de la versión: «FinOps» publicado y servido (visto como «admin»)». El árbol de agentes y el historial de publicaciones respondieron al administrador con la forma esperada.
 - **Un código rechazado, provocado a propósito** (un ingreso del administrador de prueba en el mismo segundo en que empezó la corrida): Cognito rechazó el primer código con `ExpiredCodeException`, que es la excepción de un código ya usado en su ventana. El recorrido reintentó una vez y pasó; la corrida entera, 14 pasaron y ninguno falló, en 65 s. El informe anotó el reintento. La vigilancia no contó ningún error de consola ni ningún 4xx no declarado.
+- **Nota con fecha (2026-10-08, más tarde): la corrida en otras tres situaciones.**
+  - **Después de actualizar** la instalación de laboratorio a `v0.1.0-g6f9b8e4`, desde la etiqueta instalada: 14 pasaron, 0 fallaron y 6 se saltaron.
+  - **En una instalación desde cero sin segundo administrador** (cuenta nueva, sin packs): 10 pasaron, 0 fallaron y 10 se saltaron; `06-agents` dijo «FinOps publicado y servido».
+  - **Con el stack `Core` en `DELETE_FAILED`** tras un fallo del `UninstallGuard` antes de borrar nada ([D58](D058-distribucion-para-clientes.md) (18)), ya con el segundo administrador: 12 pasaron y 0 fallaron. La instalación seguía entera y la corrida lo confirmó.
 
 **(9) Lo que sigue sin verse en una instalación.** Un veredicto de fallo de `06-agents` (el laboratorio tiene su agente publicado) y un segundo rechazo seguido del código. Los dos están con tests unitarios.
+
+- **Nota con fecha (2026-10-08, más tarde): el límite del punto (6) se vio en una instalación.** Tras un fallo del `UninstallGuard` a medio barrido ([D58](D058-distribucion-para-clientes.md) (18)), el harness del agente de la versión ya no existía y el stack quedó en `DELETE_FAILED` con la aplicación en pie. La corrida de solo lectura **pasó:** `06-agents` dijo «FinOps publicado y servido». Lee lo que responde la API, y la API comprueba su puntero, el hash y la forma del ARN del harness; no pregunta a AgentCore. La aplicación seguía mostrando un agente que ya no podía responder: solo lo habría visto un turno de chat. El mensaje del guard sí lo avisa («Some agents or packs may already be gone»). Se anota como hecho; si la API o la comprobación deben preguntar a AgentCore no se decide aquí.
+- **Sigue sin verse en una instalación** un veredicto de fallo de `06-agents`: en la situación de la nota anterior, la que más se le parecía, pasó. Y un segundo rechazo seguido del código.
 
 Sin permisos, recursos, parámetros, dependencias ni supresiones nuevas: es código de pruebas (`tests/install`).
