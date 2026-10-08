@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { loadReleaseDefaults } from "../lib/config/release.js";
 import { releaseConfigJson, spaAuthConfigSchema } from "../lib/constructs/edge.js";
 import { importPackNetwork, packNetworkExports } from "../lib/constructs/pack-network.js";
+import { ANCHORED } from "../lib/constructs/uninstall-guard.js";
 import { releaseSynthesizer, UNPUBLISHED_TARGET } from "../lib/release-target.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { PackNetworkStack } from "../lib/stacks/pack-network-stack.js";
@@ -360,11 +361,14 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     expect(guard.DependsOn).toContain(role[0]);
   });
 
-  it("leaves out only the resources with a condition, and these are all of them", () => {
-    // CloudFormation rejects a template whose `DependsOn` names a resource its condition
-    // leaves out ("Unresolved resource dependencies", seen on 2026-10-08): with one of these
-    // in the list, the stack could not be created with that condition false. A new
-    // conditional resource has to be added here on purpose.
+  // D58 (17): `DependsOn` cannot name a resource with a condition (CloudFormation rejects the
+  // template when the condition is false), so an anchor names each of them inside `Fn::If`
+  // and the guard depends on the anchor. A failed guard then leaves those standing too.
+  const [anchorId, anchor] = Object.entries(source.Resources).find(
+    ([, r]) => r.Type === "AWS::CloudFormation::WaitConditionHandle",
+  )! as [string, Resource & { Metadata: Record<string, Record<string, unknown>> }];
+
+  it("holds every resource with a condition through the anchor, each under its own condition", () => {
     expect(conditional.map(([, r]) => `${r.Condition} ${r.Type}`).sort()).toEqual([
       "HasSecondAdmin AWS::Cognito::UserPoolUser",
       "HasSecondAdmin AWS::Cognito::UserPoolUserToGroupAttachment",
@@ -372,8 +376,27 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
       "OwnsTransactionSearch AWS::Logs::ResourcePolicy",
       "OwnsTransactionSearch AWS::XRay::TransactionSearchConfig",
     ]);
+    // Whatever the list above says: a conditional resource the anchor does not name, or
+    // names under another condition, fails here.
+    const anchored = Object.values(anchor.Metadata[ANCHORED]!);
+    const expected = conditional.map(([id, r]) => ({ "Fn::If": [r.Condition, { Ref: id }, "none"] }));
+    const byRef = (x: unknown) => JSON.stringify(x);
+    expect(anchored.map(byRef).sort()).toEqual(expected.map(byRef).sort());
+    // `DependsOn` itself never names one: the template would be rejected with its condition false.
     for (const [id] of conditional) expect(guard.DependsOn).not.toContain(id);
     expect(guard.Condition).toBeUndefined();
+  });
+
+  it("has an anchor that creates nothing, always exists, and the guard depends on it", () => {
+    expect(ofType("AWS::CloudFormation::WaitConditionHandle")).toHaveLength(1);
+    expect(anchorId).toMatch(/^UninstallGuardAnchor/);
+    expect(anchor.Condition).toBeUndefined();
+    expect(anchor.Properties).toBeUndefined();
+    expect((anchor as unknown as { DependsOn?: unknown }).DependsOn).toBeUndefined();
+    expect(guard.DependsOn).toContain(anchorId);
+    // Nothing else reads the anchor: its pre-signed URL is never used.
+    const { [anchorId]: _anchor, [guardId]: _guard, ...rest } = source.Resources;
+    expect(JSON.stringify(rest)).not.toContain(`"${anchorId}"`);
   });
 
   it("is a dependency of nothing: no cycle, and nothing waits for it to be created", () => {

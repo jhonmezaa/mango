@@ -1,4 +1,4 @@
-import { Aspects, CfnResource, CustomResource, Duration, Stack } from "aws-cdk-lib";
+import { Aspects, CfnResource, CfnWaitConditionHandle, CustomResource, Duration, Fn, Lazy, Stack } from "aws-cdk-lib";
 import * as agentcoreL1 from "aws-cdk-lib/aws-bedrockagentcore";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
@@ -11,6 +11,9 @@ import { AgentPlatform } from "./agent-platform.js";
 import { Alerts } from "./alerts.js";
 import { PackPlatform } from "./pack-platform.js";
 import { PythonFunction } from "./python-function.js";
+
+/** `Metadata` key of the anchor under which the conditional resources of the stack are named. */
+export const ANCHORED = "mango:anchored";
 
 export interface UninstallGuardProps {
   readonly installation: Installation;
@@ -31,11 +34,12 @@ export interface UninstallGuardProps {
  * Cedar policies, roles and log groups) and waits until it is gone. Without it the stack
  * deletion fails: those roles carry permissions boundaries of the stack.
  *
- * It depends on **every other resource of the stack** (D58 (16)), so it is created last and
- * deleted first. CloudFormation does not delete what a resource that failed to delete depends
- * on: if the guard fails, the stack ends in `DELETE_FAILED` with the installation still
+ * It depends on **every other resource of the stack** (D58 (16), (17)), so it is created last
+ * and deleted first. CloudFormation does not delete what a resource that failed to delete
+ * depends on: if the guard fails, the stack ends in `DELETE_FAILED` with the installation still
  * standing, instead of half deleted (seen on 2026-10-07, when it depended only on what agents
- * and packs hold on to). Resources with a condition stay out: see `dependsOnTheRestOfTheStack`.
+ * and packs hold on to). Resources with a condition are held through an anchor: see
+ * `dependsOnTheRestOfTheStack`.
  *
  * Its role only deletes, only by the name prefixes of the installation, and roles only with
  * one of the two boundaries. It reads no data of the installation. Only CloudFormation (and
@@ -176,7 +180,9 @@ export class UninstallGuard extends Construct {
       // CloudFormation waits this long for the answer; the function gives up a little earlier.
       serviceTimeout: Duration.minutes(60),
     });
-    dependsOnTheRestOfTheStack(resource.node.defaultChild as CfnResource);
+    // Holds the resources with a condition, which `DependsOn` cannot name (D58 (17)).
+    const anchor = new CfnWaitConditionHandle(this, "Anchor");
+    dependsOnTheRestOfTheStack(resource.node.defaultChild as CfnResource, anchor);
 
     acknowledge(
       role,
@@ -214,18 +220,33 @@ export class UninstallGuard extends Construct {
  * so that what the stack adds after the guard, or in a later release, is included without
  * anyone remembering to list it. A test fails if a resource is left out (`release.test.ts`).
  *
- * A resource with a condition is not included: CloudFormation rejects the whole template
- * ("Unresolved resource dependencies") when a `DependsOn` names a resource its condition leaves
- * out, so the stack could not be created or updated with that condition false (seen on
- * 2026-10-08 with a test stack). The alternative, a reference inside `Fn::If` in a property,
- * would give the guard a property that changes, which TM-D13 forbids.
+ * A resource with a condition cannot be named in `DependsOn`: CloudFormation rejects the whole
+ * template ("Unresolved resource dependencies") when its condition leaves it out (seen on
+ * 2026-10-08 with a test stack). Those are held through `anchor` instead (D58 (17)): a
+ * resource that creates nothing, with no condition and no properties, whose `Metadata` names
+ * each of them inside `Fn::If` under its own condition. CloudFormation then makes the anchor
+ * depend on them only when they exist, and the guard depends on the anchor like on any other
+ * resource. Tried on 2026-10-08 with filler stacks: with the guard failing to delete, the
+ * anchored conditional resource survived. The guard itself still has no property (TM-D13).
+ *
+ * `AWS::CDK::Metadata` is left out of both: it is not a resource of AWS, and CDK adds it after
+ * the aspects ran. A condition set by a raw override is not seen here (`cfnOptions.condition`
+ * is the only typed way to set one): the test on the synthesized template fails for it.
  */
-function dependsOnTheRestOfTheStack(guard: CfnResource): void {
+function dependsOnTheRestOfTheStack(guard: CfnResource, anchor: CfnWaitConditionHandle): void {
+  const anchored: Record<string, unknown> = {};
+  anchor.addMetadata(ANCHORED, Lazy.any({ produce: () => anchored }));
   Aspects.of(guard.stack).add({
     visit(node: IConstruct): void {
       if (!CfnResource.isCfnResource(node) || node === guard || node.stack !== guard.stack) return;
-      if (node.cfnOptions.condition !== undefined) return;
-      guard.addResourceDependency(node);
+      if (node.cfnResourceType === "AWS::CDK::Metadata") return;
+      const condition = node.cfnOptions.condition;
+      if (condition === undefined) {
+        guard.addResourceDependency(node);
+      } else {
+        // By construct path: a stable, readable key. The value is what creates the dependency.
+        anchored[node.node.path] = Fn.conditionIf(condition.logicalId, node.ref, "none");
+      }
     },
   });
 }
