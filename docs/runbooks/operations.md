@@ -70,7 +70,8 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `Reconciler-failed` | La reconciliación diaria no pudo correr: no se comparó nada | Los errores de ese mismo log group y el mensaje en la cola `Mango-<ns>-Reconciler-dlq` |
 | `AgentProvisioner-failed`, `AgentDeprovisioner-failed` | Publicar o retirar un agente falló, se agotó o se abortó | La ejecución fallida de la máquina de estados (`AgentProvisionerArn`, `AgentDeprovisionerArn`) |
 | `AgentProvisioner-volume` | Más de 30 publicaciones de agentes en una hora | Quién las pidió, en Auditoría |
-| `UninstallGuard-failed` | Durante una desinstalación, la función que borra agentes y packs falló todos sus reintentos | Errores del log group `/aws/lambda/Mango-<ns>-UninstallGuard` (`uninstall_guard failed`, con la operación y el código del error) y el mensaje en la cola `Mango-<ns>-UninstallGuard-dlq` |
+| `UninstallGuard-deletion-failed` | Alguien borró el stack `Core` y la función que borra agentes y packs (el `UninstallGuard`) **detuvo el borrado**: respondió a CloudFormation que falló. El stack está en `DELETE_FAILED` y **la instalación sigue en pie y funcionando**; puede que algún agente o pack ya no exista en AgentCore aunque la aplicación lo muestre. Avisa una vez por intento, unos minutos después, y vuelve sola a `OK` aunque el stack siga en `DELETE_FAILED` (D58, punto 19) | Los eventos del stack `Mango-<ns>-Core` en CloudFormation: el motivo del recurso `Custom::MangoUninstallGuard` dice la operación, el código del error y si repetir el borrado puede servir. Después, el paso 5 de [`install.md`](install.md). Si nadie debía estar desinstalando: quién llamó a `DeleteStack`, en CloudTrail |
+| `UninstallGuard-failed` | Durante una desinstalación, el `UninstallGuard` **no llegó a responder** y agotó sus reintentos: un error que no esperaba, un tiempo agotado o no poder contestar a CloudFormation, que entonces espera hasta una hora antes de dar el borrado por fallido. Un fallo que el guard sí responde no pasa por aquí: es la alarma de arriba | Errores del log group `/aws/lambda/Mango-<ns>-UninstallGuard` y el mensaje en la cola `Mango-<ns>-UninstallGuard-dlq` |
 | `PackDns-blocked` (stack `PackNetwork`) | El DNS Firewall de la red de packs rechazó al menos una consulta de un nombre que no es de sus endpoints ni de los que pide la máquina de AgentCore por su cuenta: **un nombre que nadie esperaba**. No se resolvió nada | El registro de consultas DNS de la red de packs (log group `Mango-<ns>-PackNetwork-dns-queries`): qué nombre fue. Después, qué packs se estaban usando a esa hora |
 
 **Presupuesto: turnos cortados** (D73)
@@ -269,15 +270,16 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ### Cuánto cuesta
 
-**Unos USD 9 al mes** a precio de lista de `us-east-1`, con todas las alarmas de hoy (D71, D72 y D73):
+**Unos USD 9 al mes** a precio de lista de `us-east-1`, con todas las alarmas de hoy (D71, D72, D73 y D58, punto 19):
 
 | Qué | Cuánto | USD al mes |
 |---|---|---|
-| Métricas que leen las alarmas, a USD 0,10 cada una | 51 en la plantilla de ejemplo (2026-10-06): 50 en las 30 alarmas de `Core` y una en la de `PackNetwork` | 5,10 |
+| Métricas que leen las alarmas, a USD 0,10 cada una | 52 en la plantilla de ejemplo (2026-10-08): 51 en las 31 alarmas de `Core` y una en la de `PackNetwork` | 5,20 |
 | Tablero `Mango-<ns>-Operations` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
 | Métricas propias de la función conciliadora (D73), a USD 0,30 cada una | Cuatro | 1,20 |
-| **Total** | | **9,30** |
+| **Total** | | **9,40** |
 
 - **Fuera de la suma:** `DynamoDB-system-errors` no lee una métrica fija, sino una consulta sobre todas las tablas de la cuenta. CloudWatch la cobra por las métricas que la consulta analiza, que dependen de cuántas tablas y operaciones tenga la cuenta. Ninguna cifra de esta tabla está contrastada con una factura.
+- **La métrica propia del `UninstallGuard` (D58, punto 19) no suma:** solo existe el mes en que el guard detiene un borrado (USD 0,30 ese mes, como mucho).
 - **El número de métricas crece con las tablas:** cada tabla nueva suma una alarma con dos métricas.
 - La regla del WAF del borde que añadió D72 (USD 1 al mes) va en el costo del WAF, no aquí: §6 de la [arquitectura](../architecture/reference-architecture.md).
