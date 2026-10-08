@@ -1,7 +1,7 @@
 # D75 · La comprobación de solo lectura de una instalación falla si la versión no quedó servible
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente el 2026-10-08, punto 11)
+- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (6: de su fila 6 sale un caso, la invocación que AgentCore rechaza porque el harness no existe; es el punto 10 de esta decisión)
 - **Precisada por:** —
 
@@ -72,7 +72,7 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
 - **Visto en una instalación de laboratorio (2026-10-08),** con `aws.namespace` en la configuración y el harness en su sitio: la corrida de solo lectura pasó (14 recorridos pasaron, ninguno falló y 6 se saltaron, en 54 s). `06-agents` tardó 2,6 s y el informe dijo «FinOps publicado y servido (visto como «admin»); su harness existe en AgentCore». Los dos comandos de la CLI existen y respondieron.
 - **Sigue sin verse en una instalación** (está con tests): el veredicto de fallo por un harness que falta, y el turno que libera la reserva. Que AgentCore responde `ResourceNotFoundException` a `InvokeHarness` sale del modelo del SDK (botocore 1.43), no de una instalación.
 
-**(11) Lo que una instalación mostró del punto (10) (2026-10-08, propuesto por un agente).** El punto (10) dejó sin ver el veredicto de fallo por un harness que falta y el turno que libera la reserva, y decía que la respuesta de AgentCore salía del modelo del SDK. Ese mismo día se vieron los tres en una cuenta de ensayo, con `v0.1.0-gd578994` instalada desde cero, sin packs y con `aws.namespace` en la configuración de la comprobación. Este punto no decide nada.
+**(11) Lo que una instalación mostró del punto (10) (2026-10-08, propuesto por un agente y aceptado por el dueño el 2026-10-08).** El punto (10) dejó sin ver el veredicto de fallo por un harness que falta y el turno que libera la reserva, y decía que la respuesta de AgentCore salía del modelo del SDK. Ese mismo día se vieron los tres en una cuenta de ensayo, con `v0.1.0-gd578994` instalada desde cero, sin packs y con `aws.namespace` en la configuración de la comprobación. Este punto no decide nada.
 
 - **Con el harness en su sitio,** recién instalada: 12 recorridos pasaron, ninguno falló y 8 se saltaron; «FinOps publicado y servido; su harness existe en AgentCore».
 - **Cómo se llegó al caso.** Se borraron a mano en AgentCore el endpoint `live` del harness del agente de la versión y después el harness.
