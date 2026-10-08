@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { App } from "aws-cdk-lib";
@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { GLOBAL_METRICS_REGION, OPERATIONAL_THRESHOLDS } from "../lib/constructs/operational-alarms.js";
 import { PACK_DNS_BLOCKED_QUERIES } from "../lib/constructs/pack-network.js";
+import { UNINSTALL_GUARD_METRICS } from "../lib/constructs/uninstall-guard.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { PackNetworkStack } from "../lib/stacks/pack-network-stack.js";
 import { instantiate } from "./parameters.js";
@@ -100,6 +101,7 @@ describe("operational alarms of Core", () => {
         "GatewayInterceptor-failing",
         "PreSignUp-throttled",
         "PreTokenGeneration-failing",
+        "UninstallGuard-deletion-failed",
         "UninstallGuard-failed",
       ].map((suffix) => `Mango-${ns}-${suffix}`),
     );
@@ -260,6 +262,35 @@ describe("functions people depend on", () => {
     const properties = alarm("UninstallGuard-failed");
     expect(properties).toMatchObject({ MetricName: "ApproximateNumberOfMessagesVisible", Threshold: 1 });
     expect(dimension(properties.Dimensions, "QueueName")).toEqual({ "Fn::GetAtt": [queueId, "QueueName"] });
+  });
+
+  // D58 (19): a guard that answers FAILED ends well, so nothing reaches that queue. Since
+  // D58 (16) the alarms and the topic outlive such a failure, and this one says it.
+  it("alarms when the uninstall guard stops a deletion, from a metric the function writes in its log", () => {
+    const properties = alarm("UninstallGuard-deletion-failed");
+    expect(properties).toMatchObject({
+      Namespace: UNINSTALL_GUARD_METRICS.namespace,
+      MetricName: UNINSTALL_GUARD_METRICS.failed,
+      Dimensions: [{ Name: UNINSTALL_GUARD_METRICS.dimension, Value: ns }],
+      // Not the sum: a negative value from another writer of the account would cancel it.
+      Statistic: "Maximum",
+      Period: 300,
+      Threshold: 1,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      EvaluationPeriods: 1,
+      TreatMissingData: "notBreaching",
+    });
+    // It tells where the guard's own message is: the events of the stack being deleted.
+    expect(properties.AlarmDescription).toContain(`the Core stack (Mango-${ns}-Core): the stack is in DELETE_FAILED`);
+    expect(properties.AlarmDescription).toContain("Look first at the events of that stack");
+    // The same names on both sides: the function writes them, the alarm reads them.
+    const handler = readFileSync(
+      resolve(import.meta.dirname, "../../functions/provisioner/src/mango_provisioner/uninstall.py"),
+      "utf8",
+    );
+    expect(handler).toContain(`METRIC_NAMESPACE = "${UNINSTALL_GUARD_METRICS.namespace}"`);
+    expect(handler).toContain(`METRIC_DIMENSION = "${UNINSTALL_GUARD_METRICS.dimension}"`);
+    expect(handler).toContain(`METRIC_NAME = "${UNINSTALL_GUARD_METRICS.failed}"`);
   });
 });
 

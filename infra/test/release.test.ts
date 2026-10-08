@@ -456,6 +456,29 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     expect(JSON.stringify(deletes[0]!.Resource)).toMatch(/-mcp-\*/);
   });
 
+  // D58 (19): the failure reaches the alerts topic through an alarm on a metric written in the
+  // function's own log. The guard itself cannot publish, and the role is the one it had.
+  it("tells the alerts topic of a deletion it stopped without gaining a permission", () => {
+    const [alarmId, alarm] = Object.entries(source.Resources).find(
+      ([, r]) => r.Type === "AWS::CloudWatch::Alarm" && JSON.stringify(r.Properties.AlarmName).includes("-UninstallGuard-deletion-failed"),
+    )!;
+    const [topicId] = Object.entries(source.Resources).find(([, r]) => r.Type === "AWS::SNS::Topic")!;
+    expect(alarm.Properties.AlarmActions).toEqual([{ Ref: topicId }]);
+    // The alarm and its topic are among what a guard that fails leaves standing.
+    expect(guard.DependsOn).toContain(alarmId);
+    expect(guard.DependsOn).toContain(topicId);
+    for (const service of ["sns:", "cloudwatch:", "events:"]) {
+      expect(actions.some((a) => a.startsWith(service)), service).toBe(false);
+    }
+    expect(actions.filter((a) => a.startsWith("logs:")).sort()).toEqual([
+      "logs:CreateLogStream",
+      "logs:DeleteLogGroup",
+      "logs:DescribeLogGroups",
+      "logs:PutLogEvents",
+    ]);
+    expect(Object.values(source.Resources).filter((r) => r.Type === "AWS::Logs::MetricFilter")).toEqual([]);
+  });
+
   it("can only be invoked by CloudFormation and by itself", () => {
     const invoke = statements.find((s) => s.Sid === "KeepWaiting")!;
     expect(JSON.stringify(invoke.Resource)).toContain("-UninstallGuard");

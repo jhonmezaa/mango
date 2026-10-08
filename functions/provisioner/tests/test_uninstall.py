@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -204,6 +205,7 @@ class Run:
         self.agentcore, self.iam, self.logs = AgentCore(), Iam(), Logs()
         self.answers: list[tuple[str, str]] = []
         self.reinvoked: list[dict[str, Any]] = []
+        self.emitted: list[str] = []
         self.now = 0.0
         handle(
             {**EVENT, **event},
@@ -213,10 +215,17 @@ class Run:
             answer=lambda _event, status, reason: self.answers.append((status, reason)),
             clock=lambda: self.now,
             sleep=self._sleep,
+            emit=self._emit,
+            now=lambda: 1_700_000_000.5,
         )
 
     def _sleep(self, seconds: float) -> None:
         self.now += seconds
+
+    def _emit(self, line: str) -> None:
+        # The metric is written after the answer, never instead of it.
+        assert [status for status, _ in self.answers] == ["FAILED"]
+        self.emitted.append(line)
 
 
 def test_removes_every_agent_and_pack_of_the_installation_and_nothing_else() -> None:
@@ -416,6 +425,79 @@ def test_a_failure_that_is_not_an_aws_call_names_only_its_kind() -> None:
         "-",
         "ThrottlingException",
     )
+
+
+def test_every_failed_answer_counts_once_in_the_metric_and_says_nothing_of_the_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def denied(self: AgentCore, policyEngineId: str, policyId: str) -> None:  # noqa: N803
+        raise error("AccessDeniedException", "DeletePolicy", f"not authorized on {policyId}")
+
+    record = {
+        "_aws": {
+            "Timestamp": 1_700_000_000_500,
+            "CloudWatchMetrics": [
+                {
+                    "Namespace": "Mango/UninstallGuard",
+                    "Dimensions": [["Installation"]],
+                    "Metrics": [{"Name": "DeletionFailed", "Unit": "Count"}],
+                }
+            ],
+        },
+        "Installation": "acme",
+        "DeletionFailed": 1,
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr(AgentCore, "delete_policy", denied)
+        stopped = Run()
+    assert [status for status, _ in stopped.answers] == ["FAILED"]
+    assert [json.loads(line) for line in stopped.emitted] == [record]
+
+    # AgentCore did not finish within the hour: the stack ends in DELETE_FAILED just the same.
+    monkeypatch.setattr(AgentCore, "delete_harness", lambda self, harnessId: None)  # noqa: N803
+    late = Run(MangoInvocation=uninstall.MAX_INVOCATIONS)
+    assert [status for status, _ in late.answers] == ["FAILED"]
+    assert [json.loads(line) for line in late.emitted] == [record]
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {},
+        {"RequestType": "Create"},
+        {"RequestType": "Update"},
+    ],
+)
+def test_a_deletion_that_works_and_a_request_that_deletes_nothing_write_no_metric(
+    event: dict[str, Any],
+) -> None:
+    run = Run(**event)
+    assert run.answers == [("SUCCESS", "")]
+    assert run.emitted == []
+    assert Run("UPDATE_IN_PROGRESS").emitted == []
+
+
+def test_waiting_for_the_next_invocation_is_not_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(AgentCore, "delete_harness", lambda self, harnessId: None)  # noqa: N803
+    run = Run()
+    assert run.reinvoked
+    assert run.emitted == []
+
+
+def test_a_metric_that_cannot_be_written_neither_fails_the_guard_nor_changes_its_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def denied(self: AgentCore, harnessId: str) -> None:  # noqa: N803
+        raise error("AccessDeniedException", "DeleteHarness")
+
+    def closed(self: Run, line: str) -> None:
+        raise OSError("stdout")
+
+    monkeypatch.setattr(AgentCore, "delete_harness", denied)
+    monkeypatch.setattr(Run, "_emit", closed)
+    [(status, reason)] = Run().answers
+    assert status == "FAILED"
+    assert reason.startswith("Uninstall guard failed (DeleteHarness: AccessDeniedException).")
 
 
 def test_settings_reject_anything_but_well_formed_names() -> None:

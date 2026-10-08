@@ -1,5 +1,7 @@
 import { Aspects, CfnResource, CfnWaitConditionHandle, CustomResource, Duration, Fn, Lazy, Stack } from "aws-cdk-lib";
 import * as agentcoreL1 from "aws-cdk-lib/aws-bedrockagentcore";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as sqs from "aws-cdk-lib/aws-sqs";
@@ -14,6 +16,13 @@ import { PythonFunction } from "./python-function.js";
 
 /** `Metadata` key of the anchor under which the conditional resources of the stack are named. */
 export const ANCHORED = "mango:anchored";
+
+/** The metric the function writes when it answers `FAILED` (embedded metric format). */
+export const UNINSTALL_GUARD_METRICS = {
+  namespace: "Mango/UninstallGuard",
+  dimension: "Installation",
+  failed: "DeletionFailed",
+};
 
 export interface UninstallGuardProps {
   readonly installation: Installation;
@@ -40,6 +49,10 @@ export interface UninstallGuardProps {
  * standing, instead of half deleted (seen on 2026-10-07, when it depended only on what agents
  * and packs hold on to). Resources with a condition are held through an anchor: see
  * `dependsOnTheRestOfTheStack`.
+ *
+ * Whoever deletes the stack reads that failure in its events. The alerts mailbox learns of it
+ * from an alarm on a metric the function writes in its own log when it answers `FAILED`
+ * (D58 (19)): the alarms and the topic are among what stays. The role gains nothing for it.
  *
  * Its role only deletes, only by the name prefixes of the installation, and roles only with
  * one of the two boundaries. It reads no data of the installation. Only CloudFormation (and
@@ -180,6 +193,32 @@ export class UninstallGuard extends Construct {
       // CloudFormation waits this long for the answer; the function gives up a little earlier.
       serviceTimeout: Duration.minutes(60),
     });
+    // A deletion the guard stopped: the stack is in DELETE_FAILED and the installation stands.
+    // The function answered, so nothing reaches the dead-letter queue (D58 (19)).
+    new cloudwatch.Alarm(this, "DeletionFailedAlarm", {
+      alarmName: mangoName(ns, "UninstallGuard-deletion-failed"),
+      alarmDescription:
+        // The name the installation runbook gives the stack: whoever installs chooses the real one.
+        `The uninstall guard stopped a deletion of the Core stack (${mangoName(ns, "Core")}): the stack is in DELETE_FAILED ` +
+        "and the installation is still standing and working, though some agents or packs may already be gone. " +
+        "Look first at the events of that stack in CloudFormation (the status reason of the " +
+        "Custom::MangoUninstallGuard resource names the operation and the error code, and says whether deleting " +
+        "the stack again can work), then at step 5 (uninstall) of the installation runbook.",
+      metric: new cloudwatch.Metric({
+        namespace: UNINSTALL_GUARD_METRICS.namespace,
+        metricName: UNINSTALL_GUARD_METRICS.failed,
+        dimensionsMap: { [UNINSTALL_GUARD_METRICS.dimension]: ns },
+        // The maximum, not the sum: a negative value written to the metric by someone else
+        // of the account cannot cancel the count of the guard.
+        statistic: cloudwatch.Stats.MAXIMUM,
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(new cloudwatchActions.SnsAction(props.alerts.topic));
+
     // Holds the resources with a condition, which `DependsOn` cannot name (D58 (17)).
     const anchor = new CfnWaitConditionHandle(this, "Anchor");
     dependsOnTheRestOfTheStack(resource.node.defaultChild as CfnResource, anchor);

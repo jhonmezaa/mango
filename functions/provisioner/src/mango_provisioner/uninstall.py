@@ -18,6 +18,10 @@ finds the stack in another state and changes nothing.
 AgentCore deletions are asynchronous and one invocation may not be enough: the function then
 invokes itself again with the same event, a bounded number of times, and answers
 CloudFormation at the end. Nothing of an agent or a pack is logged: only names and counts.
+
+Whoever deletes the stack reads a failure in its events. Since the alarms are still there after
+one (D58 (16)), a ``FAILED`` answer also counts in a metric that an alarm takes to the alerts
+topic (D58 (19)): a line in the function's own log, with no call and no permission.
 """
 
 from __future__ import annotations
@@ -74,6 +78,10 @@ DELETING_STACK = "DELETE_IN_PROGRESS"
 POLL_SECONDS = 20
 INVOCATION_BUDGET_SECONDS = 780
 MAX_INVOCATIONS = 4
+# The metric of a `FAILED` answer (embedded metric format). The alarm reads these names.
+METRIC_NAMESPACE = "Mango/UninstallGuard"
+METRIC_DIMENSION = "Installation"
+METRIC_NAME = "DeletionFailed"
 
 
 @dataclass(frozen=True)
@@ -133,6 +141,10 @@ class Sweep:
         self._ac = agentcore
         self._iam = iam
         self._logs = logs
+
+    @property
+    def namespace(self) -> str:
+        return self._s.namespace
 
     @property
     def role_name(self) -> str:
@@ -342,6 +354,28 @@ def respond(event: Mapping[str, Any], status: str, reason: str = "") -> None:
         pass
 
 
+def failure_record(namespace: str, now: float) -> dict[str, Any]:
+    """Embedded metric format: CloudWatch Logs turns this log line into one count of the metric.
+
+    The installation and the count, and nothing of the failure: what failed is in the answer
+    to CloudFormation and in the log line before this one.
+    """
+    return {
+        "_aws": {
+            "Timestamp": int(now * 1000),
+            "CloudWatchMetrics": [
+                {
+                    "Namespace": METRIC_NAMESPACE,
+                    "Dimensions": [[METRIC_DIMENSION]],
+                    "Metrics": [{"Name": METRIC_NAME, "Unit": "Count"}],
+                }
+            ],
+        },
+        METRIC_DIMENSION: namespace,
+        METRIC_NAME: 1,
+    }
+
+
 def handle(
     event: dict[str, Any],
     *,
@@ -351,7 +385,19 @@ def handle(
     answer: Callable[[Mapping[str, Any], str, str], None] = respond,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    emit: Callable[[str], None] = print,
+    now: Callable[[], float] = time.time,
 ) -> None:
+    def fail(reason: str) -> None:
+        # The answer goes first: nothing after it can fail the deletion or change what it says.
+        answer(event, "FAILED", reason)
+        try:
+            # Printed as-is (not through `logging`) so the `_aws` key stays at the root of the line.
+            emit(json.dumps(failure_record(sweep.namespace, now())))
+        except (OSError, ValueError):
+            # An error here would make Lambda run the event again, after the answer.
+            logger.warning("uninstall_guard could not write its failure metric")
+
     if event.get("RequestType") != "Delete":
         answer(event, "SUCCESS", "")
         return
@@ -376,17 +422,15 @@ def handle(
             reinvoke({**event, "MangoInvocation": invocation + 1})
             return
         left = ", ".join(f"{kind}={count}" for kind, count in sorted(remaining.items()) if count)
-        answer(
-            event,
-            "FAILED",
+        fail(
             f"Agents or packs are still being deleted ({left}). {_STANDING} "
-            "Delete the stack again: it goes on from where it stopped.",
+            "Delete the stack again: it goes on from where it stopped."
         )
     except (ClientError, BotoCoreError, KeyError, ValueError) as exc:
         operation, code = failed_call(exc)
         # The operation and the code only: AWS messages may quote ARNs or content.
         logger.error("uninstall_guard failed: operation=%s code=%s", operation, code)  # noqa: TRY400
-        answer(event, "FAILED", failure_reason(exc, sweep.role_name))
+        fail(failure_reason(exc, sweep.role_name))
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> None:
