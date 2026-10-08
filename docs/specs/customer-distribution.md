@@ -319,7 +319,7 @@ AgentCore puede tardar horas en soltar las ENI. Para que `Core` se borre limpio,
 
 - Exporta las subnets y el security group de cada pack (`Mango-<ns>-PackNetwork-…`); `Core` los importa con `Fn::ImportValue`. CloudFormation impide borrar `PackNetwork` mientras `Core` exista: el orden de borrado queda forzado.
 - Sale de los manifiestos firmados de la release, como hoy (D54). No tiene assets ni Lambdas.
-- Desinstalar: `Core` primero (el guard borra Runtimes y roles). Luego `PackNetwork`: si las ENI siguen, falla solo ese stack y se repite el `delete-stack` más tarde.
+- Desinstalar: `Core` primero (el guard borra Runtimes y roles). Luego `PackNetwork`: si las ENI siguen, falla solo ese stack y se repite el `delete-stack` más tarde. Medido dos veces (2026-10-07 y 2026-10-08, D58 (15)): el primer borrado falla a los 19 minutos, AgentCore suelta las ENI unas 8 horas después de borrarse el Runtime del pack y el segundo borrado tarda segundos. Mientras espera no cuesta nada: los endpoints ya se borraron.
 - Actualizar a una release con un pack nuevo: `PackNetwork` antes que `Core`. Con un pack retirado: `Core` antes. Las notas de la release lo dicen.
 - El guard ya no espera a las ENI.
 
@@ -335,7 +335,11 @@ AgentCore puede tardar horas en soltar las ENI. Para que `Core` se borre limpio,
 
 Con `RETAIN` (clientes) quedan: 8 tablas, user pool, bucket de auditoría (Object Lock), buckets de logs y packs, llaves KMS (sin alias: los alias se borran con los stacks) y log groups. **Reinstalar con el mismo namespace falla** mientras existan, porque los nombres son fijos.
 
-`purge-retained.sh <namespace>` (publicado con la release) los lista y, con `--confirm`, los borra. Se niega mientras exista `Core` o `PackNetwork`, y también si no puede comprobar que no existen. Al borrar: quita la protección de borrado, vacía buckets (con bypass de governance solo donde hay Object Lock) y programa a 7 días las llaves que llevan la etiqueta `mango:namespace` de la instalación. En modo `COMPLIANCE` el bucket de auditoría no se puede vaciar hasta que venza la retención: el script lo dice, sigue con lo demás y termina con error, como cada vez que algo de lo listado no se pudo borrar. No toca las llaves que el stack ya dejó en espera de borrado, el log group `aws/spans` ni las revisiones inactivas de la task definition, y lo dice en la lista (D58 (12); el detalle, en `docs/runbooks/install.md`, paso 5).
+`purge-retained.sh <namespace>` (publicado con la release) los lista y, con `--confirm`, los borra. Se niega mientras exista `Core` o `PackNetwork`, y también si no puede comprobar que no existen. Al borrar: quita la protección de borrado, vacía buckets (con bypass de governance solo donde hay Object Lock) y programa a 7 días las llaves que llevan la etiqueta `mango:namespace` de la instalación. En modo `COMPLIANCE` el bucket de auditoría no se puede vaciar hasta que venza la retención: el script lo dice, sigue con lo demás y termina con error, como cada vez que algo de lo listado no se pudo borrar. No toca las llaves que el stack ya dejó en espera de borrado, los log groups `aws/spans` y `/aws/application-signals/data` ni las revisiones inactivas de la task definition, y lo dice en la lista (D58 (12), (15); el detalle, en `docs/runbooks/install.md`, paso 5).
+
+**Lo que no es de la instalación y queda en la cuenta (2026-10-08, D58 (15)).** Transaction Search se revierte al borrar `Core`. CloudWatch Application Signals, que se activa con él, no: sigue activo para toda la cuenta, con su log group `/aws/application-signals/data`, sin retención. La purga lo nombra y no lo borra; la documentación de AWS no dice cómo se apaga en una cuenta. Quedan también `aws/spans` (30 días) y los roles vinculados a servicios que creó la instalación.
+
+**Visto en una instalación (2026-10-08).** La purga, con `--confirm`, en dos instalaciones de laboratorio ya desinstaladas: 89 segundos cada una, sin error y sin dejar nada de lo que listó.
 
 Orden de desinstalación: `Core` → `PackNetwork` → `purge-retained.sh` (si se quiere borrar los datos) → `OrgAccess` → `Payer`.
 
