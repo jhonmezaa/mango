@@ -1,7 +1,7 @@
 # D75 · La comprobación de solo lectura de una instalación falla si la versión no quedó servible
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente)
+- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (6: de su fila 6 sale un caso, la invocación que AgentCore rechaza porque el harness no existe; es el punto 10 de esta decisión)
 - **Precisada por:** —
 
@@ -54,12 +54,12 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
 - **Lo que eligió el dueño el 2026-10-08, por menú,** entre cuatro opciones con su costo (que la API pregunte a AgentCore, que pregunte solo la comprobación, que el reconciliador lo deje escrito, o dejarlo como está):
   - **«(b) Comprobación + turno»:** la comprobación de la instalación pregunta a AgentCore, y el turno reconoce el caso y lo deja dicho. Sin permisos nuevos para `mango-api`, sin latencia añadida y sin que un fallo de AgentCore pueda vaciar el Marketplace.
   - **«Liberar al instante»:** un turno cuyo harness no existe no cobra nada.
-- **El turno** (detalle propuesto por un agente):
+- **El turno** (detalle propuesto por un agente y aceptado por el dueño el 2026-10-08):
   - Si AgentCore responde `ResourceNotFoundException` **a la llamada `InvokeHarness`, antes de abrir el stream,** el agente no llegó a correr: el turno es uno que no empezó (fila 3 de D73). La reserva se libera en el momento y no queda fila pendiente.
   - Solo ese código y solo ahí. Cualquier otro error de la llamada (`AccessDeniedException`, `ThrottlingException`, `InternalServerException`, un corte de red) y el mismo código una vez abierto el stream siguen como antes: retenidos y conciliados.
   - **No se puede provocar:** el ARN del harness y su endpoint salen del puntero del provisioner, nunca de la petición.
   - La persona ve el mismo aviso de hoy: el texto es del diseño (D24) y no cambia. `agent.completed` lleva `failure: harness_missing`, con costo cero y `settlement: final`. El log de `mango-api` dice «agent <id> is published but its harness does not exist».
-- **La comprobación** (detalle propuesto por un agente):
+- **La comprobación** (detalle propuesto por un agente y aceptado por el dueño el 2026-10-08):
   - Con `aws.namespace` en su configuración (el `<ns>` de `Mango-<ns>-Core`), `06-agents` pregunta a AgentCore por cada agente de la versión que la aplicación sirve. Son dos lecturas con la AWS CLI y las credenciales de quien corre la suite (`aws.profile`, o las del entorno): `list-harnesses`, una vez, y `get-harness-endpoint` del endpoint `live`. Permisos de quien la corre: `bedrock-agentcore:ListHarnesses` y `bedrock-agentcore:GetHarnessEndpoint`. La región se lee de la instalación.
   - **Falla** si no hay un harness con el nombre exacto del agente (`Mango_<ns>_a_<id>`), si no tiene endpoint `live`, o si alguno de los dos no está `READY`. El fallo dice qué mirar: un stack en `DELETE_FAILED`, el hallazgo `harness_missing` y quién lo borró (CloudTrail).
   - **Si se configuró y no se puede preguntar, falla** (punto 3): credenciales vencidas, sin permiso, o una CLI que no trae el comando. Del error solo se lee su nombre.
@@ -69,7 +69,7 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
 - **Lo que no cubre.**
   - Con el harness borrado, el Marketplace y `GET /api/agents/<id>` siguen mostrando el agente como publicado: la API no pregunta. Lo notan la comprobación (si se corre con `aws.namespace`), el primer turno (Auditoría y el log) y la reconciliación diaria (en menos de 24 horas).
   - Ninguna alarma nueva: un turno contra un agente sin harness no dispara ninguna hasta la reconciliación diaria.
-  - Que la CLI de quien corre la suite traiga `bedrock-agentcore-control list-harnesses`.
-- **Comprobado con tests; sin ver en una instalación.** Que AgentCore responde `ResourceNotFoundException` a `InvokeHarness` sale del modelo del SDK (botocore 1.43), no de una instalación. Tampoco se corrió la comprobación con `aws.namespace` contra AgentCore.
+- **Visto en una instalación de laboratorio (2026-10-08),** con `aws.namespace` en la configuración y el harness en su sitio: la corrida de solo lectura pasó (14 recorridos pasaron, ninguno falló y 6 se saltaron, en 54 s). `06-agents` tardó 2,6 s y el informe dijo «FinOps publicado y servido (visto como «admin»); su harness existe en AgentCore». Los dos comandos de la CLI existen y respondieron.
+- **Sigue sin verse en una instalación** (está con tests): el veredicto de fallo por un harness que falta, y el turno que libera la reserva. Que AgentCore responde `ResourceNotFoundException` a `InvokeHarness` sale del modelo del SDK (botocore 1.43), no de una instalación.
 
 Sin permisos, recursos, parámetros, dependencias ni supresiones nuevas. Los puntos 1 a 9 son código de pruebas (`tests/install`); el punto 10 toca además el turno de chat de `mango-api`.
