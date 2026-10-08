@@ -1,5 +1,5 @@
 import { credentialsOf, ROLES } from '../src/config.ts';
-import { expect, leaves, test } from '../src/fixtures.ts';
+import { codeRefused, expect, leaves, test } from '../src/fixtures.ts';
 import { isSessionCall, SESSION_COOKIE, signIn, signOut } from '../src/session.ts';
 
 // Sign-in with password and TOTP, the session cookie, a reload, and a sign-out that takes the
@@ -16,10 +16,15 @@ test('sign-in with password and TOTP, reload, and sign-out that ends every tab',
   if (!role) return;
   leaves(testInfo, `Auditoría: una sesión iniciada, recuperada y cerrada de «${role}».`);
 
-  const { context, page } = await ownBrowser();
+  const { context, page, watch } = await ownBrowser();
   let signedIn = false;
   try {
-    const started = await signIn(page, credentialsOf(config, role), ledger);
+    const started = await signIn(
+      page,
+      credentialsOf(config, role),
+      ledger,
+      codeRefused(watch, role, testInfo),
+    );
     signedIn = true;
     expect(started.status()).toBe(204);
 

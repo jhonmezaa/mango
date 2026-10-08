@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext, Page, Response } from '@playwright/test';
 
 // What every journey watches: a CSP violation, a JavaScript error or a 5xx response fails the
 // test, and so does a 4xx the test did not declare as expected.
@@ -19,6 +19,12 @@ const CSP_MARK = '[install-check:csp]';
 // Chromium writes this for every 4xx/5xx; the response itself is judged below.
 const FAILED_RESOURCE = /^Failed to load resource/;
 
+/** The path only: a query may carry what somebody searched for. */
+function httpText(response: Response): string {
+  const { pathname, host } = new URL(response.url());
+  return `${response.status()} ${response.request().method()} ${host}${pathname}`;
+}
+
 export class Watch {
   readonly #problems: Problem[] = [];
   #expected: Expected4xx[] = [];
@@ -32,6 +38,18 @@ export class Watch {
   drain(): Problem[] {
     this.#expected = [];
     return this.#problems.splice(0);
+  }
+
+  /**
+   * Takes back the problem of one answer a helper has already dealt with (a code Cognito
+   * refused, which the sign-in tries once more). Nothing else of the test is forgiven.
+   */
+  dismiss(response: Response): void {
+    const text = httpText(response);
+    const at = this.#problems.findLastIndex(
+      (problem) => problem.kind === 'http' && problem.text === text,
+    );
+    if (at >= 0) this.#problems.splice(at, 1);
   }
 
   async attach(context: BrowserContext): Promise<void> {
@@ -65,7 +83,7 @@ export class Watch {
       const status = response.status();
       if (status < 400) return;
       const request = response.request();
-      const { pathname, host } = new URL(response.url());
+      const { pathname } = new URL(response.url());
       const allowed =
         status < 500 &&
         this.#expected.some(
@@ -75,11 +93,7 @@ export class Watch {
             (expected.method === undefined || expected.method === request.method()),
         );
       if (allowed) return;
-      // The path only: a query may carry what somebody searched for.
-      this.#problems.push({
-        kind: 'http',
-        text: `${status} ${request.method()} ${host}${pathname}`,
-      });
+      this.#problems.push({ kind: 'http', text: httpText(response) });
     });
   }
 }

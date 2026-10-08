@@ -13,7 +13,7 @@ import { z } from 'zod';
 
 import { credentialsOf, loadConfig, type Effect, type InstallConfig, type Role } from './config.ts';
 import { SCREEN_SHAPES } from './redact.ts';
-import { signIn, signOut } from './session.ts';
+import { signIn, signOut, type SignInOptions } from './session.ts';
 import { TotpLedger } from './totp.ts';
 import { Watch, type Expected4xx } from './watch.ts';
 
@@ -65,11 +65,28 @@ async function watched(browser: Browser, config: InstallConfig) {
   return { context, watch };
 }
 
+/**
+ * What a sign-in does when Cognito refuses its first code: the answer it has dealt with is not
+ * a problem of the test, and the report says that it happened and why it usually does.
+ */
+export function codeRefused(watch: Watch, role: Role, testInfo: TestInfo): SignInOptions {
+  return {
+    onCodeRefused: ({ name, response }) => {
+      watch.dismiss(response);
+      note(
+        testInfo,
+        `ingreso de «${role}»: Cognito rechazó el primer código (${name}); lo habitual es que otro ingreso del mismo usuario de prueba, de otro guion o de otra corrida, usara esa ventana de 30 s. Se reintentó una sola vez, con el código de la ventana siguiente.`,
+      );
+    },
+  };
+}
+
 async function open(
   browser: Browser,
   config: InstallConfig,
   ledger: TotpLedger,
   role: Role,
+  testInfo: TestInfo,
 ): Promise<Opened> {
   const { context, watch } = await watched(browser, config);
   // The access token the SPA sends, kept in memory only, to call the API as this person.
@@ -108,7 +125,7 @@ async function open(
       (response) => new URL(response.url()).pathname === '/api/me' && response.ok(),
     );
     answered.catch(() => undefined);
-    await signIn(page, credentialsOf(config, role), ledger);
+    await signIn(page, credentialsOf(config, role), ledger, codeRefused(watch, role, testInfo));
     signedIn = true;
     const me = meSchema.parse(await (await answered).json());
     return {
@@ -176,7 +193,8 @@ interface WorkerFixtures {
   config: InstallConfig;
   ledger: TotpLedger;
   pool: {
-    get: (role: Role) => Promise<Opened>;
+    /** `testInfo` is the test that opens the session: a retried sign-in is noted on it. */
+    get: (role: Role, testInfo: TestInfo) => Promise<Opened>;
     all: () => Opened[];
     extra: Set<{ context: BrowserContext; watch: Watch }>;
   };
@@ -213,10 +231,10 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       const sessions = new Map<Role, Opened>();
       const extra = new Set<{ context: BrowserContext; watch: Watch }>();
       await use({
-        get: async (role) => {
+        get: async (role, testInfo) => {
           const existing = sessions.get(role);
           if (existing) return existing;
-          const opened = await open(browser, config, ledger, role);
+          const opened = await open(browser, config, ledger, role, testInfo);
           sessions.set(role, opened);
           return opened;
         },
@@ -230,10 +248,10 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     },
     { scope: 'worker', timeout: 120_000 },
   ],
-  as: async ({ pool, config }, use) => {
+  as: async ({ pool, config }, use, testInfo) => {
     await use(async (role) => {
       test.skip(!config.users[role], `no hay usuario configurado para el papel «${role}»`);
-      return pool.get(role);
+      return pool.get(role, testInfo);
     });
   },
   ownBrowser: async ({ browser, config, pool }, use) => {
