@@ -52,6 +52,8 @@ Vigilancia común a todos los recorridos: fallan ante una violación de CSP, un 
 - **Qué no es un fallo.** Un agente de la versión que un administrador retiró: el informe lo anota. Tools del agente cuyo pack no está instalado: el informe dice cuántas.
 - **Necesita** el repositorio en la etiqueta instalada (de ahí sale la lista de agentes) y al menos un usuario de prueba con un grupo de cada agente de la versión.
 
+**Visto en una instalación** (laboratorio, 2026-10-08; D75): la corrida de solo lectura pasó con `06-agents` diciendo «FinOps» publicado y servido, y un código rechazado a propósito (`ExpiredCodeException`) se reintentó una vez y pasó, sin errores de consola ni 4xx sin declarar. **Sin ver en una instalación,** solo con tests unitarios: un veredicto de fallo de `06-agents` y un segundo rechazo seguido del código.
+
 **Qué no prueba la corrida de solo lectura.** Que el agente responda: no invoca el modelo ni una tool, no pasa por el Gateway y no reserva presupuesto. Eso solo lo ve el recorrido con efecto `chat`. Tampoco cambia nada, así que no prueba aprobaciones ni cambios de personas (efecto `people`).
 
 **Con efecto** (solo si se piden con `MANGO_INSTALL_EFFECTS=chat`, `people`, `chat,people` o `all`):
@@ -70,7 +72,7 @@ Ningún recorrido toca a una persona, un grupo o un agente que no haya creado.
 - **Sin trazas ni video de Playwright:** guardan la cookie de sesión, los tokens y el código TOTP tal como se escribió. No hay opción para activarlos.
 - La contraseña y el secreto TOTP se leen al ingresar y no se guardan; el token de la sesión vive solo en memoria; la sesión no se escribe a disco (`storageState` está prohibido por lint).
 - Un código TOTP no se reutiliza: `outputDir/.totp-windows.json` recuerda la última ventana de 30 s que usó cada persona (bajo un hash del correo, sin secretos) y el siguiente ingreso espera a la ventana nueva. Por eso dos corridas seguidas funcionan, a costa de unos segundos de espera.
-- Ese archivo no sabe de un ingreso hecho por otro proceso (otro guion, alguien en un navegador). Si Cognito rechaza el código, el ingreso lo reconoce, espera a la ventana siguiente y reintenta **una sola vez**; el informe anota que pasó. Un segundo rechazo falla diciendo que el código fue rechazado y la causa probable (otro proceso ingresando como ese usuario, un secreto TOTP que no es el suyo o el reloj de la máquina), no con un tiempo agotado. Del rechazo solo se lee el nombre de la excepción de Cognito: ni el código ni la contraseña llegan a un mensaje.
+- Ese archivo no sabe de un ingreso hecho por otro proceso (otro guion, alguien en un navegador). Si Cognito rechaza el código (un código ya usado en su ventana da `ExpiredCodeException`), el ingreso lo reconoce, espera a la ventana siguiente y reintenta **una sola vez**; el informe anota que pasó. Un segundo rechazo falla diciendo que el código fue rechazado y la causa probable (otro proceso ingresando como ese usuario, un secreto TOTP que no es el suyo o el reloj de la máquina), no con un tiempo agotado. Del rechazo solo se lee el nombre de la excepción de Cognito: ni el código ni la contraseña llegan a un mensaje.
 - Cada sesión se cierra aunque el recorrido falle; si el menú de la cuenta no responde, se cierra con la misma petición que enviaría.
 
 ## Relación con las otras pruebas

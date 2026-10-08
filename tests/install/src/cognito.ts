@@ -10,7 +10,7 @@ export interface Refusal {
   name: string;
 }
 
-/** The code itself was refused: wrong for this window, or already used in it. */
+/** The code itself was refused: wrong for this window, or already used in it (`ExpiredCode…`). */
 const CODE_REFUSALS: ReadonlySet<string> = new Set([
   'CodeMismatchException',
   'ExpiredCodeException',
