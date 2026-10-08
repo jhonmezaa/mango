@@ -136,7 +136,7 @@ Parámetros opcionales de `Core`:
 Después de instalar y después de cada actualización:
 
 1. **Plantilla de las cuentas miembro.** `Mango-<ns>-OrgAccess` publica en el output `MemberTemplateSha256` el sha256 de la plantilla que despliega en las cuentas miembro. Debe ser el de la `TemplateBody` del StackSet `Mango-<ns>-Member` (`aws cloudformation describe-stack-set`, sin el salto de línea final que añade la CLI).
-2. **Recorridos en el navegador** (`tests/install`, con el repositorio en la etiqueta instalada). Ingresan como usuarios de prueba y comprueban lo que una persona ve: ingreso con MFA y sesión, cabeceras de seguridad, qué ve cada papel en el Marketplace y el Org Chart, Auditoría y que Ajustes › Instalación muestra la release.
+2. **Recorridos en el navegador** (`tests/install`, con el repositorio en la etiqueta instalada). Ingresan como usuarios de prueba y comprueban lo que una persona ve: ingreso con MFA y sesión, cabeceras de seguridad, qué ve cada papel en el Marketplace y el Org Chart, Auditoría, que Ajustes › Instalación muestra la release y que los agentes de la versión están publicados y la instalación los sirve.
 
    ```sh
    export MANGO_INSTALL_CONFIG=<archivo local, fuera del repositorio>
@@ -144,8 +144,11 @@ Después de instalar y después de cada actualización:
    ```
 
    - Son de **solo lectura**: se pueden correr contra cualquier instalación que tenga usuarios de prueba. Dejan eventos de ingreso y de lectura en Auditoría.
+   - **Fallan si un agente de la versión no está publicado y servido,** o si ningún usuario de prueba tiene un agente activo: una instalación sin su agente pasaba todo lo demás. El fallo dice si la publicación falló y en qué paso, y qué mirar (la alarma `Mango-<ns>-AgentProvisioner-failed`, la ejecución del provisioner y «Problemas conocidos»). Para comprobarlo hace falta un usuario de prueba con un grupo del agente; sin él, el recorrido falla diciendo que no puede comprobarlo.
+   - **No prueban que el agente responda:** no invocan el modelo ni una tool. Eso lo ve solo el recorrido con efecto `chat`.
+   - No corras la comprobación mientras otro guion ingresa con los mismos usuarios de prueba: Cognito no acepta dos veces el mismo código TOTP en su ventana de 30 s. Si pasa, el ingreso reintenta una vez con la ventana siguiente y el informe lo anota; un segundo rechazo falla diciendo que el código fue rechazado.
    - El archivo de configuración da la URL, un usuario de prueba por papel y dónde están sus contraseñas y secretos TOTP. Su forma, en `tests/install/config.example.json`; el detalle, en `tests/install/README.md`.
-   - El informe queda fuera del repositorio (por defecto en `~/.config/mango/install-check/<fecha>/informe.md`), con la URL enmascarada, la release que muestra la instalación, qué pasó y qué se saltó. No guarda trazas ni video, y enmascara correos e ids.
+   - El informe queda fuera del repositorio (por defecto en `~/.config/mango/install-check/<fecha>/informe.md`), con la URL enmascarada, la release que muestra la instalación, sus agentes, qué pasó y qué se saltó. No guarda trazas ni video, y enmascara correos e ids.
    - Con `MANGO_INSTALL_EFFECTS=chat`, `people` o `all` corren además los recorridos **con efecto**: una pregunta al agente (gasta presupuesto) y un cambio de persona con doble aprobación sobre una persona desechable que la propia prueba invita y cierra. Para borrarla al final hace falta un perfil de AWS con acceso al directorio; sin él queda deshabilitada y el informe lo dice.
 3. **Batería por la API** (`tests/e2e/`, `tests/eval/`). Toma todo de los outputs de `Mango-<ns>-Core` (`--stack`), de los parámetros de `Mango-<ns>-OrgAccess` y de la propia aplicación, con los mismos usuarios de prueba y su archivo de secretos. **No se corre contra una instalación con datos reales**: crea agentes, habilita packs y fija contraseñas.
 4. **Alarmas.** Ninguna en `ALARM` sin motivo, y el correo de alertas recibe una de prueba: [`operations.md`](operations.md#alarmas).
