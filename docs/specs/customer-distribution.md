@@ -317,7 +317,10 @@ Reglas:
   - Los cinco recursos con condición (segundo administrador, Transaction Search) no pueden ir en ese `DependsOn`: CloudFormation rechaza la plantilla si nombra un recurso que su condición deja sin crear (visto el 2026-10-08 con un stack de prueba). Los sujeta **el ancla** (D58 (17), decidido por el dueño el 2026-10-08): un `AWS::CloudFormation::WaitConditionHandle` sin condición ni propiedades, que no crea nada, cuyo `Metadata` nombra cada uno dentro de `Fn::If` con su condición. El guard depende del ancla; el mismo aspecto la rellena, y un test falla si un recurso condicional queda fuera. El guard sigue sin propiedades propias. Mecanismo probado en AWS con stacks de relleno: con el guard fallando, el condicional anclado sobrevivió.
   - El mensaje dice que el resto del stack no se borró y qué hacer: ante un permiso denegado, que repetir falla igual hasta dar esa operación a su rol; ante un fallo del servicio o de la red, que se repita; ante otro, que se mire antes el log.
   - En el camino bueno el barrido corre antes que el resto, no a la vez: la aplicación sigue respondiendo mientras dura.
-  - Comprobado con tests y síntesis; sin ver en una instalación.
+  - Comprobado con tests y síntesis. **Visto en una instalación el 2026-10-08** (D58 (18)), con `v0.1.0-g6f9b8e4` instalada desde cero y el fallo provocado dos veces: `DELETE_FAILED` a los 11 s (antes de borrar nada) y a los 317 s (a medio barrido, con el harness del agente ya borrado), con un solo recurso fallido y nada más del stack borrado, tampoco los cinco recursos con condición. El mensaje dijo la operación, el código y qué hacer. Arreglada la causa, el borrado terminó en 18 min 4 s y ningún otro recurso empezó a borrarse antes de que el guard terminara; el camino completo, unos 23 minutos, como antes del cambio.
+  - Lo que el fallo a medio barrido enseñó: la aplicación siguió listando el agente cuyo harness ya no existía, y la comprobación de solo lectura pasó (D75 (9)). Y ninguna alarma saltó con los fallos: el guard responde a CloudFormation y no deja nada en su cola de errores.
+  - En una instalación que se actualiza a esa versión, el recurso del guard tiene un único evento `UPDATE_COMPLETE` (CloudFormation guarda su `DependsOn` nuevo) y su función no se invoca: visto el 2026-10-08.
+  - Sin ver: un fallo con packs habilitados y este orden, un fallo pasajero y el agotamiento de la hora.
 
 ### 8.2 Red de packs en un stack propio (usuario, 2026-10-03)
 
@@ -396,7 +399,7 @@ Sale de documentación o del código, no de una prueba.
 1. Que el enlace «Launch stack» de la consola acepte una `templateURL` de un bucket no público. Por API funciona.
 2. Cómo se comporta la importación de la red de packs al añadir o quitar un pack entre releases (la importación en sí funciona).
 4. Cuánto tardan de verdad las ENI de AgentCore en soltarse: se vieron 8–9 h una vez. (Medido dos veces más, el 2026-10-07 y el 2026-10-08: unas 8 horas desde que se borra el Runtime del pack; §8.2.)
-5. Que el `UninstallGuard` termine dentro de la hora de un custom resource con muchos agentes y packs. Con dos agentes y un pack tardó unos 9 minutos (2026-10-07, con el permiso de D58 (13) puesto a mano); la plantilla que ya lo trae no se ha visto en una instalación. (Vista el 2026-10-07 con `v0.1.0-g5c86ad2`, con dos agentes y un pack: `Core` se borró a la primera en 23 min 34 s. Con muchos agentes y packs sigue sin verse.)
+5. Que el `UninstallGuard` termine dentro de la hora de un custom resource con muchos agentes y packs. Con dos agentes y un pack tardó unos 9 minutos (2026-10-07, con el permiso de D58 (13) puesto a mano); la plantilla que ya lo trae no se ha visto en una instalación. (Vista el 2026-10-07 con `v0.1.0-g5c86ad2`, con dos agentes y un pack: `Core` se borró a la primera en 23 min 34 s. Con muchos agentes y packs sigue sin verse. El 2026-10-08, con el orden de D58 (16) y un agente sin packs: 5 min 17 s en borrar el harness.)
 6. Habilitar un pack y chatear con el agente en la instalación hecha desde la release: faltan los usuarios de prueba con MFA (paso 8).
 7. `PackVpcCidr` como parámetro (`Fn::Cidr`): hoy el rango de la red de packs es un valor fijo de la release.
 8. El workflow `release.yml`: la release de prueba se publicó desde una estación de trabajo.
@@ -429,7 +432,7 @@ De `v0.1.0-g58cdf6a` a `v0.1.0-gb557f40`, que saca la red de packs a `PackNetwor
 - El guard recibió sus eventos de creación sin borrar nada: el agente FinOps sigue `READY` y la app responde.
 - Un tropiezo sin consecuencias: al quitar la VPC interna, el custom resource de CDK que restringe su security group por defecto falló al borrarse (`InvalidGroup.NotFound`: la VPC ya no existía). Ocurre en la fase de limpieza, que no revierte la actualización.
 
-Sigue sin probar: la desinstalación con el guard.
+Sigue sin probar: la desinstalación con el guard. (Probada después: el 2026-10-07 con agentes y un pack, y el 2026-10-08 con el guard fallando a propósito; §8.1 y D58 (13), (16), (17) y (18).)
 
 ## 13. Una actualización toca solo lo que cambió (D69, 2026-10-05)
 
