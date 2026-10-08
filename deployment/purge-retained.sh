@@ -223,10 +223,15 @@ for definition in $(aws ecs list-task-definitions --family-prefix "Mango-$ns-api
 done
 
 # Shared with the rest of the account, or already on its way out: said, and left alone.
-for group in $(aws logs describe-log-groups --log-group-name-prefix aws/spans \
-  --query "logGroups[?logGroupName=='aws/spans'].logGroupName" --output text); do
-  untouched+=("log group $group: created by CloudWatch Transaction Search for the whole account, not by Mango")
-done
+account_wide() { # account_wide <log group> <whose it is>: named when it exists, never deleted
+  local group
+  for group in $(aws logs describe-log-groups --log-group-name-prefix "$1" \
+    --query "logGroups[?logGroupName=='$1'].logGroupName" --output text); do
+    untouched+=("log group $group: $2 for the whole account, not by Mango")
+  done
+}
+account_wide aws/spans "created by CloudWatch Transaction Search"
+account_wide /aws/application-signals/data "kept by CloudWatch Application Signals"
 inactive="$(aws ecs list-task-definitions --family-prefix "Mango-$ns-api" --status INACTIVE \
   --query taskDefinitionArns --output json |
   jq --arg family ":task-definition/Mango-$ns-api:" '[(. // [])[] | select(contains($family))] | length')"

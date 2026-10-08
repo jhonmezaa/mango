@@ -28,6 +28,7 @@ AWS_MANAGED = "55555555-eeee-4eee-8eee-555555555555"
 AUDIT = "mango-ens1-core-governanceaudit71a67a9c-example"
 ACCESS_LOGS = "mango-ens1-core-accesslogs8b620eca-example"
 TASKS = "arn:aws:ecs:us-east-1:111122223333:task-definition"
+SIGNALS = "/aws/application-signals/data"
 
 
 def _versions(count: int) -> list[dict[str, str]]:
@@ -57,6 +58,7 @@ def _account() -> dict[str, Any]:
             "/aws/lambda/Mango-ens1x-Provisioner",
             "/mango/ens1x/api",
             "aws/spans",
+            SIGNALS,
         ],
         "aliases": {},
         "keys": {
@@ -126,7 +128,8 @@ def test_the_listing_names_what_it_would_delete_and_what_it_leaves(tmp_path: Pat
     untouched = run.out.split("Not touched by this script\n")[1]
     assert f"KMS key {PENDING}" in untouched
     assert "already pending deletion, on 2026-10-14" in untouched
-    assert "log group aws/spans" in untouched
+    assert "log group aws/spans: created by CloudWatch Transaction Search" in untouched
+    assert f"log group {SIGNALS}: kept by CloudWatch Application Signals" in untouched
     assert "2 inactive revisions of task definition Mango-ens1-api" in untouched
 
 
@@ -280,11 +283,39 @@ def test_nothing_of_another_installation_or_of_nobody_is_deleted(tmp_path: Path)
         "/aws/lambda/Mango-ens1x-Provisioner",
         "/mango/ens1x/api",
         "aws/spans",
+        SIGNALS,
     ]
     assert run.account["task_definitions"]["INACTIVE"] == [
         f"{TASKS}/Mango-ens1-api:1",
         f"{TASKS}/Mango-ens1-api:2",
     ]
+
+
+def test_the_log_groups_of_the_whole_account_are_named_and_never_deleted(tmp_path: Path) -> None:
+    """Transaction Search and Application Signals keep theirs for every workload of the account."""
+    run = Run(tmp_path, _account(), "ens1", "--confirm")
+
+    assert run.code == 0, run.err
+    deleted = [call["log-group-name"] for call in run.called("delete-log-group")]
+    assert deleted == ["/aws/lambda/Mango-ens1-Provisioner", "/mango/ens1/api"]
+    assert "aws/spans" in run.account["log_groups"]
+    assert SIGNALS in run.account["log_groups"]
+    listed, untouched = run.out.split("Not touched by this script\n")
+    assert SIGNALS not in listed
+    assert f"  log group {SIGNALS}: " in untouched
+
+
+def test_a_log_group_of_the_whole_account_is_named_only_when_it_is_there(tmp_path: Path) -> None:
+    account = _account()
+    account["log_groups"].remove(SIGNALS)
+    account["log_groups"] += [f"{SIGNALS}-of-someone-else", "aws/spans-of-someone-else"]
+    run = Run(tmp_path, account, "ens1", "--confirm")
+
+    assert run.code == 0, run.err
+    assert "application-signals" not in run.out
+    assert "of-someone-else" not in run.out
+    assert f"{SIGNALS}-of-someone-else" in run.account["log_groups"]
+    assert "aws/spans-of-someone-else" in run.account["log_groups"]
 
 
 def test_a_bucket_in_another_region_is_named_and_never_emptied(tmp_path: Path) -> None:
