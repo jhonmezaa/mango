@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from mango_provisioner import uninstall
 from mango_provisioner.uninstall import GuardSettings, Sweep, handle
@@ -292,8 +292,11 @@ def test_fails_the_deletion_with_what_is_left_after_the_last_invocation(
     assert run.reinvoked == []
     [(status, reason)] = run.answers
     assert status == "FAILED"
-    assert "harnesses=1" in reason
-    assert "Delete the stack again" in reason
+    assert reason == (
+        "Agents or packs are still being deleted (harnesses=1, roles=-1). The rest of the "
+        "stack was not deleted and the application still works. Delete the stack again: it "
+        "goes on from where it stopped."
+    )
 
 
 def test_busy_or_gone_is_not_an_error_and_anything_else_fails_closed(
@@ -326,10 +329,15 @@ def test_a_denied_call_is_named_by_operation_and_code_and_nothing_else(
     monkeypatch.setattr(AgentCore, "delete_policy", denied)
     with caplog.at_level("ERROR", logger=uninstall.logger.name):
         run = Run()
+    # D58 (16): what is left, that deleting again does not help, and on which role to fix it.
     assert run.answers == [
         (
             "FAILED",
-            "Uninstall guard failed (DeletePolicy: AccessDeniedException). Delete the stack again.",
+            "Uninstall guard failed (DeletePolicy: AccessDeniedException). The rest of the stack "
+            "was not deleted and the application still works. Deleting the stack again fails "
+            "the same way until the role Mango-acme-UninstallGuard is allowed that operation. "
+            "Some agents or packs may already be gone. See step 5 (uninstall) of the "
+            "installation runbook.",
         )
     ]
     assert [record.getMessage() for record in caplog.records] == [
@@ -341,6 +349,65 @@ def test_a_denied_call_is_named_by_operation_and_code_and_nothing_else(
         assert leaked not in said
     # It stopped there: nothing after the policy was touched.
     assert run.iam.deleted == []
+
+
+@pytest.mark.parametrize(
+    "code", ["ThrottlingException", "ServiceUnavailableException", "InternalServerException"]
+)
+def test_a_failure_that_may_pass_says_to_delete_the_stack_again(
+    monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    def failing(self: AgentCore, harnessId: str) -> None:  # noqa: N803
+        raise error(code, "DeleteHarness")
+
+    monkeypatch.setattr(AgentCore, "delete_harness", failing)
+    [(status, reason)] = Run().answers
+    assert status == "FAILED"
+    assert reason == (
+        f"Uninstall guard failed (DeleteHarness: {code}). The rest of the stack was not "
+        "deleted and the application still works. The failure may pass: delete the stack "
+        "again. If it repeats: See step 5 (uninstall) of the installation runbook."
+    )
+
+
+def test_a_connection_failure_may_pass_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unreachable(self: AgentCore, harnessId: str) -> None:  # noqa: N803
+        raise EndpointConnectionError(endpoint_url="https://example.invalid")
+
+    monkeypatch.setattr(AgentCore, "delete_harness", unreachable)
+    [(status, reason)] = Run().answers
+    assert status == "FAILED"
+    assert reason.startswith("Uninstall guard failed (EndpointConnectionError). The rest of")
+    assert "The failure may pass: delete the stack again." in reason
+    assert "example.invalid" not in reason
+
+
+def test_any_other_failure_never_promises_that_deleting_again_works(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def invalid(self: AgentCore, harnessId: str) -> None:  # noqa: N803
+        raise error("ValidationException", "DeleteHarness")
+
+    monkeypatch.setattr(AgentCore, "delete_harness", invalid)
+    [(status, reason)] = Run().answers
+    assert status == "FAILED"
+    assert reason == (
+        "Uninstall guard failed (DeleteHarness: ValidationException). The rest of the stack "
+        "was not deleted and the application still works. Deleting the stack again may fail "
+        "the same way: look at the function's log group first. Some agents or packs may "
+        "already be gone. See step 5 (uninstall) of the installation runbook."
+    )
+
+
+def test_every_failure_fits_in_what_cloudformation_shows() -> None:
+    # `respond` cuts the reason at 400 characters: the instruction must not be what is cut.
+    longest_operation = "DeleteAgentRuntimeEndpoint"
+    for code in ("AccessDeniedException", "ThrottlingException", "ResourceLimitExceededException"):
+        reason = uninstall.failure_reason(
+            error(code, longest_operation), "Mango-abcd1234-UninstallGuard"
+        )
+        assert len(reason) <= 400
+        assert reason.endswith("runbook.")
 
 
 def test_a_failure_that_is_not_an_aws_call_names_only_its_kind() -> None:

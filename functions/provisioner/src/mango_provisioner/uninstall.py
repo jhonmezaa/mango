@@ -7,6 +7,10 @@ them exists. This function is a custom resource of the Core stack that everythin
 created before, and therefore deleted after: on ``Delete`` it sweeps those resources, by the
 installation's name prefixes only, and waits until they are gone.
 
+If it fails, CloudFormation deletes nothing of what it depends on, which is the rest of the
+stack (D58 (16)): the application stays up and the answer says so, and whether deleting the
+stack again can work.
+
 It deletes **only while the stack itself is being deleted** (TM-D13): a ``Delete`` event that
 comes from replacing the custom resource in an update, or from anyone invoking the function,
 finds the stack in another state and changes nothing.
@@ -42,6 +46,26 @@ _ARN_RE = re.compile(r"^arn:aws:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_-]{1,128}$
 _OPERATION_RE = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _GONE = frozenset({"ResourceNotFoundException", "NoSuchEntity", "NoSuchEntityException"})
 _BUSY = frozenset({"ConflictException", "DeleteConflict", "DeleteConflictException"})
+# A failure that deleting the stack again does not fix: the same call is denied again.
+_DENIED = frozenset({"AccessDenied", "AccessDeniedException", "UnauthorizedOperation"})
+# A failure of the service or of the way to it: the next attempt may go through.
+_PASSING = frozenset(
+    {
+        "InternalFailure",
+        "InternalServerError",
+        "InternalServerException",
+        "RequestTimeout",
+        "RequestTimeoutException",
+        "ServiceUnavailable",
+        "ServiceUnavailableException",
+        "Throttling",
+        "ThrottlingException",
+        "TooManyRequestsException",
+    }
+)
+# Every failure says it: the guard depends on the rest of the stack (D58 (16)).
+_STANDING = "The rest of the stack was not deleted and the application still works."
+_RUNBOOK = "See step 5 (uninstall) of the installation runbook."
 _DEFAULT_ENDPOINT = "DEFAULT"
 _LOG_GROUP_PREFIX = "/aws/bedrock-agentcore/runtimes/"
 DELETING_STACK = "DELETE_IN_PROGRESS"
@@ -109,6 +133,11 @@ class Sweep:
         self._ac = agentcore
         self._iam = iam
         self._logs = logs
+
+    @property
+    def role_name(self) -> str:
+        """The role this function runs as: what a denied call has to be fixed on."""
+        return f"Mango-{self._s.namespace}-UninstallGuard"
 
     def _pages(self, operation: str, key: str, **arguments: str) -> list[dict[str, Any]]:
         pages = self._ac.get_paginator(operation).paginate(**arguments)
@@ -264,6 +293,28 @@ def failed_call(exc: Exception) -> tuple[str, str]:
     return (operation if _OPERATION_RE.fullmatch(operation) else "-"), error_code(exc)
 
 
+def failure_reason(exc: Exception, role_name: str) -> str:
+    """What CloudFormation shows when the sweep fails: what failed, what is left, what to do.
+
+    "Delete the stack again" is only said of a failure that may pass. Since the sweep stopped
+    halfway, some agents or packs may be gone while the application still lists them.
+    """
+    operation, code = failed_call(exc)
+    failure = code if operation == "-" else f"{operation}: {code}"
+    head = f"Uninstall guard failed ({failure}). {_STANDING}"
+    if code in _DENIED:
+        return (
+            f"{head} Deleting the stack again fails the same way until the role {role_name} "
+            f"is allowed that operation. Some agents or packs may already be gone. {_RUNBOOK}"
+        )
+    if code in _PASSING or isinstance(exc, BotoCoreError):
+        return f"{head} The failure may pass: delete the stack again. If it repeats: {_RUNBOOK}"
+    return (
+        f"{head} Deleting the stack again may fail the same way: look at the function's log "
+        f"group first. Some agents or packs may already be gone. {_RUNBOOK}"
+    )
+
+
 def stack_is_being_deleted(cloudformation: Any, stack_id: str) -> bool:
     stacks = cloudformation.describe_stacks(StackName=stack_id)["Stacks"]
     return len(stacks) == 1 and stacks[0]["StackStatus"] == DELETING_STACK
@@ -328,14 +379,14 @@ def handle(
         answer(
             event,
             "FAILED",
-            f"Agents or packs are still being deleted ({left}). Delete the stack again.",
+            f"Agents or packs are still being deleted ({left}). {_STANDING} "
+            "Delete the stack again: it goes on from where it stopped.",
         )
     except (ClientError, BotoCoreError, KeyError, ValueError) as exc:
         operation, code = failed_call(exc)
         # The operation and the code only: AWS messages may quote ARNs or content.
         logger.error("uninstall_guard failed: operation=%s code=%s", operation, code)  # noqa: TRY400
-        failure = code if operation == "-" else f"{operation}: {code}"
-        answer(event, "FAILED", f"Uninstall guard failed ({failure}). Delete the stack again.")
+        answer(event, "FAILED", failure_reason(exc, sweep.role_name))
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> None:
