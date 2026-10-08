@@ -214,8 +214,11 @@ export class UninstallGuard extends Construct {
  * so that what the stack adds after the guard, or in a later release, is included without
  * anyone remembering to list it. A test fails if a resource is left out (`release.test.ts`).
  *
- * A resource with a condition is not included: CloudFormation documents that what depends on
- * a resource its condition leaves out is not created either, and the guard must always exist.
+ * A resource with a condition is not included: CloudFormation rejects the whole template
+ * ("Unresolved resource dependencies") when a `DependsOn` names a resource its condition leaves
+ * out, so the stack could not be created or updated with that condition false (seen on
+ * 2026-10-08 with a test stack). The alternative, a reference inside `Fn::If` in a property,
+ * would give the guard a property that changes, which TM-D13 forbids.
  */
 function dependsOnTheRestOfTheStack(guard: CfnResource): void {
   Aspects.of(guard.stack).add({

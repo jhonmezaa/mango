@@ -299,7 +299,7 @@ Las notas de cada release dan tres enlaces «Launch stack» y sus URL:
 
 ### 8.1 Recurso `UninstallGuard` (parte del stack)
 
-Un custom resource de `Core` cuyo `Delete` corre **antes** que el de los boundaries, el Gateway y la red de packs (ellos dependen de él al crear; al borrar el orden se invierte):
+Un custom resource de `Core` cuyo `Delete` corre **antes** que el de todo lo demás del stack: depende de todos los otros recursos, se crea el último y se borra el primero (2026-10-08, D58 (16); hasta entonces dependía solo de los boundaries, el Gateway, el motor de políticas y las alertas):
 
 1. Borra todo harness `Mango_<ns>_a_*` (endpoint primero), su identidad de workload y su rol `Mango-<ns>-agent-*`. Incluye al agente de la release.
 2. Borra todo target de pack del Gateway, Runtime `Mango_<ns>_mcp_*` y rol `Mango-<ns>-mcp-*`.
@@ -312,6 +312,12 @@ Reglas:
 - Solo lo invoca CloudFormation.
 - **Las políticas de packs (2026-10-07, D58 (13)):** el paso 2 borra también la política Cedar de cada pack (`Mango_<ns>_mcp_*`). AgentCore autoriza ese borrado contra el motor de políticas, contra la política y contra el Gateway al que está ligada: el rol lleva `bedrock-agentcore:ManageResourceScopedPolicy` sobre el Gateway, sin `GetGateway` ni `InvokeGateway`. Sin ese permiso el guard fallaba y `Core` quedaba a medio borrar (visto en una instalación de laboratorio).
 - Si una llamada falla, responde a CloudFormation con la operación y el código del error, sin argumentos ni identificadores.
+- **Un fallo deja la instalación en pie (2026-10-08, D58 (16), decidido por el dueño).** CloudFormation no borra aquello de lo que depende un recurso que falló al borrarse. Como el guard depende de todo lo demás, si falla el stack queda en `DELETE_FAILED` sin haber borrado nada más: la aplicación, los provisioners, el directorio y las alarmas siguen. Se arregla la causa y se repite el `delete-stack`.
+  - La dependencia la añade un aspecto de CDK al sintetizar, no una lista: un recurso nuevo entra solo, y un test falla si alguno queda fuera.
+  - Quedan fuera los cinco recursos con condición (segundo administrador, Transaction Search): CloudFormation rechaza la plantilla si un `DependsOn` nombra un recurso que su condición deja sin crear (visto el 2026-10-08 con un stack de prueba). Si el guard falla, esos sí se borran.
+  - El mensaje dice que el resto del stack no se borró y qué hacer: ante un permiso denegado, que repetir falla igual hasta dar esa operación a su rol; ante un fallo del servicio o de la red, que se repita; ante otro, que se mire antes el log.
+  - En el camino bueno el barrido corre antes que el resto, no a la vez: la aplicación sigue respondiendo mientras dura.
+  - Comprobado con tests y síntesis; sin ver en una instalación.
 
 ### 8.2 Red de packs en un stack propio (usuario, 2026-10-03)
 

@@ -361,8 +361,10 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
   });
 
   it("leaves out only the resources with a condition, and these are all of them", () => {
-    // What depends on a resource its condition leaves out is not created either, and the
-    // guard must always exist. A new conditional resource has to be added here on purpose.
+    // CloudFormation rejects a template whose `DependsOn` names a resource its condition
+    // leaves out ("Unresolved resource dependencies", seen on 2026-10-08): with one of these
+    // in the list, the stack could not be created with that condition false. A new
+    // conditional resource has to be added here on purpose.
     expect(conditional.map(([, r]) => `${r.Condition} ${r.Type}`).sort()).toEqual([
       "HasSecondAdmin AWS::Cognito::UserPoolUser",
       "HasSecondAdmin AWS::Cognito::UserPoolUserToGroupAttachment",
