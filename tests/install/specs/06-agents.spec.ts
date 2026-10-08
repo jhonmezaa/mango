@@ -116,6 +116,7 @@ test('the agents of the release are published and served', async ({ as, config }
   // What the application cannot tell: whether AgentCore still has the harness of each agent
   // it serves. Asked once for the whole account and once per agent, with the AWS CLI.
   const unreachable: string[] = [];
+  let unasked = false;
   const namespace = config.aws?.namespace;
   const servedAgents = releaseAgents().filter((agent) => proven.has(agent.id));
   const anyone = people[0]?.session;
@@ -132,11 +133,14 @@ test('the agents of the release are published and served', async ({ as, config }
           : ({ kind: 'unknown', code: listed.code } as const);
       const problem = harnessProblem(agent.name, state);
       if (problem) unreachable.push(problem);
+      unasked ||= state.kind === 'unknown';
     }
     lines.push(
-      unreachable.length > 0
-        ? 'AgentCore no tiene listo el harness de alguno'
-        : 'su harness existe en AgentCore',
+      unasked
+        ? 'no se pudo preguntar a AgentCore por su harness'
+        : unreachable.length > 0
+          ? 'AgentCore no tiene listo el harness de alguno'
+          : 'su harness existe en AgentCore',
     );
   } else if (servedAgents.length > 0) {
     lines.push('no se preguntó a AgentCore por su harness (falta `aws.namespace`)');
