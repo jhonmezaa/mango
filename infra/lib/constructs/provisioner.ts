@@ -158,9 +158,11 @@ export class Provisioner extends Construct {
         sid: "AgentRoleLifecycle",
         // `iam:PermissionsBoundary` is not a condition key of TagRole. It is one of GetRole,
         // which stays without it: the function reads a role to learn whether it exists and
-        // to report one that lost its boundary (`role_without_boundary`); with the condition
-        // IAM would answer AccessDenied to both. No Attach/Detach policy, no boundary changes
-        // and no trust policy updates.
+        // to report one that lost its boundary (`role_without_boundary`). With the condition
+        // IAM would refuse to read a role without the boundary and the function could no
+        // longer report it; what IAM answers for a role that does not exist was not checked,
+        // so that is not risked either. No Attach/Detach policy, no boundary changes and no
+        // trust policy updates.
         actions: ["iam:GetRole", "iam:TagRole"],
         resources: [platform.agentRoleArns],
       }),
