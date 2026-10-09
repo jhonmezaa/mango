@@ -1,7 +1,7 @@
 # D75 · La comprobación de solo lectura de una instalación falla si la versión no quedó servible
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11; tres veredictos más de la pregunta a AgentCore y el hallazgo de la reconciliación, vistos en una instalación, propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026-10-09, con lo que el dueño eligió ese día para el párrafo de qué mirar cuando no se puede preguntar, punto 12; ese párrafo ya no sale cuando solo no se pudo preguntar, decidido por el dueño el 2026-10-09, por menú, con su detalle propuesto por un agente ese día, punto 13)
+- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11; tres veredictos más de la pregunta a AgentCore y el hallazgo de la reconciliación, vistos en una instalación, propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026-10-09, con lo que el dueño eligió ese día para el párrafo de qué mirar cuando no se puede preguntar, punto 12; ese párrafo ya no sale cuando solo no se pudo preguntar, decidido por el dueño el 2026-10-09, por menú, con su detalle propuesto por un agente y aceptado por el dueño ese día, punto 13)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (6: de su fila 6 sale un caso, la invocación que AgentCore rechaza porque el harness no existe; es el punto 10 de esta decisión)
 - **Precisada por:** —
 
@@ -110,12 +110,12 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
   - Un veredicto de fallo de `06-agents` por un agente sin publicar o sin servir (punto 11).
   - Un segundo rechazo seguido del código (punto 9).
 
-**(13) El párrafo de qué mirar no sale cuando solo no se pudo preguntar (2026-10-09, decidido por el dueño el 2026-10-09, por menú; su detalle, propuesto por un agente ese día).** El punto (12) vio que la comprobación, cuando no puede preguntar a AgentCore, añadía el párrafo «What to look at» de un harness que falta. Las dos opciones que se le llevaron al dueño: quitarlo en ese caso o dejarlo. Eligió **«Sí, quitarlo ahí».**
+**(13) El párrafo de qué mirar no sale cuando solo no se pudo preguntar (2026-10-09, decidido por el dueño el 2026-10-09, por menú; su detalle, propuesto por un agente y aceptado por el dueño ese día).** El punto (12) vio que la comprobación, cuando no puede preguntar a AgentCore, añadía el párrafo «What to look at» de un harness que falta. Las dos opciones que se le llevaron al dueño: quitarlo en ese caso o dejarlo. Eligió **«Sí, quitarlo ahí».** El detalle que sigue lo propuso un agente y **el dueño lo aceptó el 2026-10-09**, por menú («Aceptar e integrar»).
 
 - **La regla.** El párrafo (un stack en `DELETE_FAILED`, el hallazgo `harness_missing`, CloudTrail) sale solo cuando al menos un agente servido tiene el harness, o su endpoint `live`, faltando o sin estar `READY`.
 - **Si lo único que pasó es que no se pudo preguntar, no sale.** El mensaje de ese caso ya dice qué hacer: renovar las credenciales, dar los dos permisos o quitar `aws.namespace`.
 - **Con casos mezclados sale:** si a un agente le falta el harness y de otro no se pudo preguntar, el fallo trae el mensaje de cada uno y el párrafo.
-- **Propuesto por un agente:**
+- **Propuesto por un agente y aceptado por el dueño el 2026-10-09:**
   - El párrafo sale una sola vez, al final, después de los mensajes de todos los agentes.
   - Lo demás no cambia: el mensaje de cada veredicto, que la comprobación falle cuando no puede preguntar (punto 10) y la línea del informe. Con casos mezclados, el informe sigue diciendo «no se pudo preguntar a AgentCore por su harness».
   - La regla vive en una función sin efectos (`harnessReport`, en `tests/install/src/harness.ts`), que arma la línea del informe y los párrafos del fallo; `06-agents` solo la llama.
