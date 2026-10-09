@@ -1,7 +1,7 @@
 # D48 · Desaprovisionamiento al retirar un agente
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-01
+- **Fecha:** 2026-10-01 (IAM exige el boundary de agentes también para borrar el rol, decidido por el dueño el 2026-10-09, punto 7)
 - **Precisa / reemplaza a:** en el texto: ajusta [D41](D041-alertas-y-reconciliacion.md) (punto 5)
 - **Precisada por:** [D53](D053-alineacion-con-claude-design.md) (precisa, punto 2); [D58](D058-distribucion-para-clientes.md) (precisa; su punto 22 precisa el punto 3 solo para la desinstalación: el `UninstallGuard` sí quita las políticas gestionadas de un rol antes de borrarlo, decidido por el dueño el 2026-10-09. Al retirar un agente, el punto 3 sigue igual)
 
@@ -18,5 +18,13 @@
 **(5) Auditoría y fallos.** Evento `agent.deprovision` con `requested`, `applied` o `rejected`, fail-closed: sin `requested` no se borra nada y sin `applied` no se da por terminado. El retiro no depende del borrado: si la ejecución no arranca o falla, el agente sigue retirado. Una ejecución fallida dispara la alarma `Mango-<ns>-AgentDeprovisioner-failed` (topic de alertas, [D41](D041-alertas-y-reconciliacion.md)) y, si 45 minutos después del retiro queda algo, el reconciliador diario lo reporta como `deprovision_incomplete` (con alarma) hasta que una ejecución lo borre; un operador la reinicia a mano (runbook). **Ajusta [D41](D041-alertas-y-reconciliacion.md):** el reconciliador sigue sin reparar, pero los restos de un agente retirado dejan de ser solo informativos.
 
 **(6) Riesgo aceptado.** «Retirado» lo dice la tabla, que escribe `mango-api`, y el retiro lo decide un solo administrador (spec §3): ahora tiene efecto en AWS. Se acepta porque el retiro ya dejaba al agente sin servicio y no se deshace.
+
+**(7) IAM exige el boundary de agentes también para borrar el rol (2026-10-09, decidido por el dueño el 2026-10-09, por menú).** El punto (4) dice que `DeleteRolePolicy` exige el boundary. `iam:DeleteRole` no llevaba esa condición: un comentario del constructo decía que `iam:PermissionsBoundary` no era una clave de condición de `DeleteRole`, y que el rol tuviera el boundary lo comprobaba solo el código de la función. Con eso, IAM dejaba al rol del deprovisioner borrar cualquier rol bajo `Mango-<ns>-agent-*`, lo hubiera creado el provisioner o no.
+
+- **El comentario estaba desfasado.** La referencia de autorización de servicios de AWS para IAM lista `iam:PermissionsBoundary` entre las claves de condición de `DeleteRole` (leída el 2026-10-09). Y el rol del `UninstallGuard` ya borra roles con esa condición ([D58](D058-distribucion-para-clientes.md)), visto en instalaciones el 2026-10-07 y el 2026-10-08.
+- **Qué cambia.** La sentencia que permite `iam:DeleteRole` (ahora `DeleteAgentRoleWithBoundary`, en `infra/lib/constructs/deprovisioner.ts`) lleva la misma condición que `DeleteRolePolicy`: `iam:PermissionsBoundary` igual al boundary de agentes de la instalación. Misma acción y mismo recurso: el rol solo pierde, no gana nada. Las dos escrituras de IAM que tiene el deprovisioner quedan atadas al boundary por IAM.
+- **Qué no cambia.** La función sigue comprobando el boundary antes de borrar: es lo que deja el código `role_without_boundary` en la auditoría, y ahora es la segunda barrera en vez de la única. La regla del punto (3) sigue igual: el deprovisioner no desadjunta, y un rol con políticas gestionadas se deja para una persona y se reporta.
+- **Las opciones del menú:** añadir la condición en una rama aparte, o anotarlo para después. El dueño eligió la primera («Sí, en una rama aparte»).
+- **Con qué se comprobó.** Con tests de la plantilla (`infra/test/deprovisioner.test.ts`): la sentencia con su condición, que toda escritura de IAM del rol la lleva y que la lista de acciones del rol es la misma. Sin ver en una instalación: el borrado de un rol de agente con esta condición en el rol del deprovisioner.
 
 Amenazas TM-M21 a TM-M23 en el modelo de Marketplace v1

@@ -241,7 +241,7 @@ AgentCore no admite guiones en los nombres de harness y Runtime, y los limita a 
 - **Lo que queda:** versiones `retired`, el puntero `PUBLISHED#<id>`, el historial y los log groups del Runtime (30 días, D16).
 - **Auditoría:** `agent.deprovision` con `requested`, `applied` o `rejected` (con `failed_step` y un código).
 - **Si falla:** alarma `Mango-<ns>-AgentDeprovisioner-failed`; el reconciliador reporta `deprovision_incomplete` mientras quede algo. Se reinicia a mano (`docs/runbooks/poc-deploy.md`).
-- **Rol propio**, que solo borra bajo esos prefijos y no lee definiciones ni el harness.
+- **Rol propio**, que solo borra bajo esos prefijos y no lee definiciones ni el harness. Un rol de agente y sus políticas inline solo los borra si el rol lleva el boundary de agentes: lo exige IAM, además del código (D48 (7)).
 
 ## 6. Pantallas
 
