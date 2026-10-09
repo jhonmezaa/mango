@@ -173,18 +173,31 @@ describe("deprovisioner role: delete-only, on agent names (D48)", () => {
     }
   });
 
-  it("deletes roles only under the agent prefix, and their policies only with the boundary", () => {
+  it("deletes roles and their policies only under the agent prefix and only with the boundary", () => {
     const iamStatements = deprovisioner.filter((s) => actions(s).some((a) => a.startsWith("iam:")));
     expect(iamStatements.map((s) => s.Sid).sort()).toEqual([
-      "DeleteAgentRole",
       "DeleteAgentRolePolicyWithBoundary",
+      "DeleteAgentRoleWithBoundary",
       "ReadAgentRole",
     ]);
     for (const statement of iamStatements) expect(statement.Resource).toBe(agentRoles);
+    const withBoundary = { StringEquals: { "iam:PermissionsBoundary": { Ref: boundaryId } } };
     const policy = bySid(deprovisioner, "DeleteAgentRolePolicyWithBoundary");
     expect(actions(policy)).toEqual(["iam:DeleteRolePolicy"]);
-    expect(policy.Condition).toEqual({ StringEquals: { "iam:PermissionsBoundary": { Ref: boundaryId } } });
-    expect(actions(bySid(deprovisioner, "DeleteAgentRole"))).toEqual(["iam:DeleteRole"]);
+    expect(policy.Condition).toEqual(withBoundary);
+    const role = bySid(deprovisioner, "DeleteAgentRoleWithBoundary");
+    expect(actions(role)).toEqual(["iam:DeleteRole"]);
+    expect(role.Condition).toEqual(withBoundary);
+  });
+
+  it("has no IAM write that IAM itself does not tie to the agent boundary", () => {
+    // The function checks the boundary too, but a role under the prefix that does not carry it
+    // (made by hand, or by anything else) must be out of reach whatever the code does.
+    const writes = deprovisioner.filter((s) => actions(s).some((a) => a.startsWith("iam:Delete")));
+    expect(writes.flatMap(actions).sort()).toEqual(["iam:DeleteRole", "iam:DeleteRolePolicy"]);
+    for (const statement of writes) {
+      expect(statement.Condition).toEqual({ StringEquals: { "iam:PermissionsBoundary": { Ref: boundaryId } } });
+    }
   });
 
   it("does not match its own role or any other role of the stack", () => {

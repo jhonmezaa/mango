@@ -129,23 +129,26 @@ export class Deprovisioner extends Construct {
         resources: [platform.agentRoleArns],
       }),
     );
+    // Only on roles that carry the agent boundary: the ones the provisioner created. IAM
+    // refuses any other role under the prefix, whatever the function does; the function
+    // checks the boundary too, to report it (`role_without_boundary`).
+    const withBoundary = { StringEquals: { "iam:PermissionsBoundary": platform.boundary.managedPolicyArn } };
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "DeleteAgentRolePolicyWithBoundary",
-        // Only on roles that carry the agent boundary: the ones the provisioner created.
         actions: ["iam:DeleteRolePolicy"],
         resources: [platform.agentRoleArns],
-        conditions: { StringEquals: { "iam:PermissionsBoundary": platform.boundary.managedPolicyArn } },
+        conditions: withBoundary,
       }),
     );
     role.addToPolicy(
       new iam.PolicyStatement({
-        sid: "DeleteAgentRole",
-        // `iam:PermissionsBoundary` is not a condition key of DeleteRole; the function checks
-        // the boundary itself. No Detach: a role with managed policies was changed outside
-        // Mango and is left for a person.
+        sid: "DeleteAgentRoleWithBoundary",
+        // No Detach: a role with managed policies was changed outside Mango and is left for
+        // a person (D48).
         actions: ["iam:DeleteRole"],
         resources: [platform.agentRoleArns],
+        conditions: withBoundary,
       }),
     );
 
@@ -261,7 +264,7 @@ export class Deprovisioner extends Construct {
         id: `AwsSolutions-IAM5[Resource::${platform.agentRoleArns}]`,
         reason:
           "Agent roles are created at runtime, one per agent (D10): the prefix is the scope. Delete-only, and " +
-          "DeleteRolePolicy also requires the agent permissions boundary.",
+          "DeleteRolePolicy and DeleteRole also require the agent permissions boundary.",
       },
       ...[platform.harnessArns, `${platform.harnessArns}/harness-endpoint/*`].map((resource) => ({
         id: `AwsSolutions-IAM5[Resource::${resource}]`,
