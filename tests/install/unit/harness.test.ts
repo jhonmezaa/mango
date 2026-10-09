@@ -7,6 +7,7 @@ import {
   harnessName,
   harnessOf,
   harnessProblem,
+  harnessReport,
   listHarnesses,
   type HarnessState,
 } from '../src/harness.ts';
@@ -175,5 +176,59 @@ describe('harnessProblem', () => {
       harnessProblem('FinOps', { kind: 'unknown', code: errorCode(refused('AccessDenied')) }),
     ];
     for (const text of texts) expect(text).not.toMatch(/\d{12}|arn:aws/);
+  });
+});
+
+describe('harnessReport', () => {
+  const missing: HarnessState = { kind: 'missing', what: 'harness' };
+  const unknown: HarnessState = { kind: 'unknown', code: 'AccessDeniedException' };
+
+  it('fails with nothing and says the harness exists when every one is ready', () => {
+    expect(harnessReport([{ agentName: 'FinOps', state: { kind: 'ready' } }])).toEqual({
+      line: 'su harness existe en AgentCore',
+      failure: [],
+    });
+  });
+
+  it.each<HarnessState>([
+    missing,
+    { kind: 'missing', what: 'endpoint' },
+    { kind: 'not-ready', what: 'harness', status: 'DELETING' },
+    { kind: 'not-ready', what: 'endpoint', status: 'UPDATING' },
+  ])('says where to look after a harness that is $kind ($what)', (state) => {
+    expect(harnessReport([{ agentName: 'FinOps', state }])).toEqual({
+      line: 'AgentCore no tiene listo el harness de alguno',
+      failure: [harnessProblem('FinOps', state), HARNESS_WHERE_TO_LOOK],
+    });
+  });
+
+  it('does not say where to look when all it could not do is ask', () => {
+    const asked = ['FinOps', 'Soporte'].map((agentName) => ({ agentName, state: unknown }));
+    expect(harnessReport(asked)).toEqual({
+      line: 'no se pudo preguntar a AgentCore por su harness',
+      failure: [harnessProblem('FinOps', unknown), harnessProblem('Soporte', unknown)],
+    });
+  });
+
+  it('says where to look, once and last, when one is missing and another could not be asked', () => {
+    const report = harnessReport([
+      { agentName: 'FinOps', state: unknown },
+      { agentName: 'Soporte', state: missing },
+      { agentName: 'Ventas', state: { kind: 'ready' } },
+      { agentName: 'Legal', state: { kind: 'not-ready', what: 'harness', status: 'DELETING' } },
+    ]);
+    expect(report).toEqual({
+      line: 'no se pudo preguntar a AgentCore por su harness',
+      failure: [
+        harnessProblem('FinOps', unknown),
+        harnessProblem('Soporte', missing),
+        harnessProblem('Legal', { kind: 'not-ready', what: 'harness', status: 'DELETING' }),
+        HARNESS_WHERE_TO_LOOK,
+      ],
+    });
+  });
+
+  it('says nothing of agents it did not ask about', () => {
+    expect(harnessReport([]).failure).toEqual([]);
   });
 });

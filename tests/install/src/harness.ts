@@ -101,7 +101,10 @@ export async function harnessOf(
   }
 }
 
-/** Where whoever installs looks when the harness of a published agent is not there. */
+/**
+ * Where whoever installs looks when the harness of a published agent is missing or not ready.
+ * Not for a question that could not be asked: that message already says what to do.
+ */
 export const HARNESS_WHERE_TO_LOOK =
   'What to look at: whether an uninstall stopped halfway (the stack `Mango-<ns>-Core` in ' +
   '`DELETE_FAILED`, step 5 of docs/runbooks/install.md), the finding `harness_missing` of the ' +
@@ -134,4 +137,26 @@ export function harnessProblem(agentName: string, state: HarnessState): string |
         '`bedrock-agentcore:GetHarnessEndpoint`, or remove `aws.namespace` to skip the question.'
       );
   }
+}
+
+/** What AgentCore answered about the harness of one served agent. */
+export type Asked = { agentName: string; state: HarnessState };
+
+/**
+ * What the journey says of the harnesses it asked about: its line of the report and the
+ * paragraphs of its failure, none when every harness is ready. Where to look follows the
+ * problems only when a harness or its endpoint is missing or not ready (D75 (13)).
+ */
+export function harnessReport(asked: readonly Asked[]): { line: string; failure: string[] } {
+  const problems = asked.flatMap(({ agentName, state }) => harnessProblem(agentName, state) ?? []);
+  const unasked = asked.some(({ state }) => state.kind === 'unknown');
+  const gone = asked.some(({ state }) => state.kind === 'missing' || state.kind === 'not-ready');
+  return {
+    line: unasked
+      ? 'no se pudo preguntar a AgentCore por su harness'
+      : problems.length > 0
+        ? 'AgentCore no tiene listo el harness de alguno'
+        : 'su harness existe en AgentCore',
+    failure: gone ? [...problems, HARNESS_WHERE_TO_LOOK] : problems,
+  };
 }

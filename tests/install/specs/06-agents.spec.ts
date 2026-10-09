@@ -11,11 +11,11 @@ import {
 import { ROLES } from '../src/config.ts';
 import { expect, note, test, type Session } from '../src/fixtures.ts';
 import {
-  HARNESS_WHERE_TO_LOOK,
   harnessName,
   harnessOf,
-  harnessProblem,
+  harnessReport,
   listHarnesses,
+  type Asked,
 } from '../src/harness.ts';
 
 // The agents the release ships are published and the installation serves them. A release
@@ -115,8 +115,7 @@ test('the agents of the release are published and served', async ({ as, config }
 
   // What the application cannot tell: whether AgentCore still has the harness of each agent
   // it serves. Asked once for the whole account and once per agent, with the AWS CLI.
-  const unreachable: string[] = [];
-  let unasked = false;
+  let unreachable: string[] = [];
   const namespace = config.aws?.namespace;
   const servedAgents = releaseAgents().filter((agent) => proven.has(agent.id));
   const anyone = people[0]?.session;
@@ -126,22 +125,17 @@ test('the agents of the release are published and served', async ({ as, config }
       .parse(await (await anyone.context.request.get('/config.json')).json());
     const account = { profile: config.aws?.profile, region };
     const listed = await listHarnesses(account);
+    const asked: Asked[] = [];
     for (const agent of servedAgents) {
       const state =
         listed instanceof Map
           ? await harnessOf(account, listed, harnessName(namespace, agent.id))
           : ({ kind: 'unknown', code: listed.code } as const);
-      const problem = harnessProblem(agent.name, state);
-      if (problem) unreachable.push(problem);
-      unasked ||= state.kind === 'unknown';
+      asked.push({ agentName: agent.name, state });
     }
-    lines.push(
-      unasked
-        ? 'no se pudo preguntar a AgentCore por su harness'
-        : unreachable.length > 0
-          ? 'AgentCore no tiene listo el harness de alguno'
-          : 'su harness existe en AgentCore',
-    );
+    const report = harnessReport(asked);
+    lines.push(report.line);
+    unreachable = report.failure;
   } else if (servedAgents.length > 0) {
     lines.push('no se preguntó a AgentCore por su harness (falta `aws.namespace`)');
   }
@@ -180,12 +174,7 @@ test('the agents of the release are published and served', async ({ as, config }
   note(testInfo, `agents: ${lines.join('; ') || 'la versión no trae agentes'}`);
   if (broken.length > 0 || unreachable.length > 0) {
     throw new Error(
-      [
-        ...broken,
-        ...(broken.length > 0 ? [WHERE_TO_LOOK] : []),
-        ...unreachable,
-        ...(unreachable.length > 0 ? [HARNESS_WHERE_TO_LOOK] : []),
-      ].join('\n'),
+      [...broken, ...(broken.length > 0 ? [WHERE_TO_LOOK] : []), ...unreachable].join('\n'),
     );
   }
 });
