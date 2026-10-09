@@ -3,10 +3,15 @@
 GitHub Actions prints repository variables as they are and masks only secrets. A value that
 carries an account id, an ARN or a bucket name is therefore an environment secret, never a
 variable.
+
+Also here: what starts the packs workflow. A push to main waits for the owner to approve one
+signature per pack, so it starts for what can change a pack and for nothing else.
 """
 
 import json
 import re
+import tomllib
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
@@ -25,9 +30,31 @@ ENVIRONMENT_SECRET = re.compile(r"\bsecrets\s*(?:\.\s*|\[\s*['\"])(?!GITHUB_TOKE
 ANY_SECRET = re.compile(r"\bsecrets\s*[.\[]")
 
 
+# Everything a pack's zip or its signed statement is made from, and what makes them.
+PACK_PATHS = [
+    "packs/**",
+    "deployment/build-pack.sh",
+    "deployment/pack-builder/**",
+    "packages/py/mango-packs/**",
+    "packages/py/mango-pack-runtime/**",
+    "packages/py/mango-aws/**",
+    ".github/workflows/packs.yml",
+]
+# Only their versions of Python, uv and of what writes the statement reach a pack, and
+# `toolchain.toml` records those (test_toolchain.py).
+TOOLCHAIN_SOURCES = ["mise.toml", "uv.lock"]
+
+
 def _jobs(workflow: Path) -> dict[str, dict[str, Any]]:
     jobs: dict[str, dict[str, Any]] = yaml.safe_load(workflow.read_text())["jobs"]
     return jobs
+
+
+def _packs_triggers() -> dict[str, dict[str, Any]]:
+    packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
+    # YAML 1.1 reads the key `on` as the boolean true.
+    triggers: dict[str, dict[str, Any]] = yaml.safe_load(packs.read_text())[True]
+    return triggers
 
 
 def test_there_are_workflows_to_check() -> None:
@@ -92,3 +119,42 @@ def test_no_condition_or_name_reads_a_secret(workflow: Path) -> None:
                 assert not ANY_SECRET.search(str(holder.get(key, ""))), (
                     f"{workflow.name}: job `{name}` reads a secret in `{key}`"
                 )
+
+
+def test_a_push_starts_the_packs_workflow_only_for_what_can_change_a_pack() -> None:
+    push = _packs_triggers()["push"]
+    assert push["branches"] == ["main"]
+    assert push["paths"] == PACK_PATHS
+
+
+def test_a_pull_request_also_builds_the_packs_when_the_toolchain_files_change() -> None:
+    triggers = _packs_triggers()
+    # Nothing else starts it: no `pull_request_target`, no run by hand.
+    assert set(triggers) == {"pull_request", "push"}
+    assert triggers["pull_request"]["paths"] == PACK_PATHS + TOOLCHAIN_SOURCES
+
+
+def test_a_push_starts_the_packs_workflow_for_every_source_of_the_builder() -> None:
+    paths = _packs_triggers()["push"]["paths"]
+    builder = REPO / "deployment" / "pack-builder"
+    sources = tomllib.loads((builder / "pyproject.toml").read_text())["tool"]["uv"]["sources"]
+    assert sources, "the builder no longer says which packages of the repository it uses"
+    for name, source in sources.items():
+        assert source == {"workspace": True}
+        assert f"packages/py/{name}/**" in paths, f"a change to {name} would not be signed"
+    for changed in (
+        "deployment/pack-builder/toolchain.toml",
+        "deployment/pack-builder/src/mango_pack_builder/build.py",
+        "packs/aws-pricing/requirements.lock",
+        "packs/signing-key.pub",
+    ):
+        # `**` also crosses `/` for fnmatch, as it does in a workflow path filter.
+        assert any(fnmatchcase(changed, pattern) for pattern in paths), changed
+
+
+def test_packs_are_signed_only_from_a_push_to_main_in_the_protected_environment() -> None:
+    packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
+    sign = _jobs(packs)["sign"]
+    assert sign["environment"] == "pack-signing"
+    assert sign["needs"] == "build"
+    assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in sign["if"]

@@ -222,7 +222,7 @@ Consecuencia: `mango-api` depende del ECR del proveedor cada vez que ECS arranca
 
 1. Comprueba el árbol limpio y la versión de `release.yaml`.
 2. Construye la SPA y los zips de Lambda (como hoy).
-3. Verifica los packs firmados de `dist/packs` (§6).
+3. Verifica los packs firmados de `dist/packs` (§6). En `release.yml` son los de la última ejecución correcta del workflow de packs en `main`; ese workflow solo arranca en `main` cuando cambia algo que entra en un pack o lo construye (D36, 2026-10-09; `packs/README.md`, «Cuándo se construye y cuándo se firma»).
 4. Construye la imagen (`docker buildx`, linux/arm64) y calcula su digest.
 5. `cdk synth` con el synthesizer de release → `dist/release/<versión>/` (`global-s3-assets/`, `regional-s3-assets/`).
 6. cdk-nag, cfn-guard y Checkov sobre **esas** plantillas.

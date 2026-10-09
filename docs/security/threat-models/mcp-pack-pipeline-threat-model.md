@@ -1,6 +1,6 @@
 # Pipeline de MCP packs: modelo de amenazas (v0.1)
 
-> Fecha: 2026-10-01 · Skill: `security-threat-model`. Plan: `docs/specs/marketplace-v1-plan.md` (B1). Decisiones: D19, D25, U9, U10.
+> Fecha: 2026-10-01 · TM-P13 (qué dispara la firma) del 2026-10-09 · Skill: `security-threat-model`. Plan: `docs/specs/marketplace-v1-plan.md` (B1). Decisiones: D19, D25, U9, U10.
 > Amplía TM-M4 y TM-M5 de `marketplace-v1-threat-model.md`, que dejó fuera el compromiso del CI y de la llave de firma.
 > Alcance: `packs/`, `packages/py/mango-packs/`, `deployment/pack-builder/`, `deployment/build-pack.sh` y `.github/workflows/packs.yml`. El provisioner que instala el pack (B2) tiene su propio modelo.
 
@@ -126,11 +126,12 @@ flowchart LR
 | TM-P10 | Archivo malicioso | Zip alterado | Rutas `../` al extraer | Escritura fuera del directorio temporal en el CI | Runner | `extract` valida cada ruta antes de extraer (test `test_extract_rejects_paths_outside_the_target`) | — | — | — | low | low | **low** |
 | TM-P11 | Entorno del Runtime | Variable de entorno inesperada | `AWS_PROFILE` o `PRICING_ENDPOINT` desvían las llamadas firmadas | Peticiones firmadas hacia otro destino | Credenciales del rol | El punto de entrada borra ambas antes de importar el servidor | Otras variables de boto3 (`AWS_ENDPOINT_URL`) | B2: el provisioner fija el entorno desde una lista cerrada | — | low | medium | **low** |
 | TM-P12 | Cualquiera con cuenta de GitHub | El repositorio es público (D59): los logs y los artefactos de Actions se pueden leer | Lee el id de la cuenta del proveedor en el ARN del rol de firma o en el de la llave | Reconocimiento: sabe qué cuenta y qué rol atacar. No da acceso por sí solo (el trust exige el `sub` del repositorio y el entorno) | Identificadores de la cuenta del proveedor | Desde el 2026-10-05: el ARN del rol es un secreto del entorno `pack-signing` (Actions lo enmascara; las variables del repositorio se imprimen); el id de cuenta se enmascara aparte (`::add-mask::` y `mask-aws-account-id`); la llave se nombra por su alias, así el sobre que se sube como artefacto no lleva la cuenta; un test impide volver a leer de `vars` un nombre terminado en `_ARN`, `_BUCKET` o `_ACCOUNT_ID` (`test_workflows.py`) | Actions solo enmascara el valor exacto: una forma transformada (base64, otra codificación) no se tapa. Los logs y los artefactos anteriores al cambio hay que borrarlos a mano | No imprimir ni codificar esos valores en pasos nuevos; revisar los logs tras cambiar el workflow | Buscar el id de la cuenta en los logs y artefactos de la primera ejecución tras cada cambio del workflow | low | low | **low** |
+| TM-P13 | Cambio en el repositorio | Un cambio que altera el zip o la declaración de un pack y que el filtro de rutas del workflow no ve | El pack de `main` queda sin construir, comparar ni firmar; la release sigue llevando el pack firmado antes | Una instalación recibe un pack anterior al de `main` (firmado y válido para su commit, pero sin un arreglo que `main` ya tiene) | Zip, declaración | Desde el 2026-10-09 (D36): la lista de rutas de `push` cubre `packs/`, el script, el builder, los tres paquetes que el builder usa y el workflow, y un test la fija y la compara con las fuentes del builder (`test_workflows.py`); `mise.toml` y `uv.lock` salieron de la lista, y lo que de ellos llega a un pack (Python, uv, `pydantic`, `pydantic-core`, `pyyaml`) está en `deployment/pack-builder/toolchain.toml`, que un test mantiene igual a ambos (`test_toolchain.py`); cada ejecución construye y firma los tres packs, sin estado entre ejecuciones; un pull request sigue construyendo con las dos rutas | El testigo nombra cinco versiones: otra dependencia del builder (`cryptography`, `boto3`) no escribe el zip ni la declaración, pero una futura que sí lo haga habría que añadirla a mano. GitHub evalúa el filtro sobre los primeros 300 archivos de un diff. Sin ver en el runner | Al añadir una dependencia al builder, decidir si escribe bytes de un pack y anotarla en el testigo | Tras un cambio de versión de Python, de uv o de una dependencia del builder, comprobar que hubo una ejecución de `packs` en `main` para ese commit | low | medium | **low** |
 
 ## Criticality calibration
 - **High:** no queda ninguna amenaza en alto con los controles actuales. Lo sería firmar código o IAM no revisados (TM-P3 y TM-P4 sin la separación de jobs).
 - **Medium:** cadena de suministro (TM-P1, TM-P2), cambios de tools (TM-P5), sustitución y rollback (TM-P6), llave pública y uso de la llave (TM-P7, TM-P9), manifiestos amplios (TM-P8).
-- **Low:** código de terceros en el CI (TM-P3, TM-P4), extracción de zips, variables de entorno del Runtime e identificadores de la cuenta del proveedor en logs y artefactos públicos (TM-P12).
+- **Low:** código de terceros en el CI (TM-P3, TM-P4), extracción de zips, variables de entorno del Runtime, identificadores de la cuenta del proveedor en logs y artefactos públicos (TM-P12) y un cambio de un pack que el filtro de rutas no vea (TM-P13).
 
 ## Focus paths for security review
 
@@ -138,7 +139,8 @@ flowchart LR
 |---|---|---|
 | `packages/py/mango-packs/src/mango_packs/signing.py` | Verificación de firma que decide qué código acepta una instalación | TM-P6, TM-P7 |
 | `packages/py/mango-packs/src/mango_packs/manifest.py` | Reglas de IAM, tools y parámetros | TM-P8 |
-| `.github/workflows/packs.yml` | Separación entre el job con código de terceros y el job con la llave | TM-P3, TM-P4, TM-P9 |
+| `.github/workflows/packs.yml` | Separación entre el job con código de terceros y el job con la llave; qué rutas arrancan la firma | TM-P3, TM-P4, TM-P9, TM-P13 |
+| `deployment/pack-builder/toolchain.toml` | Lo que de `mise.toml` y `uv.lock` llega a un pack; cambiarlo arranca la firma | TM-P13 |
 | `deployment/build-pack.sh` | Orden de los pasos y comparación con el zip probado | TM-P4 |
 | `deployment/pack-builder/src/mango_pack_builder/snapshot.py` y `probe.py` | Ejecutan código de terceros (contenedor sin red) | TM-P3, TM-P10 |
 | `deployment/pack-builder/src/mango_pack_builder/pack.py` | Lectura estricta del lock | TM-P2 |

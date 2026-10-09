@@ -13,6 +13,13 @@
 # records the key id and is uploaded as an artifact, where nothing is masked.
 # `PACK_SIGNING_ENABLED` is a variable because a job `if:` cannot read secrets; it carries no
 # data.
+#
+# A push to main asks the owner to approve one signature per pack, so it only starts for what
+# can change a byte of a zip or of a signed statement. `mise.toml` and `uv.lock` are not in
+# that list: the part of them that reaches a pack (the Python and uv that write the zip, the
+# packages that write the statement) is recorded in `deployment/pack-builder/toolchain.toml`,
+# which a test keeps equal to both files, so raising one of those versions changes a file
+# that is in the list. A pull request never signs and keeps both files: it builds.
 name: packs
 
 on:
@@ -39,8 +46,6 @@ on:
       - packages/py/mango-pack-runtime/**
       - packages/py/mango-aws/**
       - .github/workflows/packs.yml
-      - mise.toml
-      - uv.lock
 
 permissions:
   contents: read

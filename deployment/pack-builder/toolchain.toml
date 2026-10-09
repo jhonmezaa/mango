@@ -1,0 +1,20 @@
+# What writes the bytes of a pack: the Python and uv that build its zip, and the packages that
+# read its manifest and serialize the statement that gets signed.
+#
+# `.github/workflows/packs.yml` does not start on a push that only changes `mise.toml` or
+# `uv.lock`, so that an unrelated tool or dependency leaves no signature waiting for
+# approval. This file is what makes that safe: it is under a path that does start the
+# workflow, and `tests/test_toolchain.py` fails while it differs from those two files. To
+# raise one of these versions, change it here in the same commit: the packs are then built
+# and signed again.
+
+# `[tools]` of mise.toml.
+[tools]
+python = "3.13.15"
+uv = "0.12.19"
+
+# Versions locked in uv.lock.
+[packages]
+pydantic = "2.13.5"
+pydantic-core = "2.46.5"
+pyyaml = "6.0.3"

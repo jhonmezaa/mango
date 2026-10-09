@@ -170,6 +170,31 @@ Modelo de amenazas: `docs/security/threat-models/aws-billing-pack-threat-model.m
 | `snapshot` | Arranca el servidor **en un contenedor sin red** y compara su `tools/list` con el manifiesto: mismas tools y mismo `tools_hash` |
 | `statement` | Escribe lo que se va a firmar: manifiesto + hash del zip, del SBOM y del lock + commit |
 
+### Cuándo se construye y cuándo se firma
+
+El workflow `.github/workflows/packs.yml` construye los tres packs en cada ejecución y, en `main`, los firma. Cada firma espera la aprobación del dueño (entorno `pack-signing`), así que un `push` a `main` solo lo arranca por lo que puede cambiar un byte de un zip o de una declaración firmada (D36, 2026-10-09):
+
+| Ruta | Qué pone en un pack |
+|---|---|
+| `packs/**` | Manifiesto, lock, punto de entrada, `build.yaml`, `constraints.txt` y la llave pública con la que `sign` verifica |
+| `deployment/build-pack.sh`, `deployment/pack-builder/**` | Los pasos y el builder: qué se instala, qué se copia, cómo se escribe el zip y la declaración |
+| `packages/py/mango-packs/**` | El esquema del manifiesto y la forma de la declaración que se firma |
+| `packages/py/mango-pack-runtime/**`, `packages/py/mango-aws/**` | Se copian dentro del zip de los packs de datos de cuentas |
+| `.github/workflows/packs.yml` | El runner, los pasos y la firma |
+
+**`mise.toml` y `uv.lock` no arrancan el workflow en un `push`.** Casi nada de ellos llega a un pack: las dependencias del zip salen del `requirements.lock` de cada pack, nunca de `uv.lock`. Lo que sí llega está anotado en el archivo testigo `deployment/pack-builder/toolchain.toml`:
+
+- de `mise.toml`, la versión de **Python** (el builder escribe el zip con su `zipfile` y su zlib) y la de **uv** (desempaqueta los wheels);
+- de `uv.lock`, las de **`pydantic`, `pydantic-core` y `pyyaml`** (leen el manifiesto y escriben la declaración).
+
+`deployment/pack-builder/tests/test_toolchain.py` falla mientras el testigo no diga lo mismo que esos dos archivos. **Para subir una de esas versiones se cambia también el testigo, en el mismo commit:** el testigo sí está entre las rutas, y los packs se construyen y se firman de nuevo. Un cambio en cualquier otra parte de `mise.toml` o `uv.lock` (una tarea, una dependencia de la API) no deja firmas esperando.
+
+Un pull request no firma nunca. Conserva los dos archivos entre sus rutas: construye los packs y comprueba que el zip sale idéntico dos veces y que `tools/list` es el del manifiesto.
+
+`test_workflows.py` fija las dos listas de rutas y que cada paquete del repositorio que el builder usa esté en la de `push`. Un pack o un paquete nuevo que entre en un zip añade su ruta a las dos.
+
+La release toma los packs firmados de la última ejecución correcta de este workflow en `main` (`release.yml`); sus artefactos se conservan 90 días.
+
 ### Snapshot sin red
 
 El servidor upstream es código de terceros. En CI (`.github/workflows/packs.yml`, runner arm64) el snapshot arranca **el zip construido** dentro de un contenedor:
@@ -214,7 +239,7 @@ Se firma una declaración por pack con una **llave asimétrica de KMS** (`ECC_NI
 El resultado es `<id>-<versión>.pack.json`: un sobre DSSE con la declaración y la firma. La instalación solo necesita la **llave pública**: el provisioner verifica sin llamar a KMS ni salir de la cuenta (`mango_packs.signing.verify_envelope` y `verify_file`).
 
 El job `sign` del workflow:
-- solo corre en `main`, dentro del environment `pack-signing`, que solo admite esa rama;
+- solo corre en `main`, dentro del environment `pack-signing`, que solo admite esa rama, y solo cuando el `push` cambia algo que entra en un pack o lo construye (ver «Cuándo se construye y cuándo se firma»);
 - **no ejecuta código del pack**: reconstruye el zip y la declaración desde el commit y exige que el zip sea idéntico al que probó el job `build`;
 - asume el rol de firma por OIDC justo antes de firmar, sin llaves de larga duración;
 - verifica la firma con `packs/signing-key.pub` antes de publicar nada.
