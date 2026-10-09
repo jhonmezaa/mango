@@ -1,7 +1,7 @@
 # D43 · Provisioner de packs: qué se instala, quién lo registra y qué packs entran
 
 - **Estado:** parcial. Rigen (1), (2), (4) y (6). El punto (3) ya no rige como está: los packs de datos de cuentas se instalan desde [D49](D049-identidad-en-packs-de-datos.md), [D52](D052-pack-de-billing-ampliado.md), [D54](D054-egress-de-packs.md) y [D55](D055-pack-de-cloudwatch.md); los packs con tools de escritura siguen rechazados ([D56](D056-tools-de-escritura-con-aprobacion.md) (5)).
-- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4; lo que se ha visto de ese permiso en una instalación, 2026-10-08, punto 5; el reintento de `tools/list` cuando el Runtime aún no está listo, decidido por el dueño el 2026-10-08, con su detalle propuesto por un agente y aceptado por el dueño el 2026-10-09, y el código de error que llega al log, acotado, decidido por el dueño el 2026-10-09, punto 6; IAM exige el boundary de packs también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7; lo que una instalación mostró de ese punto y el tamaño medido de la política en línea, que corrige la estimación del punto 7, nota propuesta por un agente el 2026-10-09, punto 8)
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4; lo que se ha visto de ese permiso en una instalación, 2026-10-08, punto 5; el reintento de `tools/list` cuando el Runtime aún no está listo, decidido por el dueño el 2026-10-08, con su detalle propuesto por un agente y aceptado por el dueño el 2026-10-09, y el código de error que llega al log, acotado, decidido por el dueño el 2026-10-09, punto 6; IAM exige el boundary de packs también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7; lo que dos instalaciones mostraron de ese punto y el tamaño medido de la política en línea, que corrige la estimación del punto 7, nota propuesta por un agente el 2026-10-09, punto 8; el reintento de `tools/list`, visto en un ensayo, nota propuesta por un agente el 2026-10-09, punto 9)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D46](D046-api-del-catalogo-de-mcp.md) (amplía, punto 3); [D49](D049-identidad-en-packs-de-datos.md) (precisa, punto 2); [D52](D052-pack-de-billing-ampliado.md) (precisa); [D56](D056-tools-de-escritura-con-aprobacion.md) (precisa el punto 3)
 
@@ -49,7 +49,7 @@ Detalle **propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026
 - **Las opciones del menú:** en los dos provisioners; solo en el de agentes, dejando el de packs anotado por el límite de tamaño de su política; o anotarlo para después. El dueño eligió la primera («Sí, en los dos»).
 - **Con qué se comprobó.** Con tests de la plantilla (`infra/test/packs.test.ts`) y comparando las plantillas sintetizadas de antes y de después, sin packs y con un pack. Sin ver en una instalación.
 
-**(8) Lo que una instalación mostró del punto (7), y el tamaño medido de la política en línea (nota del 2026-10-09, propuesta por un agente).** No cambia lo decidido. Corrige un dato del punto (7): el tamaño de la política en línea, que allí es una estimación.
+**(8) Lo que dos instalaciones mostraron del punto (7), y el tamaño medido de la política en línea (nota del 2026-10-09, propuesta por un agente).** No cambia lo decidido. Corrige un dato del punto (7): el tamaño de la política en línea, que allí es una estimación.
 
 - **En una instalación que se actualiza.** Una instalación de laboratorio con datos pasó de `v0.1.0-gd578994` a `v0.1.0-gc1c233a`: la política en línea del rol del provisioner de packs (`PackProvisionerRoleDefaultPolicy…`) apareció como `Modify` de `PolicyDocument`, sin reemplazo. La política administrada de desborde no apareció, y el rol tampoco. El change set entero está en [D58](D058-distribucion-para-clientes.md) (23).
 - **Leído de IAM después.** 29 sentencias en la política en línea. `iam:DeleteRole` está en `PackRolePolicyWithBoundary`; `PackRoleLifecycle` queda con `iam:GetRole` e `iam:TagRole`.
@@ -57,6 +57,27 @@ Detalle **propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026
   - **De qué instalación es la medida.** De una con un namespace de 3 caracteres. Un namespace más largo suma unos caracteres por cada nombre que lo lleva: el margen de otra instalación puede ser menor. No se ha medido con otro namespace.
   - **Qué no cambia.** El dueño eligió seguir con el cambio sabiendo el 5 %; esa elección queda como está. Y la frase «Una sentencia más en este rol irá a la de desborde» tampoco cambia: cuándo se parte la política lo decide CDK al sintetizar, con su propia cuenta sobre la plantilla, no con lo que mide IAM.
   - **Las otras tres políticas en línea, medidas igual:** la del provisioner de agentes, 6.976 caracteres (32 % de margen); la del deprovisioner, 4.266 (58 %); la del `UninstallGuard`, 4.474 (56 %).
-- **Sigue sin verse en una instalación:** el provisioner de packs borrando un rol con la condición nueva (al deshabilitar un pack o al compensar una instalación fallida), y el reintento de `tools/list` del punto (6).
+- **El provisioner de packs borró el rol de un pack deshabilitado, con esa condición (2026-10-09).** En una instalación nueva en una cuenta de ensayo, con `v0.1.0-gc1c233a` (el ensayo de [D58](D058-distribucion-para-clientes.md) (24)).
+  - Al habilitar el pack: CloudTrail tiene, por el rol del provisioner de packs y sin error, el `CreateRole` del rol del pack y dos `PutRolePolicy`.
+  - El pack se deshabilitó por la API, con motivo: `disabling` y, a los 125 s, `disabled`.
+  - Antes, el rol del pack tenía el boundary de packs, una política en línea y ninguna adjunta. Después no existe. Tampoco quedaron el Runtime, el target ni la política del pack.
+  - CloudTrail, por el rol del provisioner de packs, todo sin error: `DeleteAgentRuntime` y, 41 s después, `DeleteRolePolicy` y `DeleteRole`.
+  - El tamaño de la política de ese rol no se midió en esa instalación. La medida sigue siendo la de arriba.
+- **Sin ver en una instalación:** el provisioner de packs borrando un rol al compensar una instalación fallida. En el ensayo se vio al deshabilitar.
+
+**(9) Lo que un ensayo mostró del punto (6): el reintento de `tools/list`, visto sin provocarlo (nota del 2026-10-09, propuesta por un agente).** No cambia lo decidido: dice con qué se ha comprobado. Es el mismo ensayo: una instalación nueva en una cuenta de ensayo, con `v0.1.0-gc1c233a` (el ensayo de [D58](D058-distribucion-para-clientes.md) (24)).
+
+- **El pack.** `aws-pricing`, habilitado con doble aprobación: quien lo pidió no pudo aprobarlo. El Runtime tardó unos 4 min 25 s en estar listo.
+- **El error.** En la primera `verify_tools`, AgentCore respondió a `tools/list` con un error JSON-RPC de código `-32010`: 153 bytes, `application/json`.
+- **El log del provisioner de packs, en ese momento.**
+  - `pack_provisioner.tools_response_invalid`, con `reason: jsonrpc_error`, `jsonrpc_error_code: -32010`, `runtime_http_status: null` y **`retryable: true`**.
+  - `pack_provisioner.step_failed`, con `step: verify_tools` y `code: tools_response_invalid`.
+  - El error de la función: `RetryableStepError`.
+- **El reintento.** Step Functions repitió `verify_tools` 14 s después, y pasó. Bastó un reintento.
+- **Cómo terminó.** La ejecución, `SUCCEEDED`, en 5 min 58 s. El pack quedó `enabled` a los 364 s de aprobarlo, sin paso fallido. **Nadie pulsó «Reintentar».**
+- **Comprobado después en AWS.** El Runtime en `READY` con su endpoint `live`; el target en `READY`; la política Cedar `ACTIVE`, en `ENFORCE`; el rol con su boundary y una política en línea; 6 tools servidas; y una llamada sin firmar, rechazada con 403.
+- **Es la primera vez que se ve con una versión que reintenta.** El 2026-10-08, con la versión anterior, ese mismo error dejó el pack en fallo y hubo que reintentar a mano (punto 6).
+- **El estado HTTP del servidor del pack sigue sin conocerse.** `runtime_http_status` llegó vacío.
+- **Sin ver en una instalación:** que el error dure más que los reintentos, y lo que pasa al agotarlos.
 
 Modelo de amenazas: `docs/security/threat-models/mcp-pack-provisioner-threat-model.md`
