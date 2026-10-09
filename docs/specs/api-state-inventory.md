@@ -8,7 +8,7 @@
 
 ## Límites de tasa
 
-Los compartidos se cuentan en la tabla `Mango-<ns>-RateLimits` (`rate_limits.py`): el número vale para todas las tareas juntas y sobrevive a un reinicio. Si la tabla no responde, la llamada se rechaza (429) y queda una línea de error con el nombre del límite; desde el segundo rechazo en 5 minutos avisa la alarma `Api-rate-limit-store-unavailable` (D71, punto 18; sin ver en una instalación). Los que son por tarea viven en memoria: con N tareas valen N veces, y un reinicio de la tarea los pone a cero.
+Los compartidos se cuentan en la tabla `Mango-<ns>-RateLimits` (`rate_limits.py`): el número vale para todas las tareas juntas y sobrevive a un reinicio. Si la tabla no responde, la llamada se rechaza (429) y queda una línea de error con el nombre del límite; desde el segundo rechazo en 5 minutos avisa la alarma `Api-rate-limit-store-unavailable` (D71, punto 18; instalada el 2026-10-09 en una instalación de laboratorio con su métrica en cero, y sin verla saltar: punto 19). Los que son por tarea viven en memoria: con N tareas valen N veces, y un reinicio de la tarea los pone a cero.
 
 | Límite (`limits.py`) | Número, por persona | Qué acota | Dónde se cuenta | Por qué |
 |---|---|---|---|---|
