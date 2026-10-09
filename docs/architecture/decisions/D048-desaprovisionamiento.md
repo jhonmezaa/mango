@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** en el texto: ajusta [D41](D041-alertas-y-reconciliacion.md) (punto 5)
-- **Precisada por:** [D53](D053-alineacion-con-claude-design.md) (precisa, punto 2); [D58](D058-distribucion-para-clientes.md) (precisa)
+- **Precisada por:** [D53](D053-alineacion-con-claude-design.md) (precisa, punto 2); [D58](D058-distribucion-para-clientes.md) (precisa; su punto 22 precisa el punto 3 solo para la desinstalación: el `UninstallGuard` sí quita las políticas gestionadas de un rol antes de borrarlo, decidido por el dueño el 2026-10-09. Al retirar un agente, el punto 3 sigue igual)
 
 ## Decisión
 
