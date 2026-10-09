@@ -226,7 +226,7 @@ AgentCore no admite guiones en los nombres de harness y Runtime, y los limita a 
 
 ### 5.4 Permisos del provisioner
 
-- `iam:CreateRole`, `iam:PutRolePolicy`, `iam:DeleteRolePolicy`, `iam:DeleteRole` y `iam:TagRole` **solo** sobre `role/Mango-<ns>-agent-*` y `role/Mango-<ns>-mcp-*`, con la condición `iam:PermissionsBoundary` obligatoria.
+- `iam:CreateRole`, `iam:PutRolePolicy`, `iam:DeleteRolePolicy`, `iam:DeleteRole` y `iam:TagRole` **solo** sobre `role/Mango-<ns>-agent-*` y `role/Mango-<ns>-mcp-*`, con la condición `iam:PermissionsBoundary` obligatoria en las cuatro primeras (`DeleteRole` desde D40 (7) y D43 (7), 2026-10-09). `iam:TagRole` no admite esa clave; `iam:GetRole` no la lleva, porque el provisioner lee el rol para saber si existe y si conserva el boundary.
 - `iam:PassRole` acotado a esos prefijos y a `bedrock-agentcore.amazonaws.com`.
 - AgentCore: harness y endpoints sobre `Mango_<ns>_a_*`; Runtime sobre `Mango_<ns>_mcp_*`; targets y políticas del Gateway de la instalación.
 - El rol del agente sale de una plantilla fija: los modelos permitidos de la versión, la invocación del Gateway y los logs de su runtime. El rol del pack sale **solo** del manifiesto firmado.

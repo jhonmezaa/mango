@@ -1,7 +1,7 @@
 # D40 · Provisioner de agentes: quién publica y con qué permisos
 
 - **Estado:** parcial. Rigen (1), (2), (4) y (5). El punto (3) ya no rige: con [D56](D056-tools-de-escritura-con-aprobacion.md) el provisioner publica agentes con tools de escritura de conectores de Mango marcadas en `approval_tools` (`functions/provisioner/src/mango_provisioner/harness.py`).
-- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día; ese permiso, visto en una instalación, 2026-10-08, punto 6)
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día; ese permiso, visto en una instalación, 2026-10-08, punto 6; IAM exige el boundary de agentes también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (deja sin efecto el punto 3)
 
@@ -28,3 +28,11 @@
 
 - **En una instalación desde cero (2026-10-07).** La segunda instalación del ensayo de ciclo de vida, en una cuenta que seguía sin el rol: CloudTrail muestra al provisioner creando `AWSServiceRoleForBedrockAgentCoreRuntimeIdentity`, sin error, y el agente de la versión se publicó.
 - **En una instalación que se actualiza (2026-10-08).** Una instalación de laboratorio con datos pasó de `v0.1.0-g998eb03` a `v0.1.0-g5c86ad2`: la política del rol del provisioner apareció como `Modify` sin reemplazo, con una sentencia más. Lo que trae ese change set está en `docs/runbooks/install.md`, «Lo que trajo cada versión».
+
+**(7) IAM exige el boundary de agentes también para borrar un rol (2026-10-09, decidido por el dueño el 2026-10-09, por menú).** El provisioner borra el rol de un agente al compensar una publicación fallida. `iam:DeleteRole` estaba en la sentencia `AgentRoleLifecycle`, sin condición, con un comentario que decía que `iam:PermissionsBoundary` no era clave de condición de esas acciones. Lo es de `DeleteRole` (referencia de autorización de servicios de AWS para IAM, leída el 2026-10-09), y el deprovisioner ya lo borra así desde [D48](D048-desaprovisionamiento.md) (7).
+
+- **Qué cambia.** `iam:DeleteRole` pasa a la sentencia `AgentRolePolicyWithBoundary`, que ya llevaba la condición `iam:PermissionsBoundary` igual al boundary de agentes para `PutRolePolicy` y `DeleteRolePolicy` (`infra/lib/constructs/provisioner.ts`). No se añade ninguna sentencia y la política mide lo mismo: 24 sentencias antes y después. El rol solo pierde: ya no puede borrar un rol bajo `Mango-<ns>-agent-*` que no lleve el boundary.
+- **Qué se queda sin condición, y por qué.** `iam:TagRole` no admite esa clave. `iam:GetRole` sí, y se queda como está: la función lee el rol para saber si existe y para decir que uno perdió el boundary (`role_without_boundary`); con la condición, IAM respondería acceso denegado en los dos casos y el código ya no sabría distinguirlos.
+- **El flujo legítimo no cambia.** El provisioner solo puede crear roles con el boundary: lo exige IAM (`CreateAgentRoleWithBoundary`) y lo pone el código al crear. Todo rol que él creó lo lleva, y esos son los que borra.
+- **Las opciones del menú:** en los dos provisioners; solo en el de agentes, dejando el de packs anotado por el límite de tamaño de su política; o anotarlo para después. El dueño eligió la primera («Sí, en los dos»).
+- **Con qué se comprobó.** Con tests de la plantilla (`infra/test/provisioner.test.ts`) y comparando las plantillas sintetizadas de antes y de después. Sin ver en una instalación.
