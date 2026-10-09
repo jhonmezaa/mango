@@ -1,7 +1,7 @@
 # D40 · Provisioner de agentes: quién publica y con qué permisos
 
 - **Estado:** parcial. Rigen (1), (2), (4) y (5). El punto (3) ya no rige: con [D56](D056-tools-de-escritura-con-aprobacion.md) el provisioner publica agentes con tools de escritura de conectores de Mango marcadas en `approval_tools` (`functions/provisioner/src/mango_provisioner/harness.py`).
-- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día; ese permiso, visto en una instalación, 2026-10-08, punto 6; IAM exige el boundary de agentes también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7; lo que dos instalaciones mostraron de ese punto, nota propuesta por un agente el 2026-10-09, punto 8)
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día; ese permiso, visto en una instalación, 2026-10-08, punto 6; IAM exige el boundary de agentes también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7; lo que dos instalaciones mostraron de ese punto, nota propuesta por un agente y aceptada por el dueño el 2026-10-09, punto 8)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (deja sin efecto el punto 3)
 
@@ -37,7 +37,7 @@
 - **Las opciones del menú:** en los dos provisioners; solo en el de agentes, dejando el de packs anotado por el límite de tamaño de su política; o anotarlo para después. El dueño eligió la primera («Sí, en los dos»).
 - **Con qué se comprobó.** Con tests de la plantilla (`infra/test/provisioner.test.ts`) y comparando las plantillas sintetizadas de antes y de después. Sin ver en una instalación.
 
-**(8) Lo que dos instalaciones mostraron del punto (7) (nota del 2026-10-09, propuesta por un agente).** No cambia lo decidido: dice con qué se ha comprobado.
+**(8) Lo que dos instalaciones mostraron del punto (7) (nota del 2026-10-09, propuesta por un agente y aceptada por el dueño el 2026-10-09).** No cambia lo decidido: dice con qué se ha comprobado.
 
 - **En una instalación que se actualiza.** Una instalación de laboratorio con datos pasó de `v0.1.0-gd578994` a `v0.1.0-gc1c233a`: la política del rol del provisioner (`ProvisionerRoleDefaultPolicy…`) apareció como `Modify` de `PolicyDocument`, sin reemplazo. El rol mismo no apareció. El change set entero está en [D58](D058-distribucion-para-clientes.md) (23).
 - **Leído de IAM después.** 24 sentencias. `iam:DeleteRole` está en `AgentRolePolicyWithBoundary`; `AgentRoleLifecycle` queda con `iam:GetRole` e `iam:TagRole`. La política en línea mide 6.976 caracteres de los 10.240 que IAM admite (IAM no cuenta los espacios): un 32 % de margen.
