@@ -519,7 +519,10 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
       "logs:DescribeLogGroups",
       "logs:PutLogEvents",
     ]);
-    expect(Object.values(source.Resources).filter((r) => r.Type === "AWS::Logs::MetricFilter")).toEqual([]);
+    // The one metric filter of the stack reads the log of mango-api (D71 (18)), not the guard's.
+    const filters = Object.values(source.Resources).filter((r) => r.Type === "AWS::Logs::MetricFilter");
+    expect(filters.map((r) => r.Properties.MetricTransformations[0].MetricName)).toEqual(["RateLimitStoreRefusals"]);
+    expect(JSON.stringify(filters)).not.toContain("UninstallGuard");
   });
 
   it("can only be invoked by CloudFormation and by itself", () => {

@@ -46,6 +46,10 @@ ATTEMPTS = 8
 UNAVAILABLE_RETRY_SECONDS = 5
 """``Retry-After`` of a call refused because the table did not answer."""
 TTL_MARGIN_SECONDS = 60
+STORE_UNAVAILABLE_LOG = "rate limit store unavailable;"
+"""How the log line of a call refused because the table could not say starts. A metric filter
+counts these lines for the alarm ``Api-rate-limit-store-unavailable`` (D71): it reads the level,
+the name of this logger and these words, in the places the log format of ``app.main`` gives them."""
 SK_HITS = "HITS"
 _NAME_RE = re.compile(r"^[a-z][a-z_]*(\.[a-z_]+)+$")
 _KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -157,7 +161,8 @@ class SharedRateLimiter:
         return [(at, count) for at, count in hits if now_ms - at < self._kept_ms]
 
     def _refused(self) -> None:
-        logger.error("rate limit store unavailable; a call of %s is refused", self._name)
+        # The name of the limit and nothing of the caller: the alarm counts these lines.
+        logger.error("%s a call of %s is refused", STORE_UNAVAILABLE_LOG, self._name)
 
     def allow(self, key: str, cost: int = 1) -> bool:
         """Record ``cost`` hits for ``key`` when all of them fit in the window (all or nothing).

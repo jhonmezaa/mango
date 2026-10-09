@@ -6,6 +6,7 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
@@ -14,6 +15,23 @@ import { Alerts } from "./alerts.js";
 
 /** CloudFront and its web ACL only report metrics in this Region. */
 export const GLOBAL_METRICS_REGION = "us-east-1";
+
+/**
+ * The one signal read from the log of mango-api (D71 (18)): a call refused because the table
+ * of the shared rate limits could not say whether it fits. mango-api writes one line per
+ * refusal, in the format of `app.main` (time in two words, level, logger, message), and the
+ * filter reads the words by their place: text a caller sends into another line cannot take
+ * the place of the level or of the logger. The metric has no dimension (a metric filter only takes them from
+ * the log), so its namespace carries the name of the installation.
+ */
+export const RATE_LIMIT_STORE_SIGNAL = {
+  namespacePrefix: "Mango/Api",
+  metric: "RateLimitStoreRefusals",
+  level: "ERROR",
+  logger: "mango_api.rate_limits",
+  /** `STORE_UNAVAILABLE_LOG` of `rate_limits.py`: how the message starts. A test compares them. */
+  message: "rate limit store unavailable;",
+};
 
 /**
  * Thresholds of the operational alarms (D71). Rates only count above a minimum of requests,
@@ -50,6 +68,12 @@ export const OPERATIONAL_THRESHOLDS = {
    * block passes this in seconds and a stray one does not reach it.
    */
   rateLimited: 50,
+  /**
+   * Calls mango-api refused because the table of the shared limits could not say, per
+   * 5 minutes. One is a blip (retries run out once, or two calls of one person collide eight
+   * times): whoever got it retries and passes. A table that does not answer refuses every call.
+   */
+  rateLimitStoreRefusals: 2,
 };
 
 const MINUTE = Duration.minutes(1);
@@ -64,6 +88,8 @@ export interface OperationalAlarmsProps {
   readonly alb: elbv2.ApplicationLoadBalancer;
   /** mango-api. The number of tasks it should run is read from its metrics, never written here. */
   readonly service: ecs.FargateService;
+  /** The log group of mango-api: the refusals of the shared rate limits are counted from it. */
+  readonly apiLogGroup: logs.ILogGroup;
   readonly distribution: cloudfront.Distribution;
   /** CloudWatch names of the edge web ACL and of its per-IP rate limits. */
   readonly edgeRateLimits: { readonly webAcl: string; readonly rules: string[] };
@@ -82,10 +108,10 @@ export interface OperationalAlarmsProps {
 
 /**
  * Alarms for what would otherwise fail in silence (D71), and one dashboard with the same
- * signals: mango-api and its load balancer, the Cognito triggers and the Gateway interceptor,
- * the DynamoDB tables, the model calls Bedrock refuses, CloudFront and the per-IP rate limits of
- * the two web ACLs. Every alarm notifies the alerts topic and says in its description what to
- * look at first.
+ * signals: mango-api, its load balancer and the refusals of its shared rate limits, the Cognito
+ * triggers and the Gateway interceptor, the DynamoDB tables, the model calls Bedrock refuses,
+ * CloudFront and the per-IP rate limits of the two web ACLs. Every alarm notifies the alerts
+ * topic and says in its description what to look at first.
  *
  * Missing data does not breach: an installation nobody is using stays quiet. The one exception
  * is `Api-no-healthy-targets`, whose metric stops exactly when the failure is worst. The tables
@@ -285,6 +311,8 @@ export class OperationalAlarms extends Construct {
       },
     );
 
+    traffic.push(this.rateLimitStoreAlarm(props.apiLogGroup));
+
     const utilization = (metricName: string) => tasks(metricName).with({ statistic: cloudwatch.Stats.AVERAGE, period: FIVE_MINUTES });
     return [
       new cloudwatch.GraphWidget({ title: "mango-api: requests and 5xx", left: traffic, width: 8 }),
@@ -297,6 +325,59 @@ export class OperationalAlarms extends Construct {
         width: 6,
       }),
     ];
+  }
+
+  /**
+   * The shared rate limits fail closed (D70): when their table cannot say, mango-api answers
+   * 429 and writes an error. Nothing else shows it: a 429 is not a 5xx, and a table that
+   * refuses for permissions or for its key reports neither throttles nor internal errors.
+   */
+  private rateLimitStoreAlarm(logGroup: logs.ILogGroup): cloudwatch.Metric {
+    const signal = RATE_LIMIT_STORE_SIGNAL;
+    const words = signal.message.split(" ");
+    const columns = ["date", "time", "level", "logger", ...words.map((_, index) => `word${index + 1}`)];
+    let pattern = logs.FilterPattern.spaceDelimited(...columns, "...")
+      .whereString("level", "=", signal.level)
+      .whereString("logger", "=", signal.logger);
+    words.forEach((word, index) => {
+      pattern = pattern.whereString(`word${index + 1}`, "=", word);
+    });
+    const namespace = `${signal.namespacePrefix}/${this.ns}`;
+    new logs.MetricFilter(this, "RateLimitStoreRefusals", {
+      logGroup,
+      filterName: mangoName(this.ns, "Api-rate-limit-store-refusals"),
+      filterPattern: pattern,
+      metricNamespace: namespace,
+      metricName: signal.metric,
+      metricValue: "1",
+      // Zero whenever mango-api logs anything else: the metric exists in a healthy
+      // installation, and the alarm has data to go back to OK after the last refusal.
+      defaultValue: 0,
+      unit: cloudwatch.Unit.COUNT,
+    });
+    const refusals = new cloudwatch.Metric({
+      namespace,
+      metricName: signal.metric,
+      statistic: cloudwatch.Stats.SUM,
+      period: FIVE_MINUTES,
+    });
+    this.alarm(
+      "RateLimitStoreUnavailable",
+      "Api-rate-limit-store-unavailable",
+      `mango-api refused at least ${OPERATIONAL_THRESHOLDS.rateLimitStoreRefusals} calls in 5 minutes because the ` +
+        "table of the shared rate limits could not say whether they fit: people get 429 answers on the routes " +
+        "those limits protect although nobody is over a limit. Look first at the lines \"rate limit store " +
+        "unavailable\" in the log group of mango-api (/mango/<namespace>/api): each names the limit. Then at " +
+        "the RateLimits table: that it exists, its throttling alarm, the DynamoDB-system-errors alarm, and " +
+        "that the task role of mango-api can still read and write it and use its key.",
+      {
+        metric: refusals,
+        threshold: OPERATIONAL_THRESHOLDS.rateLimitStoreRefusals,
+        comparisonOperator: AT_LEAST,
+        evaluationPeriods: 1,
+      },
+    );
+    return refusals.with({ label: "Refused: rate limit table unavailable" });
   }
 
   /** Cognito triggers and the Gateway interceptor: nobody signs in or calls a tool without them. */

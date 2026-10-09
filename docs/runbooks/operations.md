@@ -25,6 +25,7 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `Api-errors` | Más del 5 % de las respuestas de `mango-api` fueron 5xx, con al menos 20 peticiones en 5 minutos, en 2 de 3 periodos | Los errores del log group `/mango/<ns>/api`; después, las alarmas de DynamoDB |
 | `Api-unhealthy-targets` | Una tarea lleva 5 minutos fallando la comprobación de salud. La aplicación puede seguir respondiendo desde otra tarea | Las tareas detenidas del servicio y su motivo |
 | `Api-tasks-below-desired` | Durante 5 minutos corren menos tareas de las que pide el servicio: se detienen o no logran arrancar | Eventos del servicio: descarga de la imagen, comprobación de salud, memoria |
+| `Api-rate-limit-store-unavailable` | `mango-api` rechazó 2 o más llamadas en 5 minutos porque la tabla de los límites compartidos (`Mango-<ns>-RateLimits`) no pudo decir si cabían. **La gente recibe 429 en las rutas con límite compartido (personas, invitaciones, directorio, propuestas, escrituras de MCP, ejecutar aprobaciones) aunque nadie haya pasado un límite.** El chat y el ingreso no usan esa tabla. Un rechazo aislado no avisa: quien lo recibe reintenta y pasa. Sale de un filtro de métricas sobre el log de `mango-api` (D71, punto 18). **Sin ver en una instalación** | Las líneas `rate limit store unavailable` del log group `/mango/<ns>/api`: cada una nombra el límite (nunca a la persona). Después, la tabla `Mango-<ns>-RateLimits`: que existe, su alarma `Table-RateLimits-throttled` y `DynamoDB-system-errors`; y que el rol de `mango-api` sigue pudiendo leerla, escribirla y usar su llave (un `AccessDeniedException` en el log de `mango-api` o en CloudTrail). Si los rechazos son de un solo límite y pocos, puede ser una persona lanzando muchas llamadas a la vez: no es un fallo de la tabla |
 | `Api-slow` | `mango-api` tardó más de 1 segundo en empezar a responder el 5 % de sus peticiones, en 2 de 3 minutos con al menos 60 peticiones cada uno. **La aplicación va lenta para todos, sin errores.** Una respuesta del chat que tarda no cuenta: se mide la espera hasta el primer byte | En el tablero, la CPU de la tarea más cargada (el máximo, no la media): una tarea cerca del 100 % frena todo lo que le llega. Después, las peticiones por minuto y las alarmas de DynamoDB. Qué hacer: abajo, «Cuando la aplicación va lenta» |
 
 `Api-no-healthy-targets` es la única alarma en la que **no tener datos también avisa** (D71, punto 11). El balanceador solo publica el número de tareas sanas mientras tiene alguna registrada: si el servicio se queda sin tareas deja de publicar, y ese silencio es el peor caso.
@@ -202,6 +203,7 @@ Decisión: [D73](../architecture/decisions/D073-turno-cortado-nunca-cuesta-cero.
 - **Consultas de trazas que fallan o turnos que esperan su traza** (función conciliadora): están en las métricas `TraceQueryErrors` y `Waiting` de `Mango/BudgetReconciler`, sin umbral. Lo que avisa es el cobro por la reserva, que es su consecuencia.
 - **Cuánto tarda una respuesta del chat:** dura lo que tarda el modelo. `Api-slow` mide solo la espera hasta que `mango-api` empieza a responder.
 - **La CPU de `mango-api`:** está en el tablero (la de la tarea más cargada y la media), sin umbral. Lo que avisa es la lentitud.
+- **Los límites que viven en la memoria de cada tarea** (crear y renovar la sesión, actualizar el catálogo de modelos, las listas de agentes): no usan la tabla de límites, así que `Api-rate-limit-store-unavailable` no dice nada de ellos.
 - **Fuera de `us-east-1`** no existirían `Edge-errors` ni `Edge-rate-limited`: CloudFront solo publica sus métricas en esa región. Hoy Mango solo se instala ahí. `Cognito-rate-limited` sí existiría: su web ACL es regional.
 
 ### Comprobar que el correo llega
@@ -277,14 +279,15 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ### Cuánto cuesta
 
-**Unos USD 9 al mes** a precio de lista de `us-east-1`, con todas las alarmas de hoy (D71, D72, D73 y D58, punto 19):
+**Unos USD 10 al mes** a precio de lista de `us-east-1`, con todas las alarmas de hoy (D71, D72, D73 y D58, punto 19):
 
 | Qué | Cuánto | USD al mes |
 |---|---|---|
-| Métricas que leen las alarmas, a USD 0,10 cada una | 52 en la plantilla de ejemplo (2026-10-08): 51 en las 31 alarmas de `Core` y una en la de `PackNetwork` | 5,20 |
+| Métricas que leen las alarmas, a USD 0,10 cada una | 53 en la plantilla de ejemplo (2026-10-09): 52 en las 32 alarmas de `Core` y una en la de `PackNetwork` | 5,30 |
 | Tablero `Mango-<ns>-Operations` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
 | Métricas propias de la función conciliadora (D73), a USD 0,30 cada una | Cuatro | 1,20 |
-| **Total** | | **9,40** |
+| Métrica del filtro del log de `mango-api` (D71, punto 18), a USD 0,30 | Una: `RateLimitStoreRefusals`. Existe todos los meses, porque el filtro publica ceros | 0,30 |
+| **Total** | | **9,80** |
 
 - **Fuera de la suma:** `DynamoDB-system-errors` no lee una métrica fija, sino una consulta sobre todas las tablas de la cuenta. CloudWatch la cobra por las métricas que la consulta analiza, que dependen de cuántas tablas y operaciones tenga la cuenta. Ninguna cifra de esta tabla está contrastada con una factura.
 - **La métrica propia del `UninstallGuard` (D58, punto 19) no suma:** solo existe el mes en que el guard detiene un borrado (USD 0,30 ese mes, como mucho).

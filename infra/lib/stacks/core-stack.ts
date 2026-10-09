@@ -443,6 +443,7 @@ export class CoreStack extends Stack {
       alerts,
       alb: network.alb,
       service: api.service,
+      apiLogGroup: api.logGroup,
       distribution: edge.distribution,
       edgeRateLimits: edge.rateLimitMetrics,
       userPoolRateLimits: identity.rateLimitMetrics,

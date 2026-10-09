@@ -18,11 +18,13 @@ import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 from moto import mock_aws
 
+from mango_api.app import LOG_FORMAT
 from mango_api.probe import RateLimiter
 from mango_api.rate_limits import (
     ATTEMPTS,
     SK_HITS,
     SKEW_SECONDS,
+    STORE_UNAVAILABLE_LOG,
     TTL_MARGIN_SECONDS,
     UNAVAILABLE_RETRY_SECONDS,
     RateLimitStore,
@@ -364,3 +366,68 @@ def test_same_answers_as_the_limiter_in_memory(db: Recording) -> None:
         cost = rng.choice([1, 1, 2])
         assert shared.allow("user-1", cost) == local.allow("user-1", cost)
         assert shared.retry_after("user-1", cost) == local.retry_after("user-1", cost)
+
+
+# --- The signal of a refusal (D71): what the metric filter of the alarm counts ----------
+
+
+def _refusals(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.getMessage().startswith(STORE_UNAVAILABLE_LOG)]
+
+
+def test_a_refusal_for_the_store_writes_one_line_the_alarm_can_count(
+    db: Recording, caplog: pytest.LogCaptureFixture
+) -> None:
+    limiter = _task(db, [T0])
+    db.fail = EndpointConnectionError(endpoint_url="https://dynamodb.example")
+    with caplog.at_level(logging.INFO):
+        assert not limiter.allow("user-1")
+    (record,) = _refusals(caplog)
+    assert record.levelno == logging.ERROR
+    assert record.name == "mango_api.rate_limits"
+    # The same text as before the alarm existed, and the limit is all it names.
+    assert record.getMessage() == "rate limit store unavailable; a call of test.limit is refused"
+    assert record.args == (STORE_UNAVAILABLE_LOG, "test.limit")
+    assert record.exc_info is None
+    # As mango-api writes it: the filter reads the level, the logger and the first words of
+    # the message by their place in the line (infra/lib/constructs/operational-alarms.ts).
+    line = logging.Formatter(LOG_FORMAT).format(record)
+    assert "\n" not in line
+    words = line.split()
+    assert words[2:4] == ["ERROR", "mango_api.rate_limits"]
+    assert words[4:8] == STORE_UNAVAILABLE_LOG.split() == ["rate", "limit", "store", "unavailable;"]
+    assert "user-1" not in line
+
+
+def test_every_way_the_store_cannot_say_writes_that_line(
+    db: Recording, caplog: pytest.LogCaptureFixture
+) -> None:
+    clock = [T0]
+    limiter = _task(db, clock)
+    with caplog.at_level(logging.INFO):
+        # A key that is not a verified identifier never reaches the table.
+        assert not limiter.allow("not a key")
+        assert len(_refusals(caplog)) == 1
+        # A state this code did not write.
+        assert limiter.allow("user-2")
+        db.put_item(
+            TableName=TABLE,
+            Item={"PK": {"S": "LIMIT#test.limit#user-2"}, "SK": {"S": "HITS"}, "hits": {"S": "x"}},
+        )
+        assert not limiter.allow("user-2")
+        assert len(_refusals(caplog)) == 2
+    for record in _refusals(caplog):
+        assert record.args == (STORE_UNAVAILABLE_LOG, "test.limit")
+    assert "not a key" not in caplog.text
+    assert "user-2" not in caplog.text
+
+
+def test_a_limit_reached_is_not_that_signal(
+    db: Recording, caplog: pytest.LogCaptureFixture
+) -> None:
+    limiter = _task(db, [T0], limit=1)
+    with caplog.at_level(logging.INFO):
+        assert limiter.allow("user-1")
+        assert not limiter.allow("user-1")
+        assert limiter.retry_after("user-1") > 0
+    assert _refusals(caplog) == []

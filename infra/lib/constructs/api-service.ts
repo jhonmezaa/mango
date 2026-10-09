@@ -45,6 +45,8 @@ export const API_DRAIN_SECONDS = 120;
  */
 export class ApiService extends Construct {
   readonly service: ecs.FargateService;
+  /** Where the container writes: one line per log record, in the format of `app.main`. */
+  readonly logGroup: logs.ILogGroup;
 
   constructor(scope: Construct, id: string, props: ApiServiceProps) {
     super(scope, id);
@@ -73,6 +75,7 @@ export class ApiService extends Construct {
       encryptionKey: logsKeyOf(this),
       removalPolicy: cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
+    this.logGroup = logGroup;
     taskDef.addContainer("api", {
       image: props.image
         ? // The execution role gets pull on that one repository; the repository policy of the

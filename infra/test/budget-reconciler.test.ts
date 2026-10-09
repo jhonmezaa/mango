@@ -267,8 +267,11 @@ describe("budget reconciler alarms", () => {
       TreatMissingData: "notBreaching",
       AlarmActions: [{ Ref: topicId }],
     });
-    // Embedded metric format: no metric filter and no PutMetricData.
-    expect(ofType("AWS::Logs::MetricFilter")).toEqual([]);
+    // Embedded metric format: no metric filter and no PutMetricData. The one filter of the
+    // stack reads the log of mango-api (D71 (18)).
+    expect(ofType("AWS::Logs::MetricFilter").map(([, r]) => r.Properties.MetricTransformations[0].MetricName)).toEqual([
+      "RateLimitStoreRefusals",
+    ]);
     const handler = python("functions/budget-reconciler/src/mango_budget_reconciler/handler.py");
     expect(handler).toContain(`METRIC_NAMESPACE = "${BUDGET_RECONCILER_METRICS.namespace}"`);
     expect(handler).toContain(`METRIC_DIMENSION = "${BUDGET_RECONCILER_METRICS.dimension}"`);

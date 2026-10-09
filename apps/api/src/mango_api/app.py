@@ -139,6 +139,9 @@ MAX_BODY_BYTES = 32 * 1024
 HEARTBEAT_SECONDS = 15
 MIN_TOKEN_LIFETIME_MARGIN = 60
 HEALTH_PATH = "/api/health"
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+"""Time (two words), level, logger and message: the metric filter of the alarm
+``Api-rate-limit-store-unavailable`` reads the third and fourth words (D71)."""
 
 
 # --- Models -----------------------------------------------------------------------------
@@ -1514,5 +1517,5 @@ def _wrap(app: FastAPI, settings: Settings) -> ASGIApp:
 
 
 def main() -> ASGIApp:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     return create_app()

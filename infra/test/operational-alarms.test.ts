@@ -5,7 +5,7 @@ import { App } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
-import { GLOBAL_METRICS_REGION, OPERATIONAL_THRESHOLDS } from "../lib/constructs/operational-alarms.js";
+import { GLOBAL_METRICS_REGION, OPERATIONAL_THRESHOLDS, RATE_LIMIT_STORE_SIGNAL } from "../lib/constructs/operational-alarms.js";
 import { PACK_DNS_BLOCKED_QUERIES } from "../lib/constructs/pack-network.js";
 import { UNINSTALL_GUARD_METRICS } from "../lib/constructs/uninstall-guard.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
@@ -87,6 +87,7 @@ describe("operational alarms of Core", () => {
       [
         "Api-errors",
         "Api-no-healthy-targets",
+        "Api-rate-limit-store-unavailable",
         "Api-slow",
         "Api-tasks-below-desired",
         "Api-unhealthy-targets",
@@ -338,8 +339,75 @@ describe("Bedrock", () => {
     expect(JSON.stringify(properties)).not.toMatch(/anthropic|claude|nova/i);
   });
 
-  it("uses no metric filter: nothing measures on its own (D71)", () => {
-    expect(ofType(resources, "AWS::Logs::MetricFilter")).toHaveLength(0);
+});
+
+// D71 (18): the shared rate limits fail closed (D70), and a 429 shows in no other alarm.
+describe("the shared rate limits of mango-api", () => {
+  const python = (path: string) => readFileSync(resolve(import.meta.dirname, "../..", path), "utf8");
+  const filters = ofType(resources, "AWS::Logs::MetricFilter");
+  const signal = RATE_LIMIT_STORE_SIGNAL;
+  const namespace = `${signal.namespacePrefix}/${ns}`;
+
+  it("counts the refusals with the only metric filter of the stack, on the log group of mango-api", () => {
+    expect(filters).toHaveLength(1);
+    const properties = filters[0]![1].Properties;
+    const [logGroupId] = ofType(resources, "AWS::Logs::LogGroup").find(
+      ([, r]) => r.Properties.LogGroupName === `/mango/${ns}/api`,
+    )!;
+    expect(properties.LogGroupName).toEqual({ Ref: logGroupId });
+    expect(properties.FilterName).toBe(`Mango-${ns}-Api-rate-limit-store-refusals`);
+    // One count per line, and zero when mango-api logs anything else: no dimension, so the
+    // namespace is the one of this installation.
+    expect(properties.MetricTransformations).toEqual([
+      { MetricNamespace: namespace, MetricName: signal.metric, MetricValue: "1", DefaultValue: 0, Unit: "Count" },
+    ]);
+  });
+
+  it("reads the level, the logger and the start of the message by their place in the line", () => {
+    // Time (two words), level, logger, then the message. A place is a field between spaces:
+    // what a caller sends ends up further on, never in the third or the fourth.
+    expect(filters[0]![1].Properties.FilterPattern).toBe(
+      '[date, time, level = "ERROR", logger = "mango_api.rate_limits", word1 = "rate", word2 = "limit", ' +
+        'word3 = "store", word4 = "unavailable;", ...]',
+    );
+    // The same words on both sides: mango-api writes them, the filter reads them.
+    expect(python("apps/api/src/mango_api/rate_limits.py")).toContain(`STORE_UNAVAILABLE_LOG = "${signal.message}"`);
+    expect(python("apps/api/src/mango_api/rate_limits.py")).toContain(
+      'logger.error("%s a call of %s is refused", STORE_UNAVAILABLE_LOG, self._name)',
+    );
+    expect(python("apps/api/src/mango_api/app.py")).toContain(
+      'LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"',
+    );
+    expect(python("apps/api/src/mango_api/app.py")).toContain("logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)");
+    expect(signal.logger).toBe("mango_api.rate_limits");
+  });
+
+  it("alarms from the second refusal in 5 minutes: one is a blip", () => {
+    const properties = alarm("Api-rate-limit-store-unavailable");
+    expect(properties).toMatchObject({
+      Namespace: namespace,
+      MetricName: signal.metric,
+      Statistic: "Sum",
+      Period: 300,
+      Threshold: OPERATIONAL_THRESHOLDS.rateLimitStoreRefusals,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      EvaluationPeriods: 1,
+      TreatMissingData: "notBreaching",
+    });
+    expect(properties.Dimensions).toBeUndefined();
+    expect(OPERATIONAL_THRESHOLDS.rateLimitStoreRefusals).toBe(2);
+    expect(properties.AlarmDescription).toContain(`Look first at the lines "rate limit store unavailable"`);
+    expect(properties.AlarmDescription).toContain("RateLimits table");
+  });
+
+  it("gains no permission: the filter is a resource of the stack, and nobody publishes the metric", () => {
+    const policies = JSON.stringify(
+      [...ofType(resources, "AWS::IAM::Policy"), ...ofType(resources, "AWS::IAM::ManagedPolicy"), ...ofType(resources, "AWS::IAM::Role")].map(
+        ([, r]) => r.Properties,
+      ),
+    );
+    expect(policies).not.toContain("logs:PutMetricFilter");
+    expect(policies).not.toContain(signal.namespacePrefix);
   });
 });
 
@@ -462,6 +530,17 @@ describe("a release (D58): names come from the Namespace parameter", () => {
     for (const name of names) expect(name).toMatch(/^Mango-acme-[A-Za-z0-9-]+$/);
     const [dashboard] = ofType(instantiate(core, values), "AWS::CloudWatch::Dashboard");
     expect(dashboard![1].Properties.DashboardName).toBe("Mango-acme-Operations");
+  });
+
+  it("keeps the refusals of the shared rate limits of two installations of one account apart", () => {
+    const installed = instantiate(core, values);
+    const [filter] = ofType(installed, "AWS::Logs::MetricFilter");
+    expect(filter![1].Properties.FilterName).toBe("Mango-acme-Api-rate-limit-store-refusals");
+    expect(filter![1].Properties.MetricTransformations[0].MetricNamespace).toBe("Mango/Api/acme");
+    expect(alarmsOf(installed)["Mango-acme-Api-rate-limit-store-unavailable"]).toMatchObject({
+      Namespace: "Mango/Api/acme",
+      MetricName: RATE_LIMIT_STORE_SIGNAL.metric,
+    });
   });
 
   it("alarms in the pack network on the queries its DNS Firewall refuses (TM-E2)", () => {
