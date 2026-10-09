@@ -67,7 +67,12 @@ class AgentCore:
             "Mango_acme_a_finops-DDDDDDDDDD": ["DEFAULT", "live"],
             "Mango_other_a_finops-EEEEEEEEEE": ["DEFAULT", "live"],
         }
+        # Ids of runtimes and harnesses AgentCore is already deleting.
+        self.deleting: set[str] = set()
         self.calls: list[str] = []
+
+    def _status(self, resource_id: str) -> str:
+        return "DELETING" if resource_id in self.deleting else "READY"
 
     def get_paginator(self, operation: str) -> Any:
         guard = self
@@ -82,12 +87,17 @@ class AgentCore:
                     return [
                         {
                             "agentRuntimes": [
-                                {"agentRuntimeName": i.rsplit("-", 1)[0], "agentRuntimeId": i}
+                                {
+                                    "agentRuntimeName": i.rsplit("-", 1)[0],
+                                    "agentRuntimeId": i,
+                                    "status": guard._status(i),
+                                }
                                 for i in guard.runtimes
                             ]
                         }
                     ]
                 if operation == "list_agent_runtime_endpoints":
+                    guard.calls.append(f"list-runtime-endpoints:{arguments['agentRuntimeId']}")
                     return [
                         {
                             "runtimeEndpoints": [
@@ -99,12 +109,17 @@ class AgentCore:
                     return [
                         {
                             "harnesses": [
-                                {"harnessName": i.rsplit("-", 1)[0], "harnessId": i}
+                                {
+                                    "harnessName": i.rsplit("-", 1)[0],
+                                    "harnessId": i,
+                                    "status": guard._status(i),
+                                }
                                 for i in guard.harness_endpoints
                             ]
                         }
                     ]
                 if operation == "list_harness_endpoints":
+                    guard.calls.append(f"list-harness-endpoints:{arguments['harnessId']}")
                     return [
                         {
                             "endpoints": [
@@ -154,12 +169,37 @@ class Iam:
             "Mango-acme-ApiTask": None,
             "Mango-other-agent-finops": agent,
         }
+        self.inline: dict[str, list[str]] = {name: ["agent"] for name in self.roles}
+        # Managed policies attached after the provisioner made the role, in pages.
+        self.attached: dict[str, list[list[str]]] = {}
+        # Roles something else holds (an instance profile): never deletable.
+        self.in_instance_profile: set[str] = set()
         self.deleted: list[str] = []
+        self.calls: list[str] = []
 
-    def get_paginator(self, operation: str) -> Paginator:
-        if operation == "list_roles":
-            return Paginator([{"Roles": [{"RoleName": name} for name in self.roles]}])
-        return Paginator([{"PolicyNames": ["agent"]}])
+    def get_paginator(self, operation: str) -> Any:
+        iam = self
+
+        class Pages:
+            def paginate(self, **arguments: str) -> list[dict[str, Any]]:
+                if operation == "list_roles":
+                    return [{"Roles": [{"RoleName": name} for name in iam.roles]}]
+                name = arguments["RoleName"]
+                iam.calls.append(f"{operation}:{name}")
+                if operation == "list_role_policies":
+                    return [{"PolicyNames": list(iam.inline[name])}]
+                if operation == "list_attached_role_policies":
+                    return [
+                        {
+                            "AttachedPolicies": [
+                                {"PolicyName": "x", "PolicyArn": arn} for arn in page
+                            ]
+                        }
+                        for page in iam.attached.get(name, [[]])
+                    ]
+                raise AssertionError(operation)
+
+        return Pages()
 
     def get_role(self, RoleName: str) -> dict[str, Any]:  # noqa: N803
         boundary = self.roles[RoleName]
@@ -169,9 +209,25 @@ class Iam:
         return {"Role": role}
 
     def delete_role_policy(self, RoleName: str, PolicyName: str) -> None:  # noqa: N803
-        pass
+        self.calls.append(f"delete_role_policy:{RoleName}:{PolicyName}")
+        self.inline[RoleName].remove(PolicyName)
+
+    def detach_role_policy(self, RoleName: str, PolicyArn: str) -> None:  # noqa: N803
+        self.calls.append(f"detach_role_policy:{RoleName}:{PolicyArn}")
+        for page in self.attached[RoleName]:
+            if PolicyArn in page:
+                page.remove(PolicyArn)
 
     def delete_role(self, RoleName: str) -> None:  # noqa: N803
+        self.calls.append(f"delete_role:{RoleName}")
+        held = self.inline[RoleName] or any(self.attached.get(RoleName, []))
+        if held or RoleName in self.in_instance_profile:
+            # As IAM answers it, with the role in its message.
+            raise error(
+                "DeleteConflict",
+                "DeleteRole",
+                f"Cannot delete entity, must detach all policies first: {RoleName}",
+            )
         self.deleted.append(RoleName)
         del self.roles[RoleName]
 
@@ -201,8 +257,14 @@ class CloudFormation:
 
 
 class Run:
-    def __init__(self, status: str = "DELETE_IN_PROGRESS", **event: Any) -> None:
-        self.agentcore, self.iam, self.logs = AgentCore(), Iam(), Logs()
+    def __init__(
+        self,
+        status: str = "DELETE_IN_PROGRESS",
+        iam: Iam | None = None,
+        agentcore: AgentCore | None = None,
+        **event: Any,
+    ) -> None:
+        self.agentcore, self.iam, self.logs = agentcore or AgentCore(), iam or Iam(), Logs()
         self.answers: list[tuple[str, str]] = []
         self.reinvoked: list[dict[str, Any]] = []
         self.emitted: list[str] = []
@@ -257,6 +319,180 @@ def test_deletes_endpoints_before_what_holds_them_and_roles_last() -> None:
     assert not any("DEFAULT" in call for call in calls)
 
 
+AWS_MANAGED = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+OF_THE_ORGANIZATION = "arn:aws:iam::111111111111:policy/org-guardrail"
+FINOPS = "Mango-acme-agent-finops"
+
+
+def test_detaches_the_managed_policies_of_a_role_and_then_deletes_it() -> None:
+    # D58 (22): attached by hand or by the organization, after the provisioner made the role.
+    iam = Iam()
+    iam.attached[FINOPS] = [[AWS_MANAGED, OF_THE_ORGANIZATION]]
+    run = Run(iam=iam)
+    assert run.answers == [("SUCCESS", "")]
+    assert sorted(iam.deleted) == [FINOPS, "Mango-acme-mcp-aws-pricing"]
+    # In the order IAM asks for: inline policies, attached ones, the role. Once each.
+    assert [call for call in iam.calls if call.endswith(FINOPS) or f":{FINOPS}:" in call] == [
+        f"list_role_policies:{FINOPS}",
+        f"delete_role_policy:{FINOPS}:agent",
+        f"list_attached_role_policies:{FINOPS}",
+        f"detach_role_policy:{FINOPS}:{AWS_MANAGED}",
+        f"detach_role_policy:{FINOPS}:{OF_THE_ORGANIZATION}",
+        f"delete_role:{FINOPS}",
+    ]
+
+
+def test_detaches_every_page_of_attached_policies() -> None:
+    iam = Iam()
+    pages = [
+        [f"arn:aws:iam::111111111111:policy/p{page}{i}" for i in range(3)] for page in range(4)
+    ]
+    iam.attached[FINOPS] = [list(page) for page in pages]
+    run = Run(iam=iam)
+    assert run.answers == [("SUCCESS", "")]
+    detached = [call.rsplit(":policy/", 1)[1] for call in iam.calls if "detach_role_policy" in call]
+    assert detached == [arn.rsplit("/", 1)[1] for page in pages for arn in page]
+    assert FINOPS in iam.deleted
+
+
+def test_a_policy_someone_else_detached_first_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def gone(self: Iam, RoleName: str, PolicyArn: str) -> None:  # noqa: N803
+        self.attached[RoleName] = [[]]
+        raise error("NoSuchEntity", "DetachRolePolicy")
+
+    monkeypatch.setattr(Iam, "detach_role_policy", gone)
+    iam = Iam()
+    iam.attached[FINOPS] = [[AWS_MANAGED]]
+    run = Run(iam=iam)
+    assert run.answers == [("SUCCESS", "")]
+    assert FINOPS in iam.deleted
+
+
+def test_a_denied_detach_fails_like_any_other_call_and_names_no_role_or_policy(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def denied(self: Iam, RoleName: str, PolicyArn: str) -> None:  # noqa: N803
+        raise error(
+            "AccessDenied",
+            "DetachRolePolicy",
+            f"User is not authorized to perform iam:DetachRolePolicy on role {RoleName} "
+            f"with policy {PolicyArn}",
+        )
+
+    monkeypatch.setattr(Iam, "detach_role_policy", denied)
+    iam = Iam()
+    iam.attached[FINOPS] = [[OF_THE_ORGANIZATION]]
+    with caplog.at_level("INFO", logger=uninstall.logger.name):
+        run = Run(iam=iam)
+    assert run.answers == [
+        (
+            "FAILED",
+            "Uninstall guard failed (DetachRolePolicy: AccessDenied). The rest of the stack "
+            "was not deleted and the application still works. Deleting the stack again fails "
+            "the same way until the role Mango-acme-UninstallGuard is allowed that operation. "
+            "Some agents or packs may already be gone. See step 5 (uninstall) of the "
+            "installation runbook.",
+        )
+    ]
+    assert caplog.records[-1].getMessage() == (
+        "uninstall_guard failed: operation=DetachRolePolicy code=AccessDenied"
+    )
+    said = caplog.text + run.answers[0][1]
+    for leaked in (OF_THE_ORGANIZATION, "org-guardrail", FINOPS, "111111111111", "not authorized"):
+        assert leaked not in said
+    # It stopped there: the role is still there, and so is its policy.
+    assert iam.deleted == []
+    assert iam.attached[FINOPS] == [[OF_THE_ORGANIZATION]]
+    assert [json.loads(line)["DeletionFailed"] for line in run.emitted] == [1]
+
+
+def test_a_role_without_a_boundary_of_the_installation_keeps_its_attached_policies() -> None:
+    iam = Iam()
+    for name in ("Mango-acme-agent-handmade", "Mango-acme-ApiTask", "Mango-other-agent-finops"):
+        iam.attached[name] = [[AWS_MANAGED]]
+    run = Run(iam=iam)
+    assert run.answers == [("SUCCESS", "")]
+    # Not even listed: neither its inline policies nor its attached ones.
+    touched = {call.split(":")[1] for call in iam.calls}
+    assert touched == {FINOPS, "Mango-acme-mcp-aws-pricing"}
+    assert sorted(iam.roles) == [
+        "Mango-acme-ApiTask",
+        "Mango-acme-agent-handmade",
+        "Mango-other-agent-finops",
+    ]
+    assert all(pages == [[AWS_MANAGED]] for pages in iam.attached.values())
+
+
+def test_a_role_still_held_with_its_policies_removed_fails_in_a_few_passes_and_says_so(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # D58 (22): an instance profile holds the role and the guard may not look at it.
+    iam = Iam()
+    iam.attached[FINOPS] = [[AWS_MANAGED]]
+    iam.in_instance_profile.add(FINOPS)
+    with caplog.at_level("INFO", logger=uninstall.logger.name):
+        run = Run(iam=iam)
+    assert run.reinvoked == []
+    assert run.answers == [
+        (
+            "FAILED",
+            "Uninstall guard failed (DeleteRole: DeleteConflict). The rest of the stack was not "
+            "deleted and the application still works. 1 role(s) of agents or packs cannot be "
+            "deleted with their policies removed: something else holds them, such as an "
+            "instance profile. Deleting the stack again fails the same way until it is "
+            "removed. See step 5 (uninstall) of the installation runbook.",
+        )
+    ]
+    assert len(run.answers[0][1]) <= 400
+    # Three passes over the roles, 20 seconds apart, after the two AgentCore took: not the hour.
+    assert iam.calls.count(f"delete_role:{FINOPS}") == uninstall.HELD_ROLE_PASSES == 3
+    assert run.now == 4 * uninstall.POLL_SECONDS
+    # The policy was detached once; the other role went on the first pass.
+    assert [call for call in iam.calls if "detach_role_policy" in call] == [
+        f"detach_role_policy:{FINOPS}:{AWS_MANAGED}"
+    ]
+    assert iam.deleted == ["Mango-acme-mcp-aws-pricing"]
+    messages = [record.getMessage() for record in caplog.records]
+    assert "uninstall_guard roles: detached_policies=1 held=1" in messages
+    assert messages[-1] == "uninstall_guard failed: operation=DeleteRole code=DeleteConflict held=1"
+    said = caplog.text + run.answers[0][1]
+    for leaked in (FINOPS, AWS_MANAGED, "ReadOnlyAccess", "must detach"):
+        assert leaked not in said
+    assert [json.loads(line)["DeletionFailed"] for line in run.emitted] == [1]
+
+
+def test_a_role_that_goes_on_a_later_pass_is_not_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # IAM may take a moment to see a policy as detached: one conflict, then the role goes.
+    iam = Iam()
+    iam.in_instance_profile.add(FINOPS)
+    sleep = Run._sleep
+
+    def released(self: Run, seconds: float) -> None:
+        if f"delete_role:{FINOPS}" in iam.calls:
+            iam.in_instance_profile.clear()
+        sleep(self, seconds)
+
+    monkeypatch.setattr(Run, "_sleep", released)
+    run = Run(iam=iam)
+    assert run.answers == [("SUCCESS", "")]
+    assert iam.calls.count(f"delete_role:{FINOPS}") == 2
+    assert run.emitted == []
+
+
+def test_a_failure_of_delete_role_that_is_not_a_conflict_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def denied(self: Iam, RoleName: str) -> None:  # noqa: N803
+        raise error("AccessDenied", "DeleteRole")
+
+    monkeypatch.setattr(Iam, "delete_role", denied)
+    [(status, reason)] = Run().answers
+    assert status == "FAILED"
+    assert reason.startswith("Uninstall guard failed (DeleteRole: AccessDenied).")
+
+
 @pytest.mark.parametrize(
     "status",
     [
@@ -271,6 +507,8 @@ def test_changes_nothing_unless_the_stack_itself_is_being_deleted(status: str) -
     assert run.answers == [("SUCCESS", "")]
     assert run.agentcore.calls == []
     assert run.iam.deleted == []
+    # Nothing of IAM at all: no policy is listed or detached outside a stack deletion.
+    assert run.iam.calls == []
     assert len(run.logs.groups) == 3
 
 
@@ -417,6 +655,9 @@ def test_every_failure_fits_in_what_cloudformation_shows() -> None:
         )
         assert len(reason) <= 400
         assert reason.endswith("runbook.")
+    held = uninstall.held_reason(9999)
+    assert len(held) <= 400
+    assert held.endswith("runbook.")
 
 
 def test_a_failure_that_is_not_an_aws_call_names_only_its_kind() -> None:

@@ -19,6 +19,11 @@ AgentCore deletions are asynchronous and one invocation may not be enough: the f
 invokes itself again with the same event, a bounded number of times, and answers
 CloudFormation at the end. Nothing of an agent or a pack is logged: only names and counts.
 
+A role is deleted with what IAM asks to be removed first: its inline policies and the managed
+policies someone attached to it after the provisioner made it (D58 (22)). A role that still
+answers ``DeleteConflict`` after that is held by something this function may not remove (an
+instance profile): it fails within a few passes and says so, instead of waiting its hour.
+
 Whoever deletes the stack reads a failure in its events. Since the alarms are still there after
 one (D58 (16)), a ``FAILED`` answer also counts in a metric that an alarm takes to the alerts
 topic (D58 (19)): a line in the function's own log, with no call and no permission.
@@ -50,6 +55,9 @@ _ARN_RE = re.compile(r"^arn:aws:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_-]{1,128}$
 _OPERATION_RE = re.compile(r"^[A-Za-z0-9]{1,64}$")
 _GONE = frozenset({"ResourceNotFoundException", "NoSuchEntity", "NoSuchEntityException"})
 _BUSY = frozenset({"ConflictException", "DeleteConflict", "DeleteConflictException"})
+# What IAM answers to DeleteRole while something is still on the role. It is not "busy": IAM
+# deletes at once, so waiting does not help unless whatever holds the role goes away.
+_HELD = frozenset({"DeleteConflict", "DeleteConflictException"})
 # A failure that deleting the stack again does not fix: the same call is denied again.
 _DENIED = frozenset({"AccessDenied", "AccessDeniedException", "UnauthorizedOperation"})
 # A failure of the service or of the way to it: the next attempt may go through.
@@ -78,6 +86,9 @@ DELETING_STACK = "DELETE_IN_PROGRESS"
 POLL_SECONDS = 20
 INVOCATION_BUDGET_SECONDS = 780
 MAX_INVOCATIONS = 4
+# Passes in a row a role may answer DeleteConflict with its policies removed before the guard
+# gives up on it. More than one: IAM may take a moment to see a policy as detached.
+HELD_ROLE_PASSES = 3
 # The metric of a `FAILED` answer (embedded metric format). The alarm reads these names.
 METRIC_NAMESPACE = "Mango/UninstallGuard"
 METRIC_DIMENSION = "Installation"
@@ -124,6 +135,14 @@ class GuardSettings:
         return (f"Mango-{self.namespace}-agent-", f"Mango-{self.namespace}-mcp-")
 
 
+class RolesHeldError(Exception):
+    """Roles that cannot be deleted though nothing this function may remove is left on them."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(count)
+        self.count = count
+
+
 def _attempt(call: Callable[..., Any], **arguments: str) -> None:
     """A deletion request: already gone or still busy is not an error, the next poll decides."""
     try:
@@ -141,6 +160,8 @@ class Sweep:
         self._ac = agentcore
         self._iam = iam
         self._logs = logs
+        # Role name -> passes in a row its deletion answered DeleteConflict.
+        self._held: dict[str, int] = {}
 
     @property
     def namespace(self) -> str:
@@ -247,8 +268,14 @@ class Sweep:
         return len(harnesses)
 
     def roles(self) -> int:
-        """Execution roles of agents and packs: by name prefix **and** permissions boundary."""
+        """Execution roles of agents and packs: by name prefix **and** permissions boundary.
+
+        Raises `RolesHeldError` when a role keeps answering DeleteConflict with its policies
+        removed.
+        """
         remaining = 0
+        detached = 0
+        held: dict[str, int] = {}
         for page in self._iam.get_paginator("list_roles").paginate():
             for role in page["Roles"]:
                 name = str(role["RoleName"])
@@ -263,7 +290,31 @@ class Sweep:
                 policies = self._iam.get_paginator("list_role_policies").paginate(RoleName=name)
                 for policy in [p for policy_page in policies for p in policy_page["PolicyNames"]]:
                     _attempt(self._iam.delete_role_policy, RoleName=name, PolicyName=policy)
-                _attempt(self._iam.delete_role, RoleName=name)
+                # Managed policies attached after the provisioner made the role: by hand, or
+                # by an organization that attaches one to every role. Inline ones go first.
+                attached = self._iam.get_paginator("list_attached_role_policies").paginate(
+                    RoleName=name
+                )
+                for arn in [
+                    a["PolicyArn"] for found in attached for a in found["AttachedPolicies"]
+                ]:
+                    _attempt(self._iam.detach_role_policy, RoleName=name, PolicyArn=arn)
+                    detached += 1
+                try:
+                    self._iam.delete_role(RoleName=name)
+                except ClientError as exc:
+                    code = error_code(exc)
+                    if code in _HELD:
+                        held[name] = self._held.get(name, 0) + 1
+                    elif code not in _GONE:
+                        raise
+        self._held = held
+        if detached or held:
+            # Counts only: neither the roles nor the policies are named.
+            logger.info("uninstall_guard roles: detached_policies=%d held=%d", detached, len(held))
+        stuck = sum(1 for passes in held.values() if passes >= HELD_ROLE_PASSES)
+        if stuck:
+            raise RolesHeldError(stuck)
         return remaining
 
     def log_groups(self) -> None:
@@ -324,6 +375,16 @@ def failure_reason(exc: Exception, role_name: str) -> str:
     return (
         f"{head} Deleting the stack again may fail the same way: look at the function's log "
         f"group first. Some agents or packs may already be gone. {_RUNBOOK}"
+    )
+
+
+def held_reason(count: int) -> str:
+    """What CloudFormation shows when roles cannot be deleted with their policies removed."""
+    return (
+        f"Uninstall guard failed (DeleteRole: DeleteConflict). {_STANDING} {count} role(s) of "
+        "agents or packs cannot be deleted with their policies removed: something else holds "
+        "them, such as an instance profile. Deleting the stack again fails the same way until "
+        f"it is removed. {_RUNBOOK}"
     )
 
 
@@ -426,6 +487,11 @@ def handle(
             f"Agents or packs are still being deleted ({left}). {_STANDING} "
             "Delete the stack again: it goes on from where it stopped."
         )
+    except RolesHeldError as exc:
+        logger.error(  # noqa: TRY400
+            "uninstall_guard failed: operation=DeleteRole code=DeleteConflict held=%d", exc.count
+        )
+        fail(held_reason(exc.count))
     except (ClientError, BotoCoreError, KeyError, ValueError) as exc:
         operation, code = failed_call(exc)
         # The operation and the code only: AWS messages may quote ARNs or content.

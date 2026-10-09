@@ -55,7 +55,8 @@ export interface UninstallGuardProps {
  * (D58 (19)): the alarms and the topic are among what stays. The role gains nothing for it.
  *
  * Its role only deletes, only by the name prefixes of the installation, and roles only with
- * one of the two boundaries. It reads no data of the installation. Only CloudFormation (and
+ * one of the two boundaries: their inline policies, the managed policies attached to them
+ * (detached, D58 (22)) and the roles. It reads no data of the installation. Only CloudFormation (and
  * the function itself, to keep waiting) invokes it; any `Delete` outside a stack deletion is
  * a no-op (TM-D13, TM-D14). Code: `functions/provisioner/src/mango_provisioner/uninstall.py`.
  */
@@ -141,9 +142,14 @@ export class UninstallGuard extends Construct {
     );
     const roles = [platform.agentRoleArns, packs.roleArns];
     allow("FindRoles", ["iam:ListRoles"], ["*"]);
-    allow("ReadProvisionedRoles", ["iam:GetRole", "iam:ListRolePolicies"], roles);
+    // ListAttachedRolePolicies returns names and ARNs of policies, never a policy document.
+    allow("ReadProvisionedRoles", ["iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"], roles);
     // Only roles made by a provisioner: they carry one of the two boundaries (TM-M1).
-    allow("DeleteProvisionedRoles", ["iam:DeleteRolePolicy", "iam:DeleteRole"], roles, {
+    // DetachRolePolicy (D58 (22)): IAM refuses to delete a role with a managed policy attached,
+    // and one may be attached after the provisioner made it, by hand or by the organization
+    // (seen on 2026-10-08). It only takes policies off these roles: there is no AttachRolePolicy
+    // or PutRolePolicy here, and the three actions admit this condition key.
+    allow("DeleteProvisionedRoles", ["iam:DeleteRolePolicy", "iam:DetachRolePolicy", "iam:DeleteRole"], roles, {
       StringEquals: { "iam:PermissionsBoundary": boundaries },
     });
     allow("FindRuntimeLogGroups", ["logs:DescribeLogGroups"], ["*"]);

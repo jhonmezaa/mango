@@ -405,10 +405,10 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     expect(JSON.stringify((source as unknown as { Outputs: unknown }).Outputs)).not.toContain(guardId);
   });
 
-  it("only deletes, lists names and checks its own stack: it reads no data of the installation", () => {
+  it("only deletes, detaches, lists names and checks its own stack: it reads no data of the installation", () => {
     for (const action of actions) {
       expect(action).toMatch(
-        /^(bedrock-agentcore:(Delete|List|GetAgentRuntime|ManageResourceScopedPolicy$)|iam:(Delete|GetRole|ListRole)|logs:(Delete|Describe|CreateLogStream|PutLogEvents)|cloudformation:DescribeStacks|lambda:InvokeFunction|kms:(Decrypt|GenerateDataKey)|xray:|sqs:SendMessage)/,
+        /^(bedrock-agentcore:(Delete|List|GetAgentRuntime|ManageResourceScopedPolicy$)|iam:(Delete|GetRole$|ListRoles$|ListRolePolicies$|ListAttachedRolePolicies$|DetachRolePolicy$)|logs:(Delete|Describe|CreateLogStream|PutLogEvents)|cloudformation:DescribeStacks|lambda:InvokeFunction|kms:(Decrypt|GenerateDataKey)|xray:|sqs:SendMessage)/,
       );
     }
     for (const forbidden of ["dynamodb", "s3:", "secretsmanager", "bedrock-agentcore:GetHarness", "bedrock-agentcore:Invoke", "iam:Create", "iam:Put", "iam:Attach", "iam:PassRole"]) {
@@ -454,6 +454,49 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     expect(JSON.stringify(deletes[0]!.Condition)).toContain("iam:PermissionsBoundary");
     expect(JSON.stringify(deletes[0]!.Resource)).toMatch(/-agent-\*/);
     expect(JSON.stringify(deletes[0]!.Resource)).toMatch(/-mcp-\*/);
+  });
+
+  // D58 (22): IAM refuses to delete a role with a managed policy attached, so the guard takes
+  // them off first. Two actions, on the roles it already deleted, and nothing else.
+  it("detaches managed policies only from the roles it deletes, under the same boundary condition", () => {
+    const boundaryIds = Object.entries(source.Resources)
+      .filter(([, r]) => r.Type === "AWS::IAM::ManagedPolicy" && /-(agent|mcp)-boundary/.test(JSON.stringify(r.Properties.ManagedPolicyName)))
+      .map(([id]) => id);
+    expect(boundaryIds).toHaveLength(2);
+    const roleArns = (prefix: string) => ({
+      "Fn::Join": ["", ["arn:aws:iam::", { Ref: "AWS::AccountId" }, ":role/Mango-", { Ref: "Namespace" }, `-${prefix}-*`]],
+    });
+    const provisioned = [roleArns("agent"), roleArns("mcp")];
+    expect(statements.find((s) => s.Sid === "DeleteProvisionedRoles")).toEqual({
+      Sid: "DeleteProvisionedRoles",
+      Effect: "Allow",
+      Action: ["iam:DeleteRolePolicy", "iam:DetachRolePolicy", "iam:DeleteRole"],
+      Resource: provisioned,
+      Condition: { StringEquals: { "iam:PermissionsBoundary": expect.arrayContaining(boundaryIds.map((id) => ({ Ref: id }))) } },
+    });
+    expect(statements.find((s) => s.Sid === "ReadProvisionedRoles")).toEqual({
+      Sid: "ReadProvisionedRoles",
+      Effect: "Allow",
+      Action: ["iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"],
+      Resource: provisioned,
+    });
+    // Each of the two appears once in the whole role.
+    expect(actions.filter((a) => a === "iam:DetachRolePolicy" || a === "iam:ListAttachedRolePolicies")).toHaveLength(2);
+    // Everything of IAM the role may do. It takes policies off and never puts one on.
+    expect(actions.filter((a) => a.startsWith("iam:")).sort()).toEqual([
+      "iam:DeleteRole",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:GetRole",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListRolePolicies",
+      "iam:ListRoles",
+    ]);
+    // The whole role, by statement: a new one, or an action in another one, fails here.
+    // The role gained no statement and exactly those two actions: 18 statements, 32 actions before.
+    expect(statements).toHaveLength(18);
+    expect(actions).toHaveLength(34);
+    expect(new Set(actions).size).toBe(34);
   });
 
   // D58 (19): the failure reaches the alerts topic through an alarm on a metric written in the
