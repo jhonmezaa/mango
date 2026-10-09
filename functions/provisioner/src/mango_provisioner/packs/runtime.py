@@ -62,6 +62,9 @@ There AgentCore answers 200 and puts the error in the body, so the SDK raises no
 the condition ``PackRuntimes.tools`` already retries when it arrives as an exception (the
 server of the pack answered 4xx or 5xx, or was not up yet).
 """
+_MAX_LOGGED_CODE = 99_999
+"""Largest JSON-RPC error code, in absolute value, that is logged: five digits cover the
+codes of JSON-RPC and of AgentCore. A longer integer would be content of the answer."""
 _RUNTIME_STATUS_RE = re.compile(r"Received error \(([1-5][0-9]{2})\) from runtime\b")
 _NOT_FOUND = "ResourceNotFoundException"
 _IN_PROGRESS = frozenset({"CREATING", "UPDATING"})
@@ -198,7 +201,9 @@ def _invalid_tools(
     Once its retries are used up the failure is this same code, and the execution compensates.
     """
     code = error.get("code") if error is not None else None
+    # Decided on the exact value; what is logged below is bounded apart from it.
     not_ready = error is not None and type(code) is int and code == RUNTIME_CLIENT_ERROR
+    logged_code = code if type(code) is int and abs(code) <= _MAX_LOGGED_CODE else None
     status = _runtime_status(error.get("message")) if error is not None and not_ready else None
     logger.warning(
         json.dumps(
@@ -207,7 +212,7 @@ def _invalid_tools(
                 "reason": reason,
                 "bytes": len(raw),
                 "content_type": content_type[:64],
-                "jsonrpc_error_code": code if type(code) is int else None,
+                "jsonrpc_error_code": logged_code,
                 "runtime_http_status": status,
                 "retryable": not_ready,
             }

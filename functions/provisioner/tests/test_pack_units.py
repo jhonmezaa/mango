@@ -311,6 +311,44 @@ def test_a_refused_tools_answer_logs_its_shape_and_never_its_content(
 
 
 @pytest.mark.parametrize(
+    ("code", "logged"),
+    [
+        (-32603, -32603),
+        (0, 0),
+        (99_999, 99_999),
+        (-99_999, -99_999),
+        (100_000, None),
+        (-100_000, None),
+        (10**40, None),
+        (-(10**4000), None),  # as long as Python's JSON parser reads an integer
+        (True, None),
+        (-32603.0, None),
+        ("-32603", None),
+        (None, None),
+    ],
+)
+def test_only_a_short_error_code_reaches_the_logs(
+    caplog: pytest.LogCaptureFixture, code: object, logged: int | None
+) -> None:
+    """An integer of thousands of digits would carry content of the answer into the logs."""
+    raw = _error(code, "x")
+    with caplog.at_level("WARNING"), pytest.raises(StepError) as refused:
+        decode_tools(raw, "application/json")
+    assert type(refused.value) is StepError  # what is logged does not change what is retried
+    assert json.loads(caplog.records[-1].getMessage()) == {
+        "event": "pack_provisioner.tools_response_invalid",
+        "reason": "jsonrpc_error",
+        "bytes": len(raw),
+        "content_type": "application/json",
+        "jsonrpc_error_code": logged,
+        "runtime_http_status": None,
+        "retryable": False,
+    }
+    if isinstance(code, int) and logged is None:
+        assert str(abs(code)) not in caplog.text
+
+
+@pytest.mark.parametrize(
     ("message", "status"),
     [
         ("Received error (502) from runtime. Please check your CloudWatch logs", 502),
