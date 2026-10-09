@@ -95,6 +95,8 @@ uv run --no-project --with boto3 python tests/e2e/pack_egress.py \
   --profile mango-sandbox --state <otro-archivo-local>.json --network stack --pack aws-pricing
 ```
 
+«Los permisos que tiene el provisioner» son una copia que vive en el guion (`caller_policy`). Un test de `infra/` la compara con el rol del provisioner y falla si se separan (`docs/security/threat-models/pack-egress-threat-model.md`, «Comprobado en el laboratorio»).
+
 Con `--network stack --pack aws-pricing` debe pasar: el Runtime arranca sin ruta a internet, un nombre fuera de la allowlist no resuelve, una IP pública y una privada no conectan, Price List responde por su endpoint, **STS no es alcanzable** (ese pack no lo declara), los logs llegan y el DNS Firewall falla cerrado. `cleanup` borra todo salvo, con la red temporal, la VPC y sus subnets mientras AgentCore conserve las interfaces (hasta 8 horas): repetir `--steps cleanup` con el mismo archivo de estado.
 
 Después, las pruebas de punta a punta de los packs reales (más abajo: fase B, fase C y cuentas miembro) deben pasar igual que antes.

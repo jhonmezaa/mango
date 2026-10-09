@@ -62,6 +62,11 @@ NETWORK_SLR = (
     "arn:aws:iam::{account}:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/"
     "AWSServiceRoleForBedrockAgentCoreNetwork"
 )
+RUNTIME_IDENTITY_SLR = (
+    "arn:aws:iam::{account}:role/aws-service-role/"
+    "runtime-identity.bedrock-agentcore.amazonaws.com/"
+    "AWSServiceRoleForBedrockAgentCoreRuntimeIdentity"
+)
 # Availability Zone ids AgentCore supports for VPC mode (us-east-1). Other regions: --az-ids.
 DEFAULT_AZ_IDS = ("use1-az1", "use1-az2")
 TEMP_CIDR = "10.250.0.0/24"
@@ -344,8 +349,15 @@ def caller_policy(
     security_group: str,
 ) -> dict[str, Any]:
     """What the pack provisioner may do to create a Runtime (pack-provisioner.ts): only on the
-    pack network. A request without subnets (network mode PUBLIC) or with others is denied."""
+    pack network. A request without subnets (network mode PUBLIC) or with others is denied.
+
+    A copy, one statement per statement of the provisioner's role and under the same ``Sid``.
+    ``infra/test/packs.test.ts`` compares both and says what the copy leaves out on purpose:
+    the pack tags a request must carry (the probe carries this test's own tag), the endpoint
+    actions the probe never calls and the pack names, which here are the names of this run.
+    """
     agentcore = f"arn:aws:bedrock-agentcore:{region}:{account}"
+    runtime = f"{agentcore}:runtime/{runtime_name}-*"
     identities = f"{agentcore}:workload-identity-directory/default"
     on_pack_network = {
         "ForAllValues:StringEquals": {
@@ -358,18 +370,21 @@ def caller_policy(
         "Version": "2012-10-17",
         "Statement": [
             {
+                "Sid": "CreatePackRuntime",
                 "Effect": "Allow",
                 "Action": "bedrock-agentcore:CreateAgentRuntime",
                 "Resource": f"{agentcore}:runtime/*",
                 "Condition": on_pack_network,
             },
             {
+                "Sid": "UpdatePackRuntime",
                 "Effect": "Allow",
                 "Action": "bedrock-agentcore:UpdateAgentRuntime",
-                "Resource": f"{agentcore}:runtime/{runtime_name}-*",
+                "Resource": runtime,
                 "Condition": on_pack_network,
             },
             {
+                "Sid": "TagNewPackRuntime",
                 "Effect": "Allow",
                 "Action": [
                     "bedrock-agentcore:CreateAgentRuntimeEndpoint",
@@ -378,45 +393,68 @@ def caller_policy(
                 "Resource": f"{agentcore}:runtime/*",
             },
             {
+                "Sid": "ManagePackRuntime",
                 "Effect": "Allow",
                 "Action": [
                     "bedrock-agentcore:GetAgentRuntime",
                     "bedrock-agentcore:DeleteAgentRuntime",
                     "bedrock-agentcore:GetAgentRuntimeEndpoint",
-                    "bedrock-agentcore:InvokeAgentRuntime",
                 ],
-                "Resource": [
-                    f"{agentcore}:runtime/{runtime_name}-*",
-                    f"{agentcore}:runtime/{runtime_name}-*/runtime-endpoint/*",
-                ],
+                "Resource": [runtime, f"{runtime}/runtime-endpoint/*"],
             },
             {
+                "Sid": "ListPackTools",
+                "Effect": "Allow",
+                "Action": "bedrock-agentcore:InvokeAgentRuntime",
+                "Resource": [runtime, f"{runtime}/runtime-endpoint/*"],
+            },
+            {
+                "Sid": "CreatePackWorkloadIdentity",
                 "Effect": "Allow",
                 "Action": [
                     "bedrock-agentcore:CreateWorkloadIdentity",
-                    "bedrock-agentcore:DeleteWorkloadIdentity",
                     "bedrock-agentcore:TagResource",
                 ],
                 "Resource": [identities, f"{identities}/workload-identity/*"],
             },
             {
+                "Sid": "DeletePackWorkloadIdentity",
+                "Effect": "Allow",
+                "Action": "bedrock-agentcore:DeleteWorkloadIdentity",
+                "Resource": [identities, f"{identities}/workload-identity/*"],
+            },
+            {
+                "Sid": "PassPackRoleToAgentCore",
                 "Effect": "Allow",
                 "Action": "iam:PassRole",
                 "Resource": role_arn,
                 "Condition": {"StringEquals": {"iam:PassedToService": AGENTCORE_SERVICE}},
             },
             {
+                "Sid": "ReadSignedPacks",
                 "Effect": "Allow",
                 "Action": ["s3:GetObject", "s3:GetObjectVersion"],
                 "Resource": f"arn:aws:s3:::{bucket}/*",
             },
             {
+                "Sid": "AgentCoreNetworkServiceRole",
                 "Effect": "Allow",
                 "Action": "iam:CreateServiceLinkedRole",
                 "Resource": NETWORK_SLR.format(account=account),
                 "Condition": {
                     "StringEquals": {
                         "iam:AWSServiceName": "network.bedrock-agentcore.amazonaws.com"
+                    }
+                },
+            },
+            {
+                "Sid": "AgentCoreRuntimeIdentityServiceRole",
+                "Effect": "Allow",
+                "Action": "iam:CreateServiceLinkedRole",
+                "Resource": RUNTIME_IDENTITY_SLR.format(account=account),
+                "Condition": {
+                    "StringEquals": {
+                        "iam:AWSServiceName": "runtime-identity.bedrock-agentcore.amazonaws.com"
                     }
                 },
             },

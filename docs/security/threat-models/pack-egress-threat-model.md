@@ -198,6 +198,16 @@ Con `tests/e2e/pack_egress.py --network temp` en la cuenta `mango-sandbox`: una 
 8. Lo que imprime el Runtime llega a su log group por el endpoint de Logs con la política de la organización, y el DNS Firewall de una VPC nueva falla cerrado sin configurarlo.
 9. Con los permisos del provisioner (un rol de prueba con la misma política), crear o actualizar un Runtime en la red `PUBLIC` o con otro security group responde `AccessDeniedException`; con la red del pack, funciona.
 
+**La copia de permisos del guion (2026-10-09, sin ejecutar contra AWS).** El rol de prueba del punto 9 no usa la política del provisioner: el guion la copia (`caller_policy`), una sentencia por cada sentencia del rol y con su mismo `Sid`.
+
+- La copia se había quedado atrás: le faltaba la sentencia del rol vinculado de identidad de Runtimes (`AgentCoreRuntimeIdentityServiceRole`), que el provisioner tiene desde D43 (4). Ya la trae.
+- Un test (`infra/test/packs.test.ts`) compara la copia con el rol sintetizado: acciones, claves de condición y los dos roles vinculados. Una sentencia nueva del provisioner sobre Runtimes, su identidad, su rol, su código o un rol vinculado falla ahí hasta que el guion la copie o el test diga por qué no.
+- Lo que la copia deja fuera a propósito, escrito en ese test:
+  - Las etiquetas de pack que el provisioner exige en la petición. El Runtime de prueba lleva la etiqueta del guion, y así una denegación solo puede venir de la condición de red.
+  - Las acciones sobre el endpoint de un Runtime que ya existe (crear, actualizar, borrar, etiquetar) y `ListAgentRuntimes`: el guion no las llama.
+  - Los nombres: donde el provisioner nombra los packs de la instalación, la copia nombra los recursos de esa ejecución.
+- Los resultados de arriba son los del 2026-10-02. El guion no se volvió a ejecutar con este cambio.
+
 ## Revisión del diff (`security-audit`, modo guía, 2026-10-02)
 
 Revisión enfocada del diff: red, IAM, fronteras de confianza y fallo cerrado. Sin hallazgos confirmados que queden abiertos.

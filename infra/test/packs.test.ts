@@ -1397,6 +1397,72 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
     expect(provisioner.flatMap(actions)).not.toContain("iam:DeleteServiceLinkedRole");
   });
 
+  it("tests/e2e/pack_egress.py copies what this role may do to create a runtime, statement by statement", () => {
+    const roleLogicalId = Object.keys(shipped).find(
+      (id) => shipped[id]!.Type === "AWS::IAM::Role" && shipped[id]!.Properties.RoleName === `Mango-${ns}-PackProvisioner`,
+    )!;
+    const statements = statementsOf(roleLogicalId, shipped);
+    const source = readFileSync(resolve(REPO_ROOT, "tests/e2e/pack_egress.py"), "utf8");
+    const [head, ...blocks] = /\ndef caller_policy\(([\s\S]*?)\n\n\nclass /.exec(source)![1]!.split(/(?="Sid": ")/);
+    const copy = new Map(blocks.map((block) => [/^"Sid": "(\w+)"/.exec(block)![1]!, block]));
+    expect(copy.size).toBe(blocks.length);
+    // The network condition is written once, above the statements that use it.
+    const textOf = (sid: string) => copy.get(sid)!.replace('"Condition": on_pack_network', head!);
+    const names = (text: string) => [...new Set([...text.matchAll(/"([a-z0-9-]+:[A-Za-z]+)"/g)].map((m) => m[1]!))];
+
+    // Every statement about a runtime, its workload identity, the role it is given, its code or
+    // AgentCore's service roles has its copy. One that is added later fails here until the
+    // script copies it or this list says why not.
+    const aboutRuntimes = /^bedrock-agentcore:.*(AgentRuntime|WorkloadIdentity)|^iam:(PassRole|CreateServiceLinkedRole)$|^s3:/;
+    const notCopied = ["FindPackRuntime"]; // the probe is found by the id its creation returns
+    expect(
+      statements
+        .filter((s) => actions(s).some((action) => aboutRuntimes.test(action)))
+        .map((s) => s.Sid)
+        .sort(),
+    ).toEqual([...copy.keys(), ...notCopied].sort());
+
+    // What the copy leaves out on purpose. The pack tags of a request: the probe carries the
+    // tag of the test, and without them a refusal can only come from the network condition.
+    // The endpoint actions of a runtime that exists: the probe keeps its DEFAULT endpoint, and
+    // its creation is in TagNewPackRuntime.
+    const leftOut: Record<string, string[]> = {
+      ManagePackRuntime: [
+        "bedrock-agentcore:CreateAgentRuntimeEndpoint",
+        "bedrock-agentcore:UpdateAgentRuntimeEndpoint",
+        "bedrock-agentcore:DeleteAgentRuntimeEndpoint",
+        "bedrock-agentcore:TagResource",
+      ],
+    };
+    for (const sid of copy.keys()) {
+      const statement = bySid(statements, sid);
+      const conditions = Object.entries(statement.Condition ?? {})
+        .map(([operator, keys]) => [operator, Object.keys(keys).filter((key) => !key.startsWith("aws:RequestTag/"))] as const)
+        .filter(([, keys]) => keys.length > 0);
+      const expected = [...new Set([...actions(statement), ...conditions.flatMap(([, keys]) => keys)])].filter(
+        (name) => !(leftOut[sid] ?? []).includes(name),
+      );
+      expect(names(textOf(sid)).sort(), sid).toEqual(expected.sort());
+      for (const [operator] of conditions) expect(textOf(sid), sid).toContain(`"${operator}": {`);
+    }
+
+    // The network condition refuses an absent key (network mode PUBLIC), as the role's does.
+    expect(head).toContain('"Null": {"bedrock-agentcore:subnets": "false", "bedrock-agentcore:securityGroups": "false"}');
+    // Service-linked roles: the same service and the same role, one by one.
+    for (const sid of ["AgentCoreNetworkServiceRole", "AgentCoreRuntimeIdentityServiceRole"]) {
+      const statement = bySid(statements, sid);
+      const service = statement.Condition!.StringEquals!["iam:AWSServiceName"] as string;
+      expect(textOf(sid), sid).toMatch(new RegExp(`"iam:AWSServiceName":\\s*"${service.replace(/\./g, "\\.")}"`));
+      const constant = /"Resource": ([A-Z_]+)\.format\(account=account\)/.exec(textOf(sid))![1]!;
+      const arn = new RegExp(`\\n${constant} = \\(\\n([\\s\\S]*?)\\n\\)\\n`).exec(source)![1]!;
+      expect(arn.replace(/^\s*"|"$/gm, "").replace(/\n/g, ""), sid).toBe(
+        (statement.Resource as string).replace(account, "{account}"),
+      );
+    }
+    expect(textOf("PassPackRoleToAgentCore")).toContain('{"iam:PassedToService": AGENTCORE_SERVICE}');
+    expect(source).toContain(`\nAGENTCORE_SERVICE = "${bySid(statements, "PassPackRoleToAgentCore").Condition!.StringEquals!["iam:PassedToService"]}"\n`);
+  });
+
   it("does not synthesize a release with a pack the pack network cannot serve (TM-E6)", () => {
     expect(() => assertPackEgress([{ id: "aws-pricing", egress: { aws: ["pricing"], hosts: [] } }])).not.toThrow();
     expect(() =>
