@@ -1,7 +1,7 @@
 # D75 · La comprobación de solo lectura de una instalación falla si la versión no quedó servible
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11)
+- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11; tres veredictos más de la pregunta a AgentCore y el hallazgo de la reconciliación, vistos en una instalación, propuesto por un agente el 2026-10-08, punto 12)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (6: de su fila 6 sale un caso, la invocación que AgentCore rechaza porque el harness no existe; es el punto 10 de esta decisión)
 - **Precisada por:** —
 
@@ -88,6 +88,25 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
   - El aviso en la pantalla del chat: el turno se hizo contra la API, no se miró en un navegador.
   - El hallazgo `harness_missing` de la reconciliación diaria: no llegó a correr.
   - La comprobación cuando no puede preguntar a AgentCore, o cuando el harness existe y no está `READY`.
+  - Un segundo rechazo seguido del código (punto 9).
+
+**(12) Tres veredictos más de la pregunta a AgentCore, y el hallazgo de la reconciliación (2026-10-08, propuesto por un agente).** El punto (11) dejó sin ver la comprobación cuando no puede preguntar a AgentCore o cuando el harness existe y no está `READY`, el aviso en la pantalla del chat y el hallazgo `harness_missing` de la reconciliación diaria. Ese mismo día, de noche, se vieron en otra cuenta de ensayo, con `v0.1.0-gd578994` instalada desde cero, un pack habilitado y `aws.namespace` en la configuración de la comprobación. Este punto no decide nada.
+
+- **Con el harness en su sitio:** 12 recorridos pasaron, ninguno falló y 8 se saltaron; «su harness existe en AgentCore».
+- **Cuando no puede preguntar** (un perfil de AWS que no existe): 11 pasaron y 1 falló.
+  - Su mensaje: ``The check could not ask AgentCore for the harness of «FinOps» (CommandFailed). With `aws.namespace` in the configuration the check asks: renew the credentials of the profile, give it `bedrock-agentcore:ListHarnesses` and `bedrock-agentcore:GetHarnessEndpoint`, or remove `aws.namespace` to skip the question.``
+  - En el informe: «no se pudo preguntar a AgentCore por su harness».
+  - **Observación:** añade igual el párrafo «What to look at», el de un harness que falta (un stack en `DELETE_FAILED`, el hallazgo diario, CloudTrail), que aquí habla de otra cosa. Se anota; no es una decisión.
+- **Con el harness `READY` y sin endpoint `live`** (el endpoint, borrado a mano): 11 pasaron y 1 falló, con ``«FinOps» is published and the application serves it, but AgentCore has no `live` endpoint for it: nobody can get an answer from it.``
+- **Con el harness en `DELETING`** (borrado a mano; la corrida se lanzó antes de que desapareciera): 11 pasaron y 1 falló, con `«FinOps» is published and the application serves it, but its harness is DELETING in AgentCore, not READY.`
+- **Con eso quedan vistos los cuatro veredictos de fallo del punto (10):** el harness que falta (punto 11), el endpoint `live` que falta, el harness que no está `READY` y no poder preguntar. Sin ver: un endpoint `live` que existe y no está `READY`.
+- **El hallazgo de la reconciliación** ([D41](D041-alertas-y-reconciliacion.md)), con el harness ya borrado. La función `Reconciler` se invocó **a mano:** ignora el evento que recibe, así que hace lo mismo que por su horario.
+  - 1 hallazgo: `harness_missing`, severidad `drift`, con el agente y el ARN del harness.
+  - La alarma `Reconciler-findings` pasó de `INSUFFICIENT_DATA` a `ALARM` a los 99 s y ejecutó su acción sobre el topic de alertas.
+- **La pantalla del chat** ante ese agente, vista en un navegador: [D73](D073-turno-cortado-nunca-cuesta-cero.md) (29). La persona ve el aviso de cualquier turno fallido, como suponía el punto (10).
+- **Lo que sigue sin verse en una instalación.**
+  - El hallazgo `harness_missing` por su horario diario: se vio con la función invocada a mano.
+  - Un veredicto de fallo de `06-agents` por un agente sin publicar o sin servir (punto 11).
   - Un segundo rechazo seguido del código (punto 9).
 
 Sin permisos, recursos, parámetros, dependencias ni supresiones nuevas. Los puntos 1 a 9 son código de pruebas (`tests/install`); el punto 10 toca además el turno de chat de `mango-api`.
