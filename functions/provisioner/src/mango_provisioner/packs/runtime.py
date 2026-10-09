@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -54,6 +55,14 @@ MAX_SESSION_SECONDS = 28_800
 
 MAX_TOOLS_RESPONSE_BYTES = 4 * 1024 * 1024
 _MCP_PROTOCOL_VERSION = "2025-06-18"
+RUNTIME_CLIENT_ERROR = -32010
+"""JSON-RPC code of AgentCore's ``RuntimeClientError`` on the MCP protocol.
+
+There AgentCore answers 200 and puts the error in the body, so the SDK raises nothing: it is
+the condition ``PackRuntimes.tools`` already retries when it arrives as an exception (the
+server of the pack answered 4xx or 5xx, or was not up yet).
+"""
+_RUNTIME_STATUS_RE = re.compile(r"Received error \(([1-5][0-9]{2})\) from runtime\b")
 _NOT_FOUND = "ResourceNotFoundException"
 _IN_PROGRESS = frozenset({"CREATING", "UPDATING"})
 _FAILED = frozenset({"CREATE_FAILED", "UPDATE_FAILED", "DELETE_FAILED"})
@@ -170,9 +179,27 @@ def _client_token(*parts: str) -> str:
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
 
-def _invalid_tools(reason: str, raw: bytes, content_type: str, code: object = None) -> StepError:
+def _runtime_status(message: object) -> int | None:
+    """HTTP status AgentCore says the pack's server answered. Three digits, nothing else."""
+    if not isinstance(message, str):
+        return None
+    found = _RUNTIME_STATUS_RE.match(message[:64])
+    return int(found.group(1)) if found else None
+
+
+def _invalid_tools(
+    reason: str, raw: bytes, content_type: str, error: Mapping[str, Any] | None = None
+) -> StepError:
     """Why a ``tools/list`` answer was refused. Only its shape is logged: the answer is
-    third-party output and never reaches the logs."""
+    third-party output and never reaches the logs.
+
+    A runtime client error is refused like any other answer, but as a transient condition:
+    Step Functions asks again, and nothing is exposed until an answer passes the comparison.
+    Once its retries are used up the failure is this same code, and the execution compensates.
+    """
+    code = error.get("code") if error is not None else None
+    not_ready = error is not None and type(code) is int and code == RUNTIME_CLIENT_ERROR
+    status = _runtime_status(error.get("message")) if error is not None and not_ready else None
     logger.warning(
         json.dumps(
             {
@@ -180,10 +207,14 @@ def _invalid_tools(reason: str, raw: bytes, content_type: str, code: object = No
                 "reason": reason,
                 "bytes": len(raw),
                 "content_type": content_type[:64],
-                "jsonrpc_error_code": code if isinstance(code, int) else None,
+                "jsonrpc_error_code": code if type(code) is int else None,
+                "runtime_http_status": status,
+                "retryable": not_ready,
             }
         )
     )
+    if not_ready:
+        return RetryableError("tools_response_invalid")
     return StepError("tools_response_invalid")
 
 
@@ -205,7 +236,7 @@ def decode_tools(raw: bytes, content_type: str) -> list[Any]:
     if not isinstance(result, dict):
         error = message.get("error") if isinstance(message, dict) else None
         if isinstance(error, dict):
-            raise _invalid_tools("jsonrpc_error", raw, content_type, error.get("code"))
+            raise _invalid_tools("jsonrpc_error", raw, content_type, error)
         raise _invalid_tools("no_result", raw, content_type)
     tools = result.get("tools")
     # A paginated listing would hide tools from the comparison.

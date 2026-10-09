@@ -255,6 +255,8 @@ class FakeAgentCore:
         # What a runtime version answers to `tools/list` (default: the manifest's tools).
         self.tools_by_version: dict[str, list[dict[str, Any]]] = {}
         self.tool_calls = 0
+        # Answers to `tools/list` served, in order, before the tools (a server not up yet).
+        self.tools_answers: list[bytes] = []
         self.fail_policy_reason: str | None = None
 
     # --- Plumbing ---
@@ -486,6 +488,9 @@ class FakeAgentCore:
         assert request["method"] == "tools/list"
         ready = [v for v in runtime["versions"] if v["status"] == "READY"]
         self.tool_calls += 1
+        if self.tools_answers:
+            body = self.tools_answers.pop(0)
+            return {"response": io.BytesIO(body), "contentType": "application/json"}
         result = {"tools": self._served_tools(runtime, ready[-1]["number"])}
         body = json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}).encode()
         return {"response": io.BytesIO(body), "contentType": "application/json", "statusCode": 200}

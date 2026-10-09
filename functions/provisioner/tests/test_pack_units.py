@@ -234,6 +234,14 @@ def _answer(result: Any) -> bytes:
     return json.dumps({"jsonrpc": "2.0", "id": 1, "result": result}).encode()
 
 
+NOT_READY = "Received error (502) from runtime. Please check your CloudWatch logs"
+
+
+def _error(code: Any, message: Any) -> bytes:
+    error = {"code": code, "message": message}
+    return json.dumps({"jsonrpc": "2.0", "id": 1, "error": error}).encode()
+
+
 def test_tools_answer_as_json_or_as_one_sse_event() -> None:
     assert decode_tools(_answer({"tools": TOOLS}), "application/json") == TOOLS
     sse = b"event: message\ndata: " + _answer({"tools": TOOLS}) + b"\n\n"
@@ -247,13 +255,36 @@ def test_tools_answer_as_json_or_as_one_sse_event() -> None:
         b"not json",
         b"[]",
         json.dumps({"jsonrpc": "2.0", "id": 1, "error": {"code": -1}}).encode(),
+        _error(-32603, "Internal error - Server error"),
+        _error(-32003, "Rate limit exceeded - Too many requests"),
+        _error("-32010", NOT_READY),  # the code as text is not the code
+        _error(-32010.0, NOT_READY),
+        json.dumps({"jsonrpc": "2.0", "id": 1, "error": [-32010]}).encode(),
         _answer({"tools": "x"}),
         _answer({"tools": TOOLS, "nextCursor": "more"}),  # a page would hide tools
         b"\xff\xfe",
     ],
 )
 def test_malformed_tools_answers_are_refused(raw: bytes) -> None:
-    with pytest.raises(StepError, match="tools_response_invalid"):
+    with pytest.raises(StepError, match="tools_response_invalid") as refused:
+        decode_tools(raw, "application/json")
+    # Final: the execution compensates, Step Functions does not ask again.
+    assert type(refused.value) is StepError
+
+
+def test_a_runtime_client_error_in_the_answer_is_refused_as_not_ready_yet() -> None:
+    """AgentCore's `RuntimeClientError` in a 200 answer (`-32010`): refused, and asked again."""
+    for raw in (_error(-32010, NOT_READY), _error(-32010, None), _error(-32010, {"a": 1})):
+        with pytest.raises(RetryableError, match="tools_response_invalid"):
+            decode_tools(raw, "application/json")
+    sse = b"event: message\ndata: " + _error(-32010, NOT_READY) + b"\n\n"
+    with pytest.raises(RetryableError, match="tools_response_invalid"):
+        decode_tools(sse, "text/event-stream")
+    # Tools next to the error are never taken: the answer has no `result`.
+    raw = json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "error": {"code": -32010, "tools": TOOLS}, "tools": TOOLS}
+    ).encode()
+    with pytest.raises(RetryableError, match="tools_response_invalid"):
         decode_tools(raw, "application/json")
 
 
@@ -261,7 +292,9 @@ def test_a_refused_tools_answer_logs_its_shape_and_never_its_content(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     secret = "text-of-a-third-party-server"
-    raw = json.dumps({"jsonrpc": "2.0", "id": 1, "error": {"code": -32010, "message": secret}})
+    # Until 2026-10-08 this test used `-32010` and fixed that it was final. That code is now
+    # asked again (next test), so the final case is fixed here with another code.
+    raw = json.dumps({"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": secret}})
     with caplog.at_level("WARNING"), pytest.raises(StepError, match="tools_response_invalid"):
         decode_tools(raw.encode(), "application/json")
     logged = json.loads(caplog.records[-1].getMessage())
@@ -270,7 +303,48 @@ def test_a_refused_tools_answer_logs_its_shape_and_never_its_content(
         "reason": "jsonrpc_error",
         "bytes": len(raw),
         "content_type": "application/json",
+        "jsonrpc_error_code": -32603,
+        "runtime_http_status": None,
+        "retryable": False,
+    }
+    assert secret not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("message", "status"),
+    [
+        ("Received error (502) from runtime. Please check your CloudWatch logs", 502),
+        ("Received error (404) from runtime", 404),
+        ("Tool execution error - Please check your CloudWatch logs", None),
+        ("Received error (5020) from runtime", None),
+        ("Received error (099) from runtime", None),
+        ("Received error (abc) from runtime", None),
+        ("x Received error (502) from runtime", None),
+        (" " * 80 + "Received error (502) from runtime", None),
+        ({"Received error (502) from runtime": 1}, None),
+        (None, None),
+    ],
+)
+def test_a_runtime_client_error_logs_only_the_status_it_names(
+    caplog: pytest.LogCaptureFixture, message: object, status: int | None
+) -> None:
+    """Of the message, only three digits in AgentCore's exact sentence reach the logs."""
+    secret = "text-of-a-third-party-server"
+    error = {"code": -32010, "message": message, "data": secret}
+    if isinstance(message, str):
+        error["message"] = f"{message} {secret}"
+    raw = json.dumps({"jsonrpc": "2.0", "id": 1, "error": error})
+    with caplog.at_level("WARNING"), pytest.raises(RetryableError):
+        decode_tools(raw.encode(), "application/json")
+    logged = json.loads(caplog.records[-1].getMessage())
+    assert logged == {
+        "event": "pack_provisioner.tools_response_invalid",
+        "reason": "jsonrpc_error",
+        "bytes": len(raw),
+        "content_type": "application/json",
         "jsonrpc_error_code": -32010,
+        "runtime_http_status": status,
+        "retryable": True,
     }
     assert secret not in caplog.text
 
@@ -307,6 +381,56 @@ def test_a_server_that_is_not_up_yet_is_retried(packlab: PackLab) -> None:
     with pytest.raises(RetryableError, match="tools_list_not_ready"):
         p.verify_tools(state)
     p.verify_tools(state)
+
+
+def _ready_for_tools(lab: PackLab) -> dict[str, Any]:
+    p = lab.provisioner
+    state = p.ensure_runtime(p.ensure_role(p.load(lab.approve(), "exec-1")))
+    while not state["ready"]:
+        state = p.check_runtime(state)
+    return state
+
+
+def test_a_runtime_client_error_in_the_answer_is_asked_again(packlab: PackLab) -> None:
+    """Seen twice on a runtime just created: the same request, asked again, got the tools."""
+    lab = packlab
+    state = _ready_for_tools(lab)
+    lab.agentcore.tools_answers = [_error(-32010, NOT_READY)] * 2
+    event = {"step": "verify_tools", "state": state, "execution": "exec-1"}
+    for _ in range(2):
+        with pytest.raises(RetryableStepError) as retried:
+            handle(event, lab.provisioner)
+        # The error Step Functions retries, with the code a spent retry leaves on the pack.
+        assert json.loads(str(retried.value)) == {
+            "step": "verify_tools",
+            "code": "tools_response_invalid",
+        }
+    assert handle(event, lab.provisioner)["last_step"] == "verify_tools"
+    assert lab.agentcore.tool_calls == 3
+    # Nothing was exposed while it was asked again.
+    for operation in ("CreateAgentRuntimeEndpoint", "CreateGatewayTarget", "CreatePolicy"):
+        assert operation not in lab.agentcore.calls
+
+
+def test_any_other_error_in_the_answer_is_still_final(packlab: PackLab) -> None:
+    lab = packlab
+    state = _ready_for_tools(lab)
+    lab.agentcore.tools_answers = [_error(-32603, "Internal error - Server error")]
+    with pytest.raises(ProvisionerStepError, match="tools_response_invalid"):
+        handle({"step": "verify_tools", "state": state, "execution": "exec-1"}, lab.provisioner)
+    assert lab.agentcore.tool_calls == 1
+
+
+def test_tools_served_after_a_runtime_client_error_are_still_compared(packlab: PackLab) -> None:
+    """Asking again does not relax the comparison: other tools than the signed ones fail."""
+    lab = packlab
+    lab.agentcore.tools_answers = [_error(-32010, NOT_READY)]
+    lab.agentcore.tools_by_version["1"] = TOOLS[:1]
+    result = lab.run(lab.approve())
+    assert (result["failed_step"], result["failure"]) == ("verify_tools", "tools_mismatch")
+    assert lab.agentcore.tool_calls == 2
+    for operation in ("CreateAgentRuntimeEndpoint", "CreateGatewayTarget", "CreatePolicy"):
+        assert operation not in lab.agentcore.calls
 
 
 # --- Gateway: policies and target -----------------------------------------------------------

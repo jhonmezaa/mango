@@ -555,6 +555,41 @@ def test_different_tools_fail_and_compensate(
     assert lab.audit() == [("mcp.pack.enabled", "requested"), ("mcp.pack.enabled", "rejected")]
 
 
+def test_a_runtime_that_never_gets_ready_fails_as_before_and_compensates(
+    packlab: PackLab,
+) -> None:
+    """`-32010` on every attempt: with the retries spent, the failure and the cleanup of always."""
+    lab = packlab
+    error = {"code": -32010, "message": "Received error (502) from runtime"}
+    answer = json.dumps({"jsonrpc": "2.0", "id": 1, "error": error}).encode()
+    lab.agentcore.tools_answers = [answer] * 100
+    result = lab.run(lab.approve())
+    assert (result["failed_step"], result["failure"]) == (
+        "verify_tools",
+        "tools_response_invalid",
+    )
+    assert lab.agentcore.tool_calls == 40  # every attempt the lab's state machine allows
+    for operation in ("CreateAgentRuntimeEndpoint", "CreateGatewayTarget", "CreatePolicy"):
+        assert operation not in lab.agentcore.calls
+    _nothing_left(lab)
+    enablement = lab.enablement()
+    assert enablement["status"] == "failed"
+    assert enablement["failed_step"] == "verify_tools"
+    assert "provision_lock" not in enablement
+    assert lab.audit() == [("mcp.pack.enabled", "requested"), ("mcp.pack.enabled", "rejected")]
+
+
+def test_a_runtime_that_gets_ready_on_a_later_attempt_is_enabled(packlab: PackLab) -> None:
+    lab = packlab
+    error = {"code": -32010, "message": "Received error (502) from runtime"}
+    answer = json.dumps({"jsonrpc": "2.0", "id": 1, "error": error}).encode()
+    lab.agentcore.tools_answers = [answer] * 3
+    result = lab.run(lab.approve())
+    assert result["last_step"] == "finish"
+    assert lab.agentcore.tool_calls == 4
+    assert lab.enablement()["status"] == "enabled"
+
+
 def test_a_tool_the_gateway_does_not_serve_fails_the_policy(packlab: PackLab) -> None:
     lab = packlab
     lab.agentcore.fail_policy_reason = "unrecognized action"
