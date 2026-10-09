@@ -30,7 +30,7 @@
 **(8) Lo que dos instalaciones mostraron del punto (7) (nota del 2026-10-09, propuesta por un agente).** No cambia lo decidido: dice con qué se ha comprobado.
 
 - **En una instalación que se actualiza.** Una instalación de laboratorio con datos pasó de `v0.1.0-gd578994` a `v0.1.0-gc1c233a`: la política del rol del deprovisioner (`DeprovisionerRoleDefaultPolicy…`) apareció como `Modify` de `PolicyDocument`, sin reemplazo. El rol mismo no apareció. El change set entero está en [D58](D058-distribucion-para-clientes.md) (23).
-- **Leído de IAM después.** 15 sentencias. `iam:DeleteRole` está solo en `DeleteAgentRoleWithBoundary`, con la condición `iam:PermissionsBoundary`. La política en línea mide 4.266 caracteres de los 10.240 que IAM admite (IAM no cuenta los espacios): un 58 % de margen.
+- **Leído de IAM después.** 15 sentencias. `iam:DeleteRole` está solo en `DeleteAgentRoleWithBoundary`, con la condición `iam:PermissionsBoundary`. La política en línea mide 4.395 caracteres de los 10.240 que IAM admite (IAM no cuenta los espacios): un 57 % de margen.
 - **El deprovisioner borró el rol de un agente retirado, con esa condición (2026-10-09).** En una instalación nueva en una cuenta de ensayo, con `v0.1.0-gc1c233a` (el ensayo de [D58](D058-distribucion-para-clientes.md) (24)).
   - Un agente de prueba, creado por la API y publicado con doble aprobación. Su rol lo creó el provisioner de agentes. Antes de retirarlo, el rol tenía el boundary de agentes, una política en línea y ninguna adjunta.
   - Retirado por la API, con motivo. La ejecución del deprovisioner terminó `SUCCEEDED`. A los 43 s de retirarlo ya no existían ni el harness ni el rol.
