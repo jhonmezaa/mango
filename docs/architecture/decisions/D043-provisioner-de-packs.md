@@ -1,7 +1,7 @@
 # D43 · Provisioner de packs: qué se instala, quién lo registra y qué packs entran
 
 - **Estado:** parcial. Rigen (1), (2), (4) y (6). El punto (3) ya no rige como está: los packs de datos de cuentas se instalan desde [D49](D049-identidad-en-packs-de-datos.md), [D52](D052-pack-de-billing-ampliado.md), [D54](D054-egress-de-packs.md) y [D55](D055-pack-de-cloudwatch.md); los packs con tools de escritura siguen rechazados ([D56](D056-tools-de-escritura-con-aprobacion.md) (5)).
-- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4; lo que se ha visto de ese permiso en una instalación, 2026-10-08, punto 5; el reintento de `tools/list` cuando el Runtime aún no está listo, decidido por el dueño el 2026-10-08, con su detalle propuesto por un agente y aceptado por el dueño el 2026-10-09, y el código de error que llega al log, acotado, decidido por el dueño el 2026-10-09, punto 6; IAM exige el boundary de packs también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7; lo que dos instalaciones mostraron de ese punto y el tamaño medido de la política en línea, que corrige la estimación del punto 7, nota propuesta por un agente y aceptada por el dueño el 2026-10-09, punto 8; el reintento de `tools/list`, visto en un ensayo, nota propuesta por un agente y aceptada por el dueño el 2026-10-09, punto 9)
+- **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, decidido por el dueño el 2026-10-07, punto 4; lo que se ha visto de ese permiso en una instalación, 2026-10-08, punto 5; el reintento de `tools/list` cuando el Runtime aún no está listo, decidido por el dueño el 2026-10-08, con su detalle propuesto por un agente y aceptado por el dueño el 2026-10-09, y el código de error que llega al log, acotado, decidido por el dueño el 2026-10-09, punto 6; IAM exige el boundary de packs también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7; lo que dos instalaciones mostraron de ese punto y el tamaño medido de la política en línea, que corrige la estimación del punto 7, nota propuesta por un agente y aceptada por el dueño el 2026-10-09, punto 8; el reintento de `tools/list`, visto en un ensayo, nota propuesta por un agente y aceptada por el dueño el 2026-10-09, punto 9; ese reintento, visto otra vez en un segundo ensayo, nota propuesta por un agente el 2026-10-09, punto 10)
 - **Precisa / reemplaza a:** —
 - **Precisada por:** [D46](D046-api-del-catalogo-de-mcp.md) (amplía, punto 3); [D49](D049-identidad-en-packs-de-datos.md) (precisa, punto 2); [D52](D052-pack-de-billing-ampliado.md) (precisa); [D56](D056-tools-de-escritura-con-aprobacion.md) (precisa el punto 3)
 
@@ -79,5 +79,19 @@ Detalle **propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026
 - **Es la primera vez que se ve con una versión que reintenta.** El 2026-10-08, con la versión anterior, ese mismo error dejó el pack en fallo y hubo que reintentar a mano (punto 6).
 - **El estado HTTP del servidor del pack sigue sin conocerse.** `runtime_http_status` llegó vacío.
 - **Sin ver en una instalación:** que el error dure más que los reintentos, y lo que pasa al agotarlos.
+
+**(10) El reintento de `tools/list`, visto otra vez en un segundo ensayo (nota del 2026-10-09, propuesta por un agente).** No cambia lo decidido: dice con qué se ha comprobado. El punto (9) se queda como está: es lo que mostró el primer ensayo. Este es el segundo del día: otra instalación nueva en la misma cuenta de ensayo, con `v0.1.0-gc1c233a` (el ensayo de [D58](D058-distribucion-para-clientes.md) (25)). Lo que sigue sale del log del provisioner de packs.
+
+- **El pack.** `aws-pricing` (1.1.1-2), habilitado con doble aprobación. El Runtime tardó 4 min 24 s en estar listo: 51 `check_runtime`.
+- **El error.** 31 s después de estar listo el Runtime, la primera `verify_tools` recibió el error JSON-RPC de código `-32010`: 153 bytes.
+- **El log del provisioner de packs.** `retryable: true` y `runtime_http_status: null`; `step_failed`; y el error de la función, `RetryableStepError`.
+- **El reintento.** Step Functions repitió `verify_tools` 15 s después, y pasó. Bastó un reintento.
+- **Cómo terminó.** La ejecución, `SUCCEEDED`, en 6 min 4 s. El pack quedó `enabled` a los 374 s de aprobarlo, sin paso fallido. **Nadie pulsó «Reintentar».**
+- **Es el mismo dibujo que en el primer ensayo, el de la mañana.** Allí el error llegó también 31 s después de estar listo el Runtime (un dato que el punto (9) no recogió), y el reintento, a los 14 s.
+  - Dos instalaciones nuevas el mismo día: dos veces el error y dos veces un solo reintento.
+  - Con la del 2026-10-08 (la versión anterior, que no reintentaba: hubo que reintentar a mano, punto 6) son tres instalaciones nuevas seguidas en las que el primer `tools/list` de un Runtime recién creado falla así.
+- **Una lectura, no un hecho de AWS.** A quien hizo los ensayos le parece el arranque en frío del Runtime y no un fallo al azar. No se sabe por qué son 31 s.
+- **El estado HTTP del servidor del pack sigue sin conocerse.** `runtime_http_status` llegó vacío otra vez.
+- **Sin ver en una instalación:** que el error dure más que los reintentos, y lo que pasa al agotarlos. Tampoco el provisioner de packs borrando un rol al compensar una instalación fallida (punto 8).
 
 Modelo de amenazas: `docs/security/threat-models/mcp-pack-provisioner-threat-model.md`
