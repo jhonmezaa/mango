@@ -217,6 +217,9 @@ class Sweep:
             if str(runtime["agentRuntimeName"]).startswith(self._s.pack_prefix)
         ]
         for runtime in runtimes:
+            # Already on its way out: it still counts, and asking again changes nothing.
+            if runtime.get("status") == "DELETING":
+                continue
             runtime_id = runtime["agentRuntimeId"]
             endpoints = [
                 endpoint
@@ -246,6 +249,8 @@ class Sweep:
             if str(harness["harnessName"]).startswith(self._s.harness_prefix)
         ]
         for harness in harnesses:
+            if harness.get("status") == "DELETING":
+                continue
             harness_id = harness["harnessId"]
             endpoints = [
                 endpoint

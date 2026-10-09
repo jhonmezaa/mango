@@ -319,6 +319,57 @@ def test_deletes_endpoints_before_what_holds_them_and_roles_last() -> None:
     assert not any("DEFAULT" in call for call in calls)
 
 
+PACK_RUNTIME = "Mango_acme_mcp_aws_pricing-AAAAAAAAAA"
+HARNESS = "Mango_acme_a_finops-DDDDDDDDDD"
+
+
+@pytest.mark.parametrize(
+    ("resource_id", "kind"), [(PACK_RUNTIME, "pack_runtimes"), (HARNESS, "harnesses")]
+)
+def test_does_not_ask_again_for_a_runtime_or_a_harness_that_is_already_being_deleted(
+    resource_id: str, kind: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    # D58 (22): seen on 2026-10-08, one DeleteAgentRuntime per pass on a runtime in DELETING.
+    agentcore = AgentCore()
+    agentcore.deleting.add(resource_id)
+    with caplog.at_level("INFO", logger=uninstall.logger.name):
+        run = Run(agentcore=agentcore)
+    # Not one call that names it: neither its deletion nor its endpoints.
+    assert [call for call in agentcore.calls if resource_id in call] == []
+    # It still counts as pending, on every pass: the guard waits and hands over, as before.
+    assert run.answers == []
+    assert [event["MangoInvocation"] for event in run.reinvoked] == [2]
+    passes = [json.loads(r.getMessage().split("=", 1)[1]) for r in caplog.records]
+    assert len(passes) > 30
+    assert all(remaining[kind] == 1 and remaining["roles"] == -1 for remaining in passes)
+    assert run.iam.deleted == []
+
+
+def test_a_runtime_and_a_harness_that_are_not_being_deleted_are_asked_once_each() -> None:
+    calls = Run().agentcore.calls
+    assert calls.count(f"runtime:{PACK_RUNTIME}") == 1
+    assert calls.count(f"harness:{HARNESS}") == 1
+
+
+def test_goes_on_when_what_was_being_deleted_is_gone() -> None:
+    agentcore = AgentCore()
+    agentcore.deleting.update({PACK_RUNTIME, HARNESS})
+    sleep = Run._sleep
+
+    class Finishing(Run):
+        def _sleep(self, seconds: float) -> None:
+            # AgentCore finishes on its own: nobody asked again.
+            agentcore.runtimes.pop(PACK_RUNTIME, None)
+            agentcore.harness_endpoints.pop(HARNESS, None)
+            sleep(self, seconds)
+
+    run = Finishing(agentcore=agentcore)
+    assert run.answers == [("SUCCESS", "")]
+    assert f"runtime:{PACK_RUNTIME}" not in agentcore.calls
+    assert f"harness:{HARNESS}" not in agentcore.calls
+    assert sorted(run.iam.deleted) == [FINOPS, "Mango-acme-mcp-aws-pricing"]
+
+
 AWS_MANAGED = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 OF_THE_ORGANIZATION = "arn:aws:iam::111111111111:policy/org-guardrail"
 FINOPS = "Mango-acme-agent-finops"
