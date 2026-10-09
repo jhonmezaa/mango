@@ -1,7 +1,7 @@
 # D48 · Desaprovisionamiento al retirar un agente
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-01 (IAM exige el boundary de agentes también para borrar el rol, decidido por el dueño el 2026-10-09, punto 7)
+- **Fecha:** 2026-10-01 (IAM exige el boundary de agentes también para borrar el rol, decidido por el dueño el 2026-10-09, punto 7; lo que una instalación mostró de ese punto, nota propuesta por un agente el 2026-10-09, punto 8)
 - **Precisa / reemplaza a:** en el texto: ajusta [D41](D041-alertas-y-reconciliacion.md) (punto 5)
 - **Precisada por:** [D53](D053-alineacion-con-claude-design.md) (precisa, punto 2); [D58](D058-distribucion-para-clientes.md) (precisa; su punto 22 precisa el punto 3 solo para la desinstalación: el `UninstallGuard` sí quita las políticas gestionadas de un rol antes de borrarlo, decidido por el dueño el 2026-10-09. Al retirar un agente, el punto 3 sigue igual)
 
@@ -26,5 +26,11 @@
 - **Qué no cambia.** La función sigue comprobando el boundary antes de borrar: es lo que deja el código `role_without_boundary` en la auditoría, y ahora es la segunda barrera en vez de la única. La regla del punto (3) sigue igual: el deprovisioner no desadjunta, y un rol con políticas gestionadas se deja para una persona y se reporta.
 - **Las opciones del menú:** añadir la condición en una rama aparte, o anotarlo para después. El dueño eligió la primera («Sí, en una rama aparte»).
 - **Con qué se comprobó.** Con tests de la plantilla (`infra/test/deprovisioner.test.ts`): la sentencia con su condición, que toda escritura de IAM del rol la lleva y que la lista de acciones del rol es la misma. Sin ver en una instalación: el borrado de un rol de agente con esta condición en el rol del deprovisioner.
+
+**(8) Lo que una instalación mostró del punto (7) (nota del 2026-10-09, propuesta por un agente).** No cambia lo decidido: dice con qué se ha comprobado.
+
+- **En una instalación que se actualiza.** Una instalación de laboratorio con datos pasó de `v0.1.0-gd578994` a `v0.1.0-gc1c233a`: la política del rol del deprovisioner (`DeprovisionerRoleDefaultPolicy…`) apareció como `Modify` de `PolicyDocument`, sin reemplazo. El rol mismo no apareció. El change set entero está en [D58](D058-distribucion-para-clientes.md) (23).
+- **Leído de IAM después.** 15 sentencias. `iam:DeleteRole` está solo en `DeleteAgentRoleWithBoundary`, con la condición `iam:PermissionsBoundary`. La política en línea mide 4.266 caracteres de los 10.240 que IAM admite (IAM no cuenta los espacios): un 58 % de margen.
+- **Sigue sin verse en una instalación:** el deprovisioner borrando un rol con esa condición. Se ve al retirar un agente.
 
 Amenazas TM-M21 a TM-M23 en el modelo de Marketplace v1
