@@ -1,7 +1,7 @@
 # D75 · La comprobación de solo lectura de una instalación falla si la versión no quedó servible
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11; tres veredictos más de la pregunta a AgentCore y el hallazgo de la reconciliación, vistos en una instalación, propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026-10-09, con lo que el dueño eligió ese día para el párrafo de qué mirar cuando no se puede preguntar, que llega con otro cambio, punto 12)
+- **Fecha:** 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11; tres veredictos más de la pregunta a AgentCore y el hallazgo de la reconciliación, vistos en una instalación, propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026-10-09, con lo que el dueño eligió ese día para el párrafo de qué mirar cuando no se puede preguntar, punto 12; ese párrafo ya no sale cuando solo no se pudo preguntar, decidido por el dueño el 2026-10-09, por menú, con su detalle propuesto por un agente ese día, punto 13)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (6: de su fila 6 sale un caso, la invocación que AgentCore rechaza porque el harness no existe; es el punto 10 de esta decisión)
 - **Precisada por:** —
 
@@ -96,8 +96,8 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
 - **Cuando no puede preguntar** (un perfil de AWS que no existe): 11 pasaron y 1 falló.
   - Su mensaje: ``The check could not ask AgentCore for the harness of «FinOps» (CommandFailed). With `aws.namespace` in the configuration the check asks: renew the credentials of the profile, give it `bedrock-agentcore:ListHarnesses` and `bedrock-agentcore:GetHarnessEndpoint`, or remove `aws.namespace` to skip the question.``
   - En el informe: «no se pudo preguntar a AgentCore por su harness».
-  - **Observación:** añade igual el párrafo «What to look at», el de un harness que falta (un stack en `DELETE_FAILED`, el hallazgo diario, CloudTrail), que aquí habla de otra cosa.
-  - **Lo que eligió el dueño el 2026-10-09, por menú: «Sí, quitarlo ahí».** Cuando la comprobación no puede preguntar a AgentCore, ese párrafo no sale. Las dos opciones que se le llevaron: quitarlo en ese caso o dejarlo. **Llega con un cambio aparte** en `tests/install`; hasta entonces el párrafo sigue saliendo.
+  - **Observación:** ese día añadía igual el párrafo «What to look at», el de un harness que falta (un stack en `DELETE_FAILED`, el hallazgo diario, CloudTrail), que aquí habla de otra cosa.
+  - **Lo que eligió el dueño el 2026-10-09, por menú: «Sí, quitarlo ahí».** Cuando la comprobación no puede preguntar a AgentCore, ese párrafo no sale. Las dos opciones que se le llevaron: quitarlo en ese caso o dejarlo. Es el punto (13), que lo cambia en `tests/install`.
 - **Con el harness `READY` y sin endpoint `live`** (el endpoint, borrado a mano): 11 pasaron y 1 falló, con ``«FinOps» is published and the application serves it, but AgentCore has no `live` endpoint for it: nobody can get an answer from it.``
 - **Con el harness en `DELETING`** (borrado a mano; la corrida se lanzó antes de que desapareciera): 11 pasaron y 1 falló, con `«FinOps» is published and the application serves it, but its harness is DELETING in AgentCore, not READY.`
 - **Con eso quedan vistos los cuatro veredictos de fallo del punto (10):** el harness que falta (punto 11), el endpoint `live` que falta, el harness que no está `READY` y no poder preguntar. Sin ver: un endpoint `live` que existe y no está `READY`.
@@ -110,4 +110,16 @@ Origen: en un ensayo de ese día, el `UninstallGuard` falló a medio barrido ([D
   - Un veredicto de fallo de `06-agents` por un agente sin publicar o sin servir (punto 11).
   - Un segundo rechazo seguido del código (punto 9).
 
-Sin permisos, recursos, parámetros, dependencias ni supresiones nuevas. Los puntos 1 a 9 son código de pruebas (`tests/install`); el punto 10 toca además el turno de chat de `mango-api`.
+**(13) El párrafo de qué mirar no sale cuando solo no se pudo preguntar (2026-10-09, decidido por el dueño el 2026-10-09, por menú; su detalle, propuesto por un agente ese día).** El punto (12) vio que la comprobación, cuando no puede preguntar a AgentCore, añadía el párrafo «What to look at» de un harness que falta. Las dos opciones que se le llevaron al dueño: quitarlo en ese caso o dejarlo. Eligió **«Sí, quitarlo ahí».**
+
+- **La regla.** El párrafo (un stack en `DELETE_FAILED`, el hallazgo `harness_missing`, CloudTrail) sale solo cuando al menos un agente servido tiene el harness, o su endpoint `live`, faltando o sin estar `READY`.
+- **Si lo único que pasó es que no se pudo preguntar, no sale.** El mensaje de ese caso ya dice qué hacer: renovar las credenciales, dar los dos permisos o quitar `aws.namespace`.
+- **Con casos mezclados sale:** si a un agente le falta el harness y de otro no se pudo preguntar, el fallo trae el mensaje de cada uno y el párrafo.
+- **Propuesto por un agente:**
+  - El párrafo sale una sola vez, al final, después de los mensajes de todos los agentes.
+  - Lo demás no cambia: el mensaje de cada veredicto, que la comprobación falle cuando no puede preguntar (punto 10) y la línea del informe. Con casos mezclados, el informe sigue diciendo «no se pudo preguntar a AgentCore por su harness».
+  - La regla vive en una función sin efectos (`harnessReport`, en `tests/install/src/harness.ts`), que arma la línea del informe y los párrafos del fallo; `06-agents` solo la llama.
+- **Comprobado con tests de unidad** (`tests/install/unit/harness.test.ts`): los tres casos, y que la línea del informe y los mensajes no cambian. **Sin ver en una instalación.**
+- No pregunta nada nuevo a AWS ni imprime nada que antes no imprimiera.
+
+Sin permisos, recursos, parámetros, dependencias ni supresiones nuevas. Los puntos 1 a 9 y el 13 son código de pruebas (`tests/install`); el punto 10 toca además el turno de chat de `mango-api`.
