@@ -106,12 +106,24 @@ describe("pack provisioner role: IAM (TM-M1, TM-B4)", () => {
     expect(provisioner.filter((s) => actions(s).includes("iam:CreateRole"))).toHaveLength(1);
   });
 
-  it("can only write inline policies on roles that carry the boundary", () => {
+  it("can only write inline policies on, or delete, roles that carry the boundary", () => {
     const policy = bySid(provisioner, "PackRolePolicyWithBoundary");
-    expect(actions(policy).sort()).toEqual(["iam:DeleteRolePolicy", "iam:PutRolePolicy"]);
+    expect(actions(policy).sort()).toEqual(["iam:DeleteRole", "iam:DeleteRolePolicy", "iam:PutRolePolicy"]);
     expect(policy.Resource).toBe(packRoles);
     expect(policy.Condition).toEqual(withBoundary);
-    expect(provisioner.filter((s) => actions(s).includes("iam:PutRolePolicy"))).toHaveLength(1);
+    for (const action of actions(policy)) {
+      expect(provisioner.filter((s) => actions(s).includes(action))).toHaveLength(1);
+    }
+  });
+
+  it("has only two IAM actions that IAM does not tie to the boundary or to a service", () => {
+    // TagRole has no boundary condition key. GetRole has one and stays without it: the
+    // function reads a role to learn whether it exists and whether it still carries the boundary.
+    const unconditioned = provisioner.filter(
+      (s) => actions(s).some((a) => a.startsWith("iam:")) && s.Condition === undefined,
+    );
+    expect(unconditioned.map((s) => s.Sid)).toEqual(["PackRoleLifecycle"]);
+    expect(actions(unconditioned[0]!).sort()).toEqual(["iam:GetRole", "iam:TagRole"]);
   });
 
   it("passes pack roles only to AgentCore", () => {

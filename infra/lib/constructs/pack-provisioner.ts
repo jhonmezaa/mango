@@ -135,7 +135,9 @@ export class PackProvisioner extends Construct {
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "PackRolePolicyWithBoundary",
-        actions: ["iam:PutRolePolicy", "iam:DeleteRolePolicy"],
+        // Every write on an existing role: IAM refuses a role under the prefix that does not
+        // carry the boundary, so the provisioner cannot delete or change one it did not make.
+        actions: ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:DeleteRole"],
         resources: [packs.roleArns],
         conditions: withBoundary,
       }),
@@ -143,9 +145,12 @@ export class PackProvisioner extends Construct {
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "PackRoleLifecycle",
-        // `iam:PermissionsBoundary` is not a condition key of these actions. No
-        // Attach/Detach policy, no boundary changes and no trust policy updates.
-        actions: ["iam:GetRole", "iam:DeleteRole", "iam:TagRole"],
+        // `iam:PermissionsBoundary` is not a condition key of TagRole. It is one of GetRole,
+        // which stays without it: the function reads a role to learn whether it exists and
+        // to report one that lost its boundary (`role_without_boundary`); with the condition
+        // IAM would answer AccessDenied to both. No Attach/Detach policy, no boundary changes
+        // and no trust policy updates.
+        actions: ["iam:GetRole", "iam:TagRole"],
         resources: [packs.roleArns],
       }),
     );
