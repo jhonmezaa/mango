@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from functools import cache
 from typing import Any
 
@@ -30,6 +31,7 @@ from mango_provisioner.packs.role import PackRoles
 from mango_provisioner.packs.runtime import PackRuntimes
 from mango_provisioner.packs.steps import PackProvisioner
 from mango_provisioner.packs.store import PackStore
+from mango_provisioner.stack_tags import StackTags
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -46,6 +48,13 @@ _INVOKE_CONFIG = Config(
 @cache
 def _provisioner() -> PackProvisioner:
     settings = PackSettings.from_env()
+    # D76: what this function creates carries the installation stack's tags too.
+    settings = replace(
+        settings,
+        stack_tags=StackTags(
+            boto3.client("cloudformation", config=_CLIENT_CONFIG), settings.stack_id
+        ),
+    )
     dynamodb = boto3.client("dynamodb", config=_CLIENT_CONFIG)
     control = boto3.client("bedrock-agentcore-control", config=_CLIENT_CONFIG)
     return PackProvisioner(

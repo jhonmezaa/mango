@@ -352,6 +352,17 @@ export class PackProvisioner extends Construct {
       }),
     );
 
+    // --- Tags of the installation's stack (D76) --------------------------------------------
+    // What this function creates outside the template carries the tags the customer deployed
+    // the stack with. It reads only this stack: DescribeStacks on its own id.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadInstallationStackTags",
+        actions: ["cloudformation:DescribeStacks"],
+        resources: [stack.stackId],
+      }),
+    );
+
     // --- Runtime log groups (D16) --------------------------------------------------------
     role.addToPolicy(
       new iam.PolicyStatement({
@@ -471,6 +482,8 @@ export class PackProvisioner extends Construct {
       environment: {
         MANGO_NAMESPACE: ns,
         MANGO_ACCOUNT_ID: stack.account,
+        // D76: the stack whose tags go on the roles, runtimes and log groups created here.
+        MANGO_STACK_ID: stack.stackId,
         SETTINGS_TABLE: props.settingsTable.tableName,
         AUDIT_STREAM: props.auditStream.deliveryStreamName,
         AUDIT_INDEX_TABLE: props.auditIndex.tableName,

@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-30
 - **Precisa / reemplaza a:** flexibiliza P3 y la regla 1 de `AGENTS.md`; mantiene [D9](D009-versionado-y-upgrades.md) y §4.12
-- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa)
+- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa); [D76](D076-tags-del-stack-en-lo-creado-en-ejecucion.md) (precisa: lo que se crea por SDK lleva también los tags del stack)
 - **Tema en el registro original:** Recursos creados en runtime (flexibiliza P3 y la regla 1)
 
 ## Decisión

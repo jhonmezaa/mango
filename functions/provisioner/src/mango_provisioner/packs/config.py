@@ -19,6 +19,9 @@ from urllib.parse import quote
 
 from mango_packs.enablement import is_pack_id
 from mango_packs.signing import PackSignatureError, load_public_key
+from mango_provisioner.config import ConfigError as AgentConfigError
+from mango_provisioner.config import stack_id
+from mango_provisioner.stack_tags import StackTags, merge
 
 ENDPOINT_LIVE = "live"
 """Runtime endpoint the Gateway target invokes; moved only to a verified runtime version."""
@@ -184,6 +187,8 @@ class PackSettings:
     runtime_logs_key_arn: str
     connector_targets: frozenset[str]
     """Gateway targets of Mango connectors: a pack never takes or touches one of them."""
+    stack_id: str
+    """The installation's ``Core`` stack: its tags go on everything created here (D76)."""
     broker_role_arn: str | None = None
     """Broker a pack over account data assumes on every call, as the user (D10, D37)."""
     target_role_arn: str | None = None
@@ -201,15 +206,20 @@ class PackSettings:
     """Actions that role allows: the ceiling of a manifest of the member chain."""
     network: PackNetwork = PackNetwork(subnets=(), security_groups=MappingProxyType({}))
     """Subnets and per-pack security groups of the pack VPC (R6)."""
+    stack_tags: StackTags | None = None
+    """Reader of the stack's tags; the handler sets it (it needs an AWS client)."""
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> PackSettings:
         env = os.environ if env is None else env
         try:
+            namespace = _match(_NAMESPACE_RE, "MANGO_NAMESPACE", env["MANGO_NAMESPACE"])
+            region = _match(_REGION_RE, "AWS_REGION", env["AWS_REGION"])
+            account_id = _match(_ACCOUNT_RE, "MANGO_ACCOUNT_ID", env["MANGO_ACCOUNT_ID"])
             settings = PackSettings(
-                namespace=_match(_NAMESPACE_RE, "MANGO_NAMESPACE", env["MANGO_NAMESPACE"]),
-                region=_match(_REGION_RE, "AWS_REGION", env["AWS_REGION"]),
-                account_id=_match(_ACCOUNT_RE, "MANGO_ACCOUNT_ID", env["MANGO_ACCOUNT_ID"]),
+                namespace=namespace,
+                region=region,
+                account_id=account_id,
                 settings_table=env["SETTINGS_TABLE"],
                 audit_stream=env["AUDIT_STREAM"],
                 audit_index_table=env["AUDIT_INDEX_TABLE"],
@@ -228,6 +238,7 @@ class PackSettings:
                 connector_targets=_strings(
                     "CONNECTOR_TARGETS", _json("CONNECTOR_TARGETS", env), _TARGET_RE
                 ),
+                stack_id=_stack_id(env["MANGO_STACK_ID"], region, account_id, namespace),
                 broker_role_arn=_optional(
                     _ROLE_ARN_RE, "PACK_BROKER_ROLE_ARN", env["PACK_BROKER_ROLE_ARN"]
                 ),
@@ -342,13 +353,24 @@ class PackSettings:
     def envelope_key(self, pack_id: str, version: str) -> str:
         return f"{self.artifact_prefix(pack_id, version)}{pack_id}-{version}.pack.json"
 
+    def log_group_arn(self, name: str) -> str:
+        return f"arn:aws:logs:{self.region}:{self.account_id}:log-group:{name}"
+
     def tags(self, pack_id: str) -> dict[str, str]:
-        """Cost tags (same keys as the stack) plus the pack the resource belongs to."""
-        return {
+        """Mango's tags plus the pack the resource belongs to, and the stack's tags (D76)."""
+        own = {
             "mango:namespace": self.namespace,
             "mango:component": COMPONENT_TAG,
             "mango:pack": _pack(pack_id),
         }
+        return merge(own, self.stack_tags.get() if self.stack_tags else {})
+
+
+def _stack_id(value: str, region: str, account_id: str, namespace: str) -> str:
+    try:
+        return stack_id(value, region=region, account_id=account_id, namespace=namespace)
+    except AgentConfigError:
+        raise ConfigError("MANGO_STACK_ID is invalid") from None
 
 
 def _pack(pack_id: str) -> str:

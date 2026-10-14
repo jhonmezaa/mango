@@ -38,7 +38,18 @@ from mango_provisioner.packs.runtime import PackRuntimes
 from mango_provisioner.packs.steps import PackProvisioner
 from mango_provisioner.packs.store import PackStore
 
-from .conftest import ACCOUNT, AUDIT_TABLE, LOGS_KEY_ARN, NOW, NS, REGION, FakeFirehose, FakeLogs
+from .conftest import (
+    ACCOUNT,
+    AUDIT_TABLE,
+    LOGS_KEY_ARN,
+    NOW,
+    NS,
+    REGION,
+    STACK_ID,
+    FakeFirehose,
+    FakeLogs,
+    with_stack_tags,
+)
 
 SETTINGS_TABLE = "Mango-test-Settings"
 BUCKET = "mango-test-packs"
@@ -219,6 +230,7 @@ def env(
         "POLICY_ENGINE_ID": POLICY_ENGINE_ID,
         "RUNTIME_LOGS_KEY_ARN": LOGS_KEY_ARN,
         "CONNECTOR_TARGETS": json.dumps(["finops"]),
+        "MANGO_STACK_ID": STACK_ID,
     }
 
 
@@ -459,6 +471,7 @@ class FakeAgentCore:
             "polls": 0,
             "created": self._tick(),
             "updated": None,
+            "tags": kwargs.get("tags"),
         }
         return {"status": "CREATING"}
 
@@ -699,10 +712,13 @@ class FakeAgentCore:
 class PackLab:
     """Everything a test needs: the provisioner, its fakes and what mango-api would stage."""
 
-    def __init__(self, dynamodb: Any, iam: Any, s3: Any) -> None:
+    def __init__(
+        self, dynamodb: Any, iam: Any, s3: Any, *, stack_tags: dict[str, str] | None = None
+    ) -> None:
         self.db = dynamodb
         self.iam = iam
         self.s3 = s3
+        self.stack_tags = stack_tags
         self.signer = Signer()
         self.agentcore = FakeAgentCore()
         self.logs = FakeLogs()
@@ -740,8 +756,9 @@ class PackLab:
     ) -> PackProvisioner:
         """The provisioner as the stack of a release would configure it."""
         key = self.signer.public_pem if public_key is True else (public_key or None)
-        self.settings = PackSettings.from_env(
-            env(key, catalog, broker=self.broker, network=self.network)
+        self.settings = with_stack_tags(
+            PackSettings.from_env(env(key, catalog, broker=self.broker, network=self.network)),
+            self.stack_tags,
         )
         self.store = PackStore(self.db, SETTINGS_TABLE)
         self.provisioner = PackProvisioner(
@@ -905,8 +922,10 @@ class PackLab:
             return p.mark_failed(state)
 
 
-def make_packlab() -> PackLab:
-    """Tables, the boundary policy, a versioned bucket and the lab (inside ``mock_aws``)."""
+def make_packlab(stack_tags: dict[str, str] | None = None) -> PackLab:
+    """Tables, the boundary policy, a versioned bucket and the lab (inside ``mock_aws``).
+
+    ``stack_tags``: the tags the installation's stack was deployed with (D76)."""
     dynamodb = boto3.client("dynamodb", region_name=REGION)
     for name in (SETTINGS_TABLE, AUDIT_TABLE):
         dynamodb.create_table(
@@ -934,4 +953,4 @@ def make_packlab() -> PackLab:
     s3 = boto3.client("s3", region_name=REGION)
     s3.create_bucket(Bucket=BUCKET)
     s3.put_bucket_versioning(Bucket=BUCKET, VersioningConfiguration={"Status": "Enabled"})
-    return PackLab(dynamodb, iam, s3)
+    return PackLab(dynamodb, iam, s3, stack_tags=stack_tags)

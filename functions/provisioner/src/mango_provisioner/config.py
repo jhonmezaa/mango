@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from mango_core.agents import is_agent_id
+from mango_provisioner.stack_tags import StackTags, merge
 
 ENDPOINT_LIVE = "live"
 """Harness endpoint mango-api invokes; the provisioner moves it to the published version."""
@@ -110,6 +111,15 @@ def _match(pattern: re.Pattern[str], name: str, value: str) -> str:
     return value
 
 
+def stack_id(value: str, *, region: str, account_id: str, namespace: str) -> str:
+    """The ``Core`` stack of this installation, whose tags go on what is created (D76)."""
+    own = re.compile(
+        rf"^arn:aws:cloudformation:{re.escape(region)}:{account_id}:stack/"
+        rf"Mango-{namespace}-Core/[0-9a-f]{{8}}(-[0-9a-f]{{4}}){{3}}-[0-9a-f]{{12}}$"
+    )
+    return _match(own, "MANGO_STACK_ID", value)
+
+
 @dataclass(frozen=True)
 class Settings:
     namespace: str
@@ -131,6 +141,10 @@ class Settings:
     session_idle_seconds: int
     """Runtime session lifecycle (D39); mango-api keeps sessions with the same values."""
     session_max_seconds: int
+    stack_id: str
+    """The installation's ``Core`` stack: its tags go on everything created here (D76)."""
+    stack_tags: StackTags | None = None
+    """Reader of that stack's tags; the handler sets it (it needs an AWS client)."""
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> Settings:
@@ -138,9 +152,10 @@ class Settings:
         try:
             namespace = _match(_NAMESPACE_RE, "MANGO_NAMESPACE", env["MANGO_NAMESPACE"])
             account_id = _match(_ACCOUNT_RE, "MANGO_ACCOUNT_ID", env["MANGO_ACCOUNT_ID"])
+            region = _match(_REGION_RE, "AWS_REGION", env["AWS_REGION"])
             settings = Settings(
                 namespace=namespace,
-                region=_match(_REGION_RE, "AWS_REGION", env["AWS_REGION"]),
+                region=region,
                 account_id=account_id,
                 agents_table=env["AGENTS_TABLE"],
                 settings_table=env["SETTINGS_TABLE"],
@@ -157,6 +172,12 @@ class Settings:
                 release_agents=_release_agents(env["RELEASE_AGENTS"]),
                 session_idle_seconds=_seconds("AGENT_SESSION_IDLE_SECONDS", env),
                 session_max_seconds=_seconds("AGENT_SESSION_MAX_SECONDS", env),
+                stack_id=stack_id(
+                    env["MANGO_STACK_ID"],
+                    region=region,
+                    account_id=account_id,
+                    namespace=namespace,
+                ),
             )
         except KeyError as exc:
             raise ConfigError(f"missing environment variable {exc.args[0]}") from None
@@ -205,13 +226,17 @@ class Settings:
             f"{_LOG_GROUP_PREFIX}{runtime_id}-{ENDPOINT_LIVE}",
         )
 
+    def log_group_arn(self, name: str) -> str:
+        return f"arn:aws:logs:{self.region}:{self.account_id}:log-group:{name}"
+
     def tags(self, agent_id: str) -> dict[str, str]:
-        """Cost tags (same keys as the stack) plus the agent the resource belongs to."""
-        return {
+        """Mango's tags plus the agent the resource belongs to, and the stack's tags (D76)."""
+        own = {
             "mango:namespace": self.namespace,
             "mango:component": "agent",
             "mango:agent": _agent(agent_id),
         }
+        return merge(own, self.stack_tags.get() if self.stack_tags else {})
 
 
 def _agent(agent_id: str) -> str:

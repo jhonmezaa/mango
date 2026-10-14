@@ -508,6 +508,18 @@ describe("packs bucket (D36, TM-M15)", () => {
   });
 });
 
+describe("pack provisioner role: tags of the installation's stack (D76)", () => {
+  it("reads only its own stack, and nothing else of CloudFormation", () => {
+    const read = bySid(provisioner, "ReadInstallationStackTags");
+    expect(actions(read)).toEqual(["cloudformation:DescribeStacks"]);
+    expect(read.Resource).toEqual({ Ref: "AWS::StackId" });
+    expect(read.Condition).toBeUndefined();
+    const cloudformation = provisioner.filter((s) => actions(s).some((a) => a.startsWith("cloudformation:")));
+    expect(cloudformation.map((s) => s.Sid)).toEqual(["ReadInstallationStackTags"]);
+    expect(resources[functionId]!.Properties.Environment.Variables.MANGO_STACK_ID).toEqual({ Ref: "AWS::StackId" });
+  });
+});
+
 describe("pack provisioner function and state machine", () => {
   const environment = resources[functionId]!.Properties.Environment.Variables as Record<string, unknown>;
 

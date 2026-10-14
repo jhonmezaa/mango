@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from functools import cache
 from typing import Any
 
@@ -24,6 +25,7 @@ from mango_provisioner.errors import StepError, aws_error
 from mango_provisioner.harness import Harnesses
 from mango_provisioner.role import AgentRoles
 from mango_provisioner.runtime_logs import RuntimeLogs
+from mango_provisioner.stack_tags import StackTags
 from mango_provisioner.steps import Provisioner
 from mango_provisioner.store import ProvisionerStore
 
@@ -46,6 +48,13 @@ class RetryableStepError(Exception):
 @cache
 def _provisioner() -> Provisioner:
     settings = Settings.from_env()
+    # D76: what this function creates carries the installation stack's tags too.
+    settings = replace(
+        settings,
+        stack_tags=StackTags(
+            boto3.client("cloudformation", config=_CLIENT_CONFIG), settings.stack_id
+        ),
+    )
     dynamodb = boto3.client("dynamodb", config=_CLIENT_CONFIG)
     return Provisioner(
         settings,

@@ -32,6 +32,10 @@ PROVISIONER_ENV = {
     "AGENT_SESSION_IDLE_SECONDS": "300",
     "AGENT_SESSION_MAX_SECONDS": "28800",
     "CONNECTOR_CATALOG": "{}",
+    "MANGO_STACK_ID": (
+        "arn:aws:cloudformation:us-east-1:123456789012:stack/Mango-test-Core/"
+        "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+    ),
 }
 
 

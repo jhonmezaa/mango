@@ -8,7 +8,7 @@ been invoked yet. The runtimes of MCP packs get the same treatment.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -21,9 +21,17 @@ if TYPE_CHECKING:
 
 
 def govern_log_groups(
-    logs: CloudWatchLogsClient, names: Iterable[str], key_arn: str, tags: Mapping[str, str]
+    logs: CloudWatchLogsClient,
+    names: Iterable[str],
+    key_arn: str,
+    tags: Mapping[str, str],
+    arn_of: Callable[[str], str],
 ) -> None:
-    """Create or adopt each log group with the key and the retention of D16."""
+    """Create or adopt each log group with the key and the retention of D16, and the tags.
+
+    A log group AgentCore created first is adopted: it gets the key, the retention and the
+    same tags as one created here, the stack's included (D76).
+    """
     for name in names:
         try:
             try:
@@ -32,6 +40,7 @@ def govern_log_groups(
                 if error_code(exc) != "ResourceAlreadyExistsException":
                     raise
                 logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
+                logs.tag_resource(resourceArn=arn_of(name), tags=dict(tags))
             logs.put_retention_policy(logGroupName=name, retentionInDays=RUNTIME_LOG_RETENTION_DAYS)
         except (ClientError, BotoCoreError) as exc:
             raise aws_error("RuntimeLogGroup", exc) from None
@@ -60,6 +69,7 @@ class RuntimeLogs:
             settings.log_group_names(runtime_id),
             settings.runtime_logs_key_arn,
             settings.tags(agent_id),
+            settings.log_group_arn,
         )
 
     def delete(self, runtime_id: str) -> None:

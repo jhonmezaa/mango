@@ -25,6 +25,7 @@ from mango_provisioner.packs.role import (
 )
 from mango_provisioner.packs.runtime import MAX_TOOLS_RESPONSE_BYTES, decode_tools
 
+from .conftest import STACK_ID
 from .pack_lab import (
     ALLOWED_ACTIONS,
     BOUNDARY_ARN,
@@ -113,6 +114,7 @@ def test_names_fit_the_limits_of_aws() -> None:
             **env(KEY, {}),
             "MANGO_NAMESPACE": "abcd1234",
             "PACK_BOUNDARY_ARN": "arn:aws:iam::123456789012:policy/Mango-abcd1234-mcp-boundary",
+            "MANGO_STACK_ID": STACK_ID.replace("Mango-test-Core", "Mango-abcd1234-Core"),
         }
     )
     longest_pack = "a" + "-b" * 11 + "c"  # 24 characters, the most a pack id may have

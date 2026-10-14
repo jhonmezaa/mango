@@ -386,6 +386,7 @@ class PackProvisioner:
             settings.log_group_names(ref.runtime_id),
             settings.runtime_logs_key_arn,
             settings.tags(ctx.request.pack_id),
+            settings.log_group_arn,
         )
         return state
 

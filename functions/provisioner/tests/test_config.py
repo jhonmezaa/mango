@@ -8,7 +8,7 @@ import pytest
 
 from mango_provisioner.config import ConfigError, Settings
 
-from .conftest import ENV
+from .conftest import ENV, STACK_ID
 
 LONGEST_ID = "a" * 16
 
@@ -62,6 +62,7 @@ def test_names_fit_the_limits_with_the_longest_namespace_and_id() -> None:
             **ENV,
             "MANGO_NAMESPACE": "abcdefgh",
             "AGENT_BOUNDARY_ARN": "arn:aws:iam::123456789012:policy/Mango-abcdefgh-agent-boundary",
+            "MANGO_STACK_ID": STACK_ID.replace("Mango-test-Core", "Mango-abcdefgh-Core"),
         }
     )
     harness = settings.harness_name(LONGEST_ID)

@@ -316,6 +316,17 @@ describe("provisioner role: wildcards and the rest", () => {
   });
 });
 
+describe("provisioner role: tags of the installation's stack (D76)", () => {
+  it("reads only its own stack, and nothing else of CloudFormation", () => {
+    const read = bySid(provisioner, "ReadInstallationStackTags");
+    expect(actions(read)).toEqual(["cloudformation:DescribeStacks"]);
+    expect(read.Resource).toEqual({ Ref: "AWS::StackId" });
+    expect(read.Condition).toBeUndefined();
+    const cloudformation = provisioner.filter((s) => actions(s).some((a) => a.startsWith("cloudformation:")));
+    expect(cloudformation.map((s) => s.Sid)).toEqual(["ReadInstallationStackTags"]);
+  });
+});
+
 describe("agent permissions boundary", () => {
   const statements = resources[boundaryId]!.Properties.PolicyDocument.Statement as Statement[];
   const granted = statements.flatMap(actions);
@@ -477,12 +488,15 @@ describe("provisioner function and state machine", () => {
       "GUARDRAIL_VERSION",
       "MANGO_ACCOUNT_ID",
       "MANGO_NAMESPACE",
+      "MANGO_STACK_ID",
       "RELEASE_AGENTS",
       "RUNTIME_LOGS_KEY_ARN",
       "SETTINGS_TABLE",
     ]);
     expect(env.AGENT_BOUNDARY_ARN).toEqual({ Ref: boundaryId });
     expect(env.MANGO_NAMESPACE).toBe(ns);
+    // D76: the stack whose tags go on what the function creates.
+    expect(env.MANGO_STACK_ID).toEqual({ Ref: "AWS::StackId" });
     expect(fn.KmsKeyArn).toBeDefined();
     expect(fn.Runtime).toBe("python3.13");
     expect(fn.Role).toEqual({ "Fn::GetAtt": [provisionerRoleId, "Arn"] });

@@ -26,6 +26,7 @@ from mango_provisioner.config import Settings
 from mango_provisioner.harness import Harnesses
 from mango_provisioner.role import AgentRoles
 from mango_provisioner.runtime_logs import RuntimeLogs
+from mango_provisioner.stack_tags import StackTags
 from mango_provisioner.steps import Provisioner
 from mango_provisioner.store import ProvisionerStore
 
@@ -37,6 +38,10 @@ SETTINGS_TABLE = "Mango-test-Settings"
 AUDIT_TABLE = "Mango-test-AuditIndex"
 BOUNDARY_ARN = f"arn:aws:iam::{ACCOUNT}:policy/Mango-{NS}-agent-boundary"
 LOGS_KEY_ARN = f"arn:aws:kms:{REGION}:{ACCOUNT}:key/11111111-2222-3333-4444-555555555555"
+STACK_ID = (
+    f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/Mango-{NS}-Core/"
+    "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+)
 MODEL = "us.anthropic.claude-sonnet-4-6"
 MODEL_2 = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 DISABLED_MODEL = "us.anthropic.retired-model"
@@ -67,6 +72,7 @@ ENV = {
     "AGENT_SESSION_IDLE_SECONDS": "300",
     "AGENT_SESSION_MAX_SECONDS": "28800",
     "RELEASE_AGENTS": "{}",
+    "MANGO_STACK_ID": STACK_ID,
     "CONNECTOR_CATALOG": json.dumps(
         {
             "cost-explorer": {
@@ -311,6 +317,7 @@ class FakeAgentCore:
             "live": None,
             "target": kwargs["targetVersion"],
             "polls": 0,
+            "tags": kwargs.get("tags"),
         }
         return {"endpoint": self._endpoint_view(harness["endpoint"])}
 
@@ -351,6 +358,12 @@ class FakeLogs:
     def associate_kms_key(self, **kwargs: Any) -> None:
         self.groups[kwargs["logGroupName"]]["kms"] = kwargs["kmsKeyId"]
 
+    def tag_resource(self, **kwargs: Any) -> None:
+        prefix = f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:"
+        assert kwargs["resourceArn"].startswith(prefix)
+        group = self.groups[kwargs["resourceArn"].removeprefix(prefix)]
+        group["tags"] = {**group.get("tags", {}), **kwargs["tags"]}
+
     def put_retention_policy(self, **kwargs: Any) -> None:
         self.groups[kwargs["logGroupName"]]["retention"] = kwargs["retentionInDays"]
 
@@ -373,13 +386,36 @@ class FakeFirehose:
         self.records.append(json.loads(kwargs["Record"]["Data"]))
 
 
+class FakeCloudFormation:
+    """``DescribeStacks`` of the installation's own stack, with the tags it was deployed with."""
+
+    def __init__(self, tags: dict[str, str]) -> None:
+        self.tags = tags
+        self.calls: list[str] = []
+
+    def describe_stacks(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs["StackName"])
+        assert kwargs["StackName"] == STACK_ID
+        tags = [{"Key": k, "Value": v} for k, v in self.tags.items()]
+        return {"Stacks": [{"StackId": STACK_ID, "StackName": f"Mango-{NS}-Core", "Tags": tags}]}
+
+
+def with_stack_tags(settings: Any, tags: dict[str, str] | None) -> Any:
+    """``settings`` as the handler builds them, reading ``tags`` as the stack's (D76)."""
+    if tags is None:
+        return settings
+    return replace(settings, stack_tags=StackTags(FakeCloudFormation(tags), STACK_ID))
+
+
 class Lab:
     """Everything a test needs: the provisioner, its fakes and helpers to stage versions."""
 
-    def __init__(self, dynamodb: Any, iam: Any) -> None:
+    def __init__(
+        self, dynamodb: Any, iam: Any, *, stack_tags: dict[str, str] | None = None
+    ) -> None:
         self.db = dynamodb
         self.iam = iam
-        self.settings = Settings.from_env(ENV)
+        self.settings = with_stack_tags(Settings.from_env(ENV), stack_tags)
         self.agentcore = FakeAgentCore()
         self.logs = FakeLogs()
         self.firehose = FakeFirehose()
@@ -537,7 +573,8 @@ def aws(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 @pytest.fixture
-def lab(aws: None) -> Lab:
+def lab(aws: None, request: pytest.FixtureRequest) -> Lab:
+    """Parametrize it indirectly with a dict to deploy the stack with those tags (D76)."""
     dynamodb = boto3.client("dynamodb", region_name=REGION)
     for name in (AGENTS_TABLE, SETTINGS_TABLE, AUDIT_TABLE):
         _table(dynamodb, name)
@@ -565,12 +602,13 @@ def lab(aws: None) -> Lab:
             }
         ),
     )
-    return Lab(dynamodb, iam)
+    return Lab(dynamodb, iam, stack_tags=getattr(request, "param", None))
 
 
 @pytest.fixture
-def packlab(aws: None) -> Any:
-    """Lab of the pack provisioner (``pack_lab.PackLab``)."""
+def packlab(aws: None, request: pytest.FixtureRequest) -> Any:
+    """Lab of the pack provisioner (``pack_lab.PackLab``). Parametrize it indirectly with a
+    dict to deploy the stack with those tags (D76)."""
     from .pack_lab import make_packlab  # noqa: PLC0415 - pack_lab imports this module
 
-    return make_packlab()
+    return make_packlab(getattr(request, "param", None))
