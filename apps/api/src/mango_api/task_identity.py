@@ -16,6 +16,7 @@ Tokens are never logged.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_SUB_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+"""A Cognito subject (a UUID); anything else never reaches a ``ListUsers`` filter."""
 _LOST = frozenset({"NotAuthorizedException", "UserNotFoundException", "UserNotConfirmedException"})
 """What Cognito answers for a person who may not sign in any more."""
 
@@ -57,12 +60,13 @@ class TaskTokens:
 
     def caller_for(self, owner_id: str, run_id: str) -> Caller:
         """The owner, as a verified caller with a token issued for this run."""
+        username = self._username(owner_id)
         try:
             started = self.cognito.admin_initiate_auth(
                 UserPoolId=self.user_pool_id,
                 ClientId=self.client_id,
                 AuthFlow="CUSTOM_AUTH",
-                AuthParameters={"USERNAME": owner_id},
+                AuthParameters={"USERNAME": username},
             )
         except ClientError as exc:
             # Only here does Cognito speak about the person: disabled, deleted or unconfirmed.
@@ -94,7 +98,7 @@ class TaskTokens:
                 ChallengeName=task_identity.CHALLENGE_NAME,
                 Session=started["Session"],
                 ChallengeResponses={
-                    "USERNAME": owner_id,
+                    "USERNAME": username,
                     "ANSWER": task_identity.assemble(claims, signature),
                 },
             )
@@ -122,6 +126,26 @@ class TaskTokens:
             logger.error("the token of a task run belongs to someone else")
             raise TaskIdentityUnavailableError
         return Caller(user=user, token=token, expires_at=int(verified["exp"]))
+
+    def _username(self, owner_id: str) -> str:
+        """The Cognito user name of the owner, found by subject. With the email as user name
+        attribute it is the subject itself; a federated person (D20, SSO) has another one."""
+        if not _SUB_RE.fullmatch(owner_id):
+            # Never part of a filter expression unless it is plainly a subject.
+            raise TaskIdentityUnavailableError
+        try:
+            users = self.cognito.list_users(
+                UserPoolId=self.user_pool_id,
+                Filter=f'sub = "{owner_id}"',
+                Limit=1,
+                AttributesToGet=[],
+            ).get("Users", [])
+        except (ClientError, BotoCoreError) as exc:
+            raise TaskIdentityUnavailableError from exc
+        if not users or not users[0].get("Username"):
+            # The person no longer exists: no access at all (D26).
+            raise OwnerAccessLostError
+        return str(users[0]["Username"])
 
     def _revoke(self, refresh_token: str) -> None:
         try:

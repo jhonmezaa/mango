@@ -1,8 +1,9 @@
-# Tareas sin chat (a pedido, por horario y por evento): modelo de amenazas (v0.1)
+# Tareas sin chat (a pedido, por horario y por evento): modelo de amenazas (v0.2)
 
 > Fecha: 2026-10-15 · Skill: `security-threat-model`. Decisiones: D13, D20, D25, D26 («Schedules»), D33, D56, D58, D63, D70, D72, D73, D74, D76 y **D78** (esta).
 > Amplía `identity-propagation-threat-model.md`, `write-tools-approval-threat-model.md` y `budget-reconciliation-threat-model.md`.
 > Alcance: `apps/api/src/mango_api/tasks.py`, `tasks_store.py`, `task_worker.py` y `task_identity.py`; `packages/py/mango-core/src/mango_core/task_runs.py` y `task_identity.py`; `functions/task-auth/` (reto de Cognito); `infra/lib/constructs/tasks.ts`; el cambio de `tools.ts` (cliente de tareas en el Gateway y en el conector de Cost Explorer); la pantalla `apps/web/src/pages/schedules/`. Diseño: `docs/specs/tasks.md`.
+> v0.2 (mismo día) añade las dos reglas de D79 (TM-T10) y la revisión `security-audit` del diff, al final.
 > v0.1 se escribe **antes** de construir (regla de `AGENTS.md`), con las decisiones de la fase 1 ya tomadas (2026-10-15, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15). Nada está desplegado: lo que solo se ve en una instalación está en «Supuestos sin validar».
 
 ## Executive summary
@@ -142,6 +143,7 @@ flowchart LR
 | TM-T6 | Inyección indirecta por datos del evento o salida de tools | Integridad de la acción | Alta | Baja (solo lectura) | **Media** | A3: ninguna escritura sin aprobación del dueño desde su sesión; datos del evento acotados y delimitados; guardrail base (D34); el resultado se muestra como Markdown sin HTML crudo |
 | TM-T7 | Programaciones o colas que sobreviven a la desinstalación o a la retirada | Gasto, datos | Baja | Baja | **Baja** | Grupo de Scheduler en la plantilla (borrarlo borra sus programaciones); retirar borra la programación; un mensaje de una tarea retirada se omite |
 | TM-T8 | Fuga del resultado (otra persona lo lee, va a logs) | Resultado | Baja | Media | **Baja** | Lectura por objeto (solo el dueño y admins); nada de la tarea, del evento ni del resultado en logs ni en auditoría; TTL de 90 días |
+| TM-T10 | Suscribir a las anomalías de costo a alguien que no ve toda la organización, o una tormenta de anomalías (D79) | Datos, presupuesto | Media | Media | **Media** | Solo personas centrales crean ese disparador (`central_only`); si el dueño deja de serlo, la ejecución se omite (`not_central`) y la tarea se pausa; como mucho 5 ejecuciones por tarea y día UTC (`daily_cap`), contadas antes de invocar el modelo |
 | TM-T9 | Agotar las tareas de `mango-api` con ejecuciones largas | Disponibilidad del chat | Media | Media | **Media** | Dos ejecuciones a la vez por tarea de la API; el resto espera en la cola; turno con el límite del agente |
 
 ## Criticality calibration
@@ -177,3 +179,13 @@ flowchart LR
 - Fronteras: cada una aparece en al menos una amenaza (persona→API TM-T4; API→Scheduler TM-T7; cola TM-T5; Cognito TM-T1, TM-T2; Gateway TM-T2; evento TM-T6).
 - Ejecución frente a CI: todo lo de este documento es de ejecución.
 - Aclaraciones: los supuestos 1 a 3 los confirmó el agente principal por delegación del dueño (2026-10-15).
+
+## Revisión `security-audit` del diff (2026-10-15, modo guía)
+
+Revisados: `infra/lib/constructs/tasks.ts` y el cambio de `tools.ts`, `functions/task-auth/`, `mango_core.task_identity`, `mango_core.task_runs`, `apps/api/src/mango_api/task_identity.py`, `task_worker.py`, `tasks.py`, `tasks_store.py` y las políticas Cedar nuevas. Sin ejecutar nada fuera de los tests locales.
+
+- **Corregido: el nombre de usuario de Cognito.** La primera versión iniciaba el flujo con el `sub` como `USERNAME`. En este pool (el correo es el atributo de nombre) el nombre de usuario es un UUID igual al `sub`, pero una persona federada (SSO, previsto en D20) tiene otro: su ejecución habría fallado como «perdió el acceso» y la tarea se habría pausado. Ahora se busca el nombre por `sub` (`ListUsers`, permiso que `mango-api` ya tenía por D33 y D60) y el `sub` solo entra en el filtro si tiene forma de identificador. Con tests.
+- **Sin hallazgo:** un token de tareas no entra en ninguna ruta de `mango-api` (el verificador fija el cliente web, también el de la sesión), el approval executor no lo acepta, y llamar al Gateway con él exige la firma de invocación, cuya llave solo lee `mango-api`. Iniciar `CUSTOM_AUTH` desde internet con el id del cliente llega al reto y falla sin la firma (el WAF del user pool cubre `InitiateAuth`). El reto compara persona, nonce de un solo uso, cliente (leído de SSM, no del evento) y vencimiento; la función solo puede leer la llave pública.
+- **Sin hallazgo en IAM:** cada sentencia nombra su recurso; el único comodín es `schedule/Mango-<ns>-tasks/*` (las programaciones se crean en ejecución, D25), reconocido en cdk-nag. `iam:PassRole` solo del rol del planificador y solo hacia `scheduler.amazonaws.com`; ese rol solo envía a la cola y solo lo asumen programaciones del grupo de la instalación. La llave de identidad niega `kms:Sign` a cualquier otro principal. Los permisos de tareas van en una política administrada propia (`Mango-<ns>-ApiTasks`): las políticas en línea de un rol comparten un límite de tamaño y el rol de `mango-api` ya estaba cerca; el etiquetador del stack (D77) la etiqueta como las demás.
+- **Riesgo que queda (TM-T1, aceptado):** emitir tokens de lectura de cualquier persona exige el rol de `mango-api`. La protección contra amenazas de Cognito Plus no evalúa el flujo `CUSTOM_AUTH` (su modo para flujos personalizados no está activado), así que esas emisiones no tienen puntuación de riesgo; quedan en la auditoría de Mango (`task.run.started` con el dueño) y en los eventos de autenticación de Cognito.
+- **Pendiente, no de seguridad:** la DLQ de la cola de ejecuciones no tiene alarma; un mensaje que falla tres veces se pierde en silencio hasta que alguien mire.

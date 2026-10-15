@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-30 · puntos del 2026-10-06
 - **Precisa / reemplaza a:** reemplaza el login de [D14](D014-login-de-la-poc.md)
-- **Precisada por:** [D28](D028-implementacion-del-login-propio.md) (implementa); [D29](D029-plan-de-cognito-en-clientes.md) (revisa); [D58](D058-distribucion-para-clientes.md) (retira sus excepciones de laboratorio); [D60](D060-gestion-de-personas.md) (precisa); [D63](D063-sesion-web-con-cookie.md) (revisa: cookie de sesión)
+- **Precisada por:** [D28](D028-implementacion-del-login-propio.md) (implementa); [D29](D029-plan-de-cognito-en-clientes.md) (revisa); [D58](D058-distribucion-para-clientes.md) (retira sus excepciones de laboratorio); [D60](D060-gestion-de-personas.md) (precisa); [D63](D063-sesion-web-con-cookie.md) (revisa: cookie de sesión); [D78](D078-tareas-sin-chat.md) (un segundo cliente del user pool, solo `CUSTOM_AUTH`, para las ejecuciones de tareas; no es un ingreso de personas)
 - **Tema en el registro original:** Login y registro (reemplaza el login de [D14](D014-login-de-la-poc.md))
 
 ## Decisión

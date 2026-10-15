@@ -1,6 +1,6 @@
 # Mango Hub: arquitectura AWS de referencia
 
-> Fecha: 2026-09-28 · Revisión de coherencia: 2026-10-05 · Puesta al día con lo construido: 2026-10-14 · Estado: **adoptada**. Nació como propuesta para discusión; sus decisiones están tomadas y registradas en §8 (las primeras son del mismo 2026-09-28).
+> Fecha: 2026-09-28 · Revisión de coherencia: 2026-10-05 · Puesta al día con lo construido: 2026-10-15 · Estado: **adoptada**. Nació como propuesta para discusión; sus decisiones están tomadas y registradas en §8 (las primeras son del mismo 2026-09-28).
 > **Cómo leerla:** §1 a §7 describen el sistema que existe y la parte del plan que sigue sin construir. Lo que no está construido lleva la marca **previsto**. Donde este texto y una decisión de §8 difieran, manda la decisión. El resumen de qué existe: la tabla «Estado de lo construido», antes de §1.
 > Base: análisis de [`aws-samples/bedrock-chat`](https://github.com/aws-samples/bedrock-chat) @ `4419d62` y verificación del estado de los servicios AWS a sep-2026.
 > Los reportes de detalle, con referencias `archivo:línea` y URLs, están en [`research/`](./research):
@@ -36,7 +36,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | MCP packs firmados, con egress restringido | Hecho: tres packs de lectura. El provisioner de packs también puede crear el rol vinculado de identidad de AgentCore (D43 (4), del 2026-10-07; comprobado con tests y visto llegar en una actualización el 2026-10-08, sin que ninguna instalación lo haya ejercitado: el rol lo creó antes el provisioner de agentes, D43 (5)). Al verificar las tools de un Runtime recién creado, el provisioner vuelve a pedir `tools/list` si AgentCore responde que el servidor del pack aún no está listo (error JSON-RPC `-32010`), con el tope de reintentos del paso; la lista que llegue se compara igual con el manifiesto firmado (D43 (6), decidido por el dueño el 2026-10-08, con su detalle aceptado el 2026-10-09; comprobado con tests y **visto el 2026-10-09 en una cuenta de ensayo,** sin provocarlo: bastó un reintento, 14 s después, y el pack quedó habilitado sin que nadie pulsara «Reintentar», D43 (9); **visto otra vez ese día en un segundo ensayo,** otra instalación nueva: el mismo error en la primera `verify_tools`, un solo reintento, 15 s después, y el pack habilitado sin que nadie pulsara nada, D43 (10); con la del 2026-10-08 son tres instalaciones nuevas seguidas en las que el primer `tools/list` de un Runtime recién creado falla así; sin ver: que se agoten los reintentos). Al deshabilitar un pack, IAM solo deja al provisioner de packs borrar un rol que lleve el boundary de packs (D43 (7), 2026-10-09; en ese ensayo borró así el rol de un pack deshabilitado, D43 (8)) | `packs/aws-pricing`, `packs/aws-billing`, `packs/aws-cloudwatch`; `infra/lib/constructs/pack-network.ts` | D19, D36, D43, D54 |
 | Tags del cliente en lo que Mango crea en ejecución | Hecho; visto en una instalación el 2026-10-14 (D76 (8)): los provisioners copian los tags del stack `Core` (salvo `aws:` y `mango:`) a roles, harness, Runtimes, sus endpoints y sus log groups, y AgentCore los pasa al Runtime de un harness y a su identidad | `functions/provisioner/src/mango_provisioner/stack_tags.py`; `infra/lib/constructs/provisioner.ts`, `pack-provisioner.ts` | D76 |
 | Tags del cliente en lo que CloudFormation no puede etiquetar | Hecho; visto en una instalación el 2026-10-14 (D77 (10)): el etiquetador del stack (`Custom::MangoStackTags`) los pone al instalar y en cada versión en las políticas administradas, los recursos por defecto de las VPC y las reglas de los security groups | `functions/provisioner/src/mango_provisioner/stack_tagger.py`; `infra/lib/constructs/stack-tagger.ts` | D77 |
-| RBAC L1 (Verified Permissions) | Hecho | `policies/cedar/platform/` (15 políticas) | §4.5 |
+| RBAC L1 (Verified Permissions) | Hecho | `policies/cedar/platform/` (18 políticas; las 3 de tareas desde D78) | §4.5 |
 | RBAC L2 (Cedar en el Gateway) | Hecho por tool y por tipo de usuario; no por agente | `infra/lib/constructs/tools.ts` y `write-tools.ts`; `functions/provisioner/src/mango_provisioner/packs/gateway.py` | D33, D45 |
 | Identidad del usuario hasta el destino | Hecho: pagadora y cuentas miembro | `packages/py/mango-aws`; `infra/lib/constructs/member-access.ts` | D10, D37, D49, D51, D55 |
 | Presupuesto con reserva previa | **A medias:** solo por usuario y por agente | `apps/api/src/mango_api/budget.py` | §4.5 |
@@ -52,7 +52,8 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | RAG y bases de conocimiento | No hecho | — | §4.4 |
 | Router «Asistente Mango» | No hecho | — | §4.3 |
 | Memoria de AgentCore | No hecho: desactivada a propósito | `functions/provisioner/src/mango_provisioner/harness.py` | D13 |
-| Skills, tareas programadas y evals | No hecho | Sin pantalla ni API; fuera de `AVAILABLE_VIEWS` (`apps/web/src/layouts/navigation.ts`) | D26, D38 |
+| Tareas sin chat: a pedido y por horario (2026-10-15) | Hecho, en estado propuesta (D78). Una tarea corre un agente publicado como quien la creó, con un token de Cognito de esa persona emitido para cada ejecución (cliente `Mango-<ns>-tasks`, solo `CUSTOM_AUTH`, reto firmado con una llave KMS que solo firma `mango-api`); se pausa sola si su dueño pierde el acceso; reserva y concilia como un turno; nunca escribe (lo que pida queda como aprobación de su dueño). Las ejecuciones salen de la cola `Mango-<ns>-TaskRuns`, que leen las tareas de `mango-api`; EventBridge Scheduler deja ahí cada hora prevista. El disparador por evento existe en el modelo (con las reglas de D79: solo centrales y 5 al día) y su consumidor lo conecta D79. Pantalla «Schedules» del diseño, con «Ver resultado» y el selector de disparador como diferencias reportadas. Comprobado con tests y en el navegador contra el mock; **sin ver en una instalación** | `apps/api/src/mango_api/tasks.py`, `tasks_store.py`, `task_worker.py`, `task_identity.py`; `functions/task-auth`; `infra/lib/constructs/tasks.ts`; `apps/web/src/pages/schedules/` | D26, D78 |
+| Skills y evals | No hecho | Sin pantalla ni API | D26, D38 |
 | Delegación entre agentes | No hecho (fase 2) | — | D30 |
 | SSO con el IdP del cliente | No hecho en la infraestructura | El cliente del User Pool solo admite `COGNITO` (`infra/lib/constructs/identity.ts`) | D20, D53 (6) |
 | Editar MFA, duración de sesión e IdP desde la app | No hecho | — | D21 |
@@ -127,8 +128,8 @@ flowchart TB
   end
 
   subgraph IDN["Identidad"]
-    COG["Cognito Plus<br/>login propio: SRP + TOTP (D20)<br/>WAF regional con límites por IP (D72)"]
-    TRG["Lambdas pre sign-up y pre-token<br/>dominio del correo · rol, área y grupos"]
+    COG["Cognito Plus<br/>login propio: SRP + TOTP (D20)<br/>WAF regional con límites por IP (D72)<br/>cliente de tareas: solo CUSTOM_AUTH (D78)"]
+    TRG["Lambdas pre sign-up y pre-token<br/>dominio del correo · rol, área y grupos<br/>TaskAuth: reto firmado de una ejecución (D78)"]
   end
 
   U --> CF --> SPA
@@ -136,9 +137,11 @@ flowchart TB
   CF -- "VPC origin (HTTP en la PoC, D15)<br/>access token · SSE · cookie de sesión (D63)" --> ALB["ALB interno<br/>reparto por peticiones abiertas (D70)"]
 
   subgraph CP["PLANO DE CONTROL MANGO (nuestro)"]
-    API["mango-api (FastAPI)<br/>2 tareas de Fargate en 2 zonas (D70)<br/>chat SSE · Marketplace y Builder · aprobaciones<br/>personas y grupos · presupuestos · auditoría"]
+    API["mango-api (FastAPI)<br/>2 tareas de Fargate en 2 zonas (D70)<br/>chat SSE · Marketplace y Builder · aprobaciones<br/>personas y grupos · presupuestos · auditoría<br/>tareas sin chat: lee la cola de ejecuciones (D78)"]
     AVP["Verified Permissions<br/>(Cedar L1)"]
-    DDB[("DynamoDB, 8 tablas<br/>Conversations (RLS LeadingKeys) · Budgets · Agents<br/>Settings · Approvals · AuditIndex<br/>WebSessions · RateLimits")]
+    DDB[("DynamoDB, 9 tablas<br/>Conversations (RLS LeadingKeys) · Budgets · Agents<br/>Settings · Approvals · AuditIndex<br/>WebSessions · RateLimits · Tasks")]
+    SCH["EventBridge Scheduler<br/>grupo Mango-ns-tasks, por SDK (D78)"]
+    TQ[("SQS TaskRuns + DLQ<br/>horario, a pedido y eventos (D78)")]
     SFN["Step Functions + Lambda<br/>provisioner y deprovisioner de agentes<br/>provisioner de packs (por SDK, D25)"]
     BREC["BudgetReconciler<br/>Lambda cada 5 min (D73)"]
     REC["Reconciler<br/>Lambda diaria, solo lectura (D41)"]
@@ -146,6 +149,10 @@ flowchart TB
 
   ALB --> API
   API -- "renueva la sesión con una operación firmada (D72)" --> COG
+  API -- "token del dueño para cada ejecución (D78)" --> COG
+  API -- "crea y cambia las programaciones" --> SCH
+  SCH -- "hora prevista" --> TQ
+  TQ -- "ejecuciones" --> API
   API --> AVP
   API -- "reserva y turno pendiente, luego liquidación" --> DDB
   API --> SFN
@@ -206,7 +213,7 @@ flowchart TB
   DDB -.-> CUR
 ```
 
-Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no hay router; el Gateway tiene tres clases de target (un conector, el ejecutor de escrituras aprobadas y los packs); los packs corren en una red cerrada propia; `mango-api` son dos tareas con sesión por cookie y límites de tasa compartidos; y hay dos funciones de conciliación, alarmas y un tablero. Las cifras de alarmas son las de la plantilla sintetizada con la configuración de ejemplo el 2026-10-06.
+Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no hay router; el Gateway tiene tres clases de target (un conector, el ejecutor de escrituras aprobadas y los packs); los packs corren en una red cerrada propia; `mango-api` son dos tareas con sesión por cookie y límites de tasa compartidos; y hay dos funciones de conciliación, alarmas y un tablero. Desde D78, las tareas sin chat: Scheduler y una cola que lee `mango-api`, y un segundo cliente de Cognito para el token de cada ejecución. Las cifras de alarmas son las de la plantilla sintetizada con la configuración de ejemplo el 2026-10-06.
 
 ---
 
@@ -224,7 +231,7 @@ Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no
 | **Descartados** | Bedrock Agents Classic (maintenance mode). EKS/kagent: se revisa si hay requisito multicloud/on-prem. Lambda no ejecuta el loop del agente; solo tools y jobs | — |
 
 Límites a tener presentes:
-- **De Mango:** una sesión del runtime por conversación, con 300 s de inactividad y 8 h de vida máxima (D39). Un turno dura 120 s por defecto y hasta 600 s si el agente lo configura (D70 (6)). Un turno a la vez por conversación.
+- **De Mango:** una sesión del runtime por conversación, con 300 s de inactividad y 8 h de vida máxima (D39). Un turno dura 120 s por defecto y hasta 600 s si el agente lo configura (D70 (6)). Un turno a la vez por conversación. Una ejecución de una tarea (D78) es un turno en una sesión nueva, sin historial; una a la vez por tarea y dos a la vez por tarea de `mango-api`.
 - **De AgentCore** (verificados el 2026-09-28): 2 vCPU/8 GB por sesión; 25 sesiones nuevas por segundo y 2 500–5 000 sesiones activas por cuenta.
 - **De Bedrock:** la cuota de llamadas por minuto de cada modelo es de la cuenta y es lo primero que se agota en el chat (§4.15).
 - **Región:** hoy Mango solo se instala en us-east-1 (§4.7).
@@ -307,13 +314,14 @@ Límites a tener presentes:
 - Access tokens de 60 minutos, enriquecidos por una Lambda *pre-token* con el rol, el área y la marca de usuario central (`mango_role`, `mango_business_unit`, `mango_central`), calculados desde los grupos de Cognito y el registro de grupos (D35, D44).
 - **Sesión web con cookie del servidor** (D63): `mango-api` guarda el refresh token cifrado con KMS en una cookie `HttpOnly` y lo usa solo para renovar. La sesión dura 8 h. Crea y renueva con la operación firmada `AdminInitiateAuth`, que no pasa por el WAF del user pool (D72).
 - Las personas y sus grupos se gestionan desde la app, con doble aprobación para los grupos sensibles (D44, D60).
+- **Tareas sin chat (D78, propuesta):** una ejecución corre con un access token de quien creó la tarea, emitido para ella por un segundo cliente del user pool, `Mango-<ns>-tasks`, que solo admite `CUSTOM_AUTH`. `mango-api` responde el reto con una aserción firmada por una llave KMS que solo él usa; la Lambda `Mango-<ns>-TaskAuth` la verifica con la mitad pública. El token vive 15 minutos y lleva los grupos de ese momento; `mango-api` no lo acepta en ninguna ruta y el approval executor tampoco, así que una ejecución lee como su dueño y nunca escribe. Si Cognito no lo emite o L1 niega el agente, la tarea se pausa sola.
 - **Previsto, sin construir:** federación con **el IdP del cliente** (SAML/OIDC; una sola por instalación; falta decidir cómo recibe sus grupos un usuario federado, D53 (6)), clientes M2M con *client credentials* (no API keys) e IAM Identity Center para los operadores de Mango (D7).
 
 **Autorización en 3 niveles, todo en Cedar:**
 
 | Nivel | Pregunta | PDP / PEP |
 |---|---|---|
-| L1 plataforma | ¿Puede usar, crear, editar, publicar o aprobar el agente X, o administrar personas, grupos, modelos y packs? | Verified Permissions en mango-api, con 15 políticas estáticas (`policies/cedar/platform/`). `UseAgent` se decide en cada petición con los grupos y personas del agente como datos (D33) |
+| L1 plataforma | ¿Puede usar, crear, editar, publicar o aprobar el agente X, o administrar personas, grupos, modelos y packs? | Verified Permissions en mango-api, con 18 políticas estáticas (`policies/cedar/platform/`), las tres de tareas (`CreateTask`, `ViewTask`/`ControlTask`, `OwnTask`) desde D78. `UseAgent` se decide en cada petición con los grupos y personas del agente como datos (D33) |
 | L2 tools | ¿Puede *este tipo de usuario* llamar a esta tool? | **AgentCore Policy** en el Gateway, default-deny y con cada restricción repetida como `forbid` (D45 (5)). El Gateway solo ve al usuario, no al agente: las tools de cada agente se aplican con `allowedTools` y con la firma de la invocación que verifica el interceptor (D33) |
 | L3 destino | ¿El sistema acepta la acción del usuario? | IAM, vía identidad propagada: el rol detrás del broker y una session policy por llamada. Permisos nativos de SAP o Google: previsto |
 
@@ -330,6 +338,7 @@ Límites a tener presentes:
 - **Una respuesta más larga que el tope se corta ahí.** El harness cierra entonces el turno con un error, después de entregar el mensaje y su uso. En la instalación del 2026-10-06 `mango-api` lo tomaba por un turno fallido: la persona veía un aviso de error, la respuesta no se guardaba y el resto de la reserva quedaba retenido hasta la conciliación (D74 (12)). **El arreglo** (D74 (13), aceptado por delegación del dueño el 2026-10-06, que lo confirmó el 2026-10-07): ese final es conocido, porque el uso de la llamada ya llegó y no queda ninguna en curso. Se guarda el texto hasta el corte, el chat lo muestra como una respuesta terminada, se cobra lo real y se libera el resto al momento. **Desplegado y visto ese día en una instalación de laboratorio** (D74 (15)), en un turno sin tools: la respuesta quedó guardada, el turno se liquidó al momento sin nada retenido, y el mensaje siguiente abrió una sesión nueva con la respuesta cortada a la vista del agente. La traza `invoke_agent` de ese turno sigue saliendo con error y sin tokens: la escribe el harness. Sin ver: el tope en una llamada posterior de un turno con tools, una llamada a una tool cortada a medias y un harness creado ya con el tope que pase una reconciliación diaria (D74 (16) y (17)). **Una tool de escritura cortada por el tope no pide confirmar nada** (D74 (18), decidido por el dueño el 2026-10-07): solo pide un mensaje que terminó como llamada a tool, así que de uno cortado no sale ninguna solicitud, ni de la llamada cortada ni de otra completa del mismo mensaje, y la persona repite la petición. El turno se liquida igual: final conocido si llegó el uso de ese mensaje. Comprobado con tests, sin ver en una instalación. La primera reconciliación diaria posterior a esos despliegues no marcó desvíos (D74 (17)). Cualquier otro error del harness sigue retenido (D73 (6), fila 6). La sesión del runtime de ese turno no se continúa: el siguiente abre una nueva con el historial guardado (D39). Nada avisa todavía a la persona de que la respuesta se cortó por su límite: falta en el diseño (D24).
 - **La reserva cubre una llamada entera, no el turno entero:** cuenta como salida el mayor entre el máximo de tokens del agente y su tope por llamada, así que la salida de una llamada nunca pasa de lo reservado para salida. Sigue siendo una estimación: un turno con tools hace varias llamadas (por defecto, hasta USD 0,49 de salida con USD 0,205 reservados) y la entrada se estima, no se limita. Lo gastado de más se cobra entero. El límite de tiempo no detiene una llamada en curso, y parar la sesión del runtime tampoco y además pierde su traza: no se para (D73 (20)).
 - **Lo que ve la persona:** lo retenido se suma al gasto mostrado hasta que se concilia; nunca aparece como disponible.
+- **Una ejecución de una tarea (D78)** reserva, liquida y se concilia igual que un turno, en los ámbitos de su dueño y del agente; sin presupuesto queda «Omitida». Una tarea con disparador por anomalía de costo, como mucho 5 ejecuciones al día (D79).
 - **Un turno falla de una sola manera** (D73 (24) y (25), decididos el 2026-10-07; comprobado con tests, sin ver en una instalación): el error del harness llega como una excepción del SDK mientras se lee el stream, y uno que llegara como evento del stream termina igual. El navegador recibe un solo error, se guarda solo la pregunta, se cobra lo conocido y el resto queda retenido. La única excepción es el error que sigue al uso de un mensaje cortado en su tope, que es un final conocido (D74 (13)). El turno visto en un navegador el 2026-10-08 es otro caso, el que no empezó (D73 (29)).
 - **Fuera de todo presupuesto hoy:** el título de una conversación nueva (se cobra sin reserva previa) y el costo del guardrail (D73 (15)). El título solo se genera, y se cobra, si el primer turno de la conversación se respondió; si falló, la conversación queda con el inicio de la pregunta como título (D73 (26), decidido el 2026-10-07).
 - Topes técnicos adicionales:
@@ -361,6 +370,7 @@ Límites a tener presentes:
 - **Aprobación de terceros** (por encima): la solicitud vive en `mango-api`; el aprobador se autoriza por AVP `ApproveToolCall` con separación de funciones. **Aprobar no ejecuta nada:** quien pidió la acción la ejecuta con su propia sesión antes del vencimiento, y todo pasa por el Gateway y Cedar. No existe una identidad de servicio que escriba (D56 (2), que sustituye al `waitForTaskToken` de Step Functions de la versión original de este texto).
 - **No evadible:** el interceptor del Gateway y el approval executor exigen un *approval token* firmado con KMS, de un solo uso y ligado a `hash(tool, args)`. Los dos tramos lo emiten.
 - Hoy hay una tool de escritura, `aws-budgets.create_budget`, y ningún agente de la release la usa.
+- **Una tarea nunca escribe (D78):** su token no consigue approval tokens; si el agente pide una escritura, queda la solicitud a nombre del dueño y la ejecución termina «Espera aprobación».
 
 **Audit:**
 - **Hoy:** Firehose → S3 con Object Lock + KMS CMK, en un bucket de **la cuenta de la instalación**. El modo y los días son parámetros (`AuditLockMode`: `GOVERNANCE` por defecto, `COMPLIANCE` a elección del cliente; `AuditRetentionDays`: 365 por defecto). Un índice en DynamoDB sirve la pantalla de Auditoría.
@@ -384,7 +394,7 @@ Límites a tener presentes:
 
 ### 4.6 Datos (DynamoDB)
 
-- Ocho tablas, todas on-demand y cifradas con la llave de datos de la instalación:
+- Nueve tablas, todas on-demand y cifradas con la llave de datos de la instalación:
 
   | Tabla | Qué guarda |
   |---|---|
@@ -396,6 +406,7 @@ Límites a tener presentes:
   | `AuditIndex` | Índice de la pantalla de Auditoría |
   | `WebSessions` | Registro de las sesiones web; ningún secreto (D63) |
   | `RateLimits` | Límites de tasa compartidos entre tareas (D70) |
+  | `Tasks` | Tareas sin chat y sus ejecuciones, con su resultado 90 días (D78) |
 
 - **RLS con STS session policy + `dynamodb:LeadingKeys`** (patrón de bedrock-chat) en `Conversations`: `mango-api` lee los datos de cada persona con credenciales que solo alcanzan sus filas (`USER#u`). Otras particiones tienen sus escritores fijados por IAM: el puntero de publicación (provisioner), el de packs instalados (provisioner de packs) y los turnos pendientes (`mango-api` y la función conciliadora).
 - Conversación: **un item por mensaje** (`SK=MSG#…`) en lugar del `MessageMap` monolítico de bedrock-chat. El árbol (`parent`/`children`) para editar y regenerar y el offload a S3 de items grandes son previstos.
@@ -1001,6 +1012,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D75 | La comprobación de solo lectura de una instalación falla si la versión no quedó servible | vigente | 2026-10-08 (propuesta por un agente y aceptada por el dueño el mismo día; el punto 10, un agente cuyo harness ya no existe, decidido por el dueño ese día, con su detalle propuesto por un agente y aceptado por el dueño ese día; lo que una instalación mostró ese día de la pregunta a AgentCore; el veredicto de fallo y el turno de un agente sin harness, vistos en una instalación, propuesto por un agente y aceptado por el dueño el 2026-10-08, punto 11; tres veredictos más de la pregunta a AgentCore y el hallazgo de la reconciliación, vistos en una instalación, propuesto por un agente el 2026-10-08 y aceptado por el dueño el 2026-10-09, con lo que el dueño eligió ese día para el párrafo de qué mirar cuando no se puede preguntar, punto 12; ese párrafo ya no sale cuando solo no se pudo preguntar, decidido por el dueño el 2026-10-09, por menú, con su detalle propuesto por un agente y aceptado por el dueño ese día, punto 13) | [D075-comprobacion-de-solo-lectura-falla-sin-agentes.md](decisions/D075-comprobacion-de-solo-lectura-falla-sin-agentes.md) |
 | D76 | Lo que Mango crea en ejecución lleva los tags del stack | vigente | 2026-10-14 (el punto 1, decidido por el dueño ese día, por menú; los puntos 2 a 7, propuestos por un agente y aceptados por el dueño ese día, por menú; lo que mostró la primera instalación, punto 8, nota propuesta por un agente) | [D076-tags-del-stack-en-lo-creado-en-ejecucion.md](decisions/D076-tags-del-stack-en-lo-creado-en-ejecucion.md) |
 | D77 | Lo que CloudFormation no puede etiquetar lleva los tags del stack | vigente | 2026-10-14 (los puntos 1 a 4, decididos por el dueño ese día, por menú; los puntos 5 a 9, propuestos por un agente y aceptados por el dueño ese día, por menú; lo que mostró la primera actualización, punto 10, nota propuesta por un agente) | [D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md](decisions/D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md) |
+| D78 | Tareas: un agente publicado trabaja sin chat, como quien creó la tarea | propuesta | 2026-10-15 (los puntos 1 a 7, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15, por menú; los puntos 8 a 14, propuestos por un agente; los puntos 15 y 16 incorporan dos reglas de D79, por encargo del agente principal ese día) | [D078-tareas-sin-chat.md](decisions/D078-tareas-sin-chat.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar. Lo aprobado desde entonces es el hito 1, «instalable por una empresa real» (2026-10-05), del que salen D70 a D74.

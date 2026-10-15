@@ -1,6 +1,6 @@
 # Tareas: agentes que trabajan sin chat (hito 3, ola 1.1)
 
-> Fecha: 2026-10-15 · Estado: **diseño de la fase 1**, antes de construir. Decisión: D78 (reservada). Modelo de amenazas: [`../security/threat-models/tasks-threat-model.md`](../security/threat-models/tasks-threat-model.md). Contrato con la ola 1.2 (anomalías): sección «Interfaz».
+> Fecha: 2026-10-15 · Estado: **construido** (D78, propuesta). Este texto es el diseño de la fase 1; lo que se decidió después por menú está en D78, que manda donde difieran. Modelo de amenazas: [`../security/threat-models/tasks-threat-model.md`](../security/threat-models/tasks-threat-model.md). Contrato con la ola 1.2 (anomalías): sección «Interfaz».
 > Manda: D26 («Schedules»), D56 (2), D73, D74, D25, D20, D24, D58, D76 y las reglas 3, 4 y 5 de `AGENTS.md`. A3 (solo leen; escribir espera, como D56) y A4 (entrega dentro de Mango) los decidió el dueño el 2026-10-15.
 
 ## 1. Qué se construye
