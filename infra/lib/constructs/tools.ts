@@ -84,6 +84,9 @@ export const MAPPING_PARTITION = "BU_MAPPING";
  */
 export class Tools extends Construct {
   readonly gateway: agentcore.CfnGateway;
+  private readonly costExplorer: PythonFunction;
+  private readonly discoveryUrl: string;
+  private readonly webClientId: string;
   /** Cedar policy engine of the Gateway (L2, default deny). */
   readonly policyEngine: agentcore.CfnPolicyEngine;
   /** Gateway targets of Mango connectors: the only ones that receive the caller's token. */
@@ -225,6 +228,9 @@ export class Tools extends Construct {
       },
       environmentEncryption: configKey,
     });
+    this.costExplorer = connector;
+    this.discoveryUrl = props.discoveryUrl;
+    this.webClientId = props.webClientId;
 
     this.adminProbe = new PythonFunction(this, "AdminProbe", {
       packageName: "mango-admin-probe",
@@ -487,5 +493,17 @@ export class Tools extends Construct {
 
   get gatewayUrl(): string {
     return this.gateway.attrGatewayUrl;
+  }
+
+  /**
+   * Task runs (D78): the Gateway also takes the access tokens of the tasks client, which only
+   * a run gets, as its owner; and so does the Cost Explorer connector, which only reads. The
+   * write target never does: the approval executor keeps verifying the web client alone (A3).
+   */
+  allowTasksClient(clientId: string): void {
+    this.gateway.authorizerConfiguration = {
+      customJwtAuthorizer: { discoveryUrl: this.discoveryUrl, allowedClients: [this.webClientId, clientId] },
+    };
+    this.costExplorer.function.addEnvironment("TASKS_CLIENT_ID", clientId);
   }
 }

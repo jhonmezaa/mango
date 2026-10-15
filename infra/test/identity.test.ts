@@ -348,7 +348,11 @@ describe("customer user pool", () => {
     const text = JSON.stringify(template.toJSON());
     expect(text).not.toContain("USER_PASSWORD_AUTH");
     expect(text).not.toContain("ALLOW_USER_AUTH");
-    expect(text).not.toContain("ALLOW_CUSTOM_AUTH");
+    // The custom challenge exists only on the tasks client (D78, tasks.test.ts).
+    const custom = Object.values(template.findResources("AWS::Cognito::UserPoolClient")).filter((c) =>
+      (c.Properties.ExplicitAuthFlows as string[]).includes("ALLOW_CUSTOM_AUTH"),
+    );
+    expect(custom.map((c) => c.Properties.ClientName)).toEqual(["Mango-poc-tasks"]);
   });
 
   it("lets mango-api renew sessions with the signed operation, which cannot sign in with a password (D72)", () => {
@@ -369,13 +373,37 @@ describe("customer user pool", () => {
     );
     expect(holders).toHaveLength(1);
     expect(JSON.stringify(holders)).not.toContain("AdminRespondToAuthChallenge");
+    // Answering a challenge is only for task runs (D78), in the managed policy of mango-api for
+    // tasks, on this pool: no other policy of the stack holds either operation.
+    const managed = Object.values(template.findResources("AWS::IAM::ManagedPolicy")).filter((p) =>
+      /cognito-idp:Admin(InitiateAuth|RespondToAuthChallenge)|cognito-idp:\*/.test(
+        JSON.stringify(p.Properties.PolicyDocument),
+      ),
+    );
+    expect(managed.map((p) => p.Properties.ManagedPolicyName)).toEqual(["Mango-poc-ApiTasks"]);
+    const challenge = (managed[0]!.Properties.PolicyDocument.Statement as Statement[]).filter((st) =>
+      JSON.stringify(st.Action).includes("cognito-idp:"),
+    );
+    expect(challenge).toHaveLength(1);
+    expect(challenge[0]).toMatchObject({
+      Sid: "TaskIdentityChallenge",
+      Action: ["cognito-idp:AdminInitiateAuth", "cognito-idp:AdminRespondToAuthChallenge"],
+      Resource: { "Fn::GetAtt": [expect.stringMatching(/UserPool/), "Arn"] },
+    });
     // `AdminInitiateAuth` signs in with a password on a client that allows one of these flows:
     // with any of them, the permission above would let mango-api sign in as anybody whose
     // password it had, without SRP. The clients of the pool allow SRP and refresh only.
-    // Do not add a flow here without a recorded decision that revisits D72.
+    // Do not add a flow here without a recorded decision that revisits D72. D78 added one
+    // client, for task runs, that allows the custom challenge and nothing else: answering it
+    // takes a signature only mango-api can make (tasks.test.ts), never a password.
     const clients = Object.values(template.findResources("AWS::Cognito::UserPoolClient"));
-    expect(clients).toHaveLength(1);
-    for (const client of clients) {
+    expect(clients.map((c) => c.Properties.ClientName).sort()).toEqual(["Mango-poc-Web", "Mango-poc-tasks"]);
+    const tasksClient = clients.find((c) => c.Properties.ClientName === "Mango-poc-tasks")!;
+    expect([...(tasksClient.Properties.ExplicitAuthFlows as string[])].sort()).toEqual([
+      "ALLOW_CUSTOM_AUTH",
+      "ALLOW_REFRESH_TOKEN_AUTH",
+    ]);
+    for (const client of clients.filter((c) => c !== tasksClient)) {
       const flows = client.Properties.ExplicitAuthFlows as string[];
       expect(flows, "an empty list means the defaults of Cognito, not «none»").toBeDefined();
       for (const forbidden of [

@@ -451,8 +451,22 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
   });
 
   it("has no write access to IAM or to the AgentCore control plane", () => {
-    const granted = api.filter((s) => s.Effect === "Allow").flatMap(actions);
-    expect(granted.filter((a) => a.startsWith("iam:"))).toEqual([]);
+    // Its managed policies count too (tasks, D78, keep theirs apart for the size of the role).
+    const managed = Object.values(resources)
+      .filter(
+        (r) =>
+          r.Type === "AWS::IAM::ManagedPolicy" &&
+          (r.Properties.Roles ?? []).some((x: { Ref: string }) => x.Ref === apiRoleId),
+      )
+      .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[]);
+    const allowed = [...api, ...managed].filter((s) => s.Effect === "Allow");
+    const granted = allowed.flatMap(actions);
+    // The one IAM action: passing the role of its own schedules to EventBridge Scheduler.
+    const iamStatements = allowed.filter((s) => actions(s).some((a) => a.startsWith("iam:")));
+    expect(iamStatements.map((s) => [s.Sid, actions(s)])).toEqual([["PassTaskSchedulerRole", ["iam:PassRole"]]]);
+    expect(iamStatements[0]!.Condition).toEqual({
+      StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" },
+    });
     expect(
       granted.filter((a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke")),
     ).toEqual([]);

@@ -38,6 +38,7 @@ import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-pr
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
 import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
+import { TaskPlatform } from "../constructs/tasks.js";
 import { Tools } from "../constructs/tools.js";
 import { UninstallGuard } from "../constructs/uninstall-guard.js";
 import { WriteTools } from "../constructs/write-tools.js";
@@ -129,6 +130,16 @@ export class CoreStack extends Stack {
       issuer: identity.issuer,
       webClientId: identity.webClient.userPoolClientId,
     });
+    // Tasks without chat (D78): runs of a published agent, on demand and on a schedule, as the
+    // person who created them. Their token comes from a client of their own (CUSTOM_AUTH only).
+    const tasks = new TaskPlatform(this, "Tasks", {
+      installation: cfg,
+      userPool: identity.userPool,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+    });
+    tools.allowTasksClient(tasks.client.userPoolClientId);
+    tasks.grantApi(apiTaskRole, identity.userPool);
     // Broker to the member accounts (§4.10); the spoke roles come from the OrgAccess StackSet.
     const memberAccess = new MemberAccess(this, "MemberAccess", {
       installation: cfg,
@@ -426,6 +437,7 @@ export class CoreStack extends Stack {
         PACK_PROVISIONER_STATE_MACHINE_ARN: packProvisioner.stateMachine.stateMachineArn,
         ...packPlatform.apiEnvironment,
         ...writeTools.apiEnvironment,
+        ...tasks.apiEnvironment,
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
         // D60: who may be invited, and what Settings > General > Installation shows to
         // administrators (served by mango-api, not by the public config.json of the SPA).
