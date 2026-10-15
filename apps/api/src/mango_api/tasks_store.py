@@ -512,6 +512,28 @@ class TaskStore:
         except ClientError:
             return
 
+    def count_today(self, automation_id: str, day: str, limit: int) -> bool:
+        """Count one more run of the day (``YYYY-MM-DD``, UTC); false once ``limit`` were
+        counted. The counter expires with the runs."""
+        try:
+            self._db.update_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(automation_id)), "SK": _s(f"DAY#{day}")},
+                UpdateExpression="SET n = if_not_exists(n, :zero) + :one, expires_at = :exp",
+                ConditionExpression="attribute_not_exists(n) OR n < :limit",
+                ExpressionAttributeValues={
+                    ":zero": _n(0),
+                    ":one": _n(1),
+                    ":limit": _n(limit),
+                    ":exp": _n(int(self._clock()) + int(RETENTION.total_seconds())),
+                },
+            )
+        except ClientError as exc:
+            if _conditional(exc):
+                return False
+            raise TaskStoreUnavailableError from exc
+        return True
+
     # --- Runs ---------------------------------------------------------------------------
 
     def add_run(self, run: Run) -> Run | None:

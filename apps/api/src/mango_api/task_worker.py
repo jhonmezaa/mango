@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from mango_api.audit import AuditLog
 from mango_api.task_identity import OwnerAccessLostError, TaskIdentityUnavailableError, TaskTokens
-from mango_api.tasks import TaskScheduler
+from mango_api.tasks import CENTRAL_EVENTS, DAILY_RUNS, TaskScheduler
 from mango_api.tasks_store import (
     Automation,
     PauseReason,
@@ -173,7 +173,9 @@ class TaskRuns:
 
     # --- One run ----------------------------------------------------------------------
 
-    def _execute(self, automation: Automation, run: Run, event: task_runs.EventRun | None) -> None:
+    def _execute(  # noqa: PLR0911 - each early return is one check a run did not pass
+        self, automation: Automation, run: Run, event: task_runs.EventRun | None
+    ) -> None:
         if automation.paused_reason is PauseReason.ACCESS_LOST:
             self._skip(automation, run, "access_lost")
             return
@@ -185,6 +187,10 @@ class TaskRuns:
         except TaskIdentityUnavailableError:
             self._fail(automation, run, "identity_unavailable")
             return
+        if automation.event_type in CENTRAL_EVENTS and not caller.user.is_central:
+            # Only central people subscribe to this event (D79 (5)): the owner stopped being one.
+            self._lost(automation, run, reason="not_central")
+            return
         if not self.store.hold(
             automation.automation_id,
             run.run_id,
@@ -193,6 +199,17 @@ class TaskRuns:
         ):
             self._skip(automation, run, "overlap")
             return
+        cap = (
+            DAILY_RUNS.get(automation.event_type or "")
+            if run.trigger == task_runs.KIND_EVENT
+            else None
+        )
+        if cap is not None:
+            day = time.strftime("%Y-%m-%d", time.gmtime(self.clock()))
+            if not self.store.count_today(automation.automation_id, day, cap):
+                self.store.release(automation.automation_id, run.run_id)
+                self._skip(automation, run, "daily_cap")
+                return
         try:
             started = int(self.clock())
             self.store.update_run(
@@ -287,14 +304,21 @@ class TaskRuns:
             },
         )
 
-    def _lost(self, automation: Automation, run: Run, *, running: bool = False) -> None:
+    def _lost(
+        self,
+        automation: Automation,
+        run: Run,
+        *,
+        running: bool = False,
+        reason: str = "access_lost",
+    ) -> None:
         """The owner lost access (D26): skip this run and pause the task until they have it
         again. Only the owner resumes it, with their own session."""
         self.store.update_run(
             run,
             status=RunStatus.SKIPPED,
             expect=frozenset({RunStatus.RUNNING if running else RunStatus.QUEUED}),
-            reason="access_lost",
+            reason=reason,
             ended_at=int(self.clock()),
         )
         now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(self.clock()))
@@ -315,6 +339,7 @@ class TaskRuns:
             "agent": automation.agent_id,
             "owner": automation.owner_id,
             "reason": PauseReason.ACCESS_LOST.value,
+            "cause": reason,
             "run": run.run_id,
         }
         self._emit("task.paused", None, detail)
@@ -323,7 +348,7 @@ class TaskRuns:
             None,
             {
                 **self._detail(automation, run, None),
-                "reason": "access_lost",
+                "reason": reason,
                 "owner": automation.owner_id,
             },
         )

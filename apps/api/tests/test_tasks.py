@@ -61,6 +61,7 @@ CLAIMS: dict[str, dict[str, Any]] = {
     "creator": {
         "sub": "creator-1",
         "mango_email": "creator1@example.com",
+        "mango_role": "finops-central",
         "cognito:groups": ["mango-agent-creator", "finops-central"],
     },
     "creator2": {"sub": "creator-2", "cognito:groups": ["mango-agent-creator", "finops-central"]},
@@ -111,6 +112,7 @@ class FakeTaskTokens:
     """What Cognito gives mango-api for a run: the owner, with the groups they have now."""
 
     groups: dict[str, list[str]] = field(default_factory=dict)
+    roles: dict[str, str | None] = field(default_factory=dict)
     lost: set[str] = field(default_factory=set)
     unavailable: bool = False
     issued: list[tuple[str, str]] = field(default_factory=list)
@@ -123,6 +125,10 @@ class FakeTaskTokens:
         self.issued.append((owner_id, run_id))
         claims = next(c for c in CLAIMS.values() if c["sub"] == owner_id)
         claims = {**claims, "cognito:groups": self.groups.get(owner_id, claims["cognito:groups"])}
+        if owner_id in self.roles:
+            claims = {k: v for k, v in claims.items() if k != "mango_role"}
+            if self.roles[owner_id]:
+                claims["mango_role"] = self.roles[owner_id]
         return Caller(user=user_from_claims(claims), token=f"task-token-{owner_id}", expires_at=EXP)
 
 
@@ -682,3 +688,55 @@ def test_a_run_never_writes_it_leaves_a_request_for_its_owner(env: Env) -> None:
     assert [c["tool"] for c in requested] == [GATEWAY_TOOL]
     run = env.get("creator", task["task_id"]).json()["runs"][0]
     assert (run["status"], run["approvals"]) == ("approval", ["d" * 32])
+
+
+ANOMALY = {"kind": "event", "event_type": "cost_anomaly"}
+
+
+def _anomaly(event_id: str) -> str:
+    return task_runs.event_message(
+        "cost_anomaly", event_id, datetime(2026, 10, 15, 9, tzinfo=UTC), {"anomaly_id": event_id}
+    )
+
+
+def test_only_central_people_subscribe_to_cost_anomalies(env: Env) -> None:
+    """D79 (5): anomalies are of the whole organization."""
+    response = env.create("creator2", name="Anomalías", trigger=ANOMALY)
+    assert (response.status_code, _code(response)) == (403, "central_only")
+    assert env.create("creator2", name="Diaria").status_code == 201
+    assert env.create("creator", name="Anomalías", trigger=ANOMALY).status_code == 201
+
+
+def test_an_owner_who_stopped_being_central_pauses_the_subscription(env: Env) -> None:
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    env.tokens.roles["creator-1"] = None
+    env.deliver(_anomaly("a-1"))
+    assert env.agentcore.requests == []
+    detail = env.get("creator", task["task_id"]).json()
+    assert (detail["status"], detail["paused_reason"]) == ("paused", "access_lost")
+    assert (detail["runs"][0]["status"], detail["runs"][0]["reason"]) == ("skipped", "not_central")
+    assert env.events("task.paused")[0]["cause"] == "not_central"
+    # Resuming asks again, with the owner's own session.
+    claims = CLAIMS["creator"]
+    CLAIMS["creator"] = {k: v for k, v in claims.items() if k != "mango_role"}
+    try:
+        response = env.post("creator", task["task_id"], "resume")
+        assert (response.status_code, _code(response)) == (403, "central_only")
+    finally:
+        CLAIMS["creator"] = claims
+
+
+def test_at_most_five_investigations_per_task_and_day(env: Env) -> None:
+    """D79 (3): the sixth anomaly of the day is skipped without calling the model."""
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    for n in range(7):
+        env.deliver(_anomaly(f"a-{n}"))
+    assert len(env.agentcore.requests) == 5
+    runs = env.get("creator", task["task_id"]).json()["runs"]
+    reasons = sorted((r["status"], r["reason"]) for r in runs)
+    assert reasons == [("ok", None)] * 5 + [("skipped", "daily_cap")] * 2
+    # A schedule has no such cap.
+    daily = env.created(name="Diaria")
+    for day in range(16, 23):
+        env.deliver(_scheduled(daily["task_id"], f"2026-10-{day}T14:30:00Z"))
+    assert len(env.agentcore.requests) == 12

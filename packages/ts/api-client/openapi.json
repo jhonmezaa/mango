@@ -5297,6 +5297,10 @@
             "title": "Can Create",
             "type": "boolean"
           },
+          "can_subscribe_events": {
+            "title": "Can Subscribe Events",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/TaskOut"
@@ -5307,7 +5311,8 @@
         },
         "required": [
           "items",
-          "can_create"
+          "can_create",
+          "can_subscribe_events"
         ],
         "title": "TaskListOut",
         "type": "object"
@@ -5587,6 +5592,17 @@
       "TriggerOut": {
         "additionalProperties": false,
         "properties": {
+          "daily_cap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Cap"
+          },
           "event_type": {
             "anyOf": [
               {

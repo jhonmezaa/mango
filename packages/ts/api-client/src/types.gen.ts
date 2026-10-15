@@ -2789,6 +2789,10 @@ export type TaskListOut = {
      */
     can_create: boolean;
     /**
+     * Can Subscribe Events
+     */
+    can_subscribe_events: boolean;
+    /**
      * Items
      */
     items: Array<TaskOut>;
@@ -2932,6 +2936,10 @@ export type TriggerIn = {
  * TriggerOut
  */
 export type TriggerOut = {
+    /**
+     * Daily Cap
+     */
+    daily_cap?: number | null;
     /**
      * Event Type
      */

@@ -75,6 +75,12 @@ RUNS_PER_HOUR = 10
 CHANGES_PER_HOUR = 30
 """Creating, editing, pausing, resuming and retiring: each one writes to Scheduler."""
 NEXT_RUNS = 3
+CENTRAL_EVENTS = frozenset({"cost_anomaly"})
+"""Events only central people may subscribe to (D79 (5)): anomalies are of the whole
+organization, and the ones without an account are only theirs to see."""
+DAILY_RUNS = {"cost_anomaly": 5}
+"""Runs per automation and UTC day, by event (D79 (3)): a storm of anomalies never becomes a
+storm of investigations. The next ones are skipped with ``daily_cap``, without a model call."""
 TIMEZONES = ("America/Mexico_City", "America/Bogota", "America/Sao_Paulo", "UTC")
 """The design's list. A closed list: each one is a valid ``ScheduleExpressionTimezone``."""
 Frequency = Literal["15m", "hourly", "6h", "daily", "weekdays", "days", "weekly", "monthly"]
@@ -183,6 +189,8 @@ class TriggerOut(_Strict):
     schedule: ScheduleSpec | None
     timezone: str | None
     event_type: str | None
+    daily_cap: int | None = None
+    """Runs per day an event may start (D79 (3)); the next ones are skipped."""
 
 
 class TaskOut(_Strict):
@@ -210,6 +218,8 @@ class TaskOut(_Strict):
 class TaskListOut(_Strict):
     items: list[TaskOut]
     can_create: bool
+    can_subscribe_events: bool
+    """Hint for the SPA (D79 (5)): the server decides on its own."""
 
 
 # --- Schedules ----------------------------------------------------------------------------
@@ -461,6 +471,7 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
             schedule=spec,
             timezone=automation.timezone,
             event_type=automation.event_type,
+            daily_cap=DAILY_RUNS.get(automation.event_type or ""),
         ),
         deliver=automation.deliver,
         status=automation.status,
@@ -511,8 +522,14 @@ def _now_iso(deps: TasksDeps) -> str:
     return datetime.fromtimestamp(deps.clock(), UTC).isoformat(timespec="seconds")
 
 
+def _check_trigger(caller: Caller, trigger: TriggerIn) -> None:
+    if trigger.event_type in CENTRAL_EVENTS and not caller.user.is_central:
+        raise ApiError(403, "central_only", "only central people may subscribe to this event")
+
+
 def create_task(deps: TasksDeps, caller: Caller, body: TaskIn) -> Automation:
     _check_task(body)
+    _check_trigger(caller, body.trigger)
     now = _now_iso(deps)
     trigger = body.trigger
     automation = Automation(
@@ -626,6 +643,8 @@ def resume_task(deps: TasksDeps, caller: Caller, automation: Automation) -> Auto
     """Only the owner resumes, with the access they have now (checked by the route)."""
     if automation.status is not Status.PAUSED:
         raise ApiError(409, "task_not_paused", "this task is not paused")
+    if automation.event_type in CENTRAL_EVENTS and not caller.user.is_central:
+        raise ApiError(403, "central_only", "only central people may subscribe to this event")
     resumed = replace(automation, status=Status.ACTIVE, paused_reason=None, paused_at=None)
     _audit(deps, "task.resumed", caller, automation, outcome="requested")
     try:
@@ -795,7 +814,9 @@ def tasks_router(  # noqa: PLR0915 - registers the route closures
         automations = await run(list_tasks, deps, caller)
         items = [await run(task_out, deps, a, caller) for a in automations]
         can_create = await run(is_allowed, caller, "CreateTask", *PLATFORM, None)
-        return TaskListOut(items=items, can_create=can_create)
+        return TaskListOut(
+            items=items, can_create=can_create, can_subscribe_events=caller.user.is_central
+        )
 
     @router.post("", response_model=TaskOut, status_code=201)
     async def create_new_task(body: TaskIn, caller: Creator) -> TaskOut:

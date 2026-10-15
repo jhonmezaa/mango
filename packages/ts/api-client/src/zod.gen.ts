@@ -1356,6 +1356,7 @@ export const zTaskInSchema = z.object({
  * TriggerOut
  */
 export const zTriggerOutSchema = z.object({
+    daily_cap: z.int().nullish(),
     event_type: z.string().nullable(),
     kind: z.string(),
     schedule: zScheduleSpecSchema.nullable(),
@@ -1686,6 +1687,7 @@ export const zTaskOutSchema = z.object({
  */
 export const zTaskListOutSchema = z.object({
     can_create: z.boolean(),
+    can_subscribe_events: z.boolean(),
     items: z.array(zTaskOutSchema)
 });
 
