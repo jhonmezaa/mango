@@ -120,7 +120,7 @@ describe("release agent definition (D34)", () => {
     // `apps/api/tests/test_release_agent.py` pins the same hash from `dumps_definition`. It
     // changes with any change to agents/finops/agent.json: update both on purpose.
     const { canonical } = releaseAgentDefinition("finops", "us.anthropic.claude-sonnet-4-6");
-    expect(sha256(canonical)).toBe("d68ea3956b28a1989caba25e0169cb9755294804b05bccf759860c3ee968f5e9");
+    expect(sha256(canonical)).toBe("ac5d0b8528d76d61c97cfcb9c6aa794492589b922291e258ac0a7bfdd09f5617");
     expect(finops!.contentHash).toBe(sha256(finops!.canonical));
     // Sorted keys and no whitespace between tokens.
     expect(canonical.startsWith('{"allowed_models":["us.anthropic.claude-sonnet-4-6"],"approval_tools":[],')).toBe(true);

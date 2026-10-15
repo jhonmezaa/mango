@@ -38,7 +38,7 @@ def test_definition_is_stored_as_the_stack_writes_it() -> None:
     # agents/finops/agent.json: update both on purpose.
     canonical = dumps_definition(release_definition("finops", MODEL))
     assert content_hash(canonical) == (
-        "d68ea3956b28a1989caba25e0169cb9755294804b05bccf759860c3ee968f5e9"
+        "ac5d0b8528d76d61c97cfcb9c6aa794492589b922291e258ac0a7bfdd09f5617"
     )
     # Reading it back and writing it again changes nothing.
     assert dumps_definition(loads_definition(canonical)) == canonical
@@ -48,7 +48,7 @@ def test_finops_keeps_its_prompt_tools_and_limits() -> None:
     definition = release_definition("finops", MODEL)
     assert definition.system_prompt.startswith("You are Mango FinOps, an assistant that helps")
     assert definition.system_prompt.endswith("the platform handles identity.")
-    assert definition.system_prompt.count("\n") == 21
+    assert definition.system_prompt.count("\n") == 29
     limits = definition.limits
     assert (limits.max_iterations, limits.max_tokens, limits.timeout_seconds) == (12, 8000, 300)
     assert (limits.max_tokens_per_call, limits.temperature) == (4000, 0.2)
