@@ -43,7 +43,7 @@ describe('SchedulesPage', () => {
       await screen.findByText('Budget check diario', { selector: '.mk-name' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Todos los días · 09:30')).toBeInTheDocument();
-    expect(screen.getByText('FinOps · como ti · Bandeja del creador')).toBeInTheDocument();
+    expect(screen.getByText('FinOps · como Usuario 1 · Bandeja del creador')).toBeInTheDocument();
     expect(screen.getByLabelText('Últimas ejecuciones')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nuevo schedule' })).toBeInTheDocument();
   });

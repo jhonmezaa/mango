@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
@@ -145,8 +145,8 @@ function triggerLabel(t: Translate, task: Task): string {
   return task.trigger.schedule ? specLabel(t, task.trigger.schedule) : '—';
 }
 
-function ownerName(t: Translate, task: Task): string {
-  if (task.is_owner) return t('schedules.you');
+/** Design: «como {owner}», the person the task runs as, for the owner too. */
+function ownerName(_t: Translate, task: Task): string {
   return task.owner.name ?? task.owner.email ?? task.owner.user_id;
 }
 
@@ -242,7 +242,7 @@ function TaskRow({ task, agentName, health, busy, onOpen, onRun, onToggle }: Row
       </span>
       <span className="mk-meta">
         {task.running ? (
-          <span className="row gap-2">
+          <span className="flex items-center gap-2">
             <span className="g-spin" /> {t('schedules.running')}
           </span>
         ) : next ? (
@@ -252,7 +252,7 @@ function TaskRow({ task, agentName, health, busy, onOpen, onRun, onToggle }: Row
         )}
       </span>
       <RunDots task={task} />
-      <span className="row gap-1" style={{ flexWrap: 'wrap' }}>
+      <span className="flex items-center gap-1" style={{ flexWrap: 'wrap' }}>
         <span className={`badge ${STATUS_BADGE[task.status]}`}>
           {t(`schedules.status.${task.status}`)}
         </span>
@@ -267,7 +267,7 @@ function TaskRow({ task, agentName, health, busy, onOpen, onRun, onToggle }: Row
       </span>
       {/* The buttons do not open the detail. */}
       <span
-        className="row gap-1"
+        className="flex items-center gap-1"
         style={{ justifyContent: 'flex-end' }}
         onClick={(event) => {
           event.stopPropagation();
@@ -324,8 +324,8 @@ function RunLine({
   const reason = runReason(t, run.reason);
   const approval = run.approvals[0];
   return (
-    <div className="mk-line row between" style={{ alignItems: 'flex-start' }}>
-      <span className="row gap-2" style={{ minWidth: 0 }}>
+    <div className="mk-line flex justify-between gap-3" style={{ alignItems: 'flex-start' }}>
+      <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
         <span
           className="tk-dot"
           style={{ background: TONE_COLOR[RUN_TONE[run.status] ?? 'dim'], marginTop: 6 }}
@@ -360,7 +360,7 @@ function RunLine({
           {run.has_result ? (
             <button
               type="button"
-              className="sr-link"
+              className="sr-link block"
               onClick={() => {
                 onResult(run);
               }}
@@ -423,7 +423,7 @@ function TaskDetail({
   const spec = task.trigger.schedule;
   const footer =
     canControl && task.status !== 'retired' ? (
-      <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
+      <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
         {retiring ? (
           <>
             <input
@@ -558,7 +558,7 @@ function TaskDetail({
       </section>
       <section className="mk-sec">
         <h3 className="mk-sec-t">
-          {spec ? t('schedules.detail.schedule') : t('schedules.detail.trigger')}
+          {(spec ? t('schedules.detail.schedule') : t('schedules.detail.trigger')).toLowerCase()}
         </h3>
         {spec ? (
           <>
@@ -626,7 +626,7 @@ function TaskDetail({
       </section>
       <section className="mk-sec">
         <h3 className="mk-sec-t">
-          {t('schedules.detail.recent', { ok, total: task.runs.length })}
+          {t('schedules.detail.recent', { ok, total: task.runs.length }).toLowerCase()}
         </h3>
         {task.runs.length > 0 ? (
           task.runs.map((run) => (
@@ -872,9 +872,9 @@ function TaskEditor({
                 </button>
               ))}
             </div>
-            <div className="row gap-2 sc-when">
+            <div className="flex items-center gap-2 sc-when">
               {draft.spec.freq === 'days' ? (
-                <div className="row gap-1" style={{ flexWrap: 'wrap' }}>
+                <div className="flex items-center gap-1" style={{ flexWrap: 'wrap' }}>
                   {DAYS.map((day) => {
                     const on = draft.spec.days.includes(day);
                     const name = dayName(t, day);
@@ -976,7 +976,10 @@ function TaskEditor({
         ) : null}
         <div>
           <span className="sc-label">{t('schedules.editor.deliverTo')}</span>
-          <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <div
+            className="flex items-center gap-2"
+            style={{ flexWrap: 'wrap', alignItems: 'center' }}
+          >
             <div className="ab-seg">
               <button type="button" className="is-on">
                 {t('schedules.deliver.inbox')}
@@ -1096,6 +1099,8 @@ export function SchedulesPage() {
   const [editing, setEditing] = useState<{ task: Task | null } | null>(null);
   const [result, setResult] = useState<{ task: Task; run: TaskRun } | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Runs seen queued or running, by id: their end is told once (design toast). */
+  const openRuns = useRef(new Map<string, Task>());
 
   const ready = state.kind === 'ready' ? state : null;
   const anyOpen = ready?.list.items.some((task) => task.runs.some(isOpen)) ?? false;
@@ -1109,6 +1114,24 @@ export function SchedulesPage() {
       ]).then(
         ([list, agents]) => {
           if (controller.signal.aborted) return;
+          const seen = openRuns.current;
+          for (const item of list.items) {
+            for (const run of item.runs) {
+              if (isOpen(run)) {
+                seen.set(run.run_id, item);
+              } else if (seen.delete(run.run_id)) {
+                notify(
+                  run.status === 'ok'
+                    ? t('schedules.toast.done', {
+                        name: item.name,
+                        deliver: t('schedules.deliver.inbox').toLowerCase(),
+                      })
+                    : t('schedules.toast.failed', { name: item.name }),
+                  run.status === 'ok' ? 'success' : 'info',
+                );
+              }
+            }
+          }
           setState({ kind: 'ready', list, agents: agents.items });
         },
         () => {
@@ -1127,7 +1150,7 @@ export function SchedulesPage() {
       window.clearInterval(timer);
       controller.abort();
     };
-  }, [call, reloadToken, anyOpen]);
+  }, [call, reloadToken, anyOpen, notify, t]);
 
   const agentsById = useMemo(
     () => new Map((ready?.agents ?? []).map((agent) => [agent.id, agent])),

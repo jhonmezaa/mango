@@ -51,7 +51,6 @@ export const schedules = {
   resumeOf: 'Reanudar {{name}}',
   status: { active: 'Activa', paused: 'Pausada', retired: 'Retirada' },
   deliver: { inbox: 'Bandeja del creador', ticket: 'Crear ticket', slack: 'Canal de Slack' },
-  you: 'ti',
   freq: {
     '15m': 'Cada 15 min',
     hourly: 'Cada hora',
