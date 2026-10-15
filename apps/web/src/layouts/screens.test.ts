@@ -13,6 +13,7 @@ describe('SCREENS', () => {
       ['models', 'models/*'],
       ['mcp', 'mcp/*'],
       ['approvals', 'approvals/*'],
+      ['schedules', 'schedules/*'],
     ]);
   });
 

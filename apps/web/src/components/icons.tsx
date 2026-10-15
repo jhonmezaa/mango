@@ -350,3 +350,11 @@ export const GlobeIcon = createIcon(
     <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
   </>,
 );
+
+export const ArchiveIcon = createIcon(
+  'Archive',
+  <>
+    <rect x="3" y="4" width="18" height="4" rx="1" />
+    <path d="M5 8v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+  </>,
+);

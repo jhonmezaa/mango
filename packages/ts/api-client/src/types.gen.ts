@@ -2579,11 +2579,11 @@ export type RunDetailOut = {
     /**
      * Status
      */
-    status: string;
+    status: 'queued' | 'running' | 'ok' | 'failed' | 'skipped' | 'approval';
     /**
      * Trigger
      */
-    trigger: string;
+    trigger: 'manual' | 'schedule' | 'event';
 };
 
 /**
@@ -2625,11 +2625,11 @@ export type RunOut = {
     /**
      * Status
      */
-    status: string;
+    status: 'queued' | 'running' | 'ok' | 'failed' | 'skipped' | 'approval';
     /**
      * Trigger
      */
-    trigger: string;
+    trigger: 'manual' | 'schedule' | 'event';
 };
 
 /**
@@ -2817,7 +2817,7 @@ export type TaskOut = {
     /**
      * Deliver
      */
-    deliver: string;
+    deliver: 'inbox';
     health: HealthOut | null;
     /**
      * Is Owner
@@ -2839,7 +2839,7 @@ export type TaskOut = {
     /**
      * Paused Reason
      */
-    paused_reason: string | null;
+    paused_reason: 'owner' | 'admin' | 'access_lost' | null;
     retired: RetiredOut | null;
     /**
      * Running
@@ -2852,7 +2852,7 @@ export type TaskOut = {
     /**
      * Status
      */
-    status: string;
+    status: 'active' | 'paused' | 'retired';
     /**
      * Task
      */
@@ -2947,7 +2947,7 @@ export type TriggerOut = {
     /**
      * Kind
      */
-    kind: string;
+    kind: 'manual' | 'schedule' | 'event';
     schedule: ScheduleSpec | null;
     /**
      * Timezone

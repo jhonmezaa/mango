@@ -30,7 +30,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 from zoneinfo import ZoneInfo
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -166,10 +166,13 @@ class HealthOut(_Strict):
     code: Literal["agent_unavailable", "access_lost", "failing"]
 
 
+RunStatusOut = Literal["queued", "running", "ok", "failed", "skipped", "approval"]
+
+
 class RunOut(_Strict):
     run_id: str
-    trigger: str
-    status: str
+    trigger: Literal["manual", "schedule", "event"]
+    status: RunStatusOut
     queued_at: datetime
     started_at: datetime | None
     ended_at: datetime | None
@@ -185,7 +188,7 @@ class RunDetailOut(RunOut):
 
 
 class TriggerOut(_Strict):
-    kind: str
+    kind: Literal["manual", "schedule", "event"]
     schedule: ScheduleSpec | None
     timezone: str | None
     event_type: str | None
@@ -200,9 +203,9 @@ class TaskOut(_Strict):
     agent_name: str | None
     task: str
     trigger: TriggerOut
-    deliver: str
-    status: str
-    paused_reason: str | None
+    deliver: Literal["inbox"]
+    status: Literal["active", "paused", "retired"]
+    paused_reason: Literal["owner", "admin", "access_lost"] | None
     paused_at: str | None
     retired: RetiredOut | None
     owner: PersonOut
@@ -409,8 +412,9 @@ def _ts(value: int | None) -> datetime | None:
 def run_out(run: Run) -> RunOut:
     return RunOut(
         run_id=run.run_id,
-        trigger=run.trigger,
-        status=run.status,
+        # Validated against the literals of the model: the table holds nothing else.
+        trigger=cast(Any, run.trigger),
+        status=cast(Any, run.status.value),
         queued_at=datetime.fromtimestamp(run.queued_at, UTC),
         started_at=_ts(run.started_at),
         ended_at=_ts(run.ended_at),
@@ -467,15 +471,17 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
         agent_name=agent.definition.name if agent is not None else None,
         task=automation.task,
         trigger=TriggerOut(
-            kind=automation.trigger,
+            kind=cast(Any, automation.trigger),
             schedule=spec,
             timezone=automation.timezone,
             event_type=automation.event_type,
             daily_cap=DAILY_RUNS.get(automation.event_type or ""),
         ),
-        deliver=automation.deliver,
-        status=automation.status,
-        paused_reason=automation.paused_reason,
+        deliver=cast(Any, automation.deliver),
+        status=cast(Any, automation.status.value),
+        paused_reason=cast(
+            Any, automation.paused_reason.value if automation.paused_reason else None
+        ),
         paused_at=automation.paused_at,
         retired=retired,
         owner=PersonOut(

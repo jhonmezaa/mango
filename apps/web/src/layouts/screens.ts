@@ -7,6 +7,7 @@ import { brainsScreen } from '../pages/brains/screen';
 import { marketplaceScreen } from '../pages/marketplace/screen';
 import { mcpCatalogScreen } from '../pages/mcpCatalog/screen';
 import { orgChartScreen } from '../pages/orgChart/screen';
+import { schedulesScreen } from '../pages/schedules/screen';
 import type { ViewKey } from './navigation';
 
 /**
@@ -33,4 +34,5 @@ export const SCREENS: readonly Screen[] = [
   brainsScreen,
   mcpCatalogScreen,
   approvalsScreen,
+  schedulesScreen,
 ];

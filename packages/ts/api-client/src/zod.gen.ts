@@ -1105,8 +1105,19 @@ export const zRunDetailOutSchema = z.object({
     result: z.string().nullable(),
     run_id: z.string(),
     started_at: z.iso.datetime().nullable(),
-    status: z.string(),
-    trigger: z.string()
+    status: z.enum([
+        'queued',
+        'running',
+        'ok',
+        'failed',
+        'skipped',
+        'approval'
+    ]),
+    trigger: z.enum([
+        'manual',
+        'schedule',
+        'event'
+    ])
 });
 
 /**
@@ -1121,8 +1132,19 @@ export const zRunOutSchema = z.object({
     reason: z.string().nullable(),
     run_id: z.string(),
     started_at: z.iso.datetime().nullable(),
-    status: z.string(),
-    trigger: z.string()
+    status: z.enum([
+        'queued',
+        'running',
+        'ok',
+        'failed',
+        'skipped',
+        'approval'
+    ]),
+    trigger: z.enum([
+        'manual',
+        'schedule',
+        'event'
+    ])
 });
 
 /**
@@ -1358,7 +1380,11 @@ export const zTaskInSchema = z.object({
 export const zTriggerOutSchema = z.object({
     daily_cap: z.int().nullish(),
     event_type: z.string().nullable(),
-    kind: z.string(),
+    kind: z.enum([
+        'manual',
+        'schedule',
+        'event'
+    ]),
     schedule: zScheduleSpecSchema.nullable(),
     timezone: z.string().nullable()
 });
@@ -1664,18 +1690,26 @@ export const zTaskOutSchema = z.object({
     agent_id: z.string(),
     agent_name: z.string().nullable(),
     created_at: z.string(),
-    deliver: z.string(),
+    deliver: z.literal('inbox'),
     health: zHealthOutSchema.nullable(),
     is_owner: z.boolean(),
     name: z.string(),
     next_runs: z.array(z.iso.datetime()),
     owner: zMangoApiTasksPersonOutSchema,
     paused_at: z.string().nullable(),
-    paused_reason: z.string().nullable(),
+    paused_reason: z.enum([
+        'owner',
+        'admin',
+        'access_lost'
+    ]).nullable(),
     retired: zRetiredOutSchema.nullable(),
     running: z.boolean(),
     runs: z.array(zRunOutSchema),
-    status: z.string(),
+    status: z.enum([
+        'active',
+        'paused',
+        'retired'
+    ]),
     task: z.string(),
     task_id: z.string(),
     trigger: zTriggerOutSchema,

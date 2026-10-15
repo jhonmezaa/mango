@@ -34,6 +34,7 @@ import { handleMcpCatalog } from './mcpCatalog.ts';
 import { handleOrgChart } from './orgChart.ts';
 import { handlePeople } from './people.ts';
 import { handleSession } from './session.ts';
+import { handleTasks } from './tasks.ts';
 
 /**
  * Tried in order until one answers. The screens of the marketplace go before `handleAgents`,
@@ -42,6 +43,7 @@ import { handleSession } from './session.ts';
 const API_HANDLERS: readonly ApiHandler[] = [
   handleChatApi,
   handleApprovals,
+  handleTasks,
   handleGroups,
   handleDirectory,
   handlePeople,

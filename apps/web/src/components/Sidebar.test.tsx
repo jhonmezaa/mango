@@ -86,12 +86,14 @@ describe('Sidebar navigation', () => {
     renderSidebar(false, '/', false, 'finops-central');
     await user.click(screen.getByRole('button', { name: 'Construir' }));
     await user.click(screen.getByRole('button', { name: 'Operación' }));
-    // Of the owner views, the Org Chart is available (read only; the API filters it, D38) and the Marketplace.
+    // Of the owner views, the Org Chart is available (read only; the API filters it, D38), the
+    // Marketplace and Schedules (D78: the API lists only the caller's tasks).
     expect(navLinks()).toEqual([
       'Chat',
       'Marketplace',
       'Chat con FinOps',
       'Aprobaciones',
+      'Schedules',
       'Org Chart',
     ]);
     expect(soonItems()).toEqual([
@@ -104,7 +106,6 @@ describe('Sidebar navigation', () => {
       'Playground, próximamente',
       'Skills, próximamente',
       'Knowledge Bases, próximamente',
-      'Schedules, próximamente',
       'Observability, próximamente',
       'Evals, próximamente',
       'Costos, próximamente',
@@ -306,6 +307,7 @@ describe('Sidebar navigation', () => {
       'Audit log',
       'Brains',
       'Catálogo de MCP',
+      'Schedules',
       'Org Chart',
     ]);
     expect(soonItems()).toContain('Playground, próximamente');

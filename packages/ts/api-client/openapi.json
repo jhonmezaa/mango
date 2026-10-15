@@ -4899,10 +4899,23 @@
             "title": "Started At"
           },
           "status": {
+            "enum": [
+              "queued",
+              "running",
+              "ok",
+              "failed",
+              "skipped",
+              "approval"
+            ],
             "title": "Status",
             "type": "string"
           },
           "trigger": {
+            "enum": [
+              "manual",
+              "schedule",
+              "event"
+            ],
             "title": "Trigger",
             "type": "string"
           }
@@ -4993,10 +5006,23 @@
             "title": "Started At"
           },
           "status": {
+            "enum": [
+              "queued",
+              "running",
+              "ok",
+              "failed",
+              "skipped",
+              "approval"
+            ],
             "title": "Status",
             "type": "string"
           },
           "trigger": {
+            "enum": [
+              "manual",
+              "schedule",
+              "event"
+            ],
             "title": "Trigger",
             "type": "string"
           }
@@ -5340,6 +5366,7 @@
             "type": "string"
           },
           "deliver": {
+            "const": "inbox",
             "title": "Deliver",
             "type": "string"
           },
@@ -5386,6 +5413,11 @@
           "paused_reason": {
             "anyOf": [
               {
+                "enum": [
+                  "owner",
+                  "admin",
+                  "access_lost"
+                ],
                 "type": "string"
               },
               {
@@ -5416,6 +5448,11 @@
             "type": "array"
           },
           "status": {
+            "enum": [
+              "active",
+              "paused",
+              "retired"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -5615,6 +5652,11 @@
             "title": "Event Type"
           },
           "kind": {
+            "enum": [
+              "manual",
+              "schedule",
+              "event"
+            ],
             "title": "Kind",
             "type": "string"
           },
