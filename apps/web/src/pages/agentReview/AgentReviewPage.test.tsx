@@ -743,7 +743,10 @@ describe('AgentReviewPage (design agent-review.jsx)', () => {
     );
     await detail();
     expect(screen.getByRole('option', { name: /Otro/ })).toHaveAttribute('aria-selected', 'true');
-    expect(calls('readVersion')[0]?.[1]).toEqual({ path: { agent_id: NEW, version: 1 } });
+    // The detail shows before its effect asks for the version: wait for the call.
+    await waitFor(() => {
+      expect(calls('readVersion')[0]?.[1]).toEqual({ path: { agent_id: NEW, version: 1 } });
+    });
   });
 
   it('says so when there is nothing to review', async () => {
