@@ -335,12 +335,13 @@ describe("pack permissions boundary", () => {
 
 describe("role behind the Billing broker, in the payer account (D10, D37, TM-BL11)", () => {
   const payer = payerTemplate(cfg).toJSON().Resources as Record<string, Resource>;
-  // The payer stack also holds the write role of the first write tool (D27): its policy is
-  // not the reader's (see write-tools.test.ts).
+  // The payer stack also holds the write role of the first write tool (D27) and the role that
+  // forwards cost anomalies (D79): their policies are not the reader's (see write-tools.test.ts
+  // and cost-anomaly-events.test.ts).
   const reader = Object.values(payer)
     .filter((r) => r.Type === "AWS::IAM::Policy")
     .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
-    .filter((s) => s.Sid !== "OwnBudgets");
+    .filter((s) => s.Sid !== "OwnBudgets" && s.Action !== "events:PutEvents");
   const data = reader.filter((s) => s.Sid !== "OrganizationInventoryRead");
 
   it("allows exactly the listed data actions, and Organizations inventory", () => {

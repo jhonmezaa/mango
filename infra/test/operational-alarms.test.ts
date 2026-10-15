@@ -96,6 +96,8 @@ describe("operational alarms of Core", () => {
         "BudgetReconciler-failed",
         "BudgetReconciler-reservation-charged",
         "Cognito-rate-limited",
+        "CostAnomalies-rejected",
+        "CostAnomalyConsumer-failed",
         "DynamoDB-system-errors",
         "Edge-errors",
         "Edge-rate-limited",

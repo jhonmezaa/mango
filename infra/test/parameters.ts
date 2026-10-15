@@ -70,6 +70,8 @@ export function payerTemplate(installation: {
       OrganizationId: installation.organizationId,
       "AWS::AccountId": installation.managementAccountId,
       "AWS::Partition": "aws",
+      // Payer and Core are installed in the same Region (D79).
+      "AWS::Region": "us-east-1",
     }),
   );
 }

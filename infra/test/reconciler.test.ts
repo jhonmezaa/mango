@@ -227,9 +227,13 @@ describe("reconciler function and schedule", () => {
     // So is the budget reconciler (D73); details in budget-reconciler.test.ts.
     const budgetReconcilerId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-BudgetReconciler` });
     expect(resources[budgetReconcilerId]!.Properties.DeadLetterConfig).toBeDefined();
+    // And the cost anomaly consumer (D79); details in cost-anomaly-events.test.ts.
+    const anomalyConsumerId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-CostAnomalyConsumer` });
+    expect(resources[anomalyConsumerId]!.Properties.DeadLetterConfig).toBeDefined();
+    const asynchronous = [functionId, budgetReconcilerId, anomalyConsumerId];
     // Every other function is invoked synchronously and keeps the agreed exception.
     for (const [id, other] of ofType("AWS::Lambda::Function")) {
-      if (id === functionId || id === budgetReconcilerId || id.startsWith("UninstallGuard")) continue;
+      if (asynchronous.includes(id) || id.startsWith("UninstallGuard")) continue;
       expect(other.Properties.DeadLetterConfig).toBeUndefined();
       expect((other.Metadata?.checkov?.skip ?? []).map((s: { id: string }) => s.id)).toContain(
         CHECKOV_EXCEPTIONS.lambdaDlq.id,

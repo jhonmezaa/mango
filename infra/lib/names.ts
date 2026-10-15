@@ -35,7 +35,25 @@ export const roleNames = {
   operateBroker: (ns: string) => mangoName(ns, "OperateBroker"),
   /** Write role of the payer account for the first write tool: its own budgets only. */
   budgetsOperator: (ns: string) => mangoName(ns, "BudgetsOperator"),
+  /** Role of the payer account EventBridge uses to forward cost anomalies to Mango (D79). */
+  costAnomalyForwarder: (ns: string) => mangoName(ns, "CostAnomalyForwarder"),
+  /** Function that turns a cost anomaly into the runs of the automations subscribed (D79). */
+  costAnomalyConsumer: (ns: string) => mangoName(ns, "CostAnomalyConsumer"),
 };
+
+/**
+ * Cost anomalies (D79): the bus of the Mango account the payer forwards them to, and the rule
+ * of the payer that forwards them. The bus name is fixed so that `Payer`, installed before
+ * `Core`, can name it.
+ */
+export const costAnomalyNames = {
+  bus: (ns: string) => mangoName(ns, "CostAnomalies"),
+  forwardRule: (ns: string) => mangoName(ns, "CostAnomalies-forward"),
+};
+
+export function eventBusArn(region: string, accountId: string, busName: string): string {
+  return `arn:aws:events:${region}:${accountId}:event-bus/${busName}`;
+}
 
 /** Every resource a write tool creates is named with the installation prefix (rule 6). */
 export const writeResourcePrefix = (ns: string) => mangoName(ns, "");

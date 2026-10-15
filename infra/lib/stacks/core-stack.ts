@@ -17,6 +17,7 @@ import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "../con
 import { Alerts } from "../constructs/alerts.js";
 import { ApiService } from "../constructs/api-service.js";
 import { BudgetReconciler } from "../constructs/budget-reconciler.js";
+import { CostAnomalyEvents } from "../constructs/cost-anomaly-events.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
@@ -204,6 +205,16 @@ export class CoreStack extends Stack {
     new BudgetReconciler(this, "BudgetReconciler", {
       installation: cfg,
       budgetsTable: governance.budgets,
+      auditIndex: governance.auditIndex,
+      auditStream: governance.auditStream,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+      alerts,
+    });
+    // Cost anomalies of the organization, forwarded by the payer account, start the runs of the
+    // automations subscribed to them (D79).
+    new CostAnomalyEvents(this, "CostAnomalyEvents", {
+      installation: cfg,
       auditIndex: governance.auditIndex,
       auditStream: governance.auditStream,
       dataKey: governance.dataKey,

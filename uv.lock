@@ -10,6 +10,7 @@ members = [
     "mango-aws",
     "mango-budget-reconciler",
     "mango-core",
+    "mango-cost-anomaly-consumer",
     "mango-cost-explorer",
     "mango-gateway-interceptor",
     "mango-pack-builder",
@@ -933,6 +934,17 @@ requires-dist = [
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10" },
 ]
 provides-extras = ["agents"]
+
+[[package]]
+name = "mango-cost-anomaly-consumer"
+version = "0.1.0"
+source = { editable = "functions/cost-anomaly-consumer" }
+dependencies = [
+    { name = "boto3" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "boto3", specifier = ">=1.43.104" }]
 
 [[package]]
 name = "mango-cost-explorer"

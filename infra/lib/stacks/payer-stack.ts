@@ -1,4 +1,6 @@
 import { Aws, Stack, StackProps } from "aws-cdk-lib";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import { acknowledge } from "../nag.js";
@@ -11,6 +13,8 @@ import {
 } from "../params.js";
 import { noBootstrapSynthesizer } from "./member-stack.js";
 import {
+  costAnomalyNames,
+  eventBusArn,
   OPERATE_SESSION_TAG_KEYS,
   roleArn,
   roleNames,
@@ -104,6 +108,15 @@ export const BILLING_READER_DATA_ACTIONS = [
   ...BUDGETS_ACTIONS,
 ];
 
+/**
+ * The event AWS Cost Anomaly Detection publishes on the default bus of the payer account for
+ * each anomaly (D79). The rules of both accounts match it the same way: source, detail type and
+ * the payer account. EventBridge keeps `aws.*` sources to AWS services.
+ */
+export function costAnomalyPattern(managementAccountId: string): events.EventPattern {
+  return { source: ["aws.ce"], detailType: ["Anomaly Detected"], account: [managementAccountId] };
+}
+
 /** What the roles of the payer account are built from: the stack parameters (D58). */
 interface PayerSettings {
   readonly namespace: string;
@@ -128,6 +141,8 @@ export const BUDGETS_OPERATOR_ACTIONS = ["budgets:ModifyBudget"];
  * - `Mango-<ns>-BudgetsOperator`: the write role of the first write tool (D27). It can only
  *   touch budgets named `Mango-<ns>-*`, and only the operate broker of the Mango account may
  *   assume it, which in turn only the approval executor can use, for one approved call.
+ * - `Mango-<ns>-CostAnomalyForwarder` and the rule `Mango-<ns>-CostAnomalies-forward`: Cost
+ *   Anomaly Detection events to the Mango account (D79). The role only puts events on that bus.
  */
 export class PayerStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps = {}) {
@@ -215,6 +230,7 @@ export class PayerStack extends Stack {
       }),
     );
     this.budgetsOperator(cfg);
+    this.costAnomalyForwarding(cfg);
     acknowledge(
       reader,
       {
@@ -231,6 +247,35 @@ export class PayerStack extends Stack {
       },
     );
   }
+  /**
+   * Cost anomalies to Mango (D79): a rule on the default bus forwards each Cost Anomaly
+   * Detection event, unchanged, to the bus `Mango-<ns>-CostAnomalies` of the Mango account,
+   * through a role that can only put events on that bus. Mango is in this stack's region
+   * (`us-east-1`, the home region of Cost Anomaly Detection). The bus may not exist yet:
+   * `Payer` is installed before `Core`, and EventBridge retries a failed delivery for 24 hours.
+   */
+  private costAnomalyForwarding(cfg: PayerSettings): void {
+    const ruleName = costAnomalyNames.forwardRule(cfg.namespace);
+    const ruleArn = `arn:${Aws.PARTITION}:events:${Aws.REGION}:${cfg.managementAccountId}:rule/${ruleName}`;
+    const busArn = eventBusArn(Aws.REGION, cfg.mangoAccountId, costAnomalyNames.bus(cfg.namespace));
+    const role = new iam.Role(this, "CostAnomalyForwarder", {
+      roleName: roleNames.costAnomalyForwarder(cfg.namespace),
+      description: "EventBridge forwards AWS Cost Anomaly Detection events to the Mango bus, and nothing else",
+      // Only EventBridge, for this account's forwarding rule (confused deputy).
+      assumedBy: new iam.ServicePrincipal("events.amazonaws.com").withConditions({
+        StringEquals: { "aws:SourceAccount": cfg.managementAccountId },
+        ArnEquals: { "aws:SourceArn": ruleArn },
+      }),
+    });
+    // The target grants the role `events:PutEvents` on that bus, and nothing else.
+    new events.Rule(this, "CostAnomalyForwardRule", {
+      ruleName,
+      description: "Forwards AWS Cost Anomaly Detection events to the Mango account (D79)",
+      eventPattern: costAnomalyPattern(cfg.managementAccountId),
+      targets: [new targets.EventBus(events.EventBus.fromEventBusArn(this, "MangoCostAnomalyBus", busArn), { role })],
+    });
+  }
+
   /** Write role of the first write tool: budgets named with the installation prefix (D27). */
   private budgetsOperator(cfg: PayerSettings): void {
     const brokerArn = roleArn(cfg.mangoAccountId, roleNames.operateBroker(cfg.namespace));
