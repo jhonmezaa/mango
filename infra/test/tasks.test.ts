@@ -163,6 +163,28 @@ describe("the schedules and the queue of runs", () => {
     expect(JSON.stringify(policies)).toContain("aws:SecureTransport");
   });
 
+  it("a run that failed every receipt alarms on the alerts topic and shows on the dashboard (D71)", () => {
+    const dlqId = logicalId("AWS::SQS::Queue", { QueueName: `Mango-${ns}-TaskRuns-dlq` });
+    const alarmId = logicalId("AWS::CloudWatch::Alarm", { AlarmName: `Mango-${ns}-TaskRuns-failed` });
+    const alarm = resources[alarmId]!.Properties;
+    expect(alarm).toMatchObject({
+      MetricName: "ApproximateNumberOfMessagesVisible",
+      Namespace: "AWS/SQS",
+      Statistic: "Maximum",
+      Period: 300,
+      Threshold: 1,
+      ComparisonOperator: "GreaterThanOrEqualToThreshold",
+      EvaluationPeriods: 1,
+      TreatMissingData: "notBreaching",
+    });
+    expect(alarm.Dimensions).toEqual([{ Name: "QueueName", Value: { "Fn::GetAtt": [dlqId, "QueueName"] } }]);
+    const topics = Object.keys(template.findResources("AWS::SNS::Topic"));
+    expect(alarm.AlarmActions).toEqual([{ Ref: topics[0] }]);
+    expect(alarm.AlarmDescription).toMatch(/Look first at /);
+    const [dashboard] = Object.values(template.findResources("AWS::CloudWatch::Dashboard"));
+    expect(JSON.stringify(dashboard!.Properties.DashboardBody)).toContain(`"${alarmId}"`);
+  });
+
   it("mango-api manages only the schedules of its group and passes only the scheduler role", () => {
     const statements = statementsOf(apiRoleId);
     const schedules = bySid(statements, "TaskSchedules");

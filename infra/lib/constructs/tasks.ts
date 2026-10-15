@@ -1,4 +1,6 @@
 import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -10,6 +12,7 @@ import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { mangoName } from "../names.js";
 import { acknowledge, REASONS } from "../nag.js";
+import { Alerts } from "./alerts.js";
 import { PythonFunction } from "./python-function.js";
 
 /** Index names of the Tasks table; keep in sync with `mango_api.tasks_store`. */
@@ -52,6 +55,8 @@ export class TaskPlatform extends Construct {
   readonly table: dynamodb.TableV2;
   readonly runQueue: sqs.Queue;
   readonly runQueueKey: kms.Key;
+  /** Messages of runs that failed every receipt: those runs never ran. */
+  readonly runDeadLetters: sqs.Queue;
   readonly scheduleGroup: scheduler.CfnScheduleGroup;
   readonly schedulerRole: iam.Role;
   readonly identityKey: kms.Key;
@@ -100,13 +105,13 @@ export class TaskPlatform extends Construct {
       enableKeyRotation: true,
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    const deadLetters = new sqs.Queue(this, "RunDeadLetters", {
+    const deadLetters = (this.runDeadLetters = new sqs.Queue(this, "RunDeadLetters", {
       queueName: mangoName(ns, "TaskRuns-dlq"),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: this.runQueueKey,
       enforceSSL: true,
       retentionPeriod: Duration.days(14),
-    });
+    }));
     this.runQueue = new sqs.Queue(this, "RunQueue", {
       queueName: mangoName(ns, "TaskRuns"),
       encryption: sqs.QueueEncryption.KMS,
@@ -349,6 +354,30 @@ export class TaskPlatform extends Construct {
         "Schedules are created at runtime by mango-api, one per task (D78, D25): the schedule group of the " +
         "installation is the scope.",
     });
+  }
+
+  /**
+   * A run whose message failed every receipt never ran, and nobody would know (D71): the alarm
+   * tells the alerts topic. Created before `OperationalAlarms`, so the dashboard shows it.
+   */
+  alarmOnFailedRuns(alerts: Alerts): cloudwatch.Alarm {
+    const alarm = new cloudwatch.Alarm(this, "RunsFailedAlarm", {
+      alarmName: mangoName(this.namespace, "TaskRuns-failed"),
+      alarmDescription:
+        "A message that starts a task run failed three times and is in the dead-letter queue " +
+        `${mangoName(this.namespace, "TaskRuns-dlq")}: that run (scheduled, «Ejecutar ahora» or an event) never ran. ` +
+        "Look first at the log of mango-api («a task message is delivered again»), then at the message in the queue.",
+      metric: this.runDeadLetters.metricApproximateNumberOfMessagesVisible({
+        statistic: cloudwatch.Stats.MAXIMUM,
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    alarm.addAlarmAction(new cloudwatchActions.SnsAction(alerts.topic));
+    return alarm;
   }
 
   /**

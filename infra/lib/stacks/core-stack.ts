@@ -183,6 +183,8 @@ export class CoreStack extends Stack {
       releaseAgents: releaseHashes,
     });
     const alerts = new Alerts(this, "Alerts", { installation: cfg });
+    // D78: a task run whose message failed every receipt never ran.
+    tasks.alarmOnFailedRuns(alerts);
     // Daily read-only reconciliation and the alarms of the publication path (TM-M6, TM-M9).
     // It also reports a release agent that serves content other than the release's (D42).
     new Reconciler(this, "Reconciler", {

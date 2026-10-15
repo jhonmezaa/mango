@@ -102,6 +102,7 @@ describe("operational alarms of Core", () => {
         "GatewayInterceptor-failing",
         "PreSignUp-throttled",
         "PreTokenGeneration-failing",
+        "TaskRuns-failed",
         "UninstallGuard-deletion-failed",
         "UninstallGuard-failed",
       ].map((suffix) => `Mango-${ns}-${suffix}`),

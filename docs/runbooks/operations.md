@@ -82,6 +82,12 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | `BudgetReconciler-reservation-charged` | Un turno de chat cuyo final no se supo se cobró por su reserva entera: las trazas de AgentCore no dejaron saber lo que costó 15 minutos después de su límite de tiempo. No debería pasar casi nunca | Los eventos `budget.reconciled` de Auditoría con `basis: reservation` y su `reason`. Después, el log group `aws/spans` |
 | `BudgetReconciler-failed` | La conciliación falló todos sus reintentos: las reservas de los turnos cortados siguen retenidas y nadie las recupera | Los errores del log group `/aws/lambda/Mango-<ns>-BudgetReconciler` y el mensaje en la cola `Mango-<ns>-BudgetReconciler-dlq` |
 
+**Tareas sin chat** (D78)
+
+| Alarma | Qué significa | Qué mirar primero |
+|---|---|---|
+| `TaskRuns-failed` | Un mensaje que arrancaba una ejecución de una tarea (por horario, «Ejecutar ahora» o un evento) falló sus 3 recepciones y está en la cola `Mango-<ns>-TaskRuns-dlq`: esa ejecución no corrió | El log de `mango-api` («a task message is delivered again», con su error) y el mensaje en la cola |
+
 **Cuando la aplicación va lenta** (`Api-slow`; D70, punto 9). Dos tareas sirven con margen unas 80 lecturas por segundo (unas 300 personas activas a la vez) y se saturan hacia las 200.
 
 - **Una tarea cerca del 100 % de CPU y mucho tráfico:** la instalación está en su techo. Si es un pico, se recupera sola en segundos al bajar la carga, sin reinicios. Si es el uso normal, la instalación necesita tareas más grandes: es un cambio de versión, avisa al proveedor.
@@ -185,6 +191,16 @@ Decisión: [D73](../architecture/decisions/D073-turno-cortado-nunca-cuesta-cero.
 - **Transaction Search gestionado por fuera** (`observability.transactionSearch: external`): la conciliación solo funciona si las trazas de los harness llegan al log group `aws/spans` de la cuenta de Mango. Si no llegan, todo turno cortado acaba cobrado por su reserva y esta alarma lo dirá.
 - **El permiso de lectura** de la función alcanza todo `aws/spans`, que es de toda la cuenta. En una cuenta dedicada a Mango no hay nada más ahí.
 
+**Cuando salta `TaskRuns-failed`.** El mensaje solo nombra la tarea y la hora prevista, la ejecución a pedido o el evento: nunca da autoridad y no se puede «reintentar» desde la cola. Las causas esperables son la tabla `Mango-<ns>-Tasks` sin responder o un error de `mango-api` antes de anotar la ejecución.
+
+1. Buscar en el log de `mango-api` la línea «a task message is delivered again» y su error. Si fue la tabla o un fallo pasajero, ya pasó; si se repite, es un defecto que hay que reportar con esa línea.
+2. Una ejecución por horario perdida no se recupera: la siguiente hora prevista corre igual. Una a pedido, su dueño la vuelve a pedir con «Ejecutar ahora». Un evento perdido (una anomalía de costo, D79) no vuelve: se puede investigar a mano desde el chat.
+3. Vaciar la cola para que la alarma vuelva a `OK`:
+
+   ```sh
+   aws sqs purge-queue --queue-url "$(aws sqs get-queue-url --queue-name Mango-<ns>-TaskRuns-dlq --query QueueUrl --output text)"
+   ```
+
 **Cuando salta `BudgetReconciler-failed`.** La función corre cada 5 minutos: una pasada que falla la repite la siguiente, y nada se cobra ni se libera dos veces. La alarma queda en `ALARM` mientras haya mensajes en la cola.
 
 1. Mirar el error en el log group de la función. Un `AccessDenied` sobre la tabla `Mango-<ns>-Budgets` justo después de instalar la versión que trae D73 quiere decir que la condición por clave del rol no deja pasar la transacción: avisar al proveedor.
@@ -283,7 +299,7 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 | Qué | Cuánto | USD al mes |
 |---|---|---|
-| Métricas que leen las alarmas, a USD 0,10 cada una | 53 en la plantilla de ejemplo (2026-10-09): 52 en las 32 alarmas de `Core` y una en la de `PackNetwork` | 5,30 |
+| Métricas que leen las alarmas, a USD 0,10 cada una | 54 en la plantilla de ejemplo (2026-10-15): 53 en las 33 alarmas de `Core` y una en la de `PackNetwork` | 5,40 |
 | Tablero `Mango-<ns>-Operations` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
 | Métricas propias de la función conciliadora (D73), a USD 0,30 cada una | Cuatro | 1,20 |
 | Métrica del filtro del log de `mango-api` (D71, punto 18), a USD 0,30 | Una: `RateLimitStoreRefusals`. Existe todos los meses, porque el filtro publica ceros | 0,30 |
