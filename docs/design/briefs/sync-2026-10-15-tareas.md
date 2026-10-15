@@ -44,6 +44,14 @@ Además de «Completada», «Fallida», «Omitida» y «Espera aprobación», un
 
 El aviso «{nombre} completada · entregada en bandeja del creador» sale cuando la ejecución termina de verdad (la pantalla consulta cada 3 s mientras hay una en curso); antes sale «{nombre} en cola». Si no se completa, «{nombre} no se completó».
 
+### 2.9 La pausa de un administrador frena (D78 (19))
+
+Mientras un administrador tenga pausada una tarea, su dueño no puede «Ejecutar ahora» ni «Reanudar»: solo un administrador la reanuda. El producto desactiva esos botones para el dueño (con «Un administrador la pausó: solo un administrador la reanuda» como ayuda) y en el detalle dice «Pausada por un administrador: no se ejecutará, ni a pedido, hasta que un administrador la reanude.». La pausa del dueño sigue siendo suya: un administrador no la levanta.
+
+### 2.10 El resultado solo lo ve su dueño (D78 (18))
+
+Un administrador ve el estado, la duración, el costo y el motivo de cada ejecución, pero no «Ver resultado»: la respuesta se obtuvo con el acceso del dueño, como en el chat, donde un administrador no lee conversaciones ajenas.
+
 ## 3. El disparador por anomalía de costo (hace falta diseño)
 
 Una tarea puede arrancar sola cuando AWS detecta una anomalía de costo, para investigarla (D79). El producto añade lo mínimo:
