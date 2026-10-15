@@ -1,7 +1,7 @@
 # D80 · Una versión nueva de la release actualiza su agente si la instalación no lo cambió
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-15 (elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15; el cómo, propuesto por un agente; lo que mostró la primera actualización, punto 5, nota propuesta por un agente)
+- **Estado:** vigente
+- **Fecha:** 2026-10-15 (elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15; el cómo, propuesto por un agente; lo que mostró la primera actualización, punto 5, nota propuesta por un agente; aceptada por el dueño el 2026-10-15, por menú («Sí, aceptar las tres»), después de que el agente principal le explicara las tres)
 - **Precisa / reemplaza a:** precisa [D34](D034-guardrail-y-agentes-de-la-release.md) (qué pasa con un agente de la release cuando una versión posterior trae otro contenido)
 - **Precisada por:** —
 

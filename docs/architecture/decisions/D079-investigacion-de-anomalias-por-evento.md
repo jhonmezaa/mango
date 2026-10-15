@@ -1,7 +1,7 @@
 # D79 · Una anomalía de costo arranca sola su investigación
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-15 (los puntos 1 a 6, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15; los puntos 7 a 12, propuestos por un agente; lo que mostró la primera instalación, punto 13, nota propuesta por un agente)
+- **Estado:** vigente
+- **Fecha:** 2026-10-15 (los puntos 1 a 6, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15; los puntos 7 a 12, propuestos por un agente; lo que mostró la primera instalación, punto 13, nota propuesta por un agente; aceptada por el dueño el 2026-10-15, por menú («Sí, aceptar las tres»), después de que el agente principal le explicara las tres)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) («Schedules»: un disparador por evento, quién puede usarlo y su tope)
 - **Precisada por:** —
 
