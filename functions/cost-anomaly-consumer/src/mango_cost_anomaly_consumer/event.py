@@ -48,8 +48,8 @@ class AnomalyTrigger:
     monitor_arn: str
     start_date: date
     end_date: date
-    occurred_at: str
-    """When AWS emitted the event, ``YYYY-MM-DDTHH:MM:SSZ``."""
+    occurred_at: datetime
+    """When AWS emitted the event, in UTC."""
 
 
 def _text(value: object, reason: str) -> str:
@@ -113,11 +113,11 @@ def parse_anomaly_event(
     # A day of slack: AWS dates the anomaly in UTC and the clock of the event may run ahead.
     if start > (today or datetime.now(UTC).date()) + timedelta(days=1):
         raise RejectedEventError("bad_dates")
-    occurred_at = _text(event.get("time"), "bad_time")
-    if not _TIME_RE.fullmatch(occurred_at):
+    time = _text(event.get("time"), "bad_time")
+    if not _TIME_RE.fullmatch(time):
         raise RejectedEventError("bad_time")
     try:
-        datetime.strptime(occurred_at, "%Y-%m-%dT%H:%M:%SZ")
+        occurred_at = datetime.strptime(time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     except ValueError:
         raise RejectedEventError("bad_time") from None
     return AnomalyTrigger(event_id, anomaly_id, monitor_arn, start, end, occurred_at)

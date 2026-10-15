@@ -3,7 +3,10 @@ name = "mango-cost-anomaly-consumer"
 version = "0.1.0"
 description = "Lambda that validates cost anomaly events of the payer account and starts the runs of the automations subscribed to them (D79)"
 requires-python = ">=3.13,<3.14"
-dependencies = ["boto3>=1.43.104"]
+dependencies = ["boto3>=1.43.104", "mango-core"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
 
 [build-system]
 requires = ["hatchling>=1.27"]

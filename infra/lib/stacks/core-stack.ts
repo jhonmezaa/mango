@@ -213,14 +213,16 @@ export class CoreStack extends Stack {
     });
     // Cost anomalies of the organization, forwarded by the payer account, start the runs of the
     // automations subscribed to them (D79).
-    new CostAnomalyEvents(this, "CostAnomalyEvents", {
+    const costAnomalies = new CostAnomalyEvents(this, "CostAnomalyEvents", {
       installation: cfg,
       auditIndex: governance.auditIndex,
       auditStream: governance.auditStream,
       dataKey: governance.dataKey,
       configKey: tools.configKey,
       alerts,
+      runQueue: tasks.runQueue,
     });
+    tasks.grantEnqueueEvents(costAnomalies.function);
     // Marketplace v1 (D19, D36): MCP packs are enabled by SDK from the release's signed zips.
     const packPlatform = new PackPlatform(this, "PackPlatform", {
       installation: cfg,

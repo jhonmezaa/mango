@@ -30,17 +30,20 @@ export interface CostAnomalyEventsProps {
   readonly configKey: kms.IKey;
   /** Where alarms notify, and the key of the dead-letter queue. */
   readonly alerts: Alerts;
+  /** Queue of task runs (D78): the consumer leaves one message per anomaly in it. */
+  readonly runQueue: sqs.IQueue;
 }
 
 /**
  * Cost anomalies of the organization (D79). The payer account forwards each AWS Cost Anomaly
  * Detection event to the bus `Mango-<ns>-CostAnomalies`; a rule on it invokes the consumer,
- * which validates the event and starts one run of each automation subscribed to cost
- * anomalies, as its owner (D26), through the task engine (D78).
+ * which validates the event and leaves one message in the queue of task runs (D78). mango-api
+ * starts one run of each automation subscribed to cost anomalies, as its owner (D26).
  *
  * The bus only takes events from the forwarding role of the payer account, inside the
  * organization. The consumer reads no billing data and invokes no model: it holds no
- * credential of the payer account. What it may write is the audit trail.
+ * credential of the payer account. What it may write is the audit trail and that message; the
+ * stack grants the second (`TaskPlatform.grantEnqueueEvents`).
  */
 export class CostAnomalyEvents extends Construct {
   readonly bus: events.EventBus;
@@ -139,6 +142,7 @@ export class CostAnomalyEvents extends Construct {
         MANAGEMENT_ACCOUNT_ID: cfg.managementAccountId,
         AUDIT_STREAM: props.auditStream.deliveryStreamName,
         AUDIT_INDEX_TABLE: props.auditIndex.tableName,
+        TASK_RUNS_QUEUE_URL: props.runQueue.queueUrl,
       },
       environmentEncryption: props.configKey,
     }).function;

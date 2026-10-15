@@ -92,6 +92,7 @@ describe("cost anomaly bus and consumer in Core (D79)", () => {
   const roleId = logicalId("AWS::IAM::Role", { RoleName: name });
   const functionId = logicalId("AWS::Lambda::Function", { FunctionName: name });
   const queueId = logicalId("AWS::SQS::Queue", { QueueName: `${name}-dlq` });
+  const runQueueId = logicalId("AWS::SQS::Queue", { QueueName: `Mango-${ns}-TaskRuns` });
   const ruleId = logicalId("AWS::Events::Rule", { Name: `Mango-${ns}-CostAnomalies-consume` });
   const statements = Object.values(resources)
     .filter((r) => r.Type === "AWS::IAM::Policy" && r.Properties.Roles.some((x: { Ref: string }) => x.Ref === roleId))
@@ -123,7 +124,7 @@ describe("cost anomaly bus and consumer in Core (D79)", () => {
     expect(rule.Targets[0].RetryPolicy).toEqual({ MaximumRetryAttempts: 2, MaximumEventAgeInSeconds: 6 * 3600 });
   });
 
-  it("the consumer only writes the audit trail: no billing data, no model, no other account", () => {
+  it("the consumer only writes the audit trail and the task queue: no billing data, no model, no other account", () => {
     expect(statements.map((s) => s.Sid).filter(Boolean).sort()).toEqual([
       "DataKeyViaDynamoDB",
       "DeadLetterQueueKey",
@@ -141,6 +142,22 @@ describe("cost anomaly bus and consumer in Core (D79)", () => {
     expect(statements.find((s) => s.Sid === "DataKeyViaDynamoDB")!.Condition).toEqual({
       StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` },
     });
+    // SQS: its own dead-letter queue (Lambda) and the queue of task runs (D78), nothing else.
+    const sends = statements.filter((s) => actions(s).some((a) => a.startsWith("sqs:")));
+    expect(new Set(sends.flatMap(actions))).toEqual(new Set(["sqs:SendMessage"]));
+    expect(sends.flatMap((s) => [s.Resource].flat())).toEqual(
+      expect.arrayContaining([{ "Fn::GetAtt": [queueId, "Arn"] }, { "Fn::GetAtt": [runQueueId, "Arn"] }]),
+    );
+    expect(sends.flatMap((s) => [s.Resource].flat())).toHaveLength(2);
+    const runQueueKey = statements.find(
+      (s) => !s.Sid && actions(s).includes("kms:GenerateDataKey") && JSON.stringify(s.Resource).includes("RunQueueKey"),
+    );
+    expect(runQueueKey?.Condition).toEqual({ StringEquals: { "kms:ViaService": `sqs.${region}.amazonaws.com` } });
+  });
+
+  it("hands each anomaly to the queue of task runs of the installation (D78)", () => {
+    expect(resources[runQueueId]!.Properties.QueueName).toBe(`Mango-${ns}-TaskRuns`);
+    expect(resources[functionId]!.Properties.Environment.Variables.TASK_RUNS_QUEUE_URL).toEqual({ Ref: runQueueId });
   });
 
   it("is asynchronous: dead-letter queue, the Checkov DLQ check kept, no VPC", () => {

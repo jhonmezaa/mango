@@ -31,14 +31,14 @@ from botocore.config import Config
 from mango_cost_anomaly_consumer.audit import EVENT_RECEIVED, EVENT_REJECTED, AuditWriter
 from mango_cost_anomaly_consumer.config import Settings
 from mango_cost_anomaly_consumer.event import RejectedEventError, parse_anomaly_event, safe_event_id
-from mango_cost_anomaly_consumer.runs import RunQueue, UnconnectedRunQueue, event_message
+from mango_cost_anomaly_consumer.runs import RunQueue, SqsRunQueue, event_message
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 METRIC_NAMESPACE = "Mango/CostAnomalies"
 METRIC_DIMENSION = "Installation"
-METRICS = ("Received", "Rejected", "Queued", "NotConnected")
+METRICS = ("Received", "Rejected", "Queued")
 """What becomes a CloudWatch metric; ``Rejected`` has an alarm (TM-CA1)."""
 
 _CLIENT_CONFIG = Config(
@@ -81,11 +81,8 @@ def consume(
         return stats
 
     stats["Received"] += 1
-    if runs.connected:
-        runs.enqueue(event_message(trigger))
-        stats["Queued"] += 1
-    else:
-        stats["NotConnected"] += 1
+    runs.send(event_message(trigger))
+    stats["Queued"] += 1
     audit.emit(
         EVENT_RECEIVED,
         {
@@ -93,7 +90,6 @@ def consume(
             "aws_event_id": trigger.event_id,
             "anomaly_start_date": trigger.start_date.isoformat(),
             "anomaly_end_date": trigger.end_date.isoformat(),
-            "engine_connected": runs.connected,
         },
     )
     return stats
@@ -108,8 +104,8 @@ def _wiring() -> tuple[Settings, RunQueue, AuditWriter]:
         boto3.client("dynamodb", config=_CLIENT_CONFIG),
         settings.audit_index_table,
     )
-    # Replaced by the adapter over the task queue when D78 is integrated.
-    return settings, UnconnectedRunQueue(), audit
+    runs = SqsRunQueue(boto3.client("sqs", config=_CLIENT_CONFIG), settings.task_runs_queue_url)
+    return settings, runs, audit
 
 
 def lambda_handler(event: Mapping[str, object], _context: Any) -> dict[str, int]:

@@ -176,8 +176,10 @@ describe("Admin v0 infrastructure (D17)", () => {
       (g) =>
         actions(g.statement).includes("kms:GenerateDataKey") &&
         // The budget reconciler also writes with PutItem (the audit index) and uses the alerts
-        // key through SQS for its dead-letter queue (budget-reconciler.test.ts).
+        // key through SQS for its dead-letter queue (budget-reconciler.test.ts). The cost anomaly
+        // consumer uses the key of the task queue through SQS (cost-anomaly-events.test.ts).
         g.statement.Sid !== "DeadLetterQueueKey" &&
+        !JSON.stringify(g.statement.Resource).includes("RunQueueKey") &&
         grants().some((o) => o.roles.join() === g.roles.join() && actions(o.statement).includes("dynamodb:PutItem")),
     );
     expect(seedKms.length).toBeGreaterThan(0);

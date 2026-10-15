@@ -941,10 +941,14 @@ version = "0.1.0"
 source = { editable = "functions/cost-anomaly-consumer" }
 dependencies = [
     { name = "boto3" },
+    { name = "mango-core" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "boto3", specifier = ">=1.43.104" }]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.104" },
+    { name = "mango-core", editable = "packages/py/mango-core" },
+]
 
 [[package]]
 name = "mango-cost-explorer"
