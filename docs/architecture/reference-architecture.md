@@ -36,6 +36,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | MCP packs firmados, con egress restringido | Hecho: tres packs de lectura. El provisioner de packs también puede crear el rol vinculado de identidad de AgentCore (D43 (4), del 2026-10-07; comprobado con tests y visto llegar en una actualización el 2026-10-08, sin que ninguna instalación lo haya ejercitado: el rol lo creó antes el provisioner de agentes, D43 (5)). Al verificar las tools de un Runtime recién creado, el provisioner vuelve a pedir `tools/list` si AgentCore responde que el servidor del pack aún no está listo (error JSON-RPC `-32010`), con el tope de reintentos del paso; la lista que llegue se compara igual con el manifiesto firmado (D43 (6), decidido por el dueño el 2026-10-08, con su detalle aceptado el 2026-10-09; comprobado con tests y **visto el 2026-10-09 en una cuenta de ensayo,** sin provocarlo: bastó un reintento, 14 s después, y el pack quedó habilitado sin que nadie pulsara «Reintentar», D43 (9); **visto otra vez ese día en un segundo ensayo,** otra instalación nueva: el mismo error en la primera `verify_tools`, un solo reintento, 15 s después, y el pack habilitado sin que nadie pulsara nada, D43 (10); con la del 2026-10-08 son tres instalaciones nuevas seguidas en las que el primer `tools/list` de un Runtime recién creado falla así; sin ver: que se agoten los reintentos). Al deshabilitar un pack, IAM solo deja al provisioner de packs borrar un rol que lleve el boundary de packs (D43 (7), 2026-10-09; en ese ensayo borró así el rol de un pack deshabilitado, D43 (8)) | `packs/aws-pricing`, `packs/aws-billing`, `packs/aws-cloudwatch`; `infra/lib/constructs/pack-network.ts` | D19, D36, D43, D54 |
 | Tags del cliente en lo que Mango crea en ejecución | Hecho; visto en una instalación el 2026-10-14 (D76 (8)): los provisioners copian los tags del stack `Core` (salvo `aws:` y `mango:`) a roles, harness, Runtimes, sus endpoints y sus log groups, y AgentCore los pasa al Runtime de un harness y a su identidad | `functions/provisioner/src/mango_provisioner/stack_tags.py`; `infra/lib/constructs/provisioner.ts`, `pack-provisioner.ts` | D76 |
 | Tags del cliente en lo que CloudFormation no puede etiquetar | Hecho; visto en una instalación el 2026-10-14 (D77 (10)): el etiquetador del stack (`Custom::MangoStackTags`) los pone al instalar y en cada versión en las políticas administradas, los recursos por defecto de las VPC y las reglas de los security groups | `functions/provisioner/src/mango_provisioner/stack_tagger.py`; `infra/lib/constructs/stack-tagger.ts` | D77 |
+| Investigación de anomalías de costo por evento | Construido el camino, sin conectar (D79, propuesta, 2026-10-15): la regla de `Payer` reenvía cada evento de Cost Anomaly Detection al bus `Mango-<ns>-CostAnomalies` y el consumidor lo valida, lo audita y arranca las ejecuciones suscritas a través de una interfaz mínima. Hasta integrar el motor de tareas (D78) no arranca ninguna. La instrucción de la investigación está en el agente FinOps. Sin ver en AWS: que el evento salga con suscripciones diarias y que llegue por este camino | `infra/lib/stacks/payer-stack.ts`; `infra/lib/constructs/cost-anomaly-events.ts`; `functions/cost-anomaly-consumer/`; `agents/finops/agent.json` | D79 |
 | RBAC L1 (Verified Permissions) | Hecho | `policies/cedar/platform/` (18 políticas; las 3 de tareas desde D78) | §4.5 |
 | RBAC L2 (Cedar en el Gateway) | Hecho por tool y por tipo de usuario; no por agente | `infra/lib/constructs/tools.ts` y `write-tools.ts`; `functions/provisioner/src/mango_provisioner/packs/gateway.py` | D33, D45 |
 | Identidad del usuario hasta el destino | Hecho: pagadora y cuentas miembro | `packages/py/mango-aws`; `infra/lib/constructs/member-access.ts` | D10, D37, D49, D51, D55 |
@@ -144,6 +145,7 @@ flowchart TB
     TQ[("SQS TaskRuns + DLQ<br/>horario, a pedido y eventos (D78)")]
     SFN["Step Functions + Lambda<br/>provisioner y deprovisioner de agentes<br/>provisioner de packs (por SDK, D25)"]
     BREC["BudgetReconciler<br/>Lambda cada 5 min (D73)"]
+    CAE["Bus CostAnomalies + consumidor<br/>valida y arranca investigaciones (D79)<br/>sin motor de tareas todavía"]
     REC["Reconciler<br/>Lambda diaria, solo lectura (D41)"]
   end
 
@@ -178,7 +180,7 @@ flowchart TB
   PK -- "solo sale por" --> PN["Red de packs (stack PackNetwork, D54)<br/>endpoints de VPC por servicio declarado<br/>DNS Firewall con registro de consultas (D71)<br/>sin internet ni NAT"]
 
   subgraph ORG["Otras cuentas de la organización"]
-    PAY["Pagadora<br/>BillingReader · BudgetsOperator"]
+    PAY["Pagadora<br/>BillingReader · BudgetsOperator<br/>regla de anomalías (D79)"]
     MEM["Cuentas miembro<br/>ReadOnly (StackSet)"]
   end
 
@@ -186,14 +188,15 @@ flowchart TB
   PK -- "BillingBroker + SourceIdentity<br/>(aws-billing)" --> PAY
   PK -- "ReadBroker + SourceIdentity<br/>(aws-cloudwatch)" --> MEM
   AE -- "OperateBroker + SourceIdentity<br/>+ aprobación" --> PAY
+  PAY -- "evento aws.ce Anomaly Detected<br/>rol CostAnomalyForwarder (D79)" --> CAE
 
-  API & SFN & BREC -- "AuditEvent (hash por evento)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS<br/>cuenta de la instalación")]
+  API & SFN & BREC & CAE -- "AuditEvent (hash por evento)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS<br/>cuenta de la instalación")]
 
   RT -. "trazas sin contenido (D16)" .-> SP[("CloudWatch<br/>aws/spans")]
   BREC -- "lee los tokens de un turno cortado" --> SP
 
   subgraph OPS["Operación (D71)"]
-    AL["34 alarmas en Core y 1 en PackNetwork<br/>tablero Operations"] --> SNS["SNS Alerts, por correo"]
+    AL["36 alarmas en Core y 1 en PackNetwork<br/>tablero Operations"] --> SNS["SNS Alerts, por correo"]
   end
 
   subgraph PLAN["PREVISTO, SIN CONSTRUIR"]
@@ -522,7 +525,7 @@ Mango se instala en **una cuenta dedicada** (`mango`) dentro de la organización
 |---|---|---|---|
 | `Mango-<ns>-Core` | `mango` | Plataforma completa (CloudFront incluido: no hay un stack `Edge` aparte), roles de ejecución de conectores y **brokers** | Sí |
 | `Mango-<ns>-OrgAccess` | Management **o delegated admin de StackSets** (`CallAs`) | `AWS::CloudFormation::StackSet` **SERVICE_MANAGED** con auto-deployment sobre la raíz u OUs elegidas por parámetro. La plantilla del spoke va **embebida** (`TemplateBody`) y su sha256 es un output del stack (D51 (1)) | Sí (multi-cuenta) |
-| `Mango-<ns>-Payer` | Management | `Mango-<ns>-BillingReader` (37 acciones de lectura de facturación e inventario, D52, y listados de Organizations) y `Mango-<ns>-BudgetsOperator`, el rol de la única tool de escritura (D56). Los StackSets no llegan a la management | Sí: es el primer paso de la instalación. Operar solo con CUR 2.0 es previsto |
+| `Mango-<ns>-Payer` | Management | `Mango-<ns>-BillingReader` (37 acciones de lectura de facturación e inventario, D52, y listados de Organizations) y `Mango-<ns>-BudgetsOperator`, el rol de la única tool de escritura (D56). Además, la regla `Mango-<ns>-CostAnomalies-forward` y su rol `Mango-<ns>-CostAnomalyForwarder`, que reenvían los eventos de Cost Anomaly Detection al bus de Mango (D79). Los StackSets no llegan a la management | Sí: es el primer paso de la instalación. Operar solo con CUR 2.0 es previsto |
 | `Mango-<ns>-PackNetwork` | `mango` | Red de los Runtimes de packs; `Core` la importa (D54, D58 (8)) | Sí, antes que `Core` |
 | `Mango-<ns>-Support` (**previsto, sin construir:** D7 está pendiente) | Cuenta de Identity Center (management o delegated admin) | Permission sets de soporte acotados a la cuenta `mango`, **sin assignment** (§4.11) | Opcional |
 | `Mango-<ns>-Member` (template spoke) | Cada cuenta miembro, vía StackSet. La cuenta `mango` se excluye (D51 (2)) | `Mango-<ns>-ReadOnly`. Los roles `Operator` son previstos (D51 (5)) | Vía StackSet |
@@ -568,10 +571,12 @@ flowchart LR
     RB["Mango-ns-ReadBroker"]
     BB["Mango-ns-BillingBroker"]
     OB["Mango-ns-OperateBroker"]
+    CAB["Bus Mango-ns-CostAnomalies<br/>y consumidor (D79)"]
   end
   subgraph MGMT["Management (Payer)"]
     BR["Mango-ns-BillingReader"]
     BO["Mango-ns-BudgetsOperator"]
+    CF["Regla de anomalías<br/>Mango-ns-CostAnomalyForwarder"]
   end
   subgraph MEM["Cuentas miembro (StackSet)"]
     RO["Mango-ns-ReadOnly"]
@@ -587,6 +592,7 @@ flowchart LR
   BB -- "AssumeRole + SourceIdentity<br/>+ tags + session policy" --> BR
   RB -- "AssumeRole + SourceIdentity + tags" --> RO
   AE -. "solo con un approval token válido" .-> OB -.-> BO
+  CF -- "PutEvents (D79)" --> CAB
 ```
 
 **Patrón de roles:**
@@ -604,6 +610,7 @@ flowchart LR
   - `ReadOnly`: acciones explícitas por pack, **no** `ReadOnlyAccess`. Hoy son las del pack de CloudWatch: métricas, alarmas y metadatos de log groups (D55 (3)). Se evita leer datos sensibles (S3, Secrets, DynamoDB, eventos de log).
   - `BillingReader`: 37 acciones exactas de lectura, sin comodines (D52). Las de Cost Explorer van sobre `*` porque la API no admite recurso; documentado.
   - `BudgetsOperator`: `budgets:ModifyBudget` solo sobre presupuestos `Mango-<ns>-*` (D56 (1)).
+  - `CostAnomalyForwarder` (D79): no es un rol de lectura ni de escritura sobre datos. Solo `events:PutEvents` sobre el bus `Mango-<ns>-CostAnomalies` de la cuenta `mango`, y solo lo asume EventBridge para la regla de reenvío (`aws:SourceAccount`, `aws:SourceArn`). El bus, a su vez, solo acepta a ese rol de la cuenta pagadora dentro de la organización (`aws:PrincipalArn`, `aws:PrincipalOrgID`).
   - `Operator` en las cuentas miembro: previsto; desactivado por defecto, solo tras HITL, acotado por caso de uso y con *permission boundary*.
   - `ExternalId` solo para accesos de terceros, no dentro de la organización.
 - **StackSet:**
@@ -1013,6 +1020,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D76 | Lo que Mango crea en ejecución lleva los tags del stack | vigente | 2026-10-14 (el punto 1, decidido por el dueño ese día, por menú; los puntos 2 a 7, propuestos por un agente y aceptados por el dueño ese día, por menú; lo que mostró la primera instalación, punto 8, nota propuesta por un agente) | [D076-tags-del-stack-en-lo-creado-en-ejecucion.md](decisions/D076-tags-del-stack-en-lo-creado-en-ejecucion.md) |
 | D77 | Lo que CloudFormation no puede etiquetar lleva los tags del stack | vigente | 2026-10-14 (los puntos 1 a 4, decididos por el dueño ese día, por menú; los puntos 5 a 9, propuestos por un agente y aceptados por el dueño ese día, por menú; lo que mostró la primera actualización, punto 10, nota propuesta por un agente) | [D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md](decisions/D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md) |
 | D78 | Tareas: un agente publicado trabaja sin chat, como quien creó la tarea | propuesta | 2026-10-15 (los puntos 1 a 7, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15, por menú; los puntos 8 a 14, propuestos por un agente; los puntos 15 y 16 incorporan dos reglas de D79, por encargo del agente principal ese día; los puntos 17 a 19, elegidos por delegación expresa del dueño del 2026-10-15 tras la revisión independiente de ese día, por encargo del agente principal; el punto 20, correcciones de esa revisión, propuestas por un agente; los puntos 21 a 23, tras la segunda vuelta de esa revisión, elegidos por delegación expresa del dueño del 2026-10-15, por encargo del agente principal) | [D078-tareas-sin-chat.md](decisions/D078-tareas-sin-chat.md) |
+| D79 | Una anomalía de costo arranca sola su investigación | propuesta | 2026-10-15 (los puntos 1 a 6, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15; los puntos 7 a 12, propuestos por un agente) | [D079-investigacion-de-anomalias-por-evento.md](decisions/D079-investigacion-de-anomalias-por-evento.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar. Lo aprobado desde entonces es el hito 1, «instalable por una empresa real» (2026-10-05), del que salen D70 a D74.

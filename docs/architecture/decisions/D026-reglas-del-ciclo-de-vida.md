@@ -3,7 +3,7 @@
 - **Estado:** parcial. Construidas las validaciones del servidor, los grupos de acceso ([D44](D044-cambios-de-grupos-y-claim-central.md)), las reglas de packs ([D46](D046-api-del-catalogo-de-mcp.md)) y el HITL por tool ([D27](D027-confirmacion-de-escritura-por-tramos.md), [D56](D056-tools-de-escritura-con-aprobacion.md)). Faltan evals, skills y knowledge bases; los schedules los construye [D78](D078-tareas-sin-chat.md), en estado propuesta ([D38](D038-alcance-de-marketplace-v1.md) aplaza las dos primeras).
 - **Fecha:** 2026-09-30
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D38](D038-alcance-de-marketplace-v1.md) (aplaza evals y skills); [D44](D044-cambios-de-grupos-y-claim-central.md) (construye la doble aprobación de grupos); [D60](D060-gestion-de-personas.md) (precisa); [D78](D078-tareas-sin-chat.md) (construye «Schedules», en estado propuesta)
+- **Precisada por:** [D38](D038-alcance-de-marketplace-v1.md) (aplaza evals y skills); [D44](D044-cambios-de-grupos-y-claim-central.md) (construye la doble aprobación de grupos); [D60](D060-gestion-de-personas.md) (precisa); [D78](D078-tareas-sin-chat.md) (construye «Schedules», en estado propuesta); [D79](D079-investigacion-de-anomalias-por-evento.md) (precisa «Schedules»: el disparador por anomalía de costo, en estado propuesta)
 
 ## Decisión
 
