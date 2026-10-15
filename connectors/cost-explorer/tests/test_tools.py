@@ -273,6 +273,94 @@ def test_anomalies_hide_other_accounts_and_unattributed_for_bu_lead() -> None:
     assert [a["total_impact"] for a in result["anomalies"]] == ["2.00"]
 
 
+def test_anomalies_carry_their_id_and_expected_and_actual_spend() -> None:
+    ce = _ce()
+    today = date.today()
+    args = tools.AnomaliesArgs(start_date=today - timedelta(days=7), end_date=today)
+    anomaly_id = "12345678-abcd-ef12-3456-987654321a12"
+    response = {
+        "Anomalies": [
+            {
+                "AnomalyId": anomaly_id,
+                "AnomalyStartDate": "2026-09-20",
+                "AnomalyEndDate": "2026-09-21",
+                "AnomalyScore": {"MaxScore": 1.0, "CurrentScore": 1.0},
+                "Impact": {
+                    "MaxImpact": 151.0,
+                    "TotalImpact": 1001.0,
+                    "TotalExpectedSpend": 300.0,
+                    "TotalActualSpend": 1301.004,
+                },
+                "MonitorArn": "arn:aws:ce::444444444444:anomalymonitor/m",
+                "RootCauses": [{"Service": "Amazon EC2", "LinkedAccount": "222222222222"}],
+            },
+            {
+                "AnomalyId": "a2",
+                "AnomalyStartDate": "2026-09-21",
+                "AnomalyScore": {"MaxScore": 1.0, "CurrentScore": 1.0},
+                "Impact": {"MaxImpact": 2.0, "TotalImpact": 2.0},
+                "MonitorArn": "arn:aws:ce::444444444444:anomalymonitor/m",
+                "RootCauses": [{"Service": "AWS Config", "LinkedAccount": "222222222222"}],
+            },
+        ]
+    }
+    with Stubber(ce) as stub:
+        stub.add_response("get_anomalies", response)
+        result = tools.get_anomalies(ce, SECURITY, args)
+    first, second = result["anomalies"]
+    assert first["anomaly_id"] == anomaly_id
+    assert (first["total_impact"], first["expected_spend"], first["actual_spend"]) == (
+        "1001.00",
+        "300.00",
+        "1301.00",
+    )
+    assert (second["expected_spend"], second["actual_spend"]) == (None, None)
+
+
+def test_usage_quantity_is_read_by_usage_type_and_never_totalled() -> None:
+    today = date.today()
+    with pytest.raises(ValidationError):
+        tools.CostAndUsageArgs(
+            start_date=today - timedelta(days=7), end_date=today, metric="UsageQuantity"
+        )
+    args = tools.CostAndUsageArgs(
+        start_date=today - timedelta(days=2),
+        end_date=today,
+        metric="UsageQuantity",
+        granularity="DAILY",
+        group_by=[tools.GroupBy(type="DIMENSION", key="USAGE_TYPE")],
+    )
+    ce = _ce()
+    start = (today - timedelta(days=2)).isoformat()
+    response = {
+        "ResultsByTime": [
+            {
+                "TimePeriod": {"Start": start, "End": (today - timedelta(days=1)).isoformat()},
+                "Total": {},
+                "Groups": [
+                    {
+                        "Keys": ["BoxUsage:m5.large"],
+                        "Metrics": {"UsageQuantity": {"Amount": "48", "Unit": "Hrs"}},
+                    },
+                    {
+                        "Keys": ["TimedStorage-ByteHrs"],
+                        "Metrics": {"UsageQuantity": {"Amount": "120.5", "Unit": "GB-Mo"}},
+                    },
+                ],
+                "Estimated": False,
+            }
+        ]
+    }
+    with Stubber(ce) as stub:
+        stub.add_response("get_cost_and_usage", response)
+        result = tools.get_cost_and_usage(ce, CENTRAL, args)
+    assert [(r["keys"], r["amount"], r["unit"]) for r in result["rows"]] == [
+        (["TimedStorage-ByteHrs"], "120.50", "GB-Mo"),
+        (["BoxUsage:m5.large"], "48.00", "Hrs"),
+    ]
+    assert "totals" not in result
+
+
 def test_monthly_forecast_is_labelled_as_whole_month() -> None:
     ce = _ce()
     today = date.today()

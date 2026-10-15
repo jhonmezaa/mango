@@ -27,7 +27,7 @@
         },
         "metric": {
           "type": "string",
-          "description": "UnblendedCost (default), AmortizedCost or NetUnblendedCost"
+          "description": "UnblendedCost (default), AmortizedCost, NetUnblendedCost, or UsageQuantity (usage in each usage type's own unit; only with group_by USAGE_TYPE, no totals)"
         },
         "group_by": {
           "type": "array",

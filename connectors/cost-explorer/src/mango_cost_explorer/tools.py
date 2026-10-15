@@ -25,7 +25,10 @@ MAX_ITEMS = 50
 
 AccountId = Annotated[str, Field(pattern=r"^\d{12}$")]
 ServiceName = Annotated[str, Field(min_length=1, max_length=128)]
-Metric = Literal["UnblendedCost", "AmortizedCost", "NetUnblendedCost"]
+Metric = Literal["UnblendedCost", "AmortizedCost", "NetUnblendedCost", "UsageQuantity"]
+USAGE_QUANTITY = "UsageQuantity"
+"""Usage, not cost: separates a change of rate from a change of usage (D79). Each usage type
+has its own unit, so it is only read grouped by usage type and never added up."""
 Dimension = Literal["SERVICE", "LINKED_ACCOUNT", "REGION", "USAGE_TYPE", "INSTANCE_TYPE"]
 
 
@@ -76,6 +79,10 @@ class CostAndUsageArgs(DateRange):
             raise ValueError("date range exceeds 13 months")
         if self.granularity == "DAILY" and days > MAX_DAILY_RANGE_DAYS:
             raise ValueError("DAILY granularity is limited to 92 days")
+        if self.metric == USAGE_QUANTITY and not any(
+            g.type == "DIMENSION" and g.key == "USAGE_TYPE" for g in self.group_by
+        ):
+            raise ValueError("UsageQuantity needs group_by USAGE_TYPE: units differ by usage type")
         return self
 
 
@@ -112,6 +119,10 @@ class NoArgs(_Args):
 
 def _money(amount: str | float | Decimal) -> str:
     return str(Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def _optional_money(amount: str | float | Decimal | None) -> str | None:
+    return None if amount is None else _money(amount)
 
 
 def _account_filter(account_ids: list[str]) -> ExpressionTypeDef:
@@ -205,7 +216,7 @@ def get_cost_and_usage(
             for start, keys, amount, unit in raw
         ],
     }
-    if group_by:
+    if group_by and args.metric != USAGE_QUANTITY:
         # Totals come from the unrounded amounts: adding up rounded rows drifts by cents.
         totals: dict[str, Decimal] = {}
         units: dict[str, str] = {}
@@ -281,11 +292,16 @@ def get_anomalies(
             visible = linked & accounts if linked else (accounts if scope.org_wide else set())
             if not visible:
                 continue
+            impact = anomaly["Impact"]
             anomalies.append(
                 {
+                    # Lets an investigation started by an anomaly event find its anomaly (D79).
+                    "anomaly_id": anomaly.get("AnomalyId"),
                     "start": anomaly.get("AnomalyStartDate"),
                     "end": anomaly.get("AnomalyEndDate"),
-                    "total_impact": _money(anomaly["Impact"].get("TotalImpact", 0)),
+                    "total_impact": _money(impact.get("TotalImpact", 0)),
+                    "expected_spend": _optional_money(impact.get("TotalExpectedSpend")),
+                    "actual_spend": _optional_money(impact.get("TotalActualSpend")),
                     "root_causes": [
                         {
                             "service": c.get("Service"),
