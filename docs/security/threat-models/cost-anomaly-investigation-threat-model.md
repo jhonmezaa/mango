@@ -5,6 +5,7 @@
 > Fuera de alcance (lo modela m3-tareas, D78): el almacén de automatizaciones y ejecuciones, el motor que invoca al agente con la identidad del dueño, la reserva de presupuesto de cada ejecución y la pausa cuando el dueño pierde el acceso. Este modelo depende de esas piezas y lo dice donde importa (TM-CA5).
 > Comprobado solo con tests locales. **Sin ver en AWS:** que Cost Anomaly Detection publique el evento cuando la organización solo tiene suscripciones diarias por correo, y que EventBridge rechace eventos propios con fuente `aws.*` (supuesto 2).
 > Supuestos validados el 2026-10-15 en el menú del agente (elegida la opción recomendada): los administradores de la cuenta de gestión son de confianza; un evento `aws.ce` de la cuenta pagadora solo puede venir de AWS; al modelo solo llegan el id de la anomalía, el monitor y las fechas; solo personas centrales suscriben automatizaciones a anomalías.
+> Instalado el 2026-10-15 (D79 (13)): el bus rechazó a otro principal de la cuenta de gestión (`AccessDeniedException`) y AWS rechazó un evento con fuente `aws.ce` publicado por un cliente (`NotAuthorizedForSourceException`): el supuesto de TM-CA1 se vio en la práctica. Sin ver: un evento real de Cost Anomaly Detection.
 
 ## Executive summary
 

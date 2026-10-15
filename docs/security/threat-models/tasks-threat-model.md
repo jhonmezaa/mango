@@ -6,6 +6,7 @@
 > v0.3 (mismo día) recoge la revisión independiente: el cliente de tareas con secreto y sin revelar si una persona existe, la pérdida de acceso decidida antes del flujo, el resultado solo para su dueño (D1), la pausa de un administrador que frena (D2), la confianza del planificador y la alarma de la DLQ (D78 (17) a (20)).
 > v0.2 (mismo día) añade las dos reglas de D79 (TM-T10) y la revisión `security-audit` del diff, al final.
 > v0.1 se escribe **antes** de construir (regla de `AGENTS.md`), con las decisiones de la fase 1 ya tomadas (2026-10-15, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15). Nada está desplegado: lo que solo se ve en una instalación está en «Supuestos sin validar».
+> Instalado el 2026-10-15 en la instalación de un cliente (D78 (24)): lo que crea en la cuenta se vio; **sin ver todavía** una ejecución con una persona (V1, V2, V4 a V8 de la revisión: el token tras el reto con MFA obligatorio y la protección contra amenazas, personas federadas, el pre-token con el cliente de tareas, el Gateway con ese token y que Scheduler entregue).
 
 ## Executive summary
 
