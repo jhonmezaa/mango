@@ -95,6 +95,18 @@ class Settings:
     rate_limits_table: str = ""
     """Counters of the rate limits every task shares (D70); mango-api does not start without
     it."""
+    tasks_table: str = ""
+    """Automations and their runs (D78); empty until the tasks construct is deployed."""
+    task_runs_queue_url: str = ""
+    task_runs_queue_arn: str = ""
+    """Queue every run starts from: Scheduler, «Ejecutar ahora» and events (D78)."""
+    task_schedule_group: str = ""
+    task_scheduler_role_arn: str = ""
+    """Scheduler group of the installation and the role its schedules send with."""
+    tasks_client_id: str = ""
+    """Client of the user pool that issues the owner's token of a run (CUSTOM_AUTH only)."""
+    task_identity_key_arn: str = ""
+    """KMS key whose signature answers that client's challenge; only mango-api signs."""
 
     @staticmethod
     def from_env() -> Settings:
@@ -159,6 +171,13 @@ class Settings:
             web_sessions_table=env.get("WEB_SESSIONS_TABLE", ""),
             session_hours=int(env.get("SESSION_HOURS", "0")),
             rate_limits_table=env["RATE_LIMITS_TABLE"],
+            tasks_table=env.get("TASKS_TABLE", ""),
+            task_runs_queue_url=env.get("TASK_RUNS_QUEUE_URL", ""),
+            task_runs_queue_arn=env.get("TASK_RUNS_QUEUE_ARN", ""),
+            task_schedule_group=env.get("TASK_SCHEDULE_GROUP", ""),
+            task_scheduler_role_arn=env.get("TASK_SCHEDULER_ROLE_ARN", ""),
+            tasks_client_id=env.get("TASKS_CLIENT_ID", ""),
+            task_identity_key_arn=env.get("TASK_IDENTITY_KEY_ARN", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

@@ -25,6 +25,7 @@ from mango_api import (
     mcp,
     mfa_reset,
     people,
+    tasks,
     tool_policies,
     web_session,
 )
@@ -115,6 +116,18 @@ LIMITS: dict[str, LimitSpec] = {
         MINUTE,
         shared=True,
         why="Each run signs with KMS and calls the Gateway with a write tool (D27).",
+    ),
+    "tasks.runs": LimitSpec(
+        tasks.RUNS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="«Ejecutar ahora» starts a turn without chat, with a model bill (D78, TM-T5).",
+    ),
+    "tasks.changes": LimitSpec(
+        tasks.CHANGES_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Each change of a task writes to EventBridge Scheduler (D78).",
     ),
     "admin.probe": LimitSpec(
         admin.PROBE_CALLS_PER_MINUTE,

@@ -69,6 +69,8 @@ _GENERIC_RESOURCES = (
     ("group", "group"),
     ("target_user", "user"),
     ("conversation_id", "conversation"),
+    # Tasks and their runs (D78): the run is the turn, the task is what it belongs to.
+    ("task_id", "task"),
     ("agent", "agent"),
     ("model", "model"),
 )

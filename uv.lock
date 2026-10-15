@@ -19,6 +19,7 @@ members = [
     "mango-pre-token",
     "mango-provisioner",
     "mango-reconciler",
+    "mango-task-auth",
     "mango-workspace",
 ]
 
@@ -209,6 +210,15 @@ organizations = [
 ]
 s3 = [
     { name = "mypy-boto3-s3" },
+]
+scheduler = [
+    { name = "mypy-boto3-scheduler" },
+]
+sqs = [
+    { name = "mypy-boto3-sqs" },
+]
+ssm = [
+    { name = "mypy-boto3-ssm" },
 ]
 stepfunctions = [
     { name = "mypy-boto3-stepfunctions" },
@@ -1062,13 +1072,28 @@ requires-dist = [
 ]
 
 [[package]]
+name = "mango-task-auth"
+version = "0.1.0"
+source = { editable = "functions/task-auth" }
+dependencies = [
+    { name = "boto3" },
+    { name = "mango-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.40" },
+    { name = "mango-core", editable = "packages/py/mango-core" },
+]
+
+[[package]]
 name = "mango-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "budgets", "ce", "cognito-idp", "dynamodb", "firehose", "iam", "kms", "lambda", "logs", "organizations", "s3", "stepfunctions", "sts", "verifiedpermissions"] },
+    { name = "boto3-stubs", extra = ["bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "budgets", "ce", "cognito-idp", "dynamodb", "firehose", "iam", "kms", "lambda", "logs", "organizations", "s3", "scheduler", "sqs", "ssm", "stepfunctions", "sts", "verifiedpermissions"] },
     { name = "cedarpy" },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1084,7 +1109,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["sts", "ce", "budgets", "organizations", "dynamodb", "firehose", "verifiedpermissions", "bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "lambda", "cognito-idp", "kms", "stepfunctions", "iam", "logs", "s3"], specifier = ">=1.40" },
+    { name = "boto3-stubs", extras = ["sts", "ce", "budgets", "organizations", "dynamodb", "firehose", "verifiedpermissions", "bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "lambda", "cognito-idp", "kms", "stepfunctions", "iam", "logs", "s3", "ssm", "scheduler", "sqs"], specifier = ">=1.40" },
     { name = "cedarpy", specifier = ">=4.12,<5" },
     { name = "fastmcp", specifier = "==4.0.8" },
     { name = "httpx", specifier = ">=0.28" },
@@ -1364,6 +1389,33 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/46/db/e3922d6c62365c1098da97d9a775e78c66827df5cba11619a7d2a11cdae4/mypy_boto3_s3-1.43.106.tar.gz", hash = "sha256:731195f15830699a36e29d3c8abb2918bccd3587eb2edcb233f8046967893279", size = 79447, upload-time = "2026-09-30T22:44:48.472Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/4a/52419b5496215ab52c6c257134c1ac0da25c1ca5d802f133424d02a43686/mypy_boto3_s3-1.43.106-py3-none-any.whl", hash = "sha256:e233d04dbcf3925522dff4346e75c37344ec3d1cbb82337e5eed2af263847668", size = 86791, upload-time = "2026-09-30T22:44:46.139Z" },
+]
+
+[[package]]
+name = "mypy-boto3-scheduler"
+version = "1.43.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/88/315f03165d74a683083f0950068cd766e39da5bd1024338c911f96bdb82d/mypy_boto3_scheduler-1.43.0.tar.gz", hash = "sha256:e22f6e8842d3e7e959e9024ab2081275afe0c6928e92ec224fbc48e1445d2faf", size = 18599, upload-time = "2026-04-29T23:05:41.453Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/8e/243a1f851ef52dc42571e9ccc855756f9d9cd165ab43e1cc5a9526fa8eec/mypy_boto3_scheduler-1.43.0-py3-none-any.whl", hash = "sha256:3b454605585edeeed0d4933e11ea1926ac4e2a5d8fce430f418ad7a8edf2fae6", size = 24894, upload-time = "2026-04-29T23:05:38.679Z" },
+]
+
+[[package]]
+name = "mypy-boto3-sqs"
+version = "1.43.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/42/1e/226725696a99c7dadfe8ebfba01575107fa15146029a7fb0082c650d8689/mypy_boto3_sqs-1.43.0.tar.gz", hash = "sha256:3ec8e1e651e830affcf7fe151b2e3090b8ea98d73cb069053b09ca4c7f4c8636", size = 23318, upload-time = "2026-04-29T23:06:17.614Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/5e/5d4deb1ee7aec7fcdddbca616c623f07bfc72a1cd3e80b0e2a0c39904fae/mypy_boto3_sqs-1.43.0-py3-none-any.whl", hash = "sha256:f90225486756a4041db9f056967cb3cee202264bbe57682031c1e94d83e8ca39", size = 33604, upload-time = "2026-04-29T23:06:15.339Z" },
+]
+
+[[package]]
+name = "mypy-boto3-ssm"
+version = "1.43.104"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/b4/007e9acec1ccc7b0f9148f3ef2f6fe27ef183c5c7ab08b6b5a7d465d13d5/mypy_boto3_ssm-1.43.104.tar.gz", hash = "sha256:1b1e18762e6b9ceaf735e8165a6dbd789b10d94f56f704ef010d0c8bbef059cc", size = 98088, upload-time = "2026-09-28T20:24:22.046Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/9a/c7d22d1b1450c6b790cad4fcb2e98defd383527d381b4084cd7ee6b2deaa/mypy_boto3_ssm-1.43.104-py3-none-any.whl", hash = "sha256:4434c02de5101a0bc2fbd9bdedbcc98f5836dc432fce38ebfc8c88adb63dbb90", size = 99719, upload-time = "2026-09-28T20:24:19.363Z" },
 ]
 
 [[package]]

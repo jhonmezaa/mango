@@ -26,6 +26,14 @@
           }
         }
       },
+      "Task": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "owner": { "type": "Entity", "name": "User", "required": true }
+          }
+        }
+      },
       "Platform": { "shape": { "type": "Record", "attributes": {} } }
     },
     "actions": {
@@ -74,6 +82,10 @@
       "ProposeToolPolicy": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "CreateTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ViewTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Task"] } },
+      "ControlTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Task"] } },
+      "OwnTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Task"] } },
       "ApproveToolPolicy": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       }

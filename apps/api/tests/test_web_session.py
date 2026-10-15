@@ -708,8 +708,9 @@ def test_the_renewer_needs_the_pool_and_the_client() -> None:
 
 def test_the_server_never_starts_another_auth_flow() -> None:
     """The task role may call ``AdminInitiateAuth`` on the user pool (D72). That operation
-    also signs in with a password where the client allows it: the only flow any code of
-    mango-api may name is the renewal, and only the signed operation starts it."""
+    also signs in with a password where the client allows it: the only flows any code of
+    mango-api may name are the renewal of the web client and the custom challenge of the
+    tasks client (D78), and only the signed operations start them."""
     sources = Path(app_module.__file__).parent
     flows: list[tuple[str, str]] = []
     starters: set[tuple[str, str]] = set()
@@ -726,8 +727,15 @@ def test_the_server_never_starts_another_auth_flow() -> None:
                 "admin_respond_to_auth_challenge",
             }:
                 starters.add((path.name, node.attr))
-    assert flows == [("web_session.py", "REFRESH_FLOW")]
-    assert starters == {("web_session.py", "admin_initiate_auth")}
+    assert sorted(flows) == [
+        ("task_identity.py", "'CUSTOM_AUTH'"),
+        ("web_session.py", "REFRESH_FLOW"),
+    ]
+    assert starters == {
+        ("web_session.py", "admin_initiate_auth"),
+        ("task_identity.py", "admin_initiate_auth"),
+        ("task_identity.py", "admin_respond_to_auth_challenge"),
+    }
     assert web_session_module.REFRESH_FLOW == "REFRESH_TOKEN_AUTH"
 
 

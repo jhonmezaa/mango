@@ -187,3 +187,22 @@ def test_malformed_groups_claim_fails_closed(groups: object) -> None:
 def test_name_claim_is_display_only_and_validated(value: object, expected: str | None) -> None:
     user = user_from_claims({"sub": "u", "mango_role": "finops-central", "mango_name": value})
     assert user.name == expected
+
+
+def test_a_token_of_another_client_needs_to_be_named(verifier: AccessTokenVerifier) -> None:
+    """The tasks client (D78) is accepted only where a reader says so: never by default."""
+    token = _token(client_id="tasks-client")
+    with pytest.raises(IdentityError, match="another client"):
+        verifier.verify(token)
+    reader = AccessTokenVerifier(
+        ISSUER,
+        CLIENT,
+        jwks_client=_FakeJwks(),  # type: ignore[arg-type]
+        also_clients=("tasks-client",),
+    )
+    assert reader.verify(token)["client_id"] == "tasks-client"
+    assert reader.verify(_token())["client_id"] == CLIENT
+    with pytest.raises(IdentityError):
+        reader.verify(_token(client_id="third-client"))
+    with pytest.raises(ValueError, match="invalid verifier"):
+        AccessTokenVerifier(ISSUER, CLIENT, also_clients=("",))

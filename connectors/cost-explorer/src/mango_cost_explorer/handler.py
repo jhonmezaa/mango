@@ -52,6 +52,8 @@ class Settings:
     broker_role_arn: str
     reader_role_arn: str
     settings_table: str
+    tasks_client_id: str = ""
+    """The client of the user pool that issues the owner's token of a task run (D78)."""
 
     @staticmethod
     def from_env() -> Settings:
@@ -61,6 +63,7 @@ class Settings:
             broker_role_arn=os.environ["BILLING_BROKER_ROLE_ARN"],
             reader_role_arn=os.environ["BILLING_READER_ROLE_ARN"],
             settings_table=os.environ["SETTINGS_TABLE"],
+            tasks_client_id=os.environ.get("TASKS_CLIENT_ID", ""),
         )
 
 
@@ -120,7 +123,13 @@ class _Runtime:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.verifier = AccessTokenVerifier(settings.issuer, settings.client_id)
+        # A task run reads as its owner with a token of the tasks client (D78): reading is
+        # all this connector does, so it takes both.
+        self.verifier = AccessTokenVerifier(
+            settings.issuer,
+            settings.client_id,
+            also_clients=(settings.tasks_client_id,) if settings.tasks_client_id else (),
+        )
         self.sessions = CrossAccountSessions()
         self.chain = RoleChain(settings.broker_role_arn, settings.reader_role_arn)
         self.inventory = InventoryCache(self._load_inventory)

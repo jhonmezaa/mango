@@ -133,11 +133,16 @@ class AccessTokenVerifier:
         client_id: str,
         jwks_client: jwt.PyJWKClient | None = None,
         leeway_seconds: int = 30,
+        *,
+        also_clients: tuple[str, ...] = (),
     ) -> None:
-        if not issuer.startswith("https://cognito-idp.") or not client_id:
+        """``also_clients``: other clients of the same pool whose tokens are accepted too. Only
+        readers that act for a task run take the tasks client (D78); mango-api and the
+        approval executor never do, so a run's token cannot sign in or write."""
+        if not issuer.startswith("https://cognito-idp.") or not client_id or not all(also_clients):
             raise ValueError("invalid verifier configuration")
         self._issuer = issuer
-        self._client_id = client_id
+        self._client_ids = frozenset({client_id, *also_clients})
         self._jwks = jwks_client or jwt.PyJWKClient(
             f"{issuer}/.well-known/jwks.json", cache_keys=True, lifespan=3600, timeout=5
         )
@@ -159,6 +164,6 @@ class AccessTokenVerifier:
         # Cognito access tokens carry no "aud"; the client binding is "client_id".
         if claims.get("token_use") != "access":
             raise IdentityError("not an access token")
-        if claims.get("client_id") != self._client_id:
+        if claims.get("client_id") not in self._client_ids:
             raise IdentityError("token issued to another client")
         return claims

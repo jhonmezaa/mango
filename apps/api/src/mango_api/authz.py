@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 USER_TYPE = "Mango::User"
 AGENT_TYPE = "Mango::Agent"
+TASK_TYPE = "Mango::Task"
 PLATFORM = ("Mango::Platform", "mango")
 # Limit of requests per BatchIsAuthorized call.
 _BATCH_SIZE = 30
@@ -36,6 +37,14 @@ class AgentResource:
     users: frozenset[str] = frozenset()
 
 
+@dataclass(frozen=True)
+class TaskResource:
+    """What Cedar knows about a task (D78): its owner, read from the Tasks table."""
+
+    task_id: str
+    owner: str
+
+
 def _user_ref(user_id: str) -> dict[str, Any]:
     return {"entityIdentifier": {"entityType": USER_TYPE, "entityId": user_id}}
 
@@ -50,6 +59,13 @@ def _agent_entity(agent: AgentResource) -> dict[str, Any]:
     return {
         "identifier": {"entityType": AGENT_TYPE, "entityId": agent.agent_id},
         "attributes": attributes,
+    }
+
+
+def _task_entity(task: TaskResource) -> dict[str, Any]:
+    return {
+        "identifier": {"entityType": TASK_TYPE, "entityId": task.task_id},
+        "attributes": {"owner": _user_ref(task.owner)},
     }
 
 
@@ -80,14 +96,22 @@ class Authorizer:
         resource_type: str,
         resource_id: str,
         agent: AgentResource | None = None,
+        *,
+        task: TaskResource | None = None,
     ) -> bool:
-        """One decision. ``agent`` carries the attributes of an ``Mango::Agent`` resource."""
+        """One decision. ``agent`` carries the attributes of an ``Mango::Agent`` resource and
+        ``task`` those of a ``Mango::Task``."""
         resource: Any = {"identifier": {"entityType": resource_type, "entityId": resource_id}}
         if agent is not None:
             if resource_type != AGENT_TYPE or agent.agent_id != resource_id:
                 logger.error("agent attributes do not match the resource; denying")
                 return False
             resource = _agent_entity(agent)
+        if task is not None:
+            if resource_type != TASK_TYPE or task.task_id != resource_id or agent is not None:
+                logger.error("task attributes do not match the resource; denying")
+                return False
+            resource = _task_entity(task)
         try:
             resp = self._client.is_authorized(
                 policyStoreId=self._store,

@@ -468,6 +468,18 @@ export const zHashInSchema = z.object({
 });
 
 /**
+ * HealthOut
+ */
+export const zHealthOutSchema = z.object({
+    code: z.enum([
+        'agent_unavailable',
+        'access_lost',
+        'failing'
+    ]),
+    tone: z.enum(['red', 'amber'])
+});
+
+/**
  * InstallationOut
  *
  * What was given when Mango was installed. Read only: whoever runs AWS changes it.
@@ -840,34 +852,6 @@ export const zParamsInSchema = z.object({
 });
 
 /**
- * PersonOut
- */
-export const zPersonOutSchema = z.object({
-    created_at: z.string(),
-    email: z.string(),
-    groups: z.array(z.string()),
-    mfa: z.boolean(),
-    status: z.enum([
-        'active',
-        'invited',
-        'disabled'
-    ]),
-    user_id: z.string()
-});
-
-/**
- * PeopleOut
- */
-export const zPeopleOutSchema = z.object({
-    admins: z.int(),
-    incomplete: z.boolean(),
-    items: z.array(zPersonOutSchema),
-    next_cursor: z.string().nullable(),
-    pending: z.int(),
-    with_access: z.int()
-});
-
-/**
  * PolicyRule
  *
  * A policy as shown: only the threshold of its condition is set.
@@ -1024,11 +1008,12 @@ export const zResolveOutSchema = z.object({
 });
 
 /**
- * RetireIn
+ * RetiredOut
  */
-export const zRetireInSchema = z.object({
-    lock_version: z.int().gte(1),
-    reason: z.string().min(1).max(500)
+export const zRetiredOutSchema = z.object({
+    at: z.string().nullable(),
+    by: z.string().nullable(),
+    reason: z.string().nullable()
 });
 
 /**
@@ -1108,11 +1093,67 @@ export const zRuleOutSchema = z.object({
 });
 
 /**
+ * RunDetailOut
+ */
+export const zRunDetailOutSchema = z.object({
+    approvals: z.array(z.string()),
+    cost_usd: z.string().nullable(),
+    ended_at: z.iso.datetime().nullable(),
+    has_result: z.boolean(),
+    queued_at: z.iso.datetime(),
+    reason: z.string().nullable(),
+    result: z.string().nullable(),
+    run_id: z.string(),
+    started_at: z.iso.datetime().nullable(),
+    status: z.string(),
+    trigger: z.string()
+});
+
+/**
+ * RunOut
+ */
+export const zRunOutSchema = z.object({
+    approvals: z.array(z.string()),
+    cost_usd: z.string().nullable(),
+    ended_at: z.iso.datetime().nullable(),
+    has_result: z.boolean(),
+    queued_at: z.iso.datetime(),
+    reason: z.string().nullable(),
+    run_id: z.string(),
+    started_at: z.iso.datetime().nullable(),
+    status: z.string(),
+    trigger: z.string()
+});
+
+/**
  * SaveDraftIn
  */
 export const zSaveDraftInSchema = z.object({
     definition: zAgentDefinitionSchema,
     revision: z.int().gte(1).lte(1000000)
+});
+
+/**
+ * ScheduleSpec
+ *
+ * When a schedule runs, as the design asks for it. Never a cron expression.
+ */
+export const zScheduleSpecSchema = z.object({
+    days: z.array(z.int().gte(0).lte(6)).max(7).optional().default([]),
+    dom: z.int().gte(1).lte(28).optional().default(1),
+    dow: z.int().gte(0).lte(6).optional().default(1),
+    freq: z.enum([
+        '15m',
+        'hourly',
+        '6h',
+        'daily',
+        'weekdays',
+        'days',
+        'weekly',
+        'monthly'
+    ]),
+    hour: z.int().gte(0).lte(23).optional().default(9),
+    minute: z.int().gte(0).lte(59).optional().default(0)
 });
 
 /**
@@ -1282,6 +1323,46 @@ export const zConversationDetailSchema = z.object({
 });
 
 /**
+ * TriggerIn
+ */
+export const zTriggerInSchema = z.object({
+    event_type: z.literal('cost_anomaly').nullish(),
+    kind: z.enum([
+        'manual',
+        'schedule',
+        'event'
+    ]),
+    schedule: zScheduleSpecSchema.nullish(),
+    timezone: z.enum([
+        'America/Mexico_City',
+        'America/Bogota',
+        'America/Sao_Paulo',
+        'UTC'
+    ]).optional().default('America/Mexico_City')
+});
+
+/**
+ * TaskIn
+ */
+export const zTaskInSchema = z.object({
+    agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/),
+    deliver: z.literal('inbox').optional().default('inbox'),
+    name: z.string().min(1).max(48),
+    task: z.string().min(1).max(2000),
+    trigger: zTriggerInSchema
+});
+
+/**
+ * TriggerOut
+ */
+export const zTriggerOutSchema = z.object({
+    event_type: z.string().nullable(),
+    kind: z.string(),
+    schedule: zScheduleSpecSchema.nullable(),
+    timezone: z.string().nullable()
+});
+
+/**
  * UpdateIn
  */
 export const zUpdateInSchema = z.object({
@@ -1433,6 +1514,14 @@ export const zMangoApiAgentsRejectInSchema = z.object({
 });
 
 /**
+ * RetireIn
+ */
+export const zMangoApiAgentsRetireInSchema = z.object({
+    lock_version: z.int().gte(1),
+    reason: z.string().min(1).max(500)
+});
+
+/**
  * RejectIn
  */
 export const zMangoApiApprovalsRejectInSchema = z.object({
@@ -1528,6 +1617,83 @@ export const zMangoApiPeopleChangeOutSchema = z.object({
  */
 export const zChangeListOutSchema = z.object({
     items: z.array(zMangoApiPeopleChangeOutSchema)
+});
+
+/**
+ * PersonOut
+ */
+export const zMangoApiPeoplePersonOutSchema = z.object({
+    created_at: z.string(),
+    email: z.string(),
+    groups: z.array(z.string()),
+    mfa: z.boolean(),
+    status: z.enum([
+        'active',
+        'invited',
+        'disabled'
+    ]),
+    user_id: z.string()
+});
+
+/**
+ * PeopleOut
+ */
+export const zPeopleOutSchema = z.object({
+    admins: z.int(),
+    incomplete: z.boolean(),
+    items: z.array(zMangoApiPeoplePersonOutSchema),
+    next_cursor: z.string().nullable(),
+    pending: z.int(),
+    with_access: z.int()
+});
+
+/**
+ * PersonOut
+ */
+export const zMangoApiTasksPersonOutSchema = z.object({
+    email: z.string().nullable(),
+    name: z.string().nullable(),
+    user_id: z.string()
+});
+
+/**
+ * TaskOut
+ */
+export const zTaskOutSchema = z.object({
+    agent_id: z.string(),
+    agent_name: z.string().nullable(),
+    created_at: z.string(),
+    deliver: z.string(),
+    health: zHealthOutSchema.nullable(),
+    is_owner: z.boolean(),
+    name: z.string(),
+    next_runs: z.array(z.iso.datetime()),
+    owner: zMangoApiTasksPersonOutSchema,
+    paused_at: z.string().nullable(),
+    paused_reason: z.string().nullable(),
+    retired: zRetiredOutSchema.nullable(),
+    running: z.boolean(),
+    runs: z.array(zRunOutSchema),
+    status: z.string(),
+    task: z.string(),
+    task_id: z.string(),
+    trigger: zTriggerOutSchema,
+    updated_at: z.string()
+});
+
+/**
+ * TaskListOut
+ */
+export const zTaskListOutSchema = z.object({
+    can_create: z.boolean(),
+    items: z.array(zTaskOutSchema)
+});
+
+/**
+ * RetireIn
+ */
+export const zMangoApiTasksRetireInSchema = z.object({
+    reason: z.string().min(1).max(200)
 });
 
 /**
@@ -1924,7 +2090,7 @@ export const zGetAgentPath = z.object({
  */
 export const zGetAgentResponse = zAgentOutSchema;
 
-export const zRetireAgentBody = zRetireInSchema;
+export const zRetireAgentBody = zMangoApiAgentsRetireInSchema;
 
 export const zRetireAgentPath = z.object({
     agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/)
@@ -2322,3 +2488,89 @@ export const zRenewSessionResponse = z.union([
     zRenewedOutSchema,
     z.void()
 ]);
+
+/**
+ * Successful Response
+ */
+export const zListTasksOfCallerResponse = zTaskListOutSchema;
+
+export const zCreateNewTaskBody = zTaskInSchema;
+
+/**
+ * Successful Response
+ */
+export const zCreateNewTaskResponse = zTaskOutSchema;
+
+export const zGetTaskPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetTaskResponse = zTaskOutSchema;
+
+export const zUpdateExistingTaskBody = zTaskInSchema;
+
+export const zUpdateExistingTaskPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zUpdateExistingTaskResponse = zTaskOutSchema;
+
+export const zPauseExistingTaskBody = zEmptyInSchema;
+
+export const zPauseExistingTaskPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zPauseExistingTaskResponse = zTaskOutSchema;
+
+export const zResumePausedTaskBody = zEmptyInSchema;
+
+export const zResumePausedTaskPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zResumePausedTaskResponse = zTaskOutSchema;
+
+export const zRetireExistingTaskBody = zMangoApiTasksRetireInSchema;
+
+export const zRetireExistingTaskPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRetireExistingTaskResponse = zTaskOutSchema;
+
+export const zRunTaskNowBody = zEmptyInSchema;
+
+export const zRunTaskNowPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRunTaskNowResponse = zRunOutSchema;
+
+export const zGetTaskRunPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/),
+    run_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetTaskRunResponse = zRunDetailOutSchema;

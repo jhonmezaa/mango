@@ -18,10 +18,11 @@ import re
 import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from functools import cache
+from functools import cache, partial
 from pathlib import Path as FilePath
 from typing import Annotated, Any, Literal
 
@@ -56,7 +57,7 @@ from mango_api.audit import (
     AuditQuery,
     InvalidCursorError,
 )
-from mango_api.authz import PLATFORM, AgentResource, Authorizer
+from mango_api.authz import PLATFORM, AgentResource, Authorizer, TaskResource
 from mango_api.budget import (
     BudgetExceededError,
     BudgetScope,
@@ -113,6 +114,22 @@ from mango_api.published import AgentUnavailableError, PublishedAgent, Published
 from mango_api.rate_limits import RateLimitStore
 from mango_api.settings import ModelPrice, Settings
 from mango_api.settings_store import BudgetLimits, SettingsStore, SettingsUnavailableError
+from mango_api.task_identity import TaskTokens
+from mango_api.task_worker import (
+    AgentAccessDeniedError,
+    QueueWorker,
+    TaskRuns,
+    TurnOutcome,
+)
+from mango_api.tasks import (
+    MAX_PER_INSTALLATION,
+    MAX_PER_OWNER,
+    RunQueue,
+    TaskScheduler,
+    TasksDeps,
+    tasks_router,
+)
+from mango_api.tasks_store import Automation, Run, RunStatus, TaskStore
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
 from mango_api.web import ApiError, Caller, error_response
 from mango_api.web_session import (
@@ -345,6 +362,13 @@ class Services:
     tool_policies: ToolPolicyDeps | None = None
     # Web session cookie (D63); set in production once its table and origin are configured.
     web_sessions: WebSessionDeps | None = None
+    # Tasks without chat (D78); set in production once the tasks construct is deployed.
+    tasks: TasksDeps | None = None
+    task_tokens: TaskTokens | None = None
+    task_runs: TaskRuns | None = None
+    """Built by ``create_app``: its turn needs these services."""
+    task_queue: Any = None
+    """SQS client the worker reads the runs with; ``None`` keeps the worker off (tests)."""
     limits: Limits = field(default_factory=Limits)
     """Where every rate limit comes from (D70). In production the shared ones count in
     DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
@@ -352,6 +376,60 @@ class Services:
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
     return error_response(status, code, message)
+
+
+def _task_services(
+    settings: Settings,
+    *,
+    dynamodb: Any,
+    cognito: Any,
+    audit: AuditLog,
+    published: PublishedAgents,
+    limits: Limits,
+) -> tuple[TasksDeps | None, TaskTokens | None, Any]:
+    """Tasks (D78), once the tasks construct is deployed: all of its settings, or nothing."""
+    needed = (
+        settings.tasks_table,
+        settings.task_runs_queue_url,
+        settings.task_runs_queue_arn,
+        settings.task_schedule_group,
+        settings.task_scheduler_role_arn,
+        settings.tasks_client_id,
+        settings.task_identity_key_arn,
+    )
+    if not all(needed):
+        return None, None, None
+    region = settings.region
+    sqs = boto3.client("sqs", region_name=region)
+    tasks = TasksDeps(
+        store=TaskStore(
+            dynamodb,
+            settings.tasks_table,
+            per_owner=MAX_PER_OWNER,
+            per_installation=MAX_PER_INSTALLATION,
+        ),
+        scheduler=TaskScheduler(
+            boto3.client("scheduler", region_name=region),
+            group=settings.task_schedule_group,
+            queue_arn=settings.task_runs_queue_arn,
+            role_arn=settings.task_scheduler_role_arn,
+        ),
+        queue=RunQueue(sqs, settings.task_runs_queue_url),
+        published=published,
+        audit=audit,
+        runs=limits.limiter("tasks.runs"),
+        changes=limits.limiter("tasks.changes"),
+    )
+    tokens = TaskTokens(
+        cognito=cognito,
+        kms=boto3.client("kms", region_name=region),
+        user_pool_id=settings.cognito_user_pool_id,
+        client_id=settings.tasks_client_id,
+        key_arn=settings.task_identity_key_arn,
+        # The token of a run is checked like any other, against its own client.
+        verifier=AccessTokenVerifier(settings.cognito_issuer, settings.tasks_client_id),
+    )
+    return tasks, tokens, sqs
 
 
 def build_services(settings: Settings) -> Services:
@@ -450,6 +528,14 @@ def build_services(settings: Settings) -> Services:
             starts=limits.limiter("session.starts"),
             renewals=limits.limiter("session.renewals"),
         )
+    tasks, task_tokens, task_queue = _task_services(
+        settings,
+        dynamodb=dynamodb,
+        cognito=cognito,
+        audit=audit,
+        published=published,
+        limits=limits,
+    )
     return Services(
         settings=settings,
         verifier=verifier,
@@ -555,6 +641,9 @@ def build_services(settings: Settings) -> Services:
         ),
         invocation_key=invocation_key,
         web_sessions=web_sessions,
+        tasks=tasks,
+        task_tokens=task_tokens,
+        task_queue=task_queue,
         limits=limits,
     )
 
@@ -635,17 +724,45 @@ async def with_heartbeat(
 # --- App --------------------------------------------------------------------------------
 
 
-def create_app(  # noqa: PLR0915 - app factory registering route closures
+def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closures
     settings: Settings | None = None,
     services_factory: Callable[[Settings], Services] = build_services,
 ) -> ASGIApp:
     settings = settings or Settings.from_env()
     services = services_factory(settings)
+    if services.tasks is not None and services.task_tokens is not None:
+        services.task_runs = TaskRuns(
+            store=services.tasks.store,
+            tokens=services.task_tokens,
+            turn=lambda caller, automation, run, message: _task_turn(
+                services, caller, automation, run, message
+            ),
+            scheduler=services.tasks.scheduler,
+            audit=services.audit,
+        )
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Runs of tasks are read in the background of every task of mango-api (D78).
+        worker = (
+            QueueWorker(services.task_queue, settings.task_runs_queue_url, services.task_runs)
+            if services.task_runs is not None and services.task_queue is not None
+            else None
+        )
+        if worker is not None:
+            worker.start()
+        try:
+            yield
+        finally:
+            if worker is not None:
+                await asyncio.to_thread(worker.stop)
+
     app = FastAPI(
         title="mango-api",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     @app.exception_handler(HTTPException)
@@ -696,15 +813,20 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
         read_only: bool = False,
         context: dict[str, str] | None = None,
         agent: AgentResource | None = None,
+        task: TaskResource | None = None,
     ) -> Awaitable[None]:
         # Every decision is audited; ``read_only`` only lets the log hide allowed reads.
         # ``context`` (validated or server-generated ids only) links the decision to its turn.
-        # ``agent`` carries the attributes of an Agent resource, read from the Agents table.
+        # ``agent`` carries the attributes of an Agent resource, read from the Agents table;
+        # ``task`` those of a Task, read from the Tasks table (D78).
         async def check() -> None:
             subject = (caller.user, action, resource_type, resource_id)
-            allowed = await asyncio.to_thread(
-                services.authorizer.is_allowed, *subject, *([agent] if agent else [])
+            decide: Callable[..., bool] = (
+                partial(services.authorizer.is_allowed, task=task)
+                if task is not None
+                else services.authorizer.is_allowed
             )
+            allowed = await asyncio.to_thread(decide, *subject, *([agent] if agent else []))
             await asyncio.to_thread(
                 services.audit.emit,
                 "policy.decision",
@@ -941,6 +1063,34 @@ def create_app(  # noqa: PLR0915 - app factory registering route closures
         app.include_router(
             approvals_router(services.approvals, current_user, require, authorize_use, can_decide)
         )
+
+    if services.tasks is not None:
+
+        def task_allowed(
+            caller: Caller,
+            action: str,
+            resource_type: str,
+            resource_id: str,
+            task: TaskResource | None,
+        ) -> bool:
+            """A decision that only shapes the answer (404 or a hint), audited as a read."""
+            allowed = services.authorizer.is_allowed(
+                caller.user, action, resource_type, resource_id, None, task=task
+            )
+            services.audit.emit(
+                "policy.decision",
+                caller.user.user_id,
+                {
+                    "action": action,
+                    "resource": f"{resource_type}::{resource_id}",
+                    "allowed": allowed,
+                    "read_only": True,
+                },
+                caller.user,
+            )
+            return allowed
+
+        app.include_router(tasks_router(services.tasks, current_user, require, task_allowed))
 
     @app.post("/api/chat")
     async def chat(body: ChatRequest, caller: CallerDependency) -> Response:  # noqa: PLR0915
@@ -1510,6 +1660,184 @@ def _generate_title(
             services.conversations.set_title(user_id, conversation_id, title)
     except Exception:
         logger.exception("title generation failed")
+
+
+# --- The turn of a task (D78) -------------------------------------------------------------
+
+
+def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in the chat
+    services: Services,
+    caller: Caller,
+    automation: Automation,
+    run: Run,
+    message: str,
+) -> TurnOutcome:
+    """One turn without chat, as the owner of the task: the path of ``POST /api/chat``.
+
+    The run has no conversation: its id stands for one in the turn's pending record and its
+    runtime session, which is always new (a run never continues another). The answer goes to
+    the run, never to logs. A write the agent asks for becomes a request its owner decides from
+    their own session (A3, D56): this token has no way to run it.
+    """
+    user = caller.user
+    agent_id = automation.agent_id
+    turn_id = new_id()
+    try:
+        agent = _served_agent(services, agent_id)
+    except ApiError:
+        return TurnOutcome(status=RunStatus.FAILED, reason="agent_unavailable")
+    resource = _use_resource(agent_id, agent)
+    allowed = services.authorizer.is_allowed(user, "UseAgent", "Mango::Agent", agent_id, resource)
+    services.audit.emit(
+        "policy.decision",
+        user.user_id,
+        {
+            "action": "UseAgent",
+            "resource": f"Mango::Agent::{agent_id}",
+            "allowed": allowed,
+            "read_only": False,
+            "task": automation.automation_id,
+            "turn": turn_id,
+        },
+        user,
+    )
+    if not allowed:
+        raise AgentAccessDeniedError
+    if agent is None or agent.retired:
+        return TurnOutcome(status=RunStatus.SKIPPED, reason="agent_unavailable")
+    definition = agent.definition
+    limits = definition.limits
+    model_id = definition.model or ""
+    if model_id not in definition.allowed_models:
+        return TurnOutcome(status=RunStatus.FAILED, reason="model_unavailable")
+    try:
+        price = _model_price(services, model_id)
+    except ApiError:
+        return TurnOutcome(status=RunStatus.FAILED, reason="model_unavailable")
+    if caller.expires_at - int(time.time()) < limits.timeout_seconds + MIN_TOKEN_LIFETIME_MARGIN:
+        # The token of a run must outlive the agent loop, like a chat turn's (TM-I5).
+        return TurnOutcome(status=RunStatus.FAILED, reason="identity_unavailable")
+    try:
+        invocation_request = _agent_invocation(services, agent, model_id)
+        signature = _sign_invocation(services, caller, agent)
+    except ApiError:
+        return TurnOutcome(status=RunStatus.FAILED, reason="agent_unavailable")
+    history = [harness.ChatTurn("user", message)]
+    estimate = estimate_max_cost(
+        price, len(message), limits.max_iterations, limits.reserved_output_tokens
+    )
+    period = current_period()
+    try:
+        scopes = _budget_scopes(services, user, agent_id)
+    except ApiError:
+        return TurnOutcome(status=RunStatus.FAILED, reason="budget_unavailable")
+    turn = {"agent": agent_id, "version": agent.version, "model": model_id}
+    pending = PendingTurn.new(
+        turn_id=turn_id,
+        user_id=user.user_id,
+        agent_id=agent_id,
+        agent_version=agent.version,
+        model=model_id,
+        conversation_id=run.run_id,
+        period=period,
+        scopes=tuple(scope.key for scope in scopes),
+        reserved=estimate,
+        price=turn_price(price),
+        started_at=int(time.time()),
+        timeout_seconds=limits.timeout_seconds,
+    )
+    try:
+        services.budgets.reserve(scopes, estimate, period, pending)
+    except BudgetExceededError:
+        services.audit.emit(
+            "budget.exceeded",
+            user.user_id,
+            {**turn, "estimate": str(estimate), "task_id": automation.automation_id},
+            user,
+        )
+        return TurnOutcome(status=RunStatus.SKIPPED, reason="budget_exceeded")
+    except BudgetUnavailableError:
+        return TurnOutcome(status=RunStatus.FAILED, reason="budget_unavailable")
+    fingerprint = sessions.agent_fingerprint(
+        harness_arn=agent.harness_arn,
+        harness_version=agent.harness_version,
+        content_hash=agent.content_hash,
+        model=model_id,
+        guardrail_id=services.settings.guardrail_id,
+        guardrail_version=services.settings.guardrail_version,
+    )
+    session_id = sessions.runtime_session_id(
+        user=user,
+        agent_id=agent_id,
+        conversation_id=run.run_id,
+        generation=0,
+        fingerprint=fingerprint,
+    )
+    try:
+        services.budgets.bind_session(pending, session_id)
+    except Exception:
+        logger.exception("a task turn could not bind its session")
+        _release_turn(services, pending)
+        return TurnOutcome(status=RunStatus.FAILED, reason="budget_unavailable")
+    request = harness.build_request(
+        invocation_request,
+        session_id=session_id,
+        actor_id=user.user_id,
+        access_token=caller.token,
+        invocation_signature=signature,
+        history=history,
+    )
+    detail = {
+        **turn,
+        "task_id": automation.automation_id,
+        "run": run.run_id,
+        "trigger": run.trigger,
+        "via": "task",
+        "turn": turn_id,
+    }
+    agentcore = (
+        services.agentcore.for_turn(limits.timeout_seconds)
+        if isinstance(services.agentcore, harness.TurnClients)
+        else services.agentcore
+    )
+    result = harness.InvocationResult()
+    write_tools = frozenset(name for name, _ in agent.write_tools)
+    requested: set[str] = set()
+    approval_ids: list[str] = []
+    answered = False
+    try:
+        services.audit.emit("agent.invoke", user.user_id, {**detail, "session": "new"}, user)
+        for event in harness.run(agentcore, request, result, write_tools):
+            if event.kind != harness.WRITE_CALL:
+                continue
+            approval = _request_approval(
+                services, user, agent, run.run_id, call=event.data, requested=requested
+            )
+            if approval is not None:
+                approval_ids.append(approval.approval_id)
+        answered = True
+    except Exception:
+        if result.harness_missing:
+            logger.exception("agent %s is published but its harness does not exist", agent_id)
+        else:
+            logger.exception("task turn failed")
+    finally:
+        _settle_turn(services, user=user, turn=pending, price=price, detail=detail, result=result)
+    spent = str(cost(result.usage, price).quantize(Decimal("0.0001")))
+    if not answered:
+        return TurnOutcome(
+            status=RunStatus.FAILED,
+            reason="harness_missing" if result.harness_missing else "upstream_error",
+            cost_usd=spent,
+            turn_id=turn_id,
+        )
+    return TurnOutcome(
+        status=RunStatus.APPROVAL if approval_ids else RunStatus.OK,
+        result=result.text,
+        cost_usd=spent,
+        turn_id=turn_id,
+        approvals=approval_ids,
+    )
 
 
 def _wrap(app: FastAPI, settings: Settings) -> ASGIApp:

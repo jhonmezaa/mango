@@ -1332,6 +1332,20 @@ export type HashIn = {
 };
 
 /**
+ * HealthOut
+ */
+export type HealthOut = {
+    /**
+     * Code
+     */
+    code: 'agent_unavailable' | 'access_lost' | 'failing';
+    /**
+     * Tone
+     */
+    tone: 'red' | 'amber';
+};
+
+/**
  * InstallationOut
  *
  * What was given when Mango was installed. Read only: whoever runs AWS changes it.
@@ -1999,7 +2013,7 @@ export type PeopleOut = {
     /**
      * Items
      */
-    items: Array<PersonOut>;
+    items: Array<MangoApiPeoplePersonOut>;
     /**
      * Next Cursor
      */
@@ -2012,36 +2026,6 @@ export type PeopleOut = {
      * With Access
      */
     with_access: number;
-};
-
-/**
- * PersonOut
- */
-export type PersonOut = {
-    /**
-     * Created At
-     */
-    created_at: string;
-    /**
-     * Email
-     */
-    email: string;
-    /**
-     * Groups
-     */
-    groups: Array<string>;
-    /**
-     * Mfa
-     */
-    mfa: boolean;
-    /**
-     * Status
-     */
-    status: 'active' | 'invited' | 'disabled';
-    /**
-     * User Id
-     */
-    user_id: string;
 };
 
 /**
@@ -2349,17 +2333,21 @@ export type ResolveOut = {
 };
 
 /**
- * RetireIn
+ * RetiredOut
  */
-export type RetireIn = {
+export type RetiredOut = {
     /**
-     * Lock Version
+     * At
      */
-    lock_version: number;
+    at: string | null;
+    /**
+     * By
+     */
+    by: string | null;
     /**
      * Reason
      */
-    reason: string;
+    reason: string | null;
 };
 
 /**
@@ -2549,6 +2537,102 @@ export type RuleOut = {
 };
 
 /**
+ * RunDetailOut
+ */
+export type RunDetailOut = {
+    /**
+     * Approvals
+     */
+    approvals: Array<string>;
+    /**
+     * Cost Usd
+     */
+    cost_usd: string | null;
+    /**
+     * Ended At
+     */
+    ended_at: string | null;
+    /**
+     * Has Result
+     */
+    has_result: boolean;
+    /**
+     * Queued At
+     */
+    queued_at: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Result
+     */
+    result: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Started At
+     */
+    started_at: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Trigger
+     */
+    trigger: string;
+};
+
+/**
+ * RunOut
+ */
+export type RunOut = {
+    /**
+     * Approvals
+     */
+    approvals: Array<string>;
+    /**
+     * Cost Usd
+     */
+    cost_usd: string | null;
+    /**
+     * Ended At
+     */
+    ended_at: string | null;
+    /**
+     * Has Result
+     */
+    has_result: boolean;
+    /**
+     * Queued At
+     */
+    queued_at: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Started At
+     */
+    started_at: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Trigger
+     */
+    trigger: string;
+};
+
+/**
  * SaveDraftIn
  */
 export type SaveDraftIn = {
@@ -2557,6 +2641,38 @@ export type SaveDraftIn = {
      * Revision
      */
     revision: number;
+};
+
+/**
+ * ScheduleSpec
+ *
+ * When a schedule runs, as the design asks for it. Never a cron expression.
+ */
+export type ScheduleSpec = {
+    /**
+     * Days
+     */
+    days?: Array<number>;
+    /**
+     * Dom
+     */
+    dom?: number;
+    /**
+     * Dow
+     */
+    dow?: number;
+    /**
+     * Freq
+     */
+    freq: '15m' | 'hourly' | '6h' | 'daily' | 'weekdays' | 'days' | 'weekly' | 'monthly';
+    /**
+     * Hour
+     */
+    hour?: number;
+    /**
+     * Minute
+     */
+    minute?: number;
 };
 
 /**
@@ -2642,6 +2758,113 @@ export type SubmitIn = {
 };
 
 /**
+ * TaskIn
+ */
+export type TaskIn = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Deliver
+     */
+    deliver?: 'inbox';
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Task
+     */
+    task: string;
+    trigger: TriggerIn;
+};
+
+/**
+ * TaskListOut
+ */
+export type TaskListOut = {
+    /**
+     * Can Create
+     */
+    can_create: boolean;
+    /**
+     * Items
+     */
+    items: Array<TaskOut>;
+};
+
+/**
+ * TaskOut
+ */
+export type TaskOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Agent Name
+     */
+    agent_name: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Deliver
+     */
+    deliver: string;
+    health: HealthOut | null;
+    /**
+     * Is Owner
+     */
+    is_owner: boolean;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Next Runs
+     */
+    next_runs: Array<string>;
+    owner: MangoApiTasksPersonOut;
+    /**
+     * Paused At
+     */
+    paused_at: string | null;
+    /**
+     * Paused Reason
+     */
+    paused_reason: string | null;
+    retired: RetiredOut | null;
+    /**
+     * Running
+     */
+    running: boolean;
+    /**
+     * Runs
+     */
+    runs: Array<RunOut>;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Task
+     */
+    task: string;
+    /**
+     * Task Id
+     */
+    task_id: string;
+    trigger: TriggerOut;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
  * ToolPolicyOut
  */
 export type ToolPolicyOut = {
@@ -2684,6 +2907,44 @@ export type ToolStatus = {
      * Status
      */
     status: string;
+};
+
+/**
+ * TriggerIn
+ */
+export type TriggerIn = {
+    /**
+     * Event Type
+     */
+    event_type?: 'cost_anomaly' | null;
+    /**
+     * Kind
+     */
+    kind: 'manual' | 'schedule' | 'event';
+    schedule?: ScheduleSpec | null;
+    /**
+     * Timezone
+     */
+    timezone?: 'America/Mexico_City' | 'America/Bogota' | 'America/Sao_Paulo' | 'UTC';
+};
+
+/**
+ * TriggerOut
+ */
+export type TriggerOut = {
+    /**
+     * Event Type
+     */
+    event_type: string | null;
+    /**
+     * Kind
+     */
+    kind: string;
+    schedule: ScheduleSpec | null;
+    /**
+     * Timezone
+     */
+    timezone: string | null;
 };
 
 /**
@@ -2997,6 +3258,20 @@ export type MangoApiAgentsRejectIn = {
 };
 
 /**
+ * RetireIn
+ */
+export type MangoApiAgentsRetireIn = {
+    /**
+     * Lock Version
+     */
+    lock_version: number;
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
  * RejectIn
  */
 export type MangoApiApprovalsRejectIn = {
@@ -3156,6 +3431,64 @@ export type MangoApiPeopleChangeOut = {
      * Target User
      */
     target_user: string;
+};
+
+/**
+ * PersonOut
+ */
+export type MangoApiPeoplePersonOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Mfa
+     */
+    mfa: boolean;
+    /**
+     * Status
+     */
+    status: 'active' | 'invited' | 'disabled';
+    /**
+     * User Id
+     */
+    user_id: string;
+};
+
+/**
+ * PersonOut
+ */
+export type MangoApiTasksPersonOut = {
+    /**
+     * Email
+     */
+    email: string | null;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * User Id
+     */
+    user_id: string;
+};
+
+/**
+ * RetireIn
+ */
+export type MangoApiTasksRetireIn = {
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -4407,7 +4740,7 @@ export type GetAgentResponses = {
 export type GetAgentResponse = GetAgentResponses[keyof GetAgentResponses];
 
 export type RetireAgentData = {
-    body: RetireIn;
+    body: MangoApiAgentsRetireIn;
     path: {
         /**
          * Agent Id
@@ -5664,3 +5997,267 @@ export type RenewSessionResponses = {
 };
 
 export type RenewSessionResponse = RenewSessionResponses[keyof RenewSessionResponses];
+
+export type ListTasksOfCallerData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/tasks';
+};
+
+export type ListTasksOfCallerErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListTasksOfCallerError = ListTasksOfCallerErrors[keyof ListTasksOfCallerErrors];
+
+export type ListTasksOfCallerResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskListOut;
+};
+
+export type ListTasksOfCallerResponse = ListTasksOfCallerResponses[keyof ListTasksOfCallerResponses];
+
+export type CreateNewTaskData = {
+    body: TaskIn;
+    path?: never;
+    query?: never;
+    url: '/tasks';
+};
+
+export type CreateNewTaskErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type CreateNewTaskError = CreateNewTaskErrors[keyof CreateNewTaskErrors];
+
+export type CreateNewTaskResponses = {
+    /**
+     * Successful Response
+     */
+    201: TaskOut;
+};
+
+export type CreateNewTaskResponse = CreateNewTaskResponses[keyof CreateNewTaskResponses];
+
+export type GetTaskData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}';
+};
+
+export type GetTaskErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetTaskError = GetTaskErrors[keyof GetTaskErrors];
+
+export type GetTaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskOut;
+};
+
+export type GetTaskResponse = GetTaskResponses[keyof GetTaskResponses];
+
+export type UpdateExistingTaskData = {
+    body: TaskIn;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}';
+};
+
+export type UpdateExistingTaskErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type UpdateExistingTaskError = UpdateExistingTaskErrors[keyof UpdateExistingTaskErrors];
+
+export type UpdateExistingTaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskOut;
+};
+
+export type UpdateExistingTaskResponse = UpdateExistingTaskResponses[keyof UpdateExistingTaskResponses];
+
+export type PauseExistingTaskData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}/pause';
+};
+
+export type PauseExistingTaskErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PauseExistingTaskError = PauseExistingTaskErrors[keyof PauseExistingTaskErrors];
+
+export type PauseExistingTaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskOut;
+};
+
+export type PauseExistingTaskResponse = PauseExistingTaskResponses[keyof PauseExistingTaskResponses];
+
+export type ResumePausedTaskData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}/resume';
+};
+
+export type ResumePausedTaskErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ResumePausedTaskError = ResumePausedTaskErrors[keyof ResumePausedTaskErrors];
+
+export type ResumePausedTaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskOut;
+};
+
+export type ResumePausedTaskResponse = ResumePausedTaskResponses[keyof ResumePausedTaskResponses];
+
+export type RetireExistingTaskData = {
+    body: MangoApiTasksRetireIn;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}/retire';
+};
+
+export type RetireExistingTaskErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RetireExistingTaskError = RetireExistingTaskErrors[keyof RetireExistingTaskErrors];
+
+export type RetireExistingTaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskOut;
+};
+
+export type RetireExistingTaskResponse = RetireExistingTaskResponses[keyof RetireExistingTaskResponses];
+
+export type RunTaskNowData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}/run';
+};
+
+export type RunTaskNowErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RunTaskNowError = RunTaskNowErrors[keyof RunTaskNowErrors];
+
+export type RunTaskNowResponses = {
+    /**
+     * Successful Response
+     */
+    202: RunOut;
+};
+
+export type RunTaskNowResponse = RunTaskNowResponses[keyof RunTaskNowResponses];
+
+export type GetTaskRunData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}/runs/{run_id}';
+};
+
+export type GetTaskRunErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetTaskRunError = GetTaskRunErrors[keyof GetTaskRunErrors];
+
+export type GetTaskRunResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunDetailOut;
+};
+
+export type GetTaskRunResponse = GetTaskRunResponses[keyof GetTaskRunResponses];

@@ -2464,6 +2464,34 @@
         "title": "HashIn",
         "type": "object"
       },
+      "HealthOut": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "agent_unavailable",
+              "access_lost",
+              "failing"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "tone": {
+            "enum": [
+              "red",
+              "amber"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tone",
+          "code"
+        ],
+        "title": "HealthOut",
+        "type": "object"
+      },
       "InstallationOut": {
         "additionalProperties": false,
         "description": "What was given when Mango was installed. Read only: whoever runs AWS changes it.",
@@ -3725,7 +3753,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PersonOut"
+              "$ref": "#/components/schemas/mango_api__people__PersonOut"
             },
             "title": "Items",
             "type": "array"
@@ -3759,53 +3787,6 @@
           "incomplete"
         ],
         "title": "PeopleOut",
-        "type": "object"
-      },
-      "PersonOut": {
-        "additionalProperties": false,
-        "properties": {
-          "created_at": {
-            "title": "Created At",
-            "type": "string"
-          },
-          "email": {
-            "title": "Email",
-            "type": "string"
-          },
-          "groups": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Groups",
-            "type": "array"
-          },
-          "mfa": {
-            "title": "Mfa",
-            "type": "boolean"
-          },
-          "status": {
-            "enum": [
-              "active",
-              "invited",
-              "disabled"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "user_id": {
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "email",
-          "status",
-          "mfa",
-          "groups",
-          "created_at"
-        ],
-        "title": "PersonOut",
         "type": "object"
       },
       "PoliciesOut": {
@@ -4387,26 +4368,49 @@
         "title": "ResolveOut",
         "type": "object"
       },
-      "RetireIn": {
+      "RetiredOut": {
         "additionalProperties": false,
         "properties": {
-          "lock_version": {
-            "minimum": 1.0,
-            "title": "Lock Version",
-            "type": "integer"
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
           },
           "reason": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Reason",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "required": [
-          "lock_version",
+          "by",
+          "at",
           "reason"
         ],
-        "title": "RetireIn",
+        "title": "RetiredOut",
         "type": "object"
       },
       "RetryIn": {
@@ -4814,6 +4818,204 @@
         "title": "RuleOut",
         "type": "object"
       },
+      "RunDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approvals",
+            "type": "array"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "has_result": {
+            "title": "Has Result",
+            "type": "boolean"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "trigger",
+          "status",
+          "queued_at",
+          "started_at",
+          "ended_at",
+          "cost_usd",
+          "reason",
+          "has_result",
+          "approvals",
+          "result"
+        ],
+        "title": "RunDetailOut",
+        "type": "object"
+      },
+      "RunOut": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approvals",
+            "type": "array"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "has_result": {
+            "title": "Has Result",
+            "type": "boolean"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "trigger",
+          "status",
+          "queued_at",
+          "started_at",
+          "ended_at",
+          "cost_usd",
+          "reason",
+          "has_result",
+          "approvals"
+        ],
+        "title": "RunOut",
+        "type": "object"
+      },
       "SaveDraftIn": {
         "additionalProperties": false,
         "properties": {
@@ -4832,6 +5034,70 @@
           "definition"
         ],
         "title": "SaveDraftIn",
+        "type": "object"
+      },
+      "ScheduleSpec": {
+        "additionalProperties": false,
+        "description": "When a schedule runs, as the design asks for it. Never a cron expression.",
+        "properties": {
+          "days": {
+            "default": [],
+            "items": {
+              "maximum": 6.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 7,
+            "title": "Days",
+            "type": "array"
+          },
+          "dom": {
+            "default": 1,
+            "maximum": 28.0,
+            "minimum": 1.0,
+            "title": "Dom",
+            "type": "integer"
+          },
+          "dow": {
+            "default": 1,
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Dow",
+            "type": "integer"
+          },
+          "freq": {
+            "enum": [
+              "15m",
+              "hourly",
+              "6h",
+              "daily",
+              "weekdays",
+              "days",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Freq",
+            "type": "string"
+          },
+          "hour": {
+            "default": 9,
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Hour",
+            "type": "integer"
+          },
+          "minute": {
+            "default": 0,
+            "maximum": 59.0,
+            "minimum": 0.0,
+            "title": "Minute",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "freq"
+        ],
+        "title": "ScheduleSpec",
         "type": "object"
       },
       "SearchIn": {
@@ -4985,6 +5251,209 @@
         "title": "SubmitIn",
         "type": "object"
       },
+      "TaskIn": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "pattern": "^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "deliver": {
+            "const": "inbox",
+            "default": "inbox",
+            "title": "Deliver",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 48,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "task": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Task",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/TriggerIn"
+          }
+        },
+        "required": [
+          "name",
+          "agent_id",
+          "task",
+          "trigger"
+        ],
+        "title": "TaskIn",
+        "type": "object"
+      },
+      "TaskListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "can_create": {
+            "title": "Can Create",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "can_create"
+        ],
+        "title": "TaskListOut",
+        "type": "object"
+      },
+      "TaskOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "deliver": {
+            "title": "Deliver",
+            "type": "string"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_owner": {
+            "title": "Is Owner",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "next_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Next Runs",
+            "type": "array"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/mango_api__tasks__PersonOut"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "paused_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Reason"
+          },
+          "retired": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetiredOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunOut"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task": {
+            "title": "Task",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/TriggerOut"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "name",
+          "agent_id",
+          "agent_name",
+          "task",
+          "trigger",
+          "deliver",
+          "status",
+          "paused_reason",
+          "paused_at",
+          "retired",
+          "owner",
+          "is_owner",
+          "next_runs",
+          "running",
+          "runs",
+          "health",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TaskOut",
+        "type": "object"
+      },
       "ToolPolicyOut": {
         "additionalProperties": false,
         "properties": {
@@ -5061,6 +5530,107 @@
           "status"
         ],
         "title": "ToolStatus",
+        "type": "object"
+      },
+      "TriggerIn": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "anyOf": [
+              {
+                "const": "cost_anomaly",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Type"
+          },
+          "kind": {
+            "enum": [
+              "manual",
+              "schedule",
+              "event"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "default": "America/Mexico_City",
+            "enum": [
+              "America/Mexico_City",
+              "America/Bogota",
+              "America/Sao_Paulo",
+              "UTC"
+            ],
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "TriggerIn",
+        "type": "object"
+      },
+      "TriggerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Type"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "required": [
+          "kind",
+          "schedule",
+          "timezone",
+          "event_type"
+        ],
+        "title": "TriggerOut",
         "type": "object"
       },
       "UpdateIn": {
@@ -5681,6 +6251,28 @@
         "title": "RejectIn",
         "type": "object"
       },
+      "mango_api__agents__RetireIn": {
+        "additionalProperties": false,
+        "properties": {
+          "lock_version": {
+            "minimum": 1.0,
+            "title": "Lock Version",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lock_version",
+          "reason"
+        ],
+        "title": "RetireIn",
+        "type": "object"
+      },
       "mango_api__approvals__RejectIn": {
         "additionalProperties": false,
         "properties": {
@@ -6010,6 +6602,107 @@
           "target_in_directory"
         ],
         "title": "ChangeOut",
+        "type": "object"
+      },
+      "mango_api__people__PersonOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "mfa": {
+            "title": "Mfa",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "invited",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "status",
+          "mfa",
+          "groups",
+          "created_at"
+        ],
+        "title": "PersonOut",
+        "type": "object"
+      },
+      "mango_api__tasks__PersonOut": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "name"
+        ],
+        "title": "PersonOut",
+        "type": "object"
+      },
+      "mango_api__tasks__RetireIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RetireIn",
         "type": "object"
       },
       "mango_api__tool_policies__ProposeIn": {
@@ -7976,7 +8669,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RetireIn"
+                "$ref": "#/components/schemas/mango_api__agents__RetireIn"
               }
             }
           },
@@ -9907,6 +10600,408 @@
           }
         },
         "summary": "Renew Session"
+      }
+    },
+    "/tasks": {
+      "get": {
+        "operationId": "list_tasks_of_caller",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Tasks Of Caller"
+      },
+      "post": {
+        "operationId": "create_new_task",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create New Task"
+      }
+    },
+    "/tasks/{task_id}": {
+      "get": {
+        "operationId": "get_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Task"
+      },
+      "put": {
+        "operationId": "update_existing_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update Existing Task"
+      }
+    },
+    "/tasks/{task_id}/pause": {
+      "post": {
+        "operationId": "pause_existing_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Pause Existing Task"
+      }
+    },
+    "/tasks/{task_id}/resume": {
+      "post": {
+        "operationId": "resume_paused_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Resume Paused Task"
+      }
+    },
+    "/tasks/{task_id}/retire": {
+      "post": {
+        "operationId": "retire_existing_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mango_api__tasks__RetireIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Retire Existing Task"
+      }
+    },
+    "/tasks/{task_id}/run": {
+      "post": {
+        "operationId": "run_task_now",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Run Task Now"
+      }
+    },
+    "/tasks/{task_id}/runs/{run_id}": {
+      "get": {
+        "operationId": "get_task_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Task Run"
       }
     }
   },

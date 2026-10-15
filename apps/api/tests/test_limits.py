@@ -103,6 +103,13 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             web_sessions_table="web-sessions",
             session_hours=8,
             rate_limits_table="rate-limits",
+            tasks_table="tasks",
+            task_runs_queue_url=f"https://sqs.us-east-1.amazonaws.com/{account}/Mango-test-TaskRuns",
+            task_runs_queue_arn=f"arn:aws:sqs:us-east-1:{account}:Mango-test-TaskRuns",
+            task_schedule_group="Mango-test-tasks",
+            task_scheduler_role_arn=f"arn:aws:iam::{account}:role/Mango-test-TaskScheduler",
+            tasks_client_id="tasksclient",
+            task_identity_key_arn=f"arn:aws:kms:us-east-1:{account}:key/task-identity",
         )
         built: list[Any] = []
 
@@ -142,6 +149,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
     assert services.models is not None
     assert services.web_sessions is not None
     assert services.agents is not None
+    assert services.tasks is not None
     held = {
         "people.reads": services.people.reads,
         "people.changes": services.people.changes,
@@ -155,6 +163,8 @@ def test_production_routes_hold_the_limiters_of_the_registry(
         "session.starts": services.web_sessions.starts,
         "session.renewals": services.web_sessions.renewals,
         "agents.lists": services.agents.list_limiter,
+        "tasks.runs": services.tasks.runs,
+        "tasks.changes": services.tasks.changes,
     }
     for name, limiter in held.items():
         assert limiter is issued[name], f"{name} is not the limiter of the registry"
