@@ -219,7 +219,7 @@ Decisión: [D73](../architecture/decisions/D073-turno-cortado-nunca-cuesta-cero.
 | `CostAnomalies-rejected` | Llegó al bus `Mango-<ns>-CostAnomalies` un evento que no es una anomalía de Cost Anomaly Detection de la cuenta pagadora. No arrancó nada. El bus solo acepta el rol de reenvío de la pagadora: no debería pasar | Los eventos `cost_anomaly.rejected` de Auditoría (su `reason`). Después, `PutEvents` sobre el bus en el CloudTrail de la cuenta pagadora |
 | `CostAnomalyConsumer-failed` | Una anomalía no se pudo procesar después de sus reintentos: sus investigaciones no arrancaron | Los errores del log group `/aws/lambda/Mango-<ns>-CostAnomalyConsumer` y el mensaje en la cola `Mango-<ns>-CostAnomalyConsumer-dlq` |
 
-- **Hasta integrar el motor de tareas (D78)** cada anomalía se audita como `cost_anomaly.received` con `engine_connected: false` y no arranca ninguna investigación. Después, las ejecuciones y sus omisiones se ven en Tareas y en auditoría (`task.run.*`).
+- **Cada anomalía** se audita como `cost_anomaly.received` y deja un mensaje en la cola `Mango-<ns>-TaskRuns`. Las ejecuciones que arranca, y las que quedan «Omitida» (`daily_cap` pasadas 5 en el día; `not_central` si el dueño dejó de ser central), se ven en Tareas y en auditoría (`task.run.*`). Si no hay ninguna automatización suscrita, no arranca nada.
 - **Cuando salta `CostAnomalyConsumer-failed`:** arreglada la causa, reenviar el evento de la cola a la función es seguro (el id del evento es el de la anomalía y el motor no repite una ejecución con el mismo id). Después vaciar la cola para que la alarma vuelva a `OK`.
 
 ### Qué no tiene alarma
