@@ -40,7 +40,7 @@ FinOps ya no es un recurso de CDK: es un agente más de la tabla `Mango-<ns>-Age
 
 - El despliegue lo **siembra** (put-if-absent) como versión 1 ya aprobada por la release (`approved_by: release@<versión>`), desde `agents/finops/agent.json` más el modelo de la configuración (`models.agent`).
 - En el mismo despliegue el stack **inicia el provisioner**, que crea el rol `Mango-<ns>-agent-finops`, el harness `Mango_<ns>_a_finops` y su endpoint `live`. Tarda menos de un minuto.
-- Después la tabla manda: cambiar `agent.json` y redesplegar **no** cambia el agente ya sembrado. Los cambios se hacen en la app (Agent Builder y revisión, D18).
+- Después la tabla manda, con una excepción (D80): si se cambia `agent.json` y se redespliega, y nadie cambió el agente en la app, el provisioner añade la versión siguiente, aprobada por la release, y la publica. Si alguien lo cambió en la app (Agent Builder y revisión, D18), la release no lo toca y lo deja en Auditoría (`agent.release.update` `skipped`).
 - Si la publicación falla (por ejemplo, el modelo está deshabilitado en Brains), la versión queda `Fallida` y un admin la reintenta desde Revisión de agentes › Historial.
 - La reconciliación diaria alarma (`release_agent_content_changed`) si FinOps sirve contenido distinto del de la release (D42). También salta tras un cambio aprobado en la app: hay que confirmar que ese cambio es el esperado.
 

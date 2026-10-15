@@ -250,9 +250,11 @@ describe("Admin v0 infrastructure (D17)", () => {
   });
 
   it("seeds settings put-if-absent on create and update", () => {
-    const seeds = Object.values(template.findResources("Custom::AWS")).filter((r) =>
-      JSON.stringify(r.Properties.Create ?? "").includes("putItem"),
-    );
+    const seeds = Object.values(template.findResources("Custom::AWS")).filter((r) => {
+      const call = JSON.stringify(r.Properties.Create ?? "");
+      // The definition of the release agent is a seed of the Agents table (release-agents.test.ts).
+      return call.includes("putItem") && !call.includes("RELEASE#");
+    });
     expect(seeds).toHaveLength(3);
     for (const seed of seeds) {
       for (const phase of ["Create", "Update"]) {

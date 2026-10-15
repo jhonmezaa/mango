@@ -12,6 +12,10 @@
   (``VersionStatus``), ``revision`` (optimistic lock of the draft), ``created_by``,
   ``editors`` (everyone who wrote this content: none of them may approve it, TM-M2),
   ``approved_by``, ``rejection_reason``, ``failed_step`` and ``base_version``.
+* ``AGENT#<id>`` / ``RELEASE#<content hash>``: a definition the release ships for one of its
+  agents (D34, D80), written put-if-absent by the stack: ``definition`` and ``content_hash``.
+  It is not a version. The provisioner turns it into one (``release_version_items``) only if
+  the agent was never changed in the installation; queries of versions never see it.
 * ``CREATOR#<sub>`` / ``DAY#<yyyy-mm-dd>``: ``submissions`` counter (UTC day) with ``ttl``.
 * ``PUBLISHED#<id>`` / ``CURRENT``: what the provisioner deployed last (``version``,
   ``content_hash``, ``harness_arn``, ``harness_version``, ``published_at``). Only the
@@ -29,10 +33,12 @@ Sparse indexes:
   again or discarded. Other drafts and superseded versions are not indexed.
 * ``ByCreator`` (``creator_index`` / ``created_at``): every version, by who created it.
 
-Only two writers of state exist. mango-api owns the lifecycle up to ``approved`` (and
-retirement); the provisioner owns ``approved`` -> ``published`` | ``failed`` through the builders
-below, so both sides agree on the layout. The deprovisioner, which deletes the AWS resources
-of a retired agent (D48), takes the same lock and writes nothing else.
+Only two writers of state exist, and the stack seeds the agents of the release. mango-api
+owns the lifecycle up to ``approved`` (and retirement); the provisioner owns ``approved`` ->
+``published`` | ``failed`` through the builders below, so both sides agree on the layout. The
+provisioner also writes the next version of a release agent nobody changed in the
+installation, already approved by the release (D80). The deprovisioner, which deletes the AWS
+resources of a retired agent (D48), takes the same lock and writes nothing else.
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ SK_META = "META"
 VERSION_PREFIX = "VERSION#"
 CREATOR_PREFIX = "CREATOR#"
 PUBLISHED_PREFIX = "PUBLISHED#"
+RELEASE_PREFIX = "RELEASE#"
 SK_CURRENT = "CURRENT"
 DAY_PREFIX = "DAY#"
 INDEX_BY_STATUS = "ByStatus"
@@ -119,6 +126,11 @@ def meta_key(agent_id: str) -> dict[str, Any]:
 
 def published_key(agent_id: str) -> dict[str, Any]:
     return {"PK": _s(PUBLISHED_PREFIX + agent_id), "SK": _s(SK_CURRENT)}
+
+
+def release_key(agent_id: str, content_hash: str) -> dict[str, Any]:
+    """The definition the release ships for one of its agents (D80), by its content hash."""
+    return {"PK": _s(agent_pk(agent_id)), "SK": _s(RELEASE_PREFIX + content_hash)}
 
 
 # --- Provisioner transitions ------------------------------------------------------------
@@ -295,3 +307,79 @@ def unlock_item(table: str, *, agent_id: str, owner: str) -> dict[str, Any]:
         "ConditionExpression": "provision_lock = :owner",
         "ExpressionAttributeValues": {":owner": _s(owner)},
     }
+
+
+def release_version_items(
+    table: str,
+    *,
+    agent_id: str,
+    number: int,
+    definition: str,
+    content_hash: str,
+    approver: str,
+    meta_version: int,
+    base_version: int | None,
+    owner: str,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """``TransactWriteItems`` adding version ``number`` of a release agent, already approved by
+    the release (D34, D80), as the agent's open version.
+
+    Same item the stack seeds for the first version. Fails (condition) if the version exists
+    (nothing is overwritten), if the agent was retired, got another open version or changed
+    meanwhile (``version`` of ``META``), or if ``owner`` does not hold the provisioner lock.
+    """
+    at = _s(iso(now))
+    who = _s(approver)
+    version: dict[str, Any] = {
+        **version_key(agent_id, number),
+        "agent_id": _s(agent_id),
+        "n": _n(number),
+        "status": _s(VersionStatus.APPROVED),
+        "status_index": _s(status_index(VersionStatus.APPROVED)),
+        "status_at": at,
+        "revision": _n(1),
+        "definition": _s(definition),
+        "content_hash": _s(content_hash),
+        "created_by": who,
+        "editors": {"SS": [approver]},
+        "created_at": at,
+        "updated_at": at,
+        "submitted_by": who,
+        "submitted_at": at,
+        "approved_by": who,
+        "approved_at": at,
+    }
+    if base_version is not None:
+        version["base_version"] = _n(base_version)
+    return [
+        {
+            "Put": {
+                "TableName": table,
+                "Item": version,
+                "ConditionExpression": "attribute_not_exists(PK)",
+            }
+        },
+        {
+            "Update": {
+                "TableName": table,
+                "Key": meta_key(agent_id),
+                "UpdateExpression": (
+                    "SET latest_version = :n, open_version = :n, updated_at = :at ADD version :one"
+                ),
+                "ConditionExpression": (
+                    "#s <> :retired AND attribute_not_exists(open_version) "
+                    "AND latest_version < :n AND version = :lock AND provision_lock = :owner"
+                ),
+                "ExpressionAttributeNames": {"#s": "status"},
+                "ExpressionAttributeValues": {
+                    ":n": _n(number),
+                    ":at": at,
+                    ":one": _n(1),
+                    ":retired": _s(AgentStatus.RETIRED),
+                    ":lock": _n(meta_version),
+                    ":owner": _s(owner),
+                },
+            }
+        },
+    ]

@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 ACTOR = "system:provisioner"
 """``user_id`` of provisioner events; the people involved are in the event detail."""
 EVENT_PUBLISHED = "agent.version.published"
+EVENT_RELEASE_UPDATE = "agent.release.update"
+"""A release shipped other content for one of its agents (D80): ``applied`` (a new version,
+approved by the release) or ``skipped`` (the installation changed the agent; ``reason``)."""
 EVENT_DEPROVISION = "agent.deprovision"
 """Removal of what a retired agent left in AWS (D48): ``requested``, ``applied``, ``rejected``."""
 EVENT_PACK_ENABLED = "mcp.pack.enabled"

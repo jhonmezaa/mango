@@ -50,6 +50,44 @@ export const PROVISIONER_WRITABLE_ATTRIBUTES = [
   "provision_lock_until",
 ];
 
+/**
+ * Attributes of a version of a release agent the provisioner may write (D80): the same item
+ * the stack seeds for the first version (`release-agents.ts`, `release_version_items`).
+ */
+export const RELEASE_VERSION_ATTRIBUTES = [
+  "PK",
+  "SK",
+  "agent_id",
+  "n",
+  "status",
+  "status_index",
+  "status_at",
+  "revision",
+  "definition",
+  "content_hash",
+  "created_by",
+  "editors",
+  "created_at",
+  "updated_at",
+  "submitted_by",
+  "submitted_at",
+  "approved_by",
+  "approved_at",
+  "base_version",
+];
+
+/** Attributes of `META` the provisioner names when it opens that version (D80). */
+export const RELEASE_META_ATTRIBUTES = [
+  "PK",
+  "SK",
+  "status",
+  "latest_version",
+  "open_version",
+  "updated_at",
+  "version",
+  "provision_lock",
+];
+
 /** Tags every harness (and the runtime AgentCore derives from it) must be created with. */
 const agentRequestTags = (ns: string) => ({
   StringEquals: {
@@ -349,6 +387,46 @@ export class Provisioner extends Construct {
         },
       }),
     );
+    // D80: the next version of an agent of the release, only in their partitions. The content
+    // is the one the stack seeded, and the provisioner only writes it for the hash this stack
+    // ships (`RELEASE_AGENTS`).
+    const releaseKeys = Object.keys(props.releaseAgents)
+      .sort()
+      .map((agentId) => `AGENT#${agentId}`);
+    if (releaseKeys.length > 0) {
+      const onlyReleaseAgents = { "dynamodb:LeadingKeys": releaseKeys };
+      role.addToPolicy(
+        new iam.PolicyStatement({
+          sid: "ReadReleaseAgentAuthors",
+          // Who wrote each version: the release, or a person of the installation (D18).
+          actions: ["dynamodb:Query"],
+          resources: [agents],
+          conditions: { "ForAllValues:StringEquals": onlyReleaseAgents },
+        }),
+      );
+      role.addToPolicy(
+        new iam.PolicyStatement({
+          sid: "AddReleaseAgentVersion",
+          actions: ["dynamodb:PutItem"],
+          resources: [agents],
+          conditions: {
+            "ForAllValues:StringEquals": { ...onlyReleaseAgents, "dynamodb:Attributes": RELEASE_VERSION_ATTRIBUTES },
+            StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
+          },
+        }),
+      );
+      role.addToPolicy(
+        new iam.PolicyStatement({
+          sid: "OpenReleaseAgentVersion",
+          actions: ["dynamodb:UpdateItem"],
+          resources: [agents],
+          conditions: {
+            "ForAllValues:StringEquals": { ...onlyReleaseAgents, "dynamodb:Attributes": RELEASE_META_ATTRIBUTES },
+            StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
+          },
+        }),
+      );
+    }
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "ReadModelCatalog",
@@ -473,7 +551,10 @@ export class Provisioner extends Construct {
     this.stateMachine = this.buildStateMachine(cfg);
   }
 
-  /** Only mango-api starts executions, with `{agent_id, version, content_hash}` (TM-M1, TM-M2). */
+  /**
+   * mango-api starts executions with `{agent_id, version, content_hash}` (TM-M1, TM-M2); the stack
+   * starts those of the release agents with `{agent_id, content_hash, release}` (D80).
+   */
   grantStart(grantee: iam.IGrantable): void {
     grantee.grantPrincipal.addToPrincipalPolicy(
       new iam.PolicyStatement({

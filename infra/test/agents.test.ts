@@ -146,18 +146,29 @@ describe("Agents table (Marketplace v1, D18)", () => {
     const others = agentsGrants().filter((g) => !g.roles.includes(apiRoleId));
     const sidsOf = (roleId: string) =>
       others.filter((g) => g.roles.length === 1 && g.roles[0] === roleId).map((g) => g.statement.Sid).sort();
-    expect(sidsOf(provisionerRoleId)).toEqual(["ReadAgentVersions", "WritePublicationState", "WritePublishedPointer"]);
+    expect(sidsOf(provisionerRoleId)).toEqual([
+      // D80: only in the partitions of the release agents.
+      "AddReleaseAgentVersion",
+      "OpenReleaseAgentVersion",
+      "ReadAgentVersions",
+      "ReadReleaseAgentAuthors",
+      "WritePublicationState",
+      "WritePublishedPointer",
+    ]);
     expect(sidsOf(reconcilerRoleId)).toEqual(["ReadAgentRecordsWithoutContent"]);
     // D48: it reads the state of a retired agent and holds its lock; no content, no state change.
     expect(sidsOf(deprovisionerRoleId)).toEqual(["HoldAgentLock", "ReadAgentStateWithoutContent"]);
-    // The only other grant: the stack's own seed of the release agents (put-if-absent).
+    // The only other grant: the stack's own seeds of the release agents (put-if-absent): the
+    // first version and the definition each release ships (D80), one policy per resource.
     const known = [provisionerRoleId, deprovisionerRoleId, reconcilerRoleId];
     const rest = others.filter((g) => !g.roles.some((r) => known.includes(r)));
-    expect(rest).toHaveLength(1);
-    expect(rest[0]!.statement.Action).toBe("dynamodb:PutItem");
-    expect(rest[0]!.roles).toHaveLength(1);
-    expect(rest[0]!.roles[0]).toMatch(/^AWS679f53fac002430cb0da5b7982bd2287ServiceRole/);
-    expect(others).toHaveLength(7);
+    expect(rest).toHaveLength(2);
+    for (const grant of rest) {
+      expect(grant.statement.Action).toBe("dynamodb:PutItem");
+      expect(grant.roles).toHaveLength(1);
+      expect(grant.roles[0]).toMatch(/^AWS679f53fac002430cb0da5b7982bd2287ServiceRole/);
+    }
+    expect(others).toHaveLength(11);
   });
 
   it("passes the table name to mango-api", () => {

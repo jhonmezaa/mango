@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -17,6 +18,8 @@ from mango_core.agents_table import (
     meta_key,
     publish_items,
     published_key,
+    release_key,
+    release_version_items,
     unlock_item,
     version_key,
 )
@@ -166,3 +169,124 @@ def test_tool_names_in_a_harness() -> None:
     assert GATEWAY_MCP_SERVER == "mango"
     assert gateway_tool_name("finops", "get_cost_and_usage") == "finops___get_cost_and_usage"
     assert allowed_tool("finops", "get_cost_and_usage") == "@mango/finops___get_cost_and_usage"
+
+
+# --- Next version of a release agent (D80) ------------------------------------------------
+
+# Keep in sync with RELEASE_VERSION_ATTRIBUTES and RELEASE_META_ATTRIBUTES
+# (infra/lib/constructs/provisioner.ts): IAM only lets the provisioner name these.
+RELEASE_VERSION_ATTRIBUTES = {
+    "PK",
+    "SK",
+    "agent_id",
+    "n",
+    "status",
+    "status_index",
+    "status_at",
+    "revision",
+    "definition",
+    "content_hash",
+    "created_by",
+    "editors",
+    "created_at",
+    "updated_at",
+    "submitted_by",
+    "submitted_at",
+    "approved_by",
+    "approved_at",
+    "base_version",
+}
+RELEASE_META_ATTRIBUTES = {
+    "PK",
+    "SK",
+    "status",
+    "latest_version",
+    "open_version",
+    "updated_at",
+    "version",
+    "provision_lock",
+}
+RELEASE = "release@0.1.0"
+
+
+def _release_items(**overrides: Any) -> list[dict[str, Any]]:
+    args: dict[str, Any] = {
+        "agent_id": AGENT,
+        "number": 2,
+        "definition": "{}",
+        "content_hash": "b" * 64,
+        "approver": RELEASE,
+        "meta_version": 2,
+        "base_version": 1,
+        "owner": "exec-1",
+        "now": NOW,
+    }
+    return release_version_items(TABLE, **{**args, **overrides})
+
+
+def _names(update: dict[str, Any]) -> set[str]:
+    text = f"{update['UpdateExpression']} {update.get('ConditionExpression', '')}"
+    for alias, name in update.get("ExpressionAttributeNames", {}).items():
+        text = text.replace(alias, name)
+    words = set(re.findall(r"(?<![:#\w])[a-z_]+(?![\w(])", text))
+    return words - {"attribute_not_exists", "attribute_exists"}
+
+
+def test_release_version_names_only_what_iam_allows() -> None:
+    put, update = _release_items()
+    assert set(put["Put"]["Item"]) <= RELEASE_VERSION_ATTRIBUTES
+    assert _names(update["Update"]) | set(update["Update"]["Key"]) <= RELEASE_META_ATTRIBUTES
+    item = put["Put"]["Item"]
+    assert {item[k]["S"] for k in ("created_by", "submitted_by", "approved_by")} == {RELEASE}
+    assert item["status"]["S"] == "approved"
+    assert release_key(AGENT, "b" * 64)["SK"]["S"] == "RELEASE#" + "b" * 64
+
+
+def _published_agent(db: Any) -> None:
+    """Version 1 published, nothing open, and this execution holding the lock."""
+    db.update_item(
+        TableName=TABLE,
+        Key=meta_key(AGENT),
+        UpdateExpression="SET latest_version = :one, version = :two REMOVE open_version",
+        ExpressionAttributeValues={":one": {"N": "1"}, ":two": {"N": "2"}},
+    )
+    _lock(db, "exec-1")
+
+
+def _transact(db: Any, items: list[dict[str, Any]]) -> None:
+    db.transact_write_items(TransactItems=items)
+
+
+def test_release_version_opens_the_next_version(db: Any) -> None:
+    _published_agent(db)
+    _transact(db, _release_items())
+    meta = db.get_item(TableName=TABLE, Key=meta_key(AGENT))["Item"]
+    assert (meta["latest_version"]["N"], meta["open_version"]["N"], meta["version"]["N"]) == (
+        "2",
+        "2",
+        "3",
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"number": 1},  # an existing version: never overwritten
+        {"meta_version": 1},  # the agent changed since it was read
+        {"owner": "exec-2"},  # without the provisioner lock
+    ],
+)
+def test_release_version_writes_nothing_on_a_conflict(db: Any, overrides: dict[str, Any]) -> None:
+    _published_agent(db)
+    before = db.get_item(TableName=TABLE, Key=version_key(AGENT, 1))["Item"]
+    with pytest.raises(ClientError) as error:
+        _transact(db, _release_items(**overrides))
+    assert error.value.response["Error"]["Code"] == "TransactionCanceledException"
+    assert db.get_item(TableName=TABLE, Key=version_key(AGENT, 1))["Item"] == before
+    assert "Item" not in db.get_item(TableName=TABLE, Key=version_key(AGENT, 2))
+
+
+def test_release_version_waits_for_the_open_one(db: Any) -> None:
+    _lock(db, "exec-1")  # version 1 is still open
+    with pytest.raises(ClientError):
+        _transact(db, _release_items(meta_version=1))

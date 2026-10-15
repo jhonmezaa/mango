@@ -135,17 +135,23 @@ export interface ReleaseAgentsProps {
 }
 
 /**
- * Seeds the agents of the release as data and asks the provisioner to publish them (D34).
+ * Seeds the agents of the release as data and asks the provisioner to publish them (D34, D80).
  *
  * A release agent is not created in the app, so nobody reviews it there: the release itself
  * approves it. Its first version is written **already approved**, with
  * `approved_by: release@<version>`, and the provisioner publishes it like any other approved
  * version (role with boundary, harness, `live` endpoint), by content hash.
  *
+ * Every deployment also writes, if absent, the definition this release ships under
+ * `AGENT#<id>` / `RELEASE#<hash>`. When a later release ships other content, the
+ * provisioner decides with it (D80): if every version of the agent was written by the release
+ * and none is open, it adds the next one, approved by the release, and publishes it; if the
+ * installation changed the agent (D18), it leaves it alone and audits why; if the content is
+ * the one it serves, nothing happens.
+ *
  * Same accepted exception as the Settings seeds (TM-A6, TM-M16): the CDK singleton provider
  * role, which only CloudFormation invokes, may `PutItem` the partition of these agents and
- * nothing else of the table. The write is put-if-absent, so after the first deployment the
- * table is authoritative and every later change of the agent goes through review (D18). The
+ * nothing else of the table. Both writes are put-if-absent, so nothing is ever overwritten. The
  * provisioner refuses a release approval for any id or content this stack does not ship
  * (`RELEASE_AGENTS`), so a row written by someone else cannot pass as one of these.
  */
@@ -163,6 +169,20 @@ export class ReleaseAgents extends Construct {
 
     for (const agent of props.agents) {
       const key = { S: `AGENT#${agent.id}` };
+      // Both writes below: put-if-absent in the partition of this agent, nothing else.
+      const seedPolicy = cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ["dynamodb:PutItem"],
+          resources: [props.agentsTable.tableArn],
+          conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [`AGENT#${agent.id}`] } },
+        }),
+        new iam.PolicyStatement({
+          actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+          resources: [props.dataKey.keyArn],
+          // Only through DynamoDB, never direct use of the shared data key.
+          conditions: { StringEquals: { "kms:ViaService": `dynamodb.${stack.region}.amazonaws.com` } },
+        }),
+      ]);
       const absent = "attribute_not_exists(PK)";
       // Item layout: `packages/py/mango-core/src/mango_core/agents_table.py`.
       const putIfAbsent: Omit<cr.AwsSdkCall, "physicalResourceId"> = {
@@ -226,34 +246,50 @@ export class ReleaseAgents extends Construct {
       const seed = new cr.AwsCustomResource(this, `Seed-${agent.id}`, {
         onCreate: seedCall,
         onUpdate: seedCall,
-        policy: cr.AwsCustomResourcePolicy.fromStatements([
-          new iam.PolicyStatement({
-            actions: ["dynamodb:PutItem"],
-            resources: [props.agentsTable.tableArn],
-            conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [`AGENT#${agent.id}`] } },
-          }),
-          new iam.PolicyStatement({
-            actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
-            resources: [props.dataKey.keyArn],
-            // Only through DynamoDB, never direct use of the shared data key.
-            conditions: { StringEquals: { "kms:ViaService": `dynamodb.${stack.region}.amazonaws.com` } },
-          }),
-        ]),
+        policy: seedPolicy,
         installLatestAwsSdk: false,
       });
       seed.node.addDependency(props.agentsTable);
       this.seeds.push(seed);
 
-      // Publication: the same execution an approval starts, with identifiers and the hash
-      // only. It runs on the first deployment. If a later release ships other content the
-      // call repeats, but the seed above did not overwrite the agent, so the stored version
-      // no longer matches and the provisioner changes nothing.
+      // The definition this release ships, for the provisioner to compare with what the
+      // agent has (D80). Same role and partition as the seed above.
+      const releaseCall: cr.AwsSdkCall = {
+        service: "DynamoDB",
+        action: "putItem",
+        parameters: {
+          TableName: table,
+          Item: {
+            PK: key,
+            SK: { S: `RELEASE#${agent.contentHash}` },
+            agent_id: { S: agent.id },
+            definition: { S: agent.canonical },
+            content_hash: { S: agent.contentHash },
+            created_at: at,
+          },
+          ConditionExpression: absent,
+        },
+        // This release was deployed before: the item is already there, unchanged.
+        ignoreErrorCodesMatching: "ConditionalCheckFailedException",
+        physicalResourceId: cr.PhysicalResourceId.of(`agents-release-${agent.id}`),
+      };
+      const shipped = new cr.AwsCustomResource(this, `Release-${agent.id}`, {
+        onCreate: releaseCall,
+        onUpdate: releaseCall,
+        policy: seedPolicy,
+        installLatestAwsSdk: false,
+      });
+      shipped.node.addDependency(seed);
+
+      // Publication: identifiers, the hash and the release only. It runs on the first
+      // deployment and again whenever a release ships other content (the input changes);
+      // the provisioner decides then what the release does with the agent (D80).
       const startCall: cr.AwsSdkCall = {
         service: "SFN",
         action: "startExecution",
         parameters: {
           stateMachineArn: props.stateMachine.stateMachineArn,
-          input: JSON.stringify({ agent_id: agent.id, content_hash: agent.contentHash, version: 1 }),
+          input: JSON.stringify({ agent_id: agent.id, content_hash: agent.contentHash, release: releaseVersion() }),
         },
         physicalResourceId: cr.PhysicalResourceId.of(`agents-publish-${agent.id}`),
       };
@@ -268,7 +304,7 @@ export class ReleaseAgents extends Construct {
         ]),
         installLatestAwsSdk: false,
       });
-      publish.node.addDependency(seed, props.stateMachine, props.provisioner);
+      publish.node.addDependency(seed, shipped, props.stateMachine, props.provisioner);
     }
   }
 }

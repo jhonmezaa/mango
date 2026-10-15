@@ -4,7 +4,7 @@ import { App } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
-import { connectorCatalog, PROVISIONER_WRITABLE_ATTRIBUTES } from "../lib/constructs/provisioner.js";
+import { connectorCatalog, PROVISIONER_WRITABLE_ATTRIBUTES, RELEASE_META_ATTRIBUTES, RELEASE_VERSION_ATTRIBUTES } from "../lib/constructs/provisioner.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
@@ -290,11 +290,49 @@ describe("provisioner role: wildcards and the rest", () => {
         JSON.stringify(s.Resource).includes(agentsId) &&
         actions(s).some((a) => /dynamodb:(Put|Update|Delete|BatchWrite)/.test(a)),
     );
-    expect(agentsWrites.map((s) => s.Sid).sort()).toEqual(["WritePublicationState", "WritePublishedPointer"]);
+    expect(agentsWrites.map((s) => s.Sid).sort()).toEqual([
+      "AddReleaseAgentVersion",
+      "OpenReleaseAgentVersion",
+      "WritePublicationState",
+      "WritePublishedPointer",
+    ]);
     const granted = provisioner.flatMap(actions);
-    for (const forbidden of ["dynamodb:DeleteItem", "dynamodb:Scan", "dynamodb:Query", "dynamodb:BatchWriteItem"]) {
+    for (const forbidden of ["dynamodb:DeleteItem", "dynamodb:Scan", "dynamodb:BatchWriteItem"]) {
       expect(granted).not.toContain(forbidden);
     }
+    // Queries only to see who wrote the versions of a release agent (D80).
+    expect(provisioner.filter((s) => actions(s).includes("dynamodb:Query")).map((s) => s.Sid)).toEqual([
+      "ReadReleaseAgentAuthors",
+    ]);
+  });
+
+  it("adds versions only to the agents of the release, with the seed's attributes (D80)", () => {
+    const only = { "dynamodb:LeadingKeys": ["AGENT#finops"] };
+    const query = bySid(provisioner, "ReadReleaseAgentAuthors");
+    expect(actions(query)).toEqual(["dynamodb:Query"]);
+    expect(query.Resource).toEqual({ "Fn::GetAtt": [agentsId, "Arn"] });
+    expect(query.Condition).toEqual({ "ForAllValues:StringEquals": only });
+    const put = bySid(provisioner, "AddReleaseAgentVersion");
+    expect(actions(put)).toEqual(["dynamodb:PutItem"]);
+    expect(put.Resource).toEqual({ "Fn::GetAtt": [agentsId, "Arn"] });
+    expect(put.Condition).toEqual({
+      "ForAllValues:StringEquals": { ...only, "dynamodb:Attributes": RELEASE_VERSION_ATTRIBUTES },
+      StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
+    });
+    // Never what only the provisioner's pointer or a publication sets.
+    for (const other of ["published_at", "published_version", "harness_arn", "failed_step", "provision_lock"]) {
+      expect(RELEASE_VERSION_ATTRIBUTES).not.toContain(other);
+    }
+    const open = bySid(provisioner, "OpenReleaseAgentVersion");
+    expect(actions(open)).toEqual(["dynamodb:UpdateItem"]);
+    expect(open.Condition).toEqual({
+      "ForAllValues:StringEquals": { ...only, "dynamodb:Attributes": RELEASE_META_ATTRIBUTES },
+      StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
+    });
+    // The only attribute of META it gains over the publication state.
+    expect(RELEASE_META_ATTRIBUTES.filter((a) => !PROVISIONER_WRITABLE_ATTRIBUTES.includes(a))).toEqual([
+      "latest_version",
+    ]);
   });
 
   it("reads only the model catalog from Settings and only appends to the audit trail", () => {

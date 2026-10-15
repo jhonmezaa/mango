@@ -18,7 +18,10 @@ Rules every step follows:
 * **Idempotent by name.** Resources are found by their derived names; a repeated step, or a
   whole repeated execution, converges to the same result.
 * **Release agents** (FinOps) arrive already approved by the release (D34). Such a version is
-  published only when its id and hash are the ones the stack says this release ships.
+  published only when its id and hash are the ones the stack says this release ships. The
+  stack starts their publication with ``{agent_id, content_hash, release}`` instead, and
+  ``load`` decides what the release does with the agent first (``release``, D80): add the
+  next version, publish the open one, or leave alone an agent the installation changed.
 * **Compensation converges to what is published**, read from the ``PUBLISHED#`` pointer that
   only the provisioner can write. An agent that was never published keeps no role, harness
   or log groups; a published agent gets its ``live`` endpoint and role policy back to the
@@ -46,10 +49,19 @@ from mango_core.agents import (
     verify_content,
 )
 from mango_core.agents_table import MAX_VERSION
-from mango_provisioner.audit import EVENT_PUBLISHED, AuditWriter
+from mango_provisioner.audit import EVENT_PUBLISHED, EVENT_RELEASE_UPDATE, AuditWriter
 from mango_provisioner.config import RELEASE_APPROVER_PREFIX, Settings
 from mango_provisioner.errors import BusyError, RetryableError, StepError
 from mango_provisioner.harness import Harnesses, HarnessRef, harness_config
+from mango_provisioner.release import (
+    Decision,
+    Outcome,
+    ReleaseRequest,
+    decide,
+    is_release_input,
+    parse_release_input,
+    unchanged,
+)
 from mango_provisioner.role import AgentRoles
 from mango_provisioner.runtime_logs import RuntimeLogs
 from mango_provisioner.store import Meta, ProvisionerStore, Published, Version
@@ -66,6 +78,8 @@ _HARNESS_VERSION_RE = re.compile(r"^[1-9][0-9]{0,4}$")
 _STEP_RE = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
 _CODE_RE = re.compile(r"[^A-Za-z0-9_.:-]")
 COMPENSATION_FAILED = "compensation_failed"
+_RELEASE_ATTEMPTS = 2
+"""Decisions of a release update: a second one sees what changed the agent under the first."""
 
 
 @dataclass(frozen=True)
@@ -241,6 +255,8 @@ class Provisioner:
     # --- Forward steps --------------------------------------------------------------------
 
     def load(self, raw_input: object, execution: object) -> dict[str, Any]:
+        if is_release_input(raw_input):
+            return self._load_release(parse_release_input(raw_input, execution))
         request = parse_input(raw_input, execution)
         meta = self._store.meta(request.agent_id)
         version = self._store.version(request.agent_id, request.version)
@@ -256,7 +272,11 @@ class Provisioner:
         if version.status is not VersionStatus.APPROVED:
             raise StepError("not_approved")
         self._store.acquire_lock(request.agent_id, request.execution, self._now())
-        # From here on, a failure marks the version as failed.
+        return self._start(request)
+
+    def _start(self, request: Request) -> dict[str, Any]:
+        """Check, under the lock, everything a publication needs, and audit its request.
+        From here on, a failure marks the version as failed."""
         ctx = self._context(request)
         self._models(ctx.definition)
         harness_config(
@@ -269,6 +289,129 @@ class Provisioner:
         )
         self._audit.emit(EVENT_PUBLISHED, self._audit_detail(ctx, "requested"), self._now())
         return {**request.state(), "action": ACTION_PUBLISH}
+
+    # --- Agents of the release (D80) ------------------------------------------------------
+
+    def _load_release(self, request: ReleaseRequest) -> dict[str, Any]:
+        """What a release does with one of its agents (``mango_provisioner.release``)."""
+        agent_id = request.agent_id
+        # Only what this stack ships, before reading or locking anything (TM-M16).
+        if self._settings.release_agents.get(agent_id) != request.content_hash:
+            raise StepError("release_approval_invalid")
+        meta = self._store.meta(agent_id)
+        if meta is None:
+            raise StepError("version_not_found")
+        if unchanged(meta, self._store.published(agent_id), request.content_hash):
+            return self._release_noop(request, meta.published_version)
+        self._store.acquire_lock(agent_id, request.execution, self._now())
+        for _ in range(_RELEASE_ATTEMPTS):
+            decision = self._release_decision(request)
+            if decision.outcome is Outcome.UNCHANGED:
+                self._store.release_lock(agent_id, request.execution)
+                return self._release_noop(request, decision.version)
+            if decision.outcome is Outcome.SKIP:
+                return self._release_skip(request, decision)
+            number = int(decision.version or 0)
+            if decision.outcome is Outcome.PUBLISH or self._add_release_version(request, number):
+                return self._start(
+                    Request(agent_id, number, request.content_hash, request.execution)
+                )
+        # Something kept changing the agent while the release tried to update it.
+        raise StepError("release_update_conflict")
+
+    def _release_decision(self, request: ReleaseRequest) -> Decision:
+        meta = self._store.meta(request.agent_id)
+        if meta is None:
+            raise StepError("version_not_found")
+        if meta.lock_owner != request.execution:
+            raise BusyError
+        open_version = (
+            self._store.version(request.agent_id, meta.open_version)
+            if meta.open_version is not None
+            else None
+        )
+        return decide(
+            meta,
+            self._store.published(request.agent_id),
+            self._store.authors(request.agent_id),
+            open_version,
+            request.content_hash,
+        )
+
+    def _add_release_version(self, request: ReleaseRequest, number: int) -> bool:
+        """Version ``number`` from the definition the stack seeded, verified by its hash."""
+        definition = self._store.release_definition(request.agent_id, request.content_hash)
+        if definition is None:
+            raise StepError("release_definition_not_found")
+        if not verify_content(definition, request.content_hash):
+            raise StepError("hash_mismatch")
+        try:
+            loads_definition(definition)
+        except InvalidDefinitionError:
+            raise StepError("invalid_definition") from None
+        meta = self._store.meta(request.agent_id)
+        if meta is None or meta.record_version is None:
+            raise StepError("agent_record_invalid")
+        added = self._store.add_release_version(
+            agent_id=request.agent_id,
+            number=number,
+            definition=definition,
+            content_hash=request.content_hash,
+            approver=request.approver,
+            meta_version=meta.record_version,
+            base_version=meta.published_version,
+            owner=request.execution,
+            now=self._now(),
+        )
+        if added:
+            self._audit.emit(
+                EVENT_RELEASE_UPDATE,
+                self._release_detail(
+                    request, "applied", version=number, previous_version=meta.published_version
+                ),
+                self._now(),
+            )
+        return added
+
+    def _release_skip(self, request: ReleaseRequest, decision: Decision) -> dict[str, Any]:
+        """The release leaves the agent as the installation has it (D18): no failure, no
+        alarm, and an audit event that says why."""
+        meta = self._store.meta(request.agent_id)
+        published = meta.published_version if meta else None
+        self._audit.emit(
+            EVENT_RELEASE_UPDATE,
+            self._release_detail(
+                request, "skipped", reason=decision.reason, published_version=published
+            ),
+            self._now(),
+        )
+        self._store.release_lock(request.agent_id, request.execution)
+        return self._release_noop(request, published, skipped=decision.reason)
+
+    @staticmethod
+    def _release_noop(
+        request: ReleaseRequest, version: int | None, *, skipped: str | None = None
+    ) -> dict[str, Any]:
+        return {
+            "agent_id": request.agent_id,
+            "version": version,
+            "content_hash": request.content_hash,
+            "execution": request.execution,
+            "action": ACTION_NOOP,
+            "release_update": "skipped" if skipped else "unchanged",
+            **({"reason": skipped} if skipped else {}),
+        }
+
+    @staticmethod
+    def _release_detail(request: ReleaseRequest, outcome: str, **extra: Any) -> dict[str, Any]:
+        return {
+            "agent": request.agent_id,
+            "content_hash": request.content_hash,
+            "outcome": outcome,
+            "approved_by": request.approver,
+            "execution": request.execution,
+            **extra,
+        }
 
     def ensure_role(self, state: dict[str, Any]) -> dict[str, Any]:
         ctx = self._context(_request(state))
@@ -435,6 +578,37 @@ class Provisioner:
                 self._roles.ensure(agent_id, models)
         return {**out, "compensated": True}
 
+    def _failed_release_request(self, out: dict[str, Any]) -> Request | None:
+        """The version a failed release execution was publishing (D80), if any.
+
+        Everything of a release update happens in ``load``, whose failure leaves the
+        execution input as the state: it names no version. Under this execution's lock, the
+        version is the open one, if the release wrote it with this content. Otherwise there
+        is nothing to mark and the lock is released here.
+        """
+        try:
+            release = parse_release_input(
+                {k: out.get(k) for k in ("agent_id", "content_hash", "release")},
+                out.get("execution"),
+            )
+        except StepError:
+            return None
+        meta = self._store.meta(release.agent_id)
+        if meta is None or meta.lock_owner != release.execution:
+            return None
+        if meta.open_version is not None:
+            version = self._store.version(release.agent_id, meta.open_version)
+            if (
+                version is not None
+                and version.content_hash == release.content_hash
+                and version.approved_by == release.approver
+            ):
+                return Request(
+                    release.agent_id, meta.open_version, release.content_hash, release.execution
+                )
+        self._store.release_lock(release.agent_id, release.execution)
+        return None
+
     def mark_failed(self, state: object) -> dict[str, Any]:
         """Record the failure on the version, audit it and release the lock."""
         out: dict[str, Any] = dict(state) if isinstance(state, dict) else {}
@@ -445,7 +619,10 @@ class Provisioner:
         try:
             request = _request(out)
         except StepError:
-            return result
+            release_request = self._failed_release_request(out)
+            if release_request is None:
+                return result
+            request = release_request
         meta = self._store.meta(request.agent_id)
         if meta is None or meta.lock_owner != request.execution:
             return result

@@ -61,6 +61,7 @@ const functionId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${n
 const [finops] = releaseAgents(cfg);
 const [seedId, seed] = customResource("agents-seed-finops");
 const [publishId, publish] = customResource("agents-publish-finops");
+const [shippedId, shipped] = customResource("agents-release-finops");
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
 describe("release agent definition (D34)", () => {
@@ -172,15 +173,45 @@ describe("seed of the release agents (TM-M16)", () => {
       .filter((r) => r.Type === "AWS::IAM::Policy")
       .flatMap((r) => (r.Properties.PolicyDocument.Statement as Statement[]).map((s) => ({ roles: r.Properties.Roles, s })))
       .filter(({ s }) => s.Action === "dynamodb:PutItem" && JSON.stringify(s.Resource).includes(`"${agentsId}"`))
-      // The provisioner writes its own partition (`PUBLISHED#`, provisioner.test.ts).
-      .filter(({ s }) => s.Sid !== "WritePublishedPointer");
-    expect(grants).toHaveLength(1);
-    const { roles, s } = grants[0]!;
-    expect(s.Resource).toEqual({ "Fn::GetAtt": [agentsId, "Arn"] });
-    expect(s.Condition).toEqual({ "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["AGENT#finops"] } });
-    // The CDK singleton provider, which only CloudFormation invokes.
-    expect(roles).toHaveLength(1);
-    expect(roles[0].Ref).toMatch(/^AWS679f53fac002430cb0da5b7982bd2287ServiceRole/);
+      // The provisioner writes its own partition (`PUBLISHED#`) and the next version of a
+      // release agent (D80): provisioner.test.ts.
+      .filter(({ s }) => !["WritePublishedPointer", "AddReleaseAgentVersion"].includes(s.Sid ?? ""));
+    // The seed and the definition of the release share the grant (one per resource).
+    expect(grants.length).toBeGreaterThanOrEqual(1);
+    for (const { roles, s } of grants) {
+      expect(s.Resource).toEqual({ "Fn::GetAtt": [agentsId, "Arn"] });
+      expect(s.Condition).toEqual({ "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["AGENT#finops"] } });
+      // The CDK singleton provider, which only CloudFormation invokes.
+      expect(roles).toHaveLength(1);
+      expect(roles[0].Ref).toMatch(/^AWS679f53fac002430cb0da5b7982bd2287ServiceRole/);
+    }
+  });
+});
+
+describe("definition of the release, for later releases (D80)", () => {
+  const text = call(shipped);
+
+  it("is written under the agent, keyed by its hash, and is not a version", () => {
+    const parsed = JSON.parse(text);
+    expect([parsed.service, parsed.action]).toEqual(["DynamoDB", "putItem"]);
+    const item = parsed.parameters.Item;
+    expect(item.PK).toEqual({ S: "AGENT#finops" });
+    expect(item.SK).toEqual({ S: `RELEASE#${finops!.contentHash}` });
+    expect(Object.keys(item).sort()).toEqual(["PK", "SK", "agent_id", "content_hash", "created_at", "definition"]);
+    expect(item.definition.S).toBe(finops!.canonical);
+    expect(sha256(item.definition.S)).toBe(finops!.contentHash);
+    // Nobody approves it here: the provisioner decides what the release does with it.
+    expect(text).not.toContain("approved");
+    expect(text).not.toContain("VERSION#");
+  });
+
+  it("is put-if-absent on create and update, and never deletes", () => {
+    const parsed = JSON.parse(text);
+    expect(parsed.parameters.ConditionExpression).toBe("attribute_not_exists(PK)");
+    expect(parsed.ignoreErrorCodesMatching).toBe("ConditionalCheckFailedException");
+    expect(call(shipped, "Update")).toBe(text);
+    expect(shipped.Properties.Delete).toBeUndefined();
+    expect(shipped.DependsOn).toEqual(expect.arrayContaining([seedId]));
   });
 });
 
@@ -189,10 +220,11 @@ describe("publication of the release agents", () => {
     const text = call(publish);
     const parsed = JSON.parse(text);
     expect([parsed.service, parsed.action]).toEqual(["SFN", "startExecution"]);
+    // No version: the provisioner decides which one, if any (D80).
     expect(JSON.parse(parsed.parameters.input)).toEqual({
       agent_id: "finops",
       content_hash: finops!.contentHash,
-      version: 1,
+      release: releaseVersion(),
     });
     expect(text).not.toContain("system_prompt");
     expect(call(publish, "Update")).toBe(text);
@@ -200,7 +232,7 @@ describe("publication of the release agents", () => {
   });
 
   it("waits for the seed and for the provisioner of this release", () => {
-    expect(publish.DependsOn).toEqual(expect.arrayContaining([seedId, machineId, functionId]));
+    expect(publish.DependsOn).toEqual(expect.arrayContaining([seedId, shippedId, machineId, functionId]));
   });
 
   it("may only start that state machine", () => {

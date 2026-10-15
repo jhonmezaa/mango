@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** en el texto de [D18](D018-creacion-y-publicacion-de-agentes.md) (ajuste del 2026-10-01): ajusta [D18](D018-creacion-y-publicacion-de-agentes.md) (guardrail base compartido en vez de uno por agente)
-- **Precisada por:** [D42](D042-chat-con-varios-agentes.md) (precisa la siembra, punto 3); [D58](D058-distribucion-para-clientes.md) (precisa)
+- **Precisada por:** [D42](D042-chat-con-varios-agentes.md) (precisa la siembra, punto 3); [D58](D058-distribucion-para-clientes.md) (precisa); [D80](D080-actualizacion-del-agente-de-la-release.md) (precisa: una versión posterior actualiza el agente si la instalación no lo cambió)
 
 ## Decisión
 
