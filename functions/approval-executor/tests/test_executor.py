@@ -322,3 +322,50 @@ def test_settings_reject_a_prefix_that_is_not_the_installation(
         handler.Settings.from_env()
     monkeypatch.setenv("RESOURCE_PREFIX", "Mango-poc-")
     assert handler.Settings.from_env().resource_prefix == "Mango-poc-"
+
+
+def test_a_token_of_the_tasks_client_never_reaches_a_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D78, H4 of the review: a task run reads as its owner and never writes. The executor of the
+    installation verifies the web client alone, even with the tasks client in its environment."""
+    import time  # noqa: PLC0415
+
+    import jwt  # noqa: PLC0415
+    from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: PLC0415
+
+    issuer = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_T"
+    for name, value in {
+        "COGNITO_ISSUER": issuer,
+        "COGNITO_CLIENT_ID": "webclient",
+        "TASKS_CLIENT_ID": "tasksclient",
+        "OPERATE_BROKER_ROLE_ARN": SETTINGS.broker_role_arn,
+        "BUDGETS_OPERATOR_ROLE_ARN": SETTINGS.budgets_role_arn,
+        "APPROVALS_TABLE": "approvals",
+        "APPROVAL_KEY_ARN": SETTINGS.approval_key_arn,
+        "RESOURCE_PREFIX": "Mango-poc-",
+        "AWS_DEFAULT_REGION": "us-east-1",
+    }.items():
+        monkeypatch.setenv(name, value)
+    handler._runtime.cache_clear()
+    runtime = handler._runtime()
+    handler._runtime.cache_clear()
+    signer = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    runtime.verifier._jwks = SimpleNamespace(  # type: ignore[attr-defined]
+        get_signing_key_from_jwt=lambda _token: SimpleNamespace(key=signer.public_key())
+    )
+
+    def token(client: str) -> str:
+        now = int(time.time())
+        claims = {
+            "sub": "u-central",
+            "iss": issuer,
+            "client_id": client,
+            "token_use": "access",
+            "iat": now,
+            "exp": now + 600,
+            "cognito:groups": ["finops-central"],
+        }
+        return jwt.encode(claims, signer, algorithm="RS256")
+
+    assert runtime.verifier.verify(token("webclient"))["client_id"] == "webclient"
+    with pytest.raises(IdentityError, match="another client"):
+        runtime.verifier.verify(token("tasksclient"))

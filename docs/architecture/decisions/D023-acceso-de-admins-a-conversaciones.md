@@ -3,7 +3,7 @@
 - **Estado:** pendiente. Sin construir: la acción `ViewConversations` no existe en `policies/cedar` ni en `apps/api` (comprobado el 2026-10-05).
 - **Fecha:** 2026-09-30
 - **Precisa / reemplaza a:** —
-- **Precisada por:** —
+- **Precisada por:** [D78](D078-tareas-sin-chat.md) (el resultado de una ejecución de una tarea tampoco lo ve un administrador)
 
 ## Decisión
 

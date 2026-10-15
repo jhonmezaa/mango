@@ -165,3 +165,24 @@ export function isRunReason(value: string): value is RunReason {
 
 export const HEALTH_KEYS = ['agent_unavailable', 'access_lost', 'failing', 'tools'] as const;
 export type HealthKey = (typeof HEALTH_KEYS)[number];
+
+/**
+ * Who may press «Pausar» or «Reanudar» (design, with D2 after the review): an active task, its
+ * owner or an administrator; a paused one, whoever paused it in the owner's place: an
+ * administrator's pause only an administrator lifts, any other only the owner. The API decides.
+ */
+export function canToggle(task: Task, isAdmin: boolean): boolean {
+  if (task.status === 'retired' || task.paused_reason === 'access_lost') return false;
+  if (task.status === 'active') return true;
+  return task.paused_reason === 'admin' ? isAdmin : task.is_owner;
+}
+
+/** «Ejecutar ahora»: only the owner, and never while an administrator holds it paused (D2). */
+export function canRunNow(task: Task): boolean {
+  return (
+    task.is_owner &&
+    task.status !== 'retired' &&
+    task.paused_reason !== 'access_lost' &&
+    task.paused_reason !== 'admin'
+  );
+}

@@ -22,10 +22,13 @@ function apiWith(handlers: Record<string, Handler>) {
   });
 }
 
-function renderPage(call: ReturnType<typeof vi.fn>) {
+function renderPage(call: ReturnType<typeof vi.fn>, isAdmin = false) {
   const api = { call } as unknown as ApiClient;
   render(
-    <TestProviders session={sessionValue({ api, me: baseMe })} path="/schedules">
+    <TestProviders
+      session={sessionValue({ api, me: { ...baseMe, is_admin: isAdmin } })}
+      path="/schedules"
+    >
       <Routes>
         <Route path="schedules/*" element={<SchedulesPage />} />
         <Route path="approvals/*" element={<p>approvals</p>} />
@@ -222,5 +225,42 @@ describe('SchedulesPage', () => {
     expect(
       await screen.findByText('Budget check diario', { selector: '.mk-name' }),
     ).toBeInTheDocument();
+  });
+
+  it('a pause of an administrator is lifted only by an administrator (D2)', async () => {
+    const paused = task({
+      status: 'paused',
+      paused_reason: 'admin',
+      paused_at: '2026-10-15T09:00:00Z',
+    });
+    renderPage(apiWith(base(list([paused]))));
+    await userEvent.click(await screen.findByText('Budget check diario', { selector: '.mk-name' }));
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByText(/Pausada por un administrador/)).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: /Ejecutar ahora/ })).toBeDisabled();
+    expect(within(panel).getByRole('button', { name: 'Reanudar' })).toBeDisabled();
+  });
+
+  it('an administrator resumes what an administrator paused', async () => {
+    const paused = task({
+      status: 'paused',
+      paused_reason: 'admin',
+      paused_at: '2026-10-15T09:00:00Z',
+      is_owner: false,
+    });
+    const call = apiWith({
+      ...base(list([paused])),
+      resumePausedTask: () => task({ is_owner: false }),
+    });
+    renderPage(call, true);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Reanudar Budget check diario' }),
+    );
+    await waitFor(() => {
+      expect(call).toHaveBeenCalledWith('resumePausedTask', {
+        path: { task_id: 'a'.repeat(32) },
+        body: {},
+      });
+    });
   });
 });

@@ -63,7 +63,7 @@ Una tarea de `mango-api` que muere con una ejecución abierta deja la fila de D7
 
 Hoy la identidad llega al destino porque el access token de quien pregunta va al Gateway (`harness.py`): el Gateway lo valida (`CUSTOM_JWT`, cliente web), el interceptor exige la firma de `mango-api` (`X-Mango-Invocation`), los conectores lo vuelven a verificar y el broker asume roles con `SourceIdentity` = la persona. En una ejecución programada no hay token. Las opciones están en §5 del modelo de amenazas y se deciden por menú (fase 1).
 
-**«Se pausa si pierde el acceso»**, en cualquier opción: al empezar cada ejecución, `mango-api` lee el estado de la persona **en Cognito** (habilitada, sus grupos, con la misma derivación de `mango_role`/`mango_central` que el pre-token) y vuelve a decidir L1 `UseAgent` con esos grupos y la versión servida del agente. Si falla: la ejecución queda `skipped` con `access_lost`, la automatización pasa a `paused` (`access_lost`), se audita (`task.paused`) y no se invoca nada ni se reserva presupuesto. Solo el dueño la puede reanudar, y solo si recupera el acceso (el servidor lo vuelve a comprobar).
+**«Se pausa si pierde el acceso»**, en cualquier opción: al empezar cada ejecución, `mango-api` lee el estado de la persona **en Cognito** (precisado en D78 (20): antes del flujo, con `ListUsers` por sujeto) (habilitada, sus grupos, con la misma derivación de `mango_role`/`mango_central` que el pre-token) y vuelve a decidir L1 `UseAgent` con esos grupos y la versión servida del agente. Si falla: la ejecución queda `skipped` con `access_lost`, la automatización pasa a `paused` (`access_lost`), se audita (`task.paused`) y no se invoca nada ni se reserva presupuesto. Solo el dueño la puede reanudar, y solo si recupera el acceso (el servidor lo vuelve a comprobar).
 
 ## 6. Presupuesto y límites
 
@@ -81,7 +81,7 @@ Hoy la identidad llega al destino porque el access token de quien pregunta va al
 - **Ver la pantalla:** como el diseño (`OWNER_VIEWS`: administradores y FinOps central con el grupo de creadores).
 - **Crear y editar:** quien puede crear agentes (`mango-agent-creator`) o es administrador, y **solo sobre agentes publicados que puede usar** (L1 `UseAgent`).
 - **Ejecutar ahora, editar, reanudar:** solo el dueño (corre con su identidad).
-- **Pausar y retirar:** el dueño o un administrador; retirar exige motivo. Retirada no vuelve; el historial se conserva.
+- **Pausar y retirar:** el dueño o un administrador; retirar exige motivo. La pausa de un administrador frena también al dueño y solo la levanta un administrador (D78 (19)). El resultado de una ejecución solo lo ve su dueño (D78 (18)). Retirada no vuelve; el historial se conserva.
 - Acciones nuevas en Verified Permissions: `CreateTask` y `ManageTask` (por objeto, con el dueño como atributo).
 
 ## 8. Resultado, entrega y escrituras

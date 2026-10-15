@@ -396,6 +396,7 @@ def _task_services(
         settings.task_scheduler_role_arn,
         settings.tasks_client_id,
         settings.task_identity_key_arn,
+        settings.tasks_client_secret_arn,
     )
     if not all(needed):
         return None, None, None
@@ -428,6 +429,11 @@ def _task_services(
         key_arn=settings.task_identity_key_arn,
         # The token of a run is checked like any other, against its own client.
         verifier=AccessTokenVerifier(settings.cognito_issuer, settings.tasks_client_id),
+        client_secret=str(
+            boto3.client("secretsmanager", region_name=region).get_secret_value(
+                SecretId=settings.tasks_client_secret_arn
+            )["SecretString"]
+        ),
     )
     return tasks, tokens, sqs
 

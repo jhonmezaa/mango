@@ -31,6 +31,8 @@ import {
   QUICK,
   RUN_TONE,
   TIMEZONES,
+  canRunNow,
+  canToggle,
   cronOf,
   durationMs,
   healthOf,
@@ -195,6 +197,7 @@ function RunDots({ task }: { task: Task }) {
 
 interface RowProps {
   task: Task;
+  isAdmin: boolean;
   agentName: string;
   health: Health | null;
   busy: boolean;
@@ -203,11 +206,9 @@ interface RowProps {
   onToggle: (task: Task) => void;
 }
 
-function TaskRow({ task, agentName, health, busy, onOpen, onRun, onToggle }: RowProps) {
+function TaskRow({ task, isAdmin, agentName, health, busy, onOpen, onRun, onToggle }: RowProps) {
   const { t } = useTranslation();
-  const lost = task.paused_reason === 'access_lost';
   const next = task.status === 'active' ? task.next_runs[0] : undefined;
-  const controllable = task.status !== 'retired' && !lost;
   return (
     <div
       className="sc-tr"
@@ -273,7 +274,7 @@ function TaskRow({ task, agentName, health, busy, onOpen, onRun, onToggle }: Row
           event.stopPropagation();
         }}
       >
-        {controllable && task.is_owner ? (
+        {canRunNow(task) ? (
           <button
             type="button"
             className="btn btn-sm btn-ghost btn-icon"
@@ -287,7 +288,7 @@ function TaskRow({ task, agentName, health, busy, onOpen, onRun, onToggle }: Row
             <PlayIcon size={12} />
           </button>
         ) : null}
-        {controllable && (task.status !== 'paused' || task.is_owner) ? (
+        {canToggle(task, isAdmin) ? (
           <button
             type="button"
             className="btn btn-sm btn-ghost btn-icon"
@@ -388,6 +389,7 @@ function RunLine({
 
 interface DetailProps {
   task: Task;
+  isAdmin: boolean;
   agentName: string;
   health: Health | null;
   canControl: boolean;
@@ -402,6 +404,7 @@ interface DetailProps {
 
 function TaskDetail({
   task,
+  isAdmin,
   agentName,
   health,
   canControl,
@@ -419,6 +422,7 @@ function TaskDetail({
   const [why, setWhy] = useState('');
   const owner = ownerName(t, task);
   const lost = task.paused_reason === 'access_lost';
+  const byAdmin = task.status === 'paused' && task.paused_reason === 'admin';
   const ok = task.runs.filter((run) => run.status === 'ok').length;
   const spec = task.trigger.schedule;
   const footer =
@@ -464,19 +468,26 @@ function TaskDetail({
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={task.running || lost || busy}
+                disabled={task.running || !canRunNow(task) || busy}
+                title={byAdmin ? t('schedules.detail.adminPausedTitle') : undefined}
                 onClick={onRun}
               >
                 <PlayIcon size={12} />{' '}
                 {task.running ? t('schedules.running') : t('schedules.runNow')}
               </button>
             ) : null}
-            {task.status !== 'paused' || task.is_owner ? (
+            {task.status !== 'paused' || task.is_owner || isAdmin ? (
               <button
                 type="button"
                 className="btn btn-sm"
-                disabled={(lost && task.status === 'paused') || busy}
-                title={lost ? t('schedules.detail.lostTitle') : undefined}
+                disabled={(task.status === 'paused' && !canToggle(task, isAdmin)) || busy}
+                title={
+                  lost
+                    ? t('schedules.detail.lostTitle')
+                    : byAdmin && !isAdmin
+                      ? t('schedules.detail.adminPausedTitle')
+                      : undefined
+                }
                 onClick={onToggle}
               >
                 {task.status === 'paused' ? t('schedules.resume') : t('schedules.pause')}
@@ -529,7 +540,8 @@ function TaskDetail({
       {task.status === 'paused' && !lost ? (
         <div className="mc-alert">
           <PauseIcon size={14} />
-          <div>{t('schedules.detail.paused')}</div>
+          {/* Not in the design yet (D2 after the review, reported): an administrator's pause. */}
+          <div>{byAdmin ? t('schedules.detail.adminPaused') : t('schedules.detail.paused')}</div>
         </div>
       ) : null}
       {task.status === 'paused' && lost && task.paused_at ? (
@@ -1087,7 +1099,7 @@ function RunResult({
  */
 export function SchedulesPage() {
   const { t } = useTranslation();
-  const { api } = useSession();
+  const { api, me } = useSession();
   const call = api.call;
   const { notify, stack } = useToasts();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
@@ -1400,6 +1412,7 @@ export function SchedulesPage() {
                   <TaskRow
                     key={task.task_id}
                     task={task}
+                    isAdmin={me.is_admin}
                     agentName={agentName(task)}
                     health={healths.get(task.task_id) ?? null}
                     busy={busy}
@@ -1423,6 +1436,7 @@ export function SchedulesPage() {
       {selected && ready ? (
         <TaskDetail
           task={selected}
+          isAdmin={me.is_admin}
           agentName={agentName(selected)}
           health={healths.get(selected.task_id) ?? null}
           // The API lists only the tasks the caller may pause and retire (owner or administrator).

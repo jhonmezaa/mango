@@ -409,7 +409,9 @@ def _ts(value: int | None) -> datetime | None:
     return datetime.fromtimestamp(value, UTC) if value is not None else None
 
 
-def run_out(run: Run) -> RunOut:
+def run_out(run: Run, *, owner: bool = True) -> RunOut:
+    """``owner``: whether the reader is the owner of the task. Only the owner learns that a run
+    left a result (D78, D1 after the review: the result was obtained with the owner's access)."""
     return RunOut(
         run_id=run.run_id,
         # Validated against the literals of the model: the table holds nothing else.
@@ -420,7 +422,7 @@ def run_out(run: Run) -> RunOut:
         ended_at=_ts(run.ended_at),
         cost_usd=run.cost_usd,
         reason=run.reason,
-        has_result=bool(run.result),
+        has_result=owner and bool(run.result),
         approvals=list(run.approvals),
     )
 
@@ -490,7 +492,7 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
         is_owner=automation.owner_id == caller.user.user_id,
         next_runs=upcoming,
         running=any(r.status in {RunStatus.QUEUED, RunStatus.RUNNING} for r in runs),
-        runs=[run_out(r) for r in runs],
+        runs=[run_out(r, owner=automation.owner_id == caller.user.user_id) for r in runs],
         health=_health(automation, agent, runs),
         created_at=automation.created_at,
         updated_at=automation.updated_at,
@@ -649,7 +651,8 @@ def resume_task(deps: TasksDeps, caller: Caller, automation: Automation) -> Auto
     """Only the owner resumes, with the access they have now (checked by the route)."""
     if automation.status is not Status.PAUSED:
         raise ApiError(409, "task_not_paused", "this task is not paused")
-    if automation.event_type in CENTRAL_EVENTS and not caller.user.is_central:
+    is_owner = automation.owner_id == caller.user.user_id
+    if automation.event_type in CENTRAL_EVENTS and is_owner and not caller.user.is_central:
         raise ApiError(403, "central_only", "only central people may subscribe to this event")
     resumed = replace(automation, status=Status.ACTIVE, paused_reason=None, paused_at=None)
     _audit(deps, "task.resumed", caller, automation, outcome="requested")
@@ -710,6 +713,9 @@ def retire_task(deps: TasksDeps, caller: Caller, automation: Automation, reason:
 def run_now(deps: TasksDeps, caller: Caller, automation: Automation) -> Run:
     if automation.status is Status.RETIRED or automation.paused_reason is PauseReason.ACCESS_LOST:
         raise ApiError(409, "task_not_runnable", "this task cannot run")
+    if automation.paused_reason is PauseReason.ADMIN:
+        # D2 (after the review): an administrator's pause is a brake, also for its owner.
+        raise ApiError(409, "paused_by_admin", "an administrator paused this task")
     _limit(deps.runs, caller.user.user_id)
     run = Run(
         run_id=secrets.token_hex(16),
@@ -863,10 +869,20 @@ def tasks_router(  # noqa: PLR0915 - registers the route closures
 
     @router.post("/{task_id}/resume", response_model=TaskOut)
     async def resume_paused_task(task_id: TaskId, _body: EmptyIn, caller: SignedIn) -> TaskOut:
-        automation = await load(caller, task_id, "OwnTask")
-        _limit(deps.changes, caller.user.user_id)
-        # Paused because its owner lost access: it resumes only if the owner has it again.
-        await use_agent(caller, automation.agent_id, task_id)
+        automation = await load(caller, task_id, "ViewTask")
+        resource = TaskResource(task_id, automation.owner_id)
+        if automation.paused_reason is PauseReason.ADMIN:
+            # D2 (after the review): only an administrator lifts an administrator's pause. The
+            # next run checks its owner's access as always.
+            await authorize(caller, "ControlTask", TASK_TYPE, task_id, task=resource)
+            if not caller.user.is_admin:
+                raise ApiError(403, "paused_by_admin", "an administrator paused this task")
+            _limit(deps.changes, caller.user.user_id)
+        else:
+            await authorize(caller, "OwnTask", TASK_TYPE, task_id, task=resource)
+            _limit(deps.changes, caller.user.user_id)
+            # Paused because its owner lost access: it resumes only if the owner has it again.
+            await use_agent(caller, automation.agent_id, task_id)
         resumed = await run(resume_task, deps, caller, automation)
         return await run(task_out, deps, resumed, caller)
 
@@ -879,14 +895,19 @@ def tasks_router(  # noqa: PLR0915 - registers the route closures
 
     @router.get("/{task_id}/runs/{run_id}", response_model=RunDetailOut)
     async def get_task_run(task_id: TaskId, run_id: RunId, caller: SignedIn) -> RunDetailOut:
-        await load(caller, task_id, "ViewTask")
+        automation = await load(caller, task_id, "ViewTask")
+        owner = automation.owner_id == caller.user.user_id
         try:
             found = await run(deps.store.run, task_id, run_id)
         except TaskStoreUnavailableError as exc:
             raise _unavailable(exc) from exc
         if found is None:
             raise HTTPException(status_code=404, detail="not found")
-        return RunDetailOut(**run_out(found).model_dump(), result=found.result)
+        # D1 (after the review): status, cost and reason for whoever sees the task; the
+        # answer, obtained with the owner's access, only for the owner (as D23 for chats).
+        return RunDetailOut(
+            **run_out(found, owner=owner).model_dump(), result=found.result if owner else None
+        )
 
     return router
 

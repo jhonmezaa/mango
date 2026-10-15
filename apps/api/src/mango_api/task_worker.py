@@ -154,6 +154,10 @@ class TaskRuns:
         if automation.status is Status.RETIRED:
             self._skip(automation, run, "task_retired")
             return
+        if automation.paused_reason is PauseReason.ADMIN:
+            # Queued before an administrator paused it (D2): the pause wins.
+            self._skip(automation, run, "paused_by_admin")
+            return
         self._execute(automation, run, None)
 
     def _event(self, message: task_runs.EventRun) -> None:

@@ -78,13 +78,34 @@ describe("the identity of a run (TM-T1, TM-T2)", () => {
   it("has a client of its own that only allows the custom challenge", () => {
     const client = resources[tasksClientId]!.Properties;
     expect(client.ExplicitAuthFlows.sort()).toEqual(["ALLOW_CUSTOM_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]);
-    expect(client.GenerateSecret).toBe(false);
+    // With a secret (after the review): only mango-api starts its flow.
+    expect(client.GenerateSecret).toBe(true);
     expect(client.AllowedOAuthFlows ?? []).toEqual([]);
     expect(client.AllowedOAuthFlowsUserPoolClient ?? false).toBe(false);
     expect(client.AccessTokenValidity).toBe(15);
     expect(client.EnableTokenRevocation).toBe(true);
     expect(client.ReadAttributes ?? []).toEqual([]);
     expect(client.WriteAttributes ?? []).toEqual([]);
+  });
+
+  it("keeps the secret of that client only in Secrets Manager, read by mango-api alone", () => {
+    const secretId = logicalId("AWS::SecretsManager::Secret", { Name: `Mango-${ns}-tasks-client` });
+    const readers = grants().filter(
+      (g) => actions(g.statement).includes("secretsmanager:GetSecretValue") && JSON.stringify(g.statement.Resource).includes(secretId),
+    );
+    expect(readers.flatMap((g) => g.roles)).toEqual([apiRoleId]);
+    // Only its ARN travels: no function or task carries the value.
+    const api = Object.values(resources).find((r) => r.Type === "AWS::ECS::TaskDefinition")!;
+    const env = api.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
+    expect(env.find((e) => e.Name === "TASKS_CLIENT_SECRET_ARN")!.Value).toEqual({ Ref: secretId });
+    const text = JSON.stringify(template.toJSON());
+    expect(text).not.toMatch(/TASKS_CLIENT_SECRET"/);
+    for (const fn of Object.values(resources).filter((r) => r.Type === "AWS::Lambda::Function")) {
+      expect(JSON.stringify(fn.Properties.Environment ?? {})).not.toContain("ClientSecret");
+    }
+    // The custom resource that reads it once from Cognito never logs what it got.
+    const [reader] = Object.values(template.findResources("Custom::DescribeCognitoUserPoolClient"));
+    expect(JSON.stringify(reader!.Properties.Create)).toContain('\\"logApiResponseData\\":false');
   });
 
   it("no other client may start the custom challenge, nor sign in with a password", () => {
@@ -138,8 +159,12 @@ describe("the schedules and the queue of runs", () => {
     const role = resources[schedulerRoleId]!.Properties;
     const trust = role.AssumeRolePolicyDocument.Statement[0];
     expect(trust.Principal).toEqual({ Service: "scheduler.amazonaws.com" });
-    expect(trust.Condition.StringEquals).toEqual({ "aws:SourceAccount": account });
-    expect(JSON.stringify(trust.Condition.ArnLike)).toContain(`schedule-group/Mango-${ns}-tasks/*`);
+    // The ARN of the group itself, as Scheduler sends it (H1 of the review): never a pattern.
+    expect(Object.keys(trust.Condition)).toEqual(["StringEquals"]);
+    expect(trust.Condition.StringEquals["aws:SourceAccount"]).toBe(account);
+    const sourceArn = JSON.stringify(trust.Condition.StringEquals["aws:SourceArn"]);
+    expect(sourceArn).toContain(`:schedule-group/Mango-${ns}-tasks"`);
+    expect(sourceArn).not.toContain("*");
     const statements = statementsOf(schedulerRoleId);
     expect(statements.flatMap(actions).sort()).toEqual(["kms:Decrypt", "kms:GenerateDataKey", "sqs:SendMessage"]);
     expect(bySid(statements, "SendDueTimes").Resource).toEqual({ "Fn::GetAtt": [queueId, "Arn"] });

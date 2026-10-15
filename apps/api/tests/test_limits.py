@@ -86,6 +86,7 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
     with mock_aws():
         secrets = boto3.client("secretsmanager", region_name="us-east-1")
         secret = secrets.create_secret(Name="invocation", SecretString="k" * 32)
+        tasks_secret = secrets.create_secret(Name="tasks-client", SecretString="t" * 40)
         account = "111111111111"
         settings = dataclasses.replace(
             _settings(),
@@ -110,6 +111,7 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             task_scheduler_role_arn=f"arn:aws:iam::{account}:role/Mango-test-TaskScheduler",
             tasks_client_id="tasksclient",
             task_identity_key_arn=f"arn:aws:kms:us-east-1:{account}:key/task-identity",
+            tasks_client_secret_arn=tasks_secret["ARN"],
         )
         built: list[Any] = []
 
@@ -204,3 +206,56 @@ def test_routes_do_not_build_limiters_outside_the_registry() -> None:
         if any(_builds_a_limiter(node) for node in ast.walk(ast.parse(path.read_text())))
     }
     assert builders == defaults | {"limits.py"}
+
+
+def test_production_refuses_a_token_of_the_tasks_client(
+    production: tuple[Settings, list[Any]],
+) -> None:
+    """D78, H4 of the review: the token of a task run never signs in to mango-api, neither on a
+    route nor on the web session. Only the run itself, inside mango-api, uses it."""
+    import time  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    import jwt  # noqa: PLC0415
+    from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: PLC0415
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+
+    from mango_core.identity import IdentityError  # noqa: PLC0415
+
+    from .test_app import HOST  # noqa: PLC0415
+
+    settings, built = production
+    services: app_module.Services = built[0]
+    assert services.web_sessions is not None
+    assert services.web_sessions.verifier is services.verifier
+    assert services.task_tokens is not None
+    assert services.task_tokens.client_secret == "t" * 40
+    signer = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwks = SimpleNamespace(
+        get_signing_key_from_jwt=lambda _t: SimpleNamespace(key=signer.public_key())
+    )
+    services.verifier._jwks = jwks  # type: ignore[assignment]
+
+    def token(client: str) -> str:
+        now = int(time.time())
+        claims = {
+            "sub": "user-1",
+            "iss": settings.cognito_issuer,
+            "client_id": client,
+            "token_use": "access",
+            "iat": now,
+            "exp": now + 600,
+            "cognito:groups": ["finops-central"],
+        }
+        return jwt.encode(claims, signer, algorithm="RS256")
+
+    tasks_token = token(settings.tasks_client_id)
+    assert services.verifier.verify(token(settings.cognito_client_id))
+    with pytest.raises(IdentityError, match="another client"):
+        services.verifier.verify(tasks_token)
+    client = TestClient(
+        app_module.create_app(settings, services_factory=lambda _s: services),  # type: ignore[arg-type]
+        base_url=f"http://{HOST}",
+    )
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {tasks_token}"})
+    assert response.status_code == 401

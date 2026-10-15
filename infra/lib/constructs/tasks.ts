@@ -5,6 +5,7 @@ import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as ssm from "aws-cdk-lib/aws-ssm";
@@ -61,11 +62,14 @@ export class TaskPlatform extends Construct {
   readonly schedulerRole: iam.Role;
   readonly identityKey: kms.Key;
   readonly client: cognito.UserPoolClient;
+  /** Secret of the tasks client, in Secrets Manager only. */
+  readonly clientSecret: secretsmanager.Secret;
   readonly challenge: PythonFunction;
   /** Environment mango-api needs for tasks. */
   readonly apiEnvironment: Record<string, string>;
   private readonly dataKey: kms.IKey;
   private readonly namespace: string;
+  private readonly configKey: kms.IKey;
 
   constructor(scope: Construct, id: string, props: TaskPlatformProps) {
     super(scope, id);
@@ -74,6 +78,7 @@ export class TaskPlatform extends Construct {
     const { account, region, partition } = Stack.of(this);
     this.dataKey = props.dataKey;
     this.namespace = ns;
+    this.configKey = props.configKey;
 
     // --- Automations and runs ---------------------------------------------------------------
     this.table = new dynamodb.TableV2(this, "Table", {
@@ -132,9 +137,9 @@ export class TaskPlatform extends Construct {
       roleName: mangoName(ns, "TaskScheduler"),
       description: "EventBridge Scheduler: sends the due times of tasks to their queue, nothing else",
       // Only schedules of this installation's group, in this account (confused deputy).
+      // Scheduler sends the ARN of the group itself, never a schedule's (H1 of the review).
       assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com").withConditions({
-        StringEquals: { "aws:SourceAccount": account },
-        ArnLike: { "aws:SourceArn": `${groupArn}/*` },
+        StringEquals: { "aws:SourceAccount": account, "aws:SourceArn": groupArn },
       }),
     });
     this.schedulerRole.addToPolicy(
@@ -167,9 +172,11 @@ export class TaskPlatform extends Construct {
     // Only `CUSTOM_AUTH` (no password, no SRP, no hosted UI, no OAuth). Tokens live 15 minutes,
     // enough for the longest turn (600 s); the refresh token is revoked as soon as it is
     // issued and lives the shortest Cognito allows.
+    // With a secret (D78, after the review of 2026-10-15): nobody but mango-api can even start
+    // its flow, so no answer of it tells whether an email is in the directory.
     this.client = props.userPool.addClient("TasksClient", {
       userPoolClientName: mangoName(ns, "tasks"),
-      generateSecret: false,
+      generateSecret: true,
       authFlows: { custom: true },
       disableOAuth: true,
       supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.COGNITO],
@@ -181,6 +188,21 @@ export class TaskPlatform extends Construct {
       readAttributes: new cognito.ClientAttributes(),
       writeAttributes: new cognito.ClientAttributes(),
     });
+    // The secret only in Secrets Manager (AGENTS.md): never in an environment variable, the
+    // template or a log. CDK reads it once with a custom resource whose logging hides data.
+    this.clientSecret = new secretsmanager.Secret(this, "ClientSecret", {
+      secretName: mangoName(ns, "tasks-client"),
+      description: "Secret of the tasks client of the user pool; only mango-api reads it (SECRET_HASH)",
+      secretStringValue: this.client.userPoolClientSecret,
+      encryptionKey: props.configKey,
+    });
+    acknowledge(this.clientSecret, {
+      id: "AwsSolutions-SMG4",
+      reason:
+        "It is the secret Cognito generated for the tasks client: a new one means a new client. It only " +
+        "lets mango-api start the challenge, which still needs a signature only mango-api can make (D78).",
+    });
+
     // The user pool depends on the challenge function: the client id reaches it through SSM,
     // or the function, the client and the pool would depend on each other.
     const parameterName = `/${mangoName(ns, "tasks")}/client-id`;
@@ -246,6 +268,8 @@ export class TaskPlatform extends Construct {
       TASK_SCHEDULER_ROLE_ARN: this.schedulerRole.roleArn,
       TASKS_CLIENT_ID: this.client.userPoolClientId,
       TASK_IDENTITY_KEY_ARN: this.identityKey.keyArn,
+      // The ARN, never the value: mango-api reads it from Secrets Manager.
+      TASKS_CLIENT_SECRET_ARN: this.clientSecret.secretArn,
     };
   }
 
@@ -318,6 +342,21 @@ export class TaskPlatform extends Construct {
         actions: ["iam:PassRole"],
         resources: [this.schedulerRole.roleArn],
         conditions: { StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" } },
+      }),
+    );
+    policy.addStatements(
+      new iam.PolicyStatement({
+        sid: "TasksClientSecret",
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [this.clientSecret.secretArn],
+      }),
+    );
+    policy.addStatements(
+      new iam.PolicyStatement({
+        sid: "TasksClientSecretKey",
+        actions: ["kms:Decrypt"],
+        resources: [this.configKey.keyArn],
+        conditions: { StringEquals: { "kms:ViaService": `secretsmanager.${region}.amazonaws.com` } },
       }),
     );
     policy.addStatements(

@@ -6,9 +6,11 @@ test keeps the web client on SRP). Tokens are issued after exactly one challenge
 with an assertion that only mango-api can sign (``mango_core.task_identity``): this person,
 this client and the nonce of this challenge, valid for a minute. Everything else fails.
 
-* **Define:** fails for any other client, an unknown user, or any session that is not one
-  correct ``CUSTOM_CHALLENGE``. MFA is not asked: it is not a sign-in of a person, and the
-  password is never involved. That is exactly the power this function holds (TM-T1).
+* **Define:** fails for any other client or any session that is not one correct
+  ``CUSTOM_CHALLENGE``. A person who does not exist gets the same challenge as one who does
+  (D78, after the review): no answer tells whether an email is in the directory; the answer
+  then fails at Verify, which finds no subject. MFA is not asked: it is not a sign-in of a
+  person, and the password is never involved. That is exactly the power this function holds (TM-T1).
 * **Create:** a random nonce, public (mango-api signs it) and private (the verifier compares).
 * **Verify:** the signature with the public key of the task identity key (this function cannot
   sign), the subject of the user Cognito resolved, the nonce and the client.
@@ -82,7 +84,7 @@ def _define(event: dict[str, Any]) -> dict[str, Any]:
     request = event.get("request", {})
     response = event.setdefault("response", {})
     response.update({"issueTokens": False, "failAuthentication": True})
-    if not _client_ok(event) or request.get("userNotFound"):
+    if not _client_ok(event):
         return event
     session = request.get("session") or []
     if not session:
@@ -91,7 +93,8 @@ def _define(event: dict[str, Any]) -> dict[str, Any]:
         )
         return event
     if (
-        len(session) == 1
+        not request.get("userNotFound")
+        and len(session) == 1
         and session[0].get("challengeName") == task_identity.CHALLENGE_NAME
         and session[0].get("challengeResult") is True
         and session[0].get("challengeMetadata") == _METADATA

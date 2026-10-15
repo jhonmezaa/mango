@@ -175,11 +175,32 @@ def test_only_one_correct_challenge_issues_tokens(session: list[dict[str, Any]])
 
 
 @pytest.mark.usefixtures("key")
-def test_an_unknown_user_fails() -> None:
-    response = handler.lambda_handler(_event(handler._DEFINE, session=[], userNotFound=True), None)[
-        "response"
-    ]
-    assert response["failAuthentication"] is True
+def test_an_unknown_user_gets_the_same_challenge_and_never_tokens() -> None:
+    """No answer tells whether a person exists (AGENTS.md, D20): same challenge, then failure."""
+    first = handler.lambda_handler(_event(handler._DEFINE, session=[], userNotFound=True), None)
+    assert first["response"]["challengeName"] == "CUSTOM_CHALLENGE"
+    assert first["response"]["failAuthentication"] is False
+    unknown = _event(
+        handler._VERIFY, privateChallengeParameters={"nonce": "n" * 43}, challengeAnswer="v1.x.y"
+    )
+    unknown["request"]["userAttributes"] = {}
+    assert handler.lambda_handler(unknown, None)["response"]["answerCorrect"] is False
+    # Even with a correct-looking session, a person who does not exist gets no tokens.
+    final = handler.lambda_handler(
+        _event(
+            handler._DEFINE,
+            userNotFound=True,
+            session=[
+                {
+                    "challengeName": "CUSTOM_CHALLENGE",
+                    "challengeResult": True,
+                    "challengeMetadata": "MANGO_TASK",
+                }
+            ],
+        ),
+        None,
+    )["response"]
+    assert final["issueTokens"] is False
 
 
 def test_without_the_client_parameter_everything_fails(monkeypatch: pytest.MonkeyPatch) -> None:

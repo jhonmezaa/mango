@@ -5,9 +5,14 @@ task, signs the answer to the challenge with the task identity key in KMS and ge
 token of that person with the groups they have now. The token is verified like any other
 (JWKS, issuer, expiry, client and use) before anything is done with it.
 
-What Cognito answers decides whether the owner lost access (D26): a person who is disabled or
-no longer exists gets no token. Anything else that fails (throttling, the network, KMS) is a
-failed run, never a pause: a task is never paused because AWS had a bad minute.
+Whether the owner lost access (D26) is decided before the flow starts, from the user pool
+itself (``ListUsers`` by subject): a person who no longer exists, is disabled or was never
+confirmed. Anything that fails after that (the flow, the challenge, throttling, KMS) is a failed
+run, never a pause: a task is never paused because AWS had a bad minute.
+
+The tasks client has a secret (D78, after the review of 2026-10-15): nobody but mango-api can
+start its flow. The secret lives in Secrets Manager; mango-api reads it once and only computes
+``SECRET_HASH`` with it. It is never logged.
 
 The refresh token Cognito also issues is never kept: it is revoked at once (best effort).
 Tokens are never logged.
@@ -15,11 +20,14 @@ Tokens are never logged.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import logging
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -36,8 +44,8 @@ logger = logging.getLogger(__name__)
 
 _SUB_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 """A Cognito subject (a UUID); anything else never reaches a ``ListUsers`` filter."""
-_LOST = frozenset({"NotAuthorizedException", "UserNotFoundException", "UserNotConfirmedException"})
-"""What Cognito answers for a person who may not sign in any more."""
+_NOT_SIGNING_IN = frozenset({"UNCONFIRMED", "ARCHIVED", "COMPROMISED", "UNKNOWN"})
+"""States of a person who may not sign in (``UserStatus``)."""
 
 
 class OwnerAccessLostError(Exception):
@@ -56,7 +64,17 @@ class TaskTokens:
     client_id: str
     key_arn: str
     verifier: AccessTokenVerifier
+    client_secret: str = field(default="", repr=False)
+    """Secret of the tasks client (Secrets Manager); never logged nor shown."""
     clock: Callable[[], float] = time.time
+
+    def _secret_hash(self, username: str) -> dict[str, str]:
+        if not self.client_secret:
+            return {}
+        digest = hmac.new(
+            self.client_secret.encode(), (username + self.client_id).encode(), hashlib.sha256
+        ).digest()
+        return {"SECRET_HASH": base64.b64encode(digest).decode()}
 
     def caller_for(self, owner_id: str, run_id: str) -> Caller:
         """The owner, as a verified caller with a token issued for this run."""
@@ -66,14 +84,11 @@ class TaskTokens:
                 UserPoolId=self.user_pool_id,
                 ClientId=self.client_id,
                 AuthFlow="CUSTOM_AUTH",
-                AuthParameters={"USERNAME": username},
+                AuthParameters={"USERNAME": username, **self._secret_hash(username)},
             )
-        except ClientError as exc:
-            # Only here does Cognito speak about the person: disabled, deleted or unconfirmed.
-            if exc.response.get("Error", {}).get("Code", "") in _LOST:
-                raise OwnerAccessLostError from exc
-            raise TaskIdentityUnavailableError from exc
-        except BotoCoreError as exc:
+        except (ClientError, BotoCoreError) as exc:
+            # The person was there a moment ago: a refusal now is the challenge, the user
+            # pool's protection or the network, not the person (TM-T3). A failed run.
             raise TaskIdentityUnavailableError from exc
         try:
             nonce = started.get("ChallengeParameters", {}).get(task_identity.NONCE_PARAMETER, "")
@@ -100,6 +115,7 @@ class TaskTokens:
                 ChallengeResponses={
                     "USERNAME": username,
                     "ANSWER": task_identity.assemble(claims, signature),
+                    **self._secret_hash(username),
                 },
             )
         except (ClientError, BotoCoreError, KeyError, ValueError) as exc:
@@ -145,11 +161,19 @@ class TaskTokens:
         if not users or not users[0].get("Username"):
             # The person no longer exists: no access at all (D26).
             raise OwnerAccessLostError
-        return str(users[0]["Username"])
+        person = users[0]
+        if person.get("Enabled") is False or person.get("UserStatus") in _NOT_SIGNING_IN:
+            # Disabled, or may not sign in: the same as a person who left.
+            raise OwnerAccessLostError
+        return str(person["Username"])
 
     def _revoke(self, refresh_token: str) -> None:
         try:
-            self.cognito.revoke_token(Token=refresh_token, ClientId=self.client_id)
+            self.cognito.revoke_token(
+                Token=refresh_token,
+                ClientId=self.client_id,
+                **({"ClientSecret": self.client_secret} if self.client_secret else {}),
+            )
         except (ClientError, BotoCoreError):
             # It dies with its validity (the shortest Cognito allows) and is never stored.
             logger.warning("the refresh token of a task run could not be revoked")

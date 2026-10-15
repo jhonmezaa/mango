@@ -421,7 +421,7 @@ def test_each_person_sees_their_tasks_and_an_administrator_sees_all(env: Env) ->
     assert env.get("admin", mine["task_id"]).json()["is_owner"] is False
 
 
-def test_an_administrator_pauses_and_retires_but_never_runs_edits_or_resumes(env: Env) -> None:
+def test_an_administrator_pauses_and_retires_but_never_runs_or_edits(env: Env) -> None:
     task = env.created()
     task_id = task["task_id"]
     assert env.post("admin", task_id, "run").status_code == 403
@@ -434,8 +434,9 @@ def test_an_administrator_pauses_and_retires_but_never_runs_edits_or_resumes(env
     paused = env.post("admin", task_id, "pause")
     assert (paused.status_code, paused.json()["paused_reason"]) == (200, "admin")
     assert env.scheduler.updated[-1]["State"] == "DISABLED"
-    assert env.post("admin", task_id, "resume").status_code == 403
-    resumed = env.post("creator", task_id, "resume")
+    # Their own pause is a brake (D2): the owner cannot lift it; the administrator can.
+    assert env.post("creator", task_id, "resume").status_code == 403
+    resumed = env.post("admin", task_id, "resume")
     assert (resumed.status_code, resumed.json()["status"]) == (200, "active")
     assert env.scheduler.updated[-1]["State"] == "ENABLED"
     # Other people cannot even find it.
@@ -740,3 +741,43 @@ def test_at_most_five_investigations_per_task_and_day(env: Env) -> None:
     for day in range(16, 23):
         env.deliver(_scheduled(daily["task_id"], f"2026-10-{day}T14:30:00Z"))
     assert len(env.agentcore.requests) == 12
+
+
+def test_only_the_owner_reads_the_result_of_a_run(env: Env) -> None:
+    """D1 (after the review): the answer was obtained with the owner's access. An administrator
+    sees status, cost and reason, as with chats (D23)."""
+    task = env.created()
+    env.deliver(_scheduled(task["task_id"]))
+    run_id = env.get("creator", task["task_id"]).json()["runs"][0]["run_id"]
+    path = f"/api/tasks/{task['task_id']}/runs/{run_id}"
+    assert env.client.get(path, headers=_h("creator")).json()["result"] == "Hola \n\nmundo"
+    seen = env.get("admin", task["task_id"]).json()["runs"][0]
+    assert (seen["status"], seen["has_result"]) == ("ok", False)
+    assert seen["cost_usd"] is not None
+    detail = env.client.get(path, headers=_h("admin")).json()
+    assert (detail["status"], detail["result"], detail["has_result"]) == ("ok", None, False)
+
+
+def test_an_administrators_pause_is_a_brake(env: Env) -> None:
+    """D2 (after the review): while it lasts, its owner cannot run the task now nor resume it;
+    only an administrator resumes it."""
+    task = env.created()
+    queued = env.post("creator", task["task_id"], "run").json()
+    assert env.post("admin", task["task_id"], "pause").json()["paused_reason"] == "admin"
+    # What was queued before the pause does not run.
+    env.deliver()
+    run = env.client.get(
+        f"/api/tasks/{task['task_id']}/runs/{queued['run_id']}", headers=_h("creator")
+    ).json()
+    assert (run["status"], run["reason"]) == ("skipped", "paused_by_admin")
+    assert env.agentcore.requests == []
+    response = env.post("creator", task["task_id"], "run")
+    assert (response.status_code, _code(response)) == (409, "paused_by_admin")
+    response = env.post("creator", task["task_id"], "resume")
+    assert (response.status_code, _code(response)) == (403, "paused_by_admin")
+    resumed = env.post("admin", task["task_id"], "resume")
+    assert (resumed.status_code, resumed.json()["status"]) == (200, "active")
+    # An owner's own pause stays the owner's to lift.
+    env.post("creator", task["task_id"], "pause")
+    assert env.post("admin", task["task_id"], "resume").status_code == 403
+    assert env.post("creator", task["task_id"], "resume").status_code == 200

@@ -106,6 +106,8 @@ class Settings:
     tasks_client_id: str = ""
     """Client of the user pool that issues the owner's token of a run (CUSTOM_AUTH only)."""
     task_identity_key_arn: str = ""
+    tasks_client_secret_arn: str = ""
+    """Secrets Manager secret of the tasks client: only ``SECRET_HASH`` is computed with it."""
     """KMS key whose signature answers that client's challenge; only mango-api signs."""
 
     @staticmethod
@@ -178,6 +180,7 @@ class Settings:
             task_scheduler_role_arn=env.get("TASK_SCHEDULER_ROLE_ARN", ""),
             tasks_client_id=env.get("TASKS_CLIENT_ID", ""),
             task_identity_key_arn=env.get("TASK_IDENTITY_KEY_ARN", ""),
+            tasks_client_secret_arn=env.get("TASKS_CLIENT_SECRET_ARN", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

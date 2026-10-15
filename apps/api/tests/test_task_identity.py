@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +30,15 @@ PUBLIC = KEY.public_key().public_bytes(
 )
 
 
+SECRET = "s3cr3t-of-the-tasks-client"
+
+
+def _hash(username: str) -> str:
+    """SECRET_HASH as Cognito defines it: HMAC-SHA256(secret, username + client id), base64."""
+    digest = hmac.new(SECRET.encode(), (username + CLIENT).encode(), hashlib.sha256).digest()
+    return base64.b64encode(digest).decode()
+
+
 def _error(code: str) -> ClientError:
     return ClientError({"Error": {"Code": code, "Message": "x"}}, "op")
 
@@ -44,6 +56,8 @@ class FakeCognito:
     """The challenge Lambda's checks, done here with the public half of the key."""
 
     username: str | None = SUB
+    enabled: bool = True
+    status: str = "CONFIRMED"
     initiate_error: str | None = None
     respond_error: str | None = None
     revoked: list[str] = field(default_factory=list)
@@ -51,11 +65,15 @@ class FakeCognito:
 
     def list_users(self, **request: Any) -> dict[str, Any]:
         assert request["Filter"] == f'sub = "{SUB}"'
-        return {"Users": [{"Username": self.username}] if self.username else []}
+        user = {"Username": self.username, "Enabled": self.enabled, "UserStatus": self.status}
+        return {"Users": [user] if self.username else []}
 
     def admin_initiate_auth(self, **request: Any) -> dict[str, Any]:
         assert (request["AuthFlow"], request["ClientId"]) == ("CUSTOM_AUTH", CLIENT)
-        assert request["AuthParameters"] == {"USERNAME": self.username}
+        assert request["AuthParameters"] == {
+            "USERNAME": self.username,
+            "SECRET_HASH": _hash(str(self.username)),
+        }
         if self.initiate_error:
             raise _error(self.initiate_error)
         return {
@@ -67,6 +85,7 @@ class FakeCognito:
     def admin_respond_to_auth_challenge(self, **request: Any) -> dict[str, Any]:
         if self.respond_error:
             raise _error(self.respond_error)
+        assert request["ChallengeResponses"]["SECRET_HASH"] == _hash(str(self.username))
         verified = task_identity.TaskIdentityVerifier(PUBLIC).verify(
             request["ChallengeResponses"]["ANSWER"], subject=SUB, nonce=self.nonce, client_id=CLIENT
         )
@@ -74,6 +93,7 @@ class FakeCognito:
         return {"AuthenticationResult": {"AccessToken": "token", "RefreshToken": "refresh"}}
 
     def revoke_token(self, **request: Any) -> dict[str, Any]:
+        assert request["ClientSecret"] == SECRET
         self.revoked.append(request["Token"])
         return {}
 
@@ -102,6 +122,7 @@ def _tokens(cognito: FakeCognito, verifier: FakeVerifier | None = None) -> TaskT
         client_id=CLIENT,
         key_arn="arn:aws:kms:us-east-1:111122223333:key/k",
         verifier=verifier or FakeVerifier(),  # type: ignore[arg-type]
+        client_secret=SECRET,
     )
 
 
@@ -117,10 +138,11 @@ def test_a_federated_person_signs_in_with_their_own_user_name() -> None:
     assert _tokens(cognito).caller_for(SUB, RUN).user.user_id == SUB
 
 
-@pytest.mark.parametrize("code", ["NotAuthorizedException", "UserNotFoundException"])
-def test_a_disabled_or_deleted_person_has_lost_access(code: str) -> None:
+@pytest.mark.parametrize("cognito", [FakeCognito(enabled=False), FakeCognito(status="UNCONFIRMED")])
+def test_a_disabled_or_unconfirmed_person_has_lost_access(cognito: FakeCognito) -> None:
+    """Decided from the user pool before the flow (H3 of the review)."""
     with pytest.raises(OwnerAccessLostError):
-        _tokens(FakeCognito(initiate_error=code)).caller_for(SUB, RUN)
+        _tokens(cognito).caller_for(SUB, RUN)
 
 
 def test_a_person_who_is_not_in_the_pool_has_lost_access() -> None:
@@ -138,6 +160,10 @@ def test_a_person_without_groups_has_lost_access() -> None:
     "cognito",
     [
         FakeCognito(initiate_error="TooManyRequestsException"),
+        # The challenge function could not read its parameter (SSM), or the user pool's
+        # protection refused the flow: Cognito says «not authorized», the person is fine.
+        FakeCognito(initiate_error="NotAuthorizedException"),
+        FakeCognito(initiate_error="UserNotFoundException"),
         # A refused answer is our key or our clock, never the person: no pause.
         FakeCognito(respond_error="NotAuthorizedException"),
     ],
