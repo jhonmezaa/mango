@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Sequence
+import re
 from datetime import date
 from typing import Any
 
@@ -15,12 +15,7 @@ from mango_cost_anomaly_consumer.audit import EVENT_RECEIVED, EVENT_REJECTED, Au
 from mango_cost_anomaly_consumer.config import ConfigError, Settings
 from mango_cost_anomaly_consumer.event import RejectedEventError, parse_anomaly_event
 from mango_cost_anomaly_consumer.handler import METRICS, consume, metrics_record
-from mango_cost_anomaly_consumer.runs import (
-    DAILY_CAP,
-    StartOutcome,
-    Subscription,
-    UnconnectedRunStarter,
-)
+from mango_cost_anomaly_consumer.runs import EventMessage, UnconnectedRunQueue
 
 PAYER = "111122223333"
 OTHER = "444455556666"
@@ -99,38 +94,16 @@ class FakeIndex:
         self.items.append(Item)
 
 
-class FakeEngine:
-    """Stands for the task engine (D78): idempotency per anomaly and a daily cap."""
+class FakeQueue:
+    """Stands for the task queue of D78: records what would be sent."""
 
     connected = True
 
-    def __init__(self, automations: Sequence[str], already_today: int = 0) -> None:
-        self.automations = [Subscription(a) for a in automations]
-        self.started: dict[tuple[str, str], dict[str, str]] = {}
-        self.today = dict.fromkeys(automations, already_today)
-        self.not_eligible: set[str] = set()
+    def __init__(self) -> None:
+        self.messages: list[EventMessage] = []
 
-    def subscriptions(self, trigger_type: str) -> Sequence[Subscription]:
-        assert trigger_type == "cost_anomaly"
-        return self.automations
-
-    def start(
-        self,
-        subscription: Subscription,
-        trigger_input: dict[str, str],
-        idempotency_key: str,
-        daily_cap: int,
-    ) -> StartOutcome:
-        automation = subscription.automation_id
-        if automation in self.not_eligible:
-            return StartOutcome.NOT_ELIGIBLE
-        if (automation, idempotency_key) in self.started:
-            return StartOutcome.DUPLICATE
-        if self.today[automation] >= daily_cap:
-            return StartOutcome.CAPPED
-        self.today[automation] += 1
-        self.started[(automation, idempotency_key)] = trigger_input
-        return StartOutcome.STARTED
+    def enqueue(self, message: EventMessage) -> None:
+        self.messages.append(message)
 
 
 class Lab:
@@ -152,7 +125,7 @@ def test_the_documented_event_is_accepted() -> None:
     assert trigger.anomaly_id == ANOMALY
     assert trigger.monitor_arn == MONITOR
     assert (trigger.start_date, trigger.end_date) == (date(2026, 10, 13), date(2026, 10, 14))
-    assert trigger.idempotency_key == f"cost_anomaly:{ANOMALY}"
+    assert trigger.occurred_at == "2026-10-15T06:00:00Z"
 
 
 @pytest.mark.parametrize(
@@ -175,6 +148,8 @@ def test_the_documented_event_is_accepted() -> None:
         ({"resources": []}, "bad_resources"),
         ({"resources": [MONITOR, MONITOR]}, "bad_resources"),
         ({"detail.anomalyStartDate": "2026-10-13"}, "bad_dates"),
+        ({"time": "2026-10-15"}, "bad_time"),
+        ({"time": "2026-13-15T06:00:00Z"}, "bad_time"),
         ({"detail.anomalyStartDate": "2026-02-30T00:00:00Z"}, "bad_dates"),
         ({"detail.anomalyEndDate": "2026-10-12T00:00:00Z"}, "bad_dates"),
         ({"detail.anomalyStartDate": "2026-06-01T00:00:00Z"}, "bad_dates"),
@@ -201,77 +176,63 @@ def test_an_anomaly_without_account_attribution_is_accepted() -> None:
     assert parse_anomaly_event(event, PAYER, TODAY).anomaly_id == ANOMALY
 
 
-# --- Runs ---
+# --- Hand-off to the task engine ---
 
 
-def test_each_subscribed_automation_gets_one_run_with_ids_and_dates_only() -> None:
-    lab = Lab(FakeEngine(["auto-1", "auto-2"]))
+def test_a_valid_anomaly_queues_one_event_with_ids_and_dates_only() -> None:
+    lab = Lab(FakeQueue())
     stats = lab.run(aws_event())
-    assert stats["Received"] == 1
-    assert stats["started"] == 2
-    expected = {
-        "type": "cost_anomaly",
-        "anomaly_id": ANOMALY,
-        "monitor_arn": MONITOR,
-        "anomaly_start_date": "2026-10-13",
-        "anomaly_end_date": "2026-10-14",
-    }
-    assert lab.engine.started == {
-        ("auto-1", f"cost_anomaly:{ANOMALY}"): expected,
-        ("auto-2", f"cost_anomaly:{ANOMALY}"): expected,
-    }
+    assert (stats["Received"], stats["Queued"]) == (1, 1)
+    assert lab.engine.messages == [
+        EventMessage(
+            event_type="cost_anomaly",
+            event_id=ANOMALY,
+            occurred_at="2026-10-15T06:00:00Z",
+            data={
+                "anomaly_id": ANOMALY,
+                "monitor_arn": MONITOR,
+                "anomaly_start_date": "2026-10-13",
+                "anomaly_end_date": "2026-10-14",
+            },
+        )
+    ]
 
 
-def test_no_text_written_by_people_reaches_a_run_the_audit_or_the_log(
+def test_the_event_id_matches_the_task_contract() -> None:
+    # `mango_core.task_runs`: event ids are ^[A-Za-z0-9:_./-]{1,128}$ and data at most 16 KiB.
+    lab = Lab(FakeQueue())
+    lab.run(aws_event())
+    (message,) = lab.engine.messages
+    assert re.fullmatch(r"[A-Za-z0-9:_./-]{1,128}", message.event_id)
+    assert len(json.dumps(message.data)) < 16 * 1024
+
+
+def test_no_text_written_by_people_reaches_the_engine_the_audit_or_the_log(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    lab = Lab(FakeEngine(["auto-1"]))
+    lab = Lab(FakeQueue())
     with caplog.at_level("INFO"):
         lab.run(aws_event())
         lab.run(aws_event(**{"detail.anomalyId": HOSTILE}))
-    seen = json.dumps([lab.engine.started[k] for k in lab.engine.started])
+    seen = json.dumps([m.__dict__ for m in lab.engine.messages])
     seen += json.dumps(lab.firehose.records) + caplog.text
     for forbidden in (HOSTILE, OTHER, "1001", "Amazon Elastic Compute Cloud"):
         assert forbidden not in seen
 
 
-def test_the_same_anomaly_twice_starts_no_second_run() -> None:
-    lab = Lab(FakeEngine(["auto-1"]))
+def test_a_repeated_anomaly_keeps_its_event_id_so_the_engine_starts_no_second_run() -> None:
+    lab = Lab(FakeQueue())
     lab.run(aws_event())
-    stats = lab.run(aws_event(id="0b1c2d3e-0000-4000-8000-000000000001"))
-    assert stats["duplicate"] == 1
-    assert "started" not in stats
-    assert len(lab.engine.started) == 1
+    lab.run(aws_event(id="0b1c2d3e-0000-4000-8000-000000000001", time="2026-10-16T06:00:00Z"))
+    first, second = lab.engine.messages
+    assert first.event_id == second.event_id == ANOMALY
 
 
-def test_a_storm_stops_at_the_daily_cap() -> None:
-    lab = Lab(FakeEngine(["auto-1"]))
-    stats: dict[str, int] = {}
-    for n in range(DAILY_CAP + 3):
-        anomaly = f"12345678-abcd-ef12-3456-{n:012d}"
-        result = lab.run(aws_event(**{"detail.anomalyId": anomaly}))
-        for key, value in result.items():
-            stats[key] = stats.get(key, 0) + value
-    assert DAILY_CAP == 5
-    assert stats["started"] == DAILY_CAP
-    assert stats["capped"] == 3
-
-
-def test_an_automation_the_engine_refuses_is_counted_not_started() -> None:
-    engine = FakeEngine(["auto-1", "auto-2"])
-    engine.not_eligible.add("auto-2")
-    lab = Lab(engine)
-    stats = lab.run(aws_event())
-    assert (stats["started"], stats["not_eligible"]) == (1, 1)
-    (record,) = lab.firehose.records
-    assert record["detail"]["outcomes"] == {"auto-1": "started", "auto-2": "not_eligible"}
-
-
-def test_a_rejected_event_starts_nothing_and_is_audited_with_its_reason() -> None:
-    lab = Lab(FakeEngine(["auto-1"]))
+def test_a_rejected_event_queues_nothing_and_is_audited_with_its_reason() -> None:
+    lab = Lab(FakeQueue())
     stats = lab.run(aws_event(account=OTHER))
     assert stats == {"Rejected": 1}
-    assert lab.engine.started == {}
+    assert lab.engine.messages == []
     (record,) = lab.firehose.records
     assert record["event"] == EVENT_REJECTED
     assert record["detail"] == {
@@ -280,22 +241,22 @@ def test_a_rejected_event_starts_nothing_and_is_audited_with_its_reason() -> Non
     }
 
 
-def test_without_a_task_engine_the_anomaly_is_audited_and_nothing_starts() -> None:
-    lab = Lab(UnconnectedRunStarter())
+def test_without_a_task_engine_the_anomaly_is_audited_and_nothing_is_queued() -> None:
+    lab = Lab(UnconnectedRunQueue())
     stats = lab.run(aws_event())
     assert (stats["Received"], stats["NotConnected"]) == (1, 1)
+    assert "Queued" not in stats
     (record,) = lab.firehose.records
     assert record["event"] == EVENT_RECEIVED
     assert record["detail"]["engine_connected"] is False
-    assert record["detail"]["automations"] == 0
 
 
-def test_an_engine_failure_fails_the_invocation_so_lambda_retries() -> None:
-    class Down(FakeEngine):
-        def start(self, *args: Any, **kwargs: Any) -> StartOutcome:
-            raise ConnectionError("engine down")
+def test_a_queue_failure_fails_the_invocation_so_lambda_retries() -> None:
+    class Down(FakeQueue):
+        def enqueue(self, message: EventMessage) -> None:
+            raise ConnectionError("queue down")
 
-    lab = Lab(Down(["auto-1"]))
+    lab = Lab(Down())
     with pytest.raises(ConnectionError):
         lab.run(aws_event())
     assert lab.firehose.records == []
@@ -307,7 +268,7 @@ def test_an_engine_failure_fails_the_invocation_so_lambda_retries() -> None:
 def test_the_audit_record_has_the_shape_of_mango_api_records() -> None:
     from mango_api.audit import AuditLog, resource_of  # noqa: PLC0415
 
-    lab = Lab(FakeEngine(["auto-1"]))
+    lab = Lab(FakeQueue())
     lab.run(aws_event())
     (mine,) = lab.firehose.records
     theirs = FakeFirehose()
@@ -327,11 +288,10 @@ def test_the_audit_record_has_the_shape_of_mango_api_records() -> None:
 def test_metrics_cover_every_outcome() -> None:
     from collections import Counter  # noqa: PLC0415
 
-    record = metrics_record("poc", Counter({"started": 2}), 1_791_306_900)
+    record = metrics_record("poc", Counter({"Queued": 2}), 1_791_306_900)
     names = [m["Name"] for m in record["_aws"]["CloudWatchMetrics"][0]["Metrics"]]
-    assert names == list(METRICS)
-    assert {o.value for o in StartOutcome} <= set(names)
-    assert record["started"] == 2
+    assert names == list(METRICS) == ["Received", "Rejected", "Queued", "NotConnected"]
+    assert record["Queued"] == 2
     assert record["Rejected"] == 0
 
 

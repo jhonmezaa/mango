@@ -1,88 +1,69 @@
-"""How the consumer starts runs: a minimal interface over the task engine (D78).
+"""How the consumer hands an anomaly to the task engine (D78): one event message per anomaly.
 
-The engine (automations, runs, the owner's identity, budget) belongs to the tasks work of
-milestone 3. Until its interface is fixed, the consumer depends only on :class:`RunStarter`;
-the integration replaces :class:`UnconnectedRunStarter` with an adapter over the engine. The
-engine is expected to honor the idempotency key and the daily cap, to run as the
-automation's owner, to reserve budget before invoking (D73) and to refuse automations whose
-owner lost access or is no longer central (D26, D79).
+The contract of milestone 3 fixes the interface: the consumer puts one message on the queue
+``Mango-<ns>-TaskRuns``, built by ``mango_core.task_runs.event_message``, and ends. mango-api
+reads it, finds the active automations subscribed to ``cost_anomaly`` and starts one run of
+each as its owner, with the event id as idempotency key (run id = hash of automation and event
+id). That module is not on this branch yet: the consumer depends only on :class:`RunQueue`,
+and the integration replaces :class:`UnconnectedRunQueue` with an adapter that builds the
+message with ``event_message`` and sends it to the queue (``TASK_RUNS_QUEUE_URL``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Protocol
 
 from mango_cost_anomaly_consumer.event import AnomalyTrigger
 
-TRIGGER_TYPE = "cost_anomaly"
-DAILY_CAP = 5
-"""Runs a single automation may start from anomalies in a day (D79). The rest are skipped."""
-
-
-class StartOutcome(StrEnum):
-    STARTED = "started"
-    DUPLICATE = "duplicate"
-    """A run for this anomaly and automation already exists."""
-    CAPPED = "capped"
-    """The automation reached :data:`DAILY_CAP` today: recorded as skipped, nothing invoked."""
-    NOT_ELIGIBLE = "not_eligible"
-    """Paused, retired, owner without access or not central, agent not published."""
+EVENT_TYPE = "cost_anomaly"
 
 
 @dataclass(frozen=True)
-class Subscription:
-    automation_id: str
+class EventMessage:
+    """The arguments of ``mango_core.task_runs.event_message``."""
+
+    event_type: str
+    event_id: str
+    occurred_at: str
+    data: dict[str, str]
 
 
-class RunStarter(Protocol):
+class RunQueue(Protocol):
     @property
     def connected(self) -> bool:
-        """False while no task engine is wired in: nothing can be started."""
+        """False while no task engine is wired in: nothing is queued."""
         ...
 
-    def subscriptions(self, trigger_type: str) -> Sequence[Subscription]:
-        """Active automations whose trigger is ``trigger_type``."""
-        ...
-
-    def start(
-        self,
-        subscription: Subscription,
-        trigger_input: dict[str, str],
-        idempotency_key: str,
-        daily_cap: int,
-    ) -> StartOutcome:
-        """Start one run, or say why not. Raises if the engine cannot be reached."""
+    def enqueue(self, message: EventMessage) -> None:
+        """Queue one event for the engine. Raises if the queue cannot be reached."""
         ...
 
 
-def trigger_input(trigger: AnomalyTrigger) -> dict[str, str]:
-    """What the run receives from the event (D79): identifiers and dates only. The agent reads
-    amounts and root causes itself, with its owner's scope, through its read-only tool."""
-    return {
-        "type": TRIGGER_TYPE,
-        "anomaly_id": trigger.anomaly_id,
-        "monitor_arn": trigger.monitor_arn,
-        "anomaly_start_date": trigger.start_date.isoformat(),
-        "anomaly_end_date": trigger.end_date.isoformat(),
-    }
+def event_message(trigger: AnomalyTrigger) -> EventMessage:
+    """What the engine receives (D79): identifiers and dates only. The agent reads amounts and
+    root causes itself, with its owner's scope, through its read-only tool.
+
+    The event id is the anomaly id, not the EventBridge id: AWS repeats the event, with a new
+    EventBridge id, while the anomaly lasts, and the engine starts one run per automation and
+    event id."""
+    return EventMessage(
+        event_type=EVENT_TYPE,
+        event_id=trigger.anomaly_id,
+        occurred_at=trigger.occurred_at,
+        data={
+            "anomaly_id": trigger.anomaly_id,
+            "monitor_arn": trigger.monitor_arn,
+            "anomaly_start_date": trigger.start_date.isoformat(),
+            "anomaly_end_date": trigger.end_date.isoformat(),
+        },
+    )
 
 
-class UnconnectedRunStarter:
-    """Stand-in until the task engine is integrated: no automation exists, nothing starts."""
+class UnconnectedRunQueue:
+    """Stand-in until the task engine is integrated: nothing is queued."""
 
     connected = False
 
-    def subscriptions(self, trigger_type: str) -> Sequence[Subscription]:
-        return ()
-
-    def start(
-        self,
-        subscription: Subscription,
-        trigger_input: dict[str, str],
-        idempotency_key: str,
-        daily_cap: int,
-    ) -> StartOutcome:
+    def enqueue(self, message: EventMessage) -> None:
         raise RuntimeError("no task engine is connected")

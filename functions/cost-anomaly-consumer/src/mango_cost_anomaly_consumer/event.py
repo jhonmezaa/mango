@@ -24,6 +24,7 @@ _UUID_RE = re.compile(rf"^{_UUID}$")
 _ACCOUNT_RE = re.compile(r"^\d{12}$")
 _EVENT_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 _DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T00:00:00Z$")
+_TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 class RejectedEventError(Exception):
@@ -42,15 +43,13 @@ class AnomalyTrigger:
     """What a run may learn from the event: identifiers and dates, nothing written by people."""
 
     event_id: str
+    """The EventBridge id: a new one each time AWS repeats the anomaly. For the audit only."""
     anomaly_id: str
     monitor_arn: str
     start_date: date
     end_date: date
-
-    @property
-    def idempotency_key(self) -> str:
-        """One run per anomaly and automation: AWS repeats the event while the anomaly lasts."""
-        return f"cost_anomaly:{self.anomaly_id}"
+    occurred_at: str
+    """When AWS emitted the event, ``YYYY-MM-DDTHH:MM:SSZ``."""
 
 
 def _text(value: object, reason: str) -> str:
@@ -114,4 +113,11 @@ def parse_anomaly_event(
     # A day of slack: AWS dates the anomaly in UTC and the clock of the event may run ahead.
     if start > (today or datetime.now(UTC).date()) + timedelta(days=1):
         raise RejectedEventError("bad_dates")
-    return AnomalyTrigger(event_id, anomaly_id, monitor_arn, start, end)
+    occurred_at = _text(event.get("time"), "bad_time")
+    if not _TIME_RE.fullmatch(occurred_at):
+        raise RejectedEventError("bad_time")
+    try:
+        datetime.strptime(occurred_at, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        raise RejectedEventError("bad_time") from None
+    return AnomalyTrigger(event_id, anomaly_id, monitor_arn, start, end, occurred_at)

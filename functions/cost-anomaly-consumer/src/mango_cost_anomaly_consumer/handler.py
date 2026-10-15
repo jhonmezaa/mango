@@ -1,15 +1,16 @@
 """Lambda entry point of the cost anomaly consumer (EventBridge rule on the Mango bus, D79).
 
 The payer account forwards each AWS Cost Anomaly Detection event to the bus
-``Mango-<ns>-CostAnomalies``. This function checks that it is one (``event.py``), finds the
-automations subscribed to cost anomalies and starts one run of each, with the anomaly's
-identifiers and dates as input. The runs belong to the task engine (D78): it runs them as the
-automation's owner, reserves budget first and honors the idempotency key and the daily cap.
+``Mango-<ns>-CostAnomalies``. This function checks that it is one (``event.py``) and puts one
+message on the task queue, with the anomaly's identifiers and dates and the anomaly id as event
+id. The task engine (D78) finds the automations subscribed to cost anomalies and starts one run
+of each as its owner, reserving budget first; the event id makes a repeated anomaly start no
+second run.
 
 A rejected event is not retried: it is counted (alarm), audited with its reason code and
 dropped. If the engine or the audit cannot be reached the invocation fails, Lambda retries it
 and then sends it to the dead-letter queue, which has its own alarm; retrying is safe because
-each run is started with the anomaly's idempotency key.
+the engine starts one run per automation and event id.
 
 Nothing of the event but identifiers, reason codes and counts is logged or audited (TM-CA8).
 """
@@ -30,21 +31,14 @@ from botocore.config import Config
 from mango_cost_anomaly_consumer.audit import EVENT_RECEIVED, EVENT_REJECTED, AuditWriter
 from mango_cost_anomaly_consumer.config import Settings
 from mango_cost_anomaly_consumer.event import RejectedEventError, parse_anomaly_event, safe_event_id
-from mango_cost_anomaly_consumer.runs import (
-    DAILY_CAP,
-    TRIGGER_TYPE,
-    RunStarter,
-    StartOutcome,
-    UnconnectedRunStarter,
-    trigger_input,
-)
+from mango_cost_anomaly_consumer.runs import RunQueue, UnconnectedRunQueue, event_message
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 METRIC_NAMESPACE = "Mango/CostAnomalies"
 METRIC_DIMENSION = "Installation"
-METRICS = ("Received", "Rejected", "NotConnected", *(o.value for o in StartOutcome))
+METRICS = ("Received", "Rejected", "Queued", "NotConnected")
 """What becomes a CloudWatch metric; ``Rejected`` has an alarm (TM-CA1)."""
 
 _CLIENT_CONFIG = Config(
@@ -72,9 +66,9 @@ def metrics_record(namespace: str, stats: Counter[str], now: int) -> dict[str, A
 
 
 def consume(
-    event: Mapping[str, object], settings: Settings, runs: RunStarter, audit: AuditWriter
+    event: Mapping[str, object], settings: Settings, runs: RunQueue, audit: AuditWriter
 ) -> Counter[str]:
-    """Validate one event and start the runs it triggers; the counts of what happened."""
+    """Validate one event and hand it to the task engine; the counts of what happened."""
     stats: Counter[str] = Counter()
     try:
         trigger = parse_anomaly_event(event, settings.management_account_id)
@@ -87,15 +81,11 @@ def consume(
         return stats
 
     stats["Received"] += 1
-    if not runs.connected:
+    if runs.connected:
+        runs.enqueue(event_message(trigger))
+        stats["Queued"] += 1
+    else:
         stats["NotConnected"] += 1
-    subscriptions = runs.subscriptions(TRIGGER_TYPE) if runs.connected else ()
-    payload = trigger_input(trigger)
-    outcomes: dict[str, str] = {}
-    for subscription in subscriptions:
-        outcome = runs.start(subscription, payload, trigger.idempotency_key, DAILY_CAP)
-        stats[outcome.value] += 1
-        outcomes[subscription.automation_id] = outcome.value
     audit.emit(
         EVENT_RECEIVED,
         {
@@ -104,15 +94,13 @@ def consume(
             "anomaly_start_date": trigger.start_date.isoformat(),
             "anomaly_end_date": trigger.end_date.isoformat(),
             "engine_connected": runs.connected,
-            "automations": len(subscriptions),
-            "outcomes": outcomes,
         },
     )
     return stats
 
 
 @cache
-def _wiring() -> tuple[Settings, RunStarter, AuditWriter]:
+def _wiring() -> tuple[Settings, RunQueue, AuditWriter]:
     settings = Settings.from_env()
     audit = AuditWriter(
         boto3.client("firehose", config=_CLIENT_CONFIG),
@@ -120,8 +108,8 @@ def _wiring() -> tuple[Settings, RunStarter, AuditWriter]:
         boto3.client("dynamodb", config=_CLIENT_CONFIG),
         settings.audit_index_table,
     )
-    # Replaced by the adapter over the task engine when D78 is integrated.
-    return settings, UnconnectedRunStarter(), audit
+    # Replaced by the adapter over the task queue when D78 is integrated.
+    return settings, UnconnectedRunQueue(), audit
 
 
 def lambda_handler(event: Mapping[str, object], _context: Any) -> dict[str, int]:

@@ -38,7 +38,7 @@ def test_definition_is_stored_as_the_stack_writes_it() -> None:
     # agents/finops/agent.json: update both on purpose.
     canonical = dumps_definition(release_definition("finops", MODEL))
     assert content_hash(canonical) == (
-        "ac5d0b8528d76d61c97cfcb9c6aa794492589b922291e258ac0a7bfdd09f5617"
+        "a23a4ede5e9e21b5eb3420416b53afff923488304cb142057bdce73e15c50a01"
     )
     # Reading it back and writing it again changes nothing.
     assert dumps_definition(loads_definition(canonical)) == canonical

@@ -219,8 +219,8 @@ Decisión: [D73](../architecture/decisions/D073-turno-cortado-nunca-cuesta-cero.
 | `CostAnomalies-rejected` | Llegó al bus `Mango-<ns>-CostAnomalies` un evento que no es una anomalía de Cost Anomaly Detection de la cuenta pagadora. No arrancó nada. El bus solo acepta el rol de reenvío de la pagadora: no debería pasar | Los eventos `cost_anomaly.rejected` de Auditoría (su `reason`). Después, `PutEvents` sobre el bus en el CloudTrail de la cuenta pagadora |
 | `CostAnomalyConsumer-failed` | Una anomalía no se pudo procesar después de sus reintentos: sus investigaciones no arrancaron | Los errores del log group `/aws/lambda/Mango-<ns>-CostAnomalyConsumer` y el mensaje en la cola `Mango-<ns>-CostAnomalyConsumer-dlq` |
 
-- **Hasta integrar el motor de tareas (D78)** cada anomalía se audita como `cost_anomaly.received` con `engine_connected: false` y no arranca ninguna investigación.
-- **Cuando salta `CostAnomalyConsumer-failed`:** arreglada la causa, reenviar el evento de la cola a la función es seguro (cada ejecución se arranca con el id de la anomalía como clave: no se repite). Después vaciar la cola para que la alarma vuelva a `OK`.
+- **Hasta integrar el motor de tareas (D78)** cada anomalía se audita como `cost_anomaly.received` con `engine_connected: false` y no arranca ninguna investigación. Después, las ejecuciones y sus omisiones se ven en Tareas y en auditoría (`task.run.*`).
+- **Cuando salta `CostAnomalyConsumer-failed`:** arreglada la causa, reenviar el evento de la cola a la función es seguro (el id del evento es el de la anomalía y el motor no repite una ejecución con el mismo id). Después vaciar la cola para que la alarma vuelva a `OK`.
 
 ### Qué no tiene alarma
 
@@ -313,7 +313,7 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 | Tablero `Mango-<ns>-Operations` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
 | Métricas propias de la función conciliadora (D73), a USD 0,30 cada una | Cuatro | 1,20 |
 | Métrica del filtro del log de `mango-api` (D71, punto 18), a USD 0,30 | Una: `RateLimitStoreRefusals`. Existe todos los meses, porque el filtro publica ceros | 0,30 |
-| Métricas propias del consumidor de anomalías (D79), a USD 0,30 cada una | Siete, en `Mango/CostAnomalies`. Solo se cobran las horas en que llega un evento: con pocas anomalías al mes, céntimos | ~0 |
+| Métricas propias del consumidor de anomalías (D79), a USD 0,30 cada una | Cuatro, en `Mango/CostAnomalies`. Solo se cobran las horas en que llega un evento: con pocas anomalías al mes, céntimos | ~0 |
 | **Total** | | **10,00** |
 
 - **Fuera de la suma:** `DynamoDB-system-errors` no lee una métrica fija, sino una consulta sobre todas las tablas de la cuenta. CloudWatch la cobra por las métricas que la consulta analiza, que dependen de cuántas tablas y operaciones tenga la cuenta. Ninguna cifra de esta tabla está contrastada con una factura.
