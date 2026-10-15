@@ -11,7 +11,7 @@ CloudFormation da los tags de un stack a todo lo que la plantilla declara y admi
 
 Controles que lo acotan:
 
-- **Solo escribe tags.** Sin `DeleteTags`, `UntagPolicy` ni ninguna otra escritura: un tag no cambia lo que una política permite ni el tráfico que una regla deja pasar.
+- **Solo escribe tags.** Sin `DeleteTags`, `UntagPolicy` ni ninguna otra escritura sobre los recursos de la cuenta (aparte de su propio log y sus trazas de X-Ray, como toda función): un tag no cambia lo que una política permite ni el tráfico que una regla deja pasar.
 - **Políticas:** solo `Mango-<ns>-*`, y la función se niega si un stack declara una fuera de ese prefijo.
 - **Defaults de red:** solo en las dos VPC de la instalación (condición `ec2:Vpc`).
 - **Reglas:** el tipo `security-group-rule` no admite condición de VPC ni de grupo. El rol podría etiquetar cualquier regla de la cuenta, pero **cada petición tiene que llevar `mango:namespace` del namespace** (`aws:RequestTag`), así que no puede poner tags sin dejar la marca de la instalación. La función solo pide reglas de los grupos de sus dos VPC y descarta cualquier otra que el filtro devuelva.
@@ -39,7 +39,7 @@ Riesgo residual principal: el permiso sobre reglas de toda la cuenta. Queda en p
 |---|---|---|
 | `Custom::MangoStackTags` | Recurso de `Core`; propiedades `Release` (cambia en cada versión) y `VpcIds` (la de `Core` y la importada de `PackNetwork`). Depende de las políticas, VPC, grupos y reglas del stack | `infra/lib/constructs/stack-tagger.ts` (`runsAfterWhatItTags`) |
 | Función `Mango-<ns>-StackTagger` | Lee tags y recursos, escribe tags, responde a CloudFormation | `stack_tagger.py` (`handle`, `Tagger.run`) |
-| Rol `Mango-<ns>-StackTagger` | Cinco sentencias: leer los dos stacks, etiquetar políticas, defaults de red y reglas, y leer la red | `stack-tagger.ts` |
+| Rol `Mango-<ns>-StackTagger` | Siete sentencias: cinco suyas (leer los dos stacks, etiquetar políticas, defaults de red y reglas, y leer la red) y las dos de toda función (su log y X-Ray) | `stack-tagger.ts` |
 | Lectura de tags del stack | Las mismas reglas que D76: nunca `aws:` ni `mango:`; ASCII que AgentCore acepta; como mucho 50 | `stack_tags.py` (`custom_tags`, `merge`) |
 
 ### Data flows and trust boundaries
@@ -133,7 +133,7 @@ flowchart LR
 
 | Path | Why it matters | Related Threat IDs |
 |---|---|---|
-| `infra/lib/constructs/stack-tagger.ts` | Las cinco sentencias y sus condiciones | TM-ST1, TM-ST4 |
+| `infra/lib/constructs/stack-tagger.ts` | Las cinco sentencias propias y sus condiciones | TM-ST1, TM-ST4 |
 | `functions/provisioner/src/mango_provisioner/stack_tagger.py` | Comprobación de VPC y políticas, filtro de reglas, rollback, respuestas | TM-ST1, TM-ST2, TM-ST4, TM-ST5, TM-ST6 |
 | `functions/provisioner/src/mango_provisioner/stack_tags.py` | Qué tags se copian | TM-ST2, TM-ST3 |
 | `infra/test/stack-tagger.test.ts`, `functions/provisioner/tests/test_stack_tagger.py` | Fijan permisos y comportamiento | Todas |
