@@ -2,7 +2,7 @@
 
 > Fecha: 2026-10-14 · Skill: `security-threat-model`. Decisión que lo enmarca: D77 (precisa D76). Componente nuevo con permisos de escritura: se modeló antes de construirlo y se ajustó con lo construido.
 > Alcance: `functions/provisioner/src/mango_provisioner/stack_tagger.py`, la lectura de tags compartida con D76 (`stack_tags.py`), `infra/lib/constructs/stack-tagger.ts`, su conexión en `infra/lib/stacks/core-stack.ts` y la salida `VpcId` de `infra/lib/stacks/pack-network-stack.ts`.
-> Comprobado con tests locales (`functions/provisioner/tests/test_stack_tagger.py`, `infra/test/stack-tagger.test.ts`). Sin ver en una instalación.
+> Comprobado con tests locales (`functions/provisioner/tests/test_stack_tagger.py`, `infra/test/stack-tagger.test.ts`) y en la actualización de una instalación el 2026-10-14 (D77, punto 10): etiquetó lo previsto con la condición `ec2:Vpc` y sin reintentos. Que el rol no pueda etiquetar fuera de las dos VPC no se probó en una instalación.
 > Supuestos validados con el dueño el 2026-10-14: el cliente no usa tags para autorizar (ABAC) sobre reglas de security groups, ACL, tablas de rutas ni políticas de IAM en la cuenta de Mango; y se acepta que el permiso sobre reglas no se pueda limitar a una VPC, con la condición de namespace en cada petición.
 
 ## Executive summary

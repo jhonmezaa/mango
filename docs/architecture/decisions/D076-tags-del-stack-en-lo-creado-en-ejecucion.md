@@ -36,6 +36,6 @@ Origen: la primera instalación en la organización de un cliente (2026-10-14). 
 - **Lo creado en ejecución lleva los tags del stack:** el rol, el harness y sus endpoints, y los dos log groups del Runtime del agente de la versión, que el provisioner creó mientras `Core` se instalaba.
 - **AgentCore los pasa del harness al Runtime que crea para él y a su identidad de workload:** la API de etiquetas los listaba con el tag del proyecto y los de Mango. Era lo que el punto 6 marcaba «sin ver».
 - **Todo lo que declara la plantilla lleva el tag:** los 180 recursos que la API de etiquetas lista con el `mango:namespace` de la instalación en la cuenta de Mango, los 31 roles de IAM de esa cuenta y los 2 de la cuenta de gestión, y el StackSet de `OrgAccess`. En las cuentas miembro no se pudo leer: quien instaló no tenía acceso a ellas.
-- **Lo que quedó sin ningún tag,** porque CloudFormation no puede etiquetarlo: las 3 políticas administradas de IAM, los recursos por defecto de las 2 VPC y las 59 reglas de los security groups. Es D77.
+- **Lo que quedó sin ningún tag,** porque CloudFormation no puede etiquetarlo: las 3 políticas administradas de IAM, los recursos por defecto de las 2 VPC y las 59 reglas de los security groups. Es D77; desde la actualización a la versión que lo trae, los llevan (D77, punto 10).
 - **Sin ver todavía:** un agente o un pack creados después de instalar, y un tag que AgentCore no acepta en una instalación.
 
