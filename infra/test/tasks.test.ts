@@ -233,6 +233,8 @@ describe("the schedules and the queue of runs", () => {
       "ByOwner",
     ]);
     if (cfg.retainData) expect(table.DeletionPolicy).toBe("Retain");
+    // Its throttling alarm is named after it, like every table's (D71).
+    expect(Object.keys(template.findResources("AWS::CloudWatch::Alarm", { Properties: { AlarmName: `Mango-${ns}-Table-Tasks-throttled` } }))).toHaveLength(1);
   });
 
   it("the role of mango-api keeps everything else in its inline policy, with no overflow", () => {

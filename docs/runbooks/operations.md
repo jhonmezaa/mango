@@ -299,7 +299,7 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 | Qué | Cuánto | USD al mes |
 |---|---|---|
-| Métricas que leen las alarmas, a USD 0,10 cada una | 54 en la plantilla de ejemplo (2026-10-15): 53 en las 33 alarmas de `Core` y una en la de `PackNetwork` | 5,40 |
+| Métricas que leen las alarmas, a USD 0,10 cada una | 56 en la plantilla de ejemplo (2026-10-15): 55 en las 34 alarmas de `Core` y una en la de `PackNetwork` | 5,60 |
 | Tablero `Mango-<ns>-Operations` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
 | Métricas propias de la función conciliadora (D73), a USD 0,30 cada una | Cuatro | 1,20 |
 | Métrica del filtro del log de `mango-api` (D71, punto 18), a USD 0,30 | Una: `RateLimitStoreRefusals`. Existe todos los meses, porque el filtro publica ceros | 0,30 |

@@ -81,7 +81,8 @@ export class TaskPlatform extends Construct {
     this.configKey = props.configKey;
 
     // --- Automations and runs ---------------------------------------------------------------
-    this.table = new dynamodb.TableV2(this, "Table", {
+    // Its id names its throttling alarm, as for every table: `Table-Tasks-throttled` (D71).
+    this.table = new dynamodb.TableV2(this, "Tasks", {
       tableName: mangoName(ns, "Tasks"),
       partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "SK", type: dynamodb.AttributeType.STRING },
