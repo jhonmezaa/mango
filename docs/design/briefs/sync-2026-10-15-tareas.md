@@ -46,7 +46,7 @@ El aviso «{nombre} completada · entregada en bandeja del creador» sale cuando
 
 ### 2.9 La pausa de un administrador frena (D78 (19))
 
-Mientras un administrador tenga pausada una tarea, su dueño no puede «Ejecutar ahora» ni «Reanudar»: solo un administrador la reanuda. El producto desactiva esos botones para el dueño (con «Un administrador la pausó: solo un administrador la reanuda» como ayuda) y en el detalle dice «Pausada por un administrador: no se ejecutará, ni a pedido, hasta que un administrador la reanude.». La pausa del dueño sigue siendo suya: un administrador no la levanta.
+Mientras un administrador tenga pausada una tarea, su dueño no puede «Ejecutar ahora» ni «Reanudar»: solo un administrador la reanuda. El producto desactiva esos botones para el dueño (con «Un administrador la pausó: solo un administrador la reanuda» como ayuda) y en el detalle dice «Pausada por un administrador: no se ejecutará, ni a pedido, hasta que un administrador la reanude.». La pausa del dueño sigue siendo suya: un administrador no la levanta, pero sí puede tomarla: en el detalle de una tarea pausada por su dueño, un administrador ve «Pausar» (ayuda: «También frena a su dueño: solo un administrador la reanuda») y el motivo pasa a ser suyo.
 
 ### 2.10 El resultado solo lo ve su dueño (D78 (18))
 

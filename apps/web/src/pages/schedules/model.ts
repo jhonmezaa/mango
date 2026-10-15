@@ -186,3 +186,8 @@ export function canRunNow(task: Task): boolean {
     task.paused_reason !== 'admin'
   );
 }
+
+/** An administrator holds what its owner paused (A1 of the second review): the brake of D2. */
+export function canHold(task: Task, isAdmin: boolean): boolean {
+  return isAdmin && !task.is_owner && task.status === 'paused' && task.paused_reason === 'owner';
+}

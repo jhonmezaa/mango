@@ -263,4 +263,27 @@ describe('SchedulesPage', () => {
       });
     });
   });
+
+  it('an administrator holds a task its owner paused', async () => {
+    const paused = task({
+      status: 'paused',
+      paused_reason: 'owner',
+      paused_at: '2026-10-15T09:00:00Z',
+      is_owner: false,
+    });
+    const call = apiWith({
+      ...base(list([paused])),
+      pauseExistingTask: () => ({ ...paused, paused_reason: 'admin' }),
+    });
+    renderPage(call, true);
+    await userEvent.click(await screen.findByText('Budget check diario', { selector: '.mk-name' }));
+    const panel = await screen.findByRole('dialog');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Pausar' }));
+    await waitFor(() => {
+      expect(call).toHaveBeenCalledWith('pauseExistingTask', {
+        path: { task_id: 'a'.repeat(32) },
+        body: {},
+      });
+    });
+  });
 });

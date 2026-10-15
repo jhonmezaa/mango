@@ -781,3 +781,18 @@ def test_an_administrators_pause_is_a_brake(env: Env) -> None:
     env.post("creator", task["task_id"], "pause")
     assert env.post("admin", task["task_id"], "resume").status_code == 403
     assert env.post("creator", task["task_id"], "resume").status_code == 200
+
+
+def test_an_administrator_also_holds_a_task_its_owner_paused(env: Env) -> None:
+    """A1 of the second review (D78 (19)): the owner's pause cannot dodge the brake of D2."""
+    task = env.created()
+    env.post("creator", task["task_id"], "pause")
+    held = env.post("admin", task["task_id"], "pause")
+    assert (held.status_code, held.json()["paused_reason"]) == (200, "admin")
+    assert env.post("creator", task["task_id"], "resume").status_code == 403
+    response = env.post("creator", task["task_id"], "run")
+    assert (response.status_code, _code(response)) == (409, "paused_by_admin")
+    # Nobody pauses again what an administrator holds.
+    assert env.post("creator", task["task_id"], "pause").status_code == 409
+    assert env.post("admin", task["task_id"], "pause").status_code == 409
+    assert env.post("admin", task["task_id"], "resume").json()["status"] == "active"

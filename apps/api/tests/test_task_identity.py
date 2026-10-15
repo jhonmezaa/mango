@@ -138,7 +138,16 @@ def test_a_federated_person_signs_in_with_their_own_user_name() -> None:
     assert _tokens(cognito).caller_for(SUB, RUN).user.user_id == SUB
 
 
-@pytest.mark.parametrize("cognito", [FakeCognito(enabled=False), FakeCognito(status="UNCONFIRMED")])
+@pytest.mark.parametrize(
+    "cognito",
+    [
+        FakeCognito(enabled=False),
+        FakeCognito(status="UNCONFIRMED"),
+        # A3 of the second review: who must set a new password first acts through no task.
+        FakeCognito(status="RESET_REQUIRED"),
+        FakeCognito(status="FORCE_CHANGE_PASSWORD"),
+    ],
+)
 def test_a_disabled_or_unconfirmed_person_has_lost_access(cognito: FakeCognito) -> None:
     """Decided from the user pool before the flow (H3 of the review)."""
     with pytest.raises(OwnerAccessLostError):

@@ -625,8 +625,16 @@ def update_task(
 def pause_task(
     deps: TasksDeps, caller: Caller, automation: Automation, *, reason: PauseReason
 ) -> Automation:
-    if automation.status is not Status.ACTIVE:
+    # An administrator may also hold a task its owner paused (A1 of the second review, D78
+    # (19)): the reason becomes ``admin`` and the brake of D2 applies from then on.
+    takes_over = (
+        automation.status is Status.PAUSED
+        and automation.paused_reason is PauseReason.OWNER
+        and reason is PauseReason.ADMIN
+    )
+    if automation.status is not Status.ACTIVE and not takes_over:
         raise ApiError(409, "task_not_active", "this task is not active")
+    expected = frozenset({Status.PAUSED}) if takes_over else frozenset({Status.ACTIVE})
     paused = replace(
         automation, status=Status.PAUSED, paused_reason=reason, paused_at=_now_iso(deps)
     )
@@ -635,9 +643,9 @@ def pause_task(
         deps.store.update(
             automation,
             {"status": Status.PAUSED, "paused_reason": reason.value, "paused_at": paused.paused_at},
-            expect_status=frozenset({Status.ACTIVE}),
+            expect_status=expected,
         )
-        if automation.trigger == "schedule":
+        if automation.trigger == "schedule" and not takes_over:
             deps.scheduler.update(paused, enabled=False)
     except TaskConflictError as exc:
         raise ApiError(409, "version_conflict", "the task changed; reload it") from exc

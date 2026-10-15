@@ -203,3 +203,13 @@ La revisión de seguridad de la rama (`security-audit`, modo guía, hecha por ot
 Y dos decisiones, por delegación del dueño: **D1**, el resultado solo para el dueño (TM-T8); **D2**, la pausa de un administrador frena (TM-T4).
 
 **Sigue sin validar en AWS:** V1 (MFA obligatorio y `CUSTOM_AUTH`), V2 (protección contra amenazas con flujos personalizados; ahora un rechazo es una ejecución fallida, no una pausa), V4 (personas federadas), V5 (pre-token con el cliente de tareas), V6 (Gateway con dos clientes) y V7 (Scheduler entrega con la confianza corregida). V3 (intentos fallidos contra terceros) queda cerrada por el secreto.
+
+## Segunda vuelta de la revisión (2026-10-15)
+
+H1 a H4, D1 y D2 confirmados. Tres puntos abiertos, decididos por delegación del dueño (D78 (21) a (23)) y corregidos con tests:
+
+- **A1 (baja):** el dueño podía esquivar el freno de un administrador pausando antes. Ahora un administrador también pausa una tarea que pausó su dueño; el motivo pasa a `admin` y rige D2.
+- **A2:** la supresión de cdk-nag `AwsSolutions-SMG4` del secreto del cliente, registrada en `AGENTS.md` (acordada por delegación, pendiente de revisión del dueño). Checkov no la marca.
+- **A3:** una persona en `RESET_REQUIRED` o `FORCE_CHANGE_PASSWORD` pausa su tarea como una deshabilitada (TM-T3): si un administrador le pidió cambiar la contraseña por sospecha de compromiso, ninguna tarea sigue actuando como ella.
+
+**V8, nuevo, a validar en AWS:** que Cognito, con `PreventUserExistenceErrors` y una persona que no existe, llame a Create y Verify y devuelva el mismo reto. Con el secreto en el cliente el riesgo práctico desaparece aunque no lo haga.

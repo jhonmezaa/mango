@@ -31,6 +31,7 @@ import {
   QUICK,
   RUN_TONE,
   TIMEZONES,
+  canHold,
   canRunNow,
   canToggle,
   cronOf,
@@ -398,6 +399,7 @@ interface DetailProps {
   onEdit: () => void;
   onRun: () => void;
   onToggle: () => void;
+  onHold: () => void;
   onRetire: (reason: string) => void;
   onResult: (run: TaskRun) => void;
 }
@@ -413,6 +415,7 @@ function TaskDetail({
   onEdit,
   onRun,
   onToggle,
+  onHold,
   onRetire,
   onResult,
 }: DetailProps) {
@@ -491,6 +494,19 @@ function TaskDetail({
                 onClick={onToggle}
               >
                 {task.status === 'paused' ? t('schedules.resume') : t('schedules.pause')}
+              </button>
+            ) : null}
+            {canHold(task, isAdmin) ? (
+              // Not in the design yet (A1 of the second review, D78 (19)): an administrator
+              // also holds a task its owner paused, and the brake of D2 applies.
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy}
+                title={t('schedules.detail.holdTitle')}
+                onClick={onHold}
+              >
+                {t('schedules.pause')}
               </button>
             ) : null}
             {task.is_owner ? (
@@ -1453,6 +1469,12 @@ export function SchedulesPage() {
           }}
           onToggle={() => {
             toggle(selected);
+          }}
+          onHold={() => {
+            act(
+              () => call('pauseExistingTask', { path: { task_id: selected.task_id }, body: {} }),
+              t('schedules.toast.paused', { name: selected.name }),
+            );
           }}
           onRetire={(reason) => {
             act(

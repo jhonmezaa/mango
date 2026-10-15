@@ -125,6 +125,7 @@ export const schedules = {
     paused: 'Pausada: no se ejecutará hasta que la reanudes.',
     adminPaused:
       'Pausada por un administrador: no se ejecutará, ni a pedido, hasta que un administrador la reanude.',
+    holdTitle: 'También frena a su dueño: solo un administrador la reanuda',
     adminPausedTitle: 'Un administrador la pausó: solo un administrador la reanuda',
     autoPausedTitle: 'Pausada automáticamente {{ago}}.',
     autoPausedBody: 'Solo se reanuda si recupera el acceso; si no, retírala.',

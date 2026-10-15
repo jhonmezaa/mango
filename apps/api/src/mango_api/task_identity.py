@@ -44,8 +44,19 @@ logger = logging.getLogger(__name__)
 
 _SUB_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 """A Cognito subject (a UUID); anything else never reaches a ``ListUsers`` filter."""
-_NOT_SIGNING_IN = frozenset({"UNCONFIRMED", "ARCHIVED", "COMPROMISED", "UNKNOWN"})
-"""States of a person who may not sign in (``UserStatus``)."""
+_NOT_SIGNING_IN = frozenset(
+    {
+        "UNCONFIRMED",
+        "ARCHIVED",
+        "COMPROMISED",
+        "UNKNOWN",
+        # Must set a new password first (an administrator may have asked for it on suspicion
+        # of compromise): the task waits until the person signs in again and resumes it (A3).
+        "RESET_REQUIRED",
+        "FORCE_CHANGE_PASSWORD",
+    }
+)
+"""States of a person who may not act through a task (``UserStatus``)."""
 
 
 class OwnerAccessLostError(Exception):

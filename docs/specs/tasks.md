@@ -81,7 +81,7 @@ Hoy la identidad llega al destino porque el access token de quien pregunta va al
 - **Ver la pantalla:** como el diseño (`OWNER_VIEWS`: administradores y FinOps central con el grupo de creadores).
 - **Crear y editar:** quien puede crear agentes (`mango-agent-creator`) o es administrador, y **solo sobre agentes publicados que puede usar** (L1 `UseAgent`).
 - **Ejecutar ahora, editar, reanudar:** solo el dueño (corre con su identidad).
-- **Pausar y retirar:** el dueño o un administrador; retirar exige motivo. La pausa de un administrador frena también al dueño y solo la levanta un administrador (D78 (19)). El resultado de una ejecución solo lo ve su dueño (D78 (18)). Retirada no vuelve; el historial se conserva.
+- **Pausar y retirar:** el dueño o un administrador; retirar exige motivo. La pausa de un administrador frena también al dueño y solo la levanta un administrador, que además puede tomar la pausa del dueño (D78 (19) y (21)). El resultado de una ejecución solo lo ve su dueño (D78 (18)). Retirada no vuelve; el historial se conserva.
 - Acciones nuevas en Verified Permissions: `CreateTask` y `ManageTask` (por objeto, con el dueño como atributo).
 
 ## 8. Resultado, entrega y escrituras
