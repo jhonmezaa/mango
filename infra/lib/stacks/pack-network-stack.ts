@@ -53,6 +53,8 @@ export class PackNetworkStack extends Stack {
       packs: release.packs,
     });
 
+    // D77: Core's stack tagger gives this VPC's defaults and rules the stack's tags.
+    new CfnOutput(this, "VpcId", { value: network.vpc.vpcId, exportName: packNetworkExports.vpc(namespace) });
     network.subnetIds.forEach((subnetId, index) => {
       new CfnOutput(this, `Subnet${index + 1}`, {
         value: subnetId,

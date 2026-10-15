@@ -3,6 +3,7 @@ import {
   CfnOutput,
   CfnResource,
   Duration,
+  Fn,
   RemovalPolicy,
   Stack,
   StackProps,
@@ -24,7 +25,8 @@ import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
 import { OperationalAlarms } from "../constructs/operational-alarms.js";
-import { importPackNetwork, PackNetwork, PackNetworkRef } from "../constructs/pack-network.js";
+import { importPackNetwork, PackNetwork, PackNetworkRef, packNetworkExports } from "../constructs/pack-network.js";
+import { StackTagger } from "../constructs/stack-tagger.js";
 import {
   accountDataPacks,
   loadPackRelease,
@@ -252,6 +254,19 @@ export class CoreStack extends Stack {
     new Observability(this, "Observability", {
       installation: cfg,
       ...(release ? { when: release.ownsTransactionSearch } : {}),
+    });
+    // D77: what CloudFormation cannot tag gets the stack's tags, on install and every version.
+    // A release keeps the pack network in its own stack, which exports its VPC.
+    const packVpcId = ownPackNetwork
+      ? ownPackNetwork.vpc.vpcId
+      : release
+        ? Fn.importValue(packNetworkExports.vpc(cfg.namespace))
+        : undefined;
+    new StackTagger(this, "StackTagger", {
+      installation: cfg,
+      vpcIds: [network.vpc.vpcId, ...(packVpcId ? [packVpcId] : [])],
+      release: props.release?.label ?? "v0.0.0-unpublished",
+      configKey: tools.configKey,
     });
 
     // Harnesses the provisioner creates (D32), FinOps included. InvokeHarness can override

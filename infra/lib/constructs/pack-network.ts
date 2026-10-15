@@ -75,6 +75,8 @@ export function provisionerSetting(stack: Stack, network: PackNetworkRef): strin
 
 /** Names `Mango-<ns>-PackNetwork` exports and `Mango-<ns>-Core` imports. */
 export const packNetworkExports = {
+  /** The pack VPC, for the stack tagger of Core (D77). */
+  vpc: (ns: string) => `${mangoName(ns, "PackNetwork")}-VpcId`,
   subnet: (ns: string, index: number) => `${mangoName(ns, "PackNetwork")}-Subnet${index + 1}`,
   securityGroup: (ns: string, pack: string) => `${mangoName(ns, "PackNetwork")}-SecurityGroup-${pack}`,
 };

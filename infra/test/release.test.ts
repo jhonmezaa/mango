@@ -211,8 +211,14 @@ describe("Core template of a release", () => {
     const keys = [...first!.matchAll(/"(?:S3Key|SourceObjectKeys)":(\[[^\]]*\]|"[^"]*")/g)].flatMap((m) => m[1]!.match(/[^"[\],]+/g)!);
     expect(keys.length).toBeGreaterThan(15);
     for (const key of keys) expect(key).toMatch(/^mango\/assets\/[0-9a-f]{64}\.zip$/);
-    expect(first!.split("v0.1.0-g1a2b3c4")).toHaveLength(2);
-    expect(first!.replace("v0.1.0-g1a2b3c4", "v0.1.1")).toBe(second);
+    // The label is in two places: the API task (MANGO_RELEASE) and the stack tagger, which has
+    // to run on every version (D77 (2)). Nothing else changes between the two templates.
+    expect(first!.split("v0.1.0-g1a2b3c4")).toHaveLength(3);
+    const tagger = Object.values(JSON.parse(first!).Resources as Record<string, Resource>).find(
+      (r) => r.Type === "Custom::MangoStackTags",
+    )!;
+    expect(tagger.Properties.Release).toBe("v0.1.0-g1a2b3c4");
+    expect(first!.replaceAll("v0.1.0-g1a2b3c4", "v0.1.1")).toBe(second);
   });
 });
 
@@ -296,11 +302,15 @@ describe("pack network of a release, in its own stack", () => {
 
   it("exports what Core imports, under names of the installation", () => {
     const names = Object.values(network.Outputs).map((o) => instantiate(o.Export.Name, { Namespace: "acme" }));
-    expect(names).toEqual(["Mango-acme-PackNetwork-Subnet1", "Mango-acme-PackNetwork-Subnet2"]);
+    expect(names).toEqual(["Mango-acme-PackNetwork-VpcId", "Mango-acme-PackNetwork-Subnet1", "Mango-acme-PackNetwork-Subnet2"]);
+    // D77: Core's stack tagger reads the pack VPC from that export.
+    expect(packNetworkExports.vpc("acme")).toBe("Mango-acme-PackNetwork-VpcId");
+    const tagger = Object.values(source.Resources).find((r) => r.Type === "Custom::MangoStackTags")!;
+    expect(JSON.stringify(tagger.Properties.VpcIds)).toContain("-PackNetwork-VpcId");
     const stack = new Stack();
     const imported = stack.resolve(importPackNetwork("acme", [{ id: "aws-pricing" }])) as unknown;
     expect(imported).toEqual({
-      subnetIds: names.map((name) => ({ "Fn::ImportValue": name })),
+      subnetIds: names.slice(1).map((name) => ({ "Fn::ImportValue": name })),
       securityGroupIds: { "aws-pricing": { "Fn::ImportValue": "Mango-acme-PackNetwork-SecurityGroup-aws-pricing" } },
     });
     expect(packNetworkExports.securityGroup("acme", "aws-pricing")).toBe("Mango-acme-PackNetwork-SecurityGroup-aws-pricing");

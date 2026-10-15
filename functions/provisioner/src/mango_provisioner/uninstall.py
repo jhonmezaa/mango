@@ -398,13 +398,19 @@ def stack_is_being_deleted(cloudformation: Any, stack_id: str) -> bool:
     return len(stacks) == 1 and stacks[0]["StackStatus"] == DELETING_STACK
 
 
-def respond(event: Mapping[str, Any], status: str, reason: str = "") -> None:
+def respond(
+    event: Mapping[str, Any],
+    status: str,
+    reason: str = "",
+    *,
+    physical_id: str = "mango-uninstall-guard",
+) -> None:
     """Answer CloudFormation at the pre-signed URL of the request."""
     body = json.dumps(
         {
             "Status": status,
             "Reason": reason[:400] or "See the function's log group",
-            "PhysicalResourceId": event.get("PhysicalResourceId") or "mango-uninstall-guard",
+            "PhysicalResourceId": event.get("PhysicalResourceId") or physical_id,
             "StackId": event["StackId"],
             "RequestId": event["RequestId"],
             "LogicalResourceId": event["LogicalResourceId"],

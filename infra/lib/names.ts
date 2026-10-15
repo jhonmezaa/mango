@@ -27,6 +27,8 @@ export const roleNames = {
   memberReadOnly: (ns: string) => mangoName(ns, "ReadOnly"),
   /** Custom resource function that removes agents and packs when the stack is deleted (D58). */
   uninstallGuard: (ns: string) => mangoName(ns, "UninstallGuard"),
+  /** Gives the stack's tags to what CloudFormation cannot tag (D77). */
+  stackTagger: (ns: string) => mangoName(ns, "StackTagger"),
   /** Lambda behind the Gateway that runs approved write tools (D27). */
   approvalExecutor: (ns: string) => mangoName(ns, "ApprovalExecutor"),
   /** Broker to the write roles; only the approval executor may assume it (§4.10). */

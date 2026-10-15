@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-05 (propuesta por un agente y aceptada por el dueño el mismo día)
 - **Precisa / reemplaza a:** precisa [D58](D058-distribucion-para-clientes.md) y [D8](D008-distribucion.md)
-- **Precisada por:** —
+- **Precisada por:** [D77](D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md) (precisa: la etiqueta está también en el etiquetador del stack, que corre en cada versión; una entrada más en cada actualización de `Core`)
 
 ## Decisión
 
