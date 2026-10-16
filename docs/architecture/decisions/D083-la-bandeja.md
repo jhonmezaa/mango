@@ -1,0 +1,29 @@
+# D83 · La Bandeja: avisos de cada persona, guardados en su partición
+
+- **Estado:** propuesta
+- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «90 días (Recomendada)», «Tabla de conversaciones (Recomendada)» y «Como el diseño y al brief (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente)
+- **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (el resultado de una ejecución, ahora también con un aviso en la Bandeja de su dueño)
+- **Precisada por:** —
+
+## Decisión
+
+Origen: el diseño (D24, `other-views.jsx` «Inbox» y la sección «Schedules · resultado, estados y anomalías de costo» de `HANDOFF.md`) tiene una Bandeja completa, y el producto la mostraba como «Próximamente». El dueño eligió construirla el 2026-10-16, por menú («La Bandeja (Recomendada)»).
+
+**(1) Retención de 90 días (tomada por el dueño el 2026-10-16, por menú: «90 días (Recomendada)»).** Cada aviso y cada marca de leído o archivado caduca a los 90 días por el TTL de DynamoDB (`ttl`): lo mismo que la ejecución a la que apunta (D78 (6)) y que una solicitud de aprobación.
+
+**(2) Los avisos viven en la tabla de conversaciones, en la partición de su destinatario (tomada por el dueño el 2026-10-16, por menú: «Tabla de conversaciones (Recomendada)»).** Sin tabla ni permiso de IAM nuevos:
+- `PK = USER#<sub>`, `SK = INBOX#<id>`: el aviso de una ejecución. El id es el instante en milisegundos (13 cifras) seguido de 16 caracteres hexadecimales aleatorios: ordena del más reciente al más antiguo y no se adivina.
+- `PK = USER#<sub>`, `SK = INBOXSTATE#APPROVAL#<id de la solicitud>`: si esa persona leyó o archivó una aprobación.
+- Se leen y escriben solo con el cliente de RLS de la persona (rol `Mango-<ns>-ConversationData` con la política de sesión `dynamodb:LeadingKeys = USER#<sub>`), también cuando escribe el worker de tareas. La tabla ya tiene CMK, PITR, `RETAIN`, protección de borrado y TTL.
+
+**(3) En pantalla angosta, como el diseño (tomada por el dueño el 2026-10-16, por menú: «Como el diseño y al brief (Recomendada)»).** A 900 px o menos el diseño oculta el detalle de la Bandeja: la lista se ve, el detalle no. Se construye así y se lleva al brief siguiente (`docs/design/briefs/sync-2026-10-16b.md`) para que Claude Design lo resuelva.
+
+**(4) Qué trae la Bandeja (propuesto por un agente).**
+- **Aprobaciones:** no se copian. En cada lectura salen de la tabla de aprobaciones con la regla de la pantalla de Aprobaciones (D56): nivel `approvers`, pendientes y sin vencer, no pedidas por quien mira, no firmadas ya por quien mira, y solo si tiene `ApproveToolCall`. Al decidirse, firmarse o vencer dejan de aparecer. El detalle muestra la misma tarjeta de decisión que Aprobaciones; firmar sigue pasando por sus rutas. Las que confirma quien las pidió (nivel `self`) no van a la Bandeja: el diseño no las pone.
+- **Ejecuciones:** un aviso por cada ejecución de una tarea que terminó «Completada» o «Fallida», solo para su dueño, escrito por el worker en la partición del dueño (el `owner_id` de la tabla de tareas, nunca un dato del mensaje) y solo si el cambio de estado condicionado se aplicó, así que una entrega repetida no deja dos. Lleva el nombre de la tarea, el agente, si se completó, el código del motivo y la primera línea del informe, sin marcas de Markdown y con 200 caracteres como mucho. Nunca el informe, los pasos ni la instrucción (D78 (18), D82). Las omitidas y las que esperan una aprobación no dejan aviso, como el diseño. «Ver resultado» o «Ver ejecución» abre Schedules en esa ejecución (`/schedules/<tarea>/run/<ejecución>`).
+- **Lo demás del diseño** (menciones, tickets, presupuesto y sistema) no tiene señal en el producto: la pestaña «Menciones» es «Próximamente» y no hay avisos de ejemplo (D24).
+- **Rutas:** `GET /api/inbox` (vistas `all`, `unread`, `approvals` y `archived`; páginas de 20 avisos por cursor, con las aprobaciones solo en la primera), `GET /api/inbox/unread`, `POST /api/inbox/read-all` (las 200 más recientes) y `PUT /api/inbox/{approval|run}/{id}` (leído, archivado; archivar marca como leído). Todas exigen L1 `ViewInbox` (Verified Permissions, toda persona de Mango, `policies/cedar/platform/inbox-view.cedar`), que se audita como lectura. Lo ajeno, o una aprobación que quien mira no puede firmar, es 404.
+- **Contador:** la barra lateral muestra los no leídos (como mucho «99+»), que la SPA pide cada 60 s y al volver a la pestaña. La lista carga la página siguiente al llegar al final: el diseño no tiene un control para eso, y va al brief.
+- **Textos de Schedules:** pasan a la variante del diseño que nombra la Bandeja («Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.», «El resultado está en el detalle de la tarea y en tu Bandeja.», «En el detalle y en tu Bandeja · solo tú lo ves»).
+
+Modelo de amenazas: [`inbox-threat-model.md`](../../security/threat-models/inbox-threat-model.md). Comprobado con tests de Python (`apps/api/tests/test_inbox.py`, `test_tasks.py`, `test_cedar_policies.py`), de la web y e2e contra el mock, y en el navegador. **Sin ver en una instalación.** En una actualización, el change set cambia el esquema del almacén de políticas y añade la política `ViewInbox`, y despliega la imagen nueva de `mango-api`; no crea tablas, roles ni alarmas.
