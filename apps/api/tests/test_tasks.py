@@ -657,6 +657,7 @@ def test_a_failure_of_cognito_is_a_failed_run_never_a_pause(env: Env) -> None:
 
 
 def test_without_budget_the_run_is_skipped_and_the_task_stays_active(env: Env) -> None:
+    clock = _clocked(env)
     task = env.created()
     env.budgets.exceed = True
     env.deliver(_scheduled(task["task_id"]))
@@ -671,6 +672,7 @@ def test_without_budget_the_run_is_skipped_and_the_task_stays_active(env: Env) -
     # Design 2026-10-16b: until the agent's budget is computed, the last run tells it.
     assert detail["health"] == {"tone": "amber", "code": "budget_skipped"}
     env.budgets.exceed = False
+    clock.now += 60  # the next run is the most recent one
     env.deliver(_scheduled(task["task_id"], "2026-10-16T14:30:00Z"))
     assert env.get("creator", task["task_id"]).json()["health"] is None
 
