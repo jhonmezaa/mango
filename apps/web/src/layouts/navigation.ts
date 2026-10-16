@@ -70,7 +70,8 @@ export const AVAILABLE_VIEWS: ReadonlySet<ViewKey> = new Set<ViewKey>([
 
 /**
  * Design store.js USER_VIEWS: what every account sees. Admins see every view. Org Chart is here
- * (design oct 2026): the API returns each caller the tree they may see (D38).
+ * (design oct 2026): the API returns each caller the tree they may see (D38). Schedules too
+ * (design 2026-10-16, D82 (1)): anyone with a usable agent creates tasks; the API lists theirs.
  */
 const USER_VIEWS: ReadonlySet<ViewKey> = new Set([
   'chat',
@@ -82,6 +83,7 @@ const USER_VIEWS: ReadonlySet<ViewKey> = new Set([
   'search',
   'approvals',
   'org',
+  'schedules',
 ]);
 
 /**

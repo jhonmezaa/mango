@@ -46,7 +46,8 @@ describe('SchedulesPage', () => {
       await screen.findByText('Budget check diario', { selector: '.mk-name' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Todos los días · 09:30')).toBeInTheDocument();
-    expect(screen.getByText('FinOps · como Usuario 1 · Bandeja del creador')).toBeInTheDocument();
+    expect(screen.getByText('FinOps · como tú')).toBeInTheDocument();
+    expect(screen.getByText('cuándo corre')).toBeInTheDocument();
     expect(screen.getByLabelText('Últimas ejecuciones')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nuevo schedule' })).toBeInTheDocument();
   });
@@ -59,7 +60,11 @@ describe('SchedulesPage', () => {
 
   it('hides creating for whoever may not create', async () => {
     renderPage(apiWith(base(list([], { can_create: false }))));
-    expect(await screen.findByText('Ningún schedule coincide.')).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Aún no tienes tareas. Para crear una necesitas un agente publicado que puedas usar.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nuevo schedule' })).toBeNull();
   });
 
@@ -98,12 +103,23 @@ describe('SchedulesPage', () => {
   });
 
   it('an administrator sees that only the owner edits, runs or resumes a task', async () => {
-    renderPage(apiWith(base(list([task({ is_owner: false })]))));
+    renderPage(
+      apiWith(
+        base(list([task({ is_owner: false, task: null, runs: [run({ has_result: false })] })])),
+      ),
+      true,
+    );
     await userEvent.click(await screen.findByText('Budget check diario', { selector: '.mk-name' }));
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByText(/Solo Usuario 1 puede editarla/)).toBeInTheDocument();
     expect(within(panel).queryByRole('button', { name: /Editar/ })).toBeNull();
     expect(within(panel).getByRole('button', { name: /Retirar/ })).toBeInTheDocument();
+    // D82 (3) and D78 (18): neither the instruction nor the results of someone else's task.
+    expect(
+      within(panel).getByText(/Solo Usuario 1 ve la instrucción y los resultados/),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText('Los resultados solo los ve Usuario 1.')).toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: 'Ver resultado' })).toBeNull();
   });
 
   it('retiring needs a reason', async () => {
@@ -119,10 +135,7 @@ describe('SchedulesPage', () => {
     // Asking for the reason leaves one «Retirar»: the one that confirms.
     const confirm = within(panel).getByRole('button', { name: /Retirar/ });
     expect(confirm).toBeDisabled();
-    await userEvent.type(
-      within(panel).getByLabelText('Motivo del retiro (obligatorio)'),
-      'Duplicada',
-    );
+    await userEvent.type(within(panel).getByLabelText('Motivo del retiro'), 'Duplicada');
     await userEvent.click(confirm);
     await waitFor(() => {
       expect(call).toHaveBeenCalledWith('retireExistingTask', {
@@ -135,13 +148,26 @@ describe('SchedulesPage', () => {
   it('shows the result of a run as Markdown without raw HTML', async () => {
     const call = apiWith({
       ...base(list([task()])),
-      getTaskRun: () => ({ ...run(), result: `**Total** USD 10 ${XSS}` }),
+      getTaskRun: () => ({
+        ...run(),
+        result: `**Total** USD 10 ${XSS}`,
+        steps: [{ text: `Consulto ${XSS}`, tool: 'get_budgets' }],
+      }),
     });
     renderPage(call);
     await userEvent.click(await screen.findByText('Budget check diario', { selector: '.mk-name' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Ver resultado' }));
-    expect(await screen.findByText('Total')).toBeInTheDocument();
+    // Inside the panel of the task (design 2.1), with its steps and the report.
+    const panel = await screen.findByRole('dialog');
+    expect(await within(panel).findByText('Total')).toBeInTheDocument();
+    expect(within(panel).getByText('Pasos · 1 consulta')).toBeInTheDocument();
+    expect(within(panel).getByText('get_budgets')).toBeInTheDocument();
+    expect(
+      within(panel).getByText('Solo tú ves este resultado: se obtuvo con tu acceso.'),
+    ).toBeInTheDocument();
     expect(document.querySelector('img')).toBeNull();
+    await userEvent.click(within(panel).getByRole('button', { name: /Volver a la tarea/ }));
+    expect(within(panel).getByText('entrega y control')).toBeInTheDocument();
   });
 
   it('creates a scheduled task with the fields of the design', async () => {
@@ -179,7 +205,7 @@ describe('SchedulesPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Nuevo schedule' }));
     const dialog = await screen.findByRole('dialog');
     expect(
-      within(dialog).getByRole('button', { name: 'Cuando haya una anomalía de costo' }),
+      within(dialog).getByRole('button', { name: 'Al detectar una anomalía de costo' }),
     ).toBeDisabled();
     expect(
       within(dialog).getByText(
@@ -203,11 +229,18 @@ describe('SchedulesPage', () => {
     });
     renderPage(apiWith(base(list([anomaly]))));
     expect(await screen.findByText('Al detectar una anomalía de costo')).toBeInTheDocument();
-    expect(screen.getByText('Hasta 5 investigaciones por día')).toBeInTheDocument();
+    expect(screen.getByText('Hasta 5 por día')).toBeInTheDocument();
     await userEvent.click(screen.getByText('Anomalías', { selector: '.mk-name' }));
+    const panel = await screen.findByRole('dialog');
     expect(
-      await screen.findByText('Se alcanzó el tope de investigaciones del día'),
+      await within(panel).findByText('Se alcanzó el tope de investigaciones del día'),
     ).toBeInTheDocument();
+    expect(within(panel).getByText('Hasta 5 investigaciones por día')).toBeInTheDocument();
+    expect(
+      within(panel).getByText('Una a la vez; la siguiente espera en cola'),
+    ).toBeInTheDocument();
+    // An anomaly task is never run on demand: there is no anomaly to investigate.
+    expect(within(panel).queryByRole('button', { name: /Ejecutar ahora/ })).toBeNull();
   });
 
   it('says why a waiting run did not run when its task was paused (D81)', async () => {
@@ -313,11 +346,112 @@ describe('SchedulesPage', () => {
     await userEvent.click(await screen.findByText('Budget check diario', { selector: '.mk-name' }));
     const panel = await screen.findByRole('dialog');
     await userEvent.click(within(panel).getByRole('button', { name: 'Pausar' }));
+    // D82 (2): an administrator says why.
+    const confirm = within(panel).getByRole('button', { name: 'Pausar' });
+    expect(confirm).toBeDisabled();
+    await userEvent.type(within(panel).getByLabelText('Motivo de la pausa'), 'Revisemos el costo');
+    await userEvent.click(confirm);
     await waitFor(() => {
       expect(call).toHaveBeenCalledWith('pauseExistingTask', {
         path: { task_id: 'a'.repeat(32) },
-        body: {},
+        body: { reason: 'Revisemos el costo' },
       });
     });
+  });
+
+  it('the owner reads why an administrator paused the task (D82 (2))', async () => {
+    const paused = task({
+      status: 'paused',
+      paused_reason: 'admin',
+      paused_at: '2026-10-15T09:00:00Z',
+      paused_note: 'Revisemos el costo antes de seguir.',
+    });
+    renderPage(apiWith(base(list([paused]))));
+    expect(await screen.findByText('Pausada por un admin')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Budget check diario', { selector: '.mk-name' }));
+    const panel = await screen.findByRole('dialog');
+    expect(
+      within(panel).getByText('Motivo: Revisemos el costo antes de seguir.'),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByText('Un administrador la pausó: solo un administrador la reanuda.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the anomaly of a run and that a run waits for the previous one (D81)', async () => {
+    const anomaly = task({
+      name: 'Anomalías',
+      trigger: {
+        kind: 'event',
+        schedule: null,
+        timezone: null,
+        event_type: 'cost_anomaly',
+        daily_cap: 5,
+      },
+      next_runs: [],
+      runs: [
+        run({
+          run_id: 'r1',
+          trigger: 'event',
+          status: 'queued',
+          started_at: null,
+          ended_at: null,
+          has_result: false,
+          waiting_since: '2026-10-15T14:30:00Z',
+          anomaly: { start: '2026-10-14', end: '2026-10-15' },
+        }),
+        run({
+          run_id: 'r2',
+          trigger: 'event',
+          waiting_since: '2026-10-15T14:28:00Z',
+          started_at: '2026-10-15T14:30:00Z',
+          anomaly: { start: '2026-10-14', end: '2026-10-14' },
+        }),
+      ],
+    });
+    renderPage(apiWith(base(list([anomaly]))));
+    expect(await screen.findByText('En cola')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Anomalías', { selector: '.mk-name' }));
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByText('Anomalía · 14–15 oct')).toBeInTheDocument();
+    expect(
+      within(panel).getByText('Espera a que termine la investigación anterior'),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText('Esperó 2 min en cola')).toBeInTheDocument();
+  });
+
+  it('the editor shows the next runs the server computes in the zone of the task', async () => {
+    const call = apiWith({
+      ...base(list([])),
+      previewNextRuns: () => ({
+        next_runs: ['2026-10-17T14:00:00Z', '2026-10-18T14:00:00Z', '2026-10-19T14:00:00Z'],
+      }),
+    });
+    renderPage(call);
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuevo schedule' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByText(/^Próximas, hora de Ciudad de México:/),
+    ).toBeInTheDocument();
+    expect(call).toHaveBeenCalledWith(
+      'previewNextRuns',
+      {
+        body: {
+          schedule: { freq: 'daily', hour: 9, minute: 0, days: [1, 4], dow: 1, dom: 1 },
+          timezone: 'America/Mexico_City',
+        },
+      },
+      expect.anything(),
+    );
+    expect(
+      within(dialog).getByText('Queda en el detalle de la tarea. Solo tú lo ves.'),
+    ).toBeInTheDocument();
+  });
+
+  it('nobody creates without a usable agent', async () => {
+    renderPage(apiWith({ listTasksOfCaller: () => list([]), getAgents: () => ({ items: [] }) }));
+    const button = await screen.findByRole('button', { name: 'Nuevo schedule' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'No tienes agentes publicados que puedas usar');
   });
 });

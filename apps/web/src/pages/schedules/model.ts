@@ -41,16 +41,18 @@ const RUNS_PER_MONTH: Record<Frequency, (spec: Spec) => number> = {
 export type TaskStatus = 'active' | 'paused' | 'retired';
 export type QuickFilter = 'all' | TaskStatus | 'attention';
 export const QUICK: readonly QuickFilter[] = ['all', 'active', 'paused', 'attention', 'retired'];
-export type RunTone = 'green' | 'red' | 'dim' | 'amber' | 'accent';
-/** Design SC_RUN, plus the two states a run is in before it ends. */
+export type RunTone = 'green' | 'red' | 'dim' | 'amber' | 'muted';
+/** Design SC_RUN. «Ejecutando…» shows a spinner instead of its dot. */
 export const RUN_TONE: Record<string, RunTone> = {
   ok: 'green',
   failed: 'red',
   skipped: 'dim',
   approval: 'amber',
-  queued: 'accent',
-  running: 'accent',
+  queued: 'muted',
+  running: 'muted',
 };
+/** Design SC_STARTED: the runs that count for the daily cap (the skipped ones do not). */
+const STARTED = new Set(['ok', 'failed', 'approval', 'running']);
 
 export const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -122,19 +124,39 @@ export function matchesQuick(task: Task, quick: QuickFilter, health: Health | nu
   return task.status === quick;
 }
 
-/** «Costo estimado · mes»: the average cost of a run times the runs a month (design). Tasks
- * that run on an event have no frequency: they are left out (brief, point 6). */
-export function monthlyEstimate(tasks: readonly Task[]): number {
+const DAY_MS = 86_400_000;
+
+/** «Costo estimado · mes» (design): tasks by schedule, the average cost of a run times the runs
+ * a month; tasks on an anomaly, what they cost in the last 30 days. */
+export function monthlyEstimate(tasks: readonly Task[], now = Date.now()): number {
   let total = 0;
   for (const task of tasks) {
+    if (task.status !== 'active') continue;
+    const costs = task.runs.flatMap((run) => (run.cost_usd === null ? [] : [run]));
     const spec = task.trigger.schedule;
-    if (task.status !== 'active' || !spec) continue;
-    const costs = task.runs.flatMap((run) => (run.cost_usd === null ? [] : [Number(run.cost_usd)]));
-    if (costs.length === 0) continue;
-    const average = costs.reduce((sum, cost) => sum + cost, 0) / costs.length;
-    total += average * perMonth(spec);
+    if (isEvent(task)) {
+      for (const run of costs) {
+        if (now - new Date(run.queued_at).getTime() < 30 * DAY_MS) total += Number(run.cost_usd);
+      }
+    } else if (spec && costs.length > 0) {
+      const sum = costs.reduce((acc, run) => acc + Number(run.cost_usd), 0);
+      total += (sum / costs.length) * perMonth(spec);
+    }
   }
   return total;
+}
+
+/** The start of a UTC day (``offset`` days from today): the day of the daily cap (design). */
+export function utcDay(offset = 0, now = new Date()): number {
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + offset);
+}
+
+/** Design scToday: the runs that started today (UTC), which count for the cap. */
+export function startedToday(task: Task, now = new Date()): number {
+  const day = utcDay(0, now);
+  return task.runs.filter(
+    (run) => STARTED.has(run.status) && new Date(run.started_at ?? run.queued_at).getTime() >= day,
+  ).length;
 }
 
 export function durationMs(run: TaskRun): number | null {
@@ -168,28 +190,46 @@ export function isRunReason(value: string): value is RunReason {
 export const HEALTH_KEYS = ['agent_unavailable', 'access_lost', 'failing', 'tools'] as const;
 export type HealthKey = (typeof HEALTH_KEYS)[number];
 
+export interface Perms {
+  own: boolean;
+  anomaly: boolean;
+  adminPaused: boolean;
+  autoPaused: boolean;
+  busy: TaskRun | undefined;
+  canRun: boolean;
+  canResume: boolean;
+  canPause: boolean;
+}
+
 /**
- * Who may press «Pausar» or «Reanudar» (design, with D2 after the review): an active task, its
- * owner or an administrator; a paused one, whoever paused it in the owner's place: an
- * administrator's pause only an administrator lifts, any other only the owner. The API decides.
+ * Design scPerms: only the owner edits and runs it now; an administrator's pause also stops the
+ * owner and only an administrator lifts it; an administrator may take over the owner's pause
+ * (D78 (19), (21)). What a task paused by itself (lost access) allows is nothing but retiring.
+ * The API decides every action; this only shows what the design shows.
  */
-export function canToggle(task: Task, isAdmin: boolean): boolean {
-  if (task.status === 'retired' || task.paused_reason === 'access_lost') return false;
-  if (task.status === 'active') return true;
-  return task.paused_reason === 'admin' ? isAdmin : task.is_owner;
+export function permsOf(task: Task, isAdmin: boolean): Perms {
+  const own = task.is_owner;
+  const anomaly = isEvent(task);
+  const paused = task.status === 'paused';
+  const adminPaused = paused && task.paused_reason === 'admin';
+  const autoPaused = task.paused_reason === 'access_lost';
+  const live = task.status !== 'retired' && !autoPaused;
+  return {
+    own,
+    anomaly,
+    adminPaused,
+    autoPaused,
+    busy: task.runs.find(isOpen),
+    canRun: own && !anomaly && live && !adminPaused,
+    canResume: live && paused && (adminPaused ? isAdmin : own),
+    canPause: live && (!paused ? own || isAdmin : isAdmin && !own && !adminPaused),
+  };
 }
 
-/** «Ejecutar ahora»: only the owner, and never while an administrator holds it paused (D2). */
-export function canRunNow(task: Task): boolean {
-  return (
-    task.is_owner &&
-    task.status !== 'retired' &&
-    task.paused_reason !== 'access_lost' &&
-    task.paused_reason !== 'admin'
+/** Why a task paused itself: its owner lost access to the agent, or stopped being central. */
+export function autoPauseKind(task: Task): 'access' | 'central' {
+  const cause = task.runs.find(
+    (run) => run.reason === 'access_lost' || run.reason === 'not_central',
   );
-}
-
-/** An administrator holds what its owner paused (A1 of the second review): the brake of D2. */
-export function canHold(task: Task, isAdmin: boolean): boolean {
-  return isAdmin && !task.is_owner && task.status === 'paused' && task.paused_reason === 'owner';
+  return cause?.reason === 'not_central' ? 'central' : 'access';
 }

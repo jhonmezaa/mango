@@ -12,6 +12,8 @@ const USER: ViewKey[] = [
   'search',
   'approvals',
   'activity',
+  // Design 2026-10-16 (D82 (1)): anyone with a usable agent creates tasks.
+  'schedules',
   'org',
 ];
 const OWNER_EXTRA: ViewKey[] = [
@@ -19,7 +21,6 @@ const OWNER_EXTRA: ViewKey[] = [
   'playground',
   'skills',
   'knowledge',
-  'schedules',
   'observability',
   'evals',
   'costs',

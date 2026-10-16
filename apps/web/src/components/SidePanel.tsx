@@ -18,6 +18,8 @@ interface Props {
   /** Fixed below the scrolling content (design `mc-foot`): the actions of the item. */
   footer?: ReactNode;
   onClose: () => void;
+  /** What Escape does, when it is not closing (design: a result inside the panel goes back). */
+  onEscape?: () => void;
   children: ReactNode;
 }
 
@@ -34,11 +36,12 @@ export function SidePanel({
   width,
   footer,
   onClose,
+  onEscape,
   children,
 }: Props) {
   const { t } = useTranslation();
   const titleId = useId();
-  const ref = useFocusTrap<HTMLElement>(true, onClose);
+  const ref = useFocusTrap<HTMLElement>(true, onEscape ?? onClose);
 
   return createPortal(
     <div

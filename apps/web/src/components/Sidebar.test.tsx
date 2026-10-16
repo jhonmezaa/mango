@@ -59,11 +59,13 @@ describe('Sidebar navigation', () => {
     renderSidebar(false);
     // Org Chart is a user view (design USER_VIEWS, oct 2026): the API filters the tree (D38).
     await user.click(screen.getByRole('button', { name: 'Operación' }));
+    await user.click(screen.getByRole('button', { name: 'Construir' }));
     expect(navLinks()).toEqual([
       'Chat',
       'Marketplace',
       'Chat con FinOps',
       'Aprobaciones',
+      'Schedules',
       'Org Chart',
     ]);
     expect(soonItems()).toEqual([
@@ -73,9 +75,9 @@ describe('Sidebar navigation', () => {
       'Buscar conversaciones, próximamente',
       'Actividad, próximamente',
     ]);
-    // Construir has no user views; admin screens and the Catálogo de MCP are hidden.
+    // Construir only has Schedules (design 2026-10-16, D82 (1)); admin screens and the
+    // Catálogo de MCP are hidden.
     expect(screen.getByRole('button', { name: 'Gobernanza' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Construir' })).toBeNull();
     expect(screen.queryByText('Catálogo de MCP')).toBeNull();
     expect(screen.queryByText('Audit log')).toBeNull();
     expect(screen.queryByText('Presupuestos')).toBeNull();

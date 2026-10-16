@@ -6,11 +6,17 @@ import { CheckIcon, CloseIcon, InfoIcon, WarnIcon, X2Icon } from '../icons';
 // --- Toasts (design ui.jsx ToastProvider) ---------------------------------------------------
 
 export type ToastTone = 'success' | 'info' | 'warn' | 'error';
+/** Design Toast `action` and `duration`: a button that does something and closes the toast. */
+export interface ToastOptions {
+  action?: { label: string; onClick: () => void };
+  duration?: number;
+}
 interface ToastItem {
   id: number;
   tone: ToastTone;
   msg: string;
   title?: string;
+  action?: ToastOptions['action'];
 }
 const TOAST_ICON = { success: CheckIcon, error: X2Icon, warn: WarnIcon, info: InfoIcon };
 const TOAST_MS = 4200;
@@ -24,13 +30,16 @@ export function useToasts() {
     setToasts((list) => list.filter((item) => item.id !== id));
   }, []);
   const notify = useCallback(
-    (msg: string, tone: ToastTone = 'success', title?: string) => {
+    (msg: string, tone: ToastTone = 'success', title?: string, options: ToastOptions = {}) => {
       nextId.current += 1;
       const id = nextId.current;
-      setToasts((list) => [...list, title ? { id, tone, msg, title } : { id, tone, msg }]);
+      const item: ToastItem = { id, tone, msg };
+      if (title) item.title = title;
+      if (options.action) item.action = options.action;
+      setToasts((list) => [...list, item]);
       window.setTimeout(() => {
         dismiss(id);
-      }, TOAST_MS);
+      }, options.duration ?? TOAST_MS);
     },
     [dismiss],
   );
@@ -52,6 +61,18 @@ export function useToasts() {
               ) : (
                 item.msg
               )}
+              {item.action ? (
+                <button
+                  type="button"
+                  className="btn btn-sm g-toast-act"
+                  onClick={() => {
+                    item.action?.onClick();
+                    dismiss(item.id);
+                  }}
+                >
+                  {item.action.label}
+                </button>
+              ) : null}
             </div>
             <button
               type="button"

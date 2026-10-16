@@ -1,8 +1,11 @@
 /**
- * Mock routes of the Schedules screen (D78): GET/POST /tasks, GET/PUT /tasks/{id}, POST
- * /tasks/{id}/{run,pause,resume,retire} and GET /tasks/{id}/runs/{run}. The response follows the
- * generated contract (packages/ts/api-client). The mock user owns every task it creates; a run
- * started with «Ejecutar ahora» ends two seconds later with a short answer.
+ * Mock routes of the Schedules screen (D78, D82): GET/POST /tasks, POST /tasks/next-runs, GET/PUT
+ * /tasks/{id}, POST /tasks/{id}/{run,pause,resume,retire} and GET /tasks/{id}/runs/{run}. The
+ * response follows the generated contract (packages/ts/api-client). The mock user (an
+ * administrator and central) owns what it creates; three example tasks follow the design's demo
+ * with neutral data: an investigation of cost anomalies, a task of another person paused by an
+ * administrator, and a daily check with a run skipped for budget. A run started with «Ejecutar
+ * ahora» ends two seconds later with a short answer in steps.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -17,6 +20,7 @@ type Spec = {
   dow: number;
   dom: number;
 };
+type Step = { text: string; tool: string | null };
 interface Run {
   run_id: string;
   trigger: 'manual' | 'schedule' | 'event';
@@ -27,7 +31,10 @@ interface Run {
   cost_usd: string | null;
   reason: string | null;
   result: string | null;
+  steps: Step[];
   approvals: string[];
+  anomaly: { start: string; end: string } | null;
+  waiting_since: string | null;
 }
 interface Task {
   task_id: string;
@@ -41,48 +48,253 @@ interface Task {
     event_type: string | null;
   };
   status: 'active' | 'paused' | 'retired';
-  paused_reason: 'owner' | null;
+  paused_reason: 'owner' | 'admin' | null;
   paused_at: string | null;
+  paused_note: string | null;
+  paused_by: string | null;
   retired: { by: string; at: string; reason: string } | null;
+  owner: { user_id: string; email: string; name: string | null };
   created_at: string;
   updated_at: string;
   runs: Run[];
 }
 
+const ME = { user_id: 'mock-user', email: MOCK_USER, name: null };
+const OTHER = { user_id: 'user-2', email: 'usuario2@empresa.com', name: 'Usuario 2' };
 const tasks = new Map<string, Task>();
 const id = () => randomBytes(16).toString('hex');
 const now = () => new Date().toISOString();
+const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+const isoDay = (offset: number) => {
+  const day = new Date();
+  day.setUTCDate(day.getUTCDate() + offset);
+  return day.toISOString().slice(0, 10);
+};
 const TASK_ROUTE = /^\/tasks\/([0-9a-f]{32})(?:\/(run|pause|resume|retire))?$/;
 const RUN_ROUTE = /^\/tasks\/([0-9a-f]{32})\/runs\/([0-9a-f]{32})$/;
+const ZONES = ['America/Mexico_City', 'America/Bogota', 'America/Sao_Paulo', 'UTC'];
 
-function summary(run: Run) {
-  const { result, ...rest } = run;
-  return { ...rest, has_result: Boolean(result) };
+const REPORT =
+  '## Anomalía en Amazon EC2\n\n**Impacto:** USD 412,30 sobre lo esperado.\n\n| Tipo de uso | Esperado | Real |\n|---|---|---|\n| BoxUsage | USD 640,00 | USD 1.052,30 |\n\n**Siguiente paso:** confirmar con el equipo dueño de la cuenta si el aumento fue intencional.';
+const STEPS: Step[] = [
+  {
+    text: 'Busco la anomalía por su id para ver qué cuenta y tipo de uso la explican.',
+    tool: 'get_anomalies',
+  },
+  { text: 'Comparo con los mismos días de la semana anterior.', tool: 'get_cost_and_usage' },
+];
+
+function run(overrides: Partial<Run>): Run {
+  return {
+    run_id: id(),
+    trigger: 'event',
+    status: 'ok',
+    queued_at: ago(30),
+    started_at: ago(30),
+    ended_at: ago(29),
+    cost_usd: '0.3100',
+    reason: null,
+    result: null,
+    steps: [],
+    approvals: [],
+    anomaly: null,
+    waiting_since: null,
+    ...overrides,
+  };
+}
+
+function seed() {
+  const created = ago(60 * 24 * 7);
+  const anomaly = { start: isoDay(-1), end: isoDay(0) };
+  const yesterday = (hours: number) => {
+    const at = new Date();
+    at.setUTCDate(at.getUTCDate() - 1);
+    at.setUTCHours(hours, 0, 0, 0);
+    return at.toISOString();
+  };
+  const investigations: Task = {
+    task_id: id(),
+    name: 'Investigar anomalías de costo',
+    agent_id: 'finops',
+    task: 'Cuando AWS detecte una anomalía de costo, identifica qué cuenta, servicio y tipo de uso la explican, compárala con las dos semanas anteriores y propone el siguiente paso.',
+    trigger: { kind: 'event', schedule: null, timezone: null, event_type: 'cost_anomaly' },
+    status: 'active',
+    paused_reason: null,
+    paused_at: null,
+    paused_note: null,
+    paused_by: null,
+    retired: null,
+    owner: ME,
+    created_at: created,
+    updated_at: created,
+    runs: [
+      run({ anomaly, result: REPORT, steps: STEPS, queued_at: ago(20), started_at: ago(20) }),
+      run({
+        anomaly,
+        result: REPORT,
+        steps: STEPS,
+        queued_at: ago(51),
+        waiting_since: ago(51),
+        started_at: ago(50),
+        ended_at: ago(49),
+        cost_usd: '0.2700',
+      }),
+      run({ anomaly, result: REPORT, queued_at: ago(52), started_at: ago(52), ended_at: ago(51) }),
+      run({
+        status: 'skipped',
+        reason: 'daily_cap',
+        anomaly: { start: isoDay(-2), end: isoDay(-1) },
+        queued_at: yesterday(21),
+        started_at: null,
+        ended_at: yesterday(21),
+        cost_usd: null,
+      }),
+      run({
+        status: 'skipped',
+        reason: 'overlap',
+        anomaly: { start: isoDay(-2), end: isoDay(-1) },
+        queued_at: yesterday(15),
+        started_at: null,
+        ended_at: yesterday(15),
+        cost_usd: null,
+      }),
+    ],
+  };
+  const cohort: Task = {
+    task_id: id(),
+    name: 'Cohort retention Q3',
+    agent_id: 'finops',
+    task: 'Recalcula la retención por cohorte y resume los cambios.',
+    trigger: {
+      kind: 'schedule',
+      schedule: { freq: 'days', hour: 6, minute: 0, days: [1, 4], dow: 1, dom: 1 },
+      timezone: 'UTC',
+      event_type: null,
+    },
+    status: 'paused',
+    paused_reason: 'admin',
+    paused_at: ago(60 * 48),
+    paused_note:
+      'Recalcula todo el histórico en cada ejecución; revisemos el costo antes de seguir.',
+    paused_by: 'usuario6@empresa.com',
+    retired: null,
+    owner: OTHER,
+    created_at: created,
+    updated_at: created,
+    runs: [
+      run({ trigger: 'schedule', result: 'Sin novedades.', queued_at: ago(60 * 72) }),
+      run({
+        trigger: 'schedule',
+        status: 'failed',
+        reason: 'upstream_error',
+        queued_at: ago(60 * 96),
+        cost_usd: '0.0400',
+      }),
+    ],
+  };
+  const budget: Task = {
+    task_id: id(),
+    name: 'Budget check diario',
+    agent_id: 'finops',
+    task: 'Revisa el consumo del presupuesto mensual y avisa si pasa del 80%.',
+    trigger: {
+      kind: 'schedule',
+      schedule: { freq: 'daily', hour: 9, minute: 0, days: [], dow: 1, dom: 1 },
+      timezone: 'America/Mexico_City',
+      event_type: null,
+    },
+    status: 'active',
+    paused_reason: null,
+    paused_at: null,
+    paused_note: null,
+    paused_by: null,
+    retired: null,
+    owner: ME,
+    created_at: created,
+    updated_at: created,
+    runs: [
+      run({
+        trigger: 'schedule',
+        result: '**Gasto del mes:** USD 2.400,00 de USD 3.000,00 (80 %).',
+        queued_at: ago(60 * 3),
+        cost_usd: '0.0800',
+      }),
+      run({
+        trigger: 'schedule',
+        status: 'skipped',
+        reason: 'budget_exceeded',
+        queued_at: ago(60 * 27),
+        started_at: null,
+        cost_usd: null,
+      }),
+    ],
+  };
+  for (const task of [investigations, cohort, budget]) tasks.set(task.task_id, task);
+}
+seed();
+
+/** The next times of a spec in a zone (the mock: daily-like frequencies only, enough to see). */
+function nextRuns(spec: Spec, zone: string, count = 3): string[] {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+  });
+  const out: string[] = [];
+  const start = Math.ceil(Date.now() / 60_000) * 60_000;
+  for (let at = start; out.length < count && at < start + 40 * 86_400_000; at += 60_000) {
+    const parts = Object.fromEntries(fmt.formatToParts(at).map((p) => [p.type, p.value]));
+    const minute = Number(parts.minute);
+    const hour = Number(parts.hour);
+    const weekday = new Date(`${parts.year}-${parts.month}-${parts.day}`).getDay();
+    const dom = Number(parts.day);
+    const due =
+      spec.freq === '15m'
+        ? minute % 15 === 0
+        : minute === spec.minute &&
+          (spec.freq === 'hourly' || (spec.freq === '6h' ? hour % 6 === 0 : hour === spec.hour)) &&
+          (spec.freq !== 'days' || spec.days.includes(weekday)) &&
+          (spec.freq !== 'weekdays' || (weekday > 0 && weekday < 6)) &&
+          (spec.freq !== 'weekly' || weekday === spec.dow) &&
+          (spec.freq !== 'monthly' || dom === spec.dom);
+    if (due) out.push(new Date(at).toISOString());
+  }
+  return out;
+}
+
+function summary(item: Run, owner: boolean) {
+  const { result, steps, ...rest } = item;
+  return { ...rest, has_result: owner && Boolean(result ?? steps.length) };
 }
 
 function out(task: Task) {
   const spec = task.trigger.schedule;
-  const next =
-    spec && task.status === 'active' ? [new Date(Date.now() + 3_600_000).toISOString()] : [];
+  const own = task.owner.user_id === ME.user_id;
   return {
     task_id: task.task_id,
     name: task.name,
     agent_id: task.agent_id,
     agent_name: null,
-    task: task.task,
+    task: own ? task.task : null,
     trigger: { ...task.trigger, daily_cap: task.trigger.event_type ? 5 : null },
     deliver: 'inbox',
     status: task.status,
     paused_reason: task.paused_reason,
     paused_at: task.paused_at,
+    paused_note: task.paused_note,
+    // The mock user is an administrator: it reads who paused (D82 (2)).
+    paused_by: task.paused_by,
     retired: task.retired,
-    owner: { user_id: 'mock-user', email: MOCK_USER, name: null },
-    is_owner: true,
-    next_runs: next,
-    running: task.runs.some((run) => run.status === 'queued' || run.status === 'running'),
-    runs: task.runs
-      .slice(0, 10)
-      .map(({ result, ...run }) => ({ ...run, has_result: Boolean(result) })),
+    owner: task.owner,
+    is_owner: own,
+    next_runs:
+      spec && task.status === 'active' ? nextRuns(spec, task.trigger.timezone ?? 'UTC') : [],
+    running: task.runs.some((item) => item.status === 'queued' || item.status === 'running'),
+    runs: task.runs.slice(0, 10).map((item) => summary(item, own)),
     health: null,
     created_at: task.created_at,
     updated_at: task.updated_at,
@@ -135,6 +347,27 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
     });
     return true;
   }
+  if (path === '/tasks/next-runs' && req.method === 'POST') {
+    const body = await readObject(req, ['schedule', 'timezone']);
+    const spec = body?.schedule as Partial<Spec> | undefined;
+    const zone = body?.timezone;
+    if (
+      !spec ||
+      typeof spec.freq !== 'string' ||
+      typeof zone !== 'string' ||
+      !ZONES.includes(zone)
+    ) {
+      sendError(res, 422, 'invalid_request', 'invalid fields');
+      return true;
+    }
+    sendJson(res, 200, {
+      next_runs: nextRuns(
+        { days: [], dow: 1, dom: 1, hour: 9, minute: 0, ...spec, freq: spec.freq },
+        zone,
+      ),
+    });
+    return true;
+  }
   if (path === '/tasks' && req.method === 'POST') {
     const body = await readObject(req, ['name', 'agent_id', 'task', 'trigger', 'deliver']);
     const fields = body ? fromBody(body) : null;
@@ -148,7 +381,10 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
       status: 'active',
       paused_reason: null,
       paused_at: null,
+      paused_note: null,
+      paused_by: null,
       retired: null,
+      owner: ME,
       created_at: now(),
       updated_at: now(),
       runs: [],
@@ -159,11 +395,16 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
   }
   const runMatch = RUN_ROUTE.exec(path);
   if (runMatch && req.method === 'GET') {
-    const run = tasks.get(runMatch[1] ?? '')?.runs.find((item) => item.run_id === runMatch[2]);
-    if (!run) sendError(res, 404, 'not_found', 'not found');
+    const task = tasks.get(runMatch[1] ?? '');
+    const found = task?.runs.find((item) => item.run_id === runMatch[2]);
+    if (!task || !found) sendError(res, 404, 'not_found', 'not found');
     else {
-      const { result, ...rest } = run;
-      sendJson(res, 200, { ...rest, has_result: Boolean(result), result });
+      const own = task.owner.user_id === ME.user_id;
+      sendJson(res, 200, {
+        ...summary(found, own),
+        result: own ? found.result : null,
+        steps: own ? found.steps : [],
+      });
     }
     return true;
   }
@@ -191,37 +432,58 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
     return true;
   }
   if (req.method !== 'POST') return false;
+  const own = task.owner.user_id === ME.user_id;
   if (action === 'run') {
-    const run: Run = {
-      run_id: id(),
+    const item = run({
       trigger: 'manual',
       status: 'queued',
       queued_at: now(),
       started_at: null,
       ended_at: null,
       cost_usd: null,
-      reason: null,
-      result: null,
-      approvals: [],
-    };
-    task.runs.unshift(run);
+    });
+    task.runs.unshift(item);
     setTimeout(() => {
-      Object.assign(run, {
+      Object.assign(item, {
         status: 'ok',
-        started_at: run.queued_at,
+        started_at: item.queued_at,
         ended_at: now(),
         cost_usd: '0.0800',
+        steps: [
+          { text: 'Voy a consultar el consumo del presupuesto del mes.', tool: 'get_budgets' },
+        ],
         result:
           '**Gasto del mes:** USD 2.400,00 de USD 3.000,00 (80 %).\n\n- EC2: +12 %\n- S3: sin cambios',
       });
     }, 2000);
-    sendJson(res, 202, summary(run));
+    sendJson(res, 202, summary(item, own));
     return true;
   }
-  if (action === 'pause' || action === 'resume') {
-    task.status = action === 'pause' ? 'paused' : 'active';
-    task.paused_reason = action === 'pause' ? 'owner' : null;
-    task.paused_at = action === 'pause' ? now() : null;
+  if (action === 'pause') {
+    const body = await readObject(req, ['reason']);
+    const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+    if (!own && !reason) {
+      sendError(res, 422, 'reason_required', 'say why you pause this task');
+      return true;
+    }
+    Object.assign(task, {
+      status: 'paused',
+      paused_reason: own ? 'owner' : 'admin',
+      paused_at: now(),
+      paused_note: own ? null : reason,
+      paused_by: own ? null : MOCK_USER,
+    });
+    sendJson(res, 200, out(task));
+    return true;
+  }
+  if (action === 'resume') {
+    Object.assign(task, {
+      status: 'active',
+      paused_reason: null,
+      paused_at: null,
+      paused_note: null,
+      paused_by: null,
+    });
     sendJson(res, 200, out(task));
     return true;
   }

@@ -11,8 +11,10 @@ import { GovErrorState, GovModal, Skel } from '../../components/admin/govKit';
 import { useToasts } from '../../components/admin/useToasts';
 import {
   ArchiveIcon,
+  ChevronLeftIcon,
   ClockIcon,
   EditIcon,
+  InfoIcon,
   LockIcon,
   PauseIcon,
   PlayIcon,
@@ -20,6 +22,7 @@ import {
   SearchIcon,
   UserIcon,
   WarnIcon,
+  ZapIcon,
 } from '../../components/icons';
 import { SidePanel } from '../../components/SidePanel';
 import { Soon } from '../../components/Soon';
@@ -31,9 +34,7 @@ import {
   QUICK,
   RUN_TONE,
   TIMEZONES,
-  canHold,
-  canRunNow,
-  canToggle,
+  autoPauseKind,
   cronOf,
   durationMs,
   healthOf,
@@ -44,8 +45,12 @@ import {
   monthlyEstimate,
   needsAttention,
   pad2,
+  permsOf,
+  startedToday,
+  utcDay,
   type Frequency,
   type Health,
+  type Perms,
   type QuickFilter,
   type RunDetail,
   type Spec,
@@ -64,12 +69,16 @@ type Translate = TFunction;
 const POLL_MS = 20_000;
 /** While a run is queued or running, its end is looked for this often. */
 const RUN_POLL_MS = 3_000;
+/** Design: the editor asks for the next runs 300 ms after the last change. */
+const PREVIEW_DELAY_MS = 300;
+/** Design: the toast of a finished run stays 8 s, with its button. */
+const DONE_TOAST_MS = 8000;
 const TONE_COLOR = {
   green: 'var(--green)',
   red: 'var(--red)',
   dim: 'var(--text-dim)',
   amber: 'var(--amber)',
-  accent: 'var(--accent)',
+  muted: 'var(--text-muted)',
 } as const;
 const STATUS_BADGE = { active: 'badge-green', paused: '', retired: '' } as const;
 const DEFAULT_SPEC: Spec = { freq: 'daily', hour: 9, minute: 0, days: [1, 4], dow: 1, dom: 1 };
@@ -85,6 +94,11 @@ const TIME = new Intl.DateTimeFormat('es-MX', {
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
+});
+const DAY_UTC = new Intl.DateTimeFormat('es-MX', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
 });
 
 function dayName(t: Translate, day: number): string {
@@ -138,9 +152,22 @@ function specLabel(t: Translate, spec: Spec): string {
   }
 }
 
+/** Design scReason: a fixed text for each code; an unknown code says it could not finish. */
 function runReason(t: Translate, reason: string | null): string | null {
   if (!reason) return null;
-  return isRunReason(reason) ? t(`schedules.run.reason.${reason}`) : reason;
+  return isRunReason(reason)
+    ? t(`schedules.run.reason.${reason}`)
+    : t('schedules.run.unknownReason');
+}
+
+/** Design scRange: the dates of an anomaly, as AWS gives them (UTC days). */
+function anomalyDates(anomaly: NonNullable<TaskRun['anomaly']>): string {
+  const from = new Date(`${anomaly.start}T00:00:00Z`);
+  const to = new Date(`${anomaly.end}T00:00:00Z`);
+  const a = DAY_UTC.format(from);
+  const b = DAY_UTC.format(to);
+  if (a === b) return b;
+  return from.getUTCMonth() === to.getUTCMonth() ? `${from.getUTCDate()}–${b}` : `${a} – ${b}`;
 }
 
 function triggerLabel(t: Translate, task: Task): string {
@@ -148,18 +175,28 @@ function triggerLabel(t: Translate, task: Task): string {
   return task.trigger.schedule ? specLabel(t, task.trigger.schedule) : '—';
 }
 
-/** Design: «como {owner}», the person the task runs as, for the owner too. */
-function ownerName(_t: Translate, task: Task): string {
+function ownerName(task: Task): string {
   return task.owner.name ?? task.owner.email ?? task.owner.user_id;
 }
 
+function zoneLabel(t: Translate, zone: TimeZone): string {
+  return zone === 'UTC'
+    ? t('schedules.editor.upcomingUtc')
+    : t('schedules.editor.upcomingZone', { name: t(`schedules.zone.${zone}`) });
+}
+
 function healthText(t: Translate, task: Task, health: Health): string {
-  const owner = ownerName(t, task);
+  const owner = ownerName(task);
   switch (health.key) {
     case 'agent_unavailable':
       return t('schedules.health.agent_unavailable');
     case 'access_lost':
-      return t('schedules.health.access_lost', { owner });
+      return t('schedules.health.access_lost', {
+        reason:
+          autoPauseKind(task) === 'central'
+            ? t('schedules.detail.centralReason', { owner })
+            : t('schedules.detail.lostReason', { owner }),
+      });
     case 'failing':
       return t('schedules.health.failing');
     case 'tools':
@@ -177,6 +214,13 @@ function errorToast(t: Translate, error: unknown): string {
   return t('schedules.toast.error');
 }
 
+function statusBadge(t: Translate, task: Task): [string, string] {
+  if (task.status === 'paused' && task.paused_reason === 'admin') {
+    return [t('schedules.status.adminPaused'), 'badge-amber'];
+  }
+  return [t(`schedules.status.${task.status}`), STATUS_BADGE[task.status]];
+}
+
 function RunDots({ task }: { task: Task }) {
   const { t } = useTranslation();
   if (task.runs.length === 0) return <span className="mk-meta">{t('schedules.noRuns')}</span>;
@@ -185,31 +229,48 @@ function RunDots({ task }: { task: Task }) {
       {task.runs
         .slice(0, 10)
         .toReversed()
-        .map((run) => (
-          <i
-            key={run.run_id}
-            title={`${t(`schedules.run.${run.status}`)} · ${FMT.format(new Date(run.queued_at))}`}
-            style={{ background: TONE_COLOR[RUN_TONE[run.status] ?? 'dim'] }}
-          />
-        ))}
+        .map((run) => {
+          const reason = runReason(t, run.reason);
+          return (
+            <i
+              key={run.run_id}
+              title={`${t(`schedules.run.${run.status}`)}${reason ? ` · ${reason}` : ''} · ${FMT.format(new Date(run.queued_at))}`}
+              style={{ background: TONE_COLOR[RUN_TONE[run.status] ?? 'dim'] }}
+            />
+          );
+        })}
     </span>
   );
 }
 
 interface RowProps {
   task: Task;
-  isAdmin: boolean;
+  perms: Perms;
   agentName: string;
   health: Health | null;
   busy: boolean;
-  onOpen: (task: Task) => void;
+  onOpen: (task: Task, ask?: 'pause') => void;
   onRun: (task: Task) => void;
-  onToggle: (task: Task) => void;
+  onPause: (task: Task) => void;
+  onResume: (task: Task) => void;
 }
 
-function TaskRow({ task, isAdmin, agentName, health, busy, onOpen, onRun, onToggle }: RowProps) {
+function TaskRow({
+  task,
+  perms,
+  agentName,
+  health,
+  busy,
+  onOpen,
+  onRun,
+  onPause,
+  onResume,
+}: RowProps) {
   const { t } = useTranslation();
   const next = task.status === 'active' ? task.next_runs[0] : undefined;
+  const cap = task.trigger.daily_cap ?? 0;
+  const capHit = perms.anomaly && task.status === 'active' && cap > 0 && startedToday(task) >= cap;
+  const [badge, badgeClass] = statusBadge(t, task);
   return (
     <div
       className="sc-tr"
@@ -229,24 +290,42 @@ function TaskRow({ task, isAdmin, agentName, health, busy, onOpen, onRun, onTogg
         <span className="mk-meta sc-ellipsis">
           {t('schedules.rowMeta', {
             agent: agentName,
-            owner: ownerName(t, task),
-            deliver: t(`schedules.deliver.${task.deliver}`),
+            owner: perms.own ? t('schedules.you') : ownerName(task),
           })}
         </span>
       </span>
-      <span style={{ fontSize: 13 }}>
-        {triggerLabel(t, task)}
-        <span className="mk-meta" style={{ display: 'block' }}>
-          {isEvent(task)
-            ? t('schedules.event.cap', { count: task.trigger.daily_cap ?? 0 })
-            : task.trigger.timezone}
-        </span>
+      <span style={{ fontSize: 13, minWidth: 0 }}>
+        {perms.anomaly ? (
+          <>
+            <span className="sc-trg">
+              <ZapIcon size={12} /> {t('schedules.event.label')}
+            </span>
+            <span className="mk-meta" style={{ display: 'block' }}>
+              {t('schedules.event.capShort', { count: cap })}
+            </span>
+          </>
+        ) : (
+          <>
+            {triggerLabel(t, task)}
+            <span className="mk-meta" style={{ display: 'block' }}>
+              {task.trigger.timezone}
+            </span>
+          </>
+        )}
       </span>
       <span className="mk-meta">
-        {task.running ? (
+        {perms.busy ? (
           <span className="flex items-center gap-2">
-            <span className="g-spin" /> {t('schedules.running')}
+            {perms.busy.status === 'running' ? (
+              <>
+                <span className="g-spin" /> {t('schedules.running')}
+              </>
+            ) : (
+              t('schedules.queuedShort')
+            )}
           </span>
+        ) : capHit ? (
+          t('schedules.capHit')
         ) : next ? (
           FMT.format(new Date(next))
         ) : (
@@ -255,9 +334,7 @@ function TaskRow({ task, isAdmin, agentName, health, busy, onOpen, onRun, onTogg
       </span>
       <RunDots task={task} />
       <span className="flex items-center gap-1" style={{ flexWrap: 'wrap' }}>
-        <span className={`badge ${STATUS_BADGE[task.status]}`}>
-          {t(`schedules.status.${task.status}`)}
-        </span>
+        <span className={`badge ${badgeClass}`}>{badge}</span>
         {health ? (
           <span
             className={`badge ${health.tone === 'red' ? 'badge-red' : 'badge-amber'}`}
@@ -275,13 +352,13 @@ function TaskRow({ task, isAdmin, agentName, health, busy, onOpen, onRun, onTogg
           event.stopPropagation();
         }}
       >
-        {canRunNow(task) ? (
+        {perms.canRun && task.status !== 'paused' ? (
           <button
             type="button"
             className="btn btn-sm btn-ghost btn-icon"
             title={t('schedules.runNow')}
             aria-label={t('schedules.runNowOf', { name: task.name })}
-            disabled={task.running || busy}
+            disabled={Boolean(perms.busy) || busy}
             onClick={() => {
               onRun(task);
             }}
@@ -289,22 +366,33 @@ function TaskRow({ task, isAdmin, agentName, health, busy, onOpen, onRun, onTogg
             <PlayIcon size={12} />
           </button>
         ) : null}
-        {canToggle(task, isAdmin) ? (
+        {perms.canResume ? (
           <button
             type="button"
             className="btn btn-sm btn-ghost btn-icon"
-            title={task.status === 'paused' ? t('schedules.resume') : t('schedules.pause')}
-            aria-label={
-              task.status === 'paused'
-                ? t('schedules.resumeOf', { name: task.name })
-                : t('schedules.pauseOf', { name: task.name })
-            }
+            title={t('schedules.resume')}
+            aria-label={t('schedules.resumeOf', { name: task.name })}
             disabled={busy}
             onClick={() => {
-              onToggle(task);
+              onResume(task);
             }}
           >
-            {task.status === 'paused' ? <PlayIcon size={12} /> : <PauseIcon size={12} />}
+            <PlayIcon size={12} />
+          </button>
+        ) : perms.canPause ? (
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost btn-icon"
+            title={t('schedules.pause')}
+            aria-label={t('schedules.pauseOf', { name: task.name })}
+            disabled={busy}
+            onClick={() => {
+              // An administrator says why (D82 (2)): in the detail, as the design does.
+              if (perms.own) onPause(task);
+              else onOpen(task, 'pause');
+            }}
+          >
+            <PauseIcon size={12} />
           </button>
         ) : null}
       </span>
@@ -312,12 +400,17 @@ function TaskRow({ task, isAdmin, agentName, health, busy, onOpen, onRun, onTogg
   );
 }
 
+/** Design ScRunRow. */
 function RunLine({
   run,
+  event,
+  canSee,
   onResult,
   onApproval,
 }: {
   run: TaskRun;
+  event: boolean;
+  canSee: boolean;
   onResult: (run: TaskRun) => void;
   onApproval: (id: string) => void;
 }) {
@@ -325,130 +418,276 @@ function RunLine({
   const ms = durationMs(run);
   const reason = runReason(t, run.reason);
   const approval = run.approvals[0];
+  const waited =
+    run.waiting_since && run.started_at
+      ? Math.round(
+          (new Date(run.started_at).getTime() - new Date(run.waiting_since).getTime()) / 60_000,
+        )
+      : 0;
+  const result = canSee && run.has_result;
   return (
-    <div className="mk-line flex justify-between gap-3" style={{ alignItems: 'flex-start' }}>
-      <span className="flex items-center gap-2" style={{ minWidth: 0 }}>
+    <div className="mk-line sc-run">
+      {run.status === 'running' ? (
+        <span className="g-spin" aria-hidden="true" />
+      ) : (
         <span
           className="tk-dot"
-          style={{ background: TONE_COLOR[RUN_TONE[run.status] ?? 'dim'], marginTop: 6 }}
+          aria-hidden="true"
+          style={{ background: TONE_COLOR[RUN_TONE[run.status] ?? 'dim'] }}
         />
-        <span style={{ minWidth: 0 }}>
-          <span style={{ display: 'block' }}>
-            {t(`schedules.run.${run.status}`)}
-            {run.trigger === 'manual' ? t('schedules.run.manual') : ''}
-          </span>
-          {reason ? (
-            <span
-              className="mk-meta"
-              style={{
-                display: 'block',
-                color: run.status === 'failed' ? 'var(--red)' : undefined,
-              }}
-            >
-              {reason}
-            </span>
-          ) : null}
-          {run.status === 'approval' && approval ? (
-            <button
-              type="button"
-              className="sr-link"
-              onClick={() => {
-                onApproval(approval);
-              }}
-            >
-              {t('schedules.run.seeApproval')}
-            </button>
-          ) : null}
-          {run.has_result ? (
-            <button
-              type="button"
-              className="sr-link block"
-              onClick={() => {
-                onResult(run);
-              }}
-            >
-              {t('schedules.run.seeResult')}
-            </button>
-          ) : null}
+      )}
+      <div className="sc-run-b">
+        <span>
+          {t(`schedules.run.${run.status}`)}
+          {run.trigger === 'manual' ? t('schedules.run.manual') : ''}
         </span>
-      </span>
-      <span className="mk-meta mono" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+        {run.anomaly ? (
+          <span className="mk-meta">
+            {t('schedules.run.anomaly', { dates: anomalyDates(run.anomaly) })}
+          </span>
+        ) : null}
+        {reason ? (
+          <span
+            className="mk-meta"
+            style={run.status === 'failed' ? { color: 'var(--red)' } : undefined}
+          >
+            {reason}
+          </span>
+        ) : null}
+        {run.status === 'queued' && event && run.waiting_since ? (
+          <span className="mk-meta">{t('schedules.run.waiting')}</span>
+        ) : null}
+        {waited > 0 ? (
+          <span className="mk-meta">{t('schedules.run.waited', { count: waited })}</span>
+        ) : null}
+        {result || (run.status === 'approval' && approval) ? (
+          <span className="sc-run-acts">
+            {result ? (
+              <button
+                type="button"
+                className="sr-link"
+                onClick={() => {
+                  onResult(run);
+                }}
+              >
+                {t('schedules.run.seeResult')}
+              </button>
+            ) : null}
+            {run.status === 'approval' && approval ? (
+              <button
+                type="button"
+                className="sr-link"
+                onClick={() => {
+                  onApproval(approval);
+                }}
+              >
+                {t('schedules.run.seeApproval')}
+              </button>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+      <span className="mk-meta mono sc-run-m">
         {formatRelative(run.queued_at)}
-        {ms !== null ? (
-          <>
-            <br />
-            {t('schedules.run.meta', {
+        <br />
+        {ms !== null
+          ? t('schedules.run.meta', {
               seconds: (ms / 1000).toFixed(1).replace('.', ','),
               cost: run.cost_usd ? formatUsd(run.cost_usd) : '—',
-            })}
-          </>
-        ) : null}
+            })
+          : '—'}
       </span>
     </div>
   );
 }
 
+/** Design ScResult: the result inside the panel of the task, only for its owner (D78 (18)). */
+function RunResult({
+  api,
+  task,
+  run,
+  agentName,
+  onBack,
+}: {
+  api: OperationCaller;
+  task: Task;
+  run: TaskRun;
+  agentName: string;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const [detail, setDetail] = useState<RunDetail | 'error' | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    api(
+      'getTaskRun',
+      { path: { task_id: task.task_id, run_id: run.run_id } },
+      { signal: controller.signal },
+    ).then(
+      (found) => {
+        if (!controller.signal.aborted) setDetail(found);
+      },
+      () => {
+        if (!controller.signal.aborted) setDetail('error');
+      },
+    );
+    return () => {
+      controller.abort();
+    };
+  }, [api, task.task_id, run.run_id]);
+  const ms = durationMs(run);
+  const meta = [
+    agentName,
+    t(`schedules.run.${run.status}`) + (run.trigger === 'manual' ? t('schedules.run.manual') : ''),
+    ms !== null ? `${(ms / 1000).toFixed(1).replace('.', ',')} s` : null,
+    run.cost_usd ? formatUsd(run.cost_usd) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <div className="sc-res">
+      <button type="button" className="sr-link sc-res-back" onClick={onBack}>
+        <ChevronLeftIcon size={12} /> {t('schedules.result.back')}
+      </button>
+      <div>
+        <div className="sc-res-h">
+          {t('schedules.result.title', { when: FMT.format(new Date(run.queued_at)) })}
+        </div>
+        <div className="mk-meta" style={{ marginTop: 3 }}>
+          {meta}
+        </div>
+      </div>
+      {run.anomaly ? (
+        <div className="sc-anom">
+          <span className="mk-sec-t">{t('schedules.result.anomaly')}</span>
+          <span className="mk-meta">{anomalyDates(run.anomaly)}</span>
+        </div>
+      ) : null}
+      {detail === null ? (
+        <div role="status" aria-label={t('schedules.result.loading')}>
+          <Skel w="70%" h={13} />
+          <Skel w="90%" h={11} />
+        </div>
+      ) : detail === 'error' ? (
+        <div className="sc-err" role="alert">
+          {t('schedules.result.error')}
+        </div>
+      ) : (
+        <>
+          {detail.steps.length > 0 ? (
+            <details className="sc-steps">
+              <summary>{t('schedules.result.steps', { count: detail.steps.length })}</summary>
+              <ol>
+                {detail.steps.map((step, index) => (
+                  <li key={index}>
+                    {step.text ? <span>{step.text}</span> : null}
+                    {step.tool ? <span className="mk-meta mono">{step.tool}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
+          {detail.result ? (
+            // The agent's answer: Markdown without raw HTML (AGENTS.md, REACT-MARKUP-001).
+            <div className="md">
+              <ChatMarkdown>{detail.result}</ChatMarkdown>
+            </div>
+          ) : (
+            <div className="mk-meta">{t('schedules.result.none')}</div>
+          )}
+        </>
+      )}
+      <p className="mk-meta sc-res-foot">
+        <LockIcon size={11} /> {t('schedules.result.foot')}
+      </p>
+    </div>
+  );
+}
+
 interface DetailProps {
+  api: OperationCaller;
   task: Task;
   isAdmin: boolean;
   agentName: string;
   health: Health | null;
-  canControl: boolean;
   busy: boolean;
+  ask0: 'pause' | null;
+  run0: string | null;
   onClose: () => void;
   onEdit: () => void;
   onRun: () => void;
-  onToggle: () => void;
-  onHold: () => void;
+  onPause: (reason: string | null) => void;
+  onResume: () => void;
   onRetire: (reason: string) => void;
-  onResult: (run: TaskRun) => void;
 }
 
 function TaskDetail({
+  api,
   task,
   isAdmin,
   agentName,
   health,
-  canControl,
   busy,
+  ask0,
+  run0,
   onClose,
   onEdit,
   onRun,
-  onToggle,
-  onHold,
+  onPause,
+  onResume,
   onRetire,
-  onResult,
 }: DetailProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [retiring, setRetiring] = useState(false);
+  const perms = permsOf(task, isAdmin);
+  const [ask, setAsk] = useState<'pause' | 'retire' | null>(ask0);
   const [why, setWhy] = useState('');
-  const owner = ownerName(t, task);
-  const lost = task.paused_reason === 'access_lost';
-  const byAdmin = task.status === 'paused' && task.paused_reason === 'admin';
-  const ok = task.runs.filter((run) => run.status === 'ok').length;
+  const [runId, setRunId] = useState<string | null>(run0);
+  const owner = ownerName(task);
   const spec = task.trigger.schedule;
+  const ok = task.runs.filter((run) => run.status === 'ok').length;
+  const openRun = runId && perms.own ? task.runs.find((run) => run.run_id === runId) : undefined;
+  const cap = task.trigger.daily_cap ?? 0;
+  const today = perms.anomaly ? startedToday(task) : 0;
+  const kind = autoPauseKind(task);
+  const pausedBy = task.paused_by ?? t('schedules.detail.adminPausedSomeone');
+
   const footer =
-    canControl && task.status !== 'retired' ? (
+    !openRun && (perms.own || isAdmin) && task.status !== 'retired' ? (
       <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
-        {retiring ? (
+        {ask ? (
           <>
+            {ask === 'pause' ? (
+              <span className="ap-reason" style={{ flexBasis: '100%' }}>
+                <InfoIcon size={12} />
+                <span>{t('schedules.detail.holdNote')}</span>
+              </span>
+            ) : null}
             <input
               className="input"
               style={{ flex: '1 1 200px' }}
               value={why}
               maxLength={200}
+              autoFocus
               onChange={(event) => {
                 setWhy(event.target.value);
               }}
-              placeholder={t('schedules.detail.retireReason')}
-              aria-label={t('schedules.detail.retireReason')}
+              placeholder={
+                ask === 'retire'
+                  ? t('schedules.detail.retireReason')
+                  : t('schedules.detail.pauseReason')
+              }
+              aria-label={
+                ask === 'retire'
+                  ? t('schedules.detail.retireReasonLabel')
+                  : t('schedules.detail.pauseReasonLabel')
+              }
             />
             <button
               type="button"
               className="btn btn-sm"
               onClick={() => {
-                setRetiring(false);
+                setAsk(null);
               }}
             >
               {t('schedules.detail.cancel')}
@@ -458,77 +697,101 @@ function TaskDetail({
               className="btn btn-sm btn-primary"
               disabled={!why.trim() || busy}
               onClick={() => {
-                onRetire(why.trim());
-                setRetiring(false);
+                const reason = why.trim();
+                const which = ask;
+                setAsk(null);
+                setWhy('');
+                if (which === 'retire') onRetire(reason);
+                else onPause(reason);
               }}
             >
-              <ArchiveIcon size={12} /> {t('schedules.detail.retire')}
+              {ask === 'retire' ? (
+                <>
+                  <ArchiveIcon size={12} /> {t('schedules.detail.retire')}
+                </>
+              ) : (
+                <>
+                  <PauseIcon size={12} /> {t('schedules.pause')}
+                </>
+              )}
             </button>
           </>
         ) : (
           <>
-            {task.is_owner ? (
+            {perms.own && !perms.anomaly ? (
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={task.running || !canRunNow(task) || busy}
-                title={byAdmin ? t('schedules.detail.adminPausedTitle') : undefined}
+                disabled={Boolean(perms.busy) || !perms.canRun || busy}
                 onClick={onRun}
               >
                 <PlayIcon size={12} />{' '}
-                {task.running ? t('schedules.running') : t('schedules.runNow')}
+                {perms.busy
+                  ? perms.busy.status === 'running'
+                    ? t('schedules.running')
+                    : t('schedules.queuedBusy')
+                  : t('schedules.runNow')}
               </button>
             ) : null}
-            {task.status !== 'paused' || task.is_owner || isAdmin ? (
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={(task.status === 'paused' && !canToggle(task, isAdmin)) || busy}
-                title={
-                  lost
-                    ? t('schedules.detail.lostTitle')
-                    : byAdmin && !isAdmin
-                      ? t('schedules.detail.adminPausedTitle')
-                      : undefined
-                }
-                onClick={onToggle}
-              >
-                {task.status === 'paused' ? t('schedules.resume') : t('schedules.pause')}
+            {perms.canResume ? (
+              <button type="button" className="btn btn-sm" disabled={busy} onClick={onResume}>
+                {t('schedules.resume')}
+              </button>
+            ) : perms.own && task.status === 'paused' ? (
+              <button type="button" className="btn btn-sm" disabled>
+                {t('schedules.resume')}
               </button>
             ) : null}
-            {canHold(task, isAdmin) ? (
-              // Not in the design yet (A1 of the second review, D78 (19)): an administrator
-              // also holds a task its owner paused, and the brake of D2 applies.
+            {perms.canPause ? (
               <button
                 type="button"
                 className="btn btn-sm"
                 disabled={busy}
-                title={t('schedules.detail.holdTitle')}
-                onClick={onHold}
+                title={perms.own ? undefined : t('schedules.detail.holdTitle')}
+                onClick={() => {
+                  if (perms.own) onPause(null);
+                  else setAsk('pause');
+                }}
               >
-                {t('schedules.pause')}
+                <PauseIcon size={12} /> {t('schedules.pause')}
               </button>
             ) : null}
-            {task.is_owner ? (
-              <button type="button" className="btn btn-sm" disabled={lost || busy} onClick={onEdit}>
+            {perms.own ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={perms.autoPaused || busy}
+                onClick={onEdit}
+              >
                 <EditIcon size={12} /> {t('schedules.detail.edit')}
               </button>
-            ) : null}
-            {!task.is_owner ? (
-              <span className="ap-reason" style={{ flexBasis: '100%', order: 9 }}>
-                <LockIcon size={12} /> {t('schedules.detail.ownerOnly', { owner })}
-              </span>
             ) : null}
             <div style={{ flex: 1 }} />
             <button
               type="button"
               className="btn btn-sm btn-ghost"
               onClick={() => {
-                setRetiring(true);
+                setAsk('retire');
               }}
             >
               <ArchiveIcon size={12} /> {t('schedules.detail.retire')}
             </button>
+            {perms.own && perms.adminPaused ? (
+              <span className="ap-reason" style={{ flexBasis: '100%', order: 9 }}>
+                <LockIcon size={12} />
+                <span>{t('schedules.detail.adminPausedNote')}</span>
+              </span>
+            ) : null}
+            {!perms.own ? (
+              <span className="ap-reason" style={{ flexBasis: '100%', order: 9 }}>
+                <LockIcon size={12} />
+                <span>
+                  {perms.anomaly
+                    ? t('schedules.detail.ownerOnlyAnomaly', { owner })
+                    : t('schedules.detail.ownerOnly', { owner })}
+                </span>
+              </span>
+            ) : null}
           </>
         )}
       </div>
@@ -537,141 +800,234 @@ function TaskDetail({
   return (
     <SidePanel
       title={task.name}
-      width={520}
+      width={openRun ? 640 : 520}
       lead={
         <span className="mc-ic lg">
-          <ClockIcon size={20} />
+          {perms.anomaly ? <ZapIcon size={20} /> : <ClockIcon size={20} />}
         </span>
       }
-      meta={`${agentName} · ${triggerLabel(t, task)}`}
+      meta={<span className="mk-meta">{`${agentName} · ${triggerLabel(t, task)}`}</span>}
       onClose={onClose}
+      onEscape={
+        openRun
+          ? () => {
+              setRunId(null);
+            }
+          : onClose
+      }
       footer={footer}
     >
-      {health ? (
-        <div className={`mc-alert ${health.tone}`}>
-          <WarnIcon size={14} />
-          <div>{healthText(t, task, health)}.</div>
-        </div>
-      ) : null}
-      {task.status === 'paused' && !lost ? (
-        <div className="mc-alert">
-          <PauseIcon size={14} />
-          {/* Not in the design yet (D2 after the review, reported): an administrator's pause. */}
-          <div>{byAdmin ? t('schedules.detail.adminPaused') : t('schedules.detail.paused')}</div>
-        </div>
-      ) : null}
-      {task.status === 'paused' && lost && task.paused_at ? (
-        <div className="mc-alert red">
-          <LockIcon size={14} />
-          <div>
-            <b>{t('schedules.detail.autoPausedTitle', { ago: formatRelative(task.paused_at) })}</b>{' '}
-            {t('schedules.detail.lostReason', { owner })}. {t('schedules.detail.autoPausedBody')}
-          </div>
-        </div>
-      ) : null}
-      {task.retired ? (
-        <div className="mc-alert">
-          <ArchiveIcon size={14} />
-          <div>
-            {t('schedules.detail.retired', {
-              by: task.retired.by ?? '—',
-              reason: task.retired.reason ? ` · ${task.retired.reason}` : '',
-            })}
-          </div>
-        </div>
-      ) : null}
-      <section className="mk-sec">
-        <h3 className="mk-sec-t">{t('schedules.detail.task').toLowerCase()}</h3>
-        <div className="sc-task">{task.task}</div>
-      </section>
-      <section className="mk-sec">
-        <h3 className="mk-sec-t">
-          {(spec ? t('schedules.detail.schedule') : t('schedules.detail.trigger')).toLowerCase()}
-        </h3>
-        {spec ? (
-          <>
-            <div className="mk-kv">
-              <span>{t('schedules.detail.frequency')}</span>
-              <span>{specLabel(t, spec)}</span>
+      {openRun ? (
+        <RunResult
+          key={openRun.run_id}
+          api={api}
+          task={task}
+          run={openRun}
+          agentName={agentName}
+          onBack={() => {
+            setRunId(null);
+          }}
+        />
+      ) : (
+        <>
+          {health && !perms.autoPaused ? (
+            <div className={`mc-alert ${health.tone}`}>
+              <WarnIcon size={14} />
+              <div>{healthText(t, task, health)}.</div>
             </div>
-            <div className="mk-kv">
-              <span>{t('schedules.detail.timezone')}</span>
-              <span className="mono" style={{ fontSize: 12 }}>
-                {task.trigger.timezone}
-              </span>
+          ) : null}
+          {task.status === 'paused' && !perms.autoPaused ? (
+            perms.adminPaused ? (
+              <div className="mc-alert amber">
+                <PauseIcon size={14} />
+                <div>
+                  <b>
+                    {t('schedules.detail.adminPausedBy', {
+                      by: isAdmin ? pausedBy : t('schedules.detail.adminPausedSomeone'),
+                    })}
+                  </b>{' '}
+                  {t('schedules.detail.adminPausedBody')}
+                  {task.paused_note ? (
+                    <div style={{ marginTop: 4 }}>
+                      {t('schedules.detail.adminPausedReason', { reason: task.paused_note })}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="mc-alert">
+                <PauseIcon size={14} />
+                <div>
+                  {perms.own
+                    ? t('schedules.detail.paused')
+                    : t('schedules.detail.pausedByOwner', { owner })}
+                </div>
+              </div>
+            )
+          ) : null}
+          {perms.autoPaused && task.status === 'paused' && task.paused_at ? (
+            <div className="mc-alert red">
+              <LockIcon size={14} />
+              <div>
+                <b>
+                  {t('schedules.detail.autoPausedTitle', { ago: formatRelative(task.paused_at) })}
+                </b>{' '}
+                {kind === 'central'
+                  ? t('schedules.detail.centralReason', { owner })
+                  : t('schedules.detail.lostReason', { owner })}
+                .{' '}
+                {kind === 'central'
+                  ? t('schedules.detail.autoPausedCentral')
+                  : t('schedules.detail.autoPausedAccess')}
+              </div>
             </div>
-            <div className="mk-kv">
-              <span>{t('schedules.detail.cron')}</span>
-              <span className="mono" style={{ fontSize: 12 }}>
-                {cronOf(spec)}
-              </span>
+          ) : null}
+          {task.retired ? (
+            <div className="mc-alert">
+              <ArchiveIcon size={14} />
+              <div>
+                {t('schedules.detail.retired', {
+                  by: task.retired.by ?? '—',
+                  reason: task.retired.reason ? ` · ${task.retired.reason}` : '',
+                })}
+              </div>
             </div>
-            {task.next_runs.length > 0 ? (
+          ) : null}
+          <section className="mk-sec">
+            <h3 className="mk-sec-t">{t('schedules.detail.task').toLowerCase()}</h3>
+            {perms.own && task.task !== null ? (
+              <div className="sc-task">{task.task}</div>
+            ) : (
+              <div className="ap-reason">
+                <LockIcon size={12} />
+                <span>{t('schedules.detail.taskHidden', { owner })}</span>
+              </div>
+            )}
+          </section>
+          {perms.anomaly ? (
+            <section className="mk-sec">
+              <h3 className="mk-sec-t">{t('schedules.detail.trigger').toLowerCase()}</h3>
               <div className="mk-kv">
-                <span>{t('schedules.detail.upcoming')}</span>
-                <span style={{ textAlign: 'right' }}>
-                  {task.next_runs.map((at) => (
-                    <div key={at}>{FMT.format(new Date(at))}</div>
-                  ))}
+                <span>{t('schedules.detail.starts')}</span>
+                <span>{t('schedules.event.label')}</span>
+              </div>
+              <div className="mk-kv">
+                <span>{t('schedules.detail.cap')}</span>
+                <span>{t('schedules.event.cap', { count: cap })}</span>
+              </div>
+              <div className="mk-kv">
+                <span>{t('schedules.detail.today')}</span>
+                <span
+                  style={{
+                    textAlign: 'right',
+                    ...(cap > 0 && today >= cap ? { color: 'var(--amber)' } : {}),
+                  }}
+                >
+                  {t('schedules.detail.todayValue', {
+                    count: today,
+                    cap,
+                    time: TIME.format(new Date(utcDay(1))),
+                  })}
                 </span>
               </div>
+              <div className="mk-kv">
+                <span>{t('schedules.detail.several')}</span>
+                <span style={{ textAlign: 'right' }}>{t('schedules.detail.severalValue')}</span>
+              </div>
+            </section>
+          ) : spec ? (
+            <section className="mk-sec">
+              <h3 className="mk-sec-t">{t('schedules.detail.schedule').toLowerCase()}</h3>
+              <div className="mk-kv">
+                <span>{t('schedules.detail.frequency')}</span>
+                <span>{specLabel(t, spec)}</span>
+              </div>
+              <div className="mk-kv">
+                <span>{t('schedules.detail.timezone')}</span>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {task.trigger.timezone}
+                </span>
+              </div>
+              <div className="mk-kv">
+                <span>{t('schedules.detail.cron')}</span>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {cronOf(spec)}
+                </span>
+              </div>
+              {task.status === 'active' && task.next_runs.length > 0 ? (
+                <div className="mk-kv">
+                  <span>{t('schedules.detail.upcoming')}</span>
+                  <span style={{ textAlign: 'right' }}>
+                    {task.next_runs.map((at) => (
+                      <div key={at}>{FMT.format(new Date(at))}</div>
+                    ))}
+                  </span>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+          <section className="mk-sec">
+            <h3 className="mk-sec-t">{t('schedules.detail.control').toLowerCase()}</h3>
+            <div className="mk-kv">
+              <span>{t('schedules.detail.result')}</span>
+              <span style={{ textAlign: 'right' }}>
+                {perms.own
+                  ? t('schedules.detail.resultValueMine')
+                  : t('schedules.detail.resultValueOther', { owner })}
+              </span>
+            </div>
+            <div className="mk-kv">
+              <span>{t('schedules.detail.runsAs')}</span>
+              <span>{t('schedules.detail.runsAsValue', { owner })}</span>
+            </div>
+            <div className="mk-kv">
+              <span>{t('schedules.detail.agent')}</span>
+              <span>{t('schedules.detail.agentValue', { agent: agentName })}</span>
+            </div>
+            <div className="mk-kv">
+              <span>
+                {perms.anomaly
+                  ? t('schedules.detail.ifLostCentral', { owner })
+                  : t('schedules.detail.ifLost', { owner })}
+              </span>
+              <span>{t('schedules.detail.ifLostValue')}</span>
+            </div>
+            <div className="mk-kv">
+              <span>{t('schedules.detail.writes')}</span>
+              <span>{t('schedules.detail.writesValue')}</span>
+            </div>
+          </section>
+          <section className="mk-sec">
+            <h3 className="mk-sec-t">
+              {t('schedules.detail.recent', { ok, total: task.runs.length }).toLowerCase()}
+            </h3>
+            {!perms.own && task.runs.length > 0 ? (
+              <p className="mk-meta" style={{ margin: '0 0 4px' }}>
+                {t('schedules.detail.resultsOwnerOnly', { owner })}
+              </p>
             ) : null}
-          </>
-        ) : (
-          <div className="mk-kv">
-            <span>{t('schedules.detail.trigger')}</span>
-            <span>
-              {triggerLabel(t, task)}
-              {isEvent(task)
-                ? ` · ${t('schedules.event.cap', { count: task.trigger.daily_cap ?? 0 })}`
-                : ''}
-            </span>
-          </div>
-        )}
-      </section>
-      <section className="mk-sec">
-        <h3 className="mk-sec-t">{t('schedules.detail.control').toLowerCase()}</h3>
-        <div className="mk-kv">
-          <span>{t('schedules.detail.result')}</span>
-          <span>{t(`schedules.deliver.${task.deliver}`)}</span>
-        </div>
-        <div className="mk-kv">
-          <span>{t('schedules.detail.runsAs')}</span>
-          <span>{t('schedules.detail.runsAsValue', { owner })}</span>
-        </div>
-        <div className="mk-kv">
-          <span>{t('schedules.detail.agent')}</span>
-          <span>{t('schedules.detail.agentValue', { agent: agentName })}</span>
-        </div>
-        <div className="mk-kv">
-          <span>{t('schedules.detail.ifLost', { owner })}</span>
-          <span>{t('schedules.detail.ifLostValue')}</span>
-        </div>
-        <div className="mk-kv">
-          <span>{t('schedules.detail.writes')}</span>
-          <span>{t('schedules.detail.writesValue')}</span>
-        </div>
-      </section>
-      <section className="mk-sec">
-        <h3 className="mk-sec-t">
-          {t('schedules.detail.recent', { ok, total: task.runs.length }).toLowerCase()}
-        </h3>
-        {task.runs.length > 0 ? (
-          task.runs.map((run) => (
-            <RunLine
-              key={run.run_id}
-              run={run}
-              onResult={onResult}
-              onApproval={(id) => {
-                onClose();
-                void navigate(`/approvals/pending/${id}`);
-              }}
-            />
-          ))
-        ) : (
-          <div className="mk-meta">{t('schedules.detail.noRuns')}</div>
-        )}
-      </section>
+            {task.runs.length > 0 ? (
+              task.runs.map((run) => (
+                <RunLine
+                  key={run.run_id}
+                  run={run}
+                  event={perms.anomaly}
+                  canSee={perms.own}
+                  onResult={(item) => {
+                    setRunId(item.run_id);
+                  }}
+                  onApproval={(id) => {
+                    onClose();
+                    void navigate(`/approvals/pending/${id}`);
+                  }}
+                />
+              ))
+            ) : (
+              <div className="mk-meta">{t('schedules.detail.noRuns')}</div>
+            )}
+          </section>
+        </>
+      )}
     </SidePanel>
   );
 }
@@ -700,17 +1056,76 @@ function draftOf(task: Task | null, agents: Agent[]): Draft {
   return {
     name: task.name,
     agent: task.agent_id,
-    task: task.task,
+    task: task.task ?? '',
     kind: isEvent(task) ? 'event' : 'schedule',
     spec: { ...DEFAULT_SPEC, ...task.trigger.schedule },
     tz,
   };
 }
 
+/** The offset of a time zone from the viewer's, now, in minutes (design scTzOff). */
+function zoneOffset(zone: TimeZone): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+  }).formatToParts(new Date());
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const asUtc = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour') % 24,
+    get('minute'),
+  );
+  return Math.round((asUtc - Math.floor(Date.now() / 60_000) * 60_000) / 60_000);
+}
+
+/** Design 2.5: the next runs in the zone of the task, computed by the server 300 ms after the
+ * last change; «Calculando…» meanwhile, nothing if it fails. */
+function useNextRuns(api: OperationCaller, draft: Draft): string[] | 'computing' | null {
+  const [found, setFound] = useState<{ key: string; next: string[] | null } | null>(null);
+  const applies =
+    draft.kind === 'schedule' && !(draft.spec.freq === 'days' && draft.spec.days.length === 0);
+  const key = JSON.stringify([draft.spec, draft.tz]);
+  const { spec, tz } = draft;
+  useEffect(() => {
+    if (!applies) return undefined;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      api(
+        'previewNextRuns',
+        { body: { schedule: spec, timezone: tz } },
+        { signal: controller.signal },
+      ).then(
+        (answer) => {
+          if (!controller.signal.aborted) setFound({ key, next: answer.next_runs });
+        },
+        () => {
+          if (!controller.signal.aborted) setFound({ key, next: null });
+        },
+      );
+    }, PREVIEW_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+    // `key` stands for `spec` and `tz`: a new object with the same values asks nothing again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, applies, key]);
+  if (!applies) return null;
+  return found?.key === key ? found.next : 'computing';
+}
+
 function TaskEditor({
   api,
   task,
   agents,
+  allAgents,
   canSubscribeEvents,
   onClose,
   onSaved,
@@ -718,6 +1133,7 @@ function TaskEditor({
   api: OperationCaller;
   task: Task | null;
   agents: Agent[];
+  allAgents: ReadonlyMap<string, Agent>;
   canSubscribeEvents: boolean;
   onClose: () => void;
   onSaved: (saved: Task, created: boolean) => void;
@@ -728,29 +1144,36 @@ function TaskEditor({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const isNew = task === null;
-  const agentName = agents.find((agent) => agent.id === draft.agent)?.name ?? draft.agent;
+  const anomaly = draft.kind === 'event';
+  // Design: the agent of a task stays in the list while editing even if it is no longer usable.
+  const options = useMemo(() => {
+    const current = !isNew ? allAgents.get(draft.agent) : undefined;
+    return current && !agents.some((agent) => agent.id === current.id)
+      ? [current, ...agents]
+      : agents;
+  }, [agents, allAgents, draft.agent, isNew]);
+  const agentName = options.find((agent) => agent.id === draft.agent)?.name;
+  const next = useNextRuns(api, draft);
   const setSpec = (patch: Partial<Spec>) => {
     setDraft((current) => ({ ...current, spec: { ...current.spec, ...patch } }));
   };
+  const noDays = !anomaly && draft.spec.freq === 'days' && draft.spec.days.length === 0;
   const errors: string[] = [];
   if (!draft.name.trim()) errors.push(t('schedules.editor.errName'));
+  if (!draft.agent) errors.push(t('schedules.editor.errAgent'));
   if (!draft.task.trim()) errors.push(t('schedules.editor.errTask'));
-  if (draft.kind === 'schedule' && draft.spec.freq === 'days' && draft.spec.days.length === 0) {
-    errors.push(t('schedules.editor.errDays'));
-  }
-  const heavy =
-    draft.kind === 'schedule' && (draft.spec.freq === '15m' || draft.spec.freq === 'hourly');
-  const owner = task ? ownerName(t, task) : '';
+  if (noDays) errors.push(t('schedules.editor.errDays'));
+  const heavy = !anomaly && (draft.spec.freq === '15m' || draft.spec.freq === 'hourly');
+  const otherZone = !anomaly && zoneOffset(draft.tz) !== -new Date().getTimezoneOffset();
 
   const save = () => {
     setTried(true);
     if (errors.length > 0 || busy) return;
     setBusy(true);
     setFailure(null);
-    const trigger =
-      draft.kind === 'event'
-        ? { kind: 'event' as const, event_type: 'cost_anomaly' as const }
-        : { kind: 'schedule' as const, schedule: draft.spec, timezone: draft.tz };
+    const trigger = anomaly
+      ? { kind: 'event' as const, event_type: 'cost_anomaly' as const }
+      : { kind: 'schedule' as const, schedule: draft.spec, timezone: draft.tz };
     const body = {
       name: draft.name.trim(),
       agent_id: draft.agent,
@@ -794,9 +1217,6 @@ function TaskEditor({
       }
     >
       <div className="sc-form">
-        {agents.length === 0 ? (
-          <div className="mc-alert amber">{t('schedules.editor.noAgents')}</div>
-        ) : null}
         <div className="sc-grid2">
           <div>
             <label className="sc-label" htmlFor="sc-n">
@@ -820,16 +1240,27 @@ function TaskEditor({
               id="sc-a"
               className="input"
               value={draft.agent}
+              disabled={options.length === 0}
+              aria-describedby="sc-a-h"
               onChange={(event) => {
                 setDraft({ ...draft, agent: event.target.value });
               }}
             >
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
+              {options.length > 0 ? (
+                options.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))
+              ) : (
+                <option value="">{t('schedules.editor.agentNoneOption')}</option>
+              )}
             </select>
+            <div id="sc-a-h" className="mk-meta" style={{ marginTop: 5, fontSize: 12 }}>
+              {options.length > 0
+                ? t('schedules.editor.agentHelp')
+                : t('schedules.editor.agentNone')}
+            </div>
           </div>
         </div>
         <div>
@@ -842,44 +1273,65 @@ function TaskEditor({
             rows={3}
             maxLength={2000}
             value={draft.task}
-            placeholder={t('schedules.editor.taskPlaceholder')}
+            placeholder={
+              anomaly
+                ? t('schedules.editor.taskPlaceholderAnomaly')
+                : t('schedules.editor.taskPlaceholder')
+            }
             onChange={(event) => {
               setDraft({ ...draft, task: event.target.value });
             }}
           />
         </div>
-        {isNew ? (
-          // Not in the design yet (D24, reported): the trigger of cost anomalies (D79).
-          <div>
-            <span className="sc-label">{t('schedules.editor.trigger')}</span>
-            <div className="ab-seg" role="group" aria-label={t('schedules.editor.trigger')}>
-              <button
-                type="button"
-                className={draft.kind === 'schedule' ? 'is-on' : ''}
-                onClick={() => {
-                  setDraft({ ...draft, kind: 'schedule' });
-                }}
-              >
-                {t('schedules.editor.bySchedule')}
-              </button>
-              <button
-                type="button"
-                className={draft.kind === 'event' ? 'is-on' : ''}
-                disabled={!canSubscribeEvents}
-                title={canSubscribeEvents ? undefined : t('schedules.editor.centralOnly')}
-                onClick={() => {
-                  setDraft({ ...draft, kind: 'event' });
-                }}
-              >
-                {t('schedules.editor.byAnomaly')}
-              </button>
+        <div>
+          <span className="sc-label">{t('schedules.editor.trigger')}</span>
+          {isNew ? (
+            <>
+              <div className="ab-seg" role="group" aria-label={t('schedules.editor.trigger')}>
+                <button
+                  type="button"
+                  className={!anomaly ? 'is-on' : ''}
+                  onClick={() => {
+                    setDraft({ ...draft, kind: 'schedule' });
+                  }}
+                >
+                  {t('schedules.editor.bySchedule')}
+                </button>
+                <button
+                  type="button"
+                  className={anomaly ? 'is-on' : ''}
+                  disabled={!canSubscribeEvents}
+                  aria-describedby={canSubscribeEvents ? undefined : 'sc-trg-why'}
+                  onClick={() => {
+                    setDraft({ ...draft, kind: 'event' });
+                  }}
+                >
+                  {t('schedules.editor.byAnomaly')}
+                </button>
+              </div>
+              {!canSubscribeEvents ? (
+                <div id="sc-trg-why" className="mk-meta" style={{ marginTop: 6, fontSize: 12 }}>
+                  {t('schedules.editor.centralOnly')}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="sc-ro">
+              {anomaly ? t('schedules.editor.byAnomaly') : t('schedules.editor.bySchedule')}
+              <span className="mk-meta">{t('schedules.editor.triggerFixed')}</span>
             </div>
-            {!canSubscribeEvents ? (
-              <div className="mk-meta sc-note">{t('schedules.editor.centralOnly')}</div>
-            ) : null}
-          </div>
-        ) : null}
-        {draft.kind === 'schedule' ? (
+          )}
+          {anomaly ? (
+            <div className="mc-alert" style={{ marginTop: 10, fontSize: 12.5 }}>
+              <ZapIcon size={13} />
+              <div>
+                <b>{t('schedules.editor.anomalyCap', { count: task?.trigger.daily_cap ?? 5 })}</b>{' '}
+                {t('schedules.editor.anomalyNote')}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        {!anomaly ? (
           <div>
             <span className="sc-label">{t('schedules.editor.frequency')}</span>
             <div
@@ -984,57 +1436,79 @@ function TaskEditor({
                 ))}
               </select>
             </div>
-            <div className="mk-meta sc-note">
+            <div className="mk-meta" style={{ marginTop: 8 }}>
               {specLabel(t, draft.spec)} · <span className="mono">{cronOf(draft.spec)}</span>
             </div>
+            {next === 'computing' ? (
+              <div className="mk-meta" style={{ marginTop: 2 }} role="status">
+                {t('schedules.editor.computing')}
+              </div>
+            ) : next && next.length > 0 ? (
+              <div className="mk-meta" style={{ marginTop: 2 }}>
+                {t('schedules.editor.upcoming', {
+                  zone: zoneLabel(t, draft.tz),
+                  list: next
+                    .map((at) =>
+                      new Intl.DateTimeFormat('es-MX', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false,
+                        timeZone: draft.tz,
+                      }).format(new Date(at)),
+                    )
+                    .join(' · '),
+                })}
+                {otherZone && next[0]
+                  ? t('schedules.editor.upcomingYours', { first: FMT.format(new Date(next[0])) })
+                  : ''}
+              </div>
+            ) : null}
             {heavy ? (
-              <div className="mc-alert amber sc-note">
+              <div className="mc-alert amber" style={{ marginTop: 8, fontSize: 12.5 }}>
                 <WarnIcon size={13} />
                 <div>
                   {draft.spec.freq === '15m'
-                    ? t('schedules.editor.heavy15m', { agent: agentName })
-                    : t('schedules.editor.heavyHourly', { agent: agentName })}
+                    ? t('schedules.editor.heavy15m', { agent: agentName ?? '' })
+                    : t('schedules.editor.heavyHourly', { agent: agentName ?? '' })}
                 </div>
               </div>
             ) : null}
-            {tried && draft.spec.freq === 'days' && draft.spec.days.length === 0 ? (
-              <div className="sc-err">{t('schedules.editor.errDays')}</div>
+            {noDays ? (
+              <div className="sc-err" style={{ marginTop: 6, fontSize: 12 }}>
+                {t('schedules.editor.errDays')}
+              </div>
             ) : null}
           </div>
         ) : null}
         <div>
-          <span className="sc-label">{t('schedules.editor.deliverTo')}</span>
-          <div
-            className="flex items-center gap-2"
-            style={{ flexWrap: 'wrap', alignItems: 'center' }}
-          >
-            <div className="ab-seg">
-              <button type="button" className="is-on">
-                {t('schedules.deliver.inbox')}
-              </button>
-            </div>
-            {/* Delivery stays inside Mango in this wave (A4): tickets and Slack are «Próximamente». */}
-            <Soon name={t('schedules.deliver.ticket')}>
-              <span className="ab-seg">
-                <button type="button">{t('schedules.deliver.ticket')}</button>
-              </span>
-            </Soon>
+          <span className="sc-label">{t('schedules.editor.result')}</span>
+          <div className="sc-ro">{t('schedules.editor.resultValue')}</div>
+          <div className="flex items-center gap-2" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <span className="mk-meta">{t('schedules.editor.alsoSend')}</span>
+            {/* The results stay inside Mango in this wave (A4): Slack and tickets are «Próximamente». */}
             <Soon name={t('schedules.deliver.slack')}>
               <span className="ab-seg">
                 <button type="button">{t('schedules.deliver.slack')}</button>
               </span>
             </Soon>
+            <Soon name={t('schedules.deliver.ticket')}>
+              <span className="ab-seg">
+                <button type="button">{t('schedules.deliver.ticket')}</button>
+              </span>
+            </Soon>
           </div>
         </div>
-        <div className="mc-alert sc-note">
+        <div className="mc-alert" style={{ fontSize: 12.5 }}>
           <UserIcon size={13} />
           <div>
             {t('schedules.editor.note', {
-              who: isNew
-                ? t('schedules.editor.noteNew')
-                : t('schedules.editor.noteOwner', { owner }),
-              agent: agentName,
-              lose: isNew ? t('schedules.editor.loseNew') : t('schedules.editor.loseOwner'),
+              budget: agentName
+                ? t('schedules.editor.noteBudget', { agent: agentName })
+                : t('schedules.editor.noteBudgetNone'),
+              central: anomaly ? t('schedules.editor.noteCentral') : '',
             })}
           </div>
         </div>
@@ -1049,69 +1523,12 @@ function TaskEditor({
   );
 }
 
-function RunResult({
-  api,
-  task,
-  run,
-  onClose,
-}: {
-  api: OperationCaller;
-  task: Task;
-  run: TaskRun;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const [detail, setDetail] = useState<RunDetail | 'error' | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    api(
-      'getTaskRun',
-      { path: { task_id: task.task_id, run_id: run.run_id } },
-      { signal: controller.signal },
-    ).then(
-      (found) => {
-        if (!controller.signal.aborted) setDetail(found);
-      },
-      () => {
-        if (!controller.signal.aborted) setDetail('error');
-      },
-    );
-    return () => {
-      controller.abort();
-    };
-  }, [api, task.task_id, run.run_id]);
-  return (
-    <GovModal
-      title={t('schedules.detail.resultTitle', { when: FMT.format(new Date(run.queued_at)) })}
-      sub={task.name}
-      width={640}
-      onClose={onClose}
-    >
-      {detail === null ? (
-        <div role="status" aria-label={t('schedules.detail.resultLoading')}>
-          <Skel w="70%" h={13} />
-          <Skel w="90%" h={11} />
-        </div>
-      ) : detail === 'error' ? (
-        <div className="sc-err" role="alert">
-          {t('schedules.detail.resultError')}
-        </div>
-      ) : detail.result ? (
-        // The agent's answer: Markdown without raw HTML (AGENTS.md, REACT-MARKUP-001).
-        <div className="sc-result">
-          <ChatMarkdown>{detail.result}</ChatMarkdown>
-        </div>
-      ) : (
-        <div className="mk-meta">{t('schedules.detail.noResult')}</div>
-      )}
-    </GovModal>
-  );
-}
-
 /**
  * Schedules (design schedules.jsx): tasks a published agent runs without chat, as the person who
- * created them (D78). Each person sees their tasks and administrators see all of them. Every
- * action is authorized by the API; what is hidden here is only what the design hides.
+ * created them (D78), by schedule or on a cost anomaly (D79). Anyone with a usable agent creates
+ * them (D82 (1)). Each person sees theirs and administrators see all of them, without their
+ * instruction or results (D78 (18), D82 (3)). Every action is authorized by the API; what is
+ * hidden here is only what the design hides.
  */
 export function SchedulesPage() {
   const { t } = useTranslation();
@@ -1123,12 +1540,16 @@ export function SchedulesPage() {
   const [query, setQuery] = useState('');
   const [quick, setQuick] = useState<QuickFilter>('all');
   const [agentFilter, setAgentFilter] = useState('all');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<{
+    id: string;
+    ask: 'pause' | null;
+    run: string | null;
+  } | null>(null);
   const [editing, setEditing] = useState<{ task: Task | null } | null>(null);
-  const [result, setResult] = useState<{ task: Task; run: TaskRun } | null>(null);
   const [busy, setBusy] = useState(false);
   /** Runs seen queued or running, by id: their end is told once (design toast). */
   const openRuns = useRef(new Map<string, Task>());
+  const isAdmin = me.is_admin;
 
   const ready = state.kind === 'ready' ? state : null;
   const anyOpen = ready?.list.items.some((task) => task.runs.some(isOpen)) ?? false;
@@ -1148,14 +1569,28 @@ export function SchedulesPage() {
               if (isOpen(run)) {
                 seen.set(run.run_id, item);
               } else if (seen.delete(run.run_id)) {
+                const done = run.status === 'ok';
+                const open = { id: item.task_id, ask: null, run: done ? run.run_id : null };
                 notify(
-                  run.status === 'ok'
-                    ? t('schedules.toast.done', {
-                        name: item.name,
-                        deliver: t('schedules.deliver.inbox').toLowerCase(),
-                      })
-                    : t('schedules.toast.failed', { name: item.name }),
-                  run.status === 'ok' ? 'success' : 'info',
+                  done
+                    ? t('schedules.toast.doneBody')
+                    : (runReason(t, run.reason) ?? t('schedules.run.unknownReason')),
+                  done ? 'success' : 'info',
+                  done
+                    ? t('schedules.toast.doneTitle', { name: item.name })
+                    : t('schedules.toast.failedTitle', { name: item.name }),
+                  {
+                    duration: DONE_TOAST_MS,
+                    action: {
+                      label:
+                        done && item.is_owner
+                          ? t('schedules.run.seeResult')
+                          : t('schedules.toast.seeRun'),
+                      onClick: () => {
+                        setSelected(item.is_owner ? open : { ...open, run: null });
+                      },
+                    },
+                  },
                 );
               }
             }
@@ -1250,28 +1685,40 @@ export function SchedulesPage() {
     },
     [act, call, t],
   );
-  const toggle = useCallback(
-    (task: Task) => {
-      if (task.status === 'paused') {
-        act(
-          () => call('resumePausedTask', { path: { task_id: task.task_id }, body: {} }),
-          t('schedules.toast.resumed', { name: task.name }),
-        );
-      } else {
-        act(
-          () => call('pauseExistingTask', { path: { task_id: task.task_id }, body: {} }),
-          t('schedules.toast.paused', { name: task.name }),
-        );
-      }
+  const pause = useCallback(
+    (task: Task, reason: string | null) => {
+      act(
+        () =>
+          call('pauseExistingTask', {
+            path: { task_id: task.task_id },
+            body: reason ? { reason } : {},
+          }),
+        task.is_owner
+          ? t('schedules.toast.paused', { name: task.name })
+          : t('schedules.toast.pausedAdmin', { name: task.name }),
+      );
     },
     [act, call, t],
   );
+  const resume = useCallback(
+    (task: Task) => {
+      act(
+        () => call('resumePausedTask', { path: { task_id: task.task_id }, body: {} }),
+        t('schedules.toast.resumed', { name: task.name }),
+      );
+    },
+    [act, call, t],
+  );
+  const openTask = useCallback((task: Task, ask?: 'pause') => {
+    setSelected({ id: task.task_id, ask: ask ?? null, run: null });
+  }, []);
 
   const q = query.trim().toLowerCase();
+  // Design: the search only looks at the instruction of one's own tasks.
   const base = tasks.filter(
     (task) =>
       (agentFilter === 'all' || task.agent_id === agentFilter) &&
-      (!q || `${task.name} ${task.task}`.toLowerCase().includes(q)),
+      (!q || `${task.name} ${task.is_owner ? (task.task ?? '') : ''}`.toLowerCase().includes(q)),
   );
   const visible = base.filter((task) =>
     matchesQuick(task, quick, healths.get(task.task_id) ?? null),
@@ -1281,10 +1728,15 @@ export function SchedulesPage() {
   const attention = tasks.filter((task) =>
     needsAttention(task, healths.get(task.task_id) ?? null),
   ).length;
+  const anomalyTasks = active.some(isEvent);
   const next = active
-    .flatMap((task) => (task.next_runs[0] ? [{ task, at: task.next_runs[0] }] : []))
+    .flatMap((task) =>
+      !isEvent(task) && task.next_runs[0] ? [{ task, at: task.next_runs[0] }] : [],
+    )
     .toSorted((a, b) => a.at.localeCompare(b.at))[0];
-  const selected = selectedId ? (tasks.find((task) => task.task_id === selectedId) ?? null) : null;
+  const selectedTask = selected
+    ? (tasks.find((task) => task.task_id === selected.id) ?? null)
+    : null;
   const canCreate = ready?.list.can_create ?? false;
 
   return (
@@ -1296,7 +1748,8 @@ export function SchedulesPage() {
             <button
               type="button"
               className="btn btn-sm btn-primary"
-              disabled={!ready}
+              disabled={!ready || usable.length === 0}
+              title={ready && usable.length === 0 ? t('schedules.createNoAgents') : undefined}
               onClick={() => {
                 setEditing({ task: null });
               }}
@@ -1309,7 +1762,10 @@ export function SchedulesPage() {
       <div className="content">
         <div className="page-head">
           <h1 className="page-title">{t('schedules.title')}</h1>
-          <p className="page-subtitle">{t('schedules.subtitle')}</p>
+          <p className="page-subtitle">
+            {t('schedules.subtitle')}
+            {isAdmin ? t('schedules.subtitleAdmin') : ''}
+          </p>
         </div>
         {state.kind === 'error' ? (
           <div role="alert">
@@ -1357,7 +1813,9 @@ export function SchedulesPage() {
               <div className="card bg-kpi">
                 <span className="bg-kpi-l">{t('schedules.kpi.cost')}</span>
                 <span className="bg-kpi-v">{formatUsd(monthlyEstimate(tasks).toFixed(2))}</span>
-                <span className="bg-kpi-s">{t('schedules.kpi.costSub')}</span>
+                <span className="bg-kpi-s">
+                  {anomalyTasks ? t('schedules.kpi.costSubAnomaly') : t('schedules.kpi.costSub')}
+                </span>
               </div>
             </div>
             <div className="bg-toolbar">
@@ -1418,7 +1876,7 @@ export function SchedulesPage() {
               <div className="card mc-table">
                 <div className="sc-tr mc-th">
                   <span>{t('schedules.columns.schedule')}</span>
-                  <span>{t('schedules.columns.frequency')}</span>
+                  <span>{t('schedules.columns.when')}</span>
                   <span>{t('schedules.columns.next')}</span>
                   <span>{t('schedules.columns.runs')}</span>
                   <span>{t('schedules.columns.status')}</span>
@@ -1428,20 +1886,25 @@ export function SchedulesPage() {
                   <TaskRow
                     key={task.task_id}
                     task={task}
-                    isAdmin={me.is_admin}
+                    perms={permsOf(task, isAdmin)}
                     agentName={agentName(task)}
                     health={healths.get(task.task_id) ?? null}
                     busy={busy}
-                    onOpen={(item) => {
-                      setSelectedId(item.task_id);
-                    }}
+                    onOpen={openTask}
                     onRun={runNow}
-                    onToggle={toggle}
+                    onPause={(item) => {
+                      pause(item, null);
+                    }}
+                    onResume={resume}
                   />
                 ))}
                 {visible.length === 0 ? (
                   <div className="mk-meta" style={{ padding: 16 }}>
-                    {t('schedules.noneMatch')}
+                    {tasks.length > 0
+                      ? t('schedules.noneMatch')
+                      : usable.length > 0 && canCreate
+                        ? t('schedules.emptyMine')
+                        : t('schedules.emptyNoAgents')}
                   </div>
                 ) : null}
               </div>
@@ -1449,45 +1912,41 @@ export function SchedulesPage() {
           </>
         )}
       </div>
-      {selected && ready ? (
+      {selected && selectedTask && ready ? (
         <TaskDetail
-          task={selected}
-          isAdmin={me.is_admin}
-          agentName={agentName(selected)}
-          health={healths.get(selected.task_id) ?? null}
-          // The API lists only the tasks the caller may pause and retire (owner or administrator).
-          canControl
+          key={`${selectedTask.task_id}:${selected.ask ?? ''}:${selected.run ?? ''}`}
+          api={call}
+          task={selectedTask}
+          isAdmin={isAdmin}
+          agentName={agentName(selectedTask)}
+          health={healths.get(selectedTask.task_id) ?? null}
           busy={busy}
+          ask0={selected.ask}
+          run0={selected.run}
           onClose={() => {
-            setSelectedId(null);
+            setSelected(null);
           }}
           onEdit={() => {
-            setEditing({ task: selected });
+            setEditing({ task: selectedTask });
           }}
           onRun={() => {
-            runNow(selected);
+            runNow(selectedTask);
           }}
-          onToggle={() => {
-            toggle(selected);
+          onPause={(reason) => {
+            pause(selectedTask, reason);
           }}
-          onHold={() => {
-            act(
-              () => call('pauseExistingTask', { path: { task_id: selected.task_id }, body: {} }),
-              t('schedules.toast.paused', { name: selected.name }),
-            );
+          onResume={() => {
+            resume(selectedTask);
           }}
           onRetire={(reason) => {
             act(
               () =>
                 call('retireExistingTask', {
-                  path: { task_id: selected.task_id },
+                  path: { task_id: selectedTask.task_id },
                   body: { reason },
                 }),
-              t('schedules.toast.retired', { name: selected.name }),
+              t('schedules.toast.retired', { name: selectedTask.name }),
             );
-          }}
-          onResult={(run) => {
-            setResult({ task: selected, run });
           }}
         />
       ) : null}
@@ -1496,6 +1955,7 @@ export function SchedulesPage() {
           api={call}
           task={editing.task}
           agents={usable}
+          allAgents={agentsById}
           canSubscribeEvents={ready.list.can_subscribe_events}
           onClose={() => {
             setEditing(null);
@@ -1503,18 +1963,8 @@ export function SchedulesPage() {
           onSaved={(saved, created) => {
             setEditing(null);
             replace(saved);
-            setSelectedId(saved.task_id);
+            setSelected({ id: saved.task_id, ask: null, run: null });
             notify(created ? t('schedules.toast.created') : t('schedules.toast.saved'));
-          }}
-        />
-      ) : null}
-      {result ? (
-        <RunResult
-          api={call}
-          task={result.task}
-          run={result.run}
-          onClose={() => {
-            setResult(null);
           }}
         />
       ) : null}

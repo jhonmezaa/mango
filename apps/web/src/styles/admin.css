@@ -1072,6 +1072,10 @@
   .g-toast-x {
     padding: 2px;
   }
+  /* Design ui.jsx Toast `action`: `btn btn-sm` with marginTop 8. */
+  .g-toast-act {
+    margin-top: 8px;
+  }
 
   /* --- styles.css: budgets (bg-*) ------------------------------------------------------- */
   .bg-kpis {
