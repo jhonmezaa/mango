@@ -24,7 +24,7 @@ test('the Bandeja lists what to sign and the runs of my tasks, and opens a resul
   await expect(page.getByRole('heading', { level: 1, name: 'Bandeja' })).toBeVisible();
   await expect(page.getByText(/\d+ sin leer/).first()).toBeVisible();
 
-  const list = page.getByRole('listbox', { name: 'Notificaciones' });
+  const list = page.getByRole('listbox', { name: 'Avisos' });
   await expect(
     list.getByRole('option').filter({ hasText: 'Te piden aprobar:' }).first(),
   ).toBeVisible();
@@ -53,19 +53,20 @@ test('a notice is archived and comes back; everything is marked as read', async 
   await signIn(page);
   const nav = page.getByRole('navigation', { name: 'Navegación principal' });
   await nav.getByRole('link', { name: /^Bandeja/ }).click();
-  const list = page.getByRole('listbox', { name: 'Notificaciones' });
+  const list = page.getByRole('listbox', { name: 'Avisos' });
   const notice = list.getByRole('option').filter({ hasText: 'Budget check diario · completada' });
   await notice.first().click();
   await page.getByRole('button', { name: 'Archivar' }).click();
   await expect(notice).toHaveCount(0);
 
-  await page.getByRole('tab', { name: 'Archivado' }).click();
+  // Design 2026-10-16b: «Archivado» is a button next to the count, not a tab.
+  await page.getByRole('button', { name: 'Archivado', exact: true }).click();
   await expect(page).toHaveURL(/\/inbox\/archived$/);
   await list.getByRole('option').filter({ hasText: 'Budget check diario' }).first().click();
   await page.getByRole('button', { name: 'Desarchivar' }).click();
   await expect(page.getByText('Nada por aquí.')).toBeVisible();
 
-  await page.getByRole('tab', { name: 'Todo' }).click();
+  await page.getByRole('button', { name: 'Volver a la bandeja' }).click();
   await page.getByRole('button', { name: 'Marcar todo como leído' }).click();
   await expect(page.getByText('Todo al día')).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Bandeja', exact: true })).toBeVisible();
