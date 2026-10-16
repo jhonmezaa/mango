@@ -1,8 +1,9 @@
-# Tareas sin chat (a pedido, por horario y por evento): modelo de amenazas (v0.4)
+# Tareas sin chat (a pedido, por horario y por evento): modelo de amenazas (v0.5)
 
-> Fecha: 2026-10-15 · Actualizado: 2026-10-16 · Skill: `security-threat-model`. Decisiones: D13, D20, D25, D26 («Schedules»), D33, D56, D58, D63, D70, D72, D73, D74, D76, **D78** (esta) y D81.
+> Fecha: 2026-10-15 · Actualizado: 2026-10-16 · Skill: `security-threat-model`. Decisiones: D13, D20, D25, D26 («Schedules»), D33, D56, D58, D63, D70, D72, D73, D74, D76, **D78** (esta), D81 y D82.
 > Amplía `identity-propagation-threat-model.md`, `write-tools-approval-threat-model.md` y `budget-reconciliation-threat-model.md`.
 > Alcance: `apps/api/src/mango_api/tasks.py`, `tasks_store.py`, `task_worker.py` y `task_identity.py`; `packages/py/mango-core/src/mango_core/task_runs.py` y `task_identity.py`; `functions/task-auth/` (reto de Cognito); `infra/lib/constructs/tasks.ts`; el cambio de `tools.ts` (cliente de tareas en el Gateway y en el conector de Cost Explorer); la pantalla `apps/web/src/pages/schedules/`. Diseño: `docs/specs/tasks.md`.
+> v0.5 (2026-10-16) recoge **D82**, tomada por el dueño ese día por menú tras la ronda de diseño: cualquiera con sesión crea tareas (L1 `UseAgent` sigue limitando), la pausa de un administrador lleva un motivo que el dueño lee, la instrucción solo la ve su dueño, el resultado se guarda por pasos con el nombre de la tool, cada ejecución por evento guarda las fechas de su anomalía, y el editor pide las próximas ejecuciones al servidor. TM-T4 y TM-T8 cambian y se añade TM-T11. Revisión `security-audit` del cambio de autorización al final.
 > v0.4 (2026-10-16) recoge **D81**: una ejecución por evento que encuentra su tarea ocupada espera a la anterior en vez de omitirse. TM-T5 y TM-T9 cambian, y la cola gana un mensaje que solo deja `mango-api` (`wait`). Revisión `security-audit` del diff al final.
 > v0.3 (mismo día) recoge la revisión independiente: el cliente de tareas con secreto y sin revelar si una persona existe, la pérdida de acceso decidida antes del flujo, el resultado solo para su dueño (D1), la pausa de un administrador que frena (D2), la confianza del planificador y la alarma de la DLQ (D78 (17) a (20)).
 > v0.2 (mismo día) añade las dos reglas de D79 (TM-T10) y la revisión `security-audit` del diff, al final.
@@ -103,7 +104,7 @@ flowchart LR
 ## Attacker model
 
 ### Capabilities
-- Una persona con cuenta (creadora de agentes o no) que manda peticiones arbitrarias a `/api/tasks*` con su token.
+- Una persona con cuenta (creadora de agentes o no; desde D82 cualquiera puede crear tareas) que manda peticiones arbitrarias a `/api/tasks*` con su token.
 - Una persona que perdió el acceso (deshabilitada, sin el grupo) y espera que su tarea siga.
 - Quien escribe en una cuenta del cliente (nombres de recursos, etiquetas) o provoca una anomalía: controla parte de los datos de un evento y de lo que devuelven las tools.
 - Un modelo que sigue instrucciones inyectadas.
@@ -118,7 +119,8 @@ flowchart LR
 | Superficie | Cómo se llega | Frontera | Notas |
 |---|---|---|---|
 | `POST /api/tasks`, `PATCH /api/tasks/{id}` | SPA | Persona → API | Pydantic, L1, límites |
-| `POST /api/tasks/{id}/run`, `/pause`, `/resume`, `/retire` | SPA | Persona → API | Solo el dueño ejecuta y reanuda; admin pausa y retira |
+| `POST /api/tasks/{id}/run`, `/pause`, `/resume`, `/retire` | SPA | Persona → API | Solo el dueño ejecuta y reanuda; admin pausa (con motivo, D82 (2)) y retira |
+| `POST /api/tasks/next-runs` | SPA (editor) | Persona → API | `CreateTask`; cuerpo estricto (frecuencia y zona de listas cerradas); cálculo puro, sin leer ni escribir (D82 (4)) |
 | `GET /api/tasks`, `GET /api/tasks/{id}`, `GET /api/tasks/{id}/runs/{run}` | SPA | Persona → API | Por objeto |
 | Mensajes de la cola | Scheduler, `mango-api`, D79 | Servicio → API | Sin autoridad |
 | `InitiateAuth`/`AdminInitiateAuth` con el cliente de tareas | Cognito | Internet/AWS → Cognito | Solo `CUSTOM_AUTH`, reto firmado |
@@ -143,12 +145,13 @@ flowchart LR
 | TM-T1 | Emitir tokens de tareas de cualquier persona desde un `mango-api` comprometido o con la llave de identidad | Capacidad de emitir tokens | Baja: exige comprometer el rol de la tarea (ya de máxima confianza) | Alta: lectura como cualquiera, sin MFA, durante el compromiso | **Alta** | `kms:Sign` solo para el rol de `mango-api` (y denegado a cualquier otro en la política de la llave); la Lambda solo verifica; respuesta de 60 s ligada al nonce; token de 15 min solo útil con firma de invocación; ninguna escritura posible; cada emisión auditada (`task.run.started` con el `sub`) y visible en los eventos de autenticación de Cognito (D31) |
 | TM-T2 | Usar un token de tareas para escribir o fuera de una ejecución | Token de ejecución | Baja | Alta | **Media** | Verificador de `mango-api` y del executor fijado al cliente web; approval tokens solo desde rutas del cliente web; interceptor exige firma de invocación; vida de 15 min; cliente sin refresh útil |
 | TM-T3 | Una tarea sigue corriendo cuando su dueño perdió el acceso | Atribución, datos | Media | Media | **Media** | Cognito no emite a deshabilitados ni borrados; grupos vivos por el pre-token; L1 `UseAgent` en cada ejecución; pausa `access_lost` que solo el dueño, con acceso recuperado, deshace. Ventana: la ejecución en curso (≤ 15 min) |
-| TM-T4 | Crear, editar, disparar o reanudar la tarea de otro, o cambiar su dueño | Definición | Media | Alta | **Media** | Dueño puesto por el servidor; autorización por objeto (L1 `OwnTask`, `ViewTask` y `ControlTask` con el dueño como atributo); 404 para lo ajeno; el admin solo pausa, retira y levanta su propia pausa, que frena también al dueño (D2); mensajes de cola sin autoridad |
+| TM-T4 | Crear, editar, disparar o reanudar la tarea de otro, o cambiar su dueño | Definición | Media | Alta | **Media** | Cualquiera con sesión crea (D82 (1)), pero solo sobre un agente publicado que puede usar (L1 `UseAgent` al guardar y en cada ejecución) y dentro de los límites por persona e instalación; dueño puesto por el servidor; autorización por objeto (L1 `OwnTask`, `ViewTask` y `ControlTask` con el dueño como atributo); 404 para lo ajeno; el admin solo pausa (con motivo obligatorio, D82 (2)), retira y levanta su propia pausa, que frena también al dueño (D2); mensajes de cola sin autoridad |
 | TM-T5 | Gasto sin control (frecuencia, número de tareas, mensajes repetidos, esperas que se multiplican) | Presupuesto | Media | Media | **Media** | Reserva D73 en cada ejecución; límites por persona e instalación; frecuencia mínima; una a la vez por tarea (el `hold` no lo toma dos veces ni la misma ejecución, D81); concurrencia por tarea de la API; ids deterministas; «Ejecutar ahora» con límite compartido. Por evento (D81): la que encuentra la tarea ocupada espera «En cola», reanudada solo por el mensaje con su `wake` vigente; un evento repetido no crea otra ejecución ni otra espera; el tope del día se cuenta al arrancar; la espera dura como mucho 30 min (dos `hold` completos) y después queda `overlap`; cada vistazo es un mensaje y dos lecturas de la tabla, sin token ni modelo |
 | TM-T6 | Inyección indirecta por datos del evento o salida de tools | Integridad de la acción | Alta | Baja (solo lectura) | **Media** | A3: ninguna escritura sin aprobación del dueño desde su sesión; datos del evento acotados y delimitados; guardrail base (D34); el resultado se muestra como Markdown sin HTML crudo |
 | TM-T7 | Programaciones o colas que sobreviven a la desinstalación o a la retirada | Gasto, datos | Baja | Baja | **Baja** | Grupo de Scheduler en la plantilla (borrarlo borra sus programaciones); retirar borra la programación; un mensaje de una tarea retirada se omite |
-| TM-T8 | Fuga del resultado (otra persona lo lee, va a logs) | Resultado | Baja | Media | **Baja** | Lectura por objeto: el resultado solo para el dueño (un administrador ve estado, costo y motivo, D1, como D23); nada de la tarea, del evento ni del resultado en logs ni en auditoría; TTL de 90 días |
+| TM-T8 | Fuga del resultado (otra persona lo lee, va a logs) | Resultado | Baja | Media | **Baja** | Lectura por objeto: el resultado, sus pasos y la instrucción solo para el dueño (un administrador ve estado, costo, motivo y fechas de la anomalía, D1 y D82 (3), como D23); nada de la tarea, del evento ni del resultado en logs ni en auditoría; TTL de 90 días |
 | TM-T10 | Suscribir a las anomalías de costo a alguien que no ve toda la organización, o una tormenta de anomalías (D79) | Datos, presupuesto | Media | Media | **Media** | Solo personas centrales crean ese disparador (`central_only`); si el dueño deja de serlo, la ejecución se omite (`not_central`) y la tarea se pausa; como mucho 5 ejecuciones por tarea y día UTC (`daily_cap`), contadas antes de invocar el modelo |
+| TM-T11 | Texto de terceros en lo que muestra la pantalla de tareas (D82): nombre de tool escrito por el modelo en los pasos, fechas del evento, motivo de la pausa de un administrador | Integridad de lo que se ve | Media | Baja | **Baja** | Los pasos solo nombran tools de la versión publicada (TM-LP1); como mucho 20 pasos de 2.000 caracteres; fechas guardadas solo si son ISO válidas y en orden, nada más del evento (D79 (4)); el motivo de la pausa (1 a 200 caracteres) es de un administrador, se muestra como texto y no va a auditoría ni logs; la SPA renderiza todo como texto y el informe como Markdown sin HTML crudo |
 | TM-T9 | Agotar las tareas de `mango-api` con ejecuciones largas | Disponibilidad del chat | Media | Media | **Media** | Dos ejecuciones a la vez por tarea de la API; el resto espera en la cola; turno con el límite del agente. Una ejecución por evento que espera a la anterior (D81) no ocupa un hilo: vuelve a la cola con `DelaySeconds` y su manejo termina en milisegundos; nunca falla, así que no gasta recepciones ni llega a la DLQ |
 
 ## Criticality calibration
@@ -238,3 +241,26 @@ Lo decidió el dueño el 2026-10-16, por menú, tras la primera noche de la inst
 - Nada del mensaje va a logs; la auditoría gana `task.run.waiting` (tarea, ejecución, evento, dueño) la primera vez que una ejecución espera.
 - **Informativo:** la primera vez que una ejecución por evento encuentra la tarea ocupada ya ha pedido el token de su dueño (el orden de comprobaciones de D78 no cambia) y lo descarta; al reanudar pide otro. Es una emisión más, auditada en Cognito, sin uso.
 - **Sin ver en AWS:** que SQS entregue un mensaje con `DelaySeconds` cifrado con la CMK de la cola con el permiso que ya tiene `mango-api` (la API no pide otro permiso para el retraso).
+
+## D82: cualquiera crea tareas; lo que ve un administrador (2026-10-16)
+
+La tomó el dueño el 2026-10-16, por menú, tras la ronda de Claude Design que respondió el brief de tareas.
+
+**Qué cambia en las fronteras:**
+
+- **Persona → API, crear:** `CreateTask` pasa a toda persona de Mango (`tasks-create.cedar`, con la forma de `ViewApprovals`). No abre datos nuevos: la tarea solo usa un agente que la persona ya puede usar en el chat, con su identidad y su presupuesto. Lo que cambia es el volumen posible: más personas pueden crear hasta 10 tareas cada una, dentro de las 200 de la instalación (TM-T5).
+- **Persona → API, leer:** la instrucción deja de salir hacia quien no es el dueño (`task: null`), igual que el resultado y sus pasos; quién pausó, solo hacia administradores (FASTAPI-AUTHZ-001 por propiedad).
+- **Pausa de un administrador:** cuerpo estricto (`reason` de 1 a 200), exigido a quien no es el dueño (`reason_required`); se guarda con la tarea y se borra al reanudar.
+- **Editor → API:** `POST /api/tasks/next-runs`, solo cálculo sobre un cuerpo validado; no toca la tabla ni Scheduler y no se audita. Exige `CreateTask` y sesión.
+- **Cola → tabla:** las fechas de la anomalía y los pasos del turno se guardan con la ejecución, validados y acotados (TM-T11).
+
+**Revisión `security-audit` del cambio de autorización (modo guía), sin hallazgos que bloqueen:**
+
+- `CreateTask` abierto no salta `UseAgent`: la ruta de crear y la de editar llaman a `use_agent` antes de guardar, y cada ejecución vuelve a decidirlo con los grupos de ese momento (`test_anyone_who_may_use_the_agent_creates_tasks`: un miembro de `finops-central` crea; uno sin acceso al agente recibe 403 y no se crea programación).
+- Un usuario sin grupos pasa `CreateTask` pero no `UseAgent` de ningún agente: no crea nada (`test_any_mango_user_creates_tasks` y el test de `UseAgent`).
+- El disparador por anomalía sigue solo para personas centrales (`central_only`), y las escrituras siguen como aprobación de su dueño (D56).
+- **Informativo:** con más personas creando, el límite de 200 tareas por instalación se alcanza antes; si una instalación lo llena, nadie más crea hasta que se retire alguna. Es la misma regla de D78 (4).
+- La instrucción, el resultado y los pasos solo salen hacia el dueño en las tres lecturas (`GET /api/tasks`, `GET /api/tasks/{id}`, `GET …/runs/{run}`); `paused_by`, solo hacia administradores (`test_only_the_owner_reads_the_instruction`, `test_an_administrator_says_why_they_pause_and_the_owner_reads_it`).
+- **Informativo:** `POST /api/tasks/next-runs` no cuenta en los límites de tasa por persona: es cálculo acotado (como mucho 62 días y 3 resultados) sobre un cuerpo de listas cerradas, sin E/S; lo cubren el límite por IP del WAF (D72) y la sesión. Si alguna vez leyera o escribiera algo, tendría que contar en `RateLimits` (D70).
+- **Sin ver en una instalación:** la política nueva en el almacén de Verified Permissions tras la actualización del stack.
+

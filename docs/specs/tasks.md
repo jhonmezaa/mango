@@ -78,16 +78,16 @@ Hoy la identidad llega al destino porque el access token de quien pregunta va al
 
 ## 7. Quién puede qué
 
-- **Ver la pantalla:** como el diseño (`OWNER_VIEWS`: administradores y FinOps central con el grupo de creadores).
-- **Crear y editar:** quien puede crear agentes (`mango-agent-creator`) o es administrador, y **solo sobre agentes publicados que puede usar** (L1 `UseAgent`).
+- **Ver la pantalla:** todos los roles (diseño del 2026-10-16, `USER_VIEWS`). Cada persona ve sus tareas; un administrador ve todas.
+- **Crear y editar:** cualquiera con sesión (D82 (1), 2026-10-16; antes, quien podía crear agentes o era administrador), y **solo sobre agentes publicados que puede usar** (L1 `UseAgent`).
 - **Ejecutar ahora, editar, reanudar:** solo el dueño (corre con su identidad).
-- **Pausar y retirar:** el dueño o un administrador; retirar exige motivo. La pausa de un administrador frena también al dueño y solo la levanta un administrador, que además puede tomar la pausa del dueño (D78 (19) y (21)). El resultado de una ejecución solo lo ve su dueño (D78 (18)). Retirada no vuelve; el historial se conserva.
-- Acciones nuevas en Verified Permissions: `CreateTask` y `ManageTask` (por objeto, con el dueño como atributo).
+- **Pausar y retirar:** el dueño o un administrador; retirar exige motivo. La pausa de un administrador frena también al dueño y solo la levanta un administrador, que además puede tomar la pausa del dueño (D78 (19) y (21)); exige un motivo, que el dueño lee (D82 (2)). La instrucción y el resultado de una ejecución solo los ve su dueño (D78 (18), D82 (3)). Retirada no vuelve; el historial se conserva.
+- Acciones en Verified Permissions: `CreateTask` (de toda persona de Mango desde D82 (1)), y por objeto, con el dueño como atributo, `ViewTask`, `ControlTask` y `OwnTask` (D78 (5)).
 
 ## 8. Resultado, entrega y escrituras
 
-- El resultado se guarda en la ejecución (tabla `Tasks`, retención de 90 días) y se ve en la aplicación. **Ver §10:** el diseño no tiene dónde mostrarlo.
-- «Bandeja del creador» es la única entrega de esta ola (A4). «Crear ticket» y «Canal de Slack», «Próximamente».
+- El resultado se guarda en la ejecución (tabla `Tasks`, retención de 90 días), en tramos: lo que el agente escribió antes de cada tool, con la tool, y el informe (D82 (4)). Se lee en el detalle de la tarea («Ver resultado», diseño del 2026-10-16).
+- El resultado queda en el detalle; la Bandeja no existe todavía. «Crear ticket» y «Canal de Slack», «Próximamente» (A4).
 - **Escrituras (A3):** la ejecución corre sin approval token posible. Si el agente pide una tool de escritura, el Gateway la rechaza y `mango-api` crea la solicitud de D56 a nombre del dueño; la ejecución termina `approval` y el dueño la ejecuta después desde su propia sesión («Ver aprobación»).
 - Lo que trae un evento entra como **dato no confiable**, delimitado y nunca como instrucción del sistema (inyección indirecta).
 
@@ -96,6 +96,8 @@ Hoy la identidad llega al destino porque el access token de quien pregunta va al
 Eventos nuevos, sin contenido (ni la tarea ni el resultado): `task.created`, `task.updated`, `task.paused` (con motivo), `task.resumed`, `task.retired` (con motivo), `task.run.started`, `task.run.finished` (estado, costo, `turn_id`), `task.run.skipped` (motivo). El turno de una ejecución emite además `agent.invoke` y `agent.completed` como el chat, con `trigger` y `automation_id`. El actor de una ejecución programada es el dueño, marcado `via: task`.
 
 ## 10. Lo que no cuadra con el diseño (D24, se reporta antes de construir)
+
+> Respondido por el diseño en la ronda del 2026-10-16 (`docs/design/mango-hub/HANDOFF.md`, «Schedules · resultado, estados y anomalías de costo») e implementado; lo que queda está en el brief `docs/design/briefs/sync-2026-10-16.md`. La lista de abajo es el historial.
 
 1. **El resultado de una ejecución no se ve en ninguna parte.** «Ejecuciones recientes» muestra estado, duración y costo, y la Bandeja (que no está construida) no tiene un tipo «ejecución». Hace falta dónde leer la respuesta del agente.
 2. **«Crear ticket» aparece disponible** en el editor; los tickets no existen y A4 deja la entrega dentro de Mango: va como «Próximamente», igual que Slack.
