@@ -128,7 +128,14 @@ function seed() {
     created_at: created,
     updated_at: created,
     runs: [
-      run({ anomaly, result: REPORT, steps: STEPS, queued_at: ago(20), started_at: ago(20) }),
+      run({
+        anomaly,
+        result: REPORT,
+        steps: STEPS,
+        queued_at: ago(20),
+        started_at: ago(20),
+        ended_at: ago(19),
+      }),
       run({
         anomaly,
         result: REPORT,

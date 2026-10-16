@@ -978,14 +978,17 @@ function TaskDetail({
             </div>
             <div className="mk-kv">
               <span>{t('schedules.detail.runsAs')}</span>
-              <span>{t('schedules.detail.runsAsValue', { owner })}</span>
+              <span style={{ minWidth: 0, overflowWrap: 'anywhere', textAlign: 'right' }}>
+                {t('schedules.detail.runsAsValue', { owner })}
+              </span>
             </div>
             <div className="mk-kv">
               <span>{t('schedules.detail.agent')}</span>
               <span>{t('schedules.detail.agentValue', { agent: agentName })}</span>
             </div>
             <div className="mk-kv">
-              <span>
+              {/* An owner without a name shows their address, which has no spaces to wrap at. */}
+              <span style={{ minWidth: 0, flexShrink: 1, overflowWrap: 'anywhere' }}>
                 {perms.anomaly
                   ? t('schedules.detail.ifLostCentral', { owner })
                   : t('schedules.detail.ifLost', { owner })}
@@ -1225,6 +1228,8 @@ function TaskEditor({
             <input
               id="sc-n"
               className="input"
+              // Design: the name has the focus when the editor opens.
+              autoFocus
               value={draft.name}
               maxLength={48}
               onChange={(event) => {
@@ -1380,7 +1385,8 @@ function TaskEditor({
               ) : null}
               {draft.spec.freq === 'weekly' ? (
                 <select
-                  className="input sc-auto"
+                  className="input"
+                  style={{ width: 'auto' }}
                   aria-label={t('schedules.editor.day')}
                   value={draft.spec.dow}
                   onChange={(event) => {
@@ -1396,7 +1402,8 @@ function TaskEditor({
               ) : null}
               {draft.spec.freq === 'monthly' ? (
                 <select
-                  className="input sc-auto"
+                  className="input"
+                  style={{ width: 'auto' }}
                   aria-label={t('schedules.editor.dayOfMonth')}
                   value={draft.spec.dom}
                   onChange={(event) => {
@@ -1413,7 +1420,8 @@ function TaskEditor({
               {!['15m', 'hourly', '6h'].includes(draft.spec.freq) ? (
                 <input
                   type="time"
-                  className="input sc-auto"
+                  className="input"
+                  style={{ width: 'auto' }}
                   aria-label={t('schedules.editor.time')}
                   value={`${pad2(draft.spec.hour)}:${pad2(draft.spec.minute)}`}
                   onChange={(event) => {
@@ -1423,7 +1431,8 @@ function TaskEditor({
                 />
               ) : null}
               <select
-                className="input sc-auto"
+                className="input"
+                style={{ width: 'auto' }}
                 aria-label={t('schedules.editor.timezone')}
                 value={draft.tz}
                 onChange={(event) => {
