@@ -19,7 +19,7 @@ src/
   login.jsx              login, registro, verificación, recuperación, MFA, SSO, pantalla sin acceso
   app.jsx                router por vista, estado de agentes, panel Tweaks
   dashboard.jsx marketplace.jsx share-agent.jsx chat.jsx tickets.jsx admin.jsx (Agent Builder)
-  agent-review.jsx mcp-catalog.jsx models-view.jsx skills.jsx knowledge.jsx schedules.jsx
+  agent-review.jsx mcp-catalog.jsx models-view.jsx skills.jsx knowledge.jsx schedules.jsx schedules-run.jsx
   evals.jsx eval-create.jsx playground.jsx observability2.jsx costs2.jsx activity.jsx search.jsx
   approvals.jsx policies.jsx audit-budgets.jsx groups-admin.jsx people.jsx settings.jsx other-views.jsx
   gov/                   kit.jsx, data.js, mango-data.js, budgets.jsx (usuarios y valores por defecto), areas.jsx, propose.jsx, connectivity.jsx
@@ -41,7 +41,7 @@ src/
   - Áreas y OUs (propio de `gov/areas.jsx`, mismo patrón).
 - **Agentes**: se publican con aprobación de otro admin. No se eliminan ni archivan: un admin los **retira** y se conserva el historial. Modelo por defecto + modelos permitidos en la versión aprobada (el chat solo muestra esos). Presupuesto en solo lectura en el Builder; lo cambian admins en Presupuestos. Los agentes nuevos arrancan con el límite por defecto.
 - **Aprobaciones humanas**: ninguna tool de escritura se ejecuta sin confirmación. Cada una tiene su política (siempre, monto, cantidad de recursos o entorno; aprobadores; vencimiento). Por debajo del umbral confirma el propio usuario en el chat con la tarjeta «¿Ejecutar esta acción?» (`approval.self_confirm`); por encima, N aprobadores distintos de quien la pidió (quien la pidió ve «Aprobar» deshabilitado). Lo vencido se rechaza solo (`approval.expire`). `window.approvalTier(tool, params)` decide el tramo; si falta el dato o no se puede interpretar, usa el tramo de aprobadores.
-- **Schedules**: corren con la identidad y permisos de quien los creó; se pausan solos si esa persona pierde el acceso al agente. Solo el dueño edita, ejecuta ahora o reanuda; un admin que no es el dueño solo pausa o retira. No se eliminan. Entrega a Slack: Próximamente.
+- **Schedules**: corren con la identidad y permisos de quien los creó; se pausan solos si esa persona pierde el acceso al agente (o deja de ser central, en las de anomalía). Cada persona ve las suyas; un admin ve todas, sin la instrucción ni los resultados. Solo el dueño edita y ejecuta ahora, y reanuda su propia pausa. Un admin que no es el dueño pausa (con motivo; después solo un admin la reanuda) o retira. No se eliminan. Slack y tickets: Próximamente. Ver «Schedules · resultado, estados y anomalías de costo».
 - **Skills**: las creadas en la app son solo instrucciones; las que incluyen scripts vienen instaladas con Mango y no se editan. Duplicar crea una propuesta (v1 pendiente de otro admin).
 - **MCP**: único conector de Mango disponible: Cost Explorer; el resto Próximamente. Drive y Confluence son "Datos internos". Los packs de escritura muestran sus permisos de escritura.
 - **Observabilidad**: sin acceso a conversaciones solo metadatos (agente, usuario, duración, tokens, costo, tools). Evals: la fuente "Conversaciones reales" requiere ese acceso y su uso se audita.
@@ -57,7 +57,7 @@ src/
 
 ## Disponibilidad ("Próximamente")
 
-Tweaks → "Ver disponibilidad actual". `MangoStore.AVAILABLE` = chat (solo FinOps), budgets (valores por defecto, por agente, por usuario), audit, settings (General › Autenticación, Áreas y OUs, Conectividad), login. En ese modo, solo FinOps aparece fijado (sin quitarlo), el selector de modelo y "Más opciones" del chat son Próximamente, la lista de conversaciones no muestra vista previa ni no leídos, el chat no ofrece acciones de escritura ni tickets (Aprobaciones es Próximamente), Presupuestos es solo para admins (la cuenta "FinOps central" sin Admin no lo ve); FinOps usa el límite por defecto (sin presupuesto propio); "Alertas activas" está disponible con los agentes en alerta y su %; "Por equipo" es Próximamente y sin equipos de ejemplo. Ajustes › General › Autenticación está disponible: datos de solo lectura, políticas y Restablecer MFA; "Proponer cambio" de MFA, sesión e IdP es Próximamente (hoy se configuran al instalar) y no se muestran propuestas de ejemplo; las demás secciones de General y la pestaña Grupos son Próximamente. El Audit log muestra eventos de presupuestos (de FinOps), áreas, cuenta, accesos y consultas a FinOps; no muestra "Contraseña creada" ni "MFA configurado" (esos pasos van directo al proveedor de identidad y aún no se registran). Lo demás aparece deshabilitado con la etiqueta; con el interruptor apagado las vistas muestran su diseño completo con datos de ejemplo.
+Tweaks → "Ver disponibilidad actual". `MangoStore.AVAILABLE` = chat (solo FinOps), schedules (sin Bandeja), budgets (valores por defecto, por agente, por usuario), audit, settings (General › Autenticación, Áreas y OUs, Conectividad), login. En ese modo, solo FinOps aparece fijado (sin quitarlo), el selector de modelo y "Más opciones" del chat son Próximamente, la lista de conversaciones no muestra vista previa ni no leídos, el chat no ofrece acciones de escritura ni tickets (Aprobaciones es Próximamente), Presupuestos es solo para admins (la cuenta "FinOps central" sin Admin no lo ve); FinOps usa el límite por defecto (sin presupuesto propio); "Alertas activas" está disponible con los agentes en alerta y su %; "Por equipo" es Próximamente y sin equipos de ejemplo. Ajustes › General › Autenticación está disponible: datos de solo lectura, políticas y Restablecer MFA; "Proponer cambio" de MFA, sesión e IdP es Próximamente (hoy se configuran al instalar) y no se muestran propuestas de ejemplo; las demás secciones de General y la pestaña Grupos son Próximamente. El Audit log muestra eventos de presupuestos (de FinOps), áreas, cuenta, accesos y consultas a FinOps; no muestra "Contraseña creada" ni "MFA configurado" (esos pasos van directo al proveedor de identidad y aún no se registran). Lo demás aparece deshabilitado con la etiqueta; con el interruptor apagado las vistas muestran su diseño completo con datos de ejemplo.
 
 ## Tweaks (solo revisión)
 
@@ -416,3 +416,64 @@ Confirmado por el producto (sin cambios): doble aprobación solo para lo sensibl
 - **«Respuesta completa»:** solo sale si la persona no ve el final de esa conversación, es decir, si está en otra pantalla, si la pestaña está en segundo plano o si subió más de 80 px en la conversación. Si ve el final, no sale: la respuesta misma lo indica. El fin de la respuesta se anuncia siempre a lectores de pantalla (`aria-live="polite"`: «Respuesta completa. {agente} terminó de responder.»), salga o no el aviso.
 - **Avisos sobre el contenido:** a más de 560 px se quedan arriba a la derecha, sobre el contenido, mientras duran. Es lo previsto: no desplazan nada, se cierran con «×» y la pila no capta clics fuera de los avisos (`pointer-events: none` en `.toast-stack`, `auto` en cada aviso).
 - **Pendiente del producto, sin cambios de diseño:** evento «Persona registrada» en Auditoría; que el turno informe el motivo del aviso «Las tools de AWS Billing son solo para usuarios centrales…»; el motivo del fallo de una tool y la marca «cortado por guardrail» en el mensaje guardado.
+
+## Schedules · resultado, estados y anomalías de costo (2026-10-16)
+Archivos: `schedules.jsx` (lista, detalle, editor), `schedules-run.jsx` (zona horaria, estados, motivos, resultado, datos de ejemplo), `other-views.jsx` (Bandeja), `store.js` (Schedules para todos los roles y en «Disponible hoy»).
+
+**Dónde se lee el resultado (2.1): en el detalle, con un aviso en la Bandeja**
+- El resultado vive en el detalle de la tarea. En «Ejecuciones recientes», cada ejecución con resultado tiene «Ver resultado». Se abre dentro del mismo panel, no en un diálogo encima. El panel pasa de 520 a 640 px y se vuelve con «‹ Volver a la tarea» o con Esc.
+- Contenido, en orden: «Resultado · {fecha}»; agente · estado · duración · costo; la caja «Anomalía que la arrancó», si la hay; «Pasos · {n} consultas», cerrado, con lo que el agente escribió antes de cada consulta y el nombre de la tool; el informe en Markdown (sin HTML, mismo render que el chat); al final, «Solo tú ves este resultado: se obtuvo con tu acceso.».
+- Para separar pasos e informe, el producto guarda el texto por tramos: lo escrito antes de cada consulta (con su tool) y lo escrito después de la última. Si una ejecución solo tiene el texto completo, se muestra entero y sin «Pasos».
+- Bandeja: un aviso por ejecución terminada, de tipo «Ejecución» (icono reloj). Dice «{tarea} · completada» con la primera línea del informe, o «{tarea} · no se completó» con el motivo. «Ver resultado» o «Ver ejecución» abre Schedules en esa ejecución. Los avisos de ejecución van del más reciente al más antiguo. La Bandeja no copia el resultado. Mientras la Bandeja no exista, no hay aviso y los textos nombran solo el detalle.
+- «Entregar resultado en» deja de ser una elección. El campo pasa a «Resultado: Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.», con «También enviar a: Canal de Slack · Crear ticket», los dos Próximamente (2.2). La lista ya no muestra la entrega en cada fila, y la columna «frecuencia» pasa a «cuándo corre».
+
+**Selector de agente (2.3):** como el producto, solo los agentes publicados que la persona puede usar, con la ayuda «Solo agentes publicados que puedes usar.». Sin ninguno, «Nuevo schedule» queda desactivado («No tienes agentes publicados que puedas usar»).
+
+**Quién ve qué (2.4, 2.10):** cada persona ve las suyas y un administrador ve todas. De una tarea ajena, el administrador no ve la instrucción ni los resultados:
+- En «Tarea»: «Solo {dueño} ve la instrucción y los resultados: se obtienen con su acceso, como sus conversaciones.».
+- En «Ejecuciones recientes»: «Los resultados solo los ve {dueño}.», sin «Ver resultado».
+- Sí ve nombre, agente, dueño, disparador, estado, duración, costo y motivo de cada ejecución. La búsqueda solo mira la instrucción de las tareas propias.
+- Schedules pasa a estar disponible para todos los roles (antes, solo creadores y administradores).
+
+**Próximas en el editor (2.5):** «Próximas, hora de {zona}: …», tres fechas en la zona elegida. Las calcula el servidor al cambiar frecuencia, hora o zona: espera de 300 ms, «Calculando…» mientras tanto, y si falla no se muestra la línea. Si la zona no es la de quien mira, se agrega «· la primera es {fecha} en tu hora». En la lista, en el detalle («Próximas · tu hora») y en «Próxima ejecución», van en la hora de quien mira, calculadas con la zona de la tarea.
+
+**Presupuesto (2.6):** sin cambios de diseño; pendiente del producto.
+
+**Estados y motivos (2.7):** «En cola» (gris), «Ejecutando…» (spinner), «Completada», «Fallida», «Omitida» y «Espera aprobación». Fallida y Omitida llevan debajo su motivo, un texto fijo por código (Fallida en rojo, Omitida en gris):
+- `budget` «Presupuesto agotado» · `access` «El creador perdió el acceso al agente» · `central` «El creador dejó de ser persona central» · `overlap` «Otra ejecución seguía en curso» · `cap` «Se alcanzó el tope de investigaciones del día» · `dup` «Esta anomalía ya se investigó» · `agent` «El agente falló» · `tool` «Falló una tool · {tool}» (con el nombre, cuando el producto lo tenga) · `timeout` «Se agotó el tiempo máximo de la ejecución». Código desconocido: «No se pudo completar».
+- Si una ejecución esperó en cola: «Esperó {n} min en cola».
+
+**Ejecutar ahora (2.8):** como el producto.
+- Al pedirla: aviso «{nombre} en cola»; la línea pasa a «En cola» y luego a «Ejecutando…».
+- Al completarse: «{nombre} completada» · «El resultado está en el detalle de la tarea y en tu Bandeja.», con el botón «Ver resultado» (8 s).
+- Si no se completa: «{nombre} no se completó» · {motivo}, con «Ver ejecución».
+- Solo en tareas por horario. Las que arrancan por anomalía no tienen «Ejecutar ahora»: no hay anomalía que investigar.
+
+**Pausa de un administrador (2.9):** como el producto.
+- Pausa del dueño: inmediata, sin motivo. El dueño ve «Pausada: no se ejecutará hasta que la reanudes.»; un admin, «Pausada por {dueño}: no se ejecutará hasta que la reanude.». Un admin no la reanuda, pero puede tomarla con «Pausar» (ayuda: «También frena a su dueño: solo un administrador la reanuda.»).
+- Pausa de un admin, sea de una tarea activa o tomando la del dueño: pide un motivo obligatorio. El dueño ve «Pausada por un administrador: no se ejecutará, ni a pedido, hasta que un administrador la reanude.» y «Motivo: {motivo}»; un admin ve el nombre de quien la pausó. La insignia dice «Pausada por un admin» (ámbar).
+- El dueño ve «Ejecutar ahora» y «Reanudar» desactivados, con «Un administrador la pausó: solo un administrador la reanuda.». «Editar» sigue activo. Cualquier administrador reanuda una pausa de administrador.
+
+**Disparador por anomalía de costo (3)**
+1. En el editor de una tarea nueva, «Disparador»: «Por horario» o «Al detectar una anomalía de costo». Con el segundo no hay frecuencia ni zona, y aparece: «Hasta 5 investigaciones por día. Arranca sola cuando AWS publica una anomalía de costo y recibe sus datos. Una a la vez: si llega otra mientras investiga, espera en cola. Pasado el tope, las siguientes se omiten hasta el día siguiente (UTC).». Al editar, el disparador se muestra fijo: «… · No se cambia al editar; para otro disparador, crea otra tarea.».
+2. Para quien no es persona central, la opción está desactivada y debajo se lee, siempre visible: «Solo las personas centrales pueden suscribirse a las anomalías de costo.».
+3. En la lista: «Al detectar una anomalía de costo» (icono de rayo) y «Hasta 5 por día» en lugar de frecuencia y zona. «Próxima» muestra «—», o «Tope de hoy alcanzado» si ya corrió 5 veces. No cuentan para el indicador «Próxima ejecución».
+4. En el detalle, la sección «Disparador»: Arranca · Tope «Hasta 5 investigaciones por día» · Hoy «{n} de 5 · se reinicia a las {hh:mm} (tu hora)» · Si llegan varias «Una a la vez; la siguiente espera en cola». El día es UTC, como las fechas de AWS, y cuentan las ejecuciones que arrancaron, no las omitidas.
+5. Cada ejecución muestra «Anomalía · {servicio} · {fechas} · impacto USD {x}». Las fechas van siempre; servicio e impacto, si el producto los recibe. En el resultado, la caja «Anomalía que la arrancó» agrega la cuenta. «Ver anomalía» solo cuando la aplicación tenga una página de anomalías. Las omisiones llevan su motivo (`cap`, `budget`, `access`, `central`, `dup`, `overlap`); en `dup`, el dueño ve «Ver la investigación anterior».
+6. «Costo estimado · mes» suma las tareas por horario (costo medio × ejecuciones del mes) y, para las de anomalía, lo que costaron en los últimos 30 días. El subtítulo, solo si hay tareas por anomalía: «Horario: costo medio · anomalías: últimos 30 días».
+7. «Se ejecuta como…» no cambia. En «Entrega y control»: «Si {dueño} pierde el acceso o deja de ser central: La tarea se pausa sola».
+8. Si llegan varias: la que llega mientras otra investiga queda «En cola» («Espera a que termine la investigación anterior») y corre cuando esa termina, dentro del tope. Si no llega a correr: «Omitida» · «Otra ejecución seguía en curso».
+- Si el dueño deja de ser central, se ve «Pausada automáticamente hace {t}. {dueño} dejó de ser persona central. Solo se reanuda si vuelve a ser persona central; si no, retírala.», con «Reanudar» desactivado.
+
+**Demo:**
+- «Investigar anomalías de costo» (de Usuario 1) muestra ayer con 5 investigaciones, 2 omitidas por el tope, una repetida y una que no alcanzó a correr; hoy lleva 3 de 5, una de ellas tras esperar en cola.
+- «Cohort retention Q3» (de Usuario 2) está pausada por un administrador.
+- «Budget check diario» tiene una ejecución omitida por presupuesto agotado.
+
+**Pendiente del producto:**
+- «Presupuesto del agente agotado» en «Necesitan atención».
+- Guardar el texto de cada ejecución por tramos (pasos e informe).
+- El aviso en la Bandeja.
+- Servicio, cuenta e impacto de la anomalía en cada ejecución.
+- El nombre de la tool en el motivo `tool`.
+- Siguen pendientes también: el evento «Persona registrada»; que el turno informe el motivo del aviso de AWS Billing; el motivo del fallo de una tool y la marca «cortado por guardrail» en el mensaje guardado.

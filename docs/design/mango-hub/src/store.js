@@ -13,7 +13,7 @@
     user: { label: 'Usuario', area: 'finanzas', groups: ['bu-lead', 'bu-finanzas'] },
     creator: { label: 'Creador de agentes', creator: true, groups: ['mango-agent-creator', 'people'] },
   };
-  const USER_VIEWS = ['chat', 'inbox', 'dashboard', 'marketplace', 'tickets', 'activity', 'search', 'approvals', 'org'];
+  const USER_VIEWS = ['chat', 'inbox', 'dashboard', 'marketplace', 'tickets', 'activity', 'search', 'approvals', 'org', 'schedules'];
   const OWNER_VIEWS = [...USER_VIEWS, 'governance', 'playground', 'admin', 'budgets', 'evals', 'observability', 'costs', 'skills', 'knowledge', 'schedules', 'mcp'];
   const CREATOR_VIEWS = [...USER_VIEWS, 'admin', 'mcp'];
   const PERMS = {
@@ -110,10 +110,10 @@
     { id: 'CHG-10', kind: 'auth', key: 'idp', from: 'none', to: 'sso', by: 'Usuario 1', at: ago(5000), reason: 'Entrar con la cuenta corporativa.', status: 'rejected', decidedBy: 'Usuario 6', decidedAt: ago(4900), note: 'Falta el metadata del IdP.' },
   ];
   const CHG_PREFIX = { member: 'directory.member_', mfa_reset: 'account.mfa_reset_', share: 'agent.share_', group: 'group.', skill: 'skill.', policy: 'policy.', auth: 'settings.' };
-  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp'];
+  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules'];
 
   let state = {
-    avail: ls('mango-avail2', true),
+    avail: ls('mango-avail3', false),
     accountState: 'active',
     authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta', convAccess: false, install: 'client', domains: ['empresa.com', 'empresa.mx'], dirPlan: 'Essentials', installName: 'mango-empresa', version: 'v0.1.0', release: 'v0.1.0-g1a2b3c4', awsOrg: 'o-xxxxxxxxxx', mgmtAccount: '111111111111', alertEmail: 'alertas@empresa.com', firstAdmins: ['usuario1@empresa.com', 'usuario6@empresa.com'], pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
     changes, retired: {},
@@ -142,7 +142,7 @@
     state = { ...state, ...p };
     if ('role' in p) localStorage.setItem('mango-role', JSON.stringify(state.role));
     if ('lang' in p) localStorage.setItem('mango-lang', JSON.stringify(state.lang));
-    if ('avail' in p) localStorage.setItem('mango-avail2', JSON.stringify(state.avail));
+    if ('avail' in p) localStorage.setItem('mango-avail3', JSON.stringify(state.avail));
     emit();
   };
 

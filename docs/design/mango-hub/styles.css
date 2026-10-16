@@ -1858,3 +1858,24 @@ input[type="range"],input[type="checkbox"],input[type="radio"]{accent-color:var(
 .toast-stack{position:fixed;top:calc(env(safe-area-inset-top,0px) + 72px);right:18px;z-index:2000;display:flex;flex-direction:column;gap:8px;max-width:360px;pointer-events:none}.toast-stack>*{pointer-events:auto}
 @media (max-width:560px){.toast-stack{left:12px;right:12px;max-width:none}}
 @media (max-width:560px){.chg-h{flex-direction:column;gap:8px}.chg-h>div:first-child{width:100%}.chg-act{margin-left:0;width:100%;flex-wrap:wrap;justify-content:flex-start}.chg-m{gap:2px 10px}}
+
+/* Schedules · ejecuciones y resultado */
+.sc-run{display:grid;grid-template-columns:12px minmax(0,1fr) auto;align-items:start}
+.sc-run>.tk-dot{margin-top:6px}
+.sc-run-b{min-width:0;display:flex;flex-direction:column;gap:2px}
+.sc-run-acts{display:flex;gap:14px;flex-wrap:wrap;margin-top:2px}.sc-run-acts .sr-link{padding:0}
+.sc-run-m{text-align:right;white-space:nowrap}
+.sc-trg{display:flex;gap:5px;align-items:flex-start}.sc-trg svg{flex:none;margin-top:3px}
+.sc-task{font-size:13.5px;line-height:1.55;padding:10px 12px;border-radius:10px;background:var(--input-bg)}
+.sc-ro{font-size:13px;line-height:1.5;padding:9px 12px;border-radius:10px;background:var(--input-bg)}
+.sc-res{display:flex;flex-direction:column;gap:14px;min-width:0}
+.sc-res-back{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;padding:0}
+.sc-res-h{font-size:15px;font-weight:600;color:var(--text-strong)}
+.sc-anom{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:10px;background:var(--input-bg);font-size:13px}
+.sc-steps{border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px}
+.sc-steps summary{cursor:pointer;color:var(--text-muted);font-size:12.5px}
+.sc-steps ol{list-style:none;margin:10px 0 2px;padding:0;display:flex;flex-direction:column;gap:10px}
+.sc-steps li{display:flex;flex-direction:column;gap:2px;line-height:1.5}
+.sc-res .md{min-width:0}.sc-res .md table{display:block;overflow-x:auto;max-width:100%}
+.sc-res-foot{margin:0;display:flex;gap:6px;align-items:center}
+.ab-seg button:disabled{opacity:.5;cursor:not-allowed}

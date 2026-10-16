@@ -626,16 +626,19 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const I = window.Icons;
   const S = window.MangoStore;
   const approvals = window.useMango(st => st.approvals);
+  const scheds = window.useMango(st => st.schedules) || [];
+  const role = window.useMango(st => st.role);
   const toast = window.useToast?.();
   const tk = (id) => tickets.find(t => t.id === id);
   const base = React.useMemo(() => [
     ...approvals.filter(ap => ap.status === 'pending').slice(0, 3).map((ap, i) => ({ id: 'ap-' + ap.id, type: 'approval', approvalId: ap.id, agent: ap.agent, title: 'Te piden aprobar: ' + ap.action, body: ap.impact + '. Política: ' + ap.policy + '.', time: window.fmtAgo(ap.at) })),
+    ...scheds.filter(s => s.owner === S.actor() && s.status !== 'retired').flatMap(s => { const r = (s.runs || []).find(x => x.status === 'ok' || x.status === 'failed'); if (!r || Date.now() - new Date(r.at).getTime() > 3 * 864e5) return []; const ok = r.status === 'ok'; return [{ id: 'run-' + r.id, type: 'run', agent: s.agent, ok, title: s.name + (ok ? ' · completada' : ' · no se completó'), body: ok ? window.scSummary(r) : (window.scReason(r) || 'No se pudo completar'), time: window.fmtAgo(r.at), scheduleId: s.id, runId: r.id, at: r.at }]; }).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 3),
     { id: 'm-410', type: 'mention', agent: 'dev-01', title: 'Usuario 9 te mencionó en MNG-410', body: '“@Usuario 1 ¿puedes confirmar si el rollback de prod-web se puede hacer hoy antes de las 18:00?”', time: 'hace 4 h', ticketId: 'MNG-410' },
     { id: 'b-res', type: 'budget', agent: 'fin-01', title: 'FinOps alcanzó 80% de su presupuesto', body: 'Lleva USD 2.400,00 de USD 3.000,00 este mes. Al 100% solo se enviará una alerta; no se pausará.', time: 'hace 5 h' },
     { id: 't-412', type: 'ticket', agent: 'fin-01', title: 'MNG-412 pasó a En progreso', body: (tk('MNG-412') || {}).title || 'Identificar top 5 drivers de costo de octubre', time: 'hace 6 h', ticketId: 'MNG-412', threadId: 't1' },
     { id: 't-404', type: 'ticket', agent: 'dev-01', title: 'MNG-404 se cerró', body: (tk('MNG-404') || {}).title || 'Ticket resuelto por el agente', time: 'hace 1 d', ticketId: 'MNG-404' },
     { id: 's-sap', type: 'system', agent: 'sap-01', title: 'Heartbeat restaurado en SAP Procure', body: 'El agente volvió a responder tras 12 minutos sin heartbeat. No se perdieron solicitudes.', time: 'hace 1 d' },
-  ], [approvals]);
+  ], [approvals, scheds, role]);
   const [state, setState] = React.useState(() => { try { return JSON.parse(localStorage.getItem('mango-inbox') || '{}'); } catch { return {}; } });
   const [tab, setTab] = React.useState('all');
   const [sel, setSel] = React.useState(null);
@@ -651,8 +654,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const archive = (it) => { save({ ...state, [it.id]: { read: true, archived: !it.archived } }); toast?.({ tone: 'info', msg: it.archived ? 'Movido a la bandeja' : 'Archivado' }); if (sel === it.id) setSel(null); };
   const markAll = () => { const n = { ...state }; items.forEach(i => { n[i.id] = { ...n[i.id], read: true }; }); save(n); };
   const current = items.find(i => i.id === sel);
-  const ICON = { approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'] };
-  const TYPE = { approval: 'Aprobación', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema' };
+  const ICON = { approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
+  const TYPE = { approval: 'Aprobación', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución' };
 
   return (
     <>
@@ -719,6 +722,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   {current.ticketId && <button className="btn btn-sm" onClick={() => setView('tickets', current.ticketId)}>Abrir {current.ticketId} <I.ArrowRight size={11} /></button>}
                   {(current.threadId || ap?.threadId) && <button className="btn btn-sm" onClick={() => openChat(current.agent, current.threadId || ap.threadId)}>Ver conversación <I.ArrowRight size={11} /></button>}
                   {current.type === 'budget' && <button className="btn btn-sm" onClick={() => setView('budgets')}>Ajustar presupuesto <I.ArrowRight size={11} /></button>}
+                  {current.type === 'run' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId, run: current.ok ? current.runId : null } }); setView('schedules'); }}>{current.ok ? 'Ver resultado' : 'Ver ejecución'} <I.ArrowRight size={11} /></button>}
                   {current.type === 'mention' && !replying && <button className="btn btn-sm btn-primary" onClick={() => setReplying(true)}><I.Chat size={12} /> Responder</button>}
                 </div>
               </div>
