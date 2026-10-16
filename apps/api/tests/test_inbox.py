@@ -224,10 +224,9 @@ def test_a_request_leaves_the_inbox_once_signed_decided_or_expired(env: Env) -> 
     # Self-confirmation requests are never in anyone's inbox.
     env.clock[0] -= timedelta(hours=25)
     env.request(tier=Tier.SELF)
-    assert [i["item_id"] for i in env.get("approver2").json()["items"]] == [
-        two.approval_id,
-        expiring.approval_id,
-    ]
+    # Which requests remain, not their order: they were all made at the same instant.
+    remaining = [i["item_id"] for i in env.get("approver2").json()["items"]]
+    assert sorted(remaining) == sorted([two.approval_id, expiring.approval_id])
 
 
 def test_reading_and_archiving_an_approval_is_per_person(env: Env) -> None:
