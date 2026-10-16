@@ -138,7 +138,9 @@ export class AccountHealth extends Construct {
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "DataKeyViaDynamoDB",
-        actions: ["kms:Encrypt", "kms:GenerateDataKey"],
+        // DynamoDB decrypts the table key with this key on every write too: without Decrypt
+        // the PutItem is refused (seen in an installation, D84 (11)).
+        actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
         resources: [props.dataKey.keyArn],
         conditions: { StringEquals: { "kms:ViaService": `dynamodb.${stack.region}.amazonaws.com` } },
       }),

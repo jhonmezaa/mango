@@ -1,7 +1,7 @@
 # D84 · Gobernanza de tools: clase de cada tool en el manifiesto y salud diaria de las cuentas
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-16 (las dos reglas, tomadas por el dueño ese día, por menú: «Nunca se habilitan (Recomendada)» y «Como sistema, solo comprobar (Recomendada)»; el cómo, puntos 3 a 10, propuesto por un agente y aceptado por el dueño el 2026-10-16, por menú («Aceptar el cómo de D84 (Recomendada)»))
+- **Fecha:** 2026-10-16 (las dos reglas, tomadas por el dueño ese día, por menú: «Nunca se habilitan (Recomendada)» y «Como sistema, solo comprobar (Recomendada)»; el cómo, puntos 3 a 10, propuesto por un agente y aceptado por el dueño el 2026-10-16, por menú («Aceptar el cómo de D84 (Recomendada)»); lo que mostró la primera instalación, punto 11, nota propuesta por un agente el 2026-10-16)
 - **Precisa / reemplaza a:** precisa [D17](D017-admin-v0.md) (la sonda ya no solo entra en nombre de un administrador), [D19](D019-catalogo-de-mcp.md) («tools con lectura/escritura» del manifiesto) y [D56](D056-tools-de-escritura-con-aprobacion.md) (5)
 - **Precisada por:** —
 
@@ -38,5 +38,7 @@ Lo que sigue lo propuso un agente.
 **(9) El aviso.** Métricas `Mango/AccountHealth` (formato embebido) y dos alarmas al topic de alertas (D41): `Mango-<ns>-AccountHealth-invalid` (cuentas inválidas más un broker que no exige identidad, ≥ 1; con datos ausentes mantiene su estado) y `Mango-<ns>-AccountHealth-failed` (la ejecución agotó sus reintentos: mensaje en la DLQ).
 
 **(10) La pantalla.** Ajustes › Conectividad lee el ítem al abrir (`GET /api/admin/member-health`, `ViewAdmin`; ninguna llamada a AWS como el administrador) y lo muestra en una sección «Comprobación diaria de las cuentas miembro» bajo la prueba a pedido, que no cambia. El diseño (D24) no tiene esta sección ni los estados `válida`, `inválida` y `pendiente`, ni una insignia para `destructive` en el catálogo de MCP: se hizo con los componentes que existen (tarjeta, filas de comprobación e insignias) y queda anotado para el brief siguiente. En el catálogo, toda tool que no es `read` se muestra como escritura.
+
+**(11) Lo que mostró la primera instalación (nota del 2026-10-16, propuesta por un agente).** En la instalación de un cliente, la actualización a la versión con D84 terminó sin fallos. La primera corrida de la comprobación diaria, invocada a mano, llegó hasta guardar su resultado: la cadena con la identidad del sistema funcionó. Pero el `PutItem` en `Settings` fue rechazado, porque al rol le faltaba `kms:Decrypt` sobre la llave de datos, que DynamoDB también usa al escribir. Sin corregir, la corrida programada habría ido a la cola de errores después de sus reintentos y `AccountHealth-failed` habría saltado cada día. Se corrige con `kms:Decrypt` en la misma sentencia, con la misma condición `kms:ViaService` de DynamoDB, y un test de infra lo fija.
 
 Comprobado con tests (Python, infra, web), sin ver en una instalación. Los manifiestos de los packs no cambian, pero el esquema y el pipeline sí: el workflow `packs` vuelve a construir y firmar los tres packs desde `main`, con la aprobación del dueño.

@@ -90,6 +90,7 @@ describe("daily account health (D84): its own role, as the system identity only"
       [
         "dynamodb:PutItem",
         "kms:Decrypt",
+        "kms:Decrypt",
         "kms:Encrypt",
         "kms:GenerateDataKey",
         "kms:GenerateDataKey",
@@ -104,6 +105,10 @@ describe("daily account health (D84): its own role, as the system identity only"
         "xray:PutTraceSegments",
       ].sort(),
     );
+    // DynamoDB needs Decrypt with the table's key on a write too (seen in an installation).
+    const dataKey = statements.find((s) => s.Sid === "DataKeyViaDynamoDB")!;
+    expect(listed(dataKey.Action).sort()).toEqual(["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"]);
+    expect(JSON.stringify(dataKey.Condition)).toContain("dynamodb.");
     const brokers = statements.find((s) => s.Sid === "UseTheBrokersAsTheSystemIdentity")!;
     expect(JSON.stringify(brokers.Resource)).toContain(`Mango-${ns}-ReadBroker`);
     expect(JSON.stringify(brokers.Resource)).toContain(`Mango-${ns}-BillingBroker`);
