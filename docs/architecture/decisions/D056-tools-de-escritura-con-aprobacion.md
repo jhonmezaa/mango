@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-02 (precisada el 2026-10-07: solo un mensaje que terminó como llamada a tool pide confirmar una escritura)
 - **Precisa / reemplaza a:** construye [D27](D027-confirmacion-de-escritura-por-tramos.md); precisa [D43](D043-provisioner-de-packs.md) (3); en el texto: ajusta §4.5 (punto 2). Con [D27](D027-confirmacion-de-escritura-por-tramos.md) construido deja de regir [D40](D040-provisioner-de-agentes.md) (3), que esta fila no cita
-- **Precisada por:** [D74](D074-tope-de-tokens-en-cada-llamada.md) (18 y 19: cuándo se crea la solicitud, punto 6)
+- **Precisada por:** [D74](D074-tope-de-tokens-en-cada-llamada.md) (18 y 19: cuándo se crea la solicitud, punto 6); [D84](D084-gobernanza-de-tools.md) (5: una tool sin clase de un pack cuenta como escritura; una `destructive` no se habilita ni con aprobación)
 - **Tema en el registro original:** Tools de escritura con aprobación ([D27](D027-confirmacion-de-escritura-por-tramos.md) construido; precisa [D43](D043-provisioner-de-packs.md) (3))
 
 ## Decisión

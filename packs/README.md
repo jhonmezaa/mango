@@ -36,7 +36,7 @@ El esquema es `PackManifest` en `packages/py/mango-packs/src/mango_packs/manifes
 | `identity.chain` | Solo en packs `central_only`. `payer` (por defecto; no se escribe): broker de Billing → `Mango-<ns>-BillingReader` en la pagadora. `member`: broker de lectura → `Mango-<ns>-ReadOnly` de la cuenta miembro que pide cada llamada (D51). Va firmado; cambiarlo en un pack instalado exige deshabilitar y habilitar de nuevo |
 | `iam` | Acciones **exactas** (`servicio:Acción`), sin comodines. `resources: ["*"]` solo con `reason`. En un pack `service` son los permisos de su rol. En uno `central_only` son el tope de cada llamada (session policy): su rol no recibe ninguna |
 | `egress` | Todo lo que el Runtime puede alcanzar (R6). `aws`: servicios de una lista cerrada (`AwsEndpoint`), cada uno con su endpoint de VPC en la red de packs. `hosts`: nombres de host fuera de AWS, sin comodines ni IP; **un pack que declare alguno no se instala todavía**. Obligatorio, aunque esté vacío. Un pack `central_only` necesita `sts`. Ver «Red de los Runtimes» |
-| `tools` | Lista cerrada de tools, cada una `read` o `write`. Las `write` solo en `data_tier: write` |
+| `tools` | Lista cerrada de tools, cada una con su clase (`access`, D84): `read`, `write` o `destructive`. **Sin `access` cuenta como `write`.** Cualquier tool que no sea `read` va con `data_tier: write`. Una instalación solo sirve packs cuyas tools son todas `read`: una `write` o sin clase pediría una aprobación que los packs no tienen (D56 (5)), y una `destructive` **no se habilita nunca, ni con aprobación**. La clase no puede decir menos que las anotaciones MCP del servidor (`readOnlyHint`, `destructiveHint`): `check` y `snapshot` lo comprueban |
 | `tools_hash` | Hash del snapshot de `tools/list` |
 | `config` | Parámetros que el admin puede fijar: clave, valores permitidos y valor por defecto. Nunca secretos |
 
@@ -162,12 +162,12 @@ Modelo de amenazas: `docs/security/threat-models/aws-billing-pack-threat-model.m
 
 | Paso | Qué comprueba |
 |---|---|
-| `check` | Manifiesto válido; `requirements.in` fija solo el paquete declarado; el lock fija **todo** por hash y contiene el wheel declarado; cuarentena cumplida; `constraints.txt` y `build.yaml`, si existen, son válidos |
+| `check` | Manifiesto válido; `requirements.in` fija solo el paquete declarado; el lock fija **todo** por hash y contiene el wheel declarado; cuarentena cumplida; `constraints.txt` y `build.yaml`, si existen, son válidos; `tools.snapshot.json` es el que fija `tools_hash` y ninguna tool está clasificada por debajo de sus anotaciones (D84) |
 | `check-lock` | Volver a resolver con el mismo corte da el mismo lock. Nadie editó el lock a mano |
 | `build` | Zip reproducible con wheels `aarch64-manylinux2014` (`uv pip install --require-hashes --no-deps --only-binary :all:`) |
 | `pip-audit` | Sin vulnerabilidades conocidas en las versiones fijadas. Genera el SBOM (CycloneDX) |
 | segundo `build` | El zip es idéntico byte a byte |
-| `snapshot` | Arranca el servidor **en un contenedor sin red** y compara su `tools/list` con el manifiesto: mismas tools y mismo `tools_hash` |
+| `snapshot` | Arranca el servidor **en un contenedor sin red** y compara su `tools/list` con el manifiesto: mismas tools, mismo `tools_hash` y clases no menores que sus anotaciones (D84) |
 | `statement` | Escribe lo que se va a firmar: manifiesto + hash del zip, del SBOM y del lock + commit |
 
 ### Cuándo se construye y cuándo se firma
@@ -294,7 +294,8 @@ Sin llave pública el catálogo queda vacío y no se puede instalar nada. Una in
 **Qué comprueba antes de instalar.** Nada de esto sale de la petición del admin:
 - la firma del sobre, con la llave de la plantilla, y que la declaración sea **exactamente** la que nombra el catálogo. Un pack antiguo, aunque esté bien firmado, no se instala (sin rollback);
 - el zip, leído en una versión concreta del objeto de S3, contra el hash y el tamaño firmados. El Runtime se crea con esa misma versión;
-- que el pack solo tenga tools de lectura y sea `public` (modo `service`) o de datos de cuentas en modo `central_only`. Las tools de escritura y `per_user_adapter` se rechazan;
+- que ninguna tool sea `destructive` (`destructive_tool`, antes que cualquier otro límite: D84). La síntesis de una release que traiga un pack así falla;
+- que el pack solo tenga tools de lectura y sea `public` (modo `service`) o de datos de cuentas en modo `central_only`. Las tools de escritura, las que no tienen clase (cuentan como escritura) y `per_user_adapter` se rechazan;
 - que el pack tenga su red (R6): la plantilla construye un security group por pack de la release a partir de su `egress` firmado, y sin él no se instala (`egress_unavailable`). Un pack que declare hosts fuera de AWS se rechaza (`external_egress_unsupported`); la síntesis de una release que lo traiga falla. Ya no hay excepción de laboratorio: ningún Runtime de pack usa la red `PUBLIC`;
 - que todas las acciones IAM del manifiesto estén en la lista cerrada de su modo: la del permissions boundary de packs (`PACK_DATA_ACTIONS` en `infra/lib/constructs/pack-platform.ts`) para un pack `service`, o la del rol detrás del broker de su cadena para uno `central_only` (`BILLING_READER_DATA_ACTIONS` en la cadena `payer`, `MEMBER_READ_ONLY_DATA_ACTIONS` en la cadena `member`). **Un pack nuevo que necesite otras acciones las añade ahí, en la misma PR**;
 - que una actualización no cambie la cadena de un pack instalado (`identity_chain_changed`): se deshabilita y se habilita de nuevo;
@@ -303,6 +304,8 @@ Sin llave pública el catálogo queda vacío y no se puede instalar nada. Una in
 **Qué crea**, en este orden: rol `Mango-<ns>-mcp-<id>` (con el boundary `Mango-<ns>-mcp-boundary`), Runtime `Mango_<ns>_mcp_<id>` desde el zip en modo `VPC` (subnets de la red de packs y el security group del pack; una versión con otra red no se expone: `runtime_network_mismatch`), comprobación de `tools/list` contra `tools_hash`, endpoint `live`, log groups con KMS y retención, target `<id>` del Gateway con SigV4 y, al final, las políticas Cedar `Mango_<ns>_mcp_<id>_<n>`. Hasta ese último paso las tools están denegadas.
 
 Si algo falla, deshace lo creado (o vuelve a la versión instalada, si era una actualización) y deja el paso y el código del error en la habilitación. Deshabilitar borra políticas, target, Runtime y rol.
+
+**En cada llamada** el interceptor del Gateway solo deja pasar, de un target que no es un conector de Mango, las tools que el manifiesto firmado de la release clasifica `read` (`PACK_TOOLS`); un target que la release no conoce se rechaza (D84).
 
 Un pack **nunca recibe el token del usuario**: el interceptor del Gateway solo lo inyecta en los conectores de Mango. Un pack `central_only` recibe en su lugar la aserción de identidad descrita arriba; su rol solo puede asumir el broker de su cadena (nunca los dos), sus políticas Cedar solo permiten a usuarios centrales (y lo repiten como `forbid`), y el Runtime recibe además `MANGO_PACK_BROKER_ROLE_ARN`, `MANGO_PACK_REGION`, `MANGO_PACK_IDENTITY_PUBLIC_KEY` y el destino: `MANGO_PACK_TARGET_ROLE_ARN` (cadena `payer`) o `MANGO_PACK_TARGET_ROLE_NAME` (cadena `member`). El trust de cada broker nombra el ARN exacto de los roles de los packs de su cadena. El puntero de lo instalado guarda el nivel de datos y el modo de identidad de la versión que sirve.
 

@@ -4,6 +4,7 @@
 > Amplía TM-003 y TM-004 de `mango-architecture-threat-model.md` y TM-A7 de `admin-v0-threat-model.md`.
 > Alcance: `infra/lib/stacks/org-access-stack.ts`, `infra/lib/stacks/member-stack.ts`, `infra/lib/constructs/member-access.ts`, `infra/lib/config/schema.ts` (`orgAccess`), `infra/bin/mango.ts`, `functions/admin-probe/` (operación `member_access`), `deployment/deploy-org-access.sh` y `tests/e2e/member_access.py`.
 > Comprobado en local (tests de infra sobre las plantillas sintetizadas y tests del probe con STS simulado). **Nada está desplegado:** lo que falta ver en el laboratorio está en «Supuestos sin validar».
+> Actualizado el 2026-10-16 (D84): el trust de `ReadBroker` acepta además el rol `Mango-<ns>-AccountHealth`, solo con `SourceIdentity = mango-health` y de la organización; los demás llamadores ya no pueden usar esa identidad (`StringNotEqualsIgnoreCase`). El rol de las cuentas miembro no cambia. Ver `account-health-threat-model.md` (TM-AH1 a TM-AH3); TM-O1 y TM-O4 cubren también a ese rol.
 
 ## Executive summary
 

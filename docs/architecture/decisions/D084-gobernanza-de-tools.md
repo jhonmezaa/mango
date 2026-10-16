@@ -1,0 +1,42 @@
+# D84 · Gobernanza de tools: clase de cada tool en el manifiesto y salud diaria de las cuentas
+
+- **Estado:** propuesta
+- **Fecha:** 2026-10-16 (las dos reglas, tomadas por el dueño ese día, por menú: «Nunca se habilitan (Recomendada)» y «Como sistema, solo comprobar (Recomendada)»; el cómo, puntos 3 a 10, propuesto por un agente)
+- **Precisa / reemplaza a:** precisa [D17](D017-admin-v0.md) (la sonda ya no solo entra en nombre de un administrador), [D19](D019-catalogo-de-mcp.md) («tools con lectura/escritura» del manifiesto) y [D56](D056-tools-de-escritura-con-aprobacion.md) (5)
+- **Precisada por:** —
+
+## Decisión
+
+Origen: los puntos 2.2 y 2.4 de `docs/specs/roadmap-agentes-proactivos-propuesta.md`, que el dueño eligió el 2026-10-16 («Gobernanza de tools (Recomendada)»).
+
+**(1) Clase de cada tool (tomada por el dueño el 2026-10-16, por menú: «Nunca se habilitan (Recomendada)»).** El manifiesto firmado de cada pack clasifica cada tool como `read`, `write` o `destructive`. Una tool sin clasificar cuenta como escritura y pide aprobación, como hoy (D56). **Una tool `destructive` no se habilita nunca, ni con aprobación.**
+
+**(2) Salud diaria de las cuentas conectadas (tomada por el dueño el 2026-10-16, por menú: «Como sistema, solo comprobar (Recomendada)»).** Cada día, Mango comprueba que puede entrar a cada cuenta conectada por la misma cadena que la prueba a pedido (`functions/admin-probe`, D17: probe → ReadBroker → ReadOnly). Entra con una identidad fija del sistema, `mango-health`, como `SourceIdentity`, que queda en el CloudTrail de cada cuenta. Solo comprueba la entrada (`sts:GetCallerIdentity`, con una política de sesión que no permite nada más) y no lee datos. Cada cuenta queda válida, inválida o pendiente; el estado se guarda y se ve en Ajustes › Conectividad › Cuentas miembro. Un fallo avisa por el topic de alertas. Precisa D17, que solo entraba en nombre de un administrador.
+
+Lo que sigue lo propuso un agente.
+
+**(3) El campo.** Es el `access` que el manifiesto ya tenía por tool (`read` | `write`), con un valor más, `destructive`, y ahora opcional: sin `access` la tool es `write` para todo lo que decide (`PackTool.effective_access`). Un manifiesto ya clasificado se serializa igual que antes (`access` ausente no se escribe). La regla de antes se mantiene: cualquier tool que no sea `read` va con `data_tier: write`. Las tools de los tres packs de la release ya eran todas `read`: sus manifiestos no cambian.
+
+**(4) El pipeline de packs** compara la clase con las anotaciones MCP del propio servidor (`readOnlyHint`, `destructiveHint`), en `check` (sobre el `tools.snapshot.json` revisado) y en `snapshot` (sobre lo que lista el zip): falla si el manifiesto dice menos que el servidor (una `read` que el servidor no marca de solo lectura, o una que el servidor marca destructiva y el manifiesto no). Las anotaciones son de código de terceros: solo pueden volver más estricta la revisión, nunca convertir una tool en lectura. El provisioner repite la comparación al verificar `tools/list` de un Runtime.
+
+**(5) Quién lo aplica.** Las mismas reglas en cada salto, y fallan cerradas:
+- **La síntesis** de una release que trae un pack con una tool `destructive` falla: la release no lo distribuye.
+- **El provisioner de packs** rechaza habilitar un pack con una tool `destructive` (`destructive_tool`), antes que cualquier otro límite. Un pack con una tool `write` o sin clasificar sigue rechazado como hoy (`data_tier_unsupported`).
+- **`mango-api`** no deja pedir la habilitación de esos packs (`pack_unsupported`), lista la clase que aplica (una tool sin clasificar sale como `write`) y nunca deja dar a un agente una tool `destructive` (`tool_not_enabled`). Un conector de Mango no puede declarar una: el catálogo de la release no carga.
+- **El interceptor del Gateway** solo deja pasar, de un target que no es un conector de Mango, las tools que el manifiesto firmado de la release clasifica `read` (`PACK_TOOLS`, `tool_not_read_only`). Un target que la release no conoce también se rechaza. Es la misma regla del provisioner en el último salto, aunque la versión del agente nombre la tool y Cedar la permita.
+
+**(6) Dónde corre la comprobación diaria.** En una función propia, `Mango-<ns>-AccountHealth`, con su rol, a las 06:30 UTC (EventBridge, asíncrona, con DLQ). No en el reconciliador: D41 lo deja de solo lectura en la cuenta Mango (TM-M18) y añadirle `AssumeRole` entre cuentas y una escritura cambiaría eso. No en el AdminProbe: su rol y sus operaciones son las de un administrador. Reutiliza el código del probe (mismo paquete, otro punto de entrada) para listar las cuentas y entrar a cada una. Modelo de amenazas: `docs/security/threat-models/account-health-threat-model.md`.
+
+**(7) Cómo acepta el broker la identidad del sistema sin abrir la puerta a otras.** En el trust de `Mango-<ns>-ReadBroker` y de `Mango-<ns>-BillingBroker` (para listar las cuentas por la pagadora), una sentencia nueva deja entrar al rol `Mango-<ns>-AccountHealth`, por su ARN exacto, solo con `sts:SourceIdentity = mango-health` (`AssumeRole` y `SetSourceIdentity`; `TagSession` con las mismas llaves de siempre; en el broker de lectura, también de la organización). Las sentencias de los demás llamadores (probe, conector, roles de packs) ganan `StringNotEqualsIgnoreCase sts:SourceIdentity = mango-health` (sin distinguir mayúsculas). Así nadie más se presenta como el sistema, y el rol del sistema no puede presentarse como una persona. El AdminProbe además rechaza un `actor` igual a `mango-health`. **El rol de las cuentas miembro (StackSet) y el `BillingReader` de la pagadora no cambian:** ya aceptan cualquier `SourceIdentity` que su broker pase.
+
+**(8) Dónde se guarda.** Un ítem de la tabla `Settings`, `ACCOUNT_HEALTH` / `MEMBER`: fecha de la comprobación, por cuenta su id, nombre, estado y un motivo cerrado (`broker_refused`, `role_refused`, `unexpected_account`, `unavailable`, `not_checked`), el total de cuentas objetivo y si el broker rechazó una sesión sin identidad. Solo lo escribe la función (`dynamodb:LeadingKeys`); IAM le niega a `mango-api` escribir esa partición. Se reescribe entero cada día; no guarda historial.
+- **`valid`:** la sesión quedó en esa cuenta.
+- **`invalid`:** el broker o el rol de la cuenta la rechazaron (`AccessDenied`), o la sesión quedó en otra cuenta.
+- **`pending`:** no se determinó ese día: otro error de AWS, más cuentas de las que revisa una ronda (500), o sin tiempo. No alarma.
+- Si no se pueden listar las cuentas, o el broker falla con algo que no es una denegación, la ejecución falla y no escribe nada.
+
+**(9) El aviso.** Métricas `Mango/AccountHealth` (formato embebido) y dos alarmas al topic de alertas (D41): `Mango-<ns>-AccountHealth-invalid` (cuentas inválidas más un broker que no exige identidad, ≥ 1; con datos ausentes mantiene su estado) y `Mango-<ns>-AccountHealth-failed` (la ejecución agotó sus reintentos: mensaje en la DLQ).
+
+**(10) La pantalla.** Ajustes › Conectividad lee el ítem al abrir (`GET /api/admin/member-health`, `ViewAdmin`; ninguna llamada a AWS como el administrador) y lo muestra en una sección «Comprobación diaria de las cuentas miembro» bajo la prueba a pedido, que no cambia. El diseño (D24) no tiene esta sección ni los estados `válida`, `inválida` y `pendiente`, ni una insignia para `destructive` en el catálogo de MCP: se hizo con los componentes que existen (tarjeta, filas de comprobación e insignias) y queda anotado para el brief siguiente. En el catálogo, toda tool que no es `read` se muestra como escritura.
+
+Comprobado con tests (Python, infra, web), sin ver en una instalación. Los manifiestos de los packs no cambian, pero el esquema y el pipeline sí: el workflow `packs` vuelve a construir y firmar los tres packs desde `main`, con la aprobación del dueño.

@@ -39,12 +39,14 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | Investigación de anomalías de costo por evento | Hecho (D79, 2026-10-15): la regla de `Payer` reenvía cada evento de Cost Anomaly Detection al bus `Mango-<ns>-CostAnomalies`; el consumidor lo valida, lo audita y deja un mensaje en la cola de tareas `Mango-<ns>-TaskRuns` (D78), con el id de la anomalía como id del evento y solo id, monitor y fechas. `mango-api` arranca una ejecución del agente FinOps por cada automatización suscrita, como su dueño, con las dos reglas de D79 que aplica el motor: solo personas centrales y 5 al día. La instrucción de la investigación está en el agente FinOps. Comprobado con tests e **instalado el 2026-10-15** (D79 (13)): la regla y el bus, y que el bus rechaza a otro principal y AWS una fuente `aws.ce` publicada por un cliente; y **una anomalía real llegó por este camino** con suscripciones solo diarias; y **la primera investigación de una anomalía real terminó sola** (D79 (13)). La primera noche, 5 anomalías en 3 entregas: 2 llegaron mientras otra se investigaba y quedaron omitidas por solapamiento. Desde D81 (2026-10-16), una anomalía que llega mientras otra se investiga espera «En cola» a la anterior (hasta 30 min, dentro del tope del día) y su anomalía no se pierde; con tests, **sin ver en una instalación** | `infra/lib/stacks/payer-stack.ts`; `infra/lib/constructs/cost-anomaly-events.ts`; `functions/cost-anomaly-consumer/`; `agents/finops/agent.json`; las reglas, en `apps/api/src/mango_api/tasks.py` y `task_worker.py` | D78, D79, D81 |
 | RBAC L1 (Verified Permissions) | Hecho | `policies/cedar/platform/` (18 políticas; las 3 de tareas desde D78) | §4.5 |
 | RBAC L2 (Cedar en el Gateway) | Hecho por tool y por tipo de usuario; no por agente | `infra/lib/constructs/tools.ts` y `write-tools.ts`; `functions/provisioner/src/mango_provisioner/packs/gateway.py` | D33, D45 |
+| Salud diaria de las cuentas miembro (2026-10-16) | Hecho, sin ver en una instalación (D84 (2), (6) a (10)): la función `Mango-<ns>-AccountHealth` entra cada día a cada cuenta miembro por `ReadBroker` → `ReadOnly` como la identidad del sistema `mango-health`, con una sesión que solo permite `sts:GetCallerIdentity`; guarda `valid`, `invalid` o `pending` por cuenta en `Settings` y alarma al topic. Solo ese rol puede usar esa identidad en los brokers, y él no puede usar otra. La pantalla es mínima: el diseño no la tiene todavía | `functions/admin-probe/src/mango_admin_probe/health.py`; `infra/lib/constructs/account-health.ts`; `apps/web/src/components/admin/MemberHealth.tsx` | D17, D41, D84 |
 | Identidad del usuario hasta el destino | Hecho: pagadora y cuentas miembro | `packages/py/mango-aws`; `infra/lib/constructs/member-access.ts` | D10, D37, D49, D51, D55 |
 | Presupuesto con reserva previa | **A medias:** solo por usuario y por agente | `apps/api/src/mango_api/budget.py` | §4.5 |
 | Un turno cortado nunca cuesta cero (comprobado el 2026-10-06) | Hecho. **Visto en una instalación de laboratorio** el 2026-10-06 (D73 (17)): la reserva y el registro del turno van en una transacción; con final desconocido se cobra lo conocido y el resto queda retenido y cuenta para el tope; una función cada 5 minutos concilia con las trazas de AgentCore. Esa validación encontró que un turno cortado por su límite de tiempo se conciliaba con costo cero (D73 (18)). **La corrección se vio ese día en una instalación de laboratorio** (D73 (19) y (21)): se suman también las llamadas al modelo y se espera a que terminen; un turno cortado por tiempo se concilió por su llamada, con el costo de su traza, 3 min 24 s después de empezar. Un turno retenido puede esperar dos pasadas (se vieron 8 min 27 s, D73 (22)). Sin ver: el cobro por la reserva al plazo, el motivo `model_call_unfinished`, las filas 6, 7, 9 y 10 de la tabla de D73 y las dos alarmas (D73 (23)). La fila 6 está comprobada con tests que leen el error como lo lanza el SDK; un error que llegara como evento termina el turno igual, y una conversación nueva cuyo primer turno no se respondió no recibe título (D73 (24) a (26), decididos el 2026-10-07; sin ver en una instalación). Un turno a un agente cuyo harness no existe no empezó y no cobra nada (D73 (27)): **visto en una cuenta de ensayo** el 2026-10-08, con costo 0, nada retenido y ningún turno pendiente (D73 (28)). La pantalla de ese turno se vio esa noche en un navegador (D73 (29)): un solo aviso con «Reintentar», la consola sin errores y la conversación con la pregunta como título; la fila 6 sigue sin verse en una instalación. **El tope de tokens en cada llamada al modelo está desplegado en una instalación de laboratorio** desde el 2026-10-06 (D74 (12)): viaja y corta; la reserva cubre una llamada entera; un turno de varias llamadas puede costar más. Esa instalación mostró que una respuesta cortada en su tope terminaba como error, sin guardarse y con la reserva retenida. **El arreglo se desplegó y se vio ese día en esa instalación** (D74 (13), aceptado por delegación del dueño el 2026-10-06, que lo confirmó el 2026-10-07; D74 (15)): ese turno termina como final conocido, con su texto guardado y liquidado al momento. Visto en un turno, sin tools; sin ver, el tope en un turno con tools (D74 (16)). Una tool de escritura cortada por el tope, o por cualquier otro final que no sea `tool_use`, no pide confirmar nada (D74 (18), 2026-10-07): comprobado con tests, sin ver en una instalación | `packages/py/mango-core/src/mango_core/budget_turns.py`; `apps/api/src/mango_api/budget.py`, `pricing.py` y `harness.py`; `functions/budget-reconciler`; `infra/lib/constructs/budget-reconciler.ts` | D73, D74 |
 | Jerarquía de presupuestos instalación → área → equipo → usuario | No hecho | — | §4.5 |
 | Límite de presupuesto por agente editable | No hecho | La API solo edita los valores por defecto y el límite por usuario (`apps/api/src/mango_api/admin.py`) | D17, D22 |
 | Reconciliación del gasto contra CUR | No hecho | — | §4.5 |
+| Clase de cada tool de un pack: `read`, `write` o `destructive` (2026-10-16) | Hecho, sin ver en una instalación (D84 (1), (3) a (5)): campo `access` del manifiesto firmado; sin clase cuenta como `write`; el pipeline compara la clase con las anotaciones MCP del servidor; una tool `destructive` no entra en una release, el provisioner la rechaza (`destructive_tool`) y no se da a ningún agente; el interceptor del Gateway solo deja pasar las tools de pack que la release clasifica `read`. Los tres packs de la release son de lectura | `packages/py/mango-packs/src/mango_packs/manifest.py`, `tools.py`; `functions/provisioner/src/mango_provisioner/packs/release.py`; `functions/gateway-interceptor` (`PACK_TOOLS`) | D19, D56, D84 |
 | Aprobación de tools de escritura | Hecho, con una tool. Solo un mensaje del modelo que terminó como llamada a tool (`tool_use`) pide confirmar una escritura: cualquier otro final, o ninguno, no pide nada (D74 (18), decidido el 2026-10-07; comprobado con tests, sin ver en una instalación) | `connectors/aws-budgets` (`create_budget`); `apps/api/src/mango_api/approvals.py`; `functions/approval-executor` | D27, D56, D74 (18) |
 | Tool de escritura en un agente de la release | No hecho | `approval_tools: []` en `infra/lib/constructs/release-agents.ts` | — |
 | Auditoría en S3 con Object Lock | **A medias:** hash por evento, sin cadena ni digest firmado; bucket en la cuenta de la instalación, `GOVERNANCE` por defecto | `apps/api/src/mango_api/audit.py`; `infra/lib/constructs/governance.ts` | §4.5 |
@@ -148,6 +150,7 @@ flowchart TB
     BREC["BudgetReconciler<br/>Lambda cada 5 min (D73)"]
     CAE["Bus CostAnomalies + consumidor<br/>valida la anomalía y la deja<br/>en la cola de tareas (D79)"]
     REC["Reconciler<br/>Lambda diaria, solo lectura (D41)"]
+    AH["AccountHealth<br/>Lambda diaria, entra como mango-health (D84)"]
   end
 
   ALB --> API
@@ -163,10 +166,11 @@ flowchart TB
   API --> SFN
   BREC -- "cierra los turnos cortados" --> DDB
   REC -. "compara con los harness" .-> DDB
+  AH -- "estado de cada cuenta miembro" --> DDB
 
   subgraph AC["AMAZON BEDROCK AGENTCORE (misma cuenta)"]
     RT["Un harness por agente (D32)<br/>microVM por sesión · memoria desactivada (D13)"]
-    GW["Gateway MCP<br/>JWT de Cognito · interceptor: firma de la invocación,<br/>tools del agente y approval token · Policy (Cedar L2)"]
+    GW["Gateway MCP<br/>JWT de Cognito · interceptor: firma de la invocación,<br/>tools del agente, solo tools de pack read (D84)<br/>y approval token · Policy (Cedar L2)"]
     PK["Runtimes de MCP packs (D36)<br/>aws-pricing · aws-billing · aws-cloudwatch"]
   end
 
@@ -190,6 +194,7 @@ flowchart TB
   CE -- "BillingBroker + SourceIdentity" --> PAY
   PK -- "BillingBroker + SourceIdentity<br/>(aws-billing)" --> PAY
   PK -- "ReadBroker + SourceIdentity<br/>(aws-cloudwatch)" --> MEM
+  AH -. "ReadBroker como mango-health<br/>solo GetCallerIdentity (D84)" .-> MEM
   AE -- "OperateBroker + SourceIdentity<br/>+ aprobación" --> PAY
   PAY -- "evento aws.ce Anomaly Detected<br/>rol CostAnomalyForwarder (D79)" --> CAE
 
@@ -261,6 +266,7 @@ Límites a tener presentes:
   | SAP | OpenAPI (BTP/OData) o MCP de SAP, **VPC egress** a la red del cliente | OAuth **OBO** vía Identity; escritura siempre con aprobación | Previsto |
   | Google Drive | Lectura: Managed KB (ACL nativa). Acciones: MCP con **3LO** + Consent Portal | Token del usuario en el vault de Identity | Previsto |
 
+- **Clase de cada tool (D84):** el manifiesto firmado de cada pack clasifica cada tool como `read`, `write` o `destructive`. Sin clase cuenta como `write`, que pide aprobación y que un pack no tiene (D56 (5)). Una `destructive` no se habilita nunca, ni con aprobación: la release no distribuye un pack que la tenga, el provisioner lo rechaza y ningún agente la recibe. El pipeline falla si el manifiesto clasifica una tool por debajo de lo que anota el propio servidor (`readOnlyHint`, `destructiveHint`), y el interceptor del Gateway solo deja pasar las tools de pack que la release clasifica `read`. Un conector de Mango no declara tools `destructive`.
 - **Red de los packs (D54):** los Runtimes de packs corren en una VPC propia sin internet ni NAT. Solo alcanzan los endpoints de VPC de los servicios que declara su manifiesto firmado, con un DNS Firewall que resuelve esos nombres y nada más, y registro de consultas (D71 (13), (14)).
 - **Skills** en formato AgentSkills.io (`SKILL.md`), **previsto, sin construir** (D26, D38):
   - Se guardarían en **S3 versionado**, referenciadas por agente en el harness.
@@ -538,6 +544,7 @@ Mango se instala en **una cuenta dedicada** (`mango`) dentro de la organización
   - **Entre cuentas, ningún stack lee a otro en deploy-time.** Se descarta el acoplamiento SSM+RAM de ISB. Dentro de la cuenta `mango`, `Core` importa de `PackNetwork` las subnets y los security groups de los packs.
   - Orden de instalación vigente (`docs/runbooks/install.md`): `Payer` → `OrgAccess` → `PackNetwork` → `Core`. `Support` no existe todavía.
   - El **connectivity check** (Ajustes › Conectividad) prueba `AssumeRole` contra la pagadora y contra las cuentas miembro objetivo, hasta 50 por comprobación (D53 (4)). Leer el estado de las instancias del StackSet es previsto.
+  - **Salud diaria (D84):** la función `Mango-<ns>-AccountHealth` recorre a las 06:30 UTC la misma cadena para cada cuenta miembro objetivo (hasta 500 por ronda), como la identidad del sistema `mango-health`, con una sesión que solo permite `sts:GetCallerIdentity`, y lista las cuentas por la pagadora con la sesión de Organizations del probe. Guarda `valid`, `invalid` o `pending` por cuenta en `Settings` (solo ella escribe ese ítem) y avisa al topic de alertas (`AccountHealth-invalid`, `AccountHealth-failed`). Los dos brokers aceptan `mango-health` solo de ese rol, y el resto de sus llamadores no puede usarla. El rol de las cuentas miembro y el de la pagadora no cambian. Ajustes › Conectividad muestra el último resultado.
 - **No modificamos la estructura de la organización:** no creamos OUs ni SCPs, a diferencia de ISB.
 - **Desinstalar (D58 (8), (9), (13), (14), (15), (16), (17), (18), (19), (20), (21), (22), (24), (25)):** `Core` → `PackNetwork` → `OrgAccess` → `Payer`, con `delete-stack`.
   - Los agentes y los packs se crean por API, fuera de CloudFormation (D25), y sus roles llevan boundaries del stack: mientras existan, `Core` no se puede borrar. Los borra el `UninstallGuard`, un recurso de `Core` que depende de todos los demás recursos del stack: se crea el último y se borra el primero, antes que la aplicación, los provisioners, el directorio, las alarmas, los boundaries, el Gateway y el motor de políticas (D58 (16)). Los cinco recursos con condición (el segundo administrador y Transaction Search) no pueden ir en un `DependsOn`: los sujeta un ancla, un recurso que no crea nada y cuyo `Metadata` nombra cada uno bajo su condición; el guard depende del ancla y sigue sin propiedades propias (D58 (17)).
@@ -570,6 +577,7 @@ flowchart LR
     C["Conector Cost Explorer (Lambda)"]
     PK["Runtimes de packs de datos de cuentas<br/>aws-billing · aws-cloudwatch"]
     AP["AdminProbe (Lambda)<br/>comprobación de conectividad"]
+    AH["AccountHealth (Lambda)<br/>diaria, como mango-health (D84)"]
     AE["Approval executor (Lambda)"]
     RB["Mango-ns-ReadBroker"]
     BB["Mango-ns-BillingBroker"]
@@ -592,6 +600,8 @@ flowchart LR
   PK -- "aws-cloudwatch" --> RB
   AP --> BB
   AP --> RB
+  AH -- "solo como mango-health" --> BB
+  AH -- "solo como mango-health" --> RB
   BB -- "AssumeRole + SourceIdentity<br/>+ tags + session policy" --> BR
   RB -- "AssumeRole + SourceIdentity + tags" --> RO
   AE -. "solo con un approval token válido" .-> OB -.-> BO
@@ -1029,6 +1039,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D81 | Una ejecución por evento que encuentra su tarea ocupada espera a la anterior | vigente | 2026-10-16 (tomada por el dueño ese día, por menú: «Que espere a la anterior (Recomendada)»; el cómo y el límite, propuestos por un agente; los motivos `task_paused` y `paused_by_admin` en la pantalla, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15, por menú: «Códigos + texto mínimo (Recomendada)») | [D081-una-anomalia-espera-a-la-anterior.md](decisions/D081-una-anomalia-espera-a-la-anterior.md) |
 | D82 | Cualquiera con un agente crea tareas; un administrador no ve la instrucción y dice por qué pausa | vigente | 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «Que cualquiera con un agente cree tareas» y «Las dos (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D82 (4)»)) | [D082-tareas-para-cualquiera-y-lo-que-ve-un-admin.md](decisions/D082-tareas-para-cualquiera-y-lo-que-ve-un-admin.md) |
 | D83 | La Bandeja: avisos de cada persona, guardados en su partición | vigente | 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «90 días (Recomendada)», «Tabla de conversaciones (Recomendada)» y «Como el diseño y al brief (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D83 (4) (Recomendada)»)) | [D083-la-bandeja.md](decisions/D083-la-bandeja.md) |
+| D84 | Gobernanza de tools: clase de cada tool en el manifiesto y salud diaria de las cuentas | propuesta | 2026-10-16 (las dos reglas, tomadas por el dueño ese día, por menú: «Nunca se habilitan (Recomendada)» y «Como sistema, solo comprobar (Recomendada)»; el cómo, puntos 3 a 10, propuesto por un agente) | [D084-gobernanza-de-tools.md](decisions/D084-gobernanza-de-tools.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar. Lo aprobado desde entonces es el hito 1, «instalable por una empresa real» (2026-10-05), del que salen D70 a D74.

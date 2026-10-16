@@ -3,7 +3,7 @@
 - **Estado:** parcial. Construidas las formas (1) y (2). Falta la (3): MCP remotos del cliente.
 - **Fecha:** 2026-09-29 · ajuste del 2026-10-01
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D36](D036-artefacto-y-firma-de-packs.md) (ajusta: zip en lugar de imagen)
+- **Precisada por:** [D36](D036-artefacto-y-firma-de-packs.md) (ajusta: zip en lugar de imagen); [D84](D084-gobernanza-de-tools.md) (cada tool del manifiesto es `read`, `write` o `destructive`; sin clase cuenta como `write`; `destructive` nunca se habilita)
 
 ## Decisión
 
