@@ -575,8 +575,9 @@ export const ToolsSection = memo(function ToolsSection({
   const enabled = catalog.flatMap((connector) => {
     const served = connector.tools.filter((tool) => index.get(tool.ref)?.enabled);
     // Design: a destructive tool of a served connector is listed, disabled (D84: never enabled).
+    const servedRefs = new Set(served.map((tool) => tool.ref));
     const shown = connector.tools.filter(
-      (tool) => served.includes(tool) || tool.access === 'destructive',
+      (tool) => servedRefs.has(tool.ref) || tool.access === 'destructive',
     );
     return served.length > 0 ? [{ ...connector, tools: shown }] : [];
   });
