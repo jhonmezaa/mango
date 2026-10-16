@@ -18,6 +18,7 @@ from enum import StrEnum
 from typing import Any
 
 from mango_core.agents import AgentStatus, VersionStatus
+from mango_core.agents_table import AGENT_PREFIX, RELEASE_PREFIX
 from mango_reconciler.config import (
     CLOCK_SKEW,
     DEPROVISION_GRACE,
@@ -333,6 +334,7 @@ class _Evaluation:
         snapshot = self.snapshot
         for key in snapshot.invalid:
             self.drift("record_invalid", None, key)
+        self._release_records()
         for agent_id, pointer in snapshot.pointers.items():
             meta = snapshot.agents.get(agent_id)
             if meta is None:
@@ -363,6 +365,20 @@ class _Evaluation:
                 continue
             if meta.published_version is not None or meta.status is AgentStatus.PUBLISHED:
                 self.drift("publication_record_mismatch", agent_id, None, reason="no_pointer")
+
+    def _release_records(self) -> None:
+        """``RELEASE#<hash>`` under an agent the release does not ship (D80).
+
+        Only the release seeds these, and only for its own agents: one under any other id was
+        written by someone else. The provisioner would never use it. Well-formed ones under a
+        release agent, of this release or an earlier one, are expected: nothing deletes them.
+        """
+        for agent_id, digests in sorted(self.snapshot.releases.items()):
+            if agent_id not in self.settings.release_agents:
+                for digest in sorted(digests):
+                    self.drift(
+                        "record_invalid", None, f"{AGENT_PREFIX}{agent_id}|{RELEASE_PREFIX}{digest}"
+                    )
 
     # --- Agents of the release (D34, D42, TM-M16) ----------------------------------------
 

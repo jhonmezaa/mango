@@ -463,6 +463,64 @@ def test_release_agent_that_is_not_published_yet_is_not_reported(lab: Lab) -> No
     assert lab.run().findings == ()
 
 
+def test_definitions_every_release_shipped_are_not_findings(lab: Lab) -> None:
+    # The seed writes one per release that changed the agent and nothing deletes them (D80).
+    lab.publish(FINOPS)
+    lab.put_release(FINOPS, HASH)
+    lab.put_release(FINOPS, "b" * 64)
+    report = lab.run()
+    assert report.findings == ()
+
+
+def test_a_release_definition_seeded_before_the_first_publication_is_not_a_finding(
+    lab: Lab,
+) -> None:
+    lab.put_meta(FINOPS)
+    lab.put_version(FINOPS, 1, "approved", at=lab.now)
+    lab.put_release(FINOPS)
+    assert lab.run().findings == ()
+
+
+@pytest.mark.parametrize(
+    ("digest", "content_hash"),
+    [
+        ("A" * 64, None),  # not lowercase hex
+        ("a" * 63, None),  # too short
+        ("", None),
+        (HASH, ""),  # no content_hash
+        (HASH, "b" * 64),  # the key and the attribute disagree
+    ],
+)
+def test_a_malformed_release_item_is_an_invalid_record(
+    lab: Lab, digest: str, content_hash: str | None
+) -> None:
+    lab.publish(FINOPS)
+    lab.put_release(FINOPS, digest, content_hash=content_hash)
+    finding = only(lab, "record_invalid")
+    assert (finding.severity, finding.resource) == (
+        Severity.DRIFT,
+        f"AGENT#{FINOPS}|RELEASE#{digest}",
+    )
+    assert lab.codes() == ["record_invalid"]
+
+
+def test_a_release_item_under_an_agent_the_release_does_not_ship_is_reported(lab: Lab) -> None:
+    # Only the release seeds these, for its own agents: one under another id was written by
+    # someone else (mango-api or an operator). The provisioner never uses it (TM-M16).
+    lab.publish(AGENT)
+    lab.put_release(AGENT)
+    lab.put_release(OTHER, "b" * 64)
+    report = lab.run()
+    assert sorted(f.code for f in report.findings) == ["record_invalid", "record_invalid"]
+    assert sorted(str(f.resource) for f in report.findings) == [
+        f"AGENT#{AGENT}|RELEASE#{HASH}",
+        f"AGENT#{OTHER}|RELEASE#{'b' * 64}",
+    ]
+    assert {f.severity for f in report.findings} == {Severity.DRIFT}
+    assert report.alarming == 2
+    assert PROMPT_MARKER not in json.dumps([f.as_dict() for f in report.findings])
+
+
 # --- Table consistency (TM-M2) -------------------------------------------------------------
 
 

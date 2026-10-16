@@ -18,7 +18,14 @@ from botocore.exceptions import ClientError
 from botocore.validate import validate_parameters
 from moto import mock_aws
 
-from mango_core.agents_table import creator_pk, day_sk, meta_key, publish_items, version_key
+from mango_core.agents_table import (
+    creator_pk,
+    day_sk,
+    meta_key,
+    publish_items,
+    release_key,
+    version_key,
+)
 from mango_reconciler.checks import Report
 from mango_reconciler.config import Settings
 from mango_reconciler.handler import Reconciler
@@ -237,6 +244,23 @@ class Lab:
         }
         if content_hash:
             item["content_hash"] = {"S": content_hash}
+        self.db.put_item(TableName=AGENTS_TABLE, Item=item)
+
+    # --- What the stack seeds ---
+
+    def put_release(
+        self, agent_id: str, digest: str = HASH, *, content_hash: str | None = None
+    ) -> None:
+        """``RELEASE#<hash>`` as ``release-agents.ts`` writes it (D80); ``content_hash``
+        defaults to the hash of the key."""
+        item = {
+            **release_key(agent_id, digest),
+            "agent_id": {"S": agent_id},
+            "definition": {"S": json.dumps({"system_prompt": PROMPT_MARKER})},
+            "created_at": {"S": "2026-10-01T00:00:00+00:00"},
+        }
+        if content_hash != "":
+            item["content_hash"] = {"S": content_hash or digest}
         self.db.put_item(TableName=AGENTS_TABLE, Item=item)
 
     def put_submissions(self, creator: str, count: int) -> None:

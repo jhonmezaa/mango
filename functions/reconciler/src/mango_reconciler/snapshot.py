@@ -7,6 +7,7 @@ Layout: ``mango_core.agents_table``.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,7 @@ from mango_core.agents_table import (
     CREATOR_PREFIX,
     DAY_PREFIX,
     PUBLISHED_PREFIX,
+    RELEASE_PREFIX,
     SK_CURRENT,
     SK_META,
     VERSION_PREFIX,
@@ -42,6 +44,9 @@ SCAN_ATTRIBUTES = (
 )
 """Everything the reconciler reads. Keep in sync with ``RECONCILER_READABLE_ATTRIBUTES`` in
 ``infra/lib/constructs/reconciler.ts``; never add ``definition``."""
+
+
+_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -87,6 +92,10 @@ class Snapshot:
     versions: dict[str, dict[int, VersionRecord]] = field(default_factory=dict)
     pointers: dict[str, Pointer] = field(default_factory=dict)
     submissions: list[Submissions] = field(default_factory=list)
+    releases: dict[str, set[str]] = field(default_factory=dict)
+    """Agent id -> content hashes of the ``RELEASE#<hash>`` items under it (D80): the
+    definitions every release shipped. Seeding is put-if-absent and nothing deletes them, so
+    the ones of earlier releases stay."""
     invalid: list[str] = field(default_factory=list)
     """``PK|SK`` of items that do not follow the layout."""
 
@@ -128,6 +137,12 @@ def _add(snapshot: Snapshot, pk: str, sk: str, item: dict[str, Any]) -> None:
                 status_at=status_at,
                 created_by=_opt_s(item, "created_by"),
             )
+        elif sk.startswith(RELEASE_PREFIX):
+            digest = sk[len(RELEASE_PREFIX) :]
+            # The seed writes the hash twice, in the key and in ``content_hash``.
+            if not _HASH_RE.fullmatch(digest) or item["content_hash"]["S"] != digest:
+                raise ValueError("release item")
+            snapshot.releases.setdefault(agent_id, set()).add(digest)
         else:
             raise ValueError("sort key")
     elif pk.startswith(PUBLISHED_PREFIX) and sk == SK_CURRENT:
