@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-15 (los puntos 1 a 6, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-10-15; los puntos 7 a 12, propuestos por un agente; lo que mostró la primera instalación, punto 13, nota propuesta por un agente; aceptada por el dueño el 2026-10-15, por menú («Sí, aceptar las tres»), después de que el agente principal le explicara las tres; la nota del punto 13, corregida y ampliada el 2026-10-16 al registrar D81, propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) («Schedules»: un disparador por evento, quién puede usarlo y su tope)
-- **Precisada por:** [D81](D081-una-anomalia-espera-a-la-anterior.md) (3: una anomalía que llega mientras otra se investiga espera a la anterior y no gasta su única ejecución)
+- **Precisada por:** [D81](D081-una-anomalia-espera-a-la-anterior.md) (3: una anomalía que llega mientras otra se investiga espera a la anterior y no gasta su única ejecución); [D85](D085-id-de-la-anomalia-en-pantalla.md) (4: el id de la anomalía también se ve en cada ejecución)
 
 ## Decisión
 

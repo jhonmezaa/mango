@@ -1,7 +1,7 @@
 # D83 · La Bandeja: avisos de cada persona, guardados en su partición
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «90 días (Recomendada)», «Tabla de conversaciones (Recomendada)» y «Como el diseño y al brief (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D83 (4) (Recomendada)»); lo que mostró la primera instalación, punto 5, nota propuesta por un agente)
+- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «90 días (Recomendada)», «Tabla de conversaciones (Recomendada)» y «Como el diseño y al brief (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D83 (4) (Recomendada)»); lo que mostró la primera instalación, punto 5, nota propuesta por un agente; lo que resolvió el diseño, punto 6, nota del 2026-10-16 propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (el resultado de una ejecución, ahora también con un aviso en la Bandeja de su dueño)
 - **Precisada por:** —
 
@@ -27,5 +27,7 @@ Origen: el diseño (D24, `other-views.jsx` «Inbox» y la sección «Schedules �
 - **Textos de Schedules:** pasan a la variante del diseño que nombra la Bandeja («Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.», «El resultado está en el detalle de la tarea y en tu Bandeja.», «En el detalle y en tu Bandeja · solo tú lo ves»).
 
 **(5) Lo que mostró la primera instalación (nota del 2026-10-16, propuesta por un agente).** En la instalación de un cliente, después de actualizar, «Ejecutar ahora» en una tarea por horario dejó en la Bandeja de su dueño el aviso «· completada», con la primera línea del informe, y el contador de la barra lateral lo contó. Es decir, el worker escribe en la partición del dueño con su política de sesión también en AWS. Las aprobaciones de la Bandeja no se vieron todavía, porque no había ninguna pendiente.
+
+**(6) Lo que resolvió el diseño (nota del 2026-10-16, propuesta por un agente).** La ronda de Claude Design del 2026-10-16b respondió al brief de la Bandeja, y el producto lo implementa: a 900 px o menos el detalle reemplaza la lista, con «Volver a la lista» y Esc, como Aprobaciones (resuelve el punto 3); «Archivado» deja de ser pestaña y pasa a un botón junto al contador; la página siguiente se pide con «Mostrar más», con su error y «Reintentar», en lugar de cargarse sola (punto 4); y un aviso que no se pudo marcar como leído al abrirlo queda sin leer, sin error. Los avisos «Tarea» y «Tu solicitud» del diseño no tienen señal en el producto: quedan pendientes.
 
 Modelo de amenazas: [`inbox-threat-model.md`](../../security/threat-models/inbox-threat-model.md). Comprobado con tests de Python (`apps/api/tests/test_inbox.py`, `test_tasks.py`, `test_cedar_policies.py`), de la web y e2e contra el mock, y en el navegador. Visto en una instalación (punto 5). En una actualización, el change set cambia el esquema del almacén de políticas y añade la política `ViewInbox`, y despliega la imagen nueva de `mango-api`; no crea tablas, roles ni alarmas.
