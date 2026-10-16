@@ -7,7 +7,9 @@ Item layout, all under ``PK = AUTO#<automation id>``:
   expression from the client); ``status`` and its reason; ``running_run`` while a run holds
   the automation (one at a time, TM-T5).
 * ``SK = RUN#<start, reversed>#<run id>``: a run, newest first. Its result (the agent's text)
-  lives here, with the table's TTL: never in logs nor in the audit trail (TM-T8).
+  lives here, with the table's TTL: never in logs nor in the audit trail (TM-T8). An event run
+  that waits for the previous one (D81) keeps ``waiting_since`` and the ``wake`` of the one
+  message that may resume it.
 * ``SK = RUNKEY#<run id>``: the idempotency mark of a run, written in the same transaction as
   the run. A trigger delivered twice finds it and runs nothing (D78, SQS at least once).
 
@@ -131,6 +133,10 @@ class Run:
     approvals: list[str] = field(default_factory=list)
     scheduled_at: str | None = None
     event_ref: str | None = None
+    waiting_since: int | None = None
+    """When an event run first found its task busy and started to wait (D81)."""
+    wake: str | None = None
+    """The random id of the only message that resumes a waiting run; never shown."""
     sk: str = ""
 
 
@@ -213,6 +219,8 @@ def _run(item: dict[str, Any]) -> Run:
         approvals=[a["S"] for a in approvals if "S" in a],
         scheduled_at=_str(item, "scheduled_at"),
         event_ref=_str(item, "event_ref"),
+        waiting_since=_int(item, "waiting_since"),
+        wake=_str(item, "wake"),
         sk=item["SK"]["S"],
     )
 
@@ -470,9 +478,10 @@ class TaskStore:
     def hold(
         self, automation_id: str, run_id: str, *, stale_before: int, allow_paused: bool = False
     ) -> bool:
-        """Take the automation for one run: false when another run holds it (and has not
-        outlived its turn) or the automation may not run. A paused task still runs when its
-        owner presses «Ejecutar ahora» (``allow_paused``); a retired one never does."""
+        """Take the automation for one run: false when a run holds it (and has not outlived its
+        turn) or the automation may not run. A paused task still runs when its owner presses
+        «Ejecutar ahora» (``allow_paused``); a retired one never does. Not even the same run
+        takes it twice: two deliveries of one run never both pass (D81)."""
         statuses = [Status.ACTIVE, Status.PAUSED] if allow_paused else [Status.ACTIVE]
         values: dict[str, Any] = {
             ":r": _s(run_id),
@@ -488,7 +497,7 @@ class TaskStore:
                 UpdateExpression="SET running_run = :r, running_since = :t",
                 ConditionExpression=(
                     f"#status IN ({allowed}) AND (attribute_not_exists(running_run) OR "
-                    "running_run = :r OR running_since < :stale)"
+                    "running_since < :stale)"
                 ),
                 ExpressionAttributeNames={"#status": "status"},
                 ExpressionAttributeValues=values,
@@ -599,6 +608,37 @@ class TaskStore:
         except ClientError as exc:
             raise TaskStoreUnavailableError from exc
         return _run(item) if item else None
+
+    def wait(self, run: Run, wake: str, *, previous: str | None, since: int) -> bool:
+        """Hand a queued run to the message ``wake`` (D81): only if it is still queued and its
+        wait is still the one ``previous`` names (none for the first). False otherwise: another
+        message took the wait, or the run left the queue, and ``wake`` resumes nothing."""
+        values: dict[str, Any] = {
+            ":w": _s(wake),
+            ":since": _n(since),
+            ":queued": _s(RunStatus.QUEUED),
+        }
+        if previous is None:
+            same = "attribute_not_exists(wake)"
+        else:
+            same = "wake = :p"
+            values[":p"] = _s(previous)
+        try:
+            self._db.update_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(run.automation_id)), "SK": _s(run.sk)},
+                UpdateExpression=(
+                    "SET wake = :w, waiting_since = if_not_exists(waiting_since, :since)"
+                ),
+                ConditionExpression=f"#status = :queued AND {same}",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues=values,
+            )
+        except ClientError as exc:
+            if _conditional(exc):
+                return False
+            raise TaskStoreUnavailableError from exc
+        return True
 
     def recent_runs(self, automation_id: str, limit: int = RUNS_SHOWN) -> list[Run]:
         try:

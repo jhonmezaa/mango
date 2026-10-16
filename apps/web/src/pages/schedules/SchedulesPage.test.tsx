@@ -210,6 +210,40 @@ describe('SchedulesPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('says why a waiting run did not run when its task was paused (D81)', async () => {
+    const anomaly = task({
+      name: 'Anomalías',
+      trigger: {
+        kind: 'event',
+        schedule: null,
+        timezone: null,
+        event_type: 'cost_anomaly',
+        daily_cap: 5,
+      },
+      next_runs: [],
+      runs: [
+        run({
+          run_id: 'r1',
+          trigger: 'event',
+          status: 'skipped',
+          reason: 'task_paused',
+          has_result: false,
+        }),
+        run({
+          run_id: 'r2',
+          trigger: 'event',
+          status: 'skipped',
+          reason: 'paused_by_admin',
+          has_result: false,
+        }),
+      ],
+    });
+    renderPage(apiWith(base(list([anomaly]))));
+    await userEvent.click(await screen.findByText('Anomalías', { selector: '.mk-name' }));
+    expect(await screen.findByText('La tarea se pausó')).toBeInTheDocument();
+    expect(screen.getByText('Un administrador pausó la tarea')).toBeInTheDocument();
+  });
+
   it('says when the list cannot be loaded and retries', async () => {
     let fail = true;
     renderPage(

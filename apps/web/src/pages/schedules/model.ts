@@ -156,6 +156,8 @@ export const RUN_REASONS = [
   'harness_missing',
   'queue_unavailable',
   'task_retired',
+  'task_paused',
+  'paused_by_admin',
 ] as const;
 export type RunReason = (typeof RUN_REASONS)[number];
 

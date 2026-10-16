@@ -351,13 +351,19 @@ class TaskScheduler:
 
 
 class RunQueue:
-    """Leaves the message of a manual run in the queue the worker reads."""
+    """Leaves a message in the queue the worker reads: a manual run, or the wait of an event
+    run that found its task busy (D81), delayed by ``delay_seconds`` (SQS allows 900)."""
 
     def __init__(self, client: "SQSClient", queue_url: str) -> None:
         self._client = client
         self._url = queue_url
 
-    def send(self, body: str) -> None:
+    def send(self, body: str, *, delay_seconds: int = 0) -> None:
+        if delay_seconds:
+            self._client.send_message(
+                QueueUrl=self._url, MessageBody=body, DelaySeconds=delay_seconds
+            )
+            return
         self._client.send_message(QueueUrl=self._url, MessageBody=body)
 
 

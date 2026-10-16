@@ -14,7 +14,7 @@ El producto ya implementa la pantalla «Schedules» (`schedules.jsx`): lista con
 
 ### 2.1 Ver el resultado de una ejecución
 
-El diseño no muestra en ninguna parte qué respondió el agente. «Entregar resultado en: Bandeja del creador», pero la Bandeja no tiene un tipo «ejecución» y no está construida. El producto añade, en cada línea de «Ejecuciones recientes» que dejó resultado, un enlace «Ver resultado» que abre un diálogo «Resultado · {fecha}» con el nombre de la tarea y la respuesta en Markdown (sin HTML). Hace falta decidir dónde se lee el resultado: en el detalle, en la Bandeja o en los dos.
+El diseño no muestra en ninguna parte qué respondió el agente. «Entregar resultado en: Bandeja del creador», pero la Bandeja no tiene un tipo «ejecución» y no está construida. El producto añade, en cada línea de «Ejecuciones recientes» que dejó resultado, un enlace «Ver resultado» que abre un diálogo «Resultado · {fecha}» con el nombre de la tarea y la respuesta en Markdown (sin HTML). Hace falta decidir dónde se lee el resultado: en el detalle, en la Bandeja o en los dos. El resultado es todo lo que el agente escribió en la ejecución, incluidos los avisos de lo que va a hacer antes de cada consulta, seguidos del informe.
 
 ### 2.2 «Crear ticket» no está disponible
 
@@ -38,7 +38,7 @@ El editor no muestra «· próximas: …». El producto calcula las próximas en
 
 ### 2.7 Estados de una ejecución que el diseño no tiene
 
-Además de «Completada», «Fallida», «Omitida» y «Espera aprobación», una ejecución está «En cola» o «Ejecutando…» mientras corre. Una omitida o fallida dice por qué, con un texto fijo debajo: «Presupuesto agotado», «El creador perdió el acceso al agente», «Otra ejecución seguía en curso», «Se alcanzó el tope de investigaciones del día», «El agente falló»…
+Además de «Completada», «Fallida», «Omitida» y «Espera aprobación», una ejecución está «En cola» o «Ejecutando…» mientras corre. Una omitida o fallida dice por qué, con un texto fijo debajo: «Presupuesto agotado», «El creador perdió el acceso al agente», «Otra ejecución seguía en curso», «Se alcanzó el tope de investigaciones del día», «La tarea se pausó», «Un administrador pausó la tarea», «El agente falló»…
 
 ### 2.8 Al terminar «Ejecutar ahora»
 
@@ -63,5 +63,6 @@ Una tarea puede arrancar sola cuando AWS detecta una anomalía de costo, para in
 5. En cada ejecución, qué anomalía la arrancó (fechas, enlace a la anomalía si llega a existir en la aplicación) y el motivo de una omisión (tope, presupuesto, acceso perdido, ya investigada). Hoy solo se muestra el motivo.
 6. «Costo estimado · mes» no se puede calcular por frecuencia para estas tareas: hoy se dejan fuera de la suma. Hay que decidir qué mostrar.
 7. «Se ejecuta como…» vale igual.
+8. Varias anomalías a la vez: AWS a veces publica dos con segundos de diferencia (en el primer día pasó dos veces, con 5 anomalías). Una tarea corre una ejecución a la vez: la que llega mientras otra investiga queda «En cola» y corre cuando termina la anterior, dentro del tope del día (D81). Si la anterior no termina a tiempo, la que espera queda «Omitida» con «Otra ejecución seguía en curso».
 
 Si el dueño deja de ser central, la tarea se pausa sola, como cuando pierde el acceso al agente.

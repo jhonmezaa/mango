@@ -745,6 +745,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             ),
             scheduler=services.tasks.scheduler,
             audit=services.audit,
+            queue=services.tasks.queue,
         )
 
     @asynccontextmanager

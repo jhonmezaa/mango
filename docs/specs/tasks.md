@@ -72,7 +72,7 @@ Hoy la identidad llega al destino porque el access token de quien pregunta va al
   - automatizaciones activas o en pausa por persona: **10**; por instalación: **200**;
   - frecuencia mínima: **15 minutos** (la del diseño, con su aviso de «~2.880 ejecuciones al mes»);
   - tope de gasto por ejecución: la reserva del turno (no se agrega otro número);
-  - concurrencia: **una ejecución a la vez por automatización** (si la anterior sigue, la nueva queda `skipped` con `overlap`); **dos a la vez por tarea de `mango-api`**;
+  - concurrencia: **una ejecución a la vez por automatización** (si la anterior sigue, la nueva por horario o a pedido queda `skipped` con `overlap`; la nueva por evento espera `queued` a la anterior, reanudada por un mensaje con retraso, hasta 30 minutos, y después queda `overlap`: D81); **dos a la vez por tarea de `mango-api`**;
   - «Ejecutar ahora»: **10 por persona y hora**, contado en `RateLimits` (D70).
 - `POST /api/chat` sigue sin límite de tasa; las tareas sí tienen uno porque las dispara una máquina.
 

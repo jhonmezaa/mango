@@ -110,3 +110,33 @@ def test_a_naive_time_is_refused() -> None:
 def test_anything_else_is_refused(body: object) -> None:
     with pytest.raises(task_runs.InvalidTaskMessageError):
         task_runs.parse_message(body)
+
+
+def test_a_wait_message_round_trips_and_names_its_event_run() -> None:
+    """D81: mango-api resumes a waiting event run with the run's own event, nothing more."""
+    event = task_runs.parse_message(
+        task_runs.event_message("cost_anomaly", "anomaly-1", WHEN, {"anomaly_id": "anomaly-1"})
+    )
+    assert isinstance(event, task_runs.EventRun)
+    message = task_runs.parse_message(task_runs.wait_message(AUTOMATION, RUN, event))
+    assert message == task_runs.WaitRun(AUTOMATION, RUN, event)
+    assert isinstance(message, task_runs.WaitRun)
+    assert message.run_id == event.run_id(AUTOMATION)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"wake": "not-an-id"},
+        {"automation_id": "A" * 32},
+        {"run_id": RUN},
+        {"event_type": "guardduty"},
+    ],
+)
+def test_a_wait_message_is_read_exactly(change: dict[str, str]) -> None:
+    event = task_runs.EventRun("cost_anomaly", "anomaly-1", WHEN, {})
+    body = json.loads(task_runs.wait_message(AUTOMATION, RUN, event))
+    with pytest.raises(task_runs.InvalidTaskMessageError):
+        task_runs.parse_message(json.dumps({**body, **change}))
+    with pytest.raises(task_runs.InvalidTaskMessageError):
+        task_runs.wait_message("x", RUN, event)

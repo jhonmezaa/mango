@@ -118,6 +118,8 @@ export const schedules = {
       harness_missing: 'El agente no está disponible',
       queue_unavailable: 'No se pudo encolar',
       task_retired: 'La tarea se retiró',
+      task_paused: 'La tarea se pausó',
+      paused_by_admin: 'Un administrador pausó la tarea',
     },
   },
   detail: {

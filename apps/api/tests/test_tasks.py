@@ -19,6 +19,7 @@ from moto import mock_aws
 from mango_api import app as app_module
 from mango_api.authz import Authorizer
 from mango_api.task_identity import OwnerAccessLostError, TaskIdentityUnavailableError
+from mango_api.task_worker import HOLD_SECONDS, WAIT_POLL_SECONDS, WAIT_SECONDS, QueueWorker
 from mango_api.tasks import (
     MAX_PER_OWNER,
     RunQueue,
@@ -101,9 +102,21 @@ class FakeSchedulerClient:
 @dataclass
 class FakeSqs:
     sent: list[str] = field(default_factory=list)
+    delays: list[int] = field(default_factory=list)
+    """``DelaySeconds`` of each delayed message, in order (the waits of D81)."""
+    deleted: list[str] = field(default_factory=list)
+    fail: bool = False
 
     def send_message(self, **request: Any) -> dict[str, Any]:
+        if self.fail:
+            raise RuntimeError("sqs unavailable")
         self.sent.append(request["MessageBody"])
+        if "DelaySeconds" in request:
+            self.delays.append(request["DelaySeconds"])
+        return {}
+
+    def delete_message(self, **request: Any) -> dict[str, Any]:
+        self.deleted.append(request["ReceiptHandle"])
         return {}
 
 
@@ -796,3 +809,254 @@ def test_an_administrator_also_holds_a_task_its_owner_paused(env: Env) -> None:
     assert env.post("creator", task["task_id"], "pause").status_code == 409
     assert env.post("admin", task["task_id"], "pause").status_code == 409
     assert env.post("admin", task["task_id"], "resume").json()["status"] == "active"
+
+
+# --- An event run waits for the previous one (D81) ----------------------------------------
+
+
+@dataclass
+class Clock:
+    now: float
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _clocked(env: Env) -> Clock:
+    """One clock for the worker and the table, moved by the test."""
+    clock = Clock(time.time())
+    assert env.services.task_runs is not None and env.services.tasks is not None
+    env.services.task_runs.clock = clock
+    env.services.tasks.store._clock = clock
+    return clock
+
+
+PREVIOUS = "f" * 32
+"""A run of the same task that is still going (another task of mango-api runs it)."""
+
+
+def _busy(env: Env, task_id: str, holder: str = PREVIOUS) -> None:
+    assert env.services.tasks is not None
+    assert env.services.tasks.store.hold(task_id, holder, stale_before=0)
+
+
+def _free(env: Env, task_id: str, holder: str = PREVIOUS) -> None:
+    assert env.services.tasks is not None
+    env.services.tasks.store.release(task_id, holder)
+
+
+def _runs(env: Env, task_id: str) -> list[dict[str, Any]]:
+    runs: list[dict[str, Any]] = env.get("creator", task_id).json()["runs"]
+    return runs
+
+
+def test_two_anomalies_at_once_the_second_waits_and_then_runs(env: Env) -> None:
+    """What the first night showed (D81): the second anomaly is not lost."""
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    env.deliver(_anomaly("a-2"))
+    assert env.agentcore.requests == []
+    (run,) = _runs(env, task["task_id"])
+    assert (run["status"], run["reason"]) == ("queued", None)
+    # It waits in the queue, not in a worker: one message, delayed.
+    assert env.sqs.delays == [WAIT_POLL_SECONDS]
+    assert isinstance(task_runs.parse_message(env.sqs.sent[0]), task_runs.WaitRun)
+    (waiting,) = env.events("task.run.waiting")
+    assert (waiting["run"], waiting["event_id"]) == (run["run_id"], "a-2")
+    # Still busy a minute later: it waits again, without asking Cognito for a token.
+    issued = len(env.tokens.issued)
+    clock.now += WAIT_POLL_SECONDS
+    env.deliver()
+    assert len(env.tokens.issued) == issued
+    assert len(env.sqs.sent) == 1
+    assert len(env.events("task.run.waiting")) == 1
+    # The previous run ends; the next look runs it, as its owner, with the event's data.
+    _free(env, task["task_id"])
+    clock.now += WAIT_POLL_SECONDS
+    env.deliver()
+    (request,) = env.agentcore.requests
+    assert "a-2" in request["messages"][-1]["content"][0]["text"]
+    (run,) = _runs(env, task["task_id"])
+    assert (run["run_id"], run["status"]) == (waiting["run"], "ok")
+    # A token of its own again: whatever the first look found is not reused.
+    assert env.tokens.issued[issued:] == [("creator-1", run["run_id"])]
+    assert env.sqs.sent == []
+
+
+def test_a_wait_has_a_limit_then_the_run_is_skipped_as_overlap(env: Env) -> None:
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    start = clock.now
+    _busy(env, task["task_id"])
+    env.deliver(_anomaly("a-2"))
+    looks = 0
+    holder = PREVIOUS
+    while env.sqs.sent:
+        # Run after run keeps the task busy, each within its hold.
+        _free(env, task["task_id"], holder)
+        holder = f"{looks:032x}"
+        _busy(env, task["task_id"], holder)
+        clock.now += env.sqs.delays[looks]
+        looks += 1
+        env.deliver()
+    assert env.agentcore.requests == []
+    (run,) = _runs(env, task["task_id"])
+    assert (run["status"], run["reason"]) == ("skipped", "overlap")
+    assert clock.now - start == WAIT_SECONDS
+    assert looks == WAIT_SECONDS // WAIT_POLL_SECONDS
+    assert all(0 < delay <= WAIT_POLL_SECONDS for delay in env.sqs.delays)
+    assert env.events("task.run.skipped")[-1]["reason"] == "overlap"
+
+
+def test_a_previous_run_that_died_does_not_hold_a_wait(env: Env) -> None:
+    """A hold older than any turn belongs to a task of mango-api that died: the wait ends."""
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    env.deliver(_anomaly("a-2"))
+    clock.now += HOLD_SECONDS + 1
+    env.deliver()
+    assert len(env.agentcore.requests) == 1
+    assert _runs(env, task["task_id"])[0]["status"] == "ok"
+
+
+def test_an_event_repeated_while_its_run_waits_makes_no_other_run(env: Env) -> None:
+    """D79 (3) stays: AWS may publish the same anomaly again, and SQS deliver twice."""
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    env.deliver(_anomaly("a-2"))
+    env.deliver(_anomaly("a-2"))  # the same anomaly, published again
+    assert len(env.sqs.sent) == 1
+    # The same wait delivered twice: only one goes on waiting.
+    clock.now += WAIT_POLL_SECONDS
+    wait = env.sqs.sent.pop(0)
+    env.deliver(wait)
+    env.deliver(wait)
+    assert len(env.sqs.sent) == 1
+    # A made-up wait for the run (another wake) resumes nothing.
+    body = json.loads(env.sqs.sent[0])
+    _free(env, task["task_id"])
+    env.deliver(json.dumps({**body, "wake": "0" * 32}))
+    assert env.agentcore.requests == []
+    clock.now += WAIT_POLL_SECONDS
+    env.deliver()
+    env.deliver(_anomaly("a-2"))
+    env.deliver(wait)
+    assert len(env.agentcore.requests) == 1
+    assert len(_runs(env, task["task_id"])) == 1
+    assert env.sqs.sent == []
+
+
+@pytest.mark.parametrize(
+    ("token", "action", "body", "reason"),
+    [
+        ("creator", "pause", None, "task_paused"),
+        ("admin", "pause", None, "paused_by_admin"),
+        ("creator", "retire", {"reason": "fin"}, "task_retired"),
+        ("admin", "retire", {"reason": "fin"}, "task_retired"),
+    ],
+)
+def test_a_task_paused_or_retired_while_its_run_waits_does_not_run_it(
+    env: Env, token: str, action: str, body: Any, reason: str
+) -> None:
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    env.deliver(_anomaly("a-2"))
+    issued = len(env.tokens.issued)
+    assert env.post(token, task["task_id"], action, body).status_code == 200
+    _free(env, task["task_id"])
+    clock.now += WAIT_POLL_SECONDS
+    env.deliver()
+    assert env.agentcore.requests == []
+    assert len(env.tokens.issued) == issued
+    run = env.get("admin", task["task_id"]).json()["runs"][0]
+    assert (run["status"], run["reason"]) == ("skipped", reason)
+    assert env.sqs.sent == []
+
+
+def test_an_owner_who_lost_access_while_their_run_waits(env: Env) -> None:
+    """Every check is made again when the run resumes: a message never carries authority."""
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    env.deliver(_anomaly("a-2"))
+    env.tokens.lost.add("creator-1")
+    _free(env, task["task_id"])
+    clock.now += WAIT_POLL_SECONDS
+    env.deliver()
+    assert env.agentcore.requests == []
+    detail = env.get("creator", task["task_id"]).json()
+    assert (detail["status"], detail["paused_reason"]) == ("paused", "access_lost")
+    assert (detail["runs"][0]["status"], detail["runs"][0]["reason"]) == ("skipped", "access_lost")
+
+
+def test_the_daily_cap_counts_a_waiting_run_when_it_starts(env: Env) -> None:
+    """D79 (3): six anomalies while the task is busy all wait (none is counted yet); five
+    run, and the sixth is skipped with ``daily_cap`` when its turn comes."""
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    for n in range(6):
+        env.deliver(_anomaly(f"a-{n}"))
+    assert [r["status"] for r in _runs(env, task["task_id"])] == ["queued"] * 6
+    _free(env, task["task_id"])
+    clock.now += WAIT_POLL_SECONDS
+    while env.sqs.sent:
+        env.deliver()
+    assert len(env.agentcore.requests) == 5
+    reasons = sorted((r["status"], r["reason"]) for r in _runs(env, task["task_id"]))
+    assert reasons == [("ok", None)] * 5 + [("skipped", "daily_cap")]
+
+
+def test_a_wait_never_goes_to_the_dead_letter_queue(env: Env) -> None:
+    """A normal wait never raises: its message is deleted, so ``TaskRuns-failed`` stays quiet."""
+    _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    assert env.services.task_runs is not None
+    worker = QueueWorker(env.sqs, "https://sqs.example/q", env.services.task_runs)  # type: ignore[arg-type]
+    worker._slots.acquire()  # what the loop does before it hands a message over
+    worker._one({"Body": _anomaly("a-2"), "ReceiptHandle": "receipt-1"})
+    assert env.sqs.deleted == ["receipt-1"]
+    assert len(env.sqs.sent) == 1
+
+
+def test_a_wait_that_could_not_be_queued_is_taken_up_again(env: Env) -> None:
+    """If SQS refuses the wait, the event is delivered again (not deleted) and the run, still
+    queued, waits from there: never a second run, never lost."""
+    clock = _clocked(env)
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    _busy(env, task["task_id"])
+    env.sqs.fail = True
+    with pytest.raises(RuntimeError):
+        env.deliver(_anomaly("a-2"))
+    env.sqs.fail = False
+    assert _runs(env, task["task_id"])[0]["status"] == "queued"
+    env.deliver(_anomaly("a-2"))
+    assert len(env.sqs.sent) == 1
+    _free(env, task["task_id"])
+    clock.now += WAIT_POLL_SECONDS
+    env.deliver()
+    assert len(env.agentcore.requests) == 1
+    assert len(_runs(env, task["task_id"])) == 1
+
+
+def test_scheduled_and_manual_runs_still_skip_an_overlap(env: Env) -> None:
+    """D81 is only for event runs: a schedule or «Ejecutar ahora» never waits."""
+    task = env.created()
+    _busy(env, task["task_id"])
+    env.deliver(_scheduled(task["task_id"]))
+    queued = env.post("creator", task["task_id"], "run").json()
+    env.deliver()
+    assert env.agentcore.requests == []
+    assert env.sqs.sent == [] and env.sqs.delays == []
+    runs = {r["run_id"]: r for r in _runs(env, task["task_id"])}
+    assert (runs[queued["run_id"]]["status"], runs[queued["run_id"]]["reason"]) == (
+        "skipped",
+        "overlap",
+    )
+    assert sorted((r["status"], r["reason"]) for r in runs.values()) == [("skipped", "overlap")] * 2
+    assert env.events("task.run.waiting") == []
