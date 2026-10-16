@@ -1,7 +1,7 @@
 # D82 · Cualquiera con un agente crea tareas; un administrador no ve la instrucción y dice por qué pausa
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «Todos crean (cambia D78 (5))» y «Las dos, en la API, con D82 (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente)
+- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «Que cualquiera con un agente cree tareas» y «Las dos (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D82 (4)»))
 - **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (5), (18) y (19)
 - **Precisada por:** —
 
@@ -22,7 +22,7 @@ Origen: la ronda de Claude Design del 2026-10-16, que respondió al brief de tar
 
 **(3) La instrucción de una tarea solo la ve su dueño (tomada por el dueño el 2026-10-16, por menú; precisa D78 (18)).** Como el resultado, la instrucción es del dueño: la API devuelve `task: null` a quien no es el dueño. Un administrador sigue viendo el nombre, el agente, el dueño, el disparador, el estado y, de cada ejecución, el estado, la duración, el costo, el motivo y la anomalía.
 
-**(4) Lo demás que pide el diseño, sin cambiar reglas (propuesto por un agente).**
+**(4) Lo demás que pide el diseño, sin cambiar reglas (propuesto por un agente; aceptado por el dueño el 2026-10-16, por menú).**
 - **El resultado por pasos.** Una ejecución guarda, además del informe, lo que el agente escribió antes de cada llamada a una tool y el nombre de esa tool (`steps`, como mucho 20 de 2.000 caracteres). El nombre solo se guarda si es de una tool de la versión publicada: lo escribe el modelo (TM-LP1). Solo lo lee el dueño, como el resultado (D78 (18)), con la misma retención (D78 (6)). Las ejecuciones anteriores se muestran enteras, sin pasos.
 - **Las fechas de la anomalía.** Una ejecución por evento guarda las dos fechas de la anomalía que la arrancó, solo si son fechas ISO válidas y en orden; nada más del evento (D79 (4)). Servicio, cuenta e impacto no llegan al motor, así que no se muestran.
 - **Cuándo empezó a esperar** (`waiting_since`, D81): la pantalla dice «Espera a que termine la investigación anterior» y, al correr, «Esperó n min en cola».
