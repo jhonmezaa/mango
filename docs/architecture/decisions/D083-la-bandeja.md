@@ -1,7 +1,7 @@
 # D83 · La Bandeja: avisos de cada persona, guardados en su partición
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «90 días (Recomendada)», «Tabla de conversaciones (Recomendada)» y «Como el diseño y al brief (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente)
+- **Estado:** vigente
+- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «90 días (Recomendada)», «Tabla de conversaciones (Recomendada)» y «Como el diseño y al brief (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D83 (4) (Recomendada)»))
 - **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (el resultado de una ejecución, ahora también con un aviso en la Bandeja de su dueño)
 - **Precisada por:** —
 
@@ -18,7 +18,7 @@ Origen: el diseño (D24, `other-views.jsx` «Inbox» y la sección «Schedules �
 
 **(3) En pantalla angosta, como el diseño (tomada por el dueño el 2026-10-16, por menú: «Como el diseño y al brief (Recomendada)»).** A 900 px o menos el diseño oculta el detalle de la Bandeja: la lista se ve, el detalle no. Se construye así y se lleva al brief siguiente (`docs/design/briefs/sync-2026-10-16b.md`) para que Claude Design lo resuelva.
 
-**(4) Qué trae la Bandeja (propuesto por un agente).**
+**(4) Qué trae la Bandeja (propuesto por un agente; aceptado por el dueño el 2026-10-16, por menú).**
 - **Aprobaciones:** no se copian. En cada lectura salen de la tabla de aprobaciones con la regla de la pantalla de Aprobaciones (D56): nivel `approvers`, pendientes y sin vencer, no pedidas por quien mira, no firmadas ya por quien mira, y solo si tiene `ApproveToolCall`. Al decidirse, firmarse o vencer dejan de aparecer. El detalle muestra la misma tarjeta de decisión que Aprobaciones; firmar sigue pasando por sus rutas. Las que confirma quien las pidió (nivel `self`) no van a la Bandeja: el diseño no las pone.
 - **Ejecuciones:** un aviso por cada ejecución de una tarea que terminó «Completada» o «Fallida», solo para su dueño, escrito por el worker en la partición del dueño (el `owner_id` de la tabla de tareas, nunca un dato del mensaje) y solo si el cambio de estado condicionado se aplicó, así que una entrega repetida no deja dos. Lleva el nombre de la tarea, el agente, si se completó, el código del motivo y la primera línea del informe, sin marcas de Markdown y con 200 caracteres como mucho. Nunca el informe, los pasos ni la instrucción (D78 (18), D82). Las omitidas y las que esperan una aprobación no dejan aviso, como el diseño. «Ver resultado» o «Ver ejecución» abre Schedules en esa ejecución (`/schedules/<tarea>/run/<ejecución>`).
 - **Lo demás del diseño** (menciones, tickets, presupuesto y sistema) no tiene señal en el producto: la pestaña «Menciones» es «Próximamente» y no hay avisos de ejemplo (D24).
