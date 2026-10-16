@@ -693,7 +693,7 @@ export const ToolsSection = memo(function ToolsSection({
                         })}
                       </Badge>
                     ) : null}
-                    {tool.access === 'write' ? (
+                    {tool.access !== 'read' ? (
                       <Badge tone="amber" title={t('agentBuilder.tools.writeTitle')}>
                         {t('agentBuilder.tools.write')}
                       </Badge>

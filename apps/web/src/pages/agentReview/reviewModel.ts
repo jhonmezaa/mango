@@ -244,7 +244,7 @@ export function toolIndex(catalog: Catalog): Map<string, ToolInfo> {
     for (const tool of connector.tools) {
       tools.set(tool.ref, {
         dataTier: connector.data_tier,
-        write: tool.access === 'write',
+        write: tool.access !== 'read',
         enabled: connector.enabled,
       });
     }

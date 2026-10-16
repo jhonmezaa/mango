@@ -808,13 +808,34 @@ def test_stale_version_is_a_conflict(env: Env) -> None:
         },
         # Hosts outside AWS cannot be allowed one by one yet (R6).
         {"egress": {"aws": ["pricing"], "hosts": ["api.example.com"]}},
+        # An unclassified tool counts as a write; a destructive one is never enabled (D84).
+        {
+            "data_tier": "write",
+            "identity_mode": "central_only",
+            "egress": {"aws": ["sts"]},
+            "tools": [{"name": "get_pricing"}],
+        },
+        {
+            "data_tier": "write",
+            "identity_mode": "central_only",
+            "egress": {"aws": ["sts"]},
+            "tools": [
+                {"name": "get_pricing", "access": "read"},
+                {"name": "get_pricing_service_codes", "access": "destructive"},
+            ],
+        },
     ],
 )
 def test_packs_this_installation_cannot_install_are_not_requested(
     env: Env, changes: dict[str, Any]
 ) -> None:
     env.ship(_manifest(**changes))
-    assert _pack(env)["data_tier"] == changes.get("data_tier", "public")
+    pack = _pack(env)
+    assert pack["data_tier"] == changes.get("data_tier", "public")
+    declared = {tool["name"]: tool.get("access", "write") for tool in changes.get("tools", [])}
+    for tool in pack["tools"]:
+        # The catalog lists the class the installation applies (D84).
+        assert tool["access"] == declared.get(tool["name"], "read")
     response = _request(env)
     assert (response.status_code, _code(response)) == (409, "pack_unsupported")
 

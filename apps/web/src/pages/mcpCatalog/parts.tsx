@@ -59,9 +59,13 @@ export function ModeBadge({ server }: { server: Server }) {
   );
 }
 
+/**
+ * Anything but `read` is shown as a write (D84): the API also reports `destructive`, which the
+ * design has no badge for yet and which no agent can be given.
+ */
 export function AccessBadge({ tool }: { tool: Tool }) {
   const { t } = useTranslation();
-  return tool.access === 'write' ? (
+  return tool.access !== 'read' ? (
     <Badge tone="amber" title={t('mcpCatalog.access.writeTitle')}>
       {t('mcpCatalog.access.write')}
     </Badge>

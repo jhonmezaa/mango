@@ -10,8 +10,9 @@ The installation bucket is filled by CloudFormation when the stack is installed 
 * the zip is read at one S3 object version and compared with the signed digest and size; the
   runtime is then created from that same version, so the object cannot change in between.
 
-On top of the signature, the installation applies its own limits to the signed manifest:
-read-only tools, over public data with the pack's own role or over account data as the calling
+On top of the signature, the installation applies its own limits to the signed manifest: no
+``destructive`` tool (D84), only tools classified ``read`` (an unclassified one counts as a
+write), over public data with the pack's own role or over account data as the calling
 user (``central_only``, D37), only IAM actions from the closed list of that mode, and only on
 the pack network of the stack, which reaches nothing but the AWS endpoints the manifest
 declares (R6).
@@ -58,8 +59,12 @@ class VerifiedPack:
 
 def check_manifest(settings: PackSettings, manifest: PackManifest) -> None:
     """Limits of this installation on a signed manifest. They fail closed."""
-    # Write tools need an approval on every call (D27) and `per_user_adapter` is not
-    # validated (S-M1): neither exists yet.
+    if manifest.destructive_tools:
+        # Never enabled, not even with an approval (D84): first, so the failure says why.
+        raise StepError("destructive_tool")
+    # Write tools (and unclassified ones, which count as writes, D84) need an approval on
+    # every call (D27), which only Mango connectors have; `per_user_adapter` is not validated
+    # (S-M1). Both end in `data_tier_unsupported` below.
     if manifest.egress.hosts:
         # The pack network only reaches VPC endpoints: no host outside AWS can be allowed.
         raise StepError("external_egress_unsupported")

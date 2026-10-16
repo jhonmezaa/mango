@@ -68,6 +68,8 @@ def _manifest(**overrides: Any) -> dict[str, Any]:
         {"role_arn": "arn:aws:iam::111111111111:role/Admin"},
         {"tools": []},
         {"tools": [{"name": "t", "description": "", "access": "admin"}]},
+        # A destructive tool is never enabled (D84): a connector cannot declare one.
+        {"tools": [{"name": "t", "description": "", "access": "destructive"}]},
         {
             "tools": [
                 {"name": "t", "description": "", "access": "read"},

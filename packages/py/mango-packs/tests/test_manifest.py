@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from mango_packs.manifest import IdentityChain, PackManifest
+from mango_packs.manifest import IdentityChain, PackManifest, ToolAccess
 
 
 def _invalid(data: dict[str, Any], match: str) -> None:
@@ -226,3 +226,42 @@ def test_a_pack_that_acts_as_the_user_declares_sts(manifest_data: dict[str, Any]
     account_data = {**manifest_data, "data_tier": "account_data", "identity_mode": "central_only"}
     _invalid({**account_data, "egress": {"aws": ["ce"]}}, "'sts' in egress.aws")
     PackManifest.model_validate({**account_data, "egress": {"aws": ["ce", "sts"]}})
+
+
+_WRITE_TIER = {"data_tier": "write", "identity_mode": "central_only", "egress": {"aws": ["sts"]}}
+
+
+def test_tool_classes_are_a_closed_list(manifest_data: dict[str, Any]) -> None:
+    manifest_data["tools"] = [{"name": "get_pricing", "access": "mutating"}]
+    _invalid({**manifest_data, **_WRITE_TIER}, "access")
+
+
+def test_an_unclassified_tool_counts_as_a_write(manifest_data: dict[str, Any]) -> None:
+    """D84: a tool without a class needs an approval like a write, so it is not installable."""
+    manifest_data["tools"].append({"name": "put_thing"})
+    _invalid(manifest_data, "write tools")
+    manifest = PackManifest.model_validate({**manifest_data, **_WRITE_TIER})
+    tool = next(t for t in manifest.tools if t.name == "put_thing")
+    assert tool.access is None
+    assert tool.effective_access is ToolAccess.WRITE
+    assert manifest.read_tools == {"get_pricing"}
+    assert manifest.installable is False
+
+
+def test_a_destructive_tool_is_never_installable(manifest_data: dict[str, Any]) -> None:
+    manifest_data["tools"].append({"name": "delete_thing", "access": "destructive"})
+    _invalid(manifest_data, "write tools")
+    manifest = PackManifest.model_validate({**manifest_data, **_WRITE_TIER})
+    assert manifest.destructive_tools == {"delete_thing"}
+    assert manifest.installable is False
+
+
+def test_classified_tools_keep_their_signed_bytes(manifest_data: dict[str, Any]) -> None:
+    """A manifest signed before D84 serializes exactly as it did: ``access`` of each tool."""
+    manifest = PackManifest.model_validate(manifest_data)
+    assert manifest.model_dump(mode="json")["tools"] == [{"name": "get_pricing", "access": "read"}]
+    unclassified = PackManifest.model_validate(
+        {**manifest_data, **_WRITE_TIER, "tools": [{"name": "put_thing"}]}
+    )
+    assert unclassified.model_dump(mode="json")["tools"] == [{"name": "put_thing"}]
+    assert PackManifest.model_validate(unclassified.model_dump(mode="json")) == unclassified

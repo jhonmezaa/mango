@@ -104,8 +104,16 @@ class AwsEndpoint(StrEnum):
 
 
 class ToolAccess(StrEnum):
+    """What a tool does, as the signed manifest classifies it (D84).
+
+    A tool without a class counts as ``write`` (it needs an approval on every call, D56). A
+    ``destructive`` tool is never enabled, not even with an approval: no installation serves a
+    pack that has one.
+    """
+
     READ = "read"
     WRITE = "write"
+    DESTRUCTIVE = "destructive"
 
 
 class StrictModel(BaseModel):
@@ -157,7 +165,21 @@ class PackIdentity(StrictModel):
 
 class PackTool(StrictModel):
     name: ToolName
-    access: ToolAccess
+    # Left out of the serialized manifest when absent, so a classified tool keeps the exact
+    # bytes it was signed with before ``destructive`` existed.
+    access: ToolAccess | None = None
+
+    @model_serializer(mode="wrap")
+    def _canonical(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.access is None:
+            data.pop("access", None)
+        return data
+
+    @property
+    def effective_access(self) -> ToolAccess:
+        """The class the installation applies: an unclassified tool is a write (D84)."""
+        return self.access if self.access is not None else ToolAccess.WRITE
 
 
 class ConfigParam(StrictModel):
@@ -235,9 +257,13 @@ class PackManifest(StrictModel):
             raise ValueError(
                 "identity_mode 'service' goes with data_tier 'public', and only with it"
             )
-        has_write = any(tool.access is ToolAccess.WRITE for tool in self.tools)
+        # Unclassified and destructive tools change resources too (D84).
+        has_write = any(tool.effective_access is not ToolAccess.READ for tool in self.tools)
         if has_write != (self.data_tier is DataTier.WRITE):
-            raise ValueError("write tools go with data_tier 'write', and only with it")
+            raise ValueError(
+                "write tools (and destructive or unclassified ones) go with data_tier 'write', "
+                "and only with it"
+            )
         if self.member_chain and self.identity_mode is not IdentityMode.CENTRAL_ONLY:
             # The member chain exists only for calls made as a verified central user.
             raise ValueError("identity.chain 'member' goes with identity_mode 'central_only'")
@@ -261,18 +287,33 @@ class PackManifest(StrictModel):
         return frozenset(tool.name for tool in self.tools)
 
     @property
+    def read_tools(self) -> frozenset[str]:
+        """Tools the manifest classifies ``read``: the only ones a pack serves (D84)."""
+        return frozenset(
+            tool.name for tool in self.tools if tool.effective_access is ToolAccess.READ
+        )
+
+    @property
+    def destructive_tools(self) -> frozenset[str]:
+        """Tools classified ``destructive``: never enabled, not even with an approval (D84)."""
+        return frozenset(tool.name for tool in self.tools if tool.access is ToolAccess.DESTRUCTIVE)
+
+    @property
     def installable(self) -> bool:
         """What an installation enables today, whatever the signature says.
 
         Read-only tools, over public data with the pack's own role or over account data in
-        ``central_only`` mode (D37). Write tools need an approval on every call (D27) and
-        ``per_user_adapter`` is not validated (S-M1): neither exists yet. Hosts outside AWS
-        cannot be allowed one by one yet (R6): the pack network only reaches VPC endpoints.
-        mango-api and the provisioner both ask here, so they refuse the same packs.
+        ``central_only`` mode (D37). Write tools (and unclassified ones, which count as writes)
+        need an approval on every call (D27, D56), which only Mango connectors have; a
+        ``destructive`` tool is never enabled (D84). ``per_user_adapter`` is not validated
+        (S-M1). Hosts outside AWS cannot be allowed one by one yet (R6): the pack network only
+        reaches VPC endpoints. mango-api and the provisioner both ask here, so they refuse the
+        same packs.
         """
         return (
             self.identity_mode in {IdentityMode.SERVICE, IdentityMode.CENTRAL_ONLY}
-            and all(tool.access is ToolAccess.READ for tool in self.tools)
+            and self.read_tools == self.tool_names
+            and not self.destructive_tools
             and not self.egress.hosts
         )
 

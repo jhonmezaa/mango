@@ -417,6 +417,13 @@ def test_manifest_with_an_action_outside_the_boundary_is_not_installed(packlab: 
             "egress": {"aws": ["sts"]},
             "tools": [{"name": "get_pricing", "access": "write"}],
         },
+        # An unclassified tool counts as a write (D84).
+        {
+            "data_tier": "write",
+            "identity_mode": "central_only",
+            "egress": {"aws": ["sts"]},
+            "tools": [{"name": "get_pricing"}],
+        },
     ],
 )
 def test_only_read_packs_with_a_known_identity_mode_are_installed(
@@ -425,6 +432,26 @@ def test_only_read_packs_with_a_known_identity_mode_are_installed(
     lab = packlab
     lab.release(lab.signer.statement(manifest_data(**changes)))
     _refused(lab, lab.approve(), "data_tier_unsupported")
+
+
+@pytest.mark.parametrize("identity_mode", ["central_only", "per_user_adapter"])
+def test_a_pack_with_a_destructive_tool_is_never_installed(
+    packlab: PackLab, identity_mode: str
+) -> None:
+    """D84: not even with an approval, and before any other limit is looked at."""
+    lab = packlab
+    destructive = manifest_data(
+        data_tier="write",
+        identity_mode=identity_mode,
+        egress={"aws": ["sts"], "hosts": ["api.example.com"]},
+        tools=[
+            {"name": "get_pricing", "access": "read"},
+            {"name": "delete_everything", "access": "destructive"},
+        ],
+    )
+    lab.release(lab.signer.statement(destructive))
+    _refused(lab, lab.approve(), "destructive_tool")
+    assert "CreateAgentRuntime" not in lab.agentcore.calls
 
 
 def test_a_pack_cannot_take_the_target_of_a_connector(packlab: PackLab) -> None:

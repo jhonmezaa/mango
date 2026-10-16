@@ -114,7 +114,7 @@ export function toolIndex(catalog: readonly Connector[]): Map<string, ToolInfo> 
         ref: tool.ref,
         connector,
         enabled: connector.enabled && tool.enabled,
-        write: tool.access === 'write',
+        write: tool.access !== 'read',
         centralOnly: tool.central_groups_only,
       });
     }

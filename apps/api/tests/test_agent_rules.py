@@ -16,7 +16,7 @@ from mango_api.agent_rules import (
     find_secrets,
     validate_for_review,
 )
-from mango_api.mcp_catalog import ConnectorManifest, McpCatalog
+from mango_api.mcp_catalog import ConnectorManifest, McpCatalog, McpServer
 from mango_api.model_catalog import ModelCatalog, ModelEntry
 from mango_core.agents import ROOT_SUPERVISOR, AgentDefinition
 from mango_core.groups import GroupDef
@@ -262,6 +262,31 @@ def test_write_tools_must_be_marked_for_approval() -> None:
     # In a `write` connector every tool needs approval, whatever its own access says.
     assert violations == [Violation("write_tool_without_approval", "approval_tools", tuple(tools))]
     assert _codes(_definition(tools=tools, approval_tools=tools)) == []
+
+
+def test_a_destructive_tool_is_never_enabled() -> None:
+    """D84: not even marked for approval. Only a pack can list one, and none is installed."""
+    pack = McpServer.model_validate(
+        {
+            "id": "ec2-pack",
+            "kind": "pack",
+            "name": "EC2",
+            "description": "",
+            "provider": "test",
+            "data_tier": "write",
+            "identity_mode": "central_only",
+            "gateway_target": "ec2-pack",
+            "tools": [{"name": "terminate", "description": "", "access": "destructive"}],
+        }
+    )
+    catalog = McpCatalog(McpCatalog.load(CONNECTORS).connectors)
+    catalog._add_tools(pack, enabled=frozenset({"terminate"}))
+    tool = catalog.tool("ec2-pack.terminate")
+    assert tool is not None and tool.is_destructive and tool.is_write and not tool.enabled
+    ctx = RuleContext(catalog=catalog, models=_ctx().models, groups=GROUPS, org=Org())
+    refs = ["ec2-pack.terminate"]
+    violations = validate_for_review(SELF, _definition(tools=refs, approval_tools=refs), ctx)
+    assert Violation("tool_not_enabled", "tools", tuple(refs)) in violations
 
 
 def test_approval_tools_must_be_selected_tools() -> None:

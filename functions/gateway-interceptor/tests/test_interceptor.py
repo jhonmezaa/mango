@@ -19,6 +19,7 @@ from mango_gateway_interceptor.handler import (
     _approvals,
     _context_targets,
     _pack_identities,
+    _pack_tools,
     handle,
 )
 from mango_pack_runtime.identity import IdentityError, IdentityVerifier
@@ -26,6 +27,15 @@ from mango_pack_runtime.identity import IdentityError, IdentityVerifier
 KEY = b"k" * 32
 TARGETS = frozenset({"finops"})
 TOOL = "finops___get_cost_and_usage"
+# The read tools of the release's packs (D84, `PACK_TOOLS`). The last three are packs whose id
+# only looks like a connector's target.
+PACK_TOOLS = {
+    "aws-pricing": frozenset({"get_pricing"}),
+    "aws-billing": frozenset({"cost_explorer"}),
+    "finops-evil": frozenset({"get_cost_and_usage"}),
+    "finops-": frozenset({"get_cost_and_usage"}),
+    "FINOPS": frozenset({"get_cost_and_usage"}),
+}
 
 
 def _token(sub: str = "user-1", **claims: str) -> str:
@@ -202,7 +212,7 @@ def test_rejections_log_the_reason_and_nothing_else(caplog: pytest.LogCaptureFix
 def test_pack_tools_never_get_the_caller_token(tool: str) -> None:
     supplied = {"service_code": "AmazonEC2", "_mango_ctx": {"token": "forged"}}
     event = _event("tools/call", supplied, _headers(tools=(tool,)), name=tool)
-    result = handle(event, KEY, TARGETS)
+    result = handle(event, KEY, TARGETS, pack_tools=PACK_TOOLS)
     assert _args(result) == {"service_code": "AmazonEC2"}
     assert _token() not in json.dumps(result)
 
@@ -214,6 +224,52 @@ def test_pack_calls_still_need_a_signed_invocation_that_names_the_tool() -> None
     assert _denied(handle(_event("tools/call", {}, headers, name=tool), KEY, TARGETS))
     # Signed for an agent version that does not have the pack tool.
     assert _denied(handle(_event("tools/call", {}, _headers(), name=tool), KEY, TARGETS))
+
+
+@pytest.mark.parametrize(
+    ("tool", "pack_tools"),
+    [
+        # Classified `write`, `destructive` or unclassified: not in the read list (D84).
+        ("aws-pricing___delete_price_list", PACK_TOOLS),
+        # A target the release does not ship.
+        ("handmade___get_pricing", PACK_TOOLS),
+        # A pack tool with no read list configured at all.
+        ("aws-pricing___get_pricing", None),
+        ("aws-pricing___get_pricing", {}),
+    ],
+)
+def test_only_read_tools_of_the_release_packs_go_through(
+    tool: str, pack_tools: dict[str, frozenset[str]] | None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Even when the signed agent version names the tool and Cedar would allow it (D84)."""
+    caplog.set_level(logging.INFO)
+    event = _event("tools/call", {}, _headers(tools=(tool,)), name=tool)
+    result = handle(event, KEY, TARGETS, PACKS, pack_tools=pack_tools)
+    response = result["mcp"]["transformedGatewayResponse"]
+    assert response["statusCode"] == 403
+    assert response["body"]["error"] == {"code": -32003, "message": "tool not allowed"}
+    assert [json.loads(r.getMessage())["reason"] for r in caplog.records] == ["tool_not_read_only"]
+
+
+def test_connector_tools_need_no_pack_classification() -> None:
+    assert not _denied(handle(_event("tools/call", {}, _headers()), KEY, TARGETS, pack_tools={}))
+
+
+def test_pack_tools_come_from_the_stack(monkeypatch: pytest.MonkeyPatch) -> None:
+    _pack_tools.cache_clear()
+    monkeypatch.setenv("PACK_TOOLS", '{"aws-pricing": ["get_pricing"]}')
+    assert _pack_tools() == {"aws-pricing": frozenset({"get_pricing"})}
+    # Fail closed on a missing or malformed map: the function errors, the Gateway denies.
+    for malformed in ('["aws-pricing"]', '{"aws-pricing": "get_pricing"}', '{"a": [1]}'):
+        _pack_tools.cache_clear()
+        monkeypatch.setenv("PACK_TOOLS", malformed)
+        with pytest.raises(ValueError, match="PACK_TOOLS"):
+            _pack_tools()
+    _pack_tools.cache_clear()
+    monkeypatch.delenv("PACK_TOOLS")
+    with pytest.raises(KeyError):
+        _pack_tools()
+    _pack_tools.cache_clear()
 
 
 def test_context_targets_come_from_the_stack(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -259,7 +315,7 @@ def _pack_event(central: str | None, arguments: dict[str, Any] | None = None) ->
 
 def test_account_data_pack_gets_a_signed_caller_and_never_the_token() -> None:
     supplied = {"service": "AmazonEC2", "_mango_ctx": {"identity": "forged", "token": "forged"}}
-    result = handle(_pack_event("true", supplied), KEY, TARGETS, PACKS)
+    result = handle(_pack_event("true", supplied), KEY, TARGETS, PACKS, pack_tools=PACK_TOOLS)
     args = _args(result)
     assert set(args) == {"service", "_mango_ctx"}
     assert set(args["_mango_ctx"]) == {"identity"}
@@ -291,7 +347,7 @@ def test_account_data_pack_fails_closed_when_the_caller_cannot_be_signed(
         raise ClientError({"Error": {"Code": "KMSInvalidStateException"}}, "Sign")
 
     packs = PackIdentities(targets=frozenset({PACK}), sign=broken)
-    result = handle(_pack_event("true"), KEY, TARGETS, packs)
+    result = handle(_pack_event("true"), KEY, TARGETS, packs, pack_tools=PACK_TOOLS)
     assert result["mcp"]["transformedGatewayResponse"]["statusCode"] == 503
     assert "transformedGatewayRequest" not in result["mcp"]
     assert _token(mango_central="true") not in caplog.text
@@ -302,7 +358,7 @@ def test_other_packs_get_nothing_even_for_central_users() -> None:
     headers = _headers(tools=(tool,))
     headers["Authorization"] = f"Bearer {_token(mango_central='true')}"
     event = _event("tools/call", {"_mango_ctx": {"identity": "forged"}}, headers, name=tool)
-    assert _args(handle(event, KEY, TARGETS, PACKS)) == {}
+    assert _args(handle(event, KEY, TARGETS, PACKS, pack_tools=PACK_TOOLS)) == {}
 
 
 def test_identity_targets_come_from_the_stack(monkeypatch: pytest.MonkeyPatch) -> None:

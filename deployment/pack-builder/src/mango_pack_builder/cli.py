@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -40,7 +41,15 @@ def _check(args: argparse.Namespace) -> None:
         raise PackError(error)
     if not pack.snapshot.is_file():
         raise PackError(f"{pack.snapshot.name} not found; run the 'snapshot --update' command")
-    print(f"{pack.manifest.id} {pack.manifest.version}: manifest, lock and entry point are valid")
+    # Offline, before anything is built: the reviewed snapshot is the one the manifest pins,
+    # and no tool is classified as less than the server annotates it (D84). `snapshot`
+    # repeats it on what the built zip lists.
+    check_tools(pack.manifest, json.loads(pack.snapshot.read_bytes()))
+    classes = sorted({tool.effective_access.value for tool in pack.manifest.tools})
+    print(
+        f"{pack.manifest.id} {pack.manifest.version}: manifest, lock and entry point are valid; "
+        f"tool classes {classes}"
+    )
 
 
 def _lock(args: argparse.Namespace) -> None:

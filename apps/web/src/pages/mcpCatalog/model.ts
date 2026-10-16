@@ -130,7 +130,7 @@ export function filterServers(servers: readonly Server[], filters: Filters): Ser
 }
 
 export function writeTools(server: Server): number {
-  return server.tools.filter((tool) => tool.access === 'write').length;
+  return server.tools.filter((tool) => tool.access !== 'read').length;
 }
 
 export interface ToolRow {
@@ -154,7 +154,7 @@ export interface ToolFilters {
 export function filterTools(rows: readonly ToolRow[], filters: ToolFilters): ToolRow[] {
   const needle = filters.query.trim().toLowerCase();
   return rows.filter(({ server, tool }) => {
-    if (filters.kind !== 'all' && (tool.access === 'write') !== (filters.kind === 'write')) {
+    if (filters.kind !== 'all' && (tool.access !== 'read') !== (filters.kind === 'write')) {
       return false;
     }
     if (filters.onlyEnabled && !tool.enabled) return false;
@@ -222,7 +222,7 @@ export function newPermissions(server: Server, servers: readonly Server[]): stri
 
 /** Tool of an update by name: the API lists names, the access comes from the release's tools. */
 export function isWriteTool(server: Server, name: string): boolean {
-  return server.tools.some((tool) => tool.name === name && tool.access === 'write');
+  return server.tools.some((tool) => tool.name === name && tool.access !== 'read');
 }
 
 export const REASON_MAX_LENGTH = 500;

@@ -84,3 +84,51 @@ def test_a_pack_over_account_data_cannot_list_a_closed_schema(
     with pytest.raises(PackToolsError, match=r"\['get_pricing'\] forbids additional properties"):
         check_tools(_manifest(account_data, [closed]), [closed])
     check_tools(_manifest(account_data, [TOOL]), [TOOL])
+
+
+def _classified(
+    data: dict[str, Any], tools: list[dict[str, Any]], access: dict[str, str | None]
+) -> PackManifest:
+    declared = [
+        {"name": tool["name"], **({"access": a} if (a := access[tool["name"]]) else {})}
+        for tool in tools
+    ]
+    pinned = tools_hash(normalize_tools(tools))
+    write = {"data_tier": "write", "identity_mode": "central_only", "egress": {"aws": ["sts"]}}
+    tier = write if any(a != "read" for a in access.values()) else {}
+    return PackManifest.model_validate({**data, **tier, "tools": declared, "tools_hash": pinned})
+
+
+@pytest.mark.parametrize(
+    ("annotations", "access", "fails"),
+    [
+        ({"readOnlyHint": True}, "read", False),
+        ({"readOnlyHint": True, "destructiveHint": True}, "read", False),
+        (None, "read", False),
+        ({"readOnlyHint": False}, "read", True),
+        ({"readOnlyHint": False}, "write", False),
+        ({"readOnlyHint": False}, None, False),
+        ({"destructiveHint": True}, "read", True),
+        ({"readOnlyHint": False, "destructiveHint": True}, "write", True),
+        ({"readOnlyHint": False, "destructiveHint": True}, None, True),
+        ({"readOnlyHint": False, "destructiveHint": True}, "destructive", False),
+        ({"readOnlyHint": False, "destructiveHint": False}, "write", False),
+        ({"readOnlyHint": "false"}, "read", False),
+    ],
+)
+def test_the_manifest_classifies_at_least_what_the_server_annotates(
+    manifest_data: dict[str, Any],
+    annotations: dict[str, Any] | None,
+    access: str | None,
+    fails: bool,
+) -> None:
+    """D84: a server's hints can make the build stricter, never turn a tool into a read."""
+    tool = {k: v for k, v in TOOL.items() if k != "annotations"}
+    if annotations is not None:
+        tool["annotations"] = annotations
+    manifest = _classified(manifest_data, [tool], {"get_pricing": access})
+    if fails:
+        with pytest.raises(PackToolsError, match="more than the manifest classifies"):
+            check_tools(manifest, [tool])
+    else:
+        check_tools(manifest, [tool])

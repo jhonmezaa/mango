@@ -11,7 +11,10 @@ Gateway target of a pack is its id, so its tools are exposed as ``<pack id>___<t
 
 A manifest declares, per tool, what agent rules need (``mango_api.agent_rules``):
 
-* ``access``: ``read`` or ``write`` (write tools always need approval on each call);
+* ``access``: ``read``, ``write`` or ``destructive`` (D84). Write tools always need approval
+  on each call; a ``destructive`` tool is never given to an agent, not even with approval. A
+  pack tool its signed manifest leaves unclassified is listed as ``write``. A connector
+  declares no ``destructive`` tool: the catalog refuses the release if one does;
 * ``audience``: ``central`` for tools that answer for the whole organization. The Gateway
   (Cedar L2) and the connector enforce it on every call, whatever the agent says.
 
@@ -35,10 +38,10 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from botocore.exceptions import BotoCoreError, ClientError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from mango_api.mcp_store import Enablement, Installed, PackRecordError, PackStore
 from mango_api.pack_release import (
@@ -108,7 +111,7 @@ class ManifestApproval(_Frozen):
 class ManifestTool(_Frozen):
     name: Annotated[str, _TOOL_NAME]
     description: Annotated[str, Field(max_length=300)]
-    access: Literal["read", "write"]
+    access: Literal["read", "write", "destructive"]
     audience: Literal["all", "central"] = "all"
     approval: ManifestApproval | None = None
 
@@ -144,6 +147,13 @@ class ConnectorManifest(McpServer):
     provider: Annotated[str, Field(min_length=1, max_length=60)]
     tools: Annotated[tuple[ManifestTool, ...], Field(min_length=1, max_length=100)]
 
+    @model_validator(mode="after")
+    def _never_destructive(self) -> Self:
+        # A destructive tool is never enabled (D84): the release must not ship one.
+        if any(tool.access == "destructive" for tool in self.tools):
+            raise ValueError("a connector declares no destructive tool (D84)")
+        return self
+
 
 class InvalidCatalogError(Exception):
     """The release catalog is missing or malformed; callers fail closed."""
@@ -161,7 +171,13 @@ class CatalogTool:
 
     @property
     def is_write(self) -> bool:
-        return self.tool.access == "write" or self.server.data_tier is DataTier.WRITE
+        """It changes resources: a write, or a destructive tool (D84)."""
+        return self.tool.access != "read" or self.server.data_tier is DataTier.WRITE
+
+    @property
+    def is_destructive(self) -> bool:
+        """Never given to an agent, not even with approval (D84)."""
+        return self.tool.access == "destructive"
 
     @property
     def filters_by_user(self) -> bool:
@@ -213,7 +229,8 @@ class PackState:
         """The pack in the shape of the catalog: the tools of the release's version, plus
         the ones only the installed (older) version serves."""
         manifest = self.release.manifest
-        declared = {tool.name: tool.access.value for tool in manifest.tools}
+        # An unclassified tool is listed as the write it counts as (D84).
+        declared = {tool.name: tool.effective_access.value for tool in manifest.tools}
         for name in sorted(self.usable_tools - declared.keys()):
             # The provisioner only installs packs whose tools are all read-only.
             declared[name] = "read"
@@ -286,9 +303,10 @@ class McpCatalog:
             raise InvalidCatalogError("duplicate tool name")
         for tool in server.tools:
             ref = f"{server.id}.{tool.name}"
-            self._tools[ref] = CatalogTool(
-                ref=ref, server=server, tool=tool, enabled=enabled is None or tool.name in enabled
-            )
+            # A destructive tool is never enabled, not even with approval (D84): no agent can
+            # be given it (`tool_not_enabled`).
+            usable = (enabled is None or tool.name in enabled) and tool.access != "destructive"
+            self._tools[ref] = CatalogTool(ref=ref, server=server, tool=tool, enabled=usable)
 
     @property
     def connectors(self) -> tuple[ConnectorManifest, ...]:

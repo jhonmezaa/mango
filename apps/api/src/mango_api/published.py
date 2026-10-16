@@ -225,8 +225,10 @@ class PublishedAgents:
                 raise AgentUnavailableError("agent unavailable")
             target = tool.server.gateway_target
             name = gateway_tool_name(target, tool.tool.name)
-            if tool.is_write != (ref in approval) or (
-                tool.is_write and tool.server.kind != "connector"
+            if (
+                tool.is_destructive
+                or tool.is_write != (ref in approval)
+                or (tool.is_write and tool.server.kind != "connector")
             ):
                 logger.error("published agent uses a tool whose approval is not enforced")
                 raise AgentUnavailableError("agent unavailable")

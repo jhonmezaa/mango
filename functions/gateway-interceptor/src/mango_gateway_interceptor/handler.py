@@ -22,6 +22,11 @@ they name the agent version in use and its tools, so a ``tools/call`` for any ot
 rejected, whatever Cedar (L2) would allow that user: the Gateway itself only sees the user,
 not the agent.
 
+A tool of an MCP pack goes through only if the release's signed manifest classifies it
+``read`` (D84, ``PACK_TOOLS``): a write, destructive or unclassified tool of a pack, or a tool
+of a target the release does not know, is refused here whatever the agent version names. The
+provisioner never installs such a pack; this is the same rule at the last hop.
+
 No write tool runs without a person confirming it (D27, TM-W1). For the write tools of the
 release (``APPROVAL_TOOLS``, a closed list) the request must also carry ``X-Mango-Approval``:
 a token mango-api signed with a KMS key only it can use, bound to this user, this tool and
@@ -38,7 +43,7 @@ import json
 import logging
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from typing import Any
@@ -59,6 +64,7 @@ _TARGET_SEPARATOR = "___"
 _CONTEXT_TARGETS_ENV = "CONTEXT_TARGETS"
 _IDENTITY_TARGETS_ENV = "IDENTITY_TARGETS"
 _IDENTITY_KEY_ENV = "PACK_IDENTITY_KEY_ARN"
+_PACK_TOOLS_ENV = "PACK_TOOLS"
 _APPROVAL_TOOLS_ENV = "APPROVAL_TOOLS"
 _APPROVAL_KEY_ENV = "APPROVAL_KEY_ARN"
 _APPROVALS_TABLE_ENV = "APPROVALS_TABLE"
@@ -150,6 +156,17 @@ def _context_targets() -> frozenset[str]:
     if not isinstance(targets, list) or not all(isinstance(t, str) and t for t in targets):
         raise ValueError(f"{_CONTEXT_TARGETS_ENV} must be a list of target names")
     return frozenset(targets)
+
+
+@cache
+def _pack_tools() -> dict[str, frozenset[str]]:
+    """Pack id -> the tools its signed manifest classifies ``read`` (stack configuration)."""
+    raw = json.loads(os.environ[_PACK_TOOLS_ENV])
+    if not isinstance(raw, dict) or not all(
+        isinstance(tools, list) and all(isinstance(t, str) for t in tools) for tools in raw.values()
+    ):
+        raise ValueError(f"{_PACK_TOOLS_ENV} must map pack ids to lists of tool names")
+    return {str(pack): frozenset(tools) for pack, tools in raw.items()}
 
 
 @cache
@@ -276,6 +293,21 @@ def _signed_tool(name: object, signed: invocation.Invocation) -> str:
     return name
 
 
+def _classified(
+    name: str, context_targets: frozenset[str], pack_tools: Mapping[str, frozenset[str]]
+) -> None:
+    """A Mango connector's tool, or a pack tool its signed manifest classifies ``read`` (D84).
+
+    Deny by default: an unknown target, a pack the release does not ship, or any other class
+    of tool (write, destructive or unclassified, which counts as a write) is refused.
+    """
+    target, tool = _target_of(name)
+    if target in context_targets:
+        return
+    if tool not in pack_tools.get(target, frozenset()):
+        raise _RefusedError(403, _FORBIDDEN, "tool not allowed", "tool_not_read_only")
+
+
 def _context(
     name: str,
     token: str,
@@ -353,7 +385,14 @@ def _deny(request_id: Any, reason: str) -> dict[str, Any]:
 
 
 def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    return handle(event, _invocation_key(), _context_targets(), _pack_identities(), _approvals())
+    return handle(
+        event,
+        _invocation_key(),
+        _context_targets(),
+        _pack_identities(),
+        _approvals(),
+        pack_tools=_pack_tools(),
+    )
 
 
 def handle(
@@ -362,7 +401,11 @@ def handle(
     context_targets: frozenset[str],
     packs: PackIdentities | None = None,
     approvals: Approvals | None = None,
+    *,
+    pack_tools: Mapping[str, frozenset[str]] | None = None,
 ) -> dict[str, Any]:
+    """``pack_tools``: the read tools of each pack of the release; without it no pack tool
+    goes through."""
     request = (event.get("mcp") or {}).get("gatewayRequest") or {}
     body = request.get("body")
     if not isinstance(body, dict):
@@ -387,6 +430,7 @@ def handle(
     arguments = {k: v for k, v in supplied.items() if k != RESERVED_CONTEXT_ARG}
     try:
         name = _signed_tool(params.get("name"), signed)
+        _classified(name, context_targets, pack_tools or {})
         context = _context(name, token, signed, context_targets, packs)
         # Last: the approval is spent only on a call that would otherwise go through.
         approval_token = _approved(name, arguments, headers, signed, approvals)

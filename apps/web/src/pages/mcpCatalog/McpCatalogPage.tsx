@@ -143,7 +143,7 @@ function ToolsTable({ rows, onOpen }: { rows: readonly ToolRow[]; onOpen: (id: s
   const { t } = useTranslation();
   const [filters, setFilters] = useState<ToolFilters>(NO_TOOL_FILTERS);
   const list = filterTools(rows, filters);
-  const writeEnabled = rows.filter(({ tool }) => tool.access === 'write' && tool.enabled).length;
+  const writeEnabled = rows.filter(({ tool }) => tool.access !== 'read' && tool.enabled).length;
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-2">

@@ -1,10 +1,13 @@
 import json
+import re
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 import yaml
 
+from mango_pack_builder.cli import main
 from mango_pack_builder.pack import (
     PackError,
     check_pack,
@@ -12,7 +15,10 @@ from mango_pack_builder.pack import (
     parse_constraints,
     parse_lock,
 )
+from mango_pack_builder.snapshot import snapshot_json
 from mango_pack_runtime.guard import session_policy
+from mango_packs.manifest import ToolAccess
+from mango_packs.tools import tools_hash
 
 from .conftest import LOCK, WHEEL_SHA256
 
@@ -96,6 +102,27 @@ def test_packs_of_the_release_are_valid(directory: Path) -> None:
     check_pack(pack)
     assert pack.snapshot.is_file()
     assert pack.manifest.quarantine_error(datetime.now(UTC)) is None
+    # D84: every tool of the release is classified, and only as `read` (no pack serves more).
+    assert all(tool.access is ToolAccess.READ for tool in pack.manifest.tools)
+    assert pack.manifest.installable
+    assert main(["check", str(directory.parent)]) == 0
+
+
+def test_check_refuses_a_tool_classified_below_its_annotations(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """D84: the offline `check` step compares the classes with the reviewed snapshot."""
+    pack_dir = tmp_path / "aws-pricing"
+    shutil.copytree(REPO / "packs" / "aws-pricing", pack_dir)
+    snapshot = json.loads((pack_dir / "tools.snapshot.json").read_text())
+    snapshot[0]["annotations"] = {"readOnlyHint": False, "destructiveHint": True}
+    (pack_dir / "tools.snapshot.json").write_bytes(snapshot_json(snapshot))
+    manifest = (pack_dir / "manifest.yaml").read_text()
+    pinned = tools_hash(snapshot)
+    manifest = re.sub(r'tools_hash: "sha256:[0-9a-f]{64}"', f'tools_hash: "{pinned}"', manifest)
+    (pack_dir / "manifest.yaml").write_text(manifest)
+    assert main(["check", str(pack_dir)]) == 1
+    assert "more than the manifest classifies" in capsys.readouterr().err
 
 
 def test_pricing_pack_keeps_file_system_tools_out() -> None:
