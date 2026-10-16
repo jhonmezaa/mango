@@ -81,6 +81,7 @@ function Connectivity({ state, retry, sim }) {
         )}
       </div>
       {window.MangoStore.get().avail && run?.status === 'done' && !running && <MemberAccounts sim={sim} />}
+      <DailyCheck sim={sim} />
     </section>
   );
 }
@@ -126,6 +127,47 @@ function MemberAccounts({ sim }) {
       </div>
     </div>
   );
+}
+
+// Comprobación diaria (06:30 UTC) con la identidad de sistema mango-health: solo comprueba la entrada a cada cuenta, no lee datos.
+const DAILY_REASON = { broker: 'El rol intermedio de Mango rechazó la entrada.', role: 'El rol de lectura no existe en esta cuenta o no acepta a Mango.', session: 'La sesión no quedó en esta cuenta.', aws: 'AWS no respondió; se vuelve a comprobar mañana.', round: 'No se alcanzó a comprobar en esta ronda.' };
+const DAILY_ST = { valid: ['válida', 'válidas', 'badge-green', 'green', 'Check'], invalid: ['inválida', 'inválidas', 'badge-red', 'red', 'X2'], pending: ['pendiente', 'pendientes', 'badge-amber', 'amber', 'Clock'] };
+function DailyCheck({ sim }) {
+  const Ic = window.Icons;
+  const d = window.useMango(s => s.simDaily) || null;
+  if (sim === 'member-none') return null;
+  const at = (() => { const n = new Date(); const t = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate(), 6, 30); return new Date(t > Date.now() ? t - 864e5 : t); })();
+  const head = <div className="g-sec-h" style={{ marginBottom: 8 }}><div><div className="g-sec-t" style={{ fontSize: 13.5 }}>Comprobación diaria de las cuentas miembro</div><div className="g-sec-meta">Cada día a las 06:30 UTC, Mango comprueba que puede entrar a cada cuenta miembro con su identidad de sistema, <span className="mono">mango-health</span>. Solo comprueba la entrada, no lee datos, y cada entrada queda en el CloudTrail de la cuenta. Si una cuenta deja de ser válida, avisa por el topic de alertas.</div></div></div>;
+  let body;
+  if (d === 'loading') body = <div className="g-card"><div className="g-conn-h" role="status" style={{ borderBottom: 'none' }}><K.Spinner /><span>Leyendo la última comprobación diaria…</span></div></div>;
+  else if (d === 'error') body = <K.Banner tone="error" title="No se pudo leer la comprobación diaria">Vuelve a cargar la página en unos segundos. La prueba de arriba sigue disponible.</K.Banner>;
+  else if (d === 'never') body = <div className="g-card"><K.Empty icon="Clock" title="La comprobación diaria aún no ha corrido">Corre una vez al día. Mientras tanto, puedes probar las cuentas con el botón de arriba.</K.Empty></div>;
+  else {
+    const bad = d === 'ok' || d === 'noid' ? {} : { staging: ['invalid', 'role'], sandbox: ['pending', 'round'] };
+    const rows = MEMBER_ACCTS.map(([n, id]) => ({ n, id, st: (bad[n] || ['valid'])[0], why: (bad[n] || [])[1] }));
+    const cnt = (k) => rows.filter(r => r.st === k).length;
+    const noid = d === 'noid';
+    const tone = noid || cnt('invalid') ? 'red' : cnt('pending') ? 'amber' : 'green';
+    body = <div className="g-card">
+      <div className="g-conn-h" style={{ flexWrap: 'wrap' }}><span className={'g-dot-lg ' + tone}>{tone === 'green' ? <Ic.Check size={12} /> : tone === 'red' ? <Ic.X2 size={12} /> : <Ic.Clock size={12} />}</span><span><b>{['valid', 'invalid', 'pending'].map(k => { const c = cnt(k); return c + ' ' + DAILY_ST[k][c === 1 ? 0 : 1]; }).join(' · ')}</b></span><span className="g-sub" style={{ marginLeft: 'auto' }}>Última comprobación: {K.fmtDate(at)}</span></div>
+      {noid && <div className="g-check">
+        <span className="g-check-i"><span className="g-dot-lg red sm"><Ic.X2 size={10} /></span></span>
+        <div style={{ minWidth: 0, flex: 1 }}><div className="g-check-n">Exige la identidad del usuario</div><div className="g-check-d bad">El rol intermedio de Mango no la exige: sin ella, Mango no lee ninguna cuenta miembro. Se comprueba en el rol intermedio y vale para todas las cuentas.</div></div>
+        <span className="badge badge-red">no la exige</span>
+      </div>}
+      {rows.map(r => { const [l, , b, c, icon] = DAILY_ST[r.st]; const Icon = Ic[icon]; return (
+        <div key={r.id} className="g-check">
+          <span className="g-check-i"><span className={'g-dot-lg sm ' + c}><Icon size={10} /></span></span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="row gap-2" style={{ alignItems: 'baseline', flexWrap: 'wrap' }}><span className="g-check-n">{r.n}</span><span className="g-sub mono">{r.id}</span></div>
+            {r.why && <div className={'g-check-d' + (r.st === 'invalid' ? ' bad' : '')}>{DAILY_REASON[r.why]}</div>}
+          </div>
+          <span className={'badge ' + b}>{l}</span>
+        </div>
+      ); })}
+    </div>;
+  }
+  return <div style={{ marginTop: 20 }}>{head}{body}</div>;
 }
 
 window.GovConnectivity = Connectivity;

@@ -14,7 +14,7 @@
   const LIMITS = { drafts: 20, perDay: 5 };
 
   // ---- Catálogo ----
-  const T = (name, write, desc, scope = 'org', service) => ({ name, write: !!write, desc, scope, service });
+  const T = (name, write, desc, scope = 'org', service) => ({ name, write: !!write, desc, scope, service, ...(write === 2 ? { destructive: true } : write === 3 ? { unclassified: true } : {}) });
   const CONNECTOR_TOOLS = {
     'aws-cost-explorer': { level: 'accounts', perms: ['ce:GetCostAndUsage', 'ce:GetCostForecast', 'ce:GetDimensionValues', 'ce:GetTags'], tools: [T('get_cost_and_usage', 0, 'Gasto por servicio, cuenta o tag', 'user'), T('get_cost_forecast', 0, 'Pronóstico de gasto', 'user'), T('get_dimension_values', 0, 'Valores disponibles para filtrar', 'user')] },
     'compute-optimizer': { level: 'accounts', perms: ['compute-optimizer:GetEC2InstanceRecommendations', 'compute-optimizer:GetECSServiceRecommendations'], tools: [T('get_recommendations', 0, 'Recomendaciones de rightsizing'), T('get_savings_estimate', 0, 'Ahorro estimado por recomendación')] },

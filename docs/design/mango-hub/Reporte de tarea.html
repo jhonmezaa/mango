@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mango · Plantillas del reporte de tarea</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+doc-page:not(:defined){visibility:hidden}
+:root{--ink:#18181b;--muted:#5b5b65;--line:#e2e2e8;--soft:#f4f4f6;--accent:oklch(64% 0.19 50);--accent-ink:oklch(50% 0.16 45);--accent-soft:oklch(64% 0.19 50 / 0.13);--bar:#33333a;--up:#a8201a;--down:#1a7f37}
+a{color:var(--accent-ink)}a:hover{color:var(--ink)}
+.pg{box-sizing:border-box;height:100%;padding:14mm 16mm 11mm;display:flex;flex-direction:column;gap:7mm;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:12pt;line-height:1.4;color:var(--ink);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.9em}
+.top{display:flex;justify-content:space-between;align-items:center;font-size:10pt;color:var(--muted)}
+.brand{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--ink);font-size:11pt}
+.brand i{width:9px;height:9px;border-radius:50%;background:var(--accent);display:block}
+.brand span{font-weight:400;color:var(--muted)}
+.title h1{font-size:20pt;line-height:1.15;font-weight:600;margin:0 0 4px;letter-spacing:-.01em;text-wrap:balance}
+.title p{margin:0;color:var(--muted);font-size:11pt;text-wrap:pretty}
+.title p+p{margin-top:2px}
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1.5px solid var(--ink);border-bottom:1px solid var(--line)}
+.kpi{padding:3.5mm 4mm 4mm 0;display:flex;flex-direction:column;gap:2px}
+.kpi+.kpi{padding-left:4mm;border-left:1px solid var(--line)}
+.kpi-l{font-size:10pt;color:var(--muted)}
+.kpi-v{font-size:19pt;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.kpi-s{font-size:10pt;color:var(--muted)}
+.up{color:var(--up)}.down{color:var(--down)}
+.sec{display:flex;flex-direction:column;gap:2.5mm}
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.sec-h h2{font-size:13pt;font-weight:600;margin:0}
+.legend{display:flex;gap:12px;font-size:10pt;color:var(--muted);flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block;background:var(--bar)}
+.sw.acc{background:var(--accent)}.sw.band{background:var(--accent-soft);outline:1px solid oklch(64% 0.19 50 / .35)}
+.sw.dash{width:14px;height:0;border-top:1.5px dashed var(--muted);border-radius:0;background:none}
+.src{font-size:10pt;color:var(--muted)}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+table{width:100%;border-collapse:collapse;font-size:11.5pt}
+th{font-size:10pt;font-weight:500;color:var(--muted);text-align:left;padding:0 0 2mm;border-bottom:1px solid var(--ink)}
+td{padding:1.7mm 0;border-bottom:1px solid var(--line);vertical-align:middle}
+th+th,td+td{padding-left:3mm}
+.num{text-align:right;white-space:nowrap}
+tr.other td{color:var(--muted)}
+tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
+.tb{height:7px;background:var(--bar);border-radius:1px;display:block}
+.tb.acc{background:var(--accent)}
+.notes{font-size:12pt;line-height:1.5;text-wrap:pretty}
+.notes p{margin:0 0 2.5mm}.notes ul{margin:0;padding-left:5mm;display:flex;flex-direction:column;gap:2mm}
+.notes code{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.88em;background:var(--soft);padding:0 3px;border-radius:3px}
+.next{border-left:3px solid var(--accent);padding:2.5mm 0 2.5mm 4mm;background:linear-gradient(90deg,var(--accent-soft),transparent 70%)}
+.next b{display:block;font-size:10pt;font-weight:500;color:var(--accent-ink);margin-bottom:1mm}
+.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2.5mm;counter-reset:s}
+.steps li{display:grid;grid-template-columns:7mm minmax(0,1fr);gap:0 2mm;font-size:11.5pt;counter-increment:s}
+.steps li::before{content:counter(s);font-size:10pt;color:var(--muted);padding-top:1px}
+.steps .mono{display:block;color:var(--muted);font-size:9.5pt}
+.about{margin-top:auto;font-size:10pt;color:var(--muted);line-height:1.45;border-top:1px solid var(--line);padding-top:3mm;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2mm 6mm}
+.about p{margin:0;text-wrap:pretty}
+.foot{display:flex;justify-content:space-between;gap:12px;font-size:9.5pt;color:var(--muted);border-top:1px solid var(--line);padding-top:2.5mm}
+.pg>.foot{margin-top:auto}
+.about+.foot{margin-top:0}
+.id{word-break:break-all}
+</style>
+</head>
+<body>
+<doc-page size="a4">
+
+<section class="page" id="costos" data-screen-label="Resumen de costos · 1">
+<div class="pg">
+  <div class="top"><span class="brand"><i></i>Mango <span>· Resumen de costos</span></span><span>Uso interno</span></div>
+  <div class="title">
+    <h1>Cierre mensual de costos · septiembre 2026</h1>
+    <p>Del 1 al 30 de septiembre de 2026 · USD · toda la organización</p>
+    <p>Generado el 1 oct 2026, 08:01 (hora de Ciudad de México) por FinOps para usuario1@empresa.com</p>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><span class="kpi-l">Total del periodo</span><span class="kpi-v">USD 84.312,40</span><span class="kpi-s">30 días</span></div>
+    <div class="kpi"><span class="kpi-l">Contra agosto</span><span class="kpi-v up">+5,5 %</span><span class="kpi-s">+USD 4.432,25 · agosto: USD 79.880,15</span></div>
+    <div class="kpi"><span class="kpi-l">Promedio diario</span><span class="kpi-v">USD 2.810,41</span><span class="kpi-s">agosto: USD 2.576,78</span></div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h2>Costo diario</h2><div class="legend"><span><i class="sw"></i>septiembre</span><span><i class="sw dash"></i>promedio diario de agosto</span></div></div>
+    <div class="chart" id="ch-cost" role="img" aria-label="Costo diario de septiembre: entre USD 2.300 y USD 3.100 por día; sube desde el 12 de septiembre y queda por encima del promedio de agosto."></div>
+    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por día, costo sin amortizar · consulta del 1 oct, 08:00</div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h2>Servicios que más gastan</h2></div>
+    <table>
+      <thead><tr><th>Servicio</th><th style="width:30mm"></th><th class="num">Septiembre</th><th class="num">Agosto</th><th class="num">Cambio</th></tr></thead>
+      <tbody>
+        <tr><td>Amazon EC2</td><td><span class="tb" style="width:100%"></span></td><td class="num">31.420,10</td><td class="num">29.360,35</td><td class="num up">+7,0 %</td></tr>
+        <tr><td>Amazon RDS</td><td><span class="tb" style="width:47.4%"></span></td><td class="num">14.880,35</td><td class="num">14.588,60</td><td class="num up">+2,0 %</td></tr>
+        <tr><td>Amazon S3</td><td><span class="tb" style="width:29%"></span></td><td class="num">9.105,60</td><td class="num">9.197,55</td><td class="num down">−1,0 %</td></tr>
+        <tr><td>Amazon ElastiCache</td><td><span class="tb" style="width:19.9%"></span></td><td class="num">6.240,00</td><td class="num">5.571,45</td><td class="num up">+12,0 %</td></tr>
+        <tr><td>Amazon CloudFront</td><td><span class="tb" style="width:14%"></span></td><td class="num">4.410,25</td><td class="num">4.281,80</td><td class="num up">+3,0 %</td></tr>
+        <tr><td>AWS Lambda</td><td><span class="tb" style="width:9.9%"></span></td><td class="num">3.120,80</td><td class="num">2.644,75</td><td class="num up">+18,0 %</td></tr>
+        <tr><td>Amazon DynamoDB</td><td><span class="tb" style="width:9.5%"></span></td><td class="num">2.980,40</td><td class="num">3.104,60</td><td class="num down">−4,0 %</td></tr>
+        <tr><td>Amazon CloudWatch</td><td><span class="tb" style="width:7.7%"></span></td><td class="num">2.410,30</td><td class="num">2.211,30</td><td class="num up">+9,0 %</td></tr>
+        <tr class="other"><td>Otros 31 servicios</td><td></td><td class="num">9.744,60</td><td class="num">8.919,75</td><td class="num">+9,2 %</td></tr>
+        <tr class="total"><td>Total</td><td></td><td class="num">84.312,40</td><td class="num">79.880,15</td><td class="num up">+5,5 %</td></tr>
+      </tbody>
+    </table>
+    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por servicio · USD</div>
+  </div>
+  <div class="foot"><span>Mango · Cierre mensual de costos · ejecución <span class="mono">sch-11-0</span></span><span>Página 1 de 2</span></div>
+</div>
+</section>
+
+<section class="page" id="costos-2" data-screen-label="Resumen de costos · 2">
+<div class="pg">
+  <div class="top"><span class="brand"><i></i>Mango <span>· Resumen de costos · septiembre 2026</span></span><span>Uso interno</span></div>
+  <div class="sec">
+    <div class="sec-h"><h2>Cuentas</h2></div>
+    <table>
+      <thead><tr><th>Cuenta</th><th>Nombre</th><th style="width:26mm"></th><th class="num">Septiembre</th><th class="num">Agosto</th><th class="num">Cambio</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">111111111111</td><td>produccion</td><td><span class="tb" style="width:100%"></span></td><td class="num">38.204,90</td><td class="num">35.410,30</td><td class="num up">+7,9 %</td></tr>
+        <tr><td class="mono">222222222222</td><td>datos</td><td><span class="tb" style="width:56.4%"></span></td><td class="num">21.560,30</td><td class="num">20.902,15</td><td class="num up">+3,1 %</td></tr>
+        <tr><td class="mono">333333333333</td><td>staging</td><td><span class="tb" style="width:25.8%"></span></td><td class="num">9.870,45</td><td class="num">9.615,20</td><td class="num up">+2,7 %</td></tr>
+        <tr><td class="mono">444444444444</td><td>servicios-compartidos</td><td><span class="tb" style="width:21.3%"></span></td><td class="num">8.120,15</td><td class="num">7.988,40</td><td class="num up">+1,6 %</td></tr>
+        <tr><td class="mono">555555555555</td><td>sandbox</td><td><span class="tb" style="width:8.9%"></span></td><td class="num">3.410,60</td><td class="num">3.120,70</td><td class="num up">+9,3 %</td></tr>
+        <tr class="other"><td colspan="2">Otras 6 cuentas</td><td></td><td class="num">3.146,00</td><td class="num">2.843,40</td><td class="num">+10,6 %</td></tr>
+        <tr class="total"><td colspan="2">Total</td><td></td><td class="num">84.312,40</td><td class="num">79.880,15</td><td class="num up">+5,5 %</td></tr>
+      </tbody>
+    </table>
+    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por cuenta vinculada · USD</div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h2>Notas de FinOps</h2></div>
+    <div class="notes">
+      <p><b>Amazon EC2 explica casi la mitad del aumento</b> (+USD 2.059,75). El uso de <code>m6i.2xlarge</code> en <code>produccion</code> subió desde el 12 de septiembre y se mantuvo hasta el cierre.</p>
+      <ul>
+        <li><b>AWS Lambda +18 %</b> (+USD 476,05): más invocaciones en <code>datos</code> desde el 20 de septiembre.</li>
+        <li><b>Amazon ElastiCache +12 %</b> (+USD 668,55): un nodo más en <code>produccion</code> desde el 8 de septiembre.</li>
+        <li>Amazon S3 y DynamoDB bajaron un poco; el resto se movió menos de un 10 %.</li>
+        <li>Sin anomalías de costo abiertas al cierre.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="about">
+    <p><b>De dónde salen los datos.</b> El agente FinOps los leyó de AWS Cost Explorer con el acceso de usuario1@empresa.com el 1 oct 2026 a las 08:00. Mango arma este documento con una plantilla fija a partir de esos datos y no recalcula las cifras.</p>
+    <p><b>Sobre las cifras.</b> Costo sin amortizar, en USD, sin créditos ni impuestos. AWS puede ajustar el periodo unos días después del cierre.</p>
+    <p><b>Quién lo ve.</b> Solo quien creó la tarea puede descargarlo en Mango. Cada descarga queda en la auditoría de Mango.</p>
+    <p><b>Hasta cuándo.</b> Mango lo guarda hasta el 30 dic 2026, como el resultado de su ejecución. Archivo: <span class="mono id">cierre-mensual-de-costos-2026-10-01-0800.pdf</span></p>
+  </div>
+  <div class="foot"><span>Mango · Cierre mensual de costos · ejecución <span class="mono">sch-11-0</span></span><span>Página 2 de 2</span></div>
+</div>
+</section>
+
+<section class="page" id="anomalia" data-screen-label="Investigación de anomalía · 1">
+<div class="pg">
+  <div class="top"><span class="brand"><i></i>Mango <span>· Investigación de anomalía</span></span><span>Uso interno</span></div>
+  <div class="title">
+    <h1>Amazon EC2 · 15–16 oct 2026</h1>
+    <p>Anomalía <span class="mono id">8d09e1c2-4b5d-4e8f-9a01-8d092b3c4d5e</span> · monitor «Servicios de AWS»</p>
+    <p>Tarea «Investigar anomalías de costo» · generado el 16 oct 2026, 09:41 UTC por FinOps para usuario1@empresa.com</p>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><span class="kpi-l">Impacto</span><span class="kpi-v up">+USD 412,30</span><span class="kpi-s">+64 % sobre lo esperado · 2 días</span></div>
+    <div class="kpi"><span class="kpi-l">Esperado</span><span class="kpi-v">USD 640,00</span><span class="kpi-s">USD 320,00 por día</span></div>
+    <div class="kpi"><span class="kpi-l">Real</span><span class="kpi-v">USD 1.052,30</span><span class="kpi-s">USD 526,15 por día</span></div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h2>Costo diario de Amazon EC2 en produccion</h2><div class="legend"><span><i class="sw"></i>costo</span><span><i class="sw acc"></i>días de la anomalía</span><span><i class="sw dash"></i>esperado</span></div></div>
+    <div class="chart" id="ch-anom" role="img" aria-label="Costo diario de Amazon EC2 en la cuenta produccion del 1 al 16 de octubre: cerca de USD 320 por día hasta el 14 y unos USD 526 el 15 y el 16."></div>
+    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por día, cuenta 111111111111 · 1–16 oct</div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h2>Qué la explica</h2></div>
+    <table>
+      <thead><tr><th>Tipo de uso</th><th>Servicio</th><th>Cuenta</th><th style="width:24mm"></th><th class="num">Impacto</th><th class="num">Parte</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">BoxUsage:m6i.2xlarge</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:100%"></span></td><td class="num">351,80</td><td class="num">85 %</td></tr>
+        <tr><td class="mono">EBS:VolumeUsage.gp3</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:11.1%"></span></td><td class="num">38,90</td><td class="num">9 %</td></tr>
+        <tr><td class="mono">DataTransfer-Regional-Bytes</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:6.1%"></span></td><td class="num">21,60</td><td class="num">5 %</td></tr>
+        <tr class="total"><td colspan="4">Total</td><td class="num">412,30</td><td class="num">100 %</td></tr>
+      </tbody>
+    </table>
+    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por tipo de uso, ventana de la anomalía contra los 14 días anteriores · USD</div>
+  </div>
+  <div class="foot"><span>Mango · Investigar anomalías de costo · ejecución <span class="mono">sch-10-t3</span></span><span>Página 1 de 2</span></div>
+</div>
+</section>
+
+<section class="page" id="anomalia-2" data-screen-label="Investigación de anomalía · 2">
+<div class="pg">
+  <div class="top"><span class="brand"><i></i>Mango <span>· Investigación de anomalía · Amazon EC2 · 15–16 oct 2026</span></span><span>Uso interno</span></div>
+  <div class="sec">
+    <div class="sec-h"><h2>Conclusión de FinOps</h2></div>
+    <div class="notes">
+      <p>El aumento empezó el 15 de octubre hacia las 14:00 UTC: las horas de <code>m6i.2xlarge</code> en <code>produccion</code> pasaron de unas 780 a unas 1.240 por día y no volvieron a bajar.</p>
+      <p>El almacenamiento EBS y la transferencia regional crecieron en la misma proporción, así que parece capacidad nueva y no un cambio de precio. No hay cambios parecidos en otras cuentas ni en otros tipos de instancia.</p>
+    </div>
+    <div class="next notes"><b>Siguiente paso</b>Confirmar con el equipo dueño de <code>produccion</code> si la capacidad nueva de <code>m6i.2xlarge</code> es intencional. Si no lo es, revisar qué la lanzó el 15 de octubre a las 14:00 UTC.</div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h2>Consultas del agente</h2></div>
+    <ol class="steps">
+      <li><div>Recibí la anomalía de Amazon EC2 (15–16 oct). Busco qué cuenta y tipo de uso la explican.<span class="mono">get_anomalies</span></div></li>
+      <li><div>Comparo con las dos semanas anteriores.<span class="mono">get_cost_and_usage</span></div></li>
+      <li><div>Separo por tipo de uso en la cuenta afectada.<span class="mono">get_cost_and_usage</span></div></li>
+    </ol>
+  </div>
+  <div class="about">
+    <p><b>De dónde salen los datos.</b> El id, el monitor y las fechas de la anomalía llegan de AWS a Mango. Servicio, cuenta, impacto y causas los leyó el agente FinOps con sus consultas, con el acceso de usuario1@empresa.com. Mango no recalcula las cifras.</p>
+    <p><b>Sobre las cifras.</b> Costo sin amortizar, en USD. AWS puede ajustar el costo de los últimos días.</p>
+    <p><b>Quién lo ve.</b> Solo quien creó la tarea puede descargarlo en Mango. Cada descarga queda en la auditoría de Mango.</p>
+    <p><b>Hasta cuándo.</b> Mango lo guarda hasta el 14 ene 2027, como el resultado de su ejecución. Archivo: <span class="mono id">investigar-anomalias-de-costo-2026-10-16-8d09e1c2.pdf</span></p>
+  </div>
+  <div class="foot"><span>Mango · Investigar anomalías de costo · ejecución <span class="mono">sch-10-t3</span></span><span>Página 2 de 2</span></div>
+</div>
+</section>
+
+</doc-page>
+<script src="doc-page.js"></script>
+<script>
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  const fmt = (n) => n.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+  // Mismo dibujo que haría el servidor: barras por día, línea de referencia punteada y, si hay, la ventana de la anomalía.
+  function bars(host, { data, labels, ref, refLabel, band, max, step, h = 210 }) {
+    const W = 680, pl = 44, pr = 6, pt = 10, pb = 22, iw = W - pl - pr, ih = h - pt - pb;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${h}`, 'aria-hidden': 'true', 'font-family': 'IBM Plex Sans, sans-serif' });
+    const y = (v) => pt + ih - (v / max) * ih;
+    for (let v = 0; v <= max; v += step) {
+      svg.appendChild(el('line', { x1: pl, x2: W - pr, y1: y(v), y2: y(v), stroke: v === 0 ? '#18181b' : '#e2e2e8', 'stroke-width': v === 0 ? 1 : 0.8 }));
+      svg.appendChild(el('text', { x: pl - 6, y: y(v) + 4, 'text-anchor': 'end', 'font-size': 12.5, fill: '#5b5b65' }, fmt(v)));
+    }
+    const bw = iw / data.length;
+    if (band) svg.appendChild(el('rect', { x: pl + band[0] * bw, y: pt, width: (band[1] - band[0] + 1) * bw, height: ih, fill: 'oklch(64% 0.19 50 / 0.13)' }));
+    data.forEach((v, i) => {
+      const inBand = band && i >= band[0] && i <= band[1];
+      svg.appendChild(el('rect', { x: pl + i * bw + bw * 0.14, y: y(v), width: bw * 0.72, height: y(0) - y(v), fill: inBand ? 'oklch(64% 0.19 50)' : '#33333a', rx: 1 }));
+      if (labels[i]) svg.appendChild(el('text', { x: pl + i * bw + bw / 2, y: h - 6, 'text-anchor': 'middle', 'font-size': 12.5, fill: '#5b5b65' }, labels[i]));
+    });
+    if (ref != null) {
+      svg.appendChild(el('line', { x1: pl, x2: W - pr, y1: y(ref), y2: y(ref), stroke: '#5b5b65', 'stroke-width': 1.4, 'stroke-dasharray': '5 4' }));
+      if (refLabel) svg.appendChild(el('text', { x: pl + 6, y: y(ref) - 6, 'font-size': 12.5, fill: '#5b5b65' }, refLabel));
+    }
+    host.appendChild(svg);
+  }
+  // Septiembre 2026: empieza en martes; sube desde el 12 (EC2) y desde el 20 (Lambda). Se escala al total del periodo.
+  const raw = Array.from({ length: 30 }, (_, i) => { const dow = (2 + i) % 7; const we = dow === 0 || dow === 6; let v = 2720 + Math.sin(i * 1.7) * 38; if (i >= 11) v += 230; if (i >= 19) v += 70; return we ? v * 0.84 : v; });
+  const k = 84312.40 / raw.reduce((a, b) => a + b, 0);
+  bars(document.getElementById('ch-cost'), { data: raw.map(v => v * k), labels: raw.map((_, i) => [0, 6, 13, 20, 27].includes(i) ? (i + 1) + ' sep' : ''), ref: 79880.15 / 31, refLabel: 'agosto: 2.577 por día', max: 3500, step: 1000 });
+  const an = [318.4, 322.9, 316.2, 309.8, 312.6, 324.1, 327.3, 321.5, 319.9, 315.4, 311.7, 318.8, 326.4, 323.6, 526.2, 526.1];
+  bars(document.getElementById('ch-anom'), { data: an, labels: an.map((_, i) => [0, 4, 9, 14].includes(i) ? (i + 1) + ' oct' : ''), ref: 320, refLabel: 'esperado: 320 por día', band: [14, 15], max: 600, step: 200, h: 200 });
+  const go = () => { const t = location.hash && document.getElementById(location.hash.slice(1)); if (t) window.scrollTo({ top: t.getBoundingClientRect().top + window.scrollY - 16 }); };
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => setTimeout(go, 150));
+})();
+</script>
+</body>
+</html>

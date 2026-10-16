@@ -3,16 +3,18 @@ function SchedulesView({ agents }) {
   const I = window.Icons; const S = window.MangoStore; const L = window.Lifecycle;
   const toast = window.useToast?.();
   const all = window.useMango(s => s.schedules) || [];
-  const role = window.useMango(s => s.role); window.useMango(s => s.budgets); window.useMango(s => s.actorOverride); window.useMango(s => s.avail);
+  const role = window.useMango(s => s.role); window.useMango(s => s.budgets); window.useMango(s => s.actorOverride); const avail = window.useMango(s => s.avail);
   const scOpen = window.useMango(s => s.scOpen);
   const me = S.actor(); const isAdmin = role === 'admin';
   const inboxOn = !S.isSoon('inbox');
+  const repOn = !avail;
   const usable = agents.filter(scCanUse);
   const list0 = isAdmin ? all : all.filter(s => s.owner === me);
   const [q, setQ] = useState(''); const [st, setSt] = useState('all'); const [ag, setAg] = useState('all');
   const [sel, setSel] = useState(null); const [run, setRun] = useState(null); const [ask, setAsk] = useState(null); const [edit, setEdit] = useState(null);
   const open = (id, a = null) => { setSel(id); setRun(null); setAsk(a); };
-  useEffect(() => { if (!scOpen) return; setSel(scOpen.id); setRun(scOpen.run || null); setAsk(null); S.set({ scOpen: null }); }, [scOpen]);
+  // Desde la Bandeja: si la ejecución ya no existe (se guardan 90 días), se abre la tarea y se avisa.
+  useEffect(() => { if (!scOpen) return; const t = list0.find(x => x.id === scOpen.id); const ref = scOpen.ref || scOpen.run; const gone = !t || (ref && !t.runs.some(r => r.id === ref)); setSel(t ? t.id : null); setRun(t && !gone ? scOpen.run || null : null); setAsk(null); S.set({ scOpen: null }); if (gone && ref) toast?.({ tone: 'info', title: 'Esa ejecución ya no está disponible', msg: 'Los resultados se guardan 90 días.' }); }, [scOpen]);
   const health = (s) => {
     const a = agents.find(x => x.id === s.agent);
     if (!a) return { tone: 'red', msg: 'El agente ya no existe' };
@@ -21,6 +23,7 @@ function SchedulesView({ agents }) {
     const off = (a.mcp || []).filter(id => { const x = L.serverOf(id); return !x || x.status !== 'enabled'; });
     const b = (S.get().budgets || []).find(x => x.scope === 'agent' && x.target === a.id);
     if (b && b.spent >= b.limit) return { tone: 'amber', msg: 'Presupuesto del agente agotado: las próximas ejecuciones se omitirán' };
+    if (s.runs[0]?.status === 'skipped' && s.runs[0].reason === 'budget') return { tone: 'amber', msg: 'La última ejecución se omitió: presupuesto agotado' };
     if (off.length) return { tone: 'amber', msg: `${off.length === 1 ? 'Una tool no está disponible' : off.length + ' tools no están disponibles'} (${off.join(', ')})` };
     const fails = s.runs.slice(0, 3).filter(r => r.status === 'failed').length;
     if (fails >= 2) return { tone: 'red', msg: `${fails} de las últimas 3 ejecuciones fallaron` };
@@ -40,20 +43,27 @@ function SchedulesView({ agents }) {
   const set = (id, patch, action, msg) => { setSc(id, x => ({ ...x, ...patch })); S.log(action, id, msg); };
   const patchRun = (sid, rid, patch) => setSc(sid, x => ({ ...x, runs: x.runs.map(r => r.id === rid ? { ...r, ...patch } : r) }));
   const openResult = (sid, rid) => { S.set({ scOpen: { id: sid, run: rid } }); window.MangoNav?.('schedules'); };
+  const finishReport = (sid, rid, ms) => setTimeout(() => { const x = S.get().schedules.find(y => y.id === sid); const r = x?.runs.find(y => y.id === rid); if (!r?.report || r.report.status !== 'generating') return; patchRun(sid, rid, { report: S.get().simReport === 'genfail' ? { status: 'failed', reason: 'render', period: r.report.period } : { status: 'ready', pages: 2, kb: 405, period: r.report.period } }); }, ms);
+  const retryReport = (sid, rid) => { const r = S.get().schedules.find(y => y.id === sid)?.runs.find(y => y.id === rid); patchRun(sid, rid, { report: { status: 'generating', period: r?.report?.period } }); finishReport(sid, rid, 2500); };
   const runNow = (s) => {
     const rid = s.id + '-m' + Date.now().toString(36);
     setSc(s.id, x => ({ ...x, runs: [{ id: rid, at: new Date().toISOString(), status: 'queued', manual: true }, ...x.runs] }));
     S.log('schedule.run', s.id, 'Ejecutó ahora ' + s.name);
     toast?.({ tone: 'info', msg: s.name + ' en cola' });
-    setTimeout(() => patchRun(s.id, rid, { status: 'running' }), 1200);
+    const cur = () => (S.get().schedules.find(x => x.id === s.id)?.runs || []).find(x => x.id === rid);
+    setTimeout(() => { if (cur()?.status === 'queued') patchRun(s.id, rid, { status: 'running' }); }, 1200);
     setTimeout(() => {
-      patchRun(s.id, rid, { status: 'ok', ms: 6200, cost: 0.08, result: scResultFor(s, 0) });
+      if (cur()?.status !== 'running') { if (cur()?.status === 'skipped') toast?.({ tone: 'info', title: s.name + ' no se completó', msg: scReason(cur()) }); return; }
+      const withRep = repOn && !!s.report;
+      patchRun(s.id, rid, { status: 'ok', ms: 6200, cost: 0.08, result: scResultFor(s, 0), ...(withRep ? { report: { status: 'generating', period: s.id === 'sch-11' ? SC_MES[(new Date().getUTCMonth() + 11) % 12] + ' ' + new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 15)).getUTCFullYear() : '' } } : {}) });
+      if (withRep) finishReport(s.id, rid, 3500);
       setSc(s.id, x => x.status === 'error' ? { ...x, status: 'active' } : x);
-      toast?.({ tone: 'success', title: s.name + ' completada', msg: inboxOn ? 'El resultado está en el detalle de la tarea y en tu Bandeja.' : 'El resultado está en el detalle de la tarea.', duration: 8000, action: { label: 'Ver resultado', fn: () => openResult(s.id, rid) } });
+      toast?.({ tone: 'success', title: s.name + ' completada', msg: (inboxOn ? 'El resultado está en el detalle de la tarea y en tu Bandeja.' : 'El resultado está en el detalle de la tarea.') + (withRep ? ' El PDF tarda un poco más.' : ''), duration: 8000, action: { label: 'Ver resultado', fn: () => openResult(s.id, rid) } });
     }, 4200);
   };
-  const retire = (s, reason) => { set(s.id, { status: 'retired', retired: { by: me, at: new Date().toISOString(), reason } }, 'schedule.retire', 'Retiró ' + s.name + ': ' + reason); toast?.({ tone: 'info', msg: s.name + ' retirada · el historial se conserva' }); };
-  const pause = (s, reason) => { const byAdmin = s.owner !== me; set(s.id, { status: 'paused', paused: { by: byAdmin ? 'admin' : 'owner', actor: me, at: new Date().toISOString(), reason: reason || null } }, 'schedule.pause', 'Pausó ' + s.name + (reason ? ': ' + reason : '')); toast?.({ tone: 'info', msg: s.name + ' pausada' + (byAdmin ? ' · solo un administrador la reanuda' : '') }); };
+  const dropQueued = (x, reason) => x.runs.map(r => r.status === 'queued' ? { ...r, status: 'skipped', reason } : r);
+  const retire = (s, reason) => { setSc(s.id, x => ({ ...x, status: 'retired', retired: { by: me, at: new Date().toISOString(), reason }, runs: dropQueued(x, 'retired') })); S.log('schedule.retire', s.id, 'Retiró ' + s.name + ': ' + reason); toast?.({ tone: 'info', msg: s.name + ' retirada · el historial se conserva' }); };
+  const pause = (s, reason) => { const byAdmin = s.owner !== me; setSc(s.id, x => ({ ...x, status: 'paused', paused: { by: byAdmin ? 'admin' : 'owner', actor: S.actorEmail(), at: new Date().toISOString(), reason: reason || null }, runs: dropQueued(x, byAdmin ? 'admin_paused' : 'paused') })); S.log('schedule.pause', s.id, 'Pausó ' + s.name + (reason ? ': ' + reason : '')); toast?.({ tone: 'info', msg: s.name + ' pausada' + (byAdmin ? ' · solo un administrador la reanuda' : '') }); };
   const resume = (s) => { set(s.id, { status: 'active', paused: null }, 'schedule.resume', 'Reanudó ' + s.name); toast?.({ tone: 'info', msg: s.name + ' reanudada' }); };
   const selected = sel && list0.find(x => x.id === sel);
   const STATUS = { active: ['Activa', 'badge-green'], paused: ['Pausada', 'badge'], error: ['Con errores', 'badge-red'], retired: ['Retirada', 'badge'] };
@@ -100,13 +110,13 @@ function SchedulesView({ agents }) {
           </div>
         </div>
       </div>
-      {selected && <ScheduleDetail s={selected} agent={agents.find(a => a.id === selected.agent)} health={health(selected)} me={me} isAdmin={isAdmin} inboxOn={inboxOn} run={run} setRun={setRun} ask0={ask} onClose={() => { setSel(null); setRun(null); setAsk(null); }} onEdit={() => setEdit({ ...selected })} onRun={() => runNow(selected)} onPause={(r) => pause(selected, r)} onResume={() => resume(selected)} onRetire={(r) => retire(selected, r)} />}
+      {selected && <ScheduleDetail s={selected} agent={agents.find(a => a.id === selected.agent)} health={health(selected)} me={me} isAdmin={isAdmin} inboxOn={inboxOn} repOn={repOn} onRetryReport={(rid) => retryReport(selected.id, rid)} run={run} setRun={setRun} ask0={ask} onClose={() => { setSel(null); setRun(null); setAsk(null); }} onEdit={() => setEdit({ ...selected })} onRun={() => runNow(selected)} onPause={(r) => pause(selected, r)} onResume={() => resume(selected)} onRetire={(r) => retire(selected, r)} />}
       {edit && <ScheduleEditor s={edit} agents={agents} onClose={() => setEdit(null)} onSaved={(id) => { setEdit(null); open(id); }} />}
     </>
   );
 }
 
-function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, run, setRun, ask0, onClose, onEdit, onRun, onPause, onResume, onRetire }) {
+function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, repOn, onRetryReport, run, setRun, ask0, onClose, onEdit, onRun, onPause, onResume, onRetire }) {
   const I = window.Icons;
   const P = scPerms(s, me, isAdmin);
   const [ask, setAsk] = useState(ask0 || null); const [why, setWhy] = useState('');
@@ -117,7 +127,7 @@ function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, run, setRun, a
   const openRun = run && P.own ? s.runs.find(r => r.id === run && r.result) : null;
   const today = P.anomaly ? scToday(s) : 0;
   const dest = inboxOn ? (P.own ? 'En el detalle y en tu Bandeja' : 'En el detalle y en la Bandeja de ' + s.owner) : 'En el detalle de la tarea';
-  const pausedBy = s.paused?.actor === me ? 'ti' : s.paused?.actor || 'un administrador';
+  const pausedBy = s.paused?.actor === window.MangoStore.actorEmail() ? 'ti' : s.paused?.actor || 'un administrador';
   return (
     <div className="mk-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <aside className="mk-drawer" style={{ width: openRun ? 640 : 520 }} role="dialog" aria-modal="true" aria-label={s.name}>
@@ -127,18 +137,18 @@ function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, run, setRun, a
           <button className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}><I.Close size={14} /></button>
         </div>
         <div className="mk-drawer-b" key={openRun ? openRun.id : 'detail'}>
-          {openRun ? <ScResult s={s} r={openRun} agent={agent} onBack={() => setRun(null)} /> : <>
+          {openRun ? <ScResult s={s} r={openRun} agent={agent} rep={repOn && !!s.report} onRetry={() => onRetryReport(openRun.id)} onBack={() => setRun(null)} /> : <>
             {health && !s.autoPaused && <div className={'mc-alert ' + (health.tone === 'red' ? 'red' : 'amber')}><I.Warn size={14} /><div>{health.msg}.</div></div>}
             {s.status === 'paused' && !s.autoPaused && (P.adminPaused
               ? <div className="mc-alert amber"><I.Pause size={14} /><div><b>Pausada por {isAdmin ? pausedBy : 'un administrador'}:</b> no se ejecutará, ni a pedido, hasta que un administrador la reanude.{s.paused.reason && <div style={{ marginTop: 4 }}>Motivo: {s.paused.reason}</div>}</div></div>
               : <div className="mc-alert"><I.Pause size={14} /><div>{P.own ? 'Pausada: no se ejecutará hasta que la reanudes.' : 'Pausada por ' + s.owner + ': no se ejecutará hasta que la reanude.'}</div></div>)}
             {s.autoPaused && s.status === 'paused' && <div className="mc-alert red"><I.Lock size={14} /><div><b>Pausada automáticamente {window.fmtAgo(s.autoPaused.at)}.</b> {s.autoPaused.reason}. {s.autoPaused.kind === 'central' ? 'Solo se reanuda si vuelve a ser persona central; si no, retírala.' : 'Solo se reanuda si recupera el acceso; si no, retírala.'}</div></div>}
             {s.status === 'retired' && <div className="mc-alert"><I.Archive size={14} /><div>Retirada por {s.retired?.by}{s.retired?.reason ? ' · ' + s.retired.reason : ''}. No vuelve a ejecutarse; el historial se conserva.</div></div>}
-            <MkSec title="Tarea">{P.own ? <div className="sc-task">{s.task}</div> : <div className="ap-reason"><I.Lock size={12} /><span>{'Solo ' + s.owner + ' ve la instrucción y los resultados: se obtienen con su acceso, como sus conversaciones.'}</span></div>}</MkSec>
+            <MkSec title="Tarea">{P.own ? <div className="sc-task">{s.task}</div> : <div className="ap-reason sc-note"><I.Lock size={12} /><span>{'Solo ' + s.owner + ' ve la instrucción y los resultados: se obtienen con su acceso, como sus conversaciones.'}</span></div>}</MkSec>
             {P.anomaly ? <MkSec title="Disparador">
               <div className="mk-kv"><span>Arranca</span><span>{SC_ANOMALY}</span></div>
               <div className="mk-kv"><span>Tope</span><span>Hasta {SC_CAP} investigaciones por día</span></div>
-              <div className="mk-kv"><span>Hoy</span><span style={{ textAlign: 'right', ...(today >= SC_CAP ? { color: 'var(--amber)' } : {}) }}>{today} de {SC_CAP} · se reinicia a las {scResetAt()} (tu hora)</span></div>
+              <div className="mk-kv"><span>Hoy</span><span style={{ textAlign: 'right', ...(today >= SC_CAP ? { color: 'var(--amber)' } : {}) }}>{today} de {SC_CAP} · se reinicia a las <span style={{ whiteSpace: 'nowrap' }}>{scResetAt()} (tu hora)</span></span></div>
               <div className="mk-kv"><span>Si llegan varias</span><span style={{ textAlign: 'right' }}>Una a la vez; la siguiente espera en cola</span></div>
             </MkSec> : <MkSec title="Programación">
               <div className="mk-kv"><span>Frecuencia</span><span>{scSafeLabel(s)}</span></div>
@@ -148,6 +158,7 @@ function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, run, setRun, a
             </MkSec>}
             <MkSec title="Entrega y control">
               <div className="mk-kv"><span>Resultado</span><span style={{ textAlign: 'right' }}>{dest} · solo {P.own ? 'tú lo ves' : s.owner + ' lo ve'}</span></div>
+              {repOn && s.report && <div className="mk-kv"><span>Reporte</span><span style={{ textAlign: 'right' }}>PDF · {(SC_REPORT[s.report] || [''])[0]} · solo {P.own ? 'tú lo descargas' : s.owner + ' lo descarga'}</span></div>}
               <div className="mk-kv"><span>Se ejecuta como</span><span>{s.owner} · con su identidad y sus permisos</span></div>
               <div className="mk-kv"><span>Agente</span><span>{agent?.name} · usa su presupuesto</span></div>
               <div className="mk-kv"><span>Si {s.owner} pierde el acceso{P.anomaly ? ' o deja de ser central' : ''}</span><span>La tarea se pausa sola</span></div>
@@ -155,13 +166,13 @@ function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, run, setRun, a
             </MkSec>
             <MkSec title={`Ejecuciones recientes · ${ok} de ${s.runs.length} completadas`}>
               {!P.own && s.runs.length > 0 && <p className="mk-meta" style={{ margin: '0 0 4px' }}>Los resultados solo los ve {s.owner}.</p>}
-              {s.runs.length ? s.runs.slice(0, 12).map(r => <ScRunRow key={r.id} r={r} s={s} canSee={P.own} onOpen={() => setRun(r.id)} onDup={() => setRun(r.dupOf)} onApproval={() => { onClose(); window.MangoNav?.('approvals'); }} />) : <div className="mk-meta">Aún no se ha ejecutado.</div>}
+              {s.runs.length ? s.runs.slice(0, 12).map(r => <ScRunRow key={r.id} r={r} s={s} canSee={P.own} rep={repOn && !!s.report} onOpen={() => setRun(r.id)} onApproval={() => { onClose(); window.MangoNav?.('approvals'); }} />) : <div className="mk-meta">Aún no se ha ejecutado.</div>}
             </MkSec>
           </>}
         </div>
         {!openRun && (P.own || isAdmin) && s.status !== 'retired' && <div className="mc-foot row gap-2" style={{ flexWrap: 'wrap' }}>
           {ask ? <>
-            {ask === 'pause' && <span className="ap-reason" style={{ flexBasis: '100%' }}><I.Info size={12} /><span>También frena a su dueño: solo un administrador la reanuda.</span></span>}
+            {ask === 'pause' && <span className="ap-reason sc-note" style={{ flexBasis: '100%' }}><I.Info size={12} /><span>También frena a su dueño: solo un administrador la reanuda.</span></span>}
             <input className="input" style={{ flex: '1 1 200px' }} value={why} onChange={e => setWhy(e.target.value)} placeholder={ask === 'retire' ? 'Motivo del retiro (obligatorio)' : 'Motivo de la pausa (obligatorio)'} aria-label={ask === 'retire' ? 'Motivo del retiro' : 'Motivo de la pausa'} autoFocus />
             <button className="btn btn-sm" onClick={() => setAsk(null)}>Cancelar</button>
             <button className="btn btn-sm btn-primary" disabled={!why.trim()} onClick={() => { const w = why.trim(); const k = ask; setAsk(null); setWhy(''); if (k === 'retire') onRetire(w); else onPause(w); }}>{ask === 'retire' ? <><I.Archive size={12} /> Retirar</> : <><I.Pause size={12} /> Pausar</>}</button>
@@ -172,8 +183,8 @@ function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, run, setRun, a
             {P.own && <button className="btn btn-sm" disabled={!!s.autoPaused} onClick={onEdit}><I.Edit size={12} /> Editar</button>}
             <div style={{ flex: 1 }}></div>
             <button className="btn btn-sm btn-ghost" onClick={() => setAsk('retire')}><I.Archive size={12} /> Retirar</button>
-            {P.own && P.adminPaused && <span className="ap-reason" style={{ flexBasis: '100%', order: 9 }}><I.Lock size={12} /><span>Un administrador la pausó: solo un administrador la reanuda.</span></span>}
-            {!P.own && <span className="ap-reason" style={{ flexBasis: '100%', order: 9 }}><I.Lock size={12} /><span>{'Solo ' + s.owner + ' puede editarla' + (P.anomaly ? '' : ' o ejecutarla ahora') + ' (corre con su identidad). Como admin puedes pausarla, reanudar la pausa de un administrador o retirarla.'}</span></span>}
+            {P.own && P.adminPaused && <span className="ap-reason sc-note" style={{ flexBasis: '100%', order: 9 }}><I.Lock size={12} /><span>Un administrador la pausó: solo un administrador la reanuda.</span></span>}
+            {!P.own && <span className="ap-reason sc-note" style={{ flexBasis: '100%', order: 9 }}><I.Lock size={12} /><span>{'Solo ' + s.owner + ' puede editarla' + (P.anomaly ? '' : ' o ejecutarla ahora') + ' (corre con su identidad). Como admin puedes pausarla, reanudar la pausa de un administrador o retirarla.'}</span></span>}
           </>}
         </div>}
       </aside>
@@ -186,13 +197,15 @@ function ScheduleEditor({ s, agents, onClose, onSaved }) {
   const toast = window.useToast?.();
   const central = !!(S.ROLES[S.get().role] || {}).central;
   const inboxOn = !S.isSoon('inbox');
+  const repSoon = !!S.get().avail;
   const usable = agents.filter(scCanUse);
   const opts = !s.agent || usable.some(x => x.id === s.agent) ? usable : [agents.find(x => x.id === s.agent), ...usable].filter(Boolean);
-  const [f, setF] = useState({ trigger: 'schedule', ...s, tz: s.tz || 'America/Mexico_City', p: { freq: 'daily', hour: 9, min: 0, dow: 1, dom: 1, days: [1, 4], ...s.p } });
+  const [f, setF] = useState({ trigger: 'schedule', ...s, report: !!s.report, tz: s.tz || 'America/Mexico_City', p: { freq: 'daily', hour: 9, min: 0, dow: 1, dom: 1, days: [1, 4], ...s.p } });
   const [tried, setTried] = useState(false);
   const setP = (patch) => setF(x => ({ ...x, p: { ...x.p, ...patch } }));
   const anomaly = f.trigger === 'anomaly';
   const a = agents.find(x => x.id === f.agent);
+  const canRep = scReportable(a); const repT = scReportType(f.trigger);
   const nx = anomaly ? [] : scNextTz(f.p, f.tz, 3);
   const otherTz = !anomaly && scTzOff(f.tz) !== -new Date().getTimezoneOffset();
   const heavy = !anomaly && (f.p.freq === 'hourly' || f.p.freq === '15m');
@@ -201,7 +214,7 @@ function ScheduleEditor({ s, agents, onClose, onSaved }) {
   useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
   const save = () => {
     setTried(true); if (errs.length) return;
-    const rec = { name: f.name.trim(), agent: f.agent, task: f.task, trigger: f.trigger, p: f.p, deliver: 'inbox', ...(anomaly ? { tz: null, cron: null, cronLabel: SC_ANOMALY } : { tz: f.tz, cron: scCron(f.p), cronLabel: scLabel(f.p) }) };
+    const rec = { name: f.name.trim(), agent: f.agent, task: f.task, trigger: f.trigger, p: f.p, deliver: 'inbox', report: repSoon ? (s.report || null) : (f.report && canRep ? repT : null), ...(anomaly ? { tz: null, cron: null, cronLabel: SC_ANOMALY } : { tz: f.tz, cron: scCron(f.p), cronLabel: scLabel(f.p) }) };
     const what = anomaly ? 'al detectar una anomalía de costo' : scLabel(f.p);
     if (s.isNew) { const id = 'sch-' + Date.now().toString(36).slice(-4); S.set({ schedules: [...S.get().schedules, { ...rec, id, status: 'active', runs: [], owner: S.actor() }] }); S.log('schedule.create', id, `Creó ${rec.name} · ${what}`); toast?.({ tone: 'success', msg: 'Schedule creado' }); onSaved(id); }
     else { S.set({ schedules: S.get().schedules.map(x => x.id === s.id ? { ...x, ...rec } : x) }); S.log('schedule.update', s.id, `Editó ${rec.name} · ${what}`, anomaly ? {} : { before: { frecuencia: scSafeLabel(s) }, after: { frecuencia: scLabel(f.p) } }); toast?.({ tone: 'success', msg: 'Cambios guardados' }); onSaved(s.id); }
@@ -241,6 +254,12 @@ function ScheduleEditor({ s, agents, onClose, onSaved }) {
           <div><Lb>Resultado</Lb>
             <div className="sc-ro">{inboxOn ? 'Queda en el detalle de la tarea y te llega a la Bandeja.' : 'Queda en el detalle de la tarea.'} Solo tú lo ves.</div>
             <div className="row gap-2" style={{ marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}><span className="mk-meta">También enviar a</span><window.Soon on><div className="ab-seg"><button type="button">Canal de Slack</button></div></window.Soon><window.Soon on><div className="ab-seg"><button type="button">Crear ticket</button></div></window.Soon></div>
+          </div>
+          <div><Lb>Reporte descargable</Lb>
+            {repSoon ? <window.Soon on block><label className="sc-rep-opt"><input type="checkbox" disabled /><span><b>También un PDF con gráficos</b><span className="mk-meta">Para guardarlo o compartirlo fuera de Mango.</span></span></label></window.Soon> : <>
+              <label className={'sc-rep-opt' + (canRep ? '' : ' is-off')}><input type="checkbox" checked={!!f.report && canRep} disabled={!canRep} aria-describedby="sc-rep-h" onChange={e => setF({ ...f, report: e.target.checked })} /><span><b>También un PDF · {SC_REPORT[repT][0]}</b><span className="mk-meta">{SC_REPORT[repT][1]}</span></span></label>
+              <div id="sc-rep-h" className="mk-meta" style={{ marginTop: 6, fontSize: 12 }}>{!canRep ? (a ? a.name + ' no consulta costos: el reporte solo existe para agentes que leen Cost Explorer o la facturación.' : 'Elige un agente.') : f.report ? 'No hace falta pedirlo en la tarea: Mango le pide al agente los datos y arma el PDF con una plantilla fija. Solo tú lo descargas; se guarda 90 días, como el resultado.' : 'El tipo lo fija el disparador: por horario, resumen de costos; por anomalía, investigación de la anomalía.'}</div>
+            </>}
           </div>
           <div className="mc-alert" style={{ fontSize: 12.5 }}><I.User size={13} /><div>Se ejecuta con tu identidad y tus permisos (no con los del agente) y usa {a ? 'el presupuesto de ' + a.name : 'el presupuesto del agente'}. Si pierdes el acceso al agente{anomaly ? ' o dejas de ser persona central' : ''}, la tarea se pausa sola. Si necesita escribir, se crea una aprobación pendiente.</div></div>
         </div>

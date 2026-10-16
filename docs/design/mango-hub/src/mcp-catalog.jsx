@@ -81,6 +81,11 @@ function McpCatalog({ agents, setView }) {
 }
 
 function McpLevel({ level }) { const L = window.Lifecycle; const [l, c] = L.DATA_LEVEL[level]; return <span className={'badge ' + c} title={level === 'accounts' ? 'Solo roles centrales; nunca líderes de área' : level === 'write' ? 'Incluye tools que modifican recursos' : 'Información pública'}>{l}</span>; }
+function ToolKind({ t }) {
+  if (t.destructive) return <span className="badge badge-red" title="El manifiesto firmado la clasifica como destructiva: Mango no la habilita para ningún agente, ni con aprobación.">Destructiva · nunca se habilita</span>;
+  if (t.write) return <><span className="badge badge-amber" title="Confirmación o aprobación, según su política">Escritura · confirmación o aprobación</span>{t.unclassified && <span className="badge" title="El manifiesto no la clasifica: cuenta como escritura">Sin clasificar</span>}</>;
+  return <span className="badge">Lectura</span>;
+}
 function McpStatus({ s }) { const L = window.Lifecycle; if (s.status === 'soon') return <window.SoonTag />; const [l, c] = L.MCP_STATUS[s.status]; return <span className={'badge ' + c}>{s.status === 'installing' && <span className="g-spin" style={{ width: 9, height: 9, marginRight: 5 }} />}{l}</span>; }
 function McpHealth({ s }) {
   if (window.MangoStore.get().avail) return <window.SoonTag />;
@@ -91,7 +96,7 @@ function McpHealth({ s }) {
 
 function McpRow({ s, onOpen }) {
   const L = window.Lifecycle; const I = window.Icons;
-  const w = s.tools.filter(t => t.write).length;
+  const w = s.tools.filter(t => t.write && !t.destructive).length; const dz = s.tools.filter(t => t.destructive).length;
   const used = L.usedBy(s.id).length;
   return (
     <button className="mc-tr" onClick={onOpen}>
@@ -104,7 +109,7 @@ function McpRow({ s, onOpen }) {
       </span>
       <span className="row gap-1" style={{ flexWrap: 'wrap' }}><McpStatus s={s} />{s.update && <span className="badge badge-amber" title="Actualización con cambios en tools pendiente de aprobación">Actualización</span>}</span>
       <span className="row gap-1" style={{ flexWrap: 'wrap' }}><McpLevel level={s.level} /><McpMode s={s} /></span>
-      <span className="mk-meta">{s.tools.length}{w ? <> · <span style={{ color: 'var(--amber)' }}>{w} de escritura</span></> : ' · lectura'}</span>
+      <span className="mk-meta">{s.tools.length}{w ? <> · <span style={{ color: 'var(--amber)' }}>{w} de escritura</span></> : dz ? '' : ' · lectura'}{dz ? <> · <span style={{ color: 'var(--red)' }}>{dz} {dz === 1 ? 'destructiva' : 'destructivas'}</span></> : null}</span>
       <span className="mk-meta">{used || '—'}</span>
       <McpHealth s={s} />
     </button>
@@ -249,13 +254,14 @@ function McpDetail({ s, isAdmin, onClose, setView }) {
             {s.tools.map(t => (
               <div key={t.name} className="mk-line row between" style={{ alignItems: 'flex-start' }}>
                 <div style={{ minWidth: 0 }}><div className="mono" style={{ fontSize: 12.5, fontWeight: 600, overflowWrap: 'anywhere' }}>{t.name}</div>{!(avail && s.kind === 'pack') && <div className="mk-meta">{t.desc}</div>}</div>
-                <span className="row gap-1" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>{avail && t.service && <span className="badge badge-amber" title={'Responde con error si la cuenta pagadora no tiene activado ' + t.service + '; Mango no lo comprueba'}>Requiere {t.service}</span>}{avail && s.kind === 'connector' && s.level === 'accounts' && <span className={'badge' + (t.scope === 'org' ? ' badge-violet' : '')}>{t.scope === 'org' ? 'Solo grupos centrales' : 'Por usuario'}</span>}{t.write ? <span className="badge badge-amber" title="Confirmación o aprobación, según su política">Escritura · confirmación o aprobación</span> : <span className="badge">Lectura</span>}</span>
+                <span className="row gap-1" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>{avail && t.service && <span className="badge badge-amber" title={'Responde con error si la cuenta pagadora no tiene activado ' + t.service + '; Mango no lo comprueba'}>Requiere {t.service}</span>}{avail && s.kind === 'connector' && s.level === 'accounts' && <span className={'badge' + (t.scope === 'org' ? ' badge-violet' : '')}>{t.scope === 'org' ? 'Solo grupos centrales' : 'Por usuario'}</span>}<ToolKind t={t} /></span>
               </div>
             ))}
             {avail && s.kind === 'pack' && <div className="mk-meta" style={{ marginTop: 6 }}>El manifiesto firmado del pack solo trae nombre y tipo de acceso de cada tool.</div>}
+            {s.tools.some(t => t.destructive) && (n => <div className="mc-alert red" style={{ marginTop: 8, fontSize: 12.5 }}><I.Lock size={13} /><div>{n === 1 ? 'Una tool es destructiva' : n + ' tools son destructivas'}: Mango nunca {n === 1 ? 'la habilita' : 'las habilita'}, ni con aprobación, y no se {n === 1 ? 'puede' : 'pueden'} dar a un agente. El resto del pack funciona igual.</div></div>)(s.tools.filter(t => t.destructive).length)}
           </MkSec>
 
-          {s.status === 'pending' && isAdmin && !ownReq && <div className="mc-alert amber" style={{ display: 'block', fontSize: 12.5 }}><div style={{ fontWeight: 600, marginBottom: 4 }}>Antes de aprobar</div>{newPerms.length ? <div>Suma {newPerms.length} {newPerms.length === 1 ? 'permiso de AWS nuevo' : 'permisos de AWS nuevos'}: {newPerms.map(p => <code key={p} className="mc-tool-chip">{p}</code>)}</div> : <div>No suma permisos de AWS nuevos.</div>}{s.level === 'accounts' && <div style={{ marginTop: 4 }}>Nivel «Datos de cuentas»: solo lo podrán usar agentes de roles centrales.</div>}{s.tools.some(t => t.write) && <div style={{ marginTop: 4 }}>Incluye tools de escritura: cada uso pedirá confirmación o aprobación, según su política.</div>}</div>}
+          {s.status === 'pending' && isAdmin && !ownReq && <div className="mc-alert amber" style={{ display: 'block', fontSize: 12.5 }}><div style={{ fontWeight: 600, marginBottom: 4 }}>Antes de aprobar</div>{newPerms.length ? <div>Suma {newPerms.length} {newPerms.length === 1 ? 'permiso de AWS nuevo' : 'permisos de AWS nuevos'}: {newPerms.map(p => <code key={p} className="mc-tool-chip">{p}</code>)}</div> : <div>No suma permisos de AWS nuevos.</div>}{s.level === 'accounts' && <div style={{ marginTop: 4 }}>Nivel «Datos de cuentas»: solo lo podrán usar agentes de roles centrales.</div>}{s.tools.some(t => t.write && !t.destructive) && <div style={{ marginTop: 4 }}>Incluye tools de escritura: cada uso pedirá confirmación o aprobación, según su política.</div>}{s.tools.some(t => t.destructive) && <div style={{ marginTop: 4 }}>Incluye tools destructivas: no se habilitan, ni con aprobación.</div>}</div>}
           <MkSec title="Permisos de AWS">
             {s.perms.length ? <><div className="mk-meta" style={{ marginBottom: 6 }}>Lectura</div><div className="mc-perms">{s.perms.map(p => <code key={p}>{p}</code>)}</div></> : <div className="mk-meta">No usa permisos de AWS.</div>}
             {(s.wperms || []).length > 0 && <><div className="row gap-2" style={{ margin: '12px 0 6px', alignItems: 'center' }}><span className="badge badge-amber">Escritura</span><span className="mk-meta">Se usan solo tras una confirmación o aprobación, según su política</span></div><div className="mc-perms">{s.wperms.map(p => <code key={p}>{p}</code>)}</div></>}
@@ -292,13 +298,14 @@ function McpToolsTable({ rows, onOpen }) {
   const I = window.Icons; const L = window.Lifecycle;
   const [q, setQ] = useState(''); const [kind, setKind] = useState('all'); const [onlyOn, setOnlyOn] = useState(false);
   const Q = q.trim().toLowerCase();
-  const list = rows.filter(({ s, t }) => (kind === 'all' || (kind === 'write' ? t.write : !t.write)) && (!onlyOn || s.status === 'enabled') && (!Q || (t.name + ' ' + t.desc + ' ' + s.name).toLowerCase().includes(Q)));
-  const w = rows.filter(r => r.t.write && r.s.status === 'enabled').length;
+  const list = rows.filter(({ s, t }) => (kind === 'all' || (kind === 'write' ? t.write && !t.destructive : kind === 'destructive' ? t.destructive : !t.write)) && (!onlyOn || s.status === 'enabled') && (!Q || (t.name + ' ' + t.desc + ' ' + s.name).toLowerCase().includes(Q)));
+  const w = rows.filter(r => r.t.write && !r.t.destructive && r.s.status === 'enabled').length;
+  const anyD = rows.some(r => r.t.destructive);
   return (
     <>
       <div className="row gap-2" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
         <div className="search-wrap" style={{ flex: '1 1 220px', maxWidth: 300 }}><I.Search size={13} /><input className="input" placeholder="Buscar tool" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar tools" /></div>
-        <div className="tk-quick" role="group">{[['all', 'Todas'], ['read', 'Lectura'], ['write', 'Escritura']].map(([k, l]) => <button key={k} className={kind === k ? 'is-on' : ''} onClick={() => setKind(k)}>{l}</button>)}</div>
+        <div className="tk-quick" role="group">{[['all', 'Todas'], ['read', 'Lectura'], ['write', 'Escritura'], ...(anyD ? [['destructive', 'Destructivas']] : [])].map(([k, l]) => <button key={k} className={kind === k ? 'is-on' : ''} onClick={() => setKind(k)}>{l}</button>)}</div>
         <label className="row gap-2" style={{ fontSize: 12.5, cursor: 'pointer' }}><input type="checkbox" checked={onlyOn} onChange={e => setOnlyOn(e.target.checked)} style={{ accentColor: 'var(--accent)' }} /> Solo habilitadas</label>
         <div style={{ flex: 1 }} /><span className="mk-meta">{w} tools de escritura habilitadas</span>
       </div>
@@ -308,7 +315,7 @@ function McpToolsTable({ rows, onOpen }) {
           <button key={s.id + t.name} className="mt-tr" onClick={() => onOpen(s.id)}>
             <span style={{ minWidth: 0 }}><span className="mono" style={{ display: 'block', fontSize: 12.5, fontWeight: 600 }}>{t.name}</span><span className="mk-meta" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.desc}</span></span>
             <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
-            <span>{t.write ? <span className="badge badge-amber">Escritura · confirmación o aprobación</span> : <span className="badge">Lectura</span>}</span>
+            <span><ToolKind t={t} /></span>
             <span className="row gap-1" style={{ flexWrap: 'wrap' }}><McpLevel level={s.level} /><McpMode s={s} /></span>
             <span><McpStatus s={s} /></span>
           </button>

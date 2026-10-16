@@ -10,7 +10,7 @@ const AUDIT_ACTIONS = {
   'mapping.propose': 'Cambio de áreas propuesto', 'mapping.approve': 'Cambio de áreas aprobado', 'mapping.reject': 'Cambio de áreas rechazado', 'mapping.withdraw': 'Cambio de áreas retirado',
   'model.enable': 'Modelo habilitado', 'model.disable': 'Modelo deshabilitado', 'model.price': 'Precio de modelo cambiado', 'model.catalog_sync': 'Catálogo de Bedrock consultado', 'mcp.withdraw': 'Solicitud de MCP retirada', 'mcp.update_request': 'Actualización de MCP pedida',
   'group.create': 'Grupo creado', 'group.update': 'Grupo editado', 'group.delete': 'Grupo eliminado',
-  'skill.update': 'Skill actualizada', 'eval.run': 'Eval ejecutada', 'eval.create': 'Suite de evals creada', 'eval.update': 'Eval configurada', 'schedule.create': 'Schedule creado', 'schedule.update': 'Schedule editado', 'schedule.pause': 'Schedule pausado', 'schedule.resume': 'Schedule reanudado', 'schedule.run': 'Ejecución manual', 'schedule.retire': 'Schedule retirado', 'schedule.autopause': 'Schedule pausado automáticamente', 'kb.create': 'Knowledge base creada', 'kb.sync': 'Knowledge base sincronizada', 'kb.update': 'Knowledge base editada', 'kb.query': 'Búsqueda de prueba', 'role.assign': 'Rol asignado', 'role.switch': 'Cambio de rol', 'settings.update': 'Ajuste cambiado', 'skill.create': 'Skill creada',
+  'skill.update': 'Skill actualizada', 'eval.run': 'Eval ejecutada', 'eval.create': 'Suite de evals creada', 'eval.update': 'Eval configurada', 'schedule.create': 'Schedule creado', 'schedule.update': 'Schedule editado', 'schedule.pause': 'Schedule pausado', 'schedule.resume': 'Schedule reanudado', 'schedule.run': 'Ejecución manual', 'schedule.retire': 'Schedule retirado', 'schedule.autopause': 'Schedule pausado automáticamente', 'schedule.report_download': 'Reporte descargado', 'kb.create': 'Knowledge base creada', 'kb.sync': 'Knowledge base sincronizada', 'kb.update': 'Knowledge base editada', 'kb.query': 'Búsqueda de prueba', 'role.assign': 'Rol asignado', 'role.switch': 'Cambio de rol', 'settings.update': 'Ajuste cambiado', 'skill.create': 'Skill creada',
   'tool.execute': 'Tool ejecutada', 'playground.publish': 'Publicado desde playground', 'access.request': 'Solicitud de acceso', 'client.error': 'Error de cliente', 'chat.attach': 'Archivo adjuntado',
   'settings.propose': 'Cambio de ajuste propuesto', 'settings.approve': 'Cambio de ajuste aprobado', 'settings.reject': 'Cambio de ajuste rechazado', 'settings.withdraw': 'Propuesta de ajuste retirada',
   'agent.share_propose': 'Cambio de acceso propuesto', 'agent.share_approve': 'Cambio de acceso aprobado', 'agent.share_reject': 'Cambio de acceso rechazado', 'agent.share_withdraw': 'Cambio de acceso retirado', 'agent.retire': 'Agente retirado',
@@ -210,6 +210,12 @@ function AuditDetail({ r, audit, onClose, onActor, onTarget }) {
             {r.requestedAt && <div className="mk-kv"><span>Solicitado</span><span className="au-steps">{new Date(r.requestedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} · <span className="mono">{r.requestedId}</span> · se registra antes de aplicar</span></div>}
             <div className="mk-kv"><span>Hace</span><span>{window.fmtAgo(r.at)}</span></div>
           </MkSec>
+          {r.action === 'schedule.report_download' && <MkSec title="Descarga">
+            {r.task && <div className="mk-kv"><span>Tarea</span><span>{r.task}</span></div>}
+            {r.run && <div className="mk-kv"><span>Ejecución</span><span className="mono" style={{ fontSize: 12 }}>{r.run}</span></div>}
+            {r.file && <div className="mk-kv"><span>Archivo</span><span className="mono" style={{ fontSize: 12, overflowWrap: 'anywhere', textAlign: 'right' }}>{r.file}</span></div>}
+            <div className="mk-meta" style={{ marginTop: 4 }}>El enlace de descarga vence a los 5 minutos. Se registra quién, cuándo y qué ejecución; el contenido del reporte no.</div>
+          </MkSec>}
           {r.action === 'directory.list' && r.scope && <MkSec title="Lectura">
             <div className="mk-kv"><span>Qué se leyó</span><span>{r.scope === 'changes' ? 'Lista de cambios de personas' : 'Búsqueda de personas'}</span></div>
             <div className="mk-kv"><span>Resultados</span><span>{r.returned ?? '—'}</span></div>

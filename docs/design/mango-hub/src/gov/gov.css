@@ -195,7 +195,7 @@
 .g-help{margin-top:8px;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--input-bg);text-wrap:pretty}
 .g-dot-lg{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex-shrink:0}
 .g-dot-lg.sm{width:18px;height:18px}
-.g-dot-lg.green{background:var(--green-soft);color:var(--green)}.g-dot-lg.red{background:var(--red-soft);color:var(--red)}
+.g-dot-lg.green{background:var(--green-soft);color:var(--green)}.g-dot-lg.red{background:var(--red-soft);color:var(--red)}.g-dot-lg.amber{background:var(--amber-soft);color:var(--amber)}
 
 .g-toast{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:70;display:flex;gap:8px;align-items:center;padding:10px 14px;border-radius:10px;background:var(--text-strong);color:var(--bg);font-size:13px;box-shadow:var(--shadow);animation:gtoast .2s ease-out;max-width:calc(100% - 32px)}
 @keyframes gtoast{from{opacity:0;transform:translate(-50%,8px)}}

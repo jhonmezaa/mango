@@ -628,67 +628,118 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const approvals = window.useMango(st => st.approvals);
   const scheds = window.useMango(st => st.schedules) || [];
   const role = window.useMango(st => st.role);
+  const avail = window.useMango(st => st.avail);
+  const sim = window.useMango(st => st.simInbox) || null;
+  const actorOv = window.useMango(st => st.actorOverride);
   const toast = window.useToast?.();
+  const narrow = window.useMedia ? window.useMedia('(max-width: 900px)') : false;
+  const me = S.actor();
   const tk = (id) => tickets.find(t => t.id === id);
-  const base = React.useMemo(() => [
-    ...approvals.filter(ap => ap.status === 'pending').slice(0, 3).map((ap, i) => ({ id: 'ap-' + ap.id, type: 'approval', approvalId: ap.id, agent: ap.agent, title: 'Te piden aprobar: ' + ap.action, body: ap.impact + '. Política: ' + ap.policy + '.', time: window.fmtAgo(ap.at) })),
-    ...scheds.filter(s => s.owner === S.actor() && s.status !== 'retired').flatMap(s => { const r = (s.runs || []).find(x => x.status === 'ok' || x.status === 'failed'); if (!r || Date.now() - new Date(r.at).getTime() > 3 * 864e5) return []; const ok = r.status === 'ok'; return [{ id: 'run-' + r.id, type: 'run', agent: s.agent, ok, title: s.name + (ok ? ' · completada' : ' · no se completó'), body: ok ? window.scSummary(r) : (window.scReason(r) || 'No se pudo completar'), time: window.fmtAgo(r.at), scheduleId: s.id, runId: r.id, at: r.at }]; }).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 3),
-    { id: 'm-410', type: 'mention', agent: 'dev-01', title: 'Usuario 9 te mencionó en MNG-410', body: '“@Usuario 1 ¿puedes confirmar si el rollback de prod-web se puede hacer hoy antes de las 18:00?”', time: 'hace 4 h', ticketId: 'MNG-410' },
-    { id: 'b-res', type: 'budget', agent: 'fin-01', title: 'FinOps alcanzó 80% de su presupuesto', body: 'Lleva USD 2.400,00 de USD 3.000,00 este mes. Al 100% solo se enviará una alerta; no se pausará.', time: 'hace 5 h' },
-    { id: 't-412', type: 'ticket', agent: 'fin-01', title: 'MNG-412 pasó a En progreso', body: (tk('MNG-412') || {}).title || 'Identificar top 5 drivers de costo de octubre', time: 'hace 6 h', ticketId: 'MNG-412', threadId: 't1' },
-    { id: 't-404', type: 'ticket', agent: 'dev-01', title: 'MNG-404 se cerró', body: (tk('MNG-404') || {}).title || 'Ticket resuelto por el agente', time: 'hace 1 d', ticketId: 'MNG-404' },
-    { id: 's-sap', type: 'system', agent: 'sap-01', title: 'Heartbeat restaurado en SAP Procure', body: 'El agente volvió a responder tras 12 minutos sin heartbeat. No se perdieron solicitudes.', time: 'hace 1 d' },
-  ], [approvals, scheds, role]);
+  const PAGE = 20;
+  const [exAt] = React.useState(() => { const ago = (m) => new Date(Date.now() - m * 6e4).toISOString(); return { m: ago(240), b: ago(300), t1: ago(360), t2: ago(1440), s: ago(1500) }; });
+  // Orden: lo que te piden aprobar arriba; el resto, del más reciente al más antiguo. Los avisos de ejecución llegan de a 20.
+  const { pinned, rest } = React.useMemo(() => {
+    const byAt = (x, y) => new Date(y.at) - new Date(x.at);
+    const old = (at) => Date.now() - new Date(at).getTime() > 864e5;
+    const live = (ap) => !(ap.expiresMin != null && Date.now() - new Date(ap.at).getTime() > ap.expiresMin * 6e4);
+    const pinned = approvals.filter(ap => ap.status === 'pending' && live(ap) && S.can('approval.decide') && ap.requestedBy !== me && !(ap.approvalsGiven || []).includes(me)).sort(byAt)
+      .map(ap => ({ id: 'ap-' + ap.id, type: 'approval', approvalId: ap.id, agent: ap.agent, title: 'Te piden aprobar: ' + ap.action, body: (avail || !ap.impact ? '' : ap.impact + '. ') + 'Política: ' + ap.policy + '.', at: ap.at }));
+    const mine = scheds.filter(s => s.owner === me);
+    const runs = mine.flatMap(s => (s.runs || []).filter(r => r.status === 'ok' || r.status === 'failed').map(r => { const ok = r.status === 'ok'; return { id: 'run-' + r.id, type: 'run', agent: s.agent, ok, title: s.name + (ok ? ' · completada' : ' · no se completó'), body: ok ? window.scSummary(r) : (window.scReason(r) || 'No se pudo completar'), at: r.at, scheduleId: s.id, runId: r.id, seedRead: old(r.at) }; }));
+    if (sim === 'gone' && runs.length) { runs.sort(byAt); runs[0] = { ...runs[0], runId: runs[0].runId + '-vencida', seedRead: false }; }
+    // Diseño completo: avisos que el producto aún no envía (la tarea dejó de correr; respuesta a tu solicitud).
+    const tasks = avail ? [] : mine.flatMap(s => {
+      const base = { type: 'task', agent: s.agent, scheduleId: s.id };
+      if (s.status === 'paused' && s.autoPaused) return [{ ...base, id: 'tsk-' + s.id + '-auto', kind: 'auto', title: s.name + ' · se pausó sola', body: s.autoPaused.kind === 'central' ? 'Dejaste de ser persona central: no se ejecutará mientras no vuelvas a serlo.' : 'Perdiste el acceso al agente: no se ejecutará mientras no lo recuperes. Si no lo vas a recuperar, retírala.', at: s.autoPaused.at, seedRead: old(s.autoPaused.at) }];
+      if (s.status === 'paused' && s.paused?.by === 'admin') return [{ ...base, id: 'tsk-' + s.id + '-admin-' + (s.paused.at || ''), kind: 'admin', title: s.name + ' · un administrador la pausó', body: 'No se ejecutará, ni a pedido, hasta que un administrador la reanude.', reason: s.paused.reason, at: s.paused.at || new Date().toISOString() }];
+      if (s.status === 'retired' && s.retired && s.retired.by !== s.owner) return [{ ...base, id: 'tsk-' + s.id + '-retired', kind: 'retired', title: s.name + ' · un administrador la retiró', body: 'No vuelve a ejecutarse; el historial se conserva.', reason: s.retired.reason, at: s.retired.at }];
+      return [];
+    });
+    const reqs = avail ? [] : approvals.filter(ap => ap.requestedBy === me && ap.decidedBy && (ap.status === 'rejected' || ['approved', 'executing', 'executed', 'failed'].includes(ap.status) || (ap.status === 'expired' && ap.wasApproved))).map(ap => { const ok = ap.status !== 'rejected'; return { id: 'req-' + ap.id + (ok ? '-a' : '-r'), type: 'request', ok, approvalId: ap.id, agent: ap.agent, title: (ok ? 'Aprobaron tu solicitud: ' : 'Rechazaron tu solicitud: ') + ap.action, body: ok ? 'Aprobó ' + ap.decidedBy + '. La ejecutas tú, antes de que venza.' : 'Rechazó ' + ap.decidedBy + (ap.note ? ': «' + ap.note + '»' : '') + '.', at: ap.decidedAt || ap.at, seedRead: old(ap.decidedAt || ap.at) }; });
+    const ex = avail ? [] : [
+      { id: 'm-410', type: 'mention', agent: 'dev-01', title: 'Usuario 9 te mencionó en MNG-410', body: '“@Usuario 1 ¿puedes confirmar si el rollback de prod-web se puede hacer hoy antes de las 18:00?”', at: exAt.m, ticketId: 'MNG-410' },
+      { id: 'b-res', type: 'budget', agent: 'fin-01', title: 'FinOps alcanzó 80% de su presupuesto', body: 'Lleva USD 2.400,00 de USD 3.000,00 este mes. Al 100% solo se enviará una alerta; no se pausará.', at: exAt.b },
+      { id: 't-412', type: 'ticket', agent: 'fin-01', title: 'MNG-412 pasó a En progreso', body: (tk('MNG-412') || {}).title || 'Identificar top 5 drivers de costo de octubre', at: exAt.t1, ticketId: 'MNG-412', threadId: 't1' },
+      { id: 't-404', type: 'ticket', agent: 'dev-01', title: 'MNG-404 se cerró', body: (tk('MNG-404') || {}).title || 'Ticket resuelto por el agente', at: exAt.t2, ticketId: 'MNG-404' },
+      { id: 's-sap', type: 'system', agent: 'sap-01', title: 'Heartbeat restaurado en SAP Procure', body: 'El agente volvió a responder tras 12 minutos sin heartbeat. No se perdieron solicitudes.', at: exAt.s },
+    ];
+    return { pinned, rest: [...runs, ...tasks, ...reqs, ...ex].sort(byAt) };
+  }, [approvals, scheds, role, avail, sim, actorOv, tickets]);
   const [state, setState] = React.useState(() => { try { return JSON.parse(localStorage.getItem('mango-inbox') || '{}'); } catch { return {}; } });
   const [tab, setTab] = React.useState('all');
+  const [arch, setArch] = React.useState(false);
   const [sel, setSel] = React.useState(null);
+  const [pages, setPages] = React.useState(1);
+  const [more, setMore] = React.useState(null);
   const [replying, setReplying] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   React.useEffect(() => { setReplying(false); setDraft(''); }, [sel]);
-  const save = (n) => { setState(n); localStorage.setItem('mango-inbox', JSON.stringify(n)); };
-  const items = base.map(it => ({ ...it, read: !!state[it.id]?.read, archived: !!state[it.id]?.archived }));
-  const unread = items.filter(i => !i.read && !i.archived).length;
+  React.useEffect(() => { if (avail && tab === 'mentions') setTab('all'); }, [avail]);
+  const persist = (n) => { setState(n); localStorage.setItem('mango-inbox', JSON.stringify(n)); };
+  // Marcar y archivar: si el servidor no lo guarda, el aviso queda como estaba. Abrir un aviso que no se pudo marcar no avisa: se marca la próxima vez.
+  const save = (n) => { if (S.get().simInbox === 'save') { toast?.({ tone: 'error', msg: 'No se pudo guardar el cambio. Vuelve a intentarlo.' }); return false; } persist(n); return true; };
+  const deco = (it) => ({ ...it, read: state[it.id]?.read ?? !!it.seedRead, archived: !!state[it.id]?.archived });
+  const all = [...pinned, ...rest].map(deco);
+  const shown = rest.slice(0, pages * PAGE);
+  const hasMore = rest.length > shown.length;
+  const loaded = [...pinned, ...shown].map(deco);
+  const unread = all.filter(i => !i.read && !i.archived).length;
   React.useEffect(() => { S.set({ inboxUnread: unread }); }, [unread]);
-  const list = items.filter(i => tab === 'archived' ? i.archived : !i.archived && (tab === 'all' || (tab === 'unread' && !i.read) || (tab === 'mentions' && i.type === 'mention') || (tab === 'approvals' && i.type === 'approval')));
-  const open = (it) => { setSel(it.id); if (!it.read) save({ ...state, [it.id]: { ...state[it.id], read: true } }); };
-  const archive = (it) => { save({ ...state, [it.id]: { read: true, archived: !it.archived } }); toast?.({ tone: 'info', msg: it.archived ? 'Movido a la bandeja' : 'Archivado' }); if (sel === it.id) setSel(null); };
-  const markAll = () => { const n = { ...state }; items.forEach(i => { n[i.id] = { ...n[i.id], read: true }; }); save(n); };
-  const current = items.find(i => i.id === sel);
+  const inTab = (i) => arch ? i.archived : !i.archived && (tab === 'all' || (tab === 'unread' && !i.read) || (tab === 'approvals' && (i.type === 'approval' || i.type === 'request')) || (tab === 'mentions' && i.type === 'mention'));
+  const list = loaded.filter(inTab);
+  const paged = arch || tab === 'all' || tab === 'unread';
+  const open = (it) => { setSel(it.id); if (!it.read && S.get().simInbox !== 'save') persist({ ...state, [it.id]: { ...state[it.id], read: true } }); if (narrow) setTimeout(() => document.getElementById('inbox-detail-h')?.focus(), 0); };
+  const back = () => { const id = sel; setSel(null); setTimeout(() => document.getElementById('inbox-row-' + id)?.focus(), 0); };
+  React.useEffect(() => { if (!narrow || !sel) return; const h = (e) => { if (e.key === 'Escape') back(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [narrow, sel]);
+  const archive = (it) => { if (!save({ ...state, [it.id]: { read: true, archived: !it.archived } })) return; toast?.({ tone: 'info', msg: it.archived ? 'Movido a la bandeja' : 'Archivado' }); if (sel === it.id) setSel(null); };
+  const markAll = () => { const n = { ...state }; all.forEach(i => { n[i.id] = { ...n[i.id], read: true }; }); save(n); };
+  const loadMore = () => { setMore('loading'); setTimeout(() => { if (S.get().simInbox === 'more') { setMore('error'); return; } setPages(p => p + 1); setMore(null); }, 700); };
+  const current = all.find(i => i.id === sel);
   const ICON = { approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
-  const TYPE = { approval: 'Aprobación', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución' };
+  const iconOf = (it) => it.type === 'request' ? (it.ok ? ['Check2', 'var(--green)'] : ['X2', 'var(--red)']) : it.type === 'task' ? (it.kind === 'retired' ? ['Archive', 'var(--text-muted)'] : ['Pause', 'var(--amber)']) : ICON[it.type];
+  const TYPE = { approval: 'Aprobación', request: 'Tu solicitud', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución', task: 'Tarea' };
+  const loadErr = sim === 'error'; const loading = sim === 'loading';
 
   return (
     <>
-      <Topbar crumbs={["Bandeja"]} actions={<button className="btn btn-sm" onClick={markAll} disabled={!unread}>Marcar todo como leído</button>} />
-      <div className="inbox">
+      <Topbar crumbs={["Bandeja"]} actions={<button className="btn btn-sm" onClick={markAll} disabled={!unread || loading || loadErr}>Marcar todo como leído</button>} />
+      <div className={'inbox' + (current ? ' show-detail' : '')}>
         <div className="inbox-list">
-          <div style={{ padding: '4px 24px 0' }}>
+          <div className="inbox-head">
             <h1 className="page-title">Bandeja</h1>
-            <p className="page-subtitle" style={{ marginBottom: 12 }}>{unread ? unread + ' sin leer' : 'Todo al día'}</p>
+            <div className="inbox-sub">
+              <p className="page-subtitle" style={{ margin: 0 }}>{arch ? 'Archivado' : unread ? unread + ' sin leer' : 'Todo al día'}</p>
+              <button className="btn btn-sm btn-ghost" onClick={() => { setArch(x => !x); setSel(null); }}>{arch ? <><I.ChevronLeft size={12} /> Volver a la bandeja</> : <><I.Archive size={12} /> Archivado</>}</button>
+            </div>
           </div>
-          <div className="tabs" role="tablist" style={{ padding: '0 24px' }}>
-            {[['all', 'Todo'], ['unread', 'Sin leer'], ['approvals', 'Aprobaciones'], ['mentions', 'Menciones'], ['archived', 'Archivado']].map(([k, l]) => (
-              <button key={k} role="tab" aria-selected={tab === k} className={'tab ' + (tab === k ? 'active' : '')} onClick={() => setTab(k)}>{l}</button>
-            ))}
-          </div>
-          <div role="listbox" aria-label="Notificaciones">
-            {list.length === 0 && <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13.5 }}>Nada por aquí.</div>}
-            {list.map(it => {
-              const [ic, col] = ICON[it.type]; const Ic = I[ic];
-              const ag = agents.find(x => x.id === it.agent);
-              return (
-                <button key={it.id} role="option" aria-selected={sel === it.id} className={'inbox-row ' + (sel === it.id ? 'on' : '')} onClick={() => open(it)}>
-                  <span className="inbox-dot" style={{ background: it.read ? 'transparent' : 'var(--accent)' }} aria-label={it.read ? undefined : 'No leído'} />
-                  <span style={{ color: col, display: 'flex', paddingTop: 2 }}><Ic size={15} /></span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: it.read ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</span>
-                    <span style={{ display: 'block', fontSize: 13.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ag ? ag.name + ' · ' : ''}{it.body}</span>
-                  </span>
-                  <span style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{it.time}</span>
-                </button>
-              );
-            })}
-          </div>
+          {!arch && <div className="tabs" role="tablist" aria-label="Filtrar avisos" style={{ padding: '0 24px' }}>
+            {[['all', 'Todo'], ['unread', 'Sin leer'], ['approvals', 'Aprobaciones']].map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={'tab ' + (tab === k ? 'active' : '')} onClick={() => setTab(k)}>{l}</button>)}
+            {avail ? <button role="tab" aria-selected="false" aria-disabled="true" tabIndex={-1} className="tab inbox-tab-soon" title="Próximamente">Menciones <window.SoonTag /></button>
+              : <button role="tab" aria-selected={tab === 'mentions'} className={'tab ' + (tab === 'mentions' ? 'active' : '')} onClick={() => setTab('mentions')}>Menciones</button>}
+          </div>}
+          {loading ? <div role="status" aria-label="Cargando la bandeja">{[0, 1, 2, 3, 4].map(i => <div key={i} className="inbox-row" style={{ cursor: 'default' }}><span className="inbox-dot" /><span style={{ flex: 1, display: 'grid', gap: 7 }}><window.GovKit.Skel w="64%" /><window.GovKit.Skel w="88%" h={10} /></span></div>)}</div>
+            : loadErr ? <div role="alert" style={{ padding: 16 }}><window.GovKit.ErrorState title="No se pudo cargar la bandeja" body="Vuelve a intentarlo en unos segundos." onRetry={() => S.set({ simInbox: null })} /></div>
+            : <div role="listbox" aria-label="Avisos">
+              {list.length === 0 && <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13.5 }}>Nada por aquí.</div>}
+              {list.map(it => {
+                const [ic, col] = iconOf(it); const Ic = I[ic];
+                const ag = agents.find(x => x.id === it.agent);
+                return (
+                  <button key={it.id} id={'inbox-row-' + it.id} role="option" aria-selected={sel === it.id} className={'inbox-row ' + (sel === it.id ? 'on' : '')} onClick={() => open(it)}>
+                    <span className="inbox-dot" style={{ background: it.read ? 'transparent' : 'var(--accent)' }} aria-label={it.read ? undefined : 'No leído'} />
+                    <span style={{ color: col, display: 'flex', paddingTop: 2 }}><Ic size={15} /></span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: it.read ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</span>
+                      <span style={{ display: 'block', fontSize: 13.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ag ? ag.name + ' · ' : ''}{it.body}</span>
+                    </span>
+                    <span style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{window.fmtAgo(it.at)}</span>
+                  </button>
+                );
+              })}
+              {paged && hasMore && <div className="inbox-more">{more === 'error'
+                ? <div role="alert" className="inbox-more-err"><span>No se pudieron cargar más avisos.</span><button className="btn btn-sm" onClick={loadMore}><I.Refresh size={12} /> Reintentar</button></div>
+                : <button className="btn btn-sm" disabled={more === 'loading'} onClick={loadMore}>{more === 'loading' ? <><span className="g-spin" aria-hidden="true"></span> Cargando…</> : 'Mostrar más'}</button>}</div>}
+            </div>}
         </div>
         <div className="inbox-detail">
           {!current ? (
@@ -698,18 +749,23 @@ function Inbox({ tickets, agents, setView, openChat }) {
           ) : (() => {
             const ag = agents.find(x => x.id === current.agent);
             const ap = current.approvalId && approvals.find(x => x.id === current.approvalId);
+            const sc = current.scheduleId && scheds.find(x => x.id === current.scheduleId);
+            const run = sc && current.runId && sc.runs.find(x => x.id === current.runId);
+            const pdf = !avail && sc?.report && run?.report?.status === 'ready';
             return (
               <div style={{ maxWidth: 620, width: '100%' }}>
-                <div className="row between" style={{ marginBottom: 14 }}>
+                <button className="btn btn-sm btn-ghost inbox-back" onClick={back}><I.ChevronLeft size={12} /> Volver a la lista</button>
+                <div className="row between" style={{ marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
                   <span className="badge">{TYPE[current.type]}</span>
                   <span className="row gap-1">
                     <button className="btn btn-sm btn-ghost" onClick={() => save({ ...state, [current.id]: { ...state[current.id], read: !current.read } })}>{current.read ? 'Marcar como no leído' : 'Marcar como leído'}</button>
                     <button className="btn btn-sm" onClick={() => archive(current)}><I.Archive size={12} /> {current.archived ? 'Desarchivar' : 'Archivar'}</button>
                   </span>
                 </div>
-                <h2 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', margin: '0 0 6px' }}>{current.title}</h2>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : 'Sistema'} · {current.time}</div>
+                <h2 id="inbox-detail-h" tabIndex={-1} style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', margin: '0 0 6px', outline: 'none' }}>{current.title}</h2>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : 'Sistema'} · {window.fmtAgo(current.at)}</div>
                 {current.type !== 'mention' && <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 22px' }}>{current.body}</p>}
+                {current.reason && <div className="mc-alert" style={{ marginBottom: 18 }}><I.Info size={14} /><div>Motivo: {current.reason}</div></div>}
                 {ap && <div className="card" style={{ padding: 16, marginBottom: 16 }}><window.ApprovalDecision ap={ap} /></div>}
                 {current.type === 'mention' && (
                   <div style={{ marginBottom: 18 }}>
@@ -718,11 +774,13 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   </div>
                 )}
                 <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
-                  {current.type === 'approval' && <button className="btn btn-sm" onClick={() => setView('approvals')}>Ver en Aprobaciones <I.ArrowRight size={11} /></button>}
+                  {(current.type === 'approval' || current.type === 'request') && <button className="btn btn-sm" onClick={() => setView('approvals')}>Ver en Aprobaciones <I.ArrowRight size={11} /></button>}
                   {current.ticketId && <button className="btn btn-sm" onClick={() => setView('tickets', current.ticketId)}>Abrir {current.ticketId} <I.ArrowRight size={11} /></button>}
                   {(current.threadId || ap?.threadId) && <button className="btn btn-sm" onClick={() => openChat(current.agent, current.threadId || ap.threadId)}>Ver conversación <I.ArrowRight size={11} /></button>}
                   {current.type === 'budget' && <button className="btn btn-sm" onClick={() => setView('budgets')}>Ajustar presupuesto <I.ArrowRight size={11} /></button>}
-                  {current.type === 'run' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId, run: current.ok ? current.runId : null } }); setView('schedules'); }}>{current.ok ? 'Ver resultado' : 'Ver ejecución'} <I.ArrowRight size={11} /></button>}
+                  {current.type === 'run' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId, run: current.ok ? current.runId : null, ref: current.runId } }); setView('schedules'); }}>{current.ok ? 'Ver resultado' : 'Ver ejecución'} <I.ArrowRight size={11} /></button>}
+                  {pdf && <window.ScRepDl s={sc} r={run} btn />}
+                  {current.type === 'task' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId } }); setView('schedules'); }}>Ver tarea <I.ArrowRight size={11} /></button>}
                   {current.type === 'mention' && !replying && <button className="btn btn-sm btn-primary" onClick={() => setReplying(true)}><I.Chat size={12} /> Responder</button>}
                 </div>
               </div>

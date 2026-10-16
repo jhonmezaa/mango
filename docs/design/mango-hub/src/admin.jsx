@@ -126,7 +126,7 @@ function AgentAdmin({ agents, models, setView, routeId }) {
     setSnap(s => ({ ...s, name: t.label, desc: t.desc, cat: t.cat, icon: t.icon, color: t.color, prompt: t.prompt, groups: t.groups.filter(g => groups.includes(g)), tools: t.tools.filter(id => L.toolInfo(id).server?.status === 'enabled') }));
   };
   const toggleTool = (id) => set({ tools: snap.tools.includes(id) ? snap.tools.filter(x => x !== id) : [...snap.tools, id] });
-  const toggleServer = (s) => { const ids = s.tools.map(t => L.toolId(s, t)); const all = ids.every(id => snap.tools.includes(id)); set({ tools: all ? snap.tools.filter(x => !ids.includes(x)) : [...new Set([...snap.tools, ...ids])] }); };
+  const toggleServer = (s) => { const ids = s.tools.filter(t => !t.destructive).map(t => L.toolId(s, t)); const all = ids.every(id => snap.tools.includes(id)); set({ tools: all ? snap.tools.filter(x => !ids.includes(x)) : [...new Set([...snap.tools, ...ids])] }); };
   const toggleGroup = (g) => set({ groups: snap.groups.includes(g) ? snap.groups.filter(x => x !== g) : [...snap.groups, g] });
   const finalSnap = () => ({ ...snap, role: (snap.role || '').trim(), name: snap.name.trim(), desc: snap.desc.trim() || `Agente ${snap.cat}` });
 
@@ -285,7 +285,7 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                   : acctSel && areaSel.length > 0 && <div className="mc-alert amber"><I.Warn size={14} /><div>Hay tools de <b>Datos de cuentas</b> y el agente es visible para roles de área ({areaSel.join(', ')}). No se podrá enviar así.</div></div>}
                 <div className="ab-list" style={{ maxHeight: 460 }}>
                   {enabled.map(s => {
-                    const ids = s.tools.map(t => L.toolId(s, t)); const nOn = ids.filter(id => snap.tools.includes(id)).length;
+                    const ids = s.tools.filter(t => !t.destructive).map(t => L.toolId(s, t)); const nOn = ids.filter(id => snap.tools.includes(id)).length;
                     return (
                       <React.Fragment key={s.id}>
                         <div className="ab-group row between" style={{ gap: 8 }}>
@@ -293,12 +293,12 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                           <button type="button" className="sr-link" onClick={() => toggleServer(s)}>{nOn === ids.length ? 'Quitar todas' : 'Todas'}</button>
                         </div>
                         {s.tools.map(t => { const id = L.toolId(s, t); const on = snap.tools.includes(id); return (
-                          <button key={id} type="button" className={'ab-item' + (on ? ' is-on' : '')} onClick={() => toggleTool(id)} aria-pressed={on}>
-                            <span className="ab-check">{on && <I.Check size={10} />}</span>
-                            <span style={{ flex: 1, minWidth: 0 }}><span className="mono" style={{ display: 'block', fontSize: 12.5, fontWeight: 500 }}>{t.name}</span><span className="ab-sub">{t.desc}</span></span>
+                          <button key={id} type="button" className={'ab-item' + (on ? ' is-on' : '') + (t.destructive ? ' is-off' : '')} disabled={!!t.destructive} onClick={() => !t.destructive && toggleTool(id)} aria-pressed={t.destructive ? undefined : on}>
+                            <span className="ab-check">{on && !t.destructive && <I.Check size={10} />}</span>
+                            <span style={{ flex: 1, minWidth: 0 }}><span className="mono" style={{ display: 'block', fontSize: 12.5, fontWeight: 500 }}>{t.name}</span><span className="ab-sub">{t.desc}{t.destructive ? ' · No se puede dar a un agente.' : ''}</span></span>
                             {avail && s.level === 'accounts' && t.scope === 'org' && <span className="badge badge-violet" title="Responde por toda la organización: solo la pueden usar grupos centrales">Solo grupos centrales</span>}
                             {avail && t.service && <span className="badge badge-amber" title={'Responde con error si la cuenta pagadora no tiene activado ' + t.service + '; Mango no lo comprueba'}>Requiere {t.service}</span>}
-                            {t.write ? <span className="badge badge-amber" title="Confirmación o aprobación, según su política">Escritura · confirmación o aprobación</span> : <span className="badge">Lectura</span>}
+                            <ToolKind t={t} />
                           </button>
                         ); })}
                       </React.Fragment>

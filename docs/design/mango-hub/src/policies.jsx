@@ -23,7 +23,7 @@ const polSummary = (p) => (polBelow(p) ? polBelow(p) + ': confirma el usuario ·
 function writeTools() {
   const S = window.MangoStore;
   const cat = S.get().mcpCatalog || [];
-  const fromCat = cat.flatMap(s => s.tools.filter(t => t.write).map(t => ({ id: s.id + '.' + t.name, server: s.name, desc: t.desc, status: s.status })));
+  const fromCat = cat.flatMap(s => s.tools.filter(t => t.write && !t.destructive).map(t => ({ id: s.id + '.' + t.name, server: s.name, desc: t.desc, status: s.status })));
   const extra = Object.keys(S.get().toolPolicies || {}).filter(id => !fromCat.some(x => x.id === id)).map(id => ({ id, server: id.split('.')[0], desc: '', status: 'enabled' }));
   return [...fromCat, ...extra];
 }
