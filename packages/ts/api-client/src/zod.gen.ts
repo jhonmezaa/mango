@@ -117,10 +117,12 @@ export const zAgentStateOutSchema = z.object({
 /**
  * AnomalyOut
  *
- * The cost anomaly that started an event run: its dates only (D79 (4)).
+ * The cost anomaly that started an event run: its dates and AWS's id, nothing written by
+ * people (D79 (4), D85). Runs from before D85 have no id.
  */
 export const zAnomalyOutSchema = z.object({
     end: z.iso.date(),
+    id: z.string().nullish(),
     start: z.iso.date()
 });
 
@@ -206,7 +208,8 @@ export const zCatalogToolSchema = z.object({
     enabled: z.boolean().optional().default(true),
     name: z.string(),
     ref: z.string(),
-    requires_service: z.string().nullish()
+    requires_service: z.string().nullish(),
+    unclassified: z.boolean().optional().default(false)
 });
 
 /**
@@ -484,6 +487,7 @@ export const zHealthOutSchema = z.object({
     code: z.enum([
         'agent_unavailable',
         'access_lost',
+        'budget_skipped',
         'failing'
     ]),
     tone: z.enum(['red', 'amber'])

@@ -368,13 +368,18 @@ export type AgentStateOut = {
 /**
  * AnomalyOut
  *
- * The cost anomaly that started an event run: its dates only (D79 (4)).
+ * The cost anomaly that started an event run: its dates and AWS's id, nothing written by
+ * people (D79 (4), D85). Runs from before D85 have no id.
  */
 export type AnomalyOut = {
     /**
      * End
      */
     end: string;
+    /**
+     * Id
+     */
+    id?: string | null;
     /**
      * Start
      */
@@ -777,6 +782,10 @@ export type CatalogTool = {
      * Requires Service
      */
     requires_service?: string | null;
+    /**
+     * Unclassified
+     */
+    unclassified?: boolean;
 };
 
 /**
@@ -1354,7 +1363,7 @@ export type HealthOut = {
     /**
      * Code
      */
-    code: 'agent_unavailable' | 'access_lost' | 'failing';
+    code: 'agent_unavailable' | 'access_lost' | 'budget_skipped' | 'failing';
     /**
      * Tone
      */

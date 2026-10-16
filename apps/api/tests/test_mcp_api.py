@@ -836,6 +836,11 @@ def test_packs_this_installation_cannot_install_are_not_requested(
     for tool in pack["tools"]:
         # The catalog lists the class the installation applies (D84).
         assert tool["access"] == declared.get(tool["name"], "read")
+        # Design 2026-10-16b: an unclassified tool is marked «Sin clasificar».
+        unclassified = any(
+            t["name"] == tool["name"] and "access" not in t for t in changes.get("tools", [])
+        )
+        assert tool["unclassified"] is unclassified
     response = _request(env)
     assert (response.status_code, _code(response)) == (409, "pack_unsupported")
 

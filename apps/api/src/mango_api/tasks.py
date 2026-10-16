@@ -180,17 +180,19 @@ class RetiredOut(_Strict):
 
 class HealthOut(_Strict):
     tone: Literal["red", "amber"]
-    code: Literal["agent_unavailable", "access_lost", "failing"]
+    code: Literal["agent_unavailable", "access_lost", "budget_skipped", "failing"]
 
 
 RunStatusOut = Literal["queued", "running", "ok", "failed", "skipped", "approval"]
 
 
 class AnomalyOut(_Strict):
-    """The cost anomaly that started an event run: its dates only (D79 (4))."""
+    """The cost anomaly that started an event run: its dates and AWS's id, nothing written by
+    people (D79 (4), D85). Runs from before D85 have no id."""
 
     start: date
     end: date
+    id: str | None = None
 
 
 class StepOut(_Strict):
@@ -474,6 +476,7 @@ def run_out(run: Run, *, owner: bool = True) -> RunOut:
             AnomalyOut(
                 start=date.fromisoformat(run.anomaly_start),
                 end=date.fromisoformat(run.anomaly_end),
+                id=run.anomaly_id,
             )
             if run.anomaly_start and run.anomaly_end
             else None
@@ -498,6 +501,9 @@ def _health(
         return HealthOut(tone="red", code="agent_unavailable")
     if automation.paused_reason is PauseReason.ACCESS_LOST:
         return HealthOut(tone="red", code="access_lost")
+    # The design: until the agent's budget is computed, the last run tells it (2026-10-16b).
+    if runs and runs[0].status is RunStatus.SKIPPED and runs[0].reason == "budget_exceeded":
+        return HealthOut(tone="amber", code="budget_skipped")
     failed = sum(1 for r in runs[:3] if r.status is RunStatus.FAILED)
     if failed >= 2:  # noqa: PLR2004 - the design: «2 de las últimas 3 ejecuciones fallaron»
         return HealthOut(tone="red", code="failing")

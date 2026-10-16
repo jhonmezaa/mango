@@ -114,6 +114,9 @@ class ManifestTool(_Frozen):
     access: Literal["read", "write", "destructive"]
     audience: Literal["all", "central"] = "all"
     approval: ManifestApproval | None = None
+    unclassified: bool = False
+    """A pack tool the signed manifest does not classify: it counts as ``write`` (D84). Only the
+    catalog sets it; a connector cannot declare it."""
 
 
 class ManifestIam(_Frozen):
@@ -152,6 +155,8 @@ class ConnectorManifest(McpServer):
         # A destructive tool is never enabled (D84): the release must not ship one.
         if any(tool.access == "destructive" for tool in self.tools):
             raise ValueError("a connector declares no destructive tool (D84)")
+        if any(tool.unclassified for tool in self.tools):
+            raise ValueError("a connector classifies every tool (D84)")
         return self
 
 
@@ -231,6 +236,7 @@ class PackState:
         manifest = self.release.manifest
         # An unclassified tool is listed as the write it counts as (D84).
         declared = {tool.name: tool.effective_access.value for tool in manifest.tools}
+        unclassified = {tool.name for tool in manifest.tools if tool.access is None}
         for name in sorted(self.usable_tools - declared.keys()):
             # The provisioner only installs packs whose tools are all read-only.
             declared[name] = "read"
@@ -258,7 +264,12 @@ class PackState:
             ),
             tools=tuple(
                 # Pack manifests carry no tool descriptions (they are in the signed snapshot).
-                ManifestTool(name=name, description="", access=access)  # type: ignore[arg-type]
+                ManifestTool(
+                    name=name,
+                    description="",
+                    access=access,  # type: ignore[arg-type]
+                    unclassified=name in unclassified,
+                )
                 for name, access in declared.items()
             ),
         )

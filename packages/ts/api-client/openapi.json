@@ -724,12 +724,23 @@
       },
       "AnomalyOut": {
         "additionalProperties": false,
-        "description": "The cost anomaly that started an event run: its dates only (D79 (4)).",
+        "description": "The cost anomaly that started an event run: its dates and AWS's id, nothing written by\npeople (D79 (4), D85). Runs from before D85 have no id.",
         "properties": {
           "end": {
             "format": "date",
             "title": "End",
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
           },
           "start": {
             "format": "date",
@@ -1441,6 +1452,11 @@
               }
             ],
             "title": "Requires Service"
+          },
+          "unclassified": {
+            "default": false,
+            "title": "Unclassified",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2493,6 +2509,7 @@
             "enum": [
               "agent_unavailable",
               "access_lost",
+              "budget_skipped",
               "failing"
             ],
             "title": "Code",

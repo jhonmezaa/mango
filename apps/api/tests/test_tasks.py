@@ -668,6 +668,11 @@ def test_without_budget_the_run_is_skipped_and_the_task_stays_active(env: Env) -
         "budget_exceeded",
     )
     assert env.events("budget.exceeded")
+    # Design 2026-10-16b: until the agent's budget is computed, the last run tells it.
+    assert detail["health"] == {"tone": "amber", "code": "budget_skipped"}
+    env.budgets.exceed = False
+    env.deliver(_scheduled(task["task_id"], "2026-10-16T14:30:00Z"))
+    assert env.get("creator", task["task_id"]).json()["health"] is None
 
 
 def test_one_run_at_a_time(env: Env) -> None:
@@ -785,9 +790,44 @@ def test_a_run_shows_the_dates_of_the_anomaly_that_started_it(env: Env) -> None:
         task_runs.event_message("cost_anomaly", "a-1", datetime(2026, 10, 15, 9, tzinfo=UTC), data)
     )
     (run,) = _runs(env, task["task_id"])
-    assert run["anomaly"] == {"start": "2026-10-14", "end": "2026-10-15"}
+    # "a-1" is not a UUID: the id is not kept (D85).
+    assert run["anomaly"] == {"start": "2026-10-14", "end": "2026-10-15", "id": None}
     assert run["waiting_since"] is None
     assert "111122223333" not in json.dumps(env.get("admin", task["task_id"]).json())
+
+
+def test_a_run_keeps_the_id_aws_gave_the_anomaly(env: Env) -> None:
+    """D85: the id tells apart two anomalies of the same day; only a UUID is kept."""
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    anomaly = "8D09E1C2-4B5D-4E8F-9A01-8D092B3C4D5E"
+    data = {
+        "anomaly_id": anomaly,
+        "anomaly_start_date": "2026-10-14",
+        "anomaly_end_date": "2026-10-15",
+    }
+    env.deliver(
+        task_runs.event_message("cost_anomaly", "a-1", datetime(2026, 10, 15, 9, tzinfo=UTC), data)
+    )
+    (run,) = _runs(env, task["task_id"])
+    assert run["anomaly"]["id"] == anomaly.lower()
+    # The admin sees the run line, as the owner (D82): the same id, never the report.
+    (admin_run,) = env.get("admin", task["task_id"]).json()["runs"]
+    assert admin_run["anomaly"]["id"] == anomaly.lower()
+
+
+@pytest.mark.parametrize("anomaly", ["<b>x</b>", "8d09e1c2-4b5d-4e8f-9a01", 42, None])
+def test_an_id_that_is_not_a_uuid_is_not_kept(env: Env, anomaly: object) -> None:
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    data = {
+        "anomaly_id": anomaly,
+        "anomaly_start_date": "2026-10-14",
+        "anomaly_end_date": "2026-10-15",
+    }
+    env.deliver(
+        task_runs.event_message("cost_anomaly", "a-1", datetime(2026, 10, 15, 9, tzinfo=UTC), data)
+    )
+    (run,) = _runs(env, task["task_id"])
+    assert run["anomaly"] == {"start": "2026-10-14", "end": "2026-10-15", "id": None}
 
 
 @pytest.mark.parametrize(

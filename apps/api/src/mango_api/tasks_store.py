@@ -144,6 +144,8 @@ class Run:
     anomaly_start: str | None = None
     anomaly_end: str | None = None
     """The dates of the cost anomaly that started an event run (ISO dates, validated)."""
+    anomaly_id: str | None = None
+    """AWS's id of that anomaly (a UUID, validated; D85)."""
     steps: list[dict[str, str]] = field(default_factory=list)
     """What the agent wrote before each tool call, with the tool (``text``, ``tool``). When a run
     has steps, ``result`` is only what it wrote after the last one: the report."""
@@ -235,6 +237,7 @@ def _run(item: dict[str, Any]) -> Run:
         wake=_str(item, "wake"),
         anomaly_start=_str(item, "anomaly_start"),
         anomaly_end=_str(item, "anomaly_end"),
+        anomaly_id=_str(item, "anomaly_id"),
         steps=_steps(_str(item, "steps")),
         sk=item["SK"]["S"],
     )
@@ -597,6 +600,8 @@ class TaskStore:
         if run.anomaly_start and run.anomaly_end:
             item["anomaly_start"] = _s(run.anomaly_start)
             item["anomaly_end"] = _s(run.anomaly_end)
+            if run.anomaly_id:
+                item["anomaly_id"] = _s(run.anomaly_id)
         if run.reason:
             item["reason"] = _s(run.reason)
         if run.ended_at is not None:

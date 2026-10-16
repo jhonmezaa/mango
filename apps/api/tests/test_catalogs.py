@@ -70,6 +70,8 @@ def _manifest(**overrides: Any) -> dict[str, Any]:
         {"tools": [{"name": "t", "description": "", "access": "admin"}]},
         # A destructive tool is never enabled (D84): a connector cannot declare one.
         {"tools": [{"name": "t", "description": "", "access": "destructive"}]},
+        # Only the catalog marks a pack tool unclassified; a connector classifies them all.
+        {"tools": [{"name": "t", "description": "", "access": "write", "unclassified": True}]},
         {
             "tools": [
                 {"name": "t", "description": "", "access": "read"},

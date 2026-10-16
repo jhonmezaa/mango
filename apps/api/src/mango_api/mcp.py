@@ -151,6 +151,9 @@ class CatalogTool(_Strict):
     name: str
     description: str
     access: str
+    unclassified: bool = False
+    """The signed manifest does not classify it: it is listed as the ``write`` it counts as (D84)
+    and the design marks it «Sin clasificar»."""
     audience: str
     central_groups_only: bool
     enabled: bool = True
@@ -509,6 +512,7 @@ def _server_out(
                 name=tool.tool.name,
                 description=tool.tool.description,
                 access=tool.tool.access,
+                unclassified=tool.tool.unclassified,
                 audience=tool.tool.audience,
                 central_groups_only=tool.central_groups_only,
                 enabled=tool.enabled,

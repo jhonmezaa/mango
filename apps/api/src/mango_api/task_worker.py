@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 import threading
 import time
@@ -135,6 +136,21 @@ def anomaly_dates(event: task_runs.EventRun) -> tuple[str | None, str | None]:
             found.append("")
     start, end = found
     return (start, end) if start and end and start <= end else (None, None)
+
+
+_ANOMALY_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def anomaly_id(event: task_runs.EventRun) -> str | None:
+    """The id AWS gave the anomaly, if it is a UUID (D79 (4), D85): it tells apart the anomalies
+    of the same day on screen. Anything else in the event is untrusted and is not kept."""
+    if event.event_type != "cost_anomaly":
+        return None
+    value = event.data.get("anomaly_id")
+    if not isinstance(value, str):
+        return None
+    value = value.lower()
+    return value if _ANOMALY_ID.fullmatch(value) else None
 
 
 class RunSender(Protocol):
@@ -250,6 +266,7 @@ class TaskRuns:
         for automation in self.store.subscribed(message.event_type):
             run_id = message.run_id(automation.automation_id)
             start, end = anomaly_dates(message)
+            anomaly = anomaly_id(message) if start and end else None
             run = self.store.add_run(
                 Run(
                     run_id=run_id,
@@ -260,6 +277,7 @@ class TaskRuns:
                     event_ref=f"{message.event_type}:{message.event_id}",
                     anomaly_start=start,
                     anomaly_end=end,
+                    anomaly_id=anomaly,
                 )
             )
             if run is None:
