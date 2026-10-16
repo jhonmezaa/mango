@@ -15,6 +15,8 @@ export const roleNames = {
   billingReader: (ns: string) => mangoName(ns, "BillingReader"),
   costExplorerConnector: (ns: string) => mangoName(ns, "CostExplorerConnector"),
   adminProbe: (ns: string) => mangoName(ns, "AdminProbe"),
+  /** Daily check that Mango can enter each member account, as `mango-health` (D84). */
+  accountHealth: (ns: string) => mangoName(ns, "AccountHealth"),
   provisioner: (ns: string) => mangoName(ns, "Provisioner"),
   deprovisioner: (ns: string) => mangoName(ns, "Deprovisioner"),
   reconciler: (ns: string) => mangoName(ns, "Reconciler"),

@@ -1635,6 +1635,50 @@ export type MemberAccountOut = {
 };
 
 /**
+ * MemberHealthAccountOut
+ */
+export type MemberHealthAccountOut = {
+    /**
+     * Account Id
+     */
+    account_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Reason
+     */
+    reason?: 'broker_refused' | 'role_refused' | 'unexpected_account' | 'unavailable' | 'not_checked' | null;
+    /**
+     * Status
+     */
+    status: 'valid' | 'invalid' | 'pending';
+};
+
+/**
+ * MemberHealthOut
+ */
+export type MemberHealthOut = {
+    /**
+     * Accounts
+     */
+    accounts: Array<MemberHealthAccountOut>;
+    /**
+     * Checked At
+     */
+    checked_at: string | null;
+    /**
+     * Identity Required
+     */
+    identity_required: boolean | null;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
  * MessageOut
  */
 export type MessageOut = {
@@ -4258,6 +4302,31 @@ export type MemberAccessCheckResponses = {
 };
 
 export type MemberAccessCheckResponse = MemberAccessCheckResponses[keyof MemberAccessCheckResponses];
+
+export type GetMemberHealthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/member-health';
+};
+
+export type GetMemberHealthErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetMemberHealthError = GetMemberHealthErrors[keyof GetMemberHealthErrors];
+
+export type GetMemberHealthResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemberHealthOut;
+};
+
+export type GetMemberHealthResponse = GetMemberHealthResponses[keyof GetMemberHealthResponses];
 
 export type GetRequestsData = {
     body?: never;

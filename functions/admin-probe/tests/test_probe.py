@@ -191,6 +191,10 @@ def test_organization_failure_is_generic() -> None:
         {"operation": "organization"},
         {"operation": "organization", "actor": "a b c"},
         {"operation": "organization", "actor": "x" * 80},
+        # The system identity of the daily account health (D84): never an administrator's.
+        {"operation": "member_access", "actor": "mango-health", "account_id": MEMBER},
+        {"operation": "member_accounts", "actor": "mango-health"},
+        {"operation": "connectivity", "actor": "Mango-Health"},
     ],
 )
 def test_rejects_invalid_requests_without_aws_calls(event: Any) -> None:

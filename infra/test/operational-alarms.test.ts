@@ -42,8 +42,19 @@ const alarmsOf = (all: Resources) =>
   Object.fromEntries(ofType(all, "AWS::CloudWatch::Alarm").map(([, r]) => [r.Properties.AlarmName as string, r.Properties]));
 
 const alarms = alarmsOf(resources);
-/** The alarms of the publication path: they live in `Reconciler` and have their own tests. */
-const PUBLICATION = ["AgentDeprovisioner-failed", "AgentProvisioner-failed", "AgentProvisioner-volume", "Reconciler-failed", "Reconciler-findings"];
+/**
+ * The alarms of the publication path, which live in `Reconciler`, and of the daily account
+ * health (D84), which live in `AccountHealth`: both have their own tests.
+ */
+const PUBLICATION = [
+  "AgentDeprovisioner-failed",
+  "AgentProvisioner-failed",
+  "AgentProvisioner-volume",
+  "Reconciler-failed",
+  "Reconciler-findings",
+  "AccountHealth-failed",
+  "AccountHealth-invalid",
+];
 const operational = Object.fromEntries(
   Object.entries(alarms).filter(([name]) => !PUBLICATION.some((suffix) => name === `Mango-${ns}-${suffix}`)),
 );

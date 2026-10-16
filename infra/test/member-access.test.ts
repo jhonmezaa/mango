@@ -348,7 +348,10 @@ describe("ReadBroker (Core)", () => {
   )[0]!;
 
   it("trusts exactly the AdminProbe role, of the organization, with SourceIdentity", () => {
-    const statements = broker.Properties.AssumeRolePolicyDocument.Statement as Statement[];
+    const all = broker.Properties.AssumeRolePolicyDocument.Statement as Statement[];
+    // The daily account health has statements of its own (D84, account-health.test.ts).
+    const statements = all.filter((s) => !s.Sid?.startsWith("AccountHealth"));
+    expect(all.length - statements.length).toBe(2);
     expect(statements.flatMap((s) => listed(s.Action)).sort()).toEqual([
       "sts:AssumeRole",
       "sts:SetSourceIdentity",
@@ -362,6 +365,10 @@ describe("ReadBroker (Core)", () => {
       expect(statement.Condition?.StringEquals).toEqual({ "aws:PrincipalOrgID": cfg.organizationId });
     }
     expect(byAction(statements)["sts:AssumeRole"]!.Condition?.Null).toEqual({ "sts:SourceIdentity": "false" });
+    // Never as the system identity of the daily account health (D84).
+    for (const action of ["sts:AssumeRole", "sts:SetSourceIdentity"]) {
+      expect(byAction(statements)[action]!.Condition?.StringNotEqualsIgnoreCase).toEqual({ "sts:SourceIdentity": "mango-health" });
+    }
     expect(broker.Properties.MaxSessionDuration).toBe(3600);
   });
 
@@ -392,10 +399,15 @@ describe("ReadBroker (Core)", () => {
     expect(JSON.stringify(member().toJSON())).toContain(BROKER);
   });
 
-  it("is named in the identity policy of the AdminProbe and of nobody else", () => {
+  it("is named in the identity policy of the AdminProbe, of the daily account health and of nobody else", () => {
     const naming = policies.filter((p) => JSON.stringify(p.Properties.PolicyDocument).includes("ReadBroker"));
-    expect(naming).toHaveLength(1);
-    expect(refersTo(naming[0]!.Properties.Roles, probeRoleId)).toBe(true);
+    expect(naming).toHaveLength(2);
+    const healthRoleId = Object.keys(
+      core.findResources("AWS::IAM::Role", { Properties: { RoleName: `Mango-${ns}-AccountHealth` } }),
+    )[0]!;
+    expect(naming.map((p) => [probeRoleId, healthRoleId].find((id) => refersTo(p.Properties.Roles, id))).sort()).toEqual(
+      [probeRoleId, healthRoleId].sort(),
+    );
     const managed = Object.values(core.findResources("AWS::IAM::ManagedPolicy")) as Resource[];
     // The only managed policy that names it is the permissions boundary of pack roles: a
     // ceiling, not a grant. Who can use the broker is still decided by its trust (D49, D51).

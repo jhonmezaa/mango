@@ -230,7 +230,10 @@ describe("reconciler function and schedule", () => {
     // And the cost anomaly consumer (D79); details in cost-anomaly-events.test.ts.
     const anomalyConsumerId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-CostAnomalyConsumer` });
     expect(resources[anomalyConsumerId]!.Properties.DeadLetterConfig).toBeDefined();
-    const asynchronous = [functionId, budgetReconcilerId, anomalyConsumerId];
+    // And the daily account health (D84); details in account-health.test.ts.
+    const accountHealthId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-AccountHealth` });
+    expect(resources[accountHealthId]!.Properties.DeadLetterConfig).toBeDefined();
+    const asynchronous = [functionId, budgetReconcilerId, anomalyConsumerId, accountHealthId];
     // Every other function is invoked synchronously and keeps the agreed exception.
     for (const [id, other] of ofType("AWS::Lambda::Function")) {
       if (asynchronous.includes(id) || id.startsWith("UninstallGuard")) continue;

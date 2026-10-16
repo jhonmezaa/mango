@@ -3032,6 +3032,101 @@
         "title": "MemberAccountOut",
         "type": "object"
       },
+      "MemberHealthAccountOut": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "pattern": "^\\d{12}$",
+            "title": "Account Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "broker_refused",
+                  "role_refused",
+                  "unexpected_account",
+                  "unavailable",
+                  "not_checked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "valid",
+              "invalid",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "name",
+          "status"
+        ],
+        "title": "MemberHealthAccountOut",
+        "type": "object"
+      },
+      "MemberHealthOut": {
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/MemberHealthAccountOut"
+            },
+            "title": "Accounts",
+            "type": "array"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "identity_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Required"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checked_at",
+          "accounts",
+          "total",
+          "identity_required"
+        ],
+        "title": "MemberHealthOut",
+        "type": "object"
+      },
       "MessageOut": {
         "additionalProperties": false,
         "properties": {
@@ -8108,6 +8203,34 @@
           }
         },
         "summary": "Member Access Check"
+      }
+    },
+    "/admin/member-health": {
+      "get": {
+        "operationId": "get_member_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberHealthOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Member Health"
       }
     },
     "/admin/mfa-resets": {

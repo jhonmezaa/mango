@@ -16,6 +16,7 @@ import { Installation } from "../config/schema.js";
 import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "../constructs/agent-platform.js";
 import { Alerts } from "../constructs/alerts.js";
 import { ApiService } from "../constructs/api-service.js";
+import { AccountHealth } from "../constructs/account-health.js";
 import { BudgetReconciler } from "../constructs/budget-reconciler.js";
 import { CostAnomalyEvents } from "../constructs/cost-anomaly-events.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
@@ -33,6 +34,7 @@ import {
   loadPackRelease,
   memberChainPacks,
   PackPlatform,
+  packReadTools,
   payerChainPacks,
 } from "../constructs/pack-platform.js";
 import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-provisioner.js";
@@ -116,6 +118,7 @@ export class CoreStack extends Stack {
       installation: cfg,
       accountDataPacks: accountDataPacks(packRelease),
       payerChainPacks: payerChainPacks(packRelease),
+      packReadTools: packReadTools(packRelease),
       issuer: identity.issuer,
       discoveryUrl: identity.discoveryUrl,
       webClientId: identity.webClient.userPoolClientId,
@@ -198,6 +201,21 @@ export class CoreStack extends Stack {
       deprovisioner: deprovisioner.stateMachine,
       alerts,
       releaseAgents: releaseHashes,
+    });
+    // D84: every day, whether Mango can still enter each member account, as `mango-health`.
+    // Its own function and role: the reconciler stays read-only in this account (D41) and the
+    // AdminProbe only acts for an administrator (D17).
+    new AccountHealth(this, "AccountHealth", {
+      installation: cfg,
+      settingsTable: governance.settings,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+      billingBrokerArn: tools.billingBrokerArn,
+      billingReaderArn: tools.billingReaderArn,
+      readBrokerArn: memberAccess.readBrokerArn,
+      memberRoleName: memberAccess.memberRoleName,
+      alerts,
+      apiTaskRole,
     });
     // A chat turn whose end mango-api never knew keeps its budget reservation held; this
     // function closes it from the AgentCore traces (D73). The daily reconciler above stays
@@ -359,6 +377,7 @@ export class CoreStack extends Stack {
         },
       }),
     );
+
     // Marketplace v1 (D18): agent definitions as data.
     governance.grantAgents(apiTaskRole);
     governance.grantWebSessions(apiTaskRole);

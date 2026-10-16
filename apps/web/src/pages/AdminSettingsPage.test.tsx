@@ -38,12 +38,19 @@ const directory = (admins: number) => ({
   incomplete: false,
 });
 
+const NO_HEALTH = {
+  checked_at: '2026-10-16T06:30:00Z',
+  accounts: [],
+  total: 0,
+  identity_required: null,
+};
+
 function renderPage(
   api: Partial<ApiClient>,
   isAdmin = true,
   tab: string | null = 'Áreas y OUs',
   config: Partial<RuntimeConfig> = {},
-  page: { admins?: number; installation?: typeof INSTALLATION | Error } = {},
+  page: { admins?: number; installation?: typeof INSTALLATION | Error; health?: unknown } = {},
 ) {
   const units = businessUnitsFixture();
   // Far-future expiry so the fixtures stay "pending" whatever today's date is.
@@ -55,6 +62,11 @@ function renderPage(
   const call = vi.fn((operation: string, ...args: unknown[]) => {
     if (operation === 'searchPeople') return Promise.resolve(directory(page.admins ?? 2));
     if (operation === 'getMemberChanges') return Promise.resolve({ items: [] });
+    if (operation === 'getMemberHealth') {
+      // D84: by default a daily check that found no target accounts (the section is hidden).
+      const health = page.health ?? { ...NO_HEALTH };
+      return health instanceof Error ? Promise.reject(health) : Promise.resolve(health);
+    }
     if (operation === 'getInstallation') {
       return installation instanceof Error
         ? Promise.reject(installation)
@@ -907,5 +919,91 @@ describe('Connectivity tab', () => {
     await user.click(await screen.findByRole('tab', { name: 'Conectividad' }));
     await user.click(screen.getByRole('button', { name: /Probar conexión/ }));
     expect(await screen.findByRole('button', { name: 'Disponible en 17 s' })).toBeDisabled();
+  });
+
+  describe('daily health of the member accounts (D84)', () => {
+    async function openTab(health: unknown) {
+      const user = userEvent.setup();
+      const call = vi.fn(memberAccess([]));
+      renderPage({ call: call as ApiClient['call'] }, true, 'Áreas y OUs', {}, { health });
+      await user.click(await screen.findByRole('tab', { name: 'Conectividad' }));
+      return call;
+    }
+
+    it('shows the last daily result without running any check', async () => {
+      const call = await openTab({
+        checked_at: '2026-10-16T06:30:00Z',
+        accounts: [
+          {
+            account_id: '210987654321',
+            name: '<img src=x onerror=alert(1)>',
+            status: 'valid',
+            reason: null,
+          },
+          {
+            account_id: '410987654321',
+            name: 'staging',
+            status: 'invalid',
+            reason: 'role_refused',
+          },
+          { account_id: '510987654321', name: 'sandbox', status: 'pending', reason: 'unavailable' },
+        ],
+        total: 4,
+        identity_required: true,
+      });
+      const section = await screen.findByRole('group', {
+        name: 'Comprobación diaria de las cuentas miembro',
+      });
+      // One more target account than the run listed: it counts as pending.
+      expect(
+        within(section).getByText('1 válidas · 1 inválidas · 2 pendientes'),
+      ).toBeInTheDocument();
+      expect(within(section).getByText('inválida')).toHaveClass('badge-red');
+      expect(within(section).getByText('pendiente')).toHaveClass('badge-amber');
+      expect(within(section).getByText('válida')).toHaveClass('badge-green');
+      expect(
+        within(section).getByText(
+          'El rol de lectura no existe en esta cuenta o no acepta a Mango.',
+        ),
+      ).toBeInTheDocument();
+      // The account name comes from AWS Organizations: it is text, never markup.
+      expect(within(section).getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
+      expect(section.querySelector('img')).toBeNull();
+      expect(within(section).queryByText('Exige la identidad del usuario')).toBeNull();
+      // Reading the stored result probes nothing as the administrator.
+      expect(call).not.toHaveBeenCalledWith('memberAccessCheck', expect.anything());
+    });
+
+    it('says when the broker accepted a session without identity', async () => {
+      await openTab({
+        checked_at: '2026-10-16T06:30:00Z',
+        accounts: [{ account_id: '210987654321', name: 'prod', status: 'valid', reason: null }],
+        total: 1,
+        identity_required: false,
+      });
+      const section = await screen.findByRole('group', {
+        name: 'Comprobación diaria de las cuentas miembro',
+      });
+      expect(within(section).getByText('Exige la identidad del usuario')).toBeInTheDocument();
+      expect(within(section).getByText('No lo exige.')).toBeInTheDocument();
+    });
+
+    it('says the daily check has not run yet', async () => {
+      await openTab({ checked_at: null, accounts: [], total: 0, identity_required: null });
+      expect(
+        await screen.findByText('La comprobación diaria aún no ha corrido'),
+      ).toBeInTheDocument();
+    });
+
+    it('says when the daily result cannot be read', async () => {
+      await openTab(new ApiError(502, 'upstream_error', 'x'));
+      expect(await screen.findByText('No se pudo leer la comprobación diaria')).toBeInTheDocument();
+    });
+
+    it('does not appear without target accounts', async () => {
+      await openTab({ ...NO_HEALTH });
+      await screen.findByRole('button', { name: /Probar conexión/ });
+      expect(screen.queryByText('Comprobación diaria de las cuentas miembro')).toBeNull();
+    });
   });
 });

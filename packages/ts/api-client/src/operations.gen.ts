@@ -66,6 +66,7 @@ import {
     zGetConversationResponse,
     zGetInstallationResponse,
     zGetMemberChangesResponse,
+    zGetMemberHealthResponse,
     zGetMineResponse,
     zGetModelsResponse,
     zGetOrgResponse,
@@ -488,6 +489,15 @@ export const operations = {
         query: null,
         body: null,
         response: zGetMemberChangesResponse,
+    },
+    getMemberHealth: {
+        method: 'GET',
+        path: '/admin/member-health',
+        status: 200,
+        pathParams: null,
+        query: null,
+        body: null,
+        response: zGetMemberHealthResponse,
     },
     getMine: {
         method: 'GET',

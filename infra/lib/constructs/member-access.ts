@@ -5,6 +5,7 @@ import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { packNames, roleArn, roleNames, SESSION_TAG_KEYS } from "../names.js";
 import { acknowledge } from "../nag.js";
+import { accountHealthRoleArn, NOT_THE_SYSTEM_IDENTITY, trustAccountHealth } from "./account-health.js";
 
 export interface MemberAccessProps {
   readonly installation: Installation;
@@ -54,14 +55,19 @@ export class MemberAccess extends Construct {
       description: "Broker to the ReadOnly role of the member accounts; only the roles its trust names may use it",
       // AssumeRole itself requires a SourceIdentity: every call through the broker is
       // attributable to a person, and the spoke demands it again.
-      assumedBy: principal.withConditions({ ...fromCallers, Null: { "sts:SourceIdentity": "false" } }),
+      // None of these callers may name the system identity of the daily account health (D84).
+      assumedBy: principal.withConditions({
+        ...fromCallers,
+        Null: { "sts:SourceIdentity": "false" },
+        ...NOT_THE_SYSTEM_IDENTITY,
+      }),
       maxSessionDuration: Duration.hours(1),
     });
     broker.assumeRolePolicy?.addStatements(
       new iam.PolicyStatement({
         actions: ["sts:SetSourceIdentity"],
         principals: [principal],
-        conditions: { ...fromCallers, StringLike: { "sts:SourceIdentity": "*" } },
+        conditions: { ...fromCallers, StringLike: { "sts:SourceIdentity": "*" }, ...NOT_THE_SYSTEM_IDENTITY },
       }),
       new iam.PolicyStatement({
         actions: ["sts:TagSession"],
@@ -69,6 +75,13 @@ export class MemberAccess extends Construct {
         conditions: { ...fromCallers, "ForAllValues:StringEquals": { "aws:TagKeys": SESSION_TAG_KEYS } },
       }),
     );
+
+    // The daily account health enters each member account through this broker, only as
+    // `mango-health` and from the organization (D84). The spoke's trust does not change: it
+    // already accepts any SourceIdentity the broker passes on.
+    trustAccountHealth(broker, principal, accountHealthRoleArn(account, ns), {
+      StringEquals: { "aws:PrincipalOrgID": cfg.organizationId },
+    });
 
     // The spoke role exists in accounts this stack cannot know (they join and leave the
     // target OUs), so the account is a wildcard: the role name and the organization are the

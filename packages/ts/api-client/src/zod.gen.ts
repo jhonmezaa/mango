@@ -613,6 +613,36 @@ export const zMemberAccessOutSchema = z.object({
 });
 
 /**
+ * MemberHealthAccountOut
+ */
+export const zMemberHealthAccountOutSchema = z.object({
+    account_id: z.string().regex(/^\d{12}$/),
+    name: z.string().max(128),
+    reason: z.enum([
+        'broker_refused',
+        'role_refused',
+        'unexpected_account',
+        'unavailable',
+        'not_checked'
+    ]).nullish(),
+    status: z.enum([
+        'valid',
+        'invalid',
+        'pending'
+    ])
+});
+
+/**
+ * MemberHealthOut
+ */
+export const zMemberHealthOutSchema = z.object({
+    accounts: z.array(zMemberHealthAccountOutSchema),
+    checked_at: z.string().nullable(),
+    identity_required: z.boolean().nullable(),
+    total: z.int()
+});
+
+/**
  * ModelAgentOut
  */
 export const zModelAgentOutSchema = z.object({
@@ -2026,6 +2056,11 @@ export const zMemberAccessCheckBody = zEmptyInSchema;
  * Successful Response
  */
 export const zMemberAccessCheckResponse = zMemberAccessOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zGetMemberHealthResponse = zMemberHealthOutSchema;
 
 /**
  * Successful Response

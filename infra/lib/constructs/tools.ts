@@ -12,6 +12,7 @@ import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { mangoName, packNames, roleArn, roleNames, SESSION_TAG_KEYS } from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
+import { accountHealthRoleArn, NOT_THE_SYSTEM_IDENTITY, trustAccountHealth } from "./account-health.js";
 import { PythonFunction } from "./python-function.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -64,6 +65,11 @@ export interface ToolsProps {
    * A pack of the member chain uses the Read broker instead (D51) and is not named here.
    */
   readonly payerChainPacks: string[];
+  /**
+   * Pack id -> the tools its signed manifest classifies `read` (D84), for every pack of the
+   * release. The interceptor refuses any other tool of a pack target, and any unknown target.
+   */
+  readonly packReadTools: Record<string, string[]>;
 }
 
 /**
@@ -147,10 +153,12 @@ export class Tools extends Construct {
       description:
         "Broker to the payer BillingReader; only the Cost Explorer connector, AdminProbe and account-data MCP packs may use it",
       // AssumeRole itself requires a SourceIdentity (AGENTS.md, review ADM-04): every call
-      // through the broker is attributable to a person (or the named inventory identity).
+      // through the broker is attributable to a person, and none of these callers may name
+      // the system identity of the daily account health (D84), which has its own statement.
       assumedBy: new iam.AccountPrincipal(account).withConditions({
         ArnEquals: { "aws:PrincipalArn": brokerCallers },
         Null: { "sts:SourceIdentity": "false" },
+        ...NOT_THE_SYSTEM_IDENTITY,
       }),
       maxSessionDuration: Duration.hours(1),
     });
@@ -161,6 +169,7 @@ export class Tools extends Construct {
         conditions: {
           ArnEquals: { "aws:PrincipalArn": brokerCallers },
           StringLike: { "sts:SourceIdentity": "*" },
+          ...NOT_THE_SYSTEM_IDENTITY,
         },
       }),
       new iam.PolicyStatement({
@@ -172,6 +181,9 @@ export class Tools extends Construct {
         },
       }),
     );
+    // The daily account health lists the member accounts through this chain, only as
+    // `mango-health` (D84).
+    trustAccountHealth(broker, new iam.AccountPrincipal(account), accountHealthRoleArn(account, ns));
     const readerArn = roleArn(cfg.managementAccountId, roleNames.billingReader(ns));
     this.billingBrokerArn = roleArn(account, roleNames.billingBroker(ns));
     this.billingReaderArn = readerArn;
@@ -294,6 +306,8 @@ export class Tools extends Construct {
         CONTEXT_TARGETS: JSON.stringify(this.connectorTargets),
         // Packs over account data get a signed assertion of who is calling, never the token.
         IDENTITY_TARGETS: JSON.stringify(props.accountDataPacks),
+        // The only pack tools that go through (D84): the ones each signed manifest calls read.
+        PACK_TOOLS: JSON.stringify(props.packReadTools),
         PACK_IDENTITY_KEY_ARN: this.packIdentityKey.keyArn,
       },
       environmentEncryption: configKey,

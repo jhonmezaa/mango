@@ -286,6 +286,7 @@ ENDPOINTS: list[tuple[str, str, dict[str, Any] | None, str]] = [
     ("GET", "/api/admin/organization", None, "ViewAdmin"),
     ("POST", "/api/admin/connectivity-check", {}, "ViewAdmin"),
     ("POST", "/api/admin/member-access-check", {}, "ViewAdmin"),
+    ("GET", "/api/admin/member-health", None, "ViewAdmin"),
 ]
 
 
@@ -1157,3 +1158,86 @@ def test_largest_valid_proposal_fits_the_body_limit(env: Env) -> None:
     # Accepted by size and schema; rejected only because the OUs do not exist.
     assert response.status_code == 400
     assert _code(response) == "unknown_ou"
+
+
+# --- Daily health of the member accounts (D84) ---------------------------------------------
+
+
+def _health_item(**overrides: Any) -> dict[str, Any]:
+    accounts = [
+        {"id": "333333333333", "name": "Prod <b>", "status": "valid"},
+        {"id": "444444444444", "name": "Sandbox", "status": "invalid", "reason": "role_refused"},
+        {"id": "555555555555", "name": "Logs", "status": "pending", "reason": "unavailable"},
+    ]
+    return {
+        "PK": {"S": "ACCOUNT_HEALTH"},
+        "SK": {"S": "MEMBER"},
+        "schema_version": {"N": "1"},
+        "checked_at": {"S": "2026-10-16T06:30:05+00:00"},
+        "accounts": {"S": json.dumps(accounts)},
+        "total": {"N": "4"},
+        "identity_required": {"BOOL": True},
+        **overrides,
+    }
+
+
+def test_member_health_before_the_first_daily_run(env: Env) -> None:
+    response = env.client.get("/api/admin/member-health", headers=_h("admin"))
+    assert response.status_code == 200
+    assert response.json() == {
+        "checked_at": None,
+        "accounts": [],
+        "total": 0,
+        "identity_required": None,
+    }
+    assert env.probe.member_calls == []
+
+
+def test_member_health_is_what_the_daily_function_recorded(env: Env) -> None:
+    env.db.put_item(TableName="settings", Item=_health_item())
+    body = env.client.get("/api/admin/member-health", headers=_h("admin")).json()
+    assert body["checked_at"] == "2026-10-16T06:30:05+00:00"
+    assert body["total"] == 4 and body["identity_required"] is True
+    assert body["accounts"] == [
+        {"account_id": "333333333333", "name": "Prod <b>", "status": "valid", "reason": None},
+        {
+            "account_id": "444444444444",
+            "name": "Sandbox",
+            "status": "invalid",
+            "reason": "role_refused",
+        },
+        {
+            "account_id": "555555555555",
+            "name": "Logs",
+            "status": "pending",
+            "reason": "unavailable",
+        },
+    ]
+    # Reading it probes nothing: no AWS call as the administrator.
+    assert env.probe.calls == [] and env.probe.member_calls == []
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"schema_version": {"N": "2"}},
+        {"accounts": {"S": "not json"}},
+        {"accounts": {"S": json.dumps([{"id": "1", "name": "x", "status": "valid"}])}},
+        {"accounts": {"S": json.dumps([{"id": "333333333333", "name": "x", "status": "ok"}])}},
+        {
+            "accounts": {
+                "S": json.dumps(
+                    [{"id": "333333333333", "name": "x", "status": "invalid", "reason": "arn:x"}]
+                )
+            }
+        },
+        {"checked_at": {"S": "yesterday"}},
+        {"total": {"S": "4"}},
+    ],
+)
+def test_a_malformed_health_record_is_not_shown_as_a_state(
+    env: Env, overrides: dict[str, Any]
+) -> None:
+    env.db.put_item(TableName="settings", Item=_health_item(**overrides))
+    response = env.client.get("/api/admin/member-health", headers=_h("admin"))
+    assert (response.status_code, _code(response)) == (502, "upstream_error")

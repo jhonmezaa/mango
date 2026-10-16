@@ -95,6 +95,11 @@ export function accountDataPacks(release: PackRelease): string[] {
   return release.packs.filter((pack) => pack.identityMode === "central_only").map((pack) => pack.id);
 }
 
+/** Pack id -> the tools its signed manifest classifies `read` (D84). */
+export function packReadTools(release: PackRelease): Record<string, string[]> {
+  return Object.fromEntries(release.packs.map((pack) => [pack.id, [...pack.readTools].sort()]));
+}
+
 /** Of those, the packs that read the member accounts through the Read broker (D51). */
 export function memberChainPacks(release: PackRelease): string[] {
   return release.packs

@@ -47,6 +47,16 @@ const statementSchema = z.object({
       aws: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,39}$/)).max(20),
       hosts: z.array(z.string().max(253)).max(20).default([]),
     }),
+    // Class of each tool (D84). Absent means unclassified, which counts as a write.
+    tools: z
+      .array(
+        z.object({
+          name: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+          access: z.enum(["read", "write", "destructive"]).optional(),
+        }),
+      )
+      .min(1)
+      .max(100),
   }),
   artifact: fileDigest,
   sbom: fileDigest,
@@ -76,6 +86,11 @@ export interface ReleasePack {
    * a VPC endpoint in the pack network, and hosts outside AWS (not installable yet).
    */
   readonly egress: { readonly aws: string[]; readonly hosts: string[] };
+  /**
+   * Tools the signed manifest classifies `read` (D84): the only ones of the pack the Gateway
+   * interceptor lets through. A write or unclassified tool needs an approval packs do not have.
+   */
+  readonly readTools: string[];
 }
 
 /** What the provisioner receives as `PACK_CATALOG`. */
@@ -134,6 +149,11 @@ export function loadReleasePacks(dir: string, publicKeyPem: string): ReleasePack
       throw new Error(`${name}: the signed manifest is ${id} ${version}`);
     }
     if (packs.some((p) => p.id === id)) throw new Error(`${id}: a release ships one version of a pack`);
+    const destructive = statement.manifest.tools.filter((t) => t.access === "destructive").map((t) => t.name);
+    if (destructive.length > 0) {
+      // Never enabled, not even with an approval (D84): a release does not ship such a pack.
+      throw new Error(`${name}: destructive tools are never enabled (${destructive.join(", ")})`);
+    }
     for (const file of [statement.artifact, statement.sbom]) {
       const filePath = resolve(dir, file.file);
       if (!existsSync(filePath) || statSync(filePath).size !== file.size || sha256File(filePath) !== file.sha256) {
@@ -148,6 +168,7 @@ export function loadReleasePacks(dir: string, publicKeyPem: string): ReleasePack
       identityMode,
       identityChain,
       egress,
+      readTools: statement.manifest.tools.filter((t) => t.access === "read").map((t) => t.name),
     });
   }
   return packs;

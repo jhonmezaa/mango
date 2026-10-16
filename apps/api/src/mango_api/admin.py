@@ -14,10 +14,13 @@ Security notes (threat model ``admin-v0-threat-model.md``; security-best-practic
   (TM-A7).
 * The member account check answers with a closed set of statuses per account, never with the
   probe's details, role names or ARNs; the accounts are the configured targets, not input.
+* The daily health of the member accounts (D84) is read from the item its own function writes;
+  it is validated as untrusted storage and answered with closed values only.
 """
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
 import asyncio
+import json
 import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping
@@ -224,6 +227,34 @@ class MemberAccountOut(_Strict):
     status: MemberAccountStatus
     """``role_missing``: the read role cannot be assumed in the account.
     ``identity_not_required``: the chain accepts a session that names no person."""
+
+
+MemberHealthStatus = Literal["valid", "invalid", "pending"]
+MemberHealthReason = Literal[
+    "broker_refused", "role_refused", "unexpected_account", "unavailable", "not_checked"
+]
+MAX_HEALTH_ACCOUNTS = 500
+_ACCOUNT_ID = r"^\d{12}$"
+
+
+class MemberHealthAccountOut(_Strict):
+    account_id: Annotated[str, Field(pattern=_ACCOUNT_ID)]
+    name: Annotated[str, Field(max_length=128)]
+    status: MemberHealthStatus
+    """``valid``: Mango entered the account. ``invalid``: the broker or the account's role
+    refused it, or the session was in another account. ``pending``: not determined that day."""
+    reason: MemberHealthReason | None = None
+
+
+class MemberHealthOut(_Strict):
+    checked_at: str | None
+    """When the daily check last ran; ``None`` before its first run (nothing else is set)."""
+    accounts: list[MemberHealthAccountOut]
+    total: int
+    """Target accounts in all; more than ``len(accounts)`` when one run could not list them all
+    (the rest count as pending)."""
+    identity_required: bool | None
+    """Whether the Read broker refused a session that names no person, that day."""
 
 
 class MemberAccessOut(_Strict):
@@ -674,6 +705,40 @@ def member_access(deps: AdminDeps, caller: Caller) -> MemberAccessOut:
     )
 
 
+def _health_from(item: dict[str, Any]) -> MemberHealthOut:
+    """The item the daily function wrote; ``ValueError``, ``KeyError`` or ``TypeError`` if it is
+    not one."""
+    if item.get("schema_version", {}).get("N") != "1":
+        raise ValueError("schema_version")
+    accounts = json.loads(item["accounts"]["S"])
+    if not isinstance(accounts, list) or len(accounts) > MAX_HEALTH_ACCOUNTS:
+        raise ValueError("accounts")
+    return MemberHealthOut(
+        checked_at=iso(datetime.fromisoformat(item["checked_at"]["S"])),
+        accounts=[
+            MemberHealthAccountOut(
+                account_id=a["id"], name=a["name"], status=a["status"], reason=a.get("reason")
+            )
+            for a in accounts
+        ],
+        total=max(int(item["total"]["N"]), len(accounts)),
+        identity_required=item.get("identity_required", {}).get("BOOL"),
+    )
+
+
+def member_health(deps: AdminDeps) -> MemberHealthOut:
+    """The last daily health of the member accounts (D84), as its function recorded it."""
+    item = deps.store.member_health()
+    if item is None:
+        return MemberHealthOut(checked_at=None, accounts=[], total=0, identity_required=None)
+    try:
+        return _health_from(item)
+    except (KeyError, TypeError, ValueError) as exc:
+        # Written by another function: a malformed record is not shown as a state (fail closed).
+        logger.warning("account health record is malformed")
+        raise ApiError(502, "upstream_error", "the account health could not be read") from exc
+
+
 # --- Routes -----------------------------------------------------------------------------
 
 
@@ -763,6 +828,10 @@ def admin_router(
     @router.post("/connectivity-check", response_model=ConnectivityOut)
     async def connectivity_check(_body: EmptyIn, caller: ViewAdmin) -> ConnectivityOut:
         return await run(connectivity, deps, caller)
+
+    @router.get("/member-health", response_model=MemberHealthOut)
+    async def get_member_health(_caller: ViewAdmin) -> MemberHealthOut:
+        return await run(member_health, deps)
 
     @router.post("/member-access-check", response_model=MemberAccessOut)
     async def member_access_check(_body: EmptyIn, caller: ViewAdmin) -> MemberAccessOut:

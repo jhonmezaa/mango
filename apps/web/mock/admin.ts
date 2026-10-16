@@ -484,6 +484,29 @@ export const handleAdmin: ApiHandler = async (req, res, path) => {
     sendJson(res, 200, { ous: organizationOus });
     return true;
   }
+  if (path === '/admin/member-health' && req.method === 'GET') {
+    // D84: the last daily check, with one account of each state and one more target account
+    // than the run listed (it counts as pending).
+    const today = new Date();
+    today.setUTCHours(6, 30, 5, 0);
+    sendJson(res, 200, {
+      checked_at: today.toISOString(),
+      accounts: [
+        { account_id: '210987654321', name: 'prod-main', status: 'valid', reason: null },
+        {
+          account_id: '310987654321',
+          name: 'prod-data <img src=x onerror=alert(1)>',
+          status: 'valid',
+          reason: null,
+        },
+        { account_id: '410987654321', name: 'staging', status: 'pending', reason: 'unavailable' },
+        { account_id: '510987654321', name: 'sandbox', status: 'invalid', reason: 'role_refused' },
+      ],
+      total: 5,
+      identity_required: true,
+    });
+    return true;
+  }
   if (path === '/admin/member-access-check' && req.method === 'POST') {
     // Four runs in a loop: more accounts than the check covers, problems (broker identity and
     // a missing role), a check that could not run, and all in order. The failure falls on an

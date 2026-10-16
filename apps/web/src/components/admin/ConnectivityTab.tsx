@@ -9,6 +9,7 @@ import { CheckIcon, CloudIcon, RefreshIcon, X2Icon } from '../icons';
 import { fmtDate } from './govFormat';
 import { Banner, Empty, Spinner } from './govKit';
 import { MemberAccounts, type MemberAccess } from './MemberAccounts';
+import { MemberHealthSection, type MemberHealth } from './MemberHealth';
 
 /**
  * The API allows 5 checks per minute per admin. After a 429 the button counts down the API's
@@ -42,6 +43,23 @@ export function ConnectivityTab() {
   // The member check failed on its own, with the connection in order: it has its own banner.
   const [membersFailed, setMembersFailed] = useState(false);
   const [wait, setWait] = useState(0);
+  // D84: the last daily check, read once when the tab opens (no AWS call as the admin).
+  const [health, setHealth] = useState<MemberHealth | null | undefined>(undefined);
+
+  useEffect(() => {
+    let current = true;
+    api.call('getMemberHealth').then(
+      (value) => {
+        if (current) setHealth(value);
+      },
+      () => {
+        if (current) setHealth(null);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [api]);
 
   useEffect(() => {
     if (wait <= 0) return;
@@ -227,6 +245,7 @@ export function ConnectivityTab() {
       {result && !running && (membersFailed || (members && members.accounts.length > 0)) ? (
         <MemberAccounts access={membersFailed ? null : members} />
       ) : null}
+      <MemberHealthSection health={health} />
     </section>
   );
 }

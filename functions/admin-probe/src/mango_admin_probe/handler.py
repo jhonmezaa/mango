@@ -17,6 +17,10 @@ Operations use free, read-only APIs and a per-call session policy:
 
 Check results never include exception text, ARNs or account ids: only fixed, short details.
 Raw events are never logged.
+
+The daily health of the member accounts (``mango_admin_probe.health``, D84) is another
+function with another role that uses the same chain as the system identity ``mango-health``.
+This one never acts as that identity: an ``actor`` that names it is refused.
 """
 
 from __future__ import annotations
@@ -62,6 +66,8 @@ MEMBER_ACCOUNTS_ACTIONS = (
     "organizations:ListOrganizationalUnitsForParent",
 )
 MAX_MEMBER_ACCOUNTS = 50
+SYSTEM_IDENTITY = "mango-health"
+"""SourceIdentity of the daily account health (D84): reserved, never an administrator's."""
 
 
 @dataclass(frozen=True)
@@ -292,9 +298,13 @@ def _accounts_under(org: OrganizationsClient, targets: tuple[str, ...]) -> set[s
 
 
 def list_member_accounts(
-    org: OrganizationsClient, targets: tuple[str, ...], never: frozenset[str]
+    org: OrganizationsClient,
+    targets: tuple[str, ...],
+    never: frozenset[str],
+    *,
+    limit: int = MAX_MEMBER_ACCOUNTS,
 ) -> dict[str, Any]:
-    """Active accounts under ``targets`` except ``never``, by name; at most the first 50.
+    """Active accounts under ``targets`` except ``never``, by name; at most the first ``limit``.
 
     ``total`` is how many there are in all, so the caller can say how many were left out."""
     names = {
@@ -313,8 +323,8 @@ def list_member_accounts(
         key=lambda account: (account["name"].lower(), account["id"]),
     )
     return {
-        "accounts": found[:MAX_MEMBER_ACCOUNTS],
-        "truncated": len(found) > MAX_MEMBER_ACCOUNTS,
+        "accounts": found[:limit],
+        "truncated": len(found) > limit,
         "total": len(found),
     }
 
@@ -344,7 +354,8 @@ def handle(event: object, runtime: _Runtime) -> dict[str, Any]:
         return {"error": {"code": "invalid_request"}}
     operation = OPERATIONS.get(str(event.get("operation")))
     actor = event.get("actor")
-    if operation is None or not isinstance(actor, str):
+    if operation is None or not isinstance(actor, str) or actor.lower() == SYSTEM_IDENTITY:
+        # The system identity is the daily health check's, through its own role (D84).
         return {"error": {"code": "invalid_request"}}
     try:
         _caller(actor)

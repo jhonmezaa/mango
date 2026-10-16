@@ -89,11 +89,12 @@ describe("Admin v0 infrastructure (D17)", () => {
         expect(["MCP#*", "MCP_INSTALLED#*"]).toContain(keys[0]);
         continue;
       }
-      // CDK custom resource provider (seed): PutItem only, one partition each.
+      // CDK custom resource provider (seed), and the daily account health (D84): PutItem only,
+      // one partition each.
       expect(actions(statement)).toEqual(["dynamodb:PutItem"]);
       const keys = statement.Condition?.["ForAllValues:StringEquals"]?.["dynamodb:LeadingKeys"];
       expect(keys).toHaveLength(1);
-      expect(["BUDGETS", "BU_MAPPING", "GROUPS", "MODELS"]).toContainEqual((keys as string[])[0]);
+      expect(["BUDGETS", "BU_MAPPING", "GROUPS", "MODELS", "ACCOUNT_HEALTH"]).toContainEqual((keys as string[])[0]);
     }
     expect(writers.some((g) => g.roles.includes(connectorRoleId))).toBe(false);
     expect(writers.some((g) => g.roles.includes(probeRoleId))).toBe(false);
@@ -142,7 +143,10 @@ describe("Admin v0 infrastructure (D17)", () => {
   });
 
   it("restricts the broker trust to the connector and the AdminProbe roles", () => {
-    const trust = resources[brokerId]!.Properties.AssumeRolePolicyDocument.Statement as Statement[];
+    const all = resources[brokerId]!.Properties.AssumeRolePolicyDocument.Statement as Statement[];
+    // The daily account health has two statements of its own (D84, account-health.test.ts).
+    const trust = all.filter((s) => !s.Sid?.startsWith("AccountHealth"));
+    expect(all.length - trust.length).toBe(2);
     expect(trust).toHaveLength(3);
     for (const statement of trust) {
       expect(statement.Condition?.ArnEquals?.["aws:PrincipalArn"]).toEqual([
@@ -159,7 +163,10 @@ describe("Admin v0 infrastructure (D17)", () => {
     );
     const readerTrust = payer.toJSON().Resources[readerId!].Properties.AssumeRolePolicyDocument
       .Statement as Statement[];
-    const brokerTrust = resources[brokerId]!.Properties.AssumeRolePolicyDocument.Statement as Statement[];
+    const brokerTrust = (resources[brokerId]!.Properties.AssumeRolePolicyDocument.Statement as Statement[]).filter(
+      // The daily account health assumes it only as `mango-health` (D84, account-health.test.ts).
+      (s) => !s.Sid?.startsWith("AccountHealth"),
+    );
     for (const trust of [brokerTrust, readerTrust]) {
       const assume = trust.filter((s) => actions(s).includes("sts:AssumeRole"));
       expect(assume).toHaveLength(1);

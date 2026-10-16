@@ -10,8 +10,12 @@ Item layout (``PK`` / ``SK``):
   holds only this item, so the connector's ``dynamodb:LeadingKeys`` read grant covers nothing
   else.
 * ``BU_CHANGE`` / ``<change_id>``: change requests (proposal, status, decision).
+* ``ACCOUNT_HEALTH`` / ``MEMBER``: the last daily health of the member accounts (D84). Written
+  by its daily function only (``mango_admin_probe.health``); mango-api reads it and IAM
+  denies it any write to that partition.
 
-Only mango-api writes to this table (TM-A6); IaC seeds the first values put-if-absent.
+Only mango-api writes to this table (TM-A6), except the account health item; IaC seeds the
+first values put-if-absent.
 """
 
 from __future__ import annotations
@@ -38,6 +42,8 @@ USER_PREFIX = "USER#"
 PK_MAPPING = "BU_MAPPING"
 SK_CURRENT = "CURRENT"
 PK_CHANGE = "BU_CHANGE"
+PK_ACCOUNT_HEALTH = "ACCOUNT_HEALTH"
+SK_MEMBER_HEALTH = "MEMBER"
 CHANGE_LIFETIME = timedelta(days=7)
 CHANGE_RETENTION = timedelta(days=90)  # table TTL; the audit trail keeps the evidence
 STATUS_PENDING = "pending"
@@ -140,6 +146,10 @@ class SettingsStore:
             ConsistentRead=True,
         ).get("Item")
         return item
+
+    def member_health(self) -> dict[str, Any] | None:
+        """The raw item of the last daily account health (D84), or None before its first run."""
+        return self._get(PK_ACCOUNT_HEALTH, SK_MEMBER_HEALTH)
 
     # --- Budgets --------------------------------------------------------------------------
 

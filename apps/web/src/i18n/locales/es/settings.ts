@@ -259,6 +259,31 @@ export const settings = {
         help: 'Revisa que el rol de lectura tenga permisos de solo lectura sobre AWS Organizations.',
       },
     },
+    // D84: daily health of the member accounts. Not in the design yet (noted for the brief).
+    health: {
+      title: 'Comprobación diaria de las cuentas miembro',
+      meta: 'Cada día Mango comprueba que puede entrar a cada cuenta miembro con su identidad de sistema (mango-health), que queda en el CloudTrail de cada cuenta. Solo comprueba la entrada: no lee datos.',
+      loading: 'Leyendo la última comprobación diaria…',
+      failed: 'No se pudo leer la comprobación diaria',
+      failedBody:
+        'Vuelve a cargar la página en unos segundos. La prueba de arriba sigue disponible.',
+      neverTitle: 'La comprobación diaria aún no ha corrido',
+      neverBody:
+        'Corre una vez al día. Mientras tanto, puedes probar las cuentas con el botón de arriba.',
+      summary: '{{valid}} válidas · {{invalid}} inválidas · {{pending}} pendientes',
+      status: {
+        valid: 'válida',
+        invalid: 'inválida',
+        pending: 'pendiente',
+      },
+      reasons: {
+        broker_refused: 'El rol intermedio de Mango rechazó la entrada.',
+        role_refused: 'El rol de lectura no existe en esta cuenta o no acepta a Mango.',
+        unexpected_account: 'La sesión no quedó en esta cuenta.',
+        unavailable: 'AWS no respondió; se vuelve a comprobar mañana.',
+        not_checked: 'No se alcanzó a comprobar en esta ronda.',
+      },
+    },
     // Design `MemberAccounts`: fixed texts; the API only reports closed values.
     members: {
       title: 'Cuentas miembro',

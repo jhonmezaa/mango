@@ -608,6 +608,8 @@ interface PackSpec {
   identity?: unknown;
   /** `null`: a statement signed before the field existed. */
   egress?: { aws: string[]; hosts?: string[] } | null;
+  /** Tools of the manifest; one `read` tool by default. `access` absent: unclassified (D84). */
+  tools?: { name: string; access?: string }[];
 }
 
 function signedRelease(options: PackSpec & { tamper?: "zip" | "name"; also?: PackSpec[] } = {}) {
@@ -632,6 +634,7 @@ function signedRelease(options: PackSpec & { tamper?: "zip" | "name"; also?: Pac
         identity_mode: identityMode,
         ...(spec.identity !== undefined && { identity: spec.identity }),
         ...(egress === null ? {} : { egress }),
+        tools: spec.tools ?? [{ name: "get_pricing", access: "read" }],
       },
       artifact: { file: `${id}-1.1.1-1.zip`, sha256: digest(zip), size: zip.length },
       sbom: { file: `${id}-1.1.1-1.sbom.cdx.json`, sha256: digest(sbom), size: sbom.length },
@@ -692,6 +695,24 @@ describe("release packs (D36): only what the release key signed", () => {
     expect(() => loadReleasePacks(replaced.dir, replaced.pem)).toThrow(/not the signed file/);
     const renamed = signedRelease({ tamper: "name" });
     expect(() => loadReleasePacks(renamed.dir, renamed.pem)).toThrow(/the signed manifest is aws-pricing/);
+  });
+
+  it("keeps the read tools of each pack and ships no pack with a destructive tool (D84)", () => {
+    const tools = [
+      { name: "get_pricing", access: "read" },
+      { name: "put_price", access: "write" },
+      { name: "tag_price" },
+    ];
+    const mixed = signedRelease({ tools });
+    expect(loadReleasePacks(mixed.dir, mixed.pem)[0]!.readTools).toEqual(["get_pricing"]);
+    const destructive = signedRelease({ tools: [...tools, { name: "delete_prices", access: "destructive" }] });
+    expect(() => loadReleasePacks(destructive.dir, destructive.pem)).toThrow(
+      /destructive tools are never enabled \(delete_prices\)/,
+    );
+    for (const odd of [[], [{ name: "x", access: "mutating" }], [{ name: "bad name", access: "read" }]]) {
+      const release = signedRelease({ tools: odd });
+      expect(() => loadReleasePacks(release.dir, release.pem)).toThrow(/not one this release accepts/);
+    }
   });
 
   it("only accepts an ECC P-256 signing key", () => {
@@ -804,9 +825,12 @@ describe("packs over account data act as the calling user (D37)", () => {
   const environmentOf = (all: Record<string, Resource>, name: string): Record<string, any> =>
     Object.values(all).find((r) => r.Type === "AWS::Lambda::Function" && r.Properties.FunctionName === name)!.Properties
       .Environment.Variables;
+  // Without the two statements of the daily account health (D84, account-health.test.ts).
   const trustOf = (all: Record<string, Resource>): Statement[] =>
-    Object.values(all).find((r) => r.Type === "AWS::IAM::Role" && r.Properties.RoleName === `Mango-${ns}-BillingBroker`)!
-      .Properties.AssumeRolePolicyDocument.Statement;
+    (
+      Object.values(all).find((r) => r.Type === "AWS::IAM::Role" && r.Properties.RoleName === `Mango-${ns}-BillingBroker`)!
+        .Properties.AssumeRolePolicyDocument.Statement as Statement[]
+    ).filter((s) => !s.Sid?.startsWith("AccountHealth"));
   const callersOf = (all: Record<string, Resource>): string[][] =>
     trustOf(all).map((s) => JSON.stringify(s.Condition!.ArnEquals!["aws:PrincipalArn"]).match(/Mango-[a-z0-9]+-mcp-[a-z0-9-]+/g) ?? []);
 
@@ -867,6 +891,8 @@ describe("packs over account data act as the calling user (D37)", () => {
   it("without such packs, no pack role may use the broker and the interceptor signs for none", () => {
     expect(JSON.parse(environmentOf(resources, `Mango-${ns}-GatewayInterceptor`).IDENTITY_TARGETS)).toEqual([]);
     expect(callersOf(resources).flat()).toEqual([]);
+    // D84: and no pack tool goes through it.
+    expect(JSON.parse(environmentOf(resources, `Mango-${ns}-GatewayInterceptor`).PACK_TOOLS)).toEqual({});
     expect(brokerArn).toContain("BillingBroker");
   });
 
@@ -883,6 +909,15 @@ describe("packs over account data act as the calling user (D37)", () => {
 
     const publicOnly = withPricing;
     expect(JSON.parse(environmentOf(publicOnly, `Mango-${ns}-GatewayInterceptor`).IDENTITY_TARGETS)).toEqual([]);
+    // D84: every pack of the release, account data or not, with its read tools only.
+    for (const [release, id] of [
+      [shipped, "aws-billing"],
+      [publicOnly, "aws-pricing"],
+    ] as const) {
+      expect(JSON.parse(environmentOf(release, `Mango-${ns}-GatewayInterceptor`).PACK_TOOLS)).toEqual({
+        [id]: ["get_pricing"],
+      });
+    }
     expect(callersOf(publicOnly).flat()).toEqual([]);
   });
 
@@ -897,9 +932,12 @@ describe("packs over member accounts use the Read broker (D51, identity.chain: m
   const environmentOf = (all: Record<string, Resource>, name: string): Record<string, any> =>
     Object.values(all).find((r) => r.Type === "AWS::Lambda::Function" && r.Properties.FunctionName === name)!.Properties
       .Environment.Variables;
+  // Without the two statements of the daily account health (D84, account-health.test.ts).
   const trustOf = (all: Record<string, Resource>, broker: string): Statement[] =>
-    Object.values(all).find((r) => r.Type === "AWS::IAM::Role" && r.Properties.RoleName === `Mango-${ns}-${broker}`)!
-      .Properties.AssumeRolePolicyDocument.Statement;
+    (
+      Object.values(all).find((r) => r.Type === "AWS::IAM::Role" && r.Properties.RoleName === `Mango-${ns}-${broker}`)!
+        .Properties.AssumeRolePolicyDocument.Statement as Statement[]
+    ).filter((s) => !s.Sid?.startsWith("AccountHealth"));
   const packCallers = (trust: Statement[]): string[][] =>
     trust.map((s) => JSON.stringify(s.Condition!.ArnEquals!["aws:PrincipalArn"]).match(/Mango-[a-z0-9]+-mcp-[a-z0-9-]+/g) ?? []);
 
