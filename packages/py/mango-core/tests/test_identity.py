@@ -57,6 +57,28 @@ def test_valid_access_token(verifier: AccessTokenVerifier) -> None:
     assert not user.is_central
 
 
+def test_cognito_acr_and_amr_claims_change_nothing(verifier: AccessTokenVerifier) -> None:
+    """Cognito adds ``acr`` and ``amr`` to access tokens from 2026-11-04: still accepted."""
+    now = int(time.time())  # one instant for both tokens, so only acr and amr differ
+    base = {
+        "iat": now,
+        "exp": now + 600,
+        "cognito:groups": ["bu-lead", "bu-security"],
+        "mango_email": "nombre@empresa.com",
+        "mango_name": "Usuario 1",
+    }
+    plain = verifier.verify(_token(**base))
+    with_new = verifier.verify(_token(**base, acr="1", amr=["pwd", "otp", "mfa"]))
+    assert with_new["amr"] == ["pwd", "otp", "mfa"]
+    assert {k: v for k, v in with_new.items() if k not in ("acr", "amr")} == plain
+    user = user_from_claims(with_new)
+    assert user == user_from_claims(plain)
+    assert user.user_id == "user-1"
+    assert with_new["client_id"] == CLIENT
+    assert user.groups == frozenset({"bu-lead", "bu-security"})
+    assert require_role(user) == "bu-lead"
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
