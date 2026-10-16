@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 
@@ -15,6 +15,8 @@ import { readPreference, writePreference } from '../preferences/storage';
 import { ShellContext, type ShellContextValue } from './ShellContext';
 
 const COLLAPSED_KEY = 'mango-sb-collapsed';
+/** The sidebar's Bandeja counter is read again this often, and when the tab comes back. */
+const INBOX_POLL_MS = 60_000;
 const NO_AGENTS: readonly Agent[] = [];
 
 // Only opened on demand («Nueva conversación»): it stays out of the main chunk.
@@ -26,7 +28,7 @@ export function AppLayout() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { me, agents, conversations } = useSession();
+  const { me, agents, conversations, api } = useSession();
   const isNarrow = useMediaQuery('(max-width: 1200px)');
   const isMobile = useMediaQuery('(max-width: 900px)');
   const [collapsed, setCollapsed] = useState(() => readPreference(COLLAPSED_KEY) === '1');
@@ -60,6 +62,29 @@ export function AppLayout() {
     [conversations],
   );
 
+  // Bandeja counter (D83): what the API counts for this person; nothing is decided here.
+  const [inboxUnread, setInboxUnread] = useState<number | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    const load = () => {
+      if (document.visibilityState === 'hidden') return;
+      api.call('unreadInbox', {}, { signal: controller.signal }).then(
+        (result) => {
+          if (!controller.signal.aborted) setInboxUnread(result.unread);
+        },
+        () => undefined,
+      );
+    };
+    load();
+    const timer = window.setInterval(load, INBOX_POLL_MS);
+    document.addEventListener('visibilitychange', load);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', load);
+      controller.abort();
+    };
+  }, [api]);
+
   const toggleCollapsed = () => {
     const next = !collapsed;
     setCollapsed(next);
@@ -77,8 +102,10 @@ export function AppLayout() {
       openAgentPicker: () => {
         setPickerOpen(true);
       },
+      inboxUnread,
+      setInboxUnread,
     }),
-    [isMobile, pinnedAgentIds, togglePinned],
+    [isMobile, pinnedAgentIds, togglePinned, inboxUnread],
   );
 
   const classes = ['app'];

@@ -504,3 +504,14 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
   sendJson(res, 200, out(task));
   return true;
 };
+
+/** Runs of the mock user's tasks that completed or failed, for the Bandeja mock (D83). */
+export function endedRunsOfMine() {
+  return [...tasks.values()]
+    .filter((task) => task.owner.user_id === ME.user_id)
+    .flatMap((task) =>
+      task.runs
+        .filter((item) => (item.status === 'ok' || item.status === 'failed') && item.ended_at)
+        .map((item) => ({ task, run: item })),
+    );
+}

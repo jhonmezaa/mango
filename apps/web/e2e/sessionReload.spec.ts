@@ -134,9 +134,11 @@ test('a message sent while the renewal answers 503 fails without signing out', a
   // The clock of the page only: the access token (1 h) is due for renewal after 54 minutes.
   await page.clock.install();
   await signIn(page);
+  // Down before the clock moves: the shell's background requests (the Bandeja counter, every
+  // minute) would otherwise renew the token on the way and the turn would not need to.
+  const down = await renewalDown(page);
   await page.clock.fastForward('55:00');
 
-  const down = await renewalDown(page);
   await page.locator('#chat-input').fill('hola');
   await page.locator('#chat-input').press('Enter');
   await expect(page.getByText(GENERIC)).toBeVisible();

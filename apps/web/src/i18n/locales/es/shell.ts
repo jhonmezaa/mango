@@ -70,6 +70,8 @@ export const nav = {
   collapse: 'Colapsar sidebar',
   expand: 'Expandir sidebar',
   breadcrumb: 'Ruta de navegación',
+  withUnread_one: '{{label}}, {{count}} sin leer',
+  withUnread_other: '{{label}}, {{count}} sin leer',
   searchShort: 'Buscar',
   searchLabel: 'Buscar (⌘K)',
   accountMenu: 'Cuenta de {{user}}',

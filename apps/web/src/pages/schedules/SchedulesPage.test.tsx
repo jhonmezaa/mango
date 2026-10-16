@@ -444,7 +444,9 @@ describe('SchedulesPage', () => {
       expect.anything(),
     );
     expect(
-      within(dialog).getByText('Queda en el detalle de la tarea. Solo tú lo ves.'),
+      within(dialog).getByText(
+        'Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.',
+      ),
     ).toBeInTheDocument();
   });
 

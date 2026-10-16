@@ -16,7 +16,7 @@ read again from the Tasks table, and every check of a chat turn is made again:
 4. The turn (``TaskTurn``, the same path as ``POST /api/chat``): ``UseAgent`` with the groups
    the owner has now (denied: skipped, paused), the agent published, the budget reserved (D73).
 5. The result is stored in the run; the hold is released; everything is audited without
-   content.
+   content. A run that completed or failed leaves a notice in its owner's Bandeja (D83).
 
 Messages are deleted once handled, skipped ones included. One whose handling failed before the
 run was recorded stays in the queue and is retried (its run id makes the retry safe); after
@@ -143,6 +143,23 @@ class RunSender(Protocol):
     def send(self, body: str, *, delay_seconds: int = ...) -> None: ...
 
 
+class RunNotices(Protocol):
+    """The Bandeja (``inbox.RunInbox``): a notice for the owner when a run ends (D83)."""
+
+    def run_ended(
+        self,
+        *,
+        owner_id: str,
+        task_id: str,
+        task_name: str,
+        agent_id: str,
+        run_id: str,
+        ok: bool,
+        reason: str | None,
+        report: str | None,
+    ) -> None: ...
+
+
 class TaskTurn(Protocol):
     """One turn without chat, run as ``caller``. Raises ``AgentAccessDeniedError`` when the
     owner may not use the agent; any other exception is a failed run."""
@@ -174,6 +191,8 @@ class TaskRuns:
     audit: AuditLog
     queue: RunSender
     clock: Callable[[], float] = time.time
+    inbox: RunNotices | None = None
+    """``None`` keeps the Bandeja out (tests that do not look at it)."""
 
     # --- Entry point ------------------------------------------------------------------
 
@@ -351,7 +370,7 @@ class TaskRuns:
             except Exception:
                 logger.exception("a task run failed")
                 outcome = TurnOutcome(status=RunStatus.FAILED, reason="upstream_error")
-            self.store.update_run(
+            ended = self.store.update_run(
                 run,
                 status=outcome.status,
                 expect=frozenset({RunStatus.RUNNING}),
@@ -363,6 +382,8 @@ class TaskRuns:
                 approvals=outcome.approvals or None,
                 steps=outcome.steps or None,
             )
+            if ended:
+                self._notify(automation, run, outcome.status, outcome.reason, outcome.result)
             finished = (
                 "task.run.skipped" if outcome.status is RunStatus.SKIPPED else "task.run.finished"
             )
@@ -443,13 +464,14 @@ class TaskRuns:
         )
 
     def _fail(self, automation: Automation, run: Run, reason: str) -> None:
-        self.store.update_run(
+        if self.store.update_run(
             run,
             status=RunStatus.FAILED,
             expect=frozenset({RunStatus.QUEUED}),
             reason=reason,
             ended_at=int(self.clock()),
-        )
+        ):
+            self._notify(automation, run, RunStatus.FAILED, reason, None)
         self._emit(
             "task.run.finished",
             None,
@@ -516,6 +538,30 @@ class TaskRuns:
             except Exception:
                 # The task is paused already: whatever Scheduler still sends is skipped.
                 logger.exception("the schedule of a paused task could not be disabled")
+
+    def _notify(
+        self,
+        automation: Automation,
+        run: Run,
+        status: RunStatus,
+        reason: str | None,
+        report: str | None,
+    ) -> None:
+        """One notice per run that completed or failed, only for the owner (D83, design: skipped
+        runs and runs that wait for an approval leave none). Called only after this worker
+        moved the run to its final status, so a second delivery never leaves a second one."""
+        if self.inbox is None or status not in (RunStatus.OK, RunStatus.FAILED):
+            return
+        self.inbox.run_ended(
+            owner_id=automation.owner_id,
+            task_id=automation.automation_id,
+            task_name=automation.name,
+            agent_id=automation.agent_id,
+            run_id=run.run_id,
+            ok=status is RunStatus.OK,
+            reason=reason,
+            report=report,
+        )
 
     def _emit(self, event: str, caller: Caller | None, detail: dict[str, Any]) -> None:
         """Never raises: the run is recorded in its table either way. The actor of a run is

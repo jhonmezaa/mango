@@ -1184,3 +1184,42 @@ def test_scheduled_and_manual_runs_still_skip_an_overlap(env: Env) -> None:
     )
     assert sorted((r["status"], r["reason"]) for r in runs.values()) == [("skipped", "overlap")] * 2
     assert env.events("task.run.waiting") == []
+
+
+@dataclass
+class RecordingInbox:
+    notices: list[dict[str, Any]] = field(default_factory=list)
+
+    def run_ended(self, **notice: Any) -> None:
+        self.notices.append(notice)
+
+
+def test_each_run_that_ends_leaves_one_notice_for_its_owner(env: Env) -> None:
+    """D83: the Bandeja gets one notice per run that completed or failed, only for its owner;
+    skipped runs leave none (design), and a run delivered twice leaves one."""
+    inbox = RecordingInbox()
+    assert env.services.task_runs is not None
+    env.services.task_runs.inbox = inbox
+    task = env.created()
+    body = _scheduled(task["task_id"])
+    env.deliver(body)
+    env.deliver(body)
+    (completed,) = inbox.notices
+    assert completed["owner_id"] == "creator-1"
+    assert (completed["ok"], completed["report"], completed["task_id"]) == (
+        True,
+        "mundo",
+        task["task_id"],
+    )
+    env.tokens.unavailable = True
+    env.deliver(_scheduled(task["task_id"], "2026-10-16T14:30:00Z"))
+    failed = inbox.notices[-1]
+    assert (failed["ok"], failed["reason"], failed["report"]) == (
+        False,
+        "identity_unavailable",
+        None,
+    )
+    env.tokens.unavailable = False
+    env.budgets.exceed = True
+    env.deliver(_scheduled(task["task_id"], "2026-10-17T14:30:00Z"))
+    assert len(inbox.notices) == 2

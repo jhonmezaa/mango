@@ -16,6 +16,7 @@ function TestShell({
   onOpenAgentPicker: () => void;
 }) {
   const [pinned, setPinned] = useState(readPinnedAgents);
+  const [inboxUnread, setInboxUnread] = useState<number | null>(null);
   const shell = useMemo<ShellContextValue>(
     () => ({
       isMobile: false,
@@ -25,8 +26,10 @@ function TestShell({
         setPinned((current) => togglePinnedAgent(current, agentId));
       },
       openAgentPicker: onOpenAgentPicker,
+      inboxUnread,
+      setInboxUnread,
     }),
-    [pinned, onOpenAgentPicker],
+    [pinned, onOpenAgentPicker, inboxUnread],
   );
   return <ShellContext value={shell}>{children}</ShellContext>;
 }

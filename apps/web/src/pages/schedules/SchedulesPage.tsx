@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 
 import { ApiError } from '../../api/errors';
 import type { OperationCaller } from '../../api/operations';
@@ -1539,6 +1539,8 @@ function TaskEditor({
  * instruction or results (D78 (18), D82 (3)). Every action is authorized by the API; what is
  * hidden here is only what the design hides.
  */
+const LINK_ID = /^[0-9a-f]{32}$/;
+
 export function SchedulesPage() {
   const { t } = useTranslation();
   const { api, me } = useSession();
@@ -1549,11 +1551,22 @@ export function SchedulesPage() {
   const [query, setQuery] = useState('');
   const [quick, setQuick] = useState<QuickFilter>('all');
   const [agentFilter, setAgentFilter] = useState('all');
+  // Deep link `/schedules/<task>[/run/<run>]` (from the Bandeja, D83): untrusted input, only
+  // well-formed ids are used, and the task opens only if the list has it for this account.
+  const [routeTask = '', routeKind = '', routeRun = ''] = (useParams()['*'] ?? '').split('/');
   const [selected, setSelected] = useState<{
     id: string;
     ask: 'pause' | null;
     run: string | null;
-  } | null>(null);
+  } | null>(() =>
+    LINK_ID.test(routeTask)
+      ? {
+          id: routeTask,
+          ask: null,
+          run: routeKind === 'run' && LINK_ID.test(routeRun) ? routeRun : null,
+        }
+      : null,
+  );
   const [editing, setEditing] = useState<{ task: Task | null } | null>(null);
   const [busy, setBusy] = useState(false);
   /** Runs seen queued or running, by id: their end is told once (design toast). */

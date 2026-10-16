@@ -73,7 +73,11 @@ interface NavItemProps {
 /** One destination: a link when it is available, a disabled "Próximamente" row otherwise. */
 function NavItem({ view, active, collapsed, sub = false, onNavigate }: NavItemProps) {
   const { t } = useTranslation();
+  const { inboxUnread } = useShell();
   const label = t(`nav.${view}`);
+  // Design: the Bandeja shows its unread count (a dot when the sidebar is collapsed).
+  const badge = view === 'inbox' && inboxUnread ? inboxUnread : null;
+  const badgeText = badge === null ? null : badge >= 99 ? '99+' : String(badge);
   const Icon = sub ? null : VIEW_ICONS[view];
   const className = sub ? 'sb-item sb-item-sub' : 'sb-item';
   if (!isAvailable(view)) {
@@ -100,7 +104,15 @@ function NavItem({ view, active, collapsed, sub = false, onNavigate }: NavItemPr
       to={viewPath(view)}
       className={className}
       aria-current={active ? 'page' : undefined}
-      aria-label={collapsed ? label : undefined}
+      aria-label={
+        collapsed
+          ? badgeText
+            ? `${label} (${badgeText})`
+            : label
+          : badgeText
+            ? t('nav.withUnread', { label, count: badge ?? 0 })
+            : undefined
+      }
       title={collapsed ? label : undefined}
       onClick={onNavigate}
     >
@@ -110,6 +122,12 @@ function NavItem({ view, active, collapsed, sub = false, onNavigate }: NavItemPr
         </span>
       )}
       {!collapsed && <span className="sb-item-label">{label}</span>}
+      {!collapsed && badgeText ? (
+        <span className="sb-item-badge" aria-hidden="true">
+          {badgeText}
+        </span>
+      ) : null}
+      {collapsed && badgeText ? <span className="sb-dot-badge" aria-hidden="true" /> : null}
     </Link>
   );
 }

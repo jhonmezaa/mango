@@ -490,6 +490,18 @@ export const zHealthOutSchema = z.object({
 });
 
 /**
+ * InboxRun
+ */
+export const zInboxRunSchema = z.object({
+    ok: z.boolean(),
+    reason: z.string().nullable(),
+    run_id: z.string(),
+    summary: z.string().nullable(),
+    task_id: z.string(),
+    task_name: z.string()
+});
+
+/**
  * InstallationOut
  *
  * What was given when Mango was installed. Read only: whoever runs AWS changes it.
@@ -1294,6 +1306,39 @@ export const zApprovalListOutSchema = z.object({
 });
 
 /**
+ * InboxItem
+ */
+export const zInboxItemSchema = z.object({
+    agent_id: z.string(),
+    agent_name: z.string().nullable(),
+    approval: zApprovalOutSchema.nullish(),
+    archived: z.boolean(),
+    at: z.string(),
+    item_id: z.string(),
+    kind: z.enum(['approval', 'run']),
+    read: z.boolean(),
+    run: zInboxRunSchema.nullish()
+});
+
+/**
+ * InboxPage
+ */
+export const zInboxPageSchema = z.object({
+    can_decide: z.boolean(),
+    items: z.array(zInboxItemSchema),
+    next_cursor: z.string().nullable(),
+    unread: z.int()
+});
+
+/**
+ * StateIn
+ */
+export const zStateInSchema = z.object({
+    archived: z.boolean().nullish(),
+    read: z.boolean().nullish()
+});
+
+/**
  * StepOut
  */
 export const zStepOutSchema = z.object({
@@ -1439,6 +1484,13 @@ export const zTriggerOutSchema = z.object({
     ]),
     schedule: zScheduleSpecSchema.nullable(),
     timezone: z.string().nullable()
+});
+
+/**
+ * UnreadOut
+ */
+export const zUnreadOutSchema = z.object({
+    unread: z.int()
 });
 
 /**
@@ -2455,6 +2507,45 @@ export const zListGroupsResponse = zGroupListSchema;
  * Successful Response
  */
 export const zHealthResponse = z.record(z.string(), z.string());
+
+export const zListInboxQuery = z.object({
+    view: z.enum([
+        'all',
+        'unread',
+        'approvals',
+        'archived'
+    ]).optional().default('all'),
+    cursor: z.string().regex(/^[0-9]{13}[0-9a-f]{16}$/).nullish()
+});
+
+/**
+ * Successful Response
+ */
+export const zListInboxResponse = zInboxPageSchema;
+
+export const zReadAllInboxBody = zEmptyInSchema;
+
+/**
+ * Successful Response
+ */
+export const zReadAllInboxResponse = zUnreadOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zUnreadInboxResponse = zUnreadOutSchema;
+
+export const zSetInboxStateBody = zStateInSchema;
+
+export const zSetInboxStatePath = z.object({
+    kind: z.enum(['approval', 'run']),
+    item_id: z.string().regex(/(?:^[0-9]{13}[0-9a-f]{16}$)|(?:^[0-9a-f]{32}$)/)
+});
+
+/**
+ * Successful Response
+ */
+export const zSetInboxStateResponse = zInboxItemSchema;
 
 /**
  * Successful Response

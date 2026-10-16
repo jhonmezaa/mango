@@ -1,10 +1,12 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Me } from '../api/schemas';
 import { agentFixture, baseMe, finopsAgent, sessionValue } from '../test/fixtures';
+import { useShell } from '../layouts/ShellContext';
 import { TestProviders } from '../test/TestProviders';
 import { Sidebar } from './Sidebar';
 
@@ -30,6 +32,35 @@ function renderSidebar(
 }
 
 const nav = () => screen.getByRole('navigation', { name: 'Navegación principal' });
+
+/** What the shell learns from the API: the Bandeja's unread count (D83). */
+function InboxCount({ count }: { count: number }) {
+  const { setInboxUnread } = useShell();
+  useEffect(() => {
+    setInboxUnread(count);
+  }, [count, setInboxUnread]);
+  return null;
+}
+
+describe('Sidebar · Bandeja', () => {
+  it('shows the unread count of the Bandeja, and «99+» past it', () => {
+    const { rerender } = render(
+      <TestProviders session={sessionValue()} path="/">
+        <InboxCount count={3} />
+        <Sidebar mode="full" collapsed={false} onToggleCollapsed={noop} onNavigate={noop} />
+      </TestProviders>,
+    );
+    const link = screen.getByRole('link', { name: 'Bandeja, 3 sin leer' });
+    expect(within(link).getByText('3')).toBeVisible();
+    rerender(
+      <TestProviders session={sessionValue()} path="/">
+        <InboxCount count={99} />
+        <Sidebar mode="full" collapsed={false} onToggleCollapsed={noop} onNavigate={noop} />
+      </TestProviders>,
+    );
+    expect(screen.getByText('99+')).toBeVisible();
+  });
+});
 
 /** Enabled destinations (real links with an href). */
 function navLinks() {
@@ -62,6 +93,7 @@ describe('Sidebar navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Construir' }));
     expect(navLinks()).toEqual([
       'Chat',
+      'Bandeja',
       'Marketplace',
       'Chat con FinOps',
       'Aprobaciones',
@@ -70,7 +102,6 @@ describe('Sidebar navigation', () => {
     ]);
     expect(soonItems()).toEqual([
       'Inicio, próximamente',
-      'Bandeja, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
       'Actividad, próximamente',
@@ -92,6 +123,7 @@ describe('Sidebar navigation', () => {
     // Marketplace and Schedules (D78: the API lists only the caller's tasks).
     expect(navLinks()).toEqual([
       'Chat',
+      'Bandeja',
       'Marketplace',
       'Chat con FinOps',
       'Aprobaciones',
@@ -100,7 +132,6 @@ describe('Sidebar navigation', () => {
     ]);
     expect(soonItems()).toEqual([
       'Inicio, próximamente',
-      'Bandeja, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
       'Gobernanza, próximamente',
@@ -301,6 +332,7 @@ describe('Sidebar navigation', () => {
     renderSidebar(true, '/', true);
     expect(navLinks()).toEqual([
       'Chat',
+      'Bandeja',
       'Marketplace',
       'Chat con FinOps',
       'Aprobaciones',

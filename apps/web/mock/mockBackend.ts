@@ -28,6 +28,7 @@ import {
 } from './cognito.ts';
 import { handleDirectory } from './directory.ts';
 import { handleGroups } from './groups.ts';
+import { handleInbox } from './inbox.ts';
 import { originOf, sendError, sendJson, type ApiHandler } from './http.ts';
 import { handleMarketplace } from './marketplace.ts';
 import { handleMcpCatalog } from './mcpCatalog.ts';
@@ -44,6 +45,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleChatApi,
   handleApprovals,
   handleTasks,
+  handleInbox,
   handleGroups,
   handleDirectory,
   handlePeople,

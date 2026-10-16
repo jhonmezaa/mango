@@ -81,7 +81,8 @@ export const finopsAgent = agentFixture();
 
 export function sessionValue(overrides: Partial<SessionContextValue> = {}): SessionContextValue {
   return {
-    api: {} as ApiClient,
+    // Calls nobody stubbed fail, as an API that is not there (the shell asks for the Bandeja count).
+    api: { call: () => Promise.reject(new Error('no API in this test')) } as unknown as ApiClient,
     config: testConfig,
     me: baseMe,
     conversations: [],

@@ -553,3 +553,11 @@ export const handleApprovals: ApiHandler = async (req, res, path, url) => {
   }
   return false;
 };
+
+/** The requests the mock user can sign now, as the API shows them (Bandeja mock, D83). */
+export function signableApprovals() {
+  return [...approvals.values()]
+    .map(out)
+    .filter((item) => item.can_sign)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}

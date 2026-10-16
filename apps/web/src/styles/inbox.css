@@ -1,0 +1,202 @@
+/*
+ * Bandeja (design other-views.jsx `Inbox`: `inbox`, `inbox-list`, `inbox-row`, `inbox-dot`,
+ * `inbox-detail`, and the design's `tabs` / `tab`). Ported from the design (Claude Design
+ * styles.css); values are the design's. The `inbox-*` helpers below hold the inline styles of the
+ * design's component. Under 900px the design hides the detail (D83 (3): as the design, and to the
+ * next brief).
+ */
+@layer components {
+  .inbox {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(340px, 440px) minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .inbox-list {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding-top: 8px;
+  }
+  .inbox-head {
+    padding: 4px 24px 0;
+  }
+  .inbox-head .page-subtitle {
+    margin-bottom: 12px;
+  }
+  .inbox-list .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    overflow-x: auto;
+    gap: 16px;
+    scrollbar-width: none;
+  }
+  .inbox-list .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .inbox-list .tab {
+    padding: 12px 0;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .inbox-list .tab:hover {
+    color: var(--text);
+  }
+  .inbox-list .tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .inbox-list .tab.is-soon {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: not-allowed;
+  }
+  .inbox-list .tab.is-soon > :not(.soon-tag) {
+    opacity: 0.55;
+  }
+  .inbox-row {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    /* The design's rows are buttons with the browser's line height. */
+    line-height: normal;
+  }
+  .inbox-row:hover {
+    background: var(--row-hover);
+  }
+  .inbox-row.on {
+    background: var(--accent-soft);
+  }
+  .inbox-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-top: 7px;
+    flex-shrink: 0;
+    background: transparent;
+  }
+  .inbox-dot.is-unread {
+    background: var(--accent);
+  }
+  .inbox-ic {
+    display: flex;
+    padding-top: 2px;
+    color: var(--text-muted);
+  }
+  .inbox-ic.is-amber {
+    color: var(--amber);
+  }
+  .inbox-row-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .inbox-row-t,
+  .inbox-row-s {
+    display: block;
+    font-size: 13.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .inbox-row-t {
+    font-weight: 400;
+  }
+  .inbox-row.is-unread .inbox-row-t {
+    font-weight: 600;
+  }
+  .inbox-row-s {
+    color: var(--text-muted);
+  }
+  .inbox-row-time {
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .inbox-empty {
+    padding: 48px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13.5px;
+  }
+  .inbox-more {
+    height: 1px;
+  }
+  .inbox-detail {
+    display: flex;
+    padding: 32px 40px;
+    overflow-y: auto;
+  }
+  .inbox-detail > div {
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+    max-width: 760px;
+  }
+  .inbox-detail > .inbox-pick {
+    margin: auto;
+    width: auto;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13.5px;
+  }
+  .inbox-pick svg {
+    margin-bottom: 8px;
+  }
+  .inbox-detail-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .inbox-detail-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .inbox-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .inbox-detail-t {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  .inbox-detail-m {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+  }
+  .inbox-detail-b {
+    font-size: 14.5px;
+    line-height: 1.6;
+    margin: 0 0 22px;
+    overflow-wrap: anywhere;
+  }
+  .inbox-card {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 900px) {
+    .inbox {
+      grid-template-columns: 1fr;
+    }
+    .inbox-detail {
+      display: none;
+    }
+  }
+}

@@ -180,6 +180,12 @@ def test_any_mango_user_reads_approvals(authz: Authorizer) -> None:
         assert authz.is_allowed(user, "ViewApprovals", *PLATFORM), user.user_id
 
 
+def test_any_mango_user_reads_their_inbox(authz: Authorizer) -> None:
+    # D83: the partition and the rule of the approvals screen decide what each one sees.
+    for user in (*EVERYONE, CENTRAL, NO_GROUP):
+        assert authz.is_allowed(user, "ViewInbox", *PLATFORM), user.user_id
+
+
 def test_any_mango_user_creates_tasks(authz: Authorizer) -> None:
     # D82 (1): anyone signed in creates a task; UseAgent on a published agent, checked by
     # mango-api with the agent's groups and users, is what limits it.

@@ -85,6 +85,8 @@ from mango_api.group_admin import (
     group_admin_router,
 )
 from mango_api.groups import GroupRegistry, groups_router
+from mango_api.inbox import InboxDeps, RunInbox, inbox_router
+from mango_api.inbox_store import InboxStore
 from mango_api.limits import Limits
 from mango_api.mcp import McpDeps, mcp_router
 from mango_api.mcp_catalog import CatalogSource, McpCatalog
@@ -370,6 +372,8 @@ class Services:
     """Built by ``create_app``: its turn needs these services."""
     task_queue: Any = None
     """SQS client the worker reads the runs with; ``None`` keeps the worker off (tests)."""
+    # La Bandeja (D83): notices of each person, in their conversations partition.
+    inbox: InboxDeps | None = None
     limits: Limits = field(default_factory=Limits)
     """Where every rate limit comes from (D70). In production the shared ones count in
     DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
@@ -574,6 +578,12 @@ def build_services(settings: Settings) -> Services:
             invitations=limits.limiter("people.invitations"),
         ),
         approvals=approvals,
+        inbox=InboxDeps(
+            store=InboxStore(rls.for_user, settings.conversations_table),
+            published=published,
+            approvals=approvals,
+            clock=now_utc,
+        ),
         tool_policies=ToolPolicyDeps(
             store=policy_store,
             catalog=mcp_catalog,
@@ -747,6 +757,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             scheduler=services.tasks.scheduler,
             audit=services.audit,
             queue=services.tasks.queue,
+            inbox=RunInbox(services.inbox.store) if services.inbox is not None else None,
         )
 
     @asynccontextmanager
@@ -1071,6 +1082,14 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         app.include_router(
             approvals_router(services.approvals, current_user, require, authorize_use, can_decide)
         )
+
+    if services.inbox is not None:
+
+        def inbox_can_decide(caller: Caller) -> bool:
+            # A hint that shapes the list: signing is authorized (and audited) per request.
+            return services.authorizer.is_allowed(caller.user, "ApproveToolCall", *PLATFORM)
+
+        app.include_router(inbox_router(services.inbox, current_user, require, inbox_can_decide))
 
     if services.tasks is not None:
 

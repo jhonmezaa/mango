@@ -1362,6 +1362,94 @@ export type HealthOut = {
 };
 
 /**
+ * InboxItem
+ */
+export type InboxItem = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Agent Name
+     */
+    agent_name: string | null;
+    approval?: ApprovalOut | null;
+    /**
+     * Archived
+     */
+    archived: boolean;
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Item Id
+     */
+    item_id: string;
+    /**
+     * Kind
+     */
+    kind: 'approval' | 'run';
+    /**
+     * Read
+     */
+    read: boolean;
+    run?: InboxRun | null;
+};
+
+/**
+ * InboxPage
+ */
+export type InboxPage = {
+    /**
+     * Can Decide
+     */
+    can_decide: boolean;
+    /**
+     * Items
+     */
+    items: Array<InboxItem>;
+    /**
+     * Next Cursor
+     */
+    next_cursor: string | null;
+    /**
+     * Unread
+     */
+    unread: number;
+};
+
+/**
+ * InboxRun
+ */
+export type InboxRun = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Summary
+     */
+    summary: string | null;
+    /**
+     * Task Id
+     */
+    task_id: string;
+    /**
+     * Task Name
+     */
+    task_name: string;
+};
+
+/**
  * InstallationOut
  *
  * What was given when Mango was installed. Read only: whoever runs AWS changes it.
@@ -2811,6 +2899,20 @@ export type SignatureOut = {
 };
 
 /**
+ * StateIn
+ */
+export type StateIn = {
+    /**
+     * Archived
+     */
+    archived?: boolean | null;
+    /**
+     * Read
+     */
+    read?: boolean | null;
+};
+
+/**
  * StepOut
  */
 export type StepOut = {
@@ -3038,6 +3140,16 @@ export type TriggerOut = {
      * Timezone
      */
     timezone: string | null;
+};
+
+/**
+ * UnreadOut
+ */
+export type UnreadOut = {
+    /**
+     * Unread
+     */
+    unread: number;
 };
 
 /**
@@ -5684,6 +5796,124 @@ export type HealthResponses = {
 };
 
 export type HealthResponse = HealthResponses[keyof HealthResponses];
+
+export type ListInboxData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * View
+         */
+        view?: 'all' | 'unread' | 'approvals' | 'archived';
+        /**
+         * Cursor
+         */
+        cursor?: string | null;
+    };
+    url: '/inbox';
+};
+
+export type ListInboxErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListInboxError = ListInboxErrors[keyof ListInboxErrors];
+
+export type ListInboxResponses = {
+    /**
+     * Successful Response
+     */
+    200: InboxPage;
+};
+
+export type ListInboxResponse = ListInboxResponses[keyof ListInboxResponses];
+
+export type ReadAllInboxData = {
+    body: EmptyIn;
+    path?: never;
+    query?: never;
+    url: '/inbox/read-all';
+};
+
+export type ReadAllInboxErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ReadAllInboxError = ReadAllInboxErrors[keyof ReadAllInboxErrors];
+
+export type ReadAllInboxResponses = {
+    /**
+     * Successful Response
+     */
+    200: UnreadOut;
+};
+
+export type ReadAllInboxResponse = ReadAllInboxResponses[keyof ReadAllInboxResponses];
+
+export type UnreadInboxData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/inbox/unread';
+};
+
+export type UnreadInboxErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type UnreadInboxError = UnreadInboxErrors[keyof UnreadInboxErrors];
+
+export type UnreadInboxResponses = {
+    /**
+     * Successful Response
+     */
+    200: UnreadOut;
+};
+
+export type UnreadInboxResponse = UnreadInboxResponses[keyof UnreadInboxResponses];
+
+export type SetInboxStateData = {
+    body: StateIn;
+    path: {
+        /**
+         * Kind
+         */
+        kind: 'approval' | 'run';
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/inbox/{kind}/{item_id}';
+};
+
+export type SetInboxStateErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SetInboxStateError = SetInboxStateErrors[keyof SetInboxStateErrors];
+
+export type SetInboxStateResponses = {
+    /**
+     * Successful Response
+     */
+    200: InboxItem;
+};
+
+export type SetInboxStateResponse = SetInboxStateResponses[keyof SetInboxStateResponses];
 
 export type GetCatalogData = {
     body?: never;

@@ -1,6 +1,6 @@
 // Schedules (design schedules.jsx and schedules-run.jsx): tasks a published agent runs without
-// chat (D78), by schedule or when AWS detects a cost anomaly (D79). The Bandeja does not exist
-// yet: as the design says for that case, the texts only name the detail of the task.
+// chat (D78), by schedule or when AWS detects a cost anomaly (D79). Each run that ends leaves a
+// notice in its owner's Bandeja (D83): the texts name the detail of the task and the Bandeja.
 export const schedules = {
   crumbBuild: 'Construir',
   title: 'Schedules',
@@ -178,8 +178,8 @@ export const schedules = {
     severalValue: 'Una a la vez; la siguiente espera en cola',
     control: 'Entrega y control',
     result: 'Resultado',
-    resultValueMine: 'En el detalle de la tarea · solo tú lo ves',
-    resultValueOther: 'En el detalle de la tarea · solo {{owner}} lo ve',
+    resultValueMine: 'En el detalle y en tu Bandeja · solo tú lo ves',
+    resultValueOther: 'En el detalle y en la Bandeja de {{owner}} · solo {{owner}} lo ve',
     runsAs: 'Se ejecuta como',
     runsAsValue: '{{owner}} · con su identidad y sus permisos',
     agent: 'Agente',
@@ -250,7 +250,7 @@ export const schedules = {
     heavyHourly:
       'Cada hora son ~720 ejecuciones al mes con el presupuesto de {{agent}}. Revisa que te alcance.',
     result: 'Resultado',
-    resultValue: 'Queda en el detalle de la tarea. Solo tú lo ves.',
+    resultValue: 'Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.',
     alsoSend: 'También enviar a',
     note: 'Se ejecuta con tu identidad y tus permisos (no con los del agente) y usa {{budget}}. Si pierdes el acceso al agente{{central}}, la tarea se pausa sola. Si necesita escribir, se crea una aprobación pendiente.',
     noteBudget: 'el presupuesto de {{agent}}',
@@ -276,7 +276,7 @@ export const schedules = {
     saved: 'Cambios guardados',
     queued: '{{name}} en cola',
     doneTitle: '{{name}} completada',
-    doneBody: 'El resultado está en el detalle de la tarea.',
+    doneBody: 'El resultado está en el detalle de la tarea y en tu Bandeja.',
     failedTitle: '{{name}} no se completó',
     seeRun: 'Ver ejecución',
     paused: '{{name}} pausada',
