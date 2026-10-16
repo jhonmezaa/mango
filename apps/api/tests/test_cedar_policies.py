@@ -180,6 +180,14 @@ def test_any_mango_user_reads_approvals(authz: Authorizer) -> None:
         assert authz.is_allowed(user, "ViewApprovals", *PLATFORM), user.user_id
 
 
+def test_any_mango_user_creates_tasks(authz: Authorizer) -> None:
+    # D82 (1): anyone signed in creates a task; UseAgent on a published agent, checked by
+    # mango-api with the agent's groups and users, is what limits it.
+    for user in (*EVERYONE, CENTRAL, NO_GROUP):
+        assert authz.is_allowed(user, "CreateTask", *PLATFORM), user.user_id
+    assert not authz.is_allowed(MEMBER, "CreateTask", AGENT_TYPE, AGENT, AgentResource(AGENT))
+
+
 def test_tool_calls_are_approved_by_admins_and_central_finops(authz: Authorizer) -> None:
     people = (*EVERYONE, CENTRAL)
     allowed = {u.user_id for u in people if authz.is_allowed(u, "ApproveToolCall", *PLATFORM)}

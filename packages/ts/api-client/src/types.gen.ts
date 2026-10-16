@@ -366,6 +366,22 @@ export type AgentStateOut = {
 };
 
 /**
+ * AnomalyOut
+ *
+ * The cost anomaly that started an event run: its dates only (D79 (4)).
+ */
+export type AnomalyOut = {
+    /**
+     * End
+     */
+    end: string;
+    /**
+     * Start
+     */
+    start: string;
+};
+
+/**
  * ApprovalListOut
  */
 export type ApprovalListOut = {
@@ -1999,6 +2015,16 @@ export type ParamsIn = {
 };
 
 /**
+ * PauseIn
+ */
+export type PauseIn = {
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
  * PeopleOut
  */
 export type PeopleOut = {
@@ -2128,6 +2154,29 @@ export type PolicyRule = {
      * Expires Hours
      */
     expires_hours: 1 | 4 | 24 | 48 | 72;
+};
+
+/**
+ * PreviewIn
+ *
+ * The editor's schedule, to show its next runs before it is saved (design 2.5).
+ */
+export type PreviewIn = {
+    schedule: ScheduleSpec;
+    /**
+     * Timezone
+     */
+    timezone: 'America/Mexico_City' | 'America/Bogota' | 'America/Sao_Paulo' | 'UTC';
+};
+
+/**
+ * PreviewOut
+ */
+export type PreviewOut = {
+    /**
+     * Next Runs
+     */
+    next_runs: Array<string>;
 };
 
 /**
@@ -2540,6 +2589,7 @@ export type RuleOut = {
  * RunDetailOut
  */
 export type RunDetailOut = {
+    anomaly?: AnomalyOut | null;
     /**
      * Approvals
      */
@@ -2581,15 +2631,24 @@ export type RunDetailOut = {
      */
     status: 'queued' | 'running' | 'ok' | 'failed' | 'skipped' | 'approval';
     /**
+     * Steps
+     */
+    steps?: Array<StepOut>;
+    /**
      * Trigger
      */
     trigger: 'manual' | 'schedule' | 'event';
+    /**
+     * Waiting Since
+     */
+    waiting_since?: string | null;
 };
 
 /**
  * RunOut
  */
 export type RunOut = {
+    anomaly?: AnomalyOut | null;
     /**
      * Approvals
      */
@@ -2630,6 +2689,10 @@ export type RunOut = {
      * Trigger
      */
     trigger: 'manual' | 'schedule' | 'event';
+    /**
+     * Waiting Since
+     */
+    waiting_since?: string | null;
 };
 
 /**
@@ -2748,6 +2811,20 @@ export type SignatureOut = {
 };
 
 /**
+ * StepOut
+ */
+export type StepOut = {
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Tool
+     */
+    tool: string | null;
+};
+
+/**
  * SubmitIn
  */
 export type SubmitIn = {
@@ -2837,6 +2914,14 @@ export type TaskOut = {
      */
     paused_at: string | null;
     /**
+     * Paused By
+     */
+    paused_by?: string | null;
+    /**
+     * Paused Note
+     */
+    paused_note?: string | null;
+    /**
      * Paused Reason
      */
     paused_reason: 'owner' | 'admin' | 'access_lost' | null;
@@ -2856,7 +2941,7 @@ export type TaskOut = {
     /**
      * Task
      */
-    task: string;
+    task: string | null;
     /**
      * Task Id
      */
@@ -6056,6 +6141,31 @@ export type CreateNewTaskResponses = {
 
 export type CreateNewTaskResponse = CreateNewTaskResponses[keyof CreateNewTaskResponses];
 
+export type PreviewNextRunsData = {
+    body: PreviewIn;
+    path?: never;
+    query?: never;
+    url: '/tasks/next-runs';
+};
+
+export type PreviewNextRunsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PreviewNextRunsError = PreviewNextRunsErrors[keyof PreviewNextRunsErrors];
+
+export type PreviewNextRunsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreviewOut;
+};
+
+export type PreviewNextRunsResponse = PreviewNextRunsResponses[keyof PreviewNextRunsResponses];
+
 export type GetTaskData = {
     body?: never;
     path: {
@@ -6117,7 +6227,7 @@ export type UpdateExistingTaskResponses = {
 export type UpdateExistingTaskResponse = UpdateExistingTaskResponses[keyof UpdateExistingTaskResponses];
 
 export type PauseExistingTaskData = {
-    body: EmptyIn;
+    body: PauseIn;
     path: {
         /**
          * Task Id

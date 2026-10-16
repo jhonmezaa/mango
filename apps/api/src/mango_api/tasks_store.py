@@ -114,6 +114,10 @@ class Automation:
     updated_at: str
     running_run: str | None = None
     running_since: int | None = None
+    paused_note: str | None = None
+    """Why an administrator paused it (D82 (2)): the administrator's text, shown to the owner."""
+    paused_by: str | None = None
+    """Who paused it, when an administrator did; only administrators read it (D82 (2))."""
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,12 @@ class Run:
     """When an event run first found its task busy and started to wait (D81)."""
     wake: str | None = None
     """The random id of the only message that resumes a waiting run; never shown."""
+    anomaly_start: str | None = None
+    anomaly_end: str | None = None
+    """The dates of the cost anomaly that started an event run (ISO dates, validated)."""
+    steps: list[dict[str, str]] = field(default_factory=list)
+    """What the agent wrote before each tool call, with the tool (``text``, ``tool``). When a run
+    has steps, ``result`` is only what it wrote after the last one: the report."""
     sk: str = ""
 
 
@@ -199,6 +209,8 @@ def _automation(item: dict[str, Any]) -> Automation:
         updated_at=item["updated_at"]["S"],
         running_run=_str(item, "running_run"),
         running_since=_int(item, "running_since"),
+        paused_note=_str(item, "paused_note"),
+        paused_by=_str(item, "paused_by"),
     )
 
 
@@ -221,8 +233,27 @@ def _run(item: dict[str, Any]) -> Run:
         event_ref=_str(item, "event_ref"),
         waiting_since=_int(item, "waiting_since"),
         wake=_str(item, "wake"),
+        anomaly_start=_str(item, "anomaly_start"),
+        anomaly_end=_str(item, "anomaly_end"),
+        steps=_steps(_str(item, "steps")),
         sk=item["SK"]["S"],
     )
+
+
+def _steps(raw: str | None) -> list[dict[str, str]]:
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(raw)
+    except ValueError:
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [
+        {"text": str(step.get("text", "")), "tool": str(step.get("tool", ""))}
+        for step in loaded
+        if isinstance(step, dict)
+    ]
 
 
 def _conditional(exc: ClientError) -> bool:
@@ -563,6 +594,9 @@ class TaskStore:
             item["scheduled_at"] = _s(run.scheduled_at)
         if run.event_ref:
             item["event_ref"] = _s(run.event_ref)
+        if run.anomaly_start and run.anomaly_end:
+            item["anomaly_start"] = _s(run.anomaly_start)
+            item["anomaly_end"] = _s(run.anomaly_end)
         if run.reason:
             item["reason"] = _s(run.reason)
         if run.ended_at is not None:
@@ -672,6 +706,9 @@ class TaskStore:
                 raise TypeError("no booleans in a run")
             if isinstance(value, int):
                 values[f":v{index}"] = _n(value)
+            elif name == "steps":
+                # Bounded by the caller (``MAX_STEPS``): stored as one JSON text.
+                values[f":v{index}"] = _s(json.dumps(value, ensure_ascii=False))
             elif isinstance(value, list):
                 values[f":v{index}"] = {"L": [_s(str(v)) for v in value]}
             else:

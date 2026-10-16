@@ -19,7 +19,13 @@ from moto import mock_aws
 from mango_api import app as app_module
 from mango_api.authz import Authorizer
 from mango_api.task_identity import OwnerAccessLostError, TaskIdentityUnavailableError
-from mango_api.task_worker import HOLD_SECONDS, WAIT_POLL_SECONDS, WAIT_SECONDS, QueueWorker
+from mango_api.task_worker import (
+    HOLD_SECONDS,
+    WAIT_POLL_SECONDS,
+    WAIT_SECONDS,
+    QueueWorker,
+    TaskSteps,
+)
 from mango_api.tasks import (
     MAX_PER_OWNER,
     RunQueue,
@@ -387,11 +393,12 @@ def test_nobody_names_another_owner(env: Env) -> None:
     assert (response.status_code, _code(response)) == (422, "invalid_request")
 
 
-@pytest.mark.parametrize("token", ["member", "stranger"])
-def test_only_creators_who_may_use_the_agent_create_tasks(env: Env, token: str) -> None:
-    response = env.create(token)
+def test_anyone_who_may_use_the_agent_creates_tasks(env: Env) -> None:
+    """D82 (1): not only agent creators. UseAgent on a published agent is what limits it."""
+    assert env.created("member")["owner"]["user_id"] == "member-1"
+    response = env.create("stranger")
     assert response.status_code == 403
-    assert env.scheduler.created == []
+    assert len(env.scheduler.created) == 1
 
 
 def test_a_task_needs_a_published_agent(env: Env) -> None:
@@ -427,11 +434,61 @@ def test_each_person_sees_their_tasks_and_an_administrator_sees_all(env: Env) ->
     listed = env.client.get("/api/tasks", headers=_h("admin")).json()
     assert {t["name"] for t in listed["items"]} == {"Budget check diario", "De otro"}
     assert listed["can_create"] is True
-    assert env.client.get("/api/tasks", headers=_h("member")).json()["can_create"] is False
+    assert env.client.get("/api/tasks", headers=_h("member")).json()["can_create"] is True
     # Someone else's task does not exist for whoever may not see it (TM-T4).
     assert env.get("creator2", mine["task_id"]).status_code == 404
     assert env.get("member", mine["task_id"]).status_code == 404
     assert env.get("admin", mine["task_id"]).json()["is_owner"] is False
+
+
+def test_only_the_owner_reads_the_instruction(env: Env) -> None:
+    """D82 (3): the instruction is its owner's, as their conversations; an administrator sees
+    everything else of the task."""
+    task = env.created()
+    assert task["task"].startswith("Revisa el consumo")
+    seen = env.get("admin", task["task_id"]).json()
+    assert (seen["task"], seen["name"]) == (None, "Budget check diario")
+    listed = env.client.get("/api/tasks", headers=_h("admin")).json()["items"]
+    assert [t["task"] for t in listed] == [None]
+
+
+def test_an_administrator_says_why_they_pause_and_the_owner_reads_it(env: Env) -> None:
+    """D82 (2): the reason is required from an administrator and shown to the owner; who
+    paused it, only to administrators. The owner's own pause has none."""
+    task = env.created()
+    response = env.post("admin", task["task_id"], "pause")
+    assert (response.status_code, _code(response)) == (422, "reason_required")
+    assert env.post("admin", task["task_id"], "pause", {"reason": "  "}).status_code == 422
+    assert env.post("admin", task["task_id"], "pause", {"reason": "x" * 201}).status_code == 422
+    paused = env.post("admin", task["task_id"], "pause", {"reason": " Revisemos el costo "})
+    assert paused.json()["paused_note"] == "Revisemos el costo"
+    owner = env.get("creator", task["task_id"]).json()
+    assert (owner["paused_note"], owner["paused_by"]) == ("Revisemos el costo", None)
+    assert env.get("admin", task["task_id"]).json()["paused_by"] == "admin-1"
+    # Never in the audit trail.
+    assert "Revisemos" not in json.dumps(env.audit.events)
+    resumed = env.post("admin", task["task_id"], "resume").json()
+    assert (resumed["paused_note"], resumed["paused_by"]) == (None, None)
+    mine = env.post("creator", task["task_id"], "pause", {"reason": "mío"}).json()
+    assert (mine["paused_reason"], mine["paused_note"]) == ("owner", None)
+
+
+def test_the_editor_previews_the_next_runs_in_the_zone_of_the_task(env: Env) -> None:
+    body = {"schedule": {"freq": "daily", "hour": 9, "minute": 30}, "timezone": "UTC"}
+    response = env.client.post("/api/tasks/next-runs", headers=_h("member"), json=body)
+    assert response.status_code == 200
+    runs = response.json()["next_runs"]
+    assert len(runs) == 3
+    assert all(r.endswith("09:30:00Z") for r in runs)
+    bogota = env.client.post(
+        "/api/tasks/next-runs", headers=_h("member"), json={**body, "timezone": "America/Bogota"}
+    ).json()["next_runs"]
+    assert all(r.endswith("14:30:00Z") for r in bogota)
+    bad = env.client.post(
+        "/api/tasks/next-runs", headers=_h("member"), json={**body, "timezone": "Europe/Paris"}
+    )
+    assert bad.status_code == 422
+    assert env.client.post("/api/tasks/next-runs", json=body).status_code == 401
 
 
 def test_an_administrator_pauses_and_retires_but_never_runs_or_edits(env: Env) -> None:
@@ -444,7 +501,7 @@ def test_an_administrator_pauses_and_retires_but_never_runs_or_edits(env: Env) -
         json={"name": "x", "agent_id": AGENT, "task": "y", "trigger": DAILY},
     )
     assert edit.status_code == 403
-    paused = env.post("admin", task_id, "pause")
+    paused = env.post("admin", task_id, "pause", {"reason": "Revisemos el costo"})
     assert (paused.status_code, paused.json()["paused_reason"]) == (200, "admin")
     assert env.scheduler.updated[-1]["State"] == "DISABLED"
     # Their own pause is a brake (D2): the owner cannot lift it; the administrator can.
@@ -517,7 +574,9 @@ def test_run_now_runs_as_the_owner_with_a_token_of_its_own(env: Env) -> None:
     result = env.client.get(
         f"/api/tasks/{task['task_id']}/runs/{run['run_id']}", headers=_h("creator")
     ).json()
-    assert result["result"] == "Hola \n\nmundo"
+    # D82 (4): what it wrote before the tool call is a step; the rest is the report.
+    assert result["result"] == "mundo"
+    assert [step["text"] for step in result["steps"]] == ["Hola"]
     # Budget reserved and settled like a chat turn (D73), with the run as its conversation.
     (turn,) = env.budgets.turns
     assert (turn.user_id, turn.conversation_id) == ("creator-1", run["run_id"])
@@ -713,6 +772,61 @@ def _anomaly(event_id: str) -> str:
     )
 
 
+def test_a_run_shows_the_dates_of_the_anomaly_that_started_it(env: Env) -> None:
+    """Design 3.5: the dates of the anomaly, and nothing else of the event (D79 (4))."""
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    data = {
+        "anomaly_id": "a-1",
+        "anomaly_start_date": "2026-10-14",
+        "anomaly_end_date": "2026-10-15",
+        "monitor_arn": "arn:aws:ce::111122223333:anomalymonitor/x",
+    }
+    env.deliver(
+        task_runs.event_message("cost_anomaly", "a-1", datetime(2026, 10, 15, 9, tzinfo=UTC), data)
+    )
+    (run,) = _runs(env, task["task_id"])
+    assert run["anomaly"] == {"start": "2026-10-14", "end": "2026-10-15"}
+    assert run["waiting_since"] is None
+    assert "111122223333" not in json.dumps(env.get("admin", task["task_id"]).json())
+
+
+@pytest.mark.parametrize(
+    "dates",
+    [
+        {},
+        {"anomaly_start_date": "2026-10-16", "anomaly_end_date": "2026-10-15"},
+        {"anomaly_start_date": "ayer", "anomaly_end_date": "2026-10-15"},
+        {"anomaly_start_date": 20261014, "anomaly_end_date": "2026-10-15"},
+    ],
+)
+def test_dates_that_are_not_dates_are_not_shown(env: Env, dates: dict[str, Any]) -> None:
+    task = env.created(name="Anomalías", trigger=ANOMALY)
+    env.deliver(
+        task_runs.event_message(
+            "cost_anomaly",
+            "a-9",
+            datetime(2026, 10, 15, 9, tzinfo=UTC),
+            {"anomaly_id": "a-9", **dates},
+        )
+    )
+    (run,) = _runs(env, task["task_id"])
+    assert run["anomaly"] is None
+
+
+def test_steps_only_name_tools_of_the_published_version() -> None:
+    """TM-LP1: a tool name in the stream is written by the model."""
+    steps = TaskSteps(frozenset({"get_anomalies"}))
+    steps.tool("Busco la anomalía.", "get_anomalies")
+    steps.tool("Busco la anomalía.", "get_anomalies")  # a second call of the same message
+    steps.tool("Busco la anomalía.\n\nY comparo.", "ignore_all_previous")
+    assert steps.steps == [
+        {"text": "Busco la anomalía.", "tool": "get_anomalies"},
+        {"text": "Y comparo.", "tool": ""},
+    ]
+    assert steps.report("Busco la anomalía.\n\nY comparo.\n\n## Informe") == "## Informe"
+    assert TaskSteps(frozenset()).report("Todo") == "Todo"
+
+
 def test_only_central_people_subscribe_to_cost_anomalies(env: Env) -> None:
     """D79 (5): anomalies are of the whole organization."""
     response = env.create("creator2", name="Anomalías", trigger=ANOMALY)
@@ -763,7 +877,8 @@ def test_only_the_owner_reads_the_result_of_a_run(env: Env) -> None:
     env.deliver(_scheduled(task["task_id"]))
     run_id = env.get("creator", task["task_id"]).json()["runs"][0]["run_id"]
     path = f"/api/tasks/{task['task_id']}/runs/{run_id}"
-    assert env.client.get(path, headers=_h("creator")).json()["result"] == "Hola \n\nmundo"
+    mine = env.client.get(path, headers=_h("creator")).json()
+    assert (mine["result"], len(mine["steps"])) == ("mundo", 1)
     seen = env.get("admin", task["task_id"]).json()["runs"][0]
     assert (seen["status"], seen["has_result"]) == ("ok", False)
     assert seen["cost_usd"] is not None
@@ -776,7 +891,12 @@ def test_an_administrators_pause_is_a_brake(env: Env) -> None:
     only an administrator resumes it."""
     task = env.created()
     queued = env.post("creator", task["task_id"], "run").json()
-    assert env.post("admin", task["task_id"], "pause").json()["paused_reason"] == "admin"
+    assert (
+        env.post("admin", task["task_id"], "pause", {"reason": "Revisemos el costo"}).json()[
+            "paused_reason"
+        ]
+        == "admin"
+    )
     # What was queued before the pause does not run.
     env.deliver()
     run = env.client.get(
@@ -800,14 +920,17 @@ def test_an_administrator_also_holds_a_task_its_owner_paused(env: Env) -> None:
     """A1 of the second review (D78 (19)): the owner's pause cannot dodge the brake of D2."""
     task = env.created()
     env.post("creator", task["task_id"], "pause")
-    held = env.post("admin", task["task_id"], "pause")
+    held = env.post("admin", task["task_id"], "pause", {"reason": "Revisemos el costo"})
     assert (held.status_code, held.json()["paused_reason"]) == (200, "admin")
     assert env.post("creator", task["task_id"], "resume").status_code == 403
     response = env.post("creator", task["task_id"], "run")
     assert (response.status_code, _code(response)) == (409, "paused_by_admin")
     # Nobody pauses again what an administrator holds.
     assert env.post("creator", task["task_id"], "pause").status_code == 409
-    assert env.post("admin", task["task_id"], "pause").status_code == 409
+    assert (
+        env.post("admin", task["task_id"], "pause", {"reason": "Revisemos el costo"}).status_code
+        == 409
+    )
     assert env.post("admin", task["task_id"], "resume").json()["status"] == "active"
 
 
@@ -859,6 +982,7 @@ def test_two_anomalies_at_once_the_second_waits_and_then_runs(env: Env) -> None:
     assert env.agentcore.requests == []
     (run,) = _runs(env, task["task_id"])
     assert (run["status"], run["reason"]) == ("queued", None)
+    assert run["waiting_since"] is not None  # «Espera a que termine la investigación anterior»
     # It waits in the queue, not in a worker: one message, delayed.
     assert env.sqs.delays == [WAIT_POLL_SECONDS]
     assert isinstance(task_runs.parse_message(env.sqs.sent[0]), task_runs.WaitRun)
@@ -953,7 +1077,7 @@ def test_an_event_repeated_while_its_run_waits_makes_no_other_run(env: Env) -> N
     ("token", "action", "body", "reason"),
     [
         ("creator", "pause", None, "task_paused"),
-        ("admin", "pause", None, "paused_by_admin"),
+        ("admin", "pause", {"reason": "Revisemos el costo"}, "paused_by_admin"),
         ("creator", "retire", {"reason": "fin"}, "task_retired"),
         ("admin", "retire", {"reason": "fin"}, "task_retired"),
     ],

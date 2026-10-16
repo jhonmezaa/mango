@@ -119,6 +119,7 @@ from mango_api.task_worker import (
     AgentAccessDeniedError,
     QueueWorker,
     TaskRuns,
+    TaskSteps,
     TurnOutcome,
 )
 from mango_api.tasks import (
@@ -1809,12 +1810,17 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     )
     result = harness.InvocationResult()
     write_tools = frozenset(name for name, _ in agent.write_tools)
+    steps = TaskSteps(
+        frozenset(harness.display_tool_name(t) for t in request.get("allowedTools", []))
+    )
     requested: set[str] = set()
     approval_ids: list[str] = []
     answered = False
     try:
         services.audit.emit("agent.invoke", user.user_id, {**detail, "session": "new"}, user)
         for event in harness.run(agentcore, request, result, write_tools):
+            if event.kind == "tool" and event.data.get("status") == "started":
+                steps.tool(result.text, event.data.get("name", ""))
             if event.kind != harness.WRITE_CALL:
                 continue
             approval = _request_approval(
@@ -1840,7 +1846,8 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         )
     return TurnOutcome(
         status=RunStatus.APPROVAL if approval_ids else RunStatus.OK,
-        result=result.text,
+        result=steps.report(result.text),
+        steps=steps.steps,
         cost_usd=spent,
         turn_id=turn_id,
         approvals=approval_ids,

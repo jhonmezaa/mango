@@ -33,6 +33,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import date
 from typing import TYPE_CHECKING, Any, Protocol
 
 from mango_api.audit import AuditLog
@@ -87,6 +88,53 @@ class TurnOutcome:
     cost_usd: str | None = None
     turn_id: str | None = None
     approvals: list[str] = field(default_factory=list)
+    steps: list[dict[str, str]] = field(default_factory=list)
+    """What the agent wrote before each tool call (``task_steps``); ``result`` is then the
+    report, what it wrote after the last one."""
+
+
+MAX_STEPS = 20
+MAX_STEP_CHARS = 2000
+"""Bounds of the steps of a run: the whole result is already bounded (``MAX_RESULT_CHARS``)."""
+
+
+class TaskSteps:
+    """Splits what the agent wrote in a run at its tool calls (design «Pasos», D82 (4)): the text
+    before each call, with the tool, and the report after the last one. A tool name comes from
+    the stream, written by the model: only a tool of the published version is named (TM-LP1)."""
+
+    def __init__(self, known_tools: frozenset[str]) -> None:
+        self._known = known_tools
+        self._start = 0
+        self.steps: list[dict[str, str]] = []
+
+    def tool(self, text_so_far: str, name: str) -> None:
+        segment = text_so_far[self._start :].strip()
+        self._start = len(text_so_far)
+        if not segment and self.steps:
+            return  # another call of the same message: the step before already says it
+        if len(self.steps) < MAX_STEPS:
+            tool = name if name in self._known else ""
+            self.steps.append({"text": segment[:MAX_STEP_CHARS], "tool": tool})
+
+    def report(self, text: str) -> str:
+        return text[self._start :].strip() if self.steps else text
+
+
+def anomaly_dates(event: task_runs.EventRun) -> tuple[str | None, str | None]:
+    """The dates of the anomaly in an event, if both are ISO dates; nothing else is kept. The
+    data of an event is untrusted: only a value that parses as a date is stored and shown."""
+    if event.event_type != "cost_anomaly":
+        return None, None
+    found: list[str] = []
+    for name in ("anomaly_start_date", "anomaly_end_date"):
+        value = event.data.get(name)
+        try:
+            found.append(date.fromisoformat(value).isoformat() if isinstance(value, str) else "")
+        except ValueError:
+            found.append("")
+    start, end = found
+    return (start, end) if start and end and start <= end else (None, None)
 
 
 class RunSender(Protocol):
@@ -182,6 +230,7 @@ class TaskRuns:
     def _event(self, message: task_runs.EventRun) -> None:
         for automation in self.store.subscribed(message.event_type):
             run_id = message.run_id(automation.automation_id)
+            start, end = anomaly_dates(message)
             run = self.store.add_run(
                 Run(
                     run_id=run_id,
@@ -190,6 +239,8 @@ class TaskRuns:
                     status=RunStatus.QUEUED,
                     queued_at=int(self.clock()),
                     event_ref=f"{message.event_type}:{message.event_id}",
+                    anomaly_start=start,
+                    anomaly_end=end,
                 )
             )
             if run is None:
@@ -310,6 +361,7 @@ class TaskRuns:
                 cost_usd=outcome.cost_usd,
                 turn_id=outcome.turn_id,
                 approvals=outcome.approvals or None,
+                steps=outcome.steps or None,
             )
             finished = (
                 "task.run.skipped" if outcome.status is RunStatus.SKIPPED else "task.run.finished"

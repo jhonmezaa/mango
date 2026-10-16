@@ -115,6 +115,16 @@ export const zAgentStateOutSchema = z.object({
 });
 
 /**
+ * AnomalyOut
+ *
+ * The cost anomaly that started an event run: its dates only (D79 (4)).
+ */
+export const zAnomalyOutSchema = z.object({
+    end: z.iso.date(),
+    start: z.iso.date()
+});
+
+/**
  * ApproveIn
  */
 export const zApproveInSchema = z.object({
@@ -852,6 +862,13 @@ export const zParamsInSchema = z.object({
 });
 
 /**
+ * PauseIn
+ */
+export const zPauseInSchema = z.object({
+    reason: z.string().min(1).max(200).nullish()
+});
+
+/**
  * PolicyRule
  *
  * A policy as shown: only the threshold of its condition is set.
@@ -900,6 +917,13 @@ export const zPolicyChangeOutSchema = z.object({
         'expired'
     ]),
     tool: z.string()
+});
+
+/**
+ * PreviewOut
+ */
+export const zPreviewOutSchema = z.object({
+    next_runs: z.array(z.iso.datetime())
 });
 
 /**
@@ -1093,37 +1117,10 @@ export const zRuleOutSchema = z.object({
 });
 
 /**
- * RunDetailOut
- */
-export const zRunDetailOutSchema = z.object({
-    approvals: z.array(z.string()),
-    cost_usd: z.string().nullable(),
-    ended_at: z.iso.datetime().nullable(),
-    has_result: z.boolean(),
-    queued_at: z.iso.datetime(),
-    reason: z.string().nullable(),
-    result: z.string().nullable(),
-    run_id: z.string(),
-    started_at: z.iso.datetime().nullable(),
-    status: z.enum([
-        'queued',
-        'running',
-        'ok',
-        'failed',
-        'skipped',
-        'approval'
-    ]),
-    trigger: z.enum([
-        'manual',
-        'schedule',
-        'event'
-    ])
-});
-
-/**
  * RunOut
  */
 export const zRunOutSchema = z.object({
+    anomaly: zAnomalyOutSchema.nullish(),
     approvals: z.array(z.string()),
     cost_usd: z.string().nullable(),
     ended_at: z.iso.datetime().nullable(),
@@ -1144,7 +1141,8 @@ export const zRunOutSchema = z.object({
         'manual',
         'schedule',
         'event'
-    ])
+    ]),
+    waiting_since: z.iso.datetime().nullish()
 });
 
 /**
@@ -1176,6 +1174,21 @@ export const zScheduleSpecSchema = z.object({
     ]),
     hour: z.int().gte(0).lte(23).optional().default(9),
     minute: z.int().gte(0).lte(59).optional().default(0)
+});
+
+/**
+ * PreviewIn
+ *
+ * The editor's schedule, to show its next runs before it is saved (design 2.5).
+ */
+export const zPreviewInSchema = z.object({
+    schedule: zScheduleSpecSchema,
+    timezone: z.enum([
+        'America/Mexico_City',
+        'America/Bogota',
+        'America/Sao_Paulo',
+        'UTC'
+    ])
 });
 
 /**
@@ -1278,6 +1291,45 @@ export const zApprovalOutSchema = z.object({
 export const zApprovalListOutSchema = z.object({
     can_decide: z.boolean(),
     items: z.array(zApprovalOutSchema)
+});
+
+/**
+ * StepOut
+ */
+export const zStepOutSchema = z.object({
+    text: z.string(),
+    tool: z.string().nullable()
+});
+
+/**
+ * RunDetailOut
+ */
+export const zRunDetailOutSchema = z.object({
+    anomaly: zAnomalyOutSchema.nullish(),
+    approvals: z.array(z.string()),
+    cost_usd: z.string().nullable(),
+    ended_at: z.iso.datetime().nullable(),
+    has_result: z.boolean(),
+    queued_at: z.iso.datetime(),
+    reason: z.string().nullable(),
+    result: z.string().nullable(),
+    run_id: z.string(),
+    started_at: z.iso.datetime().nullable(),
+    status: z.enum([
+        'queued',
+        'running',
+        'ok',
+        'failed',
+        'skipped',
+        'approval'
+    ]),
+    steps: z.array(zStepOutSchema).optional().default([]),
+    trigger: z.enum([
+        'manual',
+        'schedule',
+        'event'
+    ]),
+    waiting_since: z.iso.datetime().nullish()
 });
 
 /**
@@ -1697,6 +1749,8 @@ export const zTaskOutSchema = z.object({
     next_runs: z.array(z.iso.datetime()),
     owner: zMangoApiTasksPersonOutSchema,
     paused_at: z.string().nullable(),
+    paused_by: z.string().nullish(),
+    paused_note: z.string().nullish(),
     paused_reason: z.enum([
         'owner',
         'admin',
@@ -1710,7 +1764,7 @@ export const zTaskOutSchema = z.object({
         'paused',
         'retired'
     ]),
-    task: z.string(),
+    task: z.string().nullable(),
     task_id: z.string(),
     trigger: zTriggerOutSchema,
     updated_at: z.string()
@@ -2537,6 +2591,13 @@ export const zCreateNewTaskBody = zTaskInSchema;
  */
 export const zCreateNewTaskResponse = zTaskOutSchema;
 
+export const zPreviewNextRunsBody = zPreviewInSchema;
+
+/**
+ * Successful Response
+ */
+export const zPreviewNextRunsResponse = zPreviewOutSchema;
+
 export const zGetTaskPath = z.object({
     task_id: z.string().regex(/^[0-9a-f]{32}$/)
 });
@@ -2557,7 +2618,7 @@ export const zUpdateExistingTaskPath = z.object({
  */
 export const zUpdateExistingTaskResponse = zTaskOutSchema;
 
-export const zPauseExistingTaskBody = zEmptyInSchema;
+export const zPauseExistingTaskBody = zPauseInSchema;
 
 export const zPauseExistingTaskPath = z.object({
     task_id: z.string().regex(/^[0-9a-f]{32}$/)

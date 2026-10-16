@@ -29,7 +29,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 from zoneinfo import ZoneInfo
 
@@ -145,6 +145,23 @@ class RetireIn(_Strict):
     reason: Annotated[str, Field(min_length=1, max_length=200)]
 
 
+class PauseIn(_Strict):
+    reason: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    """Required when an administrator pauses someone else's task (D82 (2)); the owner's own
+    pause has none."""
+
+
+class PreviewIn(_Strict):
+    """The editor's schedule, to show its next runs before it is saved (design 2.5)."""
+
+    schedule: ScheduleSpec
+    timezone: Literal["America/Mexico_City", "America/Bogota", "America/Sao_Paulo", "UTC"]
+
+
+class PreviewOut(_Strict):
+    next_runs: list[datetime]
+
+
 class EmptyIn(_Strict):
     pass
 
@@ -169,6 +186,18 @@ class HealthOut(_Strict):
 RunStatusOut = Literal["queued", "running", "ok", "failed", "skipped", "approval"]
 
 
+class AnomalyOut(_Strict):
+    """The cost anomaly that started an event run: its dates only (D79 (4))."""
+
+    start: date
+    end: date
+
+
+class StepOut(_Strict):
+    text: str
+    tool: str | None
+
+
 class RunOut(_Strict):
     run_id: str
     trigger: Literal["manual", "schedule", "event"]
@@ -180,11 +209,17 @@ class RunOut(_Strict):
     reason: str | None
     has_result: bool
     approvals: list[str]
+    anomaly: AnomalyOut | None = None
+    waiting_since: datetime | None = None
+    """When an event run started to wait for the previous one (D81)."""
 
 
 class RunDetailOut(RunOut):
     result: str | None
-    """The agent's answer as Markdown; the SPA renders it without raw HTML."""
+    """The agent's answer as Markdown; the SPA renders it without raw HTML. With steps, only
+    what it wrote after the last tool call: the report."""
+    steps: list[StepOut] = []
+    """What the agent wrote before each tool call, with the tool; empty for older runs."""
 
 
 class TriggerOut(_Strict):
@@ -201,12 +236,17 @@ class TaskOut(_Strict):
     name: str
     agent_id: str
     agent_name: str | None
-    task: str
+    task: str | None
+    """The instruction, only for its owner (D82 (3)): it is theirs, as their conversations."""
     trigger: TriggerOut
     deliver: Literal["inbox"]
     status: Literal["active", "paused", "retired"]
     paused_reason: Literal["owner", "admin", "access_lost"] | None
     paused_at: str | None
+    paused_note: str | None = None
+    """Why an administrator paused it (D82 (2)), for the owner and administrators."""
+    paused_by: str | None = None
+    """Who paused it, when an administrator did: only for administrators."""
     retired: RetiredOut | None
     owner: PersonOut
     is_owner: bool
@@ -428,8 +468,17 @@ def run_out(run: Run, *, owner: bool = True) -> RunOut:
         ended_at=_ts(run.ended_at),
         cost_usd=run.cost_usd,
         reason=run.reason,
-        has_result=owner and bool(run.result),
+        has_result=owner and bool(run.result or run.steps),
         approvals=list(run.approvals),
+        anomaly=(
+            AnomalyOut(
+                start=date.fromisoformat(run.anomaly_start),
+                end=date.fromisoformat(run.anomaly_end),
+            )
+            if run.anomaly_start and run.anomaly_end
+            else None
+        ),
+        waiting_since=_ts(run.waiting_since),
     )
 
 
@@ -456,6 +505,7 @@ def _health(
 
 
 def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut:
+    is_owner = automation.owner_id == caller.user.user_id
     agent = _served(deps, automation.agent_id)
     runs = deps.store.recent_runs(automation.automation_id, RUNS_SHOWN)
     spec = ScheduleSpec.model_validate(automation.spec) if automation.spec else None
@@ -477,7 +527,7 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
         name=automation.name,
         agent_id=automation.agent_id,
         agent_name=agent.definition.name if agent is not None else None,
-        task=automation.task,
+        task=automation.task if is_owner else None,
         trigger=TriggerOut(
             kind=cast(Any, automation.trigger),
             schedule=spec,
@@ -491,14 +541,16 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
             Any, automation.paused_reason.value if automation.paused_reason else None
         ),
         paused_at=automation.paused_at,
+        paused_note=automation.paused_note,
+        paused_by=automation.paused_by if caller.user.is_admin else None,
         retired=retired,
         owner=PersonOut(
             user_id=automation.owner_id, email=automation.owner_email, name=automation.owner_name
         ),
-        is_owner=automation.owner_id == caller.user.user_id,
+        is_owner=is_owner,
         next_runs=upcoming,
         running=any(r.status in {RunStatus.QUEUED, RunStatus.RUNNING} for r in runs),
-        runs=[run_out(r, owner=automation.owner_id == caller.user.user_id) for r in runs],
+        runs=[run_out(r, owner=is_owner) for r in runs],
         health=_health(automation, agent, runs),
         created_at=automation.created_at,
         updated_at=automation.updated_at,
@@ -629,7 +681,12 @@ def update_task(
 
 
 def pause_task(
-    deps: TasksDeps, caller: Caller, automation: Automation, *, reason: PauseReason
+    deps: TasksDeps,
+    caller: Caller,
+    automation: Automation,
+    *,
+    reason: PauseReason,
+    note: str | None = None,
 ) -> Automation:
     # An administrator may also hold a task its owner paused (A1 of the second review, D78
     # (19)): the reason becomes ``admin`` and the brake of D2 applies from then on.
@@ -641,14 +698,30 @@ def pause_task(
     if automation.status is not Status.ACTIVE and not takes_over:
         raise ApiError(409, "task_not_active", "this task is not active")
     expected = frozenset({Status.PAUSED}) if takes_over else frozenset({Status.ACTIVE})
+    by_admin = reason is PauseReason.ADMIN
+    if by_admin and not (note and note.strip()):
+        # D82 (2): an administrator says why; the owner reads it in the task.
+        raise ApiError(422, "reason_required", "say why you pause this task")
     paused = replace(
-        automation, status=Status.PAUSED, paused_reason=reason, paused_at=_now_iso(deps)
+        automation,
+        status=Status.PAUSED,
+        paused_reason=reason,
+        paused_at=_now_iso(deps),
+        paused_note=note.strip() if by_admin and note else None,
+        paused_by=(caller.user.email or caller.user.user_id) if by_admin else None,
     )
+    # The note is the administrator's text: shown in the app, never audited (TM-T8).
     _audit(deps, "task.paused", caller, automation, reason=reason.value, outcome="requested")
     try:
         deps.store.update(
             automation,
-            {"status": Status.PAUSED, "paused_reason": reason.value, "paused_at": paused.paused_at},
+            {
+                "status": Status.PAUSED,
+                "paused_reason": reason.value,
+                "paused_at": paused.paused_at,
+                "paused_note": paused.paused_note,
+                "paused_by": paused.paused_by,
+            },
             expect_status=expected,
         )
         if automation.trigger == "schedule" and not takes_over:
@@ -668,12 +741,25 @@ def resume_task(deps: TasksDeps, caller: Caller, automation: Automation) -> Auto
     is_owner = automation.owner_id == caller.user.user_id
     if automation.event_type in CENTRAL_EVENTS and is_owner and not caller.user.is_central:
         raise ApiError(403, "central_only", "only central people may subscribe to this event")
-    resumed = replace(automation, status=Status.ACTIVE, paused_reason=None, paused_at=None)
+    resumed = replace(
+        automation,
+        status=Status.ACTIVE,
+        paused_reason=None,
+        paused_at=None,
+        paused_note=None,
+        paused_by=None,
+    )
     _audit(deps, "task.resumed", caller, automation, outcome="requested")
     try:
         deps.store.update(
             automation,
-            {"status": Status.ACTIVE, "paused_reason": None, "paused_at": None},
+            {
+                "status": Status.ACTIVE,
+                "paused_reason": None,
+                "paused_at": None,
+                "paused_note": None,
+                "paused_by": None,
+            },
             expect_status=frozenset({Status.PAUSED}),
         )
         if automation.trigger == "schedule":
@@ -844,6 +930,14 @@ def tasks_router(  # noqa: PLR0915 - registers the route closures
             items=items, can_create=can_create, can_subscribe_events=caller.user.is_central
         )
 
+    @router.post("/next-runs", response_model=PreviewOut)
+    async def preview_next_runs(body: PreviewIn, caller: Creator) -> PreviewOut:
+        """The next runs of a schedule in its zone, before it is saved (design 2.5): computed
+        here, as for a saved task. Pure computation on a validated body: nothing is read or
+        written, and nothing is audited."""
+        now = datetime.fromtimestamp(deps.clock(), UTC)
+        return PreviewOut(next_runs=next_runs(body.schedule, body.timezone, now))
+
     @router.post("", response_model=TaskOut, status_code=201)
     async def create_new_task(body: TaskIn, caller: Creator) -> TaskOut:
         _limit(deps.changes, caller.user.user_id)
@@ -872,13 +966,13 @@ def tasks_router(  # noqa: PLR0915 - registers the route closures
         return run_out(await run(run_now, deps, caller, automation))
 
     @router.post("/{task_id}/pause", response_model=TaskOut)
-    async def pause_existing_task(task_id: TaskId, _body: EmptyIn, caller: SignedIn) -> TaskOut:
+    async def pause_existing_task(task_id: TaskId, body: PauseIn, caller: SignedIn) -> TaskOut:
         automation = await load(caller, task_id, "ControlTask")
         _limit(deps.changes, caller.user.user_id)
         reason = (
             PauseReason.OWNER if automation.owner_id == caller.user.user_id else PauseReason.ADMIN
         )
-        paused = await run(pause_task, deps, caller, automation, reason=reason)
+        paused = await run(pause_task, deps, caller, automation, reason=reason, note=body.reason)
         return await run(task_out, deps, paused, caller)
 
     @router.post("/{task_id}/resume", response_model=TaskOut)
@@ -920,7 +1014,11 @@ def tasks_router(  # noqa: PLR0915 - registers the route closures
         # D1 (after the review): status, cost and reason for whoever sees the task; the
         # answer, obtained with the owner's access, only for the owner (as D23 for chats).
         return RunDetailOut(
-            **run_out(found, owner=owner).model_dump(), result=found.result if owner else None
+            **run_out(found, owner=owner).model_dump(),
+            result=found.result if owner else None,
+            steps=[StepOut(text=step["text"], tool=step["tool"] or None) for step in found.steps]
+            if owner
+            else [],
         )
 
     return router

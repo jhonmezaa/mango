@@ -185,7 +185,7 @@ class InvocationResult:
     that end of the stream, not a failure (D74)."""
 
 
-def _display_tool_name(raw: str) -> str:
+def display_tool_name(raw: str) -> str:
     name = raw.rsplit("/", 1)[-1]
     return name.split("___", 1)[-1][:64]
 
@@ -406,7 +406,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     progress = _Progress()
     # The tool name in the stream is written by the model and the guardrail does not check it:
     # progress only names tools of the published version (TM-LP1).
-    known_tools = {_display_tool_name(tool) for tool in request.get("allowedTools", [])}
+    known_tools = {display_tool_name(tool) for tool in request.get("allowedTools", [])}
     # Sent before the call: the first event of the harness only arrives once the guardrail
     # has released the first block of the answer (or the first tool call).
     yield from progress.to(Phase.THINKING)
@@ -457,7 +457,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 ):
                     refused.add(tool_id)
                     asked = True
-                name = _display_tool_name(start["toolUse"].get("name", "tool"))
+                name = display_tool_name(start["toolUse"].get("name", "tool"))
                 tool_names[tool_id] = name
                 running.add(tool_id)
                 # Text before and after a tool call are separate model blocks; keep them as

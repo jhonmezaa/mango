@@ -722,6 +722,28 @@
         "title": "AgentStateOut",
         "type": "object"
       },
+      "AnomalyOut": {
+        "additionalProperties": false,
+        "description": "The cost anomaly that started an event run: its dates only (D79 (4)).",
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "AnomalyOut",
+        "type": "object"
+      },
       "ApprovalListOut": {
         "additionalProperties": false,
         "properties": {
@@ -3740,6 +3762,26 @@
         "title": "ParamsIn",
         "type": "object"
       },
+      "PauseIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "PauseIn",
+        "type": "object"
+      },
       "PeopleOut": {
         "additionalProperties": false,
         "properties": {
@@ -4011,6 +4053,49 @@
           "expires_hours"
         ],
         "title": "PolicyRule",
+        "type": "object"
+      },
+      "PreviewIn": {
+        "additionalProperties": false,
+        "description": "The editor's schedule, to show its next runs before it is saved (design 2.5).",
+        "properties": {
+          "schedule": {
+            "$ref": "#/components/schemas/ScheduleSpec"
+          },
+          "timezone": {
+            "enum": [
+              "America/Mexico_City",
+              "America/Bogota",
+              "America/Sao_Paulo",
+              "UTC"
+            ],
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule",
+          "timezone"
+        ],
+        "title": "PreviewIn",
+        "type": "object"
+      },
+      "PreviewOut": {
+        "additionalProperties": false,
+        "properties": {
+          "next_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Next Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "next_runs"
+        ],
+        "title": "PreviewOut",
         "type": "object"
       },
       "PromptLine": {
@@ -4821,6 +4906,16 @@
       "RunDetailOut": {
         "additionalProperties": false,
         "properties": {
+          "anomaly": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnomalyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "approvals": {
             "items": {
               "type": "string"
@@ -4910,6 +5005,14 @@
             "title": "Status",
             "type": "string"
           },
+          "steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
           "trigger": {
             "enum": [
               "manual",
@@ -4918,6 +5021,18 @@
             ],
             "title": "Trigger",
             "type": "string"
+          },
+          "waiting_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting Since"
           }
         },
         "required": [
@@ -4939,6 +5054,16 @@
       "RunOut": {
         "additionalProperties": false,
         "properties": {
+          "anomaly": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnomalyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "approvals": {
             "items": {
               "type": "string"
@@ -5025,6 +5150,18 @@
             ],
             "title": "Trigger",
             "type": "string"
+          },
+          "waiting_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting Since"
           }
         },
         "required": [
@@ -5261,6 +5398,32 @@
         "title": "SignatureOut",
         "type": "object"
       },
+      "StepOut": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "text",
+          "tool"
+        ],
+        "title": "StepOut",
+        "type": "object"
+      },
       "SubmitIn": {
         "additionalProperties": false,
         "properties": {
@@ -5410,6 +5573,28 @@
             ],
             "title": "Paused At"
           },
+          "paused_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused By"
+          },
+          "paused_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Note"
+          },
           "paused_reason": {
             "anyOf": [
               {
@@ -5457,8 +5642,15 @@
             "type": "string"
           },
           "task": {
-            "title": "Task",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
           },
           "task_id": {
             "title": "Task Id",
@@ -10724,6 +10916,45 @@
         "summary": "Create New Task"
       }
     },
+    "/tasks/next-runs": {
+      "post": {
+        "description": "The next runs of a schedule in its zone, before it is saved (design 2.5): computed\nhere, as for a saved task. Pure computation on a validated body: nothing is read or\nwritten, and nothing is audited.",
+        "operationId": "preview_next_runs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Preview Next Runs"
+      }
+    },
     "/tasks/{task_id}": {
       "get": {
         "operationId": "get_task",
@@ -10831,7 +11062,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EmptyIn"
+                "$ref": "#/components/schemas/PauseIn"
               }
             }
           },
