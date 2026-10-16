@@ -28,6 +28,7 @@ import {
   requiredServices,
   shownVersion,
   statusOf,
+  destructiveTools,
   writeTools,
   type Pack,
   type PackRequest,
@@ -329,6 +330,7 @@ export function McpDetail({ server, servers, isAdmin, onAction, onClose }: Props
   const pendingUpdate = pending?.kind === 'update' ? pending : null;
   const agents = server.agents;
   const hasWrite = writeTools(server) > 0;
+  const destructive = destructiveTools(server);
   const dataMode = dataModeOf(server);
   const services = requiredServices(server);
   // Design: a connector over account data says, tool by tool, who may call it.
@@ -763,6 +765,11 @@ export function McpDetail({ server, servers, isAdmin, onAction, onClose }: Props
           </div>
         ))}
         {pack ? <div className="mk-meta mt-1.5">{t('mcpCatalog.detail.toolsPackNote')}</div> : null}
+        {destructive > 0 ? (
+          <Alert tone="red" icon={<LockIcon size={13} />} className="mt-2 text-[12.5px]">
+            {t('mcpCatalog.detail.destructiveNote', { count: destructive })}
+          </Alert>
+        ) : null}
       </Sec>
 
       {status === 'pending' && isAdmin && pending && !pending.own ? (
@@ -782,6 +789,9 @@ export function McpDetail({ server, servers, isAdmin, onAction, onClose }: Props
             <div className="mt-1">{t('mcpCatalog.detail.accountsNote')}</div>
           ) : null}
           {hasWrite ? <div className="mt-1">{t('mcpCatalog.detail.writeNote')}</div> : null}
+          {destructive > 0 ? (
+            <div className="mt-1">{t('mcpCatalog.detail.destructiveBeforeApproving')}</div>
+          ) : null}
         </Alert>
       ) : null}
 

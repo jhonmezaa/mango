@@ -22,12 +22,12 @@ function apiWith(handlers: Record<string, Handler>) {
   });
 }
 
-function renderPage(call: ReturnType<typeof vi.fn>, isAdmin = false) {
+function renderPage(call: ReturnType<typeof vi.fn>, isAdmin = false, path = '/schedules') {
   const api = { call } as unknown as ApiClient;
   render(
     <TestProviders
       session={sessionValue({ api, me: { ...baseMe, is_admin: isAdmin } })}
-      path="/schedules"
+      path={path}
     >
       <Routes>
         <Route path="schedules/*" element={<SchedulesPage />} />
@@ -405,7 +405,11 @@ describe('SchedulesPage', () => {
           trigger: 'event',
           waiting_since: '2026-10-15T14:28:00Z',
           started_at: '2026-10-15T14:30:00Z',
-          anomaly: { start: '2026-10-14', end: '2026-10-14' },
+          anomaly: {
+            start: '2026-10-14',
+            end: '2026-10-14',
+            id: '8d09e1c2-4b5d-4e8f-9a01-8d092b3c4d5e',
+          },
         }),
       ],
     });
@@ -418,6 +422,9 @@ describe('SchedulesPage', () => {
       within(panel).getByText('Espera a que termine la investigación anterior'),
     ).toBeInTheDocument();
     expect(within(panel).getByText('Esperó 2 min en cola')).toBeInTheDocument();
+    // D85: the short id of the anomaly tells apart those of the same day (design 2026-10-16b).
+    expect(within(panel).getByText('8d09e1c2')).toHaveClass('mono');
+    expect(within(panel).queryByText(/8d09e1c2-4b5d/)).toBeNull();
   });
 
   it('the editor shows the next runs the server computes in the zone of the task', async () => {
@@ -455,5 +462,46 @@ describe('SchedulesPage', () => {
     const button = await screen.findByRole('button', { name: 'Nuevo schedule' });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', 'No tienes agentes publicados que puedas usar');
+  });
+
+  it('a run skipped for lack of budget puts the task in «Necesitan atención»', async () => {
+    renderPage(
+      apiWith(
+        base(
+          list([
+            task({
+              health: { tone: 'amber', code: 'budget_skipped' },
+              runs: [run({ status: 'skipped', reason: 'budget_exceeded', has_result: false })],
+            }),
+          ]),
+        ),
+      ),
+    );
+    expect(
+      await screen.findByTitle('La última ejecución se omitió: presupuesto agotado'),
+    ).toHaveClass('badge-amber');
+  });
+
+  it('a run that is gone opens its task with a notice (design 2026-10-16b)', async () => {
+    renderPage(
+      apiWith(base(list([task()]))),
+      false,
+      `/schedules/${'a'.repeat(32)}/run/${'f'.repeat(32)}`,
+    );
+    expect(await screen.findByText('Esa ejecución ya no está disponible')).toBeInTheDocument();
+    expect(screen.getByText('Los resultados se guardan 90 días.')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Budget check diario' })).toBeInTheDocument();
+  });
+
+  it('the editor shows the downloadable report as «Próximamente»', async () => {
+    renderPage(apiWith(base(list([]))));
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuevo schedule' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Reporte descargable')).toBeInTheDocument();
+    const option = within(dialog).getAllByText('También un PDF con gráficos')[0];
+    const soon = option?.closest('.soon');
+    expect(soon).not.toBeNull();
+    expect(within(soon as HTMLElement).getByText('Próximamente')).toBeInTheDocument();
+    expect(within(soon as HTMLElement).getByRole('checkbox', { hidden: true })).toBeDisabled();
   });
 });

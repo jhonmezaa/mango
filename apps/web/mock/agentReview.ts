@@ -291,6 +291,7 @@ const tool = (name: string, description: string, audience: 'all' | 'central' = '
   description,
   access: 'read',
   audience,
+  unclassified: false,
   central_groups_only: audience === 'central',
 });
 

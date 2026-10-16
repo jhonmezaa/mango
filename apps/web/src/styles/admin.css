@@ -902,6 +902,10 @@
     background: var(--red-soft);
     color: var(--red);
   }
+  .g-dot-lg.amber {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
 
   @container app (max-width: 720px) {
     .g-tr.m {

@@ -30,6 +30,8 @@ import {
   shownVersion,
   statusOf,
   toolRows,
+  destructiveTools,
+  isDestructive,
   writeTools,
   type Catalog,
   type Filters,
@@ -57,6 +59,8 @@ type Tab = 'catalog' | 'tools' | 'requests';
 const PANEL_ID = 'mcp-panel';
 const KINDS: readonly KindFilter[] = ['all', 'connector', 'pack'];
 const TOOL_KINDS: readonly ToolKind[] = ['all', 'read', 'write'];
+/** Design: the «Destructivas» filter only when some tool is. */
+const TOOL_KINDS_DESTRUCTIVE: readonly ToolKind[] = [...TOOL_KINDS, 'destructive'];
 const NO_TOOL_FILTERS: ToolFilters = { query: '', kind: 'all', onlyEnabled: false };
 /** While the provisioner installs or removes a pack, the catalog is read again this often. */
 const POLL_MS = 5000;
@@ -91,6 +95,7 @@ function isStatus(value: string): value is ServerStatus {
 function ServerRow({ server, onOpen }: { server: Server; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
   const write = writeTools(server);
+  const destructive = destructiveTools(server);
   return (
     <button
       type="button"
@@ -126,9 +131,19 @@ function ServerRow({ server, onOpen }: { server: Server; onOpen: (id: string) =>
             {server.tools.length} ·{' '}
             <span className="text-warn">{t('mcpCatalog.toolsWrite', { count: write })}</span>
           </>
+        ) : destructive > 0 ? (
+          server.tools.length
         ) : (
           t('mcpCatalog.toolsRead', { count: server.tools.length })
         )}
+        {destructive > 0 ? (
+          <>
+            {' · '}
+            <span className="text-danger">
+              {t('mcpCatalog.toolsDestructive', { count: destructive })}
+            </span>
+          </>
+        ) : null}
       </span>
       <span className="mk-meta">{server.agents.length || '—'}</span>
       <span>
@@ -143,7 +158,10 @@ function ToolsTable({ rows, onOpen }: { rows: readonly ToolRow[]; onOpen: (id: s
   const { t } = useTranslation();
   const [filters, setFilters] = useState<ToolFilters>(NO_TOOL_FILTERS);
   const list = filterTools(rows, filters);
-  const writeEnabled = rows.filter(({ tool }) => tool.access !== 'read' && tool.enabled).length;
+  const writeEnabled = rows.filter(
+    ({ tool }) => tool.access !== 'read' && !isDestructive(tool) && tool.enabled,
+  ).length;
+  const kinds = rows.some(({ tool }) => isDestructive(tool)) ? TOOL_KINDS_DESTRUCTIVE : TOOL_KINDS;
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -161,7 +179,7 @@ function ToolsTable({ rows, onOpen }: { rows: readonly ToolRow[]; onOpen: (id: s
           />
         </div>
         <div className="tk-quick" role="group" aria-label={t('mcpCatalog.toolsTab.kindLabel')}>
-          {TOOL_KINDS.map((kind) => (
+          {kinds.map((kind) => (
             <button
               key={kind}
               type="button"

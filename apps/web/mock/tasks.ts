@@ -33,7 +33,7 @@ interface Run {
   result: string | null;
   steps: Step[];
   approvals: string[];
-  anomaly: { start: string; end: string } | null;
+  anomaly: { start: string; end: string; id?: string | null } | null;
   waiting_since: string | null;
 }
 interface Task {
@@ -105,7 +105,9 @@ function run(overrides: Partial<Run>): Run {
 
 function seed() {
   const created = ago(60 * 24 * 7);
-  const anomaly = { start: isoDay(-1), end: isoDay(0) };
+  // Neutral ids (design data), one per anomaly: the short id tells apart those of a day (D85).
+  const anomalyOf = (id: string) => ({ start: isoDay(-1), end: isoDay(0), id });
+  const anomaly = anomalyOf('8d09e1c2-4b5d-4e8f-9a01-8d092b3c4d5e');
   const yesterday = (hours: number) => {
     const at = new Date();
     at.setUTCDate(at.getUTCDate() - 1);
@@ -137,7 +139,7 @@ function seed() {
         ended_at: ago(19),
       }),
       run({
-        anomaly,
+        anomaly: anomalyOf('81c2e1c2-4b5d-4e8f-9a01-81c22b3c4d5e'),
         result: REPORT,
         steps: STEPS,
         queued_at: ago(51),
@@ -146,11 +148,17 @@ function seed() {
         ended_at: ago(49),
         cost_usd: '0.2700',
       }),
-      run({ anomaly, result: REPORT, queued_at: ago(52), started_at: ago(52), ended_at: ago(51) }),
+      run({
+        anomaly: anomalyOf('7f3ae1c2-4b5d-4e8f-9a01-7f3a2b3c4d5e'),
+        result: REPORT,
+        queued_at: ago(52),
+        started_at: ago(52),
+        ended_at: ago(51),
+      }),
       run({
         status: 'skipped',
         reason: 'daily_cap',
-        anomaly: { start: isoDay(-2), end: isoDay(-1) },
+        anomaly: { start: isoDay(-2), end: isoDay(-1), id: '7105e1c2-4b5d-4e8f-9a01-71052b3c4d5e' },
         queued_at: yesterday(21),
         started_at: null,
         ended_at: yesterday(21),
@@ -159,7 +167,7 @@ function seed() {
       run({
         status: 'skipped',
         reason: 'overlap',
-        anomaly: { start: isoDay(-2), end: isoDay(-1) },
+        anomaly: { start: isoDay(-2), end: isoDay(-1), id: '6f58e1c2-4b5d-4e8f-9a01-6f582b3c4d5e' },
         queued_at: yesterday(15),
         started_at: null,
         ended_at: yesterday(15),

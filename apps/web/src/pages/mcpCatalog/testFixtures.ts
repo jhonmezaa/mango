@@ -13,6 +13,7 @@ export function tool(server: string, name: string, overrides: Partial<Tool> = {}
     description: '',
     access: 'read',
     audience: 'all',
+    unclassified: false,
     central_groups_only: false,
     enabled: true,
     ...overrides,
@@ -87,6 +88,7 @@ export const costExplorer = server({
     tool('cost-explorer', 'get_cost_and_usage', { description: 'Gasto real.' }),
     tool('cost-explorer', 'get_savings_plans_utilization', {
       audience: 'central',
+      unclassified: false,
       central_groups_only: true,
     }),
   ],
@@ -124,6 +126,7 @@ export const billing = server({
   tools: [
     tool('aws-billing', 'list_invoices', {
       audience: 'central',
+      unclassified: false,
       central_groups_only: true,
       enabled: false,
     }),

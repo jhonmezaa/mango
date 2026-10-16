@@ -94,7 +94,7 @@ export function isOpen(run: TaskRun): boolean {
 
 export type Health = {
   tone: 'red' | 'amber';
-  key: 'agent_unavailable' | 'access_lost' | 'failing' | 'tools';
+  key: 'agent_unavailable' | 'access_lost' | 'budget_skipped' | 'failing' | 'tools';
   values?: Record<string, string>;
 };
 
@@ -107,8 +107,12 @@ export function healthOf(
   unavailableTools: readonly string[] | undefined,
 ): Health | null {
   if (task.status === 'retired') return null;
-  if (task.health) return { tone: task.health.tone, key: task.health.code };
-  if (unavailableTools && unavailableTools.length > 0) {
+  const tools = unavailableTools && unavailableTools.length > 0;
+  // Design order: tools that are not available come before «2 de las últimas 3 fallaron».
+  if (task.health && !(task.health.code === 'failing' && tools)) {
+    return { tone: task.health.tone, key: task.health.code };
+  }
+  if (unavailableTools && tools) {
     return { tone: 'amber', key: 'tools', values: { tools: unavailableTools.join(', ') } };
   }
   return null;
@@ -187,7 +191,13 @@ export function isRunReason(value: string): value is RunReason {
   return (RUN_REASONS as readonly string[]).includes(value);
 }
 
-export const HEALTH_KEYS = ['agent_unavailable', 'access_lost', 'failing', 'tools'] as const;
+export const HEALTH_KEYS = [
+  'agent_unavailable',
+  'access_lost',
+  'budget_skipped',
+  'failing',
+  'tools',
+] as const;
 export type HealthKey = (typeof HEALTH_KEYS)[number];
 
 export interface Perms {

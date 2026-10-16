@@ -129,8 +129,18 @@ export function filterServers(servers: readonly Server[], filters: Filters): Ser
     );
 }
 
+/** A tool the signed manifest classifies `destructive`: never enabled, not even with approval (D84). */
+export function isDestructive(tool: Pick<Tool, 'access'>): boolean {
+  return tool.access === 'destructive';
+}
+
+/** Write tools (an unclassified one counts as a write); destructive ones are counted apart. */
 export function writeTools(server: Server): number {
-  return server.tools.filter((tool) => tool.access !== 'read').length;
+  return server.tools.filter((tool) => tool.access !== 'read' && !isDestructive(tool)).length;
+}
+
+export function destructiveTools(server: Server): number {
+  return server.tools.filter(isDestructive).length;
 }
 
 export interface ToolRow {
@@ -142,7 +152,7 @@ export function toolRows(servers: readonly Server[]): ToolRow[] {
   return servers.flatMap((server) => server.tools.map((tool) => ({ server, tool })));
 }
 
-export type ToolKind = 'all' | 'read' | 'write';
+export type ToolKind = 'all' | 'read' | 'write' | 'destructive';
 
 export interface ToolFilters {
   query: string;
@@ -154,9 +164,9 @@ export interface ToolFilters {
 export function filterTools(rows: readonly ToolRow[], filters: ToolFilters): ToolRow[] {
   const needle = filters.query.trim().toLowerCase();
   return rows.filter(({ server, tool }) => {
-    if (filters.kind !== 'all' && (tool.access !== 'read') !== (filters.kind === 'write')) {
-      return false;
-    }
+    if (filters.kind === 'read' && tool.access !== 'read') return false;
+    if (filters.kind === 'write' && (tool.access === 'read' || isDestructive(tool))) return false;
+    if (filters.kind === 'destructive' && !isDestructive(tool)) return false;
     if (filters.onlyEnabled && !tool.enabled) return false;
     return (
       !needle || `${tool.name} ${tool.description} ${server.name}`.toLowerCase().includes(needle)

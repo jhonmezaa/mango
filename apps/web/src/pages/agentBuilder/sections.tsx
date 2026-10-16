@@ -8,6 +8,7 @@ import { CheckIcon, LockIcon, PlusIcon, WarnIcon } from '../../components/icons'
 import { PersonChip } from '../../components/PersonChip';
 import { isEmail, type LookupResult, type People } from '../../directory/usePeople';
 import { formatUsd } from '../../lib/format';
+import { AccessBadge } from '../mcpCatalog/parts';
 import { AgentIcon } from './AgentIcon';
 import { AGENT_ICON_COLORS, ALL_ICONS, CURATED_ICONS, agentColor } from './agentIcons';
 import { BuilderField, BuilderSection } from './fields';
@@ -573,14 +574,21 @@ export const ToolsSection = memo(function ToolsSection({
   // Only what an agent can use now: the servers with a tool they serve, and those tools.
   const enabled = catalog.flatMap((connector) => {
     const served = connector.tools.filter((tool) => index.get(tool.ref)?.enabled);
-    return served.length > 0 ? [{ ...connector, tools: served }] : [];
+    // Design: a destructive tool of a served connector is listed, disabled (D84: never enabled).
+    const shown = connector.tools.filter(
+      (tool) => served.includes(tool) || tool.access === 'destructive',
+    );
+    return served.length > 0 ? [{ ...connector, tools: shown }] : [];
   });
   const off = tools.filter((ref) => !index.get(ref)?.enabled);
   const writeCount = tools.filter((ref) => index.get(ref)?.write).length;
   const centralOnly = tools.some((ref) => index.get(ref)?.centralOnly);
 
   const toggleConnector = (connector: Connector) => {
-    const refs = connector.tools.map((tool) => tool.ref);
+    // A destructive tool is never given to an agent (D84): «Todas» leaves it out.
+    const refs = connector.tools
+      .filter((tool) => tool.access !== 'destructive')
+      .map((tool) => tool.ref);
     const all = refs.every((ref) => selected.has(ref));
     onChange({
       tools: all ? tools.filter((ref) => !refs.includes(ref)) : [...new Set([...tools, ...refs])],
@@ -636,7 +644,9 @@ export const ToolsSection = memo(function ToolsSection({
       <div className="ab-list ab-list-tools">
         {enabled.length === 0 && <div className="ab-empty">{t('agentBuilder.tools.empty')}</div>}
         {enabled.map((connector) => {
-          const all = connector.tools.every((tool) => selected.has(tool.ref));
+          const all = connector.tools
+            .filter((tool) => tool.access !== 'destructive')
+            .every((tool) => selected.has(tool.ref));
           return (
             <Fragment key={connector.id}>
               <div className="ab-group">
@@ -660,21 +670,29 @@ export const ToolsSection = memo(function ToolsSection({
                 </button>
               </div>
               {connector.tools.map((tool) => {
-                const on = selected.has(tool.ref);
+                const destructive = tool.access === 'destructive';
+                const on = !destructive && selected.has(tool.ref);
+                const classes = ['ab-item'];
+                if (on) classes.push('is-on');
+                if (destructive) classes.push('is-off');
                 return (
                   <button
                     key={tool.ref}
                     type="button"
-                    className={on ? 'ab-item is-on' : 'ab-item'}
-                    aria-pressed={on}
+                    className={classes.join(' ')}
+                    aria-pressed={destructive ? undefined : on}
+                    disabled={destructive}
                     onClick={() => {
-                      onChange({ tools: toggled(tools, tool.ref) });
+                      if (!destructive) onChange({ tools: toggled(tools, tool.ref) });
                     }}
                   >
                     <span className="ab-check">{on && <CheckIcon size={10} />}</span>
                     <span className="ab-item-text">
                       <span className="mono ab-item-name">{tool.name}</span>
-                      <span className="ab-sub">{tool.description}</span>
+                      <span className="ab-sub">
+                        {tool.description}
+                        {destructive ? t('agentBuilder.tools.destructiveSuffix') : ''}
+                      </span>
                     </span>
                     {tool.central_groups_only && (
                       <Badge tone="violet" title={t('agentBuilder.tools.centralOnlyTitle')}>
@@ -693,13 +711,7 @@ export const ToolsSection = memo(function ToolsSection({
                         })}
                       </Badge>
                     ) : null}
-                    {tool.access !== 'read' ? (
-                      <Badge tone="amber" title={t('agentBuilder.tools.writeTitle')}>
-                        {t('agentBuilder.tools.write')}
-                      </Badge>
-                    ) : (
-                      <Badge>{t('agentBuilder.tools.read')}</Badge>
-                    )}
+                    <AccessBadge tool={tool} />
                   </button>
                 );
               })}

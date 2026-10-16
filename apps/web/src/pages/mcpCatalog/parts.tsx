@@ -60,18 +60,34 @@ export function ModeBadge({ server }: { server: Server }) {
 }
 
 /**
- * Anything but `read` is shown as a write (D84): the API also reports `destructive`, which the
- * design has no badge for yet and which no agent can be given.
+ * Design `ToolKind`, the only source of the kind badge (catalog and Builder): destructive (never
+ * enabled, D84), write (an unclassified tool counts as one and is also marked «Sin clasificar»)
+ * or read.
  */
-export function AccessBadge({ tool }: { tool: Tool }) {
+export function AccessBadge({ tool }: { tool: Pick<Tool, 'access' | 'unclassified'> }) {
   const { t } = useTranslation();
-  return tool.access !== 'read' ? (
-    <Badge tone="amber" title={t('mcpCatalog.access.writeTitle')}>
-      {t('mcpCatalog.access.write')}
-    </Badge>
-  ) : (
-    <Badge>{t('mcpCatalog.access.read')}</Badge>
-  );
+  if (tool.access === 'destructive') {
+    return (
+      <Badge tone="red" title={t('mcpCatalog.access.destructiveTitle')}>
+        {t('mcpCatalog.access.destructive')}
+      </Badge>
+    );
+  }
+  if (tool.access !== 'read') {
+    return (
+      <>
+        <Badge tone="amber" title={t('mcpCatalog.access.writeTitle')}>
+          {t('mcpCatalog.access.write')}
+        </Badge>
+        {tool.unclassified ? (
+          <Badge title={t('mcpCatalog.access.unclassifiedTitle')}>
+            {t('mcpCatalog.access.unclassified')}
+          </Badge>
+        ) : null}
+      </>
+    );
+  }
+  return <Badge>{t('mcpCatalog.access.read')}</Badge>;
 }
 
 export function ServerIcon({ server, large = false }: { server: Server; large?: boolean }) {

@@ -79,6 +79,8 @@ export const mcpCatalog = {
   updateBadgeTitle: 'Actualización con cambios en tools pendiente de aprobación',
   toolsRead: '{{count}} · lectura',
   toolsWrite: '{{count}} de escritura',
+  toolsDestructive_one: '{{count}} destructiva',
+  toolsDestructive_other: '{{count}} destructivas',
   toolsTab: {
     search: 'Buscar tool',
     searchLabel: 'Buscar tools',
@@ -86,6 +88,7 @@ export const mcpCatalog = {
     all: 'Todas',
     read: 'Lectura',
     write: 'Escritura',
+    destructive: 'Destructivas',
     onlyEnabled: 'Solo habilitadas',
     writeEnabled_one: '{{count}} tool de escritura habilitada',
     writeEnabled_other: '{{count}} tools de escritura habilitadas',
@@ -103,6 +106,11 @@ export const mcpCatalog = {
     write: 'Escritura · confirmación o aprobación',
     writeTitle: 'Confirmación o aprobación, según su política',
     writeSuffix: ' · escritura',
+    destructive: 'Destructiva · nunca se habilita',
+    destructiveTitle:
+      'El manifiesto firmado la clasifica como destructiva: Mango no la habilita para ningún agente, ni con aprobación.',
+    unclassified: 'Sin clasificar',
+    unclassifiedTitle: 'El manifiesto no la clasifica: cuenta como escritura',
   },
   requests: {
     emptyTitle: 'No hay solicitudes pendientes',
@@ -172,6 +180,11 @@ export const mcpCatalog = {
     accountsNote: 'Nivel «Datos de cuentas»: solo lo podrán usar agentes de roles centrales.',
     writeNote:
       'Incluye tools de escritura: cada uso pedirá confirmación o aprobación, según su política.',
+    destructiveNote_one:
+      'Una tool es destructiva: Mango nunca la habilita, ni con aprobación, y no se puede dar a un agente. El resto del pack funciona igual.',
+    destructiveNote_other:
+      '{{count}} tools son destructivas: Mango nunca las habilita, ni con aprobación, y no se pueden dar a un agente. El resto del pack funciona igual.',
+    destructiveBeforeApproving: 'Incluye tools destructivas: no se habilitan, ni con aprobación.',
     permissions: 'Permisos de AWS',
     permissionsRead: 'Lectura',
     permissionsNone: 'No usa permisos de AWS.',

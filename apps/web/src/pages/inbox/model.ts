@@ -7,14 +7,23 @@ import { isRunReason } from '../schedules/model';
 export type InboxPage = OperationOutput<'listInbox'>;
 export type InboxItem = InboxPage['items'][number];
 
-/** Design tabs. «Menciones» has no backend: it is shown as «Próximamente». */
-export type InboxTab = 'all' | 'unread' | 'approvals' | 'mentions' | 'archived';
-export const TABS: readonly InboxTab[] = ['all', 'unread', 'approvals', 'mentions', 'archived'];
+/**
+ * Design tabs. «Menciones» has no backend: it is shown as «Próximamente». «Archivado» is not a tab
+ * in the design: a button next to the unread count opens it.
+ */
+export type InboxTab = 'all' | 'unread' | 'approvals' | 'mentions';
+export const TABS: readonly InboxTab[] = ['all', 'unread', 'approvals', 'mentions'];
 export const SOON_TABS: ReadonlySet<InboxTab> = new Set<InboxTab>(['mentions']);
-export type InboxView = Exclude<InboxTab, 'mentions'>;
+export type InboxView = Exclude<InboxTab, 'mentions'> | 'archived';
+const VIEWS: readonly string[] = ['all', 'unread', 'approvals', 'archived'];
 
 export function isInboxView(value: string): value is InboxView {
-  return (TABS as readonly string[]).includes(value) && !SOON_TABS.has(value as InboxTab);
+  return VIEWS.includes(value);
+}
+
+/** The design pages the notices («Mostrar más») in Todo, Sin leer and Archivado. */
+export function isPagedView(view: InboxView): boolean {
+  return view !== 'approvals';
 }
 
 /** Public ids of the API: a run notice or an approval request. Anything else is ignored. */

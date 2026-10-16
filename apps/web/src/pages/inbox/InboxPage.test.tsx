@@ -84,7 +84,7 @@ function renderPage(call: ReturnType<typeof vi.fn>, path = '/inbox') {
   );
 }
 
-const list = async () => within(await screen.findByRole('listbox', { name: 'Notificaciones' }));
+const list = async () => within(await screen.findByRole('listbox', { name: 'Avisos' }));
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: NOW });
@@ -92,7 +92,17 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
+
+function narrowScreen() {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('max-width: 900px'),
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+}
 
 describe('InboxPage', () => {
   it('lists approvals and run notices as the design, everything as text', async () => {
@@ -200,6 +210,68 @@ describe('InboxPage', () => {
       { query: { view: 'archived' } },
       expect.anything(),
     );
-    expect(screen.getByRole('tab', { name: 'Archivado' })).toHaveAttribute('aria-selected', 'true');
+    // Design 2026-10-16b: «Archivado» is a button, not a tab, and it goes back to the inbox.
+    expect(screen.queryByRole('tab', { name: 'Archivado' })).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Volver a la bandeja' })).toBeVisible();
+  });
+
+  it('«Mostrar más» loads the next page, and says so when it fails (design 2026-10-16b)', async () => {
+    const user = userEvent.setup();
+    let fail = true;
+    const second = runItem(
+      { item_id: `${String(NOW - 5)}${'f'.repeat(16)}` },
+      { task_name: 'Rightsizing semanal' },
+    );
+    const call = vi.fn();
+    call.mockImplementation((operation: string, input: { query?: Record<string, string> } = {}) => {
+      if (operation !== 'listInbox') return Promise.reject(new Error(operation));
+      if (!input.query?.cursor) return Promise.resolve(page([runItem()], { next_cursor: 'next' }));
+      if (fail) {
+        fail = false;
+        return Promise.reject(new Error('down'));
+      }
+      return Promise.resolve(page([second]));
+    });
+    renderPage(call);
+    await user.click(await screen.findByRole('button', { name: 'Mostrar más' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron cargar más avisos.');
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await (await list()).findByText('Rightsizing semanal · completada')).toBeVisible();
+    // The last page: no button.
+    expect(screen.queryByRole('button', { name: 'Mostrar más' })).toBeNull();
+  });
+
+  it('on a narrow screen the detail replaces the list and goes back (design 2026-10-16b)', async () => {
+    narrowScreen();
+    const user = userEvent.setup();
+    const call = apiWith({
+      listInbox: () => page([runItem({ read: true })]),
+    });
+    renderPage(call);
+    await user.click(await (await list()).findByText('Budget check diario · completada'));
+    expect(screen.getByRole('heading', { name: 'Budget check diario · completada' })).toHaveFocus();
+    expect(document.querySelector('.inbox')).toHaveClass('show-detail');
+    await user.click(screen.getByRole('button', { name: 'Volver a la lista' }));
+    expect(document.querySelector('.inbox')).not.toHaveClass('show-detail');
+    await user.click(await (await list()).findByText('Budget check diario · completada'));
+    await user.keyboard('{Escape}');
+    expect(document.querySelector('.inbox')).not.toHaveClass('show-detail');
+  });
+
+  it('a notice that could not be marked as read stays unread, without an error', async () => {
+    const user = userEvent.setup();
+    const call = vi.fn();
+    call.mockImplementation((operation: string) =>
+      operation === 'listInbox'
+        ? Promise.resolve(page([runItem()]))
+        : Promise.reject(new Error(operation)),
+    );
+    renderPage(call);
+    await user.click(await (await list()).findByText('Budget check diario · completada'));
+    await waitFor(() => {
+      expect(document.querySelector('.inbox-row.is-unread')).not.toBeNull();
+    });
+    expect(screen.queryByText('No se pudo guardar el cambio. Vuelve a intentarlo.')).toBeNull();
   });
 });

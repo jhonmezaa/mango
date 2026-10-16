@@ -955,9 +955,7 @@ describe('Connectivity tab', () => {
         name: 'Comprobación diaria de las cuentas miembro',
       });
       // One more target account than the run listed: it counts as pending.
-      expect(
-        within(section).getByText('1 válidas · 1 inválidas · 2 pendientes'),
-      ).toBeInTheDocument();
+      expect(within(section).getByText('1 válida · 1 inválida · 2 pendientes')).toBeInTheDocument();
       expect(within(section).getByText('inválida')).toHaveClass('badge-red');
       expect(within(section).getByText('pendiente')).toHaveClass('badge-amber');
       expect(within(section).getByText('válida')).toHaveClass('badge-green');
@@ -985,7 +983,11 @@ describe('Connectivity tab', () => {
         name: 'Comprobación diaria de las cuentas miembro',
       });
       expect(within(section).getByText('Exige la identidad del usuario')).toBeInTheDocument();
-      expect(within(section).getByText('No lo exige.')).toBeInTheDocument();
+      expect(
+        within(section).getByText(/El rol intermedio de Mango no la exige/),
+      ).toBeInTheDocument();
+      expect(within(section).getByText('no la exige')).toHaveClass('badge-red');
+      expect(within(section).getByText(/Última comprobación:/)).toBeInTheDocument();
     });
 
     it('says the daily check has not run yet', async () => {

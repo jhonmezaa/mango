@@ -10,12 +10,15 @@ import { Badge } from '../../components/Badge';
 import {
   ArchiveIcon,
   ArrowRightIcon,
+  ChevronLeftIcon,
   ClockIcon,
   InboxIcon,
   LockIcon,
+  RefreshIcon,
 } from '../../components/icons';
 import { SoonTag } from '../../components/Soon';
 import { Topbar } from '../../components/Topbar';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useShell } from '../../layouts/ShellContext';
 import { formatRelative } from '../../lib/format';
 import { ApprovalDecision } from '../approvals/ApprovalDecision';
@@ -25,6 +28,7 @@ import {
   TABS,
   bodyOf,
   isInboxView,
+  isPagedView,
   keyOf,
   matchesView,
   runPath,
@@ -52,10 +56,17 @@ type LoadState =
 const POLL_MS = 60_000;
 /** "hace 5 min" labels move on their own. */
 const CLOCK_MS = 30_000;
-const SKELETON_ROWS = [0, 1, 2, 3] as const;
+const SKELETON_ROWS = [0, 1, 2, 3, 4] as const;
+/** As Aprobaciones: at this width the detail replaces the list. */
+const NARROW_QUERY = '(max-width: 900px)';
 
 function tabPath(tab: InboxView): string {
   return tab === 'all' ? '/inbox' : `/inbox/${tab}`;
+}
+
+/** DOM id of a row: focus goes back to it when the narrow detail closes. Ids are API-checked. */
+function rowId(item: Pick<InboxItem, 'kind' | 'item_id'>): string {
+  return `inbox-row-${item.kind}-${item.item_id}`;
 }
 
 function replaceItem(items: readonly InboxItem[], next: InboxItem): InboxItem[] {
@@ -82,6 +93,7 @@ function InboxRow({
   return (
     <button
       type="button"
+      id={rowId(item)}
       role="option"
       aria-selected={active}
       className={classes.join(' ')}
@@ -128,8 +140,9 @@ export function InboxPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [reloadToken, setReloadToken] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const sentinel = useRef<HTMLDivElement | null>(null);
+  const [more, setMore] = useState<'loading' | 'error' | null>(null);
+  const narrow = useMediaQuery(NARROW_QUERY);
+  const detailTitle = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -182,12 +195,12 @@ export function InboxPage() {
   const ready = state.kind === 'ready' && state.view === view ? state : null;
   const cursor = ready?.cursor ?? null;
 
-  const loadMore = useCallback(() => {
-    if (!cursor || loadingMore) return;
-    setLoadingMore(true);
+  const loadMore = () => {
+    if (!cursor || more === 'loading') return;
+    setMore('loading');
     api.call('listInbox', { query: { view, cursor } }).then(
       (page) => {
-        setLoadingMore(false);
+        setMore(null);
         setState((current) => {
           if (current.kind !== 'ready' || current.view !== view) return current;
           const seen = new Set(current.items.map(keyOf));
@@ -200,23 +213,10 @@ export function InboxPage() {
         });
       },
       () => {
-        setLoadingMore(false);
+        setMore('error');
       },
     );
-  }, [api, cursor, loadingMore, view]);
-
-  // Pages load as the end of the list comes into view (the design has no control for it).
-  useEffect(() => {
-    const target = sentinel.current;
-    if (!target || !cursor || typeof IntersectionObserver === 'undefined') return undefined;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) loadMore();
-    });
-    observer.observe(target);
-    return () => {
-      observer.disconnect();
-    };
-  }, [cursor, loadMore]);
+  };
 
   const refreshUnread = useCallback(() => {
     api.call('unreadInbox').then(
@@ -258,15 +258,55 @@ export function InboxPage() {
     setSelectedKey(keyOf(item));
     if (!item.read) {
       update({ ...item, read: true });
-      void setItemState(item, { read: true });
+      // As the design: a notice that could not be marked as read stays unread, without an error,
+      // and is marked the next time it is opened.
+      void api
+        .call('setInboxState', {
+          path: { kind: item.kind, item_id: item.item_id },
+          body: { read: true },
+        })
+        .then(
+          (next) => {
+            update(next);
+            refreshUnread();
+          },
+          () => {
+            update(item);
+          },
+        );
     }
   };
+
+  // Narrow screen (design, ≤900 px): the detail replaces the list, «Volver a la lista» and Esc go
+  // back, focus goes to the notice's title and, on the way back, to its row.
+  const back = useCallback(() => {
+    const key = selectedKey;
+    setSelectedKey(null);
+    if (!key) return;
+    const [kind = '', itemId = ''] = key.split(':');
+    window.setTimeout(() => {
+      document.getElementById(`inbox-row-${kind}-${itemId}`)?.focus();
+    }, 0);
+  }, [selectedKey]);
+
+  const showDetail = narrow && selectedKey !== null;
+  useEffect(() => {
+    if (!showDetail) return undefined;
+    detailTitle.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') back();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showDetail, back]);
 
   const archive = (item: InboxItem) => {
     void setItemState(item, { archived: !item.archived }).then((next) => {
       if (!next) return;
       notify(next.archived ? t('inbox.archived') : t('inbox.restored'), 'info');
-      setSelectedKey((key) => (key === keyOf(item) ? null : key));
+      if (selectedKey === keyOf(item)) back();
     });
   };
 
@@ -306,60 +346,92 @@ export function InboxPage() {
   const current = ready?.items.find((item) => keyOf(item) === selectedKey) ?? null;
   const unread = inboxUnread ?? 0;
 
-  const selectTab = (tab: InboxTab) => {
+  const selectTab = (tab: InboxTab | 'archived') => {
     if (!isInboxView(tab)) return;
     setSelectedKey(null);
+    setMore(null);
     void navigate(tabPath(tab));
   };
+  const archivedView = view === 'archived';
 
   return (
     <>
       <Topbar
         crumbs={[t('inbox.title')]}
         actions={
-          <button type="button" className="btn btn-sm" onClick={markAll} disabled={!unread}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={markAll}
+            disabled={!unread || ready === null}
+          >
             {t('inbox.markAll')}
           </button>
         }
       />
-      <div className="inbox">
+      <div className={current ? 'inbox show-detail' : 'inbox'}>
         <div className="inbox-list">
           <div className="inbox-head">
             <h1 className="page-title">{t('inbox.title')}</h1>
-            <p className="page-subtitle">
-              {unread ? t('inbox.unread', { count: unread }) : t('inbox.allClear')}
-            </p>
+            <div className="inbox-sub">
+              <p className="page-subtitle">
+                {archivedView
+                  ? t('inbox.archivedTitle')
+                  : unread
+                    ? t('inbox.unread', { count: unread })
+                    : t('inbox.allClear')}
+              </p>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  selectTab(archivedView ? 'all' : 'archived');
+                }}
+              >
+                {archivedView ? (
+                  <>
+                    <ChevronLeftIcon size={12} /> {t('inbox.backToInbox')}
+                  </>
+                ) : (
+                  <>
+                    <ArchiveIcon size={12} /> {t('inbox.archivedButton')}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-          <div className="tabs" role="tablist" aria-label={t('inbox.tabsLabel')}>
-            {TABS.map((tab) =>
-              SOON_TABS.has(tab) ? (
-                <span
-                  key={tab}
-                  role="tab"
-                  aria-selected={false}
-                  aria-disabled="true"
-                  className="tab is-soon"
-                  title={t('soon.title')}
-                >
-                  <span>{t(`inbox.tab.${tab}`)}</span>
-                  <SoonTag />
-                </span>
-              ) : (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === view}
-                  className={tab === view ? 'tab active' : 'tab'}
-                  onClick={() => {
-                    selectTab(tab);
-                  }}
-                >
-                  {t(`inbox.tab.${tab}`)}
-                </button>
-              ),
-            )}
-          </div>
+          {archivedView ? null : (
+            <div className="tabs" role="tablist" aria-label={t('inbox.tabsLabel')}>
+              {TABS.map((tab) =>
+                SOON_TABS.has(tab) ? (
+                  <span
+                    key={tab}
+                    role="tab"
+                    aria-selected={false}
+                    aria-disabled="true"
+                    className="tab is-soon"
+                    title={t('soon.tag')}
+                  >
+                    <span>{t(`inbox.tab.${tab}`)}</span>
+                    <SoonTag />
+                  </span>
+                ) : (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === view}
+                    className={tab === view ? 'tab active' : 'tab'}
+                    onClick={() => {
+                      selectTab(tab);
+                    }}
+                  >
+                    {t(`inbox.tab.${tab}`)}
+                  </button>
+                ),
+              )}
+            </div>
+          )}
           {state.kind === 'error' ? (
             <div className="inbox-empty" role="alert">
               <GovErrorState
@@ -374,10 +446,11 @@ export function InboxPage() {
           ) : ready === null ? (
             <div role="status" aria-label={t('inbox.loading')}>
               {SKELETON_ROWS.map((row) => (
-                <div key={row} className="inbox-row">
-                  <span className="inbox-row-main">
-                    <Skel w="60%" h={13} />
-                    <Skel w="85%" h={11} />
+                <div key={row} className="inbox-row is-skel">
+                  <span className="inbox-dot" />
+                  <span className="inbox-row-main inbox-skel">
+                    <Skel w="64%" />
+                    <Skel w="88%" h={10} />
                   </span>
                 </div>
               ))}
@@ -397,10 +470,31 @@ export function InboxPage() {
                   />
                 ))
               )}
-              {cursor ? <div ref={sentinel} className="inbox-more" aria-hidden="true" /> : null}
-              {loadingMore ? (
-                <div className="sr-only" role="status">
-                  {t('inbox.loadingMore')}
+              {cursor && isPagedView(view) ? (
+                <div className="inbox-more">
+                  {more === 'error' ? (
+                    <div role="alert" className="inbox-more-err">
+                      <span>{t('inbox.moreError')}</span>
+                      <button type="button" className="btn btn-sm" onClick={loadMore}>
+                        <RefreshIcon size={12} /> {t('inbox.retry')}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={more === 'loading'}
+                      onClick={loadMore}
+                    >
+                      {more === 'loading' ? (
+                        <>
+                          <span className="g-spin" aria-hidden="true" /> {t('inbox.loadingMore')}
+                        </>
+                      ) : (
+                        t('inbox.showMore')
+                      )}
+                    </button>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -409,6 +503,9 @@ export function InboxPage() {
         <div className="inbox-detail">
           {current ? (
             <div>
+              <button type="button" className="btn btn-sm btn-ghost inbox-back" onClick={back}>
+                <ChevronLeftIcon size={12} /> {t('inbox.backToList')}
+              </button>
               <div className="inbox-detail-h">
                 <Badge>{t(`inbox.type.${current.kind}`)}</Badge>
                 <span className="inbox-detail-tools">
@@ -433,7 +530,9 @@ export function InboxPage() {
                   </button>
                 </span>
               </div>
-              <h2 className="inbox-detail-t">{titleOf(t, current)}</h2>
+              <h2 className="inbox-detail-t" ref={detailTitle} tabIndex={-1}>
+                {titleOf(t, current)}
+              </h2>
               <div className="inbox-detail-m">
                 {current.agent_name ?? t('inbox.system')} · {formatRelative(current.at, now)}
               </div>

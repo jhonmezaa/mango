@@ -2,8 +2,7 @@
  * Bandeja (design other-views.jsx `Inbox`: `inbox`, `inbox-list`, `inbox-row`, `inbox-dot`,
  * `inbox-detail`, and the design's `tabs` / `tab`). Ported from the design (Claude Design
  * styles.css); values are the design's. The `inbox-*` helpers below hold the inline styles of the
- * design's component. Under 900px the design hides the detail (D83 (3): as the design, and to the
- * next brief).
+ * design's component. Under 900px the detail replaces the list, as Aprobaciones (design 2026-10-16b).
  */
 @layer components {
   .inbox {
@@ -20,8 +19,19 @@
   .inbox-head {
     padding: 4px 24px 0;
   }
-  .inbox-head .page-subtitle {
-    margin-bottom: 12px;
+  .inbox-sub {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 2px 0 8px;
+    flex-wrap: wrap;
+  }
+  .inbox-sub .page-subtitle {
+    margin: 0;
+  }
+  .inbox-sub .btn {
+    margin-right: -8px;
   }
   .inbox-list .tabs {
     display: flex;
@@ -128,8 +138,35 @@
     color: var(--text-muted);
     font-size: 13.5px;
   }
+  .inbox-row.is-skel {
+    cursor: default;
+  }
+  .inbox-row.is-skel:hover {
+    background: none;
+  }
+  .inbox-skel {
+    display: grid;
+    gap: 7px;
+  }
   .inbox-more {
-    height: 1px;
+    padding: 14px 24px 22px;
+    display: flex;
+    justify-content: center;
+  }
+  .inbox-more-err {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .inbox-back {
+    display: none;
+  }
+  .inbox-detail-t:focus {
+    outline: none;
   }
   .inbox-detail {
     display: flex;
@@ -191,12 +228,38 @@
     padding: 16px;
     margin-bottom: 16px;
   }
+  /* Design: under 900px the detail replaces the list, with «Volver a la lista». */
   @media (max-width: 900px) {
     .inbox {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
     .inbox-detail {
       display: none;
+      padding: 12px 16px 32px;
+    }
+    .inbox.show-detail .inbox-list {
+      display: none;
+    }
+    .inbox.show-detail .inbox-detail {
+      display: flex;
+    }
+    .inbox-back {
+      display: inline-flex !important;
+      margin: 0 0 12px -8px;
+    }
+  }
+  @media (max-width: 480px) {
+    .inbox-list .tab.is-soon .soon-tag {
+      display: none;
+    }
+    .inbox-head {
+      padding: 4px 16px 0;
+    }
+    .inbox-list .tabs {
+      padding: 0 16px;
+    }
+    .inbox-row {
+      padding: 14px 16px;
     }
   }
 }

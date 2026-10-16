@@ -555,6 +555,7 @@ export function catalogView() {
         ...item,
         requires_service: item.requires_service ?? null,
         ref: `${server.id}.${item.name}`,
+        unclassified: false,
         central_groups_only: server.data_tier !== 'public' && item.audience === 'central',
         enabled: served(server, item.name),
       })),

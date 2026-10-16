@@ -262,7 +262,10 @@ export const settings = {
     // D84: daily health of the member accounts. Not in the design yet (noted for the brief).
     health: {
       title: 'Comprobación diaria de las cuentas miembro',
-      meta: 'Cada día Mango comprueba que puede entrar a cada cuenta miembro con su identidad de sistema (mango-health), que queda en el CloudTrail de cada cuenta. Solo comprueba la entrada: no lee datos.',
+      metaBefore:
+        'Cada día a las 06:30 UTC, Mango comprueba que puede entrar a cada cuenta miembro con su identidad de sistema, ',
+      metaAfter:
+        '. Solo comprueba la entrada, no lee datos, y cada entrada queda en el CloudTrail de la cuenta. Si una cuenta deja de ser válida, avisa por el topic de alertas.',
       loading: 'Leyendo la última comprobación diaria…',
       failed: 'No se pudo leer la comprobación diaria',
       failedBody:
@@ -270,7 +273,16 @@ export const settings = {
       neverTitle: 'La comprobación diaria aún no ha corrido',
       neverBody:
         'Corre una vez al día. Mientras tanto, puedes probar las cuentas con el botón de arriba.',
-      summary: '{{valid}} válidas · {{invalid}} inválidas · {{pending}} pendientes',
+      valid_one: '{{count}} válida',
+      valid_other: '{{count}} válidas',
+      invalid_one: '{{count}} inválida',
+      invalid_other: '{{count}} inválidas',
+      pending_one: '{{count}} pendiente',
+      pending_other: '{{count}} pendientes',
+      checkedAt: 'Última comprobación: {{date}}',
+      identityNotRequired:
+        'El rol intermedio de Mango no la exige: sin ella, Mango no lee ninguna cuenta miembro. Se comprueba en el rol intermedio y vale para todas las cuentas.',
+      identityBadge: 'no la exige',
       status: {
         valid: 'válida',
         invalid: 'inválida',

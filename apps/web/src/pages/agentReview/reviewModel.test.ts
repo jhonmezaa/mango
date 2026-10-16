@@ -196,6 +196,7 @@ describe('reviewModel', () => {
               description: '',
               access: 'write',
               audience: 'central',
+              unclassified: false,
               central_groups_only: true,
               enabled: true,
             },

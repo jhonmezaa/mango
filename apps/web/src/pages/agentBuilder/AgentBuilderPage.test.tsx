@@ -253,6 +253,21 @@ describe('AgentBuilderPage', () => {
     });
   });
 
+  it('never offers a destructive tool, not even with «Todas» (D84)', async () => {
+    const user = userEvent.setup();
+    renderPage(fakeApi());
+    const terminate = await screen.findByRole('button', { name: /^terminate/ });
+    expect(terminate).toBeDisabled();
+    expect(terminate).toHaveTextContent('· No se puede dar a un agente.');
+    expect(within(terminate).getByText('Destructiva · nunca se habilita')).toHaveClass('badge-red');
+    const group = terminate.parentElement as HTMLElement;
+    const all = within(group).getAllByRole('button', { name: 'Todas' }).at(-1) as HTMLElement;
+    await user.click(all);
+    expect(screen.getByRole('button', { name: /^stop/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(terminate).not.toHaveAttribute('aria-pressed');
+    expect(screen.getByRole('button', { name: /^stop/ }).closest('.ab-list')).toBeTruthy();
+  });
+
   it('shows the rules the server reports, even when the local checks pass', async () => {
     const user = userEvent.setup();
     const stored = version({ definition: definition({ name: 'Analista LATAM' }) });

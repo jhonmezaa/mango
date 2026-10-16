@@ -744,4 +744,46 @@ describe('McpCatalogPage', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByRole('button', { name: /^AWS Support/ })).toBeVisible();
   });
+
+  it('marks a destructive tool and an unclassified one (design ToolKind, D84)', async () => {
+    const risky = {
+      ...ec2,
+      tools: [
+        ...ec2.tools,
+        tool('ec2-operations', 'terminate_instances', { access: 'destructive', enabled: false }),
+        tool('ec2-operations', 'modify_instance_attribute', {
+          access: 'write',
+          unclassified: true,
+        }),
+      ],
+    };
+    renderPage(apiWith(catalog([risky])));
+    const row = await screen.findByRole('button', { name: /^EC2 Operations/ });
+    expect(row).toHaveTextContent('1 destructiva');
+    const { user, panel } = await openServer('EC2 Operations');
+    expect(within(panel).getByText('Destructiva · nunca se habilita')).toHaveClass('badge-red');
+    expect(within(panel).getByText('Sin clasificar')).toHaveAttribute(
+      'title',
+      'El manifiesto no la clasifica: cuenta como escritura',
+    );
+    expect(panel).toHaveTextContent(
+      'Una tool es destructiva: Mango nunca la habilita, ni con aprobación, y no se puede dar a un agente.',
+    );
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('tab', { name: /^Tools/ }));
+    await user.click(screen.getByRole('button', { name: 'Destructivas' }));
+    const toolRows = screen
+      .getAllByRole('button')
+      .filter((button) => button.classList.contains('mt-tr'));
+    expect(toolRows.map((r) => r.querySelector('.mono')?.textContent)).toEqual([
+      'terminate_instances',
+    ]);
+  });
+
+  it('offers the «Destructivas» filter only when some tool is', async () => {
+    renderPage(apiWith(catalog()));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('tab', { name: /^Tools/ }));
+    expect(screen.queryByRole('button', { name: 'Destructivas' })).toBeNull();
+  });
 });

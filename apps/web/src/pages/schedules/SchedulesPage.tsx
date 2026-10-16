@@ -170,6 +170,11 @@ function anomalyDates(anomaly: NonNullable<TaskRun['anomaly']>): string {
   return from.getUTCMonth() === to.getUTCMonth() ? `${from.getUTCDate()}–${b}` : `${a} – ${b}`;
 }
 
+/** Design scShortId: the first 8 characters of the anomaly's id, to tell apart those of a day. */
+function shortAnomalyId(id: string): string {
+  return id.slice(0, 8);
+}
+
 function triggerLabel(t: Translate, task: Task): string {
   if (isEvent(task)) return t('schedules.event.label');
   return task.trigger.schedule ? specLabel(t, task.trigger.schedule) : '—';
@@ -197,6 +202,8 @@ function healthText(t: Translate, task: Task, health: Health): string {
             ? t('schedules.detail.centralReason', { owner })
             : t('schedules.detail.lostReason', { owner }),
       });
+    case 'budget_skipped':
+      return t('schedules.health.budget_skipped');
     case 'failing':
       return t('schedules.health.failing');
     case 'tools':
@@ -444,6 +451,12 @@ function RunLine({
         {run.anomaly ? (
           <span className="mk-meta">
             {t('schedules.run.anomaly', { dates: anomalyDates(run.anomaly) })}
+            {run.anomaly.id ? (
+              <>
+                {' · '}
+                <span className="mono">{shortAnomalyId(run.anomaly.id)}</span>
+              </>
+            ) : null}
           </span>
         ) : null}
         {reason ? (
@@ -560,7 +573,10 @@ function RunResult({
       {run.anomaly ? (
         <div className="sc-anom">
           <span className="mk-sec-t">{t('schedules.result.anomaly')}</span>
-          <span className="mk-meta">{anomalyDates(run.anomaly)}</span>
+          <span>{anomalyDates(run.anomaly)}</span>
+          {run.anomaly.id ? (
+            <span className="mk-meta mono sc-anom-id">{run.anomaly.id}</span>
+          ) : null}
         </div>
       ) : null}
       {detail === null ? (
@@ -1510,6 +1526,19 @@ function TaskEditor({
             </Soon>
           </div>
         </div>
+        <div>
+          <span className="sc-label">{t('schedules.editor.report')}</span>
+          {/* The downloadable report is new and not built yet (design part D): «Próximamente». */}
+          <Soon name={t('schedules.editor.reportOption')} block>
+            <label className="sc-rep-opt">
+              <input type="checkbox" disabled />
+              <span>
+                <b>{t('schedules.editor.reportOption')}</b>
+                <span className="mk-meta">{t('schedules.editor.reportHint')}</span>
+              </span>
+            </label>
+          </Soon>
+        </div>
         <div className="mc-alert" style={{ fontSize: 12.5 }}>
           <UserIcon size={13} />
           <div>
@@ -1567,6 +1596,9 @@ export function SchedulesPage() {
         }
       : null,
   );
+  // From the Bandeja, a run that is gone (results are kept 90 days, D78 (6)): the task opens, if
+  // it is still there, with a notice (design 2026-10-16b). Checked once, on the first list.
+  const link = useRef(selected?.run ? { id: selected.id, run: selected.run } : null);
   const [editing, setEditing] = useState<{ task: Task | null } | null>(null);
   const [busy, setBusy] = useState(false);
   /** Runs seen queued or running, by id: their end is told once (design toast). */
@@ -1618,6 +1650,15 @@ export function SchedulesPage() {
             }
           }
           setState({ kind: 'ready', list, agents: agents.items });
+          const linked = link.current;
+          link.current = null;
+          if (first && linked) {
+            const found = list.items.find((item) => item.task_id === linked.id);
+            if (!found?.runs.some((run) => run.run_id === linked.run)) {
+              setSelected(found ? { id: linked.id, ask: null, run: null } : null);
+              notify(t('schedules.toast.goneBody'), 'info', t('schedules.toast.goneTitle'));
+            }
+          }
         },
         () => {
           if (!controller.signal.aborted && first) setState({ kind: 'error' });

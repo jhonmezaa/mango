@@ -207,7 +207,39 @@
     margin: 0;
     display: flex;
     gap: 6px;
-    align-items: center;
+    align-items: flex-start;
+  }
+  .sc-res-foot > svg {
+    flex: none;
+    margin-top: 3px;
+  }
+  .sc-anom-id {
+    word-break: break-all;
+  }
+  /* Design: the downloadable report option (shown «Próximamente» in the product). */
+  .sc-rep-opt {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .sc-rep-opt input {
+    margin-top: 2px;
+    accent-color: var(--accent);
+    flex: none;
+  }
+  .sc-rep-opt > span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .sc-rep-opt b {
+    font-weight: 600;
   }
   .ab-seg button:disabled {
     opacity: 0.5;

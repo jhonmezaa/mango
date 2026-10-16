@@ -404,6 +404,16 @@
     flex-shrink: 0;
     color: #fff;
   }
+  /* Design: a destructive tool, disabled in the list (D84). */
+  .ab-item.is-off {
+    cursor: not-allowed;
+  }
+  .ab-item.is-off .ab-check {
+    opacity: 0.35;
+  }
+  .ab-item.is-off .mono {
+    color: var(--text-muted);
+  }
   .ab-item.is-on .ab-check {
     background: var(--accent-ink);
     border-color: var(--accent-ink);

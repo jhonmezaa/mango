@@ -107,6 +107,7 @@ export const schedules = {
   health: {
     agent_unavailable: 'El agente ya no existe',
     access_lost: '{{reason}}: la tarea se pausó sola y no se puede reanudar',
+    budget_skipped: 'La última ejecución se omitió: presupuesto agotado',
     failing: '2 de las últimas 3 ejecuciones fallaron',
     tools: 'Alguna tool no está disponible ({{tools}})',
   },
@@ -252,6 +253,9 @@ export const schedules = {
     result: 'Resultado',
     resultValue: 'Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.',
     alsoSend: 'También enviar a',
+    report: 'Reporte descargable',
+    reportOption: 'También un PDF con gráficos',
+    reportHint: 'Para guardarlo o compartirlo fuera de Mango.',
     note: 'Se ejecuta con tu identidad y tus permisos (no con los del agente) y usa {{budget}}. Si pierdes el acceso al agente{{central}}, la tarea se pausa sola. Si necesita escribir, se crea una aprobación pendiente.',
     noteBudget: 'el presupuesto de {{agent}}',
     noteBudgetNone: 'el presupuesto del agente',
@@ -274,6 +278,8 @@ export const schedules = {
   toast: {
     created: 'Schedule creado',
     saved: 'Cambios guardados',
+    goneTitle: 'Esa ejecución ya no está disponible',
+    goneBody: 'Los resultados se guardan 90 días.',
     queued: '{{name}} en cola',
     doneTitle: '{{name}} completada',
     doneBody: 'El resultado está en el detalle de la tarea y en tu Bandeja.',
