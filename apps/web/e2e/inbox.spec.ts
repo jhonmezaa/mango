@@ -44,9 +44,8 @@ test('the Bandeja lists what to sign and the runs of my tasks, and opens a resul
   await expect(page.getByText('Ejecución', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Ver resultado/ }).click();
   await expect(page).toHaveURL(/\/schedules\/[0-9a-f]{32}\/run\/[0-9a-f]{32}$/);
-  await expect(
-    page.getByText('Solo tú ves este resultado: se obtuvo con tu acceso.'),
-  ).toBeVisible();
+  // This run also asked for a PDF (D86): the foot says who downloads it.
+  await expect(page.getByText(/Solo tú ves este resultado/)).toBeVisible();
 });
 
 test('a notice is archived and comes back; everything is marked as read', async ({ page }) => {

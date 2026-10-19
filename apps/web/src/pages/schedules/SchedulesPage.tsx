@@ -543,19 +543,22 @@ function RunResult({
   run,
   agentName,
   onBack,
+  onReport,
 }: {
   api: OperationCaller;
   task: Task;
   run: TaskRun;
   agentName: string;
   onBack: () => void;
+  onReport: () => void;
 }) {
   const { t } = useTranslation();
   const [detail, setDetail] = useState<RunDetail | 'error' | null>(null);
   // «Generar de nuevo» shows its answer at once; the next poll of the task brings the rest.
   const [retried, setRetried] = useState<RunReport | null>(null);
   const [retrying, setRetrying] = useState(false);
-  const report = retried ?? run.report ?? null;
+  // Until the poll brings the new state, the run still says «failed».
+  const report = (run.report?.status === 'failed' ? retried : null) ?? run.report ?? null;
   const retry = () => {
     if (retrying) return;
     setRetrying(true);
@@ -563,6 +566,8 @@ function RunResult({
       (updated) => {
         setRetrying(false);
         setRetried(updated.report ?? null);
+        // Read the task again: a PDF being drawn is polled every few seconds.
+        onReport();
       },
       () => {
         setRetrying(false);
@@ -685,6 +690,7 @@ interface DetailProps {
   onPause: (reason: string | null) => void;
   onResume: () => void;
   onRetire: (reason: string) => void;
+  onReload: () => void;
 }
 
 function TaskDetail({
@@ -702,6 +708,7 @@ function TaskDetail({
   onPause,
   onResume,
   onRetire,
+  onReload,
 }: DetailProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -893,6 +900,7 @@ function TaskDetail({
           onBack={() => {
             setRunId(null);
           }}
+          onReport={onReload}
         />
       ) : (
         <>
@@ -2088,6 +2096,9 @@ export function SchedulesPage() {
           run0={selected.run}
           onClose={() => {
             setSelected(null);
+          }}
+          onReload={() => {
+            setReloadToken((value) => value + 1);
           }}
           onEdit={() => {
             setEditing({ task: selectedTask });
