@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-19 (los nueve puntos, tomados por el dueño ese día, por menú, todos con la opción «(Recomendada)»)
 - **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (lo que entrega una ejecución) y [D79](D079-investigacion-de-anomalias-por-evento.md) (lo que entrega la investigación de una anomalía)
-- **Precisada por:** —
+- **Precisada por:** [D87](D087-como-se-construyen-los-reportes.md) (2: ReportLab en el zip de la función, con IBM Plex; 6: la tool interna es una `inline_function` del harness y la serie diaria sale de la consulta cuando se puede)
 
 ## Decisión
 

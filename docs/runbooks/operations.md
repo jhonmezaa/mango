@@ -89,6 +89,7 @@ Los nombres llevan el prefijo `Mango-<ns>-`.
 | Alarma | Qué significa | Qué mirar primero |
 |---|---|---|
 | `TaskRuns-failed` | Un mensaje que arrancaba una ejecución de una tarea (por horario, «Ejecutar ahora» o un evento) falló sus 3 recepciones y está en la cola `Mango-<ns>-TaskRuns-dlq`: esa ejecución no corrió | El log de `mango-api` («a task message is delivered again», con su error) y el mensaje en la cola |
+| `TaskReport-failed` | El PDF de una ejecución (D86) no se pudo dibujar tras los reintentos de su función y su invocación está en la cola `Mango-<ns>-TaskReport-dlq`. La ejecución sigue «Completada»; a los 15 minutos su dueño ve «No se pudo armar el PDF» y puede generarlo de nuevo | Los errores del log group `/aws/lambda/Mango-<ns>-TaskReport` (la tabla `Mango-<ns>-Tasks`, el bucket de reportes o su llave) y el mensaje en la cola, que solo nombra la tarea y la ejecución |
 
 **Cuando la aplicación va lenta** (`Api-slow`; D70, punto 9). Dos tareas sirven con margen unas 80 lecturas por segundo (unas 300 personas activas a la vez) y se saturan hacia las 200.
 
