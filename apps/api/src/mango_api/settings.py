@@ -108,6 +108,10 @@ class Settings:
     task_identity_key_arn: str = ""
     tasks_client_secret_arn: str = ""
     """Secrets Manager secret of the tasks client: only ``SECRET_HASH`` is computed with it."""
+    task_report_function: str = ""
+    task_reports_bucket: str = ""
+    """The function that draws the PDF of a run and the bucket it writes to (D86); empty until
+    the reports construct is deployed."""
     """KMS key whose signature answers that client's challenge; only mango-api signs."""
 
     @staticmethod
@@ -181,6 +185,8 @@ class Settings:
             tasks_client_id=env.get("TASKS_CLIENT_ID", ""),
             task_identity_key_arn=env.get("TASK_IDENTITY_KEY_ARN", ""),
             tasks_client_secret_arn=env.get("TASKS_CLIENT_SECRET_ARN", ""),
+            task_report_function=env.get("TASK_REPORT_FUNCTION", ""),
+            task_reports_bucket=env.get("TASK_REPORTS_BUCKET", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

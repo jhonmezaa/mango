@@ -9,6 +9,7 @@ only as the Authorization header of the ``remote_mcp`` tool pointing at the Gate
 
 from __future__ import annotations
 
+import json
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -36,6 +37,15 @@ MAX_TOOL_INPUT_CHARS = 16 * 1024
 WRITE_CALL = "write_call"
 """Internal event: a write tool was called. mango-api turns it into an approval request and
 never forwards it to the client as it is."""
+INLINE_CALL = "inline_call"
+"""Internal event: the agent called an ``inline_function`` of this invocation (D87 (3)). The
+harness hands the call back to mango-api and reaches no other system; its input is model
+output, validated by whoever asked for the tool."""
+MAX_INLINE_INPUT_CHARS = 128 * 1024
+"""Input of an inline call kept; a longer one is dropped (``task_reports.MAX_INPUT_CHARS``)."""
+MAX_RECORDED_CHARS = 512 * 1024
+"""Input and answer kept of a recorded tool call (``task_reports.MAX_QUERY_CHARS``)."""
+MAX_RECORDED_CALLS = 20
 READ_MARGIN_SECONDS = 30
 """How much longer than the limit of a turn mango-api waits in silence for the harness. The
 harness ends the turn itself when the limit is up: the margin lets its answer arrive first."""
@@ -169,6 +179,10 @@ class InvocationResult:
     stop_reason: str = ""
     usage: Usage = field(default_factory=Usage)
     tools: list[dict[str, str]] = field(default_factory=list)
+    calls: list[dict[str, str]] = field(default_factory=list)
+    """The calls of the tools ``run`` was asked to record, by their id in the stream: ``id``,
+    ``name``, ``input`` and ``output`` (the answer as text). Untrusted, like every answer of a
+    tool; read only to take a series from a query (D87 (4))."""
     interrupted: bool = False
     """The turn was ended here while the harness was still working (a write tool waits for a
     person, D27): its runtime session holds a half-finished turn."""
@@ -216,7 +230,11 @@ def build_request(
     invocation_signature: str,
     history: list[ChatTurn],
     today: str | None = None,
+    inline_tools: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
+    """``inline_tools``: ``inline_function`` tools of this invocation only, built by mango-api
+    (the internal tool of a report, D87 (3)). Their calls come back to mango-api: they reach no
+    system, so the Gateway has nothing to govern (rule 3 as D87 precises it)."""
     date_line = f"Current date (UTC): {today or datetime.now(UTC).date().isoformat()}."
     messages = [
         {"role": turn.role, "content": [{"text": turn.text}]}
@@ -248,24 +266,29 @@ def build_request(
         # without tools gets no server at all; the empty allow-list also disables the harness
         # built-in shell and file tools.
         "tools": [
-            {
-                "type": "remote_mcp",
-                "name": GATEWAY_MCP_SERVER,
-                "config": {
-                    "remoteMcp": {
-                        "url": agent.gateway_url,
-                        "headers": {
-                            "Authorization": f"Bearer {access_token}",
-                            invocation.HEADER: invocation_signature,
+            *inline_tools,
+            *(
+                [
+                    {
+                        "type": "remote_mcp",
+                        "name": GATEWAY_MCP_SERVER,
+                        "config": {
+                            "remoteMcp": {
+                                "url": agent.gateway_url,
+                                "headers": {
+                                    "Authorization": f"Bearer {access_token}",
+                                    invocation.HEADER: invocation_signature,
+                                },
+                            }
                         },
                     }
-                },
-            }
-        ]
-        if agent.allowed_tools
-        else [],
-        # Exactly the tools of the published version, by name (no globs).
-        "allowedTools": list(agent.allowed_tools),
+                ]
+                if agent.allowed_tools
+                else []
+            ),
+        ],
+        # Exactly the tools of the published version, by name (no globs), and the inline ones.
+        "allowedTools": [*agent.allowed_tools, *(str(t["name"]) for t in inline_tools)],
         "maxIterations": limits.max_iterations,
         "maxTokens": limits.max_tokens,
         "timeoutSeconds": limits.timeout_seconds,
@@ -303,8 +326,16 @@ class _WriteCalls:
     pieces.
     """
 
-    def __init__(self, capture: frozenset[str]) -> None:
+    def __init__(
+        self,
+        capture: frozenset[str],
+        *,
+        kind: str = WRITE_CALL,
+        max_chars: int = MAX_TOOL_INPUT_CHARS,
+    ) -> None:
         self._capture = capture
+        self._kind = kind
+        self._max = max_chars
         self._open: dict[int, tuple[str, list[str], int]] = {}
         self._complete: list[tuple[str, str]] = []
 
@@ -321,7 +352,7 @@ class _WriteCalls:
         if entry is None:
             return
         name, pieces, size = entry
-        if size + len(piece) > MAX_TOOL_INPUT_CHARS:
+        if size + len(piece) > self._max:
             # Too large to show and to sign: no request is made for it.
             del self._open[index]
             return
@@ -343,11 +374,72 @@ class _WriteCalls:
         if stop_reason != TOOL_STOP:
             return
         for name, arguments in calls:
-            yield StreamEvent(WRITE_CALL, {"tool": name, "arguments": arguments})
+            yield StreamEvent(self._kind, {"tool": name, "arguments": arguments})
 
     def drop(self) -> None:
         """Forget the calls of a message whose end never arrived: they are never asked."""
         self._open, self._complete = {}, []
+
+
+class _Recorded:
+    """Input and answer of the calls of some tools, by their id in the stream (D87 (4)).
+
+    A call's input arrives in the deltas of its block; its answer, in the deltas of the block
+    that starts with its result. Both are kept up to ``MAX_RECORDED_CHARS`` and a call that
+    passes it is dropped whole: a cut answer is never read as a complete one."""
+
+    def __init__(self, names: frozenset[str]) -> None:
+        self._names = names
+        self._by_index: dict[int, tuple[str, str]] = {}
+        self._calls: dict[str, dict[str, Any]] = {}
+
+    def call(self, index: int, call_id: str, name: str) -> None:
+        if name in self._names and call_id and len(self._calls) < MAX_RECORDED_CALLS:
+            self._calls[call_id] = {"id": call_id, "name": name, "input": [], "output": [], "n": 0}
+            self._by_index[index] = (call_id, "input")
+
+    def answer(self, index: int, call_id: str) -> None:
+        if call_id in self._calls:
+            self._by_index[index] = (call_id, "output")
+
+    def add(self, index: int, piece: str) -> None:
+        target = self._by_index.get(index)
+        if target is None:
+            return
+        call = self._calls.get(target[0])
+        if call is None:
+            return
+        call["n"] += len(piece)
+        if call["n"] > MAX_RECORDED_CHARS:
+            del self._calls[target[0]]
+            return
+        call[target[1]].append(piece)
+
+    def stop(self, index: int) -> None:
+        self._by_index.pop(index, None)
+
+    def done(self) -> list[dict[str, str]]:
+        return [
+            {
+                "id": c["id"],
+                "name": c["name"],
+                "input": "".join(c["input"]),
+                "output": "".join(c["output"]),
+            }
+            for c in self._calls.values()
+            if c["output"]
+        ]
+
+
+def _result_pieces(delta: Any) -> Iterator[str]:
+    """The text of a tool result delta: a list of blocks with ``text`` or ``json``."""
+    for block in delta if isinstance(delta, list) else [delta]:
+        if not isinstance(block, Mapping):
+            continue
+        if isinstance(block.get("text"), str):
+            yield block["text"]
+        elif "json" in block:
+            yield json.dumps(block["json"], separators=(",", ":"), default=str)
 
 
 def _raised[Event: Mapping[str, object]](stream: Iterable[Event]) -> Iterator[Event]:
@@ -387,6 +479,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     request: dict[str, Any],
     result: InvocationResult,
     capture: frozenset[str] = frozenset(),
+    *,
+    inline: frozenset[str] = frozenset(),
+    record: frozenset[str] = frozenset(),
 ) -> Iterator[StreamEvent]:
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
 
@@ -402,6 +497,11 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     agent could add matters either: the person decides, and the next turn tells the agent
     what happened. So the stream is closed once that message and its usage have arrived, and
     the tool is never tried again in this turn.
+
+    ``inline`` names the ``inline_function`` tools of the request. The harness hands their
+    calls back: each one is reported as an ``inline_call`` event with its input once its
+    message has ended as a tool call, and the turn ends there, as with a write tool. ``record``
+    names tools (as shown, without their prefix) whose calls are kept in ``result.calls``.
     """
     progress = _Progress()
     # The tool name in the stream is written by the model and the guardrail does not check it:
@@ -423,6 +523,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     running: set[str] = set()
     text_blocks: set[int] = set()
     write_calls = _WriteCalls(capture)
+    inline_calls = _WriteCalls(inline, kind=INLINE_CALL, max_chars=MAX_INLINE_INPUT_CHARS)
+    recorded = _Recorded(record)
     # Write tool calls in flight: the Gateway refuses them, whatever the harness does next.
     refused: set[str] = set()
     asked = False
@@ -452,12 +554,16 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             start = block.get("start", {})
             if "toolUse" in start:
                 tool_id = start["toolUse"].get("toolUseId", "")
-                if write_calls.start(
-                    block.get("contentBlockIndex", -1), str(start["toolUse"].get("name", ""))
-                ):
+                index = block.get("contentBlockIndex", -1)
+                raw_name = str(start["toolUse"].get("name", ""))
+                if write_calls.start(index, raw_name):
                     refused.add(tool_id)
                     asked = True
+                elif inline and raw_name in inline and inline_calls.start(index, raw_name):
+                    # Handed back to mango-api: the turn ends with this message (D87 (3)).
+                    asked = True
                 name = display_tool_name(start["toolUse"].get("name", "tool"))
+                recorded.call(index, tool_id, name)
                 tool_names[tool_id] = name
                 running.add(tool_id)
                 # Text before and after a tool call are separate model blocks; keep them as
@@ -472,7 +578,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             elif "toolResult" in start:
                 # The message before this result never reported its end: nothing is asked.
                 write_calls.drop()
+                inline_calls.drop()
                 tool_id = start["toolResult"].get("toolUseId", "")
+                recorded.answer(block.get("contentBlockIndex", -1), tool_id)
                 name = tool_names.get(tool_id, "tool")
                 status = "completed" if start["toolResult"].get("status") != "error" else "error"
                 result.tools.append({"name": name, "status": status})
@@ -490,21 +598,32 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 yield from progress.to(Phase.WRITING)
                 result.text += text
                 yield StreamEvent("delta", {"text": text})
+            index = event["contentBlockDelta"].get("contentBlockIndex", -1)
             tool_delta = delta.get("toolUse")
             piece = tool_delta.get("input") if tool_delta else None
             if isinstance(piece, str):
-                write_calls.add(event["contentBlockDelta"].get("contentBlockIndex", -1), piece)
+                write_calls.add(index, piece)
+                inline_calls.add(index, piece)
+                recorded.add(index, piece)
+            if "toolResult" in delta:
+                for part in _result_pieces(delta["toolResult"]):
+                    recorded.add(index, part)
         elif "contentBlockStop" in event:
-            write_calls.stop(event["contentBlockStop"].get("contentBlockIndex", -1))
+            index = event["contentBlockStop"].get("contentBlockIndex", -1)
+            write_calls.stop(index)
+            inline_calls.stop(index)
+            recorded.stop(index)
         elif "messageStop" in event:
             result.stop_reason = event["messageStop"].get("stopReason", "")
             yield from write_calls.end(result.stop_reason)
+            yield from inline_calls.end(result.stop_reason)
             result.interrupted = asked
             owed = True
         elif "metadata" in event:
             result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
             at_cap = owed and result.stop_reason == CAP_STOP
             reported, owed = True, False
+    result.calls = recorded.done()
     if not result.interrupted:
         result.usage_final = reported and not owed
     if result.interrupted:

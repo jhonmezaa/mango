@@ -4509,6 +4509,120 @@
         "title": "RenewedOut",
         "type": "object"
       },
+      "ReportLinkOut": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "file"
+        ],
+        "title": "ReportLinkOut",
+        "type": "object"
+      },
+      "ReportOut": {
+        "additionalProperties": false,
+        "description": "The PDF of a run, as its reader may see it. Only the owner learns its period and file.",
+        "properties": {
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File"
+          },
+          "keep_until": {
+            "format": "date",
+            "title": "Keep Until",
+            "type": "string"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "data",
+                  "size",
+                  "render"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "enum": [
+              "generating",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "cost_summary",
+              "anomaly"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "status",
+          "keep_until"
+        ],
+        "title": "ReportOut",
+        "type": "object"
+      },
       "ResetCreatedOut": {
         "additionalProperties": false,
         "properties": {
@@ -5241,6 +5355,16 @@
             ],
             "title": "Reason"
           },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "result": {
             "anyOf": [
               {
@@ -5388,6 +5512,16 @@
               }
             ],
             "title": "Reason"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "run_id": {
             "title": "Run Id",
@@ -5764,6 +5898,11 @@
             "title": "Name",
             "type": "string"
           },
+          "report": {
+            "default": false,
+            "title": "Report",
+            "type": "boolean"
+          },
           "task": {
             "maxLength": 2000,
             "minLength": 1,
@@ -5914,6 +6053,21 @@
               }
             ],
             "title": "Paused Reason"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cost_summary",
+                  "anomaly"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report"
           },
           "retired": {
             "anyOf": [
@@ -11828,6 +11982,127 @@
           }
         },
         "summary": "Get Task Run"
+      }
+    },
+    "/tasks/{task_id}/runs/{run_id}/report/download": {
+      "post": {
+        "description": "Only the owner downloads (D86 (4)): the PDF was obtained with their access. An\nadministrator sees that it is ready, and is refused here.",
+        "operationId": "download_task_report",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportLinkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Download Task Report"
+      }
+    },
+    "/tasks/{task_id}/runs/{run_id}/report/retry": {
+      "post": {
+        "operationId": "retry_task_report",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Retry Task Report"
       }
     }
   },

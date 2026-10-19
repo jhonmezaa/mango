@@ -25,6 +25,7 @@ from mango_api import (
     mcp,
     mfa_reset,
     people,
+    task_reports,
     tasks,
     tool_policies,
     web_session,
@@ -128,6 +129,12 @@ LIMITS: dict[str, LimitSpec] = {
         HOUR,
         shared=True,
         why="Each change of a task writes to EventBridge Scheduler (D78).",
+    ),
+    "tasks.report_downloads": LimitSpec(
+        task_reports.DOWNLOADS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Each click on «Descargar» issues a new presigned link to a run's PDF (D86, TM-R7).",
     ),
     "admin.probe": LimitSpec(
         admin.PROBE_CALLS_PER_MINUTE,

@@ -20,6 +20,8 @@ Security notes (security-best-practices, FastAPI):
   logs or the audit trail; neither does the result of a run (TM-T8).
 * Responses use explicit models (RESP-001); changes and «Ejecutar ahora» count in the shared
   rate limits (D70).
+* A run's PDF (D86) is downloaded only by its owner (``OwnTask``), through a presigned link of
+  5 minutes that is audited before it is issued and never logged (``task_reports``).
 """
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
@@ -42,6 +44,7 @@ from mango_api.audit import AuditLog
 from mango_api.authz import AgentResource, TaskResource
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
+from mango_api.task_reports import ReportLinkOut, ReportOut, TaskReports, report_out, status_of
 from mango_api.tasks_store import (
     RUNS_SHOWN,
     Automation,
@@ -55,6 +58,7 @@ from mango_api.tasks_store import (
     TaskStoreUnavailableError,
 )
 from mango_api.web import ApiError, Caller, rate_limited
+from mango_core import task_reports as reports
 from mango_core import task_runs
 from mango_core.agents import AGENT_ID_PATTERN
 
@@ -139,6 +143,8 @@ class TaskIn(_Strict):
     trigger: TriggerIn
     deliver: Literal["inbox"] = "inbox"
     """The only delivery of this wave (A4): «Crear ticket» and Slack are «Próximamente»."""
+    report: bool = False
+    """Also a PDF of each run (D86 (5)); its type is fixed by the trigger (D86 (7))."""
 
 
 class RetireIn(_Strict):
@@ -214,6 +220,8 @@ class RunOut(_Strict):
     anomaly: AnomalyOut | None = None
     waiting_since: datetime | None = None
     """When an event run started to wait for the previous one (D81)."""
+    report: ReportOut | None = None
+    """Its PDF (D86): its owner reads period, file and size; anyone else, only its status."""
 
 
 class RunDetailOut(RunOut):
@@ -242,6 +250,8 @@ class TaskOut(_Strict):
     """The instruction, only for its owner (D82 (3)): it is theirs, as their conversations."""
     trigger: TriggerOut
     deliver: Literal["inbox"]
+    report: Literal["cost_summary", "anomaly"] | None = None
+    """The PDF each run also delivers (D86), if the task asks for one."""
     status: Literal["active", "paused", "retired"]
     paused_reason: Literal["owner", "admin", "access_lost"] | None
     paused_at: str | None
@@ -437,6 +447,9 @@ class TasksDeps:
     runs: Limiter
     changes: Limiter
     clock: Callable[[], float] = time.time
+    reports: TaskReports | None = None
+    """The PDFs of runs (D86); ``None`` until the reports construct is deployed."""
+    downloads: Limiter | None = None
 
 
 def _unavailable(exc: Exception) -> ApiError:
@@ -457,7 +470,7 @@ def _ts(value: int | None) -> datetime | None:
     return datetime.fromtimestamp(value, UTC) if value is not None else None
 
 
-def run_out(run: Run, *, owner: bool = True) -> RunOut:
+def run_out(run: Run, *, owner: bool = True, now: int | None = None) -> RunOut:
     """``owner``: whether the reader is the owner of the task. Only the owner learns that a run
     left a result (D78, D1 after the review: the result was obtained with the owner's access)."""
     return RunOut(
@@ -482,6 +495,7 @@ def run_out(run: Run, *, owner: bool = True) -> RunOut:
             else None
         ),
         waiting_since=_ts(run.waiting_since),
+        report=report_out(run, owner=owner, now=int(time.time()) if now is None else now),
     )
 
 
@@ -542,6 +556,7 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
             daily_cap=DAILY_RUNS.get(automation.event_type or ""),
         ),
         deliver=cast(Any, automation.deliver),
+        report=cast(Any, automation.report),
         status=cast(Any, automation.status.value),
         paused_reason=cast(
             Any, automation.paused_reason.value if automation.paused_reason else None
@@ -556,7 +571,7 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
         is_owner=is_owner,
         next_runs=upcoming,
         running=any(r.status in {RunStatus.QUEUED, RunStatus.RUNNING} for r in runs),
-        runs=[run_out(r, owner=is_owner) for r in runs],
+        runs=[run_out(r, owner=is_owner, now=int(deps.clock())) for r in runs],
         health=_health(automation, agent, runs),
         created_at=automation.created_at,
         updated_at=automation.updated_at,
@@ -599,9 +614,21 @@ def _check_trigger(caller: Caller, trigger: TriggerIn) -> None:
         raise ApiError(403, "central_only", "only central people may subscribe to this event")
 
 
+def _report_type(deps: TasksDeps, body: TaskIn) -> str | None:
+    """The PDF of the task, if it asks for one: only with an agent that reads costs (design:
+    «solo para agentes que leen Cost Explorer o la facturación») and once reports exist."""
+    if not body.report:
+        return None
+    agent = _served(deps, body.agent_id)
+    if deps.reports is None or agent is None or not reports.reads_costs(agent.definition.tools):
+        raise ApiError(422, "report_unavailable", "this agent cannot deliver a report")
+    return reports.report_type(body.trigger.kind, body.trigger.event_type)
+
+
 def create_task(deps: TasksDeps, caller: Caller, body: TaskIn) -> Automation:
     _check_task(body)
     _check_trigger(caller, body.trigger)
+    report = _report_type(deps, body)
     now = _now_iso(deps)
     trigger = body.trigger
     automation = Automation(
@@ -625,8 +652,9 @@ def create_task(deps: TasksDeps, caller: Caller, body: TaskIn) -> Automation:
         retired_reason=None,
         created_at=now,
         updated_at=now,
+        report=report,
     )
-    _audit(deps, "task.created", caller, automation, outcome="requested")
+    _audit(deps, "task.created", caller, automation, outcome="requested", report=report)
     try:
         deps.store.create(automation)
     except TaskLimitError as exc:
@@ -640,7 +668,7 @@ def create_task(deps: TasksDeps, caller: Caller, body: TaskIn) -> Automation:
             # Never a task without its schedule, nor a schedule without its task.
             deps.store.delete_new(automation)
             raise _unavailable(exc) from exc
-    _audit(deps, "task.created", caller, automation, outcome="applied")
+    _audit(deps, "task.created", caller, automation, outcome="applied", report=report)
     return automation
 
 
@@ -654,6 +682,8 @@ def update_task(
         raise ApiError(409, "trigger_change", "the trigger of a task cannot change")
     _check_task(body)
     trigger = body.trigger
+    # Valid for the next runs (design): the runs before keep their PDF or have none.
+    report = _report_type(deps, body)
     changes: dict[str, Any] = {
         "name": body.name.strip(),
         "task": body.task.strip(),
@@ -661,6 +691,7 @@ def update_task(
         "deliver": body.deliver,
         "spec": trigger.schedule.model_dump() if trigger.schedule else None,
         "timezone": trigger.timezone if trigger.kind == "schedule" else None,
+        "report": report,
     }
     updated = replace(
         automation,
@@ -669,8 +700,9 @@ def update_task(
         agent_id=body.agent_id,
         spec=changes["spec"],
         timezone=changes["timezone"],
+        report=report,
     )
-    _audit(deps, "task.updated", caller, updated, outcome="requested")
+    _audit(deps, "task.updated", caller, updated, outcome="requested", report=report)
     try:
         deps.store.update(automation, changes, expect_status=frozenset({automation.status}))
     except TaskConflictError as exc:
@@ -682,7 +714,7 @@ def update_task(
             deps.scheduler.update(updated, enabled=updated.status is Status.ACTIVE)
         except SchedulerUnavailableError as exc:
             raise _unavailable(exc) from exc
-    _audit(deps, "task.updated", caller, updated, outcome="applied")
+    _audit(deps, "task.updated", caller, updated, outcome="applied", report=report)
     return updated
 
 
@@ -848,6 +880,66 @@ def run_now(deps: TasksDeps, caller: Caller, automation: Automation) -> Run:
         )
         raise _unavailable(exc) from exc
     return stored
+
+
+def _report_run(deps: TasksDeps, automation: Automation, run_id: str) -> Run:
+    if deps.reports is None:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        found = deps.store.run(automation.automation_id, run_id)
+    except TaskStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    if found is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return found
+
+
+def download_link(
+    deps: TasksDeps, caller: Caller, automation: Automation, run_id: str
+) -> ReportLinkOut:
+    """A new link to the run's PDF, for its owner (checked by the route), audited first."""
+    found = _report_run(deps, automation, run_id)
+    state = status_of(found, int(deps.clock()))
+    if state is None or state[0] != "ready" or deps.reports is None:
+        raise ApiError(409, "report_not_ready", "this run has no PDF to download")
+    if deps.downloads is not None:
+        _limit(deps.downloads, caller.user.user_id)
+    name = str(found.report_meta.get("file", ""))
+    # Never the content nor the link: who, which task, which run and which file (D86 (4)).
+    _audit(
+        deps,
+        "schedule.report_download",
+        caller,
+        automation,
+        run=found.run_id,
+        file=name,
+        outcome="applied",
+    )
+    try:
+        url = deps.reports.links.link(found, owner_id=automation.owner_id)
+    except (ClientError, BotoCoreError, ValueError) as exc:
+        raise _unavailable(exc) from exc
+    return ReportLinkOut(url=url, file=name)
+
+
+def retry_report(deps: TasksDeps, caller: Caller, automation: Automation, run_id: str) -> Run:
+    """«Generar de nuevo»: the same data, without running the agent again (design), only after
+    ``render``."""
+    found = _report_run(deps, automation, run_id)
+    _limit(deps.changes, caller.user.user_id)
+    now = int(deps.clock())
+    try:
+        restarted = deps.store.restart_report(
+            found, now=now, stale_before=now - reports.GENERATION_TIMEOUT_SECONDS
+        )
+    except TaskStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    if not restarted or deps.reports is None:
+        raise ApiError(409, "report_not_retryable", "this PDF cannot be generated again")
+    _audit(deps, "schedule.report_retry", caller, automation, run=found.run_id, outcome="applied")
+    updated = replace(found, report_status="generating", report_reason=None, report_at=now)
+    deps.reports.start(updated, deps.store.report_failed)
+    return updated
 
 
 def list_tasks(deps: TasksDeps, caller: Caller) -> list[Automation]:
@@ -1026,6 +1118,22 @@ def tasks_router(  # noqa: PLR0915 - registers the route closures
             if owner
             else [],
         )
+
+    @router.post("/{task_id}/runs/{run_id}/report/download", response_model=ReportLinkOut)
+    async def download_task_report(
+        task_id: TaskId, run_id: RunId, _body: EmptyIn, caller: SignedIn
+    ) -> ReportLinkOut:
+        """Only the owner downloads (D86 (4)): the PDF was obtained with their access. An
+        administrator sees that it is ready, and is refused here."""
+        automation = await load(caller, task_id, "OwnTask")
+        return await run(download_link, deps, caller, automation, run_id)
+
+    @router.post("/{task_id}/runs/{run_id}/report/retry", response_model=RunOut)
+    async def retry_task_report(
+        task_id: TaskId, run_id: RunId, _body: EmptyIn, caller: SignedIn
+    ) -> RunOut:
+        automation = await load(caller, task_id, "OwnTask")
+        return run_out(await run(retry_report, deps, caller, automation, run_id))
 
     return router
 

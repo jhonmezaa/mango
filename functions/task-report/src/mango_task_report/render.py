@@ -54,25 +54,11 @@ BAR = colors.HexColor("#33333a")
 ACCENT = colors.HexColor("#e2711d")
 ACCENT_SOFT = colors.Color(226 / 255, 113 / 255, 29 / 255, alpha=0.13)
 UP = colors.HexColor("#c2410c")
-MINUS, EN_DASH = "\u2212", "\u2013"
+MINUS, EN_DASH = "\u2212", tr.EN_DASH
 """Typographic minus and the dash of a range, as the design writes them."""
 DOWN = colors.HexColor("#15803d")
 
-MONTHS = (
-    "enero",
-    "febrero",
-    "marzo",
-    "abril",
-    "mayo",
-    "junio",
-    "julio",
-    "agosto",
-    "septiembre",
-    "octubre",
-    "noviembre",
-    "diciembre",
-)
-SHORT_MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+MONTHS, SHORT_MONTHS = tr.MONTHS, tr.SHORT_MONTHS
 ZONES = {
     "America/Mexico_City": "Ciudad de México",
     "America/Bogota": "Bogotá",
@@ -123,32 +109,12 @@ def percent(value: Decimal) -> str:
     return f"{sign}{number(abs(value), 1)} %"
 
 
-def day_month(day: date) -> str:
-    return f"{day.day} {SHORT_MONTHS[day.month - 1]}"
-
-
-def short_date(day: date) -> str:
-    return f"{day.day} {SHORT_MONTHS[day.month - 1]} {day.year}"
-
-
-def date_range(start: date, end: date) -> str:
-    """``15-16 oct 2026``, ``30 sep-2 oct 2026`` or one day."""
-    if start == end:
-        return short_date(start)
-    if (start.year, start.month) == (end.year, end.month):
-        return f"{start.day}{EN_DASH}{end.day} {SHORT_MONTHS[end.month - 1]} {end.year}"
-    if start.year == end.year:
-        return f"{day_month(start)}{EN_DASH}{day_month(end)} {end.year}"
-    return f"{short_date(start)}{EN_DASH}{short_date(end)}"
-
-
-def period_label(start: date, end: date) -> str:
-    """``septiembre 2026`` for a whole month; otherwise its range."""
-    next_month = date(end.year + (end.month == 12), end.month % 12 + 1, 1)  # noqa: PLR2004
-    whole = start.day == 1 and (next_month - end).days == 1 and start.month == end.month
-    if whole and start.year == end.year:
-        return f"{MONTHS[start.month - 1]} {start.year}"
-    return date_range(start, end)
+day_month, short_date, date_range, period_label = (
+    tr.day_month,
+    tr.short_date,
+    tr.date_range,
+    tr.period_label,
+)
 
 
 def long_range(start: date, end: date) -> str:

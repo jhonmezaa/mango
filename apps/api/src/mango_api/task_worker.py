@@ -17,6 +17,9 @@ read again from the Tasks table, and every check of a chat turn is made again:
    the owner has now (denied: skipped, paused), the agent published, the budget reserved (D73).
 5. The result is stored in the run; the hold is released; everything is audited without
    content. A run that completed or failed leaves a notice in its owner's Bandeja (D83).
+6. A completed run of a task with a report keeps the data its agent handed over (validated)
+   and asks ``Mango-<ns>-TaskReport`` for its PDF (D86); without valid data it fails with
+   ``data`` and the run is still «Completada».
 
 Messages are deleted once handled, skipped ones included. One whose handling failed before the
 run was recorded stays in the queue and is retried (its run id makes the retry safe); after
@@ -33,12 +36,13 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import TYPE_CHECKING, Any, Protocol
 
 from mango_api.audit import AuditLog
 from mango_api.task_identity import OwnerAccessLostError, TaskIdentityUnavailableError, TaskTokens
+from mango_api.task_reports import GENERATING, TaskReports, fields_for_run
 from mango_api.tasks import CENTRAL_EVENTS, DAILY_RUNS, TaskScheduler
 from mango_api.tasks_store import (
     Automation,
@@ -92,6 +96,10 @@ class TurnOutcome:
     steps: list[dict[str, str]] = field(default_factory=list)
     """What the agent wrote before each tool call (``task_steps``); ``result`` is then the
     report, what it wrote after the last one."""
+    report: str | None = None
+    """The data of the run's PDF (``task_reports.build``, JSON), when the task asked for one
+    and the agent handed over valid data (D86)."""
+    agent_name: str | None = None
 
 
 MAX_STEPS = 20
@@ -209,6 +217,8 @@ class TaskRuns:
     clock: Callable[[], float] = time.time
     inbox: RunNotices | None = None
     """``None`` keeps the Bandeja out (tests that do not look at it)."""
+    reports: TaskReports | None = None
+    """The PDFs of runs (D86); ``None`` until the reports construct is deployed."""
 
     # --- Entry point ------------------------------------------------------------------
 
@@ -388,20 +398,37 @@ class TaskRuns:
             except Exception:
                 logger.exception("a task run failed")
                 outcome = TurnOutcome(status=RunStatus.FAILED, reason="upstream_error")
+            now = int(self.clock())
+            report = (
+                fields_for_run(
+                    automation,
+                    replace(run, started_at=started),
+                    status=outcome.status,
+                    document=outcome.report,
+                    agent_name=outcome.agent_name,
+                    now=now,
+                )
+                if self.reports is not None
+                else {}
+            )
             ended = self.store.update_run(
                 run,
                 status=outcome.status,
                 expect=frozenset({RunStatus.RUNNING}),
-                ended_at=int(self.clock()),
+                ended_at=now,
                 reason=outcome.reason,
                 result=outcome.result,
                 cost_usd=outcome.cost_usd,
                 turn_id=outcome.turn_id,
                 approvals=outcome.approvals or None,
                 steps=outcome.steps or None,
+                **report,
             )
             if ended:
                 self._notify(automation, run, outcome.status, outcome.reason, outcome.result)
+                if self.reports is not None and report.get("report_status") == GENERATING:
+                    # Only after this worker closed the run: a second delivery asks for nothing.
+                    self.reports.start(run, self.store.report_failed)
             finished = (
                 "task.run.skipped" if outcome.status is RunStatus.SKIPPED else "task.run.finished"
             )

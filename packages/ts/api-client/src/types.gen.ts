@@ -2409,6 +2409,60 @@ export type RenewedOut = {
 };
 
 /**
+ * ReportLinkOut
+ */
+export type ReportLinkOut = {
+    /**
+     * File
+     */
+    file: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * ReportOut
+ *
+ * The PDF of a run, as its reader may see it. Only the owner learns its period and file.
+ */
+export type ReportOut = {
+    /**
+     * File
+     */
+    file?: string | null;
+    /**
+     * Keep Until
+     */
+    keep_until: string;
+    /**
+     * Pages
+     */
+    pages?: number | null;
+    /**
+     * Period
+     */
+    period?: string | null;
+    /**
+     * Reason
+     */
+    reason?: 'data' | 'size' | 'render' | null;
+    /**
+     * Size Bytes
+     */
+    size_bytes?: number | null;
+    /**
+     * Status
+     */
+    status: 'generating' | 'ready' | 'failed';
+    /**
+     * Type
+     */
+    type: 'cost_summary' | 'anomaly';
+};
+
+/**
  * ResetCreatedOut
  */
 export type ResetCreatedOut = {
@@ -2755,6 +2809,7 @@ export type RunDetailOut = {
      * Reason
      */
     reason: string | null;
+    report?: ReportOut | null;
     /**
      * Result
      */
@@ -2814,6 +2869,7 @@ export type RunOut = {
      * Reason
      */
     reason: string | null;
+    report?: ReportOut | null;
     /**
      * Run Id
      */
@@ -3006,6 +3062,10 @@ export type TaskIn = {
      */
     name: string;
     /**
+     * Report
+     */
+    report?: boolean;
+    /**
      * Task
      */
     task: string;
@@ -3080,6 +3140,10 @@ export type TaskOut = {
      * Paused Reason
      */
     paused_reason: 'owner' | 'admin' | 'access_lost' | null;
+    /**
+     * Report
+     */
+    report?: 'cost_summary' | 'anomaly' | null;
     retired: RetiredOut | null;
     /**
      * Running
@@ -6687,3 +6751,71 @@ export type GetTaskRunResponses = {
 };
 
 export type GetTaskRunResponse = GetTaskRunResponses[keyof GetTaskRunResponses];
+
+export type DownloadTaskReportData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}/runs/{run_id}/report/download';
+};
+
+export type DownloadTaskReportErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DownloadTaskReportError = DownloadTaskReportErrors[keyof DownloadTaskReportErrors];
+
+export type DownloadTaskReportResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReportLinkOut;
+};
+
+export type DownloadTaskReportResponse = DownloadTaskReportResponses[keyof DownloadTaskReportResponses];
+
+export type RetryTaskReportData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/tasks/{task_id}/runs/{run_id}/report/retry';
+};
+
+export type RetryTaskReportErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RetryTaskReportError = RetryTaskReportErrors[keyof RetryTaskReportErrors];
+
+export type RetryTaskReportResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunOut;
+};
+
+export type RetryTaskReportResponse = RetryTaskReportResponses[keyof RetryTaskReportResponses];

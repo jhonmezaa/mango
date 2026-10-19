@@ -10,6 +10,11 @@ Item layout, all under ``PK = AUTO#<automation id>``:
   lives here, with the table's TTL: never in logs nor in the audit trail (TM-T8). An event run
   that waits for the previous one (D81) keeps ``waiting_since`` and the ``wake`` of the one
   message that may resume it.
+  A run of a task with a report (D86) keeps it in ``report_*``: its status (``generating``,
+  ``ready``, ``failed`` with ``report_reason``), what mango-api computed for the PDF
+  (``report_meta``: file, object key, names) and the validated data (``report_data``). The
+  function ``Mango-<ns>-TaskReport`` may change only ``report_status``, ``report_reason``,
+  ``report_pages`` and ``report_bytes`` (its role says so).
 * ``SK = RUNKEY#<run id>``: the idempotency mark of a run, written in the same transaction as
   the run. A trigger delivered twice finds it and runs nothing (D78, SQS at least once).
 
@@ -118,6 +123,8 @@ class Automation:
     """Why an administrator paused it (D82 (2)): the administrator's text, shown to the owner."""
     paused_by: str | None = None
     """Who paused it, when an administrator did; only administrators read it (D82 (2))."""
+    report: str | None = None
+    """The type of PDF each run also delivers (D86): ``cost_summary`` or ``anomaly``."""
 
 
 @dataclass(frozen=True)
@@ -149,6 +156,14 @@ class Run:
     steps: list[dict[str, str]] = field(default_factory=list)
     """What the agent wrote before each tool call, with the tool (``text``, ``tool``). When a run
     has steps, ``result`` is only what it wrote after the last one: the report."""
+    report_status: str | None = None
+    """``generating``, ``ready`` or ``failed`` (D86); ``None`` when the run has no PDF."""
+    report_reason: str | None = None
+    report_pages: int | None = None
+    report_bytes: int | None = None
+    report_at: int | None = None
+    """When its PDF was asked for: a generation older than the timeout failed in silence."""
+    report_meta: dict[str, Any] = field(default_factory=dict)
     sk: str = ""
 
 
@@ -213,6 +228,7 @@ def _automation(item: dict[str, Any]) -> Automation:
         running_since=_int(item, "running_since"),
         paused_note=_str(item, "paused_note"),
         paused_by=_str(item, "paused_by"),
+        report=_str(item, "report"),
     )
 
 
@@ -239,6 +255,12 @@ def _run(item: dict[str, Any]) -> Run:
         anomaly_end=_str(item, "anomaly_end"),
         anomaly_id=_str(item, "anomaly_id"),
         steps=_steps(_str(item, "steps")),
+        report_status=_str(item, "report_status"),
+        report_reason=_str(item, "report_reason"),
+        report_pages=_int(item, "report_pages"),
+        report_bytes=_int(item, "report_bytes"),
+        report_at=_int(item, "report_at"),
+        report_meta=_meta(_str(item, "report_meta")),
         sk=item["SK"]["S"],
     )
 
@@ -257,6 +279,14 @@ def _steps(raw: str | None) -> list[dict[str, str]]:
         for step in loaded
         if isinstance(step, dict)
     ]
+
+
+def _meta(raw: str | None) -> dict[str, Any]:
+    try:
+        loaded = json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def _conditional(exc: ClientError) -> bool:
@@ -309,6 +339,8 @@ class TaskStore:
         if automation.event_type:
             item["event_type"] = _s(automation.event_type)
             item["event_key"] = _s(f"EVENT#{automation.event_type}")
+        if automation.report:
+            item["report"] = _s(automation.report)
         count = "SET n = if_not_exists(n, :zero) + :one"
         try:
             self._db.transact_write_items(
@@ -711,8 +743,8 @@ class TaskStore:
                 raise TypeError("no booleans in a run")
             if isinstance(value, int):
                 values[f":v{index}"] = _n(value)
-            elif name == "steps":
-                # Bounded by the caller (``MAX_STEPS``): stored as one JSON text.
+            elif name in {"steps", "report_meta"}:
+                # Bounded by the caller (``MAX_STEPS``, the meta of a report): one JSON text.
                 values[f":v{index}"] = _s(json.dumps(value, ensure_ascii=False))
             elif isinstance(value, list):
                 values[f":v{index}"] = {"L": [_s(str(v)) for v in value]}
@@ -739,3 +771,47 @@ class TaskStore:
                 return False
             raise TaskStoreUnavailableError from exc
         return True
+
+    def restart_report(self, run: Run, *, now: int, stale_before: int) -> bool:
+        """Ask for a run's PDF again («Generar de nuevo», D86): only after ``render``, or a
+        generation that outlived its timeout. False when it is in any other state."""
+        try:
+            self._db.update_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(run.automation_id)), "SK": _s(run.sk)},
+                UpdateExpression="SET report_status = :g, report_at = :now REMOVE report_reason",
+                ConditionExpression=(
+                    "(report_status = :f AND report_reason = :render) OR "
+                    "(report_status = :g AND report_at < :stale)"
+                ),
+                ExpressionAttributeValues={
+                    ":g": _s("generating"),
+                    ":f": _s("failed"),
+                    ":render": _s("render"),
+                    ":now": _n(now),
+                    ":stale": _n(stale_before),
+                },
+            )
+        except ClientError as exc:
+            if _conditional(exc):
+                return False
+            raise TaskStoreUnavailableError from exc
+        return True
+
+    def report_failed(self, run: Run, reason: str) -> None:
+        """The PDF could not even be asked for (its function did not take the invocation):
+        ``render``, so its owner may generate it again. Never raises."""
+        try:
+            self._db.update_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(run.automation_id)), "SK": _s(run.sk)},
+                UpdateExpression="SET report_status = :f, report_reason = :r",
+                ConditionExpression="report_status = :g",
+                ExpressionAttributeValues={
+                    ":f": _s("failed"),
+                    ":r": _s(reason),
+                    ":g": _s("generating"),
+                },
+            )
+        except ClientError:
+            return

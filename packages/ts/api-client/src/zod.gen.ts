@@ -1021,6 +1021,38 @@ export const zRenewedOutSchema = z.object({
 });
 
 /**
+ * ReportLinkOut
+ */
+export const zReportLinkOutSchema = z.object({
+    file: z.string(),
+    url: z.string()
+});
+
+/**
+ * ReportOut
+ *
+ * The PDF of a run, as its reader may see it. Only the owner learns its period and file.
+ */
+export const zReportOutSchema = z.object({
+    file: z.string().nullish(),
+    keep_until: z.iso.date(),
+    pages: z.int().nullish(),
+    period: z.string().nullish(),
+    reason: z.enum([
+        'data',
+        'size',
+        'render'
+    ]).nullish(),
+    size_bytes: z.int().nullish(),
+    status: z.enum([
+        'generating',
+        'ready',
+        'failed'
+    ]),
+    type: z.enum(['cost_summary', 'anomaly'])
+});
+
+/**
  * ResetCreatedOut
  */
 export const zResetCreatedOutSchema = z.object({
@@ -1173,6 +1205,7 @@ export const zRunOutSchema = z.object({
     has_result: z.boolean(),
     queued_at: z.iso.datetime(),
     reason: z.string().nullable(),
+    report: zReportOutSchema.nullish(),
     run_id: z.string(),
     started_at: z.iso.datetime().nullable(),
     status: z.enum([
@@ -1391,6 +1424,7 @@ export const zRunDetailOutSchema = z.object({
     has_result: z.boolean(),
     queued_at: z.iso.datetime(),
     reason: z.string().nullable(),
+    report: zReportOutSchema.nullish(),
     result: z.string().nullable(),
     run_id: z.string(),
     started_at: z.iso.datetime().nullable(),
@@ -1501,6 +1535,7 @@ export const zTaskInSchema = z.object({
     agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/),
     deliver: z.literal('inbox').optional().default('inbox'),
     name: z.string().min(1).max(48),
+    report: z.boolean().optional().default(false),
     task: z.string().min(1).max(2000),
     trigger: zTriggerInSchema
 });
@@ -1842,6 +1877,7 @@ export const zTaskOutSchema = z.object({
         'admin',
         'access_lost'
     ]).nullable(),
+    report: z.enum(['cost_summary', 'anomaly']).nullish(),
     retired: zRetiredOutSchema.nullable(),
     running: z.boolean(),
     runs: z.array(zRunOutSchema),
@@ -2801,3 +2837,27 @@ export const zGetTaskRunPath = z.object({
  * Successful Response
  */
 export const zGetTaskRunResponse = zRunDetailOutSchema;
+
+export const zDownloadTaskReportBody = zEmptyInSchema;
+
+export const zDownloadTaskReportPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/),
+    run_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDownloadTaskReportResponse = zReportLinkOutSchema;
+
+export const zRetryTaskReportBody = zEmptyInSchema;
+
+export const zRetryTaskReportPath = z.object({
+    task_id: z.string().regex(/^[0-9a-f]{32}$/),
+    run_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRetryTaskReportResponse = zRunOutSchema;

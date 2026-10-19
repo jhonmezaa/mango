@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from functools import cache, partial
 from pathlib import Path as FilePath
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import boto3
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -117,6 +117,7 @@ from mango_api.rate_limits import RateLimitStore
 from mango_api.settings import ModelPrice, Settings
 from mango_api.settings_store import BudgetLimits, SettingsStore, SettingsUnavailableError
 from mango_api.task_identity import TaskTokens
+from mango_api.task_reports import S3_CONFIG, LambdaRenderer, S3Links, TaskReports
 from mango_api.task_worker import (
     AgentAccessDeniedError,
     QueueWorker,
@@ -143,6 +144,7 @@ from mango_api.web_session import (
     web_session_router,
 )
 from mango_core import invocation
+from mango_core import task_reports as reports
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN, VersionStatus
 from mango_core.budget_turns import PendingTurn
 from mango_core.identity import (
@@ -425,6 +427,20 @@ def _task_services(
         audit=audit,
         runs=limits.limiter("tasks.runs"),
         changes=limits.limiter("tasks.changes"),
+        reports=(
+            TaskReports(
+                renderer=LambdaRenderer(
+                    boto3.client("lambda", region_name=region), settings.task_report_function
+                ),
+                links=S3Links(
+                    boto3.client("s3", region_name=region, config=S3_CONFIG),
+                    settings.task_reports_bucket,
+                ),
+            )
+            if settings.task_report_function and settings.task_reports_bucket
+            else None
+        ),
+        downloads=limits.limiter("tasks.report_downloads"),
     )
     tokens = TaskTokens(
         cognito=cognito,
@@ -758,6 +774,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             audit=services.audit,
             queue=services.tasks.queue,
             inbox=RunInbox(services.inbox.store) if services.inbox is not None else None,
+            reports=services.tasks.reports,
         )
 
     @asynccontextmanager
@@ -1806,6 +1823,14 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         logger.exception("a task turn could not bind its session")
         _release_turn(services, pending)
         return TurnOutcome(status=RunStatus.FAILED, reason="budget_unavailable")
+    # A task with a report hands its data over with the internal tool (D86 (6), D87 (3)).
+    report_type = (
+        cast(reports.ReportType, automation.report)
+        if automation.report in reports.TYPE_NAMES
+        and services.tasks is not None
+        and services.tasks.reports is not None
+        else None
+    )
     request = harness.build_request(
         invocation_request,
         session_id=session_id,
@@ -1813,6 +1838,7 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         access_token=caller.token,
         invocation_signature=signature,
         history=history,
+        inline_tools=(reports.tool_spec(report_type),) if report_type else (),
     )
     detail = {
         **turn,
@@ -1834,12 +1860,28 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     )
     requested: set[str] = set()
     approval_ids: list[str] = []
+    handed: str | None = None
     answered = False
     try:
         services.audit.emit("agent.invoke", user.user_id, {**detail, "session": "new"}, user)
-        for event in harness.run(agentcore, request, result, write_tools):
-            if event.kind == "tool" and event.data.get("status") == "started":
+        for event in harness.run(
+            agentcore,
+            request,
+            result,
+            write_tools,
+            inline=frozenset({reports.REPORT_TOOL}) if report_type else frozenset(),
+            record=frozenset({reports.COST_QUERY_TOOL}) if report_type else frozenset(),
+        ):
+            # The internal tool hands data over: it is not a query, so not a step (D86 (6)).
+            if (
+                event.kind == "tool"
+                and event.data.get("status") == "started"
+                and event.data.get("name") != reports.REPORT_TOOL
+            ):
                 steps.tool(result.text, event.data.get("name", ""))
+            if event.kind == harness.INLINE_CALL:
+                handed = event.data.get("arguments", "")
+                continue
             if event.kind != harness.WRITE_CALL:
                 continue
             approval = _request_approval(
@@ -1870,7 +1912,30 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         cost_usd=spent,
         turn_id=turn_id,
         approvals=approval_ids,
+        report=_report_document(report_type, handed, result.calls),
+        agent_name=definition.name,
     )
+
+
+def _report_document(
+    report_type: reports.ReportType | None, handed: str | None, calls: list[dict[str, str]]
+) -> str | None:
+    """The data of the run's PDF, validated, with the series of its query when one matches;
+    ``None`` when the agent handed over nothing valid (the report fails with ``data``). Nothing
+    of what the model wrote is logged (TM-R6)."""
+    if report_type is None or handed is None:
+        return None
+    try:
+        data = reports.parse(report_type, handed)
+        document = reports.build(
+            report_type,
+            data,
+            [reports.ToolCall(c["id"], c["name"], c["input"], c["output"]) for c in calls],
+        )
+    except reports.InvalidReportError:
+        logger.info("the data of a task report did not validate")
+        return None
+    return json.dumps(document, ensure_ascii=False, separators=(",", ":"))
 
 
 def _wrap(app: FastAPI, settings: Settings) -> ASGIApp:

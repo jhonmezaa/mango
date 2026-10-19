@@ -595,3 +595,52 @@ def valid_event(event: Any) -> tuple[str, str, str]:
 def keep_until(queued_at: int) -> date:
     """The day the run and its PDF are deleted (D78 (6), D86 (3))."""
     return (datetime.fromtimestamp(queued_at, UTC) + timedelta(days=RETENTION_DAYS)).date()
+
+
+# --- Dates as the design writes them --------------------------------------------------------
+
+MONTHS = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+SHORT_MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+EN_DASH = "\u2013"
+"""The dash of a range («15-16 oct 2026» with an en dash)."""
+
+
+def day_month(day: date) -> str:
+    return f"{day.day} {SHORT_MONTHS[day.month - 1]}"
+
+
+def short_date(day: date) -> str:
+    return f"{day.day} {SHORT_MONTHS[day.month - 1]} {day.year}"
+
+
+def date_range(start: date, end: date) -> str:
+    """``15-16 oct 2026``, ``30 sep-2 oct 2026`` or one day."""
+    if start == end:
+        return short_date(start)
+    if (start.year, start.month) == (end.year, end.month):
+        return f"{start.day}{EN_DASH}{end.day} {SHORT_MONTHS[end.month - 1]} {end.year}"
+    if start.year == end.year:
+        return f"{day_month(start)}{EN_DASH}{day_month(end)} {end.year}"
+    return f"{short_date(start)}{EN_DASH}{short_date(end)}"
+
+
+def period_label(start: date, end: date) -> str:
+    """``septiembre 2026`` for a whole month; otherwise its range."""
+    next_month = date(end.year + (end.month == 12), end.month % 12 + 1, 1)  # noqa: PLR2004
+    whole = start.day == 1 and (next_month - end).days == 1 and start.month == end.month
+    if whole and start.year == end.year:
+        return f"{MONTHS[start.month - 1]} {start.year}"
+    return date_range(start, end)
