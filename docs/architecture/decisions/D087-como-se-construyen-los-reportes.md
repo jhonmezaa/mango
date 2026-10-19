@@ -1,7 +1,7 @@
 # D87 · Cómo se construyen los reportes: ReportLab en el zip, una `inline_function` y la serie de la consulta
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-19 (los puntos 1 a 4, tomados por el dueño ese día, por menú: «Sí, las cuatro (Recomendada)»; la precisión de la regla 3 del punto 3, validada por el dueño ese día en el panel principal, por menú: «Aceptar la precisión (Recomendada)»; el cómo, punto 5, y las diferencias con el diseño, punto 6, propuestos por un agente, pendientes de que el dueño los acepte)
+- **Fecha:** 2026-10-19 (los puntos 1 a 4, tomados por el dueño ese día, por menú: «Sí, las cuatro (Recomendada)»; la precisión de la regla 3 del punto 3, validada por el dueño ese día en el panel principal, por menú: «Aceptar la precisión (Recomendada)»; el cómo, punto 5, y las diferencias con el diseño, punto 6, propuestos por un agente y aceptados por el dueño ese día, por menú: «Aceptar (Recomendada)»)
 - **Precisa / reemplaza a:** precisa [D86](D086-reportes-descargables-de-tareas.md) (2) (el motor y cómo viaja) y (6) (qué es la tool interna y de dónde salen las series); precisa la regla 3 de `AGENTS.md` y el principio P2 de la arquitectura de referencia (punto 3)
 - **Precisada por:** —
 
@@ -21,7 +21,7 @@ Origen: construir D86. D86 fijó qué se construye; al planearlo quedaron cuatro
 
 **(4) La serie diaria, de la consulta cuando se puede (tomado por el dueño el 2026-10-19, por menú).** Si en la ejecución hay una llamada a `get_cost_and_usage` diaria y sin agrupar que cubre todos los días del periodo, el servidor toma la serie diaria de su respuesta (por su id de llamada en el stream) y no la copia del agente. Si no, usa la del agente, y el bloque lo dice («tomada de la consulta» o «copiada por el agente de sus consultas»). Tablas y totales siguen siendo del agente, validados; el servidor calcula variaciones, partes, «Otros» y los totales de las tablas. La otra opción era usar solo lo que entrega el agente.
 
-**(5) Cómo (propuesto por un agente).**
+**(5) Cómo (propuesto por un agente, aceptado por el dueño el 2026-10-19, por menú).**
 - **El turno.** La llamada a `mango_report` no cuenta en «Pasos» y termina el turno, como una tool de escritura: el stream se cierra al llegar su consumo. Las respuestas de `get_cost_and_usage` se guardan, por id, solo en las ejecuciones con reporte y hasta 512 KB cada una; una que se pasa se descarta entera. La entrada de la tool, hasta 128 KB.
 - **Los datos.** Viven en la ejecución, en la tabla `Tasks` (CMK, PITR, TTL de 90 días): `report_status` (`generating`, `ready`, `failed`), `report_reason` (`data`, `size`, `render`), `report_meta` (lo que calculó `mango-api`: tipo, archivo, dueño, tarea, agente, zona, periodo, hasta cuándo) y `report_data` (los datos validados). Solo una ejecución «Completada» tiene reporte; sin datos válidos, `data`, sin invocar nada.
 - **Validación.** Esquema estricto (sin campos de más), importes decimales finitos y acotados, fechas en orden y dentro del periodo, sin caracteres de control ni bidireccionales, los límites de D86 (8), y las filas de una tabla no suman más que su total (1 % o USD 1 de redondeo). Se valida en `mango-api` y otra vez en la función.
@@ -32,7 +32,7 @@ Origen: construir D86. D86 fijó qué se construye; al planearlo quedaron cuatro
 - **Tipos.** Una tarea por horario o solo a pedido da «Resumen de costos»; una por anomalía, «Investigación de anomalía». La casilla se acepta solo con un agente cuya versión publicada usa `cost-explorer.*` o `aws-billing.*` (`report_unavailable`).
 - **La pantalla.** La casilla del editor, la línea «Reporte» de «Entrega y control», los estados de cada fila y la tarjeta del resultado, «Descargar PDF» en el aviso de la Bandeja cuando el PDF está listo, «El PDF tarda un poco más.» al terminar, y «Reporte descargado» con su sección «Descarga» en Auditoría. La SPA solo abre un enlace `https`.
 
-**(6) Diferencias con el diseño (propuestas por un agente, para el próximo brief).**
+**(6) Diferencias con el diseño (propuestas por un agente, aceptadas por el dueño el 2026-10-19, por menú; para el próximo brief).**
 - El PDF de una anomalía no nombra su monitor: la ejecución guarda el id y las fechas, no el monitor ([D79](D079-investigacion-de-anomalias-por-evento.md) (4), [D85](D085-id-de-la-anomalia-en-pantalla.md)).
 - «Sobre este reporte» dice que Mango calcula variaciones, partes y totales y que toma la serie de la consulta cuando puede; el diseño decía que Mango no recalcula las cifras.
 - La leyenda de los gráficos va encima del gráfico, como texto; la línea punteada de «Resumen de costos» es el promedio diario del periodo anterior.
