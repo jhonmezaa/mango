@@ -170,6 +170,15 @@ Las supresiones de cfn-guard viven en `infra/lib/guard.ts` (una por recurso, con
 
 **Preguntas al usuario:** si un agente necesita una decisión o está bloqueado, pregunta con la herramienta de preguntas de su entorno (en Claude Code, `AskUserQuestion`, con opciones concretas). Nunca deja las preguntas en prosa al final de un mensaje ni solo dentro de un informe: así el terminal no lo marca como bloqueado y nadie se entera de que está esperando.
 
+**Agentes lanzados por otro agente:** las preguntas de un agente auxiliar las contesta el agente que lo lanzó, nunca el dueño del repositorio en el panel del auxiliar.
+- **Lo que puede decidir por sí mismo, lo decide:** lee el menú y contesta. No manda al dueño al panel del auxiliar.
+- **Si una opción necesita la decisión del dueño, la pregunta él**, desde su propia sesión y con su herramienta de preguntas, y después contesta al auxiliar con lo que el dueño eligió. Necesitan al dueño:
+  - las reglas de arquitectura y las decisiones de §8;
+  - las excepciones de seguridad;
+  - los cambios en la cuenta de un cliente;
+  - lo que contradiga algo registrado.
+- **Si el menú se cierra sin respuesta,** el agente que lo lanzó se lo dice al auxiliar, para que vuelva a preguntar o siga con lo ya decidido.
+
 **CI (`.github/workflows/ci.yml`):** en cada pull request y push a `main` corre lint, tipos y tests (Python, web, infra), `cdk synth` con cdk-nag, `cfn-guard`, Checkov, auditoría de dependencias (`mise run audit`) y búsqueda de secretos (gitleaks). Solo verifica: nunca despliega. No se hace merge a `main` con el CI en rojo. Las actions se fijan por SHA.
 
 ### Repositorio público (D59)
