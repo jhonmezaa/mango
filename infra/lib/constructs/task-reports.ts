@@ -125,9 +125,12 @@ export class TaskReports extends Construct {
         sid: "ReadRunReport",
         actions: ["dynamodb:GetItem"],
         resources: [props.tasksTable.tableArn],
-        // Never the result of a run nor the instruction of a task (TM-R5).
+        // Never the result of a run nor the instruction of a task (TM-R5). `ForAllValues` is
+        // true when the request names no attribute (a GetItem without a projection reads the
+        // whole item): `Null: false` requires the projection.
         conditions: {
           "ForAllValues:StringEquals": { "dynamodb:Attributes": REPORT_READS },
+          Null: { "dynamodb:Attributes": "false" },
           StringEqualsIfExists: { "dynamodb:Select": "SPECIFIC_ATTRIBUTES" },
         },
       }),
@@ -139,6 +142,7 @@ export class TaskReports extends Construct {
         resources: [props.tasksTable.tableArn],
         conditions: {
           "ForAllValues:StringEquals": { "dynamodb:Attributes": REPORT_WRITES },
+          Null: { "dynamodb:Attributes": "false" },
           StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE", "UPDATED_NEW"] },
         },
       }),

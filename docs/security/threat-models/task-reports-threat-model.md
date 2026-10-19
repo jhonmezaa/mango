@@ -163,3 +163,17 @@ flowchart LR
 - Límites cubiertos: modelo → `mango-api`, `mango-api` → Lambda, Lambda → tabla y bucket, navegador → API, navegador → S3.
 - Lo de desarrollo (mock de la SPA, tests) queda fuera del modelo de ejecución.
 - Supuestos confirmados por el dueño (2026-10-19) y reflejados en las prioridades (TM-R3 y TM-R6 en baja por los supuestos 3 y 4).
+
+## Revisión `security-audit` del diff (2026-10-19, modo guía)
+
+Sobre el IAM de la función `Mango-<ns>-TaskReport` y de la política `Mango-<ns>-ApiTaskReports`, la política del bucket y su llave, y el camino de la URL prefirmada.
+
+- **Corregido (TM-R5):** las condiciones `ForAllValues:StringEquals` sobre `dynamodb:Attributes` son verdaderas cuando la petición no nombra ningún atributo: un `GetItem` sin proyección habría leído el ítem entero, con el resultado de la ejecución. Las dos sentencias de la tabla exigen ahora la clave (`Null: {"dynamodb:Attributes": "false"}`); lo fija `infra/test/task-reports.test.ts`.
+- **Sin hallazgos:**
+  - La función solo escribe en `owner/*` y su evento solo lleva ids validados por patrón; la clave del objeto la calculan `mango-api` y la función desde el ítem, con el mismo patrón.
+  - `mango-api` solo invoca esa función, solo lee `owner/*` (para firmar) y descifra con la llave de reportes solo a través de S3.
+  - El bucket rechaza firmas de más de 5 minutos en `GetObject`, solo acepta TLS, no admite ACL y bloquea el acceso público.
+  - La ruta de descarga exige `OwnTask`, audita antes de emitir el enlace (fail-closed), limita por persona y nunca registra la URL.
+  - La SPA solo abre enlaces `https`.
+- **Riesgos aceptados (supuestos 3 y 4):** el enlace es un portador durante 5 minutos; los access logs de S3 guardan su firma ya vencida.
+

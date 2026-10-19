@@ -92,6 +92,9 @@ describe("task reports", () => {
     expect(actions(sids.ReadRunReport!)).toEqual(["dynamodb:GetItem"]);
     expect(sids.ReadRunReport!.Condition!["ForAllValues:StringEquals"]).toEqual({ "dynamodb:Attributes": REPORT_READS });
     expect(REPORT_READS).not.toContain("result");
+    // Without it, a request that names no attribute (a GetItem without a projection) passes.
+    expect(sids.ReadRunReport!.Condition!.Null).toEqual({ "dynamodb:Attributes": "false" });
+    expect(sids.MarkRunReport!.Condition!.Null).toEqual({ "dynamodb:Attributes": "false" });
     expect(actions(sids.MarkRunReport!)).toEqual(["dynamodb:UpdateItem"]);
     expect(sids.MarkRunReport!.Condition!["ForAllValues:StringEquals"]).toEqual({ "dynamodb:Attributes": REPORT_WRITES });
     expect(actions(sids.WritePdf!)).toEqual(["s3:PutObject"]);
