@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin main
           git merge-base --is-ancestor HEAD origin/main
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
       - run: pnpm install --frozen-lockfile
       - run: uv sync --all-packages --frozen
       # The packs signed for main by the packs workflow: the release verifies every signature
