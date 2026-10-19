@@ -171,11 +171,11 @@ export const zAuditListSchema = z.object({
 export const zBudgetDefaultsInSchema = z.object({
     agent_monthly_usd: z.union([
         z.number(),
-        z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/)
+        z.string()
     ]),
     user_monthly_usd: z.union([
         z.number(),
-        z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/)
+        z.string()
     ]),
     version: z.int().gte(0)
 });
@@ -718,11 +718,11 @@ export const zModelUpdateInSchema = z.object({
     enabled: z.boolean(),
     input_usd: z.union([
         z.number(),
-        z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/)
+        z.string()
     ]).nullish(),
     output_usd: z.union([
         z.number(),
-        z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/)
+        z.string()
     ]).nullish(),
     reason: z.string().nullish(),
     version: z.int().gte(1)
@@ -1541,7 +1541,7 @@ export const zUpdateInSchema = z.object({
 export const zUserBudgetInSchema = z.object({
     limit_usd: z.union([
         z.number(),
-        z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/)
+        z.string()
     ]).nullable(),
     version: z.int().gte(0)
 });
