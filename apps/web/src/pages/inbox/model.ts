@@ -28,8 +28,8 @@ export function isPagedView(view: InboxView): boolean {
 
 /** Public ids of the API: a run notice or an approval request. Anything else is ignored. */
 export const ITEM_ID = /^(?:[0-9]{13}[0-9a-f]{16}|[0-9a-f]{32})$/;
-const TASK_ID = /^[0-9a-f]{32}$/;
-const RUN_ID = /^[0-9a-f]{32}$/;
+export const TASK_ID = /^[0-9a-f]{32}$/;
+export const RUN_ID = /^[0-9a-f]{32}$/;
 
 /** Key of an item in the list: kinds have different ids, but never trust that. */
 export function keyOf(item: Pick<InboxItem, 'kind' | 'item_id'>): string {

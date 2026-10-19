@@ -52,6 +52,9 @@ import {
   type Health,
   type Perms,
   type QuickFilter,
+  readsCosts,
+  reportTypeOf,
+  type RunReport,
   type RunDetail,
   type Spec,
   type Task,
@@ -59,8 +62,15 @@ import {
   type TaskRun,
   type TimeZone,
 } from './model';
+import { ReportCard, ReportDownload, ReportState } from './reports';
 
-type Agent = { id: string; name: string; status: string; unavailable_tools: string[] };
+type Agent = {
+  id: string;
+  name: string;
+  status: string;
+  tools: string[];
+  unavailable_tools: string[];
+};
 type LoadState =
   { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; list: TaskList; agents: Agent[] };
 type Translate = TFunction;
@@ -409,12 +419,16 @@ function TaskRow({
 
 /** Design ScRunRow. */
 function RunLine({
+  api,
+  task,
   run,
   event,
   canSee,
   onResult,
   onApproval,
 }: {
+  api: OperationCaller;
+  task: Task;
   run: TaskRun;
   event: boolean;
   canSee: boolean;
@@ -432,6 +446,8 @@ function RunLine({
         )
       : 0;
   const result = canSee && run.has_result;
+  // Design ScRunRow: «Descargar PDF» next to «Ver resultado», only for the owner (D86 (4)).
+  const download = result && run.report?.status === 'ready';
   return (
     <div className="mk-line sc-run">
       {run.status === 'running' ? (
@@ -473,6 +489,9 @@ function RunLine({
         {waited > 0 ? (
           <span className="mk-meta">{t('schedules.run.waited', { count: waited })}</span>
         ) : null}
+        {run.report ? (
+          <ReportState report={run.report} own={canSee} owner={ownerName(task)} />
+        ) : null}
         {result || (run.status === 'approval' && approval) ? (
           <span className="sc-run-acts">
             {result ? (
@@ -485,6 +504,9 @@ function RunLine({
               >
                 {t('schedules.run.seeResult')}
               </button>
+            ) : null}
+            {download ? (
+              <ReportDownload api={api} taskId={task.task_id} runId={run.run_id} />
             ) : null}
             {run.status === 'approval' && approval ? (
               <button
@@ -530,6 +552,23 @@ function RunResult({
 }) {
   const { t } = useTranslation();
   const [detail, setDetail] = useState<RunDetail | 'error' | null>(null);
+  // «Generar de nuevo» shows its answer at once; the next poll of the task brings the rest.
+  const [retried, setRetried] = useState<RunReport | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const report = retried ?? run.report ?? null;
+  const retry = () => {
+    if (retrying) return;
+    setRetrying(true);
+    api('retryTaskReport', { path: { task_id: task.task_id, run_id: run.run_id }, body: {} }).then(
+      (updated) => {
+        setRetrying(false);
+        setRetried(updated.report ?? null);
+      },
+      () => {
+        setRetrying(false);
+      },
+    );
+  };
   useEffect(() => {
     const controller = new AbortController();
     api(
@@ -579,6 +618,16 @@ function RunResult({
           ) : null}
         </div>
       ) : null}
+      {report ? (
+        <ReportCard
+          api={api}
+          task={task}
+          run={run}
+          report={report}
+          retrying={retrying}
+          onRetry={retry}
+        />
+      ) : null}
       {detail === null ? (
         <div role="status" aria-label={t('schedules.result.loading')}>
           <Skel w="70%" h={13} />
@@ -614,7 +663,8 @@ function RunResult({
         </>
       )}
       <p className="mk-meta sc-res-foot">
-        <LockIcon size={11} /> {t('schedules.result.foot')}
+        <LockIcon size={11} />{' '}
+        {report ? t('schedules.result.footReport') : t('schedules.result.foot')}
       </p>
     </div>
   );
@@ -992,6 +1042,21 @@ function TaskDetail({
                   : t('schedules.detail.resultValueOther', { owner })}
               </span>
             </div>
+            {task.report ? (
+              <div className="mk-kv">
+                <span>{t('schedules.detail.report')}</span>
+                <span style={{ textAlign: 'right' }}>
+                  {perms.own
+                    ? t('schedules.detail.reportValueMine', {
+                        type: t(`schedules.report.type.${task.report}`),
+                      })
+                    : t('schedules.detail.reportValueOther', {
+                        type: t(`schedules.report.type.${task.report}`),
+                        owner,
+                      })}
+                </span>
+              </div>
+            ) : null}
             <div className="mk-kv">
               <span>{t('schedules.detail.runsAs')}</span>
               <span style={{ minWidth: 0, overflowWrap: 'anywhere', textAlign: 'right' }}>
@@ -1029,6 +1094,8 @@ function TaskDetail({
               task.runs.map((run) => (
                 <RunLine
                   key={run.run_id}
+                  api={api}
+                  task={task}
                   run={run}
                   event={perms.anomaly}
                   canSee={perms.own}
@@ -1058,6 +1125,8 @@ interface Draft {
   kind: 'schedule' | 'event';
   spec: Spec;
   tz: TimeZone;
+  /** Also a PDF of each run (D86): off by default, editable. */
+  report: boolean;
 }
 
 function draftOf(task: Task | null, agents: Agent[]): Draft {
@@ -1069,6 +1138,7 @@ function draftOf(task: Task | null, agents: Agent[]): Draft {
       kind: 'schedule',
       spec: DEFAULT_SPEC,
       tz: TIMEZONES[0],
+      report: false,
     };
   }
   const tz = TIMEZONES.find((zone) => zone === task.trigger.timezone) ?? TIMEZONES[0];
@@ -1079,6 +1149,7 @@ function draftOf(task: Task | null, agents: Agent[]): Draft {
     kind: isEvent(task) ? 'event' : 'schedule',
     spec: { ...DEFAULT_SPEC, ...task.trigger.schedule },
     tz,
+    report: task.report != null,
   };
 }
 
@@ -1172,6 +1243,9 @@ function TaskEditor({
       : agents;
   }, [agents, allAgents, draft.agent, isNew]);
   const agentName = options.find((agent) => agent.id === draft.agent)?.name;
+  const chosen = options.find((agent) => agent.id === draft.agent);
+  const canReport = chosen ? readsCosts(chosen.tools) : false;
+  const reportType = reportTypeOf(draft.kind);
   const next = useNextRuns(api, draft);
   const setSpec = (patch: Partial<Spec>) => {
     setDraft((current) => ({ ...current, spec: { ...current.spec, ...patch } }));
@@ -1199,6 +1273,7 @@ function TaskEditor({
       task: draft.task.trim(),
       trigger,
       deliver: 'inbox' as const,
+      report: draft.report && canReport,
     };
     const request = isNew
       ? api('createNewTask', { body })
@@ -1528,16 +1603,35 @@ function TaskEditor({
         </div>
         <div>
           <span className="sc-label">{t('schedules.editor.report')}</span>
-          {/* The downloadable report is new and not built yet (design part D): «Próximamente». */}
-          <Soon name={t('schedules.editor.reportOption')} block>
-            <label className="sc-rep-opt">
-              <input type="checkbox" disabled />
-              <span>
-                <b>{t('schedules.editor.reportOption')}</b>
-                <span className="mk-meta">{t('schedules.editor.reportHint')}</span>
-              </span>
-            </label>
-          </Soon>
+          {/* Design part D (D86): the type is fixed by the trigger; only agents that read costs. */}
+          <label className={`sc-rep-opt${canReport ? '' : ' is-off'}`}>
+            <input
+              type="checkbox"
+              checked={draft.report && canReport}
+              disabled={!canReport}
+              aria-describedby="sc-rep-h"
+              onChange={(event) => {
+                setDraft({ ...draft, report: event.target.checked });
+              }}
+            />
+            <span>
+              <b>
+                {t('schedules.editor.reportOption', {
+                  type: t(`schedules.report.type.${reportType}`),
+                })}
+              </b>
+              <span className="mk-meta">{t(`schedules.report.typeHint.${reportType}`)}</span>
+            </span>
+          </label>
+          <div id="sc-rep-h" className="mk-meta" style={{ marginTop: 6, fontSize: 12 }}>
+            {!canReport
+              ? chosen
+                ? t('schedules.editor.reportUnavailable', { agent: chosen.name })
+                : t('schedules.editor.reportNoAgent')
+              : draft.report
+                ? t('schedules.editor.reportOn')
+                : t('schedules.editor.reportOff')}
+          </div>
         </div>
         <div className="mc-alert" style={{ fontSize: 12.5 }}>
           <UserIcon size={13} />
@@ -1606,7 +1700,11 @@ export function SchedulesPage() {
   const isAdmin = me.is_admin;
 
   const ready = state.kind === 'ready' ? state : null;
-  const anyOpen = ready?.list.items.some((task) => task.runs.some(isOpen)) ?? false;
+  // A PDF still being drawn is polled like a run in flight (D86): it is ready in seconds.
+  const anyOpen =
+    ready?.list.items.some((task) =>
+      task.runs.some((run) => isOpen(run) || run.report?.status === 'generating'),
+    ) ?? false;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1627,7 +1725,9 @@ export function SchedulesPage() {
                 const open = { id: item.task_id, ask: null, run: done ? run.run_id : null };
                 notify(
                   done
-                    ? t('schedules.toast.doneBody')
+                    ? run.report
+                      ? t('schedules.toast.doneBodyReport')
+                      : t('schedules.toast.doneBody')
                     : (runReason(t, run.reason) ?? t('schedules.run.unknownReason')),
                   done ? 'success' : 'info',
                   done

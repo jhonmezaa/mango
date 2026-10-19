@@ -216,9 +216,78 @@
   .sc-anom-id {
     word-break: break-all;
   }
-  /* Design: the downloadable report option (shown «Próximamente» in the product). */
+  /* Design part D: the downloadable report (D86). */
+  .sc-rep {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  .sc-rep.bad {
+    background: var(--red-soft);
+    border-color: color-mix(in oklab, var(--red) 25%, transparent);
+  }
+  .sc-rep-i {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    background: var(--input-bg);
+    color: var(--text-muted);
+    align-self: start;
+  }
+  .sc-rep.bad .sc-rep-i {
+    background: transparent;
+    color: var(--red);
+  }
+  .sc-rep-b {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.45;
+  }
+  .sc-rep-b > b {
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .sc-rep-f {
+    word-break: break-all;
+  }
+  .sc-rep-err {
+    grid-column: 1 / -1;
+    flex-basis: 100%;
+    font-size: 12px;
+    color: var(--red);
+  }
+  .sc-rep-st {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sc-dl {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  @media (max-width: 560px) {
+    .sc-rep {
+      grid-template-columns: 32px minmax(0, 1fr);
+    }
+    .sc-rep > .btn {
+      grid-column: 2;
+      justify-self: start;
+      margin-top: 6px;
+    }
+  }
   .sc-rep-opt {
     display: flex;
+    cursor: pointer;
     gap: 10px;
     align-items: flex-start;
     padding: 10px 12px;
@@ -240,6 +309,10 @@
   }
   .sc-rep-opt b {
     font-weight: 600;
+  }
+  .sc-rep-opt.is-off {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
   .ab-seg button:disabled {
     opacity: 0.5;

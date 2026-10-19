@@ -238,6 +238,8 @@ const EVENT_ACTIONS = {
   // The admin asks to disable (`mcp.disable_request`); the platform closes it (`mcp.disable`).
   'mcp.pack.disable.requested': 'mcp.disable_request',
   'mcp.pack.disabled': 'mcp.disable',
+  // Design part D (D86): a run's PDF left Mango. Not a read: always shown.
+  'schedule.report_download': 'schedule.report_download',
 } as const;
 type EventAction = (typeof EVENT_ACTIONS)[keyof typeof EVENT_ACTIONS];
 const hasEventAction = (event: string): event is keyof typeof EVENT_ACTIONS =>
@@ -326,6 +328,7 @@ export type DetailText =
   | { kind: 'catalogSync'; added: number }
   | { kind: 'session'; action: SessionAction; sso: boolean }
   | { kind: 'directoryRead'; read: DirectoryRead }
+  | { kind: 'reportDownload'; task: string | null; run: string | null; file: string | null }
   | { kind: 'raw'; text: string };
 
 export interface AuditRow {
@@ -518,6 +521,14 @@ function detailOf(
       return { kind: 'reject', reason: str(detail.reason) ?? '' };
     case 'mapping.withdraw':
       return { kind: 'withdraw', changeId: str(detail.change_id) ?? '' };
+    case 'schedule.report_download':
+      // Who, which task, which run and which file: never the content (D86 (4)).
+      return {
+        kind: 'reportDownload',
+        task: str(detail.task_id),
+        run: str(detail.run),
+        file: str(detail.file),
+      };
     case 'access.view':
     case 'access.allow':
     case 'access.denied':

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
+import type { ApiClient } from '../../api/client';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { GovErrorState, Skel } from '../../components/admin/govKit';
@@ -23,6 +24,7 @@ import { useShell } from '../../layouts/ShellContext';
 import { formatRelative } from '../../lib/format';
 import { ApprovalDecision } from '../approvals/ApprovalDecision';
 import type { Approval } from '../approvals/model';
+import { ReportDownload } from '../schedules/reports';
 import {
   SOON_TABS,
   TABS,
@@ -32,6 +34,8 @@ import {
   keyOf,
   matchesView,
   runPath,
+  RUN_ID,
+  TASK_ID,
   titleOf,
   type InboxItem,
   type InboxPage as Page,
@@ -564,6 +568,7 @@ export function InboxPage() {
                   </button>
                 ) : null}
                 {current.run ? <RunLink item={current} /> : null}
+                {current.run?.ok ? <RunPdf key={current.item_id} api={api} item={current} /> : null}
               </div>
             </div>
           ) : (
@@ -577,6 +582,37 @@ export function InboxPage() {
       {stack}
     </>
   );
+}
+
+/**
+ * Design (Bandeja, part D of 2026-10-16b): with the PDF of the run ready, its notice also
+ * offers «Descargar PDF» (D86). The notice does not carry it: the run says, for its owner.
+ */
+function RunPdf({ api, item }: { api: ApiClient; item: InboxItem }) {
+  const [ready, setReady] = useState(false);
+  const taskId = item.run?.task_id ?? '';
+  const runId = item.run?.run_id ?? '';
+  useEffect(() => {
+    if (!TASK_ID.test(taskId) || !RUN_ID.test(runId)) return;
+    const controller = new AbortController();
+    api
+      .call(
+        'getTaskRun',
+        { path: { task_id: taskId, run_id: runId } },
+        { signal: controller.signal },
+      )
+      .then(
+        (found) => {
+          if (!controller.signal.aborted) setReady(found.report?.status === 'ready');
+        },
+        () => undefined,
+      );
+    return () => {
+      controller.abort();
+    };
+  }, [api, taskId, runId]);
+  if (!ready) return null;
+  return <ReportDownload api={api.call} taskId={taskId} runId={runId} button />;
 }
 
 function RunLink({ item }: { item: InboxItem }) {

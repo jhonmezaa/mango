@@ -69,7 +69,7 @@ export const AGENTS = {
       reports_to: null,
       model: 'm',
       allowed_models: ['m'],
-      tools: [],
+      tools: ['cost-explorer.get_cost_and_usage'],
       unavailable_tools: [],
       published_at: '2026-10-01T00:00:00Z',
       retired_at: null,

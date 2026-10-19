@@ -24,6 +24,30 @@ const event = (name: string, detail: Record<string, unknown>) => ({
 });
 
 describe('toAuditRow', () => {
+  it('a downloaded report is a configuration event with its run and file, never a read (D86)', () => {
+    const row = toAuditRow(
+      event('schedule.report_download', {
+        task_id: 'a'.repeat(32),
+        run: 'b'.repeat(32),
+        file: 'cierre-2026-10-01-0800.pdf',
+        outcome: 'applied',
+      }),
+      0,
+    );
+    expect(row).toMatchObject({
+      action: 'schedule.report_download',
+      known: 'schedule.report_download',
+      category: 'config',
+      detail: {
+        kind: 'reportDownload',
+        task: 'a'.repeat(32),
+        run: 'b'.repeat(32),
+        file: 'cierre-2026-10-01-0800.pdf',
+      },
+    });
+    expect(es.audit.actions.schedule.report_download).toBe('Reporte descargado');
+  });
+
   it('maps budget writes to the design actions with before/after and outcome', () => {
     const defaults = toAuditRow(
       event('settings.budget.updated', {

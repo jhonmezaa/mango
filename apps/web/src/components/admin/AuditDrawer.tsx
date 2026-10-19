@@ -86,6 +86,7 @@ export function AuditDrawer({
   const start = row.turn?.start ?? null;
   // Design «Lectura»: what a read of the directory read, in words (never the raw keys).
   const read = row.detail.kind === 'directoryRead' ? row.detail.read : null;
+  const download = row.detail.kind === 'reportDownload' ? row.detail : null;
   // The email may only break before the «@», never in the middle of a word (design `.au-mail`).
   const at = row.actor.indexOf('@');
 
@@ -224,6 +225,40 @@ export function AuditDrawer({
               <span>{formatRelative(row.ts)}</span>
             </div>
           </Sec>
+          {download && (
+            <Sec title={t('audit.drawer.download')}>
+              {download.task ? (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.downloadTask')}</span>
+                  <span className="mono" style={{ fontSize: 12 }}>
+                    {download.task}
+                  </span>
+                </div>
+              ) : null}
+              {download.run ? (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.downloadRun')}</span>
+                  <span className="mono" style={{ fontSize: 12 }}>
+                    {download.run}
+                  </span>
+                </div>
+              ) : null}
+              {download.file ? (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.downloadFile')}</span>
+                  <span
+                    className="mono"
+                    style={{ fontSize: 12, overflowWrap: 'anywhere', textAlign: 'right' }}
+                  >
+                    {download.file}
+                  </span>
+                </div>
+              ) : null}
+              <div className="mk-meta" style={{ marginTop: 4 }}>
+                {t('audit.drawer.downloadNote')}
+              </div>
+            </Sec>
+          )}
           {read && (
             <Sec title={t('audit.drawer.read')}>
               <div className="mk-kv">

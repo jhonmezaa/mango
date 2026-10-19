@@ -194,6 +194,7 @@ describe('SchedulesPage', () => {
             timezone: 'America/Mexico_City',
           },
           deliver: 'inbox',
+          report: false,
         },
       });
     });
@@ -493,15 +494,49 @@ describe('SchedulesPage', () => {
     expect(await screen.findByRole('dialog', { name: 'Budget check diario' })).toBeInTheDocument();
   });
 
-  it('the editor shows the downloadable report as «Próximamente»', async () => {
-    renderPage(apiWith(base(list([]))));
+  it('the editor offers the PDF of the trigger, off by default, only with an agent that reads costs', async () => {
+    const created = task({ task_id: 'c'.repeat(32), name: 'Cierre', report: 'cost_summary' });
+    const call = apiWith({ ...base(list([])), createNewTask: () => created });
+    renderPage(call);
     await userEvent.click(await screen.findByRole('button', { name: 'Nuevo schedule' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Reporte descargable')).toBeInTheDocument();
-    const option = within(dialog).getAllByText('También un PDF con gráficos')[0];
-    const soon = option?.closest('.soon');
-    expect(soon).not.toBeNull();
-    expect(within(soon as HTMLElement).getByText('Próximamente')).toBeInTheDocument();
-    expect(within(soon as HTMLElement).getByRole('checkbox', { hidden: true })).toBeDisabled();
+    const box = within(dialog).getByRole('checkbox', {
+      name: /También un PDF · Resumen de costos/,
+    });
+    expect(box).not.toBeChecked();
+    expect(
+      within(dialog).getByText(/El tipo lo fija el disparador: por horario, resumen de costos/),
+    ).toBeInTheDocument();
+    await userEvent.click(box);
+    expect(within(dialog).getByText(/Mango le pide al agente los datos/)).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Al detectar una anomalía de costo' }),
+    );
+    expect(
+      within(dialog).getByRole('checkbox', { name: /También un PDF · Investigación de anomalía/ }),
+    ).toBeChecked();
+    await userEvent.type(within(dialog).getByLabelText('Nombre'), 'Cierre');
+    await userEvent.type(within(dialog).getByLabelText('Tarea'), 'Investiga');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear schedule' }));
+    await waitFor(() => {
+      const created = call.mock.calls.find(([operation]) => operation === 'createNewTask');
+      expect((created?.[1] as { body: { report: boolean } } | undefined)?.body.report).toBe(true);
+    });
+  });
+
+  it('an agent that does not read costs cannot deliver a PDF', async () => {
+    const agents = {
+      items: AGENTS.items.map((agent) => ({ ...agent, tools: ['aws-cloudwatch.get_metric_data'] })),
+    };
+    renderPage(apiWith({ ...base(list([])), getAgents: () => agents }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuevo schedule' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('checkbox', { name: /También un PDF/ })).toBeDisabled();
+    expect(
+      within(dialog).getByText(
+        'FinOps no consulta costos: el reporte solo existe para agentes que leen Cost Explorer o la facturación.',
+      ),
+    ).toBeInTheDocument();
   });
 });

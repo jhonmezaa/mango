@@ -160,6 +160,9 @@ export const audit = {
       price: 'Precio de modelo cambiado',
       catalog_sync: 'Catálogo de Bedrock consultado',
     },
+    schedule: {
+      report_download: 'Reporte descargado',
+    },
     account: {
       mfa_enroll: 'MFA configurado',
       mfa_reset: 'MFA restablecido · sesiones cerradas',
@@ -184,6 +187,7 @@ export const audit = {
     chat_other: 'Preguntó a {{agent}} · {{count}} llamadas a tools',
     chatCost: 'costo {{amount}}',
     catalogSyncNone: 'Consultó el catálogo de Bedrock · sin modelos nuevos',
+    reportDownload: 'Descargó el reporte · ejecución {{run}}',
     catalogSync_one: 'Consultó el catálogo de Bedrock · {{count}} modelo nuevo',
     catalogSync_other: 'Consultó el catálogo de Bedrock · {{count}} modelos nuevos',
     // Design round of 2026-10-05: the two reads of Ajustes › Personas, with counts only.
@@ -286,6 +290,12 @@ export const audit = {
     denied: 'Denegado',
     authzNote:
       'Cada turno del chat registra su inicio y verifica el permiso de uso del agente. Si el turno termina, ambos se agrupan aquí; si falla antes, se ven como filas sueltas.',
+    download: 'Descarga',
+    downloadTask: 'Tarea',
+    downloadRun: 'Ejecución',
+    downloadFile: 'Archivo',
+    downloadNote:
+      'El enlace de descarga vence a los 5 minutos. Se registra quién, cuándo y qué ejecución; el contenido del reporte no.',
     read: 'Lectura',
     readWhat: 'Qué se leyó',
     readPeople: 'Búsqueda de personas',

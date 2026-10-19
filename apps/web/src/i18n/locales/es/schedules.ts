@@ -181,6 +181,9 @@ export const schedules = {
     result: 'Resultado',
     resultValueMine: 'En el detalle y en tu Bandeja · solo tú lo ves',
     resultValueOther: 'En el detalle y en la Bandeja de {{owner}} · solo {{owner}} lo ve',
+    report: 'Reporte',
+    reportValueMine: 'PDF · {{type}} · solo tú lo descargas',
+    reportValueOther: 'PDF · {{type}} · solo {{owner}} lo descarga',
     runsAs: 'Se ejecuta como',
     runsAsValue: '{{owner}} · con su identidad y sus permisos',
     agent: 'Agente',
@@ -212,6 +215,8 @@ export const schedules = {
     steps_one: 'Pasos · {{count}} consulta',
     steps_other: 'Pasos · {{count}} consultas',
     foot: 'Solo tú ves este resultado: se obtuvo con tu acceso.',
+    footReport:
+      'Solo tú ves este resultado y descargas el PDF: se obtuvo con tu acceso. Cada descarga queda en Auditoría.',
     loading: 'Cargando el resultado',
     error: 'No se pudo cargar el resultado.',
     none: 'Terminó sin texto.',
@@ -254,8 +259,14 @@ export const schedules = {
     resultValue: 'Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.',
     alsoSend: 'También enviar a',
     report: 'Reporte descargable',
-    reportOption: 'También un PDF con gráficos',
-    reportHint: 'Para guardarlo o compartirlo fuera de Mango.',
+    reportOption: 'También un PDF · {{type}}',
+    reportUnavailable:
+      '{{agent}} no consulta costos: el reporte solo existe para agentes que leen Cost Explorer o la facturación.',
+    reportNoAgent: 'Elige un agente.',
+    reportOn:
+      'No hace falta pedirlo en la tarea: Mango le pide al agente los datos y arma el PDF con una plantilla fija. Solo tú lo descargas; se guarda 90 días, como el resultado.',
+    reportOff:
+      'El tipo lo fija el disparador: por horario, resumen de costos; por anomalía, investigación de la anomalía.',
     note: 'Se ejecuta con tu identidad y tus permisos (no con los del agente) y usa {{budget}}. Si pierdes el acceso al agente{{central}}, la tarea se pausa sola. Si necesita escribir, se crea una aprobación pendiente.',
     noteBudget: 'el presupuesto de {{agent}}',
     noteBudgetNone: 'el presupuesto del agente',
@@ -283,6 +294,8 @@ export const schedules = {
     queued: '{{name}} en cola',
     doneTitle: '{{name}} completada',
     doneBody: 'El resultado está en el detalle de la tarea y en tu Bandeja.',
+    doneBodyReport:
+      'El resultado está en el detalle de la tarea y en tu Bandeja. El PDF tarda un poco más.',
     failedTitle: '{{name}} no se completó',
     seeRun: 'Ver ejecución',
     paused: '{{name}} pausada',
@@ -292,5 +305,38 @@ export const schedules = {
     error: 'No se pudo completar la acción. Inténtalo de nuevo.',
     limit: 'Llegaste al límite de schedules.',
     rateLimited: 'Demasiadas solicitudes. Espera un momento.',
+  },
+  report: {
+    type: {
+      cost_summary: 'Resumen de costos',
+      anomaly: 'Investigación de anomalía',
+    },
+    typeHint: {
+      cost_summary:
+        'Total del periodo y contra el anterior, costo diario, servicios y cuentas que más gastan, y las notas del agente.',
+      anomaly:
+        'Impacto, costo diario alrededor de la anomalía, qué servicio, cuenta y tipo de uso la explican, la conclusión del agente y sus consultas.',
+    },
+    fail: {
+      data: 'El agente no entregó los datos del reporte.',
+      size: 'El reporte superó el tamaño máximo (10 MB).',
+      render: 'No se pudo armar el PDF.',
+    },
+    generatingTitle: 'Generando el PDF · {{type}}',
+    generatingBody: 'El informe ya está abajo; el PDF tarda un poco más.',
+    failedTitle: 'No se pudo generar el PDF · {{type}}',
+    failedRetry:
+      'Puedes generarlo de nuevo con los mismos datos: no vuelve a ejecutar al agente ni tiene costo.',
+    failedKeep: 'El informe de abajo está completo.',
+    retry: 'Generar de nuevo',
+    readyMeta_one: 'PDF · {{count}} página · {{kb}} KB · se guarda hasta el {{until}}',
+    readyMeta_other: 'PDF · {{count}} páginas · {{kb}} KB · se guarda hasta el {{until}}',
+    download: 'Descargar',
+    downloadPdf: 'Descargar PDF',
+    preparing: 'Preparando…',
+    downloadError: 'No se pudo preparar la descarga. Vuelve a intentarlo.',
+    rowGenerating: 'Generando el PDF…',
+    rowFailed: 'No se generó el PDF',
+    rowReadyOther: 'PDF listo · solo {{owner}} lo descarga',
   },
 } as const;

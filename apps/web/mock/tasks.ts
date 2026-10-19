@@ -6,6 +6,11 @@
  * with neutral data: an investigation of cost anomalies, a task of another person paused by an
  * administrator, and a daily check with a run skipped for budget. A run started with «Ejecutar
  * ahora» ends two seconds later with a short answer in steps.
+ *
+ * Reports (D86): «Cierre mensual de costos» asks for a PDF (two ready, one that could not be
+ * drawn), the investigations too (one without the agent's data). A run of a task with a report
+ * leaves its PDF «generating» and ready 2.5 s later; POST /tasks/{id}/runs/{run}/report/download
+ * answers a neutral https link and POST …/report/retry draws it again.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -21,6 +26,17 @@ type Spec = {
   dom: number;
 };
 type Step = { text: string; tool: string | null };
+type ReportType = 'cost_summary' | 'anomaly';
+interface Report {
+  type: ReportType;
+  status: 'generating' | 'ready' | 'failed';
+  reason: 'data' | 'size' | 'render' | null;
+  period: string | null;
+  file: string | null;
+  pages: number | null;
+  size_bytes: number | null;
+  keep_until: string;
+}
 interface Run {
   run_id: string;
   trigger: 'manual' | 'schedule' | 'event';
@@ -35,6 +51,7 @@ interface Run {
   approvals: string[];
   anomaly: { start: string; end: string; id?: string | null } | null;
   waiting_since: string | null;
+  report: Report | null;
 }
 interface Task {
   task_id: string;
@@ -57,6 +74,7 @@ interface Task {
   created_at: string;
   updated_at: string;
   runs: Run[];
+  report: ReportType | null;
 }
 
 const ME = { user_id: 'mock-user', email: MOCK_USER, name: null };
@@ -72,6 +90,8 @@ const isoDay = (offset: number) => {
 };
 const TASK_ROUTE = /^\/tasks\/([0-9a-f]{32})(?:\/(run|pause|resume|retire))?$/;
 const RUN_ROUTE = /^\/tasks\/([0-9a-f]{32})\/runs\/([0-9a-f]{32})$/;
+const REPORT_ROUTE = /^\/tasks\/([0-9a-f]{32})\/runs\/([0-9a-f]{32})\/report\/(download|retry)$/;
+const TASK_FIELDS = ['name', 'agent_id', 'task', 'trigger', 'deliver', 'report'];
 const ZONES = ['America/Mexico_City', 'America/Bogota', 'America/Sao_Paulo', 'UTC'];
 
 const REPORT =
@@ -99,8 +119,37 @@ function run(overrides: Partial<Run>): Run {
     approvals: [],
     anomaly: null,
     waiting_since: null,
+    report: null,
     ...overrides,
   };
+}
+
+function report(type: ReportType, status: Report['status'], extra: Partial<Report> = {}): Report {
+  return {
+    type,
+    status,
+    reason: null,
+    period: null,
+    file: null,
+    pages: status === 'ready' ? 2 : null,
+    size_bytes: status === 'ready' ? 405 * 1024 : null,
+    keep_until: isoDay(89),
+    ...extra,
+  };
+}
+
+/** Design scReportFile, enough for the mock: the task, the day and the hour of the run. */
+function fileOf(task: Task, item: Run): string {
+  const slug = task.name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  const at = item.queued_at;
+  const tail = item.anomaly?.id ? item.anomaly.id.slice(0, 8) : at.slice(11, 16).replace(':', '');
+  return `${slug}-${at.slice(0, 10)}-${tail}.pdf`;
 }
 
 function seed() {
@@ -129,6 +178,7 @@ function seed() {
     owner: ME,
     created_at: created,
     updated_at: created,
+    report: 'anomaly',
     runs: [
       run({
         anomaly,
@@ -137,6 +187,7 @@ function seed() {
         queued_at: ago(20),
         started_at: ago(20),
         ended_at: ago(19),
+        report: report('anomaly', 'failed', { reason: 'data' }),
       }),
       run({
         anomaly: anomalyOf('81c2e1c2-4b5d-4e8f-9a01-81c22b3c4d5e'),
@@ -147,6 +198,7 @@ function seed() {
         started_at: ago(50),
         ended_at: ago(49),
         cost_usd: '0.2700',
+        report: report('anomaly', 'ready', { period: 'Amazon EC2' }),
       }),
       run({
         anomaly: anomalyOf('7f3ae1c2-4b5d-4e8f-9a01-7f3a2b3c4d5e'),
@@ -196,6 +248,7 @@ function seed() {
     owner: OTHER,
     created_at: created,
     updated_at: created,
+    report: null,
     runs: [
       run({ trigger: 'schedule', result: 'Sin novedades.', queued_at: ago(60 * 72) }),
       run({
@@ -227,6 +280,7 @@ function seed() {
     owner: ME,
     created_at: created,
     updated_at: created,
+    report: null,
     runs: [
       run({
         trigger: 'schedule',
@@ -244,7 +298,73 @@ function seed() {
       }),
     ],
   };
-  for (const task of [investigations, cohort, budget]) tasks.set(task.task_id, task);
+  const months = (back: number) => {
+    const at = new Date();
+    at.setUTCMonth(at.getUTCMonth() - back, 1);
+    at.setUTCHours(14, 0, 0, 0);
+    return at.toISOString();
+  };
+  const monthName = (back: number) =>
+    new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+      new Date(Date.parse(months(back + 1)) + 86_400_000),
+    );
+  const closing: Task = {
+    task_id: id(),
+    name: 'Cierre mensual de costos',
+    agent_id: 'finops',
+    task: 'Resume el costo del mes que cerró contra el anterior, por servicio y por cuenta.',
+    trigger: {
+      kind: 'schedule',
+      schedule: { freq: 'monthly', hour: 8, minute: 0, days: [], dow: 1, dom: 1 },
+      timezone: 'America/Mexico_City',
+      event_type: null,
+    },
+    status: 'active',
+    paused_reason: null,
+    paused_at: null,
+    paused_note: null,
+    paused_by: null,
+    retired: null,
+    owner: ME,
+    created_at: created,
+    updated_at: created,
+    report: 'cost_summary',
+    runs: [0, 1, 2].map((back) =>
+      run({
+        trigger: 'schedule',
+        result: `## Cierre de ${monthName(back)}\n\nEl costo subió un 5,5 % contra el mes anterior.`,
+        queued_at: months(back),
+        started_at: months(back),
+        ended_at: months(back),
+        cost_usd: '0.3800',
+        report:
+          back === 2
+            ? report('cost_summary', 'failed', { reason: 'render', period: monthName(back) })
+            : report('cost_summary', 'ready', { period: monthName(back) }),
+      }),
+    ),
+  };
+  for (const item of closing.runs) {
+    if (item.report?.status === 'ready') item.report.file = fileOf(closing, item);
+  }
+  for (const item of investigations.runs) {
+    if (item.report?.status === 'ready') item.report.file = fileOf(investigations, item);
+  }
+  for (const task of [investigations, closing, cohort, budget]) tasks.set(task.task_id, task);
+}
+
+/** The PDF is drawn 2.5 s later (design «Generando…»). */
+function draw(task: Task, item: Run) {
+  setTimeout(() => {
+    if (item.report?.status !== 'generating') return;
+    Object.assign(item.report, {
+      status: 'ready',
+      reason: null,
+      file: fileOf(task, item),
+      pages: 2,
+      size_bytes: 405 * 1024,
+    });
+  }, 2500);
 }
 seed();
 
@@ -282,8 +402,11 @@ function nextRuns(spec: Spec, zone: string, count = 3): string[] {
 }
 
 function summary(item: Run, owner: boolean) {
-  const { result, steps, ...rest } = item;
-  return { ...rest, has_result: owner && Boolean(result ?? steps.length) };
+  const { result, steps, report: pdf, ...rest } = item;
+  // Only the owner reads the period and the file of a PDF (D86 (4)).
+  const shown =
+    pdf && !owner ? { ...pdf, period: null, file: null, pages: null, size_bytes: null } : pdf;
+  return { ...rest, report: shown, has_result: owner && Boolean(result ?? steps.length) };
 }
 
 function out(task: Task) {
@@ -297,6 +420,7 @@ function out(task: Task) {
     task: own ? task.task : null,
     trigger: { ...task.trigger, daily_cap: task.trigger.event_type ? 5 : null },
     deliver: 'inbox',
+    report: task.report,
     status: task.status,
     paused_reason: task.paused_reason,
     paused_at: task.paused_at,
@@ -318,7 +442,7 @@ function out(task: Task) {
 
 function fromBody(
   body: Record<string, unknown>,
-): Pick<Task, 'name' | 'agent_id' | 'task' | 'trigger'> | null {
+): Pick<Task, 'name' | 'agent_id' | 'task' | 'trigger' | 'report'> | null {
   const trigger = body.trigger as Record<string, unknown> | undefined;
   if (
     typeof body.name !== 'string' ||
@@ -332,6 +456,7 @@ function fromBody(
     name: body.name,
     agent_id: body.agent_id,
     task: body.task,
+    report: body.report === true ? (trigger.kind === 'event' ? 'anomaly' : 'cost_summary') : null,
     trigger:
       trigger.kind === 'event'
         ? { kind: 'event', schedule: null, timezone: null, event_type: 'cost_anomaly' }
@@ -384,7 +509,7 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
     return true;
   }
   if (path === '/tasks' && req.method === 'POST') {
-    const body = await readObject(req, ['name', 'agent_id', 'task', 'trigger', 'deliver']);
+    const body = await readObject(req, TASK_FIELDS);
     const fields = body ? fromBody(body) : null;
     if (!fields) {
       sendError(res, 422, 'invalid_request', 'invalid fields');
@@ -406,6 +531,39 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
     };
     tasks.set(task.task_id, task);
     sendJson(res, 201, out(task));
+    return true;
+  }
+  const reportMatch = REPORT_ROUTE.exec(path);
+  if (reportMatch && req.method === 'POST') {
+    const task = tasks.get(reportMatch[1] ?? '');
+    const found = task?.runs.find((item) => item.run_id === reportMatch[2]);
+    if (!task || !found || !(await readObject(req, []))) {
+      sendError(res, 404, 'not_found', 'not found');
+      return true;
+    }
+    if (task.owner.user_id !== ME.user_id) {
+      sendError(res, 403, 'forbidden', 'only the owner downloads');
+      return true;
+    }
+    if (reportMatch[3] === 'download') {
+      if (found.report?.status !== 'ready' || !found.report.file) {
+        sendError(res, 409, 'report_not_ready', 'this run has no PDF to download');
+        return true;
+      }
+      // A neutral link: the mock never serves a PDF (design: «Descargar» opens nothing real).
+      sendJson(res, 200, {
+        url: `https://reports.example/${found.report.file}`,
+        file: found.report.file,
+      });
+      return true;
+    }
+    if (found.report?.status !== 'failed' || found.report.reason !== 'render') {
+      sendError(res, 409, 'report_not_retryable', 'this PDF cannot be generated again');
+      return true;
+    }
+    Object.assign(found.report, { status: 'generating', reason: null });
+    draw(task, found);
+    sendJson(res, 200, summary(found, true));
     return true;
   }
   const runMatch = RUN_ROUTE.exec(path);
@@ -436,7 +594,7 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
     return true;
   }
   if (!action && req.method === 'PUT') {
-    const body = await readObject(req, ['name', 'agent_id', 'task', 'trigger', 'deliver']);
+    const body = await readObject(req, TASK_FIELDS);
     const fields = body ? fromBody(body) : null;
     if (!fields) {
       sendError(res, 422, 'invalid_request', 'invalid fields');
@@ -459,6 +617,10 @@ export const handleTasks: ApiHandler = async (req, res, path) => {
     });
     task.runs.unshift(item);
     setTimeout(() => {
+      if (task.report) {
+        item.report = report(task.report, 'generating', { period: 'mes en curso' });
+        draw(task, item);
+      }
       Object.assign(item, {
         status: 'ok',
         started_at: item.queued_at,

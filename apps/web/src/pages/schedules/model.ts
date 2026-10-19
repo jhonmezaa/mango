@@ -243,3 +243,35 @@ export function autoPauseKind(task: Task): 'access' | 'central' {
   );
   return cause?.reason === 'not_central' ? 'central' : 'access';
 }
+
+/** The PDF of a run (D86), as the API shows it to whoever reads the task. */
+export type RunReport = NonNullable<TaskRun['report']>;
+export type ReportType = RunReport['type'];
+
+/** Design scReportable: only agents that read Cost Explorer or billing deliver a report. The
+ * server decides on its own (`report_unavailable`); this only disables the box. */
+const COST_TOOL = /^(cost-explorer|aws-billing)\./;
+export function readsCosts(tools: readonly string[]): boolean {
+  return tools.some((tool) => COST_TOOL.test(tool));
+}
+
+/** Design scReportType: fixed by the trigger (D86 (7)). */
+export function reportTypeOf(kind: 'schedule' | 'event' | 'manual'): ReportType {
+  return kind === 'event' ? 'anomaly' : 'cost_summary';
+}
+
+/**
+ * Opens a download link. A link from the API only: https, never shown or copied (D86 (4)); the
+ * server sends it as an attachment, so the page stays where it is.
+ */
+export function openDownload(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'https:') return false;
+  window.location.assign(parsed.href);
+  return true;
+}

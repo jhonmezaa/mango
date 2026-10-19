@@ -284,15 +284,19 @@ export function AdminAuditPage() {
                               : t('audit.detail.catalogSyncNone')
                             : d.kind === 'directoryRead'
                               ? directoryReadText(t, d.read)
-                              : d.kind === 'session'
-                                ? d.sso
-                                  ? // The name comes from `config.json`, shown as text.
-                                    [
-                                      t('audit.detail.session.startedSso'),
-                                      ...(idpName ? [idpName] : []),
-                                    ].join(' · ')
-                                  : t(`audit.detail.${d.action}`)
-                                : d.text;
+                              : d.kind === 'reportDownload'
+                                ? t('audit.detail.reportDownload', {
+                                    run: (d.run ?? '').slice(0, 8) || '—',
+                                  })
+                                : d.kind === 'session'
+                                  ? d.sso
+                                    ? // The name comes from `config.json`, shown as text.
+                                      [
+                                        t('audit.detail.session.startedSso'),
+                                        ...(idpName ? [idpName] : []),
+                                      ].join(' · ')
+                                    : t(`audit.detail.${d.action}`)
+                                  : d.text;
       return text;
     },
     [t, idpName],

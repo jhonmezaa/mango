@@ -358,3 +358,10 @@ export const ArchiveIcon = createIcon(
     <path d="M5 8v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
   </>,
 );
+export const DocumentIcon = createIcon(
+  'Document',
+  <>
+    <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" />
+    <path d="M14 3v6h6M8 13h8M8 17h6" />
+  </>,
+);
