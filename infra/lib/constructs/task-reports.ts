@@ -192,6 +192,8 @@ export class TaskReports extends Construct {
     this.function = new PythonFunction(this, "Function", {
       packageName: "mango-task-report",
       packagePath: "functions/task-report",
+      // Pillow, a dependency of ReportLab, only publishes manylinux_2_28 wheels for arm64.
+      manylinux: "manylinux_2_28",
       retainLogs: cfg.retainData,
       handler: "mango_task_report.handler.lambda_handler",
       functionName: mangoName(ns, "TaskReport"),

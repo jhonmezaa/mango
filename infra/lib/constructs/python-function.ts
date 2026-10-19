@@ -32,6 +32,11 @@ export interface PythonFunctionProps {
   readonly retainLogs?: boolean;
   /** Required for functions invoked asynchronously (AGENTS.md): events that fail every retry. */
   readonly deadLetterQueue?: sqs.IQueue;
+  /**
+   * Wheels for a newer glibc than manylinux2014, for a package whose dependencies no longer
+   * publish older ones (the Lambda Python 3.13 runtime is Amazon Linux 2023, glibc 2.34).
+   */
+  readonly manylinux?: "manylinux_2_28";
 }
 
 /**
@@ -48,7 +53,7 @@ export class PythonFunction extends Construct {
       tryBundle(outputDir: string): boolean {
         execFileSync(
           resolve(REPO_ROOT, "deployment/bundle-python.sh"),
-          [props.packageName, outputDir],
+          [props.packageName, outputDir, ...(props.manylinux ? [props.manylinux] : [])],
           { stdio: "inherit", cwd: REPO_ROOT },
         );
         return true;

@@ -3,7 +3,10 @@
 # Third-party dependencies are installed from Linux arm64 wheels only (no source builds);
 # workspace packages are pure Python and copied from their src/ directories.
 #
-# Usage: deployment/bundle-python.sh <workspace-package-name> <output-dir>
+# Usage: deployment/bundle-python.sh <workspace-package-name> <output-dir> [manylinux-tag]
+# The tag defaults to manylinux2014. A package whose wheels are only built for a newer glibc
+# names its tag (`manylinux_2_28`): the Lambda Python 3.13 runtime is Amazon Linux 2023 (glibc
+# 2.34). Only that package's asset changes.
 set -euo pipefail
 
 # Callers such as the CDK CLI may force colored output; requirement files must stay plain.
@@ -12,6 +15,11 @@ export NO_COLOR=1
 
 package="$1"
 out="$2"
+manylinux="${3:-manylinux2014}"
+if [[ ! "$manylinux" =~ ^manylinux(2014|_2_[0-9]+)$ ]]; then
+  echo "bundle-python.sh: unknown manylinux tag: $manylinux" >&2
+  exit 2
+fi
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
 mkdir -p "$out"
@@ -23,7 +31,7 @@ uv --color never export --project "$root" --package "$package" --no-dev --no-emi
 
 if grep -qvE '^\s*(#|$)' "$req"; then
   uv --color never pip install --quiet --requirement "$req" --target "$out" \
-    --python-platform aarch64-manylinux2014 --python-version 3.13 --only-binary :all:
+    --python-platform "aarch64-$manylinux" --python-version 3.13 --only-binary :all:
 fi
 
 # Copy the package itself and every workspace package it depends on.
