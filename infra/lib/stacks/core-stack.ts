@@ -41,6 +41,7 @@ import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-pr
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
 import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
+import { TaskReports } from "../constructs/task-reports.js";
 import { TaskPlatform } from "../constructs/tasks.js";
 import { Tools } from "../constructs/tools.js";
 import { UninstallGuard } from "../constructs/uninstall-guard.js";
@@ -189,6 +190,17 @@ export class CoreStack extends Stack {
     const alerts = new Alerts(this, "Alerts", { installation: cfg });
     // D78: a task run whose message failed every receipt never ran.
     tasks.alarmOnFailedRuns(alerts);
+    // D86: the PDF of a task run, drawn by a function of the release and downloaded only by
+    // the owner of the task with a link of 5 minutes.
+    const taskReports = new TaskReports(this, "TaskReports", {
+      installation: cfg,
+      tasksTable: tasks.table,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+      accessLogs,
+      alerts,
+    });
+    taskReports.grantApi(apiTaskRole);
     // Daily read-only reconciliation and the alarms of the publication path (TM-M6, TM-M9).
     // It also reports a release agent that serves content other than the release's (D42).
     new Reconciler(this, "Reconciler", {
@@ -472,6 +484,7 @@ export class CoreStack extends Stack {
         ...packPlatform.apiEnvironment,
         ...writeTools.apiEnvironment,
         ...tasks.apiEnvironment,
+        ...taskReports.apiEnvironment,
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
         // D60: who may be invited, and what Settings > General > Installation shows to
         // administrators (served by mango-api, not by the public config.json of the SPA).

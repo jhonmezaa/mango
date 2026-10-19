@@ -115,6 +115,7 @@ describe("operational alarms of Core", () => {
         "GatewayInterceptor-failing",
         "PreSignUp-throttled",
         "PreTokenGeneration-failing",
+        "TaskReport-failed",
         "TaskRuns-failed",
         "UninstallGuard-deletion-failed",
         "UninstallGuard-failed",
