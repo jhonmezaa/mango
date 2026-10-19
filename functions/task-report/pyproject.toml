@@ -1,0 +1,20 @@
+[project]
+name = "mango-task-report"
+version = "0.1.0"
+description = "Lambda that draws the downloadable PDF of a task run from the data its agent handed over (D86, D87)"
+requires-python = ">=3.13,<3.14"
+# ReportLab draws the PDF by code: no HTML, CSS or browser reaches the model's text (D87 (2)).
+# Pillow (a dependency of ReportLab) at 12.2: later versions have no manylinux2014 arm64 wheels,
+# the only platform `deployment/bundle-python.sh` installs from. The reports draw no images, so
+# Pillow never decodes anything here.
+dependencies = ["boto3>=1.43.104", "mango-core[agents]", "pillow>=12.2,<12.3", "reportlab>=4.4,<5"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_task_report"]

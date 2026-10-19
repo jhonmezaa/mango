@@ -21,6 +21,8 @@ dev = [
   "pytest>=8.4",
   "boto3-stubs[sts,ce,budgets,organizations,dynamodb,firehose,verifiedpermissions,bedrock-agentcore,bedrock-agentcore-control,bedrock-runtime,lambda,cognito-idp,kms,stepfunctions,iam,logs,s3,ssm,scheduler,sqs]>=1.40",
   "types-pyyaml>=6.0",
+  # Types of the PDF library of functions/task-report (D87).
+  "types-reportlab>=4.4",
   "moto[dynamodb]>=5.1",
   "httpx>=0.28",
   # Evaluates the real Cedar policies in tests (policies/cedar/platform); never shipped.
@@ -54,7 +56,7 @@ python_version = "3.13"
 files = ["packages/py", "connectors", "functions", "apps/api/src", "tests/eval", "deployment/pack-builder"]
 exclude = ["/tests/"]
 explicit_package_bases = true
-mypy_path = ["packages/py/mango-aws/src", "packages/py/mango-core/src", "packages/py/mango-packs/src", "packages/py/mango-pack-runtime/src", "deployment/pack-builder/src", "connectors/cost-explorer/src", "functions/gateway-interceptor/src", "functions/pre-token/src", "functions/pre-sign-up/src", "functions/admin-probe/src", "functions/approval-executor/src", "functions/provisioner/src", "functions/reconciler/src", "functions/budget-reconciler/src", "functions/task-auth/src", "functions/cost-anomaly-consumer/src", "apps/api/src", "tests/eval"]
+mypy_path = ["packages/py/mango-aws/src", "packages/py/mango-core/src", "packages/py/mango-packs/src", "packages/py/mango-pack-runtime/src", "deployment/pack-builder/src", "connectors/cost-explorer/src", "functions/gateway-interceptor/src", "functions/pre-token/src", "functions/pre-sign-up/src", "functions/admin-probe/src", "functions/approval-executor/src", "functions/provisioner/src", "functions/reconciler/src", "functions/budget-reconciler/src", "functions/task-auth/src", "functions/cost-anomaly-consumer/src", "functions/task-report/src", "apps/api/src", "tests/eval"]
 
 [[tool.mypy.overrides]]
 # Only installed for live runs of tests/eval (uv run --with ...), not in the workspace.

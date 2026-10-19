@@ -65,6 +65,8 @@ def test_valid_summary_rounds_amounts_to_cents() -> None:
         {"daily": [{"date": "2026-10-01", "cost": 1}]},
         {"services": [{"service": "S", "cost": 1}] * 2},
         {"services": [{"service": f"S{i}", "cost": 1} for i in range(201)]},
+        {"services": [{"service": "S", "cost": 400}]},
+        {"accounts": [{"account_id": "111122223333", "cost": 1, "previous": 300}]},
     ],
 )
 def test_invalid_summary_is_refused(change: dict[str, object]) -> None:

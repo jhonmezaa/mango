@@ -142,6 +142,14 @@ class CauseRow(_Strict):
     impact: Money
 
 
+def _fits(total: Decimal, parts: list[Decimal]) -> None:
+    """Rows never add up to more than their total (1 % or USD 1 of rounding): «Otros» is what
+    the total leaves, and a table that does not fit its total is not a report."""
+    listed = sum((p for p in parts if p > 0), Decimal(0))
+    if listed > max(total, Decimal(0)) + max(Decimal(1), abs(total) / 100):
+        raise ValueError("the rows add up to more than the total")
+
+
 def _days_in_order(days: Iterable[date]) -> None:
     seen = list(days)
     if seen != sorted(set(seen)):
@@ -176,6 +184,10 @@ class CostSummaryData(_Strict):
             raise ValueError("a service is repeated")
         if len({r.account_id for r in self.accounts}) != len(self.accounts):
             raise ValueError("an account is repeated")
+        for rows in (self.services, self.accounts):
+            _fits(self.total, [r.cost for r in rows])
+            if self.previous_total is not None:
+                _fits(self.previous_total, [r.previous for r in rows if r.previous is not None])
         return self
 
 
