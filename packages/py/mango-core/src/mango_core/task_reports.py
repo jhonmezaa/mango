@@ -29,7 +29,14 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
 
 REPORT_TOOL = "mango_report"
 """Name of the internal tool in the harness. Never a tool of the Gateway: it has no prefix."""
@@ -301,11 +308,56 @@ def parse(report_type: ReportType, raw: str | Mapping[str, Any]) -> CostSummaryD
         loaded = raw
     if not isinstance(loaded, Mapping):
         raise InvalidReportError("not an object")
+    model = DATA_MODELS[report_type]
     try:
-        return DATA_MODELS[report_type].model_validate(dict(loaded))
+        return model.model_validate(dict(loaded))
+    except ValidationError as exc:
+        raise InvalidReportError(f"invalid: {_rules(model, exc)}") from exc
     except ValueError as exc:
-        # Never the model's text in the error: it may be anything (TM-R6).
         raise InvalidReportError("invalid") from exc
+
+
+def _rules(model: type[BaseModel], error: ValidationError) -> str:
+    """Which rules failed and where, to diagnose a failed report: never the model's text or
+    values (TM-R6). A path keeps only the schema's own field names and list positions; a
+    message is kept only for this module's own rules (``value_error``), the rest by type."""
+    known = _field_names(model)
+    parts = []
+    for item in error.errors(include_url=False, include_input=False, include_context=True)[:5]:
+        where = (
+            ".".join(str(p) if isinstance(p, int) or p in known else "?" for p in item["loc"])
+            or "-"
+        )
+        what = item["type"]
+        if what == "value_error":
+            reason = item.get("ctx", {}).get("error")
+            if isinstance(reason, ValueError) and str(reason) in _OWN_RULES:
+                what = str(reason)
+        parts.append(f"{where}: {what}")
+    return "; ".join(parts)
+
+
+def _field_names(model: type[BaseModel]) -> frozenset[str]:
+    names: set[str] = set()
+    for row in (model, DayCost, DayCostExpected, ServiceRow, AccountRow, CauseRow):
+        names.update(row.model_fields)
+    return frozenset(names)
+
+
+_OWN_RULES = frozenset(
+    {
+        "control characters are not allowed",
+        "one line only",
+        "the rows add up to more than the total",
+        "days must be unique and in order",
+        "the period ends before it starts",
+        "the period is longer than 400 days",
+        "a day of the series is outside the period",
+        "a service is repeated",
+        "an account is repeated",
+        "the series is longer than 400 days",
+    }
+)
 
 
 # --- The daily series from a query (D87 (4)) ------------------------------------------------

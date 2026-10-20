@@ -80,6 +80,28 @@ def test_refused_input_never_carries_the_models_text() -> None:
     assert "secreto" not in str(error.value)
 
 
+@pytest.mark.parametrize(
+    ("change", "said"),
+    [
+        ({"services": [{"service": "S", "cost": 400}]}, ": the rows add up to more than the total"),
+        ({"services": [{"service": "a\nb", "cost": 1}]}, "services.0.service: one line only"),
+        ({"accounts": [{"account_id": "12", "cost": 1}]}, "accounts.0.account_id: string_pattern"),
+        ({"total": "NaN"}, "total: finite_number"),
+    ],
+)
+def test_refused_input_says_which_rule_failed(change: dict[str, object], said: str) -> None:
+    with pytest.raises(tr.InvalidReportError) as error:
+        tr.parse("cost_summary", {**SUMMARY, **change})
+    assert said in str(error.value)
+
+
+def test_refused_input_never_names_the_models_own_keys_or_values() -> None:
+    with pytest.raises(tr.InvalidReportError) as error:
+        tr.parse("cost_summary", {**SUMMARY, "clave secreta": "valor secreto"})
+    assert "secret" not in str(error.value)
+    assert "?: extra_forbidden" in str(error.value)
+
+
 def test_input_too_large_or_not_json_is_refused() -> None:
     with pytest.raises(tr.InvalidReportError):
         tr.parse("anomaly", "x" * (tr.MAX_INPUT_CHARS + 1))

@@ -1932,8 +1932,9 @@ def _report_document(
             data,
             [reports.ToolCall(c["id"], c["name"], c["input"], c["output"]) for c in calls],
         )
-    except reports.InvalidReportError:
-        logger.info("the data of a task report did not validate")
+    except reports.InvalidReportError as error:
+        # The rule and the field that failed, never what the model wrote (TM-R6).
+        logger.info("the data of a task report did not validate: %s", error)
         return None
     return json.dumps(document, ensure_ascii=False, separators=(",", ":"))
 
