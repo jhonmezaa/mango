@@ -225,6 +225,14 @@ function seed() {
         ended_at: yesterday(15),
         cost_usd: null,
       }),
+      // Before the version that keeps the anomaly id (D85): only dates, and no report.
+      run({
+        anomaly: { start: isoDay(-4), end: isoDay(-3), id: null },
+        result: REPORT,
+        queued_at: ago(60 * 24 * 3),
+        started_at: ago(60 * 24 * 3),
+        ended_at: ago(60 * 24 * 3 - 1),
+      }),
     ],
   };
   const cohort: Task = {
