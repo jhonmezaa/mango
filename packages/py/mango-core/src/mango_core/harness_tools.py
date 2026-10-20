@@ -21,3 +21,13 @@ def gateway_tool_name(target: str, tool: str) -> str:
 def allowed_tool(target: str, tool: str) -> str:
     """``allowedTools`` entry for exactly one Gateway tool (no globs)."""
     return f"@{GATEWAY_MCP_SERVER}/{gateway_tool_name(target, tool)}"
+
+
+def allowed_inline_tool(name: str) -> str:
+    """``allowedTools`` entry for exactly one ``inline_function`` tool (D87 (3)).
+
+    The harness addresses an inline function as its own server: ``@<name>/<name>``. A plain
+    name matches only built-in tools, so the harness would drop the inline function before
+    the model sees it (seen in an installation on 2026-10-19).
+    """
+    return f"@{name}/{name}"

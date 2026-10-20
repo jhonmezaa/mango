@@ -25,7 +25,7 @@ from botocore.exceptions import ClientError, EventStreamError
 from mango_api.pricing import Usage
 from mango_core import invocation
 from mango_core.agents import AgentLimits
-from mango_core.harness_tools import GATEWAY_MCP_SERVER
+from mango_core.harness_tools import GATEWAY_MCP_SERVER, allowed_inline_tool
 
 if TYPE_CHECKING:
     from mypy_boto3_bedrock_agentcore import BedrockAgentCoreClient
@@ -288,7 +288,10 @@ def build_request(
             ),
         ],
         # Exactly the tools of the published version, by name (no globs), and the inline ones.
-        "allowedTools": [*agent.allowed_tools, *(str(t["name"]) for t in inline_tools)],
+        "allowedTools": [
+            *agent.allowed_tools,
+            *(allowed_inline_tool(str(t["name"])) for t in inline_tools),
+        ],
         "maxIterations": limits.max_iterations,
         "maxTokens": limits.max_tokens,
         "timeoutSeconds": limits.timeout_seconds,

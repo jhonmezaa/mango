@@ -192,7 +192,10 @@ def test_a_completed_run_keeps_the_data_and_asks_for_its_pdf(env: Env, reports: 
     # The internal tool is only in this run, with the schema of its type, and allowed.
     inline = [t for t in request["tools"] if t["type"] == "inline_function"]
     assert [t["name"] for t in inline] == [tr.REPORT_TOOL]
-    assert tr.REPORT_TOOL in request["allowedTools"]
+    # As the harness addresses an inline function: a plain name only matches built-in tools
+    # and the harness would drop it before the model sees it.
+    assert f"@{tr.REPORT_TOOL}/{tr.REPORT_TOOL}" in request["allowedTools"]
+    assert tr.REPORT_TOOL not in request["allowedTools"]
     run = _run(env, task)
     assert run["status"] == "ok"
     assert run["report"]["status"] == "generating"
