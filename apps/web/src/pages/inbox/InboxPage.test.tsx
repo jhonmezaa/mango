@@ -124,6 +124,11 @@ describe('InboxPage', () => {
       'Te piden aprobar: Crear un presupuesto mensual de costo en AWS Budgets, sin notificaciones.',
     );
     expect(rows[0]).toHaveTextContent('FinOps · aws-budgets.create_budget · name=team-a');
+    // Design: the approval body goes in mono, the run summaries do not.
+    expect(within(rows[0] as HTMLElement).getByText(/^aws-budgets\.create_budget · /)).toHaveClass(
+      'mono',
+    );
+    expect(rows[1]?.querySelector('.mono')).toBeNull();
     expect(within(rows[0] as HTMLElement).getByRole('img', { name: 'No leído' })).toBeVisible();
     expect(rows[1]).toHaveTextContent('Budget check diario · completada');
     expect(rows[1]).toHaveTextContent(`FinOps · ${XSS}`);
@@ -183,6 +188,7 @@ describe('InboxPage', () => {
     renderPage(apiWith({ listInbox: () => page([item]) }));
     await user.click((await list()).getByRole('option'));
     expect(screen.getByText('Aprobación')).toBeVisible();
+    expect(document.querySelector('.inbox-detail-b')).toHaveClass('mono');
     expect(screen.getByRole('button', { name: /Firmar|Aprobar/ })).toBeVisible();
     await user.click(screen.getByRole('button', { name: /Ver en Aprobaciones/ }));
     expect(await screen.findByText('approvals')).toBeVisible();

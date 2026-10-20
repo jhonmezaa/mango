@@ -128,6 +128,10 @@
   .inbox-row-s {
     color: var(--text-muted);
   }
+  /* Design: the approval body (`{tool} · k=v, … · {regla}`) goes in mono, clipped in the row. */
+  .inbox-row-mono {
+    font-size: 12px;
+  }
   .inbox-row-time {
     font-size: 13px;
     color: var(--text-muted);
@@ -224,6 +228,9 @@
     line-height: 1.6;
     margin: 0 0 22px;
     overflow-wrap: anywhere;
+  }
+  .inbox-detail-b.is-mono {
+    font-size: 12.5px;
   }
   .inbox-card {
     padding: 16px;

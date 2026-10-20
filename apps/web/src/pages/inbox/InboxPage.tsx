@@ -117,7 +117,11 @@ function InboxRow({
         <span className="inbox-row-t">{titleOf(t, item)}</span>
         <span className="inbox-row-s">
           {item.agent_name ? `${item.agent_name} · ` : ''}
-          {bodyOf(t, item)}
+          {item.approval ? (
+            <span className="mono inbox-row-mono">{bodyOf(t, item)}</span>
+          ) : (
+            bodyOf(t, item)
+          )}
         </span>
       </span>
       <span className="inbox-row-time">{formatRelative(item.at, now)}</span>
@@ -540,7 +544,9 @@ export function InboxPage() {
               <div className="inbox-detail-m">
                 {current.agent_name ?? t('inbox.system')} · {formatRelative(current.at, now)}
               </div>
-              <p className="inbox-detail-b">{bodyOf(t, current)}</p>
+              <p className={current.approval ? 'inbox-detail-b mono is-mono' : 'inbox-detail-b'}>
+                {bodyOf(t, current)}
+              </p>
               {current.approval ? (
                 <div className="card inbox-card">
                   <ApprovalDecision
