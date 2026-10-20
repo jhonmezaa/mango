@@ -67,7 +67,7 @@ const scReportable = (a) => !!a && (a.mcp || []).some(id => /cost|billing/.test(
 const scSlug = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
 const scParts = (d, tz) => { const p = {}; try { new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d).forEach(x => { p[x.type] = x.value; }); } catch (e) { return scParts(d, 'UTC'); } return p; };
 // Nombre del archivo: tarea + fecha (zona de la tarea; UTC en las de anomalía) + hora, o el id corto de la anomalía.
-const scReportFile = (s, r) => { const an = s.trigger === 'anomaly'; const p = scParts(new Date(r.at), an ? 'UTC' : s.tz); return scSlug(s.name) + '-' + p.year + '-' + p.month + '-' + p.day + '-' + (an && r.anomaly ? scShortId(r.anomaly.id) : p.hour + p.minute) + '.pdf'; };
+const scReportFile = (s, r) => { const an = s.trigger === 'anomaly'; const p = scParts(new Date(r.at), an ? 'UTC' : s.tz); return scSlug(s.name) + '-' + p.year + '-' + p.month + '-' + p.day + '-' + (an && r.anomaly?.id ? scShortId(r.anomaly.id) : p.hour + p.minute) + '.pdf'; };
 const scKeepUntil = (r) => new Date(new Date(r.at).getTime() + 90 * 864e5).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 // En el prototipo, «Descargar» abre la plantilla del PDF. En el producto, cada clic pide un enlace que vence a los 5 min.
 const scDownload = (s, r) => { const S = window.MangoStore; if (S.get().simReport === 'dlfail') return false; const file = scReportFile(s, r); S.log('schedule.report_download', s.id, 'Descargó el reporte de ' + s.name + ' · ejecución ' + r.id, { run: r.id, file, task: s.name }); window.open(encodeURI('Reporte de tarea.html#' + (s.trigger === 'anomaly' ? 'anomalia' : 'costos')), '_blank', 'noopener'); return true; };
@@ -107,10 +107,11 @@ function scResultFor(s, j = 0, an = null) {
 }
 
 function scAnomalyTask() {
-  const now = Date.now(), d0 = scDayUTC(0), d1 = scDayUTC(-1), d2 = scDayUTC(-2);
+  const now = Date.now(), d0 = scDayUTC(0), d1 = scDayUTC(-1), d2 = scDayUTC(-2), d3 = scDayUTC(-3), d4 = scDayUTC(-4);
   const T = (ms) => new Date(ms).toISOString();
   const at0 = (min, sec = 0) => T(Math.max(now - min * 6e4 + sec * 1e3, d0 + 6e4 + sec * 1e3));
   const at1 = (h, m = 0, sec = 0) => T(d1 + h * 36e5 + m * 6e4 + sec * 1e3);
+  const at3 = (h, m = 0) => T(d3 + h * 36e5 + m * 6e4);
   const an = (id, service, account, usage, impact, expected, from, to) => ({ id, service, account, usage, impact, expected, from: T(from), to: T(to) });
   const s = { id: 'sch-10', name: 'Investigar anomalías de costo', agent: 'fin-01', trigger: 'anomaly', owner: 'Usuario 1', status: 'active', deliver: 'inbox', tz: null, p: { freq: 'daily', hour: 9, min: 0 }, cron: null, cronLabel: SC_ANOMALY,
     task: 'Cuando AWS detecte una anomalía de costo, identifica qué cuenta, servicio y tipo de uso la explican, compárala con las dos semanas anteriores y propone el siguiente paso.' };
@@ -126,6 +127,7 @@ function scAnomalyTask() {
     y6: an('6f58e1c2-4b5d-4e8f-9a01-6f582b3c4d5e', 'Amazon S3', '333333333333', 'Requests-Tier1', 22.6, 80.5, d2, d1),
     y7: an('7012e1c2-4b5d-4e8f-9a01-70122b3c4d5e', 'Amazon RDS', '111111111111', 'StorageIOUsage', 18.4, 64, d2, d1),
     y8: an('7105e1c2-4b5d-4e8f-9a01-71052b3c4d5e', 'AWS Lambda', '222222222222', 'Duration', 12.9, 41, d2, d1),
+    z1: an(null, 'Amazon EC2', '222222222222', 'BoxUsage:c6i.xlarge', 58.7, 205.3, d4, d3),
   };
   const R = (id, at, status, a, extra = {}) => ({ id: 'sch-10-' + id, at, status, anomaly: a, ...extra });
   const ok = (id, at, a, ms, cost, extra) => ({ ...R(id, at, 'ok', a, { ms, cost, report: { status: 'ready', pages: 2, kb: 240 + Math.round(a.impact) % 80 }, ...extra }), result: scResultFor(s, 0, a) });
@@ -142,6 +144,8 @@ function scAnomalyTask() {
     ok('y3', at1(9, 15), A.y3, 52800, 0.34),
     ok('y2', at1(6, 30), A.y2, 37600, 0.22),
     ok('y1', at1(2, 10), A.y1, 35900, 0.21),
+    // Anterior a la versión que guarda el id: solo fechas, y sin reporte.
+    { ...R('z1', at3(11, 20), 'ok', A.z1, { ms: 43100, cost: 0.26 }), result: scResultFor(s, 0, A.z1) },
   ];
   return s;
 }
@@ -215,7 +219,7 @@ function ScRunRow({ r, s, canSee, rep, onOpen, onApproval }) {
       {r.status === 'running' ? <span className="g-spin" aria-hidden="true"></span> : <span className="tk-dot" style={{ background: col }} aria-hidden="true"></span>}
       <div className="sc-run-b">
         <span>{lbl}{r.manual ? ' · manual' : ''}</span>
-        {r.anomaly && <span className="mk-meta">Anomalía · {scRange(r.anomaly.from, r.anomaly.to)} · <span className="mono">{scShortId(r.anomaly.id)}</span></span>}
+        {r.anomaly && <span className="mk-meta">Anomalía · {scRange(r.anomaly.from, r.anomaly.to)}{r.anomaly.id && <> · <span className="mono">{scShortId(r.anomaly.id)}</span></>}</span>}
         {why && <span className="mk-meta" style={r.status === 'failed' ? { color: 'var(--red)' } : null}>{why}</span>}
         {r.status === 'queued' && s.trigger === 'anomaly' && <span className="mk-meta">Espera a que termine la investigación anterior</span>}
         {r.waitMin > 0 && <span className="mk-meta">Esperó {r.waitMin} min en cola</span>}
@@ -243,7 +247,7 @@ function ScResult({ s, r, agent, rep, onBack, onRetry }) {
         <div className="sc-res-h">Resultado · {when}</div>
         <div className="mk-meta" style={{ marginTop: 3 }}>{meta}</div>
       </div>
-      {A && <div className="sc-anom"><span className="mk-sec-t">Anomalía que la arrancó</span><span>{scRange(A.from, A.to)}</span><span className="mk-meta mono sc-anom-id">{A.id}</span></div>}
+      {A && <div className="sc-anom"><span className="mk-sec-t">Anomalía que la arrancó</span><span>{scRange(A.from, A.to)}</span>{A.id && <span className="mk-meta mono sc-anom-id">{A.id}</span>}</div>}
       {rep && r.report && <ScRepCard s={s} r={r} onRetry={onRetry} />}
       {steps.length > 0 && <details className="sc-steps"><summary>Pasos · {steps.length === 1 ? '1 consulta' : steps.length + ' consultas'}</summary><ol>{steps.map((x, i) => <li key={i}><span>{x.text}</span>{x.tool && <span className="mk-meta mono">{x.tool}</span>}</li>)}</ol></details>}
       <div className="md" dangerouslySetInnerHTML={{ __html: window.renderMarkdown(res.report || res.text || '') }}></div>

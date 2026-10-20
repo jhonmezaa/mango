@@ -643,7 +643,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
     const old = (at) => Date.now() - new Date(at).getTime() > 864e5;
     const live = (ap) => !(ap.expiresMin != null && Date.now() - new Date(ap.at).getTime() > ap.expiresMin * 6e4);
     const pinned = approvals.filter(ap => ap.status === 'pending' && live(ap) && S.can('approval.decide') && ap.requestedBy !== me && !(ap.approvalsGiven || []).includes(me)).sort(byAt)
-      .map(ap => ({ id: 'ap-' + ap.id, type: 'approval', approvalId: ap.id, agent: ap.agent, title: 'Te piden aprobar: ' + ap.action, body: (avail || !ap.impact ? '' : ap.impact + '. ') + 'Política: ' + ap.policy + '.', at: ap.at }));
+      .map(ap => ({ id: 'ap-' + ap.id, type: 'approval', approvalId: ap.id, agent: ap.agent, title: 'Te piden aprobar: ' + ap.action, body: window.apCallLine ? window.apCallLine(ap) : ap.tool + ' · ' + ap.policy, mono: true, impact: avail ? null : ap.impact, at: ap.at }));
     const mine = scheds.filter(s => s.owner === me);
     const runs = mine.flatMap(s => (s.runs || []).filter(r => r.status === 'ok' || r.status === 'failed').map(r => { const ok = r.status === 'ok'; return { id: 'run-' + r.id, type: 'run', agent: s.agent, ok, title: s.name + (ok ? ' · completada' : ' · no se completó'), body: ok ? window.scSummary(r) : (window.scReason(r) || 'No se pudo completar'), at: r.at, scheduleId: s.id, runId: r.id, seedRead: old(r.at) }; }));
     if (sim === 'gone' && runs.length) { runs.sort(byAt); runs[0] = { ...runs[0], runId: runs[0].runId + '-vencida', seedRead: false }; }
@@ -680,14 +680,16 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const save = (n) => { if (S.get().simInbox === 'save') { toast?.({ tone: 'error', msg: 'No se pudo guardar el cambio. Vuelve a intentarlo.' }); return false; } persist(n); return true; };
   const deco = (it) => ({ ...it, read: state[it.id]?.read ?? !!it.seedRead, archived: !!state[it.id]?.archived });
   const all = [...pinned, ...rest].map(deco);
-  const shown = rest.slice(0, pages * PAGE);
-  const hasMore = rest.length > shown.length;
-  const loaded = [...pinned, ...shown].map(deco);
   const unread = all.filter(i => !i.read && !i.archived).length;
   React.useEffect(() => { S.set({ inboxUnread: unread }); }, [unread]);
   const inTab = (i) => arch ? i.archived : !i.archived && (tab === 'all' || (tab === 'unread' && !i.read) || (tab === 'approvals' && (i.type === 'approval' || i.type === 'request')) || (tab === 'mentions' && i.type === 'mention'));
-  const list = loaded.filter(inTab);
+  // Cada pestaña pide sus páginas con su filtro: «Mostrar más» solo si quedan avisos de esa pestaña (nunca bajo «Nada por aquí.»).
   const paged = arch || tab === 'all' || tab === 'unread';
+  const tabRest = all.slice(pinned.length).filter(inTab);
+  const shown = paged ? tabRest.slice(0, pages * PAGE) : tabRest;
+  const hasMore = paged && tabRest.length > shown.length;
+  const list = [...all.slice(0, pinned.length).filter(inTab), ...shown];
+  React.useEffect(() => { setPages(1); setMore(null); }, [tab, arch]);
   const open = (it) => { setSel(it.id); if (!it.read && S.get().simInbox !== 'save') persist({ ...state, [it.id]: { ...state[it.id], read: true } }); if (narrow) setTimeout(() => document.getElementById('inbox-detail-h')?.focus(), 0); };
   const back = () => { const id = sel; setSel(null); setTimeout(() => document.getElementById('inbox-row-' + id)?.focus(), 0); };
   React.useEffect(() => { if (!narrow || !sel) return; const h = (e) => { if (e.key === 'Escape') back(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [narrow, sel]);
@@ -730,7 +732,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
                     <span style={{ color: col, display: 'flex', paddingTop: 2 }}><Ic size={15} /></span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 13.5, fontWeight: it.read ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</span>
-                      <span style={{ display: 'block', fontSize: 13.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ag ? ag.name + ' · ' : ''}{it.body}</span>
+                      <span style={{ display: 'block', fontSize: 13.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ag ? ag.name + ' · ' : ''}{it.mono ? <span className="mono" style={{ fontSize: 12 }}>{it.body}</span> : it.body}</span>
                     </span>
                     <span style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{window.fmtAgo(it.at)}</span>
                   </button>
@@ -764,7 +766,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
                 </div>
                 <h2 id="inbox-detail-h" tabIndex={-1} style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', margin: '0 0 6px', outline: 'none' }}>{current.title}</h2>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : 'Sistema'} · {window.fmtAgo(current.at)}</div>
-                {current.type !== 'mention' && <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 22px' }}>{current.body}</p>}
+                {current.impact && <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 8px' }}>{current.impact}.</p>}
+                {current.type !== 'mention' && (current.mono ? <p className="mono" style={{ fontSize: 12.5, lineHeight: 1.6, margin: '0 0 22px', overflowWrap: 'anywhere' }}>{current.body}</p> : <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 22px' }}>{current.body}</p>)}
                 {current.reason && <div className="mc-alert" style={{ marginBottom: 18 }}><I.Info size={14} /><div>Motivo: {current.reason}</div></div>}
                 {ap && <div className="card" style={{ padding: 16, marginBottom: 16 }}><window.ApprovalDecision ap={ap} /></div>}
                 {current.type === 'mention' && (

@@ -22,6 +22,8 @@ const apAvail = () => !!window.MangoStore.get().avail;
 const apId = (ap) => { if (!apAvail()) return ap.id; let h = 2166136261; for (let i = 0; i < ap.id.length; i++) { h ^= ap.id.charCodeAt(i); h = Math.imul(h, 16777619); } let h2 = h ^ 0x9e3779b9; h2 = Math.imul(h2 ^ (h2 >>> 15), 2246822519); return 'APR-' + ((h >>> 0).toString(36).padStart(7, '0') + (h2 >>> 0).toString(36)).slice(0, 8).toUpperCase(); };
 const apTitle = (ap) => { if (!apAvail()) return ap.action; const [srv, ...rest] = (ap.tool || '').split('.'); const t = window.Lifecycle?.serverOf?.(srv)?.tools?.find(x => x.name === rest.join('.')); return t?.desc || ap.action; };
 const apWho = (ap) => ap.requestedBy || 'quien la pidió';
+// Lo que va a ejecutar, en una línea ({tool} · k=v, … · {regla}): tarjeta del chat y aviso de la Bandeja.
+const apCallLine = (ap) => (ap.tool || '') + (Object.keys(ap.params || {}).length ? ' · ' + Object.entries(ap.params).map(([k, v]) => k + '=' + (Array.isArray(v) ? v.join('|') : v && typeof v === 'object' ? JSON.stringify(v) : v)).join(', ') : '') + ' · ' + ap.policy;
 const REJECT_REASONS = ['Falta ventana de mantenimiento', 'Necesita más contexto', 'El riesgo no se justifica', 'Hazlo primero en staging'];
 const isExpired = (ap) => { const l = minsLeft(ap); return (ap.status === 'pending' || ap.status === 'approved') && l != null && l <= 0; };
 const urgency = (ap) => { const l = minsLeft(ap); if (l != null && l <= 0) return -1e9; return (apAvail() ? 1 : (RISK[ap.risk]?.[2] || 1)) * 1000 - (l == null ? 9999 : l); };
@@ -333,7 +335,7 @@ function ApprovalCard({ id }) {
         <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{apId(ap)}</span>
       </div>
       <div style={{ fontSize: 13.5, marginBottom: 4 }}>{apTitle(ap)}</div>
-      <div className="mono" style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 12, overflowWrap: 'anywhere' }}>{ap.tool}{Object.keys(ap.params || {}).length ? ' · ' + Object.entries(ap.params).map(([k, v]) => k + '=' + (Array.isArray(v) ? v.join('|') : v)).join(', ') : ''} · {ap.policy}</div>
+      <div className="mono" style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 12, overflowWrap: 'anywhere' }}>{apCallLine(ap)}</div>
       <ApprovalDecision ap={ap} compact />
     </div>
   );
@@ -359,4 +361,4 @@ function SelfConfirmCard({ msg, onConfirm, onCancel }) {
   );
 }
 
-Object.assign(window, { ApprovalsView, ApprovalCard, ApprovalDecision, SelfConfirmCard, fmtAgo });
+Object.assign(window, { ApprovalsView, ApprovalCard, ApprovalDecision, SelfConfirmCard, fmtAgo, apCallLine });
