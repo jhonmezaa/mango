@@ -54,9 +54,9 @@ def aws_event(**changes: Any) -> dict[str, Any]:
             "feedback": "string",
             "impact": {
                 "maxImpact": 151,
-                "totalActualSpend": 1301,
+                "totalActualSpend": 1301.37,
                 "totalExpectedSpend": 300,
-                "totalImpact": 1001,
+                "totalImpact": 1001.37,
                 "totalImpactPercentage": 333.67,
             },
             "rootCauses": [
@@ -238,7 +238,9 @@ def test_no_text_written_by_people_reaches_the_engine_the_audit_or_the_log(
         lab.run(aws_event(**{"detail.anomalyId": HOSTILE}))
     seen = json.dumps(lab.engine.bodies)
     seen += json.dumps(lab.firehose.records) + caplog.text
-    for forbidden in (HOSTILE, OTHER, "1001", "Amazon Elastic Compute Cloud"):
+    # An amount with its decimals: random ids and timestamps never hold a dot, so a match is
+    # the amount itself, not chance (a bare "1001" turned up in random hex now and then).
+    for forbidden in (HOSTILE, OTHER, "1001.37", "Amazon Elastic Compute Cloud"):
         assert forbidden not in seen
 
 
