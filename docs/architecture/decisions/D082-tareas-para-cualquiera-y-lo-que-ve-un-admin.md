@@ -1,7 +1,7 @@
 # D82 · Cualquiera con un agente crea tareas; un administrador no ve la instrucción y dice por qué pausa
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «Que cualquiera con un agente cree tareas» y «Las dos (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D82 (4)»))
+- **Fecha:** 2026-10-16 (los puntos 1 a 3, tomados por el dueño ese día, por menú: «Que cualquiera con un agente cree tareas» y «Las dos (Recomendada)»; el punto 4 y el cómo de los tres primeros, propuestos por un agente; el punto 4, aceptado por el dueño el 2026-10-16, por menú («Aceptar D82 (4)»); lo que mostró la instalación, punto 5, nota del 2026-10-20 propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (5), (18) y (19)
 - **Precisada por:** —
 
@@ -28,4 +28,9 @@ Origen: la ronda de Claude Design del 2026-10-16, que respondió al brief de tar
 - **Cuándo empezó a esperar** (`waiting_since`, D81): la pantalla dice «Espera a que termine la investigación anterior» y, al correr, «Esperó n min en cola».
 - **Las próximas ejecuciones del editor**, calculadas por el servidor con la zona elegida antes de guardar (`POST /api/tasks/next-runs`): cálculo puro sobre un cuerpo validado, sin leer ni escribir nada.
 
-Comprobado con tests de Python (`apps/api/tests/test_tasks.py`, `test_cedar_policies.py`) y de la web, y en el navegador contra el mock. Modelo de amenazas: TM-T4, TM-T8 y TM-T11 de [`tasks-threat-model.md`](../../security/threat-models/tasks-threat-model.md). **Sin ver en una instalación.** En una actualización, el change set cambia la política `CreateTask` del almacén de políticas.
+Comprobado con tests de Python (`apps/api/tests/test_tasks.py`, `test_cedar_policies.py`) y de la web, y en el navegador contra el mock. Modelo de amenazas: TM-T4, TM-T8 y TM-T11 de [`tasks-threat-model.md`](../../security/threat-models/tasks-threat-model.md). Visto en una instalación (punto 5). En una actualización, el change set cambia la política `CreateTask` del almacén de políticas.
+
+**(5) Lo que mostró la instalación (nota del 2026-10-20, propuesta por un agente).** En la instalación de un cliente:
+- **La pausa de un administrador.** Un administrador pausó la tarea por horario de otra persona: la API exigió el motivo, el detalle dice «Pausada por {administrador}» con el motivo y «Ejecutar ahora» queda desactivado; el dueño lo lee en el mismo aviso. Queda en Auditoría `task.paused` con `reason: admin`. Después se reanudó.
+- **Lo que ve un administrador.** La tarea de otra persona sin su instrucción ni su resultado (punto 3).
+- **Cualquiera crea tareas.** Ninguna persona del directorio estaba sin grupos, y quitarle `mango-admin` a una de las dos dejaba una sola administradora sin otra que aprobara devolvérselo. Se preguntó en cambio al almacén de políticas de la instalación: una persona sin grupos ni rol obtiene `ALLOW` en `CreateTask` y `DENY` en una acción de administración. Sin ver desde la pantalla.

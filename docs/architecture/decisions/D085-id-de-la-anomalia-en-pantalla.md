@@ -1,7 +1,7 @@
 # D85 · El id de la anomalía se ve en cada ejecución
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-16 (el punto 1, tomado por el dueño ese día, por menú: «Guardarlo y mostrarlo (Recomendada)»; el cómo, punto 2, propuesto por un agente)
+- **Fecha:** 2026-10-16 (el punto 1, tomado por el dueño ese día, por menú: «Guardarlo y mostrarlo (Recomendada)»; el cómo, punto 2, propuesto por un agente; lo que mostró la instalación, punto 3, nota del 2026-10-20 propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D79](D079-investigacion-de-anomalias-por-evento.md) (4)
 - **Precisada por:** —
 
@@ -17,4 +17,6 @@ Origen: la ronda de Claude Design del 2026-10-16b, que respondió al brief unifi
 - La lista de ejecuciones muestra los 8 primeros caracteres en mono; la caja «Anomalía que la arrancó» del resultado, el id completo.
 - Sin cambios de IAM, de tablas ni de lo que recibe el modelo.
 
-Comprobado con tests de Python (`apps/api/tests/test_tasks.py`) y de la web, y en el navegador contra el mock. Sin ver en una instalación.
+Comprobado con tests de Python (`apps/api/tests/test_tasks.py`) y de la web, y en el navegador contra el mock. Visto en una instalación (punto 3).
+
+**(3) Lo que mostró la instalación (nota del 2026-10-20, propuesta por un agente).** En la instalación de un cliente llegó una anomalía real y la tarea por anomalía de su dueño la investigó sola. La línea de la ejecución dice «Anomalía · {fecha} · {8 caracteres}» y la caja «Anomalía que la arrancó» del resultado, el id completo. Horas después, AWS volvió a publicar la misma anomalía con otro id de evento: el consumidor la recibió y el motor no arrancó una segunda ejecución, porque la clave es el id de la anomalía (D79). Como administrador que no es el dueño, la tarea se ve sin su resultado.
