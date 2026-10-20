@@ -1,6 +1,6 @@
 # Mango Hub: arquitectura AWS de referencia
 
-> Fecha: 2026-09-28 · Revisión de coherencia: 2026-10-05 · Puesta al día con lo construido: 2026-10-19 · Estado: **adoptada**. Nació como propuesta para discusión; sus decisiones están tomadas y registradas en §8 (las primeras son del mismo 2026-09-28).
+> Fecha: 2026-09-28 · Revisión de coherencia: 2026-10-05 · Puesta al día con lo construido: 2026-10-20 · Estado: **adoptada**. Nació como propuesta para discusión; sus decisiones están tomadas y registradas en §8 (las primeras son del mismo 2026-09-28).
 > **Cómo leerla:** §1 a §7 describen el sistema que existe y la parte del plan que sigue sin construir. Lo que no está construido lleva la marca **previsto**. Donde este texto y una decisión de §8 difieran, manda la decisión. El resumen de qué existe: la tabla «Estado de lo construido», antes de §1.
 > Base: análisis de [`aws-samples/bedrock-chat`](https://github.com/aws-samples/bedrock-chat) @ `4419d62` y verificación del estado de los servicios AWS a sep-2026.
 > Los reportes de detalle, con referencias `archivo:línea` y URLs, están en [`research/`](./research):
