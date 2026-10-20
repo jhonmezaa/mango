@@ -9,9 +9,9 @@ mango-api and reaches no other system. Its input is model output, untrusted (TM-
   D86 (8), no control characters.
 * What can be computed is computed here, never taken from the model: variations, shares,
   totals of the rows and the «Otros» row (``summary``).
-* The daily cost series is taken from the answer of a ``get_cost_and_usage`` query of the run
-  when one matches (D87 (4), ``series_from_query``); otherwise the agent's copy is used, and
-  the report says which.
+* The daily cost series is taken from the answer of a daily ``get_cost_and_usage`` query of
+  the run when one matches, from its rows or, if it is grouped, from its daily totals (D87 (4),
+  ``series_from_query``); otherwise the agent's copy is used, and the report says which.
 
 The tool exists in two shapes, one per type, fixed by the trigger of the task (D86 (7)).
 Threat model: ``docs/security/threat-models/task-reports-threat-model.md``.
@@ -227,23 +227,25 @@ DATA_MODELS: dict[str, type[CostSummaryData] | type[AnomalyData]] = {
 _DESCRIPTIONS = {
     "cost_summary": (
         "Entrega a Mango los datos del reporte PDF «Resumen de costos» de esta ejecución. "
-        "Llámala una sola vez, al final, después de escribir tu informe. Usa solo cifras que "
+        "Llámala una sola vez, al final, después de escribir tu informe completo: termina la "
+        "ejecución y lo que no hayas escrito antes no se guarda. Usa solo cifras que "
         "devolvieron tus consultas en esta ejecución. El periodo es el que analizaste (fechas "
         "inclusive). total y previous_total son los totales de ese periodo y del anterior de la "
         "misma duración. services y accounts, ordenados de mayor a menor costo, con el costo del "
         "periodo anterior en previous. daily: omítela si consultaste get_cost_and_usage con "
-        "granularidad DAILY sin agrupar para todo el periodo (Mango toma la serie de esa "
+        "granularidad DAILY para todo el periodo, agrupada o no (Mango toma la serie de esa "
         "consulta); si no, el costo de cada día. notes: tu análisis breve en Markdown simple "
         "(párrafos, listas y negritas), sin enlaces ni HTML."
     ),
     "anomaly": (
         "Entrega a Mango los datos del reporte PDF «Investigación de anomalía» de esta "
-        "ejecución. Llámala una sola vez, al final, después de escribir tu informe. Usa solo "
+        "ejecución. Llámala una sola vez, al final, después de escribir tu informe completo: "
+        "termina la ejecución y lo que no hayas escrito antes no se guarda. Usa solo "
         "cifras que devolvieron tus consultas en esta ejecución. expected y actual: gasto "
         "esperado y real de la anomalía. service y account_name: el servicio y el nombre de la "
         "cuenta de la causa principal. daily: costo diario desde 14 días antes de la anomalía "
         "hasta su último día, con lo esperado por día si lo tienes (si consultaste "
-        "get_cost_and_usage diario sin agrupar para esos días, Mango toma el costo de esa "
+        "get_cost_and_usage diario, agrupado o no, para esos días, Mango toma el costo de esa "
         "consulta). causes: tipos de uso que la "
         "explican, de mayor a menor impacto. conclusion en Markdown simple y next_step en una "
         "línea, sin enlaces ni HTML. No pongas el id, el monitor ni las fechas de la anomalía: "
@@ -399,22 +401,24 @@ def _answer(text: str) -> Mapping[str, Any] | None:
 
 
 def _daily_query(call: ToolCall) -> QuerySeries | None:  # noqa: PLR0911 - one return per check
-    """The series of one ``get_cost_and_usage`` call, if it is a daily cost query without
-    grouping, with an answer of the connector's shape."""
+    """The series of one ``get_cost_and_usage`` call, if it is a daily cost query with an
+    answer of the connector's shape: its rows without grouping, or the ``totals`` of a grouped
+    one (per day, over every group, from unrounded amounts)."""
     if call.name != COST_QUERY_TOOL or len(call.output) > MAX_QUERY_CHARS:
         return None
     args = _json(call.input)
     answer = _answer(call.output)
     if not isinstance(args, Mapping) or answer is None:
         return None
-    if args.get("granularity") != "DAILY" or args.get("group_by"):
+    grouped = bool(args.get("group_by"))
+    if args.get("granularity") != "DAILY" or answer.get("granularity") != "DAILY":
         return None
-    if answer.get("granularity") != "DAILY" or answer.get("group_by"):
+    if bool(answer.get("group_by")) != grouped:
         return None
     if answer.get("metric") not in ("UnblendedCost", "AmortizedCost", "NetUnblendedCost"):
         return None
     days: dict[date, Decimal] = {}
-    rows = answer.get("rows")
+    rows = answer.get("totals" if grouped else "rows")
     if not isinstance(rows, list):
         return None
     for row in rows:

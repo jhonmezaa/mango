@@ -1,7 +1,7 @@
 # D87 · Cómo se construyen los reportes: ReportLab en el zip, una `inline_function` y la serie de la consulta
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-19 (los puntos 1 a 4, tomados por el dueño ese día, por menú: «Sí, las cuatro (Recomendada)»; la precisión de la regla 3 del punto 3, validada por el dueño ese día en el panel principal, por menú: «Aceptar la precisión (Recomendada)»; el cómo, punto 5, y las diferencias con el diseño, punto 6, propuestos por un agente y aceptados por el dueño ese día, por menú: «Aceptar (Recomendada)»)
+- **Fecha:** 2026-10-19 (los puntos 1 a 4, tomados por el dueño ese día, por menú: «Sí, las cuatro (Recomendada)»; la precisión de la regla 3 del punto 3, validada por el dueño ese día en el panel principal, por menú: «Aceptar la precisión (Recomendada)»; el cómo, punto 5, y las diferencias con el diseño, punto 6, propuestos por un agente y aceptados por el dueño ese día, por menú: «Aceptar (Recomendada)»); 2026-10-20 (el punto 7, tomado por el dueño ese día, por menú: «Totals + descripción (Recomendada)»)
 - **Precisa / reemplaza a:** precisa [D86](D086-reportes-descargables-de-tareas.md) (2) (el motor y cómo viaja) y (6) (qué es la tool interna y de dónde salen las series); precisa la regla 3 de `AGENTS.md` y el principio P2 de la arquitectura de referencia (punto 3)
 - **Precisada por:** —
 
@@ -38,5 +38,7 @@ Origen: construir D86. D86 fijó qué se construye; al planearlo quedaron cuatro
 - La leyenda de los gráficos va encima del gráfico, como texto; la línea punteada de «Resumen de costos» es el promedio diario del periodo anterior.
 - Una tabla cuyas filas no cubren su total muestra «Otros (sin detalle)».
 - En Auditoría, la sección «Descarga» muestra el id de la tarea, no su nombre: el evento no guarda texto de la persona.
+
+**(7) La serie también sale de una consulta agrupada (tomado por el dueño el 2026-10-20, por menú: «Totals + descripción (Recomendada)»).** Origen: en la instalación, el agente de un «Resumen de costos» consultó el gasto diario agrupado por servicio y no copió la serie, y el reporte falló con `data` («no daily series»). La respuesta agrupada del conector ya trae `totals`: el total de cada día sobre todos los grupos, sumado sin redondear y con todas las páginas de Cost Explorer. Ahora el punto 4 vale también para una consulta diaria agrupada: el servidor toma la serie de sus `totals`, con las mismas comprobaciones (granularidad `DAILY` en la petición y en la respuesta, agrupación igual en las dos, métrica de costo, todos los días del periodo, importes finitos y acotados). Sin `totals`, o si falta un día, usa la del agente. La descripción de `mango_report` dice además que la llamada termina la ejecución y que el informe se escribe completo antes: en esa ejecución el agente la llamó antes de escribirlo y el resultado quedó en su primera frase.
 
 Comprobado con tests (Python de `mango-core`, de la función y de `mango-api`; web; e2e contra el mock; infraestructura con cdk-nag, cfn-guard y Checkov). **Sin ver en una instalación:** que el harness devuelva la llamada a la `inline_function` y su consumo como se espera, el bundle en Lambda arm64, la escritura con la llave, la URL prefirmada desde Fargate y la denegación por antigüedad de la firma.

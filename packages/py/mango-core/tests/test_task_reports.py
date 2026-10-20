@@ -143,9 +143,12 @@ def test_reads_costs() -> None:
     assert not tr.reads_costs(["aws-cloudwatch.get_metric_data", "costs.fake"])
 
 
-def _query(rows: list[dict[str, object]], **args: object) -> tr.ToolCall:
+def _query(
+    rows: list[dict[str, object]], answer_extra: dict[str, object] | None = None, **args: object
+) -> tr.ToolCall:
     call_args = {"start_date": "2026-09-01", "end_date": "2026-09-04", "granularity": "DAILY"}
     answer = {"metric": "UnblendedCost", "granularity": "DAILY", "group_by": [], "rows": rows}
+    answer.update(answer_extra or {})
     return tr.ToolCall(
         call_id="t1",
         name=tr.COST_QUERY_TOOL,
@@ -168,9 +171,36 @@ def test_series_is_taken_from_a_matching_query() -> None:
     assert doc["tools"] == [tr.COST_QUERY_TOOL]
 
 
+BY_SERVICE = [{"type": "DIMENSION", "key": "SERVICE"}]
+GROUPED_ROWS = [
+    {"period_start": f"2026-09-0{d}", "keys": [service], "amount": "1.00", "unit": "USD"}
+    for d in (1, 2, 3)
+    for service in ("EC2", "S3")
+]
+TOTALS = [{"period_start": f"2026-09-0{d}", "amount": f"{d}1.25", "unit": "USD"} for d in (1, 2, 3)]
+
+
+def test_series_is_taken_from_the_daily_totals_of_a_grouped_query() -> None:
+    call = _query(GROUPED_ROWS, {"group_by": BY_SERVICE, "totals": TOTALS}, group_by=BY_SERVICE)
+    doc = tr.build("cost_summary", tr.parse("cost_summary", SUMMARY), [call])
+    assert doc["source"] == {"daily": "query", "accounts": [], "services": []}
+    assert [d["cost"] for d in doc["data"]["daily"]] == ["11.25", "21.25", "31.25"]
+
+
+def test_a_summary_without_its_own_series_takes_the_grouped_totals() -> None:
+    call = _query(GROUPED_ROWS, {"group_by": BY_SERVICE, "totals": TOTALS}, group_by=BY_SERVICE)
+    data = tr.parse("cost_summary", {**SUMMARY, "daily": []})
+    doc = tr.build("cost_summary", data, [call])
+    assert doc["source"]["daily"] == "query"
+    assert len(doc["data"]["daily"]) == 3
+
+
 @pytest.mark.parametrize(
     "call",
     [
+        _query(GROUPED_ROWS, {"group_by": BY_SERVICE}, group_by=BY_SERVICE),
+        _query(GROUPED_ROWS, {"group_by": BY_SERVICE, "totals": TOTALS[:2]}, group_by=BY_SERVICE),
+        _query(GROUPED_ROWS, {"group_by": BY_SERVICE, "totals": TOTALS}),
         _query(ROWS[:2]),
         _query(ROWS, group_by=[{"type": "DIMENSION", "key": "SERVICE"}]),
         _query(ROWS, granularity="MONTHLY"),
