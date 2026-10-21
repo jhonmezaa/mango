@@ -123,13 +123,19 @@ describe('task reports', () => {
       file: null,
       pages: null,
     };
-    const owned = task({ report: 'cost_summary', runs: [run({ report: failed })] });
+    const generating: RunReport = { ...failed, status: 'generating', reason: null };
+    let retried = false;
+    const owned = () =>
+      task({ report: 'cost_summary', runs: [run({ report: retried ? generating : failed })] });
     const call = apiWith({
-      listTasksOfCaller: () => list([owned]),
+      listTasksOfCaller: () => list([owned()]),
       getAgents: () => AGENTS,
-      getTask: () => owned,
+      getTask: () => owned(),
       getTaskRun: () => ({ ...run({ report: failed }), ...detail }),
-      retryTaskReport: () => run({ report: { ...failed, status: 'generating', reason: null } }),
+      retryTaskReport: () => {
+        retried = true;
+        return run({ report: generating });
+      },
     });
     renderAt(call, `/schedules/${TASK}/run/${RUN}`);
     expect(
@@ -144,6 +150,41 @@ describe('task reports', () => {
       path: { task_id: TASK, run_id: RUN },
       body: {},
     });
+  });
+
+  it('says so again when the PDF cannot be drawn a second time', async () => {
+    const failed: RunReport = {
+      ...READY,
+      status: 'failed',
+      reason: 'render',
+      file: null,
+      pages: null,
+    };
+    const owned = task({ report: 'cost_summary', runs: [run({ report: failed })] });
+    let reads = 0;
+    const call = apiWith({
+      listTasksOfCaller: () => {
+        reads += 1;
+        return list([owned]);
+      },
+      getAgents: () => AGENTS,
+      getTask: () => owned,
+      getTaskRun: () => ({ ...run({ report: failed }), ...detail }),
+      retryTaskReport: () => run({ report: { ...failed, status: 'generating', reason: null } }),
+    });
+    renderAt(call, `/schedules/${TASK}/run/${RUN}`);
+    const button = await screen.findByRole('button', { name: 'Generar de nuevo' });
+    const before = reads;
+    await userEvent.click(button);
+    // The read after the retry says «failed» again: the panel says so, not «Generando».
+    await waitFor(() => {
+      expect(reads).toBeGreaterThan(before);
+    });
+    expect(
+      await screen.findByText('No se pudo generar el PDF · Resumen de costos'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Generando el PDF · Resumen de costos')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Generar de nuevo' })).toBeInTheDocument();
   });
 
   it('a PDF without the agent data offers no retry', async () => {

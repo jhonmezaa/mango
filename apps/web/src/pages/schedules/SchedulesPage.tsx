@@ -72,7 +72,9 @@ type Agent = {
   unavailable_tools: string[];
 };
 type LoadState =
-  { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; list: TaskList; agents: Agent[] };
+  | { kind: 'loading' }
+  | { kind: 'error' }
+  | { kind: 'ready'; list: TaskList; agents: Agent[]; version: number };
 type Translate = TFunction;
 
 /** Someone else (or a run) may change a task while the page is open. */
@@ -542,6 +544,7 @@ function RunResult({
   task,
   run,
   agentName,
+  listVersion,
   onBack,
   onReport,
 }: {
@@ -549,23 +552,27 @@ function RunResult({
   task: Task;
   run: TaskRun;
   agentName: string;
+  /** Goes up with every list read: one read after «Generar de nuevo» says how it ended. */
+  listVersion: number;
   onBack: () => void;
   onReport: () => void;
 }) {
   const { t } = useTranslation();
   const [detail, setDetail] = useState<RunDetail | 'error' | null>(null);
   // «Generar de nuevo» shows its answer at once; the next poll of the task brings the rest.
-  const [retried, setRetried] = useState<RunReport | null>(null);
+  const [retried, setRetried] = useState<{ report: RunReport; version: number } | null>(null);
   const [retrying, setRetrying] = useState(false);
-  // Until the poll brings the new state, the run still says «failed».
-  const report = (run.report?.status === 'failed' ? retried : null) ?? run.report ?? null;
+  // Until a list read after the retry arrives, the run still says «failed» from before it. That
+  // read is the truth, also when it says «failed» again (the PDF could not be drawn twice).
+  const report =
+    (retried && retried.version === listVersion ? retried.report : null) ?? run.report ?? null;
   const retry = () => {
     if (retrying) return;
     setRetrying(true);
     api('retryTaskReport', { path: { task_id: task.task_id, run_id: run.run_id }, body: {} }).then(
       (updated) => {
         setRetrying(false);
-        setRetried(updated.report ?? null);
+        setRetried(updated.report ? { report: updated.report, version: listVersion } : null);
         // Read the task again: a PDF being drawn is polled every few seconds.
         onReport();
       },
@@ -691,6 +698,7 @@ interface DetailProps {
   onResume: () => void;
   onRetire: (reason: string) => void;
   onReload: () => void;
+  listVersion: number;
 }
 
 function TaskDetail({
@@ -709,6 +717,7 @@ function TaskDetail({
   onResume,
   onRetire,
   onReload,
+  listVersion,
 }: DetailProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -897,6 +906,7 @@ function TaskDetail({
           task={task}
           run={openRun}
           agentName={agentName}
+          listVersion={listVersion}
           onBack={() => {
             setRunId(null);
           }}
@@ -1757,7 +1767,12 @@ export function SchedulesPage() {
               }
             }
           }
-          setState({ kind: 'ready', list, agents: agents.items });
+          setState((previous) => ({
+            kind: 'ready',
+            list,
+            agents: agents.items,
+            version: previous.kind === 'ready' ? previous.version + 1 : 0,
+          }));
           const linked = link.current;
           link.current = null;
           if (first && linked) {
@@ -2094,6 +2109,7 @@ export function SchedulesPage() {
           busy={busy}
           ask0={selected.ask}
           run0={selected.run}
+          listVersion={ready.version}
           onClose={() => {
             setSelected(null);
           }}
