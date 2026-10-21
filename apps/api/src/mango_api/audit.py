@@ -71,6 +71,8 @@ _GENERIC_RESOURCES = (
     ("conversation_id", "conversation"),
     # Tasks and their runs (D78): the run is the turn, the task is what it belongs to.
     ("task_id", "task"),
+    # Knowledge bases (D88): before the agent, which a later event may name too.
+    ("kb_id", "knowledge_base"),
     ("agent", "agent"),
     ("model", "model"),
 )

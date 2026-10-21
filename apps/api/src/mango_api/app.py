@@ -57,7 +57,13 @@ from mango_api.audit import (
     AuditQuery,
     InvalidCursorError,
 )
-from mango_api.authz import PLATFORM, AgentResource, Authorizer, TaskResource
+from mango_api.authz import (
+    PLATFORM,
+    AgentResource,
+    Authorizer,
+    KnowledgeBaseResource,
+    TaskResource,
+)
 from mango_api.budget import (
     BudgetExceededError,
     BudgetScope,
@@ -87,6 +93,8 @@ from mango_api.group_admin import (
 from mango_api.groups import GroupRegistry, groups_router
 from mango_api.inbox import InboxDeps, RunInbox, inbox_router
 from mango_api.inbox_store import InboxStore
+from mango_api.knowledge import KnowledgeDeps, knowledge_router
+from mango_api.knowledge_store import KnowledgeStore
 from mango_api.limits import Limits
 from mango_api.mcp import McpDeps, mcp_router
 from mango_api.mcp_catalog import CatalogSource, McpCatalog
@@ -376,6 +384,8 @@ class Services:
     """SQS client the worker reads the runs with; ``None`` keeps the worker off (tests)."""
     # La Bandeja (D83): notices of each person, in their conversations partition.
     inbox: InboxDeps | None = None
+    # Knowledge bases (D88); set in production once mango-api may use the Knowledge table.
+    knowledge: KnowledgeDeps | None = None
     limits: Limits = field(default_factory=Limits)
     """Where every rate limit comes from (D70). In production the shared ones count in
     DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
@@ -383,6 +393,11 @@ class Services:
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
     return error_response(status, code, message)
+
+
+def _areas(store: SettingsStore) -> list[str]:
+    """The areas of the installation, read on each call: they change with dual approval."""
+    return list(store.mapping().units)
 
 
 def _task_services(
@@ -677,6 +692,17 @@ def build_services(settings: Settings) -> Services:
         tasks=tasks,
         task_tokens=task_tokens,
         task_queue=task_queue,
+        knowledge=(
+            KnowledgeDeps(
+                store=KnowledgeStore(dynamodb, settings.knowledge_table),
+                groups=group_registry,
+                areas=partial(_areas, settings_store),
+                audit=audit,
+                changes=limits.limiter("knowledge.changes"),
+            )
+            if settings.knowledge_table
+            else None
+        ),
         limits=limits,
     )
 
@@ -850,18 +876,20 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         context: dict[str, str] | None = None,
         agent: AgentResource | None = None,
         task: TaskResource | None = None,
+        knowledge: KnowledgeBaseResource | None = None,
     ) -> Awaitable[None]:
         # Every decision is audited; ``read_only`` only lets the log hide allowed reads.
         # ``context`` (validated or server-generated ids only) links the decision to its turn.
         # ``agent`` carries the attributes of an Agent resource, read from the Agents table;
-        # ``task`` those of a Task, read from the Tasks table (D78).
+        # ``task`` those of a Task, read from the Tasks table (D78); ``knowledge`` those of a
+        # KnowledgeBase, read from the Knowledge table (D88).
         async def check() -> None:
             subject = (caller.user, action, resource_type, resource_id)
-            decide: Callable[..., bool] = (
-                partial(services.authorizer.is_allowed, task=task)
-                if task is not None
-                else services.authorizer.is_allowed
-            )
+            decide: Callable[..., bool] = services.authorizer.is_allowed
+            if task is not None:
+                decide = partial(services.authorizer.is_allowed, task=task)
+            elif knowledge is not None:
+                decide = partial(services.authorizer.is_allowed, knowledge=knowledge)
             allowed = await asyncio.to_thread(decide, *subject, *([agent] if agent else []))
             await asyncio.to_thread(
                 services.audit.emit,
@@ -1135,6 +1163,24 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             return allowed
 
         app.include_router(tasks_router(services.tasks, current_user, require, task_allowed))
+
+    if services.knowledge is not None:
+
+        def knowledge_allowed(
+            caller: Caller, action: str, bases: list[KnowledgeBaseResource]
+        ) -> frozenset[str]:
+            """Decisions that only shape the answer (hints of a list), not audited one by one:
+            the list itself was authorized and audited."""
+            return services.authorizer.allowed_knowledge_bases(caller.user, action, bases)
+
+        def knowledge_platform(caller: Caller, action: str) -> bool:
+            return services.authorizer.is_allowed(caller.user, action, *PLATFORM)
+
+        app.include_router(
+            knowledge_router(
+                services.knowledge, current_user, require, knowledge_allowed, knowledge_platform
+            )
+        )
 
     @app.post("/api/chat")
     async def chat(body: ChatRequest, caller: CallerDependency) -> Response:  # noqa: PLR0915

@@ -34,6 +34,15 @@
           }
         }
       },
+      "KnowledgeBase": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "owner": { "type": "Entity", "name": "User", "required": true },
+            "groups": { "type": "Set", "element": { "type": "String" }, "required": true }
+          }
+        }
+      },
       "Platform": { "shape": { "type": "Record", "attributes": {} } }
     },
     "actions": {
@@ -91,6 +100,18 @@
       "OwnTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Task"] } },
       "ApproveToolPolicy": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ViewKnowledgeBase": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform", "KnowledgeBase"] }
+      },
+      "CreateKnowledgeBase": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "EditKnowledgeBase": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["KnowledgeBase"] }
+      },
+      "UseKnowledgeBase": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["KnowledgeBase"] }
       }
     }
   }

@@ -1828,6 +1828,21 @@
         "title": "DefinitionOut",
         "type": "object"
       },
+      "DeleteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "DeleteIn",
+        "type": "object"
+      },
       "DescriptionIn": {
         "additionalProperties": false,
         "properties": {
@@ -2832,6 +2847,254 @@
         "title": "InvitedOut",
         "type": "object"
       },
+      "KnowledgeBaseCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "business_unit": {
+            "default": "all",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+            "title": "Business Unit",
+            "type": "string"
+          },
+          "classification": {
+            "default": "internal",
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "restricted"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Groups",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sync_schedule": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "6h",
+              "daily",
+              "weekly"
+            ],
+            "title": "Sync Schedule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "groups"
+        ],
+        "title": "KnowledgeBaseCreate",
+        "type": "object"
+      },
+      "KnowledgeBaseListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "can_create": {
+            "title": "Can Create",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeBaseOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "can_create"
+        ],
+        "title": "KnowledgeBaseListOut",
+        "type": "object"
+      },
+      "KnowledgeBaseOut": {
+        "additionalProperties": false,
+        "properties": {
+          "business_unit": {
+            "title": "Business Unit",
+            "type": "string"
+          },
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "can_view_documents": {
+            "title": "Can View Documents",
+            "type": "boolean"
+          },
+          "classification": {
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "restricted"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "kb_id": {
+            "title": "Kb Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/OwnerOut"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "sync_schedule": {
+            "enum": [
+              "manual",
+              "6h",
+              "daily",
+              "weekly"
+            ],
+            "title": "Sync Schedule",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kb_id",
+          "name",
+          "description",
+          "owner",
+          "business_unit",
+          "groups",
+          "classification",
+          "sync_schedule",
+          "status",
+          "documents",
+          "bytes",
+          "version",
+          "created_at",
+          "updated_at",
+          "can_edit",
+          "can_view_documents"
+        ],
+        "title": "KnowledgeBaseOut",
+        "type": "object"
+      },
+      "KnowledgeBaseUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "classification": {
+            "default": "internal",
+            "enum": [
+              "public",
+              "internal",
+              "confidential",
+              "restricted"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Groups",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sync_schedule": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "6h",
+              "daily",
+              "weekly"
+            ],
+            "title": "Sync Schedule",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "groups",
+          "version"
+        ],
+        "title": "KnowledgeBaseUpdate",
+        "type": "object"
+      },
       "LimitsOut": {
         "additionalProperties": false,
         "properties": {
@@ -3541,6 +3804,44 @@
           "path"
         ],
         "title": "OrganizationalUnit",
+        "type": "object"
+      },
+      "OwnerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "email"
+        ],
+        "title": "OwnerOut",
         "type": "object"
       },
       "PackDecision": {
@@ -5835,6 +6136,19 @@
         },
         "title": "StateIn",
         "type": "object"
+      },
+      "Status": {
+        "description": "Of a knowledge base (D88 (8)).",
+        "enum": [
+          "pending",
+          "syncing",
+          "ok",
+          "warn",
+          "error",
+          "deleting"
+        ],
+        "title": "Status",
+        "type": "string"
       },
       "StepOut": {
         "additionalProperties": false,
@@ -10938,6 +11252,208 @@
           }
         },
         "summary": "Set Inbox State"
+      }
+    },
+    "/knowledge-bases": {
+      "get": {
+        "operationId": "list_knowledge_bases",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Knowledge Bases"
+      },
+      "post": {
+        "operationId": "create_new_knowledge_base",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create New Knowledge Base"
+      }
+    },
+    "/knowledge-bases/{kb_id}": {
+      "get": {
+        "operationId": "get_knowledge_base",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Knowledge Base"
+      },
+      "put": {
+        "operationId": "update_existing_knowledge_base",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update Existing Knowledge Base"
+      }
+    },
+    "/knowledge-bases/{kb_id}/delete": {
+      "post": {
+        "operationId": "delete_existing_knowledge_base",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Existing Knowledge Base"
       }
     },
     "/mcp/catalog": {

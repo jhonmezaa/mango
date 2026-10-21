@@ -221,9 +221,30 @@ describe("knowledge bases: fixed resources in Core", () => {
     }
   });
 
-  it("adds no role, function or permission to mango-api yet", () => {
+  it("lets mango-api use only the registry, from a managed policy of its own, never delete or scan", () => {
     const [apiRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-ApiTask` });
-    expect(JSON.stringify(statementsOf(apiRoleId))).not.toMatch(/s3vectors|bedrock:Retrieve|Knowledge/);
+    const [, policy] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-ApiKnowledge` });
+    expect(policy.Properties.Roles).toEqual([{ Ref: apiRoleId }]);
+    const [tableId] = only("AWS::DynamoDB::GlobalTable", { TableName: `Mango-${ns}-Knowledge` });
+    const sids = bySid(policy.Properties.PolicyDocument.Statement as Statement[]);
+    expect(Object.keys(sids).sort()).toEqual(["KnowledgeTable", "KnowledgeTableKey"]);
+    expect(actions(sids.KnowledgeTable!).sort()).toEqual([
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:Query",
+      "dynamodb:UpdateItem",
+    ]);
+    expect(JSON.stringify(sids.KnowledgeTable!.Resource)).toContain(tableId);
+    expect(JSON.stringify(sids.KnowledgeTable!.Resource)).toContain(`/index/${KNOWLEDGE_ALL}`);
+    expect(sids.KnowledgeTableKey!.Condition!.StringEquals).toEqual({
+      "kms:ViaService": `dynamodb.${region}.amazonaws.com`,
+    });
+    // Nothing of the documents, the vectors or the Bedrock base yet, and no overflow policy.
+    expect(JSON.stringify(statementsOf(apiRoleId))).not.toMatch(/s3vectors|bedrock:Retrieve|KnowledgeDocuments/);
+    expect(Object.keys(resources).some((id) => id.startsWith("ApiTaskRoleOverflowPolicy"))).toBe(false);
+    const [, service] = only("AWS::ECS::TaskDefinition", {});
+    const env = JSON.stringify(service.Properties.ContainerDefinitions);
+    expect(env).toContain("KNOWLEDGE_TABLE");
     expect(ofType("AWS::Lambda::Function").some(([, r]) => /Knowledge/i.test(String(r.Properties.FunctionName)))).toBe(
       false,
     );

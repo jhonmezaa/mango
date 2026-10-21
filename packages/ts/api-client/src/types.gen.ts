@@ -999,6 +999,16 @@ export type DefinitionOut = {
 };
 
 /**
+ * DeleteIn
+ */
+export type DeleteIn = {
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * DescriptionIn
  */
 export type DescriptionIn = {
@@ -1527,6 +1537,144 @@ export type InvitedOut = {
 };
 
 /**
+ * KnowledgeBaseCreate
+ */
+export type KnowledgeBaseCreate = {
+    /**
+     * Business Unit
+     */
+    business_unit?: string;
+    /**
+     * Classification
+     */
+    classification?: 'public' | 'internal' | 'confidential' | 'restricted';
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Sync Schedule
+     */
+    sync_schedule?: 'manual' | '6h' | 'daily' | 'weekly';
+};
+
+/**
+ * KnowledgeBaseListOut
+ */
+export type KnowledgeBaseListOut = {
+    /**
+     * Can Create
+     */
+    can_create: boolean;
+    /**
+     * Items
+     */
+    items: Array<KnowledgeBaseOut>;
+};
+
+/**
+ * KnowledgeBaseOut
+ */
+export type KnowledgeBaseOut = {
+    /**
+     * Business Unit
+     */
+    business_unit: string;
+    /**
+     * Bytes
+     */
+    bytes: number;
+    /**
+     * Can Edit
+     */
+    can_edit: boolean;
+    /**
+     * Can View Documents
+     */
+    can_view_documents: boolean;
+    /**
+     * Classification
+     */
+    classification: 'public' | 'internal' | 'confidential' | 'restricted';
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Documents
+     */
+    documents: number;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Kb Id
+     */
+    kb_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    owner: OwnerOut;
+    status: Status;
+    /**
+     * Sync Schedule
+     */
+    sync_schedule: 'manual' | '6h' | 'daily' | 'weekly';
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * KnowledgeBaseUpdate
+ */
+export type KnowledgeBaseUpdate = {
+    /**
+     * Classification
+     */
+    classification?: 'public' | 'internal' | 'confidential' | 'restricted';
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Sync Schedule
+     */
+    sync_schedule?: 'manual' | '6h' | 'daily' | 'weekly';
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * LimitsOut
  */
 export type LimitsOut = {
@@ -1930,6 +2078,24 @@ export type OrganizationalUnit = {
      * Path
      */
     path: Array<string>;
+};
+
+/**
+ * OwnerOut
+ */
+export type OwnerOut = {
+    /**
+     * Email
+     */
+    email: string | null;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * User Id
+     */
+    user_id: string;
 };
 
 /**
@@ -3020,6 +3186,13 @@ export type StateIn = {
      */
     read?: boolean | null;
 };
+
+/**
+ * Status
+ *
+ * Of a knowledge base (D88 (8)).
+ */
+export type Status = 'pending' | 'syncing' | 'ok' | 'warn' | 'error' | 'deleting';
 
 /**
  * StepOut
@@ -6056,6 +6229,146 @@ export type SetInboxStateResponses = {
 };
 
 export type SetInboxStateResponse = SetInboxStateResponses[keyof SetInboxStateResponses];
+
+export type ListKnowledgeBasesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/knowledge-bases';
+};
+
+export type ListKnowledgeBasesErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListKnowledgeBasesError = ListKnowledgeBasesErrors[keyof ListKnowledgeBasesErrors];
+
+export type ListKnowledgeBasesResponses = {
+    /**
+     * Successful Response
+     */
+    200: KnowledgeBaseListOut;
+};
+
+export type ListKnowledgeBasesResponse = ListKnowledgeBasesResponses[keyof ListKnowledgeBasesResponses];
+
+export type CreateNewKnowledgeBaseData = {
+    body: KnowledgeBaseCreate;
+    path?: never;
+    query?: never;
+    url: '/knowledge-bases';
+};
+
+export type CreateNewKnowledgeBaseErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type CreateNewKnowledgeBaseError = CreateNewKnowledgeBaseErrors[keyof CreateNewKnowledgeBaseErrors];
+
+export type CreateNewKnowledgeBaseResponses = {
+    /**
+     * Successful Response
+     */
+    201: KnowledgeBaseOut;
+};
+
+export type CreateNewKnowledgeBaseResponse = CreateNewKnowledgeBaseResponses[keyof CreateNewKnowledgeBaseResponses];
+
+export type GetKnowledgeBaseData = {
+    body?: never;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}';
+};
+
+export type GetKnowledgeBaseErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetKnowledgeBaseError = GetKnowledgeBaseErrors[keyof GetKnowledgeBaseErrors];
+
+export type GetKnowledgeBaseResponses = {
+    /**
+     * Successful Response
+     */
+    200: KnowledgeBaseOut;
+};
+
+export type GetKnowledgeBaseResponse = GetKnowledgeBaseResponses[keyof GetKnowledgeBaseResponses];
+
+export type UpdateExistingKnowledgeBaseData = {
+    body: KnowledgeBaseUpdate;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}';
+};
+
+export type UpdateExistingKnowledgeBaseErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type UpdateExistingKnowledgeBaseError = UpdateExistingKnowledgeBaseErrors[keyof UpdateExistingKnowledgeBaseErrors];
+
+export type UpdateExistingKnowledgeBaseResponses = {
+    /**
+     * Successful Response
+     */
+    200: KnowledgeBaseOut;
+};
+
+export type UpdateExistingKnowledgeBaseResponse = UpdateExistingKnowledgeBaseResponses[keyof UpdateExistingKnowledgeBaseResponses];
+
+export type DeleteExistingKnowledgeBaseData = {
+    body: DeleteIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/delete';
+};
+
+export type DeleteExistingKnowledgeBaseErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DeleteExistingKnowledgeBaseError = DeleteExistingKnowledgeBaseErrors[keyof DeleteExistingKnowledgeBaseErrors];
+
+export type DeleteExistingKnowledgeBaseResponses = {
+    /**
+     * Successful Response
+     */
+    202: KnowledgeBaseOut;
+};
+
+export type DeleteExistingKnowledgeBaseResponse = DeleteExistingKnowledgeBaseResponses[keyof DeleteExistingKnowledgeBaseResponses];
 
 export type GetCatalogData = {
     body?: never;

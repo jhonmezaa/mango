@@ -22,6 +22,7 @@ from mango_api import (
     approvals,
     directory,
     group_admin,
+    knowledge,
     mcp,
     mfa_reset,
     people,
@@ -135,6 +136,12 @@ LIMITS: dict[str, LimitSpec] = {
         HOUR,
         shared=True,
         why="Each click on «Descargar» issues a new presigned link to a run's PDF (D86, TM-R7).",
+    ),
+    "knowledge.changes": LimitSpec(
+        knowledge.CHANGES_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Creating, editing and deleting knowledge bases (D88): each one is audited twice.",
     ),
     "admin.probe": LimitSpec(
         admin.PROBE_CALLS_PER_MINUTE,

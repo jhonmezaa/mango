@@ -287,6 +287,13 @@ export const zCreateAgentInSchema = z.object({
 });
 
 /**
+ * DeleteIn
+ */
+export const zDeleteInSchema = z.object({
+    version: z.int().gte(1)
+});
+
+/**
  * DescriptionIn
  */
 export const zDescriptionInSchema = z.object({
@@ -538,6 +545,50 @@ export const zInvitedOutSchema = z.object({
 });
 
 /**
+ * KnowledgeBaseCreate
+ */
+export const zKnowledgeBaseCreateSchema = z.object({
+    business_unit: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).optional().default('all'),
+    classification: z.enum([
+        'public',
+        'internal',
+        'confidential',
+        'restricted'
+    ]).optional().default('internal'),
+    description: z.string().max(500).optional().default(''),
+    groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).min(1).max(20),
+    name: z.string().min(1).max(80),
+    sync_schedule: z.enum([
+        'manual',
+        '6h',
+        'daily',
+        'weekly'
+    ]).optional().default('manual')
+});
+
+/**
+ * KnowledgeBaseUpdate
+ */
+export const zKnowledgeBaseUpdateSchema = z.object({
+    classification: z.enum([
+        'public',
+        'internal',
+        'confidential',
+        'restricted'
+    ]).optional().default('internal'),
+    description: z.string().max(500).optional().default(''),
+    groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).min(1).max(20),
+    name: z.string().min(1).max(80),
+    sync_schedule: z.enum([
+        'manual',
+        '6h',
+        'daily',
+        'weekly'
+    ]).optional().default('manual'),
+    version: z.int().gte(1)
+});
+
+/**
  * LimitsOut
  */
 export const zLimitsOutSchema = z.object({
@@ -784,6 +835,15 @@ export const zOrganizationalUnitSchema = z.object({
  */
 export const zOrganizationOutSchema = z.object({
     ous: z.array(zOrganizationalUnitSchema)
+});
+
+/**
+ * OwnerOut
+ */
+export const zOwnerOutSchema = z.object({
+    email: z.string().nullable(),
+    name: z.string().nullable(),
+    user_id: z.string()
 });
 
 /**
@@ -1403,6 +1463,60 @@ export const zInboxPageSchema = z.object({
 export const zStateInSchema = z.object({
     archived: z.boolean().nullish(),
     read: z.boolean().nullish()
+});
+
+/**
+ * Status
+ *
+ * Of a knowledge base (D88 (8)).
+ */
+export const zStatusSchema = z.enum([
+    'pending',
+    'syncing',
+    'ok',
+    'warn',
+    'error',
+    'deleting'
+]);
+
+/**
+ * KnowledgeBaseOut
+ */
+export const zKnowledgeBaseOutSchema = z.object({
+    business_unit: z.string(),
+    bytes: z.int(),
+    can_edit: z.boolean(),
+    can_view_documents: z.boolean(),
+    classification: z.enum([
+        'public',
+        'internal',
+        'confidential',
+        'restricted'
+    ]),
+    created_at: z.iso.datetime(),
+    description: z.string(),
+    documents: z.int(),
+    groups: z.array(z.string()),
+    kb_id: z.string(),
+    name: z.string(),
+    owner: zOwnerOutSchema,
+    status: zStatusSchema,
+    sync_schedule: z.enum([
+        'manual',
+        '6h',
+        'daily',
+        'weekly'
+    ]),
+    updated_at: z.iso.datetime(),
+    version: z.int()
+});
+
+/**
+ * KnowledgeBaseListOut
+ */
+export const zKnowledgeBaseListOutSchema = z.object({
+    can_create: z.boolean(),
+    items: z.array(zKnowledgeBaseOutSchema)
 });
 
 /**
@@ -2621,6 +2735,49 @@ export const zSetInboxStatePath = z.object({
  * Successful Response
  */
 export const zSetInboxStateResponse = zInboxItemSchema;
+
+/**
+ * Successful Response
+ */
+export const zListKnowledgeBasesResponse = zKnowledgeBaseListOutSchema;
+
+export const zCreateNewKnowledgeBaseBody = zKnowledgeBaseCreateSchema;
+
+/**
+ * Successful Response
+ */
+export const zCreateNewKnowledgeBaseResponse = zKnowledgeBaseOutSchema;
+
+export const zGetKnowledgeBasePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetKnowledgeBaseResponse = zKnowledgeBaseOutSchema;
+
+export const zUpdateExistingKnowledgeBaseBody = zKnowledgeBaseUpdateSchema;
+
+export const zUpdateExistingKnowledgeBasePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zUpdateExistingKnowledgeBaseResponse = zKnowledgeBaseOutSchema;
+
+export const zDeleteExistingKnowledgeBaseBody = zDeleteInSchema;
+
+export const zDeleteExistingKnowledgeBasePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDeleteExistingKnowledgeBaseResponse = zKnowledgeBaseOutSchema;
 
 /**
  * Successful Response

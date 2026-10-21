@@ -83,11 +83,16 @@ export class Knowledge extends Construct {
   readonly table: dynamodb.TableV2;
   readonly sourceBoundary: iam.ManagedPolicy;
   readonly alarms: cloudwatch.Alarm[];
+  /** Environment mango-api needs for the knowledge bases. */
+  readonly apiEnvironment: Record<string, string>;
+  private readonly namespace: string;
+  private readonly dataKey: kms.IKey;
 
   constructor(scope: Construct, id: string, props: KnowledgeProps) {
     super(scope, id);
     const cfg = props.installation;
-    const ns = cfg.namespace;
+    const ns = (this.namespace = cfg.namespace);
+    this.dataKey = props.dataKey;
     const { account, region } = Stack.of(this);
     const removalPolicy = cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY;
 
@@ -337,5 +342,35 @@ export class Knowledge extends Construct {
         cloudwatch.Stats.MAXIMUM,
       ),
     ];
+
+    this.apiEnvironment = { KNOWLEDGE_TABLE: this.table.tableName };
+  }
+
+  /**
+   * mango-api: the registry of the knowledge bases (D88 (12)). A managed policy of its own: the
+   * inline policies of its role share one size limit, and the role is close to it. No
+   * `DeleteItem` nor `Scan`: deleting is a status, and the synchronization removes the records
+   * once it verified that no vector is left (D88 (16)).
+   */
+  grantApi(role: iam.Role): void {
+    const { region } = Stack.of(this);
+    new iam.ManagedPolicy(this, "ApiPolicy", {
+      managedPolicyName: mangoName(this.namespace, "ApiKnowledge"),
+      description: "mango-api: the registry of the knowledge bases (D88)",
+      roles: [role],
+      statements: [
+        new iam.PolicyStatement({
+          sid: "KnowledgeTable",
+          actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:UpdateItem"],
+          resources: [this.table.tableArn, `${this.table.tableArn}/index/${KNOWLEDGE_ALL}`],
+        }),
+        new iam.PolicyStatement({
+          sid: "KnowledgeTableKey",
+          actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+          resources: [this.dataKey.keyArn],
+          conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
+        }),
+      ],
+    });
   }
 }

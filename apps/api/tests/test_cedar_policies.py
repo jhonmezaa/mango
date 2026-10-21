@@ -7,7 +7,14 @@ import re
 import cedarpy
 import pytest
 
-from mango_api.authz import AGENT_TYPE, PLATFORM, AgentResource, Authorizer
+from mango_api.authz import (
+    AGENT_TYPE,
+    KNOWLEDGE_BASE_TYPE,
+    PLATFORM,
+    AgentResource,
+    Authorizer,
+    KnowledgeBaseResource,
+)
 from mango_core.identity import UserContext
 
 from .cedar_fake import CedarPolicyStore, policy_files, schema
@@ -207,3 +214,81 @@ def test_tool_policies_are_changed_by_admins_only(authz: Authorizer, action: str
     people = (*EVERYONE, CENTRAL)
     allowed = {u.user_id for u in people if authz.is_allowed(u, action, *PLATFORM)}
     assert allowed == {"admin-1"}
+
+
+# --- Knowledge bases (D88 (13)) -----------------------------------------------------------
+
+KB = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+
+
+def _kb(
+    owner: str = "creator-1", groups: frozenset[str] = frozenset({"hr"})
+) -> KnowledgeBaseResource:
+    return KnowledgeBaseResource(KB, owner, groups)
+
+
+def _kb_allowed(authz: Authorizer, action: str, kb: KnowledgeBaseResource) -> set[str]:
+    return {
+        u.user_id
+        for u in EVERYONE
+        if authz.is_allowed(u, action, KNOWLEDGE_BASE_TYPE, KB, knowledge=kb)
+    }
+
+
+@pytest.mark.parametrize("action", ["CreateKnowledgeBase", "ViewKnowledgeBase"])
+def test_knowledge_bases_are_created_and_listed_by_admins_and_creators(
+    authz: Authorizer, action: str
+) -> None:
+    allowed = {u.user_id for u in EVERYONE if authz.is_allowed(u, action, *PLATFORM)}
+    assert allowed == {"admin-1", "creator-1", "creator-2"}
+    assert not authz.is_allowed(FORMER_CREATOR, action, *PLATFORM)
+
+
+def test_the_documents_are_for_the_owner_admins_and_creators_in_its_groups(
+    authz: Authorizer,
+) -> None:
+    # creator-2 is a creator in `hr`; member-1 is in `hr` but no creator; the lead is neither.
+    assert _kb_allowed(authz, "ViewKnowledgeBase", _kb()) == {"admin-1", "creator-1", "creator-2"}
+    other = _kb(owner="someone-else", groups=frozenset({"finance"}))
+    assert _kb_allowed(authz, "ViewKnowledgeBase", other) == {"admin-1"}
+
+
+def test_editing_is_for_the_owner_while_a_creator_and_for_admins(authz: Authorizer) -> None:
+    assert _kb_allowed(authz, "EditKnowledgeBase", _kb()) == {"admin-1", "creator-1"}
+    # FORMER_CREATOR is creator-1 without the group: the owner, no longer allowed.
+    assert not authz.is_allowed(
+        FORMER_CREATOR, "EditKnowledgeBase", KNOWLEDGE_BASE_TYPE, KB, knowledge=_kb()
+    )
+    # Being in its groups is not editing it.
+    other = _kb(owner="someone-else")
+    assert _kb_allowed(authz, "EditKnowledgeBase", other) == {"admin-1"}
+
+
+def test_using_a_knowledge_base_is_being_in_its_groups_and_nothing_else(
+    authz: Authorizer,
+) -> None:
+    # Not the admin, and not the owner for being the owner: the search runs as whoever asks
+    # (rule 5). creator-1 is there as FORMER_CREATOR, who is in `hr`.
+    assert _kb_allowed(authz, "UseKnowledgeBase", _kb()) == {"creator-1", "creator-2", "member-1"}
+    assert not authz.is_allowed(
+        CREATOR, "UseKnowledgeBase", KNOWLEDGE_BASE_TYPE, KB, knowledge=_kb()
+    )
+    assert _kb_allowed(authz, "UseKnowledgeBase", _kb(groups=frozenset({"bu-lead"}))) == {"lead-1"}
+    assert _kb_allowed(authz, "UseKnowledgeBase", _kb(groups=frozenset())) == set()
+
+
+def test_knowledge_base_attributes_must_match_the_resource(authz: Authorizer) -> None:
+    assert not authz.is_allowed(
+        ADMIN, "EditKnowledgeBase", KNOWLEDGE_BASE_TYPE, "other", knowledge=_kb()
+    )
+    assert not authz.is_allowed(ADMIN, "EditKnowledgeBase", AGENT_TYPE, KB, knowledge=_kb())
+
+
+def test_lists_of_knowledge_bases_are_decided_in_one_batch(authz: Authorizer) -> None:
+    bases = [
+        KnowledgeBaseResource(f"01JABCDEFGHJKMNPQRSTVWXY{i:02d}", "creator-1", frozenset({"hr"}))
+        for i in range(35)
+    ] + [KnowledgeBaseResource("01JABCDEFGHJKMNPQRSTVWXYZZ", "x", frozenset({"finance"}))]
+    allowed = authz.allowed_knowledge_bases(CREATOR, "EditKnowledgeBase", bases)
+    assert allowed == {b.kb_id for b in bases[:35]}
+    assert authz.allowed_knowledge_bases(MEMBER, "EditKnowledgeBase", bases) == frozenset()

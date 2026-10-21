@@ -112,6 +112,7 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             tasks_client_id="tasksclient",
             task_identity_key_arn=f"arn:aws:kms:us-east-1:{account}:key/task-identity",
             tasks_client_secret_arn=tasks_secret["ARN"],
+            knowledge_table="knowledge",
         )
         built: list[Any] = []
 

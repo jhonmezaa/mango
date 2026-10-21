@@ -205,12 +205,13 @@ export class CoreStack extends Stack {
     // D88: the fixed resources of the knowledge bases (one Bedrock base over S3 Vectors, the
     // documents bucket, the registry and the boundary of the roles of existing buckets). A
     // knowledge base of Mango is a record and a prefix, never a resource of this stack.
-    new Knowledge(this, "Knowledge", {
+    const knowledge = new Knowledge(this, "Knowledge", {
       installation: cfg,
       dataKey: governance.dataKey,
       accessLogs,
       alerts,
     });
+    knowledge.grantApi(apiTaskRole);
     // Daily read-only reconciliation and the alarms of the publication path (TM-M6, TM-M9).
     // It also reports a release agent that serves content other than the release's (D42).
     new Reconciler(this, "Reconciler", {
@@ -495,6 +496,7 @@ export class CoreStack extends Stack {
         ...writeTools.apiEnvironment,
         ...tasks.apiEnvironment,
         ...taskReports.apiEnvironment,
+        ...knowledge.apiEnvironment,
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
         // D60: who may be invited, and what Settings > General > Installation shows to
         // administrators (served by mango-api, not by the public config.json of the SPA).

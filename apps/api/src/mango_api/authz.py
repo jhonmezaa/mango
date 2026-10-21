@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 USER_TYPE = "Mango::User"
 AGENT_TYPE = "Mango::Agent"
 TASK_TYPE = "Mango::Task"
+KNOWLEDGE_BASE_TYPE = "Mango::KnowledgeBase"
 PLATFORM = ("Mango::Platform", "mango")
 # Limit of requests per BatchIsAuthorized call.
 _BATCH_SIZE = 30
@@ -45,6 +46,16 @@ class TaskResource:
     owner: str
 
 
+@dataclass(frozen=True)
+class KnowledgeBaseResource:
+    """What Cedar knows about a knowledge base (D88 (13)): its owner and its groups, read from
+    the Knowledge table when asked, never from the request."""
+
+    kb_id: str
+    owner: str
+    groups: frozenset[str] = frozenset()
+
+
 def _user_ref(user_id: str) -> dict[str, Any]:
     return {"entityIdentifier": {"entityType": USER_TYPE, "entityId": user_id}}
 
@@ -66,6 +77,16 @@ def _task_entity(task: TaskResource) -> dict[str, Any]:
     return {
         "identifier": {"entityType": TASK_TYPE, "entityId": task.task_id},
         "attributes": {"owner": _user_ref(task.owner)},
+    }
+
+
+def _knowledge_entity(kb: KnowledgeBaseResource) -> dict[str, Any]:
+    return {
+        "identifier": {"entityType": KNOWLEDGE_BASE_TYPE, "entityId": kb.kb_id},
+        "attributes": {
+            "owner": _user_ref(kb.owner),
+            "groups": {"set": [{"string": g} for g in sorted(kb.groups)]},
+        },
     }
 
 
@@ -98,9 +119,11 @@ class Authorizer:
         agent: AgentResource | None = None,
         *,
         task: TaskResource | None = None,
+        knowledge: KnowledgeBaseResource | None = None,
     ) -> bool:
-        """One decision. ``agent`` carries the attributes of an ``Mango::Agent`` resource and
-        ``task`` those of a ``Mango::Task``."""
+        """One decision. ``agent`` carries the attributes of an ``Mango::Agent`` resource,
+        ``task`` those of a ``Mango::Task`` and ``knowledge`` those of a
+        ``Mango::KnowledgeBase``."""
         resource: Any = {"identifier": {"entityType": resource_type, "entityId": resource_id}}
         if agent is not None:
             if resource_type != AGENT_TYPE or agent.agent_id != resource_id:
@@ -112,6 +135,16 @@ class Authorizer:
                 logger.error("task attributes do not match the resource; denying")
                 return False
             resource = _task_entity(task)
+        if knowledge is not None:
+            if (
+                resource_type != KNOWLEDGE_BASE_TYPE
+                or knowledge.kb_id != resource_id
+                or agent is not None
+                or task is not None
+            ):
+                logger.error("knowledge base attributes do not match the resource; denying")
+                return False
+            resource = _knowledge_entity(knowledge)
         try:
             resp = self._client.is_authorized(
                 policyStoreId=self._store,
@@ -158,3 +191,40 @@ class Authorizer:
                     allowed.add(str(resource.get("entityId")))
         # Only ids that were asked for count, whatever the response says.
         return frozenset(allowed & {a.agent_id for a in unique})
+
+    def allowed_knowledge_bases(
+        self, user: UserContext, action: str, bases: Sequence[KnowledgeBaseResource]
+    ) -> frozenset[str]:
+        """Ids of the knowledge bases ``user`` may ``action`` on (fail closed), for lists."""
+        allowed: set[str] = set()
+        principal: Any = {"entityType": USER_TYPE, "entityId": user.user_id}
+        cedar_action: Any = {"actionType": "Mango::Action", "actionId": action}
+        unique = list({kb.kb_id: kb for kb in bases}.values())
+        for start in range(0, len(unique), _BATCH_SIZE):
+            batch = unique[start : start + _BATCH_SIZE]
+            entities: Any = [self._user_entity(user), *(_knowledge_entity(kb) for kb in batch)]
+            try:
+                resp = self._client.batch_is_authorized(
+                    policyStoreId=self._store,
+                    entities={"entityList": entities},
+                    requests=[
+                        {
+                            "principal": principal,
+                            "action": cedar_action,
+                            "resource": {"entityType": KNOWLEDGE_BASE_TYPE, "entityId": kb.kb_id},
+                        }
+                        for kb in batch
+                    ],
+                )
+            except Exception:
+                logger.exception("batch authorization check failed; denying")
+                continue
+            for result in resp.get("results", []):
+                resource = result.get("request", {}).get("resource", {})
+                if (
+                    result.get("decision") == "ALLOW"
+                    and resource.get("entityType") == KNOWLEDGE_BASE_TYPE
+                ):
+                    allowed.add(str(resource.get("entityId")))
+        # Only ids that were asked for count, whatever the response says.
+        return frozenset(allowed & {kb.kb_id for kb in unique})
