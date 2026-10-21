@@ -52,7 +52,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | Auditoría en S3 con Object Lock | **A medias:** hash por evento, sin cadena ni digest firmado; bucket en la cuenta de la instalación, `GOVERNANCE` por defecto | `apps/api/src/mango_api/audit.py`; `infra/lib/constructs/governance.ts` | §4.5 |
 | Guardrail base compartido | Hecho | `infra/lib/constructs/agent-platform.ts` | D34 |
 | Guardrail por agente y sobre salidas de tools | No hecho | `ApplyGuardrail` solo aparece como permiso de IAM | §4.5, D34 |
-| RAG y bases de conocimiento | No hecho | — | §4.4 |
+| RAG y bases de conocimiento | Diseñado, sin construir (2026-10-21). Primera versión solo con S3: documentos subidos con URL prefirmada y buckets que ya existen en la cuenta, propuestos por un creador, aprobados por un administrador distinto y copiados al bucket de Mango con un rol limitado a su ARN; la KB es una entidad compartida entre agentes que se asocia en el Builder. D88, aceptada por el dueño el 2026-10-21. La prueba técnica previa, hecha ese día en la cuenta de Mango de la instalación con recursos temporales ya borrados, confirmó los tipos de CloudFormation, la ingesta directa con metadatos, los filtros y el borrado en 6 s o menos (D88 (27)). Modelo de amenazas: `knowledge-bases-threat-model.md` | — | §4.4, D26, D88 |
 | Router «Asistente Mango» | No hecho | — | §4.3 |
 | Memoria de AgentCore | No hecho: desactivada a propósito | `functions/provisioner/src/mango_provisioner/harness.py` | D13 |
 | Tareas sin chat: a pedido y por horario (2026-10-15) | Hecho (D78). Una tarea corre un agente publicado como quien la creó, con un token de Cognito de esa persona emitido para cada ejecución (cliente `Mango-<ns>-tasks`, solo `CUSTOM_AUTH`, con secreto en Secrets Manager, reto firmado con una llave KMS que solo firma `mango-api`); la crea cualquiera con un agente que pueda usar (D82, 2026-10-16); se pausa sola si su dueño pierde el acceso; la instrucción y el resultado solo los ve su dueño; una pausa de un administrador frena también al dueño y lleva un motivo que el dueño lee (visto en una instalación el 2026-10-20, D82 (5)); una persona sin rol de administrador ni de creador creó, ejecutó y retiró una tarea (visto el 2026-10-21, D82 (5)); una alarma avisa de un mensaje de ejecución que agotó sus recepciones; reserva y concilia como un turno; nunca escribe (lo que pida queda como aprobación de su dueño). Las ejecuciones salen de la cola `Mango-<ns>-TaskRuns`, que leen las tareas de `mango-api`; EventBridge Scheduler deja ahí cada hora prevista. El disparador por evento existe en el modelo (con las reglas de D79: solo centrales y 5 al día) y su consumidor lo conecta D79. Una ejecución a la vez por tarea: una por horario o a pedido que se solapa queda «Omitida»; una por evento espera «En cola» a la anterior, sin ocupar un hilo (un mensaje con retraso la reanuda y se repiten todas las comprobaciones), hasta 30 minutos (D81, 2026-10-16, con tests, sin ver en una instalación). Pantalla «Schedules» del diseño de la ronda del 2026-10-16, para todos los roles: el resultado por pasos dentro del detalle, el disparador por anomalía con su tope del día y las fechas y el id corto de la anomalía de cada ejecución (D85), las próximas ejecuciones del editor calculadas por el servidor (D82 (4)); el resultado queda en el detalle y cada ejecución completada o fallida deja un aviso en la Bandeja de su dueño (D83). Comprobado con tests y en el navegador contra el mock; **instalado el 2026-10-15** (D78 (24)): lo que crea en la cuenta, y una persona que creó tareas y las ejecutó, vistos; **sin ver** una programación que entregue | `apps/api/src/mango_api/tasks.py`, `tasks_store.py`, `task_worker.py`, `task_identity.py`; `functions/task-auth`; `infra/lib/constructs/tasks.ts`; `apps/web/src/pages/schedules/` | D26, D78, D81, D82, D85 |
@@ -121,7 +121,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 
 ## 3. Vista general
 
-> Este diagrama está al día (2026-10-19): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-06 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización; no tiene todavía lo de después de esa fecha (las tareas, la Bandeja ni los reportes).
+> Este diagrama está al día (2026-10-21; ese día solo cambió el bloque de lo previsto, con las knowledge bases de D88): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-06 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización; no tiene todavía lo de después de esa fecha (las tareas, la Bandeja, los reportes ni el diseño de las knowledge bases).
 
 ```mermaid
 flowchart TB
@@ -217,7 +217,7 @@ flowchart TB
   subgraph PLAN["PREVISTO, SIN CONSTRUIR"]
     SSO["SSO con el IdP del cliente"]
     ROUTER["Router «Asistente Mango»"]
-    KB["RAG: knowledge-retrieve<br/>Bedrock KB (S3 Vectors) y Managed KB"]
+    KB["Knowledge bases (D88, diseñado): tool knowledge-retrieve<br/>una Bedrock KB sobre S3 Vectors, documentos en S3<br/>subida prefirmada y buckets existentes · Managed KB más adelante"]
     EXT["Sistemas externos: SAP, Google Drive<br/>(OBO / 3LO con AgentCore Identity)"]
     MEMO["Memory y Evaluations de AgentCore"]
     CUR["Reconciliación del gasto contra CUR"]
@@ -226,6 +226,7 @@ flowchart TB
   COG -.-> SSO
   API -.-> ROUTER
   GW -.-> KB
+  API -.-> KB
   GW -.-> EXT
   RT -.-> MEMO
   DDB -.-> CUR
@@ -260,7 +261,7 @@ Límites a tener presentes:
   - `finops`: el conector de Cost Explorer (Lambda).
   - `ops`: el approval executor (Lambda), que ejecuta las escrituras aprobadas (D56).
   - Uno por MCP pack habilitado, de tipo `mcpServer`, hacia su Runtime (D36).
-- **Previstos:** targets OpenAPI (SAP OData), `knowledge-retrieve`, MCP de terceros con 3LO (Drive) y Runtime como *agent-as-tool*.
+- **Previstos:** targets OpenAPI (SAP OData), `knowledge-retrieve` (Lambda target de clase `read`, diseñado en D88 (14)), MCP de terceros con 3LO (Drive) y Runtime como *agent-as-tool*.
 - **Fuera del Gateway, sin tocar ningún sistema (D87 (3)):** la tool interna `mango_report`, una `inline_function` del harness que `mango-api` añade solo a las ejecuciones de una tarea con reporte. El harness devuelve su llamada a `mango-api`, que valida los datos (`mango_core.task_reports`) y termina ahí el turno; no cuenta como paso.
 - **Conectores y packs:**
 
@@ -302,13 +303,21 @@ Límites a tener presentes:
   - Cada una tiene su rol. Los dos que crean Runtimes crean roles solo bajo su prefijo y con su permissions boundary; fuera de eso solo pueden crear los roles vinculados al servicio que AgentCore necesita en la cuenta: el de identidad (los dos; D40 (5), D43 (4)) y el de red (el de packs, D54).
   - El que retira solo borra. De IAM solo puede borrar un rol de agente y sus políticas inline, y solo si el rol lleva el boundary de agentes: lo exige IAM en las dos acciones, además del código de la función (D48 (7)). No desadjunta políticas.
   - Los dos que crean roles tampoco pueden borrar ni cambiar uno ajeno: escribir la política de un rol, borrarla y borrar el rol exigen en IAM que el rol lleve su boundary (D40 (7), D43 (7)). Leer un rol y etiquetarlo no llevan esa condición.
-  - Ingesta de KB, reutilizando el lock S3 y la ingesta incremental de bedrock-chat (previsto; no hay KB todavía).
+  - Sincronización de KBs (`Mango-<ns>-KnowledgeSync`), reutilizando el lock y la ingesta incremental de bedrock-chat, y creación por SDK del rol de lectura de cada fuente de bucket, una vez aprobada, con su boundary (decidida en D88 (10), (11) y (20); no hay KB todavía).
   - Las aprobaciones HITL **no** pasan por Step Functions (D56 (2)); ver §4.5.
 - **Trabajos programados:** la reconciliación diaria de agentes, de solo lectura (D41), y la conciliación del presupuesto cada 5 minutos (D73). Las dos son Lambdas con cola de mensajes fallidos.
 
 ### 4.4 RAG / Knowledge
 
-> **Estado (2026-10-06): previsto, sin construir.** No hay bases de conocimiento, ni el MCP `knowledge-retrieve`, ni ingesta. Lo que sigue es el diseño.
+> **Estado (2026-10-21): diseñado, sin construir.** No hay bases de conocimiento, ni la tool `knowledge-retrieve`, ni ingesta. El dueño decidió el 2026-10-21 el alcance de la primera versión y el cómo, y aceptó D88. La prueba técnica previa, hecha ese día en la cuenta de Mango de la instalación con recursos temporales ya borrados, confirmó lo que el diseño suponía (D88 (27)): los recursos fijos caben en `Core`, la ingesta directa pone los metadatos, el filtro `in` sobre `kb_id` aísla, y un documento borrado deja de salir en 6 s o menos. Modelo de amenazas: [`knowledge-bases-threat-model.md`](../security/threat-models/knowledge-bases-threat-model.md).
+
+**Primera versión (D88):**
+- **Solo S3.** Confluence, Google Drive y GitHub, «Próximamente»; las URLs web (crawler), fuera: para evaluar más adelante (salida a internet, SSRF). Sin escaneo de malware en v1; GuardDuty Malware Protection for S3: para evaluar más adelante.
+- **Dos fuentes:** subida desde el navegador con un POST prefirmado a un prefijo temporal (`uploads/`, se borra al día), que al guardar se valida (tamaño, tipo por sus bytes) y se copia a `kb/<kb_id>/docs/<doc_id>` del bucket de documentos de la instalación; y buckets que ya existen en la cuenta de la instalación: los propone un creador y los aprueba un administrador distinto; después la sincronización los lee con un rol por fuente limitado a su ARN, con un boundary que niega los buckets de Mango y los de otras cuentas, y los copia al bucket de documentos.
+- **La KB es una entidad de Mango, compartida entre agentes:** la crean y editan administradores y creadores de agentes; tiene grupos, área y clasificación; se asocia en el Agent Builder (hasta 5 por versión) y pasa por la revisión de D18. No crea recursos de AWS: es un registro en la tabla `Mango-<ns>-Knowledge` y un prefijo, todas sobre una sola base de Bedrock que nace con la plantilla `Core`.
+- **Sincronización** por Step Functions y Lambda, por SDK (D25): lock, diff, ingesta incremental con `IngestKnowledgeBaseDocuments` sobre un *data source* `CUSTOM` y metadatos puestos inline desde el registro, sin Lambda de transformación; reserva contra el presupuesto de quien sincroniza antes de empezar; frecuencia por EventBridge Scheduler para las fuentes de bucket.
+- **Acceso:** solo responde a quien está en los grupos de la KB (regla 5). Por eso la alerta de D26 ya no avisa de una exposición sino de que esos grupos no recibirán respuestas de esa KB (D88 (15)).
+- **Borrado verificable:** un documento, una fuente o una KB no se dan por borrados hasta que una consulta filtrada no devuelve vectores.
 
 | Tier | Backend | Costo (chico / mediano / grande)* | Cuándo |
 |---|---|---|---|
@@ -319,12 +328,14 @@ Límites a tener presentes:
 
 *Escenarios de `research/vectors.md` §3: chico = 10 KB / 1 GB, mediano = 100 KB / 50 GB, grande = 1 000 KB / 1 TB.
 
-- **Aislamiento.** Cada chunk lleva metadata `business_unit`, `kb_id`, `acl_groups` y `classification`, inyectada en la ingesta con una custom transformation Lambda (patrón de bedrock-chat).
-  - El filtro lo construye **siempre el MCP `knowledge-retrieve`** a partir del JWT verificado, nunca el LLM.
+- **Aislamiento.** Cada chunk lleva metadata `business_unit`, `kb_id`, `acl_groups` y `classification`, puesta inline en la ingesta directa desde el registro de la KB (D88 (23)), no con la custom transformation Lambda de bedrock-chat.
+  - El filtro lo construye **siempre la tool `knowledge-retrieve`** (Lambda target del Gateway) a partir del JWT verificado, nunca el LLM: las KBs de la versión del agente, firmadas por `mango-api` en la invocación, intersecadas con las KBs cuyos grupos actuales comparte quien pregunta, y `andAll[kb_id ∈ permitidas, business_unit ∈ sus áreas]`. Con la lista vacía no consulta. No se filtra por `acl_groups`: el acceso se decide por KB, con sus grupos actuales (D88 (22)); `acl_groups` y `classification` quedan para un ACL por documento futuro.
   - Habrá tests de aislamiento entre áreas y KBs en CI.
 - **Cuotas que condicionan el diseño:**
   - **100 KBs customer-managed por cuenta (no ajustable)**: obliga al modelo pooled.
-  - **Retrieve a 20 req/s**: validar en Service Quotas; si hace falta, cache semántico o subir a Managed KB (600 RPM por KB, ajustable).
+  - **Retrieve a 20 req/s** (confirmado en la cuenta de una instalación el 2026-10-21, D88 (27)): si hace falta, cache semántico o subir a Managed KB (600 RPM por KB, ajustable).
+  - **Ingesta directa:** 5 llamadas por segundo, 25 archivos y 6 MB por llamada, 10 llamadas de ingesta o borrado a la vez (confirmado el 2026-10-21).
+  - **Un filtro `in` con la lista vacía es un error de `Retrieve`, no cero resultados:** la tool no llama a `Retrieve` cuando la persona no puede leer ninguna KB del agente (D88 (27)).
 - Calidad sin hybrid: chunking jerárquico/semántico, rerank opcional por agente (Cohere Rerank 3.5, 2 USD/1k, cargado al budget del agente) y query rewriting.
 
 ### 4.5 Gobernanza
@@ -427,6 +438,8 @@ Límites a tener presentes:
   | `WebSessions` | Registro de las sesiones web; ningún secreto (D63) |
   | `RateLimits` | Límites de tasa compartidos entre tareas (D70) |
   | `Tasks` | Tareas sin chat y sus ejecuciones, con su resultado 90 días (D78) |
+
+  Prevista y sin construir: `Knowledge`, el registro de knowledge bases, sus fuentes, documentos y sincronizaciones (D88 (21)).
 
 - **RLS con STS session policy + `dynamodb:LeadingKeys`** (patrón de bedrock-chat) en `Conversations`: `mango-api` lee los datos de cada persona con credenciales que solo alcanzan sus filas (`USER#u`), también los avisos de su Bandeja, que el worker de tareas escribe en la partición del dueño con el mismo cliente (D83). Otras particiones tienen sus escritores fijados por IAM: el puntero de publicación (provisioner), el de packs instalados (provisioner de packs) y los turnos pendientes (`mango-api` y la función conciliadora).
 - Conversación: **un item por mensaje** (`SK=MSG#…`) en lugar del `MessageMap` monolítico de bedrock-chat. El árbol (`parent`/`children`) para editar y regenerar y el offload a S3 de items grandes son previstos.
@@ -989,7 +1002,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D23 | Acceso de admins a conversaciones | pendiente | 2026-09-30 | [D023-acceso-de-admins-a-conversaciones.md](decisions/D023-acceso-de-admins-a-conversaciones.md) |
 | D24 | Diseño de la UI | vigente | 2026-09-30 | [D024-diseno-de-la-ui.md](decisions/D024-diseno-de-la-ui.md) |
 | D25 | Recursos creados en runtime | vigente | 2026-09-30 | [D025-recursos-creados-en-runtime.md](decisions/D025-recursos-creados-en-runtime.md) |
-| D26 | Reglas del ciclo de vida (del diseño de Claude Design, R1–R16) | parcial | 2026-09-30 | [D026-reglas-del-ciclo-de-vida.md](decisions/D026-reglas-del-ciclo-de-vida.md) |
+| D26 | Reglas del ciclo de vida (del diseño de Claude Design, R1–R16) | parcial | 2026-09-30; 2026-10-21 (el sentido de la alerta de las knowledge bases, decidido por el dueño ese día, por menú: «Sí, cambia el sentido (Recomendada)», en D88 (26)) | [D026-reglas-del-ciclo-de-vida.md](decisions/D026-reglas-del-ciclo-de-vida.md) |
 | D27 | Confirmación de tools de escritura por tramos | vigente | 2026-09-30 (precisada el 2026-10-07: solo un mensaje que terminó como llamada a tool pide confirmar una escritura) | [D027-confirmacion-de-escritura-por-tramos.md](decisions/D027-confirmacion-de-escritura-por-tramos.md) |
 | D28 | Implementación del login propio | parcial | 2026-09-30 | [D028-implementacion-del-login-propio.md](decisions/D028-implementacion-del-login-propio.md) |
 | D29 | Plan de Cognito en clientes | vigente | 2026-09-30 · actualizada el 2026-10-01 | [D029-plan-de-cognito-en-clientes.md](decisions/D029-plan-de-cognito-en-clientes.md) |
@@ -1051,6 +1064,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D85 | El id de la anomalía se ve en cada ejecución | vigente | 2026-10-16 (el punto 1, tomado por el dueño ese día, por menú: «Guardarlo y mostrarlo (Recomendada)»; el cómo, punto 2, propuesto por un agente; lo que mostró la instalación, punto 3, nota del 2026-10-20 propuesta por un agente) | [D085-id-de-la-anomalia-en-pantalla.md](decisions/D085-id-de-la-anomalia-en-pantalla.md) |
 | D86 | Reportes descargables de las tareas: un PDF por ejecución, generado en una Lambda de la release | vigente | 2026-10-19 (los nueve puntos, tomados por el dueño ese día, por menú, todos con la opción «(Recomendada)») | [D086-reportes-descargables-de-tareas.md](decisions/D086-reportes-descargables-de-tareas.md) |
 | D87 | Cómo se construyen los reportes: ReportLab en el zip, una `inline_function` y la serie de la consulta | vigente | 2026-10-19 (los puntos 1 a 4, tomados por el dueño ese día, por menú: «Sí, las cuatro (Recomendada)»; la precisión de la regla 3 del punto 3, validada por el dueño ese día en el panel principal, por menú: «Aceptar la precisión (Recomendada)»; el cómo, punto 5, y las diferencias con el diseño, punto 6, propuestos por un agente y aceptados por el dueño ese día, por menú: «Aceptar (Recomendada)»); 2026-10-20 (el punto 7, tomado por el dueño ese día, por menú: «Totals + descripción (Recomendada)»; lo que mostró la instalación, punto 8, nota de ese día propuesta por un agente); 2026-10-21 (el PDF de anomalía y un fallo real al dibujar, en el punto 8, notas de ese día propuestas por un agente) | [D087-como-se-construyen-los-reportes.md](decisions/D087-como-se-construyen-los-reportes.md) |
+| D88 | Knowledge bases: una entidad compartida entre agentes, con documentos de S3 | vigente | 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente) | [D088-knowledge-bases-sobre-s3.md](decisions/D088-knowledge-bases-sobre-s3.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar. Lo aprobado desde entonces es el hito 1, «instalable por una empresa real» (2026-10-05), del que salen D70 a D74.
