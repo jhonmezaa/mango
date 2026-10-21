@@ -241,8 +241,10 @@ describe("knowledge bases: fixed resources in Core", () => {
       "KnowledgeTable",
       "KnowledgeTableKey",
       "SavedDocuments",
+      "StartSync",
       "Uploads",
     ]);
+    expect(actions(sids.StartSync!)).toEqual(["states:StartExecution"]);
     // Uploads: sign and check under uploads/ only; saved documents: only written, under kb/*/docs/.
     expect(actions(sids.Uploads!).sort()).toEqual(["s3:GetObject", "s3:PutObject"]);
     expect(JSON.stringify(sids.Uploads!.Resource)).toContain("/uploads/*");
@@ -271,9 +273,12 @@ describe("knowledge bases: fixed resources in Core", () => {
     const env = JSON.stringify(service.Properties.ContainerDefinitions);
     expect(env).toContain("KNOWLEDGE_TABLE");
     expect(env).toContain("KNOWLEDGE_BUCKET");
-    expect(ofType("AWS::Lambda::Function").some(([, r]) => /Knowledge/i.test(String(r.Properties.FunctionName)))).toBe(
-      false,
-    );
+    // The only function of the knowledge bases is the synchronization (PR 4); not the tool yet.
+    expect(
+      ofType("AWS::Lambda::Function")
+        .map(([, r]) => String(r.Properties.FunctionName))
+        .filter((name) => /Knowledge/i.test(name)),
+    ).toEqual([`Mango-${ns}-KnowledgeSync`]);
   });
 
   it("takes uploads from the SPA only, with a bucket name the CSP may name (D88 (9))", () => {
@@ -297,5 +302,54 @@ describe("knowledge bases: fixed resources in Core", () => {
   it("expires the records of uploads with their objects", () => {
     const [, table] = only("AWS::DynamoDB::GlobalTable", { TableName: `Mango-${ns}-Knowledge` });
     expect(table.Properties.TimeToLiveSpecification).toEqual({ AttributeName: "expires_at", Enabled: true });
+  });
+
+  it("synchronizes with a role that touches only the registry, people's budgets, one base and kb/*/docs/", () => {
+    const [syncRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-KnowledgeSync` });
+    const statements = statementsOf(syncRoleId);
+    const sids = bySid(statements);
+    expect(actions(sids.KnowledgeBaseDocuments!).sort()).toEqual([
+      "bedrock:DeleteKnowledgeBaseDocuments",
+      "bedrock:GetKnowledgeBaseDocuments",
+      "bedrock:IngestKnowledgeBaseDocuments",
+      "bedrock:Retrieve",
+    ]);
+    expect(sids.KnowledgeBaseDocuments!.Resource).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseArn"] });
+    expect(actions(sids.ReserveAndSettleBudgets!)).toEqual(["dynamodb:UpdateItem"]);
+    expect(sids.ReserveAndSettleBudgets!.Condition).toEqual({
+      "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["USER#*"] },
+    });
+    expect(actions(sids.SavedDocuments!).sort()).toEqual(["s3:DeleteObject", "s3:GetObject"]);
+    expect(JSON.stringify(sids.SavedDocuments!.Resource)).toContain("/kb/*/docs/*");
+    expect(JSON.stringify(sids.StartNextSync!.Resource)).toContain(`stateMachine:Mango-${ns}-KnowledgeSync`);
+    const all = statements.flatMap(actions);
+    for (const forbidden of ["dynamodb:Scan", "s3:PutObject", "s3:ListBucket", "iam:PassRole"]) {
+      expect(all).not.toContain(forbidden);
+    }
+    expect(all.some((a) => a.endsWith("*"))).toBe(false);
+  });
+
+  it("runs the synchronization in a state machine of 2 hours, swept every hour, that alarms when it fails", () => {
+    const [machineId, machine] = only("AWS::StepFunctions::StateMachine", { StateMachineName: `Mango-${ns}-KnowledgeSync` });
+    const definition = JSON.stringify(machine.Properties.DefinitionString);
+    for (const stepName of ["acquire", "plan", "ingest", "poll", "delete", "verify", "finish", "sweep"]) {
+      expect(definition).toContain(`\\"step\\":\\"${stepName}\\"`);
+    }
+    expect(definition).toContain('\\"TimeoutSeconds\\":7200');
+    expect(machine.Properties.LoggingConfiguration.IncludeExecutionData).toBe(false);
+    const [, rule] = only("AWS::Events::Rule", { Name: `Mango-${ns}-KnowledgeSync-sweep` });
+    expect(rule.Properties.ScheduleExpression).toBe("rate(1 hour)");
+    const [target] = rule.Properties.Targets;
+    expect(target.Arn).toEqual({ Ref: machineId });
+    expect(JSON.parse(target.Input)).toEqual({ mode: "sweep" });
+    const [, alarm] = only("AWS::CloudWatch::Alarm", { AlarmName: `Mango-${ns}-KnowledgeSync-failed` });
+    expect(alarm.Properties.AlarmActions).toHaveLength(1);
+    expect(alarm.Properties.AlarmDescription).toMatch(/Look first at /);
+    const [, fn] = only("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-KnowledgeSync` });
+    const env = fn.Properties.Environment.Variables;
+    expect(env.EMBEDDING_PRICE).toBe("0.02");
+    expect(env.KNOWLEDGE_BASE_ID).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseId"] });
+    // Invoked by Step Functions only, synchronously: no dead-letter queue (AGENTS.md, CKV_AWS_116).
+    expect(fn.Properties.DeadLetterConfig).toBeUndefined();
   });
 });

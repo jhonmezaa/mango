@@ -9,11 +9,13 @@ import json
 import time
 import zipfile
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
@@ -22,7 +24,7 @@ from mango_api import knowledge as knowledge_module
 from mango_api import knowledge_store
 from mango_api.authz import Authorizer
 from mango_api.groups import GroupsUnavailableError
-from mango_api.knowledge import CHANGES_PER_HOUR, KnowledgeDeps
+from mango_api.knowledge import CHANGES_PER_HOUR, KnowledgeDeps, SyncStarter
 from mango_api.knowledge_store import ALL_PK, INDEX_ALL, KnowledgeStore
 from mango_api.knowledge_uploads import S3_CONFIG, DocumentStorage
 from mango_core.groups import GroupDef
@@ -65,6 +67,19 @@ CLAIMS: dict[str, dict[str, Any]] = {
 }
 GROUPS = ("hr", "finance", "people")
 BUCKET = "mango-test-knowledge-0a1b2c3d"
+SYNC_ARN = "arn:aws:states:us-east-1:111122223333:stateMachine:Mango-test-KnowledgeSync"
+
+
+@dataclass
+class FakeSfn:
+    started: list[dict[str, Any]] = field(default_factory=list)
+    fail: bool = False
+
+    def start_execution(self, **request: Any) -> dict[str, Any]:
+        if self.fail:
+            raise ClientError({"Error": {"Code": "ServiceUnavailable"}}, "StartExecution")
+        self.started.append({**request, "input": json.loads(request["input"])})
+        return {}
 
 
 class FakeVerifier:
@@ -115,6 +130,7 @@ class Env:
     groups: FakeGroups
     db: Any
     s3: Any = None
+    sfn: Any = None
 
     def create(self, token: str = "creator", **body: Any) -> Any:
         payload = {"name": "Políticas de RR. HH.", "groups": ["hr"], **body}
@@ -172,6 +188,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
         create_knowledge_table(db, "knowledge")
         s3 = boto3.client("s3", region_name="us-east-1", config=S3_CONFIG)
         s3.create_bucket(Bucket=BUCKET)
+        sfn = FakeSfn()
         audit, cedar, groups = RecordingAudit(), CedarPolicyStore(), FakeGroups()
         deps = KnowledgeDeps(
             store=KnowledgeStore(db, "knowledge"),
@@ -181,6 +198,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
             changes=app_module.Limits().limiter("knowledge.changes"),
             storage=DocumentStorage(s3, BUCKET, "us-east-1"),
             uploads=app_module.Limits().limiter("knowledge.uploads"),
+            sync=SyncStarter(sfn, SYNC_ARN),
+            user_limit=lambda _user: Decimal("5"),
         )
 
         def factory(settings: Any) -> app_module.Services:
@@ -204,7 +223,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
 
         asgi = app_module.create_app(_settings(), services_factory=factory)
         client = TestClient(asgi, base_url=f"http://{HOST}")  # type: ignore[arg-type]
-        yield Env(client, audit, groups, db, s3)
+        yield Env(client, audit, groups, db, s3, sfn)
         assert cedar.errors == []
 
 
@@ -238,15 +257,15 @@ def test_creating_records_the_caller_as_owner_and_starts_unsynchronized(env: Env
 
 
 def test_nobody_sends_an_owner_a_status_an_id_or_counters(env: Env) -> None:
-    for field, value in (
+    for name, value in (
         ("owner_id", "admin-1"),
         ("status", "ok"),
         ("kb_id", "01JABCDEFGHJKMNPQRSTVWXYZ0"),
         ("documents", 5),
         ("version", 7),
     ):
-        response = env.create(**{field: value})
-        assert response.status_code == 422, field
+        response = env.create(**{name: value})
+        assert response.status_code == 422, name
         assert _code(response) == "invalid_request"
 
 
@@ -631,6 +650,7 @@ def test_a_document_that_is_not_what_it_says_is_rejected(
     assert response.json() == {
         "saved": [],
         "rejected": [{"doc_id": file["doc_id"], "reason": reason}],
+        "sync": None,
     }
     assert env.get("creator", kb["kb_id"]).json()["documents"] == 0
     listed = env.s3.list_objects_v2(Bucket=BUCKET, Prefix="kb/")
@@ -714,3 +734,112 @@ def test_the_copy_takes_only_the_object_that_was_checked(env: Env) -> None:
     [copy] = [k for n, k in calls if n == "copy_object"]
     assert copy["CopySourceIfMatch"] == found.etag
     assert copy["ChecksumAlgorithm"] == "SHA256"
+
+
+# --- Synchronization (D88 (11), (24)) -------------------------------------------------------
+
+
+def _saved(env: Env, kb: dict[str, Any], token: str = "creator") -> dict[str, Any]:
+    files = [{"name": "a.pdf", "size": len(PDF), "content_type": "application/pdf"}]
+    upload = _uploads(env, kb, files, token=token).json()
+    _put(env, upload["files"][0], PDF, "application/pdf")
+    response = _save(env, kb, upload, token=token)
+    assert response.status_code == 200, response.text
+    result: dict[str, Any] = response.json()
+    return result
+
+
+def test_saving_starts_the_synchronization_of_whoever_saved(env: Env) -> None:
+    kb = env.created()
+    result = _saved(env, kb)
+    assert result["sync"] == "started"
+    [started] = env.sfn.started
+    assert started["stateMachineArn"] == SYNC_ARN
+    assert started["name"] == started["input"]["sync_id"]
+    assert started["input"] == {
+        "mode": "sync",
+        "kb_id": kb["kb_id"],
+        "sync_id": started["name"],
+        "requested_by": {"user_id": "creator-1", "email": "creator1@example.com", "limit": "5"},
+    }
+    assert env.get("creator", kb["kb_id"]).json()["sync_running"] is True
+    [request] = env.events("kb.sync_request", None)
+    assert request == {"kb_id": kb["kb_id"], "sync_id": started["name"], "outcome": "started"}
+
+
+def test_what_is_asked_for_while_one_runs_is_queued_for_after_it(env: Env) -> None:
+    kb = env.created()
+    _saved(env, kb)
+    second = _saved(env, kb, token="admin")
+    assert second["sync"] == "queued"
+    assert len(env.sfn.started) == 1
+    item = env.db.get_item(
+        TableName="knowledge", Key={"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}}
+    )["Item"]
+    assert json.loads(item["sync_again"]["S"])["user_id"] == "admin-1"
+
+
+def test_a_machine_that_does_not_start_leaves_what_was_saved_and_frees_the_knowledge_base(
+    env: Env,
+) -> None:
+    kb = env.created()
+    env.sfn.fail = True
+    result = _saved(env, kb)
+    assert result["sync"] == "unavailable"
+    assert [d["status"] for d in result["saved"]] == ["uploaded"]
+    assert env.get("creator", kb["kb_id"]).json()["sync_running"] is False
+    path = f"/api/knowledge-bases/{kb['kb_id']}/sync"
+    response = env.client.post(path, headers=_h("creator"), json={})
+    assert (response.status_code, _code(response)) == (503, "sync_unavailable")
+    env.sfn.fail = False
+    response = env.client.post(path, headers=_h("creator"), json={})
+    assert (response.status_code, response.json()) == (202, {"sync": "started"})
+
+
+def test_synchronizing_now_is_for_who_edits(env: Env) -> None:
+    kb = env.created()
+    path = f"/api/knowledge-bases/{kb['kb_id']}/sync"
+    assert env.client.post(path, headers=_h("creator2"), json={}).status_code == 403
+    assert env.client.post(path, headers=_h("member"), json={}).status_code == 403
+    assert env.client.post(path, headers=_h("admin"), json={}).status_code == 202
+    assert env.sfn.started[0]["input"]["requested_by"]["user_id"] == "admin-1"
+
+
+def test_removing_a_document_marks_it_and_starts_the_synchronization(env: Env) -> None:
+    kb = env.created()
+    [document] = _saved(env, kb)["saved"]
+    env.sfn.started.clear()
+    env.db.update_item(
+        TableName="knowledge",
+        Key={"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}},
+        UpdateExpression="REMOVE sync_id",
+    )
+    path = f"/api/knowledge-bases/{kb['kb_id']}/documents/{document['doc_id']}/delete"
+    assert env.client.post(path, headers=_h("creator2"), json={}).status_code == 403
+    response = env.client.post(path, headers=_h("creator"), json={})
+    assert response.status_code == 202, response.text
+    assert response.json()["document"]["status"] == "deleting"
+    assert response.json()["sync"] == "started"
+    again = env.client.post(path, headers=_h("creator"), json={})
+    assert (again.status_code, _code(again)) == (409, "document_deleting")
+    unknown = f"/api/knowledge-bases/{kb['kb_id']}/documents/01JABCDEFGHJKMNPQRSTVWXYZ0/delete"
+    assert env.client.post(unknown, headers=_h("creator"), json={}).status_code == 404
+    item = env.db.get_item(
+        TableName="knowledge", Key={"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}}
+    )["Item"]
+    assert "deleting_since" in item
+    [applied] = env.events("kb.document_delete")
+    assert applied["doc_id"] == document["doc_id"]
+
+
+def test_deleting_a_knowledge_base_starts_the_synchronization_that_deletes_it(env: Env) -> None:
+    kb = env.created()
+    env.delete("creator", kb)
+    [started] = env.sfn.started
+    assert started["input"]["kb_id"] == kb["kb_id"]
+    item = env.db.get_item(
+        TableName="knowledge", Key={"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}}
+    )["Item"]
+    assert (item["status"]["S"], "deleting_since" in item) == ("deleting", True)
+    path = f"/api/knowledge-bases/{kb['kb_id']}/sync"
+    assert _code(env.client.post(path, headers=_h("creator"), json={})) == "knowledge_base_deleting"

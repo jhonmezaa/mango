@@ -344,6 +344,18 @@ export const zDocumentOutSchema = z.object({
 });
 
 /**
+ * DocumentDeleteOut
+ */
+export const zDocumentDeleteOutSchema = z.object({
+    document: zDocumentOutSchema,
+    sync: z.enum([
+        'started',
+        'queued',
+        'unavailable'
+    ])
+});
+
+/**
  * DocumentListOut
  */
 export const zDocumentListOutSchema = z.object({
@@ -1351,7 +1363,12 @@ export const zSaveInSchema = z.object({
  */
 export const zSaveOutSchema = z.object({
     rejected: z.array(zRejectedOutSchema),
-    saved: z.array(zDocumentOutSchema)
+    saved: z.array(zDocumentOutSchema),
+    sync: z.enum([
+        'started',
+        'queued',
+        'unavailable'
+    ]).nullable()
 });
 
 /**
@@ -1573,6 +1590,7 @@ export const zKnowledgeBaseOutSchema = z.object({
     name: z.string(),
     owner: zOwnerOutSchema,
     status: zStatusSchema,
+    sync_running: z.boolean(),
     sync_schedule: z.enum([
         'manual',
         '6h',
@@ -1636,6 +1654,17 @@ export const zRunDetailOutSchema = z.object({
  */
 export const zSubmitInSchema = z.object({
     revision: z.int().gte(1).lte(1000000)
+});
+
+/**
+ * SyncOut
+ */
+export const zSyncOutSchema = z.object({
+    sync: z.enum([
+        'started',
+        'queued',
+        'unavailable'
+    ])
 });
 
 /**
@@ -2895,6 +2924,29 @@ export const zSaveUploadedDocumentsPath = z.object({
  * Successful Response
  */
 export const zSaveUploadedDocumentsResponse = zSaveOutSchema;
+
+export const zDeleteKnowledgeBaseDocumentBody = zEmptyInSchema;
+
+export const zDeleteKnowledgeBaseDocumentPath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+    doc_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDeleteKnowledgeBaseDocumentResponse = zDocumentDeleteOutSchema;
+
+export const zSynchronizeKnowledgeBaseBody = zEmptyInSchema;
+
+export const zSynchronizeKnowledgeBasePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zSynchronizeKnowledgeBaseResponse = zSyncOutSchema;
 
 export const zRequestDocumentUploadsBody = zUploadsInSchema;
 

@@ -115,6 +115,7 @@ describe("operational alarms of Core", () => {
         "GatewayInterceptor-failing",
         "Knowledge-deletion-unverified",
         "Knowledge-retrieve-throttled",
+        "KnowledgeSync-failed",
         "PreSignUp-throttled",
         "PreTokenGeneration-failing",
         "TaskReport-failed",

@@ -23,6 +23,8 @@ const releaseDefaultsSchema = z
       modelId,
       z.object({ input: price, output: price, cacheRead: price, cacheWrite: price }).strict(),
     ),
+    /** USD per million input tokens of each embedding model (D88 (7), (24)). */
+    embeddingPrices: z.record(z.string().regex(/^amazon\.titan-embed-[a-z0-9.:-]+$/), price),
     budgets: z
       .object({
         userMonthlyUsd: z.number().positive().max(10_000),
@@ -213,6 +215,7 @@ export function coreParameters(stack: Stack): CoreParameters {
     },
     models: defaults.models,
     modelPrices: defaults.modelPrices,
+    embeddingPrices: defaults.embeddingPrices,
     budgets: defaults.budgets,
     audit: { retentionDays: Token.asNumber(auditDays.valueAsNumber), mode: "GOVERNANCE" },
     packs: { network: { cidr: "10.210.0.0/22", availabilityZoneIds: ["use1-az1", "use1-az2"] } },

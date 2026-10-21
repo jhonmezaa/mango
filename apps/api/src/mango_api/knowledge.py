@@ -27,14 +27,17 @@ Security notes (security-best-practices, FastAPI):
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
 import asyncio
+import json
 import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal, Protocol
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
@@ -137,6 +140,10 @@ class DeleteIn(_Strict):
     version: Annotated[int, Field(ge=1)]
 
 
+class EmptyIn(_Strict):
+    pass
+
+
 class OwnerOut(_Strict):
     user_id: str
     name: str | None
@@ -162,6 +169,8 @@ class KnowledgeBaseOut(_Strict):
     can_edit: bool
     can_view_documents: bool
     """Its documents and «Probar búsqueda» (D88 (13)); the list itself is for every creator."""
+    sync_running: bool
+    """A synchronization holds it: «Ya hay una sincronización en curso» (design 2.4)."""
 
 
 class KnowledgeBaseListOut(_Strict):
@@ -222,9 +231,24 @@ class DocumentOut(_Strict):
     created_at: datetime
 
 
+SyncState = Literal["started", "queued", "unavailable"]
+"""Started now; queued after the one running; or not started (it may be asked for again)."""
+
+
+class SyncOut(_Strict):
+    sync: SyncState
+
+
 class SaveOut(_Strict):
     saved: list[DocumentOut]
     rejected: list[RejectedOut]
+    sync: SyncState | None
+    """The synchronization that indexes them, when something was saved."""
+
+
+class DocumentDeleteOut(_Strict):
+    document: DocumentOut
+    sync: SyncState
 
 
 class DocumentListOut(_Strict):
@@ -247,6 +271,25 @@ class Authorize(Protocol):
     ) -> Awaitable[None]: ...
 
 
+class SyncStarter:
+    """Starts ``Mango-<ns>-KnowledgeSync`` for one knowledge base (D88 (11)). The input is ids,
+    and who asks with their limit: everything else the machine reads from the registry."""
+
+    def __init__(self, sfn: Any, state_machine_arn: str) -> None:
+        self._sfn = sfn
+        self._arn = state_machine_arn
+
+    def start(self, kb_id: str, sync_id: str, requester: dict[str, str]) -> None:
+        self._sfn.start_execution(
+            stateMachineArn=self._arn,
+            name=sync_id,
+            input=json.dumps(
+                {"mode": "sync", "kb_id": kb_id, "sync_id": sync_id, "requested_by": requester},
+                separators=(",", ":"),
+            ),
+        )
+
+
 @dataclass
 class KnowledgeDeps:
     store: KnowledgeStore
@@ -259,6 +302,10 @@ class KnowledgeDeps:
     storage: DocumentStorage | None = None
     """The documents bucket; ``None`` until mango-api may use it (the routes answer 503)."""
     uploads: Limiter | None = None
+    sync: SyncStarter | None = None
+    """The state machine ``Mango-<ns>-KnowledgeSync``; ``None`` until mango-api may start it."""
+    user_limit: Callable[[str], Decimal] | None = None
+    """The monthly budget limit of a person: the synchronization reserves against it (D88 (24))."""
 
 
 def resource_of(kb: KnowledgeBase) -> KnowledgeBaseResource:
@@ -417,9 +464,84 @@ def delete_knowledge_base(
     verifies it (D88 (16)). The record stays, and listed, until then."""
     _editable(kb, version)
     detail = {"documents": kb.documents, "bytes": kb.bytes}
-    return _write(
-        deps, "kb.delete", caller, kb, changes={"status": Status.DELETING.value}, detail=detail
-    )
+    changes = {"status": Status.DELETING.value, "deleting_since": _now_iso(deps)}
+    return _write(deps, "kb.delete", caller, kb, changes=changes, detail=detail)
+
+
+def request_sync(deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase) -> SyncState:
+    """Start the synchronization of ``kb`` for ``caller``, or ask the one running for one more.
+    Its embeddings go to the caller's budget (D88 (24)), reserved by the machine before it
+    ingests. Never raises for the machine: what was saved stays saved, and «Sincronizar ahora»
+    asks again."""
+    if deps.sync is None or deps.user_limit is None:
+        return "unavailable"
+    try:
+        limit = deps.user_limit(caller.user.user_id)
+    except Exception:
+        logger.exception("knowledge sync: budget limit unavailable")
+        return "unavailable"
+    requester = {
+        "user_id": caller.user.user_id,
+        "email": caller.user.email or "",
+        "limit": str(limit),
+    }
+    sync_id = knowledge.new_id(int(deps.clock() * 1000))
+    try:
+        started = deps.store.claim_sync(
+            kb.kb_id, sync_id, json.dumps(requester, sort_keys=True), now=_now_iso(deps)
+        )
+    except (KnowledgeConflictError, KnowledgeStoreUnavailableError):
+        logger.exception("knowledge sync could not be claimed")
+        return "unavailable"
+    state: SyncState = "queued"
+    if started:
+        try:
+            deps.sync.start(kb.kb_id, sync_id, requester)
+            state = "started"
+        except (BotoCoreError, ClientError):
+            logger.exception("knowledge sync could not start")
+            try:
+                deps.store.drop_sync(kb.kb_id, sync_id)
+            except KnowledgeStoreUnavailableError:
+                logger.exception("knowledge sync claim could not be dropped")
+            state = "unavailable"
+    try:
+        deps.audit.emit(
+            "kb.sync_request",
+            caller.user.user_id,
+            {"kb_id": kb.kb_id, "sync_id": sync_id, "outcome": state},
+            caller.user,
+        )
+    except Exception:
+        # The machine audits the synchronization itself (``kb.sync``).
+        logger.exception("knowledge sync request could not be audited")
+    return state
+
+
+def delete_document(
+    deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase, doc_id: str
+) -> Document:
+    """Mark a document ``deleting``: it leaves the answers once the synchronization deleted
+    and verified it (D88 (16)); until then it shows «Borrando»."""
+    _accepting(kb)
+    try:
+        document = deps.store.document(kb.kb_id, doc_id)
+    except KnowledgeStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    if document is None:
+        raise HTTPException(status_code=404, detail="not found")
+    if document.status is DocumentStatus.DELETING:
+        raise ApiError(409, "document_deleting", "this document is being deleted")
+    detail = {"doc_id": doc_id, "bytes": document.size}
+    _audit(deps, "kb.document_delete", caller, kb, outcome="requested", **detail)
+    try:
+        deps.store.delete_document(kb.kb_id, doc_id, now=_now_iso(deps))
+    except KnowledgeConflictError as exc:
+        raise ApiError(409, "document_deleting", "this document is being deleted") from exc
+    except KnowledgeStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    _audit(deps, "kb.document_delete", caller, kb, outcome="applied", **detail)
+    return replace(document, status=DocumentStatus.DELETING)
 
 
 def knowledge_base_out(
@@ -447,6 +569,7 @@ def knowledge_base_out(
         updated_at=datetime.fromisoformat(kb.updated_at),
         can_edit=can_edit and kb.status is not Status.DELETING,
         can_view_documents=can_view,
+        sync_running=kb.sync_running,
     )
 
 
@@ -658,6 +781,7 @@ def knowledge_router(  # noqa: PLR0915 - registers the route closures
     shape an answer (no 403). ``is_allowed(caller, action)``: the same on the platform."""
     router = APIRouter(prefix="/api/knowledge-bases")
     KbId = Annotated[str, Path(pattern=knowledge.ID_PATTERN)]  # noqa: N806
+    DocId = Annotated[str, Path(pattern=knowledge.ID_PATTERN)]  # noqa: N806
 
     async def run[T](fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         return await asyncio.to_thread(fn, *args, **kwargs)
@@ -738,7 +862,32 @@ def knowledge_router(  # noqa: PLR0915 - registers the route closures
         kb = await editable(caller, kb_id)
         _limit(deps.changes, caller.user.user_id)
         deleted = await run(delete_knowledge_base, deps, caller, kb, body.version)
+        # Its documents and vectors are deleted, and verified, by the synchronization.
+        await run(request_sync, deps, caller, deleted)
         return (await out(caller, [deleted]))[0]
+
+    @router.post("/{kb_id}/sync", response_model=SyncOut, status_code=202)
+    async def synchronize_knowledge_base(kb_id: KbId, _body: EmptyIn, caller: Viewer) -> SyncOut:
+        """«Sincronizar ahora» (design 1)."""
+        kb = await editable(caller, kb_id)
+        _accepting(kb)
+        _limit(deps.changes, caller.user.user_id)
+        state = await run(request_sync, deps, caller, kb)
+        if state == "unavailable":
+            raise ApiError(503, "sync_unavailable", "please try again")
+        return SyncOut(sync=state)
+
+    @router.post(
+        "/{kb_id}/documents/{doc_id}/delete", response_model=DocumentDeleteOut, status_code=202
+    )
+    async def delete_knowledge_base_document(
+        kb_id: KbId, doc_id: DocId, _body: EmptyIn, caller: Viewer
+    ) -> DocumentDeleteOut:
+        kb = await editable(caller, kb_id)
+        _limit(deps.changes, caller.user.user_id)
+        document = await run(delete_document, deps, caller, kb, doc_id)
+        state = await run(request_sync, deps, caller, kb)
+        return DocumentDeleteOut(document=document_out(document), sync=state)
 
     @router.post("/{kb_id}/uploads", response_model=UploadsOut, status_code=201)
     async def request_document_uploads(kb_id: KbId, body: UploadsIn, caller: Viewer) -> UploadsOut:
@@ -761,7 +910,9 @@ def knowledge_router(  # noqa: PLR0915 - registers the route closures
         if deps.uploads is not None:
             _limit(deps.uploads, caller.user.user_id)
         saved, rejected = await run(save_documents, deps, caller, kb, body)
-        return SaveOut(saved=[document_out(d) for d in saved], rejected=rejected)
+        # What was saved is indexed by the synchronization (D88 (11)).
+        state = await run(request_sync, deps, caller, kb) if saved else None
+        return SaveOut(saved=[document_out(d) for d in saved], rejected=rejected, sync=state)
 
     @router.get("/{kb_id}/documents", response_model=DocumentListOut)
     async def list_documents(kb_id: KbId, caller: Viewer) -> DocumentListOut:

@@ -247,6 +247,11 @@ export const installationSchema = z
         cacheWrite: z.number().nonnegative(),
       }),
     ),
+    /**
+     * USD per million input tokens of each embedding model (D88 (24), rule 7). Optional: the
+     * release's own (`release-defaults.json`) when the installation config names none.
+     */
+    embeddingPrices: z.record(z.string(), z.number().nonnegative()).optional(),
     /** Budget per user per calendar month, in USD (MVP v0: user and agent scopes). */
     budgets: z.object({
       userMonthlyUsd: z.number().positive().max(10_000),

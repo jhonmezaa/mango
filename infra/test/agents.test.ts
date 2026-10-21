@@ -240,10 +240,19 @@ describe("Brains: model catalog administration (D38)", () => {
       Resource: "*",
     });
     const actions = statements.flatMap(({ statement }) => [statement.Action].flat());
-    expect(actions.filter((a) => /^bedrock:(List|Get|Create|Put|Delete|Update)/.test(a)).sort()).toEqual([
+    // The documents of the one knowledge base, for its synchronization only: knowledge.test.ts
+    // pins them to that role and that base (D88 (32)).
+    const documents = /^bedrock:(Get|Delete|Ingest)KnowledgeBaseDocuments$/;
+    const control = actions.filter((a) => /^bedrock:(List|Get|Create|Put|Delete|Update)/.test(a));
+    expect(control.filter((a) => !documents.test(a)).sort()).toEqual([
       "bedrock:ListFoundationModels",
       "bedrock:ListInferenceProfiles",
     ]);
+    const withDocuments = statements.filter(({ statement }) =>
+      [statement.Action].flat().some((a) => documents.test(String(a))),
+    );
+    expect(withDocuments).toHaveLength(1);
+    expect(withDocuments[0]!.statement.Sid).toBe("KnowledgeBaseDocuments");
     expect(actions).not.toContain("bedrock:*");
   });
 

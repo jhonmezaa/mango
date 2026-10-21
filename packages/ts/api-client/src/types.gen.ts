@@ -1079,6 +1079,17 @@ export type DisableIn = {
 };
 
 /**
+ * DocumentDeleteOut
+ */
+export type DocumentDeleteOut = {
+    document: DocumentOut;
+    /**
+     * Sync
+     */
+    sync: 'started' | 'queued' | 'unavailable';
+};
+
+/**
  * DocumentListOut
  */
 export type DocumentListOut = {
@@ -1678,6 +1689,10 @@ export type KnowledgeBaseOut = {
     name: string;
     owner: OwnerOut;
     status: Status;
+    /**
+     * Sync Running
+     */
+    sync_running: boolean;
     /**
      * Sync Schedule
      */
@@ -3157,6 +3172,10 @@ export type SaveOut = {
      * Saved
      */
     saved: Array<DocumentOut>;
+    /**
+     * Sync
+     */
+    sync: 'started' | 'queued' | 'unavailable' | null;
 };
 
 /**
@@ -3330,6 +3349,16 @@ export type SubmitIn = {
      * Revision
      */
     revision: number;
+};
+
+/**
+ * SyncOut
+ */
+export type SyncOut = {
+    /**
+     * Sync
+     */
+    sync: 'started' | 'queued' | 'unavailable';
 };
 
 /**
@@ -6589,6 +6618,70 @@ export type SaveUploadedDocumentsResponses = {
 };
 
 export type SaveUploadedDocumentsResponse = SaveUploadedDocumentsResponses[keyof SaveUploadedDocumentsResponses];
+
+export type DeleteKnowledgeBaseDocumentData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+        /**
+         * Doc Id
+         */
+        doc_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/documents/{doc_id}/delete';
+};
+
+export type DeleteKnowledgeBaseDocumentErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DeleteKnowledgeBaseDocumentError = DeleteKnowledgeBaseDocumentErrors[keyof DeleteKnowledgeBaseDocumentErrors];
+
+export type DeleteKnowledgeBaseDocumentResponses = {
+    /**
+     * Successful Response
+     */
+    202: DocumentDeleteOut;
+};
+
+export type DeleteKnowledgeBaseDocumentResponse = DeleteKnowledgeBaseDocumentResponses[keyof DeleteKnowledgeBaseDocumentResponses];
+
+export type SynchronizeKnowledgeBaseData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/sync';
+};
+
+export type SynchronizeKnowledgeBaseErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SynchronizeKnowledgeBaseError = SynchronizeKnowledgeBaseErrors[keyof SynchronizeKnowledgeBaseErrors];
+
+export type SynchronizeKnowledgeBaseResponses = {
+    /**
+     * Successful Response
+     */
+    202: SyncOut;
+};
+
+export type SynchronizeKnowledgeBaseResponse = SynchronizeKnowledgeBaseResponses[keyof SynchronizeKnowledgeBaseResponses];
 
 export type RequestDocumentUploadsData = {
     body: UploadsIn;

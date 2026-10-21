@@ -115,6 +115,8 @@ class Settings:
     knowledge_table: str = ""
     """Registry of the knowledge bases (D88 (21)); empty until mango-api may use it."""
     knowledge_bucket: str = ""
+    knowledge_sync_state_machine_arn: str = ""
+    """``Mango-<ns>-KnowledgeSync`` (D88 (11)): indexes, deletes and verifies documents."""
     """Documents of the knowledge bases (D88 (9)): presigned uploads and the copy to ``kb/``."""
     """KMS key whose signature answers that client's challenge; only mango-api signs."""
 
@@ -193,6 +195,7 @@ class Settings:
             task_reports_bucket=env.get("TASK_REPORTS_BUCKET", ""),
             knowledge_table=env.get("KNOWLEDGE_TABLE", ""),
             knowledge_bucket=env.get("KNOWLEDGE_BUCKET", ""),
+            knowledge_sync_state_machine_arn=env.get("KNOWLEDGE_SYNC_STATE_MACHINE_ARN", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

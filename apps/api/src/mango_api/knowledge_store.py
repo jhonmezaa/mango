@@ -12,8 +12,11 @@ Item layout, all under ``PK = KB#<kb id>`` (a ULID, ``mango_core.knowledge``):
 * ``SK = DOC#<doc id>``: a saved document. Its key derives from the ids only
   (``kb/<kb id>/docs/<doc id>``); the name is what is shown, never part of a key. ``status``
   ``uploaded`` until the synchronization indexes it (D88 (8)), and ``reason`` when it fails.
-* Sources (``SRC#``) and synchronizations (``SYNC#``) come with the PRs that write them
-  (D88 (10), (11)).
+* ``SK = SYNC#<sync id>``: one synchronization, written by ``functions/knowledge-sync``.
+  On the knowledge base, ``sync_id`` is the one running (mango-api claims it before starting
+  the state machine) and ``sync_again`` who asked for one more meanwhile; ``deleting_since``
+  is when the oldest pending deletion was asked for (the alarm of D88 (16)).
+* Sources (``SRC#``) come with PR 7 (D88 (10)).
 
 The counters of a knowledge base (``documents``, ``bytes``) grow in the same transaction as
 the documents they count, so the limits of D88 (9) hold whoever saves at the same time.
@@ -74,6 +77,7 @@ class KnowledgeBase:
     version: int
     created_at: str
     updated_at: str
+    sync_running: bool = False
 
 
 @dataclass(frozen=True)
@@ -152,6 +156,7 @@ def _knowledge_base(item: dict[str, Any]) -> KnowledgeBase:
         version=_int(item, "version"),
         created_at=item["created_at"]["S"],
         updated_at=item["updated_at"]["S"],
+        sync_running="sync_id" in item,
     )
 
 
@@ -468,3 +473,95 @@ class KnowledgeStore:
         except ClientError as exc:
             raise KnowledgeStoreUnavailableError from exc
         return out
+
+    # --- Synchronizations (D88 (11)) ------------------------------------------------------
+
+    def claim_sync(self, kb_id: str, sync_id: str, requester: str, *, now: str) -> bool:
+        """``True`` if this synchronization holds the knowledge base and may start; ``False``
+        if another runs, which then starts one more for ``requester`` when it ends."""
+        key = {"PK": _s(_pk(kb_id)), "SK": _s(SK_META)}
+        for _attempt in range(2):
+            try:
+                self._db.update_item(
+                    TableName=self._table,
+                    Key=key,
+                    UpdateExpression="SET sync_id = :id, sync_requested_at = :now",
+                    ConditionExpression="attribute_exists(PK) AND attribute_not_exists(sync_id)",
+                    ExpressionAttributeValues={":id": _s(sync_id), ":now": _s(now)},
+                )
+            except ClientError as exc:
+                if not _conditional(exc):
+                    raise KnowledgeStoreUnavailableError from exc
+            else:
+                return True
+            try:
+                self._db.update_item(
+                    TableName=self._table,
+                    Key=key,
+                    UpdateExpression="SET sync_again = :r",
+                    ConditionExpression="attribute_exists(sync_id)",
+                    ExpressionAttributeValues={":r": _s(requester)},
+                )
+            except ClientError as exc:
+                if not _conditional(exc):
+                    raise KnowledgeStoreUnavailableError from exc
+                continue  # It ended in between: claim it again.
+            return False
+        raise KnowledgeConflictError
+
+    def drop_sync(self, kb_id: str, sync_id: str) -> None:
+        """A claim whose state machine could not start."""
+        try:
+            self._db.update_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(kb_id)), "SK": _s(SK_META)},
+                UpdateExpression="REMOVE sync_id, sync_requested_at",
+                ConditionExpression="sync_id = :me",
+                ExpressionAttributeValues={":me": _s(sync_id)},
+            )
+        except ClientError as exc:
+            if not _conditional(exc):
+                raise KnowledgeStoreUnavailableError from exc
+
+    def document(self, kb_id: str, doc_id: str) -> Document | None:
+        try:
+            resp = self._db.get_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(kb_id)), "SK": _s(f"DOC#{doc_id}")},
+                ConsistentRead=True,
+            )
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+        item = resp.get("Item")
+        return _document(item) if item else None
+
+    def delete_document(self, kb_id: str, doc_id: str, *, now: str) -> None:
+        """Mark a document ``deleting`` (the synchronization deletes and verifies it), and
+        when the oldest pending deletion of the knowledge base was asked for."""
+        items: list[Any] = [
+            {
+                "Update": {
+                    "TableName": self._table,
+                    "Key": {"PK": _s(_pk(kb_id)), "SK": _s(f"DOC#{doc_id}")},
+                    "UpdateExpression": "SET #status = :deleting",
+                    "ConditionExpression": "attribute_exists(PK) AND #status <> :deleting",
+                    "ExpressionAttributeNames": {"#status": "status"},
+                    "ExpressionAttributeValues": {":deleting": _s(DocumentStatus.DELETING)},
+                }
+            },
+            {
+                "Update": {
+                    "TableName": self._table,
+                    "Key": {"PK": _s(_pk(kb_id)), "SK": _s(SK_META)},
+                    "UpdateExpression": "SET deleting_since = if_not_exists(deleting_since, :now)",
+                    "ConditionExpression": "attribute_exists(PK)",
+                    "ExpressionAttributeValues": {":now": _s(now)},
+                }
+            },
+        ]
+        try:
+            self._db.transact_write_items(TransactItems=items)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "TransactionCanceledException":
+                raise KnowledgeConflictError from exc
+            raise KnowledgeStoreUnavailableError from exc

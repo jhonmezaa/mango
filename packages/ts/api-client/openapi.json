@@ -1957,6 +1957,29 @@
         "title": "DisableIn",
         "type": "object"
       },
+      "DocumentDeleteOut": {
+        "additionalProperties": false,
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentOut"
+          },
+          "sync": {
+            "enum": [
+              "started",
+              "queued",
+              "unavailable"
+            ],
+            "title": "Sync",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document",
+          "sync"
+        ],
+        "title": "DocumentDeleteOut",
+        "type": "object"
+      },
       "DocumentListOut": {
         "additionalProperties": false,
         "properties": {
@@ -3073,6 +3096,10 @@
           "status": {
             "$ref": "#/components/schemas/Status"
           },
+          "sync_running": {
+            "title": "Sync Running",
+            "type": "boolean"
+          },
           "sync_schedule": {
             "enum": [
               "manual",
@@ -3109,7 +3136,8 @@
           "created_at",
           "updated_at",
           "can_edit",
-          "can_view_documents"
+          "can_view_documents",
+          "sync_running"
         ],
         "title": "KnowledgeBaseOut",
         "type": "object"
@@ -6056,11 +6084,28 @@
             },
             "title": "Saved",
             "type": "array"
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "enum": [
+                  "started",
+                  "queued",
+                  "unavailable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync"
           }
         },
         "required": [
           "saved",
-          "rejected"
+          "rejected",
+          "sync"
         ],
         "title": "SaveOut",
         "type": "object"
@@ -6378,6 +6423,25 @@
           "revision"
         ],
         "title": "SubmitIn",
+        "type": "object"
+      },
+      "SyncOut": {
+        "additionalProperties": false,
+        "properties": {
+          "sync": {
+            "enum": [
+              "started",
+              "queued",
+              "unavailable"
+            ],
+            "title": "Sync",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sync"
+        ],
+        "title": "SyncOut",
         "type": "object"
       },
       "TaskIn": {
@@ -11806,6 +11870,117 @@
           }
         },
         "summary": "Save Uploaded Documents"
+      }
+    },
+    "/knowledge-bases/{kb_id}/documents/{doc_id}/delete": {
+      "post": {
+        "operationId": "delete_knowledge_base_document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDeleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Knowledge Base Document"
+      }
+    },
+    "/knowledge-bases/{kb_id}/sync": {
+      "post": {
+        "description": "«Sincronizar ahora» (design 1).",
+        "operationId": "synchronize_knowledge_base",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Synchronize Knowledge Base"
       }
     },
     "/knowledge-bases/{kb_id}/uploads": {

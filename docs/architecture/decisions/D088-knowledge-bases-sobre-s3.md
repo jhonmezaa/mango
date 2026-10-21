@@ -1,7 +1,7 @@
 # D88 · Knowledge bases: una entidad compartida entre agentes, con documentos de S3
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente)
+- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (la alerta de las knowledge bases: qué significa cuando el filtro sale de quien pregunta) y [D25](D025-recursos-creados-en-runtime.md) (el primer caso de KB: sin stacks de CloudFormation en ejecución); toma el diseño de §4.4
 - **Precisada por:** —
 
@@ -117,4 +117,35 @@ Las ocho preguntas que dejó abiertas la propuesta, con la opción que eligió e
 - la distribución llega al balanceador, y el balanceador depende de esa misma política.
 
 Ahora los logs del bucket de documentos se configuran a mano y la política lo nombra por su ARN, armado desde su nombre de (30). Eso no depende de ningún recurso. La CSP, la CORS y los logs son los mismos de antes. `infra/test/cycles.test.ts` ordena el grafo de dependencias de cada plantilla, con las banderas de `cdk.json`, y falla ante un ciclo. Sin esas banderas, los tests no veían este.
+
+**(32) Estado de lo construido: la sincronización (2026-10-21).** Construida con tests, sin ver en una instalación (el PR 4 del plan): `functions/knowledge-sync` y la máquina `Mango-<ns>-KnowledgeSync` en `Core`. Lo que precisa del texto de arriba, propuesto por un agente:
+
+- **Quién la arranca (11):** `mango-api`, al guardar documentos, al quitar uno (ruta nueva `POST …/documents/{doc_id}/delete`), al borrar una KB y con «Sincronizar ahora» (`POST …/sync`, `EditKnowledgeBase`). Antes de arrancar la máquina, `mango-api` marca la KB con la sincronización (`sync_id`). Si ya corre otra, queda anotado quién pidió una más (`sync_again`), y esa arranca cuando la que corre termina. Si la máquina no arranca, lo guardado sigue guardado y «Sincronizar ahora» la pide de nuevo.
+- **Pasos:**
+  - el lock con vencimiento de la base de Bedrock (cada 30 s, hasta una hora detrás de otra);
+  - el plan, leído del registro;
+  - la ingesta por lotes de 25, con un `clientToken` por lote;
+  - el estado de cada documento, cada 10 s durante hasta 15 minutos (lo que siga indexándose lo consulta la sincronización siguiente);
+  - el borrado por lotes de 25;
+  - la verificación cada 20 s, hasta 10 minutos;
+  - el cierre: cobra, libera el resto de la reserva y el lock, deja el estado de la KB, audita `kb.sync` y arranca la pedida mientras tanto.
+
+  El cierre corre también después de cualquier fallo, así que una sincronización que falla nunca deja la reserva ni el lock tomados. La máquina dura hasta 2 horas.
+- **Metadatos (23):** `kb_id`, `doc_id`, `business_unit`, `acl_groups` (como lista) y `classification`, inline desde el registro. Un test comprueba que todo documento ingerido lleva su `kb_id`. Falta ver en la instalación que S3 Vectors guarde `acl_groups` como lista.
+- **Presupuesto (24):** reserva la función de sincronización, antes de ingerir, contra el presupuesto de la persona (`USER#<sub>`), con el límite que `mango-api` le pasa al arrancarla. La estimación es de 4 bytes por token, al precio del modelo de embeddings, que ahora es configuración (`embeddingPrices` en `release-defaults.json`, regla 7).
+  - Bedrock no informa los tokens de una ingesta: se cobra la estimación de lo indexado (y de lo que aún se indexa), se libera el resto y se concilia contra la factura como el resto de §4.5.
+  - Si no alcanza el presupuesto, no se ingiere nada, la KB queda «Error» y la sincronización registra `budget`; los borrados siguen.
+  - Las sincronizaciones que arranca el barrido solo borran y no cuestan nada.
+- **Borrado (16):** un documento borrado se da por borrado cuando una búsqueda filtrada por `kb_id` y por ese documento no devuelve nada. Entonces se borra su objeto (en un bucket versionado: la versión vieja se va al día) y su registro, y bajan los contadores. Una KB borrada desaparece cuando no le queda ningún registro de documento y una búsqueda solo por su `kb_id` no devuelve nada (`kb.deleted`).
+- **Cada hora, la misma máquina barre:**
+  - publica `DeletionsOverdue` (KBs con un borrado pedido hace más de 6 horas, por `deleting_since`), que lee la alarma de (28);
+  - arranca la sincronización de los borrados que nadie terminó;
+  - y si una sincronización tiene su KB tomada hace más de 3 horas, la da por muerta: cobra entera su reserva (lo gastado ya no se sabe), libera la KB y el lock, y lo audita.
+- **Alarma `KnowledgeSync-failed`:** una ejecución que falla o se queda sin tiempo. La función solo la invoca Step Functions, de forma síncrona, así que no lleva DLQ (excepción acordada de `AGENTS.md`).
+- **El rol de la sincronización:**
+  - el registro;
+  - solo `UpdateItem` en los presupuestos `USER#*`;
+  - ingesta, estado, borrado y búsqueda solo sobre la base de Bedrock de la instalación;
+  - leer y borrar solo bajo `kb/*/docs/` (leer, por si Bedrock pide los permisos de quien ingiere sobre la ubicación S3: a ver en la instalación);
+  - arrancar su propia máquina, nombrada por su ARN, y la auditoría.
 

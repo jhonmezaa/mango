@@ -11,7 +11,7 @@ import {
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
-import { coreParameters } from "../config/release.js";
+import { coreParameters, loadReleaseDefaults } from "../config/release.js";
 import { Installation } from "../config/schema.js";
 import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "../constructs/agent-platform.js";
 import { Alerts } from "../constructs/alerts.js";
@@ -23,7 +23,7 @@ import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
-import { Knowledge } from "../constructs/knowledge.js";
+import { INDEXING_PROFILE, Knowledge } from "../constructs/knowledge.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
@@ -211,6 +211,11 @@ export class CoreStack extends Stack {
       accessLogs,
       alerts,
       appOrigin: edge.origin,
+      budgetsTable: governance.budgets,
+      auditIndex: governance.auditIndex,
+      auditStream: governance.auditStream,
+      configKey: tools.configKey,
+      embeddingPrice: embeddingPrice(cfg),
     });
     knowledge.grantApi(apiTaskRole);
     // The browser posts documents to that bucket only (D88 (9)).
@@ -613,4 +618,13 @@ export class CoreStack extends Stack {
       );
     }
   }
+}
+
+/** The price of the embedding model of the indexing profile (rule 7): of the installation, or of
+ * the release. A profile without its price would let synchronizations cost nothing. */
+function embeddingPrice(cfg: Installation): number {
+  const prices = cfg.embeddingPrices ?? loadReleaseDefaults().embeddingPrices;
+  const price = prices[INDEXING_PROFILE.embeddingModel];
+  if (price === undefined) throw new Error(`no price for ${INDEXING_PROFILE.embeddingModel}`);
+  return price;
 }

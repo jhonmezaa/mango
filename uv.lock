@@ -13,6 +13,7 @@ members = [
     "mango-cost-anomaly-consumer",
     "mango-cost-explorer",
     "mango-gateway-interceptor",
+    "mango-knowledge-sync",
     "mango-pack-builder",
     "mango-pack-runtime",
     "mango-packs",
@@ -994,6 +995,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "mango-core", editable = "packages/py/mango-core" }]
+
+[[package]]
+name = "mango-knowledge-sync"
+version = "0.1.0"
+source = { editable = "functions/knowledge-sync" }
+dependencies = [
+    { name = "boto3" },
+    { name = "mango-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.104" },
+    { name = "mango-core", editable = "packages/py/mango-core" },
+]
 
 [[package]]
 name = "mango-pack-builder"

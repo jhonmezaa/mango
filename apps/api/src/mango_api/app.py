@@ -93,7 +93,7 @@ from mango_api.group_admin import (
 from mango_api.groups import GroupRegistry, groups_router
 from mango_api.inbox import InboxDeps, RunInbox, inbox_router
 from mango_api.inbox_store import InboxStore
-from mango_api.knowledge import KnowledgeDeps, knowledge_router
+from mango_api.knowledge import KnowledgeDeps, SyncStarter, knowledge_router
 from mango_api.knowledge_store import KnowledgeStore
 from mango_api.knowledge_uploads import S3_CONFIG as KNOWLEDGE_S3_CONFIG
 from mango_api.knowledge_uploads import DocumentStorage
@@ -504,6 +504,7 @@ def build_services(settings: Settings) -> Services:
         settings.audit_index_table,
     )
     group_registry = GroupRegistry(dynamodb, settings.settings_table)
+    budget_limits = BudgetLimits(settings_store)
     agents_store = AgentsStore(dynamodb, settings.agents_table)
     model_catalog = ModelCatalogStore(dynamodb, settings.settings_table)
     # Release data inside the image: read once, and fail closed if it is not there. Packs
@@ -590,7 +591,7 @@ def build_services(settings: Settings) -> Services:
         agentcore=harness.TurnClients(region),
         bedrock=boto3.client("bedrock-runtime", region_name=region),
         settings_store=settings_store,
-        budget_limits=BudgetLimits(settings_store),
+        budget_limits=budget_limits,
         probe=AdminProbe(boto3.client("lambda", region_name=region), settings.admin_probe_function),
         published=published,
         model_catalog=ModelCatalogCache(model_catalog),
@@ -711,6 +712,15 @@ def build_services(settings: Settings) -> Services:
                     else None
                 ),
                 uploads=limits.limiter("knowledge.uploads"),
+                sync=(
+                    SyncStarter(
+                        boto3.client("stepfunctions", region_name=region),
+                        settings.knowledge_sync_state_machine_arn,
+                    )
+                    if settings.knowledge_sync_state_machine_arn
+                    else None
+                ),
+                user_limit=lambda user_id: budget_limits.for_user(user_id)[0],
             )
             if settings.knowledge_table
             else None

@@ -3,15 +3,24 @@ import * as bedrock from "aws-cdk-lib/aws-bedrock";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as firehose from "aws-cdk-lib/aws-kinesisfirehose";
 import * as kms from "aws-cdk-lib/aws-kms";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3vectors from "aws-cdk-lib/aws-s3vectors";
+import * as sfn from "aws-cdk-lib/aws-stepfunctions";
+import * as sfnTasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
+import { logsKeyOf } from "../logs.js";
 import { mangoName } from "../names.js";
-import { acknowledge, arnWildcardFinding } from "../nag.js";
+import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
 import { Alerts } from "./alerts.js";
+import { PythonFunction } from "./python-function.js";
 
 /**
  * The one indexing profile of v1 (D88 (7)): the embedding model and the shape of the index are
@@ -58,7 +67,20 @@ export interface KnowledgeProps {
   readonly alerts: Alerts;
   /** The origin of the SPA: the only one that may post uploads to the documents bucket. */
   readonly appOrigin: string;
+  /** Budgets of the people who synchronize (D88 (24)), the audit trail, and their keys. */
+  readonly budgetsTable: dynamodb.ITableV2;
+  readonly auditIndex: dynamodb.ITableV2;
+  readonly auditStream: firehose.IDeliveryStream;
+  /** Key of the environment of the installation's functions. */
+  readonly configKey: kms.IKey;
+  /** USD per million input tokens of the embedding model of the profile (rule 7). */
+  readonly embeddingPrice: number;
 }
+
+/** Keep in sync with `functions/knowledge-sync` (`handler.LOCK_SECONDS`): the lock lasts as long. */
+export const SYNC_TIMEOUT = Duration.hours(2);
+/** The hourly sweep (D88 (16)): deletions not verified in 6 hours alarm. */
+export const SWEEP_RATE = Duration.hours(1);
 
 /**
  * Knowledge bases (D88; threat model `knowledge-bases-threat-model.md`): the fixed resources,
@@ -89,6 +111,9 @@ export class Knowledge extends Construct {
   readonly dataSource: bedrock.CfnDataSource;
   readonly table: dynamodb.TableV2;
   readonly sourceBoundary: iam.ManagedPolicy;
+  /** `Mango-<ns>-KnowledgeSync`: ingests, deletes and verifies (D88 (11), (16)). */
+  readonly syncMachine: sfn.StateMachine;
+  readonly syncFunction: lambda.Function;
   readonly alarms: cloudwatch.Alarm[];
   /** Environment mango-api needs for the knowledge bases. */
   readonly apiEnvironment: Record<string, string>;
@@ -389,7 +414,282 @@ export class Knowledge extends Construct {
       ),
     ];
 
-    this.apiEnvironment = { KNOWLEDGE_TABLE: this.table.tableName, KNOWLEDGE_BUCKET: this.bucket.bucketName };
+    const sync = this.buildSync(props, bucketName);
+    this.syncFunction = sync.fn;
+    this.syncMachine = sync.machine;
+
+    this.apiEnvironment = {
+      KNOWLEDGE_TABLE: this.table.tableName,
+      KNOWLEDGE_BUCKET: this.bucket.bucketName,
+      KNOWLEDGE_SYNC_STATE_MACHINE_ARN: this.syncMachine.stateMachineArn,
+    };
+  }
+
+  /**
+   * The synchronization (D88 (11), (16), (24)): a function with one step per state, run by a
+   * standard state machine that mango-api starts, and every hour by a rule for the sweep. Its
+   * role reads and writes the registry, reserves and settles budgets of people (`USER#…`),
+   * ingests, reads the status of, deletes and searches the documents of the one Bedrock base,
+   * deletes only under `kb/*\/docs/`, and writes the audit trail.
+   */
+  private buildSync(props: KnowledgeProps, bucketName: string): { fn: lambda.Function; machine: sfn.StateMachine } {
+    const cfg = props.installation;
+    const ns = this.namespace;
+    const { account, region } = Stack.of(this);
+    const machineName = mangoName(ns, "KnowledgeSync");
+    // By name: the function starts the machine that invokes it, so neither may refer to the
+    // other as a resource.
+    const machineArn = `arn:aws:states:${region}:${account}:stateMachine:${machineName}`;
+    const documents = `${this.bucket.bucketArn}/${KNOWLEDGE_PREFIXES.bases}*/docs/*`;
+    const role = new iam.Role(this, "SyncRole", {
+      roleName: mangoName(ns, "KnowledgeSync"),
+      description: "Knowledge sync: ingests, verifies and deletes the documents of the knowledge bases",
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    });
+    const policy = new iam.Policy(this, "SyncPolicy", {
+      roles: [role],
+      statements: [
+        new iam.PolicyStatement({
+          sid: "Registry",
+          actions: [
+            "dynamodb:DeleteItem",
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:Query",
+            "dynamodb:UpdateItem",
+          ],
+          resources: [this.table.tableArn, `${this.table.tableArn}/index/${KNOWLEDGE_ALL}`],
+        }),
+        new iam.PolicyStatement({
+          sid: "ReserveAndSettleBudgets",
+          // Only the budget of a person: the one who synchronizes (D88 (24)).
+          actions: ["dynamodb:UpdateItem"],
+          resources: [props.budgetsTable.tableArn],
+          conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["USER#*"] } },
+        }),
+        new iam.PolicyStatement({
+          sid: "DataKeyViaDynamoDB",
+          actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+          resources: [props.dataKey.keyArn],
+          conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
+        }),
+        new iam.PolicyStatement({
+          sid: "KnowledgeBaseDocuments",
+          actions: [
+            "bedrock:DeleteKnowledgeBaseDocuments",
+            "bedrock:GetKnowledgeBaseDocuments",
+            "bedrock:IngestKnowledgeBaseDocuments",
+            // Only to verify a deletion: a search filtered by kb_id and the documents.
+            "bedrock:Retrieve",
+          ],
+          resources: [this.knowledgeBase.attrKnowledgeBaseArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "SavedDocuments",
+          // Reading is the S3 location of an ingestion; deleting, a verified deletion.
+          actions: ["s3:DeleteObject", "s3:GetObject"],
+          resources: [documents],
+        }),
+        new iam.PolicyStatement({
+          sid: "DocumentsKey",
+          actions: ["kms:Decrypt"],
+          resources: [this.key.keyArn],
+          conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+        }),
+        new iam.PolicyStatement({
+          sid: "StartNextSync",
+          actions: ["states:StartExecution"],
+          resources: [machineArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "WriteAuditIndex",
+          actions: ["dynamodb:PutItem"],
+          resources: [props.auditIndex.tableArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "WriteAuditTrail",
+          actions: ["firehose:PutRecord"],
+          resources: [props.auditStream.deliveryStreamArn],
+        }),
+      ],
+    });
+    const bucketId = Stack.of(this).getLogicalId(this.bucket.node.defaultChild as s3.CfnBucket);
+    acknowledge(role, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
+    acknowledge(
+      policy,
+      {
+        id: `AwsSolutions-IAM5[Resource::<${bucketId}.Arn>/${KNOWLEDGE_PREFIXES.bases}*/docs/*]`,
+        reason: "Saved documents are keyed at runtime by ULIDs under kb/<kb_id>/docs/ (D88 (9)).",
+      },
+    );
+
+    const fn = new PythonFunction(this, "Sync", {
+      packageName: "mango-knowledge-sync",
+      packagePath: "functions/knowledge-sync",
+      retainLogs: cfg.retainData,
+      handler: "mango_knowledge_sync.handler.lambda_handler",
+      functionName: mangoName(ns, "KnowledgeSync"),
+      description: "Steps of the knowledge sync: ingests, verifies and deletes documents (D88)",
+      role,
+      // A step is at most 25 documents, or the deletions of one verification.
+      timeout: Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        MANGO_NAMESPACE: ns,
+        KNOWLEDGE_TABLE: this.table.tableName,
+        KNOWLEDGE_BUCKET: bucketName,
+        KNOWLEDGE_BASE_ID: this.knowledgeBase.attrKnowledgeBaseId,
+        DATA_SOURCE_ID: this.dataSource.attrDataSourceId,
+        ACCOUNT_ID: account,
+        STATE_MACHINE_ARN: machineArn,
+        BUDGETS_TABLE: props.budgetsTable.tableName,
+        AUDIT_STREAM: props.auditStream.deliveryStreamName,
+        AUDIT_INDEX_TABLE: props.auditIndex.tableName,
+        EMBEDDING_PRICE: String(props.embeddingPrice),
+      },
+      environmentEncryption: props.configKey,
+    }).function;
+    fn.node.addDependency(policy);
+
+    // --- The state machine ----------------------------------------------------------------
+    const step = (id: string, stepName: string): sfnTasks.LambdaInvoke => {
+      const task = new sfnTasks.LambdaInvoke(this, id, {
+        lambdaFunction: fn,
+        payload: sfn.TaskInput.fromObject({ step: stepName, state: sfn.JsonPath.entirePayload }),
+        payloadResponseOnly: true,
+        retryOnServiceExceptions: true,
+        taskTimeout: sfn.Timeout.duration(Duration.minutes(6)),
+      });
+      // Throttled by Bedrock, or a table busy: the same step, later.
+      task.addRetry({
+        errors: ["RetryableStepError"],
+        interval: Duration.seconds(10),
+        maxAttempts: 8,
+        backoffRate: 2,
+      });
+      return task;
+    };
+    const failed = new sfn.Fail(this, "SyncFailed", {
+      error: "KnowledgeSyncFailed",
+      cause: "The synchronization failed; its reservation and the lock were released. See the kb.sync event.",
+    });
+    const finish = step("Finish", "finish");
+    finish.addCatch(failed, { errors: ["States.ALL"], resultPath: "$.finish_error" });
+    const after = new sfn.Choice(this, "Failed?")
+      .when(sfn.Condition.isPresent("$.error"), failed)
+      .otherwise(new sfn.Succeed(this, "Synchronized"));
+    finish.next(after);
+    const forward = (id: string, stepName: string) => {
+      const task = step(id, stepName);
+      // Whatever fails after its retries ends in `finish`, which releases what was taken.
+      task.addCatch(finish, { errors: ["States.ALL"], resultPath: "$.error" });
+      return task;
+    };
+    const acquire = forward("Acquire", "acquire");
+    const plan = forward("Plan", "plan");
+    const ingest = forward("Ingest", "ingest");
+    const poll = forward("Poll", "poll");
+    const remove = forward("Delete", "delete");
+    const verify = forward("Verify", "verify");
+    const sweep = step("Sweep", "sweep");
+    const waitLock = new sfn.Wait(this, "WaitLock", { time: sfn.WaitTime.duration(Duration.seconds(30)) });
+    const waitIndex = new sfn.Wait(this, "WaitIndex", { time: sfn.WaitTime.duration(Duration.seconds(10)) });
+    const waitVerify = new sfn.Wait(this, "WaitVerify", { time: sfn.WaitTime.duration(Duration.seconds(20)) });
+
+    const verifying = new sfn.Choice(this, "Verifying?")
+      .when(
+        sfn.Condition.isPresent("$.verifying[0]"),
+        waitVerify.next(verify).next(
+          new sfn.Choice(this, "Verified?").when(sfn.Condition.booleanEquals("$.verified", true), finish).otherwise(waitVerify),
+        ),
+      )
+      .otherwise(finish);
+    const deleting = new sfn.Choice(this, "Deleting?");
+    deleting.when(sfn.Condition.isPresent("$.delete[0]"), remove.next(deleting)).otherwise(verifying);
+    const indexing = new sfn.Choice(this, "Indexing?")
+      .when(
+        sfn.Condition.isPresent("$.indexing[0]"),
+        waitIndex.next(poll).next(
+          new sfn.Choice(this, "Polled?").when(sfn.Condition.booleanEquals("$.polled", true), deleting).otherwise(waitIndex),
+        ),
+      )
+      .otherwise(deleting);
+    const ingesting = new sfn.Choice(this, "Ingesting?");
+    ingesting.when(sfn.Condition.isPresent("$.ingest[0]"), ingest.next(ingesting)).otherwise(indexing);
+    const definition = new sfn.Choice(this, "Sweep?")
+      .when(sfn.Condition.stringEquals("$.mode", "sweep"), sweep.next(new sfn.Succeed(this, "Swept")))
+      .otherwise(
+        acquire.next(
+          new sfn.Choice(this, "Locked?")
+            .when(sfn.Condition.booleanEquals("$.locked", true), plan.next(ingesting))
+            .when(sfn.Condition.booleanEquals("$.gave_up", true), finish)
+            .otherwise(waitLock.next(acquire)),
+        ),
+      );
+
+    const logGroup = new logs.LogGroup(this, "SyncLogs", {
+      logGroupName: `/aws/vendedlogs/states/${machineName}`,
+      retention: logs.RetentionDays.THREE_MONTHS,
+      encryptionKey: logsKeyOf(this),
+      removalPolicy: cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+    });
+    const machine = new sfn.StateMachine(this, "SyncMachine", {
+      stateMachineName: machineName,
+      comment: "Synchronizes one knowledge base, or sweeps unfinished deletions (D88)",
+      definitionBody: sfn.DefinitionBody.fromChainable(definition),
+      stateMachineType: sfn.StateMachineType.STANDARD,
+      timeout: SYNC_TIMEOUT,
+      tracingEnabled: true,
+      // The state is ids and counters; it is still not logged (D88 (12)).
+      logs: { destination: logGroup, level: sfn.LogLevel.ALL, includeExecutionData: false },
+    });
+    acknowledge(
+      machine,
+      {
+        id: "AwsSolutions-IAM5[Resource::*]",
+        reason: `CloudWatch Logs delivery APIs (vended logs) and X-Ray have no resource scope. ${REASONS.xray}`,
+      },
+      {
+        id: `AwsSolutions-IAM5[Resource::<${Stack.of(this).resolve(Stack.of(this).getLogicalId(fn.node.defaultChild as lambda.CfnFunction))}.Arn>:*]`,
+        reason: REASONS.cdkGrant,
+      },
+    );
+
+    new events.Rule(this, "SweepSchedule", {
+      ruleName: mangoName(ns, "KnowledgeSync-sweep"),
+      description: "Every hour: unfinished deletions of knowledge bases and dead synchronizations (D88 (16))",
+      schedule: events.Schedule.rate(SWEEP_RATE),
+      targets: [
+        new targets.SfnStateMachine(machine, {
+          input: events.RuleTargetInput.fromObject({ mode: "sweep" }),
+          retryAttempts: 2,
+        }),
+      ],
+    });
+
+    const failures = new cloudwatch.MathExpression({
+      expression: "FILL(failed, 0) + FILL(timedOut, 0)",
+      usingMetrics: {
+        failed: machine.metricFailed({ statistic: cloudwatch.Stats.SUM, period: Duration.minutes(5) }),
+        timedOut: machine.metricTimedOut({ statistic: cloudwatch.Stats.SUM, period: Duration.minutes(5) }),
+      },
+      period: Duration.minutes(5),
+    });
+    const alarm = new cloudwatch.Alarm(this, "SyncFailedAlarm", {
+      alarmName: mangoName(ns, "KnowledgeSync-failed"),
+      alarmDescription:
+        "A knowledge base synchronization failed or ran out of time: its documents may be neither indexed nor " +
+        "deleted, and its status is «Error». Its reservation and the lock were released. Look first at the " +
+        `executions of the ${machineName} state machine, then at the log group of the function of the same name.`,
+      metric: failures,
+      threshold: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    alarm.addAlarmAction(new cloudwatchActions.SnsAction(props.alerts.topic));
+    this.alarms.push(alarm);
+    return { fn, machine };
   }
 
   /** Where the browser posts uploads: the bucket's regional host, for the CSP of the SPA. */
@@ -442,6 +742,12 @@ export class Knowledge extends Construct {
           actions: ["kms:Decrypt", "kms:GenerateDataKey"],
           resources: [this.key.keyArn],
           conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+        }),
+        // After saving, deleting a document or a base, or «Sincronizar ahora» (D88 (11)).
+        new iam.PolicyStatement({
+          sid: "StartSync",
+          actions: ["states:StartExecution"],
+          resources: [this.syncMachine.stateMachineArn],
         }),
       ],
     });
