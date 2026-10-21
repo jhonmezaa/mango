@@ -113,6 +113,8 @@ describe("operational alarms of Core", () => {
         "Edge-errors",
         "Edge-rate-limited",
         "GatewayInterceptor-failing",
+        "Knowledge-deletion-unverified",
+        "Knowledge-retrieve-throttled",
         "PreSignUp-throttled",
         "PreTokenGeneration-failing",
         "TaskReport-failed",

@@ -23,6 +23,7 @@ import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
+import { Knowledge } from "../constructs/knowledge.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
@@ -201,6 +202,15 @@ export class CoreStack extends Stack {
       alerts,
     });
     taskReports.grantApi(apiTaskRole);
+    // D88: the fixed resources of the knowledge bases (one Bedrock base over S3 Vectors, the
+    // documents bucket, the registry and the boundary of the roles of existing buckets). A
+    // knowledge base of Mango is a record and a prefix, never a resource of this stack.
+    new Knowledge(this, "Knowledge", {
+      installation: cfg,
+      dataKey: governance.dataKey,
+      accessLogs,
+      alerts,
+    });
     // Daily read-only reconciliation and the alarms of the publication path (TM-M6, TM-M9).
     // It also reports a release agent that serves content other than the release's (D42).
     new Reconciler(this, "Reconciler", {
