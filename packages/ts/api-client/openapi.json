@@ -1957,6 +1957,86 @@
         "title": "DisableIn",
         "type": "object"
       },
+      "DocumentListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DocumentListOut",
+        "type": "object"
+      },
+      "DocumentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DocumentStatus"
+          }
+        },
+        "required": [
+          "doc_id",
+          "name",
+          "size",
+          "content_type",
+          "status",
+          "reason",
+          "created_at"
+        ],
+        "title": "DocumentOut",
+        "type": "object"
+      },
+      "DocumentStatus": {
+        "description": "Of a document (D88 (8)).",
+        "enum": [
+          "uploaded",
+          "indexing",
+          "indexed",
+          "failed",
+          "deleting"
+        ],
+        "title": "DocumentStatus",
+        "type": "string"
+      },
       "EmptyIn": {
         "additionalProperties": false,
         "properties": {},
@@ -4782,6 +4862,31 @@
         "title": "ReasonIn",
         "type": "object"
       },
+      "RejectedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "not_uploaded",
+              "too_large",
+              "size_mismatch",
+              "type_mismatch"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_id",
+          "reason"
+        ],
+        "title": "RejectedOut",
+        "type": "object"
+      },
       "RenewedOut": {
         "properties": {
           "access_token": {
@@ -5909,6 +6014,57 @@
         "title": "SaveDraftIn",
         "type": "object"
       },
+      "SaveIn": {
+        "additionalProperties": false,
+        "properties": {
+          "doc_ids": {
+            "items": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Doc Ids",
+            "type": "array"
+          },
+          "upload_id": {
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "doc_ids"
+        ],
+        "title": "SaveIn",
+        "type": "object"
+      },
+      "SaveOut": {
+        "additionalProperties": false,
+        "properties": {
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedOut"
+            },
+            "title": "Rejected",
+            "type": "array"
+          },
+          "saved": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentOut"
+            },
+            "title": "Saved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "saved",
+          "rejected"
+        ],
+        "title": "SaveOut",
+        "type": "object"
+      },
       "ScheduleSpec": {
         "additionalProperties": false,
         "description": "When a schedule runs, as the design asks for it. Never a cron expression.",
@@ -6106,6 +6262,38 @@
           "note"
         ],
         "title": "SignatureOut",
+        "type": "object"
+      },
+      "SignedFileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_id",
+          "name",
+          "url",
+          "fields"
+        ],
+        "title": "SignedFileOut",
         "type": "object"
       },
       "StateIn": {
@@ -6701,6 +6889,82 @@
           "version"
         ],
         "title": "UpdateIn",
+        "type": "object"
+      },
+      "UploadFileIn": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "maxLength": 100,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 52428800.0,
+            "minimum": 1.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "content_type"
+        ],
+        "title": "UploadFileIn",
+        "type": "object"
+      },
+      "UploadsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/UploadFileIn"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "UploadsIn",
+        "type": "object"
+      },
+      "UploadsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SignedFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "expires_at",
+          "files"
+        ],
+        "title": "UploadsOut",
         "type": "object"
       },
       "UserBudgetIn": {
@@ -11454,6 +11718,144 @@
           }
         },
         "summary": "Delete Existing Knowledge Base"
+      }
+    },
+    "/knowledge-bases/{kb_id}/documents": {
+      "get": {
+        "operationId": "list_documents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Documents"
+      },
+      "post": {
+        "operationId": "save_uploaded_documents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save Uploaded Documents"
+      }
+    },
+    "/knowledge-bases/{kb_id}/uploads": {
+      "post": {
+        "operationId": "request_document_uploads",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Request Document Uploads"
       }
     },
     "/mcp/catalog": {

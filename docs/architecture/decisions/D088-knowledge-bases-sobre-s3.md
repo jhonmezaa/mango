@@ -1,7 +1,7 @@
 # D88 · Knowledge bases: una entidad compartida entre agentes, con documentos de S3
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente)
+- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (la alerta de las knowledge bases: qué significa cuando el filtro sale de quien pregunta) y [D25](D025-recursos-creados-en-runtime.md) (el primer caso de KB: sin stacks de CloudFormation en ejecución); toma el diseño de §4.4
 - **Precisada por:** —
 
@@ -95,4 +95,19 @@ Las ocho preguntas que dejó abiertas la propuesta, con la opción que eligió e
 - **Edición y borrado:** cada cambio nombra la versión que leyó, y uno hecho entre medio responde 409. Borrar marca la KB `deleting`: sigue en la lista y ya no se edita. Hasta que exista la sincronización (PR 4), una KB borrada se queda en `deleting`; no tiene documentos ni vectores que borrar. El bloqueo de borrar una KB en uso llega con la asociación (15).
 - **Respuestas:** el correo del dueño solo lo ven los administradores y el dueño; los demás creadores ven su nombre. Cada KB dice si quien pregunta puede editarla y ver sus documentos (`can_edit`, `can_view_documents`), por una decisión de Cedar en lote.
 - **Auditoría y límites:** `kb.create`, `kb.update` (qué campos cambiaron y, si cambian los grupos, de cuáles a cuáles) y `kb.delete`, cada uno antes y después de escribir. Si no se puede auditar, no se escribe. Crear, editar y borrar cuentan en un límite compartido de 30 por hora y persona (D70).
+
+**(30) Estado de lo construido: la subida y el guardado (2026-10-21).** Construidos con tests, sin ver en una instalación (el PR 3 del plan): `apps/api/src/mango_api/knowledge_uploads.py` y las rutas `POST …/uploads`, `POST …/documents` y `GET …/documents`. Lo que precisa del texto de arriba, propuesto por un agente:
+
+- **Subir y guardar es editar la KB** (`EditKnowledgeBase`). Ver sus documentos es `ViewKnowledgeBase` sobre la KB. Cada subida queda registrada (`UPLOAD#`) con quién la pidió y los archivos que anunció; solo esa persona la guarda, en esa KB, durante 23 horas, y cada documento una sola vez.
+- **El tipo lo da la extensión,** de la lista de (9), y el `Content-Type` que manda el navegador debe ser el de esa extensión. Al guardar, los bytes deben estar de acuerdo:
+  - `%PDF-` al principio para un PDF;
+  - un ZIP cuyo directorio nombre `word/document.xml` o `xl/workbook.xml` para DOCX y XLSX;
+  - UTF-8 sin bytes nulos para TXT, MD y CSV.
+  El tamaño debe ser el anunciado. Las lecturas y la copia llevan el ETag de lo que se comprobó: como el POST vale 15 minutos, otro archivo subido a la misma clave entre medio no es el que se copia. Lo que no cumple se rechaza con su motivo (`not_uploaded`, `too_large`, `size_mismatch`, `type_mismatch`), no se copia ni se cuenta, y se borra con `uploads/` al día.
+- **El nombre mostrado** es solo el último componente de la ruta, sin caracteres de control, de ancho cero ni de dirección, con hasta 200 caracteres. Las claves solo llevan el sujeto de quien sube y ULIDs.
+- **Los contadores** (`documents`, `bytes`) crecen en la misma transacción que los documentos, dentro de los topes de (9), y no cambian la versión de la KB. S3 calcula el SHA-256 de cada copia, que queda en el registro. Una copia que falla deja el documento `failed` con motivo `storage`.
+- **El navegador sube directo al bucket.** La CSP de CloudFront admite su host regional solo en `connect-src`, y la CORS del bucket solo acepta `POST` desde el origen de la app. Para que ninguno de los dos nombre al otro como recurso (un ciclo en la plantilla), el bucket de documentos se llama ahora `mango-<ns>-knowledge-<8 hex del id del stack>`, en vez del nombre generado de (28). Es único por instalación, y un bucket retenido de una instalación anterior no impide otra. Si ya estaba instalado el de (28), vacío, CloudFormation crea el nuevo y retiene el viejo.
+- **`mango-api`**, en su política propia: `GetObject` y `PutObject` solo bajo `uploads/`, `PutObject` solo bajo `kb/*/docs/` (el destino de la copia), y la llave a través de S3. No lee ni borra bajo `kb/`. Los registros de subida vencen con el TTL nuevo de la tabla (`expires_at`).
+- **Límite compartido:** 60 pedidos de subida o de guardado por hora y persona, cada uno de hasta 20 archivos.
+- **La indexación** queda para la sincronización (PR 4): hasta entonces, los documentos guardados están `uploaded`.
 

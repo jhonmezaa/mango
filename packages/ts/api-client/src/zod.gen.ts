@@ -318,6 +318,39 @@ export const zDisableInSchema = z.object({
 });
 
 /**
+ * DocumentStatus
+ *
+ * Of a document (D88 (8)).
+ */
+export const zDocumentStatusSchema = z.enum([
+    'uploaded',
+    'indexing',
+    'indexed',
+    'failed',
+    'deleting'
+]);
+
+/**
+ * DocumentOut
+ */
+export const zDocumentOutSchema = z.object({
+    content_type: z.string(),
+    created_at: z.iso.datetime(),
+    doc_id: z.string(),
+    name: z.string(),
+    reason: z.string().nullable(),
+    size: z.int(),
+    status: zDocumentStatusSchema
+});
+
+/**
+ * DocumentListOut
+ */
+export const zDocumentListOutSchema = z.object({
+    items: z.array(zDocumentOutSchema)
+});
+
+/**
  * EmptyIn
  */
 export const zEmptyInSchema = z.record(z.string(), z.never());
@@ -1071,6 +1104,19 @@ export const zReasonInSchema = z.object({
 });
 
 /**
+ * RejectedOut
+ */
+export const zRejectedOutSchema = z.object({
+    doc_id: z.string(),
+    reason: z.enum([
+        'not_uploaded',
+        'too_large',
+        'size_mismatch',
+        'type_mismatch'
+    ])
+});
+
+/**
  * RenewedOut
  */
 export const zRenewedOutSchema = z.object({
@@ -1293,6 +1339,22 @@ export const zSaveDraftInSchema = z.object({
 });
 
 /**
+ * SaveIn
+ */
+export const zSaveInSchema = z.object({
+    doc_ids: z.array(z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)).min(1).max(20),
+    upload_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * SaveOut
+ */
+export const zSaveOutSchema = z.object({
+    rejected: z.array(zRejectedOutSchema),
+    saved: z.array(zDocumentOutSchema)
+});
+
+/**
  * ScheduleSpec
  *
  * When a schedule runs, as the design asks for it. Never a cron expression.
@@ -1455,6 +1517,16 @@ export const zInboxPageSchema = z.object({
     items: z.array(zInboxItemSchema),
     next_cursor: z.string().nullable(),
     unread: z.int()
+});
+
+/**
+ * SignedFileOut
+ */
+export const zSignedFileOutSchema = z.object({
+    doc_id: z.string(),
+    fields: z.record(z.string(), z.string()),
+    name: z.string(),
+    url: z.string()
 });
 
 /**
@@ -1682,6 +1754,31 @@ export const zUnreadOutSchema = z.object({
 export const zUpdateInSchema = z.object({
     config: z.record(z.string(), z.unknown()).nullish(),
     version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * UploadFileIn
+ */
+export const zUploadFileInSchema = z.object({
+    content_type: z.string().max(100),
+    name: z.string().min(1).max(1000),
+    size: z.int().gte(1).lte(52428800)
+});
+
+/**
+ * UploadsIn
+ */
+export const zUploadsInSchema = z.object({
+    files: z.array(zUploadFileInSchema).min(1).max(20)
+});
+
+/**
+ * UploadsOut
+ */
+export const zUploadsOutSchema = z.object({
+    expires_at: z.iso.datetime(),
+    files: z.array(zSignedFileOutSchema),
+    upload_id: z.string()
 });
 
 /**
@@ -2778,6 +2875,37 @@ export const zDeleteExistingKnowledgeBasePath = z.object({
  * Successful Response
  */
 export const zDeleteExistingKnowledgeBaseResponse = zKnowledgeBaseOutSchema;
+
+export const zListDocumentsPath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zListDocumentsResponse = zDocumentListOutSchema;
+
+export const zSaveUploadedDocumentsBody = zSaveInSchema;
+
+export const zSaveUploadedDocumentsPath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zSaveUploadedDocumentsResponse = zSaveOutSchema;
+
+export const zRequestDocumentUploadsBody = zUploadsInSchema;
+
+export const zRequestDocumentUploadsPath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRequestDocumentUploadsResponse = zUploadsOutSchema;
 
 /**
  * Successful Response

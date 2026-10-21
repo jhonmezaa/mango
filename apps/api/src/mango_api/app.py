@@ -95,6 +95,8 @@ from mango_api.inbox import InboxDeps, RunInbox, inbox_router
 from mango_api.inbox_store import InboxStore
 from mango_api.knowledge import KnowledgeDeps, knowledge_router
 from mango_api.knowledge_store import KnowledgeStore
+from mango_api.knowledge_uploads import S3_CONFIG as KNOWLEDGE_S3_CONFIG
+from mango_api.knowledge_uploads import DocumentStorage
 from mango_api.limits import Limits
 from mango_api.mcp import McpDeps, mcp_router
 from mango_api.mcp_catalog import CatalogSource, McpCatalog
@@ -699,6 +701,16 @@ def build_services(settings: Settings) -> Services:
                 areas=partial(_areas, settings_store),
                 audit=audit,
                 changes=limits.limiter("knowledge.changes"),
+                storage=(
+                    DocumentStorage(
+                        boto3.client("s3", region_name=region, config=KNOWLEDGE_S3_CONFIG),
+                        settings.knowledge_bucket,
+                        region,
+                    )
+                    if settings.knowledge_bucket
+                    else None
+                ),
+                uploads=limits.limiter("knowledge.uploads"),
             )
             if settings.knowledge_table
             else None

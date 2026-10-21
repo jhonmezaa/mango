@@ -3,7 +3,11 @@ API with the real Cedar policies and the Knowledge table in moto."""
 
 from __future__ import annotations
 
+import base64
+import io
+import json
 import time
+import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -14,10 +18,13 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 
 from mango_api import app as app_module
+from mango_api import knowledge as knowledge_module
+from mango_api import knowledge_store
 from mango_api.authz import Authorizer
 from mango_api.groups import GroupsUnavailableError
 from mango_api.knowledge import CHANGES_PER_HOUR, KnowledgeDeps
 from mango_api.knowledge_store import ALL_PK, INDEX_ALL, KnowledgeStore
+from mango_api.knowledge_uploads import S3_CONFIG, DocumentStorage
 from mango_core.groups import GroupDef
 from mango_core.identity import IdentityError
 from mango_core.knowledge import is_id
@@ -57,6 +64,7 @@ CLAIMS: dict[str, dict[str, Any]] = {
     "member": {"sub": "member-1", "cognito:groups": ["hr"]},
 }
 GROUPS = ("hr", "finance", "people")
+BUCKET = "mango-test-knowledge-0a1b2c3d"
 
 
 class FakeVerifier:
@@ -106,6 +114,7 @@ class Env:
     audit: RecordingAudit
     groups: FakeGroups
     db: Any
+    s3: Any = None
 
     def create(self, token: str = "creator", **body: Any) -> Any:
         payload = {"name": "Políticas de RR. HH.", "groups": ["hr"], **body}
@@ -161,6 +170,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
     with mock_aws():
         db = boto3.client("dynamodb", region_name="us-east-1")
         create_knowledge_table(db, "knowledge")
+        s3 = boto3.client("s3", region_name="us-east-1", config=S3_CONFIG)
+        s3.create_bucket(Bucket=BUCKET)
         audit, cedar, groups = RecordingAudit(), CedarPolicyStore(), FakeGroups()
         deps = KnowledgeDeps(
             store=KnowledgeStore(db, "knowledge"),
@@ -168,6 +179,8 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
             areas=lambda: ["security", "sandbox"],
             audit=audit,  # type: ignore[arg-type]
             changes=app_module.Limits().limiter("knowledge.changes"),
+            storage=DocumentStorage(s3, BUCKET, "us-east-1"),
+            uploads=app_module.Limits().limiter("knowledge.uploads"),
         )
 
         def factory(settings: Any) -> app_module.Services:
@@ -191,7 +204,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
 
         asgi = app_module.create_app(_settings(), services_factory=factory)
         client = TestClient(asgi, base_url=f"http://{HOST}")  # type: ignore[arg-type]
-        yield Env(client, audit, groups, db)
+        yield Env(client, audit, groups, db, s3)
         assert cedar.errors == []
 
 
@@ -431,3 +444,273 @@ def test_the_list_reads_one_index_of_the_table(env: Env) -> None:
     )["Items"]
     assert len(items) == 1
     assert items[0]["groups"] == {"SS": ["hr"]}
+
+
+# --- Uploads and documents (D88 (9), TM-K4) -----------------------------------------------
+
+PDF = b"%PDF-1.7\n" + b"0" * 2000
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _zip_with(part: str) -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr(part, "<x/>")
+    return out.getvalue()
+
+
+def _uploads(
+    env: Env, kb: dict[str, Any], files: list[dict[str, Any]], token: str = "creator"
+) -> Any:
+    return env.client.post(
+        f"/api/knowledge-bases/{kb['kb_id']}/uploads", headers=_h(token), json={"files": files}
+    )
+
+
+def _signed(env: Env, kb: dict[str, Any], *files: tuple[str, bytes, str]) -> dict[str, Any]:
+    response = _uploads(
+        env, kb, [{"name": n, "size": len(b), "content_type": t} for n, b, t in files]
+    )
+    assert response.status_code == 201, response.text
+    result: dict[str, Any] = response.json()
+    return result
+
+
+def _put(env: Env, signed_file: dict[str, Any], body: bytes, content_type: str) -> None:
+    """What the browser does with the POST: here, the object S3 would end up with."""
+    env.s3.put_object(
+        Bucket=BUCKET, Key=signed_file["fields"]["key"], Body=body, ContentType=content_type
+    )
+
+
+def _save(
+    env: Env,
+    kb: dict[str, Any],
+    upload: dict[str, Any],
+    doc_ids: list[str] | None = None,
+    token: str = "creator",
+) -> Any:
+    ids = doc_ids if doc_ids is not None else [f["doc_id"] for f in upload["files"]]
+    return env.client.post(
+        f"/api/knowledge-bases/{kb['kb_id']}/documents",
+        headers=_h(token),
+        json={"upload_id": upload["upload_id"], "doc_ids": ids},
+    )
+
+
+def _policy(signed_file: dict[str, Any]) -> dict[str, Any]:
+    policy: dict[str, Any] = json.loads(base64.b64decode(signed_file["fields"]["policy"]))
+    return policy
+
+
+def test_each_upload_is_signed_for_one_key_of_ids_one_size_and_one_type(env: Env) -> None:
+    kb = env.created()
+    upload = _signed(env, kb, ("../../etc/Informe\u202e fdp.pdf", PDF, "application/pdf"))
+    [file] = upload["files"]
+    assert is_id(upload["upload_id"]) and is_id(file["doc_id"])
+    key = f"uploads/creator-1/{upload['upload_id']}/{file['doc_id']}"
+    assert file["fields"]["key"] == key
+    assert file["fields"]["Content-Type"] == "application/pdf"
+    # The regional host of the bucket: the one the CSP of the SPA allows.
+    assert file["url"] == f"https://{BUCKET}.s3.us-east-1.amazonaws.com/"
+    # The name is shown cleaned, and never reaches the key.
+    assert file["name"] == "Informe fdp.pdf"
+    conditions = _policy(file)["conditions"]
+    assert ["eq", "$key", key] in conditions
+    assert ["content-length-range", len(PDF), len(PDF)] in conditions
+    assert {"Content-Type": "application/pdf"} in conditions
+    assert {"bucket": BUCKET} in conditions
+    [applied] = env.events("kb.upload")
+    assert (applied["files"], applied["bytes"]) == (1, len(PDF))
+    assert "Informe" not in str(env.audit.events)
+
+
+@pytest.mark.parametrize(
+    ("file", "code"),
+    [
+        (
+            {"name": "virus.exe", "size": 10, "content_type": "application/pdf"},
+            "type_not_supported",
+        ),
+        ({"name": "sin-extension", "size": 10, "content_type": "text/plain"}, "type_not_supported"),
+        ({"name": "\u200b\u202e", "size": 10, "content_type": "text/plain"}, "type_not_supported"),
+        ({"name": "nota.md", "size": 10, "content_type": "text/html"}, "type_mismatch"),
+        (
+            {"name": "a.pdf", "size": 50 * 1024 * 1024 + 1, "content_type": "application/pdf"},
+            "invalid_request",
+        ),
+        ({"name": "a.pdf", "size": 0, "content_type": "application/pdf"}, "invalid_request"),
+    ],
+)
+def test_what_may_be_uploaded(env: Env, file: dict[str, Any], code: str) -> None:
+    kb = env.created()
+    response = _uploads(env, kb, [file])
+    assert response.status_code == 422, response.text
+    assert _code(response) == code
+
+
+def test_at_most_twenty_files_at_once_and_only_by_who_edits(env: Env) -> None:
+    kb = env.created()
+    many = [{"name": f"{i}.txt", "size": 5, "content_type": "text/plain"} for i in range(21)]
+    assert _uploads(env, kb, many).status_code == 422
+    one = [{"name": "a.txt", "size": 5, "content_type": "text/plain"}]
+    assert _uploads(env, kb, one, token="creator2").status_code == 403
+    assert _uploads(env, kb, one, token="member").status_code == 403
+    assert _uploads(env, kb, one, token="admin").status_code == 201
+
+
+def test_saving_checks_the_bytes_and_copies_on_the_server(env: Env) -> None:
+    kb = env.created()
+    docx = _zip_with("word/document.xml")
+    upload = _signed(
+        env,
+        kb,
+        ("manual.pdf", PDF, "application/pdf"),
+        ("guía.docx", docx, DOCX_TYPE),
+        ("notas.md", "# Título\nñandú".encode(), "text/markdown"),
+    )
+    for file, (body, ct) in zip(
+        upload["files"],
+        [
+            (PDF, "application/pdf"),
+            (docx, DOCX_TYPE),
+            ("# Título\nñandú".encode(), "text/markdown"),
+        ],
+        strict=True,
+    ):
+        _put(env, file, body, ct)
+    response = _save(env, kb, upload)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["rejected"] == []
+    assert [d["name"] for d in result["saved"]] == ["manual.pdf", "guía.docx", "notas.md"]
+    assert {d["status"] for d in result["saved"]} == {"uploaded"}
+    for document in result["saved"]:
+        copy = env.s3.get_object(Bucket=BUCKET, Key=f"kb/{kb['kb_id']}/docs/{document['doc_id']}")
+        assert copy["ContentType"] == document["content_type"]
+    listed = env.client.get(f"/api/knowledge-bases/{kb['kb_id']}/documents", headers=_h("creator"))
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 3
+    refreshed = env.get("creator", kb["kb_id"]).json()
+    assert refreshed["documents"] == 3
+    assert refreshed["bytes"] == len(PDF) + len(docx) + len("# Título\nñandú".encode())
+    # Counting documents is not editing the knowledge base: its version does not move.
+    assert refreshed["version"] == kb["version"]
+    [applied] = env.events("kb.documents_save")
+    assert (applied["documents"], applied["rejected"]) == (3, 0)
+
+
+@pytest.mark.parametrize(
+    ("name", "content_type", "body", "uploaded", "reason"),
+    [
+        ("falso.pdf", "application/pdf", b"MZ\x90\x00 not a pdf", None, "type_mismatch"),
+        (
+            "hoja.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            _zip_with("word/document.xml"),
+            None,
+            "type_mismatch",
+        ),
+        ("binario.txt", "text/plain", b"abc\x00def", None, "type_mismatch"),
+        ("latin1.csv", "text/csv", "año".encode("latin-1"), None, "type_mismatch"),
+        ("corto.pdf", "application/pdf", PDF, PDF[:100], "size_mismatch"),
+        ("nunca.pdf", "application/pdf", PDF, b"", "not_uploaded"),
+    ],
+)
+def test_a_document_that_is_not_what_it_says_is_rejected(
+    env: Env, name: str, content_type: str, body: bytes, uploaded: bytes | None, *, reason: str
+) -> None:
+    kb = env.created()
+    upload = _signed(env, kb, (name, body, content_type))
+    [file] = upload["files"]
+    if uploaded != b"":
+        _put(env, file, uploaded if uploaded is not None else body, content_type)
+    response = _save(env, kb, upload)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "saved": [],
+        "rejected": [{"doc_id": file["doc_id"], "reason": reason}],
+    }
+    assert env.get("creator", kb["kb_id"]).json()["documents"] == 0
+    listed = env.s3.list_objects_v2(Bucket=BUCKET, Prefix="kb/")
+    assert listed.get("KeyCount", 0) == 0
+
+
+def test_an_upload_is_saved_once_by_who_asked_for_it_in_its_knowledge_base(env: Env) -> None:
+    kb = env.created()
+    other = env.created("admin", name="Otra")
+    upload = _signed(env, kb, ("a.pdf", PDF, "application/pdf"))
+    _put(env, upload["files"][0], PDF, "application/pdf")
+    # Another editor of the same knowledge base, or the same upload in another one: not found.
+    assert _save(env, kb, upload, token="admin").status_code == 404
+    assert _save(env, other, upload, token="admin").status_code == 404
+    unknown = _save(env, kb, upload, doc_ids=["01JABCDEFGHJKMNPQRSTVWXYZ0"])
+    assert (unknown.status_code, _code(unknown)) == (422, "unknown_document")
+    assert _save(env, kb, upload).status_code == 200
+    again = _save(env, kb, upload)
+    assert (again.status_code, _code(again)) == (409, "already_saved")
+    assert env.get("creator", kb["kb_id"]).json()["documents"] == 1
+
+
+def test_the_documents_are_seen_by_the_owner_admins_and_creators_in_its_groups(env: Env) -> None:
+    kb = env.created()
+    path = f"/api/knowledge-bases/{kb['kb_id']}/documents"
+    for token, status in (
+        ("creator", 200),
+        ("creator2", 200),
+        ("admin", 200),
+        ("outsider", 403),
+        ("member", 403),
+    ):
+        assert env.client.get(path, headers=_h(token)).status_code == status, token
+
+
+def test_a_full_knowledge_base_takes_no_more(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    kb = env.created()
+    monkeypatch.setattr(knowledge_module, "MAX_DOCUMENTS", 1)
+    monkeypatch.setattr(knowledge_store, "MAX_DOCUMENTS", 1)
+    upload = _signed(env, kb, ("a.pdf", PDF, "application/pdf"))
+    _put(env, upload["files"][0], PDF, "application/pdf")
+    assert _save(env, kb, upload).status_code == 200
+    full = _uploads(env, kb, [{"name": "b.pdf", "size": 10, "content_type": "application/pdf"}])
+    assert (full.status_code, _code(full)) == (409, "knowledge_base_full")
+
+
+def test_a_knowledge_base_being_deleted_takes_no_documents(env: Env) -> None:
+    kb = env.created()
+    upload = _signed(env, kb, ("a.pdf", PDF, "application/pdf"))
+    deleted = env.delete("creator", kb).json()
+    one = [{"name": "b.pdf", "size": 10, "content_type": "application/pdf"}]
+    assert _code(_uploads(env, deleted, one)) == "knowledge_base_deleting"
+    assert _code(_save(env, deleted, upload)) == "knowledge_base_deleting"
+
+
+def test_the_copy_takes_only_the_object_that_was_checked(env: Env) -> None:
+    """The POST lasts 15 minutes: a second upload to the same key after the check is not what
+    gets copied. Every read and the copy name the ETag that was checked (S3 refuses the copy
+    with 412 otherwise; moto does not apply the condition, so the request is what is tested)."""
+    kb = env.created()
+    upload = _signed(env, kb, ("a.pdf", PDF, "application/pdf"))
+    [file] = upload["files"]
+    _put(env, file, PDF, "application/pdf")
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    class Recording:
+        def __getattr__(self, name: str) -> Any:
+            method = getattr(env.s3, name)
+
+            def call(**kwargs: Any) -> Any:
+                calls.append((name, kwargs))
+                return method(**kwargs)
+
+            return call
+
+    storage = DocumentStorage(Recording(), BUCKET, "us-east-1")  # type: ignore[arg-type]
+    found = storage.inspect(file["fields"]["key"], "pdf")
+    assert found is not None and found.matches
+    storage.copy(file["fields"]["key"], found.etag, f"kb/{kb['kb_id']}/docs/x", "application/pdf")
+    assert [k["IfMatch"] for n, k in calls if n == "get_object"] == [found.etag]
+    [copy] = [k for n, k in calls if n == "copy_object"]
+    assert copy["CopySourceIfMatch"] == found.etag
+    assert copy["ChecksumAlgorithm"] == "SHA256"

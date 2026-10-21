@@ -99,11 +99,14 @@ describe("edge web ACL (D72)", () => {
     const [policyId, policy] = Object.entries(policies)[0] as [string, any];
     const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy;
     expect(csp.Override).toBe(true);
-    const directives = (csp.ContentSecurityPolicy as string).split("; ");
+    // The CSP names the documents bucket of the knowledge bases (D88 (9)): a join, rendered
+    // here with each deploy-time value as `<value>`.
+    const text = renderJoin(csp.ContentSecurityPolicy);
+    const directives = text.split("; ");
     for (const directive of ["default-src 'self'", "script-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "object-src 'none'"]) {
       expect(directives).toContain(directive);
     }
-    expect(csp.ContentSecurityPolicy).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
+    expect(text).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
     const [distribution] = Object.values(template.findResources("AWS::CloudFront::Distribution")) as any[];
     const config = distribution.Properties.DistributionConfig;
     for (const behavior of [config.DefaultCacheBehavior, ...config.CacheBehaviors]) {
@@ -137,3 +140,10 @@ describe("edge web ACL (D72)", () => {
     expect(Buffer.byteLength(RATE_LIMITED_PAGE)).toBeLessThan(4096);
   });
 });
+
+function renderJoin(value: unknown): string {
+  if (typeof value === "string") return value;
+  const join = (value as { "Fn::Join"?: [string, unknown[]] })["Fn::Join"];
+  if (!join) return "<value>";
+  return join[1].map(renderJoin).join(join[0]);
+}

@@ -114,6 +114,8 @@ class Settings:
     the reports construct is deployed."""
     knowledge_table: str = ""
     """Registry of the knowledge bases (D88 (21)); empty until mango-api may use it."""
+    knowledge_bucket: str = ""
+    """Documents of the knowledge bases (D88 (9)): presigned uploads and the copy to ``kb/``."""
     """KMS key whose signature answers that client's challenge; only mango-api signs."""
 
     @staticmethod
@@ -190,6 +192,7 @@ class Settings:
             task_report_function=env.get("TASK_REPORT_FUNCTION", ""),
             task_reports_bucket=env.get("TASK_REPORTS_BUCKET", ""),
             knowledge_table=env.get("KNOWLEDGE_TABLE", ""),
+            knowledge_bucket=env.get("KNOWLEDGE_BUCKET", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { Aws, Duration, Fn, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as bedrock from "aws-cdk-lib/aws-bedrock";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
@@ -53,6 +53,8 @@ export interface KnowledgeProps {
   readonly dataKey: kms.IKey;
   readonly accessLogs: s3.IBucket;
   readonly alerts: Alerts;
+  /** The origin of the SPA: the only one that may post uploads to the documents bucket. */
+  readonly appOrigin: string;
 }
 
 /**
@@ -75,6 +77,8 @@ export interface KnowledgeProps {
 export class Knowledge extends Construct {
   readonly key: kms.Key;
   readonly bucket: s3.Bucket;
+  /** `<bucket>.s3.<region>.amazonaws.com`, without referring to the bucket resource. */
+  private readonly bucketRegionalDomain: string;
   readonly vectorBucket: s3vectors.CfnVectorBucket;
   readonly index: s3vectors.CfnIndex;
   readonly serviceRole: iam.Role;
@@ -122,7 +126,15 @@ export class Knowledge extends Construct {
     );
 
     // --- Documents ------------------------------------------------------------------------
+    // A name of its own, `mango-<ns>-knowledge-<8 hex of the stack id>`: the CSP of the SPA
+    // names this bucket and the bucket's CORS names the SPA, so neither may refer to the other
+    // as a resource. Unique per installation: a bucket retained by a removed installation
+    // never blocks a new one.
+    const stackSuffix = Fn.select(0, Fn.split("-", Fn.select(2, Fn.split("/", Aws.STACK_ID))));
+    const bucketName = Fn.join("", [`mango-${ns}-knowledge-`, stackSuffix]);
+    this.bucketRegionalDomain = Fn.join("", [bucketName, `.s3.${region}.amazonaws.com`]);
     this.bucket = new s3.Bucket(this, "Documents", {
+      bucketName,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       encryption: s3.BucketEncryption.KMS,
@@ -138,6 +150,16 @@ export class Knowledge extends Construct {
         { prefix: KNOWLEDGE_PREFIXES.uploads, expiration: Duration.days(1) },
         { noncurrentVersionExpiration: Duration.days(1), abortIncompleteMultipartUploadAfter: Duration.days(1) },
         { expiredObjectDeleteMarker: true },
+      ],
+      // The browser posts each upload straight to S3 with a presigned POST (D88 (9)); only from
+      // the SPA. Nothing is read from the browser (no download of the original, D88 (17)).
+      cors: [
+        {
+          allowedOrigins: [props.appOrigin],
+          allowedMethods: [s3.HttpMethods.POST],
+          allowedHeaders: [],
+          maxAge: 600,
+        },
       ],
       removalPolicy,
       autoDeleteObjects: !cfg.retainData,
@@ -266,6 +288,8 @@ export class Knowledge extends Construct {
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       deletionProtection: cfg.retainData,
       removalPolicy,
+      // Records of presigned uploads go with their objects (D88 (9)); nothing else expires.
+      timeToLiveAttribute: "expires_at",
       globalSecondaryIndexes: [
         {
           indexName: KNOWLEDGE_ALL,
@@ -343,18 +367,26 @@ export class Knowledge extends Construct {
       ),
     ];
 
-    this.apiEnvironment = { KNOWLEDGE_TABLE: this.table.tableName };
+    this.apiEnvironment = { KNOWLEDGE_TABLE: this.table.tableName, KNOWLEDGE_BUCKET: this.bucket.bucketName };
+  }
+
+  /** Where the browser posts uploads: the bucket's regional host, for the CSP of the SPA. */
+  get uploadOrigin(): string {
+    return `https://${this.bucketRegionalDomain}`;
   }
 
   /**
-   * mango-api: the registry of the knowledge bases (D88 (12)). A managed policy of its own: the
+   * mango-api: the registry of the knowledge bases (D88 (12)), and their documents (D88 (9)):
+   * signing uploads under `uploads/`, checking them, and copying them to `kb/<kb_id>/docs/`. A managed policy of its own: the
    * inline policies of its role share one size limit, and the role is close to it. No
    * `DeleteItem` nor `Scan`: deleting is a status, and the synchronization removes the records
    * once it verified that no vector is left (D88 (16)).
    */
   grantApi(role: iam.Role): void {
     const { region } = Stack.of(this);
-    new iam.ManagedPolicy(this, "ApiPolicy", {
+    const uploads = `${this.bucket.bucketArn}/${KNOWLEDGE_PREFIXES.uploads}*`;
+    const savedDocuments = `${this.bucket.bucketArn}/${KNOWLEDGE_PREFIXES.bases}*/docs/*`;
+    const policy = new iam.ManagedPolicy(this, "ApiPolicy", {
       managedPolicyName: mangoName(this.namespace, "ApiKnowledge"),
       description: "mango-api: the registry of the knowledge bases (D88)",
       roles: [role],
@@ -370,7 +402,38 @@ export class Knowledge extends Construct {
           resources: [this.dataKey.keyArn],
           conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
         }),
+        // Signing a POST lends this permission to the browser, for one key, size and type.
+        // Reading is `HeadObject` and two ranges to check a document, and the copy's source.
+        new iam.PolicyStatement({
+          sid: "Uploads",
+          actions: ["s3:GetObject", "s3:PutObject"],
+          resources: [uploads],
+        }),
+        // The copy's destination; mango-api never reads nor deletes under `kb/`.
+        new iam.PolicyStatement({
+          sid: "SavedDocuments",
+          actions: ["s3:PutObject"],
+          resources: [savedDocuments],
+        }),
+        new iam.PolicyStatement({
+          sid: "DocumentsKey",
+          actions: ["kms:Decrypt", "kms:GenerateDataKey"],
+          resources: [this.key.keyArn],
+          conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+        }),
       ],
     });
+    const bucketId = Stack.of(this).getLogicalId(this.bucket.node.defaultChild as s3.CfnBucket);
+    acknowledge(
+      policy,
+      {
+        id: `AwsSolutions-IAM5[Resource::<${bucketId}.Arn>/${KNOWLEDGE_PREFIXES.uploads}*]`,
+        reason: "Uploads are keyed at runtime by caller and ULIDs (D88 (9)); the prefix uploads/ is the scope.",
+      },
+      {
+        id: `AwsSolutions-IAM5[Resource::<${bucketId}.Arn>/${KNOWLEDGE_PREFIXES.bases}*/docs/*]`,
+        reason: "Saved documents are keyed at runtime by ULIDs under kb/<kb_id>/docs/ (D88 (9)).",
+      },
+    );
   }
 }

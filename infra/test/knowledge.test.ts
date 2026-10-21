@@ -227,7 +227,23 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(policy.Properties.Roles).toEqual([{ Ref: apiRoleId }]);
     const [tableId] = only("AWS::DynamoDB::GlobalTable", { TableName: `Mango-${ns}-Knowledge` });
     const sids = bySid(policy.Properties.PolicyDocument.Statement as Statement[]);
-    expect(Object.keys(sids).sort()).toEqual(["KnowledgeTable", "KnowledgeTableKey"]);
+    expect(Object.keys(sids).sort()).toEqual([
+      "DocumentsKey",
+      "KnowledgeTable",
+      "KnowledgeTableKey",
+      "SavedDocuments",
+      "Uploads",
+    ]);
+    // Uploads: sign and check under uploads/ only; saved documents: only written, under kb/*/docs/.
+    expect(actions(sids.Uploads!).sort()).toEqual(["s3:GetObject", "s3:PutObject"]);
+    expect(JSON.stringify(sids.Uploads!.Resource)).toContain("/uploads/*");
+    expect(actions(sids.SavedDocuments!)).toEqual(["s3:PutObject"]);
+    expect(JSON.stringify(sids.SavedDocuments!.Resource)).toContain("/kb/*/docs/*");
+    expect(sids.DocumentsKey!.Condition!.StringEquals).toEqual({ "kms:ViaService": `s3.${region}.amazonaws.com` });
+    const all = (policy.Properties.PolicyDocument.Statement as Statement[]).flatMap(actions);
+    for (const forbidden of ["s3:DeleteObject", "s3:ListBucket", "dynamodb:DeleteItem", "dynamodb:Scan"]) {
+      expect(all).not.toContain(forbidden);
+    }
     expect(actions(sids.KnowledgeTable!).sort()).toEqual([
       "dynamodb:GetItem",
       "dynamodb:PutItem",
@@ -240,13 +256,37 @@ describe("knowledge bases: fixed resources in Core", () => {
       "kms:ViaService": `dynamodb.${region}.amazonaws.com`,
     });
     // Nothing of the documents, the vectors or the Bedrock base yet, and no overflow policy.
-    expect(JSON.stringify(statementsOf(apiRoleId))).not.toMatch(/s3vectors|bedrock:Retrieve|KnowledgeDocuments/);
+    expect(JSON.stringify(statementsOf(apiRoleId))).not.toMatch(/s3vectors|bedrock:Retrieve/);
     expect(Object.keys(resources).some((id) => id.startsWith("ApiTaskRoleOverflowPolicy"))).toBe(false);
     const [, service] = only("AWS::ECS::TaskDefinition", {});
     const env = JSON.stringify(service.Properties.ContainerDefinitions);
     expect(env).toContain("KNOWLEDGE_TABLE");
+    expect(env).toContain("KNOWLEDGE_BUCKET");
     expect(ofType("AWS::Lambda::Function").some(([, r]) => /Knowledge/i.test(String(r.Properties.FunctionName)))).toBe(
       false,
     );
+  });
+
+  it("takes uploads from the SPA only, with a bucket name the CSP may name (D88 (9))", () => {
+    expect(JSON.stringify(bucket.Properties.BucketName)).toContain(`mango-${ns}-knowledge-`);
+    expect(JSON.stringify(bucket.Properties.BucketName)).toContain("AWS::StackId");
+    const [rule] = bucket.Properties.CorsConfiguration.CorsRules;
+    expect(rule.AllowedMethods).toEqual(["POST"]);
+    expect(rule.AllowedOrigins).toHaveLength(1);
+    expect(JSON.stringify(rule.AllowedOrigins)).toContain("Distribution");
+    const [, headers] = Object.entries(template.findResources("AWS::CloudFront::ResponseHeadersPolicy"))[0] as [
+      string,
+      Resource,
+    ];
+    const csp = JSON.stringify(headers.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy);
+    expect(csp).toContain(`mango-${ns}-knowledge-`);
+    expect(csp).toContain(`.s3.${region}.amazonaws.com`);
+    // Only connect-src: the bucket is no source of scripts, styles, frames or forms.
+    expect(csp.split("connect-src")[0]).not.toContain("knowledge");
+  });
+
+  it("expires the records of uploads with their objects", () => {
+    const [, table] = only("AWS::DynamoDB::GlobalTable", { TableName: `Mango-${ns}-Knowledge` });
+    expect(table.Properties.TimeToLiveSpecification).toEqual({ AttributeName: "expires_at", Enabled: true });
   });
 });

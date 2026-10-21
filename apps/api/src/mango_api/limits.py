@@ -143,6 +143,12 @@ LIMITS: dict[str, LimitSpec] = {
         shared=True,
         why="Creating, editing and deleting knowledge bases (D88): each one is audited twice.",
     ),
+    "knowledge.uploads": LimitSpec(
+        knowledge.UPLOADS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Each request signs up to 20 uploads or saves up to 20 documents into S3 (D88 (9)).",
+    ),
     "admin.probe": LimitSpec(
         admin.PROBE_CALLS_PER_MINUTE,
         MINUTE,

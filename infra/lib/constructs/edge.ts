@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Duration, Fn, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { Duration, Fn, Lazy, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
@@ -126,6 +126,8 @@ export class Edge extends Construct {
   readonly spaBucket: s3.Bucket;
   /** CloudWatch names of the web ACL and of its per-IP rate limits (`AWS/WAFV2` dimensions). */
   readonly rateLimitMetrics: { readonly webAcl: string; readonly rules: string[] };
+  /** Origins the SPA may also connect to besides its own and Cognito's (`allowConnectTo`). */
+  private readonly connectOrigins: string[] = [];
 
   constructor(scope: Construct, id: string, props: EdgeProps) {
     super(scope, id);
@@ -248,7 +250,15 @@ export class Edge extends Construct {
             "style-src 'self'",
             "img-src 'self' data:",
             "font-src 'self'",
-            `connect-src 'self' ${cognitoDomain} https://cognito-idp.${stack.region}.amazonaws.com`,
+            Lazy.string({
+              produce: () =>
+                [
+                  "connect-src 'self'",
+                  cognitoDomain,
+                  `https://cognito-idp.${stack.region}.amazonaws.com`,
+                  ...this.connectOrigins,
+                ].join(" "),
+            }),
             `form-action 'self' ${cognitoDomain}`,
             "frame-ancestors 'none'",
             "base-uri 'none'",
@@ -349,6 +359,17 @@ export class Edge extends Construct {
           "uses the customer's ACM certificate with TLSv1.2_2021.",
       },
     );
+  }
+
+  /**
+   * Let the SPA connect to one more origin (CSP `connect-src`): only an exact host, never a
+   * wildcard. The knowledge bases post uploads to their bucket (D88 (9)).
+   */
+  allowConnectTo(origin: string): void {
+    if (!origin.startsWith("https://") || origin.includes("*")) {
+      throw new Error("connect-src takes one exact https origin");
+    }
+    this.connectOrigins.push(origin);
   }
 
   get origin(): string {

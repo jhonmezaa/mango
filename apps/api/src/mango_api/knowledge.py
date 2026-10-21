@@ -19,6 +19,10 @@ Security notes (security-best-practices, FastAPI):
   the owner. Changes count in the shared rate limits (D70).
 * Every change is audited before and after it is written (rule 4), with ids, groups and
   counts, never the name or the description (D88 (12), TM-K9).
+* Documents (D88 (9), TM-K4): the browser uploads to S3 with a POST signed for one key made of
+  ids, one size and one type (``knowledge_uploads``). Saving accepts only documents of an
+  upload the same person asked for in the same knowledge base, checks their size and bytes
+  again, and copies them on the server side. Their names are shown, never used in a key.
 """
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
@@ -27,7 +31,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, Protocol
 
@@ -39,21 +43,44 @@ from mango_api.audit import AuditLog
 from mango_api.authz import KNOWLEDGE_BASE_TYPE, KnowledgeBaseResource
 from mango_api.groups import GroupRegistry, GroupsUnavailableError
 from mango_api.knowledge_store import (
+    MAX_BYTES,
+    MAX_DOCUMENTS,
+    AnnouncedFile,
+    Document,
     KnowledgeBase,
     KnowledgeConflictError,
+    KnowledgeLimitError,
     KnowledgeStore,
     KnowledgeStoreUnavailableError,
+    Upload,
+)
+from mango_api.knowledge_uploads import (
+    MAX_FILE_BYTES,
+    TYPES,
+    UPLOAD_SECONDS,
+    DocumentStorage,
+    StorageUnavailableError,
+    display_name,
+    document_key,
+    extension,
+    upload_key,
 )
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core import knowledge
-from mango_core.knowledge import Status
+from mango_core.knowledge import DocumentStatus, Status
 
 logger = logging.getLogger(__name__)
 
 PLATFORM = ("Mango::Platform", "mango")
 CHANGES_PER_HOUR = 30
 """Creating, editing and deleting knowledge bases, per person (D70)."""
+UPLOADS_PER_HOUR = 60
+"""Requests of presigned uploads and saves, per person: each one is up to 20 documents."""
+FILES_PER_UPLOAD = 20
+"""Files per upload (D88 (9))."""
+UPLOAD_DAYS_SECONDS = 23 * 3600
+"""An upload may be saved for 23 hours: the bucket empties ``uploads/`` after a day."""
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _CONTROL_BUT_NEWLINE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
 
@@ -142,6 +169,68 @@ class KnowledgeBaseListOut(_Strict):
     can_create: bool
 
 
+class UploadFileIn(_Strict):
+    name: Annotated[str, Field(min_length=1, max_length=1000)]
+    """As the browser has it; what is shown is :func:`display_name` of it."""
+    size: Annotated[int, Field(ge=1, le=MAX_FILE_BYTES)]
+    content_type: Annotated[str, Field(max_length=100)]
+    """Must be the type of the extension of the name (``knowledge_uploads.TYPES``)."""
+
+
+class UploadsIn(_Strict):
+    files: Annotated[list[UploadFileIn], Field(min_length=1, max_length=FILES_PER_UPLOAD)]
+
+
+class SignedFileOut(_Strict):
+    doc_id: str
+    name: str
+    url: str
+    fields: dict[str, str]
+    """The form fields of the POST, in order, before the file."""
+
+
+class UploadsOut(_Strict):
+    upload_id: str
+    expires_at: datetime
+    """When the POSTs stop being accepted (15 minutes)."""
+    files: list[SignedFileOut]
+
+
+class SaveIn(_Strict):
+    upload_id: Annotated[str, Field(pattern=knowledge.ID_PATTERN)]
+    doc_ids: Annotated[
+        list[Annotated[str, Field(pattern=knowledge.ID_PATTERN)]],
+        Field(min_length=1, max_length=FILES_PER_UPLOAD),
+    ]
+
+
+RejectReason = Literal["not_uploaded", "too_large", "size_mismatch", "type_mismatch"]
+
+
+class RejectedOut(_Strict):
+    doc_id: str
+    reason: RejectReason
+
+
+class DocumentOut(_Strict):
+    doc_id: str
+    name: str
+    size: int
+    content_type: str
+    status: DocumentStatus
+    reason: str | None
+    created_at: datetime
+
+
+class SaveOut(_Strict):
+    saved: list[DocumentOut]
+    rejected: list[RejectedOut]
+
+
+class DocumentListOut(_Strict):
+    items: list[DocumentOut]
+
+
 # --- Use cases --------------------------------------------------------------------------
 
 
@@ -167,6 +256,9 @@ class KnowledgeDeps:
     audit: AuditLog
     changes: Limiter
     clock: Callable[[], float] = time.time
+    storage: DocumentStorage | None = None
+    """The documents bucket; ``None`` until mango-api may use it (the routes answer 503)."""
+    uploads: Limiter | None = None
 
 
 def resource_of(kb: KnowledgeBase) -> KnowledgeBaseResource:
@@ -358,10 +450,204 @@ def knowledge_base_out(
     )
 
 
+def _storage(deps: KnowledgeDeps) -> DocumentStorage:
+    if deps.storage is None:
+        raise ApiError(503, "knowledge_unavailable", "please try again")
+    return deps.storage
+
+
+def _storage_unavailable(exc: StorageUnavailableError) -> ApiError:
+    logger.error("knowledge documents unavailable: %s", exc)
+    return ApiError(503, "storage_unavailable", "please try again")
+
+
+def _accepting(kb: KnowledgeBase) -> None:
+    if kb.status is Status.DELETING:
+        raise ApiError(409, "knowledge_base_deleting", "this knowledge base is being deleted")
+
+
+def request_uploads(
+    deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase, body: UploadsIn
+) -> tuple[Upload, dict[str, tuple[str, str, dict[str, str]]]]:
+    """Sign one POST per file; returns the upload and, by document id, its name, URL and
+    fields. Nothing is written to the bucket here."""
+    storage = _storage(deps)
+    _accepting(kb)
+    files: dict[str, AnnouncedFile] = {}
+    now = deps.clock()
+    for index, file in enumerate(body.files):
+        name = display_name(file.name)
+        kind = extension(name) if name else None
+        if name is None or kind is None:
+            raise ApiError(422, "type_not_supported", f"file {index + 1}: type not supported")
+        if file.content_type != TYPES[kind]:
+            raise ApiError(422, "type_mismatch", f"file {index + 1}: the type is not its own")
+        files[knowledge.new_id(int(now * 1000) + index)] = AnnouncedFile(
+            name, file.size, TYPES[kind]
+        )
+    total = sum(f.size for f in files.values())
+    if kb.documents + len(files) > MAX_DOCUMENTS or kb.bytes + total > MAX_BYTES:
+        raise ApiError(409, "knowledge_base_full", "the knowledge base would pass its limits")
+    upload = Upload(
+        kb_id=kb.kb_id,
+        upload_id=knowledge.new_id(int(now * 1000)),
+        owner_id=caller.user.user_id,
+        files=files,
+        saved=frozenset(),
+        expires_at=int(now) + UPLOAD_DAYS_SECONDS,
+    )
+    detail = {"upload_id": upload.upload_id, "files": len(files), "bytes": total}
+    _audit(deps, "kb.upload", caller, kb, outcome="requested", **detail)
+    try:
+        signed = {
+            doc_id: storage.sign(
+                upload_key(caller.user.user_id, upload.upload_id, doc_id), f.size, f.content_type
+            )
+            for doc_id, f in files.items()
+        }
+        deps.store.put_upload(upload, now=_now_iso(deps))
+    except StorageUnavailableError as exc:
+        raise _storage_unavailable(exc) from exc
+    except KnowledgeStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    _audit(deps, "kb.upload", caller, kb, outcome="applied", **detail)
+    return upload, {d: (files[d].name, s.url, s.fields) for d, s in signed.items()}
+
+
+def _checked(
+    storage: DocumentStorage, upload: Upload, doc_ids: list[str], caller: Caller, now: str
+) -> tuple[list[tuple[Document, str]], list[RejectedOut]]:
+    """Each announced document as S3 has it: there, of its size, and its bytes of its type;
+    with the ETag of what was checked."""
+    accepted: list[tuple[Document, str]] = []
+    rejected: list[RejectedOut] = []
+    for doc_id in doc_ids:
+        announced = upload.files[doc_id]
+        key = upload_key(upload.owner_id, upload.upload_id, doc_id)
+        try:
+            found = storage.inspect(key, extension(announced.name) or "")
+        except StorageUnavailableError as exc:
+            raise _storage_unavailable(exc) from exc
+        reason: RejectReason | None = None
+        if found is None:
+            reason = "not_uploaded"
+        elif found.size > MAX_FILE_BYTES:
+            reason = "too_large"
+        elif found.size != announced.size:
+            reason = "size_mismatch"
+        elif not found.matches:
+            reason = "type_mismatch"
+        if found is None or reason is not None:
+            rejected.append(RejectedOut(doc_id=doc_id, reason=reason or "not_uploaded"))
+            continue
+        accepted.append(
+            (
+                Document(
+                    kb_id=upload.kb_id,
+                    doc_id=doc_id,
+                    name=announced.name,
+                    size=announced.size,
+                    content_type=announced.content_type,
+                    sha256="",
+                    status=DocumentStatus.UPLOADED,
+                    reason=None,
+                    uploaded_by=caller.user.user_id,
+                    created_at=now,
+                ),
+                found.etag,
+            )
+        )
+    return accepted, rejected
+
+
+def _copy(
+    deps: KnowledgeDeps, storage: DocumentStorage, upload: Upload, document: Document, etag: str
+) -> Document:
+    """S3 copies the upload under ``kb/``. A copy that fails is recorded as ``failed``: the
+    document is counted, but never shows as uploaded."""
+    source = upload_key(upload.owner_id, upload.upload_id, document.doc_id)
+    destination = document_key(document.kb_id, document.doc_id)
+    try:
+        digest = storage.copy(source, etag, destination, document.content_type)
+    except StorageUnavailableError:
+        logger.exception("knowledge document copy failed")
+        try:
+            deps.store.stored(document.kb_id, document.doc_id, sha256=None, reason="storage")
+        except KnowledgeStoreUnavailableError:
+            logger.exception("knowledge document copy failure could not be recorded")
+        return replace(document, status=DocumentStatus.FAILED, reason="storage")
+    try:
+        deps.store.stored(document.kb_id, document.doc_id, sha256=digest, reason=None)
+    except KnowledgeStoreUnavailableError:
+        logger.exception("knowledge document checksum could not be recorded")
+    return replace(document, sha256=digest)
+
+
+def save_documents(
+    deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase, body: SaveIn
+) -> tuple[list[Document], list[RejectedOut]]:
+    """Check each uploaded document and record the good ones; then S3 copies them under
+    ``kb/<kb id>/docs/``. The synchronization indexes them (D88 (11), PR 4)."""
+    storage = _storage(deps)
+    _accepting(kb)
+    try:
+        upload = deps.store.upload(kb.kb_id, body.upload_id)
+    except KnowledgeStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    # Only the person who asked for the upload, in this knowledge base, while it lasts.
+    if upload is None or upload.owner_id != caller.user.user_id or upload.expires_at < deps.clock():
+        raise HTTPException(status_code=404, detail="not found")
+    wanted = list(dict.fromkeys(body.doc_ids))
+    if any(d not in upload.files for d in wanted):
+        raise ApiError(422, "unknown_document", "a document is not of this upload")
+    if any(d in upload.saved for d in wanted):
+        raise ApiError(409, "already_saved", "a document of this upload is already saved")
+    checked, rejected = _checked(storage, upload, wanted, caller, _now_iso(deps))
+    accepted = [document for document, _etag in checked]
+    detail = {
+        "upload_id": upload.upload_id,
+        "documents": len(accepted),
+        "rejected": len(rejected),
+        "bytes": sum(d.size for d in accepted),
+    }
+    _audit(deps, "kb.documents_save", caller, kb, outcome="requested", **detail)
+    if accepted:
+        try:
+            deps.store.save_documents(kb, upload, accepted)
+        except KnowledgeLimitError as exc:
+            _audit(
+                deps, "kb.documents_save", caller, kb, outcome="rejected", reason="full", **detail
+            )
+            raise ApiError(
+                409, "knowledge_base_full", "the knowledge base would pass its limits"
+            ) from exc
+        except KnowledgeConflictError as exc:
+            raise ApiError(
+                409, "already_saved", "a document of this upload is already saved"
+            ) from exc
+        except KnowledgeStoreUnavailableError as exc:
+            raise _unavailable(exc) from exc
+    saved = [_copy(deps, storage, upload, d, etag) for d, etag in checked]
+    _audit(deps, "kb.documents_save", caller, kb, outcome="applied", **detail)
+    return saved, rejected
+
+
+def document_out(document: Document) -> DocumentOut:
+    return DocumentOut(
+        doc_id=document.doc_id,
+        name=document.name,
+        size=document.size,
+        content_type=document.content_type,
+        status=document.status,
+        reason=document.reason,
+        created_at=datetime.fromisoformat(document.created_at),
+    )
+
+
 # --- Router -------------------------------------------------------------------------------
 
 
-def knowledge_router(
+def knowledge_router(  # noqa: PLR0915 - registers the route closures
     deps: KnowledgeDeps,
     current_user: Callable[..., Awaitable[Caller]],
     authorize: Authorize,
@@ -453,5 +739,45 @@ def knowledge_router(
         _limit(deps.changes, caller.user.user_id)
         deleted = await run(delete_knowledge_base, deps, caller, kb, body.version)
         return (await out(caller, [deleted]))[0]
+
+    @router.post("/{kb_id}/uploads", response_model=UploadsOut, status_code=201)
+    async def request_document_uploads(kb_id: KbId, body: UploadsIn, caller: Viewer) -> UploadsOut:
+        kb = await editable(caller, kb_id)
+        if deps.uploads is not None:
+            _limit(deps.uploads, caller.user.user_id)
+        upload, signed = await run(request_uploads, deps, caller, kb, body)
+        return UploadsOut(
+            upload_id=upload.upload_id,
+            expires_at=datetime.fromtimestamp(deps.clock() + UPLOAD_SECONDS, UTC),
+            files=[
+                SignedFileOut(doc_id=doc_id, name=name, url=url, fields=fields)
+                for doc_id, (name, url, fields) in signed.items()
+            ],
+        )
+
+    @router.post("/{kb_id}/documents", response_model=SaveOut)
+    async def save_uploaded_documents(kb_id: KbId, body: SaveIn, caller: Viewer) -> SaveOut:
+        kb = await editable(caller, kb_id)
+        if deps.uploads is not None:
+            _limit(deps.uploads, caller.user.user_id)
+        saved, rejected = await run(save_documents, deps, caller, kb, body)
+        return SaveOut(saved=[document_out(d) for d in saved], rejected=rejected)
+
+    @router.get("/{kb_id}/documents", response_model=DocumentListOut)
+    async def list_documents(kb_id: KbId, caller: Viewer) -> DocumentListOut:
+        kb = await load(kb_id)
+        await authorize(
+            caller,
+            "ViewKnowledgeBase",
+            KNOWLEDGE_BASE_TYPE,
+            kb_id,
+            read_only=True,
+            knowledge=resource_of(kb),
+        )
+        try:
+            documents = await run(deps.store.documents, kb_id)
+        except KnowledgeStoreUnavailableError as exc:
+            raise _unavailable(exc) from exc
+        return DocumentListOut(items=[document_out(d) for d in documents])
 
     return router

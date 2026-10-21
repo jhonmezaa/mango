@@ -41,6 +41,18 @@ class Status(StrEnum):
     """Its documents and vectors are being deleted; it stays listed until that is verified."""
 
 
+class DocumentStatus(StrEnum):
+    """Of a document (D88 (8))."""
+
+    UPLOADED = "uploaded"
+    """Saved in the knowledge base, not indexed yet."""
+    INDEXING = "indexing"
+    INDEXED = "indexed"
+    FAILED = "failed"
+    """Not indexed, with its ``reason``."""
+    DELETING = "deleting"
+
+
 def new_id(now_ms: int | None = None) -> str:
     """A ULID: 48 bits of milliseconds and 80 random bits, in Crockford's base 32."""
     millis = int(time.time() * 1000) if now_ms is None else now_ms

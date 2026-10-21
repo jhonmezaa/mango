@@ -1079,6 +1079,54 @@ export type DisableIn = {
 };
 
 /**
+ * DocumentListOut
+ */
+export type DocumentListOut = {
+    /**
+     * Items
+     */
+    items: Array<DocumentOut>;
+};
+
+/**
+ * DocumentOut
+ */
+export type DocumentOut = {
+    /**
+     * Content Type
+     */
+    content_type: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Doc Id
+     */
+    doc_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Size
+     */
+    size: number;
+    status: DocumentStatus;
+};
+
+/**
+ * DocumentStatus
+ *
+ * Of a document (D88 (8)).
+ */
+export type DocumentStatus = 'uploaded' | 'indexing' | 'indexed' | 'failed' | 'deleting';
+
+/**
  * EmptyIn
  */
 export type EmptyIn = {
@@ -2553,6 +2601,20 @@ export type ReasonIn = {
 };
 
 /**
+ * RejectedOut
+ */
+export type RejectedOut = {
+    /**
+     * Doc Id
+     */
+    doc_id: string;
+    /**
+     * Reason
+     */
+    reason: 'not_uploaded' | 'too_large' | 'size_mismatch' | 'type_mismatch';
+};
+
+/**
  * RenewedOut
  */
 export type RenewedOut = {
@@ -3070,6 +3132,34 @@ export type SaveDraftIn = {
 };
 
 /**
+ * SaveIn
+ */
+export type SaveIn = {
+    /**
+     * Doc Ids
+     */
+    doc_ids: Array<string>;
+    /**
+     * Upload Id
+     */
+    upload_id: string;
+};
+
+/**
+ * SaveOut
+ */
+export type SaveOut = {
+    /**
+     * Rejected
+     */
+    rejected: Array<RejectedOut>;
+    /**
+     * Saved
+     */
+    saved: Array<DocumentOut>;
+};
+
+/**
  * ScheduleSpec
  *
  * When a schedule runs, as the design asks for it. Never a cron expression.
@@ -3171,6 +3261,30 @@ export type SignatureOut = {
      * User Id
      */
     user_id: string;
+};
+
+/**
+ * SignedFileOut
+ */
+export type SignedFileOut = {
+    /**
+     * Doc Id
+     */
+    doc_id: string;
+    /**
+     * Fields
+     */
+    fields: {
+        [key: string]: string;
+    };
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Url
+     */
+    url: string;
 };
 
 /**
@@ -3456,6 +3570,52 @@ export type UpdateIn = {
      * Version
      */
     version: number;
+};
+
+/**
+ * UploadFileIn
+ */
+export type UploadFileIn = {
+    /**
+     * Content Type
+     */
+    content_type: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Size
+     */
+    size: number;
+};
+
+/**
+ * UploadsIn
+ */
+export type UploadsIn = {
+    /**
+     * Files
+     */
+    files: Array<UploadFileIn>;
+};
+
+/**
+ * UploadsOut
+ */
+export type UploadsOut = {
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Files
+     */
+    files: Array<SignedFileOut>;
+    /**
+     * Upload Id
+     */
+    upload_id: string;
 };
 
 /**
@@ -6369,6 +6529,96 @@ export type DeleteExistingKnowledgeBaseResponses = {
 };
 
 export type DeleteExistingKnowledgeBaseResponse = DeleteExistingKnowledgeBaseResponses[keyof DeleteExistingKnowledgeBaseResponses];
+
+export type ListDocumentsData = {
+    body?: never;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/documents';
+};
+
+export type ListDocumentsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListDocumentsError = ListDocumentsErrors[keyof ListDocumentsErrors];
+
+export type ListDocumentsResponses = {
+    /**
+     * Successful Response
+     */
+    200: DocumentListOut;
+};
+
+export type ListDocumentsResponse = ListDocumentsResponses[keyof ListDocumentsResponses];
+
+export type SaveUploadedDocumentsData = {
+    body: SaveIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/documents';
+};
+
+export type SaveUploadedDocumentsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SaveUploadedDocumentsError = SaveUploadedDocumentsErrors[keyof SaveUploadedDocumentsErrors];
+
+export type SaveUploadedDocumentsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SaveOut;
+};
+
+export type SaveUploadedDocumentsResponse = SaveUploadedDocumentsResponses[keyof SaveUploadedDocumentsResponses];
+
+export type RequestDocumentUploadsData = {
+    body: UploadsIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/uploads';
+};
+
+export type RequestDocumentUploadsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RequestDocumentUploadsError = RequestDocumentUploadsErrors[keyof RequestDocumentUploadsErrors];
+
+export type RequestDocumentUploadsResponses = {
+    /**
+     * Successful Response
+     */
+    201: UploadsOut;
+};
+
+export type RequestDocumentUploadsResponse = RequestDocumentUploadsResponses[keyof RequestDocumentUploadsResponses];
 
 export type GetCatalogData = {
     body?: never;

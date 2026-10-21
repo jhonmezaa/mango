@@ -210,8 +210,11 @@ export class CoreStack extends Stack {
       dataKey: governance.dataKey,
       accessLogs,
       alerts,
+      appOrigin: edge.origin,
     });
     knowledge.grantApi(apiTaskRole);
+    // The browser posts documents to that bucket only (D88 (9)).
+    edge.allowConnectTo(knowledge.uploadOrigin);
     // Daily read-only reconciliation and the alarms of the publication path (TM-M6, TM-M9).
     // It also reports a release agent that serves content other than the release's (D42).
     new Reconciler(this, "Reconciler", {

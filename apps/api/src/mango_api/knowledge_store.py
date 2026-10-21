@@ -6,8 +6,17 @@ Item layout, all under ``PK = KB#<kb id>`` (a ULID, ``mango_core.knowledge``):
   it and never changes; ``groups`` are the groups it answers to (D88 (22)); ``business_unit``
   its area or ``all``, fixed when it is created; ``status`` and the counters of its documents.
   ``version`` grows with every change: an edit names the version it read.
-* Sources (``SRC#``), documents (``DOC#``) and synchronizations (``SYNC#``) come with the PRs
-  that write them (D88 (9) to (11)).
+* ``SK = UPLOAD#<upload id>``: a presigned upload (D88 (9)): who asked for it, the files it
+  announced (name, size, type, by document id) and the ones already saved (``saved``). It
+  expires with the objects of ``uploads/`` (``expires_at``, the table's TTL).
+* ``SK = DOC#<doc id>``: a saved document. Its key derives from the ids only
+  (``kb/<kb id>/docs/<doc id>``); the name is what is shown, never part of a key. ``status``
+  ``uploaded`` until the synchronization indexes it (D88 (8)), and ``reason`` when it fails.
+* Sources (``SRC#``) and synchronizations (``SYNC#``) come with the PRs that write them
+  (D88 (10), (11)).
+
+The counters of a knowledge base (``documents``, ``bytes``) grow in the same transaction as
+the documents they count, so the limits of D88 (9) hold whoever saves at the same time.
 
 Index ``All`` (``all_pk`` = ``KB``, ``created_at``) lists every knowledge base. Keep in sync
 with ``infra/lib/constructs/knowledge.ts``. Deleting is a status (``deleting``): the item stays
@@ -17,12 +26,13 @@ an item.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import ClientError
 
-from mango_core.knowledge import Status
+from mango_core.knowledge import DocumentStatus, Status
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
@@ -32,6 +42,9 @@ SK_META = "META"
 ALL_PK = "KB"
 MAX_LISTED = 1000
 """Knowledge bases a list reads at most: far above what an installation holds."""
+MAX_DOCUMENTS = 1000
+MAX_BYTES = 5 * 1024**3
+"""Per knowledge base (D88 (9))."""
 _PAGE = 100
 
 
@@ -61,6 +74,42 @@ class KnowledgeBase:
     version: int
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class AnnouncedFile:
+    name: str
+    size: int
+    content_type: str
+
+
+@dataclass(frozen=True)
+class Upload:
+    kb_id: str
+    upload_id: str
+    owner_id: str
+    files: dict[str, AnnouncedFile]
+    """By document id."""
+    saved: frozenset[str]
+    expires_at: int
+
+
+@dataclass(frozen=True)
+class Document:
+    kb_id: str
+    doc_id: str
+    name: str
+    size: int
+    content_type: str
+    sha256: str
+    status: DocumentStatus
+    reason: str | None
+    uploaded_by: str
+    created_at: str
+
+
+class KnowledgeLimitError(Exception):
+    """The documents would pass the limits of the knowledge base (D88 (9))."""
 
 
 def _s(value: str) -> dict[str, str]:
@@ -108,6 +157,36 @@ def _knowledge_base(item: dict[str, Any]) -> KnowledgeBase:
 
 def _conditional(exc: ClientError) -> bool:
     return exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException"
+
+
+def _upload(item: dict[str, Any]) -> Upload:
+    raw: dict[str, dict[str, Any]] = json.loads(item["files"]["S"])
+    return Upload(
+        kb_id=item["kb_id"]["S"],
+        upload_id=item["upload_id"]["S"],
+        owner_id=item["owner_id"]["S"],
+        files={
+            doc_id: AnnouncedFile(f["name"], int(f["size"]), f["content_type"])
+            for doc_id, f in raw.items()
+        },
+        saved=frozenset(item.get("saved", {}).get("SS", [])),
+        expires_at=_int(item, "expires_at"),
+    )
+
+
+def _document(item: dict[str, Any]) -> Document:
+    return Document(
+        kb_id=item["kb_id"]["S"],
+        doc_id=item["doc_id"]["S"],
+        name=item["name"]["S"],
+        size=_int(item, "size"),
+        content_type=item["content_type"]["S"],
+        sha256=_str(item, "sha256") or "",
+        status=DocumentStatus(item["status"]["S"]),
+        reason=_str(item, "reason"),
+        uploaded_by=item["uploaded_by"]["S"],
+        created_at=item["created_at"]["S"],
+    )
 
 
 class KnowledgeStore:
@@ -230,3 +309,162 @@ class KnowledgeStore:
                 raise KnowledgeConflictError from exc
             raise KnowledgeStoreUnavailableError from exc
         return _knowledge_base(resp["Attributes"])
+
+    # --- Uploads and documents (D88 (9)) ---------------------------------------------------
+
+    def put_upload(self, upload: Upload, *, now: str) -> None:
+        files = {
+            doc_id: {"name": f.name, "size": f.size, "content_type": f.content_type}
+            for doc_id, f in upload.files.items()
+        }
+        try:
+            self._db.put_item(
+                TableName=self._table,
+                Item={
+                    "PK": _s(_pk(upload.kb_id)),
+                    "SK": _s(f"UPLOAD#{upload.upload_id}"),
+                    "kb_id": _s(upload.kb_id),
+                    "upload_id": _s(upload.upload_id),
+                    "owner_id": _s(upload.owner_id),
+                    "files": _s(json.dumps(files, sort_keys=True, separators=(",", ":"))),
+                    "expires_at": _n(upload.expires_at),
+                    "created_at": _s(now),
+                },
+                ConditionExpression="attribute_not_exists(PK)",
+            )
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+
+    def upload(self, kb_id: str, upload_id: str) -> Upload | None:
+        try:
+            resp = self._db.get_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(kb_id)), "SK": _s(f"UPLOAD#{upload_id}")},
+                ConsistentRead=True,
+            )
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+        item = resp.get("Item")
+        return _upload(item) if item else None
+
+    def save_documents(self, kb: KnowledgeBase, upload: Upload, documents: list[Document]) -> None:
+        """Record ``documents`` of ``upload``, once each, and count them in the knowledge base,
+        all or nothing: within its limits, while it is not being deleted."""
+        count, size = len(documents), sum(d.size for d in documents)
+        pk = _s(_pk(kb.kb_id))
+        counters: dict[str, Any] = {
+            "Update": {
+                "TableName": self._table,
+                "Key": {"PK": pk, "SK": _s(SK_META)},
+                "UpdateExpression": "ADD documents :n, #bytes :b",
+                "ConditionExpression": (
+                    "attribute_exists(PK) AND #status <> :deleting"
+                    " AND documents <= :max_documents AND #bytes <= :max_bytes"
+                ),
+                "ExpressionAttributeNames": {"#status": "status", "#bytes": "bytes"},
+                "ExpressionAttributeValues": {
+                    ":n": _n(count),
+                    ":b": _n(size),
+                    ":deleting": _s(Status.DELETING),
+                    ":max_documents": _n(MAX_DOCUMENTS - count),
+                    ":max_bytes": _n(MAX_BYTES - size),
+                },
+            }
+        }
+        ids = [d.doc_id for d in documents]
+        not_saved = " AND ".join(f"NOT contains(#saved, :d{i})" for i in range(len(ids)))
+        values: dict[str, Any] = {f":d{i}": _s(doc_id) for i, doc_id in enumerate(ids)}
+        values[":ids"] = {"SS": ids}
+        mark: dict[str, Any] = {
+            "Update": {
+                "TableName": self._table,
+                "Key": {"PK": pk, "SK": _s(f"UPLOAD#{upload.upload_id}")},
+                "UpdateExpression": "ADD #saved :ids",
+                "ConditionExpression": (
+                    f"attribute_exists(PK) AND (attribute_not_exists(#saved) OR ({not_saved}))"
+                ),
+                "ExpressionAttributeNames": {"#saved": "saved"},
+                "ExpressionAttributeValues": values,
+            }
+        }
+        puts: list[Any] = [
+            {
+                "Put": {
+                    "TableName": self._table,
+                    "Item": {
+                        "PK": pk,
+                        "SK": _s(f"DOC#{d.doc_id}"),
+                        "kb_id": _s(d.kb_id),
+                        "doc_id": _s(d.doc_id),
+                        "name": _s(d.name),
+                        "size": _n(d.size),
+                        "content_type": _s(d.content_type),
+                        "status": _s(d.status),
+                        "uploaded_by": _s(d.uploaded_by),
+                        "created_at": _s(d.created_at),
+                    },
+                    "ConditionExpression": "attribute_not_exists(PK)",
+                }
+            }
+            for d in documents
+        ]
+        try:
+            items: list[Any] = [counters, mark, *puts]
+            self._db.transact_write_items(TransactItems=items)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "TransactionCanceledException":
+                reasons = exc.response.get("CancellationReasons", [])
+                first = reasons[0].get("Code") if reasons else None
+                if first == "ConditionalCheckFailed":
+                    raise KnowledgeLimitError from exc
+                raise KnowledgeConflictError from exc
+            raise KnowledgeStoreUnavailableError from exc
+
+    def stored(self, kb_id: str, doc_id: str, *, sha256: str | None, reason: str | None) -> None:
+        """After the copy: its SHA-256, or ``failed`` with ``reason`` if it could not be made."""
+        key = {"PK": _s(_pk(kb_id)), "SK": _s(f"DOC#{doc_id}")}
+        try:
+            if reason is None:
+                self._db.update_item(
+                    TableName=self._table,
+                    Key=key,
+                    UpdateExpression="SET sha256 = :h",
+                    ConditionExpression="attribute_exists(PK)",
+                    ExpressionAttributeValues={":h": _s(sha256 or "")},
+                )
+            else:
+                self._db.update_item(
+                    TableName=self._table,
+                    Key=key,
+                    UpdateExpression="SET #status = :failed, reason = :r",
+                    ConditionExpression="attribute_exists(PK)",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":failed": _s(DocumentStatus.FAILED),
+                        ":r": _s(reason),
+                    },
+                )
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+
+    def documents(self, kb_id: str) -> list[Document]:
+        out: list[Document] = []
+        start: dict[str, Any] | None = None
+        try:
+            while len(out) <= MAX_DOCUMENTS:
+                request: dict[str, Any] = {
+                    "TableName": self._table,
+                    "KeyConditionExpression": "PK = :pk AND begins_with(SK, :doc)",
+                    "ExpressionAttributeValues": {":pk": _s(_pk(kb_id)), ":doc": _s("DOC#")},
+                    "ConsistentRead": True,
+                }
+                if start:
+                    request["ExclusiveStartKey"] = start
+                page = self._db.query(**request)
+                out.extend(_document(item) for item in page.get("Items", []))
+                start = page.get("LastEvaluatedKey")
+                if not start:
+                    break
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+        return out
