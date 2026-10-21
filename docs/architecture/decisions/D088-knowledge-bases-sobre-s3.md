@@ -1,7 +1,7 @@
 # D88 · Knowledge bases: una entidad compartida entre agentes, con documentos de S3
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente)
+- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (la alerta de las knowledge bases: qué significa cuando el filtro sale de quien pregunta) y [D25](D025-recursos-creados-en-runtime.md) (el primer caso de KB: sin stacks de CloudFormation en ejecución); toma el diseño de §4.4
 - **Precisada por:** —
 
@@ -110,4 +110,11 @@ Las ocho preguntas que dejó abiertas la propuesta, con la opción que eligió e
 - **`mango-api`**, en su política propia: `GetObject` y `PutObject` solo bajo `uploads/`, `PutObject` solo bajo `kb/*/docs/` (el destino de la copia), y la llave a través de S3. No lee ni borra bajo `kb/`. Los registros de subida vencen con el TTL nuevo de la tabla (`expires_at`).
 - **Límite compartido:** 60 pedidos de subida o de guardado por hora y persona, cada uno de hasta 20 archivos.
 - **La indexación** queda para la sincronización (PR 4): hasta entonces, los documentos guardados están `uploaded`.
+
+**(31) Un ciclo en la plantilla, corregido (2026-10-21).** CloudFormation rechazó la plantilla `Core` de (30) con «Circular dependency between resources». La causa no era la CSP:
+- la política del bucket compartido de access logs nombraba el bucket de documentos como recurso (para recibir sus logs);
+- el bucket nombra la distribución en su CORS;
+- la distribución llega al balanceador, y el balanceador depende de esa misma política.
+
+Ahora los logs del bucket de documentos se configuran a mano y la política lo nombra por su ARN, armado desde su nombre de (30). Eso no depende de ningún recurso. La CSP, la CORS y los logs son los mismos de antes. `infra/test/cycles.test.ts` ordena el grafo de dependencias de cada plantilla, con las banderas de `cdk.json`, y falla ante un ciclo. Sin esas banderas, los tests no veían este.
 

@@ -24,6 +24,9 @@ export const INDEXING_PROFILE = {
   indexName: "titan-v2-1024",
 } as const;
 
+/** Where the server access logs of the documents bucket go, in the shared access logs bucket. */
+const ACCESS_LOG_PREFIX = "knowledge/";
+
 /** Index names of the Knowledge table; keep in sync with `mango_api.knowledge_store`. */
 export const KNOWLEDGE_ALL = "All";
 
@@ -141,8 +144,6 @@ export class Knowledge extends Construct {
       encryptionKey: this.key,
       bucketKeyEnabled: true,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
-      serverAccessLogsBucket: props.accessLogs,
-      serverAccessLogsPrefix: "knowledge/",
       // A deleted or replaced document leaves no copy after a day (TM-K5).
       versioned: true,
       lifecycleRules: [
@@ -164,6 +165,27 @@ export class Knowledge extends Construct {
       removalPolicy,
       autoDeleteObjects: !cfg.retainData,
     });
+    // Server access logs, written by hand. CDK's `serverAccessLogsBucket` would make the policy
+    // of the shared access logs bucket name this bucket as a resource; the load balancer
+    // depends on that policy, the distribution on the load balancer, and this bucket (its
+    // CORS) on the distribution: a cycle CloudFormation refuses. The policy names this bucket
+    // by its ARN, built from its name, which depends on no resource.
+    (this.bucket.node.defaultChild as s3.CfnBucket).loggingConfiguration = {
+      destinationBucketName: props.accessLogs.bucketName,
+      logFilePrefix: ACCESS_LOG_PREFIX,
+    };
+    props.accessLogs.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "KnowledgeDocumentsAccessLogs",
+        principals: [new iam.ServicePrincipal("logging.s3.amazonaws.com")],
+        actions: ["s3:PutObject"],
+        resources: [props.accessLogs.arnForObjects(`${ACCESS_LOG_PREFIX}*`)],
+        conditions: {
+          ArnLike: { "aws:SourceArn": Fn.join("", ["arn:aws:s3:::", bucketName]) },
+          StringEquals: { "aws:SourceAccount": account },
+        },
+      }),
+    );
 
     // --- Vectors --------------------------------------------------------------------------
     this.vectorBucket = new s3vectors.CfnVectorBucket(this, "VectorBucket", {

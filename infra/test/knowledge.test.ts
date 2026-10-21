@@ -77,6 +77,15 @@ describe("knowledge bases: fixed resources in Core", () => {
       RestrictPublicBuckets: true,
     });
     expect(bucket.Properties.LoggingConfiguration.LogFilePrefix).toBe("knowledge/");
+    // The access logs bucket takes its logs by name, never by the bucket resource: a reference
+    // closes a cycle through the load balancer and the distribution (see cycles.test.ts).
+    const logs = Object.values(template.findResources("AWS::S3::BucketPolicy"))
+      .flatMap((p) => p.Properties.PolicyDocument.Statement as Statement[])
+      .find((st) => st.Sid === "KnowledgeDocumentsAccessLogs")!;
+    expect(actions(logs)).toEqual(["s3:PutObject"]);
+    expect(logs.Principal).toEqual({ Service: "logging.s3.amazonaws.com" });
+    expect(JSON.stringify(logs.Condition)).toContain(`mango-${ns}-knowledge-`);
+    expect(JSON.stringify(logs.Condition)).not.toContain(bucketId);
     const [, policy] = only("AWS::S3::BucketPolicy", { Bucket: { Ref: bucketId } });
     expect(
       (policy.Properties.PolicyDocument.Statement as Statement[]).some(
