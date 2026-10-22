@@ -3,7 +3,7 @@
 # aws-billing-pack-threat-model.md.
 schema_version: 1
 id: aws-billing
-version: "0.0.38-5" # <upstream version>-<Mango revision>
+version: "0.0.38-6" # <upstream version>-<Mango revision>
 name: AWS Billing and Cost Management
 description: Cost and usage, forecasts, anomalies, month-over-month comparisons, Savings Plans and reservations, budgets and optimization recommendations of the whole organization, read in the payer account. Central users only.
 
@@ -11,7 +11,7 @@ source:
   package: awslabs.billing-cost-management-mcp-server
   version: "0.0.38"
   sha256: 7bf7f82cd1c2599b0826c149fbb1a8697f3c53a2851121ad1ada3d3c8e8d52c3 # wheel
-  exclude_newer: "2026-09-24T00:00:00Z" # lock cutoff: 7 days of quarantine
+  exclude_newer: "2026-10-15T00:00:00Z" # lock cutoff: 7 days of quarantine
 
 # The server does not filter by area: every call runs as the central user who asked, with a
 # session assumed through the Billing broker (SourceIdentity = user).

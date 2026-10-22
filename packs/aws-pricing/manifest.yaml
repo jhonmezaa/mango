@@ -1,7 +1,7 @@
 # AWS Pricing MCP pack (D19). Schema: packages/py/mango-packs (PackManifest). Guide: packs/README.md.
 schema_version: 1
 id: aws-pricing
-version: "1.1.1-2" # <upstream version>-<Mango revision>
+version: "1.1.1-3" # <upstream version>-<Mango revision>
 name: AWS Pricing
 description: Public AWS list prices from the AWS Price List API, by service, region and attributes.
 
@@ -9,7 +9,7 @@ source:
   package: awslabs.aws-pricing-mcp-server
   version: "1.1.1"
   sha256: 613446bdf660e8bfa30da985c4a102f62c6ab6f8a459ffe43285311ae059175d # wheel
-  exclude_newer: "2026-09-24T00:00:00Z" # lock cutoff: 7 days of quarantine
+  exclude_newer: "2026-10-15T00:00:00Z" # lock cutoff: 7 days of quarantine
 
 data_tier: public
 identity_mode: service

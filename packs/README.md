@@ -30,7 +30,7 @@ El esquema es `PackManifest` en `packages/py/mango-packs/src/mango_packs/manifes
 | Campo | Regla |
 |---|---|
 | `id` | Igual al nombre de la carpeta |
-| `version` | `<versión upstream>-<revisión de Mango>`, p. ej. `1.1.1-2`. La revisión sube cuando cambia algo nuestro (punto de entrada, tools permitidas) sin cambiar la versión upstream |
+| `version` | `<versión upstream>-<revisión de Mango>`, p. ej. `1.1.1-3`. La revisión sube cuando cambia algo nuestro (punto de entrada, tools permitidas, el lock con el mismo upstream) sin cambiar la versión upstream |
 | `source` | Paquete, versión, `sha256` del wheel y `exclude_newer` (corte de la resolución) |
 | `data_tier` · `identity_mode` | `public` va con `service` y solo con él. `account_data` y `write` exigen `central_only` o `per_user_adapter` |
 | `identity.chain` | Solo en packs `central_only`. `payer` (por defecto; no se escribe): broker de Billing → `Mango-<ns>-BillingReader` en la pagadora. `member`: broker de lectura → `Mango-<ns>-ReadOnly` de la cuenta miembro que pide cada llamada (D51). Va firmado; cambiarlo en un pack instalado exige deshabilitar y habilitar de nuevo |
@@ -95,7 +95,7 @@ Un pack de esta cadena lee **una cuenta miembro por llamada**. Todo lo anterior 
 - Solo lo sirve `mango_pack_runtime.server` (SDK oficial de MCP). El adaptador de `fastmcp` no arranca un pack de esta cadena.
 - La prueba está en `packages/py/mango-pack-runtime/tests/test_member.py`.
 
-Tools que sirve `aws-cloudwatch` (revisión `0.3.1-2`: las mismas tools que la `-1`; declara su `egress` y solo lee la región de la instalación), todas de lectura:
+Tools que sirve `aws-cloudwatch` (revisión `0.3.1-3`: las mismas tools que la `-1`; la `-2` declara su `egress` y solo lee la región de la instalación, y la `-3` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603), todas de lectura:
 
 | Tools | Servicio | Notas |
 |---|---|---|
@@ -137,7 +137,7 @@ serve(pack, mcp)
 - **Logs.** `fastmcp` copia al log del servidor todo mensaje que una tool envía al cliente (`ctx.info`, `ctx.error`), sea cual sea el nivel; ese logger se descarta. Solo queda el registro `pack.call` (quién llamó a qué, D16).
 - La prueba de aislamiento está en `packages/py/mango-pack-runtime/tests/test_fastmcp_server.py`, con la misma versión de `fastmcp` que fija el lock del pack (`fastmcp==` en el `pyproject.toml` de la raíz). **Al actualizar el pack, se actualiza esa versión y se repite la prueba.**
 
-Tools que sirve `aws-billing` (revisión `0.0.38-5`: las mismas tools que la `-3`; la `-4` cambió el código común que viaja en su zip y la `-5` declara su `egress`), todas de lectura:
+Tools que sirve `aws-billing` (revisión `0.0.38-6`: las mismas tools que la `-3`; la `-4` cambió el código común que viaja en su zip, la `-5` declara su `egress` y la `-6` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603, con `fastmcp` 4.1.0), todas de lectura:
 
 | Tools | Servicio | Notas |
 |---|---|---|
@@ -329,7 +329,7 @@ Prueba: `tests/e2e/pack_egress.py` (ver `docs/runbooks/poc-deploy.md`).
 ## Actualizar un pack
 
 1. Cambiar `source.version` y `version` en el manifiesto y la línea de `requirements.in`. Poner `source.exclude_newer` en una fecha de hace 7 días o más, posterior a la publicación de esa versión.
-2. `uv run python -m mango_pack_builder lock packs/<id>` y copiar a `source.sha256` el hash del wheel.
+2. `uv run python -m mango_pack_builder lock packs/<id>` y copiar a `source.sha256` el hash del wheel. **Si se movió `exclude_newer`, borrar antes `requirements.lock`:** `uv pip compile` reusa las versiones del archivo de salida que ya existe y no sube nada, pero `check-lock` resuelve desde cero y falla con ese lock (visto el 2026-10-22). Revisar el diff de versiones del lock nuevo.
 3. `uv run python -m mango_pack_builder snapshot packs/<id> --update`.
 4. Revisar el diff de `tools.snapshot.json`: es lo que leerá el modelo. Si hay tools nuevas, decidir si se permiten y con qué acciones IAM. Actualizar `tools_hash`.
    - Para `aws-billing`: poner la misma versión de `fastmcp` del lock nuevo en el `pyproject.toml` de la raíz, `uv lock` y correr `packages/py/mango-pack-runtime/tests/test_fastmcp_server.py`.
