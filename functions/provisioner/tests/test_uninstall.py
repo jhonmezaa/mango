@@ -802,7 +802,7 @@ def test_settings_reject_anything_but_well_formed_names() -> None:
     }
     settings = GuardSettings.from_env(env)
     assert settings.connector_targets == frozenset({"cost-explorer", "ops"})
-    assert settings.role_prefixes == ("Mango-acme-agent-", "Mango-acme-mcp-")
+    assert settings.role_prefixes == ("Mango-acme-agent-", "Mango-acme-mcp-", "Mango-acme-kbsrc-")
     for key, bad in [
         ("MANGO_NAMESPACE", "*"),
         ("GATEWAY_ID", "a b"),

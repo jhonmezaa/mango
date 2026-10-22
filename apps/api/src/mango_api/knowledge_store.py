@@ -133,6 +133,8 @@ class Source:
     decided_by: str | None = None
     decided_at: str | None = None
     removed_by: str | None = None
+    role_arn: str | None = None
+    """``Mango-<ns>-kbsrc-<source id>``, once ``Mango-<ns>-KnowledgeSources`` created it."""
 
 
 class KnowledgeLimitError(Exception):
@@ -201,6 +203,7 @@ def _source(item: dict[str, Any]) -> Source:
         decided_by=_str(item, "decided_by"),
         decided_at=_str(item, "decided_at"),
         removed_by=_str(item, "removed_by"),
+        role_arn=_str(item, "role_arn"),
     )
 
 

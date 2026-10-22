@@ -470,13 +470,14 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
   // them off first. Two actions, on the roles it already deleted, and nothing else.
   it("detaches managed policies only from the roles it deletes, under the same boundary condition", () => {
     const boundaryIds = Object.entries(source.Resources)
-      .filter(([, r]) => r.Type === "AWS::IAM::ManagedPolicy" && /-(agent|mcp)-boundary/.test(JSON.stringify(r.Properties.ManagedPolicyName)))
+      .filter(([, r]) => r.Type === "AWS::IAM::ManagedPolicy" && /-(agent|mcp|kbsrc)-boundary/.test(JSON.stringify(r.Properties.ManagedPolicyName)))
       .map(([id]) => id);
-    expect(boundaryIds).toHaveLength(2);
+    // Agents, packs and the sources of the knowledge bases (D88 (39)).
+    expect(boundaryIds).toHaveLength(3);
     const roleArns = (prefix: string) => ({
       "Fn::Join": ["", ["arn:aws:iam::", { Ref: "AWS::AccountId" }, ":role/Mango-", { Ref: "Namespace" }, `-${prefix}-*`]],
     });
-    const provisioned = [roleArns("agent"), roleArns("mcp")];
+    const provisioned = [roleArns("agent"), roleArns("mcp"), roleArns("kbsrc")];
     expect(statements.find((s) => s.Sid === "DeleteProvisionedRoles")).toEqual({
       Sid: "DeleteProvisionedRoles",
       Effect: "Allow",

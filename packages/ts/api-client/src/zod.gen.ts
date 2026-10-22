@@ -1613,6 +1613,7 @@ export const zPendingSourceOutSchema = z.object({
     prefix: z.string(),
     proposed_at: z.iso.datetime(),
     proposed_by: zProposerOutSchema,
+    role_ready: z.boolean(),
     src_id: z.string(),
     status: zSourceStatusSchema,
     version: z.int()
@@ -1636,6 +1637,7 @@ export const zSourceOutSchema = z.object({
     prefix: z.string(),
     proposed_at: z.iso.datetime(),
     proposed_by: zProposerOutSchema,
+    role_ready: z.boolean(),
     src_id: z.string(),
     status: zSourceStatusSchema,
     version: z.int()

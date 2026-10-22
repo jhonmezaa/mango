@@ -131,8 +131,13 @@ class GuardSettings:
         return f"Mango_{self.namespace}_mcp_"
 
     @property
-    def role_prefixes(self) -> tuple[str, str]:
-        return (f"Mango-{self.namespace}-agent-", f"Mango-{self.namespace}-mcp-")
+    def role_prefixes(self) -> tuple[str, ...]:
+        """Agents, packs and the sources of the knowledge bases (D88 (10))."""
+        return (
+            f"Mango-{self.namespace}-agent-",
+            f"Mango-{self.namespace}-mcp-",
+            f"Mango-{self.namespace}-kbsrc-",
+        )
 
 
 class RolesHeldError(Exception):

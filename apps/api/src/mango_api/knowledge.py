@@ -331,6 +331,15 @@ class SyncStarter:
         )
 
 
+class SourceRoles(Protocol):
+    """``Mango-<ns>-KnowledgeSources`` (``knowledge_sources.SourceRoleFunction``): creates the
+    role of an approved source and deletes the one of a removed source."""
+
+    def ensure(self, kb_id: str, src_id: str) -> None: ...
+
+    def delete(self, kb_id: str, src_id: str) -> None: ...
+
+
 class BucketCheck(Protocol):
     """Checks a bucket before it is a source (``knowledge_sources.BucketChecker``)."""
 
@@ -374,6 +383,8 @@ class KnowledgeDeps:
     searches: Limiter | None = None
     buckets: BucketCheck | None = None
     """Checks the bucket of a source (D88 (10)); ``None`` until mango-api may (503)."""
+    source_roles: SourceRoles | None = None
+    """The roles of the sources; ``None`` until mango-api may invoke their function."""
 
 
 def resource_of(kb: KnowledgeBase) -> KnowledgeBaseResource:

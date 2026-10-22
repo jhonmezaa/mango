@@ -35,6 +35,11 @@ export interface UninstallGuardProps {
   /** Key encrypting the function's environment. */
   readonly configKey: kms.IKey;
   readonly alerts: Alerts;
+  /**
+   * The roles of the sources of the knowledge bases (D88 (10)), created at runtime by
+   * `Mango-<ns>-KnowledgeSources` with their own boundary: deleted like the other two.
+   */
+  readonly sourceRoles: { readonly boundary: iam.IManagedPolicy; readonly roleArns: string };
 }
 
 /**
@@ -55,7 +60,7 @@ export interface UninstallGuardProps {
  * (D58 (19)): the alarms and the topic are among what stays. The role gains nothing for it.
  *
  * Its role only deletes, only by the name prefixes of the installation, and roles only with
- * one of the two boundaries: their inline policies, the managed policies attached to them
+ * one of the three boundaries (agents, packs, sources of knowledge bases): their inline policies, the managed policies attached to them
  * (detached, D58 (22)) and the roles. It reads no data of the installation. Only CloudFormation (and
  * the function itself, to keep waiting) invokes it; any `Delete` outside a stack deletion is
  * a no-op (TM-D13, TM-D14). Code: `functions/provisioner/src/mango_provisioner/uninstall.py`.
@@ -74,7 +79,11 @@ export class UninstallGuard extends Construct {
     const functionArn = `arn:${stack.partition}:lambda:${stack.region}:${stack.account}:function:${functionName}`;
     const agentcore = `arn:${stack.partition}:bedrock-agentcore:${stack.region}:${stack.account}`;
     const workloadIdentities = `${agentcore}:workload-identity-directory/default`;
-    const boundaries = [platform.boundary.managedPolicyArn, packs.boundary.managedPolicyArn];
+    const boundaries = [
+      platform.boundary.managedPolicyArn,
+      packs.boundary.managedPolicyArn,
+      props.sourceRoles.boundary.managedPolicyArn,
+    ];
 
     const role = new iam.Role(this, "Role", {
       roleName: functionName,
@@ -140,11 +149,11 @@ export class UninstallGuard extends Construct {
       ["bedrock-agentcore:ManageResourceScopedPolicy"],
       [props.gateway.attrGatewayArn],
     );
-    const roles = [platform.agentRoleArns, packs.roleArns];
+    const roles = [platform.agentRoleArns, packs.roleArns, props.sourceRoles.roleArns];
     allow("FindRoles", ["iam:ListRoles"], ["*"]);
     // ListAttachedRolePolicies returns names and ARNs of policies, never a policy document.
     allow("ReadProvisionedRoles", ["iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"], roles);
-    // Only roles made by a provisioner: they carry one of the two boundaries (TM-M1).
+    // Only roles made by a provisioner: they carry one of the three boundaries (TM-M1).
     // DetachRolePolicy (D58 (22)): IAM refuses to delete a role with a managed policy attached,
     // and one may be attached after the provisioner made it, by hand or by the organization
     // (seen on 2026-10-08). It only takes policies off these roles: there is no AttachRolePolicy

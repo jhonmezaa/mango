@@ -340,6 +340,7 @@ export class CoreStack extends Stack {
       connectorTargets: tools.connectorTargets,
       configKey: tools.configKey,
       alerts,
+      sourceRoles: { boundary: knowledge.sourceBoundary, roleArns: knowledge.sourceRoleArns },
     });
     new Observability(this, "Observability", {
       installation: cfg,

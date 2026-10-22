@@ -135,6 +135,10 @@ export class Knowledge extends Construct {
   readonly syncFunction: lambda.Function;
   /** The `knowledge-retrieve` tool (D88 (14)): a Lambda target of the Gateway. */
   readonly retrieveFunction: lambda.Function;
+  /** `Mango-<ns>-KnowledgeSources`: creates and deletes the roles of the sources (D88 (10)). */
+  readonly sourcesFunction: lambda.Function;
+  /** `Mango-<ns>-kbsrc-*`: the roles of the sources, created at runtime with `sourceBoundary`. */
+  readonly sourceRoleArns: string;
   readonly alarms: cloudwatch.Alarm[];
   /** Environment mango-api needs for the knowledge bases. */
   readonly apiEnvironment: Record<string, string>;
@@ -439,6 +443,8 @@ export class Knowledge extends Construct {
     this.syncFunction = sync.fn;
     this.syncMachine = sync.machine;
     this.retrieveFunction = this.buildRetrieve(props);
+    this.sourceRoleArns = `arn:aws:iam::${account}:role/${mangoName(ns, "kbsrc-")}*`;
+    this.sourcesFunction = this.buildSources(props);
 
     this.apiEnvironment = {
       KNOWLEDGE_TABLE: this.table.tableName,
@@ -448,8 +454,9 @@ export class Knowledge extends Construct {
       KNOWLEDGE_EMBEDDING_PRICE: String(props.embeddingPrice),
       // «Probar búsqueda» (D88 (12)).
       KNOWLEDGE_BASE_ID: this.knowledgeBase.attrKnowledgeBaseId,
-      // The only account whose buckets may be sources (D88 (10)).
+      // The only account whose buckets may be sources (D88 (10)), and their roles.
       ACCOUNT_ID: Stack.of(this).account,
+      KNOWLEDGE_SOURCES_FUNCTION: this.sourcesFunction.functionName,
     };
   }
 
@@ -841,6 +848,92 @@ export class Knowledge extends Construct {
     });
   }
 
+  /**
+   * `Mango-<ns>-KnowledgeSources` (D88 (10), (20)): the role of each approved source, created by
+   * SDK and deleted when the source is removed, invoked only by mango-api with ids. Its own
+   * role may only write roles under `Mango-<ns>-kbsrc-*` that carry `Mango-<ns>-kbsrc-boundary`:
+   * IAM refuses any other, so a bug here cannot make a wider role nor touch one it did not make
+   * (the pattern of the pack provisioner, and of D48 (7) for deleting). It reads the source from
+   * the registry, never from the event.
+   */
+  private buildSources(props: KnowledgeProps): lambda.Function {
+    const cfg = props.installation;
+    const ns = this.namespace;
+    const { account, region } = Stack.of(this);
+    const withBoundary = { StringEquals: { "iam:PermissionsBoundary": this.sourceBoundary.managedPolicyArn } };
+    const role = new iam.Role(this, "SourcesRole", {
+      roleName: mangoName(ns, "KnowledgeSources"),
+      description: "Creates and deletes the roles that read the approved sources of the knowledge bases",
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    });
+    const policy = new iam.Policy(this, "SourcesPolicy", {
+      roles: [role],
+      statements: [
+        new iam.PolicyStatement({
+          sid: "CreateSourceRoleWithBoundary",
+          actions: ["iam:CreateRole"],
+          resources: [this.sourceRoleArns],
+          conditions: withBoundary,
+        }),
+        new iam.PolicyStatement({
+          sid: "SourceRolePolicyWithBoundary",
+          // Every write on an existing role: IAM refuses it on a role without the boundary.
+          actions: ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:DeleteRole"],
+          resources: [this.sourceRoleArns],
+          conditions: withBoundary,
+        }),
+        new iam.PolicyStatement({
+          sid: "SourceRoleLifecycle",
+          // `iam:PermissionsBoundary` is not a condition key of TagRole; GetRole stays without
+          // it to report a role that lost its boundary. No Attach/Detach, no boundary changes,
+          // no trust updates, no PassRole.
+          actions: ["iam:GetRole", "iam:TagRole"],
+          resources: [this.sourceRoleArns],
+        }),
+        new iam.PolicyStatement({
+          sid: "ReadAndMarkSources",
+          actions: ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+          resources: [this.table.tableArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "DataKeyViaDynamoDB",
+          actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+          resources: [props.dataKey.keyArn],
+          conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
+        }),
+      ],
+    });
+    acknowledge(role, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
+    acknowledge(policy, {
+      id: `AwsSolutions-IAM5[Resource::arn:aws:iam::<AWS::AccountId>:role/${mangoName(ns, "kbsrc-")}*]`,
+      reason:
+        "Roles of the sources are created at runtime, one per approved source (D88 (10)): the name prefix and " +
+        "the condition on their permissions boundary are the scope.",
+    });
+    const fn = new PythonFunction(this, "Sources", {
+      packageName: "mango-knowledge-sources",
+      packagePath: "functions/knowledge-sources",
+      retainLogs: cfg.retainData,
+      handler: "mango_knowledge_sources.handler.lambda_handler",
+      functionName: mangoName(ns, "KnowledgeSources"),
+      description: "Creates and deletes the role of each approved source of a knowledge base (D88)",
+      role,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        MANGO_NAMESPACE: ns,
+        ACCOUNT_ID: account,
+        KNOWLEDGE_TABLE: this.table.tableName,
+        SOURCE_BOUNDARY_ARN: this.sourceBoundary.managedPolicyArn,
+        // By name: the synchronization's role is the only principal a source role trusts.
+        SYNC_ROLE_ARN: `arn:aws:iam::${account}:role/${mangoName(ns, "KnowledgeSync")}`,
+      },
+      environmentEncryption: props.configKey,
+    }).function;
+    fn.node.addDependency(policy);
+    return fn;
+  }
+
   /** Where the browser posts uploads: the bucket's regional host, for the CSP of the SPA. */
   get uploadOrigin(): string {
     return `https://${this.bucketRegionalDomain}`;
@@ -905,6 +998,12 @@ export class Knowledge extends Construct {
           actions: ["s3:GetEncryptionConfiguration"],
           resources: ["arn:aws:s3:::*"],
           conditions: { StringEquals: { "s3:ResourceAccount": Stack.of(this).account } },
+        }),
+        // The roles of the sources, by ids (D88 (10)).
+        new iam.PolicyStatement({
+          sid: "SourceRoles",
+          actions: ["lambda:InvokeFunction"],
+          resources: [this.sourcesFunction.functionArn],
         }),
         // After saving, deleting a document or a base, or «Sincronizar ahora» (D88 (11)).
         new iam.PolicyStatement({

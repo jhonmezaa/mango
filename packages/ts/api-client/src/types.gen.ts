@@ -2498,6 +2498,10 @@ export type PendingSourceOut = {
     proposed_at: string;
     proposed_by: ProposerOut;
     /**
+     * Role Ready
+     */
+    role_ready: boolean;
+    /**
      * Src Id
      */
     src_id: string;
@@ -3485,6 +3489,10 @@ export type SourceOut = {
      */
     proposed_at: string;
     proposed_by: ProposerOut;
+    /**
+     * Role Ready
+     */
+    role_ready: boolean;
     /**
      * Src Id
      */

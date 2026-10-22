@@ -6,9 +6,15 @@ other than whoever proposed it approves or rejects it (``ApproveKbSource``): Ced
 an approver, and mango-api and a condition of the Knowledge table say it is not the proposer,
 also when the proposer is another administrator (as in the review of agents, D18). The
 approval holds for that bucket and that prefix only: they never change, and another one is
-another proposal. Until a source is approved nothing reads it: its role is created only then
-(``Mango-<ns>-kbsrc-<source id>``, PR 7b) and the synchronization copies it into the documents
-bucket of Mango (D88 (19), PR 7c).
+another proposal. Until a source is approved nothing reads it: its role is created only then,
+by ``Mango-<ns>-KnowledgeSources`` (``Mango-<ns>-kbsrc-<source id>``, which reads that bucket
+and prefix only and only the synchronization assumes), and the synchronization copies it into
+the documents bucket of Mango (D88 (19), PR 7c). Removing a source deletes its role.
+
+mango-api never names the bucket to that function: it sends the ids, and the function reads
+the source from the registry. Creating or deleting the role is audited (``kb.source_role``)
+before and after; if the function fails, the approval or the removal stands and the role is
+left for the next synchronization of the knowledge base, which asks for it again (PR 7c).
 
 The bucket is checked when it is proposed and again when it is approved:
 
@@ -33,6 +39,7 @@ Security notes (security-best-practices, FastAPI):
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
 import asyncio
+import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -125,6 +132,8 @@ class SourceOut(_Strict):
     proposed_at: datetime
     decided_at: datetime | None
     version: int
+    role_ready: bool
+    """Its role exists: the synchronization may read it (once approved)."""
     can_decide: bool
     """The caller may approve or reject it: an administrator, pending, not proposed by them."""
 
@@ -202,6 +211,42 @@ class BucketChecker:
                 "bucket_key_unsupported",
                 "the bucket is encrypted with a key of its own: not supported in this version",
             )
+
+
+# --- The roles of the sources -------------------------------------------------------------
+
+
+class SourceRoleError(Exception):
+    """The function did not create or delete the role; the code it answered, if any."""
+
+
+class SourceRoleFunction:
+    """Invokes ``Mango-<ns>-KnowledgeSources`` with ids only (``functions/knowledge-sources``)."""
+
+    def __init__(self, lambda_client: Any, function_name: str) -> None:
+        self._lambda = lambda_client
+        self._name = function_name
+
+    def _invoke(self, op: str, kb_id: str, src_id: str) -> None:
+        try:
+            response = self._lambda.invoke(
+                FunctionName=self._name,
+                InvocationType="RequestResponse",
+                Payload=json.dumps({"op": op, "kb_id": kb_id, "src_id": src_id}).encode(),
+            )
+            answer = json.loads(response["Payload"].read() or b"{}")
+        except (ClientError, BotoCoreError, ValueError) as exc:
+            raise SourceRoleError("unreachable") from exc
+        if response.get("FunctionError") or not isinstance(answer, dict):
+            raise SourceRoleError("function_error")
+        if "error" in answer:
+            raise SourceRoleError(str(answer["error"])[:64])
+
+    def ensure(self, kb_id: str, src_id: str) -> None:
+        self._invoke("ensure", kb_id, src_id)
+
+    def delete(self, kb_id: str, src_id: str) -> None:
+        self._invoke("delete", kb_id, src_id)
 
 
 # --- Use cases ----------------------------------------------------------------------------
@@ -315,6 +360,30 @@ def _change(
     return changed
 
 
+def _role(deps: KnowledgeDeps, caller: Caller, source: Source, op: str) -> Source:
+    """Create (``ensure``) or delete the role of ``source``; never raises once audited: the
+    decision already stands, and the next synchronization asks again (PR 7c)."""
+    _audit(deps, "kb.source_role", caller, source, "requested", op=op)
+    if deps.source_roles is None:
+        _audit(deps, "kb.source_role", caller, source, "failed", op=op, reason="unavailable")
+        return source
+    try:
+        if op == "ensure":
+            deps.source_roles.ensure(source.kb_id, source.src_id)
+        else:
+            deps.source_roles.delete(source.kb_id, source.src_id)
+    except SourceRoleError as exc:
+        logger.error("the role of a source was not %s: %s", op, exc)  # noqa: TRY400 - a code
+        _audit(deps, "kb.source_role", caller, source, "failed", op=op, reason=str(exc))
+        return source
+    try:
+        current = deps.store.source(source.kb_id, source.src_id) or source
+    except KnowledgeStoreUnavailableError:
+        current = source
+    _audit(deps, "kb.source_role", caller, current, "applied", op=op)
+    return current
+
+
 def decide_source(
     deps: KnowledgeDeps, caller: Caller, source: Source, version: int, *, approve: bool
 ) -> Source:
@@ -333,7 +402,8 @@ def decide_source(
         if approve
         else ("kb.source_reject", SourceStatus.REJECTED)
     )
-    return _change(deps, caller, source, event, status, not_proposer=True)
+    decided = _change(deps, caller, source, event, status, not_proposer=True)
+    return _role(deps, caller, decided, "ensure") if approve else decided
 
 
 def remove_source(deps: KnowledgeDeps, caller: Caller, source: Source, version: int) -> Source:
@@ -347,7 +417,8 @@ def remove_source(deps: KnowledgeDeps, caller: Caller, source: Source, version: 
         status = SourceStatus.REMOVING
     else:
         raise ApiError(409, "source_inactive", "this source is not active")
-    return _change(deps, caller, source, "kb.source_remove", status, not_proposer=False)
+    removed = _change(deps, caller, source, "kb.source_remove", status, not_proposer=False)
+    return _role(deps, caller, removed, "delete") if status is SourceStatus.REMOVING else removed
 
 
 def source_out(
@@ -367,6 +438,7 @@ def source_out(
         proposed_at=datetime.fromisoformat(source.proposed_at),
         decided_at=datetime.fromisoformat(source.decided_at) if source.decided_at else None,
         version=source.version,
+        role_ready=source.role_arn is not None,
         can_decide=(
             can_approve
             and source.status is SourceStatus.PENDING

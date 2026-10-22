@@ -85,6 +85,8 @@ class Settings:
     organization_id: str = ""
     management_account_id: str = ""
     account_id: str = ""
+    knowledge_sources_function: str = ""
+    """``Mango-<ns>-KnowledgeSources``: the roles of the sources (D88 (10))."""
     """The account of the installation: the only one whose buckets may be sources (D88 (10))."""
     alerts_email: str = ""
     first_admin_emails: str = ""
@@ -187,6 +189,7 @@ class Settings:
             organization_id=env.get("ORGANIZATION_ID", ""),
             management_account_id=env.get("MANAGEMENT_ACCOUNT_ID", ""),
             account_id=env.get("ACCOUNT_ID", ""),
+            knowledge_sources_function=env.get("KNOWLEDGE_SOURCES_FUNCTION", ""),
             alerts_email=env.get("ALERTS_EMAIL", ""),
             first_admin_emails=env.get("FIRST_ADMIN_EMAILS", ""),
             app_origin=env.get("APP_ORIGIN", ""),

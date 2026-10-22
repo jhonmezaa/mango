@@ -1,0 +1,16 @@
+[project]
+name = "mango-knowledge-sources"
+version = "0.1.0"
+description = "Creates and deletes the role that reads one approved source of a knowledge base (D88 (10))"
+requires-python = ">=3.13,<3.14"
+dependencies = ["boto3>=1.43.104", "mango-core"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_knowledge_sources"]

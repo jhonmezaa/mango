@@ -4647,6 +4647,10 @@
           "proposed_by": {
             "$ref": "#/components/schemas/ProposerOut"
           },
+          "role_ready": {
+            "title": "Role Ready",
+            "type": "boolean"
+          },
           "src_id": {
             "title": "Src Id",
             "type": "string"
@@ -4669,6 +4673,7 @@
           "proposed_at",
           "decided_at",
           "version",
+          "role_ready",
           "can_decide",
           "knowledge_base"
         ],
@@ -6638,6 +6643,10 @@
           "proposed_by": {
             "$ref": "#/components/schemas/ProposerOut"
           },
+          "role_ready": {
+            "title": "Role Ready",
+            "type": "boolean"
+          },
           "src_id": {
             "title": "Src Id",
             "type": "string"
@@ -6660,6 +6669,7 @@
           "proposed_at",
           "decided_at",
           "version",
+          "role_ready",
           "can_decide"
         ],
         "title": "SourceOut",

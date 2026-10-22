@@ -94,7 +94,11 @@ from mango_api.groups import GroupRegistry, groups_router
 from mango_api.inbox import InboxDeps, RunInbox, inbox_router
 from mango_api.inbox_store import InboxStore
 from mango_api.knowledge import KnowledgeDeps, SyncStarter, knowledge_router
-from mango_api.knowledge_sources import BucketChecker, knowledge_sources_router
+from mango_api.knowledge_sources import (
+    BucketChecker,
+    SourceRoleFunction,
+    knowledge_sources_router,
+)
 from mango_api.knowledge_store import KnowledgeStore
 from mango_api.knowledge_uploads import S3_CONFIG as KNOWLEDGE_S3_CONFIG
 from mango_api.knowledge_uploads import DocumentStorage
@@ -751,6 +755,14 @@ def build_services(settings: Settings) -> Services:
                 buckets=(
                     BucketChecker(boto3.client("s3", region_name=region), settings.account_id)
                     if settings.account_id
+                    else None
+                ),
+                source_roles=(
+                    SourceRoleFunction(
+                        boto3.client("lambda", region_name=region),
+                        settings.knowledge_sources_function,
+                    )
+                    if settings.knowledge_sources_function
                     else None
                 ),
             )

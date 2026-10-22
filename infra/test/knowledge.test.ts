@@ -250,6 +250,7 @@ describe("knowledge bases: fixed resources in Core", () => {
       "KnowledgeTableKey",
       "SavedDocuments",
       "SearchKnowledgeBase",
+      "SourceRoles",
       "StartSync",
       "Uploads",
     ]);
@@ -300,7 +301,7 @@ describe("knowledge bases: fixed resources in Core", () => {
         .map(([, r]) => String(r.Properties.FunctionName))
         .filter((name) => /Knowledge/i.test(name))
         .sort(),
-    ).toEqual([`Mango-${ns}-KnowledgeRetrieve`, `Mango-${ns}-KnowledgeSync`]);
+    ).toEqual([`Mango-${ns}-KnowledgeRetrieve`, `Mango-${ns}-KnowledgeSources`, `Mango-${ns}-KnowledgeSync`]);
   });
 
   it("takes uploads from the SPA only, with a bucket name the CSP may name (D88 (9))", () => {
@@ -460,5 +461,51 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(variables.find((v) => v.Name === "KNOWLEDGE_BASE_ID")?.Value).toEqual({
       "Fn::GetAtt": [kbId, "KnowledgeBaseId"],
     });
+  });
+
+  it("creates the roles of the sources only under kbsrc-* and only with their boundary (D88 (10))", () => {
+    const [sourcesRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-KnowledgeSources` });
+    const statements = statementsOf(sourcesRoleId);
+    const sids = bySid(statements);
+    const [boundaryId] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-kbsrc-boundary` });
+    const withBoundary = { StringEquals: { "iam:PermissionsBoundary": { Ref: boundaryId } } };
+    expect(actions(sids.CreateSourceRoleWithBoundary!)).toEqual(["iam:CreateRole"]);
+    expect(sids.CreateSourceRoleWithBoundary!.Condition).toEqual(withBoundary);
+    expect(actions(sids.SourceRolePolicyWithBoundary!).sort()).toEqual([
+      "iam:DeleteRole",
+      "iam:DeleteRolePolicy",
+      "iam:PutRolePolicy",
+    ]);
+    expect(sids.SourceRolePolicyWithBoundary!.Condition).toEqual(withBoundary);
+    for (const sid of ["CreateSourceRoleWithBoundary", "SourceRolePolicyWithBoundary", "SourceRoleLifecycle"]) {
+      expect(JSON.stringify(sids[sid]!.Resource)).toContain(`:role/Mango-${ns}-kbsrc-*`);
+    }
+    const all = statements.flatMap(actions);
+    for (const forbidden of [
+      "iam:PassRole",
+      "iam:AttachRolePolicy",
+      "iam:PutRolePermissionsBoundary",
+      "iam:DeleteRolePermissionsBoundary",
+      "iam:UpdateAssumeRolePolicy",
+      "s3:GetObject",
+      "s3:ListBucket",
+    ]) {
+      expect(all).not.toContain(forbidden);
+    }
+    const [fnId, fn] = only("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-KnowledgeSources` });
+    const env = fn.Properties.Environment.Variables;
+    expect(env.SOURCE_BOUNDARY_ARN).toEqual({ Ref: boundaryId });
+    expect(JSON.stringify(env.SYNC_ROLE_ARN)).toContain(`:role/Mango-${ns}-KnowledgeSync`);
+    // Only mango-api invokes it, with ids.
+    const [, api] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-ApiKnowledge` });
+    const apiSids = bySid(api.Properties.PolicyDocument.Statement as Statement[]);
+    expect(actions(apiSids.SourceRoles!)).toEqual(["lambda:InvokeFunction"]);
+    expect(apiSids.SourceRoles!.Resource).toEqual({ "Fn::GetAtt": [fnId, "Arn"] });
+  });
+
+  it("removes the roles of the sources when the stack is deleted, like the others", () => {
+    const [, guard] = only("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-UninstallGuard` });
+    const [boundaryId] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-kbsrc-boundary` });
+    expect(JSON.stringify(guard.Properties.Environment.Variables.ROLE_BOUNDARY_ARNS)).toContain(boundaryId);
   });
 });

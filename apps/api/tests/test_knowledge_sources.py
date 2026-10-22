@@ -335,3 +335,129 @@ def test_nothing_is_written_without_its_audit(env: Env, s3: FakeS3) -> None:  # 
     env.audit.fail_outcomes = set()
     assert env.client.get(_sources(kb), headers=_h("creator")).json() == {"items": []}
     assert "docs-rrhh" not in json.dumps(env.audit.events)
+
+
+# --- The role of a source (D88 (10), PR 7b) -----------------------------------------------
+
+
+@dataclass
+class FakeRoles:
+    """``Mango-<ns>-KnowledgeSources``: records what it is asked and sets the ARN like it."""
+
+    env: Env
+    fail: str | None = None
+    calls: list[tuple[str, str]] = field(default_factory=list)
+
+    def _set(self, kb_id: str, src_id: str, arn: str | None) -> None:
+        key = {"PK": {"S": f"KB#{kb_id}"}, "SK": {"S": f"SRC#{src_id}"}}
+        self.env.db.update_item(
+            TableName="knowledge",
+            Key=key,
+            UpdateExpression="SET role_arn = :a" if arn else "REMOVE role_arn",
+            **({"ExpressionAttributeValues": {":a": {"S": arn}}} if arn else {}),
+        )
+
+    def ensure(self, kb_id: str, src_id: str) -> None:
+        from mango_api.knowledge_sources import SourceRoleError  # noqa: PLC0415
+
+        self.calls.append(("ensure", src_id))
+        if self.fail:
+            raise SourceRoleError(self.fail)
+        self._set(kb_id, src_id, f"arn:aws:iam::{ACCOUNT}:role/Mango-test-kbsrc-{src_id}")
+
+    def delete(self, kb_id: str, src_id: str) -> None:
+        self.calls.append(("delete", src_id))
+        self._set(kb_id, src_id, None)
+
+
+@pytest.fixture
+def roles(env: Env) -> FakeRoles:  # noqa: F811
+    fake = FakeRoles(env)
+    assert env.deps is not None
+    env.deps.source_roles = fake
+    return fake
+
+
+def test_an_approval_creates_the_role_of_the_source_by_its_ids(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+    roles: FakeRoles,
+) -> None:
+    source = _proposed(env, env.created())
+    assert source["role_ready"] is False
+    # Proposing creates nothing: nothing is read before an approval (D88 (20)).
+    assert roles.calls == []
+    approved = _decide(env, source, "approve").json()
+    assert roles.calls == [("ensure", source["src_id"])]
+    assert approved["role_ready"] is True
+    assert [e["outcome"] for e in _events(env, "kb.source_role")] == ["requested", "applied"]
+    # A rejection creates nothing.
+    _decide(env, _proposed(env, env.created(), "s3://docs-legal/"), "reject")
+    assert len(roles.calls) == 1
+
+
+def test_an_approval_stands_when_the_role_fails_and_says_so(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+    roles: FakeRoles,
+) -> None:
+    roles.fail = "iam_AccessDenied"
+    response = _decide(env, _proposed(env, env.created()), "approve")
+    assert response.status_code == 200
+    assert (response.json()["status"], response.json()["role_ready"]) == ("approved", False)
+    [_requested, failed] = _events(env, "kb.source_role")
+    assert (failed["outcome"], failed["reason"]) == ("failed", "iam_AccessDenied")
+
+
+def test_removing_an_approved_source_deletes_its_role(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+    roles: FakeRoles,
+) -> None:
+    kb = env.created()
+    approved = _decide(env, _proposed(env, kb), "approve").json()
+    pending = _proposed(env, kb, "s3://docs-legal/")
+    path = f"{_sources(kb)}/{{}}/delete"
+    removed = env.client.post(
+        path.format(approved["src_id"]), headers=_h("creator"), json={"version": 2}
+    ).json()
+    assert (removed["status"], removed["role_ready"]) == ("removing", False)
+    env.client.post(path.format(pending["src_id"]), headers=_h("creator"), json={"version": 1})
+    # A withdrawn proposal never had a role.
+    assert roles.calls == [("ensure", approved["src_id"]), ("delete", approved["src_id"])]
+
+
+def test_the_function_is_invoked_with_ids_only() -> None:
+    from mango_api.knowledge_sources import SourceRoleError, SourceRoleFunction  # noqa: PLC0415
+
+    class Payload:
+        def __init__(self, body: bytes) -> None:
+            self.body = body
+
+        def read(self) -> bytes:
+            return self.body
+
+    sent: list[dict[str, Any]] = []
+
+    class Lambda:
+        answer: bytes = b'{"outcome": "created"}'
+        error: str | None = None
+
+        def invoke(self, **kwargs: Any) -> dict[str, Any]:
+            sent.append(kwargs)
+            response: dict[str, Any] = {"Payload": Payload(self.answer)}
+            if self.error:
+                response["FunctionError"] = self.error
+            return response
+
+    client = Lambda()
+    function = SourceRoleFunction(client, "Mango-test-KnowledgeSources")
+    function.ensure("KB1", "SRC1")
+    assert json.loads(sent[0]["Payload"]) == {"op": "ensure", "kb_id": "KB1", "src_id": "SRC1"}
+    assert sent[0]["InvocationType"] == "RequestResponse"
+    client.answer = b'{"error": "role_without_boundary"}'
+    with pytest.raises(SourceRoleError, match="role_without_boundary"):
+        function.delete("KB1", "SRC1")
+    client.answer, client.error = b"{}", "Unhandled"
+    with pytest.raises(SourceRoleError, match="function_error"):
+        function.ensure("KB1", "SRC1")

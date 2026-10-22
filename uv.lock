@@ -14,6 +14,7 @@ members = [
     "mango-cost-explorer",
     "mango-gateway-interceptor",
     "mango-knowledge-retrieve",
+    "mango-knowledge-sources",
     "mango-knowledge-sync",
     "mango-pack-builder",
     "mango-pack-runtime",
@@ -1012,6 +1013,21 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.43.104" },
     { name = "mango-core", editable = "packages/py/mango-core" },
     { name = "pydantic", specifier = ">=2.11" },
+]
+
+[[package]]
+name = "mango-knowledge-sources"
+version = "0.1.0"
+source = { editable = "functions/knowledge-sources" }
+dependencies = [
+    { name = "boto3" },
+    { name = "mango-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.104" },
+    { name = "mango-core", editable = "packages/py/mango-core" },
 ]
 
 [[package]]
