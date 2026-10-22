@@ -147,6 +147,7 @@ export function blankDefinition(context: BuilderContext): Definition {
     // Design: the access of a new agent starts empty.
     groups: [],
     users: [],
+    knowledge_bases: [],
   };
 }
 
@@ -202,6 +203,8 @@ export function toInput(
     limits: { ...definition.limits },
     groups: sortedUnique(definition.groups),
     users: sortedUnique(definition.users),
+    // No picker yet (D88, awaiting its design round): the ones the version has are kept.
+    knowledge_bases: sortedUnique(definition.knowledge_bases),
   };
 }
 

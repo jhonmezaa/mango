@@ -73,6 +73,7 @@ const DEFINITION: Version['definition'] = {
   },
   groups: ['bu-retail', 'finops-central'],
   users: [],
+  knowledge_bases: [],
 };
 
 /** A change to a published agent: every kind of difference the backend reports. */
@@ -133,6 +134,7 @@ function version(overrides: Partial<Version> = {}): Version {
       ],
     },
     violations: [],
+    knowledge_bases: [],
     ...overrides,
   };
 }

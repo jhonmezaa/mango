@@ -13,14 +13,16 @@ catalogs and the organization chart may have changed while the version waited.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Protocol
 
+from mango_api.knowledge_store import KnowledgeBase
 from mango_api.mcp_catalog import McpCatalog
 from mango_api.model_catalog import ModelCatalog
 from mango_core.agents import ROOT_SUPERVISOR, AgentDefinition, dumps_definition
 from mango_core.groups import GroupDef
+from mango_core.knowledge import Status as KnowledgeStatus
 
 MAX_DRAFTS = 20
 """Drafts a creator may hold at once (TM-M9)."""
@@ -43,6 +45,9 @@ class RuleContext:
     groups: Mapping[str, GroupDef]
     """Group registry of the installation by id (``mango_api.groups.GroupRegistry``)."""
     org: OrgChart
+    knowledge: Mapping[str, KnowledgeBase] = field(default_factory=dict)
+    """The knowledge bases the version names, as the Knowledge table has them now (D88 (15)).
+    One that is not here does not exist."""
 
 
 @dataclass(frozen=True)
@@ -109,10 +114,10 @@ def _required(definition: AgentDefinition) -> list[Violation]:
 
 def _secrets(definition: AgentDefinition) -> list[Violation]:
     out: list[Violation] = []
-    for field in ("system_prompt", "name", "description", "role"):
-        kinds = find_secrets(getattr(definition, field))
+    for name in ("system_prompt", "name", "description", "role"):
+        kinds = find_secrets(getattr(definition, name))
         if kinds:
-            out.append(Violation("secret_detected", field, kinds))
+            out.append(Violation("secret_detected", name, kinds))
     return out
 
 
@@ -148,7 +153,8 @@ def _models(definition: AgentDefinition, models: ModelCatalog) -> list[Violation
     disabled = tuple(m for m, entry in entries.items() if entry is None or not entry.enabled)
     if disabled:
         out.append(Violation("model_not_enabled", "allowed_models", disabled))
-    if definition.tools:
+    # The knowledge bases are searched with a tool too (``knowledge-retrieve``, D88 (14)).
+    if definition.tools or definition.knowledge_bases:
         no_tools = tuple(m for m, e in entries.items() if e is not None and not e.supports_tools)
         if no_tools:
             out.append(Violation("model_without_tools", "allowed_models", no_tools))
@@ -200,6 +206,55 @@ def _access(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]:
     return out
 
 
+def _knowledge(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]:
+    """Every knowledge base exists and is not being deleted (D88 (15), (16)). Who may use it
+    is checked when it is added (``mango_api.agents``): it depends on the person who adds it."""
+    gone = tuple(
+        kb_id
+        for kb_id in definition.knowledge_bases
+        if (kb := ctx.knowledge.get(kb_id)) is None or kb.status is KnowledgeStatus.DELETING
+    )
+    return [Violation("knowledge_base_unavailable", "knowledge_bases", gone)] if gone else []
+
+
+def added_knowledge_violations(
+    added: Sequence[str], knowledge: Mapping[str, KnowledgeBase], usable: Collection[str]
+) -> list[Violation]:
+    """Knowledge bases a person adds to a version (D88 (15), TM-K8): each must exist, not be
+    being deleted, and be one ``usable`` by that person (``UseKnowledgeBase``). Checked when
+    the draft is saved, by who saves it: the review rules do not know the author's groups."""
+    gone = tuple(
+        kb_id
+        for kb_id in added
+        if (kb := knowledge.get(kb_id)) is None or kb.status is KnowledgeStatus.DELETING
+    )
+    forbidden = tuple(kb_id for kb_id in added if kb_id not in gone and kb_id not in usable)
+    out: list[Violation] = []
+    if gone:
+        out.append(Violation("knowledge_base_unavailable", "knowledge_bases", gone))
+    if forbidden:
+        out.append(Violation("knowledge_base_not_usable", "knowledge_bases", forbidden))
+    return out
+
+
+def knowledge_alerts(
+    definition: AgentDefinition, knowledge: Mapping[str, KnowledgeBase]
+) -> dict[str, tuple[str, ...]]:
+    """The alert of D26 (D88 (15), (26)), by knowledge base: the groups of the agent with no
+    group of the knowledge base. Their people use the agent but get no answers from it. Not a
+    rule: it never blocks a version. People the agent is shared with one by one are not
+    looked at here: their groups are in their token."""
+    alerts: dict[str, tuple[str, ...]] = {}
+    for kb_id in definition.knowledge_bases:
+        kb = knowledge.get(kb_id)
+        if kb is None:
+            continue
+        without = tuple(g for g in definition.groups if g not in kb.groups)
+        if without:
+            alerts[kb_id] = without
+    return alerts
+
+
 def validate_for_review(
     agent_id: str, definition: AgentDefinition, ctx: RuleContext
 ) -> list[Violation]:
@@ -211,4 +266,5 @@ def validate_for_review(
         *_models(definition, ctx.models),
         *_tools(definition, ctx),
         *_access(definition, ctx),
+        *_knowledge(definition, ctx),
     ]

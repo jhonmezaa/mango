@@ -38,6 +38,8 @@ export interface MockAgentDefinition {
   };
   groups: string[];
   users: string[];
+  /** Knowledge base ids (D88 (15)); the Builder has no picker for them yet. */
+  knowledge_bases: string[];
 }
 
 export interface MockAgentVersion {
@@ -186,6 +188,7 @@ function definition(
     },
     groups: [],
     users: [],
+    knowledge_bases: [],
     ...overrides,
   };
 }

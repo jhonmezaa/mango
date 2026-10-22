@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -13,13 +13,17 @@ import pytest
 from mango_api.agent_rules import (
     RuleContext,
     Violation,
+    added_knowledge_violations,
     find_secrets,
+    knowledge_alerts,
     validate_for_review,
 )
+from mango_api.knowledge_store import KnowledgeBase
 from mango_api.mcp_catalog import ConnectorManifest, McpCatalog, McpServer
 from mango_api.model_catalog import ModelCatalog, ModelEntry
 from mango_core.agents import ROOT_SUPERVISOR, AgentDefinition
 from mango_core.groups import GroupDef
+from mango_core.knowledge import Status
 
 CONNECTORS = Path(__file__).parents[3] / "connectors"
 SONNET = "us.anthropic.claude-sonnet-4-6"
@@ -244,6 +248,63 @@ def test_a_model_without_tool_use_cannot_have_tools() -> None:
     assert _codes(_definition(tools=[]), ctx) == []
 
 
+KB_HR = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+KB_GONE = "01JABCDEFGHJKMNPQRSTVWXYZ1"
+
+
+def _kb(kb_id: str, *groups: str, status: Status = Status.OK) -> KnowledgeBase:
+    return KnowledgeBase(
+        kb_id=kb_id,
+        name="KB",
+        description="",
+        owner_id="creator-1",
+        owner_email=None,
+        owner_name=None,
+        business_unit="all",
+        groups=groups,
+        classification="internal",
+        sync_schedule="manual",
+        status=status,
+        documents=0,
+        bytes=0,
+        version=1,
+        created_at="2026-10-01T00:00:00+00:00",
+        updated_at="2026-10-01T00:00:00+00:00",
+    )
+
+
+def test_knowledge_bases_need_a_model_with_tool_use() -> None:
+    # They are searched with a tool (`knowledge-retrieve`, D88 (14)).
+    ctx = replace(_ctx(models=(_model(SONNET, tools=False),)), knowledge={KB_HR: _kb(KB_HR, "hr")})
+    assert _codes(_definition(tools=[], knowledge_bases=[KB_HR]), ctx) == ["model_without_tools"]
+
+
+def test_knowledge_bases_must_exist_and_not_be_deleting() -> None:
+    ctx = replace(
+        _ctx(),
+        knowledge={KB_HR: _kb(KB_HR, "hr"), KB_GONE: _kb(KB_GONE, "hr", status=Status.DELETING)},
+    )
+    assert _codes(_definition(knowledge_bases=[KB_HR]), ctx) == []
+    violations = validate_for_review(SELF, _definition(knowledge_bases=[KB_HR, KB_GONE]), ctx)
+    assert violations == [Violation("knowledge_base_unavailable", "knowledge_bases", (KB_GONE,))]
+
+
+def test_added_knowledge_bases_must_be_usable_by_who_adds_them() -> None:
+    known = {KB_HR: _kb(KB_HR, "hr")}
+    assert added_knowledge_violations([KB_HR], known, {KB_HR}) == []
+    assert added_knowledge_violations([KB_HR, KB_GONE], known, set()) == [
+        Violation("knowledge_base_unavailable", "knowledge_bases", (KB_GONE,)),
+        Violation("knowledge_base_not_usable", "knowledge_bases", (KB_HR,)),
+    ]
+
+
+def test_the_alert_lists_groups_of_the_agent_outside_the_knowledge_base() -> None:
+    definition = _definition(groups=["all-staff", "hr"], knowledge_bases=[KB_HR, KB_GONE])
+    alerts = knowledge_alerts(definition, {KB_HR: _kb(KB_HR, "hr", "ops")})
+    # Only the knowledge bases that exist, and only the groups of the agent.
+    assert alerts == {KB_HR: ("all-staff",)}
+
+
 # --- Tools ----------------------------------------------------------------------------------------
 
 
@@ -320,6 +381,12 @@ def test_public_tools_can_go_to_any_registered_group() -> None:
     assert _codes(definition) == []
 
 
+AWAITING_DESIGN = frozenset({"knowledge_base_unavailable", "knowledge_base_not_usable"})
+"""Rules whose wording waits for the design round of knowledge bases (D24, D88; brief
+``sync-2026-10-21-knowledge-bases.md`` §2.5). The Builder cannot pick knowledge bases yet, and
+shows any code it does not know as an unknown rule, by its code."""
+
+
 def test_the_web_knows_every_rule_code_the_api_reports() -> None:
     """Both screens that show rules take the codes from ``apps/web/src/agents/rules.ts``."""
     root = Path(__file__).parents[3]
@@ -328,4 +395,4 @@ def test_the_web_knows_every_rule_code_the_api_reports() -> None:
     reported = set(re.findall(r'Violation\(\s*"([a-z_]+)"', rules))
     listed = set(re.findall(r"^  '([a-z_]+)',$", web, flags=re.MULTILINE))
     assert reported
-    assert listed == reported
+    assert listed == reported - AWAITING_DESIGN

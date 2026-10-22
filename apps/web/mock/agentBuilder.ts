@@ -225,6 +225,7 @@ export function versionOut(agent: MockAgent, version: MockAgentVersion) {
     violations: OPEN_STATUSES.includes(version.status)
       ? validateForReview(agent.agent_id, version.definition)
       : [],
+    knowledge_bases: [],
   };
 }
 
@@ -291,6 +292,7 @@ function parseDefinition(value: unknown): MockAgentDefinition | null {
     },
     groups: sortedUnique(data.groups),
     users: sortedUnique(data.users),
+    knowledge_bases: sortedUnique(data.knowledge_bases),
   };
 }
 

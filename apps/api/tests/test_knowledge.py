@@ -171,6 +171,7 @@ class Env:
     db: Any
     s3: Any = None
     sfn: Any = None
+    deps: KnowledgeDeps | None = None
 
     def create(self, token: str = "creator", **body: Any) -> Any:
         payload = {"name": "Políticas de RR. HH.", "groups": ["hr"], **body}
@@ -263,7 +264,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
 
         asgi = app_module.create_app(_settings(), services_factory=factory)
         client = TestClient(asgi, base_url=f"http://{HOST}")  # type: ignore[arg-type]
-        yield Env(client, audit, groups, db, s3, sfn)
+        yield Env(client, audit, groups, db, s3, sfn, deps)
         assert cedar.errors == []
 
 
@@ -450,6 +451,51 @@ def test_deleting_marks_it_and_keeps_it_listed_until_verified(env: Env) -> None:
         TableName="knowledge", Key={"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}}
     )
     assert item["Item"]["status"]["S"] == "deleting"
+
+
+@dataclass(frozen=True)
+class _Using:
+    agent_id: str
+    version: int
+    name: str
+
+
+def test_a_knowledge_base_an_agent_serves_is_not_deleted(env: Env) -> None:
+    # D88 (15): a new version of the agent leaves it out first.
+    assert env.deps is not None
+    kb = env.created()
+    asked: list[str] = []
+
+    def using(kb_id: str) -> list[_Using]:
+        asked.append(kb_id)
+        return [_Using("k3fq7zr2m5xw6n4a", 2, "Asistente de RR. HH.")]
+
+    env.deps.agents_using = using
+    response = env.delete("creator", kb)
+    assert (response.status_code, _code(response)) == (409, "knowledge_base_in_use")
+    assert response.json()["agents"] == [
+        {"agent_id": "k3fq7zr2m5xw6n4a", "version": 2, "name": "Asistente de RR. HH."}
+    ]
+    assert asked == [kb["kb_id"]]
+    assert env.get("creator", kb["kb_id"]).json()["status"] == "pending"
+    # Nothing was asked to be written: no audit of a deletion, no synchronization.
+    assert env.events("kb.delete", None) == []
+    assert env.sfn.started == []
+    env.deps.agents_using = lambda _kb_id: []
+    assert env.delete("creator", kb).status_code == 202
+
+
+def test_a_knowledge_base_is_not_deleted_when_its_agents_cannot_be_read(env: Env) -> None:
+    assert env.deps is not None
+    kb = env.created()
+
+    def unavailable(_kb_id: str) -> list[_Using]:
+        raise RuntimeError("table unavailable")
+
+    env.deps.agents_using = unavailable
+    response = env.delete("creator", kb)
+    assert (response.status_code, _code(response)) == (503, "agent_unavailable")
+    assert env.get("creator", kb["kb_id"]).json()["status"] == "pending"
 
 
 def test_a_stale_delete_is_refused(env: Env) -> None:

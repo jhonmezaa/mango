@@ -35,7 +35,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from mango_api import harness, sessions
 from mango_api.admin import AdminDeps, admin_router, now_utc
-from mango_api.agents import AgentsDeps, agents_router
+from mango_api.agents import AgentsDeps, agents_router, agents_using_knowledge_base
 from mango_api.agents_store import AgentsStore, ListedVersions
 from mango_api.approval_executor import GatewayExecutor
 from mango_api.approvals import (
@@ -518,6 +518,9 @@ def build_services(settings: Settings) -> Services:
     group_registry = GroupRegistry(dynamodb, settings.settings_table)
     budget_limits = BudgetLimits(settings_store)
     agents_store = AgentsStore(dynamodb, settings.agents_table)
+    knowledge_store = (
+        KnowledgeStore(dynamodb, settings.knowledge_table) if settings.knowledge_table else None
+    )
     model_catalog = ModelCatalogStore(dynamodb, settings.settings_table)
     # Release data inside the image: read once, and fail closed if it is not there. Packs
     # join it from the signed statements of the release and their installation state (D36).
@@ -671,6 +674,7 @@ def build_services(settings: Settings) -> Services:
             )
             if settings.deprovisioner_state_machine_arn
             else None,
+            knowledge=knowledge_store,
             clock=now_utc,
         ),
         mcp=McpDeps(
@@ -709,7 +713,7 @@ def build_services(settings: Settings) -> Services:
         task_queue=task_queue,
         knowledge=(
             KnowledgeDeps(
-                store=KnowledgeStore(dynamodb, settings.knowledge_table),
+                store=knowledge_store,
                 groups=group_registry,
                 areas=partial(_areas, settings_store),
                 audit=audit,
@@ -734,8 +738,9 @@ def build_services(settings: Settings) -> Services:
                     else None
                 ),
                 user_limit=lambda user_id: budget_limits.for_user(user_id)[0],
+                agents_using=partial(agents_using_knowledge_base, agents_store),
             )
-            if settings.knowledge_table
+            if knowledge_store is not None
             else None
         ),
         limits=limits,

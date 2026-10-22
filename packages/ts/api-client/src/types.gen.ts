@@ -182,6 +182,10 @@ export type AgentDefinition = {
      * Icon
      */
     icon?: string;
+    /**
+     * Knowledge Bases
+     */
+    knowledge_bases?: Array<string>;
     limits?: AgentLimits;
     /**
      * Model
@@ -967,6 +971,10 @@ export type DefinitionOut = {
      * Icon
      */
     icon: string;
+    /**
+     * Knowledge Bases
+     */
+    knowledge_bases: Array<string>;
     limits: LimitsOut;
     /**
      * Model
@@ -1705,6 +1713,30 @@ export type KnowledgeBaseOut = {
      * Version
      */
     version: number;
+};
+
+/**
+ * KnowledgeBaseRefOut
+ *
+ * A knowledge base of the version, for the Builder and the reviewer (D18, D88 (15)).
+ */
+export type KnowledgeBaseRefOut = {
+    /**
+     * Groups Without Access
+     */
+    groups_without_access: Array<string>;
+    /**
+     * Kb Id
+     */
+    kb_id: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Status
+     */
+    status: string | null;
 };
 
 /**
@@ -3743,6 +3775,10 @@ export type VersionOut = {
      * Is Author
      */
     is_author: boolean;
+    /**
+     * Knowledge Bases
+     */
+    knowledge_bases: Array<KnowledgeBaseRefOut> | null;
     /**
      * Published At
      */

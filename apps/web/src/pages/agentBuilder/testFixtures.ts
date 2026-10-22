@@ -187,6 +187,7 @@ export function definition(overrides: Partial<Definition> = {}): Definition {
     },
     groups: ['finops-central'],
     users: [],
+    knowledge_bases: [],
     ...overrides,
   };
 }
@@ -229,6 +230,7 @@ export function version(overrides: Partial<Version> = {}): Version {
     base: null,
     diff: { is_new: true, fields: [], sets: [], prompt: null, changes: 0 },
     violations: [],
+    knowledge_bases: [],
     ...overrides,
   };
 }

@@ -41,6 +41,8 @@ from mango_api.agent_rules import (
     MAX_SUBMISSIONS_PER_DAY,
     RuleContext,
     Violation,
+    added_knowledge_violations,
+    knowledge_alerts,
     validate_for_review,
 )
 from mango_api.agents_store import (
@@ -57,8 +59,9 @@ from mango_api.agents_store import (
     SubmissionLimitError,
 )
 from mango_api.audit import AuditLog
-from mango_api.authz import AGENT_TYPE, PLATFORM, AgentResource, Authorizer
+from mango_api.authz import AGENT_TYPE, PLATFORM, AgentResource, Authorizer, KnowledgeBaseResource
 from mango_api.groups import GroupRegistry, GroupsUnavailableError
+from mango_api.knowledge_store import KnowledgeBase, KnowledgeStore, KnowledgeStoreUnavailableError
 from mango_api.mcp_catalog import InvalidCatalogError, McpCatalog
 from mango_api.model_catalog import ModelCatalogStore, ModelCatalogUnavailableError
 from mango_api.provisioner import (
@@ -85,6 +88,7 @@ from mango_core.agents import (
 from mango_core.agents import content_hash as hash_content
 from mango_core.agents_table import EXPIRED_STEP, MAX_VERSION, iso
 from mango_core.identity import UserContext
+from mango_core.knowledge import Status as KnowledgeStatus
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +115,9 @@ _LIMIT_FIELDS = (
     "max_tokens_per_call",
     "temperature",
 )
-_SET_FIELDS = ("allowed_models", "tools", "approval_tools", "groups", "users")
+_SET_FIELDS = ("allowed_models", "tools", "approval_tools", "groups", "users", "knowledge_bases")
+_IN_USE_STATUSES = (VersionStatus.APPROVED, VersionStatus.PUBLISHED, VersionStatus.FAILED)
+"""Versions that serve, or may serve without another review: a failed one is retried as it is."""
 
 
 # --- Requests ---------------------------------------------------------------------------
@@ -183,6 +189,19 @@ class DefinitionOut(_Strict):
     limits: LimitsOut
     groups: list[str]
     users: list[str]
+    knowledge_bases: list[str]
+
+
+class KnowledgeBaseRefOut(_Strict):
+    """A knowledge base of the version, for the Builder and the reviewer (D18, D88 (15))."""
+
+    kb_id: str
+    name: str | None
+    """``None`` when it no longer exists."""
+    status: str | None
+    groups_without_access: list[str]
+    """The alert of D26 (D88 (26)): groups of the agent that use it but get no answers from
+    this knowledge base. Only groups of the agent, never those of the knowledge base."""
 
 
 class ViolationOut(_Strict):
@@ -260,6 +279,9 @@ class VersionOut(_Strict):
     diff: DiffOut
     violations: list[ViolationOut] | None
     """Submit rules this content breaks now; ``None`` if they could not be evaluated."""
+    knowledge_bases: list[KnowledgeBaseRefOut] | None
+    """The knowledge bases of the definition as the registry has them now; ``None`` if it could
+    not be read."""
 
 
 class AgentOut(_Strict):
@@ -472,6 +494,8 @@ def _api_error(exc: Exception, now: datetime) -> ApiError | None:
         error = ApiError(503, "catalog_unavailable", "please try again")
     elif isinstance(exc, AgentsUnavailableError):
         error = ApiError(503, "agent_unavailable", "please try again")
+    elif isinstance(exc, KnowledgeStoreUnavailableError):
+        error = ApiError(503, "knowledge_unavailable", "please try again")
     elif isinstance(exc, InvalidDefinitionError):
         # A stored definition that no longer parses: fail closed, without its content.
         error = ApiError(500, "error", "the agent could not be read")
@@ -502,6 +526,9 @@ class AgentsDeps:
     list_limiter: Limiter | None = None
     """Lists of agents a person may ask for per minute (``limits.LIMITS``); set in
     production."""
+    knowledge: KnowledgeStore | None = None
+    """The registry of knowledge bases (D88); set in production. Without it a version that
+    names one does not pass the rules (fail closed)."""
 
 
 class _PendingOrg:
@@ -524,12 +551,23 @@ class _PendingOrg:
         return None if published is None else self._approved.get(agent_id, published)
 
 
-def _rule_context(deps: AgentsDeps, *, approving: bool = False) -> RuleContext:
+def _knowledge_bases(deps: AgentsDeps, kb_ids: Sequence[str]) -> dict[str, KnowledgeBase]:
+    """The knowledge bases of a definition that exist (at most ``MAX_KNOWLEDGE_BASES`` reads).
+    Raises ``KnowledgeStoreUnavailableError`` when the table cannot be read."""
+    if deps.knowledge is None or not kb_ids:
+        return {}
+    return {kb_id: kb for kb_id in kb_ids if (kb := deps.knowledge.get(kb_id)) is not None}
+
+
+def _rule_context(
+    deps: AgentsDeps, definition: AgentDefinition, *, approving: bool = False
+) -> RuleContext:
     return RuleContext(
         catalog=deps.catalog(),
         models=deps.models.catalog(),
         groups={g.id: g for g in deps.groups.list_groups()},
         org=_PendingOrg(deps.store) if approving else deps.store,
+        knowledge=_knowledge_bases(deps, definition.knowledge_bases),
     )
 
 
@@ -564,6 +602,7 @@ def _definition_out(definition: AgentDefinition) -> DefinitionOut:
         ),
         groups=list(definition.groups),
         users=list(definition.users),
+        knowledge_bases=list(definition.knowledge_bases),
     )
 
 
@@ -641,11 +680,41 @@ def _display_rules(deps: AgentsDeps, version: AgentVersion) -> list[ViolationOut
     if version.status not in _OPEN_STATUSES:
         return []
     try:
-        ctx = _rule_context(deps, approving=version.status is VersionStatus.IN_REVIEW)
-    except (ModelCatalogUnavailableError, GroupsUnavailableError, InvalidCatalogError) as exc:
+        ctx = _rule_context(
+            deps, version.definition, approving=version.status is VersionStatus.IN_REVIEW
+        )
+    except (
+        ModelCatalogUnavailableError,
+        GroupsUnavailableError,
+        InvalidCatalogError,
+        KnowledgeStoreUnavailableError,
+    ) as exc:
         logger.warning("submit rules unavailable: %s", type(exc).__name__)
         return None
     return _violations_out(validate_for_review(version.agent_id, version.definition, ctx))
+
+
+def _knowledge_refs(
+    deps: AgentsDeps, definition: AgentDefinition
+) -> list[KnowledgeBaseRefOut] | None:
+    """What the Builder and the reviewer show of each knowledge base, with the alert of D26.
+    Only for whoever may edit or review the version, who also sees the list of knowledge
+    bases (``ViewKnowledgeBase``): their names are no secret to them."""
+    try:
+        found = _knowledge_bases(deps, definition.knowledge_bases)
+    except KnowledgeStoreUnavailableError:
+        logger.warning("knowledge bases of a version unavailable")
+        return None
+    alerts = knowledge_alerts(definition, found)
+    return [
+        KnowledgeBaseRefOut(
+            kb_id=kb_id,
+            name=kb.name if (kb := found.get(kb_id)) else None,
+            status=kb.status.value if kb else None,
+            groups_without_access=list(alerts.get(kb_id, ())),
+        )
+        for kb_id in definition.knowledge_bases
+    ]
 
 
 def _version_out(deps: AgentsDeps, caller: Caller, version: AgentVersion) -> VersionOut:
@@ -688,6 +757,7 @@ def _version_out(deps: AgentsDeps, caller: Caller, version: AgentVersion) -> Ver
         base=_definition_out(base) if base else None,
         diff=diff_definitions(base, version.definition),
         violations=_display_rules(deps, version),
+        knowledge_bases=_knowledge_refs(deps, version.definition),
     )
 
 
@@ -1081,10 +1151,50 @@ def _ids(agent_id: str, number: int) -> dict[str, Any]:
     return {"agent": agent_id, "version": number}
 
 
+def _check_added_knowledge(
+    deps: AgentsDeps,
+    user: UserContext,
+    before: AgentDefinition | None,
+    after: AgentDefinition,
+) -> None:
+    """A knowledge base enters a version only by someone who may use it (D88 (15), TM-K8):
+    ``UseKnowledgeBase`` with its groups from the registry. The ones the version already had
+    stay, so an administrator can edit an agent whose knowledge bases they are not in."""
+    had = set(before.knowledge_bases) if before is not None else set()
+    added = [kb_id for kb_id in after.knowledge_bases if kb_id not in had]
+    if not added:
+        return
+    found = _knowledge_bases(deps, added)
+    resources = [
+        KnowledgeBaseResource(kb.kb_id, kb.owner_id, frozenset(kb.groups))
+        for kb_id in added
+        if (kb := found.get(kb_id)) is not None and kb.status is not KnowledgeStatus.DELETING
+    ]
+    usable = (
+        deps.authorizer.allowed_knowledge_bases(user, "UseKnowledgeBase", resources)
+        if resources
+        else frozenset()
+    )
+    violations = added_knowledge_violations(added, found, usable)
+    if violations:
+        raise ValidationFailedError(violations)
+
+
 def create_agent(deps: AgentsDeps, caller: Caller, body: CreateAgentIn) -> VersionOut:
     actor = caller.user.user_id
     # Generated here, never taken from the request; release slugs stay reserved (TM-M16).
     agent_id = new_agent_id()
+
+    def write() -> AgentVersion:
+        _check_added_knowledge(deps, caller.user, None, body.definition)
+        return deps.store.create_agent(
+            body.definition,
+            actor=actor,
+            actor_email=caller.user.email,
+            now=deps.clock(),
+            agent_id=agent_id,
+        )
+
     version = _audited(
         deps,
         "agent.created",
@@ -1094,13 +1204,7 @@ def create_agent(deps: AgentsDeps, caller: Caller, body: CreateAgentIn) -> Versi
             "created_by": actor,
             "content_hash": hash_content(dumps_definition(body.definition)),
         },
-        lambda: deps.store.create_agent(
-            body.definition,
-            actor=actor,
-            actor_email=caller.user.email,
-            now=deps.clock(),
-            agent_id=agent_id,
-        ),
+        write,
     )
     return _version_out(deps, caller, version)
 
@@ -1145,8 +1249,21 @@ def _require_draft(version: AgentVersion, revision: int) -> None:
 def save_draft(
     deps: AgentsDeps, caller: Caller, agent_id: str, number: int, body: SaveDraftIn
 ) -> VersionOut:
-    _require_draft(_require_version(deps, agent_id, number), body.revision)
+    draft = _require_version(deps, agent_id, number)
+    _require_draft(draft, body.revision)
     actor = caller.user.user_id
+
+    def write() -> None:
+        _check_added_knowledge(deps, caller.user, draft.definition, body.definition)
+        deps.store.save_draft(
+            agent_id,
+            number,
+            revision=body.revision,
+            definition=body.definition,
+            actor=actor,
+            now=deps.clock(),
+        )
+
     _audited(
         deps,
         "agent.version.saved",
@@ -1157,14 +1274,7 @@ def save_draft(
             "revision": body.revision,
             "content_hash": hash_content(dumps_definition(body.definition)),
         },
-        lambda: deps.store.save_draft(
-            agent_id,
-            number,
-            revision=body.revision,
-            definition=body.definition,
-            actor=actor,
-            now=deps.clock(),
-        ),
+        write,
     )
     return _version_out(deps, caller, _require_version(deps, agent_id, number))
 
@@ -1197,7 +1307,9 @@ def submit(
     actor = caller.user.user_id
 
     def write() -> AgentVersion:
-        violations = validate_for_review(agent_id, draft.definition, _rule_context(deps))
+        violations = validate_for_review(
+            agent_id, draft.definition, _rule_context(deps, draft.definition)
+        )
         if violations:
             raise ValidationFailedError(violations)
         # The store freezes ``revision`` only if the stored content is still ``draft``'s.
@@ -1294,7 +1406,7 @@ def approve(
         if not verify_content(version.canonical, body.content_hash):
             raise ApiError(409, "version_conflict", "the stored content does not match its hash")
         violations = validate_for_review(
-            agent_id, version.definition, _rule_context(deps, approving=True)
+            agent_id, version.definition, _rule_context(deps, version.definition, approving=True)
         )
         if violations:
             raise ValidationFailedError(violations)
@@ -1477,6 +1589,30 @@ def retire(deps: AgentsDeps, caller: Caller, meta: AgentMeta, body: RetireIn) ->
         # Only administrators retire (`RetireAgent`), so this never reaches anyone else.
         cleanup=cleanup if caller.user.is_admin else None,
     )
+
+
+# --- Use cases: knowledge bases ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AgentUsing:
+    agent_id: str
+    version: int
+    name: str
+
+
+def agents_using_knowledge_base(store: AgentsStore, kb_id: str) -> list[AgentUsing]:
+    """Versions that serve ``kb_id``, or may serve it without another review (D88 (15)): it
+    cannot be deleted until a new version leaves it out. One in review is not counted: its
+    approval checks again that the knowledge base exists. Raises ``AgentsUnavailableError``
+    when the table cannot be read."""
+    using = [
+        AgentUsing(v.agent_id, v.number, v.definition.name)
+        for status in _IN_USE_STATUSES
+        for v in store.by_status(status)
+        if kb_id in v.definition.knowledge_bases
+    ]
+    return sorted(using, key=lambda a: (a.name.casefold(), a.agent_id, a.version))
 
 
 # --- Routes -----------------------------------------------------------------------------

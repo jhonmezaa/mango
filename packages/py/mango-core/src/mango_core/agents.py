@@ -32,6 +32,8 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
+from mango_core.knowledge import ID_PATTERN as KNOWLEDGE_BASE_ID_PATTERN
+
 ROOT_SUPERVISOR = "platform"
 """``reports_to`` value of an agent at the top of the organization chart (D30)."""
 
@@ -54,6 +56,8 @@ MAX_TOOLS = 50
 MAX_MODELS = 10
 MAX_GROUPS = 50
 MAX_USERS = 50
+MAX_KNOWLEDGE_BASES = 5
+"""Knowledge bases one version may use (D88 (15))."""
 ICON_COLORS = 8
 
 _BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200e\u200f")
@@ -145,6 +149,7 @@ ToolRef = Annotated[str, Field(pattern=TOOL_REF_PATTERN)]
 ModelId = Annotated[str, Field(pattern=MODEL_ID_PATTERN)]
 GroupId = Annotated[str, Field(pattern=GROUP_ID_PATTERN)]
 UserId = Annotated[str, Field(pattern=USER_ID_PATTERN)]
+KnowledgeBaseId = Annotated[str, Field(pattern=KNOWLEDGE_BASE_ID_PATTERN)]
 ToolRefs = Annotated[
     tuple[ToolRef, ...], Field(max_length=MAX_TOOLS), AfterValidator(_sorted_unique)
 ]
@@ -207,15 +212,32 @@ class AgentDefinition(_Frozen):
     users: Annotated[
         tuple[UserId, ...], Field(max_length=MAX_USERS), AfterValidator(_sorted_unique)
     ] = ()
+    knowledge_bases: Annotated[
+        tuple[KnowledgeBaseId, ...],
+        Field(max_length=MAX_KNOWLEDGE_BASES),
+        AfterValidator(_sorted_unique),
+    ] = ()
+    """Ids of the knowledge bases the agent searches (D88 (15)). They answer only the people
+    in their groups, whoever the agent is shared with (D88 (22))."""
 
 
 # --- Canonical form and hash ------------------------------------------------------------
 
 
+_OMITTED_WHEN_EMPTY = ("knowledge_bases",)
+"""Fields added after agents were published: left out while empty, so the bytes and the hash
+of every version written before them (and of the release agents, which the stack writes from
+TypeScript) stay the same."""
+
+
 def dumps_definition(definition: AgentDefinition) -> str:
     """Canonical JSON used to store a definition: sorted keys, no whitespace, UTF-8."""
+    data = definition.model_dump(mode="json")
+    for name in _OMITTED_WHEN_EMPTY:
+        if not data[name]:
+            del data[name]
     return json.dumps(
-        definition.model_dump(mode="json"),
+        data,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,

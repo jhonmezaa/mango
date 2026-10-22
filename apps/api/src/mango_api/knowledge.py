@@ -31,7 +31,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -290,6 +290,17 @@ class SyncStarter:
         )
 
 
+class AgentUsing(Protocol):
+    """A version that serves a knowledge base (``agents.AgentUsing``)."""
+
+    @property
+    def agent_id(self) -> str: ...
+    @property
+    def version(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+
+
 @dataclass
 class KnowledgeDeps:
     store: KnowledgeStore
@@ -306,6 +317,9 @@ class KnowledgeDeps:
     """The state machine ``Mango-<ns>-KnowledgeSync``; ``None`` until mango-api may start it."""
     user_limit: Callable[[str], Decimal] | None = None
     """The monthly budget limit of a person: the synchronization reserves against it (D88 (24))."""
+    agents_using: Callable[[str], Sequence[AgentUsing]] | None = None
+    """Agents whose versions serve a knowledge base (``agents.agents_using_knowledge_base``);
+    set in production. Raises when it cannot tell: nothing is deleted then."""
 
 
 def resource_of(kb: KnowledgeBase) -> KnowledgeBaseResource:
@@ -457,12 +471,37 @@ def update_knowledge_base(
     return _write(deps, "kb.update", caller, kb, changes=changes, detail=detail)
 
 
+def _not_in_use(deps: KnowledgeDeps, kb: KnowledgeBase) -> None:
+    """A knowledge base an agent serves is not deleted: a new version of the agent leaves it
+    out first (D88 (15)). The answer names those agents, which whoever may delete it (its
+    owner while a creator, or an administrator) already sees in the organization chart."""
+    if deps.agents_using is None:
+        return
+    try:
+        using = deps.agents_using(kb.kb_id)
+    except Exception as exc:
+        logger.exception("agents of a knowledge base unavailable")
+        raise ApiError(503, "agent_unavailable", "please try again") from exc
+    if using:
+        raise ApiError(
+            409,
+            "knowledge_base_in_use",
+            "agents use this knowledge base; remove it from them first",
+            extra={
+                "agents": [
+                    {"agent_id": a.agent_id, "version": a.version, "name": a.name} for a in using
+                ]
+            },
+        )
+
+
 def delete_knowledge_base(
     deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase, version: int
 ) -> KnowledgeBase:
     """Mark it ``deleting``: the synchronization deletes its documents and vectors and
     verifies it (D88 (16)). The record stays, and listed, until then."""
     _editable(kb, version)
+    _not_in_use(deps, kb)
     detail = {"documents": kb.documents, "bytes": kb.bytes}
     changes = {"status": Status.DELETING.value, "deleting_since": _now_iso(deps)}
     return _write(deps, "kb.delete", caller, kb, changes=changes, detail=detail)

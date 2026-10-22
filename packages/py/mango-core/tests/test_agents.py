@@ -194,3 +194,25 @@ def test_every_version_has_a_cap_per_model_call() -> None:
     # Derived, never stored: the content hash of a version does not change.
     assert "call_max_tokens" not in _definition().limits.model_dump()
     assert content_hash(dumps_definition(_definition())) == BASE_HASH
+
+
+def test_knowledge_bases_are_left_out_of_the_canonical_form_while_empty() -> None:
+    # Versions written before the field keep their bytes and their hash (D88 (15)).
+    assert "knowledge_bases" not in json.loads(dumps_definition(_definition()))
+    kb_ids = ["01JABCDEFGHJKMNPQRSTVWXYZ1", "01JABCDEFGHJKMNPQRSTVWXYZ0"]
+    canonical = dumps_definition(_definition(knowledge_bases=[*kb_ids, kb_ids[0]]))
+    assert json.loads(canonical)["knowledge_bases"] == sorted(kb_ids)
+    assert dumps_definition(loads_definition(canonical)) == canonical
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ["01jabcdefghjkmnpqrstvwxyz0"],
+        ["kb/../x"],
+        [f"01JABCDEFGHJKMNPQRSTVWXY{i:02d}" for i in range(6)],
+    ],
+)
+def test_knowledge_bases_are_ulids_and_at_most_five(value: list[str]) -> None:
+    with pytest.raises(ValidationError):
+        _definition(knowledge_bases=value)

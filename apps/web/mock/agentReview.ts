@@ -79,6 +79,7 @@ export function versionOut(agent: MockAgent, version: MockAgentVersion) {
     base,
     diff: diffDefinitions(base, version.definition),
     violations: [],
+    knowledge_bases: [],
   };
 }
 

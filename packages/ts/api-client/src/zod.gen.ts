@@ -50,6 +50,7 @@ export const zAgentDefinitionSchema = z.object({
     description: z.string().optional().default(''),
     groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).max(50).optional().default([]),
     icon: z.string().regex(/^[A-Za-z][A-Za-z0-9]{0,31}$/).optional().default('Bot'),
+    knowledge_bases: z.array(z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)).max(5).optional().default([]),
     limits: zAgentLimitsSchema.optional().default({
         max_iterations: 8,
         max_tokens: 4096,
@@ -612,6 +613,18 @@ export const zKnowledgeBaseCreateSchema = z.object({
 });
 
 /**
+ * KnowledgeBaseRefOut
+ *
+ * A knowledge base of the version, for the Builder and the reviewer (D18, D88 (15)).
+ */
+export const zKnowledgeBaseRefOutSchema = z.object({
+    groups_without_access: z.array(z.string()),
+    kb_id: z.string(),
+    name: z.string().nullable(),
+    status: z.string().nullable()
+});
+
+/**
  * KnowledgeBaseUpdate
  */
 export const zKnowledgeBaseUpdateSchema = z.object({
@@ -655,6 +668,7 @@ export const zDefinitionOutSchema = z.object({
     description: z.string(),
     groups: z.array(z.string()),
     icon: z.string(),
+    knowledge_bases: z.array(z.string()),
     limits: zLimitsOutSchema,
     model: z.string().nullable(),
     name: z.string(),
@@ -1902,6 +1916,7 @@ export const zVersionOutSchema = z.object({
     failed_step: z.string().nullable(),
     failure: z.string().nullable(),
     is_author: z.boolean(),
+    knowledge_bases: z.array(zKnowledgeBaseRefOutSchema).nullable(),
     published_at: z.string().nullable(),
     rejected_at: z.string().nullable(),
     rejected_by: z.string().nullable(),

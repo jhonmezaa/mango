@@ -365,6 +365,16 @@
             "title": "Icon",
             "type": "string"
           },
+          "knowledge_bases": {
+            "default": [],
+            "items": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Knowledge Bases",
+            "type": "array"
+          },
           "limits": {
             "$ref": "#/components/schemas/AgentLimits",
             "default": {
@@ -1756,6 +1766,13 @@
             "title": "Icon",
             "type": "string"
           },
+          "knowledge_bases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Knowledge Bases",
+            "type": "array"
+          },
           "limits": {
             "$ref": "#/components/schemas/LimitsOut"
           },
@@ -1823,7 +1840,8 @@
           "approval_tools",
           "limits",
           "groups",
-          "users"
+          "users",
+          "knowledge_bases"
         ],
         "title": "DefinitionOut",
         "type": "object"
@@ -3140,6 +3158,53 @@
           "sync_running"
         ],
         "title": "KnowledgeBaseOut",
+        "type": "object"
+      },
+      "KnowledgeBaseRefOut": {
+        "additionalProperties": false,
+        "description": "A knowledge base of the version, for the Builder and the reviewer (D18, D88 (15)).",
+        "properties": {
+          "groups_without_access": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups Without Access",
+            "type": "array"
+          },
+          "kb_id": {
+            "title": "Kb Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "kb_id",
+          "name",
+          "status",
+          "groups_without_access"
+        ],
+        "title": "KnowledgeBaseRefOut",
         "type": "object"
       },
       "KnowledgeBaseUpdate": {
@@ -7228,6 +7293,20 @@
             "title": "Is Author",
             "type": "boolean"
           },
+          "knowledge_bases": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/KnowledgeBaseRefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Bases"
+          },
           "published_at": {
             "anyOf": [
               {
@@ -7364,7 +7443,8 @@
           "definition",
           "base",
           "diff",
-          "violations"
+          "violations",
+          "knowledge_bases"
         ],
         "title": "VersionOut",
         "type": "object"
