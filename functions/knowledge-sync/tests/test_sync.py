@@ -49,10 +49,13 @@ class FakeAgent:
     deleted: list[list[str]] = field(default_factory=list)
     statuses: dict[str, tuple[str, str]] = field(default_factory=dict)
     throttle: bool = False
+    deny: bool = False
 
     def ingest_knowledge_base_documents(self, **request: Any) -> dict[str, Any]:
         if self.throttle:
             raise ClientError({"Error": {"Code": "ThrottlingException"}}, "Ingest")
+        if self.deny:
+            raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": ""}}, "Ingest")
         self.ingested.append(request)
         return {"documentDetails": []}
 
@@ -66,6 +69,8 @@ class FakeAgent:
         return {"documentDetails": details}
 
     def delete_knowledge_base_documents(self, **request: Any) -> dict[str, Any]:
+        if self.deny:
+            raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": ""}}, "Delete")
         self.deleted.append([i["custom"]["id"] for i in request["documentIdentifiers"]])
         return {}
 
@@ -586,3 +591,54 @@ def test_throttling_is_retried_by_the_state_machine(env: Env) -> None:
 def test_an_unknown_step_is_refused(env: Env) -> None:
     with pytest.raises(handler.InvalidInputError):
         handler.handle(env.deps, {"step": "drop_everything", "state": {}})
+
+
+def test_a_permission_refused_by_aws_is_not_retried_and_says_its_code(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Seen in an installation on 2026-10-22: the deletion was retried as if Bedrock were
+    busy, and the log only said BedrockUnavailableError."""
+    kb_id = env.kb(status="deleting")
+    doc = env.doc(kb_id)
+    state = {"mode": "sync", "kb_id": kb_id, "sync_id": new_id(), "requested_by": REQUESTER}
+    state = env.step("plan", env.step("acquire", state))
+    assert state["delete"] == [doc]
+    env.agent.deny = True
+    with pytest.raises(handler.StepDeniedError, match="AccessDeniedException"):
+        env.step("delete", state)
+    assert "denied by AWS: AccessDeniedException" in caplog.text
+    # Ingesting is refused the same way.
+    other = env.kb()
+    env.doc(other)
+    state = {"mode": "sync", "kb_id": other, "sync_id": new_id(), "requested_by": REQUESTER}
+    env.deps.store.release(SETTINGS.knowledge_base_id, "nobody")
+    state = env.step("plan", {**state, "locked": True})
+    with pytest.raises(handler.StepDeniedError):
+        env.step("ingest", state)
+
+
+def test_a_retried_step_logs_the_code_of_aws(env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    kb_id = env.kb()
+    env.doc(kb_id)
+    state = {"mode": "sync", "kb_id": kb_id, "sync_id": new_id(), "requested_by": REQUESTER}
+    state = env.step("plan", env.step("acquire", state))
+    env.agent.throttle = True
+    with pytest.raises(handler.RetryableStepError):
+        env.step("ingest", state)
+    assert "will be retried: ThrottledError (ThrottlingException)" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("exc", "code"),
+    [
+        (
+            ClientError({"Error": {"Code": "AccessDenied", "Message": "secret text"}}, "X"),
+            "AccessDenied",
+        ),
+        (handler.StoreUnavailableError("ValidationException"), "ValidationException"),
+        (handler.StoreUnavailableError("quoted request: a b"), "unknown"),
+        (handler.StoreUnavailableError(), "unknown"),
+    ],
+)
+def test_only_the_code_reaches_the_log(exc: Exception, code: str) -> None:
+    assert handler.aws_code(exc) == code

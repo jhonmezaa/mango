@@ -44,6 +44,7 @@ from mango_knowledge_sync import budget
 from mango_knowledge_sync.audit import AuditWriter
 from mango_knowledge_sync.bedrock import (
     BATCH,
+    BedrockDeniedError,
     BedrockUnavailableError,
     Ingestable,
     KnowledgeBedrock,
@@ -77,6 +78,10 @@ _USER_RE = re.compile(r"^[A-Za-z0-9:._-]{1,128}$")
 
 class RetryableStepError(Exception):
     """A dependency was busy or unavailable: the state machine retries the step."""
+
+
+class StepDeniedError(Exception):
+    """AWS refused the step for permissions: the state machine does not retry it."""
 
 
 class InvalidInputError(Exception):
@@ -143,6 +148,11 @@ def handle(deps: Deps, event: dict[str, Any]) -> dict[str, Any]:
         _check(state)
     try:
         return steps[step](deps, state)
+    except BedrockDeniedError as exc:
+        # Not retried: the step ends in `finish` (reservation and lock released, status «Error»)
+        # and the execution fails, which alarms. The code of AWS says which refusal it was.
+        logger.error("knowledge sync step %s denied by AWS: %s", step, aws_code(exc))  # noqa: TRY400
+        raise StepDeniedError(aws_code(exc)) from exc
     except (
         ThrottledError,
         BedrockUnavailableError,
@@ -151,8 +161,25 @@ def handle(deps: Deps, event: dict[str, Any]) -> dict[str, Any]:
         BotoCoreError,
         ClientError,
     ) as exc:
-        logger.warning("knowledge sync step %s will be retried: %s", step, type(exc).__name__)
+        logger.warning(
+            "knowledge sync step %s will be retried: %s (%s)",
+            step,
+            type(exc).__name__,
+            aws_code(exc),
+        )
         raise RetryableStepError(type(exc).__name__) from exc
+
+
+def aws_code(exc: Exception) -> str:
+    """The error code of AWS behind ``exc``, never its message (it may quote a request)."""
+    if isinstance(exc, ClientError):
+        return str(exc.response.get("Error", {}).get("Code", "unknown"))
+    if isinstance(exc, BotoCoreError):
+        return type(exc).__name__
+    code = exc.args[0] if exc.args else ""
+    return (
+        code if isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9.]{1,64}", code) else "unknown"
+    )
 
 
 def _check(state: dict[str, Any]) -> None:

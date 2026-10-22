@@ -39,6 +39,13 @@ class BedrockUnavailableError(Exception):
     """Bedrock refused or failed for another reason; the error code only."""
 
 
+class BedrockDeniedError(Exception):
+    """Bedrock refused for permissions: retrying changes nothing (the error code only)."""
+
+
+DENIED = frozenset({"AccessDeniedException", "AccessDenied", "UnauthorizedException"})
+
+
 @dataclass(frozen=True)
 class Ingestable:
     doc_id: str
@@ -101,6 +108,8 @@ def _error(exc: Exception) -> Exception:
             "TooManyRequestsException",
         }:
             return ThrottledError(code)
+        if code in DENIED:
+            return BedrockDeniedError(code)
         return BedrockUnavailableError(code)
     return BedrockUnavailableError(type(exc).__name__)
 

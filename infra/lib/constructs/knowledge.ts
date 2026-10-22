@@ -39,6 +39,15 @@ const ACCESS_LOG_PREFIX = "knowledge/";
 /** Index names of the Knowledge table; keep in sync with `mango_api.knowledge_store`. */
 export const KNOWLEDGE_ALL = "All";
 
+/** What the synchronization may do on the Bedrock knowledge base: the five of direct ingestion. */
+export const DIRECT_INGESTION_ACTIONS = [
+  "bedrock:DeleteKnowledgeBaseDocuments",
+  "bedrock:GetKnowledgeBaseDocuments",
+  "bedrock:IngestKnowledgeBaseDocuments",
+  "bedrock:ListKnowledgeBaseDocuments",
+  "bedrock:StartIngestionJob",
+];
+
 /** Prefixes of the documents bucket (D88 (9)). */
 export const KNOWLEDGE_PREFIXES = {
   /** What the browser uploads with a presigned POST; gone after a day if never saved. */
@@ -474,14 +483,18 @@ export class Knowledge extends Construct {
           conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
         }),
         new iam.PolicyStatement({
-          sid: "KnowledgeBaseDocuments",
-          actions: [
-            "bedrock:DeleteKnowledgeBaseDocuments",
-            "bedrock:GetKnowledgeBaseDocuments",
-            "bedrock:IngestKnowledgeBaseDocuments",
-            // Only to verify a deletion: a search filtered by kb_id and the documents.
-            "bedrock:Retrieve",
-          ],
+          sid: "DirectIngestion",
+          // The five AWS asks for direct ingestion ("Prerequisites for direct ingestion"):
+          // without StartIngestionJob and ListKnowledgeBaseDocuments, Bedrock refuses
+          // DeleteKnowledgeBaseDocuments with AccessDenied (seen in an installation on
+          // 2026-10-22, D88 (34)). No ingestion job is ever started (D88 (23)).
+          actions: DIRECT_INGESTION_ACTIONS,
+          resources: [this.knowledgeBase.attrKnowledgeBaseArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "VerifyDeletion",
+          // Only to verify a deletion: a search filtered by kb_id and the documents.
+          actions: ["bedrock:Retrieve"],
           resources: [this.knowledgeBase.attrKnowledgeBaseArn],
         }),
         new iam.PolicyStatement({

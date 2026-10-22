@@ -242,7 +242,7 @@ describe("Brains: model catalog administration (D38)", () => {
     const actions = statements.flatMap(({ statement }) => [statement.Action].flat());
     // The documents of the one knowledge base, for its synchronization only: knowledge.test.ts
     // pins them to that role and that base (D88 (32)).
-    const documents = /^bedrock:(Get|Delete|Ingest)KnowledgeBaseDocuments$/;
+    const documents = /^bedrock:((Get|Delete|Ingest|List)KnowledgeBaseDocuments|StartIngestionJob)$/;
     const control = actions.filter((a) => /^bedrock:(List|Get|Create|Put|Delete|Update)/.test(a));
     expect(control.filter((a) => !documents.test(a)).sort()).toEqual([
       "bedrock:ListFoundationModels",
@@ -252,7 +252,7 @@ describe("Brains: model catalog administration (D38)", () => {
       [statement.Action].flat().some((a) => documents.test(String(a))),
     );
     expect(withDocuments).toHaveLength(1);
-    expect(withDocuments[0]!.statement.Sid).toBe("KnowledgeBaseDocuments");
+    expect(withDocuments[0]!.statement.Sid).toBe("DirectIngestion");
     expect(actions).not.toContain("bedrock:*");
   });
 

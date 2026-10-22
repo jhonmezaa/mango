@@ -3,7 +3,13 @@ import { App } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
-import { INDEXING_PROFILE, KNOWLEDGE_ALL, KNOWLEDGE_PREFIXES, KNOWLEDGE_SIGNALS } from "../lib/constructs/knowledge.js";
+import {
+  DIRECT_INGESTION_ACTIONS,
+  INDEXING_PROFILE,
+  KNOWLEDGE_ALL,
+  KNOWLEDGE_PREFIXES,
+  KNOWLEDGE_SIGNALS,
+} from "../lib/constructs/knowledge.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 
 /* The fixed resources of the knowledge bases (D88 (7), (18), (21); knowledge-bases-threat-model.md). */
@@ -309,13 +315,21 @@ describe("knowledge bases: fixed resources in Core", () => {
     const [syncRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-KnowledgeSync` });
     const statements = statementsOf(syncRoleId);
     const sids = bySid(statements);
-    expect(actions(sids.KnowledgeBaseDocuments!).sort()).toEqual([
+    // Exactly the five of direct ingestion (D88 (34)): with three of them Bedrock refused the
+    // deletions with AccessDenied in an installation.
+    expect(actions(sids.DirectIngestion!).sort()).toEqual([
       "bedrock:DeleteKnowledgeBaseDocuments",
       "bedrock:GetKnowledgeBaseDocuments",
       "bedrock:IngestKnowledgeBaseDocuments",
-      "bedrock:Retrieve",
+      "bedrock:ListKnowledgeBaseDocuments",
+      "bedrock:StartIngestionJob",
     ]);
-    expect(sids.KnowledgeBaseDocuments!.Resource).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseArn"] });
+    expect(sids.DirectIngestion!.Resource).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseArn"] });
+    expect(actions(sids.VerifyDeletion!)).toEqual(["bedrock:Retrieve"]);
+    expect(sids.VerifyDeletion!.Resource).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseArn"] });
+    // Nothing else of Bedrock: not the base itself, its data source, models or other bases.
+    const bedrock = statements.flatMap(actions).filter((a) => a.startsWith("bedrock:"));
+    expect(bedrock.sort()).toEqual([...DIRECT_INGESTION_ACTIONS, "bedrock:Retrieve"].sort());
     expect(actions(sids.ReserveAndSettleBudgets!)).toEqual(["dynamodb:UpdateItem"]);
     expect(sids.ReserveAndSettleBudgets!.Condition).toEqual({
       "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["USER#*"] },
