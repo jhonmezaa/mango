@@ -331,6 +331,12 @@ class SyncStarter:
         )
 
 
+class BucketCheck(Protocol):
+    """Checks a bucket before it is a source (``knowledge_sources.BucketChecker``)."""
+
+    def check(self, bucket: str) -> None: ...
+
+
 class AgentUsing(Protocol):
     """A version that serves a knowledge base (``agents.AgentUsing``)."""
 
@@ -366,6 +372,8 @@ class KnowledgeDeps:
     knowledge_base_id: str = ""
     """The one Bedrock knowledge base of the installation (D88 (7))."""
     searches: Limiter | None = None
+    buckets: BucketCheck | None = None
+    """Checks the bucket of a source (D88 (10)); ``None`` until mango-api may (503)."""
 
 
 def resource_of(kb: KnowledgeBase) -> KnowledgeBaseResource:

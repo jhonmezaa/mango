@@ -76,3 +76,24 @@ def usable(kb_groups: Iterable[str], user_groups: Iterable[str]) -> bool:
     no Verified Permissions of its own; a test of mango-api checks it against the policy.
     """
     return not set(kb_groups).isdisjoint(user_groups)
+
+
+class SourceStatus(StrEnum):
+    """Of a source on an existing bucket (D88 (10), (20))."""
+
+    PENDING = "pending"
+    """Proposed; waits for an administrator other than whoever proposed it."""
+    APPROVED = "approved"
+    """For exactly its bucket and prefix: changing them is a new proposal."""
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+    """Taken back before anybody decided."""
+    REMOVING = "removing"
+    """Removed after its approval: its role and its documents are being deleted."""
+
+
+ACTIVE_SOURCE_STATUSES = frozenset(
+    {SourceStatus.PENDING, SourceStatus.APPROVED, SourceStatus.REMOVING}
+)
+MAX_SOURCES = 5
+"""Sources of one knowledge base that are pending, approved or being removed."""

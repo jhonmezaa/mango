@@ -94,6 +94,7 @@ from mango_api.groups import GroupRegistry, groups_router
 from mango_api.inbox import InboxDeps, RunInbox, inbox_router
 from mango_api.inbox_store import InboxStore
 from mango_api.knowledge import KnowledgeDeps, SyncStarter, knowledge_router
+from mango_api.knowledge_sources import BucketChecker, knowledge_sources_router
 from mango_api.knowledge_store import KnowledgeStore
 from mango_api.knowledge_uploads import S3_CONFIG as KNOWLEDGE_S3_CONFIG
 from mango_api.knowledge_uploads import DocumentStorage
@@ -747,6 +748,11 @@ def build_services(settings: Settings) -> Services:
                 ),
                 knowledge_base_id=settings.knowledge_base_id,
                 searches=limits.limiter("knowledge.searches"),
+                buckets=(
+                    BucketChecker(boto3.client("s3", region_name=region), settings.account_id)
+                    if settings.account_id
+                    else None
+                ),
             )
             if knowledge_store is not None
             else None
@@ -1228,6 +1234,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             knowledge_router(
                 services.knowledge, current_user, require, knowledge_allowed, knowledge_platform
             )
+        )
+        app.include_router(
+            knowledge_sources_router(services.knowledge, current_user, require, knowledge_allowed)
         )
 
     @app.post("/api/chat")

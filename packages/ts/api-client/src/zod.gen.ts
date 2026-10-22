@@ -1126,6 +1126,14 @@ export const zProposalInSchema = z.object({
 });
 
 /**
+ * ProposerOut
+ */
+export const zProposerOutSchema = z.object({
+    email: z.string().nullable(),
+    user_id: z.string()
+});
+
+/**
  * QuotasOut
  */
 export const zQuotasOutSchema = z.object({
@@ -1564,6 +1572,80 @@ export const zSignedFileOutSchema = z.object({
     fields: z.record(z.string(), z.string()),
     name: z.string(),
     url: z.string()
+});
+
+/**
+ * SourceDecisionIn
+ */
+export const zSourceDecisionInSchema = z.object({
+    version: z.int().gte(1)
+});
+
+/**
+ * SourceIn
+ */
+export const zSourceInSchema = z.object({
+    location: z.string().max(600)
+});
+
+/**
+ * SourceStatus
+ *
+ * Of a source on an existing bucket (D88 (10), (20)).
+ */
+export const zSourceStatusSchema = z.enum([
+    'pending',
+    'approved',
+    'rejected',
+    'withdrawn',
+    'removing'
+]);
+
+/**
+ * PendingSourceOut
+ */
+export const zPendingSourceOutSchema = z.object({
+    bucket: z.string(),
+    can_decide: z.boolean(),
+    decided_at: z.iso.datetime().nullable(),
+    kb_id: z.string(),
+    knowledge_base: z.string(),
+    prefix: z.string(),
+    proposed_at: z.iso.datetime(),
+    proposed_by: zProposerOutSchema,
+    src_id: z.string(),
+    status: zSourceStatusSchema,
+    version: z.int()
+});
+
+/**
+ * PendingSourceListOut
+ */
+export const zPendingSourceListOutSchema = z.object({
+    items: z.array(zPendingSourceOutSchema)
+});
+
+/**
+ * SourceOut
+ */
+export const zSourceOutSchema = z.object({
+    bucket: z.string(),
+    can_decide: z.boolean(),
+    decided_at: z.iso.datetime().nullable(),
+    kb_id: z.string(),
+    prefix: z.string(),
+    proposed_at: z.iso.datetime(),
+    proposed_by: zProposerOutSchema,
+    src_id: z.string(),
+    status: zSourceStatusSchema,
+    version: z.int()
+});
+
+/**
+ * SourceListOut
+ */
+export const zSourceListOutSchema = z.object({
+    items: z.array(zSourceOutSchema)
 });
 
 /**
@@ -2990,6 +3072,62 @@ export const zSearchPath = z.object({
  */
 export const zSearchResponse = zSearchOutSchema;
 
+export const zListSourcesPath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zListSourcesResponse = zSourceListOutSchema;
+
+export const zProposeBody = zSourceInSchema;
+
+export const zProposePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zProposeResponse = zSourceOutSchema;
+
+export const zApproveSourceBody = zSourceDecisionInSchema;
+
+export const zApproveSourcePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+    src_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zApproveSourceResponse = zSourceOutSchema;
+
+export const zDeleteSourceBody = zSourceDecisionInSchema;
+
+export const zDeleteSourcePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+    src_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDeleteSourceResponse = zSourceOutSchema;
+
+export const zRejectSourceBody = zSourceDecisionInSchema;
+
+export const zRejectSourcePath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+    src_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRejectSourceResponse = zSourceOutSchema;
+
 export const zSynchronizeKnowledgeBaseBody = zEmptyInSchema;
 
 export const zSynchronizeKnowledgeBasePath = z.object({
@@ -3011,6 +3149,11 @@ export const zRequestDocumentUploadsPath = z.object({
  * Successful Response
  */
 export const zRequestDocumentUploadsResponse = zUploadsOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zPendingSourcesResponse = zPendingSourceListOutSchema;
 
 /**
  * Successful Response

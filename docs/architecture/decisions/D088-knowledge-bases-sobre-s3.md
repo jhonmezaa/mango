@@ -1,7 +1,7 @@
 # D88 · Knowledge bases: una entidad compartida entre agentes, con documentos de S3
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente; el rol que firma las subidas, punto 33, elegido por el dueño ese día, nota propuesta por un agente; 2026-10-22: los permisos de la ingesta directa, punto 34, diagnosticados por el dueño ese día en la instalación, nota propuesta por un agente; lo construido de la asociación con agentes en la API, punto 35, nota de ese día propuesta por un agente; lo construido de la tool, punto 36, nota de ese día propuesta por un agente, con sus cuatro precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido de «Probar búsqueda», punto 37, nota de ese día propuesta por un agente, con su autorización, que precisa el punto 29, elegida por el dueño ese día, por menú: «Verla y estar en sus grupos (Recomendada)»)
+- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente; el rol que firma las subidas, punto 33, elegido por el dueño ese día, nota propuesta por un agente; 2026-10-22: los permisos de la ingesta directa, punto 34, diagnosticados por el dueño ese día en la instalación, nota propuesta por un agente; lo construido de la asociación con agentes en la API, punto 35, nota de ese día propuesta por un agente; lo construido de la tool, punto 36, nota de ese día propuesta por un agente, con sus cuatro precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido de «Probar búsqueda», punto 37, nota de ese día propuesta por un agente, con su autorización, que precisa el punto 29, elegida por el dueño ese día, por menú: «Verla y estar en sus grupos (Recomendada)»; lo construido de las fuentes en la API, punto 38, nota de ese día propuesta por un agente, con tres precisiones elegidas ese día por menú por el agente que lanzó el trabajo)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (la alerta de las knowledge bases: qué significa cuando el filtro sale de quien pregunta) y [D25](D025-recursos-creados-en-runtime.md) (el primer caso de KB: sin stacks de CloudFormation en ejecución); toma el diseño de §4.4
 - **Precisada por:** —
 
@@ -216,3 +216,36 @@ La sincronización, además:
 - **Throttling:** si Bedrock rechaza la búsqueda por su cuota, la ruta responde 503 `search_busy` y deja una línea en el log de `mango-api`. Un filtro de métricas la suma a `RetrieveThrottles`, así la alarma de (28) cuenta la tool y la prueba. Es el segundo filtro de métricas de `Core`, después del de D71 (18).
 - **`mango-api`** puede hacer `bedrock:Retrieve` sobre la base de la instalación, en su política `Mango-<ns>-ApiKnowledge`, y nada más de Bedrock en ella. Lo fija un test.
 - **Pendiente de ver en la instalación:** que la prueba devuelva fragmentos de una KB indexada a quien está en sus grupos, y que un administrador fuera de ellos reciba 403.
+
+**(38) Estado de lo construido: las fuentes de bucket existente, en la API (2026-10-22).** Construidas con tests, sin ver en una instalación. Es el PR 7a del plan, y lo que sigue llega después: el rol de cada fuente (7b) y la copia en la sincronización con su frecuencia (7c). El código está en `apps/api/src/mango_api/knowledge_sources.py`, con las políticas `knowledge-source-propose.cedar` y `knowledge-source-approve.cedar`.
+
+El agente que lanzó el trabajo eligió por menú tres precisiones, siempre la opción recomendada:
+- el PR 7 va en tres partes;
+- el rol `Mango-<ns>-kbsrc-<src>` lo crea y lo borra una función propia, `Mango-<ns>-KnowledgeSources` (7b), y no el provisioner de agentes ni el de packs;
+- la Bandeja y Aprobaciones muestran las fuentes pendientes cuando llegue su diseño (D24). Por ahora solo existe la API.
+
+Lo demás de este punto lo propuso un agente:
+
+- **Rutas:**
+  - `GET` y `POST /api/knowledge-bases/{id}/sources`;
+  - `POST …/sources/{src_id}/approve`, `…/reject` y `…/delete`;
+  - `GET /api/knowledge-sources/pending`, la lista de lo que el administrador puede firmar, sin lo que propuso él.
+- **Quién (Cedar L1, (13)):**
+  - `ProposeKbSource` es la regla de `EditKnowledgeBase`: el dueño mientras sea creador, o un administrador. Con ella también se quita una fuente.
+  - `ApproveKbSource` es para administradores.
+  - Que no decida quien propuso, también si es administrador (20), lo comprueban `mango-api` y una condición de la tabla (`proposed_by <> :me`), como en la revisión de agentes.
+  - La lista de fuentes la ve quien ve los documentos.
+- **La propuesta:**
+  - `s3://bucket/prefijo/`, con el prefijo vacío o terminado en `/`;
+  - hasta 5 fuentes activas por KB, sin repetir bucket y prefijo;
+  - la fuente queda `pending`;
+  - el bucket y el prefijo no cambian nunca: otro es otra propuesta (20).
+  - Estados: `pending`, `approved`, `rejected`, `withdrawn` (quitada antes de decidir) y `removing` (quitada después de aprobar: su rol y sus documentos se borran en 7b y 7c).
+- **El chequeo del bucket (precisa (10)):**
+  - se hace al proponer y otra vez al aprobar;
+  - se rechaza todo bucket `mango-*`, de esta instalación o de otra de la cuenta;
+  - para saber que el bucket es de la cuenta se pide su cifrado (`GetBucketEncryption`) con `ExpectedBucketOwner`, y no `HeadBucket`. `HeadBucket` exige `s3:ListBucket`, que dejaría a `mango-api` listar cualquier bucket de la cuenta. Así `mango-api` solo tiene `s3:GetEncryptionConfiguration`, solo para buckets de la cuenta (`s3:ResourceAccount`), y no lee ni lista objetos;
+  - se aceptan SSE-S3 (el cifrado por defecto de todo bucket) y la llave `aws/s3`; una llave propia se rechaza (17);
+  - si S3 no responde, no se propone ni se aprueba (503).
+- **Auditoría:** `kb.source_propose`, `kb.source_approve`, `kb.source_reject` y `kb.source_remove`, antes y después de escribir, con el ARN (20). Cuentan en el límite de cambios de las KBs.
+- **Pendiente:** el rol de la fuente (7b), la copia y la frecuencia (7c), y la tarjeta de Aprobaciones y la Bandeja (diseño). Hasta el 7b, una fuente aprobada no se lee.

@@ -244,6 +244,7 @@ describe("knowledge bases: fixed resources in Core", () => {
     const [tableId] = only("AWS::DynamoDB::GlobalTable", { TableName: `Mango-${ns}-Knowledge` });
     const sids = bySid(policy.Properties.PolicyDocument.Statement as Statement[]);
     expect(Object.keys(sids).sort()).toEqual([
+      "CheckSourceBuckets",
       "DocumentsKey",
       "KnowledgeTable",
       "KnowledgeTableKey",
@@ -255,6 +256,9 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(actions(sids.StartSync!)).toEqual(["states:StartExecution"]);
     // «Probar búsqueda» (D88 (12)): searching the one base, nothing else of Bedrock.
     expect(actions(sids.SearchKnowledgeBase!)).toEqual(["bedrock:Retrieve"]);
+    // Sources (D88 (10)): the encryption of buckets of this account only; nothing of their objects.
+    expect(actions(sids.CheckSourceBuckets!)).toEqual(["s3:GetEncryptionConfiguration"]);
+    expect(sids.CheckSourceBuckets!.Condition).toEqual({ StringEquals: { "s3:ResourceAccount": account } });
     expect(sids.SearchKnowledgeBase!.Resource).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseArn"] });
     // Uploads: checked under uploads/ only, never signed by this role (presign.test.ts); saved
     // documents: only written, under kb/*/docs/.

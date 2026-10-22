@@ -448,6 +448,8 @@ export class Knowledge extends Construct {
       KNOWLEDGE_EMBEDDING_PRICE: String(props.embeddingPrice),
       // «Probar búsqueda» (D88 (12)).
       KNOWLEDGE_BASE_ID: this.knowledgeBase.attrKnowledgeBaseId,
+      // The only account whose buckets may be sources (D88 (10)).
+      ACCOUNT_ID: Stack.of(this).account,
     };
   }
 
@@ -896,6 +898,14 @@ export class Knowledge extends Construct {
           actions: ["bedrock:Retrieve"],
           resources: [this.knowledgeBase.attrKnowledgeBaseArn],
         }),
+        // A source on an existing bucket (D88 (10)): its encryption, asked with the expected
+        // owner, says it is a bucket of this account. No listing, no reading of objects.
+        new iam.PolicyStatement({
+          sid: "CheckSourceBuckets",
+          actions: ["s3:GetEncryptionConfiguration"],
+          resources: ["arn:aws:s3:::*"],
+          conditions: { StringEquals: { "s3:ResourceAccount": Stack.of(this).account } },
+        }),
         // After saving, deleting a document or a base, or «Sincronizar ahora» (D88 (11)).
         new iam.PolicyStatement({
           sid: "StartSync",
@@ -914,6 +924,12 @@ export class Knowledge extends Construct {
       {
         id: `AwsSolutions-IAM5[Resource::<${bucketId}.Arn>/${KNOWLEDGE_PREFIXES.bases}*/docs/*]`,
         reason: "Saved documents are keyed at runtime by ULIDs under kb/<kb_id>/docs/ (D88 (9)).",
+      },
+      {
+        id: "AwsSolutions-IAM5[Resource::arn:aws:s3:::*]",
+        reason:
+          "Sources name buckets of the installation's account at runtime (D88 (10)): only their encryption " +
+          "configuration is read, and only of buckets of this account (s3:ResourceAccount).",
       },
     );
   }

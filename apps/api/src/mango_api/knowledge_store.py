@@ -16,7 +16,10 @@ Item layout, all under ``PK = KB#<kb id>`` (a ULID, ``mango_core.knowledge``):
   On the knowledge base, ``sync_id`` is the one running (mango-api claims it before starting
   the state machine) and ``sync_again`` who asked for one more meanwhile; ``deleting_since``
   is when the oldest pending deletion was asked for (the alarm of D88 (16)).
-* Sources (``SRC#``) come with PR 7 (D88 (10)).
+* ``SK = SRC#<source id>``: a source on an existing bucket of the installation's account
+  (D88 (10)): its bucket and prefix, which never change (another bucket or prefix is another
+  proposal, D88 (20)), who proposed it and who decided. While it is ``pending`` it is also in
+  the index ``All`` under ``all_pk`` = ``SRC_PENDING``: the administrators' list to sign.
 
 The counters of a knowledge base (``documents``, ``bytes``) grow in the same transaction as
 the documents they count, so the limits of D88 (9) hold whoever saves at the same time.
@@ -35,7 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import ClientError
 
-from mango_core.knowledge import DocumentStatus, Status
+from mango_core.knowledge import DocumentStatus, SourceStatus, Status
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
@@ -43,6 +46,8 @@ if TYPE_CHECKING:
 INDEX_ALL = "All"
 SK_META = "META"
 ALL_PK = "KB"
+PENDING_SOURCES_PK = "SRC_PENDING"
+"""``all_pk`` of the sources waiting for a decision (the index ``All``)."""
 MAX_LISTED = 1000
 """Knowledge bases a list reads at most: far above what an installation holds."""
 MAX_DOCUMENTS = 1000
@@ -112,6 +117,24 @@ class Document:
     created_at: str
 
 
+@dataclass(frozen=True)
+class Source:
+    """A source on an existing bucket (D88 (10))."""
+
+    kb_id: str
+    src_id: str
+    bucket: str
+    prefix: str
+    status: SourceStatus
+    proposed_by: str
+    proposed_by_email: str | None
+    proposed_at: str
+    version: int
+    decided_by: str | None = None
+    decided_at: str | None = None
+    removed_by: str | None = None
+
+
 class KnowledgeLimitError(Exception):
     """The documents would pass the limits of the knowledge base (D88 (9))."""
 
@@ -162,6 +185,23 @@ def _knowledge_base(item: dict[str, Any]) -> KnowledgeBase:
 
 def _conditional(exc: ClientError) -> bool:
     return exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException"
+
+
+def _source(item: dict[str, Any]) -> Source:
+    return Source(
+        kb_id=item["kb_id"]["S"],
+        src_id=item["src_id"]["S"],
+        bucket=item["bucket"]["S"],
+        prefix=_str(item, "prefix") or "",
+        status=SourceStatus(item["status"]["S"]),
+        proposed_by=item["proposed_by"]["S"],
+        proposed_by_email=_str(item, "proposed_by_email"),
+        proposed_at=item["proposed_at"]["S"],
+        version=_int(item, "version"),
+        decided_by=_str(item, "decided_by"),
+        decided_at=_str(item, "decided_at"),
+        removed_by=_str(item, "removed_by"),
+    )
 
 
 def _upload(item: dict[str, Any]) -> Upload:
@@ -565,3 +605,159 @@ class KnowledgeStore:
             if exc.response.get("Error", {}).get("Code") == "TransactionCanceledException":
                 raise KnowledgeConflictError from exc
             raise KnowledgeStoreUnavailableError from exc
+
+    # --- Sources on existing buckets (D88 (10), (20)) ---------------------------------------
+
+    def put_source(self, source: Source) -> None:
+        """A new proposal, ``pending``; the knowledge base must exist and not be deleted."""
+        item: dict[str, Any] = {
+            "PK": _s(_pk(source.kb_id)),
+            "SK": _s(f"SRC#{source.src_id}"),
+            "all_pk": _s(PENDING_SOURCES_PK),
+            "created_at": _s(source.proposed_at),
+            "kb_id": _s(source.kb_id),
+            "src_id": _s(source.src_id),
+            "bucket": _s(source.bucket),
+            "status": _s(source.status),
+            "proposed_by": _s(source.proposed_by),
+            "proposed_at": _s(source.proposed_at),
+            "version": _n(source.version),
+        }
+        if source.prefix:
+            item["prefix"] = _s(source.prefix)
+        if source.proposed_by_email:
+            item["proposed_by_email"] = _s(source.proposed_by_email)
+        pk = _s(_pk(source.kb_id))
+        try:
+            self._db.transact_write_items(
+                TransactItems=[
+                    {
+                        "ConditionCheck": {
+                            "TableName": self._table,
+                            "Key": {"PK": pk, "SK": _s(SK_META)},
+                            "ConditionExpression": "attribute_exists(PK) AND #status <> :deleting",
+                            "ExpressionAttributeNames": {"#status": "status"},
+                            "ExpressionAttributeValues": {":deleting": _s(Status.DELETING)},
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self._table,
+                            "Item": item,
+                            "ConditionExpression": "attribute_not_exists(PK)",
+                        }
+                    },
+                ]
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "TransactionCanceledException":
+                raise KnowledgeConflictError from exc
+            raise KnowledgeStoreUnavailableError from exc
+
+    def sources(self, kb_id: str) -> list[Source]:
+        """Every source of a knowledge base, oldest first (a few: ``MAX_SOURCES`` active)."""
+        out: list[Source] = []
+        start: dict[str, Any] | None = None
+        try:
+            while True:
+                request: dict[str, Any] = {
+                    "TableName": self._table,
+                    "KeyConditionExpression": "PK = :pk AND begins_with(SK, :src)",
+                    "ExpressionAttributeValues": {":pk": _s(_pk(kb_id)), ":src": _s("SRC#")},
+                    "ConsistentRead": True,
+                }
+                if start:
+                    request["ExclusiveStartKey"] = start
+                page = self._db.query(**request)
+                out.extend(_source(item) for item in page.get("Items", []))
+                start = page.get("LastEvaluatedKey")
+                if not start or len(out) >= MAX_LISTED:
+                    break
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+        return out
+
+    def source(self, kb_id: str, src_id: str) -> Source | None:
+        try:
+            resp = self._db.get_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(kb_id)), "SK": _s(f"SRC#{src_id}")},
+                ConsistentRead=True,
+            )
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+        item = resp.get("Item")
+        return _source(item) if item else None
+
+    def pending_sources(self) -> list[Source]:
+        """Sources waiting for a decision, in every knowledge base, oldest first."""
+        out: list[Source] = []
+        start: dict[str, Any] | None = None
+        try:
+            while len(out) < MAX_LISTED:
+                request: dict[str, Any] = {
+                    "TableName": self._table,
+                    "IndexName": INDEX_ALL,
+                    "KeyConditionExpression": "all_pk = :a",
+                    "ExpressionAttributeValues": {":a": _s(PENDING_SOURCES_PK)},
+                    "Limit": _PAGE,
+                }
+                if start:
+                    request["ExclusiveStartKey"] = start
+                page = self._db.query(**request)
+                out.extend(_source(item) for item in page.get("Items", []))
+                start = page.get("LastEvaluatedKey")
+                if not start:
+                    break
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+        return out[:MAX_LISTED]
+
+    def set_source_status(
+        self,
+        source: Source,
+        status: SourceStatus,
+        *,
+        by: str,
+        now: str,
+        not_proposed_by: str | None = None,
+    ) -> Source:
+        """Move ``source`` from the status it was read in to ``status``, if nobody changed it
+        since (its ``version``). ``not_proposed_by``: the change must not be made by whoever
+        proposed it (D88 (20)), checked by the table too. Leaving ``pending`` takes it out of
+        the administrators' list."""
+        names = {"#version": "version", "#status": "status"}
+        values: dict[str, Any] = {
+            ":expected": _n(source.version),
+            ":next": _n(source.version + 1),
+            ":from": _s(source.status),
+            ":to": _s(status),
+            ":by": _s(by),
+            ":now": _s(now),
+        }
+        condition = "attribute_exists(PK) AND #version = :expected AND #status = :from"
+        if not_proposed_by is not None:
+            names["#proposed_by"] = "proposed_by"
+            values[":me"] = _s(not_proposed_by)
+            condition += " AND #proposed_by <> :me"
+        # Approving or rejecting is a decision; withdrawing or removing keeps who decided.
+        decided = status in (SourceStatus.APPROVED, SourceStatus.REJECTED)
+        names["#by"], names["#at"] = (
+            ("decided_by", "decided_at") if decided else ("removed_by", "removed_at")
+        )
+        expression = "SET #status = :to, #version = :next, #by = :by, #at = :now REMOVE all_pk"
+        try:
+            resp = self._db.update_item(
+                TableName=self._table,
+                Key={"PK": _s(_pk(source.kb_id)), "SK": _s(f"SRC#{source.src_id}")},
+                UpdateExpression=expression,
+                ConditionExpression=condition,
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+                ReturnValues="ALL_NEW",
+            )
+        except ClientError as exc:
+            if _conditional(exc):
+                raise KnowledgeConflictError from exc
+            raise KnowledgeStoreUnavailableError from exc
+        return _source(resp["Attributes"])

@@ -112,6 +112,12 @@
       },
       "UseKnowledgeBase": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["KnowledgeBase"] }
+      },
+      "ProposeKbSource": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["KnowledgeBase"] }
+      },
+      "ApproveKbSource": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["KnowledgeBase"] }
       }
     }
   }

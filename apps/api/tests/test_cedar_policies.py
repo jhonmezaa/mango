@@ -293,6 +293,16 @@ def test_the_retrieve_tool_decides_like_use_knowledge_base(
     assert by_tool == by_policy
 
 
+def test_sources_are_proposed_like_edits_and_decided_by_admins(authz: Authorizer) -> None:
+    # D88 (20): the owner while a creator, or an administrator, proposes; administrators
+    # decide. "Not whoever proposed it" is mango-api's and the table's (test_knowledge_sources).
+    assert _kb_allowed(authz, "ProposeKbSource", _kb()) == _kb_allowed(
+        authz, "EditKnowledgeBase", _kb()
+    )
+    assert _kb_allowed(authz, "ProposeKbSource", _kb()) == {"admin-1", "creator-1"}
+    assert _kb_allowed(authz, "ApproveKbSource", _kb()) == {"admin-1"}
+
+
 def test_knowledge_base_attributes_must_match_the_resource(authz: Authorizer) -> None:
     assert not authz.is_allowed(
         ADMIN, "EditKnowledgeBase", KNOWLEDGE_BASE_TYPE, "other", knowledge=_kb()

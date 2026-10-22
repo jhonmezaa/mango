@@ -2455,6 +2455,60 @@ export type PauseIn = {
 };
 
 /**
+ * PendingSourceListOut
+ */
+export type PendingSourceListOut = {
+    /**
+     * Items
+     */
+    items: Array<PendingSourceOut>;
+};
+
+/**
+ * PendingSourceOut
+ */
+export type PendingSourceOut = {
+    /**
+     * Bucket
+     */
+    bucket: string;
+    /**
+     * Can Decide
+     */
+    can_decide: boolean;
+    /**
+     * Decided At
+     */
+    decided_at: string | null;
+    /**
+     * Kb Id
+     */
+    kb_id: string;
+    /**
+     * Knowledge Base
+     */
+    knowledge_base: string;
+    /**
+     * Prefix
+     */
+    prefix: string;
+    /**
+     * Proposed At
+     */
+    proposed_at: string;
+    proposed_by: ProposerOut;
+    /**
+     * Src Id
+     */
+    src_id: string;
+    status: SourceStatus;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * PeopleOut
  */
 export type PeopleOut = {
@@ -2641,6 +2695,20 @@ export type ProposalIn = {
     units: {
         [key: string]: unknown | Array<string>;
     };
+};
+
+/**
+ * ProposerOut
+ */
+export type ProposerOut = {
+    /**
+     * Email
+     */
+    email: string | null;
+    /**
+     * User Id
+     */
+    user_id: string;
 };
 
 /**
@@ -3357,6 +3425,83 @@ export type SignedFileOut = {
      */
     url: string;
 };
+
+/**
+ * SourceDecisionIn
+ */
+export type SourceDecisionIn = {
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * SourceIn
+ */
+export type SourceIn = {
+    /**
+     * Location
+     */
+    location: string;
+};
+
+/**
+ * SourceListOut
+ */
+export type SourceListOut = {
+    /**
+     * Items
+     */
+    items: Array<SourceOut>;
+};
+
+/**
+ * SourceOut
+ */
+export type SourceOut = {
+    /**
+     * Bucket
+     */
+    bucket: string;
+    /**
+     * Can Decide
+     */
+    can_decide: boolean;
+    /**
+     * Decided At
+     */
+    decided_at: string | null;
+    /**
+     * Kb Id
+     */
+    kb_id: string;
+    /**
+     * Prefix
+     */
+    prefix: string;
+    /**
+     * Proposed At
+     */
+    proposed_at: string;
+    proposed_by: ProposerOut;
+    /**
+     * Src Id
+     */
+    src_id: string;
+    status: SourceStatus;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * SourceStatus
+ *
+ * Of a source on an existing bucket (D88 (10), (20)).
+ */
+export type SourceStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'removing';
 
 /**
  * StateIn
@@ -6767,6 +6912,168 @@ export type SearchResponses = {
 
 export type SearchResponse = SearchResponses[keyof SearchResponses];
 
+export type ListSourcesData = {
+    body?: never;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/sources';
+};
+
+export type ListSourcesErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListSourcesError = ListSourcesErrors[keyof ListSourcesErrors];
+
+export type ListSourcesResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceListOut;
+};
+
+export type ListSourcesResponse = ListSourcesResponses[keyof ListSourcesResponses];
+
+export type ProposeData = {
+    body: SourceIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/sources';
+};
+
+export type ProposeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ProposeError = ProposeErrors[keyof ProposeErrors];
+
+export type ProposeResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceOut;
+};
+
+export type ProposeResponse = ProposeResponses[keyof ProposeResponses];
+
+export type ApproveSourceData = {
+    body: SourceDecisionIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+        /**
+         * Src Id
+         */
+        src_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/sources/{src_id}/approve';
+};
+
+export type ApproveSourceErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ApproveSourceError = ApproveSourceErrors[keyof ApproveSourceErrors];
+
+export type ApproveSourceResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceOut;
+};
+
+export type ApproveSourceResponse = ApproveSourceResponses[keyof ApproveSourceResponses];
+
+export type DeleteSourceData = {
+    body: SourceDecisionIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+        /**
+         * Src Id
+         */
+        src_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/sources/{src_id}/delete';
+};
+
+export type DeleteSourceErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DeleteSourceError = DeleteSourceErrors[keyof DeleteSourceErrors];
+
+export type DeleteSourceResponses = {
+    /**
+     * Successful Response
+     */
+    202: SourceOut;
+};
+
+export type DeleteSourceResponse = DeleteSourceResponses[keyof DeleteSourceResponses];
+
+export type RejectSourceData = {
+    body: SourceDecisionIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+        /**
+         * Src Id
+         */
+        src_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/sources/{src_id}/reject';
+};
+
+export type RejectSourceErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RejectSourceError = RejectSourceErrors[keyof RejectSourceErrors];
+
+export type RejectSourceResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceOut;
+};
+
+export type RejectSourceResponse = RejectSourceResponses[keyof RejectSourceResponses];
+
 export type SynchronizeKnowledgeBaseData = {
     body: EmptyIn;
     path: {
@@ -6826,6 +7133,31 @@ export type RequestDocumentUploadsResponses = {
 };
 
 export type RequestDocumentUploadsResponse = RequestDocumentUploadsResponses[keyof RequestDocumentUploadsResponses];
+
+export type PendingSourcesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/knowledge-sources/pending';
+};
+
+export type PendingSourcesErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PendingSourcesError = PendingSourcesErrors[keyof PendingSourcesErrors];
+
+export type PendingSourcesResponses = {
+    /**
+     * Successful Response
+     */
+    200: PendingSourceListOut;
+};
+
+export type PendingSourcesResponse = PendingSourcesResponses[keyof PendingSourcesResponses];
 
 export type GetCatalogData = {
     body?: never;

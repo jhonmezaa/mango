@@ -84,6 +84,8 @@ class Settings:
     """Version of the installed release (``release.yaml``)."""
     organization_id: str = ""
     management_account_id: str = ""
+    account_id: str = ""
+    """The account of the installation: the only one whose buckets may be sources (D88 (10))."""
     alerts_email: str = ""
     first_admin_emails: str = ""
     """Administrators named by the installation, comma separated (display only)."""
@@ -184,6 +186,7 @@ class Settings:
             release=env.get("MANGO_RELEASE", ""),
             organization_id=env.get("ORGANIZATION_ID", ""),
             management_account_id=env.get("MANAGEMENT_ACCOUNT_ID", ""),
+            account_id=env.get("ACCOUNT_ID", ""),
             alerts_email=env.get("ALERTS_EMAIL", ""),
             first_admin_emails=env.get("FIRST_ADMIN_EMAILS", ""),
             app_origin=env.get("APP_ORIGIN", ""),

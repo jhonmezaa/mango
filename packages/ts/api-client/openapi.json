@@ -4587,6 +4587,94 @@
         "title": "PauseIn",
         "type": "object"
       },
+      "PendingSourceListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingSourceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PendingSourceListOut",
+        "type": "object"
+      },
+      "PendingSourceOut": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "can_decide": {
+            "title": "Can Decide",
+            "type": "boolean"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "kb_id": {
+            "title": "Kb Id",
+            "type": "string"
+          },
+          "knowledge_base": {
+            "title": "Knowledge Base",
+            "type": "string"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "proposed_at": {
+            "format": "date-time",
+            "title": "Proposed At",
+            "type": "string"
+          },
+          "proposed_by": {
+            "$ref": "#/components/schemas/ProposerOut"
+          },
+          "src_id": {
+            "title": "Src Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SourceStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "src_id",
+          "kb_id",
+          "bucket",
+          "prefix",
+          "status",
+          "proposed_by",
+          "proposed_at",
+          "decided_at",
+          "version",
+          "can_decide",
+          "knowledge_base"
+        ],
+        "title": "PendingSourceOut",
+        "type": "object"
+      },
       "PeopleOut": {
         "additionalProperties": false,
         "properties": {
@@ -4964,6 +5052,32 @@
           "reason"
         ],
         "title": "ProposalIn",
+        "type": "object"
+      },
+      "ProposerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "title": "ProposerOut",
         "type": "object"
       },
       "QuotasOut": {
@@ -6437,6 +6551,131 @@
         ],
         "title": "SignedFileOut",
         "type": "object"
+      },
+      "SourceDecisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "SourceDecisionIn",
+        "type": "object"
+      },
+      "SourceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "maxLength": 600,
+            "title": "Location",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "title": "SourceIn",
+        "type": "object"
+      },
+      "SourceListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SourceListOut",
+        "type": "object"
+      },
+      "SourceOut": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "can_decide": {
+            "title": "Can Decide",
+            "type": "boolean"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "kb_id": {
+            "title": "Kb Id",
+            "type": "string"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "proposed_at": {
+            "format": "date-time",
+            "title": "Proposed At",
+            "type": "string"
+          },
+          "proposed_by": {
+            "$ref": "#/components/schemas/ProposerOut"
+          },
+          "src_id": {
+            "title": "Src Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SourceStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "src_id",
+          "kb_id",
+          "bucket",
+          "prefix",
+          "status",
+          "proposed_by",
+          "proposed_at",
+          "decided_at",
+          "version",
+          "can_decide"
+        ],
+        "title": "SourceOut",
+        "type": "object"
+      },
+      "SourceStatus": {
+        "description": "Of a source on an existing bucket (D88 (10), (20)).",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "withdrawn",
+          "removing"
+        ],
+        "title": "SourceStatus",
+        "type": "string"
       },
       "StateIn": {
         "additionalProperties": false,
@@ -12151,6 +12390,274 @@
         "summary": "Search"
       }
     },
+    "/knowledge-bases/{kb_id}/sources": {
+      "get": {
+        "operationId": "list_sources",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List Sources"
+      },
+      "post": {
+        "operationId": "propose",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Propose"
+      }
+    },
+    "/knowledge-bases/{kb_id}/sources/{src_id}/approve": {
+      "post": {
+        "operationId": "approve_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "src_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Src Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve Source"
+      }
+    },
+    "/knowledge-bases/{kb_id}/sources/{src_id}/delete": {
+      "post": {
+        "operationId": "delete_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "src_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Src Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Source"
+      }
+    },
+    "/knowledge-bases/{kb_id}/sources/{src_id}/reject": {
+      "post": {
+        "operationId": "reject_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "src_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Src Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reject Source"
+      }
+    },
     "/knowledge-bases/{kb_id}/sync": {
       "post": {
         "description": "«Sincronizar ahora» (design 1).",
@@ -12250,6 +12757,35 @@
           }
         },
         "summary": "Request Document Uploads"
+      }
+    },
+    "/knowledge-sources/pending": {
+      "get": {
+        "description": "What the caller may sign (D88 (20)): never what they proposed.",
+        "operationId": "pending_sources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingSourceListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Pending Sources"
       }
     },
     "/mcp/catalog": {
