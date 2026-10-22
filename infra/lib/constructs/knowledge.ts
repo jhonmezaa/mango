@@ -525,15 +525,29 @@ export class Knowledge extends Construct {
         }),
         new iam.PolicyStatement({
           sid: "SavedDocuments",
-          // Reading is the S3 location of an ingestion; deleting, a verified deletion.
-          actions: ["s3:DeleteObject", "s3:GetObject"],
+          // Reading is the S3 location of an ingestion; deleting, a verified deletion; writing,
+          // the copy of a document of a source (D88 (19)).
+          actions: ["s3:DeleteObject", "s3:GetObject", "s3:PutObject"],
           resources: [documents],
         }),
         new iam.PolicyStatement({
           sid: "DocumentsKey",
-          actions: ["kms:Decrypt"],
+          actions: ["kms:Decrypt", "kms:GenerateDataKey"],
           resources: [this.key.keyArn],
           conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+        }),
+        new iam.PolicyStatement({
+          sid: "ReadSourcesAsWhoeverSynchronizes",
+          // The role of each approved source (D88 (39)), always with the SourceIdentity of who
+          // synchronizes (rule 5): the roles require it too.
+          actions: ["sts:AssumeRole", "sts:SetSourceIdentity"],
+          resources: [`arn:aws:iam::${account}:role/${mangoName(ns, "kbsrc-")}*`],
+        }),
+        new iam.PolicyStatement({
+          sid: "AskForSourceRoles",
+          // A source approved without a role, or removed with one, asks again (D88 (39)).
+          actions: ["lambda:InvokeFunction"],
+          resources: [`arn:aws:lambda:${region}:${account}:function:${mangoName(ns, "KnowledgeSources")}`],
         }),
         new iam.PolicyStatement({
           sid: "StartNextSync",
@@ -560,6 +574,12 @@ export class Knowledge extends Construct {
         id: `AwsSolutions-IAM5[Resource::<${bucketId}.Arn>/${KNOWLEDGE_PREFIXES.bases}*/docs/*]`,
         reason: "Saved documents are keyed at runtime by ULIDs under kb/<kb_id>/docs/ (D88 (9)).",
       },
+      {
+        id: `AwsSolutions-IAM5[Resource::arn:aws:iam::<AWS::AccountId>:role/${mangoName(ns, "kbsrc-")}*]`,
+        reason:
+          "The roles of the sources are created at runtime, one per approved source (D88 (39)); each one trusts " +
+          "only this role, with a SourceIdentity.",
+      },
     );
 
     const fn = new PythonFunction(this, "Sync", {
@@ -570,9 +590,10 @@ export class Knowledge extends Construct {
       functionName: mangoName(ns, "KnowledgeSync"),
       description: "Steps of the knowledge sync: ingests, verifies and deletes documents (D88)",
       role,
-      // A step is at most 25 documents, or the deletions of one verification.
+      // A step is at most 25 documents, the deletions of one verification, or 3 minutes of
+      // copying from a source (documents of up to 50 MB, held in memory while copied).
       timeout: Duration.minutes(5),
-      memorySize: 512,
+      memorySize: 1024,
       environment: {
         MANGO_NAMESPACE: ns,
         KNOWLEDGE_TABLE: this.table.tableName,
@@ -585,6 +606,7 @@ export class Knowledge extends Construct {
         AUDIT_STREAM: props.auditStream.deliveryStreamName,
         AUDIT_INDEX_TABLE: props.auditIndex.tableName,
         EMBEDDING_PRICE: String(props.embeddingPrice),
+        SOURCES_FUNCTION: mangoName(ns, "KnowledgeSources"),
       },
       environmentEncryption: props.configKey,
     }).function;
@@ -625,6 +647,7 @@ export class Knowledge extends Construct {
       return task;
     };
     const acquire = forward("Acquire", "acquire");
+    const copy = forward("Copy", "copy");
     const plan = forward("Plan", "plan");
     const ingest = forward("Ingest", "ingest");
     const poll = forward("Poll", "poll");
@@ -660,7 +683,14 @@ export class Knowledge extends Construct {
       .otherwise(
         acquire.next(
           new sfn.Choice(this, "Locked?")
-            .when(sfn.Condition.booleanEquals("$.locked", true), plan.next(ingesting))
+            .when(
+              sfn.Condition.booleanEquals("$.locked", true),
+              copy.next(
+                new sfn.Choice(this, "Copying?")
+                  .when(sfn.Condition.booleanEquals("$.copy_more", true), copy)
+                  .otherwise(plan.next(ingesting)),
+              ),
+            )
             .when(sfn.Condition.booleanEquals("$.gave_up", true), finish)
             .otherwise(waitLock.next(acquire)),
         ),

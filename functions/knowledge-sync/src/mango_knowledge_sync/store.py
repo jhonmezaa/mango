@@ -6,7 +6,12 @@ Layout (``mango_api.knowledge_store`` is the other writer, and documents it):
   the groups and the classification of every fragment. The synchronization sets ``status``,
   takes down the counters of what it deleted, and owns ``sync_id`` (the one running),
   ``sync_again`` (one more, asked for while it ran) and ``deleting_since``.
-* ``KB#<kb id>`` / ``DOC#<doc id>``: a document and its status.
+* ``KB#<kb id>`` / ``DOC#<doc id>``: a document and its status. One copied from a source also
+  has ``src_id``, the key it has there (``source_key``) and the ETag it was copied at
+  (``source_etag``): the next synchronization compares them with the bucket (D88 (19)).
+* ``KB#<kb id>`` / ``SRC#<source id>``: a source on an existing bucket, written by mango-api
+  (and its role's ARN by ``Mango-<ns>-KnowledgeSources``). The synchronization reads it, and
+  deletes the record of a removed source once its documents and its role are gone.
 * ``KB#<kb id>`` / ``SYNC#<sync id>``: one synchronization: who asked, what it reserved and
   charged, how many documents it ingested, indexed, failed and deleted.
 * ``LOCK#<bedrock kb id>`` / ``LOCK``: one synchronization at a time per Bedrock knowledge
@@ -22,7 +27,13 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from mango_core.knowledge import DocumentStatus, Status
+from mango_core.knowledge import (
+    MAX_BYTES,
+    MAX_DOCUMENTS,
+    DocumentStatus,
+    SourceStatus,
+    Status,
+)
 
 INDEX_ALL = "All"
 ALL_PK = "KB"
@@ -68,6 +79,40 @@ class DocumentRecord:
     doc_id: str
     size: int
     status: DocumentStatus
+    src_id: str | None = None
+    source_key: str | None = None
+    source_etag: str | None = None
+
+
+@dataclass(frozen=True)
+class SourceRecord:
+    src_id: str
+    bucket: str
+    prefix: str
+    status: SourceStatus
+    role_arn: str | None
+
+
+@dataclass(frozen=True)
+class CopiedDocument:
+    """A document copied from a source, ``uploaded`` (or ``failed`` with its reason)."""
+
+    doc_id: str
+    name: str
+    size: int
+    content_type: str
+    status: DocumentStatus
+    reason: str | None
+    sha256: str
+    src_id: str
+    source_key: str
+    source_etag: str
+    uploaded_by: str
+    created_at: str
+
+
+class KnowledgeBaseFullError(Exception):
+    """The document would pass the limits of the knowledge base (D88 (9))."""
 
 
 def _s(value: str) -> dict[str, str]:
@@ -202,10 +247,98 @@ class SyncStore:
     def documents(self, kb_id: str) -> list[DocumentRecord]:
         return [
             DocumentRecord(
-                item["doc_id"]["S"], int(item["size"]["N"]), DocumentStatus(item["status"]["S"])
+                item["doc_id"]["S"],
+                int(item["size"]["N"]),
+                DocumentStatus(item["status"]["S"]),
+                src_id=_str(item, "src_id"),
+                source_key=_str(item, "source_key"),
+                source_etag=_str(item, "source_etag"),
             )
             for item in self._items(kb_id, "DOC#")
         ]
+
+    # --- Sources (D88 (10), (19)) -----------------------------------------------------------
+
+    def sources(self, kb_id: str) -> list[SourceRecord]:
+        return [
+            SourceRecord(
+                src_id=item["src_id"]["S"],
+                bucket=item["bucket"]["S"],
+                prefix=_str(item, "prefix") or "",
+                status=SourceStatus(item["status"]["S"]),
+                role_arn=_str(item, "role_arn"),
+            )
+            for item in self._items(kb_id, "SRC#")
+        ]
+
+    def add_copied(self, kb_id: str, document: CopiedDocument) -> None:
+        """Record a copied document and count it, within the limits of the knowledge base and
+        while it is not being deleted; raises ``KnowledgeBaseFullError`` past them."""
+        item: dict[str, Any] = {
+            "PK": _pk(kb_id),
+            "SK": _s(f"DOC#{document.doc_id}"),
+            "kb_id": _s(kb_id),
+            "doc_id": _s(document.doc_id),
+            "name": _s(document.name),
+            "size": _n(document.size),
+            "content_type": _s(document.content_type),
+            "status": _s(document.status),
+            "uploaded_by": _s(document.uploaded_by),
+            "created_at": _s(document.created_at),
+            "src_id": _s(document.src_id),
+            "source_key": _s(document.source_key),
+            "source_etag": _s(document.source_etag),
+        }
+        if document.sha256:
+            item["sha256"] = _s(document.sha256)
+        if document.reason:
+            item["reason"] = _s(document.reason)
+        try:
+            self._call_transaction(
+                [
+                    {
+                        "Update": {
+                            "TableName": self._table,
+                            "Key": {"PK": _pk(kb_id), "SK": _s("META")},
+                            "UpdateExpression": "ADD documents :one, #bytes :size",
+                            "ConditionExpression": (
+                                "attribute_exists(PK) AND #status <> :deleting"
+                                " AND documents <= :max_documents AND #bytes <= :max_bytes"
+                            ),
+                            "ExpressionAttributeNames": {"#status": "status", "#bytes": "bytes"},
+                            "ExpressionAttributeValues": {
+                                ":one": _n(1),
+                                ":size": _n(document.size),
+                                ":deleting": _s(Status.DELETING),
+                                ":max_documents": _n(MAX_DOCUMENTS - 1),
+                                ":max_bytes": _n(MAX_BYTES - document.size),
+                            },
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self._table,
+                            "Item": item,
+                            "ConditionExpression": "attribute_not_exists(PK)",
+                        }
+                    },
+                ]
+            )
+        except ClientError as exc:
+            raise KnowledgeBaseFullError from exc
+
+    def remove_source(self, kb_id: str, src_id: str) -> None:
+        """The record of a removed source, once nothing of it is left; the audit trail stays."""
+        try:
+            self._call(
+                "delete_item",
+                Key={"PK": _pk(kb_id), "SK": _s(f"SRC#{src_id}")},
+                ConditionExpression="#status = :removing AND attribute_not_exists(role_arn)",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":removing": _s(SourceStatus.REMOVING)},
+            )
+        except ClientError:
+            return
 
     def set_status(self, kb_id: str, status: Status) -> None:
         """Of a knowledge base that is not being deleted: deleting is never undone here."""

@@ -57,6 +57,7 @@ from mango_api.knowledge import (
     KnowledgeDeps,
     _limit,
     _unavailable,
+    request_sync,
     resource_of,
 )
 from mango_api.knowledge_store import (
@@ -534,6 +535,9 @@ def knowledge_sources_router(  # noqa: PLR0915 - registers the route closures
         source = await load_source(kb, src_id)
         _limit(deps.changes, caller.user.user_id)
         decided = await run(decide_source, deps, caller, source, body.version, approve=approve)
+        if decided.status is SourceStatus.APPROVED and decided.role_arn:
+            # The first copy, as whoever approved it (D88 (19), (24)).
+            await run(request_sync, deps, caller, kb)
         return source_out(decided, caller, kb, can_approve=True)
 
     @router.post(prefix + "/{src_id}/approve", response_model=SourceOut)
@@ -557,6 +561,9 @@ def knowledge_sources_router(  # noqa: PLR0915 - registers the route closures
         source = await load_source(kb, src_id)
         _limit(deps.changes, caller.user.user_id)
         removed = await run(remove_source, deps, caller, source, body.version)
+        if removed.status is SourceStatus.REMOVING:
+            # Its documents go with the synchronization, verified (D88 (16)).
+            await run(request_sync, deps, caller, kb)
         return source_out(removed, caller, kb, can_approve=await can_approve(caller, kb))
 
     @router.get("/api/knowledge-sources/pending", response_model=PendingSourceListOut)

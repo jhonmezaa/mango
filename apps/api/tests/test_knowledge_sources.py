@@ -461,3 +461,28 @@ def test_the_function_is_invoked_with_ids_only() -> None:
     client.answer, client.error = b"{}", "Unhandled"
     with pytest.raises(SourceRoleError, match="function_error"):
         function.ensure("KB1", "SRC1")
+
+
+def test_an_approval_starts_the_first_copy_and_a_removal_its_cleanup(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+    roles: FakeRoles,
+) -> None:
+    kb = env.created()
+    approved = _decide(env, _proposed(env, kb), "approve").json()
+    [started] = env.sfn.started
+    assert started["input"]["requested_by"]["user_id"] == "admin-1"
+    env.client.post(
+        f"{_sources(kb)}/{approved['src_id']}/delete", headers=_h("creator"), json={"version": 2}
+    )
+    # Queued behind the one running, as whoever removed it.
+    meta = env.db.get_item(
+        TableName="knowledge", Key={"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}}
+    )["Item"]
+    assert "sync_again" in meta
+
+
+def test_an_approval_without_a_role_starts_nothing(env: Env, s3: FakeS3, roles: FakeRoles) -> None:  # noqa: F811
+    roles.fail = "iam_AccessDenied"
+    _decide(env, _proposed(env, env.created()), "approve")
+    assert env.sfn.started == []

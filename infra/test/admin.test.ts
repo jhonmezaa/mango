@@ -184,8 +184,11 @@ describe("Admin v0 infrastructure (D17)", () => {
         actions(g.statement).includes("kms:GenerateDataKey") &&
         // The budget reconciler also writes with PutItem (the audit index) and uses the alerts
         // key through SQS for its dead-letter queue (budget-reconciler.test.ts). The cost anomaly
-        // consumer uses the key of the task queue through SQS (cost-anomaly-events.test.ts).
+        // consumer uses the key of the task queue through SQS (cost-anomaly-events.test.ts). The
+        // knowledge sync writes copied documents with the documents key through S3, only
+        // (knowledge.test.ts, D88 (40)).
         g.statement.Sid !== "DeadLetterQueueKey" &&
+        !(g.statement.Sid === "DocumentsKey" && g.statement.Condition?.StringEquals?.["kms:ViaService"] === "s3.us-east-1.amazonaws.com") &&
         !JSON.stringify(g.statement.Resource).includes("RunQueueKey") &&
         grants().some((o) => o.roles.join() === g.roles.join() && actions(o.statement).includes("dynamodb:PutItem")),
     );

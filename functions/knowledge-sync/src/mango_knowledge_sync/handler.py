@@ -4,6 +4,8 @@ A synchronization of one knowledge base:
 
 1. ``acquire``: the lock of the Bedrock knowledge base (one synchronization at a time); the
    machine waits and asks again while another holds it.
+1b. ``copy``: the documents of the sources on existing buckets, copied into Mango's bucket
+   as the source is now (``sources``, D88 (19)); again while something is left to copy.
 2. ``plan``: what to ingest (documents ``uploaded``), what to delete (``deleting``, or every
    document of a knowledge base being deleted) and what is still being indexed; then the
    budget reservation of whoever asked, for the documents to ingest (rule 4).
@@ -52,6 +54,7 @@ from mango_knowledge_sync.bedrock import (
 )
 from mango_knowledge_sync.budget import Budgets, Reservation
 from mango_knowledge_sync.config import Settings
+from mango_knowledge_sync.sources import SourceCopier, role_requester, session_for
 from mango_knowledge_sync.store import Requester, StoreUnavailableError, SyncStore
 
 logger = logging.getLogger(__name__)
@@ -63,6 +66,8 @@ MAX_LOCK_ATTEMPTS = 120
 """Asked every 30 seconds: an hour behind other synchronizations, then it gives up."""
 MAX_POLLS = 90
 """Every 10 seconds: 15 minutes of indexing per run. What is left is polled by the next."""
+MAX_COPY_STEPS = 20
+"""Of 3 minutes each: an hour of copying per run. What is left is copied by the next."""
 MAX_VERIFIES = 30
 """Every 20 seconds: 10 minutes. What still answers is retried by the hourly sweep."""
 OVERDUE = timedelta(hours=6)
@@ -99,15 +104,31 @@ class Deps:
     sfn: Any
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     metrics: Callable[[str, float], None] | None = None
+    sources: SourceCopier | None = None
+    """The copy of the sources (D88 (19)); ``None`` until the stack gives what it needs."""
 
 
 @cache
 def _deps() -> Deps:
     settings = Settings.from_env()
     dynamodb = boto3.client("dynamodb")
+    store = SyncStore(dynamodb, settings.knowledge_table)
+    s3 = boto3.client("s3")
+    sources = SourceCopier(
+        store=store,
+        documents_s3=s3,
+        documents_bucket=settings.documents_bucket,
+        session_for=session_for(boto3.client("sts"), boto3.Session),
+        request_role=(
+            role_requester(boto3.client("lambda"), settings.sources_function)
+            if settings.sources_function
+            else None
+        ),
+        now_iso=lambda: _iso(datetime.now(UTC)),
+    )
     return Deps(
         settings=settings,
-        store=SyncStore(dynamodb, settings.knowledge_table),
+        store=store,
         bedrock=KnowledgeBedrock(
             boto3.client("bedrock-agent"),
             boto3.client("bedrock-agent-runtime"),
@@ -120,8 +141,9 @@ def _deps() -> Deps:
         audit=AuditWriter(
             boto3.client("firehose"), settings.audit_stream, dynamodb, settings.audit_index_table
         ),
-        s3=boto3.client("s3"),
+        s3=s3,
         sfn=boto3.client("stepfunctions"),
+        sources=sources,
     )
 
 
@@ -134,6 +156,7 @@ def handle(deps: Deps, event: dict[str, Any]) -> dict[str, Any]:
     state = dict(event.get("state") or {})
     steps: dict[str, Callable[[Deps, dict[str, Any]], dict[str, Any]]] = {
         "acquire": acquire,
+        "copy": copy,
         "plan": plan,
         "ingest": ingest,
         "poll": poll,
@@ -206,7 +229,7 @@ def _document_key(kb_id: str, doc_id: str) -> str:
 
 def _counts(state: dict[str, Any]) -> dict[str, int]:
     counts: dict[str, int] = state.setdefault("counts", {})
-    for name in ("ingested", "indexed", "failed", "deleted"):
+    for name in ("ingested", "indexed", "failed", "deleted", "copied", "copy_failed"):
         counts.setdefault(name, 0)
     return counts
 
@@ -223,6 +246,28 @@ def acquire(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
     state["gave_up"] = not state["locked"] and state["attempts"] >= MAX_LOCK_ATTEMPTS
     if state["gave_up"]:
         state["outcome"] = "busy"
+    return state
+
+
+def copy(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
+    """The sources of the knowledge base, as they are now (D88 (19)). A synchronization of
+    deletions only copies nothing: it only clears what removed sources left."""
+    kb_id = state["kb_id"]
+    state["copy_more"] = False
+    record = deps.store.knowledge_base(kb_id)
+    if deps.sources is None or record is None or record.status is Status.DELETING:
+        return state
+    requester = Requester.from_json(state["requested_by"])
+    result = deps.sources.step(kb_id, requester.user_id, copy=state.get("mode") != "deletions")
+    counts = _counts(state)
+    counts["copied"] += result.copied
+    counts["copy_failed"] += result.failed
+    state["copy_steps"] = int(state.get("copy_steps", 0)) + 1
+    state["copy_more"] = result.more and state["copy_steps"] < MAX_COPY_STEPS
+    if result.full:
+        state["full"] = True
+    if result.unavailable:
+        state["sources_unavailable"] = result.unavailable
     return state
 
 

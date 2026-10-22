@@ -24,8 +24,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import re
-import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -33,35 +31,40 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_api.presign import PresignSessions, SigningUnavailableError
+from mango_core.knowledge_files import (
+    HEAD_BYTES,
+    MAX_FILE_BYTES,
+    MAX_NAME_LENGTH,
+    TAIL_BYTES,
+    TYPES,
+    ZIP_PARTS,
+    content_matches,
+    display_name,
+    extension,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "MAX_FILE_BYTES",
+    "MAX_NAME_LENGTH",
+    "TYPES",
+    "DocumentStorage",
+    "Inspected",
+    "SignedUpload",
+    "StorageUnavailableError",
+    "content_matches",
+    "display_name",
+    "document_key",
+    "extension",
+    "upload_key",
+]
+
 UPLOAD_SECONDS = 15 * 60
 """Life of a presigned POST (D88 (9))."""
-MAX_FILE_BYTES = 50 * 1024 * 1024
-"""Per document (D88 (9)); also the largest text file Bedrock ingests (D88 (27))."""
-TYPES: dict[str, str] = {
-    "pdf": "application/pdf",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "txt": "text/plain",
-    "md": "text/markdown",
-    "csv": "text/csv",
-}
-"""Extension -> the one Content-Type a document of that kind is uploaded and stored with."""
-MAX_NAME_LENGTH = 200
-_HEAD_BYTES = 8192
-_TAIL_BYTES = 65536
-"""A ZIP keeps its central directory at the end; the part names are read from there."""
-_ZIP_PARTS = {"docx": b"word/document.xml", "xlsx": b"xl/workbook.xml"}
-_INVISIBLE = re.compile(
-    r"[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]"
-)
-"""Control characters, zero-width and bidirectional marks: they can disguise a name."""
-
 S3_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "virtual"})
 """SigV4: the bucket is encrypted with KMS."""
 
@@ -70,58 +73,12 @@ class StorageUnavailableError(Exception):
     """S3 could not be reached or refused mango-api; callers fail closed."""
 
 
-def display_name(raw: str) -> str | None:
-    """The name shown for a document, or ``None`` if nothing visible is left. Only the last
-    component of a path; invisible characters out; whitespace collapsed; at most 200."""
-    name = unicodedata.normalize("NFC", raw).replace("\\", "/").rsplit("/", 1)[-1]
-    name = " ".join(_INVISIBLE.sub("", name).split())
-    if not name or name in {".", ".."}:
-        return None
-    if len(name) > MAX_NAME_LENGTH:
-        stem, dot, ext = name.rpartition(".")
-        keep = MAX_NAME_LENGTH - len(dot + ext)
-        name = (stem[:keep] + dot + ext) if dot and keep > 0 else name[:MAX_NAME_LENGTH]
-    return name
-
-
-def extension(name: str) -> str | None:
-    """The kind of document a name says, if it is one of :data:`TYPES`."""
-    _, dot, ext = name.rpartition(".")
-    ext = ext.lower()
-    return ext if dot and ext in TYPES else None
-
-
 def upload_key(sub: str, upload_id: str, doc_id: str) -> str:
     return f"uploads/{sub}/{upload_id}/{doc_id}"
 
 
 def document_key(kb_id: str, doc_id: str) -> str:
     return f"kb/{kb_id}/docs/{doc_id}"
-
-
-def _is_text(head: bytes, size: int) -> bool:
-    """UTF-8 without NUL bytes. When ``head`` is only the start of the file, its last
-    character may be cut: up to three bytes of it are left out."""
-    if b"\x00" in head:
-        return False
-    text = head.removeprefix(b"\xef\xbb\xbf")
-    cuts = range(4) if size > len(head) else range(1)
-    for cut in cuts:
-        try:
-            text[: len(text) - cut].decode("utf-8")
-        except UnicodeDecodeError:
-            continue
-        return True
-    return False
-
-
-def content_matches(kind: str, head: bytes, tail: bytes, size: int) -> bool:
-    """Whether the first (and, for a ZIP, the last) bytes of a document are of ``kind``."""
-    if kind == "pdf":
-        return head.startswith(b"%PDF-")
-    if kind in _ZIP_PARTS:
-        return head.startswith(b"PK\x03\x04") and _ZIP_PARTS[kind] in tail
-    return _is_text(head, size)
 
 
 @dataclass(frozen=True)
@@ -194,10 +151,8 @@ class DocumentStorage:
         if size == 0 or size > MAX_FILE_BYTES:
             return Inspected(size, matches=False, etag=etag)
         try:
-            first = self._get_range(key, f"bytes=0-{_HEAD_BYTES - 1}", etag)
-            last = (
-                self._get_range(key, f"bytes=-{_TAIL_BYTES}", etag) if kind in _ZIP_PARTS else b""
-            )
+            first = self._get_range(key, f"bytes=0-{HEAD_BYTES - 1}", etag)
+            last = self._get_range(key, f"bytes=-{TAIL_BYTES}", etag) if kind in ZIP_PARTS else b""
         except (BotoCoreError, ClientError) as exc:
             raise StorageUnavailableError(type(exc).__name__) from exc
         return Inspected(size, matches=content_matches(kind, first, last, size), etag=etag)

@@ -350,11 +350,17 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(sids.ReserveAndSettleBudgets!.Condition).toEqual({
       "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["USER#*"] },
     });
-    expect(actions(sids.SavedDocuments!).sort()).toEqual(["s3:DeleteObject", "s3:GetObject"]);
+    // Writing is the copy of a document of a source (D88 (40)); reading a source is only ever
+    // as the role of that source, with the SourceIdentity of whoever synchronizes.
+    expect(actions(sids.SavedDocuments!).sort()).toEqual(["s3:DeleteObject", "s3:GetObject", "s3:PutObject"]);
+    expect(actions(sids.ReadSourcesAsWhoeverSynchronizes!).sort()).toEqual(["sts:AssumeRole", "sts:SetSourceIdentity"]);
+    expect(JSON.stringify(sids.ReadSourcesAsWhoeverSynchronizes!.Resource)).toContain(`:role/Mango-${ns}-kbsrc-*`);
+    expect(actions(sids.AskForSourceRoles!)).toEqual(["lambda:InvokeFunction"]);
+    expect(JSON.stringify(sids.AskForSourceRoles!.Resource)).toContain(`:function:Mango-${ns}-KnowledgeSources`);
     expect(JSON.stringify(sids.SavedDocuments!.Resource)).toContain("/kb/*/docs/*");
     expect(JSON.stringify(sids.StartNextSync!.Resource)).toContain(`stateMachine:Mango-${ns}-KnowledgeSync`);
     const all = statements.flatMap(actions);
-    for (const forbidden of ["dynamodb:Scan", "s3:PutObject", "s3:ListBucket", "iam:PassRole"]) {
+    for (const forbidden of ["dynamodb:Scan", "s3:ListBucket", "iam:PassRole", "iam:CreateRole"]) {
       expect(all).not.toContain(forbidden);
     }
     expect(all.some((a) => a.endsWith("*"))).toBe(false);

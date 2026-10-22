@@ -26,6 +26,9 @@ SYNC_SCHEDULES = ("manual", "6h", "daily", "weekly")
 """How often a bucket source is synchronized (D88 (11)); uploads are indexed when saved."""
 MAX_GROUPS = 20
 """Groups a knowledge base answers to."""
+MAX_DOCUMENTS = 1000
+MAX_BYTES = 5 * 1024**3
+"""Per knowledge base (D88 (9)): uploaded and copied from its sources alike."""
 
 
 class Status(StrEnum):

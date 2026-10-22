@@ -52,8 +52,6 @@ from mango_api.audit import AuditLog
 from mango_api.authz import KNOWLEDGE_BASE_TYPE, KnowledgeBaseResource
 from mango_api.groups import GroupRegistry, GroupsUnavailableError
 from mango_api.knowledge_store import (
-    MAX_BYTES,
-    MAX_DOCUMENTS,
     AnnouncedFile,
     Document,
     KnowledgeBase,
@@ -77,7 +75,7 @@ from mango_api.knowledge_uploads import (
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core import knowledge, knowledge_search
-from mango_core.knowledge import DocumentStatus, Status
+from mango_core.knowledge import MAX_BYTES, MAX_DOCUMENTS, DocumentStatus, Status
 
 logger = logging.getLogger(__name__)
 

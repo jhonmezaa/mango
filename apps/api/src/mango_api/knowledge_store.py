@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import ClientError
 
-from mango_core.knowledge import DocumentStatus, SourceStatus, Status
+from mango_core.knowledge import MAX_BYTES, MAX_DOCUMENTS, DocumentStatus, SourceStatus, Status
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
@@ -50,9 +50,6 @@ PENDING_SOURCES_PK = "SRC_PENDING"
 """``all_pk`` of the sources waiting for a decision (the index ``All``)."""
 MAX_LISTED = 1000
 """Knowledge bases a list reads at most: far above what an installation holds."""
-MAX_DOCUMENTS = 1000
-MAX_BYTES = 5 * 1024**3
-"""Per knowledge base (D88 (9))."""
 _PAGE = 100
 
 

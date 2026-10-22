@@ -1,7 +1,7 @@
 # D88 · Knowledge bases: una entidad compartida entre agentes, con documentos de S3
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente; el rol que firma las subidas, punto 33, elegido por el dueño ese día, nota propuesta por un agente; 2026-10-22: los permisos de la ingesta directa, punto 34, diagnosticados por el dueño ese día en la instalación, nota propuesta por un agente; lo construido de la asociación con agentes en la API, punto 35, nota de ese día propuesta por un agente; lo construido de la tool, punto 36, nota de ese día propuesta por un agente, con sus cuatro precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido de «Probar búsqueda», punto 37, nota de ese día propuesta por un agente, con su autorización, que precisa el punto 29, elegida por el dueño ese día, por menú: «Verla y estar en sus grupos (Recomendada)»; lo construido de las fuentes en la API, punto 38, nota de ese día propuesta por un agente, con tres precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido del rol de cada fuente, punto 39, nota de ese día propuesta por un agente)
+- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente; el rol que firma las subidas, punto 33, elegido por el dueño ese día, nota propuesta por un agente; 2026-10-22: los permisos de la ingesta directa, punto 34, diagnosticados por el dueño ese día en la instalación, nota propuesta por un agente; lo construido de la asociación con agentes en la API, punto 35, nota de ese día propuesta por un agente; lo construido de la tool, punto 36, nota de ese día propuesta por un agente, con sus cuatro precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido de «Probar búsqueda», punto 37, nota de ese día propuesta por un agente, con su autorización, que precisa el punto 29, elegida por el dueño ese día, por menú: «Verla y estar en sus grupos (Recomendada)»; lo construido de las fuentes en la API, punto 38, nota de ese día propuesta por un agente, con tres precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido del rol de cada fuente, punto 39, nota de ese día propuesta por un agente; lo construido de la copia de las fuentes, punto 40, nota de ese día propuesta por un agente, con dos precisiones elegidas ese día por menú por el agente que lanzó el trabajo)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (la alerta de las knowledge bases: qué significa cuando el filtro sale de quien pregunta) y [D25](D025-recursos-creados-en-runtime.md) (el primer caso de KB: sin stacks de CloudFormation en ejecución); toma el diseño de §4.4
 - **Precisada por:** —
 
@@ -270,3 +270,42 @@ Lo demás de este punto lo propuso un agente:
   - El siguiente intento llega con la sincronización de la fuente (7c). Mientras no haya rol, nadie lee la fuente.
 - **Desinstalación:** la guarda de desinstalación (D58) borra también los roles `Mango-<ns>-kbsrc-*` que llevan su boundary.
 - **Riesgo que queda:** IAM no puede condicionar la política de confianza de un rol que se crea. Que solo confíe en la sincronización lo garantiza el código de la función, que la construye desde su configuración y la verifica en cada llamada, como en el provisioner de packs. El boundary limita lo que ese rol lee, no quién lo asume. Anotado en el modelo de amenazas (TM-K7).
+
+**(40) Estado de lo construido: la copia de las fuentes (2026-10-22).** Construida con tests, sin ver en una instalación. Es el PR 7c del plan. El código está en `functions/knowledge-sync/src/mango_knowledge_sync/sources.py`, con un paso nuevo, `copy`, en `Mango-<ns>-KnowledgeSync`.
+
+El agente que lanzó el trabajo eligió dos precisiones ese día por menú, las dos recomendadas:
+- la frecuencia con EventBridge Scheduler va en un PR aparte (7d);
+- una sincronización por horario lee ella misma el límite de presupuesto del dueño en la tabla Settings (7d).
+
+Lo demás de este punto lo propuso un agente:
+
+- **Cuándo:** el paso `copy` corre después del lock y antes del plan, en cada sincronización de una KB con fuentes. `mango-api` arranca una al aprobar una fuente que ya tiene su rol (la primera copia, a nombre de quien aprobó, (24)) y otra al quitar una aprobada (la limpieza).
+- **Quién lee:**
+  - el rol de la fuente (39), asumido con el `SourceIdentity` de quien sincroniza;
+  - escribe en `kb/<kb_id>/docs/<doc_id>` el rol de la sincronización, que nunca lee la fuente. El rol de la fuente nunca escribe en Mango;
+  - una sincronización de solo borrados (la del barrido) no copia nada.
+- **Qué se copia:**
+  - los mismos documentos que una subida, con las reglas en `mango_core.knowledge_files`, compartidas con `mango-api`: tipo por extensión, bytes de acuerdo, hasta 50 MB;
+  - dentro de los topes de la KB (1.000 documentos y 5 GB, ahora en `mango_core.knowledge`).
+  - Un objeto que no cumple queda `failed`, con su motivo (`unsupported_type`, `type_mismatch`, `empty`, `too_large`, `size_mismatch`), no se copia y no ocupa bytes. Uno que el rol no puede leer queda `failed` con `protected`: por ejemplo, uno cifrado con una llave propia.
+  - El documento guarda la clave y el ETag de la fuente (`source_key`, `source_etag`).
+- **Cambios en la fuente:**
+  - una clave nueva se copia;
+  - una con otro ETag se copia como documento nuevo y la copia vieja se borra;
+  - una que ya no está se borra.
+
+  Los borrados son los de la sincronización, verificados (16).
+- **Por pasos:** hasta 3 minutos o 300 MB por paso, y la máquina repite el paso mientras quede algo, hasta 20 pasos por ejecución. El estado no lleva claves ni nombres: cada paso vuelve a listar la fuente.
+- **El rol, otra vez:**
+  - una fuente aprobada sin rol pide el rol de nuevo a `Mango-<ns>-KnowledgeSources`; es el reintento del que habla (39);
+  - una fuente quitada pierde primero sus documentos, después su rol y por último su registro.
+- **El rol de la sincronización gana:**
+  - `s3:PutObject` bajo `kb/*/docs/` y `kms:GenerateDataKey` de la llave de documentos, a través de S3;
+  - `sts:AssumeRole` y `sts:SetSourceIdentity` sobre `Mango-<ns>-kbsrc-*`;
+  - `lambda:InvokeFunction` sobre `Mango-<ns>-KnowledgeSources`.
+
+  Su memoria pasa a 1 GB, porque un documento de 50 MB se copia en memoria.
+- **Pendiente de ver en la instalación:**
+  - si leer un bucket cifrado con `aws/s3` necesita que el rol de la fuente tenga `kms:Decrypt`, que su boundary no da. Si lo necesita, esos documentos quedarán `protected`;
+  - la copia de un bucket de prueba del cliente, con su OK;
+  - el borrado de lo que se quita en el origen.
