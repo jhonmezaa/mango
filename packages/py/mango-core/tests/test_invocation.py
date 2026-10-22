@@ -115,3 +115,60 @@ def test_sign_refuses_an_empty_subject_and_an_oversized_header() -> None:
     with pytest.raises(ValueError, match="too large"):
         _sign(tools=many)
     assert len(_sign()) < MAX_HEADER_CHARS
+
+
+# --- Knowledge bases of the version (D88 (14)) ------------------------------------------
+
+KB_A = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+KB_B = "01JABCDEFGHJKMNPQRSTVWXYZ1"
+
+
+def test_the_knowledge_bases_of_the_version_are_signed() -> None:
+    signed = verify(KEY, "user-1", _sign(knowledge_bases=[KB_B, KB_A, KB_B]), now=NOW)
+    assert signed is not None
+    assert signed.knowledge_bases == (KB_A, KB_B)
+
+
+def test_a_signature_without_knowledge_bases_is_as_before() -> None:
+    # The claim is only there when the version has some: the signature of an agent without
+    # knowledge bases does not change.
+    value = _sign()
+    payload = json.loads(base64.urlsafe_b64decode(value.split(".")[1] + "=="))
+    assert "kbs" not in payload
+    signed = verify(KEY, "user-1", value, now=NOW)
+    assert signed is not None
+    assert signed.knowledge_bases == ()
+
+
+@pytest.mark.parametrize(
+    "kbs",
+    [
+        ["../kb/otra"],
+        ["01jabcdefghjkmnpqrstvwxyz0"],
+        [f"01JABCDEFGHJKMNPQRSTVWXYZ{i}" for i in range(6)],
+    ],
+)
+def test_only_ids_of_knowledge_bases_are_signed(kbs: list[str]) -> None:
+    with pytest.raises(ValueError, match="invalid invocation"):
+        _sign(knowledge_bases=kbs)
+
+
+@pytest.mark.parametrize(
+    "kbs",
+    [
+        "01JABCDEFGHJKMNPQRSTVWXYZ0",
+        ["../kb/otra"],
+        [1],
+        [f"01JABCDEFGHJKMNPQRSTVWXYZ{i}" for i in range(6)],
+    ],
+)
+def test_a_signed_claim_that_is_not_a_list_of_ids_is_refused(kbs: object) -> None:
+    payload = {
+        "sub": "user-1",
+        "exp": EXPIRES,
+        "agent": "finops",
+        "ver": 3,
+        "tools": TOOLS,
+        "kbs": kbs,
+    }
+    assert verify(KEY, "user-1", _forge(payload), now=NOW) is None

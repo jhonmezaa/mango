@@ -224,6 +224,37 @@ def test_agent_without_tools(db: Any, store: AgentsStore) -> None:  # noqa: F811
     assert (agent.allowed_tools, agent.gateway_tools) == ((), ())
 
 
+KB = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+
+
+def test_a_version_with_knowledge_bases_has_the_knowledge_search(
+    db: Any,  # noqa: F811
+    store: AgentsStore,  # noqa: F811
+) -> None:
+    # D88 (14): no catalog lists the tool; it follows from `knowledge_bases`.
+    version = _publish(db, store, knowledge_bases=[KB])
+    agent = _resolver(store).get(version.agent_id)
+    assert agent is not None
+    assert agent.allowed_tools == (
+        "@mango/finops___get_anomalies",
+        "@mango/finops___get_cost_and_usage",
+        "@mango/knowledge___retrieve",
+    )
+    assert "knowledge___retrieve" in agent.gateway_tools
+    assert agent.definition.knowledge_bases == (KB,)
+    # Without knowledge bases, never.
+    other = _resolver(store).get(_publish(db, store).agent_id)
+    assert other is not None
+    assert "knowledge___retrieve" not in other.gateway_tools
+
+
+def test_the_knowledge_search_cannot_be_given_as_a_tool(db: Any, store: AgentsStore) -> None:  # noqa: F811
+    # Not a connector of the catalog: a version naming it is not served.
+    version = _publish(db, store, tools=[*TOOLS, "knowledge.retrieve"])
+    with pytest.raises(AgentUnavailableError):
+        _resolver(store).get(version.agent_id)
+
+
 def test_unreadable_catalog_or_table_fails_closed(db: Any, store: AgentsStore) -> None:  # noqa: F811
     version = _publish(db, store)
 

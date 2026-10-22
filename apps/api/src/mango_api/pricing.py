@@ -9,6 +9,7 @@ from typing import Any
 
 from mango_api.settings import ModelPrice
 from mango_core.budget_turns import TokenUsage, TurnPrice, token_cost
+from mango_core.knowledge_search import MAX_QUERY_CHARS, query_tokens
 
 
 @dataclass
@@ -65,3 +66,15 @@ def estimate_max_cost(
         input_tokens=per_iteration_input * max_iterations, output_tokens=max_output_tokens
     )
     return cost(worst, price)
+
+
+_MILLION = Decimal(1_000_000)
+
+
+def knowledge_cost(searches: int, embedding_price: Decimal) -> Decimal:
+    """What ``searches`` knowledge searches of a turn cost (D88 (14)): the embedding of each
+    query, counted as the longest one (1,000 characters, about 250 tokens), at the price of
+    the embedding model (USD per million tokens, rule 7). The query to S3 Vectors is left to
+    the reconciliation against the bill (§4.5). An estimate that never falls short."""
+    tokens = searches * query_tokens("x" * MAX_QUERY_CHARS)
+    return (Decimal(tokens) * embedding_price / _MILLION).quantize(Decimal("0.000001"))

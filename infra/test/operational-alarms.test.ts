@@ -389,10 +389,15 @@ describe("the shared rate limits of mango-api", () => {
         'word3 = "store", word4 = "unavailable;", ...]',
     );
     // The same words on both sides: mango-api writes them, the filter reads them.
-    expect(python("apps/api/src/mango_api/rate_limits.py")).toContain(`STORE_UNAVAILABLE_LOG = "${signal.message}"`);
-    expect(python("apps/api/src/mango_api/rate_limits.py")).toContain(
-      'logger.error("%s a call of %s is refused", STORE_UNAVAILABLE_LOG, self._name)',
+    expect(python("packages/py/mango-core/src/mango_core/rate_limits.py")).toContain(
+      `STORE_UNAVAILABLE_LOG = "${signal.message}"`,
     );
+    expect(python("packages/py/mango-core/src/mango_core/rate_limits.py")).toContain(
+      'self._log.error("%s a call of %s is refused", STORE_UNAVAILABLE_LOG, self._name)',
+    );
+    // mango-api logs those refusals with the logger of its own module, the one the filter reads.
+    expect(python("apps/api/src/mango_api/rate_limits.py")).toContain("logger = logging.getLogger(__name__)");
+    expect(python("apps/api/src/mango_api/rate_limits.py")).toContain("log=logger");
     expect(python("apps/api/src/mango_api/app.py")).toContain(
       'LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"',
     );

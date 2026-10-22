@@ -179,6 +179,20 @@ def test_a_connector_write_tool_is_published_only_when_marked_for_approval() -> 
             allowed_tools(SETTINGS, definition)
 
 
+def test_a_version_with_knowledge_bases_gets_the_knowledge_search() -> None:
+    # D88 (14): it follows from `knowledge_bases`, the same name mango-api sends.
+    kb = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+    assert allowed_tools(SETTINGS, make_definition(knowledge_bases=[kb])) == [
+        "@mango/finops___get_cost_and_usage",
+        "@mango/knowledge___retrieve",
+    ]
+    assert "@mango/knowledge___retrieve" not in allowed_tools(SETTINGS, make_definition())
+    # Nobody gives it by hand, and no pack takes its target.
+    for tool in ("knowledge.retrieve", "knowledge.other"):
+        with pytest.raises(StepError, match="unknown_tool"):
+            allowed_tools(SETTINGS, make_definition(tools=[tool]))
+
+
 def test_fingerprint_follows_the_content() -> None:
     def fingerprint(**overrides: Any) -> str:
         kwargs: dict[str, Any] = {

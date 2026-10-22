@@ -48,13 +48,15 @@ describe("Gateway Cedar policies (L2)", () => {
   });
 
   it("creates two permits and the matching forbids, and nothing else", () => {
-    // Plus the pair of the write tools (D27, write-tools.test.ts).
+    // Plus the pair of the write tools (D27, write-tools.test.ts) and the knowledge search
+    // (D88 (14), knowledge.test.ts).
     expect(Object.keys(policies).sort()).toEqual(
       [
         "FinopsOrgWide",
         "FinopsOrgWideForbidOthers",
         "FinopsRead",
         "FinopsReadForbidOthers",
+        "KnowledgeRetrieve",
         "WriteCentral",
         "WriteCentralForbidOthers",
       ].map((name) => `Mango_${ns}_${name}`),

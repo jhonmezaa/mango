@@ -19,6 +19,11 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const TARGET_NAME = "finops";
 /** Gateway target of Mango's write tools, served by the approval executor (D27). */
 export const OPS_TARGET_NAME = "ops";
+/**
+ * Gateway target of the knowledge search (D88 (14)); keep in sync with
+ * `mango_core.harness_tools.KNOWLEDGE_TARGET`.
+ */
+export const KNOWLEDGE_TARGET_NAME = "knowledge";
 /** FinOps roles of the pre token claim `mango_role` (D13). */
 const CENTRAL_ROLE = "finops-central";
 const AREA_ROLE = "bu-lead";
@@ -93,10 +98,14 @@ export class Tools extends Construct {
   private readonly costExplorer: PythonFunction;
   private readonly discoveryUrl: string;
   private readonly webClientId: string;
+  private readonly namespace: string;
   /** Cedar policy engine of the Gateway (L2, default deny). */
   readonly policyEngine: agentcore.CfnPolicyEngine;
-  /** Gateway targets of Mango connectors: the only ones that receive the caller's token. */
-  readonly connectorTargets = [TARGET_NAME, OPS_TARGET_NAME];
+  /**
+   * Gateway targets of Mango connectors: the only ones that receive the caller's token. The
+   * knowledge search also gets the knowledge bases mango-api signed for the agent (D88 (14)).
+   */
+  readonly connectorTargets = [TARGET_NAME, OPS_TARGET_NAME, KNOWLEDGE_TARGET_NAME];
   /** REQUEST interceptor of the Gateway; `WriteTools` adds the approval check to it (D27). */
   readonly interceptor: lambda.Function;
   /** Role the Gateway invokes its Lambda targets with. */
@@ -119,7 +128,7 @@ export class Tools extends Construct {
   constructor(scope: Construct, id: string, props: ToolsProps) {
     super(scope, id);
     const cfg = props.installation;
-    const ns = cfg.namespace;
+    const ns = (this.namespace = cfg.namespace);
     const account = Stack.of(this).account;
 
     // Customer-managed key for the functions' configuration and the invocation key secret.
@@ -503,6 +512,50 @@ export class Tools extends Construct {
       });
       policy.addResourceDependency(target);
     }
+  }
+
+  /**
+   * The knowledge search (D88 (14)): its Lambda as a target of the Gateway, and its Cedar
+   * policy (L2). Like a public pack, any signed-in user on an invocation mango-api signed may
+   * call it (D33): which knowledge bases answer is decided by the tool, from the bases signed
+   * for the agent, the registry and the person's groups.
+   */
+  addKnowledgeTarget(fn: lambda.IFunction): void {
+    fn.grantInvoke(this.gatewayRole);
+    acknowledge(this.gatewayRole, {
+      id: arnWildcardFinding(fn.node.defaultChild as CfnResource, ":*"),
+      reason: REASONS.cdkGrant,
+    });
+    const tools = JSON.parse(
+      readFileSync(resolve(REPO_ROOT, "connectors/knowledge-retrieve/tool-schema.json"), "utf8"),
+    ) as ToolDefinition[];
+    const target = new agentcore.CfnGatewayTarget(this, "KnowledgeTarget", {
+      gatewayIdentifier: this.gateway.attrGatewayIdentifier,
+      name: KNOWLEDGE_TARGET_NAME,
+      description: "Knowledge search of Mango's agents",
+      credentialProviderConfigurations: [{ credentialProviderType: "GATEWAY_IAM_ROLE" }],
+      targetConfiguration: {
+        mcp: { lambda: { lambdaArn: fn.functionArn, toolSchema: { inlinePayload: tools } } },
+      },
+    });
+    const actions = tools.map((t) => `AgentCore::Action::"${KNOWLEDGE_TARGET_NAME}___${t.name}"`);
+    const policy = new agentcore.CfnPolicy(this, "PolicyKnowledgeRetrieve", {
+      name: `Mango_${this.namespace}_KnowledgeRetrieve`,
+      description: "Signed-in users may search the knowledge bases of their agents; the tool decides which answer",
+      policyEngineId: this.policyEngine.attrPolicyEngineId,
+      definition: {
+        cedar: {
+          statement: [
+            "permit (",
+            "  principal is AgentCore::OAuthUser,",
+            `  action in [${actions.join(", ")}],`,
+            `  resource == AgentCore::Gateway::"${this.gateway.attrGatewayArn}"`,
+            ");",
+          ].join("\n"),
+        },
+      },
+    });
+    policy.addResourceDependency(target);
   }
 
   get gatewayUrl(): string {

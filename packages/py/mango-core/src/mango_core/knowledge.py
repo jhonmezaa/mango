@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import secrets
 import time
+from collections.abc import Iterable
 from enum import StrEnum
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -64,3 +65,14 @@ def new_id(now_ms: int | None = None) -> str:
 
 def is_id(value: str) -> bool:
     return bool(_ID_RE.fullmatch(value))
+
+
+def usable(kb_groups: Iterable[str], user_groups: Iterable[str]) -> bool:
+    """Whether a person in ``user_groups`` gets answers from a knowledge base of ``kb_groups``.
+
+    The rule of ``UseKnowledgeBase`` (``policies/cedar/platform/knowledge-use.cedar``): being in
+    one of its groups, with the groups of the registry read when asked (D88 (22)). Neither its
+    owner nor an administrator uses it for being one (rule 5). For the retrieve tool, which has
+    no Verified Permissions of its own; a test of mango-api checks it against the policy.
+    """
+    return not set(kb_groups).isdisjoint(user_groups)

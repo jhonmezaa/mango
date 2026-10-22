@@ -12,6 +12,12 @@ GATEWAY_MCP_SERVER = "mango"
 """Name of the Gateway MCP server in a harness (``remote_mcp`` tool)."""
 _TARGET_SEPARATOR = "___"
 
+KNOWLEDGE_TARGET = "knowledge"
+"""Gateway target of the ``knowledge-retrieve`` tool (D88 (14)): a Mango connector."""
+KNOWLEDGE_TOOL = "retrieve"
+"""The one tool of that target. A version with knowledge bases has it, and only such a
+version: nobody adds it by hand, it follows from ``knowledge_bases``."""
+
 
 def gateway_tool_name(target: str, tool: str) -> str:
     """Name of a tool as the Gateway exposes it."""
@@ -31,3 +37,13 @@ def allowed_inline_tool(name: str) -> str:
     the model sees it (seen in an installation on 2026-10-19).
     """
     return f"@{name}/{name}"
+
+
+def knowledge_gateway_tool() -> str:
+    """Gateway name of the knowledge search tool (``knowledge___retrieve``)."""
+    return gateway_tool_name(KNOWLEDGE_TARGET, KNOWLEDGE_TOOL)
+
+
+def knowledge_allowed_tool() -> str:
+    """``allowedTools`` entry of the knowledge search tool."""
+    return allowed_tool(KNOWLEDGE_TARGET, KNOWLEDGE_TOOL)

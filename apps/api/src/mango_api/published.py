@@ -32,7 +32,12 @@ from mango_core.agents import (
     is_agent_id,
     verify_content,
 )
-from mango_core.harness_tools import allowed_tool, gateway_tool_name
+from mango_core.harness_tools import (
+    allowed_tool,
+    gateway_tool_name,
+    knowledge_allowed_tool,
+    knowledge_gateway_tool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +204,9 @@ class PublishedAgents:
         version marks them in ``approval_tools`` (what its reviewers saw). Asking approval for
         a read tool, or a write tool of a third-party pack, is not enforced by anything yet:
         such a version is not published (D40, D43) and neither is it served.
+
+        A version with knowledge bases also has the knowledge search (D88 (14)), which no
+        catalog lists: it follows from ``knowledge_bases``, and the invocation signs them.
         """
         approval = set(definition.approval_tools)
         if not approval <= set(definition.tools):
@@ -238,6 +246,9 @@ class PublishedAgents:
             gateway.append(name)
         if approval - {ref for _, ref in write} - set(unavailable):
             raise AgentUnavailableError("agent unavailable")
+        if definition.knowledge_bases:
+            allowed.append(knowledge_allowed_tool())
+            gateway.append(knowledge_gateway_tool())
         return (
             tuple(sorted(allowed)),
             tuple(sorted(gateway)),

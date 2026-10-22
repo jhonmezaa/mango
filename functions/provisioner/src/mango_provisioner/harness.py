@@ -20,7 +20,12 @@ from typing import TYPE_CHECKING, Any
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_core.agents import AgentDefinition
-from mango_core.harness_tools import GATEWAY_MCP_SERVER, allowed_tool
+from mango_core.harness_tools import (
+    GATEWAY_MCP_SERVER,
+    KNOWLEDGE_TARGET,
+    allowed_tool,
+    knowledge_allowed_tool,
+)
 from mango_packs.enablement import is_pack_id
 from mango_provisioner.config import ENDPOINT_LIVE, Settings
 from mango_provisioner.errors import RetryableError, StepError, aws_error, error_code
@@ -82,9 +87,13 @@ def allowed_tools(
     marks them in ``approval_tools`` (what its reviewers saw). Anything else that asks for an
     approval (a read tool, a tool of a pack) is not enforced by anything yet: such an agent
     is not published.
+
+    A version with knowledge bases also has the knowledge search (D88 (14)): no catalog
+    lists it, it follows from ``knowledge_bases``. Its target is never a pack's.
     """
     approval = set(definition.approval_tools)
     targets = {connector.target for connector in settings.connectors.values()}
+    targets.add(KNOWLEDGE_TARGET)
     out: list[str] = []
     for ref in definition.tools:
         server_id, _, tool = ref.partition(".")
@@ -108,6 +117,8 @@ def allowed_tools(
     if approval:
         # Approval asked for a tool of a pack, or for one the version does not have.
         raise StepError("write_tools_unsupported")
+    if definition.knowledge_bases:
+        out.append(knowledge_allowed_tool())
     return sorted(out)
 
 

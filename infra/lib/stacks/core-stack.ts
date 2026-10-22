@@ -217,8 +217,14 @@ export class CoreStack extends Stack {
       auditStream: governance.auditStream,
       configKey: tools.configKey,
       embeddingPrice: embeddingPrice(cfg),
+      rateLimitsTable: governance.rateLimits,
+      issuer: identity.issuer,
+      webClientId: identity.webClient.userPoolClientId,
+      tasksClientId: tasks.client.userPoolClientId,
     });
     knowledge.grantApi(apiTaskRole);
+    // The knowledge search of the agents (D88 (14)): a Mango connector behind the Gateway.
+    tools.addKnowledgeTarget(knowledge.retrieveFunction);
     // The browser posts documents to that bucket only (D88 (9)).
     edge.allowConnectTo(knowledge.uploadOrigin);
     // Every URL a browser uses is signed by a role of its own, never with the task's

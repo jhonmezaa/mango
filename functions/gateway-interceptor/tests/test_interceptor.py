@@ -561,3 +561,68 @@ def test_approval_tools_come_from_the_stack(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("APPROVALS_TABLE", "Mango-poc-Approvals")
     assert _approvals().tools == frozenset({WRITE_TOOL})
     _approvals.cache_clear()
+
+
+# --- The knowledge search (D88 (14)) -------------------------------------------------------
+
+KNOWLEDGE = "knowledge___retrieve"
+KB_A = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+KB_B = "01JABCDEFGHJKMNPQRSTVWXYZ1"
+
+
+def _knowledge_headers(kbs: tuple[str, ...]) -> dict[str, str]:
+    expires = int(time.time()) + 300
+    return {
+        "Authorization": f"Bearer {_token()}",
+        invocation.HEADER: invocation.sign(
+            KEY,
+            "user-1",
+            expires,
+            agent_id="ayuda",
+            agent_version=4,
+            tools=(KNOWLEDGE,),
+            knowledge_bases=kbs,
+        ),
+    }
+
+
+def test_the_knowledge_search_gets_the_signed_bases_and_the_agent() -> None:
+    supplied = {
+        "query": "vacaciones",
+        "knowledge_bases": [KB_A],
+        # What the model writes there is dropped: only what mango-api signed counts.
+        "_mango_ctx": {"token": "forged", "knowledge_bases": ["01JABCDEFGHJKMNPQRSTVWXYZ9"]},
+    }
+    event = _event("tools/call", supplied, _knowledge_headers((KB_B, KB_A)), name=KNOWLEDGE)
+    result = handle(event, KEY, frozenset({"finops", "knowledge"}))
+    assert _args(result) == {
+        "query": "vacaciones",
+        "knowledge_bases": [KB_A],
+        "_mango_ctx": {
+            "token": _token(),
+            "knowledge_bases": [KB_A, KB_B],
+            "agent_id": "ayuda",
+            "agent_version": 4,
+        },
+    }
+
+
+def test_other_connectors_never_get_the_knowledge_bases() -> None:
+    headers = _knowledge_headers((KB_A,))
+    headers[invocation.HEADER] = invocation.sign(
+        KEY,
+        "user-1",
+        int(time.time()) + 300,
+        agent_id="ayuda",
+        agent_version=4,
+        tools=(TOOL,),
+        knowledge_bases=(KB_A,),
+    )
+    result = handle(_event("tools/call", {}, headers), KEY, frozenset({"finops", "knowledge"}))
+    assert _args(result) == {"_mango_ctx": {"token": _token()}}
+
+
+def test_the_knowledge_search_needs_its_name_in_the_signature() -> None:
+    # A version without knowledge bases is signed without the tool: the call is refused.
+    event = _event("tools/call", {"query": "q"}, _headers(), name=KNOWLEDGE)
+    assert _denied(handle(event, KEY, frozenset({"finops", "knowledge"})))

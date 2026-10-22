@@ -4,16 +4,20 @@ which agents keep one from being deleted. Real Cedar policies and moto DynamoDB.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
+from decimal import Decimal
 from typing import Any
 
 import pytest
 
 from mango_api.agents import agents_using_knowledge_base
 from mango_api.knowledge_store import KnowledgeBase, KnowledgeStore
-from mango_core import knowledge
+from mango_api.pricing import knowledge_cost
+from mango_core import invocation, knowledge
 from mango_core.agents_table import agent_pk, version_sk
 from mango_core.knowledge import Status
 
+from . import test_agents_api
 from .test_agents_api import (
     Env,
     _approve,
@@ -243,3 +247,82 @@ def test_published_approved_and_failed_versions_keep_a_knowledge_base(
         (published["agent_id"], 1, "Publicado"),
     ]
     assert agents_using_knowledge_base(env.deps.store, _kb(kbs, "hr")) == []
+
+
+# --- The knowledge search in a turn (D88 (14)) -------------------------------------------
+
+EMBEDDING_PRICE = Decimal("0.02")
+
+
+@pytest.fixture
+def priced(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> Env:
+    """`env`, with the price of the embeddings in the settings of mango-api."""
+    base = test_agents_api._settings
+    monkeypatch.setattr(
+        test_agents_api,
+        "_settings",
+        lambda: replace(base(), knowledge_embedding_price=EMBEDDING_PRICE),
+    )
+    created: Env = request.getfixturevalue("env")
+    created.deps.knowledge = KnowledgeStore(created.db, "knowledge")
+    create_knowledge_table(created.db, "knowledge")
+    return created
+
+
+def _searching(stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The stream of the fake harness, with its tool call made a knowledge search."""
+    for event in stream:
+        tool = event.get("contentBlockStart", {}).get("start", {}).get("toolUse")
+        if tool is not None:
+            tool["name"] = "knowledge___retrieve"
+    return stream
+
+
+def test_a_turn_signs_the_knowledge_bases_and_pays_for_its_searches(priced: Env) -> None:
+    kbs = priced.deps.knowledge
+    assert kbs is not None
+    kb_id = _kb(kbs, "hr")
+    agent = _published(priced, name="Con KB", groups=["hr"], knowledge_bases=[kb_id])
+    chat = {"message": "hola", "agent_id": agent["agent_id"]}
+    assert priced.client.post("/api/chat", headers=_h("member"), json=chat).status_code == 200
+    request = priced.agentcore.requests[-1]
+    assert "@mango/knowledge___retrieve" in request["allowedTools"]
+    headers = request["tools"][0]["config"]["remoteMcp"]["headers"]
+    signed = invocation.verify(b"k" * 32, "member-1", headers[invocation.HEADER])
+    assert signed is not None
+    assert signed.knowledge_bases == (kb_id,)
+    assert "knowledge___retrieve" in signed.tools
+    # One search per iteration at most, each as the longest query: 8 x 250 tokens.
+    without = _published(priced, name="Sin KB", groups=["hr"])
+    chat_without = {"message": "hola", "agent_id": without["agent_id"]}
+    assert (
+        priced.client.post("/api/chat", headers=_h("member"), json=chat_without).status_code == 200
+    )
+    reserved_with, reserved_without = priced.budgets.reserved[-2:]
+    assert (
+        reserved_with - reserved_without
+        == knowledge_cost(8, EMBEDDING_PRICE)
+        == Decimal("0.000040")
+    )
+    # The search the turn made is charged with it.
+    original = priced.agentcore.invoke_harness
+
+    def harness(**kwargs: Any) -> dict[str, Any]:
+        return {"stream": _searching(list(original(**kwargs)["stream"]))}
+
+    priced.agentcore.invoke_harness = harness  # type: ignore[method-assign]
+    assert priced.client.post("/api/chat", headers=_h("member"), json=chat).status_code == 200
+    (_, plain), (_, searched) = priced.budgets.settled[0], priced.budgets.settled[-1]
+    assert searched - plain == knowledge_cost(1, EMBEDDING_PRICE) == Decimal("0.000005")
+
+
+def test_a_version_without_knowledge_bases_is_signed_as_before(env: Env) -> None:  # noqa: F811
+    agent = _published(env, name="Sin KB", groups=["hr"])
+    chat = {"message": "hola", "agent_id": agent["agent_id"]}
+    assert env.client.post("/api/chat", headers=_h("member"), json=chat).status_code == 200
+    request = env.agentcore.requests[-1]
+    assert request["allowedTools"] == ["@mango/finops___get_cost_and_usage"]
+    headers = request["tools"][0]["config"]["remoteMcp"]["headers"]
+    signed = invocation.verify(b"k" * 32, "member-1", headers[invocation.HEADER])
+    assert signed is not None
+    assert signed.knowledge_bases == ()

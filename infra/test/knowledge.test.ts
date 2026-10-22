@@ -280,12 +280,13 @@ describe("knowledge bases: fixed resources in Core", () => {
     const env = JSON.stringify(service.Properties.ContainerDefinitions);
     expect(env).toContain("KNOWLEDGE_TABLE");
     expect(env).toContain("KNOWLEDGE_BUCKET");
-    // The only function of the knowledge bases is the synchronization (PR 4); not the tool yet.
+    // The functions of the knowledge bases: the synchronization (PR 4) and the tool (PR 5).
     expect(
       ofType("AWS::Lambda::Function")
         .map(([, r]) => String(r.Properties.FunctionName))
-        .filter((name) => /Knowledge/i.test(name)),
-    ).toEqual([`Mango-${ns}-KnowledgeSync`]);
+        .filter((name) => /Knowledge/i.test(name))
+        .sort(),
+    ).toEqual([`Mango-${ns}-KnowledgeRetrieve`, `Mango-${ns}-KnowledgeSync`]);
   });
 
   it("takes uploads from the SPA only, with a bucket name the CSP may name (D88 (9))", () => {
@@ -366,5 +367,59 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(env.KNOWLEDGE_BASE_ID).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseId"] });
     // Invoked by Step Functions only, synchronously: no dead-letter queue (AGENTS.md, CKV_AWS_116).
     expect(fn.Properties.DeadLetterConfig).toBeUndefined();
+  });
+
+  it("searches with a role that reads the registry by key, one base, its own limit and the audit (D88 (14))", () => {
+    const [retrieveRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-KnowledgeRetrieve` });
+    const statements = statementsOf(retrieveRoleId);
+    const sids = bySid(statements);
+    expect(actions(sids.ReadRegistry!)).toEqual(["dynamodb:BatchGetItem"]);
+    expect(actions(sids.Search!)).toEqual(["bedrock:Retrieve"]);
+    expect(sids.Search!.Resource).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseArn"] });
+    // Only the items of its own limit, never another limit of the table.
+    expect(actions(sids.LimitPerPerson!).sort()).toEqual(["dynamodb:GetItem", "dynamodb:PutItem"]);
+    expect(sids.LimitPerPerson!.Condition).toEqual({
+      "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#kb.retrieve#*"] },
+    });
+    const all = statements.flatMap(actions);
+    // It reads no document, writes no registry, ingests and deletes nothing.
+    for (const forbidden of [
+      "s3:GetObject",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:UpdateItem",
+      ...DIRECT_INGESTION_ACTIONS,
+    ]) {
+      expect(all).not.toContain(forbidden);
+    }
+    expect(all.filter((a) => a.startsWith("bedrock:"))).toEqual(["bedrock:Retrieve"]);
+    expect(all.some((a) => a.endsWith("*"))).toBe(false);
+  });
+
+  it("serves the search as a Mango connector of the Gateway, open to signed-in users (D33)", () => {
+    const [fnId, fn] = only("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-KnowledgeRetrieve` });
+    const env = fn.Properties.Environment.Variables;
+    expect(env.KNOWLEDGE_BASE_ID).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseId"] });
+    expect(env.TASKS_CLIENT_ID).toBeDefined();
+    const [, target] = only("AWS::BedrockAgentCore::GatewayTarget", { Name: "knowledge" });
+    const lambda = target.Properties.TargetConfiguration.Mcp.Lambda;
+    expect(lambda.LambdaArn).toEqual({ "Fn::GetAtt": [fnId, "Arn"] });
+    expect(lambda.ToolSchema.InlinePayload.map((t: { Name: string }) => t.Name)).toEqual(["retrieve"]);
+    const [, policy] = only("AWS::BedrockAgentCore::Policy", { Name: `Mango_${ns}_KnowledgeRetrieve` });
+    const statement = JSON.stringify(policy.Properties.Definition.Cedar.Statement);
+    expect(statement).toContain('AgentCore::Action::\\"knowledge___retrieve\\"');
+    expect(statement).toContain("permit (");
+    // The interceptor hands it the caller's token and the knowledge bases signed for the agent.
+    const [, interceptor] = only("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-GatewayInterceptor` });
+    expect(JSON.parse(interceptor.Properties.Environment.Variables.CONTEXT_TARGETS)).toContain("knowledge");
+  });
+
+  it("tells mango-api the price of the embeddings, which a turn pays for its searches", () => {
+    const [, api] = ofType("AWS::ECS::TaskDefinition")[0]!;
+    const variables = api.Properties.ContainerDefinitions.flatMap(
+      (c: { Environment?: { Name: string; Value: unknown }[] }) => c.Environment ?? [],
+    );
+    const price = variables.find((v: { Name: string }) => v.Name === "KNOWLEDGE_EMBEDDING_PRICE");
+    expect(Number(price.Value)).toBeGreaterThan(0);
   });
 });

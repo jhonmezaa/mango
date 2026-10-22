@@ -120,7 +120,7 @@ from mango_api.people import (
     people_router,
 )
 from mango_api.presign import PresignSessions
-from mango_api.pricing import Usage, cost, estimate_max_cost, turn_price
+from mango_api.pricing import Usage, cost, estimate_max_cost, knowledge_cost, turn_price
 from mango_api.probe import AdminProbe, OrganizationCache
 from mango_api.provisioner import DeprovisionerClient, PackProvisionerClient, ProvisionerClient
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
@@ -158,6 +158,7 @@ from mango_core import invocation
 from mango_core import task_reports as reports
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN, VersionStatus
 from mango_core.budget_turns import PendingTurn
+from mango_core.harness_tools import KNOWLEDGE_TOOL
 from mango_core.identity import (
     AccessTokenVerifier,
     IdentityError,
@@ -1289,13 +1290,14 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             harness.ChatTurn("user", f"{note}\n\n{body.message}" if note else body.message)
         )
 
-        # Reserved with the price of the model this turn runs on (D22, rule 4).
+        # Reserved with the price of the model this turn runs on (D22, rule 4), and the
+        # knowledge searches it may make (D88 (14)).
         estimate = estimate_max_cost(
             price,
             sum(len(t.text) for t in history),
             limits.max_iterations,
             limits.reserved_output_tokens,
-        )
+        ) + _knowledge_reserve(services, agent)
         period = current_period()
         scopes = await asyncio.to_thread(_budget_scopes, services, user, agent_id)
         turn = {"agent": agent_id, "version": agent.version, "model": model_id}
@@ -1579,7 +1581,7 @@ def _agent_invocation(
 
 def _sign_invocation(services: Services, caller: Caller, agent: PublishedAgent) -> str:
     """Signature binding this invocation's Gateway calls to mango-api, this user and the tools
-    of the agent version in use (audit finding F1, D33)."""
+    of the agent version in use (audit finding F1, D33), with its knowledge bases (D88 (14))."""
     expiry = min(caller.expires_at, int(time.time()) + agent.definition.limits.timeout_seconds + 60)
     try:
         return invocation.sign(
@@ -1589,6 +1591,7 @@ def _sign_invocation(services: Services, caller: Caller, agent: PublishedAgent) 
             agent_id=agent.agent_id,
             agent_version=agent.version,
             tools=agent.gateway_tools,
+            knowledge_bases=agent.definition.knowledge_bases,
         )
     except ValueError as exc:
         logger.exception("the agent's tools cannot be signed")
@@ -1668,6 +1671,21 @@ def _release_turn(services: Services, turn: PendingTurn) -> None:
         logger.exception("the reservation of a turn that did not start was not released")
 
 
+def _knowledge_reserve(services: Services, agent: PublishedAgent) -> Decimal:
+    """What the knowledge searches of a turn may cost: one per iteration, at most (D88 (14))."""
+    if not agent.definition.knowledge_bases:
+        return Decimal(0)
+    return knowledge_cost(
+        agent.definition.limits.max_iterations, services.settings.knowledge_embedding_price
+    )
+
+
+def _knowledge_searches(result: harness.InvocationResult) -> int:
+    """Calls of the knowledge search the turn started. Counted from the stream, so a call of a
+    pack tool with the same name counts too: at most a few millionths of a dollar more."""
+    return sum(1 for t in result.tools if t["name"] == KNOWLEDGE_TOOL and t["status"] == "started")
+
+
 def _settle_turn(
     services: Services,
     *,
@@ -1686,9 +1704,12 @@ def _settle_turn(
     budget reconciler reads what the agent really spent. If nothing can be written here the
     pending record stays and the reconciler closes it.
 
-    True when the reservation was closed here with a known end.
+    True when the reservation was closed here with a known end. The knowledge searches of the
+    turn are charged with it (D88 (14)).
     """
-    known = cost(result.usage, price)
+    known = cost(result.usage, price) + knowledge_cost(
+        _knowledge_searches(result), services.settings.knowledge_embedding_price
+    )
     final = result.usage_final or not result.started
     held = Decimal(0)
     try:
@@ -1855,7 +1876,7 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     history = [harness.ChatTurn("user", message)]
     estimate = estimate_max_cost(
         price, len(message), limits.max_iterations, limits.reserved_output_tokens
-    )
+    ) + _knowledge_reserve(services, agent)
     period = current_period()
     try:
         scopes = _budget_scopes(services, user, agent_id)

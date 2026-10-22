@@ -116,6 +116,9 @@ class Settings:
     """Registry of the knowledge bases (D88 (21)); empty until mango-api may use it."""
     knowledge_bucket: str = ""
     knowledge_sync_state_machine_arn: str = ""
+    knowledge_embedding_price: Decimal = Decimal(0)
+    """USD per million tokens of the embedding model of the knowledge bases (rule 7): what a
+    search of an agent adds to its turn (D88 (14))."""
     presign_role_arn: str = ""
     """``Mango-<ns>-Presign``: the only credentials that sign URLs a browser uses."""
     """``Mango-<ns>-KnowledgeSync`` (D88 (11)): indexes, deletes and verifies documents."""
@@ -198,8 +201,20 @@ class Settings:
             knowledge_table=env.get("KNOWLEDGE_TABLE", ""),
             knowledge_bucket=env.get("KNOWLEDGE_BUCKET", ""),
             knowledge_sync_state_machine_arn=env.get("KNOWLEDGE_SYNC_STATE_MACHINE_ARN", ""),
+            knowledge_embedding_price=_price(env.get("KNOWLEDGE_EMBEDDING_PRICE", "0")),
             presign_role_arn=env.get("PRESIGN_ROLE_ARN", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),
         )
+
+
+def _price(raw: str) -> Decimal:
+    """A price of the configuration: a finite amount, never negative."""
+    try:
+        price = Decimal(raw)
+    except ArithmeticError as exc:
+        raise ValueError("invalid price") from exc
+    if not price.is_finite() or price < 0:
+        raise ValueError("invalid price")
+    return price

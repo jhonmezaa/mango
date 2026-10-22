@@ -84,7 +84,17 @@ export interface KnowledgeProps {
   readonly configKey: kms.IKey;
   /** USD per million input tokens of the embedding model of the profile (rule 7). */
   readonly embeddingPrice: number;
+  /** The shared rate limits (D70): the searches of each person (D88 (14)). */
+  readonly rateLimitsTable: dynamodb.ITableV2;
+  /** Who may call the knowledge search: access tokens of these clients of the user pool. */
+  readonly issuer: string;
+  readonly webClientId: string;
+  /** The tasks client (D78): a task run searches as its owner. */
+  readonly tasksClientId: string;
 }
+
+/** Keep in sync with `mango_knowledge_retrieve.handler.LIMIT_NAME`. */
+export const RETRIEVE_LIMIT = "kb.retrieve";
 
 /** Keep in sync with `functions/knowledge-sync` (`handler.LOCK_SECONDS`): the lock lasts as long. */
 export const SYNC_TIMEOUT = Duration.hours(2);
@@ -123,6 +133,8 @@ export class Knowledge extends Construct {
   /** `Mango-<ns>-KnowledgeSync`: ingests, deletes and verifies (D88 (11), (16)). */
   readonly syncMachine: sfn.StateMachine;
   readonly syncFunction: lambda.Function;
+  /** The `knowledge-retrieve` tool (D88 (14)): a Lambda target of the Gateway. */
+  readonly retrieveFunction: lambda.Function;
   readonly alarms: cloudwatch.Alarm[];
   /** Environment mango-api needs for the knowledge bases. */
   readonly apiEnvironment: Record<string, string>;
@@ -426,11 +438,14 @@ export class Knowledge extends Construct {
     const sync = this.buildSync(props, bucketName);
     this.syncFunction = sync.fn;
     this.syncMachine = sync.machine;
+    this.retrieveFunction = this.buildRetrieve(props);
 
     this.apiEnvironment = {
       KNOWLEDGE_TABLE: this.table.tableName,
       KNOWLEDGE_BUCKET: this.bucket.bucketName,
       KNOWLEDGE_SYNC_STATE_MACHINE_ARN: this.syncMachine.stateMachineArn,
+      // What a search of an agent adds to its turn (D88 (14), rule 7).
+      KNOWLEDGE_EMBEDDING_PRICE: String(props.embeddingPrice),
     };
   }
 
@@ -703,6 +718,90 @@ export class Knowledge extends Construct {
     alarm.addAlarmAction(new cloudwatchActions.SnsAction(props.alerts.topic));
     this.alarms.push(alarm);
     return { fn, machine };
+  }
+
+  /**
+   * The `knowledge-retrieve` tool (D88 (14)). Its role reads the registry by key (the records
+   * of the bases and the names of documents), searches the one Bedrock base, keeps the limit of
+   * each person in the shared table (only its own items), and writes the audit trail. It reads
+   * no document, ingests nothing and deletes nothing.
+   */
+  private buildRetrieve(props: KnowledgeProps): lambda.Function {
+    const cfg = props.installation;
+    const ns = this.namespace;
+    const { region } = Stack.of(this);
+    const role = new iam.Role(this, "RetrieveRole", {
+      roleName: mangoName(ns, "KnowledgeRetrieve"),
+      description: "Knowledge search tool: searches the knowledge bases the asker may use",
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    });
+    const policy = new iam.Policy(this, "RetrievePolicy", {
+      roles: [role],
+      statements: [
+        new iam.PolicyStatement({
+          sid: "ReadRegistry",
+          actions: ["dynamodb:BatchGetItem"],
+          resources: [this.table.tableArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "DataKeyViaDynamoDB",
+          actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+          resources: [this.dataKey.keyArn],
+          conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
+        }),
+        new iam.PolicyStatement({
+          sid: "Search",
+          actions: ["bedrock:Retrieve"],
+          resources: [this.knowledgeBase.attrKnowledgeBaseArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "LimitPerPerson",
+          // Only the items of this limit (`LIMIT#kb.retrieve#<sub>`), never another's.
+          actions: ["dynamodb:GetItem", "dynamodb:PutItem"],
+          resources: [props.rateLimitsTable.tableArn],
+          conditions: {
+            "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [`LIMIT#${RETRIEVE_LIMIT}#*`] },
+          },
+        }),
+        new iam.PolicyStatement({
+          sid: "WriteAuditIndex",
+          actions: ["dynamodb:PutItem"],
+          resources: [props.auditIndex.tableArn],
+        }),
+        new iam.PolicyStatement({
+          sid: "WriteAuditTrail",
+          actions: ["firehose:PutRecord"],
+          resources: [props.auditStream.deliveryStreamArn],
+        }),
+      ],
+    });
+    acknowledge(role, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
+
+    const fn = new PythonFunction(this, "Retrieve", {
+      packageName: "mango-knowledge-retrieve",
+      packagePath: "connectors/knowledge-retrieve",
+      retainLogs: cfg.retainData,
+      handler: "mango_knowledge_retrieve.handler.lambda_handler",
+      functionName: mangoName(ns, "KnowledgeRetrieve"),
+      description: "knowledge-retrieve tool: searches the knowledge bases the asker may use (D88)",
+      role,
+      timeout: Duration.seconds(30),
+      memorySize: 512,
+      environment: {
+        MANGO_NAMESPACE: ns,
+        COGNITO_ISSUER: props.issuer,
+        COGNITO_CLIENT_ID: props.webClientId,
+        TASKS_CLIENT_ID: props.tasksClientId,
+        KNOWLEDGE_TABLE: this.table.tableName,
+        KNOWLEDGE_BASE_ID: this.knowledgeBase.attrKnowledgeBaseId,
+        RATE_LIMITS_TABLE: props.rateLimitsTable.tableName,
+        AUDIT_STREAM: props.auditStream.deliveryStreamName,
+        AUDIT_INDEX_TABLE: props.auditIndex.tableName,
+      },
+      environmentEncryption: props.configKey,
+    }).function;
+    fn.node.addDependency(policy);
+    return fn;
   }
 
   /** Where the browser posts uploads: the bucket's regional host, for the CSP of the SPA. */

@@ -16,6 +16,7 @@ from mango_api.authz import (
     KnowledgeBaseResource,
 )
 from mango_core.identity import UserContext
+from mango_core.knowledge import usable
 
 from .cedar_fake import CedarPolicyStore, policy_files, schema
 
@@ -275,6 +276,21 @@ def test_using_a_knowledge_base_is_being_in_its_groups_and_nothing_else(
     )
     assert _kb_allowed(authz, "UseKnowledgeBase", _kb(groups=frozenset({"bu-lead"}))) == {"lead-1"}
     assert _kb_allowed(authz, "UseKnowledgeBase", _kb(groups=frozenset())) == set()
+
+
+@pytest.mark.parametrize(
+    "groups",
+    [frozenset({"hr"}), frozenset({"bu-lead", "finops"}), frozenset({"mango-admin"}), frozenset()],
+)
+def test_the_retrieve_tool_decides_like_use_knowledge_base(
+    authz: Authorizer, groups: frozenset[str]
+) -> None:
+    # The tool has no Verified Permissions of its own (D88 (14)): `mango_core.knowledge.usable`
+    # is the rule of this policy, for every person and every set of groups.
+    kb = _kb(groups=groups)
+    by_policy = _kb_allowed(authz, "UseKnowledgeBase", kb)
+    by_tool = {u.user_id for u in EVERYONE if usable(groups, u.groups)}
+    assert by_tool == by_policy
 
 
 def test_knowledge_base_attributes_must_match_the_resource(authz: Authorizer) -> None:

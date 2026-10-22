@@ -22,6 +22,10 @@ they name the agent version in use and its tools, so a ``tools/call`` for any ot
 rejected, whatever Cedar (L2) would allow that user: the Gateway itself only sees the user,
 not the agent.
 
+The ``knowledge-retrieve`` tool (D88 (14)) also gets, in ``_mango_ctx``, the knowledge bases
+mango-api signed for the agent version in use, and that agent: it searches no other base, and
+of those only the ones the person may use. The model can name none outside that list.
+
 A tool of an MCP pack goes through only if the release's signed manifest classifies it
 ``read`` (D84, ``PACK_TOOLS``): a write, destructive or unclassified tool of a pack, or a tool
 of a target the release does not know, is refused here whatever the agent version names. The
@@ -53,6 +57,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_core import approval, approval_use, invocation, pack_identity
+from mango_core.harness_tools import KNOWLEDGE_TARGET
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -314,11 +319,19 @@ def _context(
     signed: invocation.Invocation,
     context_targets: frozenset[str],
     packs: PackIdentities | None,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     """What a tool learns about its caller: the token (Mango connectors), a signed assertion
-    (packs over account data) or nothing (every other pack)."""
+    (packs over account data) or nothing (every other pack). The knowledge search also learns
+    the agent's knowledge bases, as mango-api signed them."""
     target, tool = _target_of(name)
     if target and target in context_targets:
+        if target == KNOWLEDGE_TARGET:
+            return {
+                "token": token,
+                "knowledge_bases": list(signed.knowledge_bases),
+                "agent_id": signed.agent_id,
+                "agent_version": signed.agent_version,
+            }
         return {"token": token}
     if packs is None or target not in packs.targets:
         return None

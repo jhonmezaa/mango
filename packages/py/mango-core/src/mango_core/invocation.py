@@ -10,6 +10,10 @@ read. The signature (v2) names the user, the agent, its published version, the e
 that version and an expiry. The interceptor rejects requests without a valid, unexpired
 signature for the token's subject, and ``tools/call`` for a tool outside the list.
 
+A version with knowledge bases also names them (``kbs``, D88 (14)): the interceptor hands them
+to the ``knowledge-retrieve`` tool, which searches only those, and of those only the ones the
+person can use. The model never names them. Without the claim, the list is empty.
+
 Format: ``v2.<base64url(JSON payload)>.<HMAC-SHA256 hex of "v2.<payload>">``. The MAC covers
 the encoded payload exactly as sent, so nothing is parsed before it is verified.
 """
@@ -26,6 +30,8 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from mango_core.knowledge import ID_PATTERN as KNOWLEDGE_BASE_ID
+
 HEADER = "X-Mango-Invocation"
 MAX_HEADER_CHARS = 8192
 """Upper bound of a signature; a version with more tools than fit is not served."""
@@ -34,6 +40,8 @@ _AGENT_RE = re.compile(r"^[a-z0-9]{2,16}$")
 _TOOL_RE = re.compile(r"^[A-Za-z0-9-]{1,48}___[A-Za-z0-9_-]{1,64}$")
 _MAX_TOOLS = 100
 _MAX_AGENT_VERSION = 999_999
+_MAX_KNOWLEDGE_BASES = 5
+_KB_RE = re.compile(KNOWLEDGE_BASE_ID)
 
 
 @dataclass(frozen=True)
@@ -46,6 +54,8 @@ class Invocation:
     tools: frozenset[str]
     """Gateway tool names (``<target>___<tool>``) this invocation may call."""
     expires_at: int
+    knowledge_bases: tuple[str, ...] = ()
+    """Knowledge bases of the agent version (ids, sorted); the tool searches no other."""
 
 
 def _mac(key: bytes, signed: str) -> str:
@@ -60,24 +70,32 @@ def sign(
     agent_id: str,
     agent_version: int,
     tools: Iterable[str],
+    knowledge_bases: Iterable[str] = (),
 ) -> str:
-    """Signature of one harness invocation. ``tools`` are Gateway names (``target___tool``)."""
+    """Signature of one harness invocation. ``tools`` are Gateway names (``target___tool``);
+    ``knowledge_bases``, the ids of the version's knowledge bases."""
     names = sorted(set(tools))
+    kbs = sorted(set(knowledge_bases))
     if (
         not subject
         or not _AGENT_RE.fullmatch(agent_id)
         or not 1 <= agent_version <= _MAX_AGENT_VERSION
         or len(names) > _MAX_TOOLS
         or not all(_TOOL_RE.fullmatch(name) for name in names)
+        or len(kbs) > _MAX_KNOWLEDGE_BASES
+        or not all(_KB_RE.fullmatch(kb) for kb in kbs)
     ):
         raise ValueError("invalid invocation")
-    claims = {
+    claims: dict[str, object] = {
         "sub": subject,
         "exp": expires_at,
         "agent": agent_id,
         "ver": agent_version,
         "tools": names,
     }
+    if kbs:
+        # Only when there are some: a signature without knowledge bases stays as it was.
+        claims["kbs"] = kbs
     payload = json.dumps(claims, separators=(",", ":"), sort_keys=True)
     encoded = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     signed = f"{_VERSION}.{encoded}"
@@ -101,6 +119,7 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
         return None
     sub, exp = payload.get("sub"), payload.get("exp")
     agent, ver, tools = payload.get("agent"), payload.get("ver"), payload.get("tools")
+    kbs = payload.get("kbs", [])
     if (
         not isinstance(sub, str)
         or not hmac.compare_digest(sub.encode(), subject.encode())
@@ -112,6 +131,9 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
         or not isinstance(ver, int)
         or not isinstance(tools, list)
         or not all(isinstance(name, str) for name in tools)
+        or not isinstance(kbs, list)
+        or len(kbs) > _MAX_KNOWLEDGE_BASES
+        or not all(isinstance(kb, str) and _KB_RE.fullmatch(kb) for kb in kbs)
     ):
         return None
     return Invocation(
@@ -120,6 +142,7 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
         agent_version=ver,
         tools=frozenset(tools),
         expires_at=exp,
+        knowledge_bases=tuple(sorted(set(kbs))),
     )
 
 
