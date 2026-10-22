@@ -1,7 +1,7 @@
 # D88 · Knowledge bases: una entidad compartida entre agentes, con documentos de S3
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente)
+- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente; el rol que firma las subidas, punto 33, elegido por el dueño ese día, nota propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (la alerta de las knowledge bases: qué significa cuando el filtro sale de quien pregunta) y [D25](D025-recursos-creados-en-runtime.md) (el primer caso de KB: sin stacks de CloudFormation en ejecución); toma el diseño de §4.4
 - **Precisada por:** —
 
@@ -148,4 +148,14 @@ Ahora los logs del bucket de documentos se configuran a mano y la política lo n
   - ingesta, estado, borrado y búsqueda solo sobre la base de Bedrock de la instalación;
   - leer y borrar solo bajo `kb/*/docs/` (leer, por si Bedrock pide los permisos de quien ingiere sobre la ubicación S3: a ver en la instalación);
   - arrancar su propia máquina, nombrada por su ARN, y la auditoría.
+
+**(33) Las subidas se firman con un rol propio (2026-10-21).** GuardDuty marcó con severidad 8 `UnauthorizedAccess:IAMUser/ResourceCredentialExfiltration.OutsideAWS` la prueba de subida de (30) en la instalación del cliente. Fue un `PutObject` desde el navegador con las credenciales del rol de la tarea ECS de `mango-api`: el POST prefirmado lleva su sesión, así que cada subida de cada persona lo habría disparado. El dueño eligió arreglarlo ese día.
+
+Ahora:
+- `mango-api` asume `Mango-<ns>-Presign` por STS, una sesión de 30 minutos por persona con `SourceIdentity` = quien sube (regla 5), cacheada mientras le queden más de 16 minutos, y firma solo con ella.
+- El rol solo hace `PutObject` bajo `uploads/` del bucket de documentos, con `kms:GenerateDataKey` de su llave a través de S3 (además de los PDF de [D86](D086-reportes-descargables-de-tareas.md) (10)).
+- Su trust solo admite al rol de la tarea y exige `SourceIdentity`.
+- El rol de la tarea ya no puede escribir en `uploads/`: lee ahí lo que comprueba y copia, y escribe solo en `kb/*/docs/`.
+- Sin el rol de firma no se firma ninguna subida (503), nunca con la sesión de la tarea.
+- Las condiciones del POST (clave, tamaño, tipo, 15 minutos) no cambian.
 

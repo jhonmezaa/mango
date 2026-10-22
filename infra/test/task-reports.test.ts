@@ -116,16 +116,17 @@ describe("task reports", () => {
     expect(JSON.stringify(fn.Metadata ?? {})).not.toContain("CKV_AWS_116");
   });
 
-  it("lets mango-api only invoke it and sign links under owner/, from a managed policy of its own", () => {
+  it("lets mango-api only invoke it: links are signed by the presign role, never by the task", () => {
     const [, policy] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-ApiTaskReports` });
     const statements = policy.Properties.PolicyDocument.Statement as Statement[];
-    expect(statements.map((s) => [s.Sid, actions(s)])).toEqual([
-      ["DrawReport", ["lambda:InvokeFunction"]],
-      ["SignReportLinks", ["s3:GetObject"]],
-      ["ReportsKeyViaS3", ["kms:Decrypt"]],
-    ]);
+    expect(statements.map((s) => [s.Sid, actions(s)])).toEqual([["DrawReport", ["lambda:InvokeFunction"]]]);
     expect(JSON.stringify(statements[0]!.Resource)).toContain(functionId);
-    expect(JSON.stringify(statements[1]!.Resource)).toContain("/owner/*");
+    // Nothing of mango-api's own role reads a PDF (presign.test.ts).
+    const [apiRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-ApiTask` });
+    const reads = statementsOf(apiRoleId).filter(
+      (s) => actions(s).includes("s3:GetObject") && JSON.stringify(s.Resource).includes(bucketId),
+    );
+    expect(reads).toEqual([]);
     expect(Object.keys(resources).some((id) => id.includes("ApiTaskRoleOverflowPolicy"))).toBe(false);
   });
 

@@ -23,7 +23,8 @@ import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
-import { INDEXING_PROFILE, Knowledge } from "../constructs/knowledge.js";
+import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
+import { Presign } from "../constructs/presign.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
@@ -220,6 +221,14 @@ export class CoreStack extends Stack {
     knowledge.grantApi(apiTaskRole);
     // The browser posts documents to that bucket only (D88 (9)).
     edge.allowConnectTo(knowledge.uploadOrigin);
+    // Every URL a browser uses is signed by a role of its own, never with the task's
+    // credentials: GuardDuty reports those used outside AWS (2026-10-21).
+    const presign = new Presign(this, "Presign", {
+      namespace: cfg.namespace,
+      apiTaskRole,
+      documents: { bucket: knowledge.bucket, key: knowledge.key, prefix: KNOWLEDGE_PREFIXES.uploads },
+      reports: { bucket: taskReports.bucket, key: taskReports.key, prefix: "owner/" },
+    });
     // Daily read-only reconciliation and the alarms of the publication path (TM-M6, TM-M9).
     // It also reports a release agent that serves content other than the release's (D42).
     new Reconciler(this, "Reconciler", {
@@ -505,6 +514,7 @@ export class CoreStack extends Stack {
         ...tasks.apiEnvironment,
         ...taskReports.apiEnvironment,
         ...knowledge.apiEnvironment,
+        ...presign.apiEnvironment,
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
         // D60: who may be invited, and what Settings > General > Installation shows to
         // administrators (served by mango-api, not by the public config.json of the SPA).

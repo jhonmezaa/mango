@@ -1,8 +1,9 @@
-# Reportes descargables de las tareas: modelo de amenazas (v0.1)
+# Reportes descargables de las tareas: modelo de amenazas (v0.2)
 
 > Fecha: 2026-10-19 · Skill: `security-threat-model`. Decisiones: D23, D25, D56, D58, D70, D78, D79, D82, D83, **D86** y **D87**.
 > Amplía `tasks-threat-model.md` (ejecuciones de tareas) e `inbox-threat-model.md` (Bandeja).
 > Alcance: la tool interna `mango_report` (`inline_function` del harness) y su validación en `mango-api` (`mango_core.task_reports`, `task_worker.py`, `app.py`); la Lambda `Mango-<ns>-TaskReport` (`functions/task-report/`) y su renderizador; el bucket de reportes y su llave; las rutas de descarga y de «Generar de nuevo» (`tasks.py`); la casilla del editor y los estados de la pantalla (`apps/web/src/pages/schedules/`); la infraestructura (`infra/lib/constructs/task-reports.ts`).
+> **v0.2 (2026-10-21):** TM-R9, el enlace firmado con las credenciales de la tarea ECS, que GuardDuty marcó en la instalación; ahora firma un rol propio (D86 (10)).
 > v0.1 se escribe **antes** de construir (D86 (9)). Supuestos confirmados por el dueño el 2026-10-19, por menú («Sí, las cuatro (Recomendada)»), junto con las decisiones de D87. Nada está desplegado.
 
 ## Executive summary
@@ -59,7 +60,7 @@ Controles que se construyen:
 - `mango-api` → Lambda: `InvokeFunction` asíncrona con `{task_id, run_id}`; el rol de `mango-api` solo puede invocar esa función.
 - Lambda → tabla: `GetItem` y `UpdateItem` solo de atributos `report*`. Lambda → bucket: `PutObject` en `owner/*` con la CMK.
 - Navegador → CloudFront → `mango-api`: token de acceso validado, L1 `OwnTask`, límite de tasa, auditoría que falla cerrada.
-- Navegador → S3: `GET` con la URL prefirmada (TLS, firma SigV4 de las credenciales del rol de `mango-api`, 5 minutos, `attachment`).
+- Navegador → S3: `GET` con la URL prefirmada (TLS, firma SigV4 de una sesión del rol `Mango-<ns>-Presign` a nombre del dueño, nunca de las credenciales de la tarea de `mango-api`, desde el 2026-10-21; 5 minutos, `attachment`).
 
 #### Diagram
 
@@ -138,6 +139,7 @@ flowchart LR
 | TM-R6 | Operadores o lectores de logs | Acceso a logs | Leer contenido o la URL | Fuga | PDF, enlace | Nunca se registran URL, datos ni texto; auditoría con ids y archivo | Access logs de S3 (supuesto 4) | — | — | Baja | Baja | **low** |
 | TM-R7 | Persona con sesión | Sesión | Descargas o regeneraciones en bucle; PDFs gigantes | Costo | Disponibilidad | Límite de descargas por persona (`RateLimits`), «Generar de nuevo» solo tras `render` y con el límite de cambios, 10 MB por PDF, tope de páginas | — | — | Métricas de invocaciones | Baja | Baja | **low** |
 | TM-R8 | Ejecución que reporta datos de otra ejecución | Mensajes repetidos | Mezclar datos de dos ejecuciones | PDF incorrecto | Integridad | Los datos se escriben en el mismo `update_run` que cierra la ejecución, condicionado a `running`; la Lambda lee el ítem por su clave | — | — | — | Baja | Baja | **low** |
+| TM-R9 | Un servicio de AWS o quien vea la URL | La URL prefirmada lleva la sesión de quien la firma | Usar desde internet credenciales de un recurso (la tarea ECS de `mango-api`): GuardDuty lo marca `ResourceCredentialExfiltration.OutsideAWS` y, filtrada la sesión, alcanza todo lo que puede la tarea | Hallazgo de severidad 8 en cada descarga; con la sesión de la tarea, acceso a todo lo de `mango-api` mientras dure | Credenciales | 5 min, deny `s3:signatureAge` | Visto en la instalación el 2026-10-21 (con una subida de D88) | Firmar solo con `Mango-<ns>-Presign`, asumido por STS, una sesión de 30 min por persona con `SourceIdentity` = el dueño; el rol solo lee `owner/` de este bucket (y sube a `uploads/` de D88); trust solo del rol de la tarea con `SourceIdentity`; el rol de la tarea ya no lee PDF; sin rol, no hay enlace (D86 (10)) | GuardDuty; CloudTrail de `AssumeRole` con la identidad de cada persona | Baja | Media | **low** (era **high** antes del 2026-10-21) |
 
 ## Criticality calibration
 

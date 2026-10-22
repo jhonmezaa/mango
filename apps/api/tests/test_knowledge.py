@@ -10,6 +10,7 @@ import time
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -26,7 +27,8 @@ from mango_api.authz import Authorizer
 from mango_api.groups import GroupsUnavailableError
 from mango_api.knowledge import CHANGES_PER_HOUR, KnowledgeDeps, SyncStarter
 from mango_api.knowledge_store import ALL_PK, INDEX_ALL, KnowledgeStore
-from mango_api.knowledge_uploads import S3_CONFIG, DocumentStorage
+from mango_api.knowledge_uploads import S3_CONFIG, DocumentStorage, StorageUnavailableError
+from mango_api.presign import PresignSessions
 from mango_core.groups import GroupDef
 from mango_core.identity import IdentityError
 from mango_core.knowledge import is_id
@@ -67,6 +69,44 @@ CLAIMS: dict[str, dict[str, Any]] = {
 }
 GROUPS = ("hr", "finance", "people")
 BUCKET = "mango-test-knowledge-0a1b2c3d"
+PRESIGN_ARN = "arn:aws:iam::111122223333:role/Mango-test-Presign"
+PRESIGN_TOKEN = "presign-session-token"
+
+
+@dataclass
+class FakeSts:
+    """STS: what mango-api assumes to sign, and for whom."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def assume_role(self, **request: Any) -> dict[str, Any]:
+        self.calls.append(request)
+        return {
+            "Credentials": {
+                "AccessKeyId": "ASIAPRESIGNEXAMPLE01",
+                "SecretAccessKey": "presign-secret",
+                "SessionToken": PRESIGN_TOKEN,
+                "Expiration": datetime.now(UTC) + timedelta(seconds=request["DurationSeconds"]),
+            }
+        }
+
+
+def presign_sessions(sts: FakeSts | None = None) -> PresignSessions:
+    return PresignSessions(
+        sts or FakeSts(),
+        PRESIGN_ARN,
+        "us-east-1",
+        client_factory=lambda c: boto3.client(
+            "s3",
+            region_name="us-east-1",
+            config=S3_CONFIG,
+            aws_access_key_id=c["AccessKeyId"],
+            aws_secret_access_key=c["SecretAccessKey"],
+            aws_session_token=c["SessionToken"],
+        ),
+    )
+
+
 SYNC_ARN = "arn:aws:states:us-east-1:111122223333:stateMachine:Mango-test-KnowledgeSync"
 
 
@@ -196,7 +236,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
             areas=lambda: ["security", "sandbox"],
             audit=audit,  # type: ignore[arg-type]
             changes=app_module.Limits().limiter("knowledge.changes"),
-            storage=DocumentStorage(s3, BUCKET, "us-east-1"),
+            storage=DocumentStorage(s3, BUCKET, "us-east-1", presign_sessions()),
             uploads=app_module.Limits().limiter("knowledge.uploads"),
             sync=SyncStarter(sfn, SYNC_ARN),
             user_limit=lambda _user: Decimal("5"),
@@ -726,7 +766,7 @@ def test_the_copy_takes_only_the_object_that_was_checked(env: Env) -> None:
 
             return call
 
-    storage = DocumentStorage(Recording(), BUCKET, "us-east-1")  # type: ignore[arg-type]
+    storage = DocumentStorage(Recording(), BUCKET, "us-east-1", None)  # type: ignore[arg-type]
     found = storage.inspect(file["fields"]["key"], "pdf")
     assert found is not None and found.matches
     storage.copy(file["fields"]["key"], found.etag, f"kb/{kb['kb_id']}/docs/x", "application/pdf")
@@ -843,3 +883,18 @@ def test_deleting_a_knowledge_base_starts_the_synchronization_that_deletes_it(en
     assert (item["status"]["S"], "deleting_since" in item) == ("deleting", True)
     path = f"/api/knowledge-bases/{kb['kb_id']}/sync"
     assert _code(env.client.post(path, headers=_h("creator"), json={})) == "knowledge_base_deleting"
+
+
+def test_uploads_are_signed_by_the_presign_role_never_by_the_task(env: Env) -> None:
+    """GuardDuty, 2026-10-21: a POST signed with the session of the ECS task, used from a
+    browser, is reported as credentials of a resource used outside AWS."""
+    kb = env.created()
+    [file] = _signed(env, kb, ("a.pdf", PDF, "application/pdf"))["files"]
+    assert file["fields"]["x-amz-security-token"] == PRESIGN_TOKEN
+    assert file["fields"]["x-amz-credential"].startswith("ASIAPRESIGNEXAMPLE01/")
+
+
+def test_without_the_presign_role_nothing_is_signed(env: Env) -> None:
+    services_storage = DocumentStorage(env.s3, BUCKET, "us-east-1", None)
+    with pytest.raises(StorageUnavailableError):
+        services_storage.sign("uploads/x", 1, "application/pdf", user_id="creator-1")

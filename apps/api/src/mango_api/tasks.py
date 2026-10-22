@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from mango_api.agent_rules import find_secrets
 from mango_api.audit import AuditLog
 from mango_api.authz import AgentResource, TaskResource
+from mango_api.presign import SigningUnavailableError
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.task_reports import ReportLinkOut, ReportOut, TaskReports, report_out, status_of
@@ -917,7 +918,7 @@ def download_link(
     )
     try:
         url = deps.reports.links.link(found, owner_id=automation.owner_id)
-    except (ClientError, BotoCoreError, ValueError) as exc:
+    except (ClientError, BotoCoreError, ValueError, SigningUnavailableError) as exc:
         raise _unavailable(exc) from exc
     return ReportLinkOut(url=url, file=name)
 

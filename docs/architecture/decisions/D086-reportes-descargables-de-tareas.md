@@ -1,7 +1,7 @@
 # D86 · Reportes descargables de las tareas: un PDF por ejecución, generado en una Lambda de la release
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-19 (los nueve puntos, tomados por el dueño ese día, por menú, todos con la opción «(Recomendada)»)
+- **Fecha:** 2026-10-19 (los nueve puntos, tomados por el dueño ese día, por menú, todos con la opción «(Recomendada)»); 2026-10-21 (punto 10, el rol que firma los enlaces, elegido por el dueño ese día; nota propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (lo que entrega una ejecución) y [D79](D079-investigacion-de-anomalias-por-evento.md) (lo que entrega la investigación de una anomalía)
 - **Precisada por:** [D87](D087-como-se-construyen-los-reportes.md) (2: ReportLab en el zip de la función, con IBM Plex; 6: la tool interna es una `inline_function` del harness y la serie diaria sale de la consulta cuando se puede)
 
@@ -26,3 +26,16 @@ Origen: la parte D del brief unificado del 2026-10-16, que la ronda de Claude De
 **(8) Límites y nombre: los del diseño.** 10 MB por PDF, 25 filas por tabla (el resto en «Otros»), 400 días de serie, 4.000 caracteres de notas y 280 por texto corto. El archivo se llama `{tarea}-{fecha}-{hhmm|id corto}.pdf`.
 
 **(9) Modelo de amenazas antes de construir.** Con `security-threat-model`, en `docs/security/threat-models/`. Cubre los datos estructurados que entrega un modelo y llegan a un renderizador, las URLs prefirmadas y las fuentes incrustadas.
+
+**(10) Las URLs se firman con un rol propio (2026-10-21, nota propuesta por un agente; el arreglo lo eligió el dueño ese día).** GuardDuty marcó con severidad 8 `UnauthorizedAccess:IAMUser/ResourceCredentialExfiltration.OutsideAWS` en la instalación del cliente. El caso fue la subida de una knowledge base ([D88](D088-knowledge-bases-sobre-s3.md) (33)), pero la descarga de este PDF firmaba igual.
+
+Una URL prefirmada lleva la sesión de quien la firma (`x-amz-security-token`). Firmada con las credenciales de la tarea ECS de `mango-api`, su uso desde el navegador son credenciales de un recurso usadas fuera de AWS.
+
+Ahora:
+- `mango-api` asume `Mango-<ns>-Presign` por STS, una sesión de 30 minutos por persona con `SourceIdentity` = el dueño de la tarea (regla 5), y firma solo con ella (`mango_api.presign`).
+- El rol solo hace `GetObject` bajo `owner/` de este bucket, con su llave a través de S3 (además de las subidas de D88).
+- Su trust solo admite al rol de la tarea de `mango-api` y exige `SourceIdentity`.
+- El rol de la tarea ya no puede leer ningún PDF.
+- Sin el rol de firma no se emite enlace (503), nunca con la sesión de la tarea.
+- El enlace sigue durando 5 minutos, y el bucket sigue negando firmas más viejas.
+

@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING, Any
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
+from mango_api.presign import PresignSessions, SigningUnavailableError
+
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
 
@@ -138,17 +140,25 @@ class SignedUpload:
 
 
 class DocumentStorage:
-    def __init__(self, s3: S3Client, bucket: str, region: str) -> None:
+    def __init__(
+        self, s3: S3Client, bucket: str, region: str, signer: PresignSessions | None
+    ) -> None:
+        """``s3`` checks and copies with mango-api's own credentials; ``signer`` signs the
+        uploads with the presign role, never with those (``mango_api.presign``)."""
         self._s3 = s3
+        self._signer = signer
         self._bucket = bucket
         # The signature of a POST covers its policy, not the host: the URL is always the
         # bucket's regional one, the only host the CSP of the SPA allows.
         self._url = f"https://{bucket}.s3.{region}.amazonaws.com/"
 
-    def sign(self, key: str, size: int, content_type: str) -> SignedUpload:
-        """A POST that only uploads ``key``, of exactly ``size`` bytes and ``content_type``."""
+    def sign(self, key: str, size: int, content_type: str, *, user_id: str) -> SignedUpload:
+        """A POST that only uploads ``key``, of exactly ``size`` bytes and ``content_type``,
+        signed by the presign role for ``user_id``."""
+        if self._signer is None:
+            raise StorageUnavailableError("no signing role")
         try:
-            signed = self._s3.generate_presigned_post(
+            signed = self._signer.s3_for(user_id).generate_presigned_post(
                 Bucket=self._bucket,
                 Key=key,
                 Fields={"Content-Type": content_type},
@@ -160,6 +170,8 @@ class DocumentStorage:
                 ],
                 ExpiresIn=UPLOAD_SECONDS,
             )
+        except SigningUnavailableError as exc:
+            raise StorageUnavailableError("signing unavailable") from exc
         except (BotoCoreError, ClientError) as exc:
             raise StorageUnavailableError(type(exc).__name__) from exc
         return SignedUpload(url=self._url, fields=dict(signed["fields"]))

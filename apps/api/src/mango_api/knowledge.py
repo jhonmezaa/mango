@@ -624,7 +624,10 @@ def request_uploads(
     try:
         signed = {
             doc_id: storage.sign(
-                upload_key(caller.user.user_id, upload.upload_id, doc_id), f.size, f.content_type
+                upload_key(caller.user.user_id, upload.upload_id, doc_id),
+                f.size,
+                f.content_type,
+                user_id=caller.user.user_id,
             )
             for doc_id, f in files.items()
         }

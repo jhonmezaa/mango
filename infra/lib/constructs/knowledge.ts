@@ -724,11 +724,11 @@ export class Knowledge extends Construct {
           resources: [this.dataKey.keyArn],
           conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
         }),
-        // Signing a POST lends this permission to the browser, for one key, size and type.
         // Reading is `HeadObject` and two ranges to check a document, and the copy's source.
+        // Uploads are signed by `Mango-<ns>-Presign`, never with this role (`presign.ts`).
         new iam.PolicyStatement({
           sid: "Uploads",
-          actions: ["s3:GetObject", "s3:PutObject"],
+          actions: ["s3:GetObject"],
           resources: [uploads],
         }),
         // The copy's destination; mango-api never reads nor deletes under `kb/`.

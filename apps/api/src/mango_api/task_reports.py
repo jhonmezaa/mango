@@ -27,12 +27,12 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict
 
+from mango_api.presign import PresignSessions, SigningUnavailableError
 from mango_api.tasks_store import Automation, Run, RunStatus
 from mango_core import task_reports as tr
 
 if TYPE_CHECKING:
     from mypy_boto3_lambda import LambdaClient
-    from mypy_boto3_s3 import S3Client
 
 logger = logging.getLogger(__name__)
 
@@ -197,15 +197,20 @@ class LambdaRenderer:
 
 @dataclass
 class S3Links:
-    client: S3Client
+    signer: PresignSessions | None
+    """Signs with the presign role, never with the task's credentials (``mango_api.presign``);
+    without it no link is issued."""
     bucket: str
 
     def link(self, run: Run, *, owner_id: str) -> str:
         """A link to the run's object, under its owner's prefix (D86 (3)): computed again
-        from the run, so a stored key never points elsewhere."""
+        from the run, so a stored key never points elsewhere. Only its owner downloads it, so
+        the session of the signature is the owner's (rule 5)."""
         name = str(run.report_meta.get("file", ""))
         key = tr.object_key(owner_id, run.automation_id, run.run_id, name)
-        return self.client.generate_presigned_url(
+        if self.signer is None:
+            raise SigningUnavailableError("no signing role")
+        return self.signer.s3_for(owner_id).generate_presigned_url(
             "get_object",
             Params={
                 "Bucket": self.bucket,

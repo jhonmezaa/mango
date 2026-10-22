@@ -119,6 +119,7 @@ from mango_api.people import (
     parse_domains,
     people_router,
 )
+from mango_api.presign import PresignSessions
 from mango_api.pricing import Usage, cost, estimate_max_cost, turn_price
 from mango_api.probe import AdminProbe, OrganizationCache
 from mango_api.provisioner import DeprovisionerClient, PackProvisionerClient, ProvisionerClient
@@ -127,7 +128,7 @@ from mango_api.rate_limits import RateLimitStore
 from mango_api.settings import ModelPrice, Settings
 from mango_api.settings_store import BudgetLimits, SettingsStore, SettingsUnavailableError
 from mango_api.task_identity import TaskTokens
-from mango_api.task_reports import S3_CONFIG, LambdaRenderer, S3Links, TaskReports
+from mango_api.task_reports import LambdaRenderer, S3Links, TaskReports
 from mango_api.task_worker import (
     AgentAccessDeniedError,
     QueueWorker,
@@ -402,6 +403,19 @@ def _areas(store: SettingsStore) -> list[str]:
     return list(store.mapping().units)
 
 
+@cache
+def _presign_for(role_arn: str, region: str) -> PresignSessions:
+    return PresignSessions(boto3.client("sts", region_name=region), role_arn, region)
+
+
+def _presign_sessions(settings: Settings) -> PresignSessions | None:
+    """The signer of every URL a browser uses: one per process, shared by reports and uploads.
+    Without its role nothing is signed (never with the task's credentials)."""
+    if not settings.presign_role_arn:
+        return None
+    return _presign_for(settings.presign_role_arn, settings.region)
+
+
 def _task_services(
     settings: Settings,
     *,
@@ -426,6 +440,7 @@ def _task_services(
         return None, None, None
     region = settings.region
     sqs = boto3.client("sqs", region_name=region)
+    presign = _presign_sessions(settings)
     tasks = TasksDeps(
         store=TaskStore(
             dynamodb,
@@ -449,10 +464,7 @@ def _task_services(
                 renderer=LambdaRenderer(
                     boto3.client("lambda", region_name=region), settings.task_report_function
                 ),
-                links=S3Links(
-                    boto3.client("s3", region_name=region, config=S3_CONFIG),
-                    settings.task_reports_bucket,
-                ),
+                links=S3Links(presign, settings.task_reports_bucket),
             )
             if settings.task_report_function and settings.task_reports_bucket
             else None
@@ -707,6 +719,7 @@ def build_services(settings: Settings) -> Services:
                         boto3.client("s3", region_name=region, config=KNOWLEDGE_S3_CONFIG),
                         settings.knowledge_bucket,
                         region,
+                        _presign_sessions(settings),
                     )
                     if settings.knowledge_bucket
                     else None

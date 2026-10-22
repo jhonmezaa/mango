@@ -240,38 +240,22 @@ export class TaskReports extends Construct {
   }
 
   /**
-   * mango-api: invoke the function, and sign download links (GetObject under `owner/`, and the
-   * key to decrypt through S3). A managed policy of its own: the role is close to its limit of
-   * inline policies.
+   * mango-api: invoke the function. Download links are signed by `Mango-<ns>-Presign`, never
+   * with the task's credentials (`presign.ts`): mango-api itself reads no PDF. A managed policy
+   * of its own: the role is close to its limit of inline policies.
    */
   grantApi(role: iam.Role): void {
-    const { region } = Stack.of(this);
-    const policy = new iam.ManagedPolicy(this, "ApiPolicy", {
+    new iam.ManagedPolicy(this, "ApiPolicy", {
       managedPolicyName: mangoName(this.namespace, "ApiTaskReports"),
       description: "mango-api: the PDFs of task runs (D86)",
       roles: [role],
-    });
-    policy.addStatements(
-      new iam.PolicyStatement({
-        sid: "DrawReport",
-        actions: ["lambda:InvokeFunction"],
-        resources: [this.function.functionArn],
-      }),
-      new iam.PolicyStatement({
-        sid: "SignReportLinks",
-        actions: ["s3:GetObject"],
-        resources: [this.bucket.arnForObjects("owner/*")],
-      }),
-      new iam.PolicyStatement({
-        sid: "ReportsKeyViaS3",
-        actions: ["kms:Decrypt"],
-        resources: [this.key.keyArn],
-        conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
-      }),
-    );
-    acknowledge(policy, {
-      id: `AwsSolutions-IAM5[Resource::<${Stack.of(this).getLogicalId(this.bucket.node.defaultChild as s3.CfnBucket)}.Arn>/owner/*]`,
-      reason: "Download links of PDFs created at runtime, one per run, under their owner's prefix (D86 (4)).",
+      statements: [
+        new iam.PolicyStatement({
+          sid: "DrawReport",
+          actions: ["lambda:InvokeFunction"],
+          resources: [this.function.functionArn],
+        }),
+      ],
     });
   }
 }

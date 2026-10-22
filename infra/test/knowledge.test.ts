@@ -245,8 +245,9 @@ describe("knowledge bases: fixed resources in Core", () => {
       "Uploads",
     ]);
     expect(actions(sids.StartSync!)).toEqual(["states:StartExecution"]);
-    // Uploads: sign and check under uploads/ only; saved documents: only written, under kb/*/docs/.
-    expect(actions(sids.Uploads!).sort()).toEqual(["s3:GetObject", "s3:PutObject"]);
+    // Uploads: checked under uploads/ only, never signed by this role (presign.test.ts); saved
+    // documents: only written, under kb/*/docs/.
+    expect(actions(sids.Uploads!)).toEqual(["s3:GetObject"]);
     expect(JSON.stringify(sids.Uploads!.Resource)).toContain("/uploads/*");
     expect(actions(sids.SavedDocuments!)).toEqual(["s3:PutObject"]);
     expect(JSON.stringify(sids.SavedDocuments!.Resource)).toContain("/kb/*/docs/*");
