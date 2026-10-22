@@ -63,8 +63,12 @@ El diseño dice: «… es visible para grupos sin acceso a esta knowledge base. 
 ### 2.7 Quién ve qué
 
 - La lista (nombre, descripción, estado, grupos) la ven creadores y administradores.
-- Los documentos y «Probar búsqueda» de una knowledge base, solo su dueño, los administradores y los creadores que están en sus grupos. Para los demás hace falta un estado de la pestaña.
-- «Probar búsqueda» devuelve fragmentos de texto, sin formato enriquecido.
+- Los documentos de una knowledge base los ven su dueño, los administradores y los creadores que están en sus grupos.
+- «Probar búsqueda» exige además estar en los grupos de la knowledge base (D88 (37), precisión de (29), elegida por el dueño el 2026-10-22). Ni el dueño ni un administrador la usan por serlo, porque la búsqueda devuelve contenido y se hace con la identidad de quien pregunta. Un administrador o un dueño que no está en sus grupos ve la pestaña «Documentos», pero no puede probar la búsqueda.
+- Hace falta un estado para cada pestaña, para quien no puede usarla:
+  - en «Documentos», para quien no ve los documentos de esa knowledge base;
+  - en «Probar búsqueda», para quien no puede probarla: no ve los documentos, o los ve pero no está en sus grupos. En el segundo caso conviene que el texto diga por qué: quien prueba no está en los grupos de esta knowledge base.
+- «Probar búsqueda» devuelve fragmentos de texto, sin formato enriquecido, cada uno con su documento, su página (si la hay) y su puntaje.
 
 ### 2.8 Datos que el diseño muestra y quizá no estén
 
