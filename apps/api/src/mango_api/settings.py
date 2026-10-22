@@ -116,6 +116,8 @@ class Settings:
     """Registry of the knowledge bases (D88 (21)); empty until mango-api may use it."""
     knowledge_bucket: str = ""
     knowledge_sync_state_machine_arn: str = ""
+    knowledge_base_id: str = ""
+    """The one Bedrock knowledge base of the installation (D88 (7)): «Probar búsqueda»."""
     knowledge_embedding_price: Decimal = Decimal(0)
     """USD per million tokens of the embedding model of the knowledge bases (rule 7): what a
     search of an agent adds to its turn (D88 (14))."""
@@ -201,6 +203,7 @@ class Settings:
             knowledge_table=env.get("KNOWLEDGE_TABLE", ""),
             knowledge_bucket=env.get("KNOWLEDGE_BUCKET", ""),
             knowledge_sync_state_machine_arn=env.get("KNOWLEDGE_SYNC_STATE_MACHINE_ARN", ""),
+            knowledge_base_id=env.get("KNOWLEDGE_BASE_ID", ""),
             knowledge_embedding_price=_price(env.get("KNOWLEDGE_EMBEDDING_PRICE", "0")),
             presign_role_arn=env.get("PRESIGN_ROLE_ARN", ""),
             allowed_hosts=frozenset(

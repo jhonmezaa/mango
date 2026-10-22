@@ -529,9 +529,12 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
       "logs:DescribeLogGroups",
       "logs:PutLogEvents",
     ]);
-    // The one metric filter of the stack reads the log of mango-api (D71 (18)), not the guard's.
+    // The metric filters of the stack read the log of mango-api (D71 (18), D88 (37)), not the guard's.
     const filters = Object.values(source.Resources).filter((r) => r.Type === "AWS::Logs::MetricFilter");
-    expect(filters.map((r) => r.Properties.MetricTransformations[0].MetricName)).toEqual(["RateLimitStoreRefusals"]);
+    expect(filters.map((r) => r.Properties.MetricTransformations[0].MetricName).sort()).toEqual([
+      "RateLimitStoreRefusals",
+      "RetrieveThrottles",
+    ]);
     expect(JSON.stringify(filters)).not.toContain("UninstallGuard");
   });
 

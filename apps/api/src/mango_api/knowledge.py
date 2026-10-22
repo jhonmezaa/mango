@@ -1,4 +1,4 @@
-"""Knowledge bases (D88): the registry, without documents or synchronization yet.
+"""Knowledge bases (D88): the registry, its documents, the synchronization and «Probar búsqueda».
 
 A knowledge base of Mango is a record and a prefix over the one Bedrock knowledge base of the
 installation (D88 (7)); it answers whoever is in one of its groups (D88 (22)). Administrators
@@ -23,6 +23,12 @@ Security notes (security-best-practices, FastAPI):
   ids, one size and one type (``knowledge_uploads``). Saving accepts only documents of an
   upload the same person asked for in the same knowledge base, checks their size and bytes
   again, and copies them on the server side. Their names are shown, never used in a key.
+* «Probar búsqueda» (D88 (12), (37)) is ``ViewKnowledgeBase`` and ``UseKnowledgeBase`` on the
+  knowledge base: who sees its documents and is in one of its groups (rule 5: neither its owner
+  nor an administrator reads its content for being one). It searches only it, with the filter
+  of the agents' tool (``mango_core.knowledge_search``). It is limited per person and audited
+  as ``kb.search`` with ids and the length of the query, never the query nor a fragment.
+  Fragments are document content: the screen shows them as text.
 """
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
@@ -70,7 +76,7 @@ from mango_api.knowledge_uploads import (
 )
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.web import ApiError, Caller, rate_limited
-from mango_core import knowledge
+from mango_core import knowledge, knowledge_search
 from mango_core.knowledge import DocumentStatus, Status
 
 logger = logging.getLogger(__name__)
@@ -82,6 +88,11 @@ UPLOADS_PER_HOUR = 60
 """Requests of presigned uploads and saves, per person: each one is up to 20 documents."""
 FILES_PER_UPLOAD = 20
 """Files per upload (D88 (9))."""
+SEARCHES_PER_MINUTE = 20
+"""«Probar búsqueda», per person (D88 (12)); the agents' tool has a limit of its own."""
+SEARCH_THROTTLED_LOG = "knowledge search throttled"
+"""How the log line of a search Bedrock refused for its quota starts: a metric filter adds it to
+``RetrieveThrottles``, which the alarm ``Knowledge-retrieve-throttled`` reads (D88 (28))."""
 UPLOAD_DAYS_SECONDS = 23 * 3600
 """An upload may be saved for 23 hours: the bucket empties ``uploads/`` after a day."""
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -255,6 +266,36 @@ class DocumentListOut(_Strict):
     items: list[DocumentOut]
 
 
+def _query(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("the query is empty")
+    if _CONTROL_BUT_NEWLINE.search(value):
+        raise ValueError("control characters are not allowed")
+    return value
+
+
+class SearchIn(_Strict):
+    query: Annotated[
+        str, Field(max_length=knowledge_search.MAX_QUERY_CHARS), AfterValidator(_query)
+    ]
+
+
+class FragmentOut(_Strict):
+    """A fragment of a document: content, never instructions nor markup to render."""
+
+    doc_id: str
+    document: str | None
+    """Its shown name; ``None`` when the document is no longer in the registry."""
+    page: int | None
+    score: float | None
+    text: str
+
+
+class SearchOut(_Strict):
+    fragments: list[FragmentOut]
+
+
 # --- Use cases --------------------------------------------------------------------------
 
 
@@ -320,6 +361,11 @@ class KnowledgeDeps:
     agents_using: Callable[[str], Sequence[AgentUsing]] | None = None
     """Agents whose versions serve a knowledge base (``agents.agents_using_knowledge_base``);
     set in production. Raises when it cannot tell: nothing is deleted then."""
+    retrieve: Callable[..., Any] | None = None
+    """``Retrieve`` of ``bedrock-agent-runtime``; ``None`` until mango-api may search (503)."""
+    knowledge_base_id: str = ""
+    """The one Bedrock knowledge base of the installation (D88 (7))."""
+    searches: Limiter | None = None
 
 
 def resource_of(kb: KnowledgeBase) -> KnowledgeBaseResource:
@@ -797,6 +843,72 @@ def save_documents(
     return saved, rejected
 
 
+def search_knowledge_base(
+    deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase, query: str
+) -> list[FragmentOut]:
+    """«Probar búsqueda»: the fragments of ``kb`` that answer ``query`` (D88 (12)).
+
+    The same search as the agents' tool, over this knowledge base only. Audited before it
+    answers; if the audit cannot be written, nothing is answered.
+    """
+    _accepting(kb)
+    if deps.retrieve is None or not deps.knowledge_base_id:
+        raise ApiError(503, "search_unavailable", "please try again")
+    outcome = "ok"
+    fragments: list[knowledge_search.Fragment] = []
+    try:
+        fragments = knowledge_search.search(
+            deps.retrieve,
+            knowledge_base_id=deps.knowledge_base_id,
+            query=query,
+            bases=[knowledge_search.Searchable(kb.kb_id, kb.business_unit)],
+        )
+    except knowledge_search.SearchThrottledError:
+        # The alarm counts these lines: the kb_id only, never the query.
+        logger.warning("%s; kb %s", SEARCH_THROTTLED_LOG, kb.kb_id)
+        outcome = "throttled"
+    except knowledge_search.SearchUnavailableError:
+        outcome = "unavailable"
+    names: dict[str, str] = {}
+    for doc_id in {f.doc_id for f in fragments}:
+        try:
+            document = deps.store.document(kb.kb_id, doc_id)
+        except KnowledgeStoreUnavailableError:
+            # The fragments still stand; only their names are missing.
+            logger.exception("the name of a document could not be read")
+            continue
+        if document is not None:
+            names[doc_id] = document.name
+    try:
+        deps.audit.emit(
+            "kb.search",
+            caller.user.user_id,
+            {
+                "kb_id": kb.kb_id,
+                "query_chars": len(query),
+                "fragments": [f.fragment_id for f in fragments],
+                "outcome": outcome,
+            },
+            caller.user,
+        )
+    except Exception as exc:
+        raise ApiError(503, "audit_unavailable", "the search could not be audited; retry") from exc
+    if outcome == "throttled":
+        raise ApiError(503, "search_busy", "the search is busy; try again in a moment")
+    if outcome == "unavailable":
+        raise ApiError(503, "search_unavailable", "please try again")
+    return [
+        FragmentOut(
+            doc_id=f.doc_id,
+            document=names.get(f.doc_id),
+            page=f.page,
+            score=round(f.score, 3) if f.score is not None else None,
+            text=f.text,
+        )
+        for f in fragments
+    ]
+
+
 def document_out(document: Document) -> DocumentOut:
     return DocumentOut(
         doc_id=document.doc_id,
@@ -972,5 +1084,23 @@ def knowledge_router(  # noqa: PLR0915 - registers the route closures
         except KnowledgeStoreUnavailableError as exc:
             raise _unavailable(exc) from exc
         return DocumentListOut(items=[document_out(d) for d in documents])
+
+    @router.post("/{kb_id}/search", response_model=SearchOut)
+    async def search(kb_id: KbId, body: SearchIn, caller: Viewer) -> SearchOut:
+        """«Probar búsqueda»: who sees its documents and is in its groups (D88 (37))."""
+        kb = await load(kb_id)
+        for action in ("ViewKnowledgeBase", "UseKnowledgeBase"):
+            await authorize(
+                caller,
+                action,
+                KNOWLEDGE_BASE_TYPE,
+                kb_id,
+                read_only=True,
+                knowledge=resource_of(kb),
+            )
+        if deps.searches is not None:
+            _limit(deps.searches, caller.user.user_id)
+        fragments = await run(search_knowledge_base, deps, caller, kb, body.query)
+        return SearchOut(fragments=fragments)
 
     return router

@@ -149,6 +149,12 @@ LIMITS: dict[str, LimitSpec] = {
         shared=True,
         why="Each request signs up to 20 uploads or saves up to 20 documents into S3 (D88 (9)).",
     ),
+    "knowledge.searches": LimitSpec(
+        knowledge.SEARCHES_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="Each «Probar búsqueda» calls Bedrock Retrieve, a quota of the account (D88 (12)).",
+    ),
     "admin.probe": LimitSpec(
         admin.PROBE_CALLS_PER_MINUTE,
         MINUTE,

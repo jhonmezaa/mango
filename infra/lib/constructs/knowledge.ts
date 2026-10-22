@@ -446,6 +446,8 @@ export class Knowledge extends Construct {
       KNOWLEDGE_SYNC_STATE_MACHINE_ARN: this.syncMachine.stateMachineArn,
       // What a search of an agent adds to its turn (D88 (14), rule 7).
       KNOWLEDGE_EMBEDDING_PRICE: String(props.embeddingPrice),
+      // «Probar búsqueda» (D88 (12)).
+      KNOWLEDGE_BASE_ID: this.knowledgeBase.attrKnowledgeBaseId,
     };
   }
 
@@ -804,6 +806,39 @@ export class Knowledge extends Construct {
     return fn;
   }
 
+  /**
+   * «Probar búsqueda» runs in mango-api, which publishes no metric of its own: each search
+   * Bedrock refuses for its quota leaves a line in its log (`SEARCH_THROTTLED_LOG` of
+   * `mango_api.knowledge`), and this filter adds it to `RetrieveThrottles`, the metric of the
+   * tool, so the one alarm counts both. The words are read by their place in the line (the
+   * format of `app.main`), like the filter of the rate limits (D71 (18)).
+   */
+  countApiThrottles(logGroup: logs.ILogGroup): void {
+    new logs.MetricFilter(this, "ApiRetrieveThrottles", {
+      logGroup,
+      filterName: mangoName(this.namespace, "Api-knowledge-search-throttled"),
+      filterPattern: logs.FilterPattern.spaceDelimited(
+        "date",
+        "time",
+        "level",
+        "logger",
+        "word1",
+        "word2",
+        "word3",
+        "...",
+      )
+        .whereString("level", "=", "WARNING")
+        .whereString("logger", "=", "mango_api.knowledge")
+        .whereString("word1", "=", "knowledge")
+        .whereString("word2", "=", "search")
+        .whereString("word3", "=", "throttled;"),
+      metricNamespace: `${KNOWLEDGE_SIGNALS.namespacePrefix}/${this.namespace}`,
+      metricName: KNOWLEDGE_SIGNALS.retrieveThrottles,
+      metricValue: "1",
+      unit: cloudwatch.Unit.COUNT,
+    });
+  }
+
   /** Where the browser posts uploads: the bucket's regional host, for the CSP of the SPA. */
   get uploadOrigin(): string {
     return `https://${this.bucketRegionalDomain}`;
@@ -854,6 +889,12 @@ export class Knowledge extends Construct {
           actions: ["kms:Decrypt", "kms:GenerateDataKey"],
           resources: [this.key.keyArn],
           conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+        }),
+        // «Probar búsqueda» (D88 (12)): one knowledge base at a time, with the tool's filter.
+        new iam.PolicyStatement({
+          sid: "SearchKnowledgeBase",
+          actions: ["bedrock:Retrieve"],
+          resources: [this.knowledgeBase.attrKnowledgeBaseArn],
         }),
         // After saving, deleting a document or a base, or «Sincronizar ahora» (D88 (11)).
         new iam.PolicyStatement({

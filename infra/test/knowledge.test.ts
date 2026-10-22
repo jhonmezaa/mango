@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
@@ -247,10 +248,14 @@ describe("knowledge bases: fixed resources in Core", () => {
       "KnowledgeTable",
       "KnowledgeTableKey",
       "SavedDocuments",
+      "SearchKnowledgeBase",
       "StartSync",
       "Uploads",
     ]);
     expect(actions(sids.StartSync!)).toEqual(["states:StartExecution"]);
+    // «Probar búsqueda» (D88 (12)): searching the one base, nothing else of Bedrock.
+    expect(actions(sids.SearchKnowledgeBase!)).toEqual(["bedrock:Retrieve"]);
+    expect(sids.SearchKnowledgeBase!.Resource).toEqual({ "Fn::GetAtt": [kbId, "KnowledgeBaseArn"] });
     // Uploads: checked under uploads/ only, never signed by this role (presign.test.ts); saved
     // documents: only written, under kb/*/docs/.
     expect(actions(sids.Uploads!)).toEqual(["s3:GetObject"]);
@@ -273,8 +278,13 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(sids.KnowledgeTableKey!.Condition!.StringEquals).toEqual({
       "kms:ViaService": `dynamodb.${region}.amazonaws.com`,
     });
-    // Nothing of the documents, the vectors or the Bedrock base yet, and no overflow policy.
-    expect(JSON.stringify(statementsOf(apiRoleId))).not.toMatch(/s3vectors|bedrock:Retrieve/);
+    // Nothing of the vectors, no other action of Bedrock, and no overflow policy.
+    const apiStatements = statementsOf(apiRoleId);
+    expect(JSON.stringify(apiStatements)).not.toMatch(/s3vectors/);
+    // mango-api searches; it never ingests nor deletes in the base (the synchronization does).
+    for (const forbidden of DIRECT_INGESTION_ACTIONS) {
+      expect(apiStatements.flatMap(actions)).not.toContain(forbidden);
+    }
     expect(Object.keys(resources).some((id) => id.startsWith("ApiTaskRoleOverflowPolicy"))).toBe(false);
     const [, service] = only("AWS::ECS::TaskDefinition", {});
     const env = JSON.stringify(service.Properties.ContainerDefinitions);
@@ -421,5 +431,30 @@ describe("knowledge bases: fixed resources in Core", () => {
     );
     const price = variables.find((v: { Name: string }) => v.Name === "KNOWLEDGE_EMBEDDING_PRICE");
     expect(Number(price.Value)).toBeGreaterThan(0);
+  });
+
+  it("counts the «Probar búsqueda» that Bedrock throttles in the alarm of the tool (D88 (12))", () => {
+    const [, filter] = only("AWS::Logs::MetricFilter", { FilterName: `Mango-${ns}-Api-knowledge-search-throttled` });
+    expect(filter.Properties.FilterPattern).toBe(
+      '[date, time, level = "WARNING", logger = "mango_api.knowledge", word1 = "knowledge", word2 = "search", ' +
+        'word3 = "throttled;", ...]',
+    );
+    expect(filter.Properties.MetricTransformations).toEqual([
+      {
+        MetricNamespace: `${KNOWLEDGE_SIGNALS.namespacePrefix}/${ns}`,
+        MetricName: KNOWLEDGE_SIGNALS.retrieveThrottles,
+        MetricValue: "1",
+        Unit: "Count",
+      },
+    ]);
+    // The same words on both sides: mango-api writes them, the filter reads them.
+    const source = readFileSync(resolve(import.meta.dirname, "../../apps/api/src/mango_api/knowledge.py"), "utf8");
+    expect(source).toContain('SEARCH_THROTTLED_LOG = "knowledge search throttled"');
+    expect(source).toContain('logger.warning("%s; kb %s", SEARCH_THROTTLED_LOG, kb.kb_id)');
+    const [, service] = only("AWS::ECS::TaskDefinition", {});
+    const variables = service.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
+    expect(variables.find((v) => v.Name === "KNOWLEDGE_BASE_ID")?.Value).toEqual({
+      "Fn::GetAtt": [kbId, "KnowledgeBaseId"],
+    });
   });
 });

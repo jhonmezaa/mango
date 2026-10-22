@@ -2205,6 +2205,62 @@
         "title": "FieldChange",
         "type": "object"
       },
+      "FragmentOut": {
+        "additionalProperties": false,
+        "description": "A fragment of a document: content, never instructions nor markup to render.",
+        "properties": {
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_id",
+          "document",
+          "page",
+          "score",
+          "text"
+        ],
+        "title": "FragmentOut",
+        "type": "object"
+      },
       "GroupAdminOut": {
         "additionalProperties": false,
         "properties": {
@@ -6239,45 +6295,21 @@
         "title": "ScheduleSpec",
         "type": "object"
       },
-      "SearchIn": {
+      "SearchOut": {
         "additionalProperties": false,
         "properties": {
-          "cursor": {
-            "anyOf": [
-              {
-                "pattern": "^[0-9]{1,5}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cursor"
-          },
-          "filter": {
-            "default": "all",
-            "enum": [
-              "all",
-              "pending",
-              "invited",
-              "disabled"
-            ],
-            "title": "Filter",
-            "type": "string"
-          },
-          "prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prefix"
+          "fragments": {
+            "items": {
+              "$ref": "#/components/schemas/FragmentOut"
+            },
+            "title": "Fragments",
+            "type": "array"
           }
         },
-        "title": "SearchIn",
+        "required": [
+          "fragments"
+        ],
+        "title": "SearchOut",
         "type": "object"
       },
       "SessionIn": {
@@ -7832,6 +7864,21 @@
         "title": "RejectIn",
         "type": "object"
       },
+      "mango_api__knowledge__SearchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "maxLength": 1000,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "SearchIn",
+        "type": "object"
+      },
       "mango_api__mcp__RejectIn": {
         "additionalProperties": false,
         "properties": {
@@ -8092,6 +8139,47 @@
           "created_at"
         ],
         "title": "PersonOut",
+        "type": "object"
+      },
+      "mango_api__people__SearchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,5}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "filter": {
+            "default": "all",
+            "enum": [
+              "all",
+              "pending",
+              "invited",
+              "disabled"
+            ],
+            "title": "Filter",
+            "type": "string"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          }
+        },
+        "title": "SearchIn",
         "type": "object"
       },
       "mango_api__tasks__PersonOut": {
@@ -9702,7 +9790,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SearchIn"
+                "$ref": "#/components/schemas/mango_api__people__SearchIn"
               }
             }
           },
@@ -12010,6 +12098,57 @@
           }
         },
         "summary": "Delete Knowledge Base Document"
+      }
+    },
+    "/knowledge-bases/{kb_id}/search": {
+      "post": {
+        "description": "«Probar búsqueda»: who sees its documents and is in its groups (D88 (37)).",
+        "operationId": "search",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Kb Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mango_api__knowledge__SearchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Search"
       }
     },
     "/knowledge-bases/{kb_id}/sync": {

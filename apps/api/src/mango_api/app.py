@@ -740,6 +740,13 @@ def build_services(settings: Settings) -> Services:
                 ),
                 user_limit=lambda user_id: budget_limits.for_user(user_id)[0],
                 agents_using=partial(agents_using_knowledge_base, agents_store),
+                retrieve=(
+                    boto3.client("bedrock-agent-runtime", region_name=region).retrieve
+                    if settings.knowledge_base_id
+                    else None
+                ),
+                knowledge_base_id=settings.knowledge_base_id,
+                searches=limits.limiter("knowledge.searches"),
             )
             if knowledge_store is not None
             else None

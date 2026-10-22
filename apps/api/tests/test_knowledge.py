@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import time
 import zipfile
 from collections.abc import Iterator
@@ -944,3 +945,163 @@ def test_without_the_presign_role_nothing_is_signed(env: Env) -> None:
     services_storage = DocumentStorage(env.s3, BUCKET, "us-east-1", None)
     with pytest.raises(StorageUnavailableError):
         services_storage.sign("uploads/x", 1, "application/pdf", user_id="creator-1")
+
+
+# --- «Probar búsqueda» (D88 (12)) -------------------------------------------------------
+
+
+@dataclass
+class FakeRetrieve:
+    results: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def __call__(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        if self.error:
+            raise ClientError({"Error": {"Code": self.error, "Message": "m"}}, "Retrieve")
+        return {"retrievalResults": self.results}
+
+
+def _searching(env: Env, retrieve: FakeRetrieve) -> None:
+    assert env.deps is not None
+    env.deps.retrieve = retrieve
+    env.deps.knowledge_base_id = "BEDROCKKB1"
+    env.deps.searches = app_module.Limits().limiter("knowledge.searches")
+
+
+def _search(env: Env, kb: dict[str, Any], token: str = "creator", query: str = "vacaciones") -> Any:
+    return env.client.post(
+        f"/api/knowledge-bases/{kb['kb_id']}/search", headers=_h(token), json={"query": query}
+    )
+
+
+def _fragment(kb_id: str, doc_id: str, text: str = "Quince días hábiles.") -> dict[str, Any]:
+    return {
+        "content": {"text": text},
+        "score": 0.81234,
+        "metadata": {
+            "kb_id": kb_id,
+            "doc_id": doc_id,
+            "x-amz-bedrock-kb-chunk-id": "chunk-1",
+            "x-amz-bedrock-kb-document-page-number": 4.0,
+        },
+    }
+
+
+def test_a_search_uses_the_filter_of_the_tool_over_this_base_only(env: Env) -> None:
+    kb = env.created(business_unit="security")
+    [document] = _saved(env, kb)["saved"]
+    other = env.created(name="Otra")
+    retrieve = FakeRetrieve(
+        [_fragment(kb["kb_id"], document["doc_id"]), _fragment(other["kb_id"], "DOCX")]
+    )
+    _searching(env, retrieve)
+    response = _search(env, kb)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "fragments": [
+            {
+                "doc_id": document["doc_id"],
+                "document": "a.pdf",
+                "page": 4,
+                "score": 0.812,
+                "text": "Quince días hábiles.",
+            }
+        ]
+    }
+    [call] = retrieve.calls
+    assert call["retrievalConfiguration"]["vectorSearchConfiguration"]["filter"] == {
+        "andAll": [
+            {"in": {"key": "kb_id", "value": [kb["kb_id"]]}},
+            {"in": {"key": "business_unit", "value": ["security"]}},
+        ]
+    }
+
+
+def test_who_sees_the_documents_and_is_in_its_groups_may_try_the_search(env: Env) -> None:
+    # D88 (37): View and Use. The administrator sees the documents but is not in `hr`; the
+    # member is in `hr` but does not see the documents.
+    kb = env.created()
+    _searching(env, FakeRetrieve())
+    for token, status in (
+        ("creator", 200),
+        ("creator2", 200),
+        ("admin", 403),
+        ("outsider", 403),
+        ("member", 403),
+    ):
+        assert _search(env, kb, token).status_code == status, token
+    assert (
+        env.client.get(
+            f"/api/knowledge-bases/{kb['kb_id']}/documents", headers=_h("admin")
+        ).status_code
+        == 200
+    )
+
+
+def test_each_search_is_audited_without_the_query(env: Env) -> None:
+    kb = env.created()
+    _searching(env, FakeRetrieve([_fragment(kb["kb_id"], "DOC1")]))
+    assert _search(env, kb, query="¿cuántos días de vacaciones?").status_code == 200
+    [detail] = [d for _u, d in env.audit.named("kb.search", None)]
+    assert detail == {
+        "kb_id": kb["kb_id"],
+        "query_chars": len("¿cuántos días de vacaciones?"),
+        "fragments": ["chunk-1"],
+        "outcome": "ok",
+    }
+    assert "vacaciones" not in json.dumps(env.audit.events)
+
+
+def test_what_a_query_may_be(env: Env) -> None:
+    kb = env.created()
+    _searching(env, FakeRetrieve())
+    for query in ("", "   ", "x" * 1001, "a\x00b"):
+        assert _search(env, kb, query=query).status_code == 422, repr(query)
+    assert _search(env, kb, query="línea uno\nlínea dos").status_code == 200
+
+
+def test_searches_are_limited_per_person(env: Env) -> None:
+    kb = env.created()
+    _searching(env, FakeRetrieve())
+    for _ in range(knowledge_module.SEARCHES_PER_MINUTE):
+        assert _search(env, kb).status_code == 200
+    assert _search(env, kb).status_code == 429
+    assert _search(env, kb, "creator2").status_code == 200
+
+
+def test_a_busy_or_failed_search_says_so_and_is_audited(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    kb = env.created()
+    _searching(env, FakeRetrieve(error="ThrottlingException"))
+    with caplog.at_level(logging.WARNING):
+        response = _search(env, kb)
+    assert (response.status_code, _code(response)) == (503, "search_busy")
+    # The line the metric filter of the alarm counts, without the query.
+    assert f"{knowledge_module.SEARCH_THROTTLED_LOG}; kb {kb['kb_id']}" in caplog.text
+    assert "vacaciones" not in caplog.text
+    _searching(env, FakeRetrieve(error="ValidationException"))
+    assert _code(_search(env, kb)) == "search_unavailable"
+    assert [d["outcome"] for _u, d in env.audit.named("kb.search", None)] == [
+        "throttled",
+        "unavailable",
+    ]
+
+
+def test_without_the_audit_or_bedrock_nothing_is_answered(env: Env) -> None:
+    kb = env.created()
+    assert _code(_search(env, kb)) == "search_unavailable"
+    _searching(env, FakeRetrieve([_fragment(kb["kb_id"], "DOC1")]))
+    env.audit.fail_outcomes = {"ok"}
+    assert _code(_search(env, kb)) == "audit_unavailable"
+
+
+def test_a_knowledge_base_being_deleted_is_not_searched(env: Env) -> None:
+    kb = env.created()
+    retrieve = FakeRetrieve()
+    _searching(env, retrieve)
+    assert env.delete("creator", kb).status_code == 202
+    assert _code(_search(env, kb)) == "knowledge_base_deleting"
+    assert retrieve.calls == []

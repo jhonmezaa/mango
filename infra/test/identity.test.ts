@@ -660,10 +660,12 @@ describe("sign-in activity export (D31)", () => {
 
   it("does not forward the events anywhere else", () => {
     template.resourceCountIs("AWS::Logs::SubscriptionFilter", 0);
-    // The one metric filter of the stack reads the log group of mango-api (D71 (18)).
+    // The metric filters of the stack read the log group of mango-api (D71 (18), D88 (37)).
     const filters = Object.values(template.findResources("AWS::Logs::MetricFilter"));
-    expect(filters).toHaveLength(1);
-    expect(JSON.stringify(filters[0]!.Properties.LogGroupName)).not.toContain("AuthEvents");
+    expect(filters).toHaveLength(2);
+    for (const filter of filters) {
+      expect(JSON.stringify(filter.Properties.LogGroupName)).not.toContain("AuthEvents");
+    }
   });
 
   it("is deleted with a Plus lab that does not retain data", () => {

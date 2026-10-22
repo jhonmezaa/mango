@@ -362,11 +362,14 @@ describe("Bedrock", () => {
 // D71 (18): the shared rate limits fail closed (D70), and a 429 shows in no other alarm.
 describe("the shared rate limits of mango-api", () => {
   const python = (path: string) => readFileSync(resolve(import.meta.dirname, "../..", path), "utf8");
-  const filters = ofType(resources, "AWS::Logs::MetricFilter");
+  // The other filter of the stack counts «Probar búsqueda» throttled (D88 (37), knowledge.test.ts).
+  const filters = ofType(resources, "AWS::Logs::MetricFilter").filter(
+    ([, r]) => r.Properties.FilterName === `Mango-${ns}-Api-rate-limit-store-refusals`,
+  );
   const signal = RATE_LIMIT_STORE_SIGNAL;
   const namespace = `${signal.namespacePrefix}/${ns}`;
 
-  it("counts the refusals with the only metric filter of the stack, on the log group of mango-api", () => {
+  it("counts the refusals with one metric filter, on the log group of mango-api", () => {
     expect(filters).toHaveLength(1);
     const properties = filters[0]![1].Properties;
     const [logGroupId] = ofType(resources, "AWS::Logs::LogGroup").find(
@@ -557,7 +560,9 @@ describe("a release (D58): names come from the Namespace parameter", () => {
 
   it("keeps the refusals of the shared rate limits of two installations of one account apart", () => {
     const installed = instantiate(core, values);
-    const [filter] = ofType(installed, "AWS::Logs::MetricFilter");
+    const filter = ofType(installed, "AWS::Logs::MetricFilter").find(([, r]) =>
+      String(r.Properties.FilterName).includes("rate-limit"),
+    );
     expect(filter![1].Properties.FilterName).toBe("Mango-acme-Api-rate-limit-store-refusals");
     expect(filter![1].Properties.MetricTransformations[0].MetricNamespace).toBe("Mango/Api/acme");
     expect(alarmsOf(installed)["Mango-acme-Api-rate-limit-store-unavailable"]).toMatchObject({

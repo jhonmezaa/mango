@@ -561,6 +561,8 @@ export class CoreStack extends Stack {
       refusingFunctions: { PreSignUp: identity.preSignUp },
       deadLetterQueues: { UninstallGuard: uninstallGuard.deadLetters },
     });
+    // «Probar búsqueda» throttled by Bedrock counts in the alarm of the tool (D88 (12)).
+    knowledge.countApiThrottles(api.logGroup);
 
     // `-c skipSpa=true` allows synthesizing before the SPA is built (CI checks only).
     if (!this.node.tryGetContext("skipSpa")) {

@@ -410,6 +410,19 @@ export const zFieldChangeSchema = z.object({
 });
 
 /**
+ * FragmentOut
+ *
+ * A fragment of a document: content, never instructions nor markup to render.
+ */
+export const zFragmentOutSchema = z.object({
+    doc_id: z.string(),
+    document: z.string().nullable(),
+    page: z.int().nullable(),
+    score: z.number().nullable(),
+    text: z.string()
+});
+
+/**
  * GroupAgentOut
  */
 export const zGroupAgentOutSchema = z.object({
@@ -1424,17 +1437,10 @@ export const zPreviewInSchema = z.object({
 });
 
 /**
- * SearchIn
+ * SearchOut
  */
-export const zSearchInSchema = z.object({
-    cursor: z.string().regex(/^[0-9]{1,5}$/).nullish(),
-    filter: z.enum([
-        'all',
-        'pending',
-        'invited',
-        'disabled'
-    ]).optional().default('all'),
-    prefix: z.string().nullish()
+export const zSearchOutSchema = z.object({
+    fragments: z.array(zFragmentOutSchema)
 });
 
 /**
@@ -2012,6 +2018,13 @@ export const zMangoApiGroupAdminRejectInSchema = z.object({
 });
 
 /**
+ * SearchIn
+ */
+export const zMangoApiKnowledgeSearchInSchema = z.object({
+    query: z.string().max(1000)
+});
+
+/**
  * RejectIn
  */
 export const zMangoApiMcpRejectInSchema = z.object({
@@ -2100,6 +2113,20 @@ export const zPeopleOutSchema = z.object({
     next_cursor: z.string().nullable(),
     pending: z.int(),
     with_access: z.int()
+});
+
+/**
+ * SearchIn
+ */
+export const zMangoApiPeopleSearchInSchema = z.object({
+    cursor: z.string().regex(/^[0-9]{1,5}$/).nullish(),
+    filter: z.enum([
+        'all',
+        'pending',
+        'invited',
+        'disabled'
+    ]).optional().default('all'),
+    prefix: z.string().nullish()
 });
 
 /**
@@ -2475,7 +2502,7 @@ export const zInvitePersonBody = zInviteInSchema;
  */
 export const zInvitePersonResponse = zInvitedOutSchema;
 
-export const zSearchPeopleBody = zSearchInSchema;
+export const zSearchPeopleBody = zMangoApiPeopleSearchInSchema;
 
 /**
  * Successful Response
@@ -2951,6 +2978,17 @@ export const zDeleteKnowledgeBaseDocumentPath = z.object({
  * Successful Response
  */
 export const zDeleteKnowledgeBaseDocumentResponse = zDocumentDeleteOutSchema;
+
+export const zSearchBody = zMangoApiKnowledgeSearchInSchema;
+
+export const zSearchPath = z.object({
+    kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zSearchResponse = zSearchOutSchema;
 
 export const zSynchronizeKnowledgeBaseBody = zEmptyInSchema;
 

@@ -1212,6 +1212,34 @@ export type FieldChange = {
 };
 
 /**
+ * FragmentOut
+ *
+ * A fragment of a document: content, never instructions nor markup to render.
+ */
+export type FragmentOut = {
+    /**
+     * Doc Id
+     */
+    doc_id: string;
+    /**
+     * Document
+     */
+    document: string | null;
+    /**
+     * Page
+     */
+    page: number | null;
+    /**
+     * Score
+     */
+    score: number | null;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
  * GroupAdminOut
  */
 export type GroupAdminOut = {
@@ -3243,21 +3271,13 @@ export type ScheduleSpec = {
 };
 
 /**
- * SearchIn
+ * SearchOut
  */
-export type SearchIn = {
+export type SearchOut = {
     /**
-     * Cursor
+     * Fragments
      */
-    cursor?: string | null;
-    /**
-     * Filter
-     */
-    filter?: 'all' | 'pending' | 'invited' | 'disabled';
-    /**
-     * Prefix
-     */
-    prefix?: string | null;
+    fragments: Array<FragmentOut>;
 };
 
 /**
@@ -4046,6 +4066,16 @@ export type MangoApiGroupAdminRejectIn = {
 };
 
 /**
+ * SearchIn
+ */
+export type MangoApiKnowledgeSearchIn = {
+    /**
+     * Query
+     */
+    query: string;
+};
+
+/**
  * RejectIn
  */
 export type MangoApiMcpRejectIn = {
@@ -4181,6 +4211,24 @@ export type MangoApiPeoplePersonOut = {
      * User Id
      */
     user_id: string;
+};
+
+/**
+ * SearchIn
+ */
+export type MangoApiPeopleSearchIn = {
+    /**
+     * Cursor
+     */
+    cursor?: string | null;
+    /**
+     * Filter
+     */
+    filter?: 'all' | 'pending' | 'invited' | 'disabled';
+    /**
+     * Prefix
+     */
+    prefix?: string | null;
 };
 
 /**
@@ -5185,7 +5233,7 @@ export type InvitePersonResponses = {
 export type InvitePersonResponse = InvitePersonResponses[keyof InvitePersonResponses];
 
 export type SearchPeopleData = {
-    body: SearchIn;
+    body: MangoApiPeopleSearchIn;
     path?: never;
     query?: never;
     url: '/admin/people/search';
@@ -6688,6 +6736,36 @@ export type DeleteKnowledgeBaseDocumentResponses = {
 };
 
 export type DeleteKnowledgeBaseDocumentResponse = DeleteKnowledgeBaseDocumentResponses[keyof DeleteKnowledgeBaseDocumentResponses];
+
+export type SearchData = {
+    body: MangoApiKnowledgeSearchIn;
+    path: {
+        /**
+         * Kb Id
+         */
+        kb_id: string;
+    };
+    query?: never;
+    url: '/knowledge-bases/{kb_id}/search';
+};
+
+export type SearchErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SearchError = SearchErrors[keyof SearchErrors];
+
+export type SearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: SearchOut;
+};
+
+export type SearchResponse = SearchResponses[keyof SearchResponses];
 
 export type SynchronizeKnowledgeBaseData = {
     body: EmptyIn;
