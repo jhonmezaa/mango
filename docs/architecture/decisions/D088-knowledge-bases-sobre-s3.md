@@ -461,3 +461,10 @@ Lo demás de este punto lo propuso un agente:
   - las fuentes no se despliegan;
   - «Buscó en…» no queda en el historial;
   - una búsqueda sin resultados dice «Buscó en las knowledge bases · 0 fragmentos», un texto que el diseño no trae.
+
+**(52) La primera copia tras aprobar una fuente: sin éxito falso y esperando a IAM (2026-10-23).** Visto en la instalación ese día: un administrador aprobó una fuente, el rol `Mango-<ns>-kbsrc-<src>` se creó y la sincronización arrancó en el mismo segundo. Listar la fuente dio `AccessDenied`, porque IAM aún no tenía listo el rol recién creado, y aun así la sincronización terminó bien y la KB quedó «Sincronizada» con 0 documentos. Un «Sincronizar ahora» minutos después copió el documento. Lo pidió el dueño ese día; el detalle lo propuso un agente. Precisa (19) y (40):
+
+- **Sin éxito falso:** una fuente aprobada que no se pudo listar ni leer deja la sincronización con el resultado `unreadable` (en el evento `kb.sync` y en su registro). La KB queda `error` con `status_reason: error`, que la pantalla ya muestra («Error» y «No se pudo sincronizar.»), y sin fecha de sincronización. Lo que otras fuentes copiaron sí se indexa.
+- **Esperar a IAM:** una negativa (`AccessDenied`, al asumir el rol, al listar o al leer un documento) en los 5 minutos siguientes a la aprobación de la fuente (`decided_at`), o de un rol que el paso acaba de pedir otra vez, no es todavía un error. El paso `copy` pide a la máquina que espere (`copy_wait_seconds`: 10, 20, 30 y 60 segundos, dos minutos en total) y copie otra vez. Espera la máquina (estado `WaitCopy`), no la función.
+- **El último intento** toma la negativa como es: la fuente queda ilegible o el documento `protected`. Mientras el rol es nuevo, un documento que no se pudo leer no queda `protected`, porque no se volvería a copiar hasta que cambiara su ETag.
+- **Pendiente de ver en la instalación:** aprobar una fuente nueva y que la primera sincronización copie sin «Sincronizar ahora».

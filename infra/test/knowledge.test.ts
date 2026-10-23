@@ -393,6 +393,14 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(fn.Properties.DeadLetterConfig).toBeUndefined();
   });
 
+  it("waits in the machine, not in the function, while the role of a new source is refused", () => {
+    const [, machine] = only("AWS::StepFunctions::StateMachine", { StateMachineName: `Mango-${ns}-KnowledgeSync` });
+    const definition = JSON.stringify(machine.Properties.DefinitionString);
+    // The copy step chooses the backoff; the wait leads back to it.
+    expect(definition).toContain('\\"WaitCopy\\":{\\"Type\\":\\"Wait\\",\\"SecondsPath\\":\\"$.copy_wait_seconds\\",\\"Next\\":\\"Copy\\"}');
+    expect(definition).toContain('\\"Variable\\":\\"$.copy_wait_seconds\\",\\"IsPresent\\":true,\\"Next\\":\\"WaitCopy\\"');
+  });
+
   it("searches with a role that reads the registry by key, one base, its own limit and the audit (D88 (14))", () => {
     const [retrieveRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-KnowledgeRetrieve` });
     const statements = statementsOf(retrieveRoleId);

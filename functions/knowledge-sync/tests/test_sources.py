@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 from mango_core.knowledge import new_id
 from mango_knowledge_sync import handler
@@ -31,9 +32,19 @@ class Sources:
     sessions: list[tuple[str, str]] = field(default_factory=list)
     asked: list[tuple[str, str]] = field(default_factory=list)
     gives_role: bool = True
+    denied: int = 0
+    """Sessions of a role IAM refuses (not ready yet, or never) before it answers."""
+    reads_denied: int = 0
+    """Sessions whose role lists but may not read yet."""
 
     def session_for(self, role_arn: str, identity: str) -> Any:
         self.sessions.append((role_arn, identity))
+        if self.denied:
+            self.denied -= 1
+            raise _denied("AssumeRole")
+        if self.reads_denied:
+            self.reads_denied -= 1
+            return _NoReads(self.env.s3)
         return self.env.s3
 
     def request_role(self, op: str, kb_id: str, src_id: str) -> None:
@@ -50,6 +61,21 @@ class Sources:
             self.env.db.update_item(
                 TableName="knowledge", Key=key, UpdateExpression="REMOVE role_arn"
             )
+
+
+def _denied(operation: str) -> ClientError:
+    return ClientError({"Error": {"Code": "AccessDenied", "Message": "no"}}, operation)
+
+
+class _NoReads:
+    def __init__(self, s3: Any) -> None:
+        self._s3 = s3
+
+    def list_objects_v2(self, **request: Any) -> Any:
+        return self._s3.list_objects_v2(**request)
+
+    def get_object(self, **_request: Any) -> Any:
+        raise _denied("GetObject")
 
 
 @pytest.fixture
@@ -74,6 +100,7 @@ def _source(
     status: str = "approved",
     prefix: str = "politicas/",
     role: bool = True,
+    decided_at: str | None = None,
 ) -> str:
     src_id = new_id()
     item: dict[str, Any] = {
@@ -90,6 +117,8 @@ def _source(
     }
     if role:
         item["role_arn"] = {"S": ROLE.format(src_id)}
+    if decided_at:
+        item["decided_at"] = {"S": decided_at}
     env.db.put_item(TableName="knowledge", Item=item)
     return src_id
 
@@ -417,3 +446,125 @@ def test_a_schedule_names_ids_only(env: Env, sources: Sources) -> None:  # noqa:
 
     with _pytest.raises(handler.InvalidInputError):
         _scheduled(env, "../otra")
+
+
+# --- A role IAM has not readied yet ---------------------------------------------------------
+
+JUST_APPROVED = "2026-10-21T14:59:40+00:00"
+"""Twenty seconds before the copy (``now_iso`` of the fixture)."""
+
+
+def _copy_again(env: Env, state: dict[str, Any]) -> dict[str, Any]:  # noqa: F811
+    """What the machine does after ``WaitCopy``: the same state, the copy step again."""
+    return handler.handle(env.deps, {"step": "copy", "state": state})
+
+
+def test_a_new_role_refused_is_waited_for_and_then_copies(env: Env, sources: Sources) -> None:  # noqa: F811
+    kb_id = env.kb()
+    _source(env, kb_id, decided_at=JUST_APPROVED)
+    _put(env, "politicas/a.pdf", PDF)
+    sources.denied = 2
+    state = _copy(env, kb_id)
+    # The machine waits; the function does not sleep.
+    assert (state["copy_wait_seconds"], state["copy_waits"]) == (10, 1)
+    assert state["counts"]["copied"] == 0
+    state = _copy_again(env, state)
+    assert state["copy_wait_seconds"] == 20
+    state = _copy_again(env, state)
+    assert "copy_wait_seconds" not in state
+    assert "sources_unavailable" not in state
+    assert state["counts"]["copied"] == 1
+
+
+def test_a_new_role_that_may_list_but_not_read_yet_is_waited_for(
+    env: Env,  # noqa: F811
+    sources: Sources,
+) -> None:
+    kb_id = env.kb()
+    _source(env, kb_id, decided_at=JUST_APPROVED)
+    _put(env, "politicas/a.pdf", PDF)
+    sources.reads_denied = 1
+    state = _copy(env, kb_id)
+    # Not «protected» for good: that document would never be copied again.
+    assert state["copy_wait_seconds"] == 10
+    assert _docs(env, kb_id) == {}
+    state = _copy_again(env, state)
+    assert _docs(env, kb_id)["politicas/a.pdf"]["status"]["S"] == "uploaded"
+
+
+def test_the_wait_is_bounded_and_the_source_ends_unreadable(env: Env, sources: Sources) -> None:  # noqa: F811
+    kb_id = env.kb()
+    _source(env, kb_id, decided_at=JUST_APPROVED)
+    _put(env, "politicas/a.pdf", PDF)
+    sources.denied = 100
+    state = _copy(env, kb_id)
+    waited = [state["copy_wait_seconds"]]
+    while "copy_wait_seconds" in state:
+        state = _copy_again(env, state)
+        waited += [state["copy_wait_seconds"]] if "copy_wait_seconds" in state else []
+    assert waited == list(handler.COPY_WAITS)
+    assert sum(waited) == 120
+    assert len(sources.sessions) == len(handler.COPY_WAITS) + 1
+    assert state["sources_unavailable"] == 1
+
+
+def test_an_old_role_refused_is_unreadable_at_once(env: Env, sources: Sources) -> None:  # noqa: F811
+    kb_id = env.kb()
+    _source(env, kb_id, decided_at="2026-10-21T12:00:00+00:00")
+    _put(env, "politicas/a.pdf", PDF)
+    sources.denied = 1
+    state = _copy(env, kb_id)
+    assert "copy_wait_seconds" not in state
+    assert state["sources_unavailable"] == 1
+
+
+def _sync(env: Env, kb_id: str) -> dict[str, Any]:  # noqa: F811
+    """Acquire, copy (with the waits taken out), plan, ingest, poll and finish."""
+    state: dict[str, Any] = {
+        "mode": "sync",
+        "kb_id": kb_id,
+        "sync_id": new_id(),
+        "requested_by": REQUESTER,
+    }
+    assert SyncStore(env.db, "knowledge").claim(
+        kb_id, state["sync_id"], "2026-10-21T15:00:00+00:00"
+    )
+    state = handler.handle(env.deps, {"step": "acquire", "state": state})
+    state = handler.handle(env.deps, {"step": "copy", "state": state})
+    while "copy_wait_seconds" in state or state["copy_more"]:
+        state = _copy_again(env, state)
+    state = handler.handle(env.deps, {"step": "plan", "state": state})
+    while state["ingest"]:
+        state = handler.handle(env.deps, {"step": "ingest", "state": state})
+    env.agent.statuses = dict.fromkeys(state["indexing"], ("INDEXED", ""))
+    if state["indexing"]:
+        state = handler.handle(env.deps, {"step": "poll", "state": state})
+    return handler.handle(env.deps, {"step": "finish", "state": state})
+
+
+def test_a_source_that_could_not_be_read_is_not_synchronized(env: Env, sources: Sources) -> None:  # noqa: F811
+    # Seen in the installation on 2026-10-23: «Sincronizada» with nothing read.
+    kb_id = env.kb()
+    _source(env, kb_id, decided_at=JUST_APPROVED)
+    _put(env, "politicas/a.pdf", PDF)
+    sources.denied = 100
+    state = _sync(env, kb_id)
+    assert state["outcome"] == "unreadable"
+    meta = env.meta(kb_id)
+    assert meta is not None
+    assert (meta["status"]["S"], meta["status_reason"]["S"]) == ("error", "error")
+    assert "synced_at" not in meta
+    assert env.audit.events[-1][1]["outcome"] == "unreadable"
+
+
+def test_a_source_read_after_waiting_is_synchronized(env: Env, sources: Sources) -> None:  # noqa: F811
+    kb_id = env.kb()
+    _source(env, kb_id, decided_at=JUST_APPROVED)
+    _put(env, "politicas/a.pdf", PDF)
+    sources.denied = 3
+    state = _sync(env, kb_id)
+    assert state["outcome"] == "done"
+    meta = env.meta(kb_id)
+    assert meta is not None
+    assert meta["status"]["S"] == "ok"
+    assert "status_reason" not in meta

@@ -22,6 +22,11 @@ source:
 * **The role:** a source approved without a role (its function failed when it was approved)
   asks ``Mango-<ns>-KnowledgeSources`` for it again; a removed one, for its deletion. A removed
   source with no document and no role left loses its record.
+* **A new role:** IAM takes a while to let a role it just created be assumed and read. A
+  refusal in the first ``PROPAGATION`` after the source was approved (or after its role was
+  asked for again in this step), listing or reading, is counted apart (``propagating``): the
+  state machine waits and copies again, a few times. Its last try (``patient`` False) takes
+  a refusal as it is: the source is unreadable, or the document ``protected``.
 
 Nothing of a key, a name or a document is logged: ids, counts and AWS error codes.
 """
@@ -35,6 +40,7 @@ import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -68,10 +74,16 @@ MAX_LISTED = 5000
 """Keys of one source looked at per step: above what a knowledge base may hold."""
 _SOURCE_IDENTITY_RE = re.compile(r"^[A-Za-z0-9+=,.@_-]{2,64}$")
 _DENIED = frozenset({"AccessDenied", "AccessDeniedException", "KMS.AccessDeniedException"})
+PROPAGATION = timedelta(minutes=5)
+"""After a source is approved, how long a refusal may still be IAM not having its role ready."""
 
 
 class SourceUnavailableError(Exception):
     """The source could not be read now (not a refusal): the next synchronization tries again."""
+
+
+class RolePropagatingError(SourceUnavailableError):
+    """The role of a source approved moments ago was refused: IAM may not have it ready yet."""
 
 
 @dataclass
@@ -80,6 +92,7 @@ class CopyResult:
     failed: int = 0
     removed: int = 0
     unavailable: int = 0
+    propagating: int = 0
     more: bool = False
     full: bool = False
     by_source: dict[str, int] = field(default_factory=dict)
@@ -158,9 +171,12 @@ class SourceCopier:
 
     # --- One step ---------------------------------------------------------------------------
 
-    def step(self, kb_id: str, requester_id: str, *, copy: bool) -> CopyResult:
+    def step(
+        self, kb_id: str, requester_id: str, *, copy: bool, patient: bool = True
+    ) -> CopyResult:
         """Bring the documents of ``kb_id`` in line with its sources. ``copy`` False: only what
-        removed sources leave behind (a synchronization that may not spend)."""
+        removed sources leave behind (a synchronization that may not spend). ``patient`` False:
+        a refusal of a new role is not waited for any more."""
         result = CopyResult()
         sources = self._store.sources(kb_id)
         if not sources:
@@ -177,8 +193,20 @@ class SourceCopier:
         for source in sources:
             if source.status is SourceStatus.REMOVING:
                 self._finish_removal(kb_id, source, by_source.get(source.src_id, []))
-        if not copy or not _SOURCE_IDENTITY_RE.fullmatch(requester_id):
-            return result
+        if copy and _SOURCE_IDENTITY_RE.fullmatch(requester_id):
+            self._copy_sources(kb_id, requester_id, sources, by_source, result, patient=patient)
+        return result
+
+    def _copy_sources(
+        self,
+        kb_id: str,
+        requester_id: str,
+        sources: list[SourceRecord],
+        by_source: dict[str, list[DocumentRecord]],
+        result: CopyResult,
+        *,
+        patient: bool,
+    ) -> None:
         started = self._clock()
         budget = [STEP_BYTES]
         for source in sources:
@@ -193,17 +221,33 @@ class SourceCopier:
                     kb_id,
                     source=source,
                     role_arn=role_arn,
+                    new_role=patient
+                    and (source.role_arn is None or self._recent(source.decided_at)),
                     requester_id=requester_id,
                     documents=by_source.get(source.src_id, []),
                     result=result,
                     out_of_time=lambda: self._clock() - started > STEP_SECONDS or budget[0] <= 0,
                     budget=budget,
                 )
+            except RolePropagatingError:
+                result.propagating += 1
             except SourceUnavailableError:
                 result.unavailable += 1
             if result.more or result.full:
                 break
-        return result
+
+    def _recent(self, decided_at: str | None) -> bool:
+        """Whether the source was approved (and its role made) less than ``PROPAGATION`` ago."""
+        if not decided_at:
+            return False
+        try:
+            decided = datetime.fromisoformat(decided_at)
+            now = datetime.fromisoformat(self._now_iso())
+        except ValueError:
+            return False
+        if decided.tzinfo is None:
+            decided = decided.replace(tzinfo=UTC)
+        return now - decided < PROPAGATION
 
     def _role_again(self, kb_id: str, src_id: str) -> str | None:
         """Ask again for the role of an approved source that has none (D88 (39))."""
@@ -235,6 +279,7 @@ class SourceCopier:
         *,
         source: SourceRecord,
         role_arn: str,
+        new_role: bool,
         requester_id: str,
         documents: list[DocumentRecord],
         result: CopyResult,
@@ -245,6 +290,9 @@ class SourceCopier:
             s3 = self._session_for(role_arn, requester_id)
             listed = {item.key: item for item in listing(s3, source)}
         except (ClientError, BotoCoreError) as exc:
+            if new_role and _code(exc) in _DENIED:
+                logger.info("source %s refused while its role is new: waiting", source.src_id)
+                raise RolePropagatingError(_code(exc)) from None
             logger.warning("source %s could not be listed: %s", source.src_id, _code(exc))
             raise SourceUnavailableError(_code(exc)) from None
         current = {d.source_key: d for d in documents if d.status is not DocumentStatus.DELETING}
@@ -265,7 +313,7 @@ class SourceCopier:
                 return
             item = listed[key]
             try:
-                copied = self._copy(kb_id, source, s3, item, requester_id)
+                copied = self._copy(kb_id, source, s3, item, requester_id, new_role=new_role)
             except (ClientError, BotoCoreError) as exc:
                 logger.warning(
                     "a document of source %s was not copied: %s", source.src_id, _code(exc)
@@ -287,7 +335,14 @@ class SourceCopier:
             result.by_source[source.src_id] = result.by_source.get(source.src_id, 0) + 1
 
     def _copy(
-        self, kb_id: str, source: SourceRecord, s3: Any, item: Listed, requester_id: str
+        self,
+        kb_id: str,
+        source: SourceRecord,
+        s3: Any,
+        item: Listed,
+        requester_id: str,
+        *,
+        new_role: bool,
     ) -> CopiedDocument:
         doc_id = knowledge.new_id()
         name = display_name(item.key) or "Documento"
@@ -321,6 +376,9 @@ class SourceCopier:
                 "Body"
             ].read()
         except ClientError as exc:
+            if _code(exc) in _DENIED and new_role:
+                # Its read permission may not be in force yet: not ``protected`` for good.
+                raise RolePropagatingError(_code(exc)) from None
             if _code(exc) in _DENIED:
                 return recorded(DocumentStatus.FAILED, "protected", 0)
             # Changed while it was being copied (PreconditionFailed), or S3 did not answer:

@@ -5,7 +5,8 @@ A synchronization of one knowledge base:
 1. ``acquire``: the lock of the Bedrock knowledge base (one synchronization at a time); the
    machine waits and asks again while another holds it.
 1b. ``copy``: the documents of the sources on existing buckets, copied into Mango's bucket
-   as the source is now (``sources``, D88 (19)); again while something is left to copy.
+   as the source is now (``sources``, D88 (19)); again while something is left to copy, and
+   again after ``copy_wait_seconds`` while the role of a source just approved is refused.
 2. ``plan``: what to ingest (documents ``uploaded``), what to delete (``deleting``, or every
    document of a knowledge base being deleted) and what is still being indexed; then the
    budget reservation of whoever asked, for the documents to ingest (rule 4).
@@ -73,6 +74,9 @@ MAX_POLLS = 90
 """Every 10 seconds: 15 minutes of indexing per run. What is left is polled by the next."""
 MAX_COPY_STEPS = 20
 """Of 3 minutes each: an hour of copying per run. What is left is copied by the next."""
+COPY_WAITS = (10, 20, 30, 60)
+"""Seconds the machine waits before copying again a source whose new role is refused: two
+minutes for IAM to have it ready. The try after the last wait takes a refusal as it is."""
 MAX_VERIFIES = 30
 """Every 20 seconds: 10 minutes. What still answers is retried by the hourly sweep."""
 OVERDUE = timedelta(hours=6)
@@ -268,7 +272,14 @@ def copy(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
     if deps.sources is None or record is None or record.status is Status.DELETING:
         return state
     requester = Requester.from_json(state["requested_by"])
-    result = deps.sources.step(kb_id, requester.user_id, copy=state.get("mode") != "deletions")
+    waits = int(state.get("copy_waits", 0))
+    state.pop("copy_wait_seconds", None)
+    result = deps.sources.step(
+        kb_id,
+        requester.user_id,
+        copy=state.get("mode") != "deletions",
+        patient=waits < len(COPY_WAITS),
+    )
     counts = _counts(state)
     counts["copied"] += result.copied
     counts["copy_failed"] += result.failed
@@ -276,8 +287,16 @@ def copy(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
     state["copy_more"] = result.more and state["copy_steps"] < MAX_COPY_STEPS
     if result.full:
         state["full"] = True
-    if result.unavailable:
-        state["sources_unavailable"] = result.unavailable
+    if result.propagating:
+        # Copied again after a wait, every source: what it copied is kept by its ETag.
+        state["copy_wait_seconds"] = COPY_WAITS[waits]
+        state["copy_waits"] = waits + 1
+        state["copy_more"] = False
+    # The last step read every source: what it could not read is what the screen says.
+    if result.unavailable or result.propagating:
+        state["sources_unavailable"] = result.unavailable + result.propagating
+    else:
+        state.pop("sources_unavailable", None)
     return state
 
 
@@ -424,6 +443,9 @@ def finish(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
     kb_id, sync_id = state["kb_id"], state["sync_id"]
     failed = "error" in state
     outcome = "error" if failed else state.get("outcome", "done")
+    if outcome == "done" and state.get("sources_unavailable"):
+        # An approved source that could not be read is not «Sincronizada» (D88 (19)).
+        outcome = "unreadable"
     requester = Requester.from_json(state["requested_by"])
     record = deps.store.knowledge_base(kb_id)
     documents = deps.store.documents(kb_id) if record else []
@@ -478,15 +500,18 @@ def finish(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
 
 def _reason(outcome: str, state: dict[str, Any]) -> str | None:
     """Why the synchronization did not finish as asked, for the screen (D88 (43)): ``budget``
-    (its embeddings did not fit), ``error`` (it failed), or ``full`` (a source passes the limits
-    of the knowledge base: it copied up to them). ``None`` when it finished."""
+    (its embeddings did not fit), ``error`` (it failed, or an approved source could not be
+    read), or ``full`` (a source passes the limits of the knowledge base: it copied up to them).
+    ``None`` when it finished."""
     if outcome in {"budget", "error"}:
         return outcome
+    if outcome == "unreadable":
+        return "error"
     return "full" if state.get("full") else None
 
 
 def _status_after(outcome: str, documents: list[Any]) -> Status:
-    if outcome in {"error", "budget", "busy"}:
+    if outcome in {"error", "budget", "busy", "unreadable"}:
         return Status.ERROR
     if any(d.status in (DocumentStatus.INDEXING, DocumentStatus.UPLOADED) for d in documents):
         return Status.SYNCING

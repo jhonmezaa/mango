@@ -678,6 +678,9 @@ export class Knowledge extends Construct {
     const waitLock = new sfn.Wait(this, "WaitLock", { time: sfn.WaitTime.duration(Duration.seconds(30)) });
     const waitIndex = new sfn.Wait(this, "WaitIndex", { time: sfn.WaitTime.duration(Duration.seconds(10)) });
     const waitVerify = new sfn.Wait(this, "WaitVerify", { time: sfn.WaitTime.duration(Duration.seconds(20)) });
+    // The role of a source approved moments ago, refused while IAM readies it: a bounded backoff
+    // chosen by the copy step (`COPY_WAITS`, about two minutes), then a last try.
+    const waitCopy = new sfn.Wait(this, "WaitCopy", { time: sfn.WaitTime.secondsPath("$.copy_wait_seconds") });
 
     const verifying = new sfn.Choice(this, "Verifying?")
       .when(
@@ -710,6 +713,7 @@ export class Knowledge extends Construct {
               sfn.Condition.booleanEquals("$.locked", true),
               copy.next(
                 new sfn.Choice(this, "Copying?")
+                  .when(sfn.Condition.isPresent("$.copy_wait_seconds"), waitCopy.next(copy))
                   .when(sfn.Condition.booleanEquals("$.copy_more", true), copy)
                   .otherwise(plan.next(ingesting)),
               ),

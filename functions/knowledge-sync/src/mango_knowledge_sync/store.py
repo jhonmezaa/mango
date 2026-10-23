@@ -93,6 +93,8 @@ class SourceRecord:
     prefix: str
     status: SourceStatus
     role_arn: str | None
+    decided_at: str | None = None
+    """When it was approved: its role was made then (D88 (39))."""
 
 
 @dataclass(frozen=True)
@@ -271,6 +273,7 @@ class SyncStore:
                 prefix=_str(item, "prefix") or "",
                 status=SourceStatus(item["status"]["S"]),
                 role_arn=_str(item, "role_arn"),
+                decided_at=_str(item, "decided_at"),
             )
             for item in self._items(kb_id, "SRC#")
         ]
