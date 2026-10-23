@@ -1041,7 +1041,16 @@ export class Knowledge extends Construct {
       statements: [
         new iam.PolicyStatement({
           sid: "KnowledgeTable",
-          actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:UpdateItem"],
+          // ConditionCheckItem: proposing a source checks its knowledge base in the same
+          // transaction (knowledge_store.put_source); moto does not evaluate IAM, so only the
+          // installation showed it missing.
+          actions: [
+            "dynamodb:ConditionCheckItem",
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:Query",
+            "dynamodb:UpdateItem",
+          ],
           resources: [this.table.tableArn, `${this.table.tableArn}/index/${KNOWLEDGE_ALL}`],
         }),
         new iam.PolicyStatement({

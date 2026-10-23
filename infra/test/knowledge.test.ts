@@ -275,6 +275,7 @@ describe("knowledge bases: fixed resources in Core", () => {
       expect(all).not.toContain(forbidden);
     }
     expect(actions(sids.KnowledgeTable!).sort()).toEqual([
+      "dynamodb:ConditionCheckItem",
       "dynamodb:GetItem",
       "dynamodb:PutItem",
       "dynamodb:Query",
