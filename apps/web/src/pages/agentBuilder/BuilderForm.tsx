@@ -14,6 +14,7 @@ import { usePeople } from '../../directory/usePeople';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { formatRelative } from '../../lib/format';
 import { BuilderAside } from './BuilderAside';
+import { KnowledgeSection } from './KnowledgeSection';
 import { BuilderBarMenu } from './BuilderBarMenu';
 import {
   SECTION_IDS,
@@ -571,6 +572,14 @@ export function BuilderForm({ data }: { data: BuilderData }) {
                 catalog={context.catalog}
                 areaGroups={areaGroups}
                 userCount={snap.users.length}
+                onChange={change}
+              />
+              <KnowledgeSection
+                selected={snap.knowledge_bases}
+                knowledge={context.knowledge}
+                agentGroups={snap.groups}
+                userCount={snap.users.length}
+                myGroups={me.groups}
                 onChange={change}
               />
               <LimitsSection

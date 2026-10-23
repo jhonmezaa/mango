@@ -179,6 +179,15 @@ export const agentReview = {
     network: 'Sin conexión. Revisa tu red e inténtalo de nuevo.',
     generic: 'No se pudo completar la acción. Inténtalo de nuevo.',
   },
+  // Design `RvKbs` (D88 (35)).
+  kbs: {
+    titleNew: 'knowledge bases · {{count}}',
+    titleChanged: 'knowledge bases · {{added}} agregadas, {{removed}} quitadas',
+    same: 'Sin cambios en knowledge bases ({{count}}).',
+    gone: 'Ya no existe',
+    gapOne: 'usa el agente y no está en sus grupos: les responde sin su contenido.',
+    gapMany: 'usan el agente y no están en sus grupos: les responde sin su contenido.',
+  },
   // Submit rules by code (`violations[].code` of the API); the server never sends the text.
   rules: {
     prompt_required: 'Faltan las instrucciones.',
@@ -206,6 +215,10 @@ export const agentReview = {
       'Usa tools de «Datos de cuentas» de toda la organización y es visible para grupos que no son centrales ({{items}}). Hay que quitar esos grupos o esas tools.',
     account_data_for_users:
       'Usa tools de «Datos de cuentas» de toda la organización y está compartido con usuarios concretos. Hay que quitar esos usuarios o esas tools.',
+    knowledge_base_unavailable:
+      'Hay knowledge bases que ya no existen o se están borrando: {{items}}. Hay que quitarlas.',
+    knowledge_base_not_usable:
+      'Quien la editó no está en los grupos de estas knowledge bases: {{items}}. Hay que quitarlas.',
     unknown: 'Incumple una regla de publicación ({{code}}).',
   },
 } as const;

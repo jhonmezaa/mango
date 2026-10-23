@@ -21,7 +21,14 @@ const LIMIT_FIELDS = [
   'max_tokens_per_call',
   'temperature',
 ] as const;
-const SET_FIELDS = ['allowed_models', 'tools', 'approval_tools', 'groups', 'users'] as const;
+const SET_FIELDS = [
+  'allowed_models',
+  'tools',
+  'approval_tools',
+  'knowledge_bases',
+  'groups',
+  'users',
+] as const;
 
 interface PromptLine {
   op: '+' | '-' | ' ';

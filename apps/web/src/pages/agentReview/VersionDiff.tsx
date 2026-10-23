@@ -161,6 +161,67 @@ function Chips({
   );
 }
 
+type KnowledgeRef = NonNullable<Version['knowledge_bases']>[number];
+
+/**
+ * One knowledge base added or removed (design `RvKbs`). An added one comes from the version, as
+ * the registry has it now: its status and the groups of the agent that would get answers
+ * without its content (D26, D88 (26)). A removed one is named from the list, when the reviewer
+ * sees it.
+ */
+function KnowledgeRow({
+  id,
+  kind,
+  current,
+  known,
+}: {
+  id: string;
+  kind: 'add' | 'rem';
+  current: KnowledgeRef | undefined;
+  known: { name: string; groups: readonly string[] } | undefined;
+}) {
+  const { t } = useTranslation();
+  const name = current?.name ?? known?.name ?? null;
+  const gone = kind === 'add' ? current !== undefined && current.name === null : false;
+  const gap = kind === 'add' ? (current?.groups_without_access ?? []) : [];
+  const status = kind === 'add' ? current?.status : null;
+  return (
+    <li className={`rv-tool ${kind}`}>
+      <Sign kind={kind} />
+      <span className="min-w-0 flex-1">
+        <span className={name ? 'block' : 'mono block'}>{name ?? id}</span>
+        {known && known.groups.length > 0 && (
+          <span className="mono mk-meta text-[11.5px]">{known.groups.join(', ')}</span>
+        )}
+        {gap.length > 0 && (
+          <span className="rv-kb-gap">
+            <span className="mono">{gap.join(', ')}</span>{' '}
+            {gap.length === 1 ? t('agentReview.kbs.gapOne') : t('agentReview.kbs.gapMany')}
+          </span>
+        )}
+      </span>
+      {gone ? (
+        <Badge tone="red">{t('agentReview.kbs.gone')}</Badge>
+      ) : status && status !== 'ok' ? (
+        <Badge tone={status === 'error' ? 'red' : status === 'warn' ? 'amber' : 'neutral'}>
+          {Object.hasOwn(KB_STATUS, status)
+            ? t(`knowledge.status.${KB_STATUS[status] ?? 'pending'}`)
+            : status}
+        </Badge>
+      ) : null}
+    </li>
+  );
+}
+
+/** The stored status of a knowledge base, as the Knowledge Bases screen names it. */
+const KB_STATUS: Readonly<Record<string, 'pending' | 'syncing' | 'warn' | 'error' | 'deleting'>> = {
+  pending: 'pending',
+  syncing: 'syncing',
+  warn: 'warn',
+  error: 'error',
+  deleting: 'deleting',
+};
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
@@ -218,6 +279,9 @@ export function VersionDiff({
   const approval = setChange(diff, 'approval_tools');
   const groups = setChange(diff, 'groups');
   const users = setChange(diff, 'users');
+  const kbs = setChange(diff, 'knowledge_bases');
+  const kbRefs = new Map((version.knowledge_bases ?? []).map((ref) => [ref.kb_id, ref]));
+  const kbAdded = isNew ? definition.knowledge_bases : kbs.added;
   // People by email for whoever may look them up (creators and administrators; the server
   // decides). An identifier the directory does not answer for stays as it is.
   const people = usePeople(
@@ -429,6 +493,46 @@ export function VersionDiff({
           </div>
         )}
       </Section>
+
+      {(!isNew || definition.knowledge_bases.length > 0) && (
+        <Section
+          title={
+            isNew
+              ? t('agentReview.kbs.titleNew', { count: definition.knowledge_bases.length })
+              : t('agentReview.kbs.titleChanged', {
+                  added: kbs.added.length,
+                  removed: kbs.removed.length,
+                })
+          }
+        >
+          {kbAdded.length > 0 || kbs.removed.length > 0 ? (
+            <ul className="rv-tools">
+              {kbAdded.map((id) => (
+                <KnowledgeRow
+                  key={id}
+                  id={id}
+                  kind="add"
+                  current={kbRefs.get(id)}
+                  known={refs.knowledge.get(id)}
+                />
+              ))}
+              {kbs.removed.map((id) => (
+                <KnowledgeRow
+                  key={`-${id}`}
+                  id={id}
+                  kind="rem"
+                  current={undefined}
+                  known={refs.knowledge.get(id)}
+                />
+              ))}
+            </ul>
+          ) : (
+            <div className="mk-meta rv-none">
+              {t('agentReview.kbs.same', { count: definition.knowledge_bases.length })}
+            </div>
+          )}
+        </Section>
+      )}
 
       <Section title={t('agentReview.detail.access')}>
         <div className="mk-meta rv-sub">{t('agentReview.detail.groups')}</div>

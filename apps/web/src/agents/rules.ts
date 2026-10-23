@@ -21,6 +21,8 @@ export const RULE_CODES = [
   'group_unknown',
   'account_data_for_non_central_group',
   'account_data_for_users',
+  'knowledge_base_unavailable',
+  'knowledge_base_not_usable',
 ] as const;
 export type RuleCode = (typeof RULE_CODES)[number];
 

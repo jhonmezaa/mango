@@ -162,6 +162,25 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
     await expect(row(page, 'Manuales de compra')).toHaveCount(0, { timeout: 20_000 });
   });
 
+  test('the Agent Builder offers the knowledge bases its author may use (D88 (35))', async () => {
+    await page.getByRole('link', { name: 'Marketplace', exact: true }).first().click();
+    await page.getByRole('link', { name: 'Nuevo agente' }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+    const section = page.locator('#ab-kbs');
+    await expect(section.getByRole('heading', { name: 'Knowledge bases' })).toBeVisible();
+    await expect(section).toContainText('0 de 5 · solo aparecen las que puedes usar');
+    await section.getByRole('button', { name: /^Políticas de RH/ }).click();
+    await expect(section).toContainText('1 de 5 · solo aparecen las que puedes usar');
+    await expect(section.getByRole('button', { name: /^Políticas de RH/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(section.getByRole('link', { name: 'Ver Knowledge Bases' })).toHaveAttribute(
+      'href',
+      '/knowledge',
+    );
+  });
+
   test('no errors in the console but the refused bucket', () => {
     // The browser logs the 422 of the Mango bucket the API refused (second test); nothing else.
     expect(consoleErrors).toEqual([

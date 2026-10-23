@@ -24,6 +24,7 @@ import {
   NO_REFERENCE,
   AGENT_ICONS,
   agentNameIndex,
+  knowledgeIndex,
   authorOf,
   groupTypeIndex,
   isForbidden,
@@ -180,6 +181,10 @@ function ReviewQueue({ crumbs }: { crumbs: string[] }) {
     );
     api.call('getOrg').then(
       keep((org) => ({ agentNames: agentNameIndex(org) })),
+      ignore,
+    );
+    api.call('listKnowledgeBases').then(
+      keep((list) => ({ knowledge: knowledgeIndex(list) })),
       ignore,
     );
     return () => {

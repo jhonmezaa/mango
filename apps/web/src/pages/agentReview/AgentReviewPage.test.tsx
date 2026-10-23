@@ -253,6 +253,51 @@ afterEach(() => {
 });
 
 describe('AgentReviewPage (design agent-review.jsx)', () => {
+  it('lists the knowledge bases a version adds and removes, with their alert (D88 (35))', async () => {
+    const hr = '01JC0000000000000000000001';
+    const gone = '01JC0000000000000000000002';
+    const old = '01JC0000000000000000000003';
+    const changed = version({
+      definition: { ...DEFINITION, knowledge_bases: [hr, gone] },
+      knowledge_bases: [
+        {
+          kb_id: hr,
+          name: 'Políticas de RH',
+          status: 'warn',
+          groups_without_access: ['bu-retail'],
+        },
+        { kb_id: gone, name: null, status: null, groups_without_access: [] },
+      ],
+    });
+    changed.diff.sets.push({ field: 'knowledge_bases', added: [hr, gone], removed: [old] });
+    setup(
+      { queue: [review()], history: [] },
+      {
+        readVersion: () => Promise.resolve(changed),
+        listKnowledgeBases: () =>
+          Promise.resolve({
+            can_create: true,
+            items: [{ kb_id: old, name: 'Runbooks 2025', groups: ['finops-central'] }],
+          }),
+      },
+    );
+    const panel = await detail();
+    expect(
+      await within(panel).findByText('knowledge bases · 2 agregadas, 1 quitadas'),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText('Políticas de RH')).toBeInTheDocument();
+    expect(within(panel).getByText('Con avisos')).toBeInTheDocument();
+    expect(
+      within(panel).getByText(
+        'usa el agente y no está en sus grupos: les responde sin su contenido.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText('Ya no existe')).toBeInTheDocument();
+    expect(await within(panel).findByText('Runbooks 2025')).toBeInTheDocument();
+    // Not repeated under «otros cambios».
+    expect(within(panel).queryByText('knowledge_bases')).toBeNull();
+  });
+
   it('opens the first version of the queue with the diff the backend computed', async () => {
     const { calls } = setup({
       queue: [review(), review({ agent_id: NEW, version: 1 })],

@@ -202,7 +202,14 @@ const SHOWN_FIELDS = new Set([
   'limits.max_tokens_per_call',
   'limits.temperature',
 ]);
-const SHOWN_SETS = new Set(['allowed_models', 'tools', 'approval_tools', 'groups', 'users']);
+const SHOWN_SETS = new Set([
+  'allowed_models',
+  'tools',
+  'approval_tools',
+  'knowledge_bases',
+  'groups',
+  'users',
+]);
 
 /**
  * Changes the detail has no section for (a field added to the API later). They are listed as
@@ -230,13 +237,22 @@ export interface ReferenceData {
   groupTypes: ReadonlyMap<string, string>;
   /** Names of the published agents, for "Reporta a". */
   agentNames: ReadonlyMap<string, string>;
+  /** Name and groups of each knowledge base the reviewer sees, for the ones a version removes. */
+  knowledge: ReadonlyMap<string, { name: string; groups: readonly string[] }>;
 }
 
 export const NO_REFERENCE: ReferenceData = {
   tools: null,
   groupTypes: new Map(),
   agentNames: new Map(),
+  knowledge: new Map(),
 };
+
+export function knowledgeIndex(list: {
+  items: readonly { kb_id: string; name: string; groups: readonly string[] }[];
+}): ReferenceData['knowledge'] {
+  return new Map(list.items.map((kb) => [kb.kb_id, { name: kb.name, groups: kb.groups }]));
+}
 
 export function toolIndex(catalog: Catalog): Map<string, ToolInfo> {
   const tools = new Map<string, ToolInfo>();

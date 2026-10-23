@@ -1,6 +1,7 @@
 import { isRuleCode, type RuleCode } from '../../agents/rules';
 import { ApiError } from '../../api/errors';
 import type { OperationInput, OperationOutput } from '../../api/operations';
+import type { KnowledgeBase } from '../knowledge/model';
 import type { agentBuilder } from '../../i18n/locales/es/agentBuilder';
 
 // Data and rules of the Agent Builder (design admin.jsx and lifecycle.js). The checks here only
@@ -16,7 +17,15 @@ export type OrgNode = OperationOutput<'getOrg'>['nodes'][number];
 export type Quotas = OperationOutput<'getMine'>['quotas'];
 export type Violation = NonNullable<Version['violations']>[number];
 
-export const SECTION_IDS = ['identity', 'org', 'brain', 'tools', 'limits', 'access'] as const;
+export const SECTION_IDS = [
+  'identity',
+  'org',
+  'brain',
+  'tools',
+  'kbs',
+  'limits',
+  'access',
+] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
 /** Root of the organization chart (`mango_core.agents.ROOT_SUPERVISOR`). */
@@ -92,6 +101,8 @@ export interface BuilderContext {
   models: readonly Model[];
   catalog: readonly Connector[];
   groups: readonly Group[];
+  /** The knowledge bases the caller sees (D88); null when they could not be read. */
+  knowledge: readonly KnowledgeBase[] | null;
 }
 
 export interface ToolInfo {
@@ -294,6 +305,7 @@ const FIELD_SECTION: Record<string, SectionId> = {
   allowed_models: 'brain',
   tools: 'tools',
   approval_tools: 'tools',
+  knowledge_bases: 'kbs',
   groups: 'access',
   users: 'access',
 };
@@ -321,6 +333,8 @@ const RULE_KEYS: Record<RuleCode, ProblemKey> = {
   group_unknown: 'groupUnknown',
   account_data_for_non_central_group: 'serverAccountDataArea',
   account_data_for_users: 'serverAccountDataUsers',
+  knowledge_base_unavailable: 'serverKbMissing',
+  knowledge_base_not_usable: 'serverKbForbidden',
 };
 
 /** Design `AB_SERVER_ERR`: where each rule points; the rest follow their field. */
@@ -389,7 +403,9 @@ export function precheck(
     out.push(problem('model_not_enabled:allowed_models', 'modelNotEnabled', 'brain', disabled));
   }
   const noTools = named.filter((id) => models.get(id)?.supports_tools === false);
-  if (definition.tools.length > 0 && noTools.length > 0) {
+  // The search of a knowledge base is a tool too (D88 (14)).
+  const usesTools = definition.tools.length > 0 || definition.knowledge_bases.length > 0;
+  if (usesTools && noTools.length > 0) {
     out.push(problem('model_without_tools:allowed_models', 'modelWithoutTools', 'brain', noTools));
   }
 
@@ -419,6 +435,17 @@ export function precheck(
   }
   if (definition.groups.length === 0) {
     out.push(problem('groups_required:groups', 'groupsRequired', 'access'));
+  }
+  // A knowledge base that is gone or being deleted cannot be sent (D88 (35)); unknown while
+  // the list could not be read, and then only the server says.
+  if (context.knowledge !== null) {
+    const known = new Map(context.knowledge.map((kb) => [kb.kb_id, kb]));
+    const gone = definition.knowledge_bases.filter(
+      (id) => known.get(id)?.status === undefined || known.get(id)?.status === 'deleting',
+    );
+    if (options.submitting && gone.length > 0) {
+      out.push(problem('knowledge_base_unavailable:knowledge_bases', 'kbMissing', 'kbs', gone));
+    }
   }
 
   const secret = firstSecret(definition);
@@ -543,6 +570,7 @@ export function changeCount(base: Definition, definition: Definition): number {
     (base.system_prompt === definition.system_prompt ? 0 : 1) +
     setChanges(base.allowed_models, definition.allowed_models) +
     setChanges(base.tools, definition.tools) +
+    setChanges(base.knowledge_bases, definition.knowledge_bases) +
     setChanges(base.groups, definition.groups) +
     setChanges(base.users, definition.users)
   );

@@ -109,7 +109,7 @@ async function loadDraft(
 async function load(api: ApiClient, target: Target | null, isAdmin: boolean): Promise<BuilderData> {
   // Independent reads go out together; only the draft waits for `mine`.
   const mine = api.call('getMine');
-  const [mineOut, models, catalog, groups, org, budgets, stored] = await Promise.all([
+  const [mineOut, models, catalog, groups, org, budgets, knowledge, stored] = await Promise.all([
     mine,
     api.call('getModels'),
     api.call('getCatalog'),
@@ -117,12 +117,18 @@ async function load(api: ApiClient, target: Target | null, isAdmin: boolean): Pr
     api.call('getOrg'),
     // Presupuestos is an admin API; without it the page only hides the amount.
     isAdmin ? api.getBudgets().catch(() => null) : null,
+    // Without the list the section says so and the version keeps the ones it has (D88 (35)).
+    api.call('listKnowledgeBases').then(
+      (data) => data.items,
+      () => null,
+    ),
     target === null ? null : loadDraft(api, target, mine),
   ]);
   const context: BuilderContext = {
     models: models.items,
     catalog: catalog.items,
     groups: groups.items,
+    knowledge,
   };
   const draft: Draft = stored ?? {
     kind: 'new',

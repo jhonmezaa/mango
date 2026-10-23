@@ -16,6 +16,7 @@ import {
   toInput,
   toolIndex,
 } from './model';
+import { kb } from '../knowledge/testFixtures';
 import { context, definition, orgNodes } from './testFixtures';
 
 const keys = (problems: { key: string }[]) => problems.map((item) => item.key);
@@ -301,5 +302,74 @@ describe('tools the catalog serves', () => {
       catalog: updating,
     });
     expect(keys(problems)).toEqual(['toolNotEnabledOne']);
+  });
+});
+
+describe('knowledge bases of a version (D88 (35))', () => {
+  const HR = '01JC0000000000000000000001';
+  const GONE = '01JC0000000000000000000002';
+  const known = { ...context, knowledge: [kb({ kb_id: HR })] };
+
+  it('treats the search as a tool: a model without tools cannot have knowledge bases', () => {
+    const problems = precheck(
+      definition({
+        tools: [],
+        knowledge_bases: [HR],
+        allowed_models: ['model.text'],
+        model: 'model.text',
+      }),
+      known,
+    );
+    expect(keys(problems)).toContain('modelWithoutTools');
+  });
+
+  it('refuses to send one that is gone or being deleted, when the list is known', () => {
+    const deleting = { ...context, knowledge: [kb({ kb_id: HR, status: 'deleting' })] };
+    const problems = precheck(definition({ knowledge_bases: [HR, GONE] }), deleting, {
+      submitting: true,
+    });
+    const missing = problems.find((item) => item.key === 'kbMissing');
+    expect(missing?.items).toEqual([HR, GONE]);
+    expect(missing?.section).toBe('kbs');
+    // A draft is saved anyway, and without the list only the server can say.
+    expect(keys(precheck(definition({ knowledge_bases: [GONE] }), deleting))).not.toContain(
+      'kbMissing',
+    );
+    expect(
+      keys(
+        precheck(
+          definition({ knowledge_bases: [GONE] }),
+          { ...context, knowledge: null },
+          {
+            submitting: true,
+          },
+        ),
+      ),
+    ).not.toContain('kbMissing');
+  });
+
+  it('words the rules of the server and points them to the section', () => {
+    expect(
+      problemOfViolation({
+        code: 'knowledge_base_not_usable',
+        field: 'knowledge_bases',
+        items: [HR],
+      }),
+    ).toMatchObject({ key: 'serverKbForbidden', section: 'kbs', items: [HR] });
+    expect(
+      problemOfViolation({
+        code: 'knowledge_base_unavailable',
+        field: 'knowledge_bases',
+        items: [],
+      }),
+    ).toMatchObject({ key: 'serverKbMissing', section: 'kbs' });
+  });
+});
+
+describe('changeCount with knowledge bases', () => {
+  it('counts each knowledge base added or removed, as the design does (`kbs` in `diffCount`)', () => {
+    const base = definition({ knowledge_bases: ['01JC0000000000000000000001'] });
+    const next = definition({ knowledge_bases: ['01JC0000000000000000000002'] });
+    expect(changeCount(base, next)).toBe(2);
   });
 });

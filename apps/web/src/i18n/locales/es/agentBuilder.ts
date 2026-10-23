@@ -36,6 +36,7 @@ export const agentBuilder = {
     org: 'Organización',
     brain: 'Modelo e instrucciones',
     tools: 'Tools',
+    kbs: 'Knowledge bases',
     limits: 'Límites',
     access: 'Acceso',
   },
@@ -83,6 +84,25 @@ export const agentBuilder = {
     saveOne: 'No se pudo guardar',
     saveMany: 'No se pudo guardar: {{count}} problemas',
   },
+  kbs: {
+    desc: 'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.',
+    keptOne: 'Esta knowledge base ya estaba y no puedes usarla',
+    keptMany: 'Estas knowledge bases ya estaban y no puedes usarlas',
+    gone: 'Ya no existe',
+    deleting: 'Se está borrando',
+    notMine: 'No estás en sus grupos · se conserva',
+    max: 'Máximo 5 por agente',
+    none: 'No hay knowledge bases que puedas usar: solo aparecen las de grupos en los que estás.',
+    unavailable:
+      'No se pudieron cargar las knowledge bases. Las que ya tiene el agente se conservan.',
+    gapOne:
+      'usa este agente pero no está en esa knowledge base. A esas personas el agente les responde sin su contenido: la búsqueda se hace con la identidad de quien pregunta.',
+    gapMany:
+      'usan este agente pero no están en esa knowledge base. A esas personas el agente les responde sin su contenido: la búsqueda se hace con la identidad de quien pregunta.',
+    users: 'Las personas agregadas por correo reciben su contenido solo si están en sus grupos.',
+    count: '{{count}} de 5 · solo aparecen las que puedes usar: estás en sus grupos',
+    link: 'Ver Knowledge Bases',
+  },
   problems: {
     nameRequired: 'Falta el nombre del agente.',
     nameRequiredToSave: 'Ponle un nombre para guardar el borrador.',
@@ -119,6 +139,11 @@ export const agentBuilder = {
     approvalToolNotSelected:
       'Las tools de escritura tienen que pedir aprobación. Vuelve a elegirlas e inténtalo de nuevo.',
     groupUnknown: 'Uno de los grupos ya no existe. Quítalo y elige otro.',
+    kbMissing: 'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.',
+    serverKbMissing:
+      'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.',
+    serverKbForbidden:
+      'Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.',
     serverAccountDataArea:
       'Tiene tools solo para grupos centrales y es visible para grupos que no son centrales ({{items}}). Quita esos grupos o esas tools.',
     serverAccountDataUsers:

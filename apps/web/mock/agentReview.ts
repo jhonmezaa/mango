@@ -8,6 +8,7 @@
  * that screen is not built. GET /agents/org (Org Chart) is left to its own module; without it
  * the screen shows the id of the supervisor instead of its name.
  */
+import { knowledgeRefs } from './knowledge.ts';
 import { diffDefinitions } from './agentDiff.ts';
 import { MOCK_USER } from './cognito.ts';
 import {
@@ -79,7 +80,7 @@ export function versionOut(agent: MockAgent, version: MockAgentVersion) {
     base,
     diff: diffDefinitions(base, version.definition),
     violations: [],
-    knowledge_bases: [],
+    knowledge_bases: knowledgeRefs(version.definition.knowledge_bases, version.definition.groups),
   };
 }
 

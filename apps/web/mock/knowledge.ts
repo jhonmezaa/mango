@@ -754,3 +754,21 @@ async function save(
   sendJson(res, 200, { saved: saved.map(docView), rejected, sync });
   return true;
 }
+
+/**
+ * The knowledge bases of a version as `mango_api.agents` gives them to the Builder and the
+ * reviewer: name and status, or `null` when it no longer exists, and the groups of the agent that
+ * are in none of its groups (D26, D88 (26)).
+ */
+export function knowledgeRefs(kbIds: readonly string[], agentGroups: readonly string[]) {
+  settle();
+  return kbIds.map((kbId) => {
+    const kb = kbs.find((item) => item.kb_id === kbId);
+    return {
+      kb_id: kbId,
+      name: kb ? kb.name : null,
+      status: kb ? kb.status : null,
+      groups_without_access: kb ? agentGroups.filter((group) => !kb.groups.includes(group)) : [],
+    };
+  });
+}

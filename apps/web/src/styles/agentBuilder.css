@@ -344,6 +344,10 @@
     max-height: 320px;
     overflow-y: auto;
   }
+  /* Design `KbAgentSection`: the list of knowledge bases is shorter. */
+  .ab-list-kbs {
+    max-height: 320px;
+  }
   .ab-list-tools {
     max-height: 460px;
   }

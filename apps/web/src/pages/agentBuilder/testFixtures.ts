@@ -132,6 +132,7 @@ export const context: BuilderContext = {
     { id: 'bu-retail', type: 'area', area: 'retail', description: 'Líderes de Retail' },
     { id: 'todos', type: 'general', area: null, description: 'Toda la organización' },
   ],
+  knowledge: [],
 };
 
 const node = (id: string, name: string, reportsTo: string): OrgNode => ({
