@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import { useSession } from '../../auth/useSession';
-import { BookOpenIcon, RefreshIcon, TrashIcon } from '../../components/icons';
+import { BookOpenIcon, DocumentIcon, RefreshIcon, TrashIcon } from '../../components/icons';
 import { SidePanel } from '../../components/SidePanel';
 import { SoonTag } from '../../components/Soon';
 import { Tabs } from '../../components/Tabs';
@@ -20,13 +20,18 @@ import {
   sameGroups,
   shownLocation,
   shownStatus,
+  type Document,
   type KnowledgeBase,
   type Schedule,
   type Source,
 } from './model';
+import { DocumentsTab, type Guard } from './KbDocuments';
+import { SearchTab } from './KbSearch';
 import { GroupChips, Kv, Notice, ScheduleChips, Section, StatusBadge } from './parts';
 
-type Tab = 'info' | 'access';
+export type Tab = 'info' | 'docs' | 'test' | 'access';
+/** Documents are read again this often while some of them are in progress. */
+const DOCS_POLL_MS = 5000;
 type Notify = (message: string, tone?: 'success' | 'info') => void;
 
 const PANEL_ID = 'kb-panel';
@@ -43,6 +48,12 @@ const OWN_ERRORS = new Set([
   'knowledge_base_in_use',
   'knowledge_base_deleting',
   'sync_unavailable',
+  'search_busy',
+  'search_unavailable',
+  'knowledge_base_full',
+  'type_not_supported',
+  'type_mismatch',
+  'document_deleting',
 ]);
 
 interface Props {
@@ -54,6 +65,8 @@ interface Props {
   /** Reads the list again (after an action on its sources). */
   onReload: () => Promise<void>;
   onClose: () => void;
+  /** Where the panel opens: a new knowledge base of files opens on its upload. */
+  start?: { tab: Tab; uploading: boolean } | undefined;
 }
 
 function who(source: Source['proposed_by'] | null | undefined): string | null {
@@ -65,10 +78,15 @@ function who(source: Source['proposed_by'] | null | undefined): string | null {
  * for a bucket). Its sources are read here, for who proposed and who decided; reading them is
  * authorized by the API like everything else.
  */
-export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose }: Props) {
+export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose, start }: Props) {
   const { t } = useTranslation();
   const { api, me } = useSession();
-  const [tab, setTab] = useState<Tab>('info');
+  const [tab, setTab] = useState<Tab>(start?.tab ?? 'info');
+  const [uploading, setUploading] = useState(start?.uploading ?? false);
+  const [documents, setDocuments] = useState<readonly Document[] | null>(null);
+  const [documentsFailed, setDocumentsFailed] = useState(false);
+  const [documentsToken, setDocumentsToken] = useState(0);
+  const guardRef: Guard = useRef(null);
   const [sources, setSources] = useState<readonly Source[] | null>(null);
   const [sourcesToken, setSourcesToken] = useState(0);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -96,6 +114,54 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose }: P
       controller.abort();
     };
   }, [api, bucket, kb.kb_id, sourcesKey, sourcesToken]);
+
+  // The documents, for whoever sees them: their tab and the count of those not indexed.
+  const docsKey = `${kb.status}:${String(kb.sync_running)}:${String(kb.documents)}`;
+  useEffect(() => {
+    if (!kb.can_view_documents) return;
+    const controller = new AbortController();
+    api.call('listDocuments', { path: { kb_id: kb.kb_id } }, { signal: controller.signal }).then(
+      (data) => {
+        setDocuments(data.items);
+        setDocumentsFailed(false);
+      },
+      () => {
+        if (!controller.signal.aborted) setDocumentsFailed(true);
+      },
+    );
+    return () => {
+      controller.abort();
+    };
+  }, [api, kb.can_view_documents, kb.kb_id, docsKey, documentsToken]);
+
+  const documentsBusy = (documents ?? []).some(
+    (document) => document.status !== 'indexed' && document.status !== 'failed',
+  );
+  useEffect(() => {
+    if (!documentsBusy) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      setDocumentsToken((value) => value + 1);
+    }, DOCS_POLL_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [documentsBusy]);
+
+  /** Leaving the upload with files not saved asks first (design `guard`). */
+  const ask = (proceed: () => void) => {
+    if (guardRef.current && !guardRef.current(proceed)) return;
+    proceed();
+  };
+  const close = () => {
+    ask(onClose);
+  };
+  const goTab = (next: Tab, upload = false) => {
+    ask(() => {
+      setTab(next);
+      setUploading(upload);
+    });
+  };
 
   const messageOf = (error: unknown) => {
     const code = apiErrorCode(error);
@@ -126,8 +192,17 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose }: P
   };
 
   const noSync = ['syncing', 'approval', 'rejected', 'nosource'].includes(status);
+  const failed = (documents ?? []).filter((document) => document.status === 'failed').length;
   const tabs = [
     { id: 'info' as const, label: t('knowledge.detail.tabs.info') },
+    {
+      id: 'docs' as const,
+      label:
+        kb.can_view_documents && failed
+          ? t('knowledge.detail.tabs.docsFailed', { count: failed })
+          : t('knowledge.detail.tabs.docs'),
+    },
+    { id: 'test' as const, label: t('knowledge.detail.tabs.test') },
     {
       id: 'access' as const,
       label: bucket ? t('knowledge.detail.tabs.accessBucket') : t('knowledge.detail.tabs.access'),
@@ -162,7 +237,9 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose }: P
           idPrefix="kb"
           panelId={PANEL_ID}
           active={tab}
-          onChange={setTab}
+          onChange={(next) => {
+            goTab(next);
+          }}
           tabs={tabs}
         />
       }
@@ -196,9 +273,21 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose }: P
               </div>
             ) : null}
           </>
+        ) : kb.can_edit && !deleting && !(tab === 'docs' && uploading) ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              goTab('docs', true);
+            }}
+          >
+            <DocumentIcon size={12} />
+            {t('knowledge.detail.uploadFiles')}
+          </button>
         ) : null
       }
-      onClose={onClose}
+      onClose={close}
+      onEscape={close}
     >
       <div
         id={PANEL_ID}
@@ -210,10 +299,37 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose }: P
           <Summary
             kb={kb}
             sources={sources}
+            failed={documents === null ? null : failed}
             onAccess={() => {
-              setTab('access');
+              goTab('access');
+            }}
+            onDocuments={() => {
+              goTab('docs');
+            }}
+            onUpload={() => {
+              goTab('docs', true);
             }}
           />
+        ) : tab === 'docs' ? (
+          <DocumentsTab
+            kb={kb}
+            documents={documents}
+            documentsFailed={documentsFailed}
+            uploading={uploading}
+            setUploading={setUploading}
+            guardRef={guardRef}
+            notify={notify}
+            messageOf={messageOf}
+            onRetry={() => {
+              setDocumentsToken((value) => value + 1);
+            }}
+            onChanged={async () => {
+              setDocumentsToken((value) => value + 1);
+              await onReload();
+            }}
+          />
+        ) : tab === 'test' ? (
+          <SearchTab kb={kb} messageOf={messageOf} />
         ) : (
           <Access
             kb={kb}
@@ -233,11 +349,18 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose }: P
 function Summary({
   kb,
   sources,
+  failed,
   onAccess,
+  onDocuments,
+  onUpload,
 }: {
   kb: KnowledgeBase;
   sources: readonly Source[] | null;
+  /** Documents not indexed; null when the documents were not read. */
+  failed: number | null;
   onAccess: () => void;
+  onDocuments: () => void;
+  onUpload: () => void;
 }) {
   const { t } = useTranslation();
   const { me } = useSession();
@@ -280,6 +403,14 @@ function Summary({
           )}
         </Notice>
       ) : null}
+      {status === 'warn' && failed ? (
+        <Notice tone="amber">
+          {t('knowledge.summary.warnCount', { count: failed })}{' '}
+          <button type="button" className="sr-link" onClick={onDocuments}>
+            {t('knowledge.summary.warnSeeWhich')}
+          </button>
+        </Notice>
+      ) : null}
       {status === 'error' ? <Notice tone="red">{t('knowledge.summary.error')}</Notice> : null}
       {status === 'blocked' ? (
         <Notice tone="amber">
@@ -299,6 +430,14 @@ function Summary({
       {status === 'pending' ? (
         <Notice tone="info">
           {bucket ? t('knowledge.summary.neverSynced') : t('knowledge.summary.noDocuments')}
+          {!bucket && kb.can_edit ? (
+            <>
+              {' '}
+              <button type="button" className="sr-link" onClick={onUpload}>
+                {t('knowledge.detail.uploadFiles')}
+              </button>
+            </>
+          ) : null}
         </Notice>
       ) : null}
       {status === 'approval' ? (

@@ -41,7 +41,7 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
 
   test('lists every state of the screen, names as text', async () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Knowledge Bases' })).toBeVisible();
-    await expect(row(page, 'Políticas de RH')).toContainText('Indexada');
+    await expect(row(page, 'Políticas de RH')).toContainText('Con avisos');
     await expect(row(page, 'Políticas de RH')).toContainText('Acceso parcial');
     await expect(row(page, 'Security Baseline')).toContainText('Pendiente de aprobación');
     await expect(row(page, 'Etiquetado de costos')).toContainText('por presupuesto');
@@ -93,7 +93,7 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
     await expect(row(page, 'Etiquetado de costos')).toContainText('Sincronizada');
   });
 
-  test('creating a knowledge base of files opens it', async () => {
+  test('a new knowledge base of files opens on its upload; saved files get indexed', async () => {
     await page.getByRole('button', { name: 'Nueva knowledge base' }).click();
     const dialog = page.getByRole('dialog', { name: 'Nueva knowledge base' });
     await dialog.getByLabel('Nombre').fill('Manuales de compra');
@@ -101,9 +101,47 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
     await dialog.getByRole('button', { name: 'Crear y subir archivos' }).click();
     await expect(page.getByText('Creada · sube sus archivos')).toBeVisible();
     const panel = page.getByRole('dialog', { name: 'Manuales de compra' });
-    await expect(panel).toContainText('Todavía no tiene documentos.');
+    await expect(panel.locator('.sc-res-h')).toHaveText('Subir archivos');
+    await panel.getByTestId('kb-file-input').setInputFiles([
+      { name: 'Gastos.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 gastos') },
+      {
+        name: 'Formulario-escaneado.pdf',
+        mimeType: 'application/pdf',
+        buffer: Buffer.from('%PDF-1.7'),
+      },
+      { name: 'Organigrama.png', mimeType: 'image/png', buffer: Buffer.from('png') },
+    ]);
+    await expect(panel.getByText('Rechazado · Tipo no admitido')).toBeVisible();
+    await expect(panel.getByText(/^Subido/)).toHaveCount(2);
+    // Leaving with files uploaded and not saved asks first.
+    await panel.getByRole('tab', { name: 'Resumen' }).click();
+    await expect(
+      panel.getByText('Tienes 2 archivos subidos sin guardar.', { exact: false }),
+    ).toBeVisible();
+    await panel.getByRole('button', { name: 'Seguir aquí' }).click();
+    await panel.getByRole('button', { name: 'Guardar 2 archivos' }).click();
+    await expect(page.getByText('2 archivos guardados · indexando')).toBeVisible();
+    await expect(panel.getByText('En curso · 2')).toBeVisible();
+    // The scanned one has no text to index.
+    await expect(panel.getByText('No indexados · 1')).toBeVisible({ timeout: 20_000 });
+    await expect(panel.getByText('OCR sin texto legible')).toBeVisible();
+    await expect(panel.getByText('Indexados · 1', { exact: true })).toBeVisible();
     await panel.getByRole('button', { name: 'Cerrar' }).click();
-    await expect(row(page, 'Manuales de compra')).toContainText('Sin documentos');
+    await expect(row(page, 'Manuales de compra')).toContainText('Con avisos');
+  });
+
+  test('«Probar búsqueda» shows the fragments as text', async () => {
+    await row(page, 'Políticas de RH').click();
+    const panel = page.getByRole('dialog', { name: 'Políticas de RH' });
+    await expect(panel).toContainText('1 documento no se pudo indexar: los agentes no lo ven.');
+    await panel.getByRole('tab', { name: 'Probar búsqueda' }).click();
+    await panel.getByLabel('Consulta de prueba').fill('vacaciones');
+    await panel.getByRole('button', { name: 'Buscar' }).click();
+    await expect(panel.locator('.kb-hit')).toHaveCount(3);
+    await expect(panel.locator('.kb-hit').first()).toContainText('<b>Texto</b> del documento');
+    await expect(panel.locator('.kb-hit b')).toHaveCount(0);
+    await expect(panel.getByText('0,58')).toBeVisible();
+    await panel.getByRole('button', { name: 'Cerrar' }).click();
   });
 
   test('a knowledge base agents use cannot be deleted; another one can', async () => {

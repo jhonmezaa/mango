@@ -51,6 +51,26 @@ interface MockAgent {
   groups_without_access: string[];
 }
 
+type DocumentStatus = 'uploaded' | 'indexing' | 'indexed' | 'failed' | 'deleting';
+
+interface MockDoc {
+  doc_id: string;
+  name: string;
+  size: number;
+  content_type: string;
+  status: DocumentStatus;
+  reason: string | null;
+  created_at: string;
+  deleting_at: number | null;
+}
+
+/** A signed upload: its files and whether each one arrived at the "bucket". */
+interface MockUpload {
+  kb_id: string;
+  expires: number;
+  files: Map<string, { name: string; size: number; content_type: string; arrived: boolean }>;
+}
+
 interface MockKb {
   kb_id: string;
   name: string;
@@ -73,6 +93,55 @@ interface MockKb {
   agents: MockAgent[];
   deleting_at: number | null;
   sync_until: number | null;
+  docs: MockDoc[];
+}
+
+const uploads = new Map<string, MockUpload>();
+const UPLOAD_TTL_MS = 15 * MINUTE_MS;
+const TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+};
+
+/** Documents of an example: generic names, the size spread over them. */
+function seedDocs(count: number, bytes: number, failed: [string, string][] = []): MockDoc[] {
+  const docs: MockDoc[] = [];
+  for (let i = 0; i < count; i += 1) {
+    docs.push({
+      doc_id: newId(),
+      name: `documento-${String(i + 1).padStart(3, '0')}.pdf`,
+      size: Math.max(1, Math.round(bytes / Math.max(1, count))),
+      content_type: TYPES.pdf ?? '',
+      status: 'indexed',
+      reason: null,
+      created_at: new Date(Date.now() - (i + 1) * HOUR_MS).toISOString(),
+      deleting_at: null,
+    });
+  }
+  for (const [name, reason] of failed) {
+    docs.push({
+      doc_id: newId(),
+      name,
+      size: 2_400_000,
+      content_type: TYPES.pdf ?? '',
+      status: 'failed',
+      reason,
+      created_at: new Date(Date.now() - 2 * HOUR_MS).toISOString(),
+      deleting_at: null,
+    });
+  }
+  return docs;
+}
+
+/** Keeps the counters of the list in step with the documents. */
+function recount(kb: MockKb): void {
+  const kept = kb.docs.filter((doc) => doc.status !== 'deleting');
+  kb.documents = kept.length;
+  kb.bytes = kept.reduce((sum, doc) => sum + doc.size, 0);
 }
 
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
@@ -124,6 +193,7 @@ function base(name: string, extra: Partial<MockKb>): MockKb {
     deleting_at: null,
     sync_until: null,
     ...extra,
+    docs: extra.docs ?? seedDocs(extra.documents ?? 0, extra.bytes ?? 0),
   };
 }
 
@@ -131,8 +201,10 @@ const kbs: MockKb[] = [
   base('Políticas de RH', {
     description: 'Vacaciones, beneficios y trabajo remoto',
     groups: ['finops-central', 'hr'],
-    documents: 8,
-    bytes: 31_000_000,
+    status: 'warn',
+    documents: 9,
+    bytes: 33_400_000,
+    docs: seedDocs(8, 31_000_000, [['Formulario-escaneado.pdf', 'no_text']]),
     agents: [
       { agent_id: 'peopledocs000001', name: 'People Docs', groups_without_access: ['mango-admin'] },
     ],
@@ -204,12 +276,26 @@ function settle(): void {
       kb.budget_estimate_usd = null;
       kb.last_attempt_at = new Date().toISOString();
       kb.last_synced_at = kb.last_attempt_at;
-      if (!kb.documents) {
-        kb.documents = 24;
-        kb.bytes = 26_000_000;
+      if (kb.origin === 'bucket' && !kb.docs.length) kb.docs = seedDocs(24, 26_000_000);
+      for (const doc of kb.docs) {
+        if (doc.status !== 'uploaded' && doc.status !== 'indexing') continue;
+        // A scanned document has no text to index (design: «OCR sin texto legible»).
+        const scanned = doc.name.toLowerCase().includes('escane');
+        doc.status = scanned ? 'failed' : 'indexed';
+        doc.reason = scanned ? 'no_text' : null;
       }
+      if (kb.docs.some((doc) => doc.status === 'failed')) kb.status = 'warn';
+      recount(kb);
+    }
+    const before = kb.docs.length;
+    kb.docs = kb.docs.filter((doc) => doc.deleting_at === null || now < doc.deleting_at);
+    if (kb.docs.length !== before) {
+      recount(kb);
+      if (!kb.docs.some((doc) => doc.status === 'failed') && kb.status === 'warn') kb.status = 'ok';
+      if (!kb.docs.length && kb.origin === 'upload') kb.status = 'pending';
     }
   }
+  for (const [id, upload] of uploads) if (now >= upload.expires) uploads.delete(id);
   for (let i = kbs.length - 1; i >= 0; i -= 1) {
     const kb = kbs[i];
     if (kb?.deleting_at !== null && kb?.deleting_at !== undefined && now >= kb.deleting_at)
@@ -346,7 +432,38 @@ async function propose(
 }
 
 const KB_ROUTE =
-  /^\/knowledge-bases\/([0-9A-Z]{26})(?:\/(sync|delete|sources)(?:\/([0-9A-Z]{26})\/delete)?)?$/;
+  /^\/knowledge-bases\/([0-9A-Z]{26})(?:\/(sync|delete|sources|documents|uploads|search)(?:\/([0-9A-Z]{26})\/delete)?)?$/;
+const S3_ROUTE = /^\/mock-s3\/([0-9A-Z]{26})\/([0-9A-Z]{26})$/;
+
+/**
+ * The "bucket" of the mock: takes the presigned POST of one file (`/mock-s3/{upload}/{doc}`).
+ * Like S3 it needs no session; it only accepts a file it signed, within its size, before its
+ * time is up.
+ */
+export async function handleMockS3(
+  req: Parameters<ApiHandler>[0],
+  res: ServerResponse,
+  path: string,
+): Promise<boolean> {
+  const match = S3_ROUTE.exec(path);
+  if (!match || req.method !== 'POST') return false;
+  const [, uploadId = '', docId = ''] = match;
+  const file = uploads.get(uploadId)?.files.get(docId);
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > 51 * 1024 * 1024) break;
+  }
+  if (!file || size > 51 * 1024 * 1024) {
+    res.statusCode = 403;
+    res.end();
+    return true;
+  }
+  file.arrived = true;
+  res.statusCode = 204;
+  res.end();
+  return true;
+}
 
 export const handleKnowledge: ApiHandler = async (req, res, path) => {
   const { method } = req;
@@ -396,6 +513,51 @@ export const handleKnowledge: ApiHandler = async (req, res, path) => {
     kb.updated_at = new Date().toISOString();
     recordAudit('kb.update', { kb: kb.kb_id, groups, outcome: 'applied' });
     sendJson(res, 200, view(kb));
+    return true;
+  }
+  if (route === 'documents' && srcId === undefined) {
+    if (method === 'GET') {
+      sendJson(res, 200, { items: kb.docs.map(docView) });
+      return true;
+    }
+    if (method === 'POST') return save(req, res, kb);
+    return false;
+  }
+  if (route === 'documents' && srcId !== undefined && method === 'POST') {
+    const input = await readObject(req, []);
+    const doc = kb.docs.find((item) => item.doc_id === srcId);
+    if (!input) return invalid(res);
+    if (!doc) {
+      sendError(res, 404, 'not_found', 'not found');
+      return true;
+    }
+    if (doc.status === 'deleting') return conflict(res, 'document_deleting');
+    doc.status = 'deleting';
+    doc.deleting_at = Date.now() + DELETE_MS;
+    recordAudit('kb.doc_remove', { kb: kb.kb_id, outcome: 'requested' });
+    sendJson(res, 202, { document: docView(doc), sync: 'started' });
+    return true;
+  }
+  if (route === 'uploads' && method === 'POST') return sign(req, res, kb);
+  if (route === 'search' && method === 'POST') {
+    const input = await readObject(req, ['query']);
+    if (!input || typeof input.query !== 'string' || !input.query.trim()) return invalid(res);
+    if (kb.status === 'deleting') return conflict(res, 'knowledge_base_deleting');
+    const fragments = kb.docs
+      .filter((doc) => doc.status === 'indexed')
+      .slice(0, 3)
+      .map((doc, index) => ({
+        doc_id: doc.doc_id,
+        document: doc.name,
+        page: index === 1 ? null : index + 2,
+        score: 0.58 - index * 0.05,
+        text:
+          index === 0
+            ? 'Los días de vacaciones se acumulan desde el primer mes. <b>Texto</b> del documento, que se ve tal cual.'
+            : `Fragmento ${String(index + 1)} de ${doc.name}.`,
+      }));
+    recordAudit('kb.search', { kb: kb.kb_id, fragments: fragments.length });
+    sendJson(res, 200, { fragments });
     return true;
   }
   if (route === 'sync' && method === 'POST') {
@@ -472,5 +634,123 @@ function create(input: Record<string, unknown> | null, res: ServerResponse): tru
   kbs.push(kb);
   recordAudit('kb.create', { kb: kb.kb_id, origin, outcome: 'applied' });
   sendJson(res, 201, view(kb));
+  return true;
+}
+
+function docView(doc: MockDoc) {
+  return {
+    doc_id: doc.doc_id,
+    name: doc.name,
+    size: doc.size,
+    content_type: doc.content_type,
+    status: doc.status,
+    reason: doc.reason,
+    created_at: doc.created_at,
+  };
+}
+
+/** POST …/uploads: one presigned "POST" per file, to the mock bucket of this origin. */
+async function sign(
+  req: Parameters<ApiHandler>[0],
+  res: ServerResponse,
+  kb: MockKb,
+): Promise<true> {
+  const input = await readObject(req, ['files']);
+  const files = Array.isArray(input?.files) ? (input.files as unknown[]) : null;
+  if (!files || files.length === 0 || files.length > 20) return invalid(res);
+  if (kb.origin !== 'upload') return conflict(res, 'knowledge_base_origin');
+  const upload: MockUpload = {
+    kb_id: kb.kb_id,
+    expires: Date.now() + UPLOAD_TTL_MS,
+    files: new Map(),
+  };
+  let total = 0;
+  for (const raw of files) {
+    const file = raw as Record<string, unknown>;
+    const name = typeof file.name === 'string' ? file.name : '';
+    const size = typeof file.size === 'number' ? file.size : 0;
+    const ext = name.includes('.') ? (name.split('.').pop() ?? '').toLowerCase() : '';
+    const type = TYPES[ext];
+    if (!type) {
+      sendError(res, 422, 'type_not_supported', 'type not supported');
+      return true;
+    }
+    if (file.content_type !== type) {
+      sendError(res, 422, 'type_mismatch', 'the type is not its own');
+      return true;
+    }
+    if (size < 1 || size > 50 * 1024 * 1024) return invalid(res);
+    total += size;
+    upload.files.set(newId(), { name, size, content_type: type, arrived: false });
+  }
+  if (kb.documents + files.length > 1000 || kb.bytes + total > 5 * 1024 ** 3)
+    return conflict(res, 'knowledge_base_full');
+  const uploadId = newId();
+  uploads.set(uploadId, upload);
+  const origin = `http://${req.headers.host ?? 'localhost:5173'}`;
+  sendJson(res, 201, {
+    upload_id: uploadId,
+    expires_at: new Date(upload.expires).toISOString(),
+    files: [...upload.files].map(([docId, file]) => ({
+      doc_id: docId,
+      name: file.name,
+      url: `${origin}/mock-s3/${uploadId}/${docId}`,
+      fields: { key: `uploads/${uploadId}/${docId}`, 'Content-Type': file.content_type },
+    })),
+  });
+  return true;
+}
+
+/** POST …/documents: what arrived enters the knowledge base and starts indexing. */
+async function save(
+  req: Parameters<ApiHandler>[0],
+  res: ServerResponse,
+  kb: MockKb,
+): Promise<true> {
+  const input = await readObject(req, ['upload_id', 'doc_ids']);
+  const upload = typeof input?.upload_id === 'string' ? uploads.get(input.upload_id) : undefined;
+  const ids = Array.isArray(input?.doc_ids) ? (input.doc_ids as unknown[]) : null;
+  if (!input || !ids || ids.length === 0) return invalid(res);
+  if (!upload || upload.kb_id !== kb.kb_id) {
+    sendError(res, 404, 'not_found', 'upload not found');
+    return true;
+  }
+  const saved: MockDoc[] = [];
+  const rejected: { doc_id: string; reason: string }[] = [];
+  for (const id of ids) {
+    const docId = String(id);
+    const file = upload.files.get(docId);
+    if (!file?.arrived) {
+      rejected.push({ doc_id: docId, reason: 'not_uploaded' });
+      continue;
+    }
+    // A file whose bytes are not of its type (design: «El contenido no es del tipo que dice»).
+    if (file.name.toLowerCase().includes('falso')) {
+      rejected.push({ doc_id: docId, reason: 'type_mismatch' });
+      continue;
+    }
+    const doc: MockDoc = {
+      doc_id: docId,
+      name: file.name,
+      size: file.size,
+      content_type: file.content_type,
+      status: 'indexing',
+      reason: null,
+      created_at: new Date().toISOString(),
+      deleting_at: null,
+    };
+    kb.docs.unshift(doc);
+    saved.push(doc);
+    upload.files.delete(docId);
+  }
+  let sync: string | null = null;
+  if (saved.length) {
+    recount(kb);
+    kb.status = 'syncing';
+    kb.sync_until = Date.now() + SYNC_MS;
+    sync = 'started';
+    recordAudit('kb.documents_save', { kb: kb.kb_id, documents: saved.length, outcome: 'applied' });
+  }
+  sendJson(res, 200, { saved: saved.map(docView), rejected, sync });
   return true;
 }

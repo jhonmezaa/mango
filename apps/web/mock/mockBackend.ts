@@ -29,7 +29,7 @@ import {
 import { handleDirectory } from './directory.ts';
 import { handleGroups } from './groups.ts';
 import { handleInbox } from './inbox.ts';
-import { handleKnowledge } from './knowledge.ts';
+import { handleKnowledge, handleMockS3 } from './knowledge.ts';
 import { originOf, sendError, sendJson, type ApiHandler } from './http.ts';
 import { handleMarketplace } from './marketplace.ts';
 import { handleMcpCatalog } from './mcpCatalog.ts';
@@ -123,6 +123,9 @@ export function middleware(): Connect.NextHandleFunction {
       if (url.pathname === '/mock-cognito-idp' && req.method === 'POST') {
         await handleCognitoApi(req, res);
         return true;
+      }
+      if (url.pathname.startsWith('/mock-s3/')) {
+        return handleMockS3(req, res, url.pathname);
       }
       if (url.pathname.startsWith('/mock-cognito/')) {
         await handleCognito(req, res, url);

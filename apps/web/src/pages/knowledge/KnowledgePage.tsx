@@ -125,6 +125,8 @@ export function KnowledgePage() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  /** A new knowledge base of files opens on its upload (design `KbCreate`). */
+  const [opensOnUpload, setOpensOnUpload] = useState(false);
   const [groups, setGroups] = useState<readonly string[] | null>(null);
 
   useEffect(() => {
@@ -365,6 +367,7 @@ export function KnowledgePage() {
                     key={kb.kb_id}
                     kb={kb}
                     onOpen={() => {
+                      setOpensOnUpload(false);
                       setSelected(kb.kb_id);
                     }}
                   />
@@ -387,8 +390,10 @@ export function KnowledgePage() {
           notify={notify}
           onChanged={put}
           onReload={reload}
+          start={opensOnUpload ? { tab: 'docs', uploading: true } : undefined}
           onClose={() => {
             setSelected(null);
+            setOpensOnUpload(false);
           }}
         />
       ) : null}
@@ -401,6 +406,7 @@ export function KnowledgePage() {
           onCreated={(kb, toast) => {
             setCreating(false);
             put(kb);
+            setOpensOnUpload(kb.origin === 'upload');
             notify(toast, 'success');
             // A bucket knowledge base now has its proposal: the list says so.
             if (kb.origin === 'bucket') void reload().catch(() => undefined);

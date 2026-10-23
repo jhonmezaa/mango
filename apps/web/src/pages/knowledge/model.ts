@@ -9,6 +9,8 @@ import { findSecrets } from '../agentBuilder/model';
 export type KnowledgeBase = OperationOutput<'listKnowledgeBases'>['items'][number];
 export type KnowledgeList = OperationOutput<'listKnowledgeBases'>;
 export type Source = OperationOutput<'listSources'>['items'][number];
+export type Document = OperationOutput<'listDocuments'>['items'][number];
+export type Fragment = OperationOutput<'search'>['fragments'][number];
 export type Origin = KnowledgeBase['origin'];
 export type Schedule = KnowledgeBase['sync_schedule'];
 
@@ -59,8 +61,29 @@ export const ORIGIN_FILTERS: readonly OriginFilter[] = ['all', 'upload', 'bucket
 export const QUERY_MAX_LENGTH = 100;
 export const NAME_MAX_LENGTH = 48;
 export const DESCRIPTION_MAX_LENGTH = 140;
-/** Design `KB_LIMITS`: what one knowledge base holds (D88). */
-export const LIMITS = { documents: 1000, bytes: 5e9 } as const;
+/**
+ * Design `KB_LIMITS` (D88 (9)), with the server's numbers: «50 MB» and «5 GB» are 50 MiB and
+ * 5 GiB in `mango_core.knowledge`, so the browser refuses exactly what the API would.
+ */
+export const LIMITS = {
+  documents: 1000,
+  bytes: 5 * 1024 ** 3,
+  fileBytes: 50 * 1024 * 1024,
+  batch: 20,
+} as const;
+/** `mango_core.knowledge_files.TYPES`: the extension decides the type. */
+export const FILE_TYPES: Readonly<Record<string, string>> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+};
+export const ACCEPT = Object.keys(FILE_TYPES)
+  .map((ext) => `.${ext}`)
+  .join(',');
+export const SEARCH_MAX_LENGTH = 1000;
 
 /** The active sources of a bucket knowledge base: one approved, maybe one proposed (D88 (42)). */
 function sourcesOf(kb: KnowledgeBase) {
@@ -209,4 +232,89 @@ export function hasSecret(...values: string[]): boolean {
 
 export function sameGroups(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n');
+}
+
+// --- Documents ----------------------------------------------------------------------------------
+
+/** Why a file was refused in the browser (design `KbUpload`), before anything is signed. */
+export type FileRefusal = 'type' | 'size' | 'documents' | 'bytes';
+
+export function fileType(name: string): string | null {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return null;
+  return FILE_TYPES[name.slice(dot + 1).toLowerCase()] ?? null;
+}
+
+/**
+ * The files of one batch, in order: each one is accepted while the knowledge base stays within
+ * its limits counting the ones accepted before it (`documents` and `bytes` are what it already
+ * holds, uploads waiting to be saved included).
+ */
+export function checkFiles(
+  files: readonly { name: string; size: number }[],
+  documents: number,
+  bytes: number,
+): (FileRefusal | null)[] {
+  let count = documents;
+  let total = bytes;
+  return files.map((file) => {
+    if (!fileType(file.name)) return 'type';
+    if (file.size === 0 || file.size > LIMITS.fileBytes) return 'size';
+    if (count + 1 > LIMITS.documents) return 'documents';
+    if (total + file.size > LIMITS.bytes) return 'bytes';
+    count += 1;
+    total += file.size;
+    return null;
+  });
+}
+
+/** Failure reasons with a text of their own; any other one reads «No se pudo indexar». */
+export type ReasonKey = keyof typeof texts.reasons;
+
+export function reasonKey(reason: string | null): ReasonKey {
+  return reason !== null && Object.hasOwn(REASON_KEYS, reason)
+    ? (REASON_KEYS[reason] as ReasonKey)
+    : 'not_indexed';
+}
+
+const REASON_KEYS: Readonly<Record<string, string>> = {
+  protected: 'protected',
+  no_text: 'no_text',
+  too_large: 'too_large',
+  unsupported: 'unsupported',
+  unsupported_type: 'unsupported',
+  type_mismatch: 'type_mismatch',
+  size_mismatch: 'size_mismatch',
+  not_uploaded: 'not_uploaded',
+  empty: 'empty',
+  storage: 'storage',
+  full: 'full',
+};
+
+export interface DocumentGroups {
+  failed: Document[];
+  busy: Document[];
+  indexed: Document[];
+}
+
+/** Design `KbDocsTab`: not indexed, in progress, and indexed (newest first). */
+export function groupDocuments(documents: readonly Document[]): DocumentGroups {
+  const groups: DocumentGroups = { failed: [], busy: [], indexed: [] };
+  for (const document of documents) {
+    if (document.status === 'failed') groups.failed.push(document);
+    else if (document.status === 'indexed') groups.indexed.push(document);
+    else groups.busy.push(document);
+  }
+  groups.indexed.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return groups;
+}
+
+const score = new Intl.NumberFormat('es-ES', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** Design: «0,58». */
+export function formatScore(value: number): string {
+  return score.format(value);
 }

@@ -44,7 +44,9 @@ function apiWith(initial: KnowledgeList, answers: Partial<Record<string, Answer>
 function writes(call: ReturnType<typeof vi.fn>) {
   return call.mock.calls.filter(
     ([operation]) =>
-      !['listKnowledgeBases', 'listGroups', 'listSources'].includes(operation as string),
+      !['listKnowledgeBases', 'listGroups', 'listSources', 'listDocuments'].includes(
+        operation as string,
+      ),
   );
 }
 
