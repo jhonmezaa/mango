@@ -88,11 +88,21 @@ def _proposed(env: Env, kb: dict[str, Any], location: str = "s3://docs-rrhh/poli
     return response.json()
 
 
-def _decide(env: Env, source: dict[str, Any], verb: str, token: str = "admin") -> Any:  # noqa: F811
+def _decide(
+    env: Env,  # noqa: F811
+    source: dict[str, Any],
+    verb: str,
+    token: str = "admin",
+    *,
+    note: str | None = "Revisado",
+) -> Any:
+    body: dict[str, Any] = {"version": source["version"]}
+    if note is not None:
+        body["note"] = note
     return env.client.post(
         f"/api/knowledge-bases/{source['kb_id']}/sources/{source['src_id']}/{verb}",
         headers=_h(token),
-        json={"version": source["version"]},
+        json=body,
     )
 
 
@@ -136,7 +146,7 @@ def test_what_is_not_a_location(location: str) -> None:
 
 
 def test_the_owner_proposes_a_bucket_of_the_account_and_it_waits(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    kb = env.created()
+    kb = env.created(origin="bucket")
     source = _proposed(env, kb)
     assert (source["bucket"], source["prefix"], source["status"]) == (
         "docs-rrhh",
@@ -153,7 +163,7 @@ def test_the_owner_proposes_a_bucket_of_the_account_and_it_waits(env: Env, s3: F
 
 
 def test_who_may_propose(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    kb = env.created()
+    kb = env.created(origin="bucket")
     # The owner while a creator, or an administrator; not another creator of its groups.
     for token, status in (("creator2", 403), ("member", 403), ("former", 403), ("admin", 201)):
         assert _propose(env, kb, "s3://docs-legal/", token).status_code == status, token
@@ -170,7 +180,7 @@ def test_who_may_propose(env: Env, s3: FakeS3) -> None:  # noqa: F811
     ],
 )
 def test_which_buckets_are_refused(env: Env, s3: FakeS3, location: str, code: str) -> None:  # noqa: F811
-    response = _propose(env, env.created(), location)
+    response = _propose(env, env.created(origin="bucket"), location)
     assert (response.status_code, _code(response)) == (422, code)
     assert _events(env, "kb.source_propose") == []
 
@@ -179,32 +189,65 @@ def test_a_bucket_without_configuration_or_with_the_managed_key_is_accepted(
     env: Env,  # noqa: F811
     s3: FakeS3,
 ) -> None:
-    kb = env.created()
-    assert _propose(env, kb, "s3://sin-config/").status_code == 201
+    assert _propose(env, env.created(origin="bucket"), "s3://sin-config/").status_code == 201
     s3.encryption["docs-legal"]["KMSMasterKeyID"] = f"arn:aws:kms:us-east-1:{ACCOUNT}:alias/aws/s3"
-    assert _propose(env, kb, "s3://docs-legal/").status_code == 201
+    assert _propose(env, env.created(origin="bucket"), "s3://docs-legal/").status_code == 201
 
 
 def test_without_s3_nothing_is_proposed(env: Env, s3: FakeS3) -> None:  # noqa: F811
     s3.down = True
-    response = _propose(env, env.created(), "s3://docs-rrhh/")
+    response = _propose(env, env.created(origin="bucket"), "s3://docs-rrhh/")
     assert (response.status_code, _code(response)) == (503, "source_check_unavailable")
     assert env.deps is not None
     env.deps.buckets = None
-    assert _code(_propose(env, env.created(), "s3://docs-rrhh/")) == "source_check_unavailable"
+    assert (
+        _code(_propose(env, env.created(origin="bucket"), "s3://docs-rrhh/"))
+        == "source_check_unavailable"
+    )
 
 
-def test_the_same_location_once_and_at_most_five(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    kb = env.created()
-    _proposed(env, kb, "s3://docs-rrhh/a/")
+def test_one_bucket_per_knowledge_base_and_one_change_at_a_time(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    # D88 (42): a knowledge base reads one bucket; a change of it waits for its decision alone.
+    kb = env.created(origin="bucket")
+    first = _proposed(env, kb, "s3://docs-rrhh/a/")
+    assert _code(_propose(env, kb, "s3://docs-rrhh/b/")) == "source_pending"
+    approved = _decide(env, first, "approve").json()
     assert _code(_propose(env, kb, "s3://docs-rrhh/a/")) == "source_exists"
-    for prefix in ("b/", "c/", "d/", "e/"):
-        _proposed(env, kb, f"s3://docs-rrhh/{prefix}")
-    assert _code(_propose(env, kb, "s3://docs-rrhh/f/")) == "too_many_sources"
+    change = _proposed(env, kb, "s3://docs-rrhh/b/")
+    assert _code(_propose(env, kb, "s3://docs-rrhh/c/")) == "source_pending"
+    # Approving the change removes the bucket it replaces.
+    assert _decide(env, change, "approve").json()["status"] == "approved"
+    statuses = {
+        s["src_id"]: s["status"]
+        for s in env.client.get(_sources(kb), headers=_h("creator")).json()["items"]
+    }
+    assert statuses == {approved["src_id"]: "removing", change["src_id"]: "approved"}
+    [replaced] = [e for e in _events(env, "kb.source_remove") if e["outcome"] == "applied"]
+    assert (replaced["src_id"], replaced["replaced_by"]) == (approved["src_id"], change["src_id"])
+
+
+def test_a_knowledge_base_of_uploads_takes_no_bucket_and_one_of_a_bucket_no_upload(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+) -> None:
+    uploads = env.created()
+    assert uploads["origin"] == "upload"
+    response = _propose(env, uploads, "s3://docs-rrhh/")
+    assert (response.status_code, _code(response)) == (409, "knowledge_base_origin")
+    bucket = env.created(origin="bucket")
+    response = env.client.post(
+        f"/api/knowledge-bases/{bucket['kb_id']}/uploads",
+        headers=_h("creator"),
+        json={"files": [{"name": "a.txt", "size": 3, "content_type": "text/plain"}]},
+    )
+    assert (response.status_code, _code(response)) == (409, "knowledge_base_origin")
+    # The origin is not edited.
+    response = env.update("creator", bucket, origin="upload")
+    assert response.status_code == 422
 
 
 def test_a_knowledge_base_being_deleted_takes_no_source(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    kb = env.created()
+    kb = env.created(origin="bucket")
     assert env.delete("creator", kb).status_code == 202
     assert _code(_propose(env, kb, "s3://docs-rrhh/")) == "knowledge_base_deleting"
 
@@ -213,7 +256,7 @@ def test_a_knowledge_base_being_deleted_takes_no_source(env: Env, s3: FakeS3) ->
 
 
 def test_an_administrator_approves_what_someone_else_proposed(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    source = _proposed(env, env.created())
+    source = _proposed(env, env.created(origin="bucket"))
     for token in ("creator", "creator2", "member"):
         assert _decide(env, source, "approve", token).status_code == 403, token
     response = _decide(env, source, "approve")
@@ -231,7 +274,7 @@ def test_an_administrator_approves_what_someone_else_proposed(env: Env, s3: Fake
 
 def test_an_administrator_never_decides_their_own_proposal(env: Env, s3: FakeS3) -> None:  # noqa: F811
     # D88 (20): also when the proposer is an administrator.
-    source = _propose(env, env.created(), "s3://docs-rrhh/", "admin").json()
+    source = _propose(env, env.created(origin="bucket"), "s3://docs-rrhh/", "admin").json()
     for verb in ("approve", "reject"):
         response = _decide(env, source, verb)
         assert (response.status_code, _code(response)) == (403, "own_proposal")
@@ -241,7 +284,7 @@ def test_the_table_refuses_a_decision_by_the_proposer_too(env: Env, s3: FakeS3) 
     from mango_api.knowledge_store import KnowledgeConflictError  # noqa: PLC0415
     from mango_core.knowledge import SourceStatus  # noqa: PLC0415
 
-    source = _proposed(env, env.created())
+    source = _proposed(env, env.created(origin="bucket"))
     assert env.deps is not None
     stored = env.deps.store.source(source["kb_id"], source["src_id"])
     assert stored is not None
@@ -252,7 +295,7 @@ def test_the_table_refuses_a_decision_by_the_proposer_too(env: Env, s3: FakeS3) 
 
 
 def test_a_bucket_that_changed_is_not_approved(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    source = _proposed(env, env.created())
+    source = _proposed(env, env.created(origin="bucket"))
     s3.owners["docs-rrhh"] = OTHER_ACCOUNT
     response = _decide(env, source, "approve")
     assert (response.status_code, _code(response)) == (422, "bucket_not_in_account")
@@ -260,21 +303,55 @@ def test_a_bucket_that_changed_is_not_approved(env: Env, s3: FakeS3) -> None:  #
 
 
 def test_a_rejection_is_audited_and_a_stale_decision_refused(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    source = _proposed(env, env.created())
+    source = _proposed(env, env.created(origin="bucket"))
     stale = {**source, "version": 7}
-    assert _code(_decide(env, stale, "reject")) == "version_conflict"
-    rejected = _decide(env, source, "reject").json()
+    assert _code(_decide(env, stale, "reject", note="No")) == "version_conflict"
+    rejected = _decide(env, source, "reject", note="No es la carpeta correcta").json()
     assert rejected["status"] == "rejected"
     assert [e["outcome"] for e in _events(env, "kb.source_reject")] == ["requested", "applied"]
+
+
+def test_a_rejection_says_why_and_the_proposer_reads_it(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    kb = env.created(origin="bucket")
+    source = _proposed(env, kb)
+    for note in (None, "", "   "):
+        response = _decide(env, source, "reject", note=note)
+        assert (response.status_code, _code(response)) == (422, "note_required"), note
+    assert _decide(env, source, "reject", note="a\x07b").status_code == 422
+    assert _code(_decide(env, source, "reject", note="clave AKIAIOSFODNN7EXAMPLE")) == "secret_in_note"
+    assert _decide(env, source, "reject", note="x" * 501).status_code == 422
+    rejected = _decide(env, source, "reject", note=" No es la carpeta correcta ").json()
+    assert rejected["note"] == "No es la carpeta correcta"
+    assert rejected["decided_by"] == {"user_id": "admin-1", "email": "admin@example.com"}
+    [listed] = env.client.get(_sources(kb), headers=_h("creator")).json()["items"]
+    assert (listed["note"], listed["decided_by"]["email"]) == (
+        "No es la carpeta correcta",
+        "admin@example.com",
+    )
+    # Another creator of its groups sees the decision, not its words nor the email.
+    [listed] = env.client.get(_sources(kb), headers=_h("creator2")).json()["items"]
+    assert (listed["note"], listed["decided_by"]["email"]) == (None, None)
+    # The audit counts the note; it never keeps it.
+    events = _events(env, "kb.source_reject")
+    assert {e["note_chars"] for e in events} == {25}
+    assert "carpeta" not in json.dumps(env.audit.events)
+
+
+def test_an_approval_may_carry_a_note(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    source = _proposed(env, env.created(origin="bucket"))
+    approved = _decide(env, source, "approve", note="Revisado con Seguridad").json()
+    assert (approved["status"], approved["note"]) == ("approved", "Revisado con Seguridad")
+    other = _proposed(env, env.created(origin="bucket"))
+    assert _decide(env, other, "approve", note=None).json()["note"] is None
 
 
 # --- The administrators' list and removing ------------------------------------------------
 
 
 def test_administrators_see_what_they_may_sign_and_never_their_own(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    kb = env.created()
+    kb = env.created(origin="bucket")
     theirs = _proposed(env, kb, "s3://docs-rrhh/a/")
-    own = _propose(env, kb, "s3://docs-rrhh/b/", "admin").json()
+    own = _propose(env, env.created(origin="bucket"), "s3://docs-rrhh/b/", "admin").json()
     pending = env.client.get("/api/knowledge-sources/pending", headers=_h("admin")).json()
     assert [s["src_id"] for s in pending["items"]] == [theirs["src_id"]]
     assert pending["items"][0]["knowledge_base"] == kb["name"]
@@ -291,7 +368,7 @@ def test_administrators_see_what_they_may_sign_and_never_their_own(env: Env, s3:
 
 
 def test_the_sources_are_listed_to_who_sees_the_documents(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    kb = env.created()
+    kb = env.created(origin="bucket")
     _proposed(env, kb)
     for token, status in (("creator2", 200), ("admin", 200), ("outsider", 403)):
         response = env.client.get(_sources(kb), headers=_h(token))
@@ -307,9 +384,9 @@ def test_removing_withdraws_a_pending_source_and_removes_an_approved_one(
     env: Env,  # noqa: F811
     s3: FakeS3,
 ) -> None:
-    kb = env.created()
-    pending = _proposed(env, kb, "s3://docs-rrhh/a/")
+    kb = env.created(origin="bucket")
     approved = _decide(env, _proposed(env, kb, "s3://docs-rrhh/b/"), "approve").json()
+    pending = _proposed(env, kb, "s3://docs-rrhh/a/")
     path = f"{_sources(kb)}/{{}}/delete"
     withdrawn = env.client.post(
         path.format(pending["src_id"]), headers=_h("creator"), json={"version": 1}
@@ -329,7 +406,7 @@ def test_removing_withdraws_a_pending_source_and_removes_an_approved_one(
 
 
 def test_nothing_is_written_without_its_audit(env: Env, s3: FakeS3) -> None:  # noqa: F811
-    kb = env.created()
+    kb = env.created(origin="bucket")
     env.audit.fail_outcomes = {"requested"}
     assert _code(_propose(env, kb, "s3://docs-rrhh/")) == "audit_unavailable"
     env.audit.fail_outcomes = set()
@@ -383,7 +460,7 @@ def test_an_approval_creates_the_role_of_the_source_by_its_ids(
     s3: FakeS3,
     roles: FakeRoles,
 ) -> None:
-    source = _proposed(env, env.created())
+    source = _proposed(env, env.created(origin="bucket"))
     assert source["role_ready"] is False
     # Proposing creates nothing: nothing is read before an approval (D88 (20)).
     assert roles.calls == []
@@ -392,7 +469,7 @@ def test_an_approval_creates_the_role_of_the_source_by_its_ids(
     assert approved["role_ready"] is True
     assert [e["outcome"] for e in _events(env, "kb.source_role")] == ["requested", "applied"]
     # A rejection creates nothing.
-    _decide(env, _proposed(env, env.created(), "s3://docs-legal/"), "reject")
+    _decide(env, _proposed(env, env.created(origin="bucket"), "s3://docs-legal/"), "reject")
     assert len(roles.calls) == 1
 
 
@@ -402,7 +479,7 @@ def test_an_approval_stands_when_the_role_fails_and_says_so(
     roles: FakeRoles,
 ) -> None:
     roles.fail = "iam_AccessDenied"
-    response = _decide(env, _proposed(env, env.created()), "approve")
+    response = _decide(env, _proposed(env, env.created(origin="bucket")), "approve")
     assert response.status_code == 200
     assert (response.json()["status"], response.json()["role_ready"]) == ("approved", False)
     [_requested, failed] = _events(env, "kb.source_role")
@@ -414,7 +491,7 @@ def test_removing_an_approved_source_deletes_its_role(
     s3: FakeS3,
     roles: FakeRoles,
 ) -> None:
-    kb = env.created()
+    kb = env.created(origin="bucket")
     approved = _decide(env, _proposed(env, kb), "approve").json()
     pending = _proposed(env, kb, "s3://docs-legal/")
     path = f"{_sources(kb)}/{{}}/delete"
@@ -468,7 +545,7 @@ def test_an_approval_starts_the_first_copy_and_a_removal_its_cleanup(
     s3: FakeS3,
     roles: FakeRoles,
 ) -> None:
-    kb = env.created()
+    kb = env.created(origin="bucket")
     approved = _decide(env, _proposed(env, kb), "approve").json()
     [started] = env.sfn.started
     assert started["input"]["requested_by"]["user_id"] == "admin-1"
@@ -484,7 +561,7 @@ def test_an_approval_starts_the_first_copy_and_a_removal_its_cleanup(
 
 def test_an_approval_without_a_role_starts_nothing(env: Env, s3: FakeS3, roles: FakeRoles) -> None:  # noqa: F811
     roles.fail = "iam_AccessDenied"
-    _decide(env, _proposed(env, env.created()), "approve")
+    _decide(env, _proposed(env, env.created(origin="bucket")), "approve")
     assert env.sfn.started == []
 
 
@@ -538,7 +615,7 @@ def test_a_knowledge_base_with_an_approved_source_follows_its_frequency(
     roles: FakeRoles,
     scheduler: FakeScheduler,
 ) -> None:
-    kb = env.created(sync_schedule="daily")
+    kb = env.created(origin="bucket", sync_schedule="daily")
     source = _proposed(env, kb)
     # Nothing to read until a source is approved.
     assert scheduler.schedules == {}
@@ -564,14 +641,14 @@ def test_the_schedule_goes_with_the_last_source_and_with_the_knowledge_base(
     roles: FakeRoles,
     scheduler: FakeScheduler,
 ) -> None:
-    kb = env.created(sync_schedule="weekly")
+    kb = env.created(origin="bucket", sync_schedule="weekly")
     approved = _decide(env, _proposed(env, kb), "approve").json()
     assert scheduler.schedules[f"kb-{kb['kb_id']}"]["ScheduleExpression"] == "rate(7 days)"
     env.client.post(
         f"{_sources(kb)}/{approved['src_id']}/delete", headers=_h("creator"), json={"version": 2}
     )
     assert scheduler.schedules == {}
-    other = env.created(name="Otra", sync_schedule="daily")
+    other = env.created(origin="bucket", name="Otra", sync_schedule="daily")
     _decide(env, _proposed(env, other), "approve")
     assert f"kb-{other['kb_id']}" in scheduler.schedules
     current = env.get("creator", other["kb_id"]).json()
@@ -586,7 +663,7 @@ def test_a_scheduler_that_fails_leaves_the_change_standing_and_audited(
     scheduler: FakeScheduler,
 ) -> None:
     scheduler.down = True
-    kb = env.created(sync_schedule="daily")
+    kb = env.created(origin="bucket", sync_schedule="daily")
     response = _decide(env, _proposed(env, kb), "approve")
     assert (response.status_code, response.json()["status"]) == (200, "approved")
     assert [d["outcome"] for _u, d in env.audit.named("kb.schedule", None)] == ["failed"]

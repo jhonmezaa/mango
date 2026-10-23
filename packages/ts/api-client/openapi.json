@@ -3066,6 +3066,14 @@
             "title": "Name",
             "type": "string"
           },
+          "origin": {
+            "enum": [
+              "upload",
+              "bucket"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
           "sync_schedule": {
             "default": "manual",
             "enum": [
@@ -3080,7 +3088,8 @@
         },
         "required": [
           "name",
-          "groups"
+          "groups",
+          "origin"
         ],
         "title": "KnowledgeBaseCreate",
         "type": "object"
@@ -3164,6 +3173,14 @@
             "title": "Name",
             "type": "string"
           },
+          "origin": {
+            "enum": [
+              "upload",
+              "bucket"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
           "owner": {
             "$ref": "#/components/schemas/OwnerOut"
           },
@@ -3203,6 +3220,7 @@
           "groups",
           "classification",
           "sync_schedule",
+          "origin",
           "status",
           "documents",
           "bytes",
@@ -4627,6 +4645,16 @@
             ],
             "title": "Decided At"
           },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kb_id": {
             "title": "Kb Id",
             "type": "string"
@@ -4634,6 +4662,17 @@
           "knowledge_base": {
             "title": "Knowledge Base",
             "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           },
           "prefix": {
             "title": "Prefix",
@@ -4672,6 +4711,8 @@
           "proposed_by",
           "proposed_at",
           "decided_at",
+          "decided_by",
+          "note",
           "version",
           "role_ready",
           "can_decide",
@@ -6557,6 +6598,33 @@
         "title": "SignedFileOut",
         "type": "object"
       },
+      "SourceDecideIn": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "SourceDecideIn",
+        "type": "object"
+      },
       "SourceDecisionIn": {
         "additionalProperties": false,
         "properties": {
@@ -6627,9 +6695,30 @@
             ],
             "title": "Decided At"
           },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kb_id": {
             "title": "Kb Id",
             "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           },
           "prefix": {
             "title": "Prefix",
@@ -6668,6 +6757,8 @@
           "proposed_by",
           "proposed_at",
           "decided_at",
+          "decided_by",
+          "note",
           "version",
           "role_ready",
           "can_decide"
@@ -12517,7 +12608,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SourceDecisionIn"
+                "$ref": "#/components/schemas/SourceDecideIn"
               }
             }
           },
@@ -12637,7 +12728,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SourceDecisionIn"
+                "$ref": "#/components/schemas/SourceDecideIn"
               }
             }
           },

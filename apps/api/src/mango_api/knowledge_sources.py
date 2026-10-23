@@ -50,6 +50,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
+from mango_api.agent_rules import find_secrets
 from mango_api.authz import KNOWLEDGE_BASE_TYPE, KnowledgeBaseResource
 from mango_api.knowledge import (
     PLATFORM,
@@ -57,6 +58,7 @@ from mango_api.knowledge import (
     KnowledgeDeps,
     _limit,
     _unavailable,
+    of_origin,
     request_sync,
     reschedule,
     resource_of,
@@ -77,6 +79,8 @@ _BUCKET_RE = re.compile(
     r"^(?!xn--)(?!sthree-)(?!.*-s3alias$)(?!.*--ol-s3$)[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
 )
 _IP_RE = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
+_CONTROL_BUT_NEWLINE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
+NOTE_CHARS = 500
 _PREFIX_RE = re.compile(r"^[A-Za-z0-9!_.*'()/ =+@,;:&$?-]{0,512}$")
 MANGO_BUCKETS = "mango-"
 """Names of the buckets of every installation of Mango (D88 (10)): never a source."""
@@ -119,9 +123,24 @@ class SourceDecisionIn(_Strict):
     """The version of the source the caller read: a source changed meanwhile is a 409."""
 
 
+def _note(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if _CONTROL_BUT_NEWLINE.search(value):
+        raise ValueError("control characters are not allowed")
+    return value or None
+
+
+class SourceDecideIn(SourceDecisionIn):
+    note: Annotated[str | None, Field(max_length=NOTE_CHARS), AfterValidator(_note)] = None
+    """Why (D88 (42)): optional to approve, required to reject. Whoever proposed it reads it."""
+
+
 class ProposerOut(_Strict):
     user_id: str
     email: str | None
+    """Only for administrators, the owner of the knowledge base and whoever proposed it."""
 
 
 class SourceOut(_Strict):
@@ -133,6 +152,9 @@ class SourceOut(_Strict):
     proposed_by: ProposerOut
     proposed_at: datetime
     decided_at: datetime | None
+    decided_by: ProposerOut | None
+    note: str | None
+    """The note of the decision, for whoever sees the emails (the same people)."""
     version: int
     role_ready: bool
     """Its role exists: the synchronization may read it (once approved)."""
@@ -300,13 +322,20 @@ def propose_source(
 ) -> Source:
     if kb.status is Status.DELETING:
         raise ApiError(409, "knowledge_base_deleting", "this knowledge base is being deleted")
+    of_origin(kb, "bucket")
     bucket, prefix = split_location(body.location)
     try:
         existing = deps.store.sources(kb.kb_id)
     except KnowledgeStoreUnavailableError as exc:
         raise _unavailable(exc) from exc
     active = [s for s in existing if s.status in ACTIVE_SOURCE_STATUSES]
-    if any((s.bucket, s.prefix) == (bucket, prefix) for s in active):
+    if any(s.status is SourceStatus.PENDING for s in active):
+        # One bucket per knowledge base (D88 (42)): a change waits for its decision alone.
+        raise ApiError(409, "source_pending", "a proposal of this knowledge base is pending")
+    if any(
+        (s.bucket, s.prefix) == (bucket, prefix) and s.status is not SourceStatus.REMOVING
+        for s in active
+    ):
         raise ApiError(409, "source_exists", "this bucket and prefix are already a source")
     if len(active) >= MAX_SOURCES:
         raise ApiError(422, "too_many_sources", "a knowledge base has at most 5 sources")
@@ -343,8 +372,13 @@ def _change(
     status: SourceStatus,
     *,
     not_proposer: bool,
+    note: str | None = None,
+    **extra: Any,
 ) -> Source:
-    _audit(deps, event, caller, source, "requested")
+    # The note is the administrator's text: the audit says it was written, never what.
+    if note is not None:
+        extra["note_chars"] = len(note)
+    _audit(deps, event, caller, source, "requested", **extra)
     try:
         changed = deps.store.set_source_status(
             source,
@@ -352,13 +386,15 @@ def _change(
             by=caller.user.user_id,
             now=_now_iso(deps),
             not_proposed_by=caller.user.user_id if not_proposer else None,
+            by_email=caller.user.email,
+            note=note,
         )
     except KnowledgeConflictError as exc:
-        _audit(deps, event, caller, source, "rejected", reason="conflict")
+        _audit(deps, event, caller, source, "rejected", reason="conflict", **extra)
         raise ApiError(409, "version_conflict", "the source changed; reload") from exc
     except KnowledgeStoreUnavailableError as exc:
         raise _unavailable(exc) from exc
-    _audit(deps, event, caller, changed, "applied")
+    _audit(deps, event, caller, changed, "applied", **extra)
     return changed
 
 
@@ -387,9 +423,20 @@ def _role(deps: KnowledgeDeps, caller: Caller, source: Source, op: str) -> Sourc
 
 
 def decide_source(
-    deps: KnowledgeDeps, caller: Caller, source: Source, version: int, *, approve: bool
+    deps: KnowledgeDeps,
+    caller: Caller,
+    source: Source,
+    version: int,
+    *,
+    approve: bool,
+    note: str | None = None,
 ) -> Source:
-    """Approve or reject, by an administrator other than whoever proposed it (D88 (20))."""
+    """Approve or reject, by an administrator other than whoever proposed it (D88 (20)); a
+    rejection says why (D88 (42))."""
+    if not approve and not note:
+        raise ApiError(422, "note_required", "a rejection says why")
+    if note and find_secrets(note):
+        raise ApiError(422, "secret_in_note", "the note looks like it has a credential")
     if source.proposed_by == caller.user.user_id:
         raise ApiError(403, "own_proposal", "a source is decided by someone who did not propose it")
     if source.status is not SourceStatus.PENDING:
@@ -404,8 +451,36 @@ def decide_source(
         if approve
         else ("kb.source_reject", SourceStatus.REJECTED)
     )
-    decided = _change(deps, caller, source, event, status, not_proposer=True)
-    return _role(deps, caller, decided, "ensure") if approve else decided
+    decided = _change(deps, caller, source, event, status, not_proposer=True, note=note)
+    if not approve:
+        return decided
+    _replace(deps, caller, decided)
+    return _role(deps, caller, decided, "ensure")
+
+
+def _replace(deps: KnowledgeDeps, caller: Caller, approved: Source) -> None:
+    """A change of bucket or prefix, once approved, replaces the one it was read from
+    (D88 (42)): that one is removed, and the next synchronization takes out what is no longer
+    in the new one. Until then the knowledge base kept reading from it."""
+    try:
+        others = [
+            s
+            for s in deps.store.sources(approved.kb_id)
+            if s.status is SourceStatus.APPROVED and s.src_id != approved.src_id
+        ]
+    except KnowledgeStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    for old in others:
+        removed = _change(
+            deps,
+            caller,
+            old,
+            "kb.source_remove",
+            SourceStatus.REMOVING,
+            not_proposer=False,
+            replaced_by=approved.src_id,
+        )
+        _role(deps, caller, removed, "delete")
 
 
 def remove_source(deps: KnowledgeDeps, caller: Caller, source: Source, version: int) -> Source:
@@ -427,6 +502,14 @@ def source_out(
     source: Source, caller: Caller, kb: KnowledgeBase, *, can_approve: bool
 ) -> SourceOut:
     sees_email = caller.user.is_admin or caller.user.user_id in (kb.owner_id, source.proposed_by)
+    decided_by = (
+        ProposerOut(
+            user_id=source.decided_by,
+            email=source.decided_by_email if sees_email else None,
+        )
+        if source.decided_by
+        else None
+    )
     return SourceOut(
         src_id=source.src_id,
         kb_id=source.kb_id,
@@ -439,6 +522,8 @@ def source_out(
         ),
         proposed_at=datetime.fromisoformat(source.proposed_at),
         decided_at=datetime.fromisoformat(source.decided_at) if source.decided_at else None,
+        decided_by=decided_by,
+        note=source.note if sees_email else None,
         version=source.version,
         role_ready=source.role_arn is not None,
         can_decide=(
@@ -529,13 +614,15 @@ def knowledge_sources_router(  # noqa: PLR0915 - registers the route closures
         return source_out(source, caller, kb, can_approve=await can_approve(caller, kb))
 
     async def decide(
-        kb_id: str, src_id: str, body: SourceDecisionIn, caller: Caller, *, approve: bool
+        kb_id: str, src_id: str, body: SourceDecideIn, caller: Caller, *, approve: bool
     ) -> SourceOut:
         kb = await load(kb_id)
         await on(caller, "ApproveKbSource", kb)
         source = await load_source(kb, src_id)
         _limit(deps.changes, caller.user.user_id)
-        decided = await run(decide_source, deps, caller, source, body.version, approve=approve)
+        decided = await run(
+            decide_source, deps, caller, source, body.version, approve=approve, note=body.note
+        )
         if decided.status is SourceStatus.APPROVED:
             # From now on its frequency applies (D88 (11)).
             await run(reschedule, deps, caller, kb)
@@ -546,13 +633,13 @@ def knowledge_sources_router(  # noqa: PLR0915 - registers the route closures
 
     @router.post(prefix + "/{src_id}/approve", response_model=SourceOut)
     async def approve_source(
-        kb_id: KbId, src_id: SrcId, body: SourceDecisionIn, caller: Viewer
+        kb_id: KbId, src_id: SrcId, body: SourceDecideIn, caller: Viewer
     ) -> SourceOut:
         return await decide(kb_id, src_id, body, caller, approve=True)
 
     @router.post(prefix + "/{src_id}/reject", response_model=SourceOut)
     async def reject_source(
-        kb_id: KbId, src_id: SrcId, body: SourceDecisionIn, caller: Viewer
+        kb_id: KbId, src_id: SrcId, body: SourceDecideIn, caller: Viewer
     ) -> SourceOut:
         return await decide(kb_id, src_id, body, caller, approve=False)
 

@@ -80,6 +80,9 @@ class KnowledgeBase:
     created_at: str
     updated_at: str
     sync_running: bool = False
+    origin: str = "upload"
+    """How its documents arrive, chosen when it is created and never changed (D88 (42)):
+    ``upload`` or ``bucket``. A record from before has none: it is ``upload``."""
 
 
 @dataclass(frozen=True)
@@ -130,6 +133,9 @@ class Source:
     decided_by: str | None = None
     decided_at: str | None = None
     removed_by: str | None = None
+    decided_by_email: str | None = None
+    note: str | None = None
+    """What the administrator wrote when deciding: required to reject (D88 (42))."""
     role_arn: str | None = None
     """``Mango-<ns>-kbsrc-<source id>``, once ``Mango-<ns>-KnowledgeSources`` created it."""
 
@@ -179,6 +185,7 @@ def _knowledge_base(item: dict[str, Any]) -> KnowledgeBase:
         created_at=item["created_at"]["S"],
         updated_at=item["updated_at"]["S"],
         sync_running="sync_id" in item,
+        origin=_str(item, "origin") or "upload",
     )
 
 
@@ -200,6 +207,8 @@ def _source(item: dict[str, Any]) -> Source:
         decided_by=_str(item, "decided_by"),
         decided_at=_str(item, "decided_at"),
         removed_by=_str(item, "removed_by"),
+        decided_by_email=_str(item, "decided_by_email"),
+        note=_str(item, "note"),
         role_arn=_str(item, "role_arn"),
     )
 
@@ -252,6 +261,7 @@ class KnowledgeStore:
             "groups": {"SS": sorted(kb.groups)},
             "classification": _s(kb.classification),
             "sync_schedule": _s(kb.sync_schedule),
+            "origin": _s(kb.origin),
             "status": _s(kb.status),
             "documents": _n(kb.documents),
             "bytes": _n(kb.bytes),
@@ -721,6 +731,8 @@ class KnowledgeStore:
         by: str,
         now: str,
         not_proposed_by: str | None = None,
+        by_email: str | None = None,
+        note: str | None = None,
     ) -> Source:
         """Move ``source`` from the status it was read in to ``status``, if nobody changed it
         since (its ``version``). ``not_proposed_by``: the change must not be made by whoever
@@ -745,7 +757,13 @@ class KnowledgeStore:
         names["#by"], names["#at"] = (
             ("decided_by", "decided_at") if decided else ("removed_by", "removed_at")
         )
-        expression = "SET #status = :to, #version = :next, #by = :by, #at = :now REMOVE all_pk"
+        sets = "#status = :to, #version = :next, #by = :by, #at = :now"
+        for name, value in (("decided_by_email", by_email), ("note", note)):
+            if decided and value:
+                names[f"#{name}"] = name
+                values[f":{name}"] = _s(value)
+                sets += f", #{name} = :{name}"
+        expression = f"SET {sets} REMOVE all_pk"
         try:
             resp = self._db.update_item(
                 TableName=self._table,

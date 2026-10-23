@@ -617,6 +617,7 @@ export const zKnowledgeBaseCreateSchema = z.object({
     description: z.string().max(500).optional().default(''),
     groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).min(1).max(20),
     name: z.string().min(1).max(80),
+    origin: z.enum(['upload', 'bucket']),
     sync_schedule: z.enum([
         'manual',
         '6h',
@@ -1575,6 +1576,14 @@ export const zSignedFileOutSchema = z.object({
 });
 
 /**
+ * SourceDecideIn
+ */
+export const zSourceDecideInSchema = z.object({
+    note: z.string().max(500).nullish(),
+    version: z.int().gte(1)
+});
+
+/**
  * SourceDecisionIn
  */
 export const zSourceDecisionInSchema = z.object({
@@ -1608,8 +1617,10 @@ export const zPendingSourceOutSchema = z.object({
     bucket: z.string(),
     can_decide: z.boolean(),
     decided_at: z.iso.datetime().nullable(),
+    decided_by: zProposerOutSchema.nullable(),
     kb_id: z.string(),
     knowledge_base: z.string(),
+    note: z.string().nullable(),
     prefix: z.string(),
     proposed_at: z.iso.datetime(),
     proposed_by: zProposerOutSchema,
@@ -1633,7 +1644,9 @@ export const zSourceOutSchema = z.object({
     bucket: z.string(),
     can_decide: z.boolean(),
     decided_at: z.iso.datetime().nullable(),
+    decided_by: zProposerOutSchema.nullable(),
     kb_id: z.string(),
+    note: z.string().nullable(),
     prefix: z.string(),
     proposed_at: z.iso.datetime(),
     proposed_by: zProposerOutSchema,
@@ -1692,6 +1705,7 @@ export const zKnowledgeBaseOutSchema = z.object({
     groups: z.array(z.string()),
     kb_id: z.string(),
     name: z.string(),
+    origin: z.enum(['upload', 'bucket']),
     owner: zOwnerOutSchema,
     status: zStatusSchema,
     sync_running: z.boolean(),
@@ -3094,7 +3108,7 @@ export const zProposePath = z.object({
  */
 export const zProposeResponse = zSourceOutSchema;
 
-export const zApproveSourceBody = zSourceDecisionInSchema;
+export const zApproveSourceBody = zSourceDecideInSchema;
 
 export const zApproveSourcePath = z.object({
     kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
@@ -3118,7 +3132,7 @@ export const zDeleteSourcePath = z.object({
  */
 export const zDeleteSourceResponse = zSourceOutSchema;
 
-export const zRejectSourceBody = zSourceDecisionInSchema;
+export const zRejectSourceBody = zSourceDecideInSchema;
 
 export const zRejectSourcePath = z.object({
     kb_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),

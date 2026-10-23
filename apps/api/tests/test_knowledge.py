@@ -175,7 +175,7 @@ class Env:
     deps: KnowledgeDeps | None = None
 
     def create(self, token: str = "creator", **body: Any) -> Any:
-        payload = {"name": "Políticas de RR. HH.", "groups": ["hr"], **body}
+        payload = {"name": "Políticas de RR. HH.", "groups": ["hr"], "origin": "upload", **body}
         return self.client.post("/api/knowledge-bases", headers=_h(token), json=payload)
 
     def created(self, token: str = "creator", **body: Any) -> dict[str, Any]:

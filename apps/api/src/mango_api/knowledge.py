@@ -117,6 +117,9 @@ def _text(value: str) -> str:
 GroupId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")]
 Classification = Literal["public", "internal", "confidential", "restricted"]
 SyncSchedule = Literal["manual", "6h", "daily", "weekly"]
+Origin = Literal["upload", "bucket"]
+"""How the documents of a knowledge base arrive (D88 (42)): uploaded from Mango, or copied
+from one bucket of the account. Chosen when it is created; never changed, never mixed."""
 
 
 class _Strict(BaseModel):
@@ -135,6 +138,7 @@ class KnowledgeBaseIn(_Strict):
 
 
 class KnowledgeBaseCreate(KnowledgeBaseIn):
+    origin: Origin
     business_unit: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")] = (
         knowledge.BUSINESS_UNIT_ALL
     )
@@ -169,6 +173,7 @@ class KnowledgeBaseOut(_Strict):
     groups: list[str]
     classification: Classification
     sync_schedule: SyncSchedule
+    origin: Origin
     status: Status
     documents: int
     bytes: int
@@ -531,8 +536,13 @@ def create_knowledge_base(
         version=1,
         created_at=now,
         updated_at=now,
+        origin=body.origin,
     )
-    detail = {"classification": kb.classification, "sync_schedule": kb.sync_schedule}
+    detail = {
+        "classification": kb.classification,
+        "sync_schedule": kb.sync_schedule,
+        "origin": kb.origin,
+    }
     _audit(deps, "kb.create", caller, kb, outcome="requested", **detail)
     try:
         deps.store.create(kb)
@@ -765,6 +775,7 @@ def knowledge_base_out(
         groups=list(kb.groups),
         classification=kb.classification,  # type: ignore[arg-type]
         sync_schedule=kb.sync_schedule,  # type: ignore[arg-type]
+        origin=kb.origin,  # type: ignore[arg-type]
         status=kb.status,
         documents=kb.documents,
         bytes=kb.bytes,
@@ -793,6 +804,12 @@ def _accepting(kb: KnowledgeBase) -> None:
         raise ApiError(409, "knowledge_base_deleting", "this knowledge base is being deleted")
 
 
+def of_origin(kb: KnowledgeBase, origin: str) -> None:
+    """Uploads go to a knowledge base of uploads, sources to one of a bucket (D88 (42))."""
+    if kb.origin != origin:
+        raise ApiError(409, "knowledge_base_origin", f"this knowledge base takes no {origin}")
+
+
 def request_uploads(
     deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase, body: UploadsIn
 ) -> tuple[Upload, dict[str, tuple[str, str, dict[str, str]]]]:
@@ -800,6 +817,7 @@ def request_uploads(
     fields. Nothing is written to the bucket here."""
     storage = _storage(deps)
     _accepting(kb)
+    of_origin(kb, "upload")
     files: dict[str, AnnouncedFile] = {}
     now = deps.clock()
     for index, file in enumerate(body.files):
@@ -920,6 +938,7 @@ def save_documents(
     ``kb/<kb id>/docs/``. The synchronization indexes them (D88 (11), PR 4)."""
     storage = _storage(deps)
     _accepting(kb)
+    of_origin(kb, "upload")
     try:
         upload = deps.store.upload(kb.kb_id, body.upload_id)
     except KnowledgeStoreUnavailableError as exc:

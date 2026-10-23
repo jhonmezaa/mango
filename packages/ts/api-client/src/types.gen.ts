@@ -1656,6 +1656,10 @@ export type KnowledgeBaseCreate = {
      */
     name: string;
     /**
+     * Origin
+     */
+    origin: 'upload' | 'bucket';
+    /**
      * Sync Schedule
      */
     sync_schedule?: 'manual' | '6h' | 'daily' | 'weekly';
@@ -1723,6 +1727,10 @@ export type KnowledgeBaseOut = {
      * Name
      */
     name: string;
+    /**
+     * Origin
+     */
+    origin: 'upload' | 'bucket';
     owner: OwnerOut;
     status: Status;
     /**
@@ -2480,6 +2488,7 @@ export type PendingSourceOut = {
      * Decided At
      */
     decided_at: string | null;
+    decided_by: ProposerOut | null;
     /**
      * Kb Id
      */
@@ -2488,6 +2497,10 @@ export type PendingSourceOut = {
      * Knowledge Base
      */
     knowledge_base: string;
+    /**
+     * Note
+     */
+    note: string | null;
     /**
      * Prefix
      */
@@ -3431,6 +3444,20 @@ export type SignedFileOut = {
 };
 
 /**
+ * SourceDecideIn
+ */
+export type SourceDecideIn = {
+    /**
+     * Note
+     */
+    note?: string | null;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * SourceDecisionIn
  */
 export type SourceDecisionIn = {
@@ -3476,10 +3503,15 @@ export type SourceOut = {
      * Decided At
      */
     decided_at: string | null;
+    decided_by: ProposerOut | null;
     /**
      * Kb Id
      */
     kb_id: string;
+    /**
+     * Note
+     */
+    note: string | null;
     /**
      * Prefix
      */
@@ -6981,7 +7013,7 @@ export type ProposeResponses = {
 export type ProposeResponse = ProposeResponses[keyof ProposeResponses];
 
 export type ApproveSourceData = {
-    body: SourceDecisionIn;
+    body: SourceDecideIn;
     path: {
         /**
          * Kb Id
@@ -7049,7 +7081,7 @@ export type DeleteSourceResponses = {
 export type DeleteSourceResponse = DeleteSourceResponses[keyof DeleteSourceResponses];
 
 export type RejectSourceData = {
-    body: SourceDecisionIn;
+    body: SourceDecideIn;
     path: {
         /**
          * Kb Id
