@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 
 import type { OperationOutput } from '../../api/operations';
 import { argumentEntries, ruleText } from '../approvals/model';
+import { locationOf } from '../approvals/sources';
 import { isRunReason } from '../schedules/model';
 
 export type InboxPage = OperationOutput<'listInbox'>;
@@ -26,8 +27,11 @@ export function isPagedView(view: InboxView): boolean {
   return view !== 'approvals';
 }
 
-/** Public ids of the API: a run notice or an approval request. Anything else is ignored. */
-export const ITEM_ID = /^(?:[0-9]{13}[0-9a-f]{16}|[0-9a-f]{32})$/;
+/**
+ * Public ids of the API: a run notice, an approval request or a bucket proposal (a ULID).
+ * Anything else is ignored.
+ */
+export const ITEM_ID = /^(?:[0-9]{13}[0-9a-f]{16}|[0-9a-f]{32}|[0-9A-HJKMNP-TV-Z]{26})$/;
 export const TASK_ID = /^[0-9a-f]{32}$/;
 export const RUN_ID = /^[0-9a-f]{32}$/;
 
@@ -45,6 +49,13 @@ export function titleOf(t: TFunction, item: InboxItem): string {
   }
   if (item.run) {
     return t(item.run.ok ? 'inbox.runDone' : 'inbox.runFailed', { task: item.run.task_name });
+  }
+  if (item.source) {
+    // Design: «Te piden aprobar: Leer un bucket en …» or «… Cambiar el bucket de …».
+    const title = item.source.replaces
+      ? t('approvals.sources.titleChange', { kb: item.source.knowledge_base })
+      : t('approvals.sources.titleNew', { kb: item.source.knowledge_base });
+    return t('inbox.sourceTitle', { title });
   }
   return '';
 }
@@ -67,6 +78,8 @@ export function bodyOf(t: TFunction, item: InboxItem): string {
       ? t(`schedules.run.reason.${reason}`)
       : t('schedules.run.unknownReason');
   }
+  // Design: the body of a proposal is its bucket.
+  if (item.source) return locationOf(item.source);
   return '';
 }
 
@@ -85,6 +98,6 @@ export function matchesView(item: InboxItem, view: InboxView): boolean {
   if (view === 'archived') return item.archived;
   if (item.archived) return false;
   if (view === 'unread') return !item.read;
-  if (view === 'approvals') return item.kind === 'approval';
+  if (view === 'approvals') return item.kind === 'approval' || item.kind === 'kbsource';
   return true;
 }

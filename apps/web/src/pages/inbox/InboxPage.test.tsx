@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from '../../api/client';
 import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
-import { NOW, XSS, approval } from '../approvals/testFixtures';
+import { NOW, XSS, approval, source } from '../approvals/testFixtures';
 import { InboxPage } from './InboxPage';
 import type { InboxItem, InboxPage as Page } from './model';
 
@@ -279,5 +279,60 @@ describe('InboxPage', () => {
       expect(document.querySelector('.inbox-row.is-unread')).not.toBeNull();
     });
     expect(screen.queryByText('No se pudo guardar el cambio. Vuelve a intentarlo.')).toBeNull();
+  });
+});
+
+describe('bucket proposals of knowledge bases (D88 (49))', () => {
+  function sourceItem(overrides: Partial<InboxItem> = {}): InboxItem {
+    const proposal = source();
+    return {
+      kind: 'kbsource',
+      item_id: proposal.src_id,
+      agent_id: null,
+      agent_name: null,
+      at: proposal.proposed_at,
+      read: false,
+      archived: false,
+      approval: null,
+      source: proposal,
+      run: null,
+      ...overrides,
+    };
+  }
+
+  it('pins one to sign with its card, its decision and where to go', async () => {
+    const call = apiWith({
+      listInbox: () => page([sourceItem()]),
+      unreadInbox: () => ({ unread: 1 }),
+      putInboxState: ({ path }) => ({ ...sourceItem(), read: true, item_id: path?.item_id }),
+      approveSource: () => ({}),
+    });
+    renderPage(call);
+    const rows = await list();
+    const row = await rows.findByRole('option', {
+      name: /Te piden aprobar: Leer un bucket en Security Baseline/,
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.click(row);
+    expect(await screen.findByText('Knowledge Bases', { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText('Es de la cuenta de AWS de la instalación y no es de Mango.'),
+    ).toBeInTheDocument();
+    // Compact: no frequency, and «Aprobar» approves at once.
+    expect(screen.queryByText('Frecuencia')).toBeNull();
+    expect(screen.getByRole('button', { name: /Abrir knowledge base/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Ver en Aprobaciones/ }));
+    expect(await screen.findByText('approvals')).toBeInTheDocument();
+  });
+
+  it('says so when a page arrived empty but there is more', async () => {
+    renderPage(
+      apiWith({
+        listInbox: () => page([], { next_cursor: `${String(NOW)}${'e'.repeat(16)}` }),
+        unreadInbox: () => ({ unread: 0 }),
+      }),
+    );
+    expect(await screen.findByText('Nada entre los avisos más recientes.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mostrar más' })).toBeInTheDocument();
   });
 });

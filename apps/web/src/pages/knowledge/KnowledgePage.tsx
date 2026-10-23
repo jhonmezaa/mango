@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams } from 'react-router';
 
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
@@ -35,6 +36,9 @@ import {
 } from './model';
 
 type LoadState = { kind: 'loading' } | { kind: 'ready'; data: KnowledgeList } | { kind: 'error' };
+
+/** `/knowledge/<id>` opens its panel (from Aprobaciones and the Bandeja): only a ULID is used. */
+const KB_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** While a knowledge base synchronizes or is being deleted, the list is read again this often. */
 const POLL_MS = 5000;
@@ -123,7 +127,11 @@ export function KnowledgePage() {
   const [forbidden, setForbidden] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
-  const [selected, setSelected] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [routeId = ''] = (useParams()['*'] ?? '').split('/');
+  const [selected, setSelected] = useState<string | null>(() =>
+    KB_ID.test(routeId) ? routeId : null,
+  );
   const [creating, setCreating] = useState(false);
   /** A new knowledge base of files opens on its upload (design `KbCreate`). */
   const [opensOnUpload, setOpensOnUpload] = useState(false);
@@ -394,6 +402,7 @@ export function KnowledgePage() {
           onClose={() => {
             setSelected(null);
             setOpensOnUpload(false);
+            if (routeId) void navigate('/knowledge', { replace: true });
           }}
         />
       ) : null}

@@ -7,10 +7,12 @@
  */
 import { signableApprovals } from './approvals.ts';
 import { readBody, sendError, sendJson, type ApiHandler } from './http.ts';
+import { queue } from './knowledge.ts';
 import { endedRunsOfMine } from './tasks.ts';
 
 const PAGE = 20;
-const ITEM_ROUTE = /^\/inbox\/(approval|run)\/([0-9]{13}[0-9a-f]{16}|[0-9a-f]{32})$/;
+const ITEM_ROUTE =
+  /^\/inbox\/(approval|kbsource|run)\/([0-9]{13}[0-9a-f]{16}|[0-9a-f]{32}|[0-9A-Z]{26})$/;
 const VIEWS = new Set(['all', 'unread', 'approvals', 'archived']);
 const state = new Map<string, { read: boolean; archived: boolean }>();
 
@@ -40,6 +42,24 @@ function items() {
       run: null,
     };
   });
+  // Bucket proposals the mock user may sign (D88 (49)), pinned with the approvals.
+  const sources = queue()
+    .filter((source) => source.can_decide)
+    .map((source) => {
+      const seen = state.get(`kbsource:${source.src_id}`);
+      return {
+        kind: 'kbsource' as const,
+        item_id: source.src_id,
+        agent_id: null,
+        agent_name: null,
+        at: source.proposed_at,
+        read: seen?.read ?? false,
+        archived: seen?.archived ?? false,
+        approval: null,
+        source,
+        run: null,
+      };
+    });
   const runs = endedRunsOfMine()
     .map(({ task, run }) => {
       const at = run.ended_at ?? run.queued_at;
@@ -66,7 +86,8 @@ function items() {
       };
     })
     .sort((a, b) => b.item_id.localeCompare(a.item_id));
-  return { approvals, runs };
+  const pinned = [...approvals, ...sources].sort((a, b) => b.at.localeCompare(a.at));
+  return { approvals: pinned, runs };
 }
 
 function unread(): number {
@@ -78,7 +99,7 @@ function visible(item: { read: boolean; archived: boolean; kind: string }, view:
   if (view === 'archived') return item.archived;
   if (item.archived) return false;
   if (view === 'unread') return !item.read;
-  if (view === 'approvals') return item.kind === 'approval';
+  if (view === 'approvals') return item.kind === 'approval' || item.kind === 'kbsource';
   return true;
 }
 

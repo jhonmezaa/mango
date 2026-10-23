@@ -181,6 +181,34 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
     );
   });
 
+  test('a bucket proposal is signed in Aprobaciones and pinned in the Bandeja (D88 (48), (49))', async () => {
+    await page.getByRole('link', { name: 'Bandeja', exact: true }).first().click();
+    const notices = page.getByRole('listbox', { name: 'Avisos' });
+    await expect(
+      notices.getByRole('option', { name: /Te piden aprobar: Cambiar el bucket de AWS Runbooks/ }),
+    ).toBeVisible();
+    await notices
+      .getByRole('option', { name: /Te piden aprobar: Leer un bucket en Security Baseline/ })
+      .click();
+    await expect(
+      page.getByText('Es de la cuenta de AWS de la instalación y no es de Mango.'),
+    ).toBeVisible();
+    await page.getByRole('button', { name: /Ver en Aprobaciones/ }).click();
+    await expect(page).toHaveURL(/\/approvals\/pending\/[0-9A-Z]{26}$/);
+    const detail = page.getByRole('region', { name: 'Detalle de la solicitud' });
+    await expect(
+      detail.getByRole('heading', { name: 'Leer un bucket en Security Baseline' }),
+    ).toBeVisible();
+    await detail.getByRole('button', { name: 'Aprobar' }).click();
+    await detail.getByLabel(/Nota/).fill('Revisado con seguridad');
+    await detail.getByRole('button', { name: 'Confirmar aprobación' }).click();
+    await expect(page.getByText('Bucket aprobado · empieza la sincronización')).toBeVisible();
+    await page.getByRole('tab', { name: 'Resueltas' }).click();
+    const done = page.getByRole('listbox', { name: 'Solicitudes' });
+    await done.getByRole('option', { name: /Leer un bucket en Security Baseline/ }).click();
+    await expect(page.getByText('aprobó: «Revisado con seguridad»')).toBeVisible();
+  });
+
   test('no errors in the console but the refused bucket', () => {
     // The browser logs the 422 of the Mango bucket the API refused (second test); nothing else.
     expect(consoleErrors).toEqual([

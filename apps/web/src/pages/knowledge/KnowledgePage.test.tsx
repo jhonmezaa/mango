@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../../api/client';
@@ -471,5 +472,34 @@ describe('creating a knowledge base', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Crear y subir archivos' }));
     expect(within(dialog).getByText('No pegues credenciales')).toBeVisible();
     expect(writes(call)).toEqual([]);
+  });
+});
+
+describe('a link to one knowledge base', () => {
+  it('opens its panel from /knowledge/<id> (Aprobaciones, Bandeja)', async () => {
+    const api = { call: apiWith(list([kb(), bucketKb({ sources: [] })])) } as unknown as ApiClient;
+    render(
+      <TestProviders session={sessionValue({ api })} path={`/knowledge/${KB_ID}`}>
+        <Routes>
+          <Route path="knowledge/*" element={<KnowledgePage />} />
+        </Routes>
+      </TestProviders>,
+    );
+    expect(await screen.findByRole('dialog', { name: 'Políticas de RH' })).toBeVisible();
+  });
+
+  it('ignores anything that is not an id', async () => {
+    const api = { call: apiWith(list([kb()])) } as unknown as ApiClient;
+    render(
+      <TestProviders session={sessionValue({ api })} path="/knowledge/..%2Fadmin">
+        <Routes>
+          <Route path="knowledge/*" element={<KnowledgePage />} />
+        </Routes>
+      </TestProviders>,
+    );
+    await waitFor(() => {
+      expect(rows()).toHaveLength(1);
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

@@ -23,6 +23,11 @@ export const inbox = {
   retry: 'Reintentar',
   listLabel: 'Avisos',
   empty: 'Nada por aquí.',
+  /** Design B1: a page that arrived empty but with a cursor: «Mostrar más» brings the next. */
+  emptyWithMore: 'Nada entre los avisos más recientes.',
+  knowledgeBases: 'Knowledge Bases',
+  sourceTitle: 'Te piden aprobar: {{title}}',
+  openKb: 'Abrir knowledge base',
   selectOne: 'Selecciona una notificación para verla',
   unreadDot: 'No leído',
   loading: 'Cargando la bandeja…',

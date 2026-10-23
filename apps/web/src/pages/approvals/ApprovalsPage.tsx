@@ -45,6 +45,15 @@ import {
   type Filters,
 } from './model';
 import { PoliciesPanel } from './PoliciesPanel';
+import { SourceBody, SourceDecision, SourceRow } from './SourceCard';
+import {
+  SOURCE_ID,
+  SOURCE_TONE,
+  isPending,
+  matchesQuery,
+  needsMe,
+  type QueuedSource,
+} from './sources';
 
 type Tab = 'pending' | 'resolved' | 'policies';
 type ListView = Exclude<Tab, 'policies'>;
@@ -61,6 +70,27 @@ const POLL_MS = 20_000;
 const CLOCK_MS = 30_000;
 const TABS: readonly Tab[] = ['pending', 'resolved', 'policies'];
 const APPROVAL_ID = /^[0-9a-f]{32}$/;
+
+/** One row of the queue: a write tool call, or a bucket proposal of a knowledge base (D88). */
+type Entry =
+  | { kind: 'approval'; id: string; approval: Approval }
+  | { kind: 'source'; id: string; source: QueuedSource };
+
+/** Design: the proposals go with the requests, but only without filters they do not have. */
+function sourcesShown(
+  sources: readonly QueuedSource[],
+  view: ListView,
+  filters: Filters,
+): QueuedSource[] {
+  if (filters.agent !== 'all') return [];
+  if (filters.quick !== 'all' && filters.quick !== 'mine') return [];
+  return sources.filter(
+    (source) =>
+      (view === 'pending' ? isPending(source) : !isPending(source)) &&
+      matchesQuery(source, filters.query) &&
+      (filters.quick !== 'mine' || needsMe(source)),
+  );
+}
 
 function isTab(value: string): value is Tab {
   return (TABS as readonly string[]).includes(value);
@@ -156,12 +186,39 @@ export function ApprovalsPage() {
   // Deep link `/approvals/<tab>/<id>`: untrusted input, only well-formed values are used.
   const [routeTab = '', routeId = ''] = (useParams()['*'] ?? '').split('/');
   const tab: Tab = isTab(routeTab) ? routeTab : 'pending';
-  const linked = APPROVAL_ID.test(routeId) ? routeId : null;
+  const linked = APPROVAL_ID.test(routeId) || SOURCE_ID.test(routeId) ? routeId : null;
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [now, setNow] = useState(() => Date.now());
   const [reloadToken, setReloadToken] = useState(0);
+  const [sources, setSources] = useState<readonly QueuedSource[]>([]);
+  const [sourcesToken, setSourcesToken] = useState(0);
   const view: ListView | null = tab === 'policies' ? null : tab;
+
+  // Bucket proposals of knowledge bases (D88 (48)). Without them the requests still show.
+  useEffect(() => {
+    if (view === null) return undefined;
+    const controller = new AbortController();
+    const load = () => {
+      api.call('sourceQueue', {}, { signal: controller.signal }).then(
+        (queue) => {
+          if (!controller.signal.aborted) setSources(queue.items);
+        },
+        () => undefined,
+      );
+    };
+    load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') load();
+    }, POLL_MS);
+    return () => {
+      window.clearInterval(timer);
+      controller.abort();
+    };
+  }, [api, view, sourcesToken]);
+  const reloadSources = useCallback(() => {
+    setSourcesToken((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -214,6 +271,24 @@ export function ApprovalsPage() {
     [base, filters.quick, now, view],
   );
   const agents = useMemo(() => agentsOf(items), [items]);
+  const shownSources = useMemo(
+    () => (view === null ? [] : sourcesShown(sources, view, filters)),
+    [sources, view, filters],
+  );
+  const entries: Entry[] = useMemo(
+    () => [
+      ...list.map((approval) => ({
+        kind: 'approval' as const,
+        id: approval.approval_id,
+        approval,
+      })),
+      ...shownSources.map((source) => ({ kind: 'source' as const, id: source.src_id, source })),
+    ],
+    [list, shownSources],
+  );
+  /** Proposals that count in a quick view: «Todas» and «Esperan tu firma» (design). */
+  const quickSources = (quick: Filters['quick']) =>
+    view === null ? 0 : sourcesShown(sources, view, { ...filters, quick }).length;
 
   const go = useCallback(
     (nextTab: Tab, id?: string) => {
@@ -223,10 +298,22 @@ export function ApprovalsPage() {
     [navigate],
   );
   const select = useCallback(
-    (approval: Approval) => {
-      if (view) go(view, approval.approval_id);
+    (entry: { id: string }) => {
+      if (view) go(view, entry.id);
     },
     [go, view],
+  );
+  const selectApproval = useCallback(
+    (approval: Approval) => {
+      select({ id: approval.approval_id });
+    },
+    [select],
+  );
+  const selectSource = useCallback(
+    (source: QueuedSource) => {
+      select({ id: source.src_id });
+    },
+    [select],
   );
   const onUpdated = useCallback((next: Approval) => {
     setState((current) =>
@@ -243,8 +330,8 @@ export function ApprovalsPage() {
   };
 
   // Design: on a wide screen the first request is open unless another one was chosen.
-  const chosen = list.find((item) => item.approval_id === linked) ?? null;
-  const selected = chosen ?? (narrow ? null : (list[0] ?? null));
+  const chosen = entries.find((entry) => entry.id === linked) ?? null;
+  const selected = chosen ?? (narrow ? null : (entries[0] ?? null));
   const showDetail = narrow && chosen !== null;
   const filtered = hasFilters(filters);
 
@@ -253,18 +340,20 @@ export function ApprovalsPage() {
     const down = event.key === 'ArrowDown' || event.key === 'j';
     const up = event.key === 'ArrowUp' || event.key === 'k';
     if (!down && !up) return;
-    const index = selected ? list.indexOf(selected) : -1;
-    const next = list[index + (down ? 1 : -1)];
+    const index = selected ? entries.findIndex((entry) => entry.id === selected.id) : -1;
+    const next = entries[index + (down ? 1 : -1)];
     if (!next) return;
     event.preventDefault();
     select(next);
     const options = event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]');
-    options[list.indexOf(next)]?.focus();
+    options[entries.indexOf(next)]?.focus();
   };
 
   const crumbs = [t('approvals.crumbGov'), t('approvals.title')];
   const pendingCount =
-    state.kind === 'ready' && state.view === 'pending' ? state.list.items.length : null;
+    state.kind === 'ready' && state.view === 'pending'
+      ? state.list.items.length + sources.filter(isPending).length
+      : null;
 
   return (
     <>
@@ -326,7 +415,8 @@ export function ApprovalsPage() {
                         >
                           {t(`approvals.quick.${quick}`)}
                           <span className="mk-count">
-                            {base.filter((item) => matchesQuick(item, quick, now)).length}
+                            {base.filter((item) => matchesQuick(item, quick, now)).length +
+                              quickSources(quick)}
                           </span>
                         </button>
                       ))}
@@ -395,7 +485,7 @@ export function ApprovalsPage() {
                   <InfoIcon size={13} /> {t('approvals.ownNote')}
                 </div>
               ) : null}
-              {list.length === 0 ? (
+              {entries.length === 0 ? (
                 <div className="ap-body">
                   <div className="mk-empty" role="status">
                     <Check2Icon size={22} className="ap-empty-i" />
@@ -436,18 +526,28 @@ export function ApprovalsPage() {
                         aria-label={t('approvals.queueLabel')}
                         onKeyDown={onListKey}
                       >
-                        {list.map((item) => (
-                          <ApprovalRow
-                            key={item.approval_id}
-                            approval={item}
-                            active={!narrow && item === selected}
-                            narrow={narrow}
-                            now={now}
-                            onSelect={select}
-                          />
-                        ))}
+                        {entries.map((entry) =>
+                          entry.kind === 'approval' ? (
+                            <ApprovalRow
+                              key={entry.id}
+                              approval={entry.approval}
+                              active={!narrow && entry.id === selected?.id}
+                              narrow={narrow}
+                              now={now}
+                              onSelect={selectApproval}
+                            />
+                          ) : (
+                            <SourceRow
+                              key={entry.id}
+                              source={entry.source}
+                              active={!narrow && entry.id === selected?.id}
+                              narrow={narrow}
+                              onSelect={selectSource}
+                            />
+                          ),
+                        )}
                       </div>
-                      {list.length > 1 ? (
+                      {entries.length > 1 ? (
                         <div className="ap-hint">
                           <kbd>J</kbd>
                           <kbd>K</kbd> {t('approvals.keysHint')}
@@ -470,29 +570,56 @@ export function ApprovalsPage() {
                               <ChevronLeftIcon size={13} /> {t('approvals.back')}
                             </button>
                           ) : null}
-                          <div className="ap-detail-h">
-                            <span className="mono ap-detail-id">
-                              {t('approvals.id', { id: shortId(selected) })}
-                            </span>
-                            <Badge tone={STATUS_TONE[selected.status]}>
-                              {t(`approvals.status.${selected.status}`)}
-                            </Badge>
-                          </div>
-                          <div className="ap-detail-b">
-                            <ApprovalBody approval={selected} me={me} now={now} />
-                          </div>
-                          <div className="ap-detail-f">
-                            <ApprovalDecision
-                              key={selected.approval_id}
-                              api={api}
-                              me={me}
-                              approval={selected}
-                              canDecide={canDecide}
-                              now={now}
-                              onUpdated={onUpdated}
-                              notify={notify}
-                            />
-                          </div>
+                          {selected.kind === 'approval' ? (
+                            <>
+                              <div className="ap-detail-h">
+                                <span className="mono ap-detail-id">
+                                  {t('approvals.id', { id: shortId(selected.approval) })}
+                                </span>
+                                <Badge tone={STATUS_TONE[selected.approval.status]}>
+                                  {t(`approvals.status.${selected.approval.status}`)}
+                                </Badge>
+                              </div>
+                              <div className="ap-detail-b">
+                                <ApprovalBody approval={selected.approval} me={me} now={now} />
+                              </div>
+                              <div className="ap-detail-f">
+                                <ApprovalDecision
+                                  key={selected.id}
+                                  api={api}
+                                  me={me}
+                                  approval={selected.approval}
+                                  canDecide={canDecide}
+                                  now={now}
+                                  onUpdated={onUpdated}
+                                  notify={notify}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="ap-detail-h">
+                                <span className="mono ap-detail-id">{selected.id}</span>
+                                <Badge tone={SOURCE_TONE[selected.source.status]}>
+                                  {t(`approvals.sources.status.${selected.source.status}`)}
+                                </Badge>
+                                <Badge>{t('approvals.sources.kind')}</Badge>
+                              </div>
+                              <div className="ap-detail-b">
+                                <SourceBody source={selected.source} />
+                              </div>
+                              <div className="ap-detail-f">
+                                <SourceDecision
+                                  key={selected.id}
+                                  api={api}
+                                  me={me}
+                                  source={selected.source}
+                                  notify={notify}
+                                  onChanged={reloadSources}
+                                />
+                              </div>
+                            </>
+                          )}
                         </>
                       ) : (
                         <div className="mk-empty">

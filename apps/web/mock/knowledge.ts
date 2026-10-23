@@ -43,6 +43,7 @@ interface MockSource {
   decided_at: string | null;
   note: string | null;
   version: number;
+  withdrawn_at?: string | null;
 }
 
 interface MockAgent {
@@ -432,7 +433,7 @@ async function propose(
 }
 
 const KB_ROUTE =
-  /^\/knowledge-bases\/([0-9A-Z]{26})(?:\/(sync|delete|sources|documents|uploads|search)(?:\/([0-9A-Z]{26})\/delete)?)?$/;
+  /^\/knowledge-bases\/([0-9A-Z]{26})(?:\/(sync|delete|sources|documents|uploads|search)(?:\/([0-9A-Z]{26})\/(delete|approve|reject))?)?$/;
 const S3_ROUTE = /^\/mock-s3\/([0-9A-Z]{26})\/([0-9A-Z]{26})$/;
 
 /**
@@ -467,6 +468,11 @@ export async function handleMockS3(
 
 export const handleKnowledge: ApiHandler = async (req, res, path) => {
   const { method } = req;
+  if (path === '/knowledge-sources' && method === 'GET') {
+    settle();
+    sendJson(res, 200, { items: queue() });
+    return true;
+  }
   if (path === '/knowledge-bases') {
     settle();
     if (method === 'GET') {
@@ -486,7 +492,7 @@ export const handleKnowledge: ApiHandler = async (req, res, path) => {
   const match = KB_ROUTE.exec(path);
   if (!match) return false;
   settle();
-  const [, kbId, route, srcId] = match;
+  const [, kbId, route, srcId, verb] = match;
   const kb = kbs.find((item) => item.kb_id === kbId);
   if (!kb) {
     sendError(res, 404, 'not_found', 'not found');
@@ -592,6 +598,9 @@ export const handleKnowledge: ApiHandler = async (req, res, path) => {
     if (method === 'POST') return propose(req, res, kb);
     return false;
   }
+  if (route === 'sources' && srcId !== undefined && verb !== 'delete' && method === 'POST') {
+    return decide(req, res, kb, srcId, verb === 'approve');
+  }
   if (route === 'sources' && srcId !== undefined && method === 'POST') {
     const input = await readObject(req, ['version']);
     const found = kb.sources.find((s) => s.src_id === srcId);
@@ -603,7 +612,7 @@ export const handleKnowledge: ApiHandler = async (req, res, path) => {
     if (input.version !== found.version) return conflict(res, 'version_conflict');
     if (found.status !== 'pending') return conflict(res, 'source_decided');
     found.status = 'withdrawn';
-    found.decided_at = new Date().toISOString();
+    found.withdrawn_at = new Date().toISOString();
     found.version += 1;
     recordAudit('kb.source_withdraw', { kb: kb.kb_id, outcome: 'applied' });
     sendJson(res, 202, sourceView(kb, found));
@@ -771,4 +780,94 @@ export function knowledgeRefs(kbIds: readonly string[], agentGroups: readonly st
       groups_without_access: kb ? agentGroups.filter((group) => !kb.groups.includes(group)) : [],
     };
   });
+}
+
+/** A proposal as Aprobaciones and the Bandeja get it (`QueuedSourceOut`, D88 (48)). */
+function queued(kb: MockKb, source: MockSource) {
+  const approved = kb.sources.find((s) => s.status === 'approved' && s !== source);
+  return {
+    ...sourceView(kb, source),
+    can_decide: source.status === 'pending' && source.proposed_by.user_id !== MOCK_USER,
+    knowledge_base: kb.name,
+    groups: kb.groups,
+    sync_schedule: kb.sync_schedule,
+    replaces:
+      source.status === 'pending' && approved ? `s3://${approved.bucket}/${approved.prefix}` : null,
+    withdrawn_at: source.withdrawn_at ?? null,
+  };
+}
+
+/** GET /knowledge-sources: the mock user is an administrator, so every proposal is theirs to see. */
+export function queue() {
+  const live = kbs.filter((kb) => kb.status !== 'deleting');
+  const pending = live.flatMap((kb) =>
+    kb.sources.filter((s) => s.status === 'pending').map((s) => queued(kb, s)),
+  );
+  const decided = live.flatMap((kb) =>
+    kb.sources
+      .filter((s) => s.status === 'approved' || s.status === 'rejected' || s.status === 'withdrawn')
+      .map((s) => queued(kb, s)),
+  );
+  return [
+    ...pending.sort((a, b) => a.proposed_at.localeCompare(b.proposed_at)),
+    ...decided.sort((a, b) =>
+      (b.decided_at ?? b.withdrawn_at ?? '').localeCompare(a.decided_at ?? a.withdrawn_at ?? ''),
+    ),
+  ];
+}
+
+/** POST …/sources/{id}/approve|reject: a different administrator decides (D88 (20), (42)). */
+async function decide(
+  req: Parameters<ApiHandler>[0],
+  res: ServerResponse,
+  kb: MockKb,
+  srcId: string,
+  approve: boolean,
+): Promise<true> {
+  let input: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse((await readBody(req)) || '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      input = parsed as Record<string, unknown>;
+    }
+  } catch {
+    input = null;
+  }
+  const found = kb.sources.find((s) => s.src_id === srcId);
+  const note = typeof input?.note === 'string' ? input.note.trim() : '';
+  if (!input || typeof input.version !== 'number') return invalid(res);
+  if (!found) {
+    sendError(res, 404, 'not_found', 'not found');
+    return true;
+  }
+  if (found.proposed_by.user_id === MOCK_USER) {
+    sendError(res, 403, 'own_proposal', 'own proposal');
+    return true;
+  }
+  if (input.version !== found.version) return conflict(res, 'version_conflict');
+  if (found.status !== 'pending') return conflict(res, 'source_decided');
+  if (!approve && !note) {
+    sendError(res, 422, 'note_required', 'a rejection says why');
+    return true;
+  }
+  const now = new Date().toISOString();
+  if (approve) {
+    for (const other of kb.sources) if (other.status === 'approved') other.status = 'removing';
+    if (kb.status === 'pending') {
+      kb.sync_until = Date.now() + SYNC_MS;
+      kb.status = 'syncing';
+    }
+  }
+  found.status = approve ? 'approved' : 'rejected';
+  found.decided_by = me;
+  found.decided_at = now;
+  found.note = note || null;
+  found.version += 1;
+  recordAudit(approve ? 'kb.source_approve' : 'kb.source_reject', {
+    kb: kb.kb_id,
+    note_chars: note.length,
+    outcome: 'applied',
+  });
+  sendJson(res, 200, sourceView(kb, found));
+  return true;
 }

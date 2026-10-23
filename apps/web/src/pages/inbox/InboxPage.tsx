@@ -10,6 +10,7 @@ import { useToasts } from '../../components/admin/useToasts';
 import { Badge } from '../../components/Badge';
 import {
   ArchiveIcon,
+  BookOpenIcon,
   ArrowRightIcon,
   ChevronLeftIcon,
   ClockIcon,
@@ -24,6 +25,8 @@ import { useShell } from '../../layouts/ShellContext';
 import { formatRelative } from '../../lib/format';
 import { ApprovalDecision } from '../approvals/ApprovalDecision';
 import type { Approval } from '../approvals/model';
+import { SourceDecision, SourceFacts } from '../approvals/SourceCard';
+import { knowledgePath } from '../approvals/sources';
 import { ReportDownload } from '../schedules/reports';
 import {
   SOON_TABS,
@@ -90,7 +93,10 @@ function InboxRow({
   onOpen: (item: InboxItem) => void;
 }) {
   const { t } = useTranslation();
-  const Icon = item.kind === 'approval' ? LockIcon : ClockIcon;
+  // Design `ICON`: a proposal of a knowledge base, an approval or a run.
+  const Icon =
+    item.kind === 'kbsource' ? BookOpenIcon : item.kind === 'approval' ? LockIcon : ClockIcon;
+  const mono = item.kind !== 'run';
   const classes = ['inbox-row'];
   if (active) classes.push('on');
   if (!item.read) classes.push('is-unread');
@@ -110,18 +116,14 @@ function InboxRow({
         role={item.read ? undefined : 'img'}
         aria-label={item.read ? undefined : t('inbox.unreadDot')}
       />
-      <span className={item.kind === 'approval' ? 'inbox-ic is-amber' : 'inbox-ic'}>
+      <span className={item.kind === 'run' ? 'inbox-ic' : 'inbox-ic is-amber'}>
         <Icon size={15} />
       </span>
       <span className="inbox-row-main">
         <span className="inbox-row-t">{titleOf(t, item)}</span>
         <span className="inbox-row-s">
           {item.agent_name ? `${item.agent_name} · ` : ''}
-          {item.approval ? (
-            <span className="mono inbox-row-mono">{bodyOf(t, item)}</span>
-          ) : (
-            bodyOf(t, item)
-          )}
+          {mono ? <span className="mono inbox-row-mono">{bodyOf(t, item)}</span> : bodyOf(t, item)}
         </span>
       </span>
       <span className="inbox-row-time">{formatRelative(item.at, now)}</span>
@@ -466,7 +468,9 @@ export function InboxPage() {
           ) : (
             <div role="listbox" aria-label={t('inbox.listLabel')}>
               {list.length === 0 ? (
-                <div className="inbox-empty">{t('inbox.empty')}</div>
+                <div className="inbox-empty">
+                  {cursor && isPagedView(view) ? t('inbox.emptyWithMore') : t('inbox.empty')}
+                </div>
               ) : (
                 list.map((item) => (
                   <InboxRow
@@ -542,9 +546,16 @@ export function InboxPage() {
                 {titleOf(t, current)}
               </h2>
               <div className="inbox-detail-m">
-                {current.agent_name ?? t('inbox.system')} · {formatRelative(current.at, now)}
+                {current.source
+                  ? t('inbox.knowledgeBases')
+                  : (current.agent_name ?? t('inbox.system'))}{' '}
+                · {formatRelative(current.at, now)}
               </div>
-              <p className={current.approval ? 'inbox-detail-b mono is-mono' : 'inbox-detail-b'}>
+              <p
+                className={
+                  current.kind === 'run' ? 'inbox-detail-b' : 'inbox-detail-b mono is-mono'
+                }
+              >
                 {bodyOf(t, current)}
               </p>
               {current.approval ? (
@@ -561,8 +572,24 @@ export function InboxPage() {
                   />
                 </div>
               ) : null}
+              {current.source ? (
+                <div className="card inbox-card grid gap-3.5">
+                  <SourceFacts source={current.source} compact />
+                  <SourceDecision
+                    key={current.item_id}
+                    api={api}
+                    me={me}
+                    source={current.source}
+                    notify={notify}
+                    onChanged={() => {
+                      setReloadToken((value) => value + 1);
+                      refreshUnread();
+                    }}
+                  />
+                </div>
+              ) : null}
               <div className="inbox-actions">
-                {current.approval ? (
+                {current.approval || current.source ? (
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -571,6 +598,17 @@ export function InboxPage() {
                     }}
                   >
                     {t('inbox.seeApprovals')} <ArrowRightIcon size={11} />
+                  </button>
+                ) : null}
+                {current.source ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      if (current.source) void navigate(knowledgePath(current.source));
+                    }}
+                  >
+                    {t('inbox.openKb')} <ArrowRightIcon size={11} />
                   </button>
                 ) : null}
                 {current.run ? <RunLink item={current} /> : null}

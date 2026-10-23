@@ -1,3 +1,4 @@
+import type { QueuedSource } from './sources';
 import type { Approval, Policies, PolicyChange, ToolPolicy } from './model';
 
 export const NOW = Date.parse('2026-10-02T12:00:00Z');
@@ -111,4 +112,29 @@ export function policyChange(overrides: Partial<PolicyChange> = {}): PolicyChang
 
 export function policies(overrides: Partial<Policies> = {}): Policies {
   return { tools: [toolPolicy()], changes: [], ...overrides };
+}
+
+/** A bucket proposal of a knowledge base as `GET /api/knowledge-sources` gives it (D88 (48)). */
+export function source(overrides: Partial<QueuedSource> = {}): QueuedSource {
+  return {
+    src_id: '01JD0000000000000000000001',
+    kb_id: '01JC0000000000000000000001',
+    bucket: 'empresa-seguridad',
+    prefix: 'baseline/',
+    status: 'pending',
+    proposed_by: { user_id: 'creator-3', email: 'usuario3@example.com' },
+    proposed_at: new Date(NOW - 150 * 60_000).toISOString(),
+    decided_at: null,
+    decided_by: null,
+    note: null,
+    version: 1,
+    role_ready: false,
+    can_decide: true,
+    knowledge_base: 'Security Baseline',
+    groups: ['security', 'devops'],
+    sync_schedule: 'daily',
+    replaces: null,
+    withdrawn_at: null,
+    ...overrides,
+  };
 }

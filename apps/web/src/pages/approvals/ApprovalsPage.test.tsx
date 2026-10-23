@@ -9,7 +9,7 @@ import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { ApprovalsPage } from './ApprovalsPage';
 import type { Approval, ApprovalList, Policies } from './model';
-import { NOW, XSS, approval, policies, policyChange, toolPolicy } from './testFixtures';
+import { NOW, XSS, approval, policies, policyChange, source, toolPolicy } from './testFixtures';
 
 type Answer = unknown;
 type Handler = (input: {
@@ -53,7 +53,10 @@ function renderPage(call: ReturnType<typeof vi.fn>, path = '/approvals', isAdmin
 
 function writes(call: ReturnType<typeof vi.fn>) {
   return call.mock.calls.filter(
-    ([operation]) => !String(operation).startsWith('list') && !String(operation).startsWith('get'),
+    ([operation]) =>
+      !String(operation).startsWith('list') &&
+      !String(operation).startsWith('get') &&
+      operation !== 'sourceQueue',
   );
 }
 
@@ -518,5 +521,151 @@ describe('Políticas', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Otro admin debe decidir sobre tu propuesta.',
     );
+  });
+});
+
+describe('bucket proposals of knowledge bases (design kb-source.jsx, D88 (48))', () => {
+  const queueOf = (items: ReturnType<typeof source>[]) => () => ({ items });
+
+  it('go in the queue with the requests, and their detail says what approving does', async () => {
+    renderPage(
+      apiWith({
+        listApprovals: lists([approval()]),
+        sourceQueue: queueOf([source()]),
+      }),
+    );
+    const rows = await findQueue();
+    const row = await rows.findByRole('option', { name: /Leer un bucket en Security Baseline/ });
+    expect(row).toHaveTextContent(
+      '01JD0000000000000000000001 · Knowledge base · propuso usuario3@example.com',
+    );
+    expect(row).toHaveTextContent('Bucket de S3');
+    expect(within(row).getByRole('img', { name: 'Espera tu firma' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Pendientes2/ })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(row);
+    const detail = screen.getByRole('region', { name: 'Detalle de la solicitud' });
+    expect(within(detail).getByText(/Mango copia lo que hay en ese prefijo/)).toBeInTheDocument();
+    expect(within(detail).getByText('s3://empresa-seguridad/baseline/')).toBeInTheDocument();
+    expect(within(detail).getByText('security, devops')).toBeInTheDocument();
+    expect(within(detail).getByText('Diaria')).toBeInTheDocument();
+    expect(
+      within(detail).getByText('Es de la cuenta de AWS de la instalación y no es de Mango.'),
+    ).toBeInTheDocument();
+    expect(within(detail).getByRole('link', { name: /Abrir knowledge base/ })).toHaveAttribute(
+      'href',
+      '/knowledge/01JC0000000000000000000001',
+    );
+  });
+
+  it('approves with an optional note, and rejects only with a reason', async () => {
+    const call = apiWith({
+      listApprovals: lists([]),
+      sourceQueue: queueOf([source()]),
+      approveSource: () => ({}),
+      rejectSource: () => ({}),
+    });
+    renderPage(call);
+    const user = userEvent.setup();
+    await user.click(await (await findQueue()).findByRole('option', { name: /Security Baseline/ }));
+    await user.click(screen.getByRole('button', { name: 'Rechazar' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar rechazo' }));
+    expect(screen.getByText('Escribe o elige un motivo')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'No es la carpeta correcta' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar rechazo' }));
+    await waitFor(() => {
+      expect(writes(call)).toEqual([
+        [
+          'rejectSource',
+          {
+            path: { kb_id: '01JC0000000000000000000001', src_id: '01JD0000000000000000000001' },
+            body: { version: 1, note: 'No es la carpeta correcta' },
+          },
+        ],
+      ]);
+    });
+    expect(await screen.findByText('Bucket rechazado')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Aprobar' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar aprobación' }));
+    await waitFor(() => {
+      expect(writes(call)[1]).toEqual([
+        'approveSource',
+        {
+          path: { kb_id: '01JC0000000000000000000001', src_id: '01JD0000000000000000000001' },
+          body: { version: 1 },
+        },
+      ]);
+    });
+  });
+
+  it('lets whoever proposed it withdraw it, never sign it', async () => {
+    const own = source({
+      can_decide: false,
+      proposed_by: { user_id: baseMe.user_id, email: null },
+    });
+    const call = apiWith({
+      listApprovals: lists([]),
+      sourceQueue: queueOf([own]),
+      deleteSource: () => ({}),
+    });
+    renderPage(call);
+    const user = userEvent.setup();
+    await user.click(await (await findQueue()).findByRole('option', { name: /Security Baseline/ }));
+    expect(
+      screen.getByText('Tú lo propusiste: lo aprueba otro administrador.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Retirar propuesta' }));
+    await waitFor(() => {
+      expect(writes(call)).toEqual([
+        [
+          'deleteSource',
+          {
+            path: { kb_id: '01JC0000000000000000000001', src_id: '01JD0000000000000000000001' },
+            body: { version: 1 },
+          },
+        ],
+      ]);
+    });
+  });
+
+  it('shows a change of bucket and, in Resueltas, how each one ended', async () => {
+    const change = source({ replaces: 's3://empresa-seguridad/old/' });
+    const rejected = source({
+      src_id: '01JD0000000000000000000002',
+      status: 'rejected',
+      decided_at: new Date(NOW - 60_000).toISOString(),
+      decided_by: { user_id: 'admin-1', email: 'admin1@example.com' },
+      note: `Es la documentación pública ${XSS}`,
+      can_decide: false,
+    });
+    renderPage(
+      apiWith({ listApprovals: lists([]), sourceQueue: queueOf([change, rejected]) }),
+      '/approvals/pending/01JD0000000000000000000001',
+    );
+    const detail = await screen.findByRole('region', { name: 'Detalle de la solicitud' });
+    expect(
+      within(detail).getByRole('heading', { name: 'Cambiar el bucket de Security Baseline' }),
+    ).toBeInTheDocument();
+    expect(within(detail).getByText('s3://empresa-seguridad/old/')).toBeInTheDocument();
+    expect(within(detail).getByText(/sigue leyendo el actual/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('tab', { name: 'Resueltas' }));
+    const row = await (await findQueue()).findByRole('option', { name: /Security Baseline/ });
+    expect(row).toHaveTextContent('Rechazado');
+    await user.click(row);
+    expect(
+      await screen.findByText(`rechazó: «Es la documentación pública ${XSS}»`),
+    ).toBeInTheDocument();
+    expect(document.querySelector('img[src="x"]')).toBeNull();
+  });
+
+  it('stays out of the views it has no data for', async () => {
+    renderPage(apiWith({ listApprovals: lists([approval()]), sourceQueue: queueOf([source()]) }));
+    const rows = await findQueue();
+    await rows.findByRole('option', { name: /Security Baseline/ });
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Agente' }), 'finops');
+    expect(queue().queryByRole('option', { name: /Security Baseline/ })).toBeNull();
   });
 });
