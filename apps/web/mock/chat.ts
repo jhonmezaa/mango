@@ -14,6 +14,8 @@ interface StoredMessage {
   tools: { name: string; status: string }[];
   /** Ids of the approval requests the answer's write tool calls created (D27). */
   approvals?: string[];
+  /** Sources of the answer: knowledge base, document and page, never text (D88 (44)). */
+  citations?: { knowledge_base: string; document: string; page?: number }[];
 }
 
 interface StoredConversation {
@@ -269,6 +271,23 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     res.end();
     return;
   }
+  // "vacaciones": the agent searches a knowledge base first; the stream says where and how many
+  // fragments, and each source with its document and page, never the text (D88 (44)).
+  const searchesKnowledge = /vacaciones/i.test(message);
+  const citations = searchesKnowledge
+    ? [
+        { knowledge_base: 'Políticas de RH', document: 'documento-001.pdf', page: 3 },
+        { knowledge_base: 'Políticas de RH', document: 'documento-002.pdf' },
+      ]
+    : [];
+  if (searchesKnowledge) {
+    send('tool', { name: 'retrieve', status: 'started' });
+    send('status', { phase: 'tool', tool: 'retrieve' });
+    await sleep(400);
+    send('tool', { name: 'retrieve', status: 'completed' });
+    send('knowledge', { knowledge_bases: ['Políticas de RH'], count: 3, sources: citations });
+    send('status', { phase: 'tool_result' });
+  }
   // To review the progress states: "en paralelo" runs two tools at once and one fails;
   // "guardrail" cuts the answer halfway, like the API's `guardrail_intervened`.
   const parallel = /paralelo/i.test(message);
@@ -313,6 +332,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       ...(parallel ? [{ name: 'get_rightsizing_recommendations', status: 'error' }] : []),
       { name: 'get_cost_forecast', status: 'completed' },
     ],
+    ...(citations.length ? { citations } : {}),
   });
   send('done', {
     message_id: messageId,

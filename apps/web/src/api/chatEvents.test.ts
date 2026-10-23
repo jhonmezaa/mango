@@ -52,6 +52,29 @@ describe('parseChatEvent', () => {
     });
   });
 
+  it('reads a knowledge search, and refuses one that does not fit (D88 (44))', () => {
+    const data = JSON.stringify({
+      knowledge_bases: ['RH'],
+      count: 2,
+      sources: [{ knowledge_base: 'RH', document: 'a.pdf', page: 3 }],
+    });
+    expect(parseChatEvent({ event: 'knowledge', data })).toEqual({
+      type: 'knowledge',
+      knowledge_bases: ['RH'],
+      count: 2,
+      sources: [{ knowledge_base: 'RH', document: 'a.pdf', page: 3 }],
+    });
+    const long = JSON.stringify({
+      knowledge_bases: ['RH'],
+      count: 1,
+      sources: [{ knowledge_base: 'RH', document: 'x'.repeat(201) }],
+    });
+    expect(parseChatEvent({ event: 'knowledge', data: long })).toMatchObject({
+      type: 'error',
+      code: 'invalid_event',
+    });
+  });
+
   it('ignores unknown event types (forward compatible)', () => {
     expect(parseChatEvent({ event: 'citation', data: '{}' })).toBeNull();
     expect(parseChatEvent({ event: 'toString', data: '{}' })).toBeNull();

@@ -3,7 +3,13 @@ import { lazy, memo, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
-import type { DisplayMessage, TurnProgress, TurnStep } from '../../hooks/chatState';
+import type {
+  Citation,
+  DisplayMessage,
+  KnowledgeSearch,
+  TurnProgress,
+  TurnStep,
+} from '../../hooks/chatState';
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -21,6 +27,7 @@ import {
 import { copyText } from '../../lib/clipboard';
 import { Soon } from '../Soon';
 import { formatMessageTime } from './threadGroups';
+import { KnowledgeCitations, KnowledgeSteps } from './KnowledgeCitations';
 import { ToolGroup } from './ToolGroup';
 
 // The markdown stack is the largest chunk and is only needed once there is an agent answer;
@@ -141,6 +148,8 @@ function TurnSteps({ steps, observe }: { steps: TurnStep[]; observe: boolean }) 
   );
 }
 
+const NO_SEARCHES: KnowledgeSearch[] = [];
+const NO_CITATIONS: Citation[] = [];
 const NO_STEPS: TurnStep[] = [];
 
 interface Props {
@@ -226,6 +235,7 @@ export const ChatMessage = memo(function ChatMessage({
         ) : (
           <ToolGroup tools={message.tools} live={false} />
         )}
+        <KnowledgeSteps searches={message.searches ?? NO_SEARCHES} />
         {message.content ? (
           // Until the markdown chunk loads, the text is shown as plain text (escaped by React).
           <Suspense fallback={<p className="md whitespace-pre-wrap">{message.content}</p>}>
@@ -263,6 +273,7 @@ export const ChatMessage = memo(function ChatMessage({
             <div>{t('chat.guardrail')}</div>
           </div>
         ) : null}
+        <KnowledgeCitations citations={message.citations ?? NO_CITATIONS} />
         {message.status === 'error' &&
           (budgetExceeded ? (
             <div role="alert" className="notice notice-amber msg-notice">

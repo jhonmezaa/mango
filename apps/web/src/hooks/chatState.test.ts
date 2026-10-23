@@ -368,3 +368,57 @@ describe('chatReducer · steps of a turn in flight (design chat.jsx streamSteps)
     expect([capped?.status, capped?.content]).toEqual(['done', 'Una guía que se cor']);
   });
 });
+
+describe('chatReducer · knowledge searches (D88 (44))', () => {
+  const hr = (document: string, page?: number) => ({
+    knowledge_base: 'Políticas de RH',
+    document,
+    ...(page === undefined ? {} : { page }),
+  });
+
+  it('keeps each search and each source once, in order, as the stored message does', () => {
+    let state = start();
+    state = chatReducer(state, {
+      type: 'event',
+      assistantId: 'a',
+      event: {
+        type: 'knowledge',
+        knowledge_bases: ['Políticas de RH'],
+        count: 3,
+        sources: [hr('Vacaciones.pdf', 3), hr('Handbook.pdf')],
+      },
+    });
+    state = chatReducer(state, {
+      type: 'event',
+      assistantId: 'a',
+      event: {
+        type: 'knowledge',
+        knowledge_bases: ['Políticas de RH'],
+        count: 1,
+        sources: [hr('Vacaciones.pdf', 3), hr('Beneficios.pdf', 7)],
+      },
+    });
+    const message = state.messages.at(-1);
+    expect(message?.searches).toEqual([
+      { knowledgeBases: ['Políticas de RH'], count: 3 },
+      { knowledgeBases: ['Políticas de RH'], count: 1 },
+    ]);
+    expect(message?.citations).toEqual([
+      { knowledgeBase: 'Políticas de RH', document: 'Vacaciones.pdf', page: 3 },
+      { knowledgeBase: 'Políticas de RH', document: 'Handbook.pdf', page: null },
+      { knowledgeBase: 'Políticas de RH', document: 'Beneficios.pdf', page: 7 },
+    ]);
+  });
+
+  it('restores the sources of a stored answer', () => {
+    const message = fromApiMessage({
+      message_id: 'm',
+      role: 'assistant',
+      content: 'Son 15 días.',
+      created_at: '2026-10-23T10:00:00Z',
+      tools: [],
+      citations: [{ knowledge_base: 'RH', document: 'a.pdf', page: null }],
+    });
+    expect(message.citations).toEqual([{ knowledgeBase: 'RH', document: 'a.pdf', page: null }]);
+  });
+});

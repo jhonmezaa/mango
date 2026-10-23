@@ -97,6 +97,16 @@ export const chat = {
     tool_result: 'Procesando resultados…',
     writing: 'Escribiendo…',
   },
+  // Knowledge searches of a turn and the sources of an answer (design kb-agent.jsx, D88 (44)).
+  knowledge: {
+    searched: 'Buscó en',
+    anyBase: 'las knowledge bases',
+    fragments_one: '{{count}} fragmento',
+    fragments_other: '{{count}} fragmentos',
+    sources: 'Fuentes',
+    sourcesOf: 'Fuentes · {{kb}}',
+    page: 'p. {{page}}',
+  },
   steps: {
     count_one: '{{count}} paso',
     count_other: '{{count}} pasos',

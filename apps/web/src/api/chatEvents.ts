@@ -18,6 +18,21 @@ const doneEvent = z.object({
   cost_usd: z.string(),
 });
 const errorEvent = z.object({ code: z.string(), message: z.string() });
+/**
+ * A knowledge search of the turn (D88 (44)): the knowledge bases that answered, how many
+ * fragments and, for each source, its document and page. Never the text of a fragment; plain
+ * text, rendered as text.
+ */
+export const citationSchema = z.object({
+  knowledge_base: z.string().max(200),
+  document: z.string().max(200),
+  page: z.number().int().positive().optional(),
+});
+const knowledgeEvent = z.object({
+  knowledge_bases: z.array(z.string().max(200)).max(10),
+  count: z.number().int().min(0).max(100),
+  sources: z.array(citationSchema).max(20),
+});
 
 export type ChatEvent =
   | ({ type: 'conversation' } & z.infer<typeof conversationEvent>)
@@ -25,6 +40,7 @@ export type ChatEvent =
   | ({ type: 'status' } & z.infer<typeof statusEvent>)
   | ({ type: 'delta' } & z.infer<typeof deltaEvent>)
   | { type: 'approval'; approval: z.infer<typeof approvalSchema> }
+  | ({ type: 'knowledge' } & z.infer<typeof knowledgeEvent>)
   | ({ type: 'done' } & z.infer<typeof doneEvent>)
   | ({ type: 'error' } & z.infer<typeof errorEvent>);
 
@@ -37,6 +53,7 @@ const schemas = {
   tool: toolEvent,
   status: statusEvent,
   delta: deltaEvent,
+  knowledge: knowledgeEvent,
   done: doneEvent,
   error: errorEvent,
 } as const;

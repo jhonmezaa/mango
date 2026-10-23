@@ -397,3 +397,48 @@ describe('ChatMessage: error states', () => {
     expect(onSend).toHaveBeenCalledWith('hola');
   });
 });
+
+describe('ChatMessage: knowledge searches and sources (design kb-agent.jsx, D88 (44))', () => {
+  const XSS = '<img src=x onerror=alert(1)>';
+
+  it('says where it searched and lists the sources as text, without anything to open', () => {
+    renderMessage({
+      id: 'a',
+      role: 'assistant',
+      content: 'Son 15 días.',
+      status: 'done',
+      tools: [],
+      searches: [{ knowledgeBases: ['Políticas de RH'], count: 3 }],
+      citations: [
+        { knowledgeBase: 'Políticas de RH', document: 'Vacaciones.pdf', page: 3 },
+        { knowledgeBase: 'Políticas de RH', document: XSS, page: null },
+      ],
+    });
+    expect(screen.getByText('Políticas de RH', { selector: 'b' })).toBeVisible();
+    expect(screen.getByText(/3 fragmentos/)).toBeVisible();
+    const sources = screen.getByRole('region', { name: 'Fuentes' });
+    expect(within(sources).getByText('Fuentes · Políticas de RH')).toBeVisible();
+    expect(within(sources).getByText('[1]')).toBeVisible();
+    expect(within(sources).getByText('p. 3')).toBeVisible();
+    expect(within(sources).getByText(XSS)).toBeVisible();
+    expect(within(sources).queryByRole('button')).toBeNull();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('names the knowledge base of each source when there are several', () => {
+    renderMessage({
+      id: 'a',
+      role: 'assistant',
+      content: 'Listo.',
+      status: 'done',
+      tools: [],
+      citations: [
+        { knowledgeBase: 'RH', document: 'a.pdf', page: null },
+        { knowledgeBase: 'Legal', document: 'b.pdf', page: null },
+      ],
+    });
+    const sources = screen.getByRole('region', { name: 'Fuentes' });
+    expect(within(sources).getByText('Fuentes', { selector: '.kb-cites-h' })).toBeVisible();
+    expect(within(sources).getByText('· Legal')).toBeVisible();
+  });
+});

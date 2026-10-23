@@ -89,6 +89,35 @@ function stepsOnTool(steps: readonly TurnStep[], tool: ToolCall): TurnStep[] {
   return steps.map((step, i) => (i === index ? { ...step, status } : step));
 }
 
+/** A source of an answer (D88 (44)): plain text, never the text of the fragment. */
+export interface Citation {
+  knowledgeBase: string;
+  document: string;
+  page: number | null;
+}
+
+/** One knowledge search of a turn in flight (design `KbStep`): where, and how many fragments. */
+export interface KnowledgeSearch {
+  knowledgeBases: string[];
+  count: number;
+}
+
+const MAX_CITATIONS = 24;
+
+/** Adds the sources not cited yet, in order, as the API keeps them on the message. */
+function addCitations(current: readonly Citation[], sources: readonly Citation[]): Citation[] {
+  const key = (c: Citation) => `${c.knowledgeBase}\u0000${c.document}\u0000${String(c.page)}`;
+  const seen = new Set(current.map(key));
+  const out = [...current];
+  for (const source of sources) {
+    if (out.length >= MAX_CITATIONS) break;
+    if (seen.has(key(source))) continue;
+    seen.add(key(source));
+    out.push(source);
+  }
+  return out;
+}
+
 export interface DisplayMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -103,6 +132,10 @@ export interface DisplayMessage {
   steps?: TurnStep[];
   /** The guardrail cut the answer: what was written stays and a notice follows it. */
   guardrail?: boolean;
+  /** Knowledge searches of the turn while it runs and after (not stored: live only). */
+  searches?: KnowledgeSearch[];
+  /** Sources of the answer, from the searches of the turn or the stored message. */
+  citations?: Citation[];
   /** ISO timestamp: `created_at` for loaded history, the client clock for messages sent now. */
   createdAt?: string;
   errorKey?: ErrorKey;
@@ -191,6 +224,11 @@ export function fromApiMessage(
       ),
     ),
     approvals: (message.approvals ?? []).flatMap((id) => approvals.get(id) ?? []),
+    citations: (message.citations ?? []).map((c) => ({
+      knowledgeBase: c.knowledge_base,
+      document: c.document,
+      page: c.page ?? null,
+    })),
     status: 'done',
     createdAt: message.created_at,
   };
@@ -291,6 +329,22 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           return updateMessage(state, assistantId, (message) => ({
             ...message,
             content: message.content + event.text,
+          }));
+        case 'knowledge':
+          return updateMessage(state, assistantId, (message) => ({
+            ...message,
+            searches: [
+              ...(message.searches ?? []),
+              { knowledgeBases: event.knowledge_bases, count: event.count },
+            ],
+            citations: addCitations(
+              message.citations ?? [],
+              event.sources.map((source) => ({
+                knowledgeBase: source.knowledge_base,
+                document: source.document,
+                page: source.page ?? null,
+              })),
+            ),
           }));
         case 'done':
           return updateMessage(state, assistantId, (message) => ({

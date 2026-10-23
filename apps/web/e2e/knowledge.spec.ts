@@ -182,7 +182,10 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
   });
 
   test('a bucket proposal is signed in Aprobaciones and pinned in the Bandeja (D88 (48), (49))', async () => {
-    await page.getByRole('link', { name: 'Bandeja', exact: true }).first().click();
+    await page
+      .getByRole('link', { name: /^Bandeja/ })
+      .first()
+      .click();
     const notices = page.getByRole('listbox', { name: 'Avisos' });
     await expect(
       notices.getByRole('option', { name: /Te piden aprobar: Cambiar el bucket de AWS Runbooks/ }),
@@ -207,6 +210,22 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
     const done = page.getByRole('listbox', { name: 'Solicitudes' });
     await done.getByRole('option', { name: /Leer un bucket en Security Baseline/ }).click();
     await expect(page.getByText('aprobó: «Revisado con seguridad»')).toBeVisible();
+  });
+
+  test('an answer from a knowledge base says where it searched and its sources (D88 (44))', async () => {
+    await page.getByRole('link', { name: 'Chat', exact: true }).first().click();
+    await page.locator('#chat-input').fill('¿Cuántos días de vacaciones tengo?');
+    await page.locator('#chat-input').press('Enter');
+    const answer = page.locator('article.msg-agent').last();
+    await expect(answer.locator('.kb-step')).toHaveText('Buscó en Políticas de RH · 3 fragmentos', {
+      timeout: 30_000,
+    });
+    const sources = answer.getByRole('region', { name: 'Fuentes' });
+    await expect(sources.locator('.kb-cites-h')).toHaveText('Fuentes · Políticas de RH', {
+      timeout: 30_000,
+    });
+    await expect(sources.locator('.kb-cite').first()).toHaveText('[1]documento-001.pdfp. 3');
+    await expect(sources.getByRole('button')).toHaveCount(0);
   });
 
   test('no errors in the console but the refused bucket', () => {

@@ -62,6 +62,17 @@ export const messageSchema = z.object({
     .array(z.string().regex(/^[0-9a-f]{32}$/))
     .max(20)
     .optional(),
+  /** Knowledge base, document and page of each source of the answer (D88 (44)). */
+  citations: z
+    .array(
+      z.object({
+        knowledge_base: z.string().max(200),
+        document: z.string().max(200),
+        page: z.number().int().positive().nullable().optional(),
+      }),
+    )
+    .max(24)
+    .optional(),
 });
 export type Message = z.infer<typeof messageSchema>;
 
