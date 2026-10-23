@@ -381,12 +381,6 @@ def test_public_tools_can_go_to_any_registered_group() -> None:
     assert _codes(definition) == []
 
 
-AWAITING_DESIGN = frozenset({"knowledge_base_unavailable", "knowledge_base_not_usable"})
-"""Rules whose wording waits for the design round of knowledge bases (D24, D88; brief
-``sync-2026-10-21-knowledge-bases.md`` §2.5). The Builder cannot pick knowledge bases yet, and
-shows any code it does not know as an unknown rule, by its code."""
-
-
 def test_the_web_knows_every_rule_code_the_api_reports() -> None:
     """Both screens that show rules take the codes from ``apps/web/src/agents/rules.ts``."""
     root = Path(__file__).parents[3]
@@ -395,4 +389,4 @@ def test_the_web_knows_every_rule_code_the_api_reports() -> None:
     reported = set(re.findall(r'Violation\(\s*"([a-z_]+)"', rules))
     listed = set(re.findall(r"^  '([a-z_]+)',$", web, flags=re.MULTILINE))
     assert reported
-    assert listed == reported - AWAITING_DESIGN
+    assert listed == reported
