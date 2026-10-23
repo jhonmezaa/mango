@@ -56,8 +56,9 @@ Total: **$2,490/mes** ($29,880 anualizado). ¿Aplico el lifecycle policy en stag
   ],
   "t5": [
     { type: "user_message", text: "¿Cuál es la política de vacaciones para 2026?", time: "Lun 10:15" },
-    { type: "tool_call", tool: "google-drive.search", params: { query: "política vacaciones 2026" }, ms: 540, status: "ok" },
-    { type: "agent_response", text: "Encontré el documento **Política de Vacaciones 2026** actualizado el 14 de marzo. Los cambios principales respecto al año anterior son:\n\n- Los días de vacaciones se acumulan desde el primer mes (antes eran 6 meses)\n- Se añadieron 2 días de **\"bienestar mental\"** por año\n- La venta de vacaciones no acumuladas se paga al 150% (antes 125%)\n\n¿Quieres que te comparta el link del documento?" },
+    { type: "kb_search", kb: "Políticas de RH", hits: 3 },
+    { type: "agent_response", text: "Según la **Política de vacaciones 2026** [1], los cambios principales respecto al año anterior son:\n\n- Los días de vacaciones se acumulan desde el primer mes de trabajo (antes, desde el sexto) [1].\n- Se suman 2 días de **bienestar** por año, que no se acumulan [2].\n- Los días no tomados al cierre del año se pagan al 150 % (antes, al 125 %) [1].\n\nLas vacaciones se piden con al menos 15 días de anticipación [3].",
+      cites: [{ n: 1, kb: "kb-02", doc: "Politica-de-vacaciones-2026.pdf", page: 3, text: "A partir del 1 de enero de 2026, los días de vacaciones se acumulan desde el primer mes de trabajo. Los días no tomados al cierre del año se pagan al 150 % del salario diario." }, { n: 2, kb: "kb-02", doc: "Beneficios-2026.pdf", page: 7, text: "Cada persona dispone de 2 días de bienestar por año calendario. No se acumulan y se piden como cualquier día de vacaciones." }, { n: 3, kb: "kb-02", doc: "Handbook-2026.pdf", page: 22, text: "Las vacaciones se piden en el portal de personas con al menos 15 días de anticipación, salvo acuerdo con el líder del equipo." }] },
   ],
   "t6": [
     { type: "user_message", text: "Revísame los findings de GuardDuty de las últimas 24h", time: "Lun 08:45" },
@@ -704,6 +705,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
       <div className="msg-hover" style={{marginBottom: 24, maxWidth: 760}}>
         <div className="md" style={{fontSize: 15.5, lineHeight: 1.7, color:'var(--text)'}}
              dangerouslySetInnerHTML={{__html: window.renderMarkdown(msg.text)}} />
+        {msg.cites?.length > 0 && window.KbCitations && <window.KbCitations cites={msg.cites} />}
         {msg.guardrail && <div className="mc-alert amber" role="status" style={{ marginTop: 10 }}><I.Lock size={14} /><div>La respuesta se cortó porque infringía una regla de seguridad de Mango. Lo que ves arriba es lo que alcanzó a escribir. Reformula la pregunta si necesitas más.</div></div>}
         {msg.artifact && (
           <window.Soon on={soon} block style={{marginTop: 14}}><button onClick={() => onOpenArtifact(msg.artifact)} className="card" style={{marginTop: 14, padding: 12, display:'flex', gap: 10, alignItems:'center', width:'100%', textAlign:'left', cursor:'pointer'}}>
@@ -726,6 +728,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
       </div>
     );
   }
+  if (msg.type === "kb_search") return window.KbStep ? <window.KbStep msg={msg} /> : null;
   if (msg.type === "tool_call") {
     return (
       <div style={{marginBottom: 10, maxWidth: 760}}>

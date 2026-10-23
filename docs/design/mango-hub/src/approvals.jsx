@@ -48,6 +48,10 @@ function ApprovalsView({ agents, openChat }) {
   const [sel, setSel] = useStateAp(null);
 
   const avail = window.useMango(s => s.avail);
+  const kbReqs = window.useMango(s => s.kbReqs);
+  // Diseño completo: propuestas de bucket de knowledge bases. Los admins ven todas; el resto, solo las suyas.
+  const kbItems = !avail && window.KbSourceRow ? (kbReqs || []).filter(r => S.get().role === 'admin' || r.by === S.actor()).map(r => ({ ...r, _kb: true })) : [];
+  const kbIn = kbItems.filter(r => tab === 'pending' ? r.status === 'pending' : tab === 'done' ? r.status !== 'pending' : false);
   const inTab = approvals.filter(a => tab === 'pending' ? AP_OPEN.includes(a.status) : tab === 'done' ? !AP_OPEN.includes(a.status) : false);
   const QUICK = [
     ['all', 'Todas', () => true],
@@ -57,15 +61,19 @@ function ApprovalsView({ agents, openChat }) {
     ...(avail ? [] : [['high', 'Riesgo alto', a => a.risk === 'high']]),
   ];
   const Q = q.trim().toLowerCase();
-  const base = inTab.filter(a => (risk === 'all' || a.risk === risk) && (agent === 'all' || a.agent === agent) && (!Q || (apId(a) + ' ' + apTitle(a) + ' ' + a.tool).toLowerCase().includes(Q)));
-  const list = base.filter(QUICK.find(x => x[0] === quick)[2])
-    .sort(tab === 'pending' ? (a, b) => urgency(b) - urgency(a) : (a, b) => new Date(b.decidedAt || b.at) - new Date(a.decidedAt || a.at));
-  const pending = approvals.filter(a => AP_OPEN.includes(a.status) && !isExpired(a)).length;
+  const kbQ = (k) => (a) => k === 'all' || (k === 'mine' && window.kbNeedsMe(a));
+  const qf = (k) => (a) => a._kb ? kbQ(k)(a) : QUICK.find(x => x[0] === k)[2](a);
+  const base = [...inTab.filter(a => (risk === 'all' || a.risk === risk) && (agent === 'all' || a.agent === agent) && (!Q || (apId(a) + ' ' + apTitle(a) + ' ' + a.tool).toLowerCase().includes(Q))),
+    ...kbIn.filter(r => risk === 'all' && agent === 'all' && (!Q || (r.id + ' ' + window.kbReqTitle(r) + ' ' + r.ref).toLowerCase().includes(Q)))];
+  const urg = (a) => a._kb ? -8999 : urgency(a);
+  const list = base.filter(qf(quick))
+    .sort(tab === 'pending' ? (a, b) => urg(b) - urg(a) : (a, b) => new Date(b.decidedAt || b.at) - new Date(a.decidedAt || a.at));
+  const pending = approvals.filter(a => AP_OPEN.includes(a.status) && !isExpired(a)).length + kbItems.filter(r => r.status === 'pending').length;
   const anyFilter = quick !== 'all' || risk !== 'all' || agent !== 'all' || Q;
   const clear = () => { setQuick('all'); setRisk('all'); setAgent('all'); setQ(''); };
 
-  useEffectAp(() => { if (wide && !list.find(a => a.id === sel)) setSel(list[0]?.id || null); }, [wide, tab, quick, risk, agent, q, approvals]);
-  const selected = sel && approvals.find(a => a.id === sel);
+  useEffectAp(() => { if (wide && !list.find(a => a.id === sel)) setSel(list[0]?.id || null); }, [wide, tab, quick, risk, agent, q, approvals, kbReqs]);
+  const selected = sel && (approvals.find(a => a.id === sel) || kbItems.find(a => a.id === sel));
   const idx = list.findIndex(a => a.id === sel);
   useEffectAp(() => {
     const h = (e) => {
@@ -83,7 +91,7 @@ function ApprovalsView({ agents, openChat }) {
       <div className="content">
         <div className="page-head">
           <h1 className="page-title">Aprobaciones</h1>
-          <p className="page-subtitle">Acciones de escritura que necesitan aprobación. Aprobar no ejecuta: lo aprobado lo ejecuta quien lo pidió, antes de que venza. Todo queda en Auditoría.</p>
+          <p className="page-subtitle">{avail ? 'Acciones de escritura que necesitan aprobación. Aprobar no ejecuta: lo aprobado lo ejecuta quien lo pidió, antes de que venza. Todo queda en Auditoría.' : 'Acciones de escritura y buckets de knowledge bases que necesitan aprobación. Aprobar una acción no la ejecuta: la ejecuta quien la pidió, antes de que venza. Todo queda en Auditoría.'}</p>
         </div>
         <div className="ap-bar">
           <div className="mk-tabs" role="tablist">
@@ -96,7 +104,7 @@ function ApprovalsView({ agents, openChat }) {
             <div className="search-wrap" style={{ flex: '1 1 200px', maxWidth: 260 }}><I.Search size={13} /><input className="input" placeholder="Buscar por ID, acción o tool" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar aprobaciones" /></div>
             {tab === 'pending' && (
               <div className="tk-quick" role="group" aria-label="Vistas rápidas">
-                {QUICK.map(([k, l, fn]) => <button key={k} className={quick === k ? 'is-on' : ''} aria-pressed={quick === k} onClick={() => setQuick(k)}>{l}<span className="mk-count">{base.filter(fn).length}</span></button>)}
+                {QUICK.map(([k, l]) => <button key={k} className={quick === k ? 'is-on' : ''} aria-pressed={quick === k} onClick={() => setQuick(k)}>{l}<span className="mk-count">{base.filter(qf(k)).length}</span></button>)}
               </div>
             )}
             {!avail && <select className="input mk-sel" value={risk} onChange={e => setRisk(e.target.value)} aria-label="Riesgo"><option value="all">Cualquier riesgo</option><option value="high">Alto</option><option value="medium">Medio</option><option value="low">Bajo</option></select>}
@@ -114,7 +122,7 @@ function ApprovalsView({ agents, openChat }) {
         {!wide && selected ? (
           <div className="ap-narrow">
             <button className="btn btn-sm btn-ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setSel(null)}><I.ChevronLeft size={12} /> Volver a la lista</button>
-            <div className="ap-detail card"><ApprovalDetail key={selected.id} ap={selected} agent={agentOf(selected)} openChat={openChat} /></div>
+            <div className="ap-detail card">{selected._kb ? <window.KbSourceDetail key={selected.id} r={selected} /> : <ApprovalDetail key={selected.id} ap={selected} agent={agentOf(selected)} openChat={openChat} />}</div>
           </div>
         ) : <div className={'ap-body' + (wide ? ' is-split' : '')}>
           <div className="ap-list" role="listbox" aria-label="Solicitudes">
@@ -122,16 +130,16 @@ function ApprovalsView({ agents, openChat }) {
               <div className="mk-empty">
                 <I.Check2 size={22} style={{ color: 'var(--green)' }} />
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}>{anyFilter ? 'Nada coincide con los filtros' : tab === 'pending' ? 'Nada pendiente' : 'Aún no hay decisiones'}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{anyFilter ? 'Prueba quitando algún filtro.' : tab === 'pending' ? 'Cuando una tool de escritura necesite aprobación, aparecerá aquí.' : 'Las solicitudes ejecutadas, rechazadas, canceladas o vencidas se guardan aquí.'}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{anyFilter ? 'Prueba quitando algún filtro.' : tab === 'pending' ? (avail ? 'Cuando una tool de escritura necesite aprobación, aparecerá aquí.' : 'Cuando una tool de escritura o un bucket de knowledge base necesite aprobación, aparecerá aquí.') : 'Las solicitudes ejecutadas, rechazadas, canceladas o vencidas se guardan aquí.'}</div>
                 {anyFilter && <button className="btn btn-sm" onClick={clear}>Limpiar filtros</button>}
               </div>
             )}
-            {list.map(a => <ApprovalRow key={a.id} ap={a} agent={agentOf(a)} active={wide && a.id === sel} onOpen={() => { setSel(a.id); if (!wide) window.scrollTo?.(0, 0); }} />)}
+            {list.map(a => a._kb ? <window.KbSourceRow key={a.id} r={a} active={wide && a.id === sel} onOpen={() => { setSel(a.id); if (!wide) window.scrollTo?.(0, 0); }} /> : <ApprovalRow key={a.id} ap={a} agent={agentOf(a)} active={wide && a.id === sel} onOpen={() => { setSel(a.id); if (!wide) window.scrollTo?.(0, 0); }} />)}
             {wide && list.length > 1 && <div className="sr-hint" style={{ marginTop: 10 }}><kbd>J</kbd><kbd>K</kbd> para moverte entre solicitudes</div>}
           </div>
           {wide && (
             <div className="ap-detail card">
-              {selected ? <ApprovalDetail key={selected.id} ap={selected} agent={agentOf(selected)} openChat={openChat} /> : <div className="mk-empty"><div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Selecciona una solicitud para revisarla.</div></div>}
+              {selected ? (selected._kb ? <window.KbSourceDetail key={selected.id} r={selected} /> : <ApprovalDetail key={selected.id} ap={selected} agent={agentOf(selected)} openChat={openChat} />) : <div className="mk-empty"><div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Selecciona una solicitud para revisarla.</div></div>}
             </div>
           )}
         </div>}

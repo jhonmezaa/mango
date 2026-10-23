@@ -74,6 +74,7 @@
     limits: a.limits || { tokens: 4096, iterations: 8, seconds: 120 },
     budget: a.budgetMax,
     color: a.colorIdx || 0, perCall: 4096, temperature: 0.2, users: [], approval: [],
+    kbs: a.kbs || (D.knowledgeBases || []).filter(k => (k.usedBy || []).includes(a.id)).map(k => k.id),
   });
   const agentById = (id) => (D.agents || []).find(a => a.id === id);
   const managerName = (id) => !id ? '—' : id === 'platform' ? 'Platform Admin' : agentById(id)?.name || id;
@@ -84,9 +85,9 @@
     { id: 'REV-41', ver: 4, agentId: 'fin-01', kind: 'change', status: 'review', by: 'Usuario 2', createdAt: ago(210), submittedAt: ago(95), base: baseFin,
       snap: { ...baseFin, temperature: 0.3, approval: ['aws-cost-explorer.get_cost_forecast'], users: ['usuario8@empresa.com'], memory: 'session', prompt: baseFin.prompt + '\nAntes de recomendar Savings Plans, revisa la cobertura actual.\nIncluye siempre el ahorro anualizado.', tools: [...baseFin.tools.filter(t => t !== 'cloudwatch.filter_log_events')], groups: [...baseFin.groups, 'bu-finanzas'], budget: 3500, limits: { ...baseFin.limits, iterations: 12 } } },
     { id: 'REV-40', agentId: null, kind: 'new', status: 'review', by: 'Usuario 3', createdAt: ago(400), submittedAt: ago(160), base: null,
-      snap: { manager: 'hr-01', role: 'Onboarding', name: 'Onboarding Buddy', desc: 'Guía a personas nuevas en sus primeras semanas: accesos, herramientas y políticas.', cat: 'Productivity', icon: 'BookOpen', model: 'Haiku 4.5', prompt: '# Instrucciones\n\nAyuda a personas nuevas de la empresa.\nResponde con pasos numerados y enlaza la política de origen.\nSi algo requiere un ticket, dilo y ofrece crearlo.', tools: ['google-drive.search', 'google-drive.get_document', 'confluence.search', 'confluence.get_page'], groups: ['people'], limits: { tokens: 2048, iterations: 6, seconds: 60 }, budget: 400 } },
+      snap: { kbs: ['kb-02'], manager: 'hr-01', role: 'Onboarding', name: 'Onboarding Buddy', desc: 'Guía a personas nuevas en sus primeras semanas: accesos, herramientas y políticas.', cat: 'Productivity', icon: 'BookOpen', model: 'Haiku 4.5', prompt: '# Instrucciones\n\nAyuda a personas nuevas de la empresa.\nResponde con pasos numerados y enlaza la política de origen.\nSi algo requiere un ticket, dilo y ofrece crearlo.', tools: ['google-drive.search', 'google-drive.get_document', 'confluence.search', 'confluence.get_page'], groups: ['people'], limits: { tokens: 2048, iterations: 6, seconds: 60 }, budget: 400 } },
     { id: 'REV-39', ver: 8, agentId: 'dev-01', kind: 'change', status: 'review', by: 'Usuario 1', createdAt: ago(80), submittedAt: ago(30), base: baseDev,
-      snap: { ...baseDev, tools: [...baseDev.tools, 'ecs.update_service'], limits: { ...baseDev.limits, seconds: 180 } } },
+      snap: { ...baseDev, tools: [...baseDev.tools, 'ecs.update_service'], kbs: [...baseDev.kbs, 'kb-07'], limits: { ...baseDev.limits, seconds: 180 } } },
     { id: 'REV-38', agentId: null, kind: 'new', status: 'rejected', by: 'Usuario 2', createdAt: ago(3000), submittedAt: ago(2800), reviewer: 'Usuario 1', decidedAt: ago(2600), reason: 'Usa tools de Datos de cuentas y está visible para bu-finanzas. Quita bu-finanzas o esas tools.', base: null,
       snap: { name: 'Cost Anomaly Watch', desc: 'Avisa de picos de gasto por cuenta.', cat: 'FinOps', icon: 'Money', model: 'Sonnet 4.6', prompt: '# Instrucciones\n\nRevisa el gasto diario y avisa de picos mayores al 20%.', tools: ['aws-cost-explorer.get_cost_and_usage'], groups: ['finops-central', 'bu-finanzas'], limits: { tokens: 4096, iterations: 8, seconds: 120 }, budget: 800 } },
     { id: 'REV-37', agentId: null, kind: 'new', status: 'draft', by: 'Usuario 1', createdAt: ago(60), base: null,
@@ -133,13 +134,19 @@
       if (org.length && areas.length) errs.push({ sec: 'tools', code: 'accounts-area', msg: `Tiene tools solo para grupos centrales (${org.slice(0, 2).map(i => i.id).join(', ')}${org.length > 2 ? '…' : ''}) y es visible para grupos que no son centrales (${areas.join(', ')}). Quita esos grupos o esas tools.` });
       if (org.length && (snap.users || []).length) errs.push({ sec: 'access', code: 'accounts-users', msg: 'Tiene tools solo para grupos centrales y está compartido con personas sueltas. Compártelo solo con grupos centrales o quita esas tools.' });
     } else if (acct.length && areas.length) errs.push({ sec: 'tools', code: 'accounts-area', msg: `Usa tools de «Datos de cuentas» y es visible para roles de área (${areas.join(', ')}). Quita esos grupos o esas tools.` });
+    if (!S.get().avail) {
+      const sel = snap.kbs || []; const now = S.get().kbs || [];
+      if (sel.length > 5) errs.push({ sec: 'kbs', code: 'kbs-max', msg: 'Un agente puede usar hasta 5 knowledge bases. Quita alguna.' });
+      const gone = sel.filter(id => { const k = now.find(x => x.id === id); return !k || k.status === 'deleting'; });
+      if (gone.length) errs.push({ sec: 'kbs', code: 'kbs-gone', msg: (gone.length === 1 ? 'Una knowledge base ya no existe o se está borrando' : gone.length + ' knowledge bases ya no existen o se están borrando') + '. Quítala para enviar.' });
+    }
     if (!(snap.groups || []).length) errs.push({ sec: 'access', code: 'groups', msg: 'Elige al menos un grupo que pueda usarlo.' });
     const sec = secretIn(snap);
     if (sec) errs.push({ sec: sec.sec, code: 'secret', msg: `Se detectó un posible secreto (${sec.type}) en ${sec.field}. Quítalo; usa una conexión segura en su lugar.` });
     if (opts.submitting && counts().today >= LIMITS.perDay) errs.push({ sec: null, code: 'daily', msg: `Alcanzaste el límite de ${LIMITS.perDay} envíos a revisión por día. Podrás enviar de nuevo mañana.` });
     return errs;
   };
-  const KNOWN = ['name', 'desc', 'cat', 'icon', 'color', 'manager', 'role', 'model', 'allowedModels', 'prompt', 'tools', 'approval', 'groups', 'users', 'limits', 'perCall', 'temperature', 'budget'];
+  const KNOWN = ['name', 'desc', 'cat', 'icon', 'color', 'manager', 'role', 'model', 'allowedModels', 'prompt', 'tools', 'kbs', 'approval', 'groups', 'users', 'limits', 'perCall', 'temperature', 'budget'];
   const diff = (base, snap) => {
     const b = base || { name: '', desc: '', model: '', prompt: '', tools: [], groups: [], limits: {}, budget: 0 };
     const set = (a, x) => ({ add: x.filter(v => !a.includes(v)), rem: a.filter(v => !x.includes(v)) });
@@ -156,12 +163,13 @@
       allowed: set(b.allowedModels || [], snap.allowedModels || []),
       prompt: b.prompt !== snap.prompt,
       tools: set(b.tools || [], snap.tools || []),
+      kbs: set(b.kbs || [], snap.kbs || []),
       groups: set(b.groups || [], snap.groups || []),
       limits: ['tokens', 'iterations', 'seconds'].filter(k => (b.limits || {})[k] !== (snap.limits || {})[k]).map(k => [k, (b.limits || {})[k], snap.limits[k]]),
       budget: b.budget !== snap.budget ? [b.budget, snap.budget] : null,
     };
   };
-  const diffCount = (d) => { const S2 = window.MangoStore.get().avail; return (d.name ? 1 : 0) + (d.desc ? 1 : 0) + (d.manager ? 1 : 0) + (d.role ? 1 : 0) + (d.model ? 1 : 0) + (d.allowed ? d.allowed.add.length + d.allowed.rem.length : 0) + (d.prompt ? 1 : 0) + d.tools.add.length + d.tools.rem.length + d.groups.add.length + d.groups.rem.length + d.limits.length + (S2 ? ((d.cat ? 1 : 0) + (d.icon ? 1 : 0) + (d.color ? 1 : 0) + (d.perCall ? 1 : 0) + (d.temperature ? 1 : 0) + (d.approval ? d.approval.add.length + d.approval.rem.length : 0) + (d.users ? d.users.add.length + d.users.rem.length : 0) + (d.extra || []).length) : (d.budget ? 1 : 0)); };
+  const diffCount = (d) => { const S2 = window.MangoStore.get().avail; return (d.name ? 1 : 0) + (d.desc ? 1 : 0) + (d.manager ? 1 : 0) + (d.role ? 1 : 0) + (d.model ? 1 : 0) + (d.allowed ? d.allowed.add.length + d.allowed.rem.length : 0) + (d.prompt ? 1 : 0) + d.tools.add.length + d.tools.rem.length + (S2 || !d.kbs ? 0 : d.kbs.add.length + d.kbs.rem.length) + d.groups.add.length + d.groups.rem.length + d.limits.length + (S2 ? ((d.cat ? 1 : 0) + (d.icon ? 1 : 0) + (d.color ? 1 : 0) + (d.perCall ? 1 : 0) + (d.temperature ? 1 : 0) + (d.approval ? d.approval.add.length + d.approval.rem.length : 0) + (d.users ? d.users.add.length + d.users.rem.length : 0) + (d.extra || []).length) : (d.budget ? 1 : 0)); };
   const uidOf = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return 'agt_' + (h >>> 0).toString(36).padStart(7, '0').slice(0, 7); };
   const revLabel = (r) => !S.get().avail ? r.id : uidOf(r.agentId || r.id) + ' · v' + (r.ver || 1);
   const reviewerLabel = (r) => !r.reviewer ? '—' : !S.get().avail ? r.reviewer : r.legacy ? uidOf('sub' + r.reviewer).replace('agt_', 'sub_') + '…' : 'usuario' + (r.reviewer.match(/\d+/) || ['1'])[0] + '@empresa.com';

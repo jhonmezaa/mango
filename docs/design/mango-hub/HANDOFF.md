@@ -9,6 +9,7 @@ Datos de ejemplo neutros: "Usuario N", `usuarioN@empresa.com`, iniciales `UN`, c
 ```
 Mango.html               entrada
 Reporte de tarea.html    plantillas del PDF de una tarea (Resumen de costos, Investigación de anomalía); usa doc-page.js
+src/kb.css               estilos de Knowledge Bases
 styles.css               tokens y componentes
 src/
   store.js               store global (useMango), audit log encadenado, cambios con doble aprobación, políticas de tools
@@ -20,7 +21,9 @@ src/
   login.jsx              login, registro, verificación, recuperación, MFA, SSO, pantalla sin acceso
   app.jsx                router por vista, estado de agentes, panel Tweaks
   dashboard.jsx marketplace.jsx share-agent.jsx chat.jsx tickets.jsx admin.jsx (Agent Builder)
-  agent-review.jsx mcp-catalog.jsx models-view.jsx skills.jsx knowledge.jsx schedules.jsx schedules-run.jsx
+  agent-review.jsx mcp-catalog.jsx models-view.jsx skills.jsx schedules.jsx schedules-run.jsx
+  kb-core.jsx (datos, permisos y acciones de Knowledge Bases) kb-source.jsx (propuesta de bucket en Aprobaciones y Bandeja)
+  kb-agent.jsx (Builder, Revisión, citas del chat) kb-docs.jsx (Documentos, subida, Probar búsqueda) knowledge.jsx (lista, detalle, alta)
   evals.jsx eval-create.jsx playground.jsx observability2.jsx costs2.jsx activity.jsx search.jsx
   approvals.jsx policies.jsx audit-budgets.jsx groups-admin.jsx people.jsx settings.jsx other-views.jsx
   gov/                   kit.jsx, data.js, mango-data.js, budgets.jsx (usuarios y valores por defecto), areas.jsx, propose.jsx, connectivity.jsx
@@ -586,4 +589,86 @@ Revisado por el producto en «Disponible hoy», claro y oscuro, a 1440, 560 y 42
 **Pendiente del producto:**
 - Bandeja: avisos «Tarea» y «Tu solicitud».
 - Schedules: reportes PDF (parte D).
+- Siguen: «Presupuesto del agente agotado», distinguir el fallo de una tool y el tiempo máximo agotado, el evento «Persona registrada», el motivo del aviso de AWS Billing en el turno y la marca «cortado por guardrail» en el mensaje guardado.
+
+
+## Knowledge Bases, primera versión (D88) y lo que quedaba de la ronda del 2026-10-19 (2026-10-22)
+Archivos: `kb-core.jsx`, `kb-source.jsx`, `kb-agent.jsx`, `kb-docs.jsx`, `knowledge.jsx`, `kb.css`, `data.js` (`knowledgeBases`), `lifecycle.js`, `admin.jsx`, `agent-review.jsx`, `approvals.jsx`, `other-views.jsx`, `chat.jsx`, `audit-budgets.jsx`, `store.js`, `shell.jsx`, `app.jsx`, `Reporte de tarea.html`.
+
+**Dónde se ve.** Knowledge Bases no tiene backend hoy: en «Disponible hoy» sigue Próximamente en el menú, y el Builder muestra «Asociar knowledge bases a un agente · Próximamente», sin nada más. Todo lo de abajo está en Diseño completo, que ahora es la primera versión: solo S3. Confluence, Google Drive y GitHub quedan en el selector como Próximamente; los datos de ejemplo son todos de S3. La lista la ven creadores y administradores (`knowledge` se sumó a las vistas del creador).
+
+**A1. Se mantiene.** Indicadores, búsqueda, filtros «Todas» · «Necesitan atención» · «Sin sincronizar», filtro por fuente (ahora «S3 · archivos subidos» / «S3 · bucket»), columnas, panel con «Resumen», «Documentos», «Probar búsqueda» y «Acceso y sync», frecuencias, «Sincronizar ahora» y los motivos de «no indexado».
+
+**A2.1 · Una sola fuente por knowledge base (decisión de diseño).** Se elige al crearla y no se cambia: «Subir archivos» o «Un bucket que ya existe». No se mezclan, por tres motivos: un bucket es un espejo (lo que se borra en el bucket sale de Mango) y los archivos subidos no lo son, así que en una misma lista «Quitar» valdría para unos documentos y no para otros; la aprobación del bucket frena toda la knowledge base, y con las dos fuentes quedaría a medias; y el agente ya puede usar hasta 5, así que combinarlas es asociar dos. El alta lo dice: «No se cambia después. Para combinar las dos, crea una de cada una y asócialas al mismo agente». Si el producto modela las fuentes como lista, vale con una sola por knowledge base. Mezclar se puede agregar después sin romper nada; separar, no.
+
+**Estados.** Bucket: Sincronizada · Sincronizando · Con avisos · Error · Sin sincronizar · Pendiente de aprobación · Bucket rechazado · Sin bucket (propuesta retirada) · No empezó · Borrando. Archivos subidos: Indexada · Indexando · Con avisos · Sin documentos · Borrando (no hablan de «sincronizar»). «Necesitan atención» = avisos, error, rechazado, sin bucket y no empezó; «Sin sincronizar» = nunca sincronizada y pendiente de aprobación. Debajo de la insignia, en la lista: la última sincronización, «por presupuesto», «supera el tope», «llave propia (KMS)» o «espera a un administrador».
+
+**A2.2 · Subir archivos** (Documentos › «Subir archivos», o el pie del panel; al crear una knowledge base de archivos se abre ahí).
+- Zona para arrastrar o «elígelos en tu equipo». Tipos PDF, DOCX, TXT, MD, CSV y XLSX; hasta 50 MB por archivo y 20 por vez («Puedes subir 20 archivos por vez: se tomaron los primeros 20.»). Siempre a la vista: «Esta knowledge base: {n} de 1.000 documentos · {x} de 5 GB».
+- Cada archivo: «Subiendo {n} %» con barra → «Subido · {tamaño}» o «Rechazado · {motivo}»: «Tipo no admitido», «Supera 50 MB», «La knowledge base pasaría de 1.000 documentos», «La knowledge base pasaría de 5 GB» (en el navegador) y «El contenido no es del tipo que dice» (lo responde el servidor al terminar de subir). Los subidos y los rechazados se quitan con «×».
+- «Guardar {n} archivos»: pasan a la lista como «Indexando» y luego «Indexado» o «No indexado · {motivo}». Ayuda: «Al guardar empieza la indexación. Lo que subas y no guardes se descarta mañana.». Mientras otra indexación está en curso, «Guardar» se desactiva: «Espera a que termine la indexación en curso para guardar.».
+- Salir con archivos subidos sin guardar (volver, otra pestaña, cerrar o Esc): «Tienes {n} archivos subidos sin guardar. Si sales, no se agregan a la knowledge base y se descartan mañana.» con «Salir sin guardar» / «Seguir aquí».
+- «Quitar» en cada documento (solo archivos subidos) pide confirmar en la misma fila: «Deja de aparecer en las respuestas de los agentes.». Mientras se borra, «Borrando». Para actualizar uno, se quita y se vuelve a subir.
+- No se descarga el original: ni en Documentos ni en las citas. Documentos lo dice al final: «Los originales no se descargan desde Mango en esta versión.».
+- Documentos muestra «No indexados», «En curso» e «Indexados» (20 y «Mostrar más»), con tamaño, páginas y fecha.
+
+**A2.3 · Un bucket que ya existe.**
+- Campo «Bucket y prefijo» (`s3://bucket/prefijo/`). El servidor comprueba al enviar: «Ese bucket es de Mango y no se puede usar como fuente.» y «Ese bucket no está en la cuenta de AWS de la instalación. Solo se aceptan buckets de esa cuenta.» (en el prototipo, `mango-…` es de Mango y `otra-cuenta` o `externo`, de otra cuenta).
+- Es una propuesta (`KBS-N`): la aprueba o rechaza un administrador distinto de quien la propuso, también si la propuso un admin. Mientras tanto la knowledge base está «Pendiente de aprobación» y no se lee nada; al aprobarse arranca la primera sincronización. Rechazo: «Bucket rechazado» con el motivo y «Proponer otro bucket». Quien la propuso puede «Retirar propuesta» (queda «Sin bucket»).
+- Cambiar el bucket o el prefijo de una aprobada («Acceso y sync› Cambiar bucket o prefijo») es una propuesta nueva. **Decisión de diseño:** mientras se decide, sigue sincronizando desde el actual; si se aprueba, la siguiente sincronización lee el nuevo y saca lo que ya no esté. Un cambio rechazado deja una línea gris con el motivo.
+- **Tarjeta de la solicitud** (Aprobaciones y Bandeja; `KbSourceFacts` + `KbSourceDecision`): «Leer un bucket en {kb}» o «Cambiar el bucket de {kb}»; knowledge base, bucket (y «Ahora lee de» si es un cambio), quién lo propuso, «La consultan» (grupos), frecuencia y «Comprobado: Es de la cuenta de AWS de la instalación y no es de Mango.»; historial; «Aprobar» (nota opcional) y «Rechazar» (motivo obligatorio, con sugerencias). Quien lo propuso: «Tú lo propusiste: lo aprueba otro administrador.» + «Retirar propuesta». En Aprobaciones van en la misma cola que las acciones (insignia «Bucket de S3», cuentan en «Esperan tu firma» y en el contador del menú); los admins ven todas, el resto solo las suyas. En la Bandeja, arriba con lo que te piden aprobar, en la pestaña Aprobaciones, con «Ver en Aprobaciones» y «Abrir knowledge base». Sin vencimiento (el contexto no lo pide).
+- **Llave propia (KMS):** se detecta al sincronizar. «Error» con «No se pudo leer el bucket: está cifrado con una llave propia del cliente (KMS) y esta versión no puede leerlo.». El aviso va también en el alta, en la tarjeta de aprobación y en «Acceso y sync».
+- «Documentos» de un bucket: «Vienen de {bucket}. Para agregar, cambiar o quitar documentos, hazlo en el bucket: se refleja en la próxima sincronización.». La frecuencia solo existe para buckets; las de archivos muestran «Indexación: cada archivo se indexa al guardarlo».
+
+**A2.4 · Estados de la sincronización.**
+- No empezó por presupuesto: «No empezó por presupuesto: los embeddings costarían unos USD {x} y el presupuesto no alcanza.» + «Vuelve a sincronizar cuando haya presupuesto.».
+- Supera el tope: «No empezó: el bucket tiene {n} documentos y el tope es 1.000.» (o «…ocupa {x} y el tope es 5 GB.») + «Acota el prefijo o reparte los documentos en varias knowledge bases.». Si ya había contenido: «Los agentes siguen usando lo indexado hace {t}.».
+- Ya hay una en curso: «Sincronizar ahora» se desactiva mientras se sabe que sincroniza; si el servidor responde que ya había una (otra pestaña, la programada), aparece bajo el botón «Ya hay una sincronización en curso de esta knowledge base. Espera a que termine.» (role="alert") y el estado pasa a «Sincronizando».
+- Borrando: la fila sigue en la lista, atenuada, con «Borrando» y spinner, y el panel queda de solo lectura: «Ya no se usa en respuestas nuevas. Sale de la lista cuando se comprueba que ningún agente puede recibir sus fragmentos.».
+- Borrar (dueño o admin, al final de «Acceso»): confirmación en línea. Con agentes publicados que la usan, el botón está desactivado: «No se puede borrar: la usa {agentes}, ya publicado(s). Quítala en una versión nueva de ese(os) agente(s) y vuelve a intentarlo.». El bucket no se toca.
+
+**A2.5 · Agent Builder** (sección nueva «Knowledge bases», entre Tools y Límites).
+- Solo ofrece las que su autor puede usar: las de grupos en los que está, sin las que se están borrando. Cada fila: nombre, fuente, tamaño, grupos y su estado si no está al día. Hasta 5 («{n} de 5»; al llegar, las demás se desactivan con «Máximo 5 por agente»).
+- Si el agente ya tenía una que quien edita no puede usar: «Esta knowledge base ya estaba y no puedes usarla · No estás en sus grupos · se conserva», con «Quitar».
+- Es parte de la versión: entra en el diff (`kbs` en `snapOf`, `diff` y `diffCount`). Reglas al enviar: más de 5, o una que ya no existe o se está borrando. Errores del servidor nuevos: «Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.» y «Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.».
+- **Revisión:** «knowledge bases · n» (o «n agregadas, m quitadas») debajo de tools, con sus grupos, su estado y el acceso parcial de cada una. Demo: REV-39 agrega Release Archive a DevOps Sentinel; REV-40 (Onboarding Buddy) usa Políticas de RH.
+- **Chat:** las respuestas pueden traer «Fuentes · {kb}»: «[n] {documento} · p. {página}», y al tocar una se ve el fragmento en texto plano. Sin enlace al original. El paso del turno dice «Buscó en {kb} · {n} fragmentos». Demo: conversación de People Docs sobre vacaciones.
+
+**A2.6 · La alerta de exposición (D26) cambia de sentido** (cambio de seguridad). Ya no dice que alguien «podría ver su contenido a través del agente»: la búsqueda va con la identidad de quien pregunta. Ahora es **«Acceso parcial»**: grupos que usan un agente que la consulta y no están en la knowledge base, a quienes el agente les responde sin su contenido.
+- Lista: insignia «Acceso parcial» («Algún agente que la consulta lo usan grupos que no están en esta knowledge base: a esas personas les responde sin su contenido.»).
+- Detalle: «Acceso parcial. Estos grupos usan un agente que la consulta pero no están en esta knowledge base. A esas personas el agente les responde sin su contenido: la búsqueda se hace con la identidad de quien pregunta.», una fila por agente con sus grupos y «Si deben recibirlo, agrega esos grupos en «Acceso».». En «Agentes que la usan»: «Lo usan grupos sin acceso».
+- Builder: «{kb}: {grupos} usa(n) este agente pero no está(n) en esa knowledge base. A esas personas el agente les responde sin su contenido…». Con personas agregadas por correo: «Las personas agregadas por correo reciben su contenido solo si están en sus grupos.» (no se puede saber de antemano).
+- Ayuda de «Grupos que pueden consultarla»: «Solo las personas de estos grupos reciben su contenido, también a través de un agente…». Al crear o editar sin estar en ninguno de los grupos elegidos: «No estás en ninguno de estos grupos: verás sus documentos, pero no podrás probar la búsqueda ni recibir su contenido en el chat.».
+
+**A2.7 · Quién ve qué** (`KB.access`).
+- Lista: creadores y administradores. Documentos: quien la creó, administradores y creadores en sus grupos. Probar búsqueda: además, estar en sus grupos.
+- **Decisión de diseño · editar:** grupos, frecuencia, documentos, bucket y borrar los cambian quien la creó o un administrador, como los agentes. Un creador en sus grupos ve documentos y prueba la búsqueda, pero no la edita; así nadie se suma solo a los grupos de una knowledge base ajena. Confirmar con el producto («crean y editan» los creadores).
+- Estados por pestaña: Documentos, para quien no los ve: «No ves los documentos de esta knowledge base · Los ven quien la creó, los administradores y los creadores de agentes que están en sus grupos: {grupos}.». Probar búsqueda, para quien no ve los documentos: «No puedes probar la búsqueda · La prueba devuelve contenido…». Para quien los ve y no está en los grupos: «No estás en los grupos de esta knowledge base · La búsqueda se hace con tu identidad, igual que la de un agente: sin estar en {grupos} no recibirías nada. Haberla creado / Ser administrador no basta.».
+- Resultados: fragmentos en texto plano con documento, página (si la hay) y puntaje; «Sin resultados.» si no hay. Sin contenido indexado, la pestaña lo dice («…el bucket espera aprobación», «…sube archivos para probarla»).
+
+**A2.8 · Datos que quizá no estén.** «Consultas · 30 días» (indicador y «Uso · 30 días» del detalle): Próximamente, sin cifras; con la métrica, la cifra (demo). Embeddings: «Amazon Titan Embeddings v2 · Bedrock». Tamaño: en tokens después de indexar; antes, en bytes («48 MB · los tokens se conocen al indexar»). El detalle suma «Topes: {n} de 1.000 documentos · {x} de 5 GB».
+
+**A3 · Auditoría** (categoría Ajustes, «Abrir Knowledge Bases»; sección «Knowledge base» en el panel con knowledge base, agente, bucket, documento, documentos, fragmentos y motivo):
+- `kb.create` «Knowledge base creada», `kb.update` «Knowledge base editada» (antes y después de grupos y frecuencia), `kb.upload` «Documentos agregados», `kb.doc_remove` «Documento quitado» (solicitado → aplicado), `kb.source_propose` «Bucket propuesto», `kb.source_approve` «Bucket aprobado», `kb.source_reject` «Bucket rechazado», `kb.source_withdraw` «Propuesta de bucket retirada», `kb.sync` «Sincronización de knowledge base» (solicitado → aplicado, o «no se aplicó» con `in_progress`, `kms_key`, `budget` o `limit`), `kb.delete` «Knowledge base borrada» (solicitado → aplicado cuando ningún agente puede recibir sus fragmentos).
+- **Cambio de nombre:** `kb.query` pasa a ser «Consulta a knowledge base», una por cada consulta de un agente (quien preguntó, agente, knowledge base, fragmentos). Es una lectura: solo con «Mostrar lecturas». La prueba pasa a `kb.search_test` «Búsqueda de prueba», siempre visible. En las dos se registra quién, dónde y cuántos fragmentos; ni el texto buscado ni los fragmentos.
+
+**B1 · Página de la Bandeja que llega vacía con cursor.** Si la primera página de una pestaña llega vacía y con cursor, no se dice «Nada por aquí.», que se contradice con el botón: se dice **«Nada entre los avisos más recientes.»** y debajo «Mostrar más», que trae los siguientes. Sin cursor sigue «Nada por aquí.» sin botón. Si una página posterior llega vacía con cursor, la lista no cambia y «Mostrar más» sigue. *Cambio para el producto* (solo el texto). Demo: Bandeja › «Página vacía con cursor» (mejor con «Creador · people», que no tiene aprobaciones fijadas arriba).
+
+**B2.** Avisos «Tarea» y «Tu solicitud»: sin cambios, siguen solo en Diseño completo.
+
+**B3 · PDF «Investigación de anomalía»** (`Reporte de tarea.html`, ejemplo actualizado al caso real: generado minutos después del aviso).
+1. **Día que Cost Explorer aún no tiene completo.** Si la serie de los días de la anomalía suma menos que el real de AWS (más de un 5 % por debajo), los días de la anomalía que terminan menos de 24 h antes de generar el PDF se dibujan rayados con la etiqueta «incompleto» (leyenda: «aún incompleto en Cost Explorer») y bajo el gráfico va: «El {día} todavía no está completo en Cost Explorer, que puede tardar hasta un día. En los días de la anomalía la serie suma USD {suma} y AWS informa un real de USD {real}: el real de arriba es el de AWS.». No se inventa otra cifra para ese día. La tarjeta «Real» dice «según AWS». «Sobre las cifras» lo explica y la fuente del gráfico dice la hora de la consulta. Con varios días rayados, el texto nombra el rango.
+2. **Fuente de «Qué la explica» por fila.** La fila que viene de la anomalía (`get_anomalies`) lleva «¹», el impacto que estimó AWS y la cuenta «—». El pie pasa a «Fuentes: ¹ get_anomalies · causa principal que informa AWS en la anomalía, con el impacto que estima AWS; la anomalía no trae la cuenta. El resto: get_cost_and_usage · …». Si todas las filas salen de una sola consulta, el pie es el de antes. En los datos de `anomaly`, cada causa lleva de qué consulta salió (lo sabe el producto, no lo escribe el agente).
+
+**Demo (panel):** «Knowledge Bases · «Sincronizar ahora»» (arranca / ya hay una en curso), «Knowledge Bases · al subir» (normal / un PDF no es del tipo que dice), «Knowledge Bases · consultas de 30 días» (Próximamente / con la métrica), «Knowledge Bases · subida abierta › Agregar 5 archivos de ejemplo» (uno se rechaza por tipo, otro por tamaño y `Formulario-escaneado.pdf` queda «No indexado · OCR sin texto legible»), Builder › errores de knowledge base, Bandeja › «Página vacía con cursor». Ejemplos: Security Baseline espera aprobación (propuso Usuario 3; firma Usuario 1); AWS Runbooks tiene un cambio de prefijo pendiente (propuso Usuario 6); SAP Procurement con avisos; Data Dictionary con llave propia; Release Archive supera el tope; Etiquetado de costos no empezó por presupuesto; Customer Docs rechazado; Guías de onboarding 2025 borrándose; Políticas de RH con acceso parcial (People Docs lo usa mango-admin). Para los estados de acceso: cuenta Admin en Políticas de RH (ve documentos, no prueba) o Data Dictionary (la creó y no está en sus grupos); «Creador · people» en AWS Runbooks (no ve documentos).
+
+**Para decidir en el producto:**
+- Qué presupuesto frena la sincronización (el de la instalación, el de quien la creó o uno propio) y si se muestra la estimación en dólares. El texto dice «el presupuesto no alcanza» sin nombrarlo. Si también frena el indexado de archivos subidos, va el mismo aviso y los archivos quedan sin indexar.
+- Editar una knowledge base: solo quien la creó y los administradores (arriba).
+- Si quien propuso un bucket recibe un aviso «Tu solicitud» cuando se aprueba o se rechaza (el diseño no lo agrega; hoy lo ve en la knowledge base).
+
+**Pendiente del producto:**
+- Knowledge Bases completo (D88), con las decisiones de arriba.
+- Bandeja: texto de la página vacía con cursor; avisos «Tarea» y «Tu solicitud».
+- Schedules: reportes PDF (parte D) con los dos casos de B3.
 - Siguen: «Presupuesto del agente agotado», distinguir el fallo de una tool y el tiempo máximo agotado, el evento «Persona registrada», el motivo del aviso de AWS Billing en el turno y la marca «cortado por guardrail» en el mensaje guardado.

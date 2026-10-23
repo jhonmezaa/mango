@@ -627,6 +627,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const S = window.MangoStore;
   const approvals = window.useMango(st => st.approvals);
   const scheds = window.useMango(st => st.schedules) || [];
+  const kbReqs = window.useMango(st => st.kbReqs);
   const role = window.useMango(st => st.role);
   const avail = window.useMango(st => st.avail);
   const sim = window.useMango(st => st.simInbox) || null;
@@ -644,6 +645,9 @@ function Inbox({ tickets, agents, setView, openChat }) {
     const live = (ap) => !(ap.expiresMin != null && Date.now() - new Date(ap.at).getTime() > ap.expiresMin * 6e4);
     const pinned = approvals.filter(ap => ap.status === 'pending' && live(ap) && S.can('approval.decide') && ap.requestedBy !== me && !(ap.approvalsGiven || []).includes(me)).sort(byAt)
       .map(ap => ({ id: 'ap-' + ap.id, type: 'approval', approvalId: ap.id, agent: ap.agent, title: 'Te piden aprobar: ' + ap.action, body: window.apCallLine ? window.apCallLine(ap) : ap.tool + ' · ' + ap.policy, mono: true, impact: avail ? null : ap.impact, at: ap.at }));
+    // Diseño completo: buckets propuestos para knowledge bases, para los administradores que pueden firmarlos.
+    const kbPinned = avail || !window.kbNeedsMe ? [] : (kbReqs || []).filter(r => window.kbNeedsMe(r)).sort(byAt)
+      .map(r => ({ id: 'kbs-' + r.id, type: 'kbsource', kbReqId: r.id, title: 'Te piden aprobar: ' + window.kbReqTitle(r), body: r.ref, mono: true, at: r.at }));
     const mine = scheds.filter(s => s.owner === me);
     const runs = mine.flatMap(s => (s.runs || []).filter(r => r.status === 'ok' || r.status === 'failed').map(r => { const ok = r.status === 'ok'; return { id: 'run-' + r.id, type: 'run', agent: s.agent, ok, title: s.name + (ok ? ' · completada' : ' · no se completó'), body: ok ? window.scSummary(r) : (window.scReason(r) || 'No se pudo completar'), at: r.at, scheduleId: s.id, runId: r.id, seedRead: old(r.at) }; }));
     if (sim === 'gone' && runs.length) { runs.sort(byAt); runs[0] = { ...runs[0], runId: runs[0].runId + '-vencida', seedRead: false }; }
@@ -663,8 +667,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
       { id: 't-404', type: 'ticket', agent: 'dev-01', title: 'MNG-404 se cerró', body: (tk('MNG-404') || {}).title || 'Ticket resuelto por el agente', at: exAt.t2, ticketId: 'MNG-404' },
       { id: 's-sap', type: 'system', agent: 'sap-01', title: 'Heartbeat restaurado en SAP Procure', body: 'El agente volvió a responder tras 12 minutos sin heartbeat. No se perdieron solicitudes.', at: exAt.s },
     ];
-    return { pinned, rest: [...runs, ...tasks, ...reqs, ...ex].sort(byAt) };
-  }, [approvals, scheds, role, avail, sim, actorOv, tickets]);
+    return { pinned: [...pinned, ...kbPinned].sort(byAt), rest: [...runs, ...tasks, ...reqs, ...ex].sort(byAt) };
+  }, [approvals, scheds, kbReqs, role, avail, sim, actorOv, tickets]);
   const [state, setState] = React.useState(() => { try { return JSON.parse(localStorage.getItem('mango-inbox') || '{}'); } catch { return {}; } });
   const [tab, setTab] = React.useState('all');
   const [arch, setArch] = React.useState(false);
@@ -682,12 +686,14 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const all = [...pinned, ...rest].map(deco);
   const unread = all.filter(i => !i.read && !i.archived).length;
   React.useEffect(() => { S.set({ inboxUnread: unread }); }, [unread]);
-  const inTab = (i) => arch ? i.archived : !i.archived && (tab === 'all' || (tab === 'unread' && !i.read) || (tab === 'approvals' && (i.type === 'approval' || i.type === 'request')) || (tab === 'mentions' && i.type === 'mention'));
-  // Cada pestaña pide sus páginas con su filtro: «Mostrar más» solo si quedan avisos de esa pestaña (nunca bajo «Nada por aquí.»).
+  const inTab = (i) => arch ? i.archived : !i.archived && (tab === 'all' || (tab === 'unread' && !i.read) || (tab === 'approvals' && (i.type === 'approval' || i.type === 'request' || i.type === 'kbsource')) || (tab === 'mentions' && i.type === 'mention'));
+  // Cada pestaña pide sus páginas con su filtro. El servidor lee hasta 300 avisos por página: si ninguno es de la pestaña, la página llega vacía y con cursor
+  // (demo «Página vacía con cursor»): se dice «Nada entre los avisos más recientes.» y «Mostrar más» trae los siguientes. Sin cursor, «Nada por aquí.» y sin botón.
   const paged = arch || tab === 'all' || tab === 'unread';
   const tabRest = all.slice(pinned.length).filter(inTab);
-  const shown = paged ? tabRest.slice(0, pages * PAGE) : tabRest;
-  const hasMore = paged && tabRest.length > shown.length;
+  const lead = paged && sim === 'emptypage' ? 1 : 0;
+  const shown = paged ? tabRest.slice(0, Math.max(0, pages - lead) * PAGE) : tabRest;
+  const hasMore = paged && (tabRest.length > shown.length || (lead > 0 && pages === 1));
   const list = [...all.slice(0, pinned.length).filter(inTab), ...shown];
   React.useEffect(() => { setPages(1); setMore(null); }, [tab, arch]);
   const open = (it) => { setSel(it.id); if (!it.read && S.get().simInbox !== 'save') persist({ ...state, [it.id]: { ...state[it.id], read: true } }); if (narrow) setTimeout(() => document.getElementById('inbox-detail-h')?.focus(), 0); };
@@ -697,9 +703,9 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const markAll = () => { const n = { ...state }; all.forEach(i => { n[i.id] = { ...n[i.id], read: true }; }); save(n); };
   const loadMore = () => { setMore('loading'); setTimeout(() => { if (S.get().simInbox === 'more') { setMore('error'); return; } setPages(p => p + 1); setMore(null); }, 700); };
   const current = all.find(i => i.id === sel);
-  const ICON = { approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
+  const ICON = { kbsource: ['BookOpen', 'var(--amber)'], approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
   const iconOf = (it) => it.type === 'request' ? (it.ok ? ['Check2', 'var(--green)'] : ['X2', 'var(--red)']) : it.type === 'task' ? (it.kind === 'retired' ? ['Archive', 'var(--text-muted)'] : ['Pause', 'var(--amber)']) : ICON[it.type];
-  const TYPE = { approval: 'Aprobación', request: 'Tu solicitud', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución', task: 'Tarea' };
+  const TYPE = { kbsource: 'Aprobación', approval: 'Aprobación', request: 'Tu solicitud', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución', task: 'Tarea' };
   const loadErr = sim === 'error'; const loading = sim === 'loading';
 
   return (
@@ -722,7 +728,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
           {loading ? <div role="status" aria-label="Cargando la bandeja">{[0, 1, 2, 3, 4].map(i => <div key={i} className="inbox-row" style={{ cursor: 'default' }}><span className="inbox-dot" /><span style={{ flex: 1, display: 'grid', gap: 7 }}><window.GovKit.Skel w="64%" /><window.GovKit.Skel w="88%" h={10} /></span></div>)}</div>
             : loadErr ? <div role="alert" style={{ padding: 16 }}><window.GovKit.ErrorState title="No se pudo cargar la bandeja" body="Vuelve a intentarlo en unos segundos." onRetry={() => S.set({ simInbox: null })} /></div>
             : <div role="listbox" aria-label="Avisos">
-              {list.length === 0 && <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13.5 }}>Nada por aquí.</div>}
+              {list.length === 0 && <div style={{ padding: hasMore ? '48px 48px 8px' : 48, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13.5 }}>{hasMore ? 'Nada entre los avisos más recientes.' : 'Nada por aquí.'}</div>}
               {list.map(it => {
                 const [ic, col] = iconOf(it); const Ic = I[ic];
                 const ag = agents.find(x => x.id === it.agent);
@@ -751,6 +757,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
           ) : (() => {
             const ag = agents.find(x => x.id === current.agent);
             const ap = current.approvalId && approvals.find(x => x.id === current.approvalId);
+            const kr = current.kbReqId && (kbReqs || []).find(x => x.id === current.kbReqId);
             const sc = current.scheduleId && scheds.find(x => x.id === current.scheduleId);
             const run = sc && current.runId && sc.runs.find(x => x.id === current.runId);
             const pdf = !avail && sc?.report && run?.report?.status === 'ready';
@@ -765,11 +772,12 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   </span>
                 </div>
                 <h2 id="inbox-detail-h" tabIndex={-1} style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', margin: '0 0 6px', outline: 'none' }}>{current.title}</h2>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : 'Sistema'} · {window.fmtAgo(current.at)}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : current.type === 'kbsource' ? 'Knowledge Bases' : 'Sistema'} · {window.fmtAgo(current.at)}</div>
                 {current.impact && <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 8px' }}>{current.impact}.</p>}
                 {current.type !== 'mention' && (current.mono ? <p className="mono" style={{ fontSize: 12.5, lineHeight: 1.6, margin: '0 0 22px', overflowWrap: 'anywhere' }}>{current.body}</p> : <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 22px' }}>{current.body}</p>)}
                 {current.reason && <div className="mc-alert" style={{ marginBottom: 18 }}><I.Info size={14} /><div>Motivo: {current.reason}</div></div>}
                 {ap && <div className="card" style={{ padding: 16, marginBottom: 16 }}><window.ApprovalDecision ap={ap} /></div>}
+                {kr && <div className="card" style={{ padding: 16, marginBottom: 16, display: 'grid', gap: 14 }}><window.KbSourceFacts r={kr} compact /><window.KbSourceDecision r={kr} /></div>}
                 {current.type === 'mention' && (
                   <div style={{ marginBottom: 18 }}>
                     <div style={{ fontSize: 13.5, color: 'var(--text-muted)', marginBottom: 10 }}>Conversación en {current.ticketId}</div>
@@ -777,7 +785,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   </div>
                 )}
                 <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
-                  {(current.type === 'approval' || current.type === 'request') && <button className="btn btn-sm" onClick={() => setView('approvals')}>Ver en Aprobaciones <I.ArrowRight size={11} /></button>}
+                  {(current.type === 'approval' || current.type === 'request' || current.type === 'kbsource') && <button className="btn btn-sm" onClick={() => setView('approvals')}>Ver en Aprobaciones <I.ArrowRight size={11} /></button>}
+                  {kr && <button className="btn btn-sm" onClick={() => { S.set({ kbOpen: kr.kb }); setView('knowledge'); }}>Abrir knowledge base <I.ArrowRight size={11} /></button>}
                   {current.ticketId && <button className="btn btn-sm" onClick={() => setView('tickets', current.ticketId)}>Abrir {current.ticketId} <I.ArrowRight size={11} /></button>}
                   {(current.threadId || ap?.threadId) && <button className="btn btn-sm" onClick={() => openChat(current.agent, current.threadId || ap.threadId)}>Ver conversación <I.ArrowRight size={11} /></button>}
                   {current.type === 'budget' && <button className="btn btn-sm" onClick={() => setView('budgets')}>Ajustar presupuesto <I.ArrowRight size={11} /></button>}

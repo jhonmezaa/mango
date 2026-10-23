@@ -15,7 +15,7 @@
   };
   const USER_VIEWS = ['chat', 'inbox', 'dashboard', 'marketplace', 'tickets', 'activity', 'search', 'approvals', 'org', 'schedules'];
   const OWNER_VIEWS = [...USER_VIEWS, 'governance', 'playground', 'admin', 'budgets', 'evals', 'observability', 'costs', 'skills', 'knowledge', 'schedules', 'mcp'];
-  const CREATOR_VIEWS = [...USER_VIEWS, 'admin', 'mcp'];
+  const CREATOR_VIEWS = [...USER_VIEWS, 'admin', 'mcp', 'knowledge'];
   const PERMS = {
     admin: { views: '*', actions: '*' },
     owner: { views: OWNER_VIEWS, actions: ['agent.edit', 'agent.create', 'agent.clone', 'approval.decide', 'budget.view', 'playground.publish', 'version.rollback'] },
@@ -27,10 +27,15 @@
   const seedAudit = [
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.renewed', target: 'session', detail: 'Recuperó la sesión al recargar', read: true, at: ago(3) },
     { actor: 'usuario4@empresa.com', role: 'user', action: 'session.rejected', target: 'session', detail: 'No se pudo crear la sesión tras el ingreso', outcome: 'rejected', error: 'invalid_refresh_token', at: ago(9) },
+    { actor: 'Usuario 8', role: 'user', action: 'kb.query', target: 'kb-02', kb: 'Políticas de RH', agent: 'People Docs', hits: 3, read: true, detail: 'People Docs consultó Políticas de RH · 3 fragmentos', at: ago(45) },
+    { actor: 'Sistema', role: 'system', action: 'kb.sync', target: 'kb-07', kb: 'Release Archive', bucket: 's3://empresa-releases/archive/', detail: 'No empezó: el bucket tiene 1.412 documentos y el tope es 1.000.', outcome: 'rejected', error: 'limit', at: ago(95) },
     { actor: 'usuario6@empresa.com', role: 'admin', action: 'session.started', target: 'session', detail: 'Ingresó con el SSO de la empresa · Okta', at: ago(150) },
+    { actor: 'Usuario 3', role: 'owner', action: 'kb.source_propose', target: 'kb-04', kb: 'Security Baseline', bucket: 's3://empresa-security-docs/baseline/', detail: 'Propuso leer s3://empresa-security-docs/baseline/ en Security Baseline', outcome: 'requested', at: ago(150) },
     { actor: 'usuario8@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'rejected', at: ago(200) },
+    { actor: 'Usuario 3', role: 'owner', action: 'kb.upload', target: 'kb-02', kb: 'Políticas de RH', docs: 3, detail: 'Agregó 3 documentos a Políticas de RH', outcome: 'applied', at: ago(260) },
     { actor: 'usuario9@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'disabled', at: ago(300) },
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.started', target: 'session', detail: 'Ingresó con contraseña y MFA', at: ago(320) },
+    { actor: 'Usuario 2', role: 'owner', action: 'kb.search_test', target: 'kb-03', kb: 'FinOps Playbooks', hits: 4, detail: 'Probó una búsqueda en FinOps Playbooks · 4 fragmentos', at: ago(330) },
     { actor: 'usuario5@empresa.com', role: 'central', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'expired', at: ago(410) },
     { actor: 'Usuario 1', role: 'admin', action: 'agent.update', target: 'fin-01', detail: 'Cambió el presupuesto de USD 2.500,00 a USD 3.000,00', before: { budgetMax: 2500 }, after: { budgetMax: 3000 }, outcome: 'applied', at: ago(18) },
     { actor: 'Usuario 4', role: 'user', action: 'chat.query', target: 'fin-01', perm: 'agent.invoke', turn: 'TRN-5102', detail: 'Preguntó a FinOps · consultó Cost Explorer (3 llamadas) · costo USD 0,04', after: { llamadas: 3, costo: 'USD 0,04' }, agentVersion: 3, model: 'us.anthropic.claude-sonnet-4-6-v1:0', at: ago(22) },

@@ -18,7 +18,7 @@ const AB_TEMPLATES = [
 ];
 const AB_SECTIONS = [
   { id: 'identity', label: 'Información básica' }, { id: 'org', label: 'Organización' }, { id: 'brain', label: 'Modelo e instrucciones' },
-  { id: 'tools', label: 'Tools' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
+  { id: 'tools', label: 'Tools' }, { id: 'kbs', label: 'Knowledge bases' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
 ];
 const AB_SERVER_ERR = {
   cycle: ['org', 'El supervisor elegido reporta, directa o indirectamente, a este agente. Elige otro para no crear un ciclo.'],
@@ -37,8 +37,11 @@ const AB_SERVER_ERR = {
   unavailable: [null, 'El servicio no está disponible. Inténtalo de nuevo en unos minutos.'],
   network: [null, 'Sin conexión. Revisa tu red e inténtalo de nuevo.'],
   daily: [null, 'Alcanzaste el límite diario de envíos a revisión. Podrás enviar de nuevo mañana.'],
+  // Diseño completo: knowledge bases
+  'kb-missing': ['kbs', 'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.'],
+  'kb-forbidden': ['kbs', 'Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.'],
 };
-const AB_BLANK = { manager: null, role: '', name: '', desc: '', cat: 'FinOps', icon: 'Bot', color: 0, model: 'Sonnet 4.6', allowedModels: ['Sonnet 4.6'], prompt: '', tools: [], groups: [], limits: { tokens: 4096, iterations: 8, seconds: 120 }, budget: 500 };
+const AB_BLANK = { manager: null, role: '', name: '', desc: '', cat: 'FinOps', icon: 'Bot', color: 0, model: 'Sonnet 4.6', allowedModels: ['Sonnet 4.6'], prompt: '', tools: [], kbs: [], groups: [], limits: { tokens: 4096, iterations: 8, seconds: 120 }, budget: 500 };
 
 function AgentAdmin({ agents, models, setView, routeId }) {
   const I = window.Icons; const S = window.MangoStore; const L = window.Lifecycle;
@@ -130,7 +133,7 @@ function AgentAdmin({ agents, models, setView, routeId }) {
   const toggleGroup = (g) => set({ groups: snap.groups.includes(g) ? snap.groups.filter(x => x !== g) : [...snap.groups, g] });
   const finalSnap = () => ({ ...snap, role: (snap.role || '').trim(), name: snap.name.trim(), desc: snap.desc.trim() || `Agente ${snap.cat}` });
 
-  const serverFail = (save) => { if (!avail || !simB || (save && simB === 'daily')) return false; const [sec, msg] = AB_SERVER_ERR[simB]; setErrKind(save ? 'save' : 'submit'); setErrors([{ sec, code: simB, msg }]); goSec(null); return true; };
+  const serverFail = (save) => { if (!simB || (save && simB === 'daily') || (avail ? /^kb-/.test(simB) : !/^kb-/.test(simB))) return false; const [sec, msg] = AB_SERVER_ERR[simB]; setErrKind(save ? 'save' : 'submit'); setErrors([{ sec, code: simB, msg }]); goSec(null); return true; };
   const saveDraft = () => {
     setErrKind('save');
     if (!snap.name.trim()) { setErrors([{ sec: 'identity', code: 'name', msg: 'Ponle un nombre para guardar el borrador.' }]); goSec(null); return; }
@@ -309,6 +312,10 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                   <span>{snap.tools.length} {snap.tools.length === 1 ? 'tool elegida' : 'tools elegidas'}{writeSel.length ? ` · ${writeSel.length} de escritura: confirmación o aprobación, según su política` : ''}</span>
                   <button type="button" className="sr-link" onClick={() => setView('mcp')}>¿Falta un MCP? Ver catálogo</button>
                 </div>
+              </ABSection>
+
+              <ABSection id="kbs" title="Knowledge bases" desc={avail ? 'Documentos que el agente consulta para responder.' : 'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.'}>
+                {window.KbAgentSection && <window.KbAgentSection snap={snap} set={set} setView={setView} />}
               </ABSection>
 
               <ABSection id="limits" title={avail ? 'Límites' : 'Límites y presupuesto'} desc={avail ? 'Topes por ejecución. El presupuesto no es parte de la versión.' : 'Topes por ejecución y gasto mensual del agente.'}>

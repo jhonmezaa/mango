@@ -22,7 +22,7 @@ function Sidebar({ view, setView, agents, user, collapsed, setCollapsed, pinnedI
   const S = window.MangoStore;
   const role = window.useMango(s => s.role);
   const lang = window.useMango(s => s.lang);
-  const pendingApprovals = window.useMango(s => s.approvals.filter(a => a.status === 'pending').length);
+  const pendingApprovals = window.useMango(s => s.approvals.filter(a => a.status === 'pending').length + (s.avail ? 0 : (s.kbReqs || []).filter(r => r.status === 'pending').length));
   const pendingReviews = window.useMango(s => (s.agentRevs || []).filter(r => r.status === 'review').length);
   const inboxUnread = window.useMango(s => s.inboxUnread);
   const [menuOpen, setMenuOpen] = useState(false);

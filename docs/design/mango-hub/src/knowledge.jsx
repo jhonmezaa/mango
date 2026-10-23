@@ -1,209 +1,259 @@
-// Knowledge Bases — fuentes de documentos indexadas en Bedrock Knowledge Bases
-const KB_STATUS = { ok: ['Sincronizada', 'badge-green'], warn: ['Con avisos', 'badge-amber'], error: ['Error', 'badge-red'], syncing: ['Sincronizando', 'badge-blue'], pending: ['Sin sincronizar', 'badge'] };
-const KB_SOURCES = { 'Confluence': ['confluence', 'Espacio'], 'Google Drive': ['google-drive', 'Carpeta'], 'GitHub': ['github', 'Repositorio'], 'Custom S3': [null, 'Bucket'], 'S3': [null, 'Bucket'] };
-const KB_FREQ = [['manual', 'Manual'], ['6h', 'Cada 6 h'], ['24h', 'Diaria'], ['7d', 'Semanal']];
-const kbNum = (n) => n >= 1e6 ? (n / 1e6).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' M' : n >= 1e3 ? (n / 1e3).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' k' : String(n);
-const KB_GROUPS = { 'kb-01': ['mango-admin', 'devops'], 'kb-02': ['people'], 'kb-03': ['mango-admin', 'finops-central'], 'kb-04': ['mango-admin', 'security'], 'kb-05': ['mango-admin', 'bu-retail'], 'kb-06': ['mango-admin', 'bu-plataforma', 'finops-central'], 'kb-07': ['devops', 'people'], 'kb-08': ['mango-admin'] };
-
-function kbInit() {
-  const S = window.MangoStore; if (S.get().kbs) return;
-  const list = (window.MangoData.knowledgeBases || []).map((k, i) => ({
-    ...k, groups: KB_GROUPS[k.id] || ['mango-admin'], freq: ['6h', '24h', '24h', '6h', '6h', '24h', '6h', 'manual'][i] || '24h',
-    queries30d: k.syncStatus === 'pending' ? null : [1240, 860, 412, 530, 0, 2210, 190, null][i],
-    sourceRef: { 'Confluence': 'Espacio ' + k.name.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4), 'Google Drive': '/Compartido/' + k.owner, 'GitHub': 'empresa/releases', 'Custom S3': k.bucket }[k.source],
-    errors: k.syncStatus === 'warn' ? [{ doc: 'PO-template-2019.pdf', msg: 'OCR sin texto legible' }, { doc: 'Vendor-list-scan.pdf', msg: 'OCR sin texto legible' }, { doc: 'Anexo-B.tiff', msg: 'Formato no soportado' }, { doc: 'Contrato-marco.pdf', msg: 'PDF protegido con contraseña' }, { doc: 'Firma-digital.png', msg: 'Imagen sin texto' }] : [],
-  }));
-  S.set({ kbs: list });
-}
-
+// Knowledge Bases · lista, detalle y alta. Primera versión (D88): solo S3, por archivos subidos o un bucket que ya existe.
 function KnowledgeView({ agents }) {
-  const I = window.Icons; const S = window.MangoStore; const L = window.Lifecycle;
+  const I = window.Icons; const S = window.MangoStore; const K = window.KB;
   const kbs = window.useMango(s => s.kbs) || [];
-  window.useMango(s => s.role);
-  const canEdit = S.can('agent.create');
-  const [q, setQ] = useState(''); const [st, setSt] = useState('all'); const [src, setSrc] = useState('all');
-  const [sel, setSel] = useState(null); const [creating, setCreating] = useState(false);
+  window.useMango(s => s.role); window.useMango(s => s.actorOverride);
+  const simQ = window.useMango(s => s.simKbQueries);
+  const kbOpen = window.useMango(s => s.kbOpen);
+  const canCreate = S.can('agent.create');
+  const [q, setQ] = React.useState(''); const [st, setSt] = React.useState('all'); const [src, setSrc] = React.useState('all');
+  const [sel, setSel] = React.useState(null); const [start, setStart] = React.useState(null); const [creating, setCreating] = React.useState(false);
+  React.useEffect(() => { if (kbOpen) { setStart(null); setSel(kbOpen); S.set({ kbOpen: null }); } }, [kbOpen]);
   const Q = q.trim().toLowerCase();
-  const base = kbs.filter(k => (src === 'all' || k.source === src) && (!Q || (k.name + ' ' + k.desc + ' ' + k.owner).toLowerCase().includes(Q)));
-  const list = base.filter(k => st === 'all' || k.syncStatus === st || (st === 'attention' && ['warn', 'error'].includes(k.syncStatus)));
-  const tot = { docs: kbs.reduce((s, k) => s + k.docs, 0), tokens: kbs.reduce((s, k) => s + k.tokens, 0), att: kbs.filter(k => ['warn', 'error'].includes(k.syncStatus)).length };
-  const sources = [...new Set(kbs.map(k => k.source))];
-  const selected = sel && kbs.find(k => k.id === sel);
-  const exposure = (k) => (k.usedBy || []).map(id => agents.find(a => a.id === id)).filter(Boolean).filter(a => (window.sharesOf?.(a).everyone) || ((a.groups || []).some(g => !k.groups.includes(g) && !k.groups.includes('all-staff'))));
+  const inF = (k, f) => f === 'all' || (f === 'attention' ? K.ATTN.includes(k.status) : K.UNSYNCED.includes(k.status));
+  const base = kbs.filter(k => (src === 'all' || k.origin === src) && (!Q || (k.name + ' ' + k.desc + ' ' + k.owner).toLowerCase().includes(Q)));
+  const list = base.filter(k => inF(k, st));
+  const docsN = kbs.reduce((s, k) => s + K.counts(k).indexed, 0); const tokN = kbs.reduce((s, k) => s + (k.tokens || 0), 0);
+  const att = kbs.filter(k => K.ATTN.includes(k.status)).length;
+  const inUse = kbs.filter(k => K.agentsOf(k, agents).length).length;
+  const open = (id) => { setStart(null); setSel(id); };
   return (
     <>
-      <Topbar crumbs={['Construir', 'Knowledge Bases']} actions={canEdit && <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}><I.Plus size={12} /> Nueva knowledge base</button>} />
+      <Topbar crumbs={['Construir', 'Knowledge Bases']} actions={canCreate && <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}><I.Plus size={12} /> Nueva knowledge base</button>} />
       <div className="content">
         <div className="page-head">
           <h1 className="page-title">Knowledge Bases</h1>
-          <p className="page-subtitle">Documentos que los agentes pueden consultar. Se indexan en Bedrock Knowledge Bases de tu instalación y solo los ven los grupos con acceso.</p>
+          <p className="page-subtitle">Documentos que los agentes consultan para responder. Se indexan en Bedrock Knowledge Bases de tu instalación. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está, también a través de un agente.</p>
         </div>
         <div className="bg-kpis">
-          <div className="card bg-kpi"><span className="bg-kpi-l">Knowledge bases</span><span className="bg-kpi-v">{kbs.length}</span><span className="bg-kpi-s">{kbs.filter(k => (k.usedBy || []).length).length} en uso por agentes</span></div>
-          <div className="card bg-kpi"><span className="bg-kpi-l">Documentos indexados</span><span className="bg-kpi-v">{tot.docs.toLocaleString('es-ES', { useGrouping: 'always' })}</span><span className="bg-kpi-s">{kbNum(tot.tokens)} tokens</span></div>
-          <div className="card bg-kpi"><span className="bg-kpi-l">Necesitan atención</span><span className="bg-kpi-v" style={tot.att ? { color: 'var(--amber)' } : null}>{tot.att}</span><span className="bg-kpi-s">{tot.att ? 'Con errores de indexación' : 'Todo sincronizado'}</span></div>
-          <div className="card bg-kpi"><span className="bg-kpi-l">Consultas · 30 días</span><span className="bg-kpi-v">{kbNum(kbs.reduce((s, k) => s + (k.queries30d || 0), 0))}</span><span className="bg-kpi-s">De los agentes que las usan</span></div>
+          <div className="card bg-kpi"><span className="bg-kpi-l">Knowledge bases</span><span className="bg-kpi-v">{kbs.length}</span><span className="bg-kpi-s">{inUse} en uso por agentes</span></div>
+          <div className="card bg-kpi"><span className="bg-kpi-l">Documentos indexados</span><span className="bg-kpi-v">{K.n(docsN)}</span><span className="bg-kpi-s">{K.tok(tokN)} tokens</span></div>
+          <div className="card bg-kpi"><span className="bg-kpi-l">Necesitan atención</span><span className="bg-kpi-v" style={att ? { color: 'var(--amber)' } : null}>{att}</span><span className="bg-kpi-s">{att ? 'Errores, avisos o sin empezar' : 'Todo al día'}</span></div>
+          <div className="card bg-kpi"><span className="bg-kpi-l">Consultas · 30 días</span>{simQ ? <><span className="bg-kpi-v">{K.tok(kbs.reduce((s, k) => s + (k.q30 || 0), 0))}</span><span className="bg-kpi-s">De los agentes que las usan</span></> : <><span className="bg-kpi-v" style={{ color: 'var(--text-muted)' }}>—</span><span className="bg-kpi-s"><window.SoonTag /></span></>}</div>
         </div>
         <div className="bg-toolbar">
           <div className="search-wrap" style={{ flex: '1 1 220px', maxWidth: 300 }}><I.Search size={13} /><input className="input" placeholder="Buscar knowledge base" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar" /></div>
-          <div className="tk-quick" role="group">{[['all', 'Todas', base.length], ['attention', 'Necesitan atención', base.filter(k => ['warn', 'error'].includes(k.syncStatus)).length], ['pending', 'Sin sincronizar', base.filter(k => k.syncStatus === 'pending').length]].map(([k, l, n]) => <button key={k} className={st === k ? 'is-on' : ''} onClick={() => setSt(k)}>{l}<span className="mk-count">{n}</span></button>)}</div>
-          <select className="input mk-sel" value={src} onChange={e => setSrc(e.target.value)} aria-label="Fuente"><option value="all">Todas las fuentes</option>{sources.map(s => <option key={s}>{s}</option>)}</select>
+          <div className="tk-quick" role="group" aria-label="Estado">{[['all', 'Todas'], ['attention', 'Necesitan atención'], ['unsynced', 'Sin sincronizar']].map(([f, l]) => <button key={f} className={st === f ? 'is-on' : ''} aria-pressed={st === f} onClick={() => setSt(f)}>{l}<span className="mk-count">{base.filter(k => inF(k, f)).length}</span></button>)}</div>
+          <select className="input mk-sel" value={src} onChange={e => setSrc(e.target.value)} aria-label="Fuente"><option value="all">Todas las fuentes</option><option value="upload">S3 · archivos subidos</option><option value="bucket">S3 · bucket</option></select>
         </div>
         <div className="mc-body" style={{ paddingTop: 0 }}>
           <div className="card mc-table">
             <div className="kb-tr mc-th"><span>knowledge base</span><span>fuente</span><span>estado</span><span>tamaño</span><span>acceso</span><span>agentes</span></div>
-            {list.map(k => { const Ic = I[k.icon] || I.BookOpen; const ex = exposure(k); return (
-              <button key={k.id} className="kb-tr" onClick={() => setSel(k.id)}>
-                <span className="row gap-3" style={{ minWidth: 0 }}><span className="mc-ic"><Ic size={14} /></span><span style={{ minWidth: 0 }}><span className="mk-name" style={{ display: 'block' }}>{k.name}</span><span className="mk-meta" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.owner} · {k.desc}</span></span></span>
-                <span className="mk-meta">{k.source}</span>
-                <span className="row gap-1" style={{ flexWrap: 'wrap' }}><span className={'badge ' + KB_STATUS[k.syncStatus][1]}>{k.syncStatus === 'syncing' && <span className="g-spin" style={{ width: 9, height: 9, marginRight: 5 }} />}{KB_STATUS[k.syncStatus][0]}</span><span className="mk-meta">{k.syncStatus === 'pending' ? '' : k.lastSync}</span></span>
-                <span className="mk-meta mono">{k.docs} docs · {kbNum(k.tokens)}</span>
-                <span className="row gap-1" style={{ flexWrap: 'wrap', minWidth: 0 }}>{k.groups.slice(0, 2).map(g => <span key={g} className="mv-cap">{g}</span>)}{k.groups.length > 2 && <span className="mk-meta">+{k.groups.length - 2}</span>}{ex.length > 0 && <span className="badge badge-amber" title="Algún agente que la usa es visible para grupos sin acceso a esta knowledge base">Exposición</span>}</span>
-                <span className="mk-meta">{(k.usedBy || []).length || '—'}</span>
+            {list.map(k => { const Ic = I[k.icon] || I.BookOpen; const s = K.status(k); const sub = K.statusSub(k); const part = K.partial(k, agents); const n = K.agentsOf(k, agents).length; return (
+              <button key={k.id} className={'kb-tr' + (k.status === 'deleting' ? ' is-deleting' : '')} onClick={() => open(k.id)}>
+                <span className="row gap-3" style={{ minWidth: 0 }}><span className="mc-ic"><Ic size={14} /></span><span style={{ minWidth: 0 }}><span className="mk-name" style={{ display: 'block' }}>{k.name}</span><span className="kb-sub">{k.owner} · {k.desc}</span></span></span>
+                <span className="mk-meta">{K.ORIGIN[k.origin]}</span>
+                <span className="kb-st"><span className={'badge ' + s.cls}>{s.spin && <span className="g-spin" style={{ width: 9, height: 9, marginRight: 5 }} />}{s.label}</span>{sub && <span className="kb-sub">{sub}</span>}</span>
+                <span className="mk-meta mono">{K.size(k)}</span>
+                <span className="row gap-1" style={{ flexWrap: 'wrap', minWidth: 0 }}>{k.groups.slice(0, 2).map(g => <span key={g} className="mv-cap">{g}</span>)}{k.groups.length > 2 && <span className="mk-meta">+{k.groups.length - 2}</span>}{part.length > 0 && <span className="badge badge-amber" title={K.partialTip}>Acceso parcial</span>}</span>
+                <span className="mk-meta">{n || '—'}</span>
               </button>
             ); })}
-            {!list.length && <div className="mk-meta" style={{ padding: 16 }}>Ninguna coincide.</div>}
+            {!list.length && <div className="mk-meta" style={{ padding: 16 }}>{kbs.length ? 'Ninguna coincide.' : 'Aún no hay knowledge bases.'}</div>}
           </div>
         </div>
       </div>
-      {selected && <KbDetail k={selected} agents={agents} exposure={exposure(selected)} canEdit={canEdit} onClose={() => setSel(null)} />}
-      {creating && <KbCreate onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSel(id); }} />}
+      {sel && <KbDetail key={sel} id={sel} agents={agents} start={start} onClose={() => { setSel(null); setStart(null); }} />}
+      {creating && <KbCreate onClose={() => setCreating(false)} onCreated={(id, origin) => { setCreating(false); setStart(origin === 'upload' ? { tab: 'docs', sub: 'upload' } : null); setSel(id); }} />}
     </>
   );
 }
 
-function kbSync(id) {
-  const S = window.MangoStore; const set = (fn) => S.set({ kbs: S.get().kbs.map(k => k.id === id ? { ...k, ...fn(k) } : k) });
-  const k0 = S.get().kbs.find(k => k.id === id);
-  set(() => ({ syncStatus: 'syncing', syncStarted: Date.now() }));
-  S.log('kb.sync', id, 'Inició la sincronización de ' + k0.name);
-  setTimeout(() => {
-    const k = S.get().kbs.find(x => x.id === id);
-    const add = k.docs ? Math.round(Math.random() * 3) : 12 + Math.round(Math.random() * 20);
-    set(x => ({ syncStatus: x.errors?.length ? 'warn' : 'ok', lastSync: 'ahora', docs: x.docs + add, chunks: x.chunks + add * 22, tokens: x.tokens + add * 9800, syncStarted: null }));
-    S.log('kb.sync', id, `Sincronizó ${k.name}: ${add} documentos nuevos`);
-  }, 3000);
-}
-
-function KbDetail({ k, agents, exposure, canEdit, onClose }) {
-  const I = window.Icons; const S = window.MangoStore; const L = window.Lifecycle;
-  const toast = window.useToast?.();
-  const [tab, setTab] = useState('info');
-  const [q, setQ] = useState(''); const [res, setRes] = useState(null);
-  const [freq, setFreq] = useState(k.freq); const [groups, setGroups] = useState(k.groups);
-  const users = (k.usedBy || []).map(id => agents.find(a => a.id === id)).filter(Boolean);
-  const groupNames = (S.get().groupDefs || []).map(g => g.id);
-  const dirty = freq !== k.freq || JSON.stringify(groups) !== JSON.stringify(k.groups);
-  useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
-  const search = () => {
-    if (!q.trim()) return;
-    const words = q.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    const docs = [k.name + ' — guía general', k.desc.split(',')[0], 'Procedimiento: ' + (words[0] || 'consulta'), 'Preguntas frecuentes de ' + k.owner];
-    setRes(k.syncStatus === 'pending' ? [] : docs.map((d, i) => ({ doc: d, score: Math.max(0.41, 0.92 - i * 0.13 - (words.length ? 0 : 0.2)), text: `…${k.desc} ${words.length ? 'Coincide con «' + words.join(' ') + '».' : ''}…` })));
-    S.log('kb.query', k.id, 'Probó una búsqueda en ' + k.name);
-  };
-  const saveCfg = () => { S.set({ kbs: S.get().kbs.map(x => x.id === k.id ? { ...x, freq, groups } : x) }); S.log('kb.update', k.id, `Cambió acceso o frecuencia de ${k.name}: ${groups.join(', ')} · ${KB_FREQ.find(f => f[0] === freq)[1].toLowerCase()}`, { before: { groups: k.groups.join(', '), freq: k.freq }, after: { groups: groups.join(', '), freq } }); toast?.({ tone: 'success', msg: 'Cambios guardados' }); };
-  const [, setTick] = useState(0);
-  useEffect(() => { if (k.syncStatus !== 'syncing') return; const t = setInterval(() => setTick(x => x + 1), 250); return () => clearInterval(t); }, [k.syncStatus]);
+function KbDetail({ id, agents, start, onClose }) {
+  const I = window.Icons; const K = window.KB; const toast = window.useToast?.();
+  const k = window.useMango(s => (s.kbs || []).find(x => x.id === id));
+  window.useMango(s => s.role); window.useMango(s => s.actorOverride);
+  const reqs = window.useMango(s => s.kbReqs) || [];
+  const [tab, setTab] = React.useState(start?.tab || 'info'); const [sub, setSub] = React.useState(start?.sub || null);
+  const [syncErr, setSyncErr] = React.useState(null);
+  const guard = React.useRef(null);
+  const ask = (fn) => { if (guard.current && guard.current(fn) === false) return; fn(); };
+  const tryClose = () => ask(onClose);
+  const goTab = (t, s = null) => ask(() => { setTab(t); setSub(s); });
+  React.useEffect(() => { if (!k) onClose(); }, [!k]);
+  React.useEffect(() => { const h = e => { if (e.key === 'Escape') tryClose(); }; document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
+  const [, tick] = React.useState(0);
+  React.useEffect(() => { if (k?.status !== 'syncing') return; const t = setInterval(() => tick(x => x + 1), 250); return () => clearInterval(t); }, [k?.status]);
+  if (!k) return null;
+  const acc = K.access(k); const s = K.status(k); const c = K.counts(k);
+  const users = K.agentsOf(k, agents); const part = K.partial(k, agents);
+  const bucket = k.origin === 'bucket'; const del = k.status === 'deleting';
+  const req = reqs.find(r => r.kb === k.id && r.status === 'pending'); const lastReq = reqs.find(r => r.kb === k.id);
   const Ic = I[k.icon] || I.BookOpen;
-  const elapsed = k.syncStarted ? Math.min(0.95, (Date.now() - k.syncStarted) / 3000) : 0;
+  const tabs = [['info', 'Resumen'], ['docs', 'Documentos' + (acc.seeDocs && c.failed ? ' · ' + c.failed + ' con error' : '')], ['test', 'Probar búsqueda'], ['access', bucket ? 'Acceso y sync' : 'Acceso']];
+  const syncNow = () => { setSyncErr(null); const r = K.sync(k.id); if (r === 'busy') setSyncErr('Ya hay una sincronización en curso de esta knowledge base. Espera a que termine.'); else if (r === 'started') toast?.({ tone: 'info', msg: 'Sincronizando ' + k.name }); };
+  const noSync = ['syncing', 'approval', 'rejected', 'nosource'].includes(k.status);
   return (
-    <div className="mk-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <aside className="mk-drawer" style={{ width: 560 }} role="dialog" aria-modal="true" aria-label={k.name}>
+    <div className="mk-scrim" onMouseDown={e => e.target === e.currentTarget && tryClose()}>
+      <aside className="mk-drawer kb-drawer" role="dialog" aria-modal="true" aria-label={k.name}>
         <div className="mk-drawer-h">
           <span className="mc-ic lg"><Ic size={20} /></span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-strong)' }}>{k.name}</div>
-            <div className="row gap-2" style={{ marginTop: 4, flexWrap: 'wrap' }}><span className={'badge ' + KB_STATUS[k.syncStatus][1]}>{KB_STATUS[k.syncStatus][0]}</span><span className="mk-meta">{k.source} · {k.owner}</span></div>
+            <div className="row gap-2" style={{ marginTop: 4, flexWrap: 'wrap' }}><span className={'badge ' + s.cls}>{s.spin && <span className="g-spin" style={{ width: 9, height: 9, marginRight: 5 }} />}{s.label}</span><span className="mk-meta">S3 · {bucket ? 'bucket' : 'archivos subidos'} · {k.owner}{acc.owner ? ' (tú)' : ''}</span></div>
           </div>
-          <button className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}><I.Close size={14} /></button>
+          <button className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={tryClose}><I.Close size={14} /></button>
         </div>
-        <div className="tk-tabs" style={{ padding: '0 20px', marginTop: 0 }} role="tablist">{[['info', 'Resumen'], ['docs', 'Documentos' + (k.errors?.length ? ' · ' + k.errors.length + ' con error' : '')], ['test', 'Probar búsqueda'], ['access', 'Acceso y sync']].map(([t, l]) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'is-on' : ''} onClick={() => setTab(t)}>{l}</button>)}</div>
+        <div className="tk-tabs kb-tabs" role="tablist">{tabs.map(([t, l]) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'is-on' : ''} onClick={() => goTab(t)}>{l}</button>)}</div>
         <div className="mk-drawer-b">
-          {tab === 'info' && <>
-            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55 }}>{k.desc}</p>
-            {k.syncStatus === 'syncing' && <div className="mc-alert"><span className="g-spin" /><div style={{ flex: 1 }}>Sincronizando desde {k.source}…<div className="mk-bar-track" style={{ marginTop: 6 }}><span style={{ width: elapsed * 100 + '%', background: 'var(--blue)' }} /></div></div></div>}
-            {k.syncStatus === 'warn' && <div className="mc-alert amber"><I.Warn size={14} /><div>{k.errors.length} documentos no se pudieron indexar; los agentes no los ven. <button className="sr-link" onClick={() => setTab('docs')}>Ver cuáles</button></div></div>}
-            {k.syncStatus === 'pending' && <div className="mc-alert"><I.Info size={14} /><div>Nunca se ha sincronizado: los agentes aún no pueden consultarla.</div></div>}
-            {exposure.length > 0 && <div className="mc-alert amber"><I.Warn size={14} /><div><b>Exposición:</b> {exposure.map(a => a.name).join(', ')} {exposure.length === 1 ? 'es visible' : 'son visibles'} para grupos sin acceso a esta knowledge base. Esos usuarios podrían ver su contenido a través del agente.</div></div>}
-            <MkSec title="Contenido">
-              <div className="mk-kv"><span>Documentos</span><span className="mono">{k.docs.toLocaleString('es-ES', { useGrouping: 'always' })}</span></div>
-              <div className="mk-kv"><span>Fragmentos</span><span className="mono">{k.chunks.toLocaleString('es-ES', { useGrouping: 'always' })}</span></div>
-              <div className="mk-kv"><span>Tamaño</span><span className="mono">{kbNum(k.tokens)} tokens</span></div>
-              <div className="mk-kv"><span>Embeddings</span><span>Amazon Titan Embeddings v2 · Bedrock</span></div>
-            </MkSec>
-            <MkSec title="Fuente">
-              <div className="mk-kv"><span>Origen</span><span>{k.source}</span></div>
-              <div className="mk-kv"><span>{KB_SOURCES[k.source]?.[1] || 'Ubicación'}</span><span className="mono" style={{ fontSize: 12 }}>{k.sourceRef}</span></div>
-              <div className="mk-kv"><span>Última sincronización</span><span>{k.syncStatus === 'pending' ? 'Nunca' : k.lastSync}</span></div>
-              <div className="mk-kv"><span>Frecuencia</span><span>{KB_FREQ.find(f => f[0] === k.freq)?.[1]}</span></div>
-            </MkSec>
-            <MkSec title={`Agentes que la usan · ${users.length}`}>{users.length ? users.map(a => <div key={a.id} className="mk-line row between"><span>{a.name}</span><span className="mk-meta">{exposure.includes(a) ? 'Visible para más grupos' : a.cat}</span></div>) : <div className="mk-meta">Ninguno todavía.</div>}</MkSec>
-            <MkSec title="Uso · 30 días"><div className="mk-kv"><span>Consultas</span><span className="mono">{k.queries30d != null ? k.queries30d.toLocaleString('es-ES', { useGrouping: 'always' }) : 'Sin datos'}</span></div></MkSec>
-          </>}
-          {tab === 'docs' && <>
-            {k.errors?.length > 0 && <MkSec title={`No indexados · ${k.errors.length}`}>{k.errors.map(e => <div key={e.doc} className="mk-line row between" style={{ alignItems: 'flex-start' }}><span className="mono" style={{ fontSize: 12.5, overflowWrap: 'anywhere' }}>{e.doc}</span><span className="badge badge-red">{e.msg}</span></div>)}<div className="mk-meta" style={{ marginTop: 6 }}>Corrígelos en {k.source} y vuelve a sincronizar.</div></MkSec>}
-            <MkSec title={`Indexados · ${k.docs}`}>{[k.name + ' — guía general.md', 'Procedimientos 2026.pdf', 'Preguntas frecuentes.docx', 'Glosario.md', 'Plantillas.xlsx'].slice(0, Math.min(5, k.docs)).map((d, i) => <div key={d} className="mk-line row between"><span className="mono" style={{ fontSize: 12.5 }}>{d}</span><span className="mk-meta">{['hace 2 d', 'hace 1 sem', 'hace 3 sem', 'hace 1 mes', 'hace 2 meses'][i]}</span></div>)}{k.docs > 5 && <div className="mk-meta" style={{ marginTop: 4 }}>y {k.docs - 5} más.</div>}</MkSec>
-          </>}
-          {tab === 'test' && <>
-            <div className="mk-meta">Busca como lo haría un agente para ver qué fragmentos recupera. No cuenta como consulta de usuario.</div>
-            <div className="row gap-2"><input className="input" style={{ flex: 1 }} value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()} placeholder={'p. ej. ' + (k.id === 'kb-02' ? 'días de vacaciones el primer año' : 'procedimiento de rollback')} aria-label="Consulta de prueba" autoFocus /><button className="btn btn-sm btn-primary" onClick={search} disabled={!q.trim()}>Buscar</button></div>
-            {res && (res.length ? res.map((r, i) => <div key={i} className="kb-hit"><div className="row between" style={{ gap: 8 }}><span style={{ fontWeight: 500, fontSize: 13 }}>{r.doc}</span><span className="mono mk-meta">{r.score.toFixed(2).replace('.', ',')}</span></div><div className="mk-meta" style={{ marginTop: 3, lineHeight: 1.5 }}>{r.text}</div><div className="mk-bar-track" style={{ marginTop: 6 }}><span style={{ width: r.score * 100 + '%', background: r.score > 0.7 ? 'var(--green)' : 'var(--amber)' }} /></div></div>) : <div className="mk-meta">Sin resultados: la knowledge base aún no está sincronizada.</div>)}
-          </>}
-          {tab === 'access' && <>
-            <MkSec title="Grupos que pueden consultarla">
-              <div className="row gap-1" style={{ flexWrap: 'wrap' }}>{groupNames.map(g => { const on = groups.includes(g); return <button key={g} type="button" disabled={!canEdit} className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} onClick={() => setGroups(on ? groups.filter(x => x !== g) : [...groups, g])}>{on && <I.Check size={10} />}{g}</button>; })}</div>
-              <div className="mk-meta" style={{ marginTop: 6 }}>Un agente que la usa solo debería ser visible para estos grupos. Si no, se marca como «Exposición».</div>
-            </MkSec>
-            <MkSec title="Sincronización">
-              <div className="tk-quick" style={{ display: 'inline-flex' }}>{KB_FREQ.map(([f, l]) => <button key={f} disabled={!canEdit} className={freq === f ? 'is-on' : ''} onClick={() => setFreq(f)}>{l}</button>)}</div>
-            </MkSec>
-            {canEdit && <div className="row gap-2"><button className="btn btn-sm btn-primary" disabled={!dirty || !groups.length} onClick={saveCfg}>Guardar cambios</button>{!groups.length && <span style={{ fontSize: 12, color: 'var(--red)' }}>Elige al menos un grupo</span>}</div>}
-          </>}
+          {tab === 'info' && <KbSummary k={k} acc={acc} c={c} users={users} part={part} req={req} lastReq={lastReq} goTab={goTab} />}
+          {tab === 'docs' && <window.KbDocsTab k={k} acc={acc} sub={sub} setSub={setSub} guard={guard} />}
+          {tab === 'test' && <window.KbTestTab k={k} acc={acc} />}
+          {tab === 'access' && <KbAccessTab k={k} acc={acc} users={users} req={req} lastReq={lastReq} />}
         </div>
-        {canEdit && <div className="mc-foot row gap-2"><button className="btn btn-sm" disabled={k.syncStatus === 'syncing'} onClick={() => { kbSync(k.id); toast?.({ tone: 'info', msg: 'Sincronizando ' + k.name }); }}><I.Refresh size={12} /> {k.syncStatus === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}</button></div>}
+        {acc.canEdit && !del && (bucket
+          ? <div className="mc-foot"><div className="row gap-2" style={{ flexWrap: 'wrap' }}><button className="btn btn-sm" disabled={noSync} onClick={syncNow}><I.Refresh size={12} /> {k.status === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}</button>{k.status === 'approval' && <span className="mk-meta">Se sincroniza sola cuando se apruebe el bucket.</span>}{['rejected', 'nosource'].includes(k.status) && <span className="mk-meta">Propón un bucket en «Acceso y sync».</span>}</div>{syncErr && <div className="kb-err" role="alert" style={{ marginTop: 8 }}>{syncErr}</div>}</div>
+          : !(tab === 'docs' && sub === 'upload') && <div className="mc-foot"><button className="btn btn-sm" onClick={() => goTab('docs', 'upload')}><I.Upload size={12} /> Subir archivos</button></div>)}
       </aside>
     </div>
   );
 }
 
+function KbSummary({ k, acc, c, users, part, req, lastReq, goTab }) {
+  const I = window.Icons; const K = window.KB;
+  const simQ = window.useMango(s => s.simKbQueries);
+  const bucket = k.origin === 'bucket';
+  const elapsed = k.syncStarted ? Math.min(0.95, (Date.now() - k.syncStarted) / 3200) : 0;
+  const partIds = part.map(x => x.a.id);
+  return (
+    <>
+      <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55 }}>{k.desc}</p>
+      {k.status === 'deleting' && <div className="mc-alert" role="status"><span className="g-spin" /><div><b>Borrando.</b> Ya no se usa en respuestas nuevas. Sale de la lista cuando se comprueba que ningún agente puede recibir sus fragmentos.</div></div>}
+      {k.status === 'syncing' && <div className="mc-alert" role="status"><span className="g-spin" /><div style={{ flex: 1, minWidth: 0 }}>{bucket ? <>Sincronizando desde <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>…</> : 'Indexando los archivos guardados…'}<div className="mk-bar-track" style={{ marginTop: 6 }}><span style={{ width: elapsed * 100 + '%', background: 'var(--blue)' }} /></div></div></div>}
+      {k.status === 'warn' && <div className="mc-alert amber"><I.Warn size={14} /><div>{c.failed} {c.failed === 1 ? 'documento no se pudo indexar: los agentes no lo ven.' : 'documentos no se pudieron indexar: los agentes no los ven.'} {acc.seeDocs && <button className="sr-link" onClick={() => goTab('docs')}>Ver cuáles</button>}</div></div>}
+      {k.status === 'error' && <div className="mc-alert red"><I.X2 size={14} /><div>{K.errText(k)}{acc.canEdit && ' Propón un bucket sin llave propia o crea una knowledge base con archivos subidos.'}</div></div>}
+      {k.status === 'blocked' && <div className="mc-alert amber"><I.Warn size={14} /><div>{K.blockText(k)} {c.indexed ? 'Los agentes siguen usando lo indexado ' + K.ago(k.lastSync) + '.' : 'Todavía no hay nada indexado.'}{acc.canEdit && (k.block?.kind === 'budget' ? ' Vuelve a sincronizar cuando haya presupuesto.' : ' Acota el prefijo o reparte los documentos en varias knowledge bases.')}</div></div>}
+      {k.status === 'pending' && <div className="mc-alert"><I.Info size={14} /><div>{bucket ? 'Nunca se ha sincronizado: los agentes aún no pueden consultarla.' : 'Todavía no tiene documentos.'}{!bucket && acc.canEdit && <> <button className="sr-link" onClick={() => goTab('docs', 'upload')}>Subir archivos</button></>}</div></div>}
+      {k.status === 'approval' && <div className="mc-alert amber"><I.Clock size={14} /><div><b>Pendiente de aprobación.</b> {req?.by === acc.me ? 'Propusiste' : (req?.by || 'Alguien') + ' propuso'} leer <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>. Lo aprueba un administrador distinto de quien lo propuso; mientras tanto no se lee nada.</div></div>}
+      {k.status === 'rejected' && <div className="mc-alert red"><I.X2 size={14} /><div><b>Bucket rechazado.</b> {lastReq?.decidedBy || 'Un administrador'} rechazó leer <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>{lastReq?.note ? ': «' + lastReq.note + '»' : ''}. {acc.canEdit && <button className="sr-link" onClick={() => goTab('access')}>Proponer otro bucket</button>}</div></div>}
+      {k.status === 'nosource' && <div className="mc-alert"><I.Info size={14} /><div><b>Sin bucket.</b> Se retiró la propuesta: no se lee nada. {acc.canEdit && <button className="sr-link" onClick={() => goTab('access')}>Proponer un bucket</button>}</div></div>}
+      {part.length > 0 && <div className="mc-alert amber"><I.Warn size={14} /><div style={{ minWidth: 0 }}><b>Acceso parcial.</b> Estos grupos usan un agente que la consulta pero no están en esta knowledge base. A esas personas el agente les responde sin su contenido: la búsqueda se hace con la identidad de quien pregunta.
+        <div className="kb-gaps">{part.map(x => <div key={x.a.id}><span>{x.a.name}</span><span className="mono">{x.groups.join(', ')}</span></div>)}</div>
+        Si deben recibirlo, agrega esos grupos en «Acceso».</div></div>}
+      <MkSec title="Contenido">
+        <div className="mk-kv"><span>Documentos</span><span className="mono">{K.n(c.indexed)}{c.failed ? ' · ' + c.failed + ' sin indexar' : ''}{c.busy ? ' · ' + c.busy + ' en curso' : ''}</span></div>
+        <div className="mk-kv"><span>Fragmentos</span><span className="mono">{k.chunks ? K.n(k.chunks) : '—'}</span></div>
+        <div className="mk-kv"><span>Tamaño</span><span className="mono">{k.tokens ? K.tok(k.tokens) + ' tokens' : c.total ? K.bytes(c.bytes) + ' · los tokens se conocen al indexar' : '—'}</span></div>
+        <div className="mk-kv"><span>Topes</span><span>{K.n(c.total)} de {K.n(K.LIMITS.docs)} documentos · {K.bytes(c.bytes)} de 5 GB</span></div>
+        <div className="mk-kv"><span>Embeddings</span><span>Amazon Titan Embeddings v2 · Bedrock</span></div>
+      </MkSec>
+      <MkSec title="Fuente">
+        <div className="mk-kv"><span>Origen</span><span>S3 · {bucket ? 'un bucket que ya existe' : 'archivos subidos desde Mango'}</span></div>
+        {bucket && <div className="mk-kv"><span>Bucket</span><span className="mono" style={{ fontSize: 12 }}>{k.ref}</span></div>}
+        {bucket && <div className="mk-kv"><span>Última sincronización</span><span>{k.lastSync ? K.ago(k.lastSync) : 'Nunca'}</span></div>}
+        {bucket && k.lastTry && <div className="mk-kv"><span>Último intento</span><span>{K.ago(k.lastTry)}</span></div>}
+        {bucket ? <div className="mk-kv"><span>Frecuencia</span><span>{K.freqLabel(k.freq)}</span></div> : <div className="mk-kv"><span>Indexación</span><span>Al guardar cada archivo{k.lastSync ? ' · la última ' + K.ago(k.lastSync) : ''}</span></div>}
+      </MkSec>
+      <MkSec title={`Agentes que la usan · ${users.length}`}>
+        {users.length ? users.map(a => <div key={a.id} className="mk-line row between"><span>{a.name}</span><span className="mk-meta">{partIds.includes(a.id) ? 'Lo usan grupos sin acceso' : a.cat}</span></div>) : <div className="mk-meta">Ninguno todavía. Se asocia en el Agent Builder, con una versión nueva del agente.</div>}
+        {users.length > 0 && !c.indexed && <div className="mk-meta" style={{ marginTop: 4 }}>Mientras no tenga nada indexado, responden sin ella.</div>}
+      </MkSec>
+      <MkSec title="Uso · 30 días"><div className="mk-kv"><span>Consultas de agentes</span>{simQ ? <span className="mono">{K.n(k.q30 || 0)}</span> : <span><window.SoonTag /></span>}</div></MkSec>
+    </>
+  );
+}
+
+function KbAccessTab({ k, acc, users, req, lastReq }) {
+  const I = window.Icons; const S = window.MangoStore; const K = window.KB; const L = window.Lifecycle; const toast = window.useToast?.();
+  const reqs = window.useMango(s => s.kbReqs) || [];
+  const groupNames = (S.get().groupDefs || []).map(g => g.id);
+  const [groups, setGroups] = React.useState(k.groups); const [freq, setFreq] = React.useState(k.freq || '24h');
+  const [editRef, setEditRef] = React.useState(false); const [ref, setRef] = React.useState(''); const [refErr, setRefErr] = React.useState(null); const [sending, setSending] = React.useState(false);
+  const [confirmDel, setConfirmDel] = React.useState(false);
+  const bucket = k.origin === 'bucket'; const edit = acc.canEdit && k.status !== 'deleting';
+  const dirty = JSON.stringify(groups) !== JSON.stringify(k.groups) || (bucket && freq !== k.freq);
+  const mineIn = groups.some(g => acc.groups.includes(g));
+  const okReq = reqs.find(r => r.kb === k.id && r.status === 'approved' && r.ref === k.ref);
+  const canPropose = edit && bucket && !req;
+  const save = () => { K.updateCfg(k.id, { groups, ...(bucket ? { freq } : {}) }); toast?.({ tone: 'success', msg: 'Cambios guardados' }); };
+  const sendRef = () => {
+    const v = ref.trim(); const e = K.refErr(v) || (L.findSecret(v) && 'No pegues credenciales en la ubicación') || (v === k.ref && k.bucketOk && 'Es el mismo bucket y prefijo de ahora');
+    if (e) { setRefErr(e); return; }
+    setSending(true);
+    setTimeout(() => { setSending(false); const se = K.refServer(v); if (se) { setRefErr(se); return; } K.propose(k.id, v); setEditRef(false); setRef(''); toast?.({ tone: 'success', msg: 'Propuesta enviada · la aprueba otro administrador' }); }, 600);
+  };
+  const names = users.map(a => a.name).join(', ');
+  return (
+    <>
+      <MkSec title="Grupos que pueden consultarla">
+        <div className="row gap-1" style={{ flexWrap: 'wrap' }}>{groupNames.map(g => { const on = groups.includes(g); return <button key={g} type="button" disabled={!edit} aria-pressed={on} className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} onClick={() => setGroups(on ? groups.filter(x => x !== g) : [...groups, g])}>{on && <I.Check size={10} />}{g}</button>; })}</div>
+        {edit && groups.length > 0 && !mineIn && <div className="mc-alert amber" style={{ marginTop: 8 }}><I.Warn size={14} /><div>No estás en ninguno de estos grupos: verás sus documentos, pero no podrás probar la búsqueda ni recibir su contenido en el chat.</div></div>}
+        <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo las personas de estos grupos reciben su contenido, también a través de un agente: la búsqueda se hace con la identidad de quien pregunta. Si un agente que la consulta lo usan otros grupos, se marca «Acceso parcial».</div>
+      </MkSec>
+      {bucket && <MkSec title="Bucket">
+        <div className="mk-kv"><span>{k.status === 'approval' ? 'Propuesto' : k.status === 'rejected' ? 'Rechazado' : k.status === 'nosource' ? 'Retirado' : 'Lee de'}</span><span className="mono" style={{ fontSize: 12 }}>{k.ref}</span></div>
+        {k.bucketOk && okReq && <div className="mk-kv"><span>Lo aprobó</span><span>{okReq.decidedBy} · {K.ago(okReq.decidedAt)}</span></div>}
+        {req && <div className="mc-alert amber" style={{ marginTop: 6 }}><I.Clock size={14} /><div style={{ minWidth: 0 }}>{req.prev ? <>Cambio propuesto a <span className="mono" style={{ overflowWrap: 'anywhere' }}>{req.ref}</span>. Mientras otro administrador lo decide, sigue sincronizando desde el actual.</> : 'Espera a que lo apruebe un administrador distinto de quien lo propuso.'}{req.by === acc.me && <div style={{ marginTop: 8 }}><button type="button" className="btn btn-sm" onClick={() => { K.withdraw(req.id); toast?.({ tone: 'info', msg: 'Propuesta retirada' }); }}>Retirar propuesta</button></div>}</div></div>}
+        {!req && lastReq?.prev && lastReq.status === 'rejected' && <div className="mk-meta">Se rechazó el cambio a <span className="mono">{lastReq.ref}</span>{lastReq.note ? ': «' + lastReq.note + '»' : ''}.</div>}
+        {canPropose && !editRef && <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start', marginTop: 6 }} onClick={() => { setEditRef(true); setRef(k.bucketOk ? k.ref : ''); setRefErr(null); }}>{k.bucketOk ? 'Cambiar bucket o prefijo' : 'Proponer otro bucket'}</button>}
+        {editRef && <div className="kb-ref-form">
+          <label htmlFor="kb-ref" style={{ fontSize: 12.5, fontWeight: 500 }}>Bucket y prefijo</label>
+          <input id="kb-ref" className="input mono" value={ref} onChange={e => { setRef(e.target.value); setRefErr(null); }} placeholder="s3://bucket/prefijo/" autoFocus aria-invalid={!!refErr} />
+          {refErr && <div className="kb-err" role="alert">{refErr}</div>}
+          <div className="mk-meta" style={{ lineHeight: 1.5 }}>Es una propuesta nueva: la aprueba un administrador distinto de ti.{k.bucketOk ? ' Mientras tanto sigue sincronizando desde el actual.' : ''}</div>
+          <div className="row gap-2"><button type="button" className="btn btn-sm btn-primary" disabled={sending || !ref.trim()} onClick={sendRef}>{sending ? 'Enviando…' : 'Enviar a aprobación'}</button><button type="button" className="btn btn-sm btn-ghost" onClick={() => setEditRef(false)}>Cancelar</button></div>
+        </div>}
+        <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo buckets de la cuenta de AWS de la instalación. Lo que hay en el prefijo se copia a Mango en cada sincronización; lo que se borra del bucket sale en la siguiente. Un bucket cifrado con una llave propia del cliente (KMS) no se puede leer en esta versión.</div>
+      </MkSec>}
+      {bucket ? <MkSec title="Sincronización">
+        <div className="tk-quick" style={{ display: 'inline-flex', flexWrap: 'wrap' }}>{K.FREQS.map(([f, l]) => <button key={f} type="button" disabled={!edit} aria-pressed={freq === f} className={freq === f ? 'is-on' : ''} onClick={() => setFreq(f)}>{l}</button>)}</div>
+        <div className="mk-meta" style={{ marginTop: 6 }}>Solo para el bucket. «Sincronizar ahora» está abajo.</div>
+      </MkSec> : <MkSec title="Indexación"><div className="mk-meta" style={{ lineHeight: 1.5 }}>Cada archivo se indexa al guardarlo; no hay sincronización. Para actualizar un documento, quítalo y vuelve a subirlo.</div></MkSec>}
+      {edit && <div className="row gap-2"><button type="button" className="btn btn-sm btn-primary" disabled={!dirty || !groups.length} onClick={save}>Guardar cambios</button>{!groups.length && <span style={{ fontSize: 12, color: 'var(--red)' }}>Elige al menos un grupo</span>}</div>}
+      {edit && <div className="kb-danger">
+        <div className="mk-sec-t">borrar</div>
+        <div className="mk-meta" style={{ lineHeight: 1.5 }}>{users.length ? <>No se puede borrar: la usa {names}, ya {users.length === 1 ? 'publicado' : 'publicados'}. Quítala en una versión nueva de {users.length === 1 ? 'ese agente' : 'esos agentes'} y vuelve a intentarlo.</> : <>Se borran sus documentos indexados de Mango{bucket ? '; el bucket no se toca' : ''}. Sale de la lista cuando se comprueba que ningún agente puede recibir sus fragmentos.</>}</div>
+        {!confirmDel ? <button type="button" className="btn btn-sm mk-danger" disabled={users.length > 0} onClick={() => setConfirmDel(true)}><I.Trash size={12} /> Borrar knowledge base</button>
+          : <div className="kb-confirm"><span>¿Borrar {k.name}? No se puede deshacer.</span><span className="row gap-2"><button type="button" className="btn btn-sm mk-danger" onClick={() => { K.remove(k.id); setConfirmDel(false); toast?.({ tone: 'info', msg: 'Borrando ' + k.name }); }}>Borrar</button><button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirmDel(false)}>Cancelar</button></span></div>}
+      </div>}
+    </>
+  );
+}
+
 function KbCreate({ onClose, onCreated }) {
-  const I = window.Icons; const S = window.MangoStore; const L = window.Lifecycle;
-  const toast = window.useToast?.();
-  const [f, setF] = useState({ name: '', desc: '', source: 'Confluence', ref: '', groups: ['mango-admin'], freq: '24h' });
-  const [tried, setTried] = useState(false);
-  const conn = KB_SOURCES[f.source][0]; const server = conn && L.serverOf(conn);
-  const connOff = conn && (!server || server.status !== 'enabled');
-  const errs = [!f.name.trim() && 'Escribe un nombre', !f.ref.trim() && 'Indica la ubicación', f.source === 'S3' && f.ref && !/^s3:\/\/[a-z0-9.-]{3,63}(\/.*)?$/.test(f.ref) && 'El bucket debe ser s3://nombre/…', connOff && 'El conector no está habilitado', !f.groups.length && 'Elige al menos un grupo', L.findSecret(f.ref) && 'No pegues credenciales en la ubicación'].filter(Boolean);
-  useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
+  const I = window.Icons; const S = window.MangoStore; const L = window.Lifecycle; const K = window.KB; const toast = window.useToast?.();
+  const me = K.me();
+  const [f, setF] = React.useState({ name: '', desc: '', origin: 'upload', ref: '', groups: [], freq: '24h' });
+  const [tried, setTried] = React.useState(false); const [srvErr, setSrvErr] = React.useState(null); const [sending, setSending] = React.useState(false);
+  const bucket = f.origin === 'bucket'; const refErr = bucket ? K.refErr(f.ref) : null;
+  const errs = [!f.name.trim() && 'Escribe un nombre', refErr, !f.groups.length && 'Elige al menos un grupo', (L.findSecret(f.ref) || L.findSecret(f.desc) || L.findSecret(f.name)) && 'No pegues credenciales'].filter(Boolean);
+  const mineIn = f.groups.some(g => me.groups.includes(g));
+  React.useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
   const save = () => {
-    setTried(true); if (errs.length) return;
-    const id = 'kb-' + String((S.get().kbs || []).length + 1).padStart(2, '0') + '-' + Date.now().toString(36).slice(-3);
-    S.set({ kbs: [...S.get().kbs, { id, name: f.name.trim(), desc: f.desc.trim() || 'Sin descripción', owner: S.actor(), source: f.source, sourceRef: f.ref.trim(), icon: 'BookOpen', docs: 0, chunks: 0, tokens: 0, embedding: 'titan-v2', lastSync: 'nunca', syncStatus: 'pending', usedBy: [], groups: f.groups, freq: f.freq, queries30d: null, errors: [] }] });
-    S.log('kb.create', id, `Creó la knowledge base ${f.name.trim()} (${f.source})`);
-    kbSync(id); toast?.({ tone: 'success', msg: 'Creada · primera sincronización en curso' }); onCreated(id);
+    setTried(true); setSrvErr(null); if (errs.length) return;
+    if (!bucket) { const id = K.create(f); toast?.({ tone: 'success', msg: 'Creada · sube sus archivos' }); onCreated(id, 'upload'); return; }
+    setSending(true);
+    setTimeout(() => { setSending(false); const se = K.refServer(f.ref.trim()); if (se) { setSrvErr(se); return; } const id = K.create(f); toast?.({ tone: 'success', msg: 'Creada · el bucket espera aprobación' }); onCreated(id, 'bucket'); }, 650);
   };
   const groupNames = (S.get().groupDefs || []).map(g => g.id);
-  const Lb = ({ children, htmlFor }) => <label htmlFor={htmlFor} style={{ fontSize: 12.5, fontWeight: 500, display: 'block', marginBottom: 6 }}>{children}</label>;
+  const Lb = ({ children, htmlFor }) => <label htmlFor={htmlFor} className="kb-lb">{children}</label>;
   return (
     <div className="drawer-backdrop" onClick={onClose} style={{ alignItems: 'center', justifyContent: 'center', zIndex: 130 }}>
-      <div className="card" role="dialog" aria-modal="true" aria-label="Nueva knowledge base" onClick={e => e.stopPropagation()} style={{ width: 540, maxWidth: '94vw', padding: 0, display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
-        <div className="row between" style={{ padding: '18px 20px 4px', alignItems: 'flex-start' }}><div><div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-strong)' }}>Nueva knowledge base</div><div className="mk-meta" style={{ marginTop: 2 }}>Se indexa en Bedrock Knowledge Bases con los conectores de Mango. No hay credenciales que ingresar.</div></div><button className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}><I.Close size={14} /></button></div>
-        <div style={{ padding: '14px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="card kb-create" role="dialog" aria-modal="true" aria-labelledby="kb-create-t" onClick={e => e.stopPropagation()}>
+        <div className="row between kb-create-h"><div><div id="kb-create-t" style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-strong)' }}>Nueva knowledge base</div><div className="mk-meta" style={{ marginTop: 2 }}>Se indexa en Bedrock Knowledge Bases de tu instalación. No hay credenciales que ingresar.</div></div><button className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}><I.Close size={14} /></button></div>
+        <div className="kb-create-b">
           <div><Lb htmlFor="kb-n">Nombre</Lb><input id="kb-n" className="input" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} autoFocus maxLength={48} /></div>
           <div><Lb htmlFor="kb-d">Descripción</Lb><input id="kb-d" className="input" value={f.desc} onChange={e => setF({ ...f, desc: e.target.value })} maxLength={140} placeholder="Qué contiene y para qué sirve" /></div>
-          <div><Lb>Fuente</Lb><div className="ab-seg">{['Confluence', 'Google Drive', 'GitHub', 'S3'].map(s => <button key={s} type="button" className={f.source === s ? 'is-on' : ''} onClick={() => setF({ ...f, source: s, ref: '' })}>{s}</button>)}</div>
-            {connOff && <div className="mc-alert red" style={{ marginTop: 8, fontSize: 12.5 }}><I.X2 size={13} /><div>El conector de {f.source} no está habilitado. <button className="sr-link" onClick={() => { onClose(); window.MangoNav?.('mcp'); }}>Ver catálogo</button></div></div>}</div>
-          <div><Lb htmlFor="kb-r">{KB_SOURCES[f.source][1]}</Lb><input id="kb-r" className="input mono" value={f.ref} onChange={e => setF({ ...f, ref: e.target.value })} placeholder={{ Confluence: 'Clave del espacio, p. ej. OPS', 'Google Drive': '/Compartido/Equipo', GitHub: 'org/repositorio', S3: 's3://bucket/prefijo/' }[f.source]} /></div>
-          <div><Lb>Grupos que pueden consultarla</Lb><div className="row gap-1" style={{ flexWrap: 'wrap' }}>{groupNames.map(g => { const on = f.groups.includes(g); return <button key={g} type="button" className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} onClick={() => setF({ ...f, groups: on ? f.groups.filter(x => x !== g) : [...f.groups, g] })}>{on && <I.Check size={10} />}{g}</button>; })}</div></div>
-          <div><Lb>Sincronización</Lb><div className="tk-quick" style={{ display: 'inline-flex' }}>{KB_FREQ.map(([k, l]) => <button key={k} type="button" className={f.freq === k ? 'is-on' : ''} onClick={() => setF({ ...f, freq: k })}>{l}</button>)}</div></div>
+          <div><Lb>Fuente</Lb><div className="kb-src" role="group" aria-label="Fuente"><button type="button" className="tweak-chip ab-chip is-on" aria-pressed="true"><I.Check size={10} />S3</button>{['Confluence', 'Google Drive', 'GitHub'].map(x => <button key={x} type="button" className="tweak-chip ab-chip" disabled aria-disabled="true" title="Próximamente">{x} <window.SoonTag /></button>)}</div></div>
+          <div><Lb>Cómo llegan los documentos</Lb>
+            <div className="kb-origin-opts" role="radiogroup" aria-label="Cómo llegan los documentos">{[['upload', 'Subir archivos', 'PDF, DOCX, TXT, MD, CSV o XLSX desde tu equipo. Se indexan al guardarlos.'], ['bucket', 'Un bucket que ya existe', 'Un prefijo de la cuenta de AWS de la instalación. Lo aprueba otro administrador y se sincroniza con la frecuencia que elijas.']].map(([v, t, d]) => <button key={v} type="button" role="radio" aria-checked={f.origin === v} className={'kb-opt' + (f.origin === v ? ' is-on' : '')} onClick={() => { setF({ ...f, origin: v }); setSrvErr(null); }}><b>{t}</b><span>{d}</span></button>)}</div>
+            <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>No se cambia después. Para combinar las dos, crea una de cada una y asócialas al mismo agente (hasta {K.LIMITS.perAgent} por agente).</div>
+          </div>
+          {bucket && <div><Lb htmlFor="kb-r">Bucket y prefijo</Lb><input id="kb-r" className="input mono" value={f.ref} onChange={e => { setF({ ...f, ref: e.target.value }); setSrvErr(null); }} placeholder="s3://bucket/prefijo/" aria-invalid={!!(srvErr || (tried && refErr))} />
+            {(srvErr || (tried && refErr)) && <div className="kb-err" role="alert">{srvErr || refErr}</div>}
+            <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo buckets de la cuenta de AWS de la instalación; los de Mango y los de otras cuentas se rechazan. Un bucket cifrado con una llave propia del cliente (KMS) no se puede leer en esta versión.</div>
+          </div>}
+          {bucket && <div><Lb>Sincronización</Lb><div className="tk-quick" style={{ display: 'inline-flex', flexWrap: 'wrap' }}>{K.FREQS.map(([v, l]) => <button key={v} type="button" aria-pressed={f.freq === v} className={f.freq === v ? 'is-on' : ''} onClick={() => setF({ ...f, freq: v })}>{l}</button>)}</div></div>}
+          <div><Lb>Grupos que pueden consultarla</Lb><div className="row gap-1" style={{ flexWrap: 'wrap' }}>{groupNames.map(g => { const on = f.groups.includes(g); return <button key={g} type="button" aria-pressed={on} className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} onClick={() => setF({ ...f, groups: on ? f.groups.filter(x => x !== g) : [...f.groups, g] })}>{on && <I.Check size={10} />}{g}</button>; })}</div>
+            {f.groups.length > 0 && !mineIn && <div className="mc-alert amber" style={{ marginTop: 8 }}><I.Warn size={14} /><div>No estás en ninguno de estos grupos: verás sus documentos, pero no podrás probar la búsqueda ni recibir su contenido en el chat.</div></div>}
+            <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo sus personas reciben el contenido, también a través de un agente.</div>
+          </div>
         </div>
-        {tried && errs.length > 0 && <div style={{ padding: '0 20px 10px', fontSize: 12.5, color: 'var(--red)' }}>{errs.join(' · ')}</div>}
-        <div className="row gap-2" style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', justifyContent: 'flex-end' }}><button className="btn btn-sm" onClick={onClose}>Cancelar</button><button className="btn btn-sm btn-primary" onClick={save}>Crear y sincronizar</button></div>
+        {tried && errs.length > 0 && <div className="kb-create-err" role="alert">{errs.join(' · ')}</div>}
+        <div className="row gap-2 kb-create-f">{bucket && <span className="mk-meta" style={{ marginRight: 'auto' }}>Lo aprueba un administrador distinto de ti.</span>}<button className="btn btn-sm" onClick={onClose}>Cancelar</button><button className="btn btn-sm btn-primary" disabled={sending} onClick={save}>{sending ? 'Enviando…' : bucket ? 'Crear y enviar a aprobación' : 'Crear y subir archivos'}</button></div>
       </div>
     </div>
   );
 }
 
-kbInit();
 Object.assign(window, { KnowledgeView });

@@ -35,6 +35,9 @@ a{color:var(--accent-ink)}a:hover{color:var(--ink)}
 .sw{width:10px;height:10px;border-radius:2px;display:inline-block;background:var(--bar)}
 .sw.acc{background:var(--accent)}.sw.band{background:var(--accent-soft);outline:1px solid oklch(64% 0.19 50 / .35)}
 .sw.dash{width:14px;height:0;border-top:1.5px dashed var(--muted);border-radius:0;background:none}
+.sw.hatch{background:repeating-linear-gradient(45deg,var(--accent) 0 1.6px,transparent 1.6px 4px);outline:1px solid var(--accent)}
+.chart-note{font-size:10pt;line-height:1.45;color:var(--ink);text-wrap:pretty;margin:0}
+sup{font-size:.7em;line-height:0}
 .src{font-size:10pt;color:var(--muted)}
 .chart svg{display:block;width:100%;height:auto;overflow:visible}
 table{width:100%;border-collapse:collapse;font-size:11.5pt}
@@ -159,25 +162,26 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
   <div class="kpis">
     <div class="kpi"><span class="kpi-l">Impacto</span><span class="kpi-v up">+USD 412,30</span><span class="kpi-s">+64 % sobre lo esperado · 2 días</span></div>
     <div class="kpi"><span class="kpi-l">Esperado</span><span class="kpi-v">USD 640,00</span><span class="kpi-s">USD 320,00 por día</span></div>
-    <div class="kpi"><span class="kpi-l">Real</span><span class="kpi-v">USD 1.052,30</span><span class="kpi-s">USD 526,15 por día</span></div>
+    <div class="kpi"><span class="kpi-l">Real</span><span class="kpi-v">USD 1.052,30</span><span class="kpi-s">según AWS · USD 526,15 por día</span></div>
   </div>
   <div class="sec">
-    <div class="sec-h"><h2>Costo diario de Amazon EC2 en produccion</h2><div class="legend"><span><i class="sw"></i>costo</span><span><i class="sw acc"></i>días de la anomalía</span><span><i class="sw dash"></i>esperado</span></div></div>
-    <div class="chart" id="ch-anom" role="img" aria-label="Costo diario de Amazon EC2 en la cuenta produccion del 1 al 16 de octubre: cerca de USD 320 por día hasta el 14 y unos USD 526 el 15 y el 16."></div>
-    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por día, cuenta 111111111111 · 1–16 oct</div>
+    <div class="sec-h"><h2>Costo diario de Amazon EC2 en produccion</h2><div class="legend"><span><i class="sw"></i>costo</span><span><i class="sw acc"></i>días de la anomalía</span><span><i class="sw hatch"></i>aún incompleto en Cost Explorer</span><span><i class="sw dash"></i>esperado</span></div></div>
+    <div class="chart" id="ch-anom" role="img" aria-label="Costo diario de Amazon EC2 en la cuenta produccion del 1 al 16 de octubre: cerca de USD 320 por día hasta el 14, unos USD 526 el 15 y el 16 todavía incompleto en Cost Explorer."></div>
+    <p class="chart-note">El 16 oct todavía no está completo en Cost Explorer, que puede tardar hasta un día. En los días de la anomalía la serie suma USD 622,60 y AWS informa un real de USD 1.052,30: el real de arriba es el de AWS.</p>
+    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por día, cuenta 111111111111 · 1–16 oct · consulta del 16 oct, 09:38 UTC</div>
   </div>
   <div class="sec">
     <div class="sec-h"><h2>Qué la explica</h2></div>
     <table>
       <thead><tr><th>Tipo de uso</th><th>Servicio</th><th>Cuenta</th><th style="width:24mm"></th><th class="num">Impacto</th><th class="num">Parte</th></tr></thead>
       <tbody>
-        <tr><td class="mono">BoxUsage:m6i.2xlarge</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:100%"></span></td><td class="num">351,80</td><td class="num">85 %</td></tr>
+        <tr><td class="mono">BoxUsage:m6i.2xlarge<sup>1</sup></td><td>Amazon EC2</td><td>—</td><td><span class="tb acc" style="width:100%"></span></td><td class="num">351,80</td><td class="num">85 %</td></tr>
         <tr><td class="mono">EBS:VolumeUsage.gp3</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:11.1%"></span></td><td class="num">38,90</td><td class="num">9 %</td></tr>
         <tr><td class="mono">DataTransfer-Regional-Bytes</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:6.1%"></span></td><td class="num">21,60</td><td class="num">5 %</td></tr>
         <tr class="total"><td colspan="4">Total</td><td class="num">412,30</td><td class="num">100 %</td></tr>
       </tbody>
     </table>
-    <div class="src">Fuente: <span class="mono">get_cost_and_usage</span> · por tipo de uso, ventana de la anomalía contra los 14 días anteriores · USD</div>
+    <div class="src">Fuentes: <sup>1</sup> <span class="mono">get_anomalies</span> · causa principal que informa AWS en la anomalía, con el impacto que estima AWS; la anomalía no trae la cuenta. El resto: <span class="mono">get_cost_and_usage</span> · por tipo de uso, ventana de la anomalía contra los 14 días anteriores · USD</div>
   </div>
   <div class="foot"><span>Mango · Investigar anomalías de costo · ejecución <span class="mono">sch-10-t3</span></span><span>Página 1 de 2</span></div>
 </div>
@@ -189,7 +193,7 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
   <div class="sec">
     <div class="sec-h"><h2>Conclusión de FinOps</h2></div>
     <div class="notes">
-      <p>El aumento empezó el 15 de octubre hacia las 14:00 UTC: las horas de <code>m6i.2xlarge</code> en <code>produccion</code> pasaron de unas 780 a unas 1.240 por día y no volvieron a bajar.</p>
+      <p>El aumento empezó el 15 de octubre hacia las 14:00 UTC: las horas de <code>m6i.2xlarge</code> en <code>produccion</code> pasaron de unas 780 a unas 1.240 el 15. El 16 todavía no está completo en Cost Explorer, así que no se puede confirmar si siguió igual.</p>
       <p>El almacenamiento EBS y la transferencia regional crecieron en la misma proporción, así que parece capacidad nueva y no un cambio de precio. No hay cambios parecidos en otras cuentas ni en otros tipos de instancia.</p>
     </div>
     <div class="next notes"><b>Siguiente paso</b>Confirmar con el equipo dueño de <code>produccion</code> si la capacidad nueva de <code>m6i.2xlarge</code> es intencional. Si no lo es, revisar qué la lanzó el 15 de octubre a las 14:00 UTC.</div>
@@ -204,7 +208,7 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
   </div>
   <div class="about">
     <p><b>De dónde salen los datos.</b> El id, el monitor y las fechas de la anomalía llegan de AWS a Mango. Servicio, cuenta, impacto y causas los leyó el agente FinOps con sus consultas, con el acceso de usuario1@empresa.com. Mango no recalcula las cifras.</p>
-    <p><b>Sobre las cifras.</b> Costo sin amortizar, en USD. AWS puede ajustar el costo de los últimos días.</p>
+    <p><b>Sobre las cifras.</b> Costo sin amortizar, en USD. Cost Explorer puede tardar hasta un día en completar el costo de un día, y AWS puede ajustar los últimos días.</p>
     <p><b>Quién lo ve.</b> Solo quien creó la tarea puede descargarlo en Mango. Cada descarga queda en la auditoría de Mango.</p>
     <p><b>Hasta cuándo.</b> Mango lo guarda hasta el 14 ene 2027, como el resultado de su ejecución. Archivo: <span class="mono id">investigar-anomalias-de-costo-2026-10-16-8d09e1c2.pdf</span></p>
   </div>
@@ -220,7 +224,7 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
   const fmt = (n) => n.toLocaleString('de-DE', { maximumFractionDigits: 0 });
   const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
   // Mismo dibujo que haría el servidor: barras por día, línea de referencia punteada y, si hay, la ventana de la anomalía.
-  function bars(host, { data, labels, ref, refLabel, band, max, step, h = 210 }) {
+  function bars(host, { data, labels, ref, refLabel, band, partial = [], max, step, h = 210 }) {
     const W = 680, pl = 44, pr = 6, pt = 10, pb = 22, iw = W - pl - pr, ih = h - pt - pb;
     const svg = el('svg', { viewBox: `0 0 ${W} ${h}`, 'aria-hidden': 'true', 'font-family': 'IBM Plex Sans, sans-serif' });
     const y = (v) => pt + ih - (v / max) * ih;
@@ -229,10 +233,13 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
       svg.appendChild(el('text', { x: pl - 6, y: y(v) + 4, 'text-anchor': 'end', 'font-size': 12.5, fill: '#5b5b65' }, fmt(v)));
     }
     const bw = iw / data.length;
+    if (partial.length) { const defs = el('defs', {}); const p = el('pattern', { id: 'hatch-' + host.id, patternUnits: 'userSpaceOnUse', width: 5, height: 5, patternTransform: 'rotate(45)' }); p.appendChild(el('rect', { width: 5, height: 5, fill: 'oklch(64% 0.19 50 / 0.16)' })); p.appendChild(el('line', { x1: 0, y1: 0, x2: 0, y2: 5, stroke: 'oklch(64% 0.19 50)', 'stroke-width': 2 })); defs.appendChild(p); svg.appendChild(defs); }
     if (band) svg.appendChild(el('rect', { x: pl + band[0] * bw, y: pt, width: (band[1] - band[0] + 1) * bw, height: ih, fill: 'oklch(64% 0.19 50 / 0.13)' }));
     data.forEach((v, i) => {
       const inBand = band && i >= band[0] && i <= band[1];
-      svg.appendChild(el('rect', { x: pl + i * bw + bw * 0.14, y: y(v), width: bw * 0.72, height: y(0) - y(v), fill: inBand ? 'oklch(64% 0.19 50)' : '#33333a', rx: 1 }));
+      const part = partial.includes(i);
+      svg.appendChild(el('rect', { x: pl + i * bw + bw * 0.14, y: y(v), width: bw * 0.72, height: y(0) - y(v), fill: part ? 'url(#hatch-' + host.id + ')' : inBand ? 'oklch(64% 0.19 50)' : '#33333a', stroke: part ? 'oklch(64% 0.19 50)' : 'none', 'stroke-width': part ? 1 : 0, rx: 1 }));
+      if (part) svg.appendChild(el('text', { x: pl + (i + 1) * bw - bw * 0.14, y: y(v) - 6, 'text-anchor': 'end', 'font-size': 12, fill: '#5b5b65', stroke: '#fff', 'stroke-width': 3, 'paint-order': 'stroke' }, 'incompleto'));
       if (labels[i]) svg.appendChild(el('text', { x: pl + i * bw + bw / 2, y: h - 6, 'text-anchor': 'middle', 'font-size': 12.5, fill: '#5b5b65' }, labels[i]));
     });
     if (ref != null) {
@@ -245,8 +252,9 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
   const raw = Array.from({ length: 30 }, (_, i) => { const dow = (2 + i) % 7; const we = dow === 0 || dow === 6; let v = 2720 + Math.sin(i * 1.7) * 38; if (i >= 11) v += 230; if (i >= 19) v += 70; return we ? v * 0.84 : v; });
   const k = 84312.40 / raw.reduce((a, b) => a + b, 0);
   bars(document.getElementById('ch-cost'), { data: raw.map(v => v * k), labels: raw.map((_, i) => [0, 6, 13, 20, 27].includes(i) ? (i + 1) + ' sep' : ''), ref: 79880.15 / 31, refLabel: 'agosto: 2.577 por día', max: 3500, step: 1000 });
-  const an = [318.4, 322.9, 316.2, 309.8, 312.6, 324.1, 327.3, 321.5, 319.9, 315.4, 311.7, 318.8, 326.4, 323.6, 526.2, 526.1];
-  bars(document.getElementById('ch-anom'), { data: an, labels: an.map((_, i) => [0, 4, 9, 14].includes(i) ? (i + 1) + ' oct' : ''), ref: 320, refLabel: 'esperado: 320 por día', band: [14, 15], max: 600, step: 200, h: 200 });
+  // El 16 oct (último día de la anomalía) Cost Explorer aún no lo tiene completo: la serie suma 622,60 en la ventana y AWS informa 1.052,30.
+  const an = [318.4, 322.9, 316.2, 309.8, 312.6, 324.1, 327.3, 321.5, 319.9, 315.4, 311.7, 318.8, 326.4, 323.6, 526.2, 96.4];
+  bars(document.getElementById('ch-anom'), { data: an, labels: an.map((_, i) => [0, 4, 9, 14].includes(i) ? (i + 1) + ' oct' : ''), ref: 320, refLabel: 'esperado: 320 por día', band: [14, 15], partial: [15], max: 600, step: 200, h: 184 });
   const go = () => { const t = location.hash && document.getElementById(location.hash.slice(1)); if (t) window.scrollTo({ top: t.getBoundingClientRect().top + window.scrollY - 16 }); };
   (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => setTimeout(go, 150));
 })();
