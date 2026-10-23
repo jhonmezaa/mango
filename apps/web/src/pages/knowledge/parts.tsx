@@ -75,7 +75,7 @@ export function GroupChips({
   const shown = [...options, ...value.filter((group) => !options.includes(group))];
   return (
     <div
-      className="row flex-wrap gap-1"
+      className="flex items-center flex-wrap gap-1"
       role="group"
       aria-label={t('knowledge.access.groupsLabel')}
     >

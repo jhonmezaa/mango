@@ -141,6 +141,15 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
     await expect(panel.locator('.kb-hit').first()).toContainText('<b>Texto</b> del documento');
     await expect(panel.locator('.kb-hit b')).toHaveCount(0);
     await expect(panel.getByText('0,58')).toBeVisible();
+    // The document on the left and the score on the right, apart (design `row between`): seen
+    // in an installation as «politica-comedor.txt0,61».
+    const head = panel.locator('.kb-hit').first().locator('div').first();
+    const name = await head.locator('.kb-doc-n').boundingBox();
+    const score = await head.getByText('0,58').boundingBox();
+    const box = await head.boundingBox();
+    if (!name || !score || !box) throw new Error('the hit has no box');
+    expect(score.x).toBeGreaterThanOrEqual(name.x + name.width + 8);
+    expect(Math.round(score.x + score.width)).toBe(Math.round(box.x + box.width));
     await panel.getByRole('button', { name: 'Cerrar' }).click();
   });
 

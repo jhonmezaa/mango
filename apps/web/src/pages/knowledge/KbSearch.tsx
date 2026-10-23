@@ -89,7 +89,7 @@ export function SearchTab({
   return (
     <>
       <div className="mk-meta leading-normal">{t('knowledge.test.help')}</div>
-      <div className="row gap-2">
+      <div className="flex items-center gap-2">
         <input
           className="input min-w-0 flex-1"
           value={query}
@@ -123,7 +123,7 @@ export function SearchTab({
         <div className="kb-hits" aria-live="polite">
           {results.map((fragment, index) => (
             <div key={`${fragment.doc_id}-${String(index)}`} className="kb-hit">
-              <div className="row between items-baseline gap-2">
+              <div className="flex items-baseline justify-between gap-2">
                 <span className="kb-doc-n min-w-0">
                   {fragment.document ?? t('knowledge.test.document')}
                   {fragment.page ? (

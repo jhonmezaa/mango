@@ -70,7 +70,7 @@ function Row({ kb, onOpen }: { kb: KnowledgeBase; onOpen: () => void }) {
       className={status === 'deleting' ? 'kb-tr is-deleting' : 'kb-tr'}
       onClick={onOpen}
     >
-      <span className="row min-w-0 gap-3">
+      <span className="flex items-center min-w-0 gap-3">
         <span className="mc-ic">
           <BookOpenIcon size={14} />
         </span>
@@ -95,7 +95,7 @@ function Row({ kb, onOpen }: { kb: KnowledgeBase; onOpen: () => void }) {
             })
           : '—'}
       </span>
-      <span className="row min-w-0 flex-wrap gap-1">
+      <span className="flex items-center min-w-0 flex-wrap gap-1">
         {kb.groups.slice(0, 2).map((group) => (
           <span key={group} className="mv-cap">
             {group}

@@ -74,7 +74,7 @@ function DocumentRow({
         <div className="kb-doc-n">{document.name}</div>
         <div className="kb-doc-m">{meta}</div>
       </div>
-      <div className="row flex-wrap justify-end gap-2">
+      <div className="flex items-center flex-wrap justify-end gap-2">
         {document.status === 'failed' ? (
           <span className="badge badge-red">
             {t(`knowledge.reasons.${reasonKey(document.reason)}`)}
@@ -108,7 +108,7 @@ function DocumentRow({
       {asking ? (
         <div className="kb-confirm">
           <span>{t('knowledge.docs.removeConfirm')}</span>
-          <span className="row gap-2">
+          <span className="flex items-center gap-2">
             <button type="button" className="btn btn-sm mk-danger" onClick={onRemove}>
               {t('knowledge.docs.remove')}
             </button>
@@ -221,7 +221,7 @@ export function DocumentsTab({
 
   return (
     <>
-      <div className="row between flex-wrap gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="mk-meta">
           {t('knowledge.docs.counts', {
             documents: formatCount(kb.documents),
@@ -255,7 +255,7 @@ export function DocumentsTab({
         </div>
       ) : null}
       {documentsFailed ? (
-        <div className="row gap-2">
+        <div className="flex items-center gap-2">
           <span className="mk-meta">{t('knowledge.docs.loadError')}</span>
           <button type="button" className="btn btn-sm" onClick={onRetry}>
             {t('knowledge.docs.retry')}
@@ -615,7 +615,7 @@ function Upload({
           <WarnIcon size={14} />
           <div className="flex-1">
             {t('knowledge.upload.leaving', { count: uploaded.length })}
-            <div className="row mt-2 flex-wrap gap-2">
+            <div className="flex items-center mt-2 flex-wrap gap-2">
               <button
                 type="button"
                 className="btn btn-sm"

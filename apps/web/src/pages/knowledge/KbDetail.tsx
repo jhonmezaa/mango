@@ -246,7 +246,7 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose, sta
       footer={
         kb.can_edit && !deleting && bucket ? (
           <>
-            <div className="row flex-wrap gap-2">
+            <div className="flex items-center flex-wrap gap-2">
               <button
                 type="button"
                 className="btn btn-sm"
@@ -565,7 +565,7 @@ function Summary({
           <div className="mk-meta">{t('knowledge.summary.agentsUnknown')}</div>
         ) : agents.length ? (
           agents.map((agent) => (
-            <div key={agent.agent_id} className="mk-line row between">
+            <div key={agent.agent_id} className="mk-line flex items-center justify-between">
               <span>{agent.name}</span>
               <span className="mk-meta">
                 {partialIds.has(agent.agent_id) ? t('knowledge.summary.agentGap') : ''}
@@ -842,7 +842,7 @@ function Access({
                 {t('knowledge.access.refHelp')}
                 {approved ? t('knowledge.access.refHelpChange') : ''}
               </div>
-              <div className="row gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
@@ -883,7 +883,7 @@ function Access({
         </Section>
       )}
       {edit ? (
-        <div className="row flex-wrap gap-2">
+        <div className="flex items-center flex-wrap gap-2">
           <button
             type="button"
             className="btn btn-sm btn-primary"
@@ -932,7 +932,7 @@ function Access({
           ) : (
             <div className="kb-confirm">
               <span>{t('knowledge.access.confirmDelete', { name: kb.name })}</span>
-              <span className="row gap-2">
+              <span className="flex items-center gap-2">
                 <button
                   type="button"
                   className="btn btn-sm mk-danger"
