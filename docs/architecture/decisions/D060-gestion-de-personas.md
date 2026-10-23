@@ -1,7 +1,7 @@
 # D60 · Gestión de personas en la aplicación
 
 - **Estado:** parcial. Construida. Falta su punto (9): el evento «Persona registrada» (`directory.signup`) y la alarma sobre `AdminAddUserToGroup` (TM-P11).
-- **Fecha:** 2026-10-03 · punto (9) revisado el 2026-10-04
+- **Fecha:** 2026-10-03 · punto (9) revisado el 2026-10-04 · punto (10) el 2026-10-23
 - **Precisa / reemplaza a:** precisa [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md), [D26](D026-reglas-del-ciclo-de-vida.md), [D28](D028-implementacion-del-login-propio.md) y [D58](D058-distribucion-para-clientes.md)
 - **Precisada por:** [D61](D061-invitaciones-mfa-y-etiqueta.md) (precisa los puntos 6, 7 y 8); [D62](D062-proveedores-de-correo-publico.md) (precisa); [D66](D066-cambios-de-personas-fuera-del-directorio.md) (precisa el punto 5); [D70](D070-dos-tareas-y-limites-compartidos.md) (precisa: sus límites se cuentan entre todas las tareas)
 - **Tema en el registro original:** Gestión de personas en la aplicación (precisa [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md), [D26](D026-reglas-del-ciclo-de-vida.md), [D28](D028-implementacion-del-login-propio.md) y [D58](D058-distribucion-para-clientes.md))
@@ -27,3 +27,10 @@ Modelo de amenazas: `docs/security/threat-models/people-management-threat-model.
 **(8) Datos de la instalación** (versión, organización, cuenta de gestión, correo de alertas, dominios, administradores iniciales): solo lectura, por `GET /api/admin/installation` para administradores; no van en el `config.json` público.
 
 **(9) Pendiente:** el evento «Persona registrada» (`directory.signup`) exige un trigger *post confirmation* nuevo (revisado el 2026-10-04: ningún evento actual registra el alta de quien se registra solo; `directory.invite` cubre solo las invitaciones, el trigger *pre sign-up* no audita y no hay *post confirmation*. El usuario decidió no construir todavía esa Lambda; la pantalla ya tiene la etiqueta y la persona se ve en Personas como «Sin acceso», TM-P12); una alarma sobre `AdminAddUserToGroup` a `mango-admin` en CloudTrail (TM-P11).
+
+**(10) Un `bu-lead` y su área** (2026-10-23, decisión del usuario por menú). El pre-token da el área (`mango_business_unit`) solo a quien tiene exactamente un `bu-<área>`, y un `bu-lead` sin `finops-central` sin área no puede entrar (visto en la instalación el 2026-10-21: la SPA decía «Tu sesión expiró»). Por eso:
+- `mango-api` rechaza con `422 area_required` el cambio que deja así a alguien que estaba bien: dar `bu-lead` sin un área, quitarle su única área, darle una segunda, quitarle `finops-central` (se vuelve a comprobar al aprobar) e invitar con `bu-lead` sin exactamente un área. Los cambios sobre quien ya estaba así se aplican, para poder arreglarlo paso a paso. Para cambiar a un `bu-lead` de área se le quita primero `bu-lead`.
+- Quien ya está así recibe `403 area_required` en toda ruta, no un 401: volver a entrar no lo arregla, lo arregla un administrador.
+- `mango-api` registra el código de cada rechazo de identidad y el `sub` del token verificado; nunca el token, las cabeceras ni los claims.
+- La SPA no tiene texto propio para ese estado ni para el rechazo en Personas: espera a la ronda de diseño (D24) y mientras tanto muestra el error genérico.
+- Queda fuera: eliminar desde Grupos un `bu-<área>` que es la única área de un `bu-lead` lo sigue dejando fuera ([D44](D044-cambios-de-grupos-y-claim-central.md) (6): Grupos no lee a los miembros).

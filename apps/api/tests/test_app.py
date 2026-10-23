@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -92,6 +93,12 @@ TOKENS = {
         "exp": int(time.time()) + 3600,
     },
     "nogroup": {"sub": "user-4", "mango_email": "new@example.com", "exp": int(time.time()) + 3600},
+    "noarea": {
+        "sub": "user-5",
+        "mango_role": "bu-lead",
+        "cognito:groups": ["bu-lead"],
+        "exp": int(time.time()) + 3600,
+    },
 }
 
 
@@ -550,6 +557,39 @@ def test_user_without_group_gets_no_group_everywhere(h: Harness) -> None:
             "error": {"code": "no_group", "message": "no group assigned yet"}
         }
     assert h.agentcore.requests == []
+
+
+def test_bu_lead_without_area_gets_area_required_and_the_reason_is_logged(
+    h: Harness, caplog: pytest.LogCaptureFixture
+) -> None:
+    client = h.client()
+    with caplog.at_level(logging.INFO, logger="mango_api"):
+        for method, path, body in (
+            ("GET", "/api/me", None),
+            ("GET", "/api/conversations", None),
+            ("POST", "/api/chat", {"message": "hola"}),
+        ):
+            response = client.request(method, path, headers=_auth("noarea"), json=body)
+            # Not a 401: signing in again does not fix it, an administrator does (D60).
+            assert response.status_code == 403
+            assert response.json() == {
+                "error": {"code": "area_required", "message": "no area assigned yet"}
+            }
+    assert h.agentcore.requests == []
+    logged = [r.getMessage() for r in caplog.records if r.name == "mango_api"]
+    assert "identity refused: area_required sub=user-5" in logged
+    # The token itself ("noarea" here) never reaches the log.
+    assert not any("noarea" in line or "Bearer" in line for line in logged)
+
+
+def test_an_unverified_token_is_logged_with_its_code_only(
+    h: Harness, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="mango_api"):
+        response = h.client().get("/api/me", headers={"Authorization": "Bearer forged"})
+    assert response.status_code == 401
+    logged = [r.getMessage() for r in caplog.records if r.name == "mango_api"]
+    assert logged == ["identity refused: invalid_token"]
 
 
 def test_chat_rejects_client_supplied_agent_configuration(h: Harness) -> None:

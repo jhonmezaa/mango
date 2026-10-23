@@ -196,7 +196,11 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
     with mock_aws():
         db = boto3.client("dynamodb", region_name="us-east-1")
         _table(db, "settings")
-        for group, kind, area in (("devops", "general", None), ("bu-finanzas", "area", "finanzas")):
+        for group, kind, area in (
+            ("devops", "general", None),
+            ("bu-finanzas", "area", "finanzas"),
+            ("bu-retail", "area", "retail"),
+        ):
             item: dict[str, Any] = {"PK": {"S": "GROUPS"}, "SK": {"S": group}, "type": {"S": kind}}
             if area:
                 item["area"] = {"S": area}
@@ -445,9 +449,9 @@ def test_an_access_group_is_given_at_once_and_audited(env: Env) -> None:
 
 
 def test_an_access_group_is_taken_at_once_without_closing_sessions(env: Env) -> None:
-    response = _post(env, "/lead/groups/remove", {"group": "bu-finanzas"})
+    response = _post(env, "/invited/groups/remove", {"group": "devops"})
     assert response.json()["result"] == "applied"
-    assert env.people.memberships["name-lead"] == {"bu-lead"}
+    assert env.people.memberships["name-invited"] == set()
     assert env.people.signed_out == []
 
 
@@ -493,6 +497,77 @@ def test_a_directory_failure_is_reported_and_audited(env: Env) -> None:
         "requested",
         "rejected",
     ]
+
+
+# --- A bu-lead and its area (D60, 2026-10-23) --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("path", "group"),
+    [
+        # bu-lead before its area: the pre-token trigger would give no business unit.
+        ("/new/groups", "bu-lead"),
+        ("/invited/groups", "bu-lead"),
+        # Its only area, or a second one: either way the trigger gives none.
+        ("/lead/groups/remove", "bu-finanzas"),
+        ("/lead/groups", "bu-retail"),
+    ],
+)
+def test_a_change_that_leaves_a_bu_lead_without_its_area_is_refused(
+    env: Env, path: str, group: str
+) -> None:
+    before = {u: set(g) for u, g in env.people.memberships.items()}
+    response = _post(env, path, {"group": group})
+    assert (response.status_code, _code(response)) == (422, "area_required")
+    assert env.people.memberships == before
+
+
+def test_an_area_first_then_bu_lead_is_given(env: Env) -> None:
+    assert _post(env, "/new/groups", {"group": "bu-retail"}).json()["result"] == "applied"
+    assert _post(env, "/new/groups", {"group": "bu-lead"}).json()["result"] == "applied"
+    assert env.people.memberships["name-new"] == {"bu-retail", "bu-lead"}
+
+
+def test_moving_a_bu_lead_to_another_area_goes_through_dropping_bu_lead(env: Env) -> None:
+    for path, group in (
+        ("/lead/groups/remove", "bu-lead"),
+        ("/lead/groups/remove", "bu-finanzas"),
+        ("/lead/groups", "bu-retail"),
+        ("/lead/groups", "bu-lead"),
+    ):
+        assert _post(env, path, {"group": group}).json()["result"] == "applied", (path, group)
+    assert env.people.memberships["name-lead"] == {"bu-retail", "bu-lead"}
+
+
+def test_a_central_bu_lead_needs_no_area(env: Env) -> None:
+    # finops-central wins in the pre-token trigger: no business unit is asked for.
+    assert _post(env, "/admin-1/groups", {"group": "bu-lead"}).json()["result"] == "applied"
+
+
+def test_a_bu_lead_already_without_its_area_can_be_fixed_step_by_step(env: Env) -> None:
+    env.people.put(_user("stuck", days=5), "bu-lead", "bu-finanzas", "bu-retail")
+    assert _post(env, "/stuck/groups/remove", {"group": "bu-retail"}).json()["result"] == "applied"
+    env.people.put(_user("lost", days=5), "bu-lead")
+    assert _post(env, "/lost/groups", {"group": "bu-retail"}).json()["result"] == "applied"
+    env.people.put(_user("both", days=5), "bu-lead", "bu-finanzas", "bu-retail")
+    assert _post(env, "/both/groups/remove", {"group": "bu-lead"}).json()["result"] == "applied"
+
+
+def test_taking_finops_central_from_a_bu_lead_without_an_area_is_refused_at_approval(
+    env: Env,
+) -> None:
+    env.people.put(_user("both", days=5), "finops-central", "bu-lead")
+    response = _post(env, "/both/groups/remove", {"group": "finops-central", "reason": "x"})
+    assert (response.status_code, _code(response)) == (422, "area_required")
+    # Proposed while the person still had an area: it is checked again at approval.
+    env.people.put(_user("later", days=5), "finops-central", "bu-lead", "bu-retail")
+    response = _post(env, "/later/groups/remove", {"group": "finops-central", "reason": "x"})
+    change_id = response.json()["change_id"]
+    env.people.memberships["name-later"].discard("bu-retail")
+    response = _post(env, f"/changes/{change_id}/approve", {}, "admin2")
+    assert (response.status_code, _code(response)) == (422, "area_required")
+    assert _changes(env)[0]["status"] == "pending"
+    assert "finops-central" in env.people.memberships["name-later"]
 
 
 # --- Dual approval ----------------------------------------------------------------------
@@ -970,15 +1045,17 @@ def test_enabling_is_applied_unless_the_person_holds_a_sensitive_group(env: Env)
 
 def test_an_invitation_creates_the_person_with_access_groups(env: Env) -> None:
     response = _post(
-        env, "/invitations", {"email": " Ana@Example.com ", "groups": ["devops", "bu-lead"]}
+        env,
+        "/invitations",
+        {"email": " Ana@Example.com ", "groups": ["devops", "bu-lead", "bu-finanzas"]},
     )
     assert response.status_code == 201
     assert response.json()["result"] == "applied"
     assert env.people.invited == ["ana@example.com"]
-    assert env.people.memberships["name-ana@example.com"] == {"devops", "bu-lead"}
+    assert env.people.memberships["name-ana@example.com"] == {"devops", "bu-lead", "bu-finanzas"}
     assert env.audit.named("directory.invite")[0][1] == {
         "target_email": "ana@example.com",
-        "groups": ["devops", "bu-lead"],
+        "groups": ["devops", "bu-lead", "bu-finanzas"],
         "outcome": "applied",
     }
 
@@ -1000,6 +1077,12 @@ def test_an_invitation_creates_the_person_with_access_groups(env: Env) -> None:
         ({"email": "ana@example.com", "groups": ["mango-admin"]}, 422, "sensitive_group"),
         ({"email": "ana@example.com", "groups": ["finops-central"]}, 422, "sensitive_group"),
         ({"email": "ana@example.com", "groups": ["pool-okta"]}, 422, "unknown_group"),
+        ({"email": "ana@example.com", "groups": ["bu-lead"]}, 422, "area_required"),
+        (
+            {"email": "ana@example.com", "groups": ["bu-lead", "bu-finanzas", "bu-retail"]},
+            422,
+            "area_required",
+        ),
     ],
 )
 def test_invitations_that_are_refused(

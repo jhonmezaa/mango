@@ -62,6 +62,8 @@ from mango_core.groups import (
     GROUP_ADMIN,
     GROUP_AGENT_CREATOR,
     MAX_USER_GROUPS,
+    TYPE_AREA,
+    fixed_shape,
     is_group_name,
 )
 from mango_core.identity import MAX_EMAIL_LENGTH
@@ -75,7 +77,8 @@ logger = logging.getLogger(__name__)
 
 PLATFORM = ("Mango::Platform", "mango")
 GROUP_CENTRAL = "finops-central"
-SYSTEM_GROUPS = (GROUP_ADMIN, GROUP_AGENT_CREATOR, GROUP_CENTRAL, "bu-lead")
+GROUP_LEAD = "bu-lead"
+SYSTEM_GROUPS = (GROUP_ADMIN, GROUP_AGENT_CREATOR, GROUP_CENTRAL, GROUP_LEAD)
 SENSITIVE_GROUPS = frozenset({GROUP_ADMIN, GROUP_CENTRAL})
 """Membership changes that need a second administrator (decision of 2026-10-03, D60)."""
 MIN_ADMINS = 2
@@ -1160,6 +1163,7 @@ def _validate(deps: PeopleDeps, kind: Kind, target: _Target, group: str | None) 
                 raise ApiError(409, "too_many_groups", "the person has too many groups")
         elif group not in groups:
             raise ApiError(409, "not_member", "the person does not have that group")
+        _check_area(groups, groups | {group} if kind == "add" else groups - {group})
     elif kind == "disable":
         if not user.enabled:
             raise ApiError(409, "already_disabled", "the person is already disabled")
@@ -1168,6 +1172,23 @@ def _validate(deps: PeopleDeps, kind: Kind, target: _Target, group: str | None) 
     removes_admin = (kind == "remove" and group == GROUP_ADMIN) or kind == "disable"
     if removes_admin and target.is_admin and len(_enabled_admins(deps)) <= MIN_ADMINS:
         raise ApiError(409, "last_admins", "name another administrator first")
+
+
+def _lacks_area(groups: frozenset[str]) -> bool:
+    """A ``bu-lead`` the pre-token trigger cannot give a business unit: without
+    ``finops-central`` it needs exactly one ``bu-<area>`` group, or nothing lets it in."""
+    if GROUP_LEAD not in groups or GROUP_CENTRAL in groups:
+        return False
+    areas = [g for g in groups if (shape := fixed_shape(g)) and shape[0] == TYPE_AREA]
+    return len(areas) != 1
+
+
+def _check_area(before: frozenset[str], after: frozenset[str]) -> None:
+    """Refuse a change that leaves a bu-lead without its one area (D60, 2026-10-23). Only a
+    change that breaks it is refused: whoever is in that state already can be fixed step by
+    step."""
+    if _lacks_area(after) and not _lacks_area(before):
+        raise ApiError(422, "area_required", "a bu-lead needs exactly one area group")
 
 
 def _touches_admins(kind: Kind, target: _Target, group: str | None) -> bool:
@@ -1513,6 +1534,14 @@ def invite(deps: PeopleDeps, caller: Caller, body: InviteIn) -> InvitedOut:
             detail,
             ApiError(422, "sensitive_group", "ask for that group after the invitation"),
         )
+    if _lacks_area(frozenset(groups)):
+        _refuse(
+            deps,
+            event,
+            caller,
+            detail,
+            ApiError(422, "area_required", "a bu-lead needs exactly one area group"),
+        )
     # Told to administrators only (exception agreed on 2026-10-03).
     if _directory(lambda: deps.people.exists(body.email)):
         _refuse(
@@ -1535,7 +1564,8 @@ def invite(deps: PeopleDeps, caller: Caller, body: InviteIn) -> InvitedOut:
         # A group that fails here leaves the person invited without it: the administrator
         # sees them in the list and adds it there.
         invited = _Target(user, frozenset())
-        for group in groups:
+        # bu-lead last: if a group fails, the person is not left a bu-lead without its area.
+        for group in sorted(groups, key=lambda g: g == GROUP_LEAD):
             _apply(deps, actor, "add", invited, group, bootstrap=bootstrap)
         return user
 

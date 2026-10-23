@@ -36,15 +36,37 @@ _REQUIRED_CLAIMS = ["exp", "iat", "iss", "sub", "token_use", "client_id"]
 
 
 class IdentityError(Exception):
-    """No trustworthy identity is available; callers must fail closed."""
+    """No trustworthy identity is available; callers must fail closed.
+
+    ``code`` is a stable reason for logs and for the API's own error codes: never the message,
+    a claim value or anything of the token.
+    """
+
+    code = "invalid_token"
+
+    def __init__(self, message: str = "", *, code: str | None = None) -> None:
+        super().__init__(message)
+        if code is not None:
+            self.code = code
 
 
 class NoGroupError(IdentityError):
     """A verified user who belongs to no Mango group yet (D20: deny by default)."""
 
+    code = "no_group"
+
+
+class NoAreaError(IdentityError):
+    """A ``bu-lead`` without exactly one ``bu-<area>`` group: the pre-token trigger gives the
+    business unit only then, and the FinOps role cannot be scoped without it (D60)."""
+
+    code = "area_required"
+
 
 class NoRoleError(IdentityError):
     """A verified user without a FinOps role, where one is required (the FinOps connector)."""
+
+    code = "no_role"
 
 
 @dataclass(frozen=True)
@@ -76,7 +98,7 @@ def groups_from_claims(claims: Mapping[str, Any]) -> frozenset[str]:
     if raw is None:
         return frozenset()
     if not isinstance(raw, list) or len(raw) > MAX_USER_GROUPS:
-        raise IdentityError("invalid groups")
+        raise IdentityError("invalid groups", code="invalid_groups")
     return frozenset(g for g in raw if is_group_name(g))
 
 
@@ -84,18 +106,18 @@ def user_from_claims(claims: Mapping[str, Any]) -> UserContext:
     """Build the user context from claims of an already verified access token."""
     sub = claims.get("sub")
     if not isinstance(sub, str) or not sub:
-        raise IdentityError("missing subject")
+        raise IdentityError("missing subject", code="missing_subject")
     groups = groups_from_claims(claims)
     role = claims.get(CLAIM_ROLE)
     if role is not None and role not in KNOWN_ROLES:
-        raise IdentityError("unknown FinOps role")
+        raise IdentityError("unknown FinOps role", code="unknown_role")
     if role is None and not groups:
         raise NoGroupError("user has no Mango group")
     business_unit = claims.get(CLAIM_BUSINESS_UNIT) or None
     if business_unit is not None and not isinstance(business_unit, str):
-        raise IdentityError("invalid business unit")
+        raise IdentityError("invalid business unit", code="invalid_business_unit")
     if role == ROLE_BU_LEAD and not business_unit:
-        raise IdentityError("business unit is required for bu-lead")
+        raise NoAreaError("business unit is required for bu-lead")
     return UserContext(
         user_id=sub,
         role=role,
@@ -163,7 +185,7 @@ class AccessTokenVerifier:
             raise IdentityError("invalid access token") from exc
         # Cognito access tokens carry no "aud"; the client binding is "client_id".
         if claims.get("token_use") != "access":
-            raise IdentityError("not an access token")
+            raise IdentityError("not an access token", code="not_access_token")
         if claims.get("client_id") not in self._client_ids:
-            raise IdentityError("token issued to another client")
+            raise IdentityError("token issued to another client", code="wrong_client")
         return claims

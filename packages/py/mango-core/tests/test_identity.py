@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from mango_core.identity import (
     AccessTokenVerifier,
     IdentityError,
+    NoAreaError,
     NoGroupError,
     NoRoleError,
     require_role,
@@ -117,6 +118,27 @@ def test_unsigned_token_rejected(verifier: AccessTokenVerifier) -> None:
 def test_user_context_fails_closed(claims: dict[str, Any]) -> None:
     with pytest.raises(IdentityError):
         user_from_claims(claims)
+
+
+@pytest.mark.parametrize(
+    ("claims", "error", "code"),
+    [
+        (
+            {"sub": "u", "mango_role": "bu-lead", "cognito:groups": ["bu-lead"]},
+            NoAreaError,
+            "area_required",
+        ),
+        ({"sub": "u"}, NoGroupError, "no_group"),
+        ({"sub": "u", "mango_role": "superadmin"}, IdentityError, "unknown_role"),
+        ({"mango_role": "finops-central"}, IdentityError, "missing_subject"),
+    ],
+)
+def test_identity_errors_carry_a_stable_code(
+    claims: dict[str, Any], error: type[IdentityError], code: str
+) -> None:
+    with pytest.raises(error) as raised:
+        user_from_claims(claims)
+    assert raised.value.code == code
 
 
 def test_central_without_business_unit() -> None:

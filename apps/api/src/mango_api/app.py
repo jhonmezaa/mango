@@ -179,6 +179,7 @@ from mango_core.harness_tools import KNOWLEDGE_TOOL
 from mango_core.identity import (
     AccessTokenVerifier,
     IdentityError,
+    NoAreaError,
     NoGroupError,
     UserContext,
     user_from_claims,
@@ -424,6 +425,15 @@ class Services:
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
     return error_response(status, code, message)
+
+
+_LOG_SUB_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+
+
+def _log_sub(claims: dict[str, Any]) -> str:
+    """The subject of verified claims, for a log line: a Cognito id or ``-``, never free text."""
+    sub = claims.get("sub")
+    return sub if isinstance(sub, str) and _LOG_SUB_RE.fullmatch(sub) else "-"
 
 
 def _areas(store: SettingsStore) -> list[str]:
@@ -957,11 +967,24 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             raise HTTPException(status_code=401, detail="missing bearer token")
         try:
             claims = await asyncio.to_thread(services.verifier.verify, token)
-            user = user_from_claims(claims)
-        except NoGroupError as exc:
-            # Valid session without a group (D20): the SPA shows "no access yet" (TM-L5).
-            raise ApiError(403, "no_group", "no group assigned yet") from exc
         except IdentityError as exc:
+            # Nothing of an unverified token is trusted, not even its subject.
+            logger.info("identity refused: %s", exc.code)
+            raise HTTPException(status_code=401, detail="invalid token") from exc
+        try:
+            user = user_from_claims(claims)
+        except IdentityError as exc:
+            # The code and the subject of a verified token: never the token or the claims.
+            # Someone waiting for a group is an expected state, not a warning.
+            log = logger.info if isinstance(exc, NoGroupError) else logger.warning
+            log("identity refused: %s sub=%s", exc.code, _log_sub(claims))
+            if isinstance(exc, NoGroupError):
+                # Valid session without a group (D20): the SPA shows "no access yet" (TM-L5).
+                raise ApiError(403, "no_group", "no group assigned yet") from exc
+            if isinstance(exc, NoAreaError):
+                # A bu-lead without exactly one area (D60): an administrator has to fix the
+                # groups; signing in again does not, so it is not a 401.
+                raise ApiError(403, "area_required", "no area assigned yet") from exc
             raise HTTPException(status_code=401, detail="invalid token") from exc
         return Caller(user=user, token=token, expires_at=int(claims["exp"]))
 
