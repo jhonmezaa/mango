@@ -254,6 +254,17 @@ export const zChatRequestSchema = z.object({
 });
 
 /**
+ * CitationOut
+ *
+ * A source of an answer: plain text, never the text of the fragment (D88 (44)).
+ */
+export const zCitationOutSchema = z.object({
+    document: z.string(),
+    knowledge_base: z.string(),
+    page: z.int().nullish()
+});
+
+/**
  * ConnectivityCheck
  */
 export const zConnectivityCheckSchema = z.object({
@@ -1857,6 +1868,7 @@ export const zToolStatusSchema = z.object({
  */
 export const zMessageOutSchema = z.object({
     approvals: z.array(z.string()).optional().default([]),
+    citations: z.array(zCitationOutSchema).optional().default([]),
     content: z.string(),
     created_at: z.string(),
     message_id: z.string(),

@@ -22,10 +22,18 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, EventStreamError
 
+from mango_api import knowledge_citations
 from mango_api.pricing import Usage
 from mango_core import invocation
 from mango_core.agents import AgentLimits
-from mango_core.harness_tools import GATEWAY_MCP_SERVER, allowed_inline_tool
+from mango_core.harness_tools import (
+    GATEWAY_MCP_SERVER,
+    KNOWLEDGE_TARGET,
+    KNOWLEDGE_TOOL,
+    allowed_inline_tool,
+    allowed_tool,
+    gateway_tool_name,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_bedrock_agentcore import BedrockAgentCoreClient
@@ -34,6 +42,9 @@ MAX_HISTORY_MESSAGES = 20
 PARAGRAPH_BREAK = "\n\n"
 MAX_TOOL_INPUT_CHARS = 16 * 1024
 """Input of a write tool call kept to ask for its confirmation; a longer one is dropped."""
+KNOWLEDGE = "knowledge"
+"""Event of a knowledge search of the turn: its knowledge bases, how many fragments and the
+document and page of each source, never their text (D88 (44))."""
 WRITE_CALL = "write_call"
 """Internal event: a write tool was called. mango-api turns it into an approval request and
 never forwards it to the client as it is."""
@@ -137,8 +148,8 @@ class ChatTurn:
 
 @dataclass
 class StreamEvent:
-    kind: str  # "delta" | "tool" | "status" | "write_call" (internal)
-    data: dict[str, str] = field(default_factory=dict)
+    kind: str  # "delta" | "tool" | "status" | "knowledge" | "write_call" (internal)
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 class Phase(StrEnum):
@@ -183,6 +194,8 @@ class InvocationResult:
     """The calls of the tools ``run`` was asked to record, by their id in the stream: ``id``,
     ``name``, ``input`` and ``output`` (the answer as text). Untrusted, like every answer of a
     tool; read only to take a series from a query (D87 (4))."""
+    searches: list[knowledge_citations.Search] = field(default_factory=list)
+    """The knowledge searches of the turn, metadata only (D88 (44))."""
     interrupted: bool = False
     """The turn was ended here while the harness was still working (a write tool waits for a
     person, D27): its runtime session holds a half-finished turn."""
@@ -434,6 +447,46 @@ class _Recorded:
         ]
 
 
+class _Searches:
+    """Answers of the knowledge tool, by content block, read for their citations (D88 (44)).
+
+    Only the tool of the ``knowledge`` target counts, and only when the version has it: the
+    name in the stream is written by the model (TM-LP1). An answer longer than
+    ``MAX_ANSWER_CHARS`` is dropped whole, and one marked as an error gives nothing."""
+
+    _NAME = frozenset({gateway_tool_name(KNOWLEDGE_TARGET, KNOWLEDGE_TOOL)})
+
+    def __init__(self, allowed: Iterable[str]) -> None:
+        self._enabled = allowed_tool(KNOWLEDGE_TARGET, KNOWLEDGE_TOOL) in allowed
+        self._calls: set[str] = set()
+        self._open: dict[int, tuple[list[str], int]] = {}
+
+    def call(self, call_id: str, raw_name: str) -> None:
+        if self._enabled and call_id and _captured_tool(raw_name, self._NAME) is not None:
+            self._calls.add(call_id)
+
+    def answer(self, index: int, call_id: str, *, failed: bool) -> None:
+        if call_id in self._calls:
+            self._calls.discard(call_id)
+            if not failed:
+                self._open[index] = ([], 0)
+
+    def add(self, index: int, piece: str) -> None:
+        entry = self._open.get(index)
+        if entry is None:
+            return
+        pieces, size = entry
+        if size + len(piece) > knowledge_citations.MAX_ANSWER_CHARS:
+            del self._open[index]
+            return
+        pieces.append(piece)
+        self._open[index] = (pieces, size + len(piece))
+
+    def stop(self, index: int) -> knowledge_citations.Search | None:
+        entry = self._open.pop(index, None)
+        return None if entry is None else knowledge_citations.search_of("".join(entry[0]))
+
+
 def _result_pieces(delta: Any) -> Iterator[str]:
     """The text of a tool result delta: a list of blocks with ``text`` or ``json``."""
     for block in delta if isinstance(delta, list) else [delta]:
@@ -528,6 +581,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     write_calls = _WriteCalls(capture)
     inline_calls = _WriteCalls(inline, kind=INLINE_CALL, max_chars=MAX_INLINE_INPUT_CHARS)
     recorded = _Recorded(record)
+    searches = _Searches(request.get("allowedTools", []))
     # Write tool calls in flight: the Gateway refuses them, whatever the harness does next.
     refused: set[str] = set()
     asked = False
@@ -567,6 +621,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                     asked = True
                 name = display_tool_name(start["toolUse"].get("name", "tool"))
                 recorded.call(index, tool_id, name)
+                searches.call(tool_id, raw_name)
                 tool_names[tool_id] = name
                 running.add(tool_id)
                 # Text before and after a tool call are separate model blocks; keep them as
@@ -586,6 +641,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 recorded.answer(block.get("contentBlockIndex", -1), tool_id)
                 name = tool_names.get(tool_id, "tool")
                 status = "completed" if start["toolResult"].get("status") != "error" else "error"
+                searches.answer(
+                    block.get("contentBlockIndex", -1), tool_id, failed=status == "error"
+                )
                 result.tools.append({"name": name, "status": status})
                 yield StreamEvent("tool", {"name": name, "status": status})
                 running.discard(tool_id)
@@ -611,11 +669,16 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             if "toolResult" in delta:
                 for part in _result_pieces(delta["toolResult"]):
                     recorded.add(index, part)
+                    searches.add(index, part)
         elif "contentBlockStop" in event:
             index = event["contentBlockStop"].get("contentBlockIndex", -1)
             write_calls.stop(index)
             inline_calls.stop(index)
             recorded.stop(index)
+            search = searches.stop(index)
+            if search is not None:
+                result.searches.append(search)
+                yield StreamEvent(KNOWLEDGE, search.event())
         elif "messageStop" in event:
             result.stop_reason = event["messageStop"].get("stopReason", "")
             yield from write_calls.end(result.stop_reason)

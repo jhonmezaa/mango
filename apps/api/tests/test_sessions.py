@@ -323,3 +323,12 @@ def test_conversation_stored_before_agents_were_data_has_no_agent(
     assert record.session == SessionState(2, NOW, NOW + 5, "")
     assert repo.summary(USER, CID) == ("antigua", None)
     assert repo.list_conversations(USER)[0]["agent_id"] is None
+
+
+def test_a_message_keeps_the_sources_of_its_answer(repo: ConversationRepository) -> None:
+    # D88 (44): knowledge base, document and page, as plain text.
+    source = {"knowledge_base": "Políticas de RH", "document": "Vacaciones.pdf", "page": 3}
+    repo.add_message(USER, CID, "user", "¿cuántos días?")
+    repo.add_message(USER, CID, "assistant", "Son 15.", [], citations=[source])
+    question, answer = repo.messages(USER, CID)
+    assert (question.citations, answer.citations) == ([], [source])

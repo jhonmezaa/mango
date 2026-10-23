@@ -863,6 +863,26 @@ export type ChatRequest = {
 };
 
 /**
+ * CitationOut
+ *
+ * A source of an answer: plain text, never the text of the fragment (D88 (44)).
+ */
+export type CitationOut = {
+    /**
+     * Document
+     */
+    document: string;
+    /**
+     * Knowledge Base
+     */
+    knowledge_base: string;
+    /**
+     * Page
+     */
+    page?: number | null;
+};
+
+/**
  * ConnectivityCheck
  */
 export type ConnectivityCheck = {
@@ -2022,6 +2042,10 @@ export type MessageOut = {
      * Approvals
      */
     approvals?: Array<string>;
+    /**
+     * Citations
+     */
+    citations?: Array<CitationOut>;
     /**
      * Content
      */

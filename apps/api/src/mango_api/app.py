@@ -33,7 +33,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from mango_api import harness, sessions
+from mango_api import harness, knowledge_citations, sessions
 from mango_api.admin import AdminDeps, admin_router, now_utc
 from mango_api.agents import (
     AgentsDeps,
@@ -246,6 +246,14 @@ class ToolStatus(_Strict):
     status: str
 
 
+class CitationOut(_Strict):
+    """A source of an answer: plain text, never the text of the fragment (D88 (44))."""
+
+    knowledge_base: str
+    document: str
+    page: int | None = None
+
+
 class MessageOut(_Strict):
     message_id: str
     role: str
@@ -254,6 +262,8 @@ class MessageOut(_Strict):
     tools: list[ToolStatus]
     approvals: list[str] = []
     """Ids of the approval requests this message created (D27); see ``ConversationDetail``."""
+    citations: list[CitationOut] = []
+    """The sources of the knowledge searches of this answer (D88 (44))."""
 
 
 class ConversationDetail(_Strict):
@@ -1071,6 +1081,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     created_at=m.created_at,
                     tools=[ToolStatus(**t) for t in m.tools],
                     approvals=m.approvals,
+                    citations=[CitationOut(**c) for c in m.citations],
                 )
                 for m in messages
             ],
@@ -1474,6 +1485,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     result.text,
                     result.tools,
                     approvals=approval_ids,
+                    citations=knowledge_citations.citations(result.searches),
                 )
                 put(
                     sse(

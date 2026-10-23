@@ -1038,3 +1038,124 @@ def test_an_error_while_the_stream_is_read_is_never_a_missing_harness() -> None:
     with pytest.raises(EventStreamError):
         list(harness.run(_Client(_raising(_text("a"), error=error)), {}, result))  # type: ignore[arg-type]
     assert (result.harness_missing, result.started) == (False, True)
+
+
+# --- Knowledge searches give their citations, never their text (D88 (44)) ------------------
+
+KNOWLEDGE = "knowledge___retrieve"
+KNOWLEDGE_REQUEST = {"allowedTools": [f"@mango/{KNOWLEDGE}"]}
+
+
+def _knowledge_answer(
+    index: int, tool_id: str, answer: str, status: str = "success"
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": index,
+                "start": {"toolResult": {"toolUseId": tool_id, "status": status}},
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": index,
+                "delta": {"toolResult": [{"text": answer[:30]}, {"text": answer[30:]}]},
+            }
+        },
+        _stop(index),
+    ]
+
+
+def _fragments(*fragments: dict[str, Any]) -> str:
+    return json.dumps({"status": "ok", "notice": "datos", "fragments": list(fragments)})
+
+
+def _knowledge_turn(
+    stream: list[dict[str, Any]], request: dict[str, Any] = KNOWLEDGE_REQUEST
+) -> tuple[list[dict[str, Any]], harness.InvocationResult]:
+    result = harness.InvocationResult()
+    events = harness.run(_Client(stream), request, result)  # type: ignore[arg-type]
+    return [e.data for e in events if e.kind == harness.KNOWLEDGE], result
+
+
+def test_a_knowledge_search_says_its_sources_without_their_text() -> None:
+    answer = _fragments(
+        {
+            "knowledge_base": "Políticas de RH",
+            "document": "Vacaciones.pdf",
+            "page": 3,
+            "score": 0.8,
+            "text": "SECRETO del fragmento",
+        },
+        {
+            "knowledge_base": "Políticas de RH",
+            "document": "Vacaciones.pdf",
+            "page": 3,
+            "text": "otro",
+        },
+        {"knowledge_base": "Políticas de RH", "document": "Handbook.docx", "text": "más"},
+    )
+    stream = [
+        _tool_start(0, f"mango/{KNOWLEDGE}", "k1"),
+        _stop(0),
+        *_knowledge_answer(1, "k1", answer),
+        _text("Listo"),
+    ]
+    events, result = _knowledge_turn(stream)
+    assert events == [
+        {
+            "knowledge_bases": ["Políticas de RH"],
+            "count": 3,
+            "sources": [
+                {"knowledge_base": "Políticas de RH", "document": "Vacaciones.pdf", "page": 3},
+                {"knowledge_base": "Políticas de RH", "document": "Handbook.docx"},
+            ],
+        }
+    ]
+    assert "SECRETO" not in json.dumps(events)
+    assert len(result.searches) == 1
+
+
+def test_a_search_without_results_says_so() -> None:
+    answer = json.dumps({"status": "no_results", "notice": "datos", "fragments": []})
+    stream = [_tool_start(0, KNOWLEDGE, "k1"), _stop(0), *_knowledge_answer(1, "k1", answer)]
+    events, _ = _knowledge_turn(stream)
+    assert events == [{"knowledge_bases": [], "count": 0, "sources": []}]
+
+
+def test_the_answer_inside_an_mcp_text_block_is_read() -> None:
+    inner = _fragments({"knowledge_base": "KB", "document": "a.pdf", "page": 1, "text": "x"})
+    answer = json.dumps({"content": [{"type": "text", "text": inner}]})
+    stream = [_tool_start(0, KNOWLEDGE, "k1"), _stop(0), *_knowledge_answer(1, "k1", answer)]
+    events, _ = _knowledge_turn(stream)
+    assert [e["count"] for e in events] == [1]
+
+
+@pytest.mark.parametrize(
+    ("name", "request_", "status", "answer"),
+    [
+        # The version has no knowledge bases: a tool of that name is not the search.
+        (KNOWLEDGE, {"allowedTools": ["@mango/x___t"]}, "success", None),
+        # Another target whose name ends like it.
+        ("evil-knowledge___retrieve", KNOWLEDGE_REQUEST, "success", None),
+        ("other___retrieve", KNOWLEDGE_REQUEST, "success", None),
+        # A failed call, an error of the tool or an answer of another shape.
+        (KNOWLEDGE, KNOWLEDGE_REQUEST, "error", None),
+        (KNOWLEDGE, KNOWLEDGE_REQUEST, "success", '{"error":{"code":"busy","message":"x"}}'),
+        (KNOWLEDGE, KNOWLEDGE_REQUEST, "success", "no es json"),
+        # Longer than any answer the tool gives.
+        (
+            KNOWLEDGE,
+            KNOWLEDGE_REQUEST,
+            "success",
+            _fragments({"knowledge_base": "KB", "document": "a.pdf", "text": "x" * 70_000}),
+        ),
+    ],
+)
+def test_only_an_answer_of_the_search_gives_citations(
+    name: str, request_: dict[str, Any], status: str, answer: str | None
+) -> None:
+    answer = answer or _fragments({"knowledge_base": "KB", "document": "a.pdf", "text": "x"})
+    stream = [_tool_start(0, name, "k1"), _stop(0), *_knowledge_answer(1, "k1", answer, status)]
+    events, result = _knowledge_turn(stream, request_)
+    assert events == [] and result.searches == []

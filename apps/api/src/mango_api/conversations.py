@@ -66,6 +66,9 @@ class StoredMessage:
     tools: list[dict[str, str]]
     approvals: list[str] = field(default_factory=list)
     """Ids of the approval requests this message's write tool calls created (D27)."""
+    citations: list[dict[str, Any]] = field(default_factory=list)
+    """Knowledge base, document and page of each source of the answer, never the text of a
+    fragment (D88 (44))."""
 
 
 class RlsClientFactory:
@@ -302,6 +305,7 @@ class ConversationRepository:
         tools: list[dict[str, str]] | None = None,
         *,
         approvals: list[str] | None = None,
+        citations: list[dict[str, Any]] | None = None,
     ) -> str:
         message_id = new_id()
         item: dict[str, Any] = {
@@ -315,6 +319,8 @@ class ConversationRepository:
         }
         if approvals:
             item["approvals"] = {"S": json.dumps(approvals)}
+        if citations:
+            item["citations"] = {"S": json.dumps(citations, ensure_ascii=False)}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
 
@@ -371,6 +377,7 @@ class ConversationRepository:
                         created_at=i["created_at"]["S"],
                         tools=json.loads(i.get("tools", {}).get("S", "[]")),
                         approvals=json.loads(i.get("approvals", {}).get("S", "[]")),
+                        citations=json.loads(i.get("citations", {}).get("S", "[]")),
                     )
                 )
             if "LastEvaluatedKey" not in resp:

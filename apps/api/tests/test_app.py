@@ -283,6 +283,8 @@ class FakeConversations:
     concurrent_turns: int = 0
     agents: dict[tuple[str, str], str] = field(default_factory=dict)
     """Agent of each conversation, as stored by its first turn."""
+    citations: list[list[dict[str, Any]]] = field(default_factory=list)
+    """The citations of each message stored, in order (D88 (44))."""
 
     def session_state(self, user: str, cid: str) -> SessionState | None:
         if (user, cid) in self.sessions:
@@ -332,13 +334,19 @@ class FakeConversations:
     def set_title(self, *_a: Any) -> None: ...
 
     def add_message(
-        self, user: str, _cid: str, role: str, content: str, *_a: Any, **_k: Any
+        self, user: str, _cid: str, role: str, content: str, *_a: Any, **kwargs: Any
     ) -> str:
         self.stored.append((user, role, content))
+        self.citations.append(kwargs.get("citations") or [])
         return "m" * 32
 
     def messages(self, _u: str, _cid: str) -> list[StoredMessage]:
-        return [StoredMessage("x", "user", "hola", "t", [])]
+        answers = [
+            StoredMessage("y", "assistant", "Listo", "t", [], citations=cited)
+            for cited in self.citations
+            if cited
+        ]
+        return [StoredMessage("x", "user", "hola", "t", []), *answers]
 
     def list_conversations(self, user: str) -> list[dict[str, str | None]]:
         return [
@@ -403,12 +411,15 @@ class FakeAgentCore:
     requests: list[dict[str, Any]] = field(default_factory=list)
     stop_reason: str = "end_turn"
     fail: bool = False
+    stream: list[dict[str, Any]] | None = None
 
     def invoke_harness(self, **request: Any) -> dict[str, Any]:
         self.requests.append(request)
         if self.fail:
             # As the harness reports an error in an installation: botocore raises it.
             return {"stream": wire_stream(error="internalServerException")}
+        if self.stream is not None:
+            return {"stream": self.stream}
         return {
             "stream": [
                 {"contentBlockStart": {"contentBlockIndex": 0, "start": {}}},
@@ -1245,3 +1256,67 @@ def _turn_with(h: Harness, **body: Any) -> str:
     response = _chat(h, **body)
     assert response.status_code == 200
     return str(next(d for k, d in _events(response.text) if k == "conversation")["conversation_id"])
+
+
+# --- Citations of the knowledge searches (D88 (44)) --------------------------------------
+
+
+def test_the_sources_of_a_knowledge_search_reach_the_chat_and_stay_with_the_answer(
+    h: Harness,
+) -> None:
+    agent = served()
+    h.published.agents["finops"] = replace(
+        agent, allowed_tools=(*agent.allowed_tools, "@mango/knowledge___retrieve")
+    )
+    answer = {
+        "status": "ok",
+        "notice": "datos",
+        "fragments": [
+            {
+                "knowledge_base": "Políticas de RH",
+                "knowledge_base_id": "01J0000000000000000000000A",
+                "document": "Vacaciones.pdf",
+                "page": 3,
+                "score": 0.71,
+                "text": "Texto del fragmento que no sale de mango-api",
+            }
+        ],
+    }
+    h.agentcore.stream = [
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": 0,
+                "start": {"toolUse": {"toolUseId": "k1", "name": "knowledge___retrieve"}},
+            }
+        },
+        {"contentBlockStop": {"contentBlockIndex": 0}},
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": 1,
+                "start": {"toolResult": {"toolUseId": "k1", "status": "success"}},
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 1,
+                "delta": {"toolResult": [{"text": json.dumps(answer)}]},
+            }
+        },
+        {"contentBlockStop": {"contentBlockIndex": 1}},
+        {"contentBlockDelta": {"contentBlockIndex": 2, "delta": {"text": "Son 15 días."}}},
+        {"messageStop": {"stopReason": "end_turn"}},
+        {"metadata": {"usage": {"inputTokens": 100, "outputTokens": 10}}},
+    ]
+    response = _chat(h, conversation_id=CONVERSATION)
+    assert response.status_code == 200
+    source = {"knowledge_base": "Políticas de RH", "document": "Vacaciones.pdf", "page": 3}
+    events = _events(response.text)
+    assert (
+        "knowledge",
+        {"knowledge_bases": ["Políticas de RH"], "count": 1, "sources": [source]},
+    ) in events
+    assert "no sale de mango-api" not in response.text
+    assert h.conversations.citations[-1] == [source]
+    detail = h.client().get(f"/api/conversations/{CONVERSATION}", headers=_auth()).json()
+    assert detail["messages"][-1]["citations"] == [source]
+    assert detail["messages"][0]["citations"] == []

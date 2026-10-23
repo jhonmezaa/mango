@@ -1606,6 +1606,37 @@
         "title": "ChatRequest",
         "type": "object"
       },
+      "CitationOut": {
+        "additionalProperties": false,
+        "description": "A source of an answer: plain text, never the text of the fragment (D88 (44)).",
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "knowledge_base": {
+            "title": "Knowledge Base",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          }
+        },
+        "required": [
+          "knowledge_base",
+          "document"
+        ],
+        "title": "CitationOut",
+        "type": "object"
+      },
       "ConnectivityCheck": {
         "additionalProperties": false,
         "properties": {
@@ -3786,6 +3817,14 @@
               "type": "string"
             },
             "title": "Approvals",
+            "type": "array"
+          },
+          "citations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "title": "Citations",
             "type": "array"
           },
           "content": {
