@@ -72,6 +72,8 @@ class KnowledgeBaseRecord:
     sync_id: str | None
     sync_requested_at: str | None
     deleting_since: str | None
+    owner_id: str = ""
+    owner_email: str | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,8 @@ def _kb(item: dict[str, Any]) -> KnowledgeBaseRecord:
         sync_id=_str(item, "sync_id"),
         sync_requested_at=_str(item, "sync_requested_at"),
         deleting_since=_str(item, "deleting_since"),
+        owner_id=_str(item, "owner_id") or "",
+        owner_email=_str(item, "owner_email"),
     )
 
 

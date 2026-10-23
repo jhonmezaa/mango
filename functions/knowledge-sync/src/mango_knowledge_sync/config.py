@@ -38,6 +38,8 @@ class Settings:
     """USD per million input tokens of the embedding model (rule 7)."""
     sources_function: str = ""
     """``Mango-<ns>-KnowledgeSources``: the roles of the sources (D88 (39))."""
+    settings_table: str = ""
+    """Where the budget limits of people are (D88 (24)): read for scheduled synchronizations."""
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> Settings:
@@ -56,6 +58,7 @@ class Settings:
                 audit_index_table=env["AUDIT_INDEX_TABLE"],
                 embedding_price=Decimal(env["EMBEDDING_PRICE"]),
                 sources_function=env.get("SOURCES_FUNCTION", ""),
+                settings_table=env.get("SETTINGS_TABLE", ""),
             )
         except KeyError as exc:
             raise ConfigError(f"missing environment variable {exc.args[0]}") from None

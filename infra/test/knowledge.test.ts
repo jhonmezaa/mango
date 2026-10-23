@@ -246,8 +246,10 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(Object.keys(sids).sort()).toEqual([
       "CheckSourceBuckets",
       "DocumentsKey",
+      "KnowledgeSchedules",
       "KnowledgeTable",
       "KnowledgeTableKey",
+      "PassKnowledgeSchedulerRole",
       "SavedDocuments",
       "SearchKnowledgeBase",
       "SourceRoles",
@@ -513,5 +515,33 @@ describe("knowledge bases: fixed resources in Core", () => {
     const [, guard] = only("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-UninstallGuard` });
     const [boundaryId] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-kbsrc-boundary` });
     expect(JSON.stringify(guard.Properties.Environment.Variables.ROLE_BOUNDARY_ARNS)).toContain(boundaryId);
+  });
+
+  it("schedules the sources of a knowledge base with a role that only starts the synchronization (D88 (41))", () => {
+    const [, group] = only("AWS::Scheduler::ScheduleGroup", { Name: `Mango-${ns}-knowledge` });
+    expect(group).toBeDefined();
+    const [schedulerRoleId, schedulerRole] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-KnowledgeScheduler` });
+    const [trust] = schedulerRole.Properties.AssumeRolePolicyDocument.Statement;
+    expect(trust.Principal).toEqual({ Service: "scheduler.amazonaws.com" });
+    expect(JSON.stringify(trust.Condition.StringEquals["aws:SourceArn"])).toContain(`schedule-group/Mango-${ns}-knowledge`);
+    const statements = statementsOf(schedulerRoleId);
+    expect(statements.flatMap(actions)).toEqual(["states:StartExecution"]);
+    const [machineId] = only("AWS::StepFunctions::StateMachine", { StateMachineName: `Mango-${ns}-KnowledgeSync` });
+    expect(statements[0]!.Resource).toEqual({ Ref: machineId });
+    // mango-api manages the schedules of that group and passes only that role.
+    const [, api] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-ApiKnowledge` });
+    const sids = bySid(api.Properties.PolicyDocument.Statement as Statement[]);
+    expect(JSON.stringify(sids.KnowledgeSchedules!.Resource)).toContain(`schedule/Mango-${ns}-knowledge/*`);
+    expect(sids.PassKnowledgeSchedulerRole!.Resource).toEqual({ "Fn::GetAtt": [schedulerRoleId, "Arn"] });
+    expect(sids.PassKnowledgeSchedulerRole!.Condition).toEqual({
+      StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" },
+    });
+    // The synchronization reads the budget limits of people, and nothing else of Settings.
+    const [syncRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-KnowledgeSync` });
+    const syncSids = bySid(statementsOf(syncRoleId));
+    expect(actions(syncSids.ReadBudgetLimits!)).toEqual(["dynamodb:GetItem"]);
+    expect(syncSids.ReadBudgetLimits!.Condition).toEqual({
+      "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["BUDGETS"] },
+    });
   });
 });

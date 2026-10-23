@@ -86,6 +86,9 @@ class Settings:
     management_account_id: str = ""
     account_id: str = ""
     knowledge_sources_function: str = ""
+    knowledge_schedule_group: str = ""
+    knowledge_scheduler_role_arn: str = ""
+    """The schedules of the knowledge bases with sources (D88 (11)) and the role they run as."""
     """``Mango-<ns>-KnowledgeSources``: the roles of the sources (D88 (10))."""
     """The account of the installation: the only one whose buckets may be sources (D88 (10))."""
     alerts_email: str = ""
@@ -190,6 +193,8 @@ class Settings:
             management_account_id=env.get("MANAGEMENT_ACCOUNT_ID", ""),
             account_id=env.get("ACCOUNT_ID", ""),
             knowledge_sources_function=env.get("KNOWLEDGE_SOURCES_FUNCTION", ""),
+            knowledge_schedule_group=env.get("KNOWLEDGE_SCHEDULE_GROUP", ""),
+            knowledge_scheduler_role_arn=env.get("KNOWLEDGE_SCHEDULER_ROLE_ARN", ""),
             alerts_email=env.get("ALERTS_EMAIL", ""),
             first_admin_emails=env.get("FIRST_ADMIN_EMAILS", ""),
             app_origin=env.get("APP_ORIGIN", ""),

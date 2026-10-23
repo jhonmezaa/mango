@@ -321,3 +321,99 @@ def test_what_is_copied_is_ingested_with_the_metadata_of_the_registry(
     # Never the bucket nor the key of the source: the copy in Mango's bucket.
     location = ingested["content"]["custom"]["s3Location"]["uri"]
     assert location == f"s3://{BUCKET}/kb/{kb_id}/docs/{document['doc_id']['S']}"
+
+
+# --- Schedules (D88 (11), (24), (41)) ------------------------------------------------------
+
+
+@dataclass
+class Settings:
+    limits: dict[str, str] = field(default_factory=lambda: {"DEFAULTS": "7"})
+    down: bool = False
+
+
+def _limits(env: Env, settings: Settings) -> None:  # noqa: F811
+    from botocore.exceptions import ClientError  # noqa: PLC0415
+
+    from mango_knowledge_sync.budget import Limits  # noqa: PLC0415
+
+    class Table:
+        def get_item(self, **request: Any) -> dict[str, Any]:
+            if settings.down:
+                raise ClientError({"Error": {"Code": "InternalServerError"}}, "GetItem")
+            assert request["Key"]["PK"] == {"S": "BUDGETS"}
+            sk = request["Key"]["SK"]["S"]
+            value = settings.limits.get(sk.removeprefix("USER#") if sk != "DEFAULTS" else sk)
+            if value is None:
+                return {}
+            name = "user_monthly_usd" if sk == "DEFAULTS" else "limit_usd"
+            return {"Item": {name: {"N": value}}}
+
+    env.deps.limits = Limits(Table(), "settings")
+
+
+def _scheduled(env: Env, kb_id: str) -> dict[str, Any]:  # noqa: F811
+    return handler.handle(
+        env.deps, {"step": "scheduled", "state": {"mode": "scheduled", "kb_id": kb_id}}
+    )
+
+
+def test_a_schedule_synchronizes_as_the_owner_with_their_limit(env: Env, sources: Sources) -> None:  # noqa: F811
+    _limits(env, Settings(limits={"DEFAULTS": "7", "creator-1": "12"}))
+    kb_id = env.kb(owner_email="creator1@example.com")
+    _source(env, kb_id)
+    assert _scheduled(env, kb_id)["started"] is True
+    [started] = env.sfn.started
+    assert started["input"]["requested_by"] == {
+        "user_id": "creator-1",
+        "email": "creator1@example.com",
+        "limit": "12",
+    }
+    assert started["input"]["mode"] == "sync"
+
+
+def test_a_schedule_uses_the_default_limit_and_fails_closed(env: Env, sources: Sources) -> None:  # noqa: F811
+    settings = Settings()
+    _limits(env, settings)
+    kb_id = env.kb()
+    _source(env, kb_id)
+    assert _scheduled(env, kb_id)["started"] is True
+    assert env.sfn.started[-1]["input"]["requested_by"]["limit"] == "7"
+    env.db.update_item(
+        TableName="knowledge",
+        Key={"PK": {"S": f"KB#{kb_id}"}, "SK": {"S": "META"}},
+        UpdateExpression="REMOVE sync_id",
+    )
+    settings.down = True
+    result = _scheduled(env, kb_id)
+    assert (result["started"], result["reason"]) == (False, "limit_unavailable")
+    settings.down, settings.limits = False, {}
+    assert _scheduled(env, kb_id)["started"] is False
+
+
+def test_a_schedule_starts_nothing_without_an_approved_source(env: Env, sources: Sources) -> None:  # noqa: F811
+    _limits(env, Settings())
+    kb_id = env.kb()
+    assert _scheduled(env, kb_id)["started"] is False
+    _source(env, kb_id, status="pending")
+    assert _scheduled(env, kb_id)["started"] is False
+    deleting = env.kb(status="deleting")
+    _source(env, deleting)
+    assert _scheduled(env, deleting)["started"] is False
+    assert env.sfn.started == []
+
+
+def test_a_schedule_leaves_a_running_synchronization_alone(env: Env, sources: Sources) -> None:  # noqa: F811
+    _limits(env, Settings())
+    kb_id = env.kb()
+    _source(env, kb_id)
+    assert _scheduled(env, kb_id)["started"] is True
+    assert _scheduled(env, kb_id)["started"] is False
+    assert len(env.sfn.started) == 1
+
+
+def test_a_schedule_names_ids_only(env: Env, sources: Sources) -> None:  # noqa: F811
+    import pytest as _pytest  # noqa: PLC0415
+
+    with _pytest.raises(handler.InvalidInputError):
+        _scheduled(env, "../otra")

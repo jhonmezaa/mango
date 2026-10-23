@@ -173,10 +173,12 @@ describe("the schedules and the queue of runs", () => {
   it("the schedule group is a resource of the stack, named with the namespace (D58, D76)", () => {
     // CloudFormation puts the stack's tags on it and deletes it, with its schedules, with
     // the stack. Schedules take no tags: the group carries them.
+    // The other group is the knowledge bases' (D88 (41), knowledge.test.ts).
     const groups = Object.values(template.findResources("AWS::Scheduler::ScheduleGroup"));
-    expect(groups).toHaveLength(1);
-    expect(groups[0]!.Properties.Name).toBe(`Mango-${ns}-tasks`);
-    expect(groups[0]!.DeletionPolicy ?? "Delete").toBe("Delete");
+    expect(groups.map((g) => g.Properties.Name).sort()).toEqual([`Mango-${ns}-knowledge`, `Mango-${ns}-tasks`]);
+    for (const group of groups) {
+      expect(group.DeletionPolicy ?? "Delete").toBe("Delete");
+    }
   });
 
   it("the queue is encrypted, refuses plain HTTP and sends failing messages to a dead-letter queue", () => {

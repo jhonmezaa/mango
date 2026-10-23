@@ -112,3 +112,39 @@ class Budgets:
             )
         except ClientError as exc:
             raise BudgetUnavailableError(str(exc.response.get("Error", {}).get("Code"))) from exc
+
+
+class LimitUnavailableError(Exception):
+    """The limit of a person could not be read: nothing that costs is started."""
+
+
+class Limits:
+    """The monthly limit of a person, as mango-api reads it (``mango_api.settings_store``):
+    their own (``BUDGETS`` / ``USER#<sub>``, ``limit_usd``) or the installation's default
+    (``BUDGETS`` / ``DEFAULTS``, ``user_monthly_usd``). For the synchronizations a schedule
+    starts, which mango-api does not see (D88 (24)): they reserve against the owner."""
+
+    def __init__(self, dynamodb: Any, settings_table: str) -> None:
+        self._db = dynamodb
+        self._table = settings_table
+
+    def _get(self, sk: str) -> dict[str, Any] | None:
+        try:
+            item = self._db.get_item(
+                TableName=self._table,
+                Key={"PK": {"S": "BUDGETS"}, "SK": {"S": sk}},
+                ConsistentRead=True,
+            ).get("Item")
+        except ClientError as exc:
+            raise LimitUnavailableError(exc.response.get("Error", {}).get("Code")) from exc
+        return dict(item) if item else None
+
+    def of(self, user_id: str) -> Decimal:
+        own = self._get(f"USER#{user_id}")
+        if own and "limit_usd" in own:
+            return Decimal(own["limit_usd"]["N"])
+        defaults = self._get("DEFAULTS")
+        if not defaults or "user_monthly_usd" not in defaults:
+            # Without a known limit nothing is reserved (fail closed).
+            raise LimitUnavailableError("no default limit")
+        return Decimal(defaults["user_monthly_usd"]["N"])

@@ -75,7 +75,7 @@ from mango_api.knowledge_uploads import (
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core import knowledge, knowledge_search
-from mango_core.knowledge import MAX_BYTES, MAX_DOCUMENTS, DocumentStatus, Status
+from mango_core.knowledge import MAX_BYTES, MAX_DOCUMENTS, DocumentStatus, SourceStatus, Status
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +329,65 @@ class SyncStarter:
         )
 
 
+SCHEDULE_EXPRESSIONS = {"6h": "rate(6 hours)", "daily": "rate(1 day)", "weekly": "rate(7 days)"}
+"""The frequencies of the design (D88 (11)); ``manual`` has no schedule."""
+
+
+class SchedulerUnavailableError(Exception):
+    """EventBridge Scheduler did not take the change; the next change of the KB asks again."""
+
+
+class KnowledgeSchedules:
+    """The schedule of a knowledge base with sources (D88 (11), (24)), one per knowledge base
+    (``kb-<kb id>``) in ``Mango-<ns>-knowledge``. It starts ``Mango-<ns>-KnowledgeSync`` in its
+    ``scheduled`` mode with the id only: the machine reads the owner and their limit."""
+
+    def __init__(self, client: Any, *, group: str, state_machine_arn: str, role_arn: str) -> None:
+        self._client = client
+        self._group = group
+        self._machine = state_machine_arn
+        self._role = role_arn
+
+    @staticmethod
+    def name(kb_id: str) -> str:
+        return f"kb-{kb_id}"
+
+    def put(self, kb_id: str, frequency: str) -> None:
+        request = {
+            "Name": self.name(kb_id),
+            "GroupName": self._group,
+            "ScheduleExpression": SCHEDULE_EXPRESSIONS[frequency],
+            "FlexibleTimeWindow": {"Mode": "FLEXIBLE", "MaximumWindowInMinutes": 15},
+            "State": "ENABLED",
+            "ActionAfterCompletion": "NONE",
+            "Target": {
+                "Arn": self._machine,
+                "RoleArn": self._role,
+                "Input": json.dumps({"mode": "scheduled", "kb_id": kb_id}),
+                "RetryPolicy": {"MaximumEventAgeInSeconds": 3600, "MaximumRetryAttempts": 3},
+            },
+        }
+        try:
+            try:
+                self._client.update_schedule(**request)
+            except ClientError as exc:
+                if exc.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
+                    raise
+                self._client.create_schedule(**request)
+        except (ClientError, BotoCoreError) as exc:
+            raise SchedulerUnavailableError from exc
+
+    def delete(self, kb_id: str) -> None:
+        try:
+            self._client.delete_schedule(Name=self.name(kb_id), GroupName=self._group)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                return
+            raise SchedulerUnavailableError from exc
+        except BotoCoreError as exc:
+            raise SchedulerUnavailableError from exc
+
+
 class SourceRoles(Protocol):
     """``Mango-<ns>-KnowledgeSources`` (``knowledge_sources.SourceRoleFunction``): creates the
     role of an approved source and deletes the one of a removed source."""
@@ -383,6 +442,8 @@ class KnowledgeDeps:
     """Checks the bucket of a source (D88 (10)); ``None`` until mango-api may (503)."""
     source_roles: SourceRoles | None = None
     """The roles of the sources; ``None`` until mango-api may invoke their function."""
+    schedules: KnowledgeSchedules | None = None
+    """The schedules of the knowledge bases with sources; ``None`` until mango-api may."""
 
 
 def resource_of(kb: KnowledgeBase) -> KnowledgeBaseResource:
@@ -568,6 +629,47 @@ def delete_knowledge_base(
     detail = {"documents": kb.documents, "bytes": kb.bytes}
     changes = {"status": Status.DELETING.value, "deleting_since": _now_iso(deps)}
     return _write(deps, "kb.delete", caller, kb, changes=changes, detail=detail)
+
+
+def reschedule(deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase) -> None:
+    """Leave the schedule of ``kb`` as its frequency and sources say (D88 (11)): one while it
+    has an approved source, a frequency other than ``manual`` and is not being deleted; none
+    otherwise. Never raises: the change it follows already stands, and is audited with the
+    outcome (``kb.schedule``); the next change of the knowledge base asks again."""
+    if deps.schedules is None:
+        return
+    try:
+        sources = deps.store.sources(kb.kb_id)
+    except KnowledgeStoreUnavailableError:
+        logger.exception("the schedule of a knowledge base was not changed")
+        return
+    wanted = (
+        kb.status is not Status.DELETING
+        and kb.sync_schedule in SCHEDULE_EXPRESSIONS
+        and any(s.status is SourceStatus.APPROVED for s in sources)
+    )
+    try:
+        if wanted:
+            deps.schedules.put(kb.kb_id, kb.sync_schedule)
+        else:
+            deps.schedules.delete(kb.kb_id)
+        outcome = "applied"
+    except SchedulerUnavailableError:
+        logger.exception("the schedule of a knowledge base was not changed")
+        outcome = "failed"
+    try:
+        deps.audit.emit(
+            "kb.schedule",
+            caller.user.user_id,
+            {
+                "kb_id": kb.kb_id,
+                "schedule": kb.sync_schedule if wanted else "none",
+                "outcome": outcome,
+            },
+            caller.user,
+        )
+    except Exception:
+        logger.exception("kb.schedule could not be audited")
 
 
 def request_sync(deps: KnowledgeDeps, caller: Caller, kb: KnowledgeBase) -> SyncState:
@@ -1024,6 +1126,8 @@ def knowledge_router(  # noqa: PLR0915 - registers the route closures
         kb = await editable(caller, kb_id)
         _limit(deps.changes, caller.user.user_id)
         updated = await run(update_knowledge_base, deps, caller, kb, body)
+        if updated.sync_schedule != kb.sync_schedule:
+            await run(reschedule, deps, caller, updated)
         return (await out(caller, [updated]))[0]
 
     @router.post("/{kb_id}/delete", response_model=KnowledgeBaseOut, status_code=202)
@@ -1033,6 +1137,7 @@ def knowledge_router(  # noqa: PLR0915 - registers the route closures
         kb = await editable(caller, kb_id)
         _limit(deps.changes, caller.user.user_id)
         deleted = await run(delete_knowledge_base, deps, caller, kb, body.version)
+        await run(reschedule, deps, caller, deleted)
         # Its documents and vectors are deleted, and verified, by the synchronization.
         await run(request_sync, deps, caller, deleted)
         return (await out(caller, [deleted]))[0]

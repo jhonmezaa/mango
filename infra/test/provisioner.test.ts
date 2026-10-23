@@ -499,12 +499,18 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[]);
     const allowed = [...api, ...managed].filter((s) => s.Effect === "Allow");
     const granted = allowed.flatMap(actions);
-    // The one IAM action: passing the role of its own schedules to EventBridge Scheduler.
+    // The one IAM action: passing the role of its own schedules to EventBridge Scheduler, for
+    // tasks (D78) and for the sources of the knowledge bases (D88 (41)).
     const iamStatements = allowed.filter((s) => actions(s).some((a) => a.startsWith("iam:")));
-    expect(iamStatements.map((s) => [s.Sid, actions(s)])).toEqual([["PassTaskSchedulerRole", ["iam:PassRole"]]]);
-    expect(iamStatements[0]!.Condition).toEqual({
-      StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" },
-    });
+    expect(iamStatements.map((s) => [s.Sid, actions(s)]).sort()).toEqual([
+      ["PassKnowledgeSchedulerRole", ["iam:PassRole"]],
+      ["PassTaskSchedulerRole", ["iam:PassRole"]],
+    ]);
+    for (const statement of iamStatements) {
+      expect(statement.Condition).toEqual({
+        StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" },
+      });
+    }
     expect(
       granted.filter((a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke")),
     ).toEqual([]);

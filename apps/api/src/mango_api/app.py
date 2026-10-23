@@ -93,7 +93,12 @@ from mango_api.group_admin import (
 from mango_api.groups import GroupRegistry, groups_router
 from mango_api.inbox import InboxDeps, RunInbox, inbox_router
 from mango_api.inbox_store import InboxStore
-from mango_api.knowledge import KnowledgeDeps, SyncStarter, knowledge_router
+from mango_api.knowledge import (
+    KnowledgeDeps,
+    KnowledgeSchedules,
+    SyncStarter,
+    knowledge_router,
+)
 from mango_api.knowledge_sources import (
     BucketChecker,
     SourceRoleFunction,
@@ -755,6 +760,18 @@ def build_services(settings: Settings) -> Services:
                 buckets=(
                     BucketChecker(boto3.client("s3", region_name=region), settings.account_id)
                     if settings.account_id
+                    else None
+                ),
+                schedules=(
+                    KnowledgeSchedules(
+                        boto3.client("scheduler", region_name=region),
+                        group=settings.knowledge_schedule_group,
+                        state_machine_arn=settings.knowledge_sync_state_machine_arn,
+                        role_arn=settings.knowledge_scheduler_role_arn,
+                    )
+                    if settings.knowledge_schedule_group
+                    and settings.knowledge_scheduler_role_arn
+                    and settings.knowledge_sync_state_machine_arn
                     else None
                 ),
                 source_roles=(

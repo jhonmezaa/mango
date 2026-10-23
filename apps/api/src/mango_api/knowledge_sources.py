@@ -58,6 +58,7 @@ from mango_api.knowledge import (
     _limit,
     _unavailable,
     request_sync,
+    reschedule,
     resource_of,
 )
 from mango_api.knowledge_store import (
@@ -535,6 +536,9 @@ def knowledge_sources_router(  # noqa: PLR0915 - registers the route closures
         source = await load_source(kb, src_id)
         _limit(deps.changes, caller.user.user_id)
         decided = await run(decide_source, deps, caller, source, body.version, approve=approve)
+        if decided.status is SourceStatus.APPROVED:
+            # From now on its frequency applies (D88 (11)).
+            await run(reschedule, deps, caller, kb)
         if decided.status is SourceStatus.APPROVED and decided.role_arn:
             # The first copy, as whoever approved it (D88 (19), (24)).
             await run(request_sync, deps, caller, kb)
@@ -562,8 +566,10 @@ def knowledge_sources_router(  # noqa: PLR0915 - registers the route closures
         _limit(deps.changes, caller.user.user_id)
         removed = await run(remove_source, deps, caller, source, body.version)
         if removed.status is SourceStatus.REMOVING:
-            # Its documents go with the synchronization, verified (D88 (16)).
+            # Its documents go with the synchronization, verified (D88 (16)); without other
+            # approved sources, so does the schedule.
             await run(request_sync, deps, caller, kb)
+            await run(reschedule, deps, caller, kb)
         return source_out(removed, caller, kb, can_approve=await can_approve(caller, kb))
 
     @router.get("/api/knowledge-sources/pending", response_model=PendingSourceListOut)

@@ -221,6 +221,7 @@ export class CoreStack extends Stack {
       issuer: identity.issuer,
       webClientId: identity.webClient.userPoolClientId,
       tasksClientId: tasks.client.userPoolClientId,
+      settingsTable: governance.settings,
     });
     knowledge.grantApi(apiTaskRole);
     // The knowledge search of the agents (D88 (14)): a Mango connector behind the Gateway.

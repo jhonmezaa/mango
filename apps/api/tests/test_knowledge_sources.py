@@ -486,3 +486,107 @@ def test_an_approval_without_a_role_starts_nothing(env: Env, s3: FakeS3, roles: 
     roles.fail = "iam_AccessDenied"
     _decide(env, _proposed(env, env.created()), "approve")
     assert env.sfn.started == []
+
+
+# --- Schedules (D88 (11), (41)) ------------------------------------------------------------
+
+
+@dataclass
+class FakeScheduler:
+    schedules: dict[str, dict[str, Any]] = field(default_factory=dict)
+    down: bool = False
+
+    def _check(self) -> None:
+        if self.down:
+            raise ClientError({"Error": {"Code": "InternalServerException"}}, "Scheduler")
+
+    def update_schedule(self, **request: Any) -> None:
+        self._check()
+        if request["Name"] not in self.schedules:
+            raise ClientError({"Error": {"Code": "ResourceNotFoundException"}}, "UpdateSchedule")
+        self.schedules[request["Name"]] = request
+
+    def create_schedule(self, **request: Any) -> None:
+        self._check()
+        self.schedules[request["Name"]] = request
+
+    def delete_schedule(self, Name: str, GroupName: str) -> None:  # noqa: N803
+        self._check()
+        if Name not in self.schedules:
+            raise ClientError({"Error": {"Code": "ResourceNotFoundException"}}, "DeleteSchedule")
+        del self.schedules[Name]
+
+
+@pytest.fixture
+def scheduler(env: Env) -> FakeScheduler:  # noqa: F811
+    from mango_api.knowledge import KnowledgeSchedules  # noqa: PLC0415
+
+    fake = FakeScheduler()
+    assert env.deps is not None
+    env.deps.schedules = KnowledgeSchedules(
+        fake,
+        group="Mango-test-knowledge",
+        state_machine_arn="arn:aws:states:us-east-1:111122223333:stateMachine:Mango-test-KnowledgeSync",
+        role_arn="arn:aws:iam::111122223333:role/Mango-test-KnowledgeScheduler",
+    )
+    return fake
+
+
+def test_a_knowledge_base_with_an_approved_source_follows_its_frequency(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+    roles: FakeRoles,
+    scheduler: FakeScheduler,
+) -> None:
+    kb = env.created(sync_schedule="daily")
+    source = _proposed(env, kb)
+    # Nothing to read until a source is approved.
+    assert scheduler.schedules == {}
+    _decide(env, source, "approve")
+    [schedule] = scheduler.schedules.values()
+    assert schedule["Name"] == f"kb-{kb['kb_id']}"
+    assert schedule["GroupName"] == "Mango-test-knowledge"
+    assert schedule["ScheduleExpression"] == "rate(1 day)"
+    # The id only: the machine reads the owner and their limit.
+    assert json.loads(schedule["Target"]["Input"]) == {"mode": "scheduled", "kb_id": kb["kb_id"]}
+    current = env.get("creator", kb["kb_id"]).json()
+    assert env.update("creator", current, sync_schedule="6h").status_code == 200
+    assert scheduler.schedules[f"kb-{kb['kb_id']}"]["ScheduleExpression"] == "rate(6 hours)"
+    current = env.get("creator", kb["kb_id"]).json()
+    assert env.update("creator", current, sync_schedule="manual").status_code == 200
+    assert scheduler.schedules == {}
+    assert [d["schedule"] for _u, d in env.audit.named("kb.schedule")] == ["daily", "6h", "none"]
+
+
+def test_the_schedule_goes_with_the_last_source_and_with_the_knowledge_base(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+    roles: FakeRoles,
+    scheduler: FakeScheduler,
+) -> None:
+    kb = env.created(sync_schedule="weekly")
+    approved = _decide(env, _proposed(env, kb), "approve").json()
+    assert scheduler.schedules[f"kb-{kb['kb_id']}"]["ScheduleExpression"] == "rate(7 days)"
+    env.client.post(
+        f"{_sources(kb)}/{approved['src_id']}/delete", headers=_h("creator"), json={"version": 2}
+    )
+    assert scheduler.schedules == {}
+    other = env.created(name="Otra", sync_schedule="daily")
+    _decide(env, _proposed(env, other), "approve")
+    assert f"kb-{other['kb_id']}" in scheduler.schedules
+    current = env.get("creator", other["kb_id"]).json()
+    assert env.delete("creator", current).status_code == 202
+    assert scheduler.schedules == {}
+
+
+def test_a_scheduler_that_fails_leaves_the_change_standing_and_audited(
+    env: Env,  # noqa: F811
+    s3: FakeS3,
+    roles: FakeRoles,
+    scheduler: FakeScheduler,
+) -> None:
+    scheduler.down = True
+    kb = env.created(sync_schedule="daily")
+    response = _decide(env, _proposed(env, kb), "approve")
+    assert (response.status_code, response.json()["status"]) == (200, "approved")
+    assert [d["outcome"] for _u, d in env.audit.named("kb.schedule", None)] == ["failed"]

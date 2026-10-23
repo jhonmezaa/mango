@@ -17,6 +17,11 @@ A synchronization of one knowledge base:
    knowledge base, the lock, the audit event, and the synchronization someone asked for
    meanwhile. It also runs after any failure of the steps above.
 
+``scheduled`` is what a schedule of EventBridge Scheduler starts, for a knowledge base with
+sources on existing buckets (D88 (11), (24)): it starts a synchronization as the owner of the
+knowledge base, with the limit of their budget read from the Settings table, and ends. One
+already running is left alone: the next schedule synchronizes.
+
 ``sweep`` runs every hour on its own: it counts the deletions not verified in 6 hours (the
 metric of the alarm), starts the synchronization of deletions nobody finished, and settles
 the reservation of a synchronization that died.
@@ -41,7 +46,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_core import knowledge
-from mango_core.knowledge import DocumentStatus, Status
+from mango_core.knowledge import DocumentStatus, SourceStatus, Status
 from mango_knowledge_sync import budget
 from mango_knowledge_sync.audit import AuditWriter
 from mango_knowledge_sync.bedrock import (
@@ -52,7 +57,7 @@ from mango_knowledge_sync.bedrock import (
     KnowledgeBedrock,
     ThrottledError,
 )
-from mango_knowledge_sync.budget import Budgets, Reservation
+from mango_knowledge_sync.budget import Budgets, Limits, LimitUnavailableError, Reservation
 from mango_knowledge_sync.config import Settings
 from mango_knowledge_sync.sources import SourceCopier, role_requester, session_for
 from mango_knowledge_sync.store import Requester, StoreUnavailableError, SyncStore
@@ -106,6 +111,9 @@ class Deps:
     metrics: Callable[[str, float], None] | None = None
     sources: SourceCopier | None = None
     """The copy of the sources (D88 (19)); ``None`` until the stack gives what it needs."""
+    limits: Limits | None = None
+    """The budget limits of people (D88 (24)): a scheduled synchronization reserves against
+    the owner's. ``None`` until the stack gives the Settings table."""
 
 
 @cache
@@ -144,6 +152,7 @@ def _deps() -> Deps:
         s3=s3,
         sfn=boto3.client("stepfunctions"),
         sources=sources,
+        limits=Limits(dynamodb, settings.settings_table) if settings.settings_table else None,
     )
 
 
@@ -164,10 +173,11 @@ def handle(deps: Deps, event: dict[str, Any]) -> dict[str, Any]:
         "verify": verify,
         "finish": finish,
         "sweep": sweep,
+        "scheduled": scheduled,
     }
     if step not in steps:
         raise InvalidInputError("unknown step")
-    if step != "sweep":
+    if step not in {"sweep", "scheduled"}:
         _check(state)
     try:
         return steps[step](deps, state)
@@ -525,6 +535,36 @@ def sweep(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
         "knowledge sweep: %d overdue, %d started, %d abandoned", overdue, started, abandoned
     )
     return {"mode": "sweep", "overdue": overdue, "started": started, "abandoned": abandoned}
+
+
+def scheduled(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
+    """A schedule's turn: a synchronization as the owner, if there is something to read."""
+    kb_id = str(state.get("kb_id", ""))
+    if not knowledge.is_id(kb_id):
+        raise InvalidInputError("invalid ids")
+    out: dict[str, Any] = {"mode": "scheduled", "kb_id": kb_id, "started": False}
+    record = deps.store.knowledge_base(kb_id)
+    if (
+        record is None
+        or record.status is Status.DELETING
+        or not _USER_RE.fullmatch(record.owner_id)
+    ):
+        return out
+    if not any(s.status is SourceStatus.APPROVED for s in deps.store.sources(kb_id)):
+        # Uploads are indexed when saved: a schedule only reads sources.
+        return out
+    if deps.limits is None:
+        out["reason"] = "limit_unavailable"
+        return out
+    try:
+        limit = deps.limits.of(record.owner_id)
+    except LimitUnavailableError as exc:
+        logger.warning("scheduled sync of %s not started: %s", kb_id, aws_code(exc))
+        out["reason"] = "limit_unavailable"
+        return out
+    owner = Requester(record.owner_id, record.owner_email, limit)
+    out["started"] = _start(deps, kb_id, owner, "sync")
+    return out
 
 
 def _abandon(deps: Deps, kb_id: str, sync_id: str) -> None:

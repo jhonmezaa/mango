@@ -12,6 +12,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3vectors from "aws-cdk-lib/aws-s3vectors";
+import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as sfnTasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { Construct } from "constructs";
@@ -91,6 +92,8 @@ export interface KnowledgeProps {
   readonly webClientId: string;
   /** The tasks client (D78): a task run searches as its owner. */
   readonly tasksClientId: string;
+  /** The budget limits of people (D17): a scheduled synchronization reads the owner's (D88 (24)). */
+  readonly settingsTable: dynamodb.ITableV2;
 }
 
 /** Keep in sync with `mango_knowledge_retrieve.handler.LIMIT_NAME`. */
@@ -133,6 +136,10 @@ export class Knowledge extends Construct {
   /** `Mango-<ns>-KnowledgeSync`: ingests, deletes and verifies (D88 (11), (16)). */
   readonly syncMachine: sfn.StateMachine;
   readonly syncFunction: lambda.Function;
+  /** `Mango-<ns>-knowledge`: the schedules of the knowledge bases with sources (D88 (11)). */
+  readonly scheduleGroup: scheduler.CfnScheduleGroup;
+  /** What those schedules run as: it may only start the synchronization. */
+  readonly schedulerRole: iam.Role;
   /** The `knowledge-retrieve` tool (D88 (14)): a Lambda target of the Gateway. */
   readonly retrieveFunction: lambda.Function;
   /** `Mango-<ns>-KnowledgeSources`: creates and deletes the roles of the sources (D88 (10)). */
@@ -443,6 +450,7 @@ export class Knowledge extends Construct {
     this.syncFunction = sync.fn;
     this.syncMachine = sync.machine;
     this.retrieveFunction = this.buildRetrieve(props);
+    ({ group: this.scheduleGroup, role: this.schedulerRole } = this.buildSchedules());
     this.sourceRoleArns = `arn:aws:iam::${account}:role/${mangoName(ns, "kbsrc-")}*`;
     this.sourcesFunction = this.buildSources(props);
 
@@ -457,6 +465,9 @@ export class Knowledge extends Construct {
       // The only account whose buckets may be sources (D88 (10)), and their roles.
       ACCOUNT_ID: Stack.of(this).account,
       KNOWLEDGE_SOURCES_FUNCTION: this.sourcesFunction.functionName,
+      // The frequency of the sources (D88 (11)).
+      KNOWLEDGE_SCHEDULE_GROUP: this.scheduleGroup.name!,
+      KNOWLEDGE_SCHEDULER_ROLE_ARN: this.schedulerRole.roleArn,
     };
   }
 
@@ -544,6 +555,14 @@ export class Knowledge extends Construct {
           resources: [`arn:aws:iam::${account}:role/${mangoName(ns, "kbsrc-")}*`],
         }),
         new iam.PolicyStatement({
+          sid: "ReadBudgetLimits",
+          // The owner's limit, for a scheduled synchronization (D88 (24)): the BUDGETS partition
+          // of the Settings table only.
+          actions: ["dynamodb:GetItem"],
+          resources: [props.settingsTable.tableArn],
+          conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["BUDGETS"] } },
+        }),
+        new iam.PolicyStatement({
           sid: "AskForSourceRoles",
           // A source approved without a role, or removed with one, asks again (D88 (39)).
           actions: ["lambda:InvokeFunction"],
@@ -607,6 +626,7 @@ export class Knowledge extends Construct {
         AUDIT_INDEX_TABLE: props.auditIndex.tableName,
         EMBEDDING_PRICE: String(props.embeddingPrice),
         SOURCES_FUNCTION: mangoName(ns, "KnowledgeSources"),
+        SETTINGS_TABLE: props.settingsTable.tableName,
       },
       environmentEncryption: props.configKey,
     }).function;
@@ -654,6 +674,7 @@ export class Knowledge extends Construct {
     const remove = forward("Delete", "delete");
     const verify = forward("Verify", "verify");
     const sweep = step("Sweep", "sweep");
+    const scheduled = step("Scheduled", "scheduled");
     const waitLock = new sfn.Wait(this, "WaitLock", { time: sfn.WaitTime.duration(Duration.seconds(30)) });
     const waitIndex = new sfn.Wait(this, "WaitIndex", { time: sfn.WaitTime.duration(Duration.seconds(10)) });
     const waitVerify = new sfn.Wait(this, "WaitVerify", { time: sfn.WaitTime.duration(Duration.seconds(20)) });
@@ -680,6 +701,8 @@ export class Knowledge extends Construct {
     ingesting.when(sfn.Condition.isPresent("$.ingest[0]"), ingest.next(ingesting)).otherwise(indexing);
     const definition = new sfn.Choice(this, "Sweep?")
       .when(sfn.Condition.stringEquals("$.mode", "sweep"), sweep.next(new sfn.Succeed(this, "Swept")))
+      // A schedule's turn (D88 (11)): it starts a synchronization as the owner, and ends.
+      .when(sfn.Condition.stringEquals("$.mode", "scheduled"), scheduled.next(new sfn.Succeed(this, "Started")))
       .otherwise(
         acquire.next(
           new sfn.Choice(this, "Locked?")
@@ -964,6 +987,36 @@ export class Knowledge extends Construct {
     return fn;
   }
 
+  /**
+   * The schedules of the knowledge bases with sources (D88 (11), (24)), created by mango-api in
+   * `Mango-<ns>-knowledge`. They run as a role that may only start the synchronization, and only
+   * for schedules of that group in this account (confused deputy, the pattern of the tasks).
+   */
+  private buildSchedules(): { group: scheduler.CfnScheduleGroup; role: iam.Role } {
+    const ns = this.namespace;
+    const { account, region, partition } = Stack.of(this);
+    const groupName = mangoName(ns, "knowledge");
+    const group = new scheduler.CfnScheduleGroup(this, "ScheduleGroup", { name: groupName });
+    const role = new iam.Role(this, "SchedulerRole", {
+      roleName: mangoName(ns, "KnowledgeScheduler"),
+      description: "EventBridge Scheduler: starts the synchronization of knowledge bases with sources, nothing else",
+      assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com").withConditions({
+        StringEquals: {
+          "aws:SourceAccount": account,
+          "aws:SourceArn": `arn:${partition}:scheduler:${region}:${account}:schedule-group/${groupName}`,
+        },
+      }),
+    });
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "StartTheSynchronization",
+        actions: ["states:StartExecution"],
+        resources: [this.syncMachine.stateMachineArn],
+      }),
+    );
+    return { group, role };
+  }
+
   /** Where the browser posts uploads: the bucket's regional host, for the CSP of the SPA. */
   get uploadOrigin(): string {
     return `https://${this.bucketRegionalDomain}`;
@@ -979,6 +1032,7 @@ export class Knowledge extends Construct {
   grantApi(role: iam.Role): void {
     const { region } = Stack.of(this);
     const uploads = `${this.bucket.bucketArn}/${KNOWLEDGE_PREFIXES.uploads}*`;
+    const schedules = `arn:${Stack.of(this).partition}:scheduler:${region}:${Stack.of(this).account}:schedule/${this.scheduleGroup.name!}/*`;
     const savedDocuments = `${this.bucket.bucketArn}/${KNOWLEDGE_PREFIXES.bases}*/docs/*`;
     const policy = new iam.ManagedPolicy(this, "ApiPolicy", {
       managedPolicyName: mangoName(this.namespace, "ApiKnowledge"),
@@ -1035,6 +1089,18 @@ export class Knowledge extends Construct {
           actions: ["lambda:InvokeFunction"],
           resources: [this.sourcesFunction.functionArn],
         }),
+        // The frequency of the sources (D88 (11)): the schedules of its group, run as its role.
+        new iam.PolicyStatement({
+          sid: "KnowledgeSchedules",
+          actions: ["scheduler:CreateSchedule", "scheduler:DeleteSchedule", "scheduler:GetSchedule", "scheduler:UpdateSchedule"],
+          resources: [schedules],
+        }),
+        new iam.PolicyStatement({
+          sid: "PassKnowledgeSchedulerRole",
+          actions: ["iam:PassRole"],
+          resources: [this.schedulerRole.roleArn],
+          conditions: { StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" } },
+        }),
         // After saving, deleting a document or a base, or «Sincronizar ahora» (D88 (11)).
         new iam.PolicyStatement({
           sid: "StartSync",
@@ -1053,6 +1119,12 @@ export class Knowledge extends Construct {
       {
         id: `AwsSolutions-IAM5[Resource::<${bucketId}.Arn>/${KNOWLEDGE_PREFIXES.bases}*/docs/*]`,
         reason: "Saved documents are keyed at runtime by ULIDs under kb/<kb_id>/docs/ (D88 (9)).",
+      },
+      {
+        id: `AwsSolutions-IAM5[Resource::${schedules}]`,
+        reason:
+          "Schedules are created at runtime by mango-api, one per knowledge base with sources (D88 (11), D25): " +
+          "the schedule group of the installation is the scope.",
       },
       {
         id: "AwsSolutions-IAM5[Resource::arn:aws:s3:::*]",

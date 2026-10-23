@@ -1,7 +1,7 @@
 # D88 · Knowledge bases: una entidad compartida entre agentes, con documentos de S3
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente; el rol que firma las subidas, punto 33, elegido por el dueño ese día, nota propuesta por un agente; 2026-10-22: los permisos de la ingesta directa, punto 34, diagnosticados por el dueño ese día en la instalación, nota propuesta por un agente; lo construido de la asociación con agentes en la API, punto 35, nota de ese día propuesta por un agente; lo construido de la tool, punto 36, nota de ese día propuesta por un agente, con sus cuatro precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido de «Probar búsqueda», punto 37, nota de ese día propuesta por un agente, con su autorización, que precisa el punto 29, elegida por el dueño ese día, por menú: «Verla y estar en sus grupos (Recomendada)»; lo construido de las fuentes en la API, punto 38, nota de ese día propuesta por un agente, con tres precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido del rol de cada fuente, punto 39, nota de ese día propuesta por un agente; lo construido de la copia de las fuentes, punto 40, nota de ese día propuesta por un agente, con dos precisiones elegidas ese día por menú por el agente que lanzó el trabajo)
+- **Fecha:** 2026-10-21 (los puntos 1 a 6, tomados por el dueño ese día, por menú; el cómo, puntos 7 a 17, propuesto por un agente; las respuestas del dueño a sus ocho preguntas, puntos 18 a 26, tomadas ese día, por menú; aceptada por el dueño ese día, por menú: «Aceptar D88 (Recomendada)»; lo que mostró la prueba técnica previa, punto 27, nota de ese día propuesta por un agente; lo construido de los recursos fijos, punto 28, nota de ese día propuesta por un agente, con el cifrado de los vectores elegido ese día por menú; lo construido del registro, punto 29, nota de ese día propuesta por un agente; lo construido de la subida, punto 30, nota de ese día propuesta por un agente; el ciclo de la plantilla, punto 31, nota de ese día propuesta por un agente; lo construido de la sincronización, punto 32, nota de ese día propuesta por un agente; el rol que firma las subidas, punto 33, elegido por el dueño ese día, nota propuesta por un agente; 2026-10-22: los permisos de la ingesta directa, punto 34, diagnosticados por el dueño ese día en la instalación, nota propuesta por un agente; lo construido de la asociación con agentes en la API, punto 35, nota de ese día propuesta por un agente; lo construido de la tool, punto 36, nota de ese día propuesta por un agente, con sus cuatro precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido de «Probar búsqueda», punto 37, nota de ese día propuesta por un agente, con su autorización, que precisa el punto 29, elegida por el dueño ese día, por menú: «Verla y estar en sus grupos (Recomendada)»; lo construido de las fuentes en la API, punto 38, nota de ese día propuesta por un agente, con tres precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido del rol de cada fuente, punto 39, nota de ese día propuesta por un agente; lo construido de la copia de las fuentes, punto 40, nota de ese día propuesta por un agente, con dos precisiones elegidas ese día por menú por el agente que lanzó el trabajo; lo construido de la frecuencia de las fuentes, punto 41, nota de ese día propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (la alerta de las knowledge bases: qué significa cuando el filtro sale de quien pregunta) y [D25](D025-recursos-creados-en-runtime.md) (el primer caso de KB: sin stacks de CloudFormation en ejecución); toma el diseño de §4.4
 - **Precisada por:** —
 
@@ -309,3 +309,27 @@ Lo demás de este punto lo propuso un agente:
   - si leer un bucket cifrado con `aws/s3` necesita que el rol de la fuente tenga `kms:Decrypt`, que su boundary no da. Si lo necesita, esos documentos quedarán `protected`;
   - la copia de un bucket de prueba del cliente, con su OK;
   - el borrado de lo que se quita en el origen.
+
+**(41) Estado de lo construido: la frecuencia de las fuentes (2026-10-22).** Construida con tests, sin ver en una instalación. Es el PR 7d del plan y cierra el PR 7. Lo que precisa de (11) y (24), propuesto por un agente:
+
+- **Un horario por KB:**
+  - se llama `kb-<kb_id>` y vive en el grupo `Mango-<ns>-knowledge`, que nace con `Core`;
+  - lo crea, cambia y borra `mango-api`, por SDK (D25);
+  - existe mientras la KB tenga una fuente aprobada, una frecuencia distinta de `manual` y no se esté borrando. Las subidas se indexan al guardarse y no necesitan horario.
+  - `6h`, `daily` y `weekly` son `rate(6 hours)`, `rate(1 day)` y `rate(7 days)`, con una ventana flexible de 15 minutos.
+- **Cuándo cambia:**
+  - al aprobar una fuente;
+  - al cambiar la frecuencia de la KB;
+  - al quitar la última fuente aprobada;
+  - al borrar la KB.
+
+  Cada cambio se audita como `kb.schedule`, con el resultado. Si Scheduler falla, el cambio de la KB se mantiene, el fallo queda auditado y el próximo cambio lo pide de nuevo.
+- **Qué arranca:** la máquina `Mango-<ns>-KnowledgeSync` en su modo `scheduled`, con solo el id de la KB. Ese modo es una ejecución corta: lee el dueño de la KB y su límite de presupuesto, arranca una sincronización normal a su nombre (24) y termina.
+  - El límite es el que lee `mango-api`: el propio de esa persona o el de la instalación, en la tabla Settings. Así lo eligió el agente que lanzó el trabajo, en (40).
+  - Si no puede leer el límite, no arranca nada.
+  - Si ya corre una sincronización de esa KB, la deja: sincroniza el próximo horario.
+- **IAM:**
+  - el rol de los horarios, `Mango-<ns>-KnowledgeScheduler`, solo arranca esa máquina y solo lo asume Scheduler para horarios de ese grupo en esta cuenta (el patrón de las tareas, D78);
+  - `mango-api` gestiona solo los horarios de ese grupo y pasa solo ese rol;
+  - la sincronización lee de Settings solo la partición `BUDGETS`.
+- **Pendiente de ver en la instalación:** que un horario arranque una sincronización a nombre del dueño y copie lo nuevo de la fuente.
