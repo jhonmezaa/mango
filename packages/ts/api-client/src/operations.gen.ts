@@ -238,6 +238,7 @@ import {
     zSetInboxStateBody,
     zSetInboxStatePath,
     zSetInboxStateResponse,
+    zSourceQueueResponse,
     zSubmitVersionBody,
     zSubmitVersionPath,
     zSubmitVersionResponse,
@@ -1213,6 +1214,15 @@ export const operations = {
         query: null,
         body: zSetInboxStateBody,
         response: zSetInboxStateResponse,
+    },
+    sourceQueue: {
+        method: 'GET',
+        path: '/knowledge-sources',
+        status: 200,
+        pathParams: null,
+        query: null,
+        body: null,
+        response: zSourceQueueResponse,
     },
     submitVersion: {
         method: 'POST',

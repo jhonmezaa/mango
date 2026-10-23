@@ -5290,6 +5290,144 @@
         "title": "ProposerOut",
         "type": "object"
       },
+      "QueuedSourceOut": {
+        "additionalProperties": false,
+        "description": "A proposal in Aprobaciones and the Bandeja (D88 (48)), with what its card says.",
+        "properties": {
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "can_decide": {
+            "title": "Can Decide",
+            "type": "boolean"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "kb_id": {
+            "title": "Kb Id",
+            "type": "string"
+          },
+          "knowledge_base": {
+            "title": "Knowledge Base",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "proposed_at": {
+            "format": "date-time",
+            "title": "Proposed At",
+            "type": "string"
+          },
+          "proposed_by": {
+            "$ref": "#/components/schemas/ProposerOut"
+          },
+          "replaces": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces"
+          },
+          "role_ready": {
+            "title": "Role Ready",
+            "type": "boolean"
+          },
+          "src_id": {
+            "title": "Src Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SourceStatus"
+          },
+          "sync_schedule": {
+            "title": "Sync Schedule",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "withdrawn_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawn At"
+          }
+        },
+        "required": [
+          "src_id",
+          "kb_id",
+          "bucket",
+          "prefix",
+          "status",
+          "proposed_by",
+          "proposed_at",
+          "decided_at",
+          "decided_by",
+          "note",
+          "version",
+          "role_ready",
+          "can_decide",
+          "knowledge_base",
+          "groups",
+          "sync_schedule",
+          "replaces",
+          "withdrawn_at"
+        ],
+        "title": "QueuedSourceOut",
+        "type": "object"
+      },
       "QuotasOut": {
         "additionalProperties": false,
         "properties": {
@@ -6928,6 +7066,23 @@
           "can_decide"
         ],
         "title": "SourceOut",
+        "type": "object"
+      },
+      "SourceQueueOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QueuedSourceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SourceQueueOut",
         "type": "object"
       },
       "SourceRefOut": {
@@ -13053,6 +13208,35 @@
           }
         },
         "summary": "Request Document Uploads"
+      }
+    },
+    "/knowledge-sources": {
+      "get": {
+        "description": "The proposals of Aprobaciones (D88 (48)): the pending ones the caller may sign and\ntheir own, and the decisions of the last ``DECIDED_DAYS`` days on knowledge bases they\nmay sign for, or that they proposed. Nobody signs their own (D88 (20)).",
+        "operationId": "source_queue",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceQueueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Source Queue"
       }
     },
     "/knowledge-sources/pending": {

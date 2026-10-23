@@ -2801,6 +2801,77 @@ export type ProposerOut = {
 };
 
 /**
+ * QueuedSourceOut
+ *
+ * A proposal in Aprobaciones and the Bandeja (D88 (48)), with what its card says.
+ */
+export type QueuedSourceOut = {
+    /**
+     * Bucket
+     */
+    bucket: string;
+    /**
+     * Can Decide
+     */
+    can_decide: boolean;
+    /**
+     * Decided At
+     */
+    decided_at: string | null;
+    decided_by: ProposerOut | null;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Kb Id
+     */
+    kb_id: string;
+    /**
+     * Knowledge Base
+     */
+    knowledge_base: string;
+    /**
+     * Note
+     */
+    note: string | null;
+    /**
+     * Prefix
+     */
+    prefix: string;
+    /**
+     * Proposed At
+     */
+    proposed_at: string;
+    proposed_by: ProposerOut;
+    /**
+     * Replaces
+     */
+    replaces: string | null;
+    /**
+     * Role Ready
+     */
+    role_ready: boolean;
+    /**
+     * Src Id
+     */
+    src_id: string;
+    status: SourceStatus;
+    /**
+     * Sync Schedule
+     */
+    sync_schedule: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Withdrawn At
+     */
+    withdrawn_at: string | null;
+};
+
+/**
  * QuotasOut
  */
 export type QuotasOut = {
@@ -3606,6 +3677,16 @@ export type SourceOut = {
      * Version
      */
     version: number;
+};
+
+/**
+ * SourceQueueOut
+ */
+export type SourceQueueOut = {
+    /**
+     * Items
+     */
+    items: Array<QueuedSourceOut>;
 };
 
 /**
@@ -7262,6 +7343,31 @@ export type RequestDocumentUploadsResponses = {
 };
 
 export type RequestDocumentUploadsResponse = RequestDocumentUploadsResponses[keyof RequestDocumentUploadsResponses];
+
+export type SourceQueueData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/knowledge-sources';
+};
+
+export type SourceQueueErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SourceQueueError = SourceQueueErrors[keyof SourceQueueErrors];
+
+export type SourceQueueResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceQueueOut;
+};
+
+export type SourceQueueResponse = SourceQueueResponses[keyof SourceQueueResponses];
 
 export type PendingSourcesData = {
     body?: never;

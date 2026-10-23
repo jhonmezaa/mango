@@ -19,7 +19,10 @@ Item layout, all under ``PK = KB#<kb id>`` (a ULID, ``mango_core.knowledge``):
 * ``SK = SRC#<source id>``: a source on an existing bucket of the installation's account
   (D88 (10)): its bucket and prefix, which never change (another bucket or prefix is another
   proposal, D88 (20)), who proposed it and who decided. While it is ``pending`` it is also in
-  the index ``All`` under ``all_pk`` = ``SRC_PENDING``: the administrators' list to sign.
+  the index ``All`` under ``all_pk`` = ``SRC_PENDING``: the administrators' list to sign. Once
+  it leaves ``pending`` (approved, rejected or withdrawn) it moves to ``all_pk`` =
+  ``SRC_DECIDED``, with ``created_at`` the time of the decision: the recent decisions of
+  Aprobaciones (D88 (48)).
 
 The counters of a knowledge base (``documents``, ``bytes``) grow in the same transaction as
 the documents they count, so the limits of D88 (9) hold whoever saves at the same time.
@@ -48,6 +51,10 @@ SK_META = "META"
 ALL_PK = "KB"
 PENDING_SOURCES_PK = "SRC_PENDING"
 """``all_pk`` of the sources waiting for a decision (the index ``All``)."""
+MAX_DECIDED = 50
+"""Recent decisions listed at most (D88 (48))."""
+DECIDED_SOURCES_PK = "SRC_DECIDED"
+"""``all_pk`` of the sources that left ``pending``, by the time they did (D88 (48))."""
 MAX_LISTED = 1000
 """Knowledge bases a list reads at most: far above what an installation holds."""
 _PAGE = 100
@@ -140,6 +147,8 @@ class Source:
     decided_by: str | None = None
     decided_at: str | None = None
     removed_by: str | None = None
+    removed_at: str | None = None
+    """When it was withdrawn or removed."""
     decided_by_email: str | None = None
     note: str | None = None
     """What the administrator wrote when deciding: required to reject (D88 (42))."""
@@ -220,6 +229,7 @@ def _source(item: dict[str, Any]) -> Source:
         decided_by=_str(item, "decided_by"),
         decided_at=_str(item, "decided_at"),
         removed_by=_str(item, "removed_by"),
+        removed_at=_str(item, "removed_at"),
         decided_by_email=_str(item, "decided_by_email"),
         note=_str(item, "note"),
         role_arn=_str(item, "role_arn"),
@@ -736,6 +746,21 @@ class KnowledgeStore:
             raise KnowledgeStoreUnavailableError from exc
         return out[:MAX_LISTED]
 
+    def decided_sources(self, since: str) -> list[Source]:
+        """Sources that left ``pending`` at ``since`` or later, newest first (D88 (48))."""
+        try:
+            page = self._db.query(
+                TableName=self._table,
+                IndexName=INDEX_ALL,
+                KeyConditionExpression="all_pk = :a AND created_at >= :since",
+                ExpressionAttributeValues={":a": _s(DECIDED_SOURCES_PK), ":since": _s(since)},
+                ScanIndexForward=False,
+                Limit=MAX_DECIDED,
+            )
+        except ClientError as exc:
+            raise KnowledgeStoreUnavailableError from exc
+        return [_source(item) for item in page.get("Items", [])]
+
     def set_source_status(
         self,
         source: Source,
@@ -776,7 +801,12 @@ class KnowledgeStore:
                 names[f"#{name}"] = name
                 values[f":{name}"] = _s(value)
                 sets += f", #{name} = :{name}"
-        expression = f"SET {sets} REMOVE all_pk"
+        if source.status is SourceStatus.PENDING:
+            # Out of the list to sign and into the recent decisions, by its time (D88 (48)).
+            names["#all"], names["#created"] = "all_pk", "created_at"
+            values[":decided_pk"] = _s(DECIDED_SOURCES_PK)
+            sets += ", #all = :decided_pk, #created = :now"
+        expression = f"SET {sets}"
         try:
             resp = self._db.update_item(
                 TableName=self._table,

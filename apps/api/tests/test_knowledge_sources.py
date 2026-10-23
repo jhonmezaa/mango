@@ -4,6 +4,7 @@ buckets. Real Cedar policies and moto DynamoDB; S3 answers like it does for each
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -366,6 +367,88 @@ def test_administrators_see_what_they_may_sign_and_never_their_own(env: Env, s3:
     pending = env.client.get("/api/knowledge-sources/pending", headers=_h("admin")).json()
     assert pending["items"] == []
     assert own["status"] == "pending"
+
+
+QUEUE = "/api/knowledge-sources"
+
+
+def _queue(env: Env, token: str) -> list[dict[str, Any]]:  # noqa: F811
+    response = env.client.get(QUEUE, headers=_h(token))
+    assert response.status_code == 200, response.text
+    items: list[dict[str, Any]] = response.json()["items"]
+    return items
+
+
+def test_the_queue_has_what_one_signs_and_what_one_proposed(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    """D88 (48): an administrator signs what others proposed; the proposer sees their own."""
+    kb = env.created(origin="bucket", sync_schedule="weekly")
+    theirs = _proposed(env, kb, "s3://docs-rrhh/a/")
+    [signable] = _queue(env, "admin")
+    assert signable["src_id"] == theirs["src_id"]
+    assert signable["can_decide"] is True
+    assert (signable["knowledge_base"], signable["groups"], signable["sync_schedule"]) == (
+        kb["name"],
+        kb["groups"],
+        "weekly",
+    )
+    assert signable["replaces"] is None
+    [own] = _queue(env, "creator")
+    assert (own["src_id"], own["can_decide"]) == (theirs["src_id"], False)
+    # Another creator, in its groups, neither proposed it nor signs.
+    assert _queue(env, "creator2") == []
+
+
+def test_the_queue_keeps_the_recent_decisions_with_their_note(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    kb = env.created(origin="bucket")
+    rejected = _decide(
+        env, _proposed(env, kb, "s3://docs-rrhh/a/"), "reject", note="No es la carpeta"
+    ).json()
+    approved = _decide(env, _proposed(env, kb, "s3://docs-rrhh/b/"), "approve").json()
+    change = _proposed(env, kb, "s3://docs-rrhh/c/")
+    for token in ("admin", "creator"):
+        queue = _queue(env, token)
+        # Pending first, then the decisions, newest first.
+        assert [s["src_id"] for s in queue] == [
+            change["src_id"],
+            approved["src_id"],
+            rejected["src_id"],
+        ], token
+        assert queue[0]["replaces"] == "s3://docs-rrhh/b/"
+        assert queue[2]["note"] == "No es la carpeta"
+        assert queue[2]["decided_by"]["email"] == "admin@example.com"
+        assert not any(s["can_decide"] for s in queue[1:])
+    # Only the change is still there to sign.
+    pending = env.client.get("/api/knowledge-sources/pending", headers=_h("admin")).json()
+    assert [s["src_id"] for s in pending["items"]] == [change["src_id"]]
+
+
+def test_a_withdrawn_proposal_says_when(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    kb = env.created(origin="bucket")
+    pending = _proposed(env, kb)
+    env.client.post(
+        f"{_sources(kb)}/{pending['src_id']}/delete", headers=_h("creator"), json={"version": 1}
+    )
+    [withdrawn] = _queue(env, "creator")
+    assert withdrawn["status"] == "withdrawn"
+    assert withdrawn["withdrawn_at"] is not None
+    assert withdrawn["decided_by"] is None
+
+
+def test_the_queue_forgets_decisions_older_than_thirty_days(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    assert env.deps is not None
+    kb = env.created(origin="bucket")
+    _decide(env, _proposed(env, kb), "approve")
+    assert len(_queue(env, "admin")) == 1
+    now = time.time()
+    env.deps.clock = lambda: now + 31 * 86_400
+    assert _queue(env, "admin") == []
+
+
+def test_the_queue_leaves_out_knowledge_bases_being_deleted(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    kb = env.created(origin="bucket")
+    _proposed(env, kb)
+    assert env.delete("creator", kb).status_code == 202
+    assert _queue(env, "admin") == []
 
 
 def test_the_sources_are_listed_to_who_sees_the_documents(env: Env, s3: FakeS3) -> None:  # noqa: F811

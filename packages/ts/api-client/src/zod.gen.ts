@@ -1660,6 +1660,32 @@ export const zPendingSourceListOutSchema = z.object({
 });
 
 /**
+ * QueuedSourceOut
+ *
+ * A proposal in Aprobaciones and the Bandeja (D88 (48)), with what its card says.
+ */
+export const zQueuedSourceOutSchema = z.object({
+    bucket: z.string(),
+    can_decide: z.boolean(),
+    decided_at: z.iso.datetime().nullable(),
+    decided_by: zProposerOutSchema.nullable(),
+    groups: z.array(z.string()),
+    kb_id: z.string(),
+    knowledge_base: z.string(),
+    note: z.string().nullable(),
+    prefix: z.string(),
+    proposed_at: z.iso.datetime(),
+    proposed_by: zProposerOutSchema,
+    replaces: z.string().nullable(),
+    role_ready: z.boolean(),
+    src_id: z.string(),
+    status: zSourceStatusSchema,
+    sync_schedule: z.string(),
+    version: z.int(),
+    withdrawn_at: z.iso.datetime().nullable()
+});
+
+/**
  * SourceOut
  */
 export const zSourceOutSchema = z.object({
@@ -1683,6 +1709,13 @@ export const zSourceOutSchema = z.object({
  */
 export const zSourceListOutSchema = z.object({
     items: z.array(zSourceOutSchema)
+});
+
+/**
+ * SourceQueueOut
+ */
+export const zSourceQueueOutSchema = z.object({
+    items: z.array(zQueuedSourceOutSchema)
 });
 
 /**
@@ -3210,6 +3243,11 @@ export const zRequestDocumentUploadsPath = z.object({
  * Successful Response
  */
 export const zRequestDocumentUploadsResponse = zUploadsOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zSourceQueueResponse = zSourceQueueOutSchema;
 
 /**
  * Successful Response
