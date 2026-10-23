@@ -15,6 +15,8 @@ interface Props {
   meta?: ReactNode;
   /** Width in px on wide screens (design: 440 by default, 500 or 520 in some panels). */
   width?: number;
+  /** Between the header and the scrolling content (design: the tabs of a knowledge base). */
+  tabs?: ReactNode;
   /** Fixed below the scrolling content (design `mc-foot`): the actions of the item. */
   footer?: ReactNode;
   onClose: () => void;
@@ -34,6 +36,7 @@ export function SidePanel({
   lead,
   meta,
   width,
+  tabs,
   footer,
   onClose,
   onEscape,
@@ -78,6 +81,7 @@ export function SidePanel({
             <CloseIcon size={14} />
           </button>
         </div>
+        {tabs}
         <div className="mk-drawer-b">{children}</div>
         {footer ? <div className="mc-foot">{footer}</div> : null}
       </aside>

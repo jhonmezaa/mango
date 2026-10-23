@@ -90,18 +90,18 @@ const USER_VIEWS: ReadonlySet<ViewKey> = new Set([
  * Design store.js CREATOR_VIEWS: agent creators also get the Catálogo de MCP (the Agent Builder,
  * `admin` in the design, has no navigation entry of its own).
  */
-const CREATOR_VIEWS: ReadonlySet<ViewKey> = new Set(['mcp']);
+const CREATOR_VIEWS: ReadonlySet<ViewKey> = new Set(['mcp', 'knowledge']);
 
 /**
  * Design store.js OWNER_VIEWS: FinOps central without Admin also sees these (all "Próximamente"
- * today). Presupuestos stays admin-only, as in the design's availability mode.
+ * today). Presupuestos stays admin-only, as in the design's availability mode. Knowledge Bases
+ * is for creators and administrators only (design «Quién ve qué», and `ViewKnowledgeBase`).
  */
 const OWNER_VIEWS: ReadonlySet<ViewKey> = new Set([
   ...USER_VIEWS,
   'governance',
   'playground',
   'skills',
-  'knowledge',
   'schedules',
   'observability',
   'evals',

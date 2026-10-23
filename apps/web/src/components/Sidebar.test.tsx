@@ -138,7 +138,6 @@ describe('Sidebar navigation', () => {
       'Actividad, próximamente',
       'Playground, próximamente',
       'Skills, próximamente',
-      'Knowledge Bases, próximamente',
       'Observability, próximamente',
       'Evals, próximamente',
       'Costos, próximamente',
@@ -341,6 +340,7 @@ describe('Sidebar navigation', () => {
       'Audit log',
       'Brains',
       'Catálogo de MCP',
+      'Knowledge Bases',
       'Schedules',
       'Org Chart',
     ]);

@@ -1,0 +1,473 @@
+/*
+ * Knowledge Bases (design knowledge.jsx, kb-*.jsx, D88). Ported from the design: its styles.css
+ * (`tk-tabs`, the `kb-tr` rows and `kb-hit`) and then src/kb.css, in that order; values are the
+ * design's. The classes it shares with other screens (`mc-*`, `mk-*`, `bg-kpi*`) are in
+ * agents.css, brains.css and admin.css.
+ */
+@layer components {
+  .tk-tabs {
+    display: flex;
+    gap: 18px;
+    border-bottom: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .tk-tabs button {
+    padding: 8px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tk-tabs button.is-on {
+    color: var(--text-strong);
+    border-bottom-color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .kb-tr {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) 110px 170px 140px minmax(130px, 1fr) 70px;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: left;
+  }
+  .kb-tr.mc-th {
+    border-top: none;
+  }
+  .kb-tr:hover:not(.mc-th) {
+    background: var(--row-hover);
+  }
+  .kb-hit {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  @media (max-width: 1100px) {
+    .kb-tr {
+      grid-template-columns: minmax(200px, 2fr) 160px 130px 60px;
+    }
+    .kb-tr > :nth-child(2),
+    .kb-tr > :nth-child(5) {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .kb-tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .kb-tr > :nth-child(4),
+    .kb-tr > :nth-child(6) {
+      display: none;
+    }
+  }
+  .kb-tr {
+    grid-template-columns: minmax(220px, 2fr) 124px 180px 140px minmax(130px, 1fr) 64px;
+  }
+  @media (max-width: 1100px) {
+    .kb-tr {
+      grid-template-columns: minmax(200px, 2fr) 170px 130px 56px;
+    }
+  }
+  @media (max-width: 760px) {
+    .kb-tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .kb-drawer {
+      width: 100%;
+    }
+    .kb-origin-opts {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .kb-tr.is-deleting {
+    opacity: 0.6;
+  }
+  .kb-st {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    min-width: 0;
+  }
+  .kb-sub {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  .kb-drawer {
+    width: 580px;
+  }
+  .kb-tabs {
+    padding: 0 20px;
+    margin-top: 0;
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .kb-err {
+    font-size: 12.5px;
+    color: var(--red);
+    line-height: 1.45;
+    margin-top: 6px;
+  }
+  .kb-gaps {
+    display: flex;
+    flex-direction: column;
+    margin: 8px 0;
+    border-top: 1px solid color-mix(in oklab, var(--amber) 25%, transparent);
+  }
+  .kb-gaps > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border-bottom: 1px solid color-mix(in oklab, var(--amber) 25%, transparent);
+    font-size: 12.5px;
+  }
+  .kb-gaps > div > .mono {
+    font-size: 12px;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .kb-lock {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--input-bg);
+  }
+  .kb-lock-t {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: var(--text-strong);
+    font-size: 14px;
+  }
+  .kb-lock-t svg {
+    color: var(--text-muted);
+    flex: none;
+  }
+  .kb-lock-b {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+  .kb-doc {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    align-items: center;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .mk-sec .kb-doc:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+  .kb-doc-n {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+    color: var(--text);
+  }
+  .kb-doc-m {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .kb-confirm {
+    grid-column: 1/-1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--input-bg);
+    font-size: 12.5px;
+  }
+  .kb-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 22px 16px;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 12px;
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--text);
+    background: var(--input-bg);
+  }
+  .kb-drop > svg {
+    color: var(--text-muted);
+  }
+  .kb-drop.is-drag {
+    border-color: var(--accent-ink);
+    background: var(--accent-soft);
+  }
+  .kb-pick {
+    font-size: 13.5px;
+  }
+  .kb-files {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .kb-file {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 8px 9px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .kb-file:first-child {
+    border-top: none;
+  }
+  .kb-file-n {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .kb-file-s {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    min-width: 0;
+  }
+  .kb-file-s .mk-bar-track {
+    max-width: 160px;
+  }
+  .kb-ok {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--green);
+  }
+  .kb-bad {
+    color: var(--red);
+  }
+  .kb-up-foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .kb-up-foot .mk-meta {
+    flex: 1 1 220px;
+  }
+  .kb-hits {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .kb-hit-t {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text);
+    text-wrap: pretty;
+  }
+  .kb-ref-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .kb-danger {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .kb-danger .kb-confirm {
+    align-self: stretch;
+  }
+  .kb-create {
+    width: 560px;
+    max-width: 94vw;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 92vh;
+  }
+  .kb-create-h {
+    padding: 18px 20px 4px;
+    align-items: flex-start;
+  }
+  .kb-create-b {
+    padding: 14px 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .kb-create-err {
+    padding: 0 20px 10px;
+    font-size: 12.5px;
+    color: var(--red);
+  }
+  .kb-create-f {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .kb-lb {
+    font-size: 12.5px;
+    font-weight: 500;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .kb-src {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .kb-src button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  .kb-origin-opts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .kb-opt {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 11px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-align: left;
+    font-size: 13px;
+    line-height: 1.45;
+    background: var(--card);
+  }
+  .kb-opt:hover {
+    border-color: var(--border-strong);
+  }
+  .kb-opt.is-on {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+  }
+  .kb-opt b {
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .kb-opt span {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  @media (max-width: 560px) {
+    .kb-origin-opts {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .kb-req-av {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+  .rv-kb-gap {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    line-height: 1.45;
+  }
+  .kb-cites {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 760px;
+  }
+  .kb-cites-h {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+  .kb-cite {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 32px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12.5px;
+    text-align: left;
+    color: var(--text);
+  }
+  .kb-cite:hover {
+    background: var(--row-hover);
+  }
+  .kb-cite-n {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    flex: none;
+  }
+  .kb-cite-d {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .kb-cite-p {
+    margin: 4px 0 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--input-bg);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+  .kb-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-width: 100%;
+  }
+  .kb-step svg {
+    color: var(--green);
+    flex: none;
+  }
+}

@@ -20,7 +20,6 @@ const OWNER_EXTRA: ViewKey[] = [
   'governance',
   'playground',
   'skills',
-  'knowledge',
   'observability',
   'evals',
   'costs',
@@ -51,7 +50,15 @@ describe('canView (UX only: the API authorizes every request)', () => {
   it('adds the owner views for FinOps central without Admin (design OWNER_VIEWS)', () => {
     const views = visible({ role: 'finops-central', is_admin: false, can: NOT_CREATOR });
     expect([...views].sort()).toEqual([...USER, ...OWNER_EXTRA].sort());
-    for (const hidden of ['budgets', 'audit', 'settings', 'review', 'models', 'mcp'] as const) {
+    for (const hidden of [
+      'budgets',
+      'audit',
+      'settings',
+      'review',
+      'models',
+      'mcp',
+      'knowledge',
+    ] as const) {
       expect(views).not.toContain(hidden);
     }
   });
@@ -61,10 +68,12 @@ describe('canView (UX only: the API authorizes every request)', () => {
     expect(canView({ role: 'bu-lead', is_admin: false, can: NOT_CREATOR }, 'org')).toBe(true);
   });
 
-  it('adds the Catálogo de MCP for agent creators (design CREATOR_VIEWS)', () => {
+  it('adds the Catálogo de MCP and Knowledge Bases for agent creators (design CREATOR_VIEWS)', () => {
     const views = visible({ role: null, is_admin: false, can: CREATOR });
-    expect([...views].sort()).toEqual([...USER, 'mcp'].sort());
+    expect([...views].sort()).toEqual([...USER, 'mcp', 'knowledge'].sort());
     const central = visible({ role: 'finops-central', is_admin: false, can: CREATOR });
-    expect([...central].sort()).toEqual([...USER, ...OWNER_EXTRA, 'mcp'].sort());
+    expect([...central].sort()).toEqual(
+      [...new Set([...USER, ...OWNER_EXTRA, 'mcp', 'knowledge'])].sort(),
+    );
   });
 });

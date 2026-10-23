@@ -9,6 +9,7 @@ import { agent, agentPicker, chat, markdown } from './es/chat';
 import { admin, gov } from './es/governance';
 import { groups } from './es/groups';
 import { inbox } from './es/inbox';
+import { knowledge } from './es/knowledge';
 import { marketplace } from './es/marketplace';
 import { mcpCatalog } from './es/mcpCatalog';
 import { orgChart } from './es/orgChart';
@@ -48,4 +49,5 @@ export const es = {
   approvals,
   schedules,
   inbox,
+  knowledge,
 } as const;

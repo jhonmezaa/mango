@@ -19,6 +19,8 @@ interface Props<Id extends string> {
   idPrefix: string;
   /** Id of the element with `role="tabpanel"`. */
   panelId: string;
+  /** Class of the tab list: `mk-tabs` unless the design uses others (`tk-tabs kb-tabs`). */
+  className?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export function Tabs<Id extends string>({
   onChange,
   idPrefix,
   panelId,
+  className = 'mk-tabs',
 }: Props<Id>) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = tabs.findIndex((tab) => tab.id === active);
@@ -51,7 +54,7 @@ export function Tabs<Id extends string>({
   };
 
   return (
-    <div className="mk-tabs" role="tablist" aria-label={label} onKeyDown={onKeyDown}>
+    <div className={className} role="tablist" aria-label={label} onKeyDown={onKeyDown}>
       {tabs.map((tab) => (
         <button
           key={tab.id}

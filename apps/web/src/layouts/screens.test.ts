@@ -12,6 +12,7 @@ describe('SCREENS', () => {
       ['org', 'org/*'],
       ['models', 'models/*'],
       ['mcp', 'mcp/*'],
+      ['knowledge', 'knowledge/*'],
       ['approvals', 'approvals/*'],
       ['schedules', 'schedules/*'],
       ['inbox', 'inbox/*'],
