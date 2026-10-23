@@ -318,7 +318,8 @@ def test_a_rejection_says_why_and_the_proposer_reads_it(env: Env, s3: FakeS3) ->
         response = _decide(env, source, "reject", note=note)
         assert (response.status_code, _code(response)) == (422, "note_required"), note
     assert _decide(env, source, "reject", note="a\x07b").status_code == 422
-    assert _code(_decide(env, source, "reject", note="clave AKIAIOSFODNN7EXAMPLE")) == "secret_in_note"
+    credential = _decide(env, source, "reject", note="clave AKIAIOSFODNN7EXAMPLE")
+    assert _code(credential) == "secret_in_note"
     assert _decide(env, source, "reject", note="x" * 501).status_code == 422
     rejected = _decide(env, source, "reject", note=" No es la carpeta correcta ").json()
     assert rejected["note"] == "No es la carpeta correcta"
