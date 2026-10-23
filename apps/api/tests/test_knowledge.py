@@ -1105,3 +1105,86 @@ def test_a_knowledge_base_being_deleted_is_not_searched(env: Env) -> None:
     assert env.delete("creator", kb).status_code == 202
     assert _code(_search(env, kb)) == "knowledge_base_deleting"
     assert retrieve.calls == []
+
+
+# --- What the screen reads of each one (D88 (43)) ----------------------------------------
+
+
+def test_who_may_search_it_comes_with_it(env: Env) -> None:
+    kb = env.created()
+    by_token = {t: env.get(t, kb["kb_id"]).json() for t in ("creator", "admin", "outsider")}
+    # Sees its documents and is in its groups; an administrator outside them does not search.
+    assert by_token["creator"]["can_search"] is True
+    assert (by_token["admin"]["can_view_documents"], by_token["admin"]["can_search"]) == (
+        True,
+        False,
+    )
+    assert by_token["outsider"]["can_search"] is False
+    # A knowledge base of uploads has no sources; a new one never synchronized.
+    assert by_token["creator"]["sources"] == []
+    assert by_token["creator"]["last_synced_at"] is None
+    assert by_token["creator"]["status_reason"] is None
+
+
+@dataclass(frozen=True)
+class Serving:
+    agent_id: str
+    version: int
+    name: str
+    groups: tuple[str, ...]
+    knowledge_bases: tuple[str, ...]
+
+
+def test_the_agents_that_serve_it_and_who_of_theirs_gets_nothing(env: Env) -> None:
+    kb = env.created()
+    other = env.created(name="Otra")
+    assert env.deps is not None
+    env.deps.agents_serving = lambda: [
+        Serving("agt_people", 3, "People Docs", ("hr", "people"), (kb["kb_id"],)),
+        Serving("agt_people", 4, "People Docs v4", ("hr", "finance"), (kb["kb_id"],)),
+        Serving("agt_ops", 1, "Ops", ("hr",), (other["kb_id"],)),
+    ]
+    [agent] = env.get("creator", kb["kb_id"]).json()["agents"]
+    # One per agent, from its latest version; the alert of D26 with its groups out of it.
+    assert agent == {
+        "agent_id": "agt_people",
+        "name": "People Docs v4",
+        "groups_without_access": ["finance"],
+    }
+    # Who does not see its documents sees the agent, not its groups.
+    [agent] = env.get("outsider", kb["kb_id"]).json()["agents"]
+    assert agent["groups_without_access"] is None
+
+    def down() -> list[Serving]:
+        raise RuntimeError("agents unavailable")
+
+    env.deps.agents_serving = down
+    assert env.get("creator", kb["kb_id"]).json()["agents"] is None
+
+
+def test_why_the_last_synchronization_did_not_finish(env: Env) -> None:
+    kb = env.created()
+    env.db.update_item(
+        TableName="knowledge",
+        Key={"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}},
+        UpdateExpression=(
+            "SET #s = :e, status_reason = :r, status_estimate_usd = :u,"
+            " last_attempt_at = :a, last_synced_at = :y"
+        ),
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={
+            ":e": {"S": "error"},
+            ":r": {"S": "budget"},
+            ":u": {"N": "12.4"},
+            ":a": {"S": "2026-10-22T10:00:00+00:00"},
+            ":y": {"S": "2026-10-21T10:00:00+00:00"},
+        },
+    )
+    got = env.get("creator", kb["kb_id"]).json()
+    assert (got["status"], got["status_reason"], got["budget_estimate_usd"]) == (
+        "error",
+        "budget",
+        "12.4",
+    )
+    assert got["last_attempt_at"].startswith("2026-10-22T10:00")
+    assert got["last_synced_at"].startswith("2026-10-21T10:00")

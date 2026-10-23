@@ -317,6 +317,9 @@ def test_uploaded_documents_are_indexed_with_the_metadata_of_the_registry(env: E
     assert meta is not None
     assert meta["status"]["S"] == "ok"
     assert "sync_id" not in meta
+    # What the screen says of it (D88 (43)): when it last tried and finished, and no reason.
+    assert meta["last_attempt_at"] == meta["last_synced_at"]
+    assert "status_reason" not in meta and "status_estimate_usd" not in meta
     # The lock is free again.
     assert "Item" not in env.db.get_item(
         TableName="knowledge", Key={"PK": {"S": "LOCK#KBID000001"}, "SK": {"S": "LOCK"}}
@@ -406,7 +409,18 @@ def test_a_synchronization_that_does_not_fit_in_the_budget_ingests_nothing(env: 
     assert state["outcome"] == "budget"
     assert env.agent.ingested == []
     assert env.budget() == {}
-    assert env.meta(kb_id)["status"]["S"] == "error"  # type: ignore[index]
+    meta = env.meta(kb_id)
+    assert meta is not None
+    assert meta["status"]["S"] == "error"
+    # «No empezó por presupuesto», with what its embeddings would have cost.
+    assert meta["status_reason"] == {"S": "budget"}
+    assert Decimal(meta["status_estimate_usd"]["N"]) == estimate(10**9, Decimal("0.02"))
+    assert "last_attempt_at" in meta and "last_synced_at" not in meta
+    # The next one that finishes clears the reason and keeps when it last finished.
+    env.agent.statuses = {}
+    env.run(kb_id)
+    meta = env.meta(kb_id)
+    assert meta is not None and "status_reason" not in meta and "last_synced_at" in meta
 
 
 def test_a_failed_synchronization_releases_its_reservation_and_its_lock(env: Env) -> None:
@@ -421,6 +435,7 @@ def test_a_failed_synchronization_releases_its_reservation_and_its_lock(env: Env
     assert env.budget()["reserved"] == 0
     assert env.budget()["spent"] == 0
     assert env.meta(kb_id)["status"]["S"] == "error"  # type: ignore[index]
+    assert env.meta(kb_id)["status_reason"] == {"S": "error"}  # type: ignore[index]
     # Finishing twice charges nothing twice.
     env.step("finish", state)
     assert env.budget()["spent"] == 0
@@ -642,3 +657,19 @@ def test_a_retried_step_logs_the_code_of_aws(env: Env, caplog: pytest.LogCapture
 )
 def test_only_the_code_reaches_the_log(exc: Exception, code: str) -> None:
     assert handler.aws_code(exc) == code
+
+
+@pytest.mark.parametrize(
+    ("outcome", "state", "reason"),
+    [
+        ("done", {}, None),
+        ("done", {"full": True}, "full"),
+        ("budget", {}, "budget"),
+        ("error", {"full": True}, "error"),
+    ],
+)
+def test_the_reason_the_screen_shows(
+    outcome: str, state: dict[str, Any], reason: str | None
+) -> None:
+    # D88 (43): a source that passes the limits copied up to them; it is not an error.
+    assert handler._reason(outcome, state) == reason

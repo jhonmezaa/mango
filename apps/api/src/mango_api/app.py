@@ -35,7 +35,12 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from mango_api import harness, sessions
 from mango_api.admin import AdminDeps, admin_router, now_utc
-from mango_api.agents import AgentsDeps, agents_router, agents_using_knowledge_base
+from mango_api.agents import (
+    AgentsDeps,
+    agents_router,
+    agents_serving_knowledge,
+    agents_using_knowledge_base,
+)
 from mango_api.agents_store import AgentsStore, ListedVersions
 from mango_api.approval_executor import GatewayExecutor
 from mango_api.approvals import (
@@ -750,6 +755,7 @@ def build_services(settings: Settings) -> Services:
                 ),
                 user_limit=lambda user_id: budget_limits.for_user(user_id)[0],
                 agents_using=partial(agents_using_knowledge_base, agents_store),
+                agents_serving=partial(agents_serving_knowledge, agents_store),
                 retrieve=(
                     boto3.client("bedrock-agent-runtime", region_name=region).retrieve
                     if settings.knowledge_base_id

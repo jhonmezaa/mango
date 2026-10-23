@@ -314,6 +314,7 @@ def plan(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
         except budget.BudgetExceededError:
             # «No empezó por presupuesto»: nothing is ingested; deletions still go ahead.
             state["outcome"] = "budget"
+            state["estimate_usd"] = str(amount)
             state["ingest"] = []
             reservation = Reservation(reservation.scope, reservation.period, Decimal(0))
     state["reservation"] = {
@@ -435,7 +436,16 @@ def finish(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
             # Gone only when no record is left and a search by its kb_id returns nothing.
             removed = not documents and not deps.bedrock.still_answering(kb_id, None)
         elif state.get("locked"):
-            deps.store.set_status(kb_id, _status_after(outcome, documents))
+            now = _iso(deps.clock())
+            reason = _reason(outcome, state)
+            deps.store.set_status(
+                kb_id,
+                _status_after(outcome, documents),
+                attempted_at=now,
+                synced_at=now if reason is None else None,
+                reason=reason,
+                estimate_usd=Decimal(state["estimate_usd"]) if reason == "budget" else None,
+            )
         deletions_left = (deleting_kb and not removed) or any(
             d.status is DocumentStatus.DELETING for d in documents
         )
@@ -464,6 +474,15 @@ def finish(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
         _start(deps, kb_id, again, "sync")
     state["outcome"] = outcome
     return state
+
+
+def _reason(outcome: str, state: dict[str, Any]) -> str | None:
+    """Why the synchronization did not finish as asked, for the screen (D88 (43)): ``budget``
+    (its embeddings did not fit), ``error`` (it failed), or ``full`` (a source passes the limits
+    of the knowledge base: it copied up to them). ``None`` when it finished."""
+    if outcome in {"budget", "error"}:
+        return outcome
+    return "full" if state.get("full") else None
 
 
 def _status_after(outcome: str, documents: list[Any]) -> Status:

@@ -105,6 +105,17 @@ export const zAgentListSchema = z.object({
 });
 
 /**
+ * AgentRefOut
+ *
+ * An agent that serves the knowledge base (D88 (15), (43)).
+ */
+export const zAgentRefOutSchema = z.object({
+    agent_id: z.string(),
+    groups_without_access: z.array(z.string()).nullable(),
+    name: z.string()
+});
+
+/**
  * AgentStateOut
  */
 export const zAgentStateOutSchema = z.object({
@@ -1664,6 +1675,17 @@ export const zSourceListOutSchema = z.object({
 });
 
 /**
+ * SourceRefOut
+ *
+ * A source of a bucket knowledge base, as the list shows it (D88 (43)).
+ */
+export const zSourceRefOutSchema = z.object({
+    location: z.string().nullable(),
+    src_id: z.string(),
+    status: zSourceStatusSchema
+});
+
+/**
  * StateIn
  */
 export const zStateInSchema = z.object({
@@ -1689,9 +1711,12 @@ export const zStatusSchema = z.enum([
  * KnowledgeBaseOut
  */
 export const zKnowledgeBaseOutSchema = z.object({
+    agents: z.array(zAgentRefOutSchema).nullable(),
+    budget_estimate_usd: z.string().nullable(),
     business_unit: z.string(),
     bytes: z.int(),
     can_edit: z.boolean(),
+    can_search: z.boolean(),
     can_view_documents: z.boolean(),
     classification: z.enum([
         'public',
@@ -1704,10 +1729,18 @@ export const zKnowledgeBaseOutSchema = z.object({
     documents: z.int(),
     groups: z.array(z.string()),
     kb_id: z.string(),
+    last_attempt_at: z.iso.datetime().nullable(),
+    last_synced_at: z.iso.datetime().nullable(),
     name: z.string(),
     origin: z.enum(['upload', 'bucket']),
     owner: zOwnerOutSchema,
+    sources: z.array(zSourceRefOutSchema).nullable(),
     status: zStatusSchema,
+    status_reason: z.enum([
+        'budget',
+        'error',
+        'full'
+    ]).nullable(),
     sync_running: z.boolean(),
     sync_schedule: z.enum([
         'manual',

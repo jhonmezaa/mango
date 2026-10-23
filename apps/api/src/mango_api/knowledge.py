@@ -59,6 +59,7 @@ from mango_api.knowledge_store import (
     KnowledgeLimitError,
     KnowledgeStore,
     KnowledgeStoreUnavailableError,
+    Source,
     Upload,
 )
 from mango_api.knowledge_uploads import (
@@ -164,6 +165,31 @@ class OwnerOut(_Strict):
     """Only for administrators and the owner."""
 
 
+StatusReason = Literal["budget", "error", "full"]
+"""Why the last synchronization did not finish as asked (D88 (43)): its embeddings did not fit
+in the budget of whoever asked; it failed; or a source passes the limits and it copied up to
+them."""
+
+
+class SourceRefOut(_Strict):
+    """A source of a bucket knowledge base, as the list shows it (D88 (43))."""
+
+    src_id: str
+    status: SourceStatus
+    location: str | None
+    """``s3://bucket/prefix/``; only for whoever sees its documents."""
+
+
+class AgentRefOut(_Strict):
+    """An agent that serves the knowledge base (D88 (15), (43))."""
+
+    agent_id: str
+    name: str
+    groups_without_access: list[str] | None
+    """The alert of D26: its groups with no group of the knowledge base. Only for whoever sees
+    its documents; ``None`` for the others."""
+
+
 class KnowledgeBaseOut(_Strict):
     kb_id: str
     name: str
@@ -185,6 +211,18 @@ class KnowledgeBaseOut(_Strict):
     """Its documents and «Probar búsqueda» (D88 (13)); the list itself is for every creator."""
     sync_running: bool
     """A synchronization holds it: «Ya hay una sincronización en curso» (design 2.4)."""
+    can_search: bool
+    """«Probar búsqueda»: sees its documents and is in one of its groups (D88 (37))."""
+    last_attempt_at: datetime | None
+    last_synced_at: datetime | None
+    status_reason: StatusReason | None
+    budget_estimate_usd: str | None
+    """With ``budget``: what its embeddings would have cost (the design says it)."""
+    sources: list[SourceRefOut] | None
+    """Of a bucket knowledge base: the active ones and the last decided one if nothing is
+    pending; ``[]`` for uploads, ``None`` when they could not be read."""
+    agents: list[AgentRefOut] | None
+    """Agents whose versions serve it; ``None`` when they could not be read."""
 
 
 class KnowledgeBaseListOut(_Strict):
@@ -408,6 +446,21 @@ class BucketCheck(Protocol):
     def check(self, bucket: str) -> None: ...
 
 
+class AgentServing(Protocol):
+    """A version that serves knowledge bases (``agents.AgentServing``)."""
+
+    @property
+    def agent_id(self) -> str: ...
+    @property
+    def version(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def groups(self) -> tuple[str, ...]: ...
+    @property
+    def knowledge_bases(self) -> tuple[str, ...]: ...
+
+
 class AgentUsing(Protocol):
     """A version that serves a knowledge base (``agents.AgentUsing``)."""
 
@@ -438,6 +491,9 @@ class KnowledgeDeps:
     agents_using: Callable[[str], Sequence[AgentUsing]] | None = None
     """Agents whose versions serve a knowledge base (``agents.agents_using_knowledge_base``);
     set in production. Raises when it cannot tell: nothing is deleted then."""
+    agents_serving: Callable[[], Sequence[AgentServing]] | None = None
+    """Every version that serves knowledge bases (``agents.agents_serving_knowledge``), for the
+    agents of each one in the answers; ``None`` or failing, they are ``None``."""
     retrieve: Callable[..., Any] | None = None
     """``Retrieve`` of ``bedrock-agent-runtime``; ``None`` until mango-api may search (503)."""
     knowledge_base_id: str = ""
@@ -758,8 +814,56 @@ def delete_document(
     return replace(document, status=DocumentStatus.DELETING)
 
 
+_DECIDED = (SourceStatus.REJECTED, SourceStatus.WITHDRAWN)
+
+
+def source_refs(sources: Sequence[Source], *, can_view: bool) -> list[SourceRefOut]:
+    """The active sources, and the last decided one when nothing is pending: what the screen
+    needs to say «Pendiente de aprobación», «Bucket rechazado» or «Sin bucket»."""
+    active = [s for s in sources if s.status not in _DECIDED]
+    decided = sorted((s for s in sources if s.status in _DECIDED), key=lambda s: s.decided_at or "")
+    shown = active + (
+        decided[-1:] if not any(s.status is SourceStatus.PENDING for s in active) else []
+    )
+    return [
+        SourceRefOut(
+            src_id=s.src_id,
+            status=s.status,
+            location=f"s3://{s.bucket}/{s.prefix}" if can_view else None,
+        )
+        for s in shown
+    ]
+
+
+def agent_refs(
+    kb: KnowledgeBase, serving: Sequence[AgentServing], *, can_view: bool
+) -> list[AgentRefOut]:
+    """One per agent, from its latest version that serves ``kb``."""
+    latest: dict[str, AgentServing] = {}
+    for version in serving:
+        if kb.kb_id not in version.knowledge_bases:
+            continue
+        if version.agent_id not in latest or version.version > latest[version.agent_id].version:
+            latest[version.agent_id] = version
+    return [
+        AgentRefOut(
+            agent_id=v.agent_id,
+            name=v.name,
+            groups_without_access=[g for g in v.groups if g not in kb.groups] if can_view else None,
+        )
+        for v in sorted(latest.values(), key=lambda v: (v.name.casefold(), v.agent_id))
+    ]
+
+
 def knowledge_base_out(
-    kb: KnowledgeBase, caller: Caller, *, can_edit: bool, can_view: bool
+    kb: KnowledgeBase,
+    caller: Caller,
+    *,
+    can_edit: bool,
+    can_view: bool,
+    can_use: bool = False,
+    sources: Sequence[Source] | None = (),
+    serving: Sequence[AgentServing] | None = None,
 ) -> KnowledgeBaseOut:
     sees_email = caller.user.is_admin or caller.user.user_id == kb.owner_id
     return KnowledgeBaseOut(
@@ -785,7 +889,20 @@ def knowledge_base_out(
         can_edit=can_edit and kb.status is not Status.DELETING,
         can_view_documents=can_view,
         sync_running=kb.sync_running,
+        can_search=can_view and can_use,
+        last_attempt_at=_when(kb.last_attempt_at),
+        last_synced_at=_when(kb.last_synced_at),
+        status_reason=kb.status_reason  # type: ignore[arg-type]
+        if kb.status_reason in ("budget", "error", "full")
+        else None,
+        budget_estimate_usd=kb.status_estimate_usd if kb.status_reason == "budget" else None,
+        sources=None if sources is None else source_refs(sources, can_view=can_view),
+        agents=None if serving is None else agent_refs(kb, serving, can_view=can_view),
     )
+
+
+def _when(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
 
 
 def _storage(deps: KnowledgeDeps) -> DocumentStorage:
@@ -1105,15 +1222,42 @@ def knowledge_router(  # noqa: PLR0915 - registers the route closures
         )
         return kb
 
+    def sources_of(kb: KnowledgeBase) -> list[Source] | None:
+        if kb.origin != "bucket":
+            return []
+        try:
+            return deps.store.sources(kb.kb_id)
+        except KnowledgeStoreUnavailableError:
+            logger.exception("the sources of a knowledge base could not be read")
+            return None
+
+    def serving() -> Sequence[AgentServing] | None:
+        if deps.agents_serving is None:
+            return None
+        try:
+            return deps.agents_serving()
+        except Exception:
+            logger.exception("the agents of the knowledge bases could not be read")
+            return None
+
     async def out(caller: Caller, bases: list[KnowledgeBase]) -> list[KnowledgeBaseOut]:
         resources = [resource_of(kb) for kb in bases]
         can_edit = await run(allowed, caller, "EditKnowledgeBase", resources)
         can_view = await run(allowed, caller, "ViewKnowledgeBase", resources)
+        can_use = await run(allowed, caller, "UseKnowledgeBase", resources)
+        agents = await run(serving)
+        sources = await asyncio.gather(*(run(sources_of, kb) for kb in bases))
         return [
             knowledge_base_out(
-                kb, caller, can_edit=kb.kb_id in can_edit, can_view=kb.kb_id in can_view
+                kb,
+                caller,
+                can_edit=kb.kb_id in can_edit,
+                can_view=kb.kb_id in can_view,
+                can_use=kb.kb_id in can_use,
+                sources=kb_sources,
+                serving=agents,
             )
-            for kb in bases
+            for kb, kb_sources in zip(bases, sources, strict=True)
         ]
 
     @router.get("", response_model=KnowledgeBaseListOut)

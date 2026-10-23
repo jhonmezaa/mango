@@ -684,6 +684,41 @@
         "title": "AgentOut",
         "type": "object"
       },
+      "AgentRefOut": {
+        "additionalProperties": false,
+        "description": "An agent that serves the knowledge base (D88 (15), (43)).",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "groups_without_access": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groups Without Access"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "name",
+          "groups_without_access"
+        ],
+        "title": "AgentRefOut",
+        "type": "object"
+      },
       "AgentStateOut": {
         "additionalProperties": false,
         "properties": {
@@ -3119,6 +3154,31 @@
       "KnowledgeBaseOut": {
         "additionalProperties": false,
         "properties": {
+          "agents": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentRefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agents"
+          },
+          "budget_estimate_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Estimate Usd"
+          },
           "business_unit": {
             "title": "Business Unit",
             "type": "string"
@@ -3129,6 +3189,10 @@
           },
           "can_edit": {
             "title": "Can Edit",
+            "type": "boolean"
+          },
+          "can_search": {
+            "title": "Can Search",
             "type": "boolean"
           },
           "can_view_documents": {
@@ -3169,6 +3233,30 @@
             "title": "Kb Id",
             "type": "string"
           },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3184,8 +3272,38 @@
           "owner": {
             "$ref": "#/components/schemas/OwnerOut"
           },
+          "sources": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SourceRefOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sources"
+          },
           "status": {
             "$ref": "#/components/schemas/Status"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "budget",
+                  "error",
+                  "full"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
           },
           "sync_running": {
             "title": "Sync Running",
@@ -3229,7 +3347,14 @@
           "updated_at",
           "can_edit",
           "can_view_documents",
-          "sync_running"
+          "sync_running",
+          "can_search",
+          "last_attempt_at",
+          "last_synced_at",
+          "status_reason",
+          "budget_estimate_usd",
+          "sources",
+          "agents"
         ],
         "title": "KnowledgeBaseOut",
         "type": "object"
@@ -6764,6 +6889,37 @@
           "can_decide"
         ],
         "title": "SourceOut",
+        "type": "object"
+      },
+      "SourceRefOut": {
+        "additionalProperties": false,
+        "description": "A source of a bucket knowledge base, as the list shows it (D88 (43)).",
+        "properties": {
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "src_id": {
+            "title": "Src Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SourceStatus"
+          }
+        },
+        "required": [
+          "src_id",
+          "status",
+          "location"
+        ],
+        "title": "SourceRefOut",
         "type": "object"
       },
       "SourceStatus": {

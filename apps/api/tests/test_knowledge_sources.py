@@ -668,3 +668,25 @@ def test_a_scheduler_that_fails_leaves_the_change_standing_and_audited(
     response = _decide(env, _proposed(env, kb), "approve")
     assert (response.status_code, response.json()["status"]) == (200, "approved")
     assert [d["outcome"] for _u, d in env.audit.named("kb.schedule", None)] == ["failed"]
+
+
+def test_a_bucket_knowledge_base_says_its_sources_in_the_list(env: Env, s3: FakeS3) -> None:  # noqa: F811
+    # D88 (43): what the list needs for «Pendiente de aprobación», «Bucket rechazado» and the
+    # rest; the location only for whoever sees its documents.
+    kb = env.created(origin="bucket")
+    source = _proposed(env, kb)
+
+    def listed(token: str) -> list[dict[str, Any]]:
+        [item] = [k for k in env.list(token).json()["items"] if k["kb_id"] == kb["kb_id"]]
+        refs: list[dict[str, Any]] = item["sources"]
+        return refs
+
+    assert listed("creator") == [
+        {"src_id": source["src_id"], "status": "pending", "location": "s3://docs-rrhh/politicas/"}
+    ]
+    assert listed("outsider")[0]["location"] is None
+    _decide(env, source, "reject", note="No es la carpeta")
+    assert [s["status"] for s in listed("creator")] == ["rejected"]
+    change = _proposed(env, kb, "s3://docs-legal/")
+    # Pending again: the old decision is not shown.
+    assert [s["src_id"] for s in listed("creator")] == [change["src_id"]]

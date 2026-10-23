@@ -1601,6 +1601,36 @@ class AgentUsing:
     name: str
 
 
+@dataclass(frozen=True)
+class AgentServing:
+    """A version that serves knowledge bases, with what the screen of Knowledge Bases says of
+    it (D88 (43)): its name, its groups and its knowledge bases."""
+
+    agent_id: str
+    version: int
+    name: str
+    groups: tuple[str, ...]
+    knowledge_bases: tuple[str, ...]
+
+
+def agents_serving_knowledge(store: AgentsStore) -> list[AgentServing]:
+    """Every version that serves a knowledge base, or may without another review (the same
+    as :func:`agents_using_knowledge_base`). Raises ``AgentsUnavailableError`` when the table
+    cannot be read."""
+    return [
+        AgentServing(
+            v.agent_id,
+            v.number,
+            v.definition.name,
+            tuple(v.definition.groups),
+            tuple(v.definition.knowledge_bases),
+        )
+        for status in _IN_USE_STATUSES
+        for v in store.by_status(status)
+        if v.definition.knowledge_bases
+    ]
+
+
 def agents_using_knowledge_base(store: AgentsStore, kb_id: str) -> list[AgentUsing]:
     """Versions that serve ``kb_id``, or may serve it without another review (D88 (15)): it
     cannot be deleted until a new version leaves it out. One in review is not counted: its

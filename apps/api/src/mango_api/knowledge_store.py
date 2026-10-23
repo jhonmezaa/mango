@@ -83,6 +83,13 @@ class KnowledgeBase:
     origin: str = "upload"
     """How its documents arrive, chosen when it is created and never changed (D88 (42)):
     ``upload`` or ``bucket``. A record from before has none: it is ``upload``."""
+    last_attempt_at: str | None = None
+    """When a synchronization last closed, and when one last finished as asked (D88 (43))."""
+    last_synced_at: str | None = None
+    status_reason: str | None = None
+    """Why the last one did not: ``budget``, ``error`` or ``full`` (the synchronization)."""
+    status_estimate_usd: str | None = None
+    """With ``budget``: what its embeddings would have cost."""
 
 
 @dataclass(frozen=True)
@@ -186,6 +193,12 @@ def _knowledge_base(item: dict[str, Any]) -> KnowledgeBase:
         updated_at=item["updated_at"]["S"],
         sync_running="sync_id" in item,
         origin=_str(item, "origin") or "upload",
+        last_attempt_at=_str(item, "last_attempt_at"),
+        last_synced_at=_str(item, "last_synced_at"),
+        status_reason=_str(item, "status_reason"),
+        status_estimate_usd=item["status_estimate_usd"]["N"]
+        if "status_estimate_usd" in item
+        else None,
     )
 
 

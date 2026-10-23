@@ -344,6 +344,26 @@ export type AgentOut = {
 };
 
 /**
+ * AgentRefOut
+ *
+ * An agent that serves the knowledge base (D88 (15), (43)).
+ */
+export type AgentRefOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Groups Without Access
+     */
+    groups_without_access: Array<string> | null;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * AgentStateOut
  */
 export type AgentStateOut = {
@@ -1684,6 +1704,14 @@ export type KnowledgeBaseListOut = {
  */
 export type KnowledgeBaseOut = {
     /**
+     * Agents
+     */
+    agents: Array<AgentRefOut> | null;
+    /**
+     * Budget Estimate Usd
+     */
+    budget_estimate_usd: string | null;
+    /**
      * Business Unit
      */
     business_unit: string;
@@ -1695,6 +1723,10 @@ export type KnowledgeBaseOut = {
      * Can Edit
      */
     can_edit: boolean;
+    /**
+     * Can Search
+     */
+    can_search: boolean;
     /**
      * Can View Documents
      */
@@ -1724,6 +1756,14 @@ export type KnowledgeBaseOut = {
      */
     kb_id: string;
     /**
+     * Last Attempt At
+     */
+    last_attempt_at: string | null;
+    /**
+     * Last Synced At
+     */
+    last_synced_at: string | null;
+    /**
      * Name
      */
     name: string;
@@ -1732,7 +1772,15 @@ export type KnowledgeBaseOut = {
      */
     origin: 'upload' | 'bucket';
     owner: OwnerOut;
+    /**
+     * Sources
+     */
+    sources: Array<SourceRefOut> | null;
     status: Status;
+    /**
+     * Status Reason
+     */
+    status_reason: 'budget' | 'error' | 'full' | null;
     /**
      * Sync Running
      */
@@ -3534,6 +3582,23 @@ export type SourceOut = {
      * Version
      */
     version: number;
+};
+
+/**
+ * SourceRefOut
+ *
+ * A source of a bucket knowledge base, as the list shows it (D88 (43)).
+ */
+export type SourceRefOut = {
+    /**
+     * Location
+     */
+    location: string | null;
+    /**
+     * Src Id
+     */
+    src_id: string;
+    status: SourceStatus;
 };
 
 /**

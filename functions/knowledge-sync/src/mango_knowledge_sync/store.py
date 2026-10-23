@@ -344,16 +344,50 @@ class SyncStore:
         except ClientError:
             return
 
-    def set_status(self, kb_id: str, status: Status) -> None:
-        """Of a knowledge base that is not being deleted: deleting is never undone here."""
+    def set_status(
+        self,
+        kb_id: str,
+        status: Status,
+        *,
+        attempted_at: str | None = None,
+        synced_at: str | None = None,
+        reason: str | None = None,
+        estimate_usd: Decimal | None = None,
+    ) -> None:
+        """Of a knowledge base that is not being deleted: deleting is never undone here.
+
+        When a synchronization closes (``attempted_at``), also what the screen says of it
+        (D88 (43)): when it last tried, when it last finished, and why it did not, if so
+        (``reason``; ``budget`` with the estimate of its embeddings). A closing without a
+        reason clears the one before."""
+        names = {"#status": "status"}
+        values: dict[str, Any] = {":s": _s(status), ":deleting": _s(Status.DELETING)}
+        sets, removes = ["#status = :s"], []
+        if attempted_at is not None:
+            fields: dict[str, Any] = {
+                "last_attempt_at": _s(attempted_at),
+                "last_synced_at": _s(synced_at) if synced_at else None,
+                "status_reason": _s(reason) if reason else None,
+                "status_estimate_usd": _n(estimate_usd) if estimate_usd is not None else None,
+            }
+            for name, value in fields.items():
+                names[f"#{name}"] = name
+                if value is not None:
+                    values[f":{name}"] = value
+                    sets.append(f"#{name} = :{name}")
+                elif name != "last_synced_at":
+                    removes.append(f"#{name}")
+                else:
+                    del names[f"#{name}"]
+        expression = "SET " + ", ".join(sets) + (" REMOVE " + ", ".join(removes) if removes else "")
         try:
             self._call(
                 "update_item",
                 Key={"PK": _pk(kb_id), "SK": _s("META")},
-                UpdateExpression="SET #status = :s",
+                UpdateExpression=expression,
                 ConditionExpression="attribute_exists(PK) AND #status <> :deleting",
-                ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={":s": _s(status), ":deleting": _s(Status.DELETING)},
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
             )
         except ClientError:
             return
