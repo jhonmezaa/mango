@@ -32,6 +32,7 @@ export const inbox = {
   actionError: 'No se pudo guardar el cambio. Vuelve a intentarlo.',
   type: {
     approval: 'Aprobación',
+    kbsource: 'Aprobación',
     run: 'Ejecución',
   },
   system: 'Sistema',

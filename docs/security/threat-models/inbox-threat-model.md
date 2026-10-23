@@ -1,4 +1,4 @@
-# La Bandeja: avisos por persona: modelo de amenazas (v0.1)
+# La Bandeja: avisos por persona: modelo de amenazas (v0.2)
 
 > Fecha: 2026-10-16 · Skill: `security-threat-model`. Decisiones: D23, D24, D27, D56, D70, D78, D82 y **D83** (esta).
 > Amplía `write-tools-approval-threat-model.md` (aprobaciones) y `tasks-threat-model.md` (ejecuciones de tareas).
@@ -148,3 +148,11 @@ Revisión enfocada de la rama, sin cambios de IAM (la Bandeja usa el rol de dato
 - **SPA:** texto plano en filas y detalle; los enlaces son rutas internas construidas con ids validados otra vez en el cliente.
 
 Queda **sin ver en una instalación**: que la política de sesión de `Mango-<ns>-ConversationData` deje al worker escribir en la partición del dueño (usa `PutItem`, ya permitido) y que la nueva política `ViewInbox` se cree en el almacén de políticas con el change set.
+
+## v0.2 (2026-10-23): las propuestas de bucket (D88 (49))
+
+Un tipo de aviso nuevo, `kbsource`: las propuestas de bucket de las knowledge bases que la persona puede firmar.
+- Se derivan en cada lectura con la regla de Aprobaciones (D88 (48)): `ApproveKbSource` sobre la KB y no haberla propuesto. Nunca se copian.
+- Contra TM-I1: solo se guarda lo leído y lo archivado, en la partición propia con la misma RLS. Marcar o archivar una que no se puede firmar responde 404, y el id se valida por patrón (ULID).
+- La nota y los correos siguen la regla de la KB.
+- Si la tabla de knowledge bases no responde, la Bandeja sigue con lo demás y el log no lleva contenido.

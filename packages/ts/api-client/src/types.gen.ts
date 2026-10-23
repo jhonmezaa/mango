@@ -1522,7 +1522,7 @@ export type InboxItem = {
     /**
      * Agent Id
      */
-    agent_id: string;
+    agent_id: string | null;
     /**
      * Agent Name
      */
@@ -1543,12 +1543,13 @@ export type InboxItem = {
     /**
      * Kind
      */
-    kind: 'approval' | 'run';
+    kind: 'approval' | 'kbsource' | 'run';
     /**
      * Read
      */
     read: boolean;
     run?: InboxRun | null;
+    source?: QueuedSourceOut | null;
 };
 
 /**
@@ -6830,7 +6831,7 @@ export type SetInboxStateData = {
         /**
          * Kind
          */
-        kind: 'approval' | 'run';
+        kind: 'approval' | 'kbsource' | 'run';
         /**
          * Item Id
          */

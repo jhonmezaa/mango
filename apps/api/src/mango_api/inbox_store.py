@@ -13,6 +13,8 @@ Item layout, all under ``PK = USER#<sub>``:
 * ``SK = INBOXSTATE#APPROVAL#<approval id>``: whether this person read or archived a pending
   approval. Approvals themselves are never copied: they are read from the approvals table on
   every request, with the rules of the approvals screen (D56).
+* ``SK = INBOXSTATE#KBSOURCE#<source id>``: the same for a bucket proposal of a knowledge base
+  (D88 (49)), read from the knowledge table with the rules of Aprobaciones (D88 (48)).
 
 Both expire with the table's TTL (``ttl``) after ``RETENTION``.
 """
@@ -39,7 +41,12 @@ PAGE_SIZE = 20
 UNREAD_SCAN = 200
 """Notices the unread count and «mark all as read» look at: the newest ones."""
 _NOTICE = "INBOX#"
-_APPROVAL_STATE = "INBOXSTATE#APPROVAL#"
+_STATE_PREFIX: dict[str, str] = {
+    "approval": "INBOXSTATE#APPROVAL#",
+    "kbsource": "INBOXSTATE#KBSOURCE#",
+}
+"""Where the state of each kind of pinned notice is kept."""
+PinnedKind = Literal["approval", "kbsource"]
 _READ_PAGE = 50
 _MAX_READS = 6
 """Queries one page may make while a filter skips notices (read or archived ones)."""
@@ -307,19 +314,22 @@ class InboxStore:
 
     # --- Approval state -------------------------------------------------------------------
 
-    def approval_states(self, user_id: str) -> dict[str, NoticeState]:
-        """What this person read or archived of the approvals, by approval id."""
+    def approval_states(
+        self, user_id: str, kind: PinnedKind = "approval"
+    ) -> dict[str, NoticeState]:
+        """What this person read or archived of the pinned notices of ``kind``, by their id."""
+        prefix = _STATE_PREFIX[kind]
         client = self._clients(user_id)
         kwargs: dict[str, Any] = {
             "TableName": self._table,
             "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
-            "ExpressionAttributeValues": {":pk": _pk(user_id), ":prefix": _s(_APPROVAL_STATE)},
+            "ExpressionAttributeValues": {":pk": _pk(user_id), ":prefix": _s(prefix)},
         }
         out: dict[str, NoticeState] = {}
         for _ in range(_MAX_READS):
             resp = self._call(lambda: client.query(**kwargs))
             for item in resp.get("Items", []):
-                out[item["SK"]["S"].removeprefix(_APPROVAL_STATE)] = NoticeState(
+                out[item["SK"]["S"].removeprefix(prefix)] = NoticeState(
                     read=bool(item.get("is_read", {}).get("BOOL", False)),
                     archived=bool(item.get("is_archived", {}).get("BOOL", False)),
                 )
@@ -329,13 +339,19 @@ class InboxStore:
         return out
 
     def set_approval_state(
-        self, user_id: str, approval_id: str, *, read: bool | None, archived: bool | None
+        self,
+        user_id: str,
+        approval_id: str,
+        *,
+        read: bool | None,
+        archived: bool | None,
+        kind: PinnedKind = "approval",
     ) -> NoticeState:
         sets, values = self._state_sets(read, archived)
         item = self._call(
             lambda: self._clients(user_id).update_item(
                 TableName=self._table,
-                Key={"PK": _pk(user_id), "SK": _s(f"{_APPROVAL_STATE}{approval_id}")},
+                Key={"PK": _pk(user_id), "SK": _s(f"{_STATE_PREFIX[kind]}{approval_id}")},
                 UpdateExpression="SET " + ", ".join([*sets, "#ttl = :ttl"]),
                 ExpressionAttributeNames={"#ttl": "ttl"},
                 ExpressionAttributeValues={**values, ":ttl": self._ttl()},

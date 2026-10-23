@@ -22,8 +22,11 @@ from mango_api.approvals import ApprovalDeps
 from mango_api.approvals_store import ApprovalRecord, ApprovalStore, Signature, Status
 from mango_api.inbox import InboxDeps, RunInbox
 from mango_api.inbox_store import RETENTION, InboxStore, first_line
+from mango_api.knowledge_sources import ProposerOut, QueuedSourceOut
 from mango_api.mcp_catalog import McpCatalog
 from mango_api.tool_policies import PolicyStore
+from mango_api.web import ApiError
+from mango_core.knowledge import SourceStatus
 
 from .test_admin import RecordingAudit, _table
 from .test_app import (
@@ -86,6 +89,7 @@ class Env:
     authorizer: InboxAuthorizer
     clock: list[datetime]
     now: list[float]
+    inbox: InboxDeps | None = None
 
     def request(self, by: str = REQUESTER, **changes: Any) -> ApprovalRecord:
         at = self.clock[0]
@@ -186,7 +190,9 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
 
         asgi = app_module.create_app(_settings(), services_factory=factory)
         client = TestClient(asgi, base_url=f"http://{HOST}")  # type: ignore[arg-type]
-        yield Env(client, db, clients, approvals, store, RunInbox(store), authorizer, clock, now)
+        yield Env(
+            client, db, clients, approvals, store, RunInbox(store), authorizer, clock, now, inbox
+        )
 
 
 # --- Approvals: the rule of the approvals screen (D56) ---------------------------------------
@@ -374,3 +380,95 @@ def test_a_notice_that_cannot_be_written_never_breaks_the_run(env: Env) -> None:
 )
 def test_the_first_line_of_the_report(report: str | None, line: str | None) -> None:
     assert first_line(report) == line
+
+
+# --- Bucket proposals of knowledge bases (D88 (49)) ------------------------------------------
+
+SRC = "01JD0000000000000000000001"
+
+
+def _source(src_id: str = SRC, *, can_decide: bool = True, **changes: Any) -> QueuedSourceOut:
+    return QueuedSourceOut(
+        src_id=src_id,
+        kb_id="01JC0000000000000000000001",
+        bucket="docs-rrhh",
+        prefix="politicas/",
+        status=SourceStatus.PENDING,
+        proposed_by=ProposerOut(user_id="creator-1", email="creator1@example.com"),
+        proposed_at=changes.pop("proposed_at", datetime(2026, 10, 16, 11, tzinfo=UTC)),
+        decided_at=None,
+        decided_by=None,
+        note=None,
+        version=1,
+        role_ready=False,
+        can_decide=can_decide,
+        knowledge_base="Políticas de RH",
+        groups=["hr"],
+        sync_schedule="daily",
+        replaces=None,
+        withdrawn_at=None,
+        **changes,
+    )
+
+
+def test_a_bucket_proposal_to_sign_is_pinned_with_its_card(env: Env) -> None:
+    assert env.inbox is not None
+    record = env.request()
+    env.inbox.sources = lambda caller: (
+        [_source(), _source("01JD0000000000000000000002", can_decide=False)]
+        if caller.user.user_id == APPROVER
+        else []
+    )
+    page = env.get("approver").json()
+    # Newest first: the approval (12:00) before the proposal (11:00); the own one is not there.
+    assert [(i["kind"], i["item_id"]) for i in page["items"]] == [
+        ("approval", record.approval_id),
+        ("kbsource", SRC),
+    ]
+    source = page["items"][1]
+    assert (source["agent_id"], source["source"]["knowledge_base"]) == (None, "Políticas de RH")
+    assert page["unread"] == 2
+    assert [i["kind"] for i in env.get("approver", view="approvals").json()["items"]] == [
+        "approval",
+        "kbsource",
+    ]
+    assert env.get("approver2").json()["items"][0]["kind"] == "approval"
+
+
+def test_reading_and_archiving_a_bucket_proposal_is_per_person(env: Env) -> None:
+    assert env.inbox is not None
+    env.inbox.sources = lambda caller: [_source()]
+    read = env.put("approver", "kbsource", SRC, {"read": True})
+    assert (read.status_code, read.json()["read"]) == (200, True)
+    assert env.get("approver", view="unread").json()["items"] == []
+    archived = env.put("approver", "kbsource", SRC, {"archived": True}).json()
+    assert (archived["archived"], archived["read"]) == (True, True)
+    assert env.get("approver", view="archived").json()["items"][0]["item_id"] == SRC
+    item = env.db.get_item(
+        TableName="conv",
+        Key={"PK": {"S": f"USER#{APPROVER}"}, "SK": {"S": f"INBOXSTATE#KBSOURCE#{SRC}"}},
+    )["Item"]
+    assert item["is_archived"]["BOOL"] is True
+    # «Marcar todo como leído» reaches them too.
+    env.inbox.sources = lambda caller: [_source(), _source("01JD0000000000000000000003")]
+    assert env.client.post(f"{URL}/read-all", headers=_h("approver"), json={}).json() == {
+        "unread": 0
+    }
+
+
+def test_a_bucket_proposal_one_cannot_sign_is_not_found(env: Env) -> None:
+    assert env.inbox is not None
+    env.inbox.sources = lambda caller: [_source(can_decide=False)]
+    assert env.put("approver", "kbsource", SRC, {"read": True}).status_code == 404
+    assert env.put("approver", "kbsource", "not-an-id", {"read": True}).status_code == 422
+
+
+def test_the_inbox_answers_when_the_proposals_cannot_be_read(env: Env) -> None:
+    assert env.inbox is not None
+    record = env.request()
+
+    def down(_caller: Any) -> list[QueuedSourceOut]:
+        raise ApiError(503, "knowledge_unavailable", "please try again")
+
+    env.inbox.sources = down
+    assert [i["item_id"] for i in env.get("approver").json()["items"]] == [record.approval_id]

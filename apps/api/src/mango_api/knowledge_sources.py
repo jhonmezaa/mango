@@ -556,6 +556,66 @@ def source_out(
     )
 
 
+Allowed = Callable[[Caller, str, list[KnowledgeBaseResource]], frozenset[str]]
+
+
+def queued_sources(
+    deps: KnowledgeDeps, caller: Caller, allowed: Allowed, *, decided: bool = True
+) -> list[QueuedSourceOut]:
+    """The proposals of Aprobaciones (D88 (48)): the pending ones the caller may sign and their
+    own, and (``decided``) the decisions of the last ``DECIDED_DAYS`` days on knowledge bases
+    they may sign for, or that they proposed. Nobody signs their own (D88 (20)). Raises
+    ``ApiError`` 503 when the table cannot be read."""
+    since = datetime.fromtimestamp(deps.clock() - DECIDED_DAYS * 86_400, UTC).isoformat(
+        timespec="seconds"
+    )
+    try:
+        pending = deps.store.pending_sources()
+        closed = deps.store.decided_sources(since) if decided else []
+        bases = {
+            kb_id: kb
+            for kb_id in {s.kb_id for s in [*pending, *closed]}
+            if (kb := deps.store.get(kb_id)) is not None
+        }
+        signable = allowed(caller, "ApproveKbSource", [resource_of(kb) for kb in bases.values()])
+        me = caller.user.user_id
+        items: list[QueuedSourceOut] = []
+        for source in [*pending, *closed]:
+            kb = bases.get(source.kb_id)
+            if kb is None or kb.status is Status.DELETING:
+                continue
+            if source.proposed_by != me and source.kb_id not in signable:
+                continue
+            out = source_out(source, caller, kb, can_approve=source.kb_id in signable)
+            items.append(
+                QueuedSourceOut(
+                    **out.model_dump(),
+                    knowledge_base=kb.name,
+                    groups=list(kb.groups),
+                    sync_schedule=kb.sync_schedule,
+                    replaces=_replaced(deps, source),
+                    withdrawn_at=(
+                        datetime.fromisoformat(source.removed_at)
+                        if source.status is SourceStatus.WITHDRAWN and source.removed_at
+                        else None
+                    ),
+                )
+            )
+    except KnowledgeStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    return items
+
+
+def _replaced(deps: KnowledgeDeps, source: Source) -> str | None:
+    """The bucket a pending proposal would replace (D88 (42))."""
+    if source.status is not SourceStatus.PENDING:
+        return None
+    approved = next(
+        (s for s in deps.store.sources(source.kb_id) if s.status is SourceStatus.APPROVED), None
+    )
+    return f"s3://{approved.bucket}/{approved.prefix}" if approved else None
+
+
 # --- Router -------------------------------------------------------------------------------
 
 
@@ -683,65 +743,8 @@ def knowledge_sources_router(  # noqa: PLR0915 - registers the route closures
 
     @router.get("/api/knowledge-sources", response_model=SourceQueueOut)
     async def source_queue(caller: Viewer) -> SourceQueueOut:
-        """The proposals of Aprobaciones (D88 (48)): the pending ones the caller may sign and
-        their own, and the decisions of the last ``DECIDED_DAYS`` days on knowledge bases they
-        may sign for, or that they proposed. Nobody signs their own (D88 (20))."""
-        since = datetime.fromtimestamp(deps.clock() - DECIDED_DAYS * 86_400, UTC).isoformat(
-            timespec="seconds"
-        )
-        try:
-            pending = await run(deps.store.pending_sources)
-            decided = await run(deps.store.decided_sources, since)
-            bases = {
-                kb_id: kb
-                for kb_id in {s.kb_id for s in [*pending, *decided]}
-                if (kb := await run(deps.store.get, kb_id)) is not None
-            }
-        except KnowledgeStoreUnavailableError as exc:
-            raise _unavailable(exc) from exc
-        signable = await run(
-            allowed, caller, "ApproveKbSource", [resource_of(kb) for kb in bases.values()]
-        )
-        me = caller.user.user_id
-
-        def shown(source: Source) -> bool:
-            kb = bases.get(source.kb_id)
-            if kb is None or kb.status is Status.DELETING:
-                return False
-            return source.proposed_by == me or source.kb_id in signable
-
-        async def replaced(source: Source) -> str | None:
-            """The bucket a pending proposal would replace (D88 (42))."""
-            if source.status is not SourceStatus.PENDING:
-                return None
-            try:
-                current = await run(deps.store.sources, source.kb_id)
-            except KnowledgeStoreUnavailableError as exc:
-                raise _unavailable(exc) from exc
-            approved = next((s for s in current if s.status is SourceStatus.APPROVED), None)
-            return f"s3://{approved.bucket}/{approved.prefix}" if approved else None
-
-        items: list[QueuedSourceOut] = []
-        for source in [*pending, *decided]:
-            if not shown(source):
-                continue
-            kb = bases[source.kb_id]
-            out = source_out(source, caller, kb, can_approve=source.kb_id in signable)
-            items.append(
-                QueuedSourceOut(
-                    **out.model_dump(),
-                    knowledge_base=kb.name,
-                    groups=list(kb.groups),
-                    sync_schedule=kb.sync_schedule,
-                    replaces=await replaced(source),
-                    withdrawn_at=(
-                        datetime.fromisoformat(source.removed_at)
-                        if source.status is SourceStatus.WITHDRAWN and source.removed_at
-                        else None
-                    ),
-                )
-            )
-        return SourceQueueOut(items=items)
+        """The proposals of Aprobaciones (D88 (48))."""
+        return SourceQueueOut(items=await run(queued_sources, deps, caller, allowed))
 
     @router.get("/api/knowledge-sources/pending", response_model=PendingSourceListOut)
     async def pending_sources(caller: Viewer) -> PendingSourceListOut:

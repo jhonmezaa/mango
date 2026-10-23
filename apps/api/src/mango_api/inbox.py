@@ -7,6 +7,9 @@ Two kinds of notice, as the design (``other-views.jsx``, «Bandeja»):
   ``approvers`` tier, pending and not expired, not asked by the caller and not signed by them
   yet, and only with ``ApproveToolCall``. Once decided or signed they are gone. Only whether
   the caller read or archived each one is stored, in the caller's partition.
+* **Bucket de S3** (``kbsource``): the bucket proposals of knowledge bases the caller may sign
+  (D88 (49)), read on every request with the rules of Aprobaciones (D88 (48)) and gone once
+  decided; as with approvals, only whether the caller read or archived each one is stored.
 * **Ejecución**: one per task run that ended completed or failed, written by the task worker
   in the partition of the task's owner (never anyone else, D78 (18), D82): the task's name,
   the agent, the reason code and the first line of the report. Never the report itself.
@@ -47,9 +50,11 @@ from mango_api.inbox_store import (
     View,
     first_line,
 )
+from mango_api.knowledge_sources import QueuedSourceOut
 from mango_api.published import AgentUnavailableError, PublishedAgents
 from mango_api.web import ApiError, Caller
 from mango_core.approval import APPROVAL_ID_PATTERN
+from mango_core.knowledge import ID_PATTERN as SOURCE_ID_PATTERN
 
 logger = logging.getLogger(__name__)
 
@@ -78,21 +83,27 @@ class InboxRun(_Strict):
     """Why it did not complete: a fixed code (the SPA has a text per code)."""
 
 
+Kind = Literal["approval", "kbsource", "run"]
+
+
 class InboxItem(_Strict):
-    kind: Literal["approval", "run"]
+    kind: Kind
     item_id: str
-    agent_id: str
+    agent_id: str | None
+    """``None`` for a bucket proposal: it is not about an agent."""
     agent_name: str | None
     at: str
     read: bool
     archived: bool
     approval: ApprovalOut | None = None
+    source: QueuedSourceOut | None = None
     run: InboxRun | None = None
 
 
 class InboxPage(_Strict):
     items: list[InboxItem]
-    """Approvals first (only on the first page), then run notices, newest first."""
+    """What the caller may sign first, approvals and bucket proposals (only on the first
+    page), then run notices, newest first."""
     next_cursor: str | None
     unread: int
     can_decide: bool
@@ -131,6 +142,9 @@ class InboxDeps:
     approvals: ApprovalDeps | None
     """``None`` while the approvals table is not deployed: no approval notices."""
     clock: Callable[[], datetime]
+    sources: Callable[[Caller], list[QueuedSourceOut]] | None = None
+    """The bucket proposals of Aprobaciones for the caller (D88 (48)); ``None`` without
+    knowledge bases."""
 
 
 def _unavailable() -> ApiError:
@@ -176,6 +190,33 @@ def _approval_item(approval: ApprovalOut, state: NoticeState) -> InboxItem:
     )
 
 
+def _signable_sources(deps: InboxDeps, caller: Caller) -> list[QueuedSourceOut]:
+    """The bucket proposals the caller may sign now (D88 (49)), newest first."""
+    if deps.sources is None:
+        return []
+    try:
+        queued = deps.sources(caller)
+    except ApiError:
+        # Without the knowledge table the rest of the Bandeja is still answered.
+        logger.warning("the bucket proposals could not be read for the inbox")
+        return []
+    signable = [s for s in queued if s.can_decide]
+    return sorted(signable, key=lambda s: s.proposed_at, reverse=True)
+
+
+def _source_item(source: QueuedSourceOut, state: NoticeState) -> InboxItem:
+    return InboxItem(
+        kind="kbsource",
+        item_id=source.src_id,
+        agent_id=None,
+        agent_name=None,
+        at=source.proposed_at.isoformat(),
+        read=state.read,
+        archived=state.archived,
+        source=source,
+    )
+
+
 def _run_item(deps: InboxDeps, notice: RunNotice, names: dict[str, str | None]) -> InboxItem:
     return InboxItem(
         kind="run",
@@ -206,10 +247,17 @@ def _unread(approvals: list[InboxItem], runs: int) -> int:
     return min(UNREAD_SHOWN, runs + sum(1 for a in approvals if not a.read and not a.archived))
 
 
-def _approval_items(deps: InboxDeps, user_id: str, can_decide: bool) -> list[InboxItem]:
+def _approval_items(deps: InboxDeps, caller: Caller, can_decide: bool) -> list[InboxItem]:
+    """What the caller may sign: approvals and bucket proposals, newest first."""
+    user_id = caller.user.user_id
     signable = _signable(deps, user_id, can_decide)
     states = deps.store.approval_states(user_id) if signable else {}
-    return [_approval_item(a, states.get(a.approval_id, _NO_STATE)) for a in signable]
+    items = [_approval_item(a, states.get(a.approval_id, _NO_STATE)) for a in signable]
+    sources = _signable_sources(deps, caller)
+    if sources:
+        kept = deps.store.approval_states(user_id, "kbsource")
+        items += [_source_item(s, kept.get(s.src_id, _NO_STATE)) for s in sources]
+    return sorted(items, key=lambda item: item.at, reverse=True)
 
 
 def list_view(
@@ -218,7 +266,7 @@ def list_view(
     user_id = caller.user.user_id
     names: dict[str, str | None] = {}
     try:
-        approvals = _approval_items(deps, user_id, can_decide)
+        approvals = _approval_items(deps, caller, can_decide)
         runs: list[RunNotice] = []
         next_cursor = None
         if view != "approvals":
@@ -243,7 +291,7 @@ def list_view(
 def unread_view(deps: InboxDeps, caller: Caller, can_decide: bool) -> UnreadOut:
     user_id = caller.user.user_id
     try:
-        approvals = _approval_items(deps, user_id, can_decide)
+        approvals = _approval_items(deps, caller, can_decide)
         return UnreadOut(unread=_unread(approvals, deps.store.unread_runs(user_id)))
     except (InboxStoreUnavailableError, ClientError, BotoCoreError) as exc:
         raise _unavailable() from exc
@@ -252,7 +300,7 @@ def unread_view(deps: InboxDeps, caller: Caller, can_decide: bool) -> UnreadOut:
 def set_state(
     deps: InboxDeps,
     caller: Caller,
-    kind: Literal["approval", "run"],
+    kind: Kind,
     item_id: str,
     body: StateIn,
     *,
@@ -270,6 +318,15 @@ def set_state(
             if notice is None:
                 raise not_found
             return _run_item(deps, notice, {})
+        if kind == "kbsource":
+            # Only a proposal the caller can sign now: anything else is the same 404 (TM-I1).
+            source = next((s for s in _signable_sources(deps, caller) if s.src_id == item_id), None)
+            if source is None:
+                raise not_found
+            kept = deps.store.set_approval_state(
+                user_id, item_id, read=body.read, archived=body.archived, kind="kbsource"
+            )
+            return _source_item(source, kept)
         # Only an approval the caller can sign now: anything else is the same 404 (TM-I1).
         approval = next(
             (a for a in _signable(deps, user_id, can_decide) if a.approval_id == item_id), None
@@ -287,9 +344,15 @@ def set_state(
 def read_all(deps: InboxDeps, caller: Caller, can_decide: bool) -> UnreadOut:
     user_id = caller.user.user_id
     try:
-        for item in _approval_items(deps, user_id, can_decide):
+        for item in _approval_items(deps, caller, can_decide):
             if not item.read:
-                deps.store.set_approval_state(user_id, item.item_id, read=True, archived=None)
+                deps.store.set_approval_state(
+                    user_id,
+                    item.item_id,
+                    read=True,
+                    archived=None,
+                    kind="kbsource" if item.kind == "kbsource" else "approval",
+                )
         deps.store.mark_runs_read(user_id)
     except (InboxStoreUnavailableError, ClientError, BotoCoreError) as exc:
         raise _unavailable() from exc
@@ -356,7 +419,8 @@ def inbox_router(
 
     View_ = Annotated[Caller, Depends(view_inbox)]  # noqa: N806
     ItemId = Annotated[  # noqa: N806
-        str, Path(pattern=f"(?:{NOTICE_ID_PATTERN})|(?:{APPROVAL_ID_PATTERN})")
+        str,
+        Path(pattern=f"(?:{NOTICE_ID_PATTERN})|(?:{APPROVAL_ID_PATTERN})|(?:{SOURCE_ID_PATTERN})"),
     ]
 
     async def decides(caller: Caller) -> bool:
@@ -380,7 +444,7 @@ def inbox_router(
 
     @router.put("/{kind}/{item_id}", response_model=InboxItem)
     async def set_inbox_state(
-        kind: Literal["approval", "run"],
+        kind: Kind,
         item_id: ItemId,
         body: StateIn,
         caller: View_,

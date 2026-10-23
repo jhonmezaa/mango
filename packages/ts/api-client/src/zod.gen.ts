@@ -1563,31 +1563,6 @@ export const zApprovalListOutSchema = z.object({
 });
 
 /**
- * InboxItem
- */
-export const zInboxItemSchema = z.object({
-    agent_id: z.string(),
-    agent_name: z.string().nullable(),
-    approval: zApprovalOutSchema.nullish(),
-    archived: z.boolean(),
-    at: z.string(),
-    item_id: z.string(),
-    kind: z.enum(['approval', 'run']),
-    read: z.boolean(),
-    run: zInboxRunSchema.nullish()
-});
-
-/**
- * InboxPage
- */
-export const zInboxPageSchema = z.object({
-    can_decide: z.boolean(),
-    items: z.array(zInboxItemSchema),
-    next_cursor: z.string().nullable(),
-    unread: z.int()
-});
-
-/**
  * SignedFileOut
  */
 export const zSignedFileOutSchema = z.object({
@@ -1683,6 +1658,36 @@ export const zQueuedSourceOutSchema = z.object({
     sync_schedule: z.string(),
     version: z.int(),
     withdrawn_at: z.iso.datetime().nullable()
+});
+
+/**
+ * InboxItem
+ */
+export const zInboxItemSchema = z.object({
+    agent_id: z.string().nullable(),
+    agent_name: z.string().nullable(),
+    approval: zApprovalOutSchema.nullish(),
+    archived: z.boolean(),
+    at: z.string(),
+    item_id: z.string(),
+    kind: z.enum([
+        'approval',
+        'kbsource',
+        'run'
+    ]),
+    read: z.boolean(),
+    run: zInboxRunSchema.nullish(),
+    source: zQueuedSourceOutSchema.nullish()
+});
+
+/**
+ * InboxPage
+ */
+export const zInboxPageSchema = z.object({
+    can_decide: z.boolean(),
+    items: z.array(zInboxItemSchema),
+    next_cursor: z.string().nullable(),
+    unread: z.int()
 });
 
 /**
@@ -3071,8 +3076,12 @@ export const zUnreadInboxResponse = zUnreadOutSchema;
 export const zSetInboxStateBody = zStateInSchema;
 
 export const zSetInboxStatePath = z.object({
-    kind: z.enum(['approval', 'run']),
-    item_id: z.string().regex(/(?:^[0-9]{13}[0-9a-f]{16}$)|(?:^[0-9a-f]{32}$)/)
+    kind: z.enum([
+        'approval',
+        'kbsource',
+        'run'
+    ]),
+    item_id: z.string().regex(/(?:^[0-9]{13}[0-9a-f]{16}$)|(?:^[0-9a-f]{32}$)|(?:^[0-9A-HJKMNP-TV-Z]{26}$)/)
 });
 
 /**

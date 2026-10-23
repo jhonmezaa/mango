@@ -106,8 +106,10 @@ from mango_api.knowledge import (
 )
 from mango_api.knowledge_sources import (
     BucketChecker,
+    QueuedSourceOut,
     SourceRoleFunction,
     knowledge_sources_router,
+    queued_sources,
 )
 from mango_api.knowledge_store import KnowledgeStore
 from mango_api.knowledge_uploads import S3_CONFIG as KNOWLEDGE_S3_CONFIG
@@ -1233,6 +1235,22 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         def inbox_can_decide(caller: Caller) -> bool:
             # A hint that shapes the list: signing is authorized (and audited) per request.
             return services.authorizer.is_allowed(caller.user, "ApproveToolCall", *PLATFORM)
+
+        if services.knowledge is not None:
+            knowledge = services.knowledge
+
+            def inbox_sources(caller: Caller) -> list[QueuedSourceOut]:
+                # The bucket proposals of Aprobaciones, pending only (D88 (49)).
+                return queued_sources(
+                    knowledge,
+                    caller,
+                    lambda c, action, bases: services.authorizer.allowed_knowledge_bases(
+                        c.user, action, bases
+                    ),
+                    decided=False,
+                )
+
+            services.inbox.sources = inbox_sources
 
         app.include_router(inbox_router(services.inbox, current_user, require, inbox_can_decide))
 

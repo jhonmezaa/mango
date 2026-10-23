@@ -2791,8 +2791,15 @@
         "additionalProperties": false,
         "properties": {
           "agent_id": {
-            "title": "Agent Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
           },
           "agent_name": {
             "anyOf": [
@@ -2830,6 +2837,7 @@
           "kind": {
             "enum": [
               "approval",
+              "kbsource",
               "run"
             ],
             "title": "Kind",
@@ -2843,6 +2851,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/InboxRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueuedSourceOut"
               },
               {
                 "type": "null"
@@ -12388,6 +12406,7 @@
             "schema": {
               "enum": [
                 "approval",
+                "kbsource",
                 "run"
               ],
               "title": "Kind",
@@ -12399,7 +12418,7 @@
             "name": "item_id",
             "required": true,
             "schema": {
-              "pattern": "(?:^[0-9]{13}[0-9a-f]{16}$)|(?:^[0-9a-f]{32}$)",
+              "pattern": "(?:^[0-9]{13}[0-9a-f]{16}$)|(?:^[0-9a-f]{32}$)|(?:^[0-9A-HJKMNP-TV-Z]{26}$)",
               "title": "Item Id",
               "type": "string"
             }
@@ -13212,7 +13231,7 @@
     },
     "/knowledge-sources": {
       "get": {
-        "description": "The proposals of Aprobaciones (D88 (48)): the pending ones the caller may sign and\ntheir own, and the decisions of the last ``DECIDED_DAYS`` days on knowledge bases they\nmay sign for, or that they proposed. Nobody signs their own (D88 (20)).",
+        "description": "The proposals of Aprobaciones (D88 (48)).",
         "operationId": "source_queue",
         "responses": {
           "200": {
