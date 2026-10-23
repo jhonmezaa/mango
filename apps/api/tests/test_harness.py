@@ -3,6 +3,7 @@ import json
 import socket
 import threading
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any
 
 import boto3
@@ -1159,3 +1160,18 @@ def test_only_an_answer_of_the_search_gives_citations(
     stream = [_tool_start(0, name, "k1"), _stop(0), *_knowledge_answer(1, "k1", answer, status)]
     events, result = _knowledge_turn(stream, request_)
     assert events == [] and result.searches == []
+
+
+def test_a_recorded_call_says_when_its_answer_arrived() -> None:
+    """The time of the query a report cites (D88, design B3.1)."""
+    stream = [
+        _tool_start(0, "mango/finops___get_anomalies", "q1"),
+        _input(0, "{}"),
+        _stop(0),
+        *_knowledge_answer(1, "q1", '{"anomalies":[]}'),
+    ]
+    result = harness.InvocationResult()
+    list(harness.run(_Client(stream), {}, result, record=frozenset({"get_anomalies"})))  # type: ignore[arg-type]
+    (call,) = result.calls
+    assert call["name"] == "get_anomalies"
+    assert datetime.fromisoformat(call["at"]).tzinfo is not None

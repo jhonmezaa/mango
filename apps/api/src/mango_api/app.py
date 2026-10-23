@@ -2058,7 +2058,11 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
             result,
             write_tools,
             inline=frozenset({reports.REPORT_TOOL}) if report_type else frozenset(),
-            record=frozenset({reports.COST_QUERY_TOOL}) if report_type else frozenset(),
+            record=(
+                frozenset({reports.COST_QUERY_TOOL, reports.ANOMALY_QUERY_TOOL})
+                if report_type
+                else frozenset()
+            ),
         ):
             # The internal tool hands data over: it is not a query, so not a step (D86 (6)).
             if (
@@ -2118,7 +2122,10 @@ def _report_document(
         document = reports.build(
             report_type,
             data,
-            [reports.ToolCall(c["id"], c["name"], c["input"], c["output"]) for c in calls],
+            [
+                reports.ToolCall(c["id"], c["name"], c["input"], c["output"], c.get("at") or None)
+                for c in calls
+            ],
         )
     except reports.InvalidReportError as error:
         # The rule and the field that failed, never what the model wrote (TM-R6).

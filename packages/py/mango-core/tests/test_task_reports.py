@@ -312,3 +312,91 @@ def test_event_of_the_function() -> None:
 def test_keep_until() -> None:
     queued = int(datetime(2026, 10, 1, tzinfo=UTC).timestamp())
     assert tr.keep_until(queued) == date(2026, 12, 30)
+
+
+# --- Investigación de anomalía: incomplete days and the source of each cause (design B3) ---
+
+
+def _days(*costs: str) -> list[tr.DayCostExpected]:
+    return [
+        tr.DayCostExpected(date=date(2026, 10, 14 + i), cost=Decimal(cost))
+        for i, cost in enumerate(costs)
+    ]
+
+
+def test_incomplete_days_need_a_short_series_and_a_recent_end() -> None:
+    start, end = date(2026, 10, 15), date(2026, 10, 16)
+    short = _days("320", "526.20", "96.40")
+    at = datetime(2026, 10, 16, 9, 40, tzinfo=UTC)
+    assert tr.incomplete_days(short, start, end, Decimal("1052.30"), at) == [date(2026, 10, 16)]
+    # As the design draws it: the 15th, which began more than 24 hours before, is not.
+    early = datetime(2026, 10, 15, 23, 0, tzinfo=UTC)
+    assert tr.incomplete_days(short, start, end, Decimal("1052.30"), early) == [
+        date(2026, 10, 15),
+        date(2026, 10, 16),
+    ]
+    # Within 5 % of the actual: complete.
+    near = _days("320", "526.20", "480")
+    assert tr.incomplete_days(near, start, end, Decimal("1052.30"), at) == []
+    # Old enough: nothing is pending in Cost Explorer.
+    later = datetime(2026, 10, 17, 0, 1, tzinfo=UTC)
+    assert tr.incomplete_days(short, start, end, Decimal("1052.30"), later) == []
+
+
+def test_the_causes_of_the_anomaly_are_told_from_the_others() -> None:
+    answer = {
+        "accounts_considered": ["111122223333"],
+        "anomalies": [
+            {
+                "anomaly_id": "a",
+                "root_causes": [
+                    {
+                        "service": "Amazon EC2",
+                        "usage_type": "BoxUsage:m6i.2xlarge",
+                        "account_id": None,
+                    }
+                ],
+            }
+        ],
+    }
+    mcp = {"content": [{"type": "text", "text": json.dumps(answer)}]}
+    calls = [
+        tr.ToolCall("1", tr.ANOMALY_QUERY_TOOL, "{}", json.dumps(mcp)),
+        tr.ToolCall("2", "other", "{}", json.dumps(answer)),
+    ]
+    assert tr.anomaly_causes(calls) == {("BoxUsage:m6i.2xlarge", "Amazon EC2")}
+    data = tr.parse(
+        "anomaly",
+        {
+            "expected": 640,
+            "actual": 1052.3,
+            "daily": [{"date": "2026-10-15", "cost": 526}],
+            "causes": [
+                {"usage_type": "BoxUsage:m6i.2xlarge", "service": "Amazon EC2", "impact": 351.8},
+                {"usage_type": "EBS:VolumeUsage.gp3", "service": "Amazon EC2", "impact": 38.9},
+            ],
+        },
+    )
+    stored = tr.build("anomaly", data, calls)
+    assert stored["source"]["causes"] == ["anomaly", "query"]
+
+
+def test_the_time_of_the_daily_query_is_kept_in_utc() -> None:
+    query = tr.ToolCall(
+        "1",
+        tr.COST_QUERY_TOOL,
+        json.dumps({"granularity": "DAILY"}),
+        json.dumps(
+            {
+                "granularity": "DAILY",
+                "metric": "UnblendedCost",
+                "rows": [{"period_start": "2026-10-15", "amount": "526.2"}],
+            }
+        ),
+        "2026-10-16T04:38:00-05:00",
+    )
+    series = tr.series_from_query([query], date(2026, 10, 15), date(2026, 10, 15))
+    assert series is not None and series.queried_at == "2026-10-16T09:38:00+00:00"
+    naive = tr.ToolCall(query.call_id, query.name, query.input, query.output, "2026-10-16T09:38:00")
+    later = tr.series_from_query([naive], date(2026, 10, 15), date(2026, 10, 15))
+    assert later is not None and later.queried_at is None

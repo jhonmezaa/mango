@@ -12,7 +12,7 @@ import io
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -53,6 +53,8 @@ SOFT = colors.HexColor("#f4f4f6")
 BAR = colors.HexColor("#33333a")
 ACCENT = colors.HexColor("#e2711d")
 ACCENT_SOFT = colors.Color(226 / 255, 113 / 255, 29 / 255, alpha=0.13)
+ACCENT_HATCH = colors.Color(226 / 255, 113 / 255, 29 / 255, alpha=0.16)
+"""A day Cost Explorer does not have complete yet (design `.sw.hatch`)."""
 UP = colors.HexColor("#c2410c")
 MINUS, EN_DASH = "\u2212", tr.EN_DASH
 """Typographic minus and the dash of a range, as the design writes them."""
@@ -66,6 +68,7 @@ ZONES = {
     "UTC": "UTC",
 }
 TOOL_LABEL = "get_cost_and_usage"
+ANOMALY_TOOL_LABEL = "get_anomalies"
 
 
 class RenderError(Exception):
@@ -273,9 +276,12 @@ def bars(
     *,
     reference: Sequence[Decimal | None] | None = None,
     band: tuple[int, int] | None = None,
+    partial: Sequence[int] = (),
     height: float = 62 * mm,
 ) -> Drawing:
-    """Daily bars, a dotted reference and the window of an anomaly, as the design draws."""
+    """Daily bars, a dotted reference and the window of an anomaly, as the design draws.
+    ``partial``: bars of days not complete in Cost Explorer yet, hatched and marked
+    «incompleto» (design B3.1)."""
     width = 174 * mm
     left, right, top, bottom = 34.0, 4.0, 8.0, 18.0
     inner_w, inner_h = width - left - right, height - top - bottom
@@ -323,15 +329,23 @@ def bars(
     every = max(1, round(count / 6))
     for i, value in enumerate(values):
         inside = band is not None and band[0] <= i <= band[1]
-        drawing.add(
-            _box(
-                left + i * slot + slot * 0.14,
-                bottom,
-                slot * 0.72,
-                y(value) - bottom,
-                ACCENT if inside else BAR,
+        x, w, h = left + i * slot + slot * 0.14, slot * 0.72, y(value) - bottom
+        if i in partial:
+            for shape in _hatched(x, bottom, w, h):
+                drawing.add(shape)
+            drawing.add(
+                String(
+                    left + (i + 1) * slot - slot * 0.14,
+                    y(value) + 4,
+                    "incompleto",
+                    fontName=SANS,
+                    fontSize=7.5,
+                    fillColor=MUTED,
+                    textAnchor="end",
+                )
             )
-        )
+        else:
+            drawing.add(_box(x, bottom, w, h, ACCENT if inside else BAR))
         if i % every == 0:
             drawing.add(
                 String(
@@ -354,6 +368,25 @@ def bars(
                 PolyLine(coords, strokeColor=MUTED, strokeWidth=1.2, strokeDashArray=[4, 3])
             )
     return drawing
+
+
+def _hatched(x: float, y: float, width: float, height: float, gap: float = 3.5) -> list[Any]:
+    """A bar drawn with diagonal lines (45°) over a light fill and an outline, inside it."""
+    box = Rect(x, y, width, max(height, 0.5))
+    box.fillColor = ACCENT_HATCH
+    box.strokeColor = ACCENT
+    box.strokeWidth = 0.8
+    shapes: list[Any] = [box]
+    top = y + max(height, 0.5)
+    # Lines x - y = c, from the bottom left corner up to the top right one, cut to the bar.
+    c = x - top
+    while c < x + width - y:
+        x1, y1 = max(x, c + y), max(y, x - c)
+        x2, y2 = min(x + width, c + top), min(top, x + width - c)
+        if x2 > x1 and y2 > y1:
+            shapes.append(Line(x1, y1, x2, y2, strokeColor=ACCENT, strokeWidth=0.9))
+        c += gap
+    return shapes
 
 
 def _box(x: float, y: float, width: float, height: float, fill: colors.Color) -> Rect:
@@ -482,14 +515,23 @@ def section(title: str, body: list[Flowable], style: Styles) -> list[Flowable]:
     return [Spacer(1, 10), CondPageBreak(40 * mm), Paragraph(text(title), style.h2), *body]
 
 
-def chart_block(legend: str, chart: Drawing, note: Paragraph, style: Styles) -> list[Flowable]:
-    """Legend, chart and source never split."""
-    return [KeepTogether([Paragraph(legend, style.small), Spacer(1, 2), chart, Spacer(1, 4), note])]
+def chart_block(
+    legend: str,
+    chart: Drawing,
+    note: Paragraph,
+    style: Styles,
+    remark: Paragraph | None = None,
+) -> list[Flowable]:
+    """Legend, chart, its remark (design `chart-note`) and source never split."""
+    body: list[Flowable] = [Paragraph(legend, style.small), Spacer(1, 2), chart, Spacer(1, 4)]
+    if remark is not None:
+        body += [remark, Spacer(1, 3)]
+    return [KeepTogether([*body, note])]
 
 
-def swatch(color: str, label: str, *, dashed: bool = False) -> str:
+def swatch(color: str, label: str, *, dashed: bool = False, hatched: bool = False) -> str:
     # A square of ZapfDingbats, a standard font of every PDF reader: IBM Plex has none.
-    mark = "- - -" if dashed else '<font name="ZapfDingbats">n</font>'
+    mark = "- - -" if dashed else "////" if hatched else '<font name="ZapfDingbats">n</font>'
     return f'<font color="{color}">{mark}</font> {text(label)}'
 
 
@@ -501,7 +543,64 @@ def daily_source(info: dict[str, Any]) -> str:
         scope.append("cuentas " + ", ".join(str(a) for a in info["accounts"]))
     if info.get("services"):
         scope.append(", ".join(str(s) for s in info["services"]))
-    return " · ".join(["por día", *scope, "tomada de la consulta"])
+    when = queried(info)
+    return " · ".join(
+        ["por día", *scope, "tomada de la consulta", *([f"consulta del {when}"] if when else [])]
+    )
+
+
+def queried(info: dict[str, Any]) -> str | None:
+    """«16 oct, 09:38 UTC»: when the daily query answered (design B3.1), if Mango knows it."""
+    raw = info.get("queried_at")
+    if not isinstance(raw, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(raw).astimezone(UTC)
+    except ValueError:
+        return None
+    return f"{day_month(moment.date())}, {moment:%H:%M} UTC"
+
+
+CAUSES_QUERY = "por tipo de uso, ventana de la anomalía contra los 14 días anteriores · USD"
+CAUSES_ANOMALY = (
+    "causa principal que informa AWS en la anomalía, con el impacto que estima AWS; la "
+    "anomalía no trae la cuenta"
+)
+
+
+def causes_source(kinds: list[str], *, mixed: bool, style: Styles) -> Paragraph:
+    """The source of «Qué la explica» (design B3.2): one query, or both with «¹»."""
+    if not mixed:
+        if kinds and all(kind == "anomaly" for kind in kinds):
+            return source(ANOMALY_TOOL_LABEL, CAUSES_ANOMALY, style)
+        return source(TOOL_LABEL, CAUSES_QUERY, style)
+    return Paragraph(
+        f'Fuentes: <super>1</super> <font face="{MONO}">{ANOMALY_TOOL_LABEL}</font> · '
+        f"{text(CAUSES_ANOMALY)}. El resto: "
+        f'<font face="{MONO}">{TOOL_LABEL}</font> · {text(CAUSES_QUERY)}',
+        style.small,
+    )
+
+
+def incomplete_note(
+    data: tr.AnomalyData, start: date, end: date, days: list[date], style: Styles
+) -> Paragraph:
+    """Design B3.1: what is not complete yet and why the actual above is AWS's."""
+    shown = sum((d.cost for d in data.daily if start <= d.date <= end), Decimal(0))
+    first, last = days[0], days[-1]
+    which = (
+        f"El {day_month(first)} todavía no está completo"
+        if first == last
+        else f"Del {day_month(first)} al {day_month(last)} todavía no están completos"
+    )
+    return Paragraph(
+        text(
+            f"{which} en Cost Explorer, que puede tardar hasta un día. En los días de la "
+            f"anomalía la serie suma {usd(shown)} y AWS informa un real de {usd(data.actual)}: "
+            "el real de arriba es el de AWS."
+        ),
+        style.body,
+    )
 
 
 def about(meta: Meta, *, anomaly: bool, style: Styles) -> list[Flowable]:
@@ -522,7 +621,11 @@ def about(meta: Meta, *, anomaly: bool, style: Styles) -> list[Flowable]:
         Spacer(1, 12),
         Paragraph(data, style.muted),
         Paragraph(
-            "<b>Sobre las cifras.</b> Costo en USD, como lo devolvió la consulta. AWS puede "
+            "<b>Sobre las cifras.</b> Costo en USD, como lo devolvió la consulta. Cost "
+            "Explorer puede tardar hasta un día en completar el costo de un día, y AWS puede "
+            "ajustar los últimos días."
+            if anomaly
+            else "<b>Sobre las cifras.</b> Costo en USD, como lo devolvió la consulta. AWS puede "
             "ajustar el costo de los últimos días.",
             style.muted,
         ),
@@ -670,6 +773,79 @@ def _others(count: int, one: str, many: str) -> str:
     return f"Otros {count} {one if count == 1 else many}"
 
 
+def causes_section(data: tr.AnomalyData, info: dict[str, Any], style: Styles) -> list[Flowable]:
+    """«Qué la explica» (design), with the source of each row (design B3.2)."""
+    if not data.causes:
+        return []
+    # Which query each cause came from, as Mango recorded it (design B3.2).
+    origins = info.get("causes")
+    kinds = (
+        [str(k) for k in origins]
+        if isinstance(origins, list) and len(origins) == len(data.causes)
+        else ["query"] * len(data.causes)
+    )
+    paired = sorted(zip(data.causes, kinds, strict=True), key=lambda p: p[0].impact, reverse=True)[
+        : tr.MAX_ROWS_SHOWN
+    ]
+    ordered = [cause for cause, _ in paired]
+    mixed = len({kind for _, kind in paired}) > 1
+    parts = tr.shares([c.impact for c in ordered])
+    top = max((c.impact for c in ordered), default=Decimal(0))
+    rows: list[list[Any]] = [
+        [
+            Paragraph(f"<b>{h}</b>", style.cell_num if i >= 4 else style.cell)  # noqa: PLR2004
+            for i, h in enumerate(["Tipo de uso", "Servicio", "Cuenta", "", "Impacto", "Parte"])
+        ]
+    ]
+    for (cause, kind), part in zip(paired, parts, strict=True):
+        mark = "<super>1</super>" if mixed and kind == "anomaly" else ""
+        share = (
+            (cause.impact / top).quantize(Decimal("0.001"))
+            if top > 0 and cause.impact > 0
+            else Decimal(0)
+        )
+        rows.append(
+            [
+                Paragraph(text(cause.usage_type) + mark, style.cell_mono),
+                Paragraph(text(cause.service), style.cell),
+                Paragraph(text(cause.account_id or "—"), style.cell_mono),
+                Bar(share, 20 * mm, accent=True),
+                Paragraph(number(cause.impact), style.cell_num),
+                Paragraph(f"{part} %", style.cell_num),
+            ]
+        )
+    total = sum((c.impact for c in ordered), Decimal(0))
+    rows.append(
+        [
+            Paragraph("<b>Total</b>", style.cell),
+            "",
+            "",
+            "",
+            Paragraph(f"<b>{number(total)}</b>", style.cell_num),
+            Paragraph("<b>100 %</b>", style.cell_num),
+        ]
+    )
+    table = Table(
+        rows, repeatRows=1, colWidths=[52 * mm, 30 * mm, 30 * mm, 22 * mm, 22 * mm, 18 * mm]
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("LINEBELOW", (0, 0), (-1, 0), 0.8, INK),
+                ("LINEBELOW", (0, 1), (-1, -2), 0.4, RULE),
+                ("LINEABOVE", (0, -1), (-1, -1), 0.8, INK),
+                ("SPAN", (0, -1), (3, -1)),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    return section(
+        "Qué la explica",
+        [table, Spacer(1, 4), causes_source(kinds, mixed=mixed, style=style)],
+        style,
+    )
+
+
 def anomaly(
     data: tr.AnomalyData,
     info: dict[str, Any],
@@ -718,7 +894,8 @@ def anomaly(
                 (
                     "Real",
                     usd(data.actual),
-                    f"{usd((data.actual / days).quantize(tr.CENT))} por día",
+                    # The actual of the anomaly is AWS's, even where the series is short of it.
+                    f"según AWS · {usd((data.actual / days).quantize(tr.CENT))} por día",
                     INK,
                 ),
             ],
@@ -727,77 +904,28 @@ def anomaly(
     )
     window = [i for i, d in enumerate(data.daily) if start <= d.date <= end]
     expected = [d.expected for d in data.daily]
+    # Design B3.1: days Cost Explorer does not have complete yet are hatched, never filled in.
+    incomplete = tr.incomplete_days(data.daily, start, end, data.actual, meta.generated_at)
     chart = bars(
         [d.cost for d in data.daily],
         [d.date for d in data.daily],
         reference=expected,
         band=(window[0], window[-1]) if window else None,
+        partial=[i for i, d in enumerate(data.daily) if d.date in incomplete],
         height=58 * mm,
     )
     legend = swatch("#33333a", "costo") + "   " + swatch("#e2711d", "días de la anomalía")
+    if incomplete:
+        legend += "   " + swatch("#e2711d", "aún incompleto en Cost Explorer", hatched=True)
     if any(e is not None for e in expected):
         legend += "   " + swatch("#5b5b65", "esperado", dashed=True)
     where = f"Costo diario de {data.service}" if data.service else "Costo diario"
     if data.account_name:
         where += f" en {data.account_name}"
     note = source(TOOL_LABEL, daily_source(info), style)
-    story += section(where, chart_block(legend, chart, note, style), style)
-    if data.causes:
-        ordered = sorted(data.causes, key=lambda c: c.impact, reverse=True)[: tr.MAX_ROWS_SHOWN]
-        parts = tr.shares([c.impact for c in ordered])
-        top = max((c.impact for c in ordered), default=Decimal(0))
-        rows: list[list[Any]] = [
-            [
-                Paragraph(f"<b>{h}</b>", style.cell_num if i >= 4 else style.cell)  # noqa: PLR2004
-                for i, h in enumerate(["Tipo de uso", "Servicio", "Cuenta", "", "Impacto", "Parte"])
-            ]
-        ]
-        for cause, part in zip(ordered, parts, strict=True):
-            share = (
-                (cause.impact / top).quantize(Decimal("0.001"))
-                if top > 0 and cause.impact > 0
-                else Decimal(0)
-            )
-            rows.append(
-                [
-                    Paragraph(text(cause.usage_type), style.cell_mono),
-                    Paragraph(text(cause.service), style.cell),
-                    Paragraph(text(cause.account_id or "—"), style.cell_mono),
-                    Bar(share, 20 * mm, accent=True),
-                    Paragraph(number(cause.impact), style.cell_num),
-                    Paragraph(f"{part} %", style.cell_num),
-                ]
-            )
-        total = sum((c.impact for c in ordered), Decimal(0))
-        rows.append(
-            [
-                Paragraph("<b>Total</b>", style.cell),
-                "",
-                "",
-                "",
-                Paragraph(f"<b>{number(total)}</b>", style.cell_num),
-                Paragraph("<b>100 %</b>", style.cell_num),
-            ]
-        )
-        table = Table(
-            rows, repeatRows=1, colWidths=[52 * mm, 30 * mm, 30 * mm, 22 * mm, 22 * mm, 18 * mm]
-        )
-        table.setStyle(
-            TableStyle(
-                [
-                    ("LINEBELOW", (0, 0), (-1, 0), 0.8, INK),
-                    ("LINEBELOW", (0, 1), (-1, -2), 0.4, RULE),
-                    ("LINEABOVE", (0, -1), (-1, -1), 0.8, INK),
-                    ("SPAN", (0, -1), (3, -1)),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ]
-            )
-        )
-        story += section(
-            "Qué la explica",
-            [table, Spacer(1, 4), source(TOOL_LABEL, "por tipo de uso · USD", style)],
-            style,
-        )
+    remark = incomplete_note(data, start, end, incomplete, style) if incomplete else None
+    story += section(where, chart_block(legend, chart, note, style, remark), style)
+    story += causes_section(data, info, style)
     conclusion = markdown(data.conclusion, style) if data.conclusion else []
     if data.next_step:
         box = Table(

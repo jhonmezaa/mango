@@ -1,4 +1,4 @@
-# Reportes descargables de las tareas: modelo de amenazas (v0.2)
+# Reportes descargables de las tareas: modelo de amenazas (v0.3)
 
 > Fecha: 2026-10-19 · Skill: `security-threat-model`. Decisiones: D23, D25, D56, D58, D70, D78, D79, D82, D83, **D86** y **D87**.
 > Amplía `tasks-threat-model.md` (ejecuciones de tareas) e `inbox-threat-model.md` (Bandeja).
@@ -178,4 +178,10 @@ Sobre el IAM de la función `Mango-<ns>-TaskReport` y de la política `Mango-<ns
   - La ruta de descarga exige `OwnTask`, audita antes de emitir el enlace (fail-closed), limita por persona y nunca registra la URL.
   - La SPA solo abre enlaces `https`.
 - **Riesgos aceptados (supuestos 3 y 4):** el enlace es un portador durante 5 minutos; los access logs de S3 guardan su firma ya vencida.
+
+## v0.3 (2026-10-23): los dos detalles del PDF de anomalía (D87 (9))
+
+- **`get_anomalies`:** la ejecución de un reporte también registra sus respuestas, con el mismo tope que `get_cost_and_usage` y como dato no confiable (TM-R1, TM-R4). De ellas solo se leen el tipo de uso y el servicio de cada causa, para marcar las filas de «Qué la explica» que vinieron de la anomalía. No se copia ninguna cifra y nada llega al PDF que no estuviera ya en los datos validados.
+- **La hora de la consulta** la pone `mango-api` (cuándo llegó la respuesta), nunca el agente. Se guarda normalizada a UTC; un valor sin zona se descarta.
+- **Los días incompletos** solo cambian cómo se dibujan las barras y añaden un texto fijo con dos cifras ya validadas. No se inventa ninguna cifra.
 

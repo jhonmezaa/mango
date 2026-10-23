@@ -24,7 +24,7 @@ import re
 import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
@@ -49,6 +49,11 @@ REPORT_SOURCES = ("cost-explorer", "aws-billing")
 """Tools (connector or pack ids) that read Cost Explorer or billing: only an agent with one of
 them may produce a report (design: «solo para agentes que leen Cost Explorer o la facturación»)."""
 COST_QUERY_TOOL = "get_cost_and_usage"
+ANOMALY_QUERY_TOOL = "get_anomalies"
+"""The query of an anomaly: Mango marks the causes that came from it (design B3.2)."""
+INCOMPLETE_GAP = Decimal("0.05")
+"""A series of the anomaly's days more than 5 % below AWS's actual: its last days are not
+complete in Cost Explorer yet (design B3.1)."""
 
 MAX_ROWS_SHOWN = 25
 """Rows of a table in the PDF; the rest is one «Otros» row (D86 (8))."""
@@ -373,6 +378,8 @@ class ToolCall:
     name: str
     input: str
     output: str
+    at: str | None = None
+    """When its answer arrived (ISO 8601, UTC); ``None`` if not known."""
 
 
 @dataclass(frozen=True)
@@ -380,6 +387,7 @@ class QuerySeries:
     days: dict[date, Decimal]
     accounts: list[str]
     services: list[str]
+    queried_at: str | None = None
 
 
 def _json(text: str) -> Any:
@@ -452,8 +460,66 @@ def series_from_query(calls: Iterable[ToolCall], start: date, end: date) -> Quer
                 days={day: series.days[day] for day in wanted},
                 accounts=series.accounts,
                 services=series.services,
+                queried_at=_instant(call.at),
             )
     return found
+
+
+def _instant(value: str | None) -> str | None:
+    """An ISO 8601 instant, normalized to UTC; anything else is not kept."""
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        return None
+    return moment.astimezone(UTC).isoformat(timespec="seconds")
+
+
+def anomaly_causes(calls: Iterable[ToolCall]) -> set[tuple[str, str]]:
+    """``(usage type, service)`` of the root causes AWS reported in the run's
+    ``get_anomalies`` answers: the rows of «Qué la explica» that came from the anomaly."""
+    found: set[tuple[str, str]] = set()
+    for call in calls:
+        if call.name != ANOMALY_QUERY_TOOL or len(call.output) > MAX_QUERY_CHARS:
+            continue
+        answer = _answer(call.output)
+        anomalies = answer.get("anomalies") if answer else None
+        if not isinstance(anomalies, list):
+            continue
+        for anomaly in anomalies:
+            causes = anomaly.get("root_causes") if isinstance(anomaly, Mapping) else None
+            for cause in causes if isinstance(causes, list) else []:
+                if not isinstance(cause, Mapping):
+                    continue
+                usage, service = cause.get("usage_type"), cause.get("service")
+                if isinstance(usage, str) and isinstance(service, str):
+                    found.add((usage, service))
+    return found
+
+
+def incomplete_days(
+    daily: Iterable[DayCostExpected], start: date, end: date, actual: Decimal, now: datetime
+) -> list[date]:
+    """Days of the anomaly that Cost Explorer may not have complete yet (design B3.1): only
+    when the series of the anomaly's days adds up to more than 5 % less than AWS's actual, the
+    ones that began less than 24 hours before ``now``, as the design's example draws them (the
+    16th, generated on the 16th at 09:38 UTC, and not the 15th). Nothing else is invented for
+    them."""
+    window = [d for d in daily if start <= d.date <= end]
+    if not window or actual <= 0:
+        return []
+    shown = sum((d.cost for d in window), Decimal(0))
+    if shown >= actual * (1 - INCOMPLETE_GAP):
+        return []
+    moment = now.astimezone(UTC)
+    return [
+        d.date
+        for d in window
+        if moment - datetime.combine(d.date, time.min, UTC) < timedelta(hours=24)
+    ]
 
 
 # --- The document: what Mango stores for the function to draw -------------------------------
@@ -491,6 +557,14 @@ def build(
                 }
             )
             source = {"daily": "query", "accounts": query.accounts, "services": query.services}
+            if query.queried_at:
+                source["queried_at"] = query.queried_at
+        # Which query each row of «Qué la explica» came from: Mango knows it, the agent does
+        # not say it (design B3.2).
+        from_anomaly = anomaly_causes(calls)
+        source["causes"] = [
+            "anomaly" if (c.usage_type, c.service) in from_anomaly else "query" for c in data.causes
+        ]
     tools = sorted({c.name for c in calls if c.name})[:20]
     return {
         "type": report_type,

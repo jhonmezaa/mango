@@ -253,3 +253,116 @@ def test_number_formats() -> None:
     assert r.usd(Decimal("-5")) == f"{r.MINUS}USD 5,00"
     assert r.percent(Decimal("5.5")) == "+5,5 %"
     assert r.period_names(date(2026, 1, 1), date(2026, 1, 31)) == ("enero", "diciembre")
+
+
+# --- Investigación de anomalía: an incomplete day and the source of each cause (design B3) ---
+
+
+def _texts(flowables: list[Any]) -> list[str]:
+    """Every text of a story: paragraphs, table cells and the strings of a chart."""
+    out: list[str] = []
+    for item in flowables:
+        if isinstance(item, r.Paragraph):
+            out.append(item.text)
+        elif isinstance(item, r.KeepTogether):
+            out += _texts(list(item._content))
+        elif isinstance(item, list):
+            out += _texts(item)
+        elif isinstance(item, r.Table):
+            for row in item._cellvalues:
+                out += _texts([cell for cell in row if not isinstance(cell, str)])
+        elif isinstance(item, r.Drawing):
+            out += [shape.text for shape in item.contents if isinstance(shape, r.String)]
+    return out
+
+
+def _anomaly_story(daily: list[dict[str, Any]], info: dict[str, Any], **meta: Any) -> list[str]:
+    data = tr.parse(
+        "anomaly",
+        {
+            "expected": 640,
+            "actual": 1052.3,
+            "service": "Amazon EC2",
+            "daily": daily,
+            "causes": [
+                {"usage_type": "BoxUsage:m6i.2xlarge", "service": "Amazon EC2", "impact": 351.8},
+                {
+                    "usage_type": "EBS:VolumeUsage.gp3",
+                    "service": "Amazon EC2",
+                    "account_id": "111122223333",
+                    "impact": 38.9,
+                },
+            ],
+        },
+    )
+    assert isinstance(data, tr.AnomalyData)
+    _, story = r.anomaly(
+        data,
+        info,
+        _meta(
+            anomaly_start=date(2026, 10, 15),
+            anomaly_end=date(2026, 10, 16),
+            timezone=None,
+            **meta,
+        ),
+        [],
+        r.styles(),
+    )
+    return _texts(story)
+
+
+DAILY = [
+    {"date": "2026-10-14", "cost": 323.6, "expected": 320},
+    {"date": "2026-10-15", "cost": 526.2, "expected": 320},
+    {"date": "2026-10-16", "cost": 96.4, "expected": 320},
+]
+
+
+def test_a_day_not_complete_in_cost_explorer_is_hatched_and_said() -> None:
+    texts = _anomaly_story(
+        DAILY,
+        {
+            "daily": "query",
+            "queried_at": "2026-10-16T09:38:00+00:00",
+            "causes": ["anomaly", "query"],
+        },
+        generated_at=datetime(2026, 10, 16, 9, 40, tzinfo=UTC),
+    )
+    joined = " ".join(texts)
+    assert "incompleto" in texts
+    assert "aún incompleto en Cost Explorer" in joined
+    assert (
+        "El 16 oct todavía no está completo en Cost Explorer, que puede tardar hasta un día. "
+        "En los días de la anomalía la serie suma USD 622,60 y AWS informa un real de "
+        "USD 1.052,30: el real de arriba es el de AWS." in joined
+    )
+    assert "según AWS · USD 526,15 por día" in joined
+    assert "consulta del 16 oct, 09:38 UTC" in joined
+    assert "Cost Explorer puede tardar hasta un día en completar el costo de un día" in joined
+
+
+def test_complete_days_are_drawn_as_always() -> None:
+    # The series reaches the actual: nothing is incomplete, whatever the time.
+    full = [*DAILY[:2], {"date": "2026-10-16", "cost": 526.1, "expected": 320}]
+    texts = _anomaly_story(
+        full, {"daily": "query"}, generated_at=datetime(2026, 10, 16, 10, tzinfo=UTC)
+    )
+    assert "incompleto" not in texts
+    # A day that ended more than 24 hours ago is not hatched either.
+    late = _anomaly_story(
+        DAILY, {"daily": "query"}, generated_at=datetime(2026, 10, 18, 1, tzinfo=UTC)
+    )
+    assert "incompleto" not in late
+
+
+def test_causes_say_which_query_they_came_from() -> None:
+    texts = _anomaly_story(DAILY, {"daily": "query", "causes": ["anomaly", "query"]})
+    joined = " ".join(texts)
+    assert any(t.endswith("BoxUsage:m6i.2xlarge<super>1</super>") for t in texts)
+    assert "EBS:VolumeUsage.gp3" in texts
+    assert "Fuentes: <super>1</super>" in joined
+    assert "la anomalía no trae la cuenta" in joined
+    # One query only: the source of before, without marks.
+    single = _anomaly_story(DAILY, {"daily": "query", "causes": ["query", "query"]})
+    assert not any("<super>" in t for t in single)
+    assert "ventana de la anomalía contra los 14 días anteriores" in " ".join(single)

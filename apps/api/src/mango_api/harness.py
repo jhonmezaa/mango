@@ -192,8 +192,9 @@ class InvocationResult:
     tools: list[dict[str, str]] = field(default_factory=list)
     calls: list[dict[str, str]] = field(default_factory=list)
     """The calls of the tools ``run`` was asked to record, by their id in the stream: ``id``,
-    ``name``, ``input`` and ``output`` (the answer as text). Untrusted, like every answer of a
-    tool; read only to take a series from a query (D87 (4))."""
+    ``name``, ``input``, ``output`` (the answer as text) and ``at`` (when the answer arrived).
+    Untrusted, like every answer of a tool; read only to take a series from a query and the
+    causes of an anomaly (D87 (4))."""
     searches: list[knowledge_citations.Search] = field(default_factory=list)
     """The knowledge searches of the turn, metadata only (D88 (44))."""
     interrupted: bool = False
@@ -417,6 +418,8 @@ class _Recorded:
     def answer(self, index: int, call_id: str) -> None:
         if call_id in self._calls:
             self._by_index[index] = (call_id, "output")
+            # When its answer arrived: the time of the query a report cites (D87, D88).
+            self._calls[call_id]["at"] = datetime.now(UTC).isoformat(timespec="seconds")
 
     def add(self, index: int, piece: str) -> None:
         target = self._by_index.get(index)
@@ -441,6 +444,7 @@ class _Recorded:
                 "name": c["name"],
                 "input": "".join(c["input"]),
                 "output": "".join(c["output"]),
+                "at": c.get("at", ""),
             }
             for c in self._calls.values()
             if c["output"]
