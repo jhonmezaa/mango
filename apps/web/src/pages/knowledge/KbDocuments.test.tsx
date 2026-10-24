@@ -271,6 +271,9 @@ describe('Subir archivos', () => {
     expect(
       await within(panel).findByText('Rechazado · El contenido no es del tipo que dice'),
     ).toBeVisible();
+    expect(within(panel).getByRole('alert')).toHaveTextContent(
+      '1 archivo no se guardó: lo rechazó el servidor al guardar.',
+    );
   });
 
   it('asks before leaving with files uploaded and not saved', async () => {
@@ -387,7 +390,7 @@ describe('Probar búsqueda', () => {
     );
     await user.click(within(panel).getByRole('button', { name: 'Buscar' }));
     expect(await within(panel).findByRole('alert')).toHaveTextContent(
-      'La búsqueda está ocupada. Inténtalo en un momento.',
+      'Hay demasiadas búsquedas en curso. Inténtalo de nuevo en unos segundos.',
     );
   });
 

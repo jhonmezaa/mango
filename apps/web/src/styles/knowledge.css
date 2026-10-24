@@ -405,7 +405,7 @@
     margin-top: 12px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     max-width: 760px;
   }
   .kb-cites-h {
@@ -416,19 +416,12 @@
   }
   .kb-cite {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 6px;
-    width: 100%;
-    min-height: 32px;
-    padding: 5px 10px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    min-width: 0;
+    padding: 2px 0;
     font-size: 12.5px;
-    text-align: left;
     color: var(--text);
-  }
-  .kb-cite:hover {
-    background: var(--row-hover);
   }
   .kb-cite-n {
     font-family: var(--font-mono);
@@ -444,16 +437,11 @@
     white-space: nowrap;
     min-width: 0;
   }
-  .kb-cite-p {
-    margin: 4px 0 6px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    background: var(--input-bg);
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--text);
-    white-space: pre-wrap;
-    text-wrap: pretty;
+  .kb-cite-m {
+    font-size: 12px;
+    color: var(--text-muted);
+    flex: none;
+    white-space: nowrap;
   }
   .kb-step {
     display: inline-flex;
@@ -469,6 +457,9 @@
   .kb-step svg {
     color: var(--green);
     flex: none;
+  }
+  .kb-step.is-empty svg {
+    color: var(--text-dim);
   }
   /* Web only: the design gives the steps of a turn `margin-bottom: 10px; max-width: 760px` inline. */
   .kb-steps {

@@ -98,6 +98,7 @@ export function SearchTab({
           aria-label={t('knowledge.test.label')}
           onChange={(event) => {
             setQuery(event.target.value);
+            setError(null);
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') void run();

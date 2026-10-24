@@ -103,9 +103,10 @@ export const chat = {
     anyBase: 'las knowledge bases',
     fragments_one: '{{count}} fragmento',
     fragments_other: '{{count}} fragmentos',
+    noFragments: 'ningún fragmento',
     sources: 'Fuentes',
     sourcesOf: 'Fuentes · {{kb}}',
-    page: 'p. {{page}}',
+    page: '· p. {{page}}',
   },
   steps: {
     count_one: '{{count}} paso',

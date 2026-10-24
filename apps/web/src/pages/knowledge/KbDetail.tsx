@@ -3,7 +3,13 @@ import { useTranslation } from 'react-i18next';
 
 import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import { useSession } from '../../auth/useSession';
-import { BookOpenIcon, DocumentIcon, RefreshIcon, TrashIcon } from '../../components/icons';
+import {
+  BookOpenIcon,
+  DocumentIcon,
+  RefreshIcon,
+  TrashIcon,
+  WarnIcon,
+} from '../../components/icons';
 import { SidePanel } from '../../components/SidePanel';
 import { SoonTag } from '../../components/Soon';
 import { Tabs } from '../../components/Tabs';
@@ -65,8 +71,11 @@ interface Props {
   /** Reads the list again (after an action on its sources). */
   onReload: () => Promise<void>;
   onClose: () => void;
-  /** Where the panel opens: a new knowledge base of files opens on its upload. */
-  start?: { tab: Tab; uploading: boolean } | undefined;
+  /**
+   * Where the panel opens: a new knowledge base of files opens on its upload; one of a bucket
+   * whose proposal could not be sent opens on «Acceso y sync», saying so, with what was typed.
+   */
+  start?: { tab: Tab; uploading: boolean; notice?: string; location?: string } | undefined;
 }
 
 function who(source: Source['proposed_by'] | null | undefined): string | null {
@@ -299,6 +308,7 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose, sta
           <Summary
             kb={kb}
             sources={sources}
+            documents={documents}
             failed={documents === null ? null : failed}
             onAccess={() => {
               goTab('access');
@@ -335,6 +345,8 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose, sta
             kb={kb}
             sources={sources}
             groups={groups}
+            notice={start?.notice}
+            initialLocation={start?.location}
             notify={notify}
             messageOf={messageOf}
             onChanged={onChanged}
@@ -349,6 +361,7 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose, sta
 function Summary({
   kb,
   sources,
+  documents,
   failed,
   onAccess,
   onDocuments,
@@ -356,6 +369,7 @@ function Summary({
 }: {
   kb: KnowledgeBase;
   sources: readonly Source[] | null;
+  documents: readonly Document[] | null;
   /** Documents not indexed; null when the documents were not read. */
   failed: number | null;
   onAccess: () => void;
@@ -379,6 +393,11 @@ function Summary({
       : ''
     : t('knowledge.summary.nothingIndexed');
   const estimate = kb.budget_estimate_usd ? formatEstimate(kb.budget_estimate_usd) : null;
+  const preparing = status === 'syncing' && kb.sync_preparing;
+  const busy = (documents ?? []).filter(
+    (document) => document.status !== 'indexed' && document.status !== 'failed',
+  ).length;
+  const indexed = (documents ?? []).filter((document) => document.status === 'indexed').length;
 
   return (
     <>
@@ -388,7 +407,8 @@ function Summary({
           <b>{t('knowledge.summary.deletingLead')}</b> {t('knowledge.summary.deleting')}
         </Notice>
       ) : null}
-      {status === 'syncing' ? (
+      {preparing ? <Notice tone="busy">{t('knowledge.summary.preparing')}</Notice> : null}
+      {status === 'syncing' && !preparing ? (
         <Notice tone="busy">
           {bucket ? (
             location ? (
@@ -411,13 +431,18 @@ function Summary({
           </button>
         </Notice>
       ) : null}
-      {status === 'error' ? <Notice tone="red">{t('knowledge.summary.error')}</Notice> : null}
+      {status === 'warn' && !kb.can_view_documents ? (
+        <Notice tone="amber">{t('knowledge.summary.warnHidden')}</Notice>
+      ) : null}
+      {status === 'error' ? (
+        <Notice tone="red">
+          {t('knowledge.summary.error')} {stillUsing}
+          {kb.can_edit ? ` ${t('knowledge.summary.errorAction')}` : ''}
+        </Notice>
+      ) : null}
       {status === 'blocked' ? (
         <Notice tone="amber">
-          {estimate
-            ? t('knowledge.summary.budget', { usd: estimate })
-            : t('knowledge.summary.budgetNoEstimate')}{' '}
-          {stillUsing}
+          <BudgetText kb={kb} estimate={estimate} /> {stillUsing}
           {kb.can_edit ? ` ${t('knowledge.summary.budgetAction')}` : ''}
         </Notice>
       ) : null}
@@ -475,7 +500,12 @@ function Summary({
       ) : null}
       {status === 'nosource' ? (
         <Notice tone="info">
-          <b>{t('knowledge.summary.nosourceLead')}</b> {t('knowledge.summary.nosource')}{' '}
+          <b>{t('knowledge.summary.nosourceLead')}</b>{' '}
+          {kb.sources?.length === 0
+            ? t('knowledge.summary.nosourceNotSent')
+            : kb.sources?.some((source) => source.status === 'withdrawn')
+              ? t('knowledge.summary.nosource')
+              : t('knowledge.summary.nosourceNone')}{' '}
           {kb.can_edit ? (
             <button type="button" className="sr-link" onClick={onAccess}>
               {t('knowledge.summary.proposeBucket')}
@@ -499,17 +529,20 @@ function Summary({
       ) : null}
       <Section title={t('knowledge.summary.content')}>
         <Kv label={t('knowledge.summary.documents')}>
-          <span className="mono">{formatCount(kb.documents)}</span>
-        </Kv>
-        <Kv label={t('knowledge.summary.fragments')}>
-          <span className="mono">—</span>
+          <span className="mono">
+            {kb.can_view_documents && documents !== null ? (
+              <>
+                {formatCount(indexed)}
+                {failed ? t('knowledge.summary.documentsFailed', { count: failed }) : ''}
+                {busy ? t('knowledge.summary.documentsBusy', { count: busy }) : ''}
+              </>
+            ) : (
+              formatCount(kb.documents)
+            )}
+          </span>
         </Kv>
         <Kv label={t('knowledge.summary.size')}>
-          <span className="mono">
-            {kb.documents
-              ? t('knowledge.summary.sizeBytes', { bytes: formatBytes(kb.bytes) })
-              : '—'}
-          </span>
+          <span className="mono">{kb.documents ? formatBytes(kb.bytes) : '—'}</span>
         </Kv>
         <Kv label={t('knowledge.summary.limits')}>
           <span>
@@ -590,10 +623,41 @@ function Summary({
   );
 }
 
+/**
+ * «No empezó por presupuesto» naming whose budget it was (D88 (53)): yours, or the one of who
+ * asked; a scheduled one says so. Without the person (a record from before) it names none.
+ */
+function BudgetText({ kb, estimate }: { kb: KnowledgeBase; estimate: string | null }) {
+  const { t } = useTranslation();
+  const { me } = useSession();
+  const by = kb.budget_by;
+  const owner = by && by.user_id === kb.owner.user_id ? (kb.owner.name ?? kb.owner.email) : null;
+  const name = by ? (by.email ?? owner) : null;
+  const whose = !by
+    ? t('knowledge.summary.whoseUnknown')
+    : by.user_id === me.user_id
+      ? t('knowledge.summary.whoseMine')
+      : name
+        ? t('knowledge.summary.whoseOf', { who: name })
+        : t('knowledge.summary.whoseUnknown');
+  const lead = by?.scheduled
+    ? t('knowledge.summary.budgetLeadScheduled')
+    : t('knowledge.summary.budgetLead');
+  return (
+    <>
+      {estimate
+        ? t('knowledge.summary.budget', { lead, usd: estimate, whose })
+        : t('knowledge.summary.budgetNoEstimate', { lead, whose })}
+    </>
+  );
+}
+
 function Access({
   kb,
   sources,
   groups,
+  notice,
+  initialLocation,
   notify,
   messageOf,
   onChanged,
@@ -602,6 +666,9 @@ function Access({
   kb: KnowledgeBase;
   sources: readonly Source[] | null;
   groups: readonly string[] | null;
+  /** Why the panel opened here: the proposal of the bucket was not sent when it was created. */
+  notice?: string | undefined;
+  initialLocation?: string | undefined;
   notify: Notify;
   messageOf: (error: unknown) => string;
   onChanged: (kb: KnowledgeBase) => void;
@@ -616,8 +683,9 @@ function Access({
   const [schedule, setSchedule] = useState<Schedule>(kb.sync_schedule);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [location, setLocation] = useState('');
+  const reopen = Boolean(notice) && status === 'nosource';
+  const [editing, setEditing] = useState(reopen);
+  const [location, setLocation] = useState(reopen ? (initialLocation ?? '') : '');
   const [refError, setRefError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -661,13 +729,12 @@ function Access({
   const propose = async () => {
     const value = location.trim();
     const shape = locationError(value);
+    // The same bucket of now is refused by the API (`source_exists`), with its own text.
     const error = shape
       ? t(`knowledge.errors.${shape}`)
       : hasSecret(value)
         ? t('knowledge.errors.secretRef')
-        : approved && value === approved.location
-          ? t('knowledge.errors.sameRef')
-          : null;
+        : null;
     if (error) {
       setRefError(error);
       return;
@@ -727,7 +794,9 @@ function Access({
       : status === 'rejected'
         ? t('knowledge.access.rejected')
         : status === 'nosource'
-          ? t('knowledge.access.withdrawn')
+          ? kb.sources?.length === 0
+            ? t('knowledge.access.notSent')
+            : t('knowledge.access.withdrawn')
           : t('knowledge.access.readsFrom');
   const changeRejected =
     !pending && approved && lastDecided?.decided_at && approvedFull?.decided_at
@@ -736,6 +805,12 @@ function Access({
 
   return (
     <>
+      {reopen ? (
+        <div className="mc-alert amber" role="alert">
+          <WarnIcon size={14} />
+          <div>{notice}</div>
+        </div>
+      ) : null}
       <Section title={t('knowledge.access.groups')}>
         <GroupChips options={groups ?? []} value={chosen} onChange={setChosen} disabled={!edit} />
         {edit && chosen.length > 0 && !mineIn ? (
@@ -808,11 +883,15 @@ function Access({
               className="btn btn-sm mt-1.5 self-start"
               onClick={() => {
                 setEditing(true);
-                setLocation(approved?.location ?? '');
+                setLocation(approved?.location ?? (status === 'nosource' ? (shown ?? '') : ''));
                 setRefError(null);
               }}
             >
-              {approved ? t('knowledge.access.change') : t('knowledge.access.proposeOther')}
+              {approved
+                ? t('knowledge.access.change')
+                : status === 'nosource'
+                  ? t('knowledge.access.proposeBucket')
+                  : t('knowledge.access.proposeOther')}
             </button>
           ) : null}
           {editing ? (

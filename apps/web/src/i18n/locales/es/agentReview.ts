@@ -218,7 +218,7 @@ export const agentReview = {
     knowledge_base_unavailable:
       'Hay knowledge bases que ya no existen o se están borrando: {{items}}. Hay que quitarlas.',
     knowledge_base_not_usable:
-      'Quien la editó no está en los grupos de estas knowledge bases: {{items}}. Hay que quitarlas.',
+      'Quien editó esta versión no está en los grupos de estas knowledge bases: {{items}}. Hay que quitarlas.',
     unknown: 'Incumple una regla de publicación ({{code}}).',
   },
 } as const;

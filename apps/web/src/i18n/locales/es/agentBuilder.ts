@@ -95,6 +95,10 @@ export const agentBuilder = {
     none: 'No hay knowledge bases que puedas usar: solo aparecen las de grupos en los que estás.',
     unavailable:
       'No se pudieron cargar las knowledge bases. Las que ya tiene el agente se conservan.',
+    retry: 'Reintentar',
+    keptUnknown_one: 'Tiene 1 knowledge base · se conservan',
+    keptUnknown_other: 'Tiene {{count}} knowledge bases · se conservan',
+    countOnly: '{{count}} de 5',
     gapOne:
       'usa este agente pero no está en esa knowledge base. A esas personas el agente les responde sin su contenido: la búsqueda se hace con la identidad de quien pregunta.',
     gapMany:

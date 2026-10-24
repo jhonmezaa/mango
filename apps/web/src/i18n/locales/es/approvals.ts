@@ -75,8 +75,9 @@ export const approvals = {
     groups: 'La consultan',
     frequency: 'Frecuencia',
     checked: 'Comprobado',
-    checkedValue: 'Es de la cuenta de AWS de la instalación y no es de Mango.',
-    note: 'Solo reciben su contenido las personas de sus grupos, también a través de un agente. El cifrado se comprueba al sincronizar: un bucket con una llave propia del cliente (KMS) no se puede leer en esta versión.',
+    checkedValue:
+      'Es de la cuenta de AWS de la instalación, no es de Mango y no usa una llave propia (KMS).',
+    note: 'Solo reciben su contenido las personas de sus grupos, también a través de un agente.',
     history: 'historial',
     proposedNew: 'propuso el bucket',
     proposedChange: 'propuso cambiar el bucket',

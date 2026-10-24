@@ -550,7 +550,7 @@ describe('bucket proposals of knowledge bases (design kb-source.jsx, D88 (48))',
     expect(within(detail).getByText('security, devops')).toBeInTheDocument();
     expect(within(detail).getByText('Diaria')).toBeInTheDocument();
     expect(
-      within(detail).getByText('Es de la cuenta de AWS de la instalación y no es de Mango.'),
+      within(detail).getByText('Es de la cuenta de AWS de la instalación, no es de Mango y no usa una llave propia (KMS).'),
     ).toBeInTheDocument();
     expect(within(detail).getByRole('link', { name: /Abrir knowledge base/ })).toHaveAttribute(
       'href',

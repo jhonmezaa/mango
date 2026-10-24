@@ -12,19 +12,25 @@ export function KnowledgeSteps({ searches }: { searches: readonly KnowledgeSearc
   if (!searches.length) return null;
   return (
     <div className="kb-steps">
-      {searches.map((search, index) => (
-        <span key={index} className="kb-step">
-          <BookOpenIcon size={11} />
-          {t('chat.knowledge.searched')}{' '}
-          <b>
-            {search.knowledgeBases.length
-              ? search.knowledgeBases.join(', ')
-              : t('chat.knowledge.anyBase')}
-          </b>
-          {' · '}
-          {t('chat.knowledge.fragments', { count: search.count })}
-        </span>
-      ))}
+      {searches.map((search, index) => {
+        // Without fragments it does not name a knowledge base: none is known (design).
+        const none = search.count === 0;
+        return (
+          <span key={index} className={none ? 'kb-step is-empty' : 'kb-step'}>
+            <BookOpenIcon size={11} />
+            {t('chat.knowledge.searched')}{' '}
+            {none || !search.knowledgeBases.length ? (
+              t('chat.knowledge.anyBase')
+            ) : (
+              <b>{search.knowledgeBases.join(', ')}</b>
+            )}
+            {' · '}
+            {none
+              ? t('chat.knowledge.noFragments')
+              : t('chat.knowledge.fragments', { count: search.count })}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -51,15 +57,13 @@ export function KnowledgeCitations({ citations }: { citations: readonly Citation
             className="kb-cite"
           >
             <span className="kb-cite-n">[{index + 1}]</span>
-            <span className="kb-cite-d">{citation.document}</span>
+            <span className="kb-cite-d" title={citation.document}>
+              {citation.document}
+            </span>
             {citation.page !== null ? (
-              <span className="mk-meta flex-none">
-                {t('chat.knowledge.page', { page: citation.page })}
-              </span>
+              <span className="kb-cite-m">{t('chat.knowledge.page', { page: citation.page })}</span>
             ) : null}
-            {single === null ? (
-              <span className="mk-meta flex-none">· {citation.knowledgeBase}</span>
-            ) : null}
+            {single === null ? <span className="kb-cite-m">· {citation.knowledgeBase}</span> : null}
           </li>
         ))}
       </ol>

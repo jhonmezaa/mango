@@ -11,8 +11,8 @@ export const knowledge = {
   kpi: {
     bases: 'Knowledge bases',
     inUse: '{{count}} en uso por agentes',
-    documents: 'Documentos indexados',
-    size: '{{size}} en total',
+    documents: 'Documentos',
+    size: '{{size}}',
     attention: 'Necesitan atención',
     attentionSome: 'Errores, avisos o sin empezar',
     attentionNone: 'Todo al día',
@@ -70,6 +70,8 @@ export const knowledge = {
     budget: 'por presupuesto',
     full: 'supera el tope',
     approval: 'espera a un administrador',
+    error: 'no se pudo leer',
+    preparing: 'preparando el acceso',
   },
   detail: {
     meta: 'S3 · {{origin}} · {{owner}}',
@@ -103,11 +105,22 @@ export const knowledge = {
     warnCount_one: '{{count}} documento no se pudo indexar: los agentes no lo ven.',
     warnCount_other: '{{count}} documentos no se pudieron indexar: los agentes no los ven.',
     warnSeeWhich: 'Ver cuáles',
-    error: 'No se pudo sincronizar.',
+    preparing:
+      'Preparando el acceso al bucket aprobado: puede tardar hasta 2 minutos. Después empieza la sincronización.',
+    warnHidden: 'Algunos documentos no se pudieron indexar: los agentes no los ven.',
+    error: 'No se pudo sincronizar: Mango no pudo leer el bucket.',
+    errorAction:
+      'Vuelve a intentarlo con «Sincronizar ahora». Si sigue fallando, pide a quien administra AWS que revise el bucket.',
+    budgetLead: 'No empezó',
+    budgetLeadScheduled: 'La sincronización programada no empezó',
     budget:
-      'No empezó por presupuesto: los embeddings costarían unos {{usd}} y el presupuesto no alcanza.',
-    budgetNoEstimate: 'No empezó por presupuesto: el presupuesto no alcanza.',
-    budgetAction: 'Vuelve a sincronizar cuando haya presupuesto.',
+      '{{lead}} por presupuesto: los embeddings costarían unos {{usd}} y {{whose}} no alcanza.',
+    budgetNoEstimate: '{{lead}} por presupuesto: {{whose}} no alcanza para los embeddings.',
+    whoseMine: 'tu presupuesto',
+    whoseOf: 'el presupuesto de {{who}}',
+    whoseUnknown: 'el presupuesto',
+    budgetAction:
+      'Vuelve a sincronizar cuando haya presupuesto: «Sincronizar ahora» usa el de quien la pide; la programada, el de quien la creó.',
     full: 'Se copió hasta el tope: el bucket tiene más de 1.000 documentos o 5 GB.',
     fullAction: 'Acota el prefijo o reparte los documentos en varias knowledge bases.',
     stillUsing: 'Los agentes siguen usando lo indexado {{ago}}.',
@@ -127,6 +140,8 @@ export const knowledge = {
     proposeOther: 'Proponer otro bucket',
     nosourceLead: 'Sin bucket.',
     nosource: 'Se retiró la propuesta: no se lee nada.',
+    nosourceNotSent: 'La propuesta del bucket no llegó a enviarse: no se lee nada.',
+    nosourceNone: 'No tiene un bucket propuesto: no se lee nada.',
     proposeBucket: 'Proponer un bucket',
     partialLead: 'Acceso parcial.',
     partial:
@@ -134,9 +149,9 @@ export const knowledge = {
     partialTail: 'Si deben recibirlo, agrega esos grupos en «Acceso».',
     content: 'Contenido',
     documents: 'Documentos',
-    fragments: 'Fragmentos',
+    documentsFailed: ' · {{count}} sin indexar',
+    documentsBusy: ' · {{count}} en curso',
     size: 'Tamaño',
-    sizeBytes: '{{bytes}} · los tokens se conocen al indexar',
     limits: 'Topes',
     limitsValue: '{{documents}} de 1.000 documentos · {{bytes}} de 5 GB',
     embeddings: 'Embeddings',
@@ -222,7 +237,11 @@ export const knowledge = {
     saving: 'Guardando…',
     waitIndexing: 'Espera a que termine la indexación en curso para guardar.',
     waitUploads: 'Espera a que terminen de subir.',
-    help: 'Al guardar empieza la indexación. Lo que subas y no guardes se descarta mañana.',
+    help: 'Al guardar se comprueba cada archivo y empieza la indexación. Lo que subas y no guardes se descarta mañana.',
+    serverRejected_one:
+      '{{count}} archivo no se guardó: lo rechazó el servidor al guardar. Siguen en la lista con su motivo; quítalos o corrígelos y vuelve a subirlos.',
+    serverRejected_other:
+      '{{count}} archivos no se guardaron: los rechazó el servidor al guardar. Siguen en la lista con su motivo; quítalos o corrígelos y vuelve a subirlos.',
   },
   test: {
     lockedDocsTitle: 'No puedes probar la búsqueda',
@@ -280,6 +299,7 @@ export const knowledge = {
     proposed: 'Propuesto',
     rejected: 'Rechazado',
     withdrawn: 'Retirado',
+    notSent: 'No se envió',
     approvedBy: 'Lo aprobó',
     approvedByValue: '{{who}} · {{ago}}',
     changePending:
@@ -290,6 +310,7 @@ export const knowledge = {
     changeRejectedNote: 'Se rechazó el cambio a {{location}}: «{{note}}».',
     change: 'Cambiar bucket o prefijo',
     proposeOther: 'Proponer otro bucket',
+    proposeBucket: 'Proponer un bucket',
     refLabel: 'Bucket y prefijo',
     refPlaceholder: 's3://bucket/prefijo/',
     refHelp: 'Es una propuesta nueva: la aprueba un administrador distinto de ti.',
@@ -298,7 +319,7 @@ export const knowledge = {
     sending: 'Enviando…',
     cancel: 'Cancelar',
     bucketHelp:
-      'Solo buckets de la cuenta de AWS de la instalación. Lo que hay en el prefijo se copia a Mango en cada sincronización; lo que se borra del bucket sale en la siguiente. Un bucket cifrado con una llave propia del cliente (KMS) no se puede leer en esta versión.',
+      'Solo buckets de la cuenta de AWS de la instalación. Lo que hay en el prefijo se copia a Mango en cada sincronización; lo que se borra del bucket sale en la siguiente. Al proponerlo se rechazan los buckets de Mango, los de otras cuentas y los cifrados con una llave propia del cliente (KMS), que esta versión no puede leer.',
     sync: 'Sincronización',
     syncHelp: 'Solo para el bucket. «Sincronizar ahora» está abajo.',
     frequencyLabel: 'Frecuencia',
@@ -340,7 +361,7 @@ export const knowledge = {
       'No se cambia después. Para combinar las dos, crea una de cada una y asócialas al mismo agente (hasta 5 por agente).',
     ref: 'Bucket y prefijo',
     refHelp:
-      'Solo buckets de la cuenta de AWS de la instalación; los de Mango y los de otras cuentas se rechazan. Un bucket cifrado con una llave propia del cliente (KMS) no se puede leer en esta versión.',
+      'Solo buckets de la cuenta de AWS de la instalación. Al enviar se rechazan los de Mango, los de otras cuentas y los cifrados con una llave propia del cliente (KMS), que esta versión no puede leer.',
     sync: 'Sincronización',
     groups: 'Grupos que pueden consultarla',
     groupsHelp: 'Solo sus personas reciben el contenido, también a través de un agente.',
@@ -357,13 +378,12 @@ export const knowledge = {
     groups: 'Elige al menos un grupo',
     secret: 'No pegues credenciales',
     secretRef: 'No pegues credenciales en la ubicación',
-    sameRef: 'Es el mismo bucket y prefijo de ahora',
     bucket_not_in_account:
       'Ese bucket no está en la cuenta de AWS de la instalación. Solo se aceptan buckets de esa cuenta.',
     mango_bucket: 'Ese bucket es de Mango y no se puede usar como fuente.',
     bucket_not_found: 'Ese bucket no existe en la cuenta de AWS de la instalación.',
     bucket_key_unsupported:
-      'No se pudo leer el bucket: está cifrado con una llave propia del cliente (KMS) y esta versión no puede leerlo.',
+      'Ese bucket está cifrado con una llave propia del cliente (KMS) y esta versión no puede leerlo. Usa otro bucket o una knowledge base de archivos subidos.',
     source_check_unavailable: 'No se pudo comprobar el bucket. Inténtalo de nuevo.',
     source_pending: 'Ya hay una propuesta pendiente para esta knowledge base.',
     source_exists: 'Esta knowledge base ya lee ese bucket y prefijo.',
@@ -373,7 +393,7 @@ export const knowledge = {
       'No se puede borrar: la usan agentes ya publicados. Quítala en una versión nueva de esos agentes y vuelve a intentarlo.',
     knowledge_base_deleting: 'La knowledge base se está borrando.',
     sync_unavailable: 'No se pudo empezar la sincronización. Inténtalo de nuevo.',
-    search_busy: 'La búsqueda está ocupada. Inténtalo en un momento.',
+    search_busy: 'Hay demasiadas búsquedas en curso. Inténtalo de nuevo en unos segundos.',
     search_unavailable: 'No se pudo buscar. Inténtalo de nuevo.',
     knowledge_base_full: 'La knowledge base pasaría de 1.000 documentos o de 5 GB.',
     type_not_supported: 'Tipo no admitido',

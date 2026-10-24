@@ -221,6 +221,107 @@ describe('the panel of a knowledge base', () => {
     expect(within(panel).getByText('Lo usan grupos sin acceso')).toBeVisible();
   });
 
+  it('names whose budget stopped it, and says when the schedule did (D88 (53))', async () => {
+    renderPage(
+      apiWith(
+        list([
+          kb({
+            status_reason: 'budget',
+            budget_estimate_usd: '12.4',
+            budget_by: { user_id: baseMe.user_id, email: null, scheduled: false },
+          }),
+          bucketKb({
+            status_reason: 'budget',
+            budget_estimate_usd: null,
+            budget_by: { user_id: ADMIN_ID, email: 'admin@example.com', scheduled: true },
+          }),
+        ]),
+        { listSources: { items: [source()] } },
+      ),
+    );
+    const opened = await open('Políticas de RH');
+    const { user } = opened;
+    let { panel } = opened;
+    expect(
+      within(panel).getByText(
+        /^No empezó por presupuesto: los embeddings costarían unos USD 12,40 y tu presupuesto no alcanza\./,
+      ),
+    ).toBeVisible();
+    expect(within(panel).getByText(/«Sincronizar ahora» usa el de quien la pide/)).toBeVisible();
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
+    ({ panel } = await open('AWS Runbooks'));
+    expect(
+      within(panel).getByText(
+        /^La sincronización programada no empezó por presupuesto: el presupuesto de admin@example.com no alcanza para los embeddings\./,
+      ),
+    ).toBeVisible();
+  });
+
+  it('says it is preparing the access of a bucket just approved', async () => {
+    renderPage(
+      apiWith(list([bucketKb({ status: 'syncing', sync_running: true, sync_preparing: true })]), {
+        listSources: { items: [source()] },
+      }),
+    );
+    expect(await screen.findByText('preparando el acceso')).toBeVisible();
+    const { panel } = await open('AWS Runbooks');
+    expect(
+      within(panel).getByText(/^Preparando el acceso al bucket aprobado: puede tardar hasta 2/),
+    ).toBeVisible();
+    expect(within(panel).queryByText(/^Sincronizando desde/)).toBeNull();
+  });
+
+  it('says an approved bucket could not be read, and what to do', async () => {
+    renderPage(
+      apiWith(list([bucketKb({ status: 'error', status_reason: 'error' })]), {
+        listSources: { items: [source()] },
+      }),
+    );
+    expect(await screen.findByText('no se pudo leer')).toBeVisible();
+    const { panel } = await open('AWS Runbooks');
+    expect(
+      within(panel).getByText(/^No se pudo sincronizar: Mango no pudo leer el bucket\./),
+    ).toBeVisible();
+    expect(
+      within(panel).getByText(/pide a quien administra AWS que revise el bucket/),
+    ).toBeVisible();
+  });
+
+  it('tells a proposal not sent from one withdrawn', async () => {
+    renderPage(
+      apiWith(
+        list([
+          bucketKb({ status: 'pending', sources: [] }),
+          kb({
+            kb_id: '01JC0000000000000000000003',
+            name: 'Customer Docs',
+            origin: 'bucket',
+            status: 'pending',
+            sources: [{ src_id: 'w', status: 'withdrawn', location: 's3://sitio/docs/' }],
+          }),
+        ]),
+        { listSources: { items: [] } },
+      ),
+    );
+    const opened = await open('AWS Runbooks');
+    const { user } = opened;
+    let { panel } = opened;
+    expect(
+      within(panel).getByText(/La propuesta del bucket no llegó a enviarse: no se lee nada\./),
+    ).toBeVisible();
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
+    ({ panel } = await open('Customer Docs'));
+    expect(within(panel).getByText(/Se retiró la propuesta: no se lee nada\./)).toBeVisible();
+  });
+
+  it('says documents failed without a number to whoever does not see them', async () => {
+    renderPage(apiWith(list([kb({ status: 'warn', can_view_documents: false })])));
+    const { panel } = await open('Políticas de RH');
+    expect(
+      within(panel).getByText('Algunos documentos no se pudieron indexar: los agentes no los ven.'),
+    ).toBeVisible();
+  });
+
   it('synchronizes now, and says when one is already running', async () => {
     const call = apiWith(list([bucketKb()]), {
       listSources: { items: [source()] },
@@ -295,9 +396,13 @@ describe('the panel of a knowledge base', () => {
     expect(await within(panel).findByText(/admin@example.com/)).toBeVisible();
     await user.click(within(panel).getByRole('button', { name: 'Cambiar bucket o prefijo' }));
     const field = within(panel).getByRole('textbox', { name: 'Bucket y prefijo' });
+    // The same bucket of now is the API's to refuse (`source_exists`): the browser only checks
+    // the shape and credentials.
+    await user.clear(field);
+    await user.type(field, 'no-es-s3');
     await user.click(within(panel).getByRole('button', { name: 'Enviar a aprobación' }));
     expect(within(panel).getByRole('alert')).toHaveTextContent(
-      'Es el mismo bucket y prefijo de ahora',
+      'Usa el formato s3://bucket/prefijo/',
     );
     await user.clear(field);
     await user.type(field, 's3://otra/carpeta/');
@@ -456,6 +561,42 @@ describe('creating a knowledge base', () => {
       ]);
     });
     expect(await screen.findByText('Creada · el bucket espera aprobación')).toBeVisible();
+  });
+
+  it('opens on «Acceso y sync» when the bucket of a new one could not be sent', async () => {
+    const created = bucketKb({ status: 'pending', sources: [] });
+    const call = apiWith(list([]), {
+      createNewKnowledgeBase: created,
+      propose: new ApiError(503, 'source_check_unavailable', 'no'),
+      // Created all the same: the list read again brings it.
+      listKnowledgeBases: list([created]),
+      listSources: { items: [] },
+    });
+    renderPage(call);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Nueva knowledge base' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nueva knowledge base' });
+    await user.type(within(dialog).getByRole('textbox', { name: 'Nombre' }), 'AWS Runbooks');
+    await user.click(within(dialog).getByRole('radio', { name: /Un bucket que ya existe/ }));
+    await user.type(
+      within(dialog).getByRole('textbox', { name: 'Bucket y prefijo' }),
+      's3://empresa-runbooks/ops/',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'hr' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Crear y enviar a aprobación' }));
+    const panel = await screen.findByRole('dialog', { name: 'AWS Runbooks' });
+    expect(within(panel).getByRole('tab', { name: 'Acceso y sync' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(within(panel).getByRole('alert')).toHaveTextContent(
+      'Se creó la knowledge base, pero no se pudo enviar el bucket.',
+    );
+    // The form is open with what was typed, and the bucket says it was not sent.
+    expect(within(panel).getByRole('textbox', { name: 'Bucket y prefijo' })).toHaveValue(
+      's3://empresa-runbooks/ops/',
+    );
+    expect(screen.queryByText('Creada · el bucket espera aprobación')).toBeNull();
   });
 
   it('refuses credentials before sending anything', async () => {

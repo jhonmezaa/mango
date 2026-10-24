@@ -56,6 +56,8 @@ function StatusSub({ kb, status }: { kb: KnowledgeBase; status: ShownStatus }) {
   else if (status === 'blocked') text = t('knowledge.sub.budget');
   else if (status === 'full') text = t('knowledge.sub.full');
   else if (status === 'approval') text = t('knowledge.sub.approval');
+  else if (status === 'error') text = t('knowledge.sub.error');
+  else if (status === 'syncing' && kb.sync_preparing) text = t('knowledge.sub.preparing');
   return text ? <span className="kb-sub">{text}</span> : null;
 }
 
@@ -135,6 +137,10 @@ export function KnowledgePage() {
   const [creating, setCreating] = useState(false);
   /** A new knowledge base of files opens on its upload (design `KbCreate`). */
   const [opensOnUpload, setOpensOnUpload] = useState(false);
+  const [unsent, setUnsent] = useState<{
+    kbId: string;
+    start: { tab: 'access'; uploading: false; notice: string; location: string };
+  } | null>(null);
   const [groups, setGroups] = useState<readonly string[] | null>(null);
 
   useEffect(() => {
@@ -398,10 +404,17 @@ export function KnowledgePage() {
           notify={notify}
           onChanged={put}
           onReload={reload}
-          start={opensOnUpload ? { tab: 'docs', uploading: true } : undefined}
+          start={
+            opensOnUpload
+              ? { tab: 'docs', uploading: true }
+              : unsent?.kbId === detail.kb_id
+                ? unsent.start
+                : undefined
+          }
           onClose={() => {
             setSelected(null);
             setOpensOnUpload(false);
+            setUnsent(null);
             if (routeId) void navigate('/knowledge', { replace: true });
           }}
         />
@@ -412,11 +425,17 @@ export function KnowledgePage() {
           onClose={() => {
             setCreating(false);
           }}
-          onCreated={(kb, toast) => {
+          onCreated={(kb, toast, unsentLocation) => {
             setCreating(false);
             put(kb);
             setOpensOnUpload(kb.origin === 'upload');
-            notify(toast, 'success');
+            if (unsentLocation === undefined) notify(toast, 'success');
+            // The proposal of the bucket was not sent: «Acceso y sync», saying so (design).
+            else
+              setUnsent({
+                kbId: kb.kb_id,
+                start: { tab: 'access', uploading: false, notice: toast, location: unsentLocation },
+              });
             // A bucket knowledge base now has its proposal: the list says so.
             if (kb.origin === 'bucket') void reload().catch(() => undefined);
             setSelected(kb.kb_id);

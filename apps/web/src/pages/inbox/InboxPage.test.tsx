@@ -316,7 +316,7 @@ describe('bucket proposals of knowledge bases (D88 (49))', () => {
     await user.click(row);
     expect(await screen.findByText('Knowledge Bases', { exact: false })).toBeInTheDocument();
     expect(
-      screen.getByText('Es de la cuenta de AWS de la instalación y no es de Mango.'),
+      screen.getByText('Es de la cuenta de AWS de la instalación, no es de Mango y no usa una llave propia (KMS).'),
     ).toBeInTheDocument();
     // Compact: no frequency, and «Aprobar» approves at once.
     expect(screen.queryByText('Frecuencia')).toBeNull();

@@ -419,10 +419,26 @@ describe('ChatMessage: knowledge searches and sources (design kb-agent.jsx, D88 
     const sources = screen.getByRole('region', { name: 'Fuentes' });
     expect(within(sources).getByText('Fuentes · Políticas de RH')).toBeVisible();
     expect(within(sources).getByText('[1]')).toBeVisible();
-    expect(within(sources).getByText('p. 3')).toBeVisible();
+    expect(within(sources).getByText('· p. 3')).toBeVisible();
     expect(within(sources).getByText(XSS)).toBeVisible();
     expect(within(sources).queryByRole('button')).toBeNull();
     expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('says «ningún fragmento» without naming a knowledge base when nothing came back', () => {
+    renderMessage({
+      id: 'a',
+      role: 'assistant',
+      content: 'No encontré nada.',
+      status: 'done',
+      tools: [],
+      searches: [{ knowledgeBases: ['Políticas de RH'], count: 0 }],
+    });
+    const step = screen.getByText(/Buscó en/);
+    expect(step).toHaveTextContent('Buscó en las knowledge bases · ningún fragmento');
+    expect(step).toHaveClass('is-empty');
+    expect(screen.queryByText('Políticas de RH')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Fuentes' })).toBeNull();
   });
 
   it('names the knowledge base of each source when there are several', () => {

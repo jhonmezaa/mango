@@ -89,17 +89,21 @@ describe('KnowledgeSection (design KbAgentSection)', () => {
     ).toBeVisible();
   });
 
-  it('says when the list could not be read, without dropping what the version has', () => {
-    renderSection({ knowledge: null, selected: [ID(1)] });
-    expect(
-      screen.getByText(
-        'No se pudieron cargar las knowledge bases. Las que ya tiene el agente se conservan.',
-      ),
-    ).toBeVisible();
+  it('says when the list could not be read, without dropping what the version has', async () => {
+    const { onChange, user } = renderSection({ knowledge: null, selected: [ID(1)] });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(
+      'No se pudieron cargar las knowledge bases. Las que ya tiene el agente se conservan.',
+    );
+    expect(within(alert).getByRole('button', { name: 'Reintentar' })).toBeVisible();
     expect(screen.queryByText(/ya estaba/)).toBeNull();
-    expect(
-      screen.getByText('1 de 5 · solo aparecen las que puedes usar: estás en sus grupos'),
-    ).toBeVisible();
+    // What the version has stays, by id (no names without the list), and can be taken out.
+    expect(screen.getByText('Tiene 1 knowledge base · se conservan')).toBeVisible();
+    expect(screen.getByText(ID(1))).toBeVisible();
+    expect(screen.getByText('1 de 5')).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Ver Knowledge Bases' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Quitar' }));
+    expect(onChange).toHaveBeenCalledWith({ knowledge_bases: [] });
   });
 
   it('says when there is none to use', () => {

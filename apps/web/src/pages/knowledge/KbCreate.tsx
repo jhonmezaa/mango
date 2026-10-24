@@ -36,7 +36,9 @@ interface Props {
   /** The groups to choose from; null while they load (or if they could not be read). */
   groups: readonly string[] | null;
   onClose: () => void;
-  onCreated: (kb: KnowledgeBase, toast: string) => void;
+  /** `unsentLocation`: the bucket typed, when the knowledge base was created and its proposal
+   * could not be sent. */
+  onCreated: (kb: KnowledgeBase, toast: string, unsentLocation?: string) => void;
 }
 
 /**
@@ -105,7 +107,11 @@ export function KbCreate({ groups, onClose, onCreated }: Props) {
       onCreated(created, t('knowledge.toast.createdBucket'));
     } catch (error) {
       // The knowledge base exists: it opens without a bucket, and says why.
-      onCreated(created, `${t('knowledge.errors.createdWithoutSource')} ${messageOf(error)}`);
+      onCreated(
+        created,
+        `${t('knowledge.errors.createdWithoutSource')} ${messageOf(error)}`,
+        location.trim(),
+      );
     }
   };
 

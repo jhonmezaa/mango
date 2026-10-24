@@ -342,6 +342,8 @@ function Upload({
   const [leaving, setLeaving] = useState<(() => void) | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Files the server refused when saving (design `srvRej`): they stay with their reason. */
+  const [serverRejected, setServerRejected] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const filesRef = useRef(files);
   const keyRef = useRef(0);
@@ -381,6 +383,7 @@ function Upload({
     const picked = Array.from(list ?? []);
     if (!picked.length) return;
     setError(null);
+    setServerRejected(0);
     setTrimmed(picked.length > LIMITS.batch);
     const batch = picked.slice(0, LIMITS.batch);
     const waiting = filesRef.current.filter((file) => file.state !== 'rejected');
@@ -456,6 +459,7 @@ function Upload({
   const save = async () => {
     setSaving(true);
     setError(null);
+    setServerRejected(0);
     const byUpload = new Map<string, PendingFile[]>();
     for (const file of uploaded) {
       if (!file.uploadId || !file.docId) continue;
@@ -493,6 +497,7 @@ function Upload({
         return saved > 0 ? [] : [file];
       }),
     );
+    setServerRejected(refused.size);
     await onSaved().catch(() => undefined);
     if (saved > 0 && refused.size === 0) onBack();
   };
@@ -608,6 +613,12 @@ function Upload({
               ) : null}
             </div>
           ))}
+        </div>
+      ) : null}
+      {serverRejected > 0 ? (
+        <div className="mc-alert amber" role="alert">
+          <WarnIcon size={14} />
+          <div>{t('knowledge.upload.serverRejected', { count: serverRejected })}</div>
         </div>
       ) : null}
       {leaving ? (

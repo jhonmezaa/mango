@@ -1,7 +1,8 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
+import { useSession } from '../../auth/useSession';
 import { Alert } from '../../components/Alert';
 import { CheckIcon, WarnIcon } from '../../components/icons';
 import {
@@ -43,13 +44,30 @@ function toggled(list: readonly string[], id: string): string[] {
  */
 export const KnowledgeSection = memo(function KnowledgeSection({
   selected,
-  knowledge,
+  knowledge: loaded,
   agentGroups,
   userCount,
   myGroups,
   onChange,
 }: Props) {
   const { t } = useTranslation();
+  const { api } = useSession();
+  // «Reintentar» reads the list again here: the rest of the form keeps what was written.
+  const [reread, setReread] = useState<readonly KnowledgeBase[] | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const knowledge = reread ?? loaded;
+  const retry = () => {
+    setRetrying(true);
+    api.call('listKnowledgeBases').then(
+      (data) => {
+        setReread(data.items);
+        setRetrying(false);
+      },
+      () => {
+        setRetrying(false);
+      },
+    );
+  };
   const byId = new Map((knowledge ?? []).map((kb) => [kb.kb_id, kb]));
   const usable = (knowledge ?? []).filter(
     (kb) => kb.status !== 'deleting' && kb.groups.some((group) => myGroups.includes(group)),
@@ -107,7 +125,38 @@ export const KnowledgeSection = memo(function KnowledgeSection({
         </Alert>
       )}
       {knowledge === null ? (
-        <div className="mk-meta">{t('agentBuilder.kbs.unavailable')}</div>
+        <>
+          <Alert tone="amber" role="alert" icon={<WarnIcon size={14} />}>
+            {t('agentBuilder.kbs.unavailable')}
+            <div className="mt-2">
+              <button type="button" className="btn btn-sm" disabled={retrying} onClick={retry}>
+                {t('agentBuilder.kbs.retry')}
+              </button>
+            </div>
+          </Alert>
+          {/* Without the list nobody knows what the author may use: what it has stays, by id. */}
+          {selected.length > 0 && (
+            <Alert tone="neutral">
+              <div className="ab-notice-title">
+                {t('agentBuilder.kbs.keptUnknown', { count: selected.length })}
+              </div>
+              {selected.map((id) => (
+                <div key={id} className="ab-off-row">
+                  <span className="mono">{id}</span>
+                  <button
+                    type="button"
+                    className="ab-link"
+                    onClick={() => {
+                      remove(id);
+                    }}
+                  >
+                    {t('agentBuilder.actions.remove')}
+                  </button>
+                </div>
+              ))}
+            </Alert>
+          )}
+        </>
       ) : usable.length ? (
         <div className="ab-list ab-list-kbs">
           {usable.map((kb) => {
@@ -167,10 +216,16 @@ export const KnowledgeSection = memo(function KnowledgeSection({
         <div className="mk-meta">{t('agentBuilder.kbs.users')}</div>
       )}
       <div className="ab-foot">
-        <span>{t('agentBuilder.kbs.count', { count: selected.length })}</span>
-        <Link to="/knowledge" className="ab-link">
-          {t('agentBuilder.kbs.link')}
-        </Link>
+        <span>
+          {knowledge === null
+            ? t('agentBuilder.kbs.countOnly', { count: selected.length })
+            : t('agentBuilder.kbs.count', { count: selected.length })}
+        </span>
+        {knowledge !== null && (
+          <Link to="/knowledge" className="ab-link">
+            {t('agentBuilder.kbs.link')}
+          </Link>
+        )}
       </div>
     </BuilderSection>
   );
