@@ -563,8 +563,8 @@ def queried(info: dict[str, Any]) -> str | None:
 
 CAUSES_QUERY = "por tipo de uso, ventana de la anomalía contra los 14 días anteriores · USD"
 CAUSES_ANOMALY = (
-    "causa principal que informa AWS en la anomalía, con el impacto que estima AWS; la "
-    "anomalía no trae la cuenta"
+    "causa principal que informa AWS en la anomalía, con el impacto que estima AWS y la "
+    "cuenta, si AWS la informa (si no, «—»)"
 )
 
 

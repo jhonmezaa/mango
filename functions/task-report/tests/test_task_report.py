@@ -361,7 +361,7 @@ def test_causes_say_which_query_they_came_from() -> None:
     assert any(t.endswith("BoxUsage:m6i.2xlarge<super>1</super>") for t in texts)
     assert "EBS:VolumeUsage.gp3" in texts
     assert "Fuentes: <super>1</super>" in joined
-    assert "la anomalía no trae la cuenta" in joined
+    assert "y la cuenta, si AWS la informa (si no, «—»)" in joined
     # One query only: the source of before, without marks.
     single = _anomaly_story(DAILY, {"daily": "query", "causes": ["query", "query"]})
     assert not any("<super>" in t for t in single)
