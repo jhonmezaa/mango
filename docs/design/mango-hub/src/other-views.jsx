@@ -645,8 +645,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
     const live = (ap) => !(ap.expiresMin != null && Date.now() - new Date(ap.at).getTime() > ap.expiresMin * 6e4);
     const pinned = approvals.filter(ap => ap.status === 'pending' && live(ap) && S.can('approval.decide') && ap.requestedBy !== me && !(ap.approvalsGiven || []).includes(me)).sort(byAt)
       .map(ap => ({ id: 'ap-' + ap.id, type: 'approval', approvalId: ap.id, agent: ap.agent, title: 'Te piden aprobar: ' + ap.action, body: window.apCallLine ? window.apCallLine(ap) : ap.tool + ' · ' + ap.policy, mono: true, impact: avail ? null : ap.impact, at: ap.at }));
-    // Diseño completo: buckets propuestos para knowledge bases, para los administradores que pueden firmarlos.
-    const kbPinned = avail || !window.kbNeedsMe ? [] : (kbReqs || []).filter(r => window.kbNeedsMe(r)).sort(byAt)
+    // Buckets propuestos para knowledge bases, para los administradores que pueden firmarlos.
+    const kbPinned = !window.kbNeedsMe ? [] : (kbReqs || []).filter(r => window.kbNeedsMe(r)).sort(byAt)
       .map(r => ({ id: 'kbs-' + r.id, type: 'kbsource', kbReqId: r.id, title: 'Te piden aprobar: ' + window.kbReqTitle(r), body: r.ref, mono: true, at: r.at }));
     const mine = scheds.filter(s => s.owner === me);
     const runs = mine.flatMap(s => (s.runs || []).filter(r => r.status === 'ok' || r.status === 'failed').map(r => { const ok = r.status === 'ok'; return { id: 'run-' + r.id, type: 'run', agent: s.agent, ok, title: s.name + (ok ? ' · completada' : ' · no se completó'), body: ok ? window.scSummary(r) : (window.scReason(r) || 'No se pudo completar'), at: r.at, scheduleId: s.id, runId: r.id, seedRead: old(r.at) }; }));
@@ -660,6 +660,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
       return [];
     });
     const reqs = avail ? [] : approvals.filter(ap => ap.requestedBy === me && ap.decidedBy && (ap.status === 'rejected' || ['approved', 'executing', 'executed', 'failed'].includes(ap.status) || (ap.status === 'expired' && ap.wasApproved))).map(ap => { const ok = ap.status !== 'rejected'; return { id: 'req-' + ap.id + (ok ? '-a' : '-r'), type: 'request', ok, approvalId: ap.id, agent: ap.agent, title: (ok ? 'Aprobaron tu solicitud: ' : 'Rechazaron tu solicitud: ') + ap.action, body: ok ? 'Aprobó ' + ap.decidedBy + '. La ejecutas tú, antes de que venza.' : 'Rechazó ' + ap.decidedBy + (ap.note ? ': «' + ap.note + '»' : '') + '.', at: ap.decidedAt || ap.at, seedRead: old(ap.decidedAt || ap.at) }; });
+    // Diseño completo: respuesta a quien propuso un bucket, en «Tu solicitud» (decisión de diseño; el producto aún no lo envía).
+    const kbMine = avail || !window.KB ? [] : (kbReqs || []).filter(r => r.by === me && r.decidedBy && (r.status === 'approved' || r.status === 'rejected')).map(r => { const ok = r.status === 'approved'; const kn = (window.KB.get(r.kb) || {}).name || r.kb; return { id: 'kbreq-' + r.id, type: 'request', ok, kbReqId: r.id, title: (r.prev ? (ok ? 'Aprobaron el cambio de bucket de ' : 'Rechazaron el cambio de bucket de ') : (ok ? 'Aprobaron tu bucket para ' : 'Rechazaron tu bucket para ')) + kn, body: ok ? 'Aprobó ' + r.decidedBy + '. ' + (r.prev ? 'La siguiente sincronización lee el prefijo nuevo.' : 'Empieza la primera sincronización.') : 'Rechazó ' + r.decidedBy + (r.note ? ': «' + r.note + '»' : '') + '. ' + (r.prev ? 'Sigue leyendo el bucket actual.' : 'Puedes proponer otro desde la knowledge base.'), at: r.decidedAt || r.at, seedRead: old(r.decidedAt || r.at) }; });
     const ex = avail ? [] : [
       { id: 'm-410', type: 'mention', agent: 'dev-01', title: 'Usuario 9 te mencionó en MNG-410', body: '“@Usuario 1 ¿puedes confirmar si el rollback de prod-web se puede hacer hoy antes de las 18:00?”', at: exAt.m, ticketId: 'MNG-410' },
       { id: 'b-res', type: 'budget', agent: 'fin-01', title: 'FinOps alcanzó 80% de su presupuesto', body: 'Lleva USD 2.400,00 de USD 3.000,00 este mes. Al 100% solo se enviará una alerta; no se pausará.', at: exAt.b },
@@ -667,7 +669,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
       { id: 't-404', type: 'ticket', agent: 'dev-01', title: 'MNG-404 se cerró', body: (tk('MNG-404') || {}).title || 'Ticket resuelto por el agente', at: exAt.t2, ticketId: 'MNG-404' },
       { id: 's-sap', type: 'system', agent: 'sap-01', title: 'Heartbeat restaurado en SAP Procure', body: 'El agente volvió a responder tras 12 minutos sin heartbeat. No se perdieron solicitudes.', at: exAt.s },
     ];
-    return { pinned: [...pinned, ...kbPinned].sort(byAt), rest: [...runs, ...tasks, ...reqs, ...ex].sort(byAt) };
+    return { pinned: [...pinned, ...kbPinned].sort(byAt), rest: [...runs, ...tasks, ...reqs, ...kbMine, ...ex].sort(byAt) };
   }, [approvals, scheds, kbReqs, role, avail, sim, actorOv, tickets]);
   const [state, setState] = React.useState(() => { try { return JSON.parse(localStorage.getItem('mango-inbox') || '{}'); } catch { return {}; } });
   const [tab, setTab] = React.useState('all');
@@ -772,7 +774,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   </span>
                 </div>
                 <h2 id="inbox-detail-h" tabIndex={-1} style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', margin: '0 0 6px', outline: 'none' }}>{current.title}</h2>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : current.type === 'kbsource' ? 'Knowledge Bases' : 'Sistema'} · {window.fmtAgo(current.at)}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : current.type === 'kbsource' || current.kbReqId ? 'Knowledge Bases' : 'Sistema'} · {window.fmtAgo(current.at)}</div>
                 {current.impact && <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 8px' }}>{current.impact}.</p>}
                 {current.type !== 'mention' && (current.mono ? <p className="mono" style={{ fontSize: 12.5, lineHeight: 1.6, margin: '0 0 22px', overflowWrap: 'anywhere' }}>{current.body}</p> : <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 22px' }}>{current.body}</p>)}
                 {current.reason && <div className="mc-alert" style={{ marginBottom: 18 }}><I.Info size={14} /><div>Motivo: {current.reason}</div></div>}

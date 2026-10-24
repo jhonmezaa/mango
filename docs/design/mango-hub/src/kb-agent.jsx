@@ -2,14 +2,24 @@
 function KbAgentSection({ snap, set, setView }) {
   const I = window.Icons; const K = window.KB;
   const kbs = window.useMango(s => s.kbs) || [];
-  const avail = window.useMango(s => s.avail);
   window.useMango(s => s.role); window.useMango(s => s.actorOverride);
-  if (avail) return <div className="row gap-2 mk-meta">Asociar knowledge bases a un agente <window.SoonTag /></div>;
+  const loadErr = window.useMango(s => s.simKbBuilder) === 'error';
   const sel = snap.kbs || [];
+  const toggle = (id) => set({ kbs: sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id] });
+  // Sin la lista no se sabe qué puede usar quien edita: las que ya tiene el agente se conservan (solo su id) y se pueden quitar.
+  if (loadErr) return (
+    <>
+      <div className="mc-alert amber" role="alert"><I.Warn size={14} /><div style={{ flex: 1, minWidth: 0 }}>No se pudieron cargar las knowledge bases. Las que ya tiene el agente se conservan.<div style={{ marginTop: 8 }}><button type="button" className="btn btn-sm" onClick={() => window.MangoStore.set({ simKbBuilder: null })}>Reintentar</button></div></div></div>
+      {sel.length > 0 && <div className="mc-alert" style={{ display: 'block' }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>{sel.length === 1 ? 'Tiene 1 knowledge base' : 'Tiene ' + sel.length + ' knowledge bases'} · se conservan</div>
+        {sel.map(id => <div key={id} className="row between" style={{ fontSize: 12.5, padding: '3px 0', gap: 8 }}><span className="mono">{id}</span><button type="button" className="sr-link" onClick={() => toggle(id)}>Quitar</button></div>)}
+      </div>}
+      <div className="mk-meta">{sel.length} de {K.LIMITS.perAgent}</div>
+    </>
+  );
   const usable = kbs.filter(k => K.access(k).inGroups && k.status !== 'deleting');
   const kept = sel.filter(id => !usable.some(k => k.id === id));
   const full = sel.length >= K.LIMITS.perAgent;
-  const toggle = (id) => set({ kbs: sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id] });
   const gaps = sel.map(id => kbs.find(k => k.id === id)).filter(Boolean).map(k => ({ k, groups: (snap.groups || []).filter(g => !k.groups.includes(g)) })).filter(x => x.groups.length);
   return (
     <>
@@ -36,8 +46,8 @@ function KbAgentSection({ snap, set, setView }) {
 
 function RvKbs({ r, d, isNew }) {
   const K = window.KB;
-  const avail = window.useMango(s => s.avail); const kbs = window.useMango(s => s.kbs) || [];
-  if (avail || !K) return null;
+  const kbs = window.useMango(s => s.kbs) || [];
+  if (!K) return null;
   const all = r.snap.kbs || []; const add = isNew ? all : d.kbs.add; const rem = isNew ? [] : d.kbs.rem;
   if (isNew && !all.length) return null;
   const row = (id, kind) => { const k = kbs.find(x => x.id === id); const gap = k && kind === 'add' ? (r.snap.groups || []).filter(g => !k.groups.includes(g)) : []; const st = k && K.status(k); return (
@@ -53,30 +63,24 @@ function RvKbs({ r, d, isNew }) {
   );
 }
 
-// Citas de una respuesta: knowledge base, documento y página. Sin enlace al original en esta versión.
+// Fuentes de una respuesta: una línea por cita con knowledge base, documento y página. No se abren: el texto del fragmento nunca llega al navegador.
+// Se guardan con la respuesta. Sin enlace al original en esta versión.
 function KbCitations({ cites }) {
-  const I = window.Icons; const [open, setOpen] = React.useState(null);
   const kbs = window.useMango(s => s.kbs) || [];
-  const names = [...new Set(cites.map(c => (kbs.find(k => k.id === c.kb) || {}).name || c.kb))];
+  const nameOf = (id) => (kbs.find(k => k.id === id) || {}).name || id;
+  const names = [...new Set(cites.map(c => nameOf(c.kb)))];
   return (
-    <div className="kb-cites">
+    <div className="kb-cites" role="group" aria-label="Fuentes">
       <div className="kb-cites-h">Fuentes{names.length === 1 ? ' · ' + names[0] : ''}</div>
-      {cites.map(c => { const on = open === c.n; const kn = (kbs.find(k => k.id === c.kb) || {}).name || c.kb; return (
-        <div key={c.n}>
-          <button type="button" className="kb-cite" aria-expanded={on} onClick={() => setOpen(on ? null : c.n)}>
-            <I.ChevronRight size={10} style={{ transform: on ? 'rotate(90deg)' : 'none', transition: 'transform .15s', color: 'var(--text-dim)', flex: 'none' }} />
-            <span className="kb-cite-n">[{c.n}]</span><span className="kb-cite-d">{c.doc}</span>{c.page && <span className="mk-meta" style={{ flex: 'none' }}>p. {c.page}</span>}{names.length > 1 && <span className="mk-meta" style={{ flex: 'none' }}>· {kn}</span>}
-          </button>
-          {on && <p className="kb-cite-p">{c.text}</p>}
-        </div>
-      ); })}
+      {cites.map(c => <div key={c.n} className="kb-cite"><span className="kb-cite-n">[{c.n}]</span><span className="kb-cite-d" title={c.doc}>{c.doc}</span>{c.page && <span className="kb-cite-m">· p. {c.page}</span>}{names.length > 1 && <span className="kb-cite-m">· {nameOf(c.kb)}</span>}</div>)}
     </div>
   );
 }
 
+// «Buscó en…» se ve solo durante el turno: no se guarda con la conversación. Sin fragmentos, no nombra la knowledge base.
 function KbStep({ msg }) {
-  const I = window.Icons;
-  return <div style={{ marginBottom: 10, maxWidth: 760 }}><span className="kb-step"><I.BookOpen size={11} /> Buscó en <b style={{ fontWeight: 500, color: 'var(--text)' }}>{msg.kb}</b> · {msg.hits} {msg.hits === 1 ? 'fragmento' : 'fragmentos'}</span></div>;
+  const I = window.Icons; const none = !msg.hits;
+  return <div style={{ marginBottom: 10, maxWidth: 760 }}><span className={'kb-step' + (none ? ' is-empty' : '')}><I.BookOpen size={11} /> Buscó en {none ? 'las knowledge bases' : <b style={{ fontWeight: 500, color: 'var(--text)' }}>{msg.kb}</b>} · {none ? 'ningún fragmento' : msg.hits + (msg.hits === 1 ? ' fragmento' : ' fragmentos')}</span></div>;
 }
 
 Object.assign(window, { KbAgentSection, RvKbs, KbCitations, KbStep });

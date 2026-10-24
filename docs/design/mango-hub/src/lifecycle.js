@@ -134,11 +134,15 @@
       if (org.length && areas.length) errs.push({ sec: 'tools', code: 'accounts-area', msg: `Tiene tools solo para grupos centrales (${org.slice(0, 2).map(i => i.id).join(', ')}${org.length > 2 ? '…' : ''}) y es visible para grupos que no son centrales (${areas.join(', ')}). Quita esos grupos o esas tools.` });
       if (org.length && (snap.users || []).length) errs.push({ sec: 'access', code: 'accounts-users', msg: 'Tiene tools solo para grupos centrales y está compartido con personas sueltas. Compártelo solo con grupos centrales o quita esas tools.' });
     } else if (acct.length && areas.length) errs.push({ sec: 'tools', code: 'accounts-area', msg: `Usa tools de «Datos de cuentas» y es visible para roles de área (${areas.join(', ')}). Quita esos grupos o esas tools.` });
-    if (!S.get().avail) {
-      const sel = snap.kbs || []; const now = S.get().kbs || [];
+    {
+      const sel = snap.kbs || []; const now = S.get().kbs || []; const simKb = opts.review ? S.get().simReviewKb : null;
       if (sel.length > 5) errs.push({ sec: 'kbs', code: 'kbs-max', msg: 'Un agente puede usar hasta 5 knowledge bases. Quita alguna.' });
-      const gone = sel.filter(id => { const k = now.find(x => x.id === id); return !k || k.status === 'deleting'; });
-      if (gone.length) errs.push({ sec: 'kbs', code: 'kbs-gone', msg: (gone.length === 1 ? 'Una knowledge base ya no existe o se está borrando' : gone.length + ' knowledge bases ya no existen o se están borrando') + '. Quítala para enviar.' });
+      const gone = sel.filter((id, i) => { const k = now.find(x => x.id === id); return !k || k.status === 'deleting' || (simKb === 'gone' && i === 0); });
+      if (gone.length) errs.push({ sec: 'kbs', code: 'kbs-gone', msg: opts.review ? 'Hay knowledge bases que ya no existen o se están borrando: ' + gone.join(', ') + '. Hay que quitarlas.' : (gone.length === 1 ? 'Una knowledge base ya no existe o se está borrando' : gone.length + ' knowledge bases ya no existen o se están borrando') + '. Quítala para enviar.' });
+      // En la Revisión: quien editó esta versión tiene que estar en los grupos de cada knowledge base que usa.
+      const mine = opts.review && window.KB ? window.KB.groupsOf(opts.by) : null;
+      const out = !mine && simKb !== 'groups' ? [] : sel.filter(id => { const k = now.find(x => x.id === id); return k && k.status !== 'deleting' && !gone.includes(id) && (simKb === 'groups' || !k.groups.some(g => mine.includes(g))); });
+      if (out.length) errs.push({ sec: 'kbs', code: 'kbs-editor', msg: 'Quien editó esta versión no está en los grupos de estas knowledge bases: ' + out.join(', ') + '. Hay que quitarlas.' });
     }
     if (!(snap.groups || []).length) errs.push({ sec: 'access', code: 'groups', msg: 'Elige al menos un grupo que pueda usarlo.' });
     const sec = secretIn(snap);

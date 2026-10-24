@@ -302,6 +302,7 @@ window.MangoData = {
   ],
 
   // Knowledge Bases (D88): solo S3. origin: upload (archivos subidos) o bucket (un bucket que ya existe). docCount = indexados.
+  // capped: el bucket pasa del tope y se copió hasta él («Con avisos»). readFail: bucket aprobado que no se pudo leer («Error»).
   knowledgeBases: [
     { id: "kb-01", name: "AWS Runbooks", owner: "Usuario 6", icon: "BookOpen", origin: "bucket", ref: "s3://empresa-runbooks/ops/", freq: "6h", groups: ["devops", "mango-admin"],
       desc: "Runbooks operativos para incidentes comunes, rollbacks y procedimientos de DR.", status: "ok", docCount: 142, chunks: 3420, tokens: 1.8e6, bytes: 2.14e8, lastSyncMin: 120, q30: 1240, usedBy: ["dev-01", "ops-01", "ops-02"] },
@@ -313,11 +314,11 @@ window.MangoData = {
       desc: "Estándares de seguridad, SOC 2, respuesta a incidentes y políticas IAM.", status: "approval", docCount: 0, usedBy: [] },
     { id: "kb-05", name: "SAP Procurement", owner: "Usuario 6", icon: "Database", origin: "bucket", ref: "s3://empresa-compras/procesos/", freq: "6h", groups: ["bu-retail", "mango-admin"],
       desc: "Procesos de compras, proveedores aprobados, three-way match y flujos de aprobación.", status: "warn", docCount: 56, chunks: 892, tokens: 412000, bytes: 9.8e7, lastSyncMin: 180, q30: 530, usedBy: ["sap-01", "sap-02"],
-      failed: [["compras/PO-template-2019.pdf", "OCR sin texto legible"], ["compras/Lista-proveedores-escaneada.pdf", "OCR sin texto legible"], ["anexos/Anexo-B.tiff", "Formato no soportado"], ["contratos/Contrato-marco.pdf", "PDF protegido con contraseña"], ["anexos/Firma-digital.png", "Formato no soportado"]] },
+      failed: [["compras/PO-template-2019.pdf", "OCR sin texto legible"], ["compras/Lista-proveedores-escaneada.pdf", "OCR sin texto legible"], ["anexos/Anexo-B.tiff", "Formato no soportado"], ["contratos/Contrato-marco.pdf", "Protegido con contraseña"], ["anexos/Firma-digital.png", "Formato no soportado"]] },
     { id: "kb-06", name: "Data Dictionary", owner: "Usuario 1", icon: "Database", origin: "bucket", ref: "s3://empresa-lakehouse-docs/dictionary/", freq: "24h", groups: ["bu-plataforma"],
-      desc: "Definiciones de tablas, métricas de negocio y contratos de datos del lakehouse.", status: "error", error: "kms", docCount: 0, lastTryMin: 300, usedBy: ["data-01"] },
+      desc: "Definiciones de tablas, métricas de negocio y contratos de datos del lakehouse.", status: "error", readFail: true, docCount: 64, chunks: 1180, tokens: 352000, bytes: 3.1e7, lastSyncMin: 2880, lastTryMin: 300, q30: 75, usedBy: ["data-01"] },
     { id: "kb-07", name: "Release Archive", owner: "Usuario 6", icon: "Zap", origin: "bucket", ref: "s3://empresa-releases/archive/", freq: "24h", groups: ["devops", "people", "mango-admin"],
-      desc: "Changelogs históricos, notas de release y RFCs archivados.", status: "blocked", block: { kind: "docs", n: 1412 }, docCount: 980, chunks: 5180, tokens: 2.6e6, bytes: 1.2e9, lastSyncMin: 2880, lastTryMin: 95, q30: 190, usedBy: ["pm-01"] },
+      desc: "Changelogs históricos, notas de release y RFCs archivados.", status: "warn", capped: true, docCount: 1000, chunks: 5290, tokens: 2.7e6, bytes: 1.24e9, lastSyncMin: 95, q30: 190, usedBy: ["pm-01"] },
     { id: "kb-08", name: "Customer Docs", owner: "Usuario 2", icon: "BookOpen", origin: "bucket", ref: "s3://empresa-sitio-publico/docs/", freq: "24h", groups: ["mango-admin"],
       desc: "Documentación externa para clientes.", status: "rejected", docCount: 0, usedBy: [] },
     { id: "kb-09", name: "Etiquetado de costos", owner: "Usuario 2", icon: "Money", origin: "bucket", ref: "s3://empresa-finops/etiquetado/", freq: "7d", groups: ["finops-central", "bu-finanzas"],

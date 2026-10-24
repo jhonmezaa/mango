@@ -49,8 +49,8 @@ function ApprovalsView({ agents, openChat }) {
 
   const avail = window.useMango(s => s.avail);
   const kbReqs = window.useMango(s => s.kbReqs);
-  // Diseño completo: propuestas de bucket de knowledge bases. Los admins ven todas; el resto, solo las suyas.
-  const kbItems = !avail && window.KbSourceRow ? (kbReqs || []).filter(r => S.get().role === 'admin' || r.by === S.actor()).map(r => ({ ...r, _kb: true })) : [];
+  // Propuestas de bucket de knowledge bases. Los admins ven todas; el resto, solo las suyas.
+  const kbItems = window.KbSourceRow ? (kbReqs || []).filter(r => S.get().role === 'admin' || r.by === S.actor()).map(r => ({ ...r, _kb: true })) : [];
   const kbIn = kbItems.filter(r => tab === 'pending' ? r.status === 'pending' : tab === 'done' ? r.status !== 'pending' : false);
   const inTab = approvals.filter(a => tab === 'pending' ? AP_OPEN.includes(a.status) : tab === 'done' ? !AP_OPEN.includes(a.status) : false);
   const QUICK = [

@@ -37,7 +37,7 @@ const AB_SERVER_ERR = {
   unavailable: [null, 'El servicio no está disponible. Inténtalo de nuevo en unos minutos.'],
   network: [null, 'Sin conexión. Revisa tu red e inténtalo de nuevo.'],
   daily: [null, 'Alcanzaste el límite diario de envíos a revisión. Podrás enviar de nuevo mañana.'],
-  // Diseño completo: knowledge bases
+  // Knowledge bases
   'kb-missing': ['kbs', 'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.'],
   'kb-forbidden': ['kbs', 'Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.'],
 };
@@ -133,7 +133,7 @@ function AgentAdmin({ agents, models, setView, routeId }) {
   const toggleGroup = (g) => set({ groups: snap.groups.includes(g) ? snap.groups.filter(x => x !== g) : [...snap.groups, g] });
   const finalSnap = () => ({ ...snap, role: (snap.role || '').trim(), name: snap.name.trim(), desc: snap.desc.trim() || `Agente ${snap.cat}` });
 
-  const serverFail = (save) => { if (!simB || (save && simB === 'daily') || (avail ? /^kb-/.test(simB) : !/^kb-/.test(simB))) return false; const [sec, msg] = AB_SERVER_ERR[simB]; setErrKind(save ? 'save' : 'submit'); setErrors([{ sec, code: simB, msg }]); goSec(null); return true; };
+  const serverFail = (save) => { if (!simB || (save && simB === 'daily') || (!avail && !/^kb-/.test(simB))) return false; const [sec, msg] = AB_SERVER_ERR[simB]; setErrKind(save ? 'save' : 'submit'); setErrors([{ sec, code: simB, msg }]); goSec(null); return true; };
   const saveDraft = () => {
     setErrKind('save');
     if (!snap.name.trim()) { setErrors([{ sec: 'identity', code: 'name', msg: 'Ponle un nombre para guardar el borrador.' }]); goSec(null); return; }
@@ -314,7 +314,7 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                 </div>
               </ABSection>
 
-              <ABSection id="kbs" title="Knowledge bases" desc={avail ? 'Documentos que el agente consulta para responder.' : 'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.'}>
+              <ABSection id="kbs" title="Knowledge bases" desc={'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.'}>
                 {window.KbAgentSection && <window.KbAgentSection snap={snap} set={set} setView={setView} />}
               </ABSection>
 

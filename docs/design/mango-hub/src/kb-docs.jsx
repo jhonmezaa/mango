@@ -6,7 +6,7 @@ function KbLocked({ title, children }) {
 
 function KbDocRow({ d, k, edit, ask, setAsk }) {
   const K = window.KB; const toast = window.useToast?.();
-  const meta = [K.bytes(d.bytes), d.pages ? d.pages + ' págs.' : null, d.status === 'indexed' ? K.ago(d.at) : null].filter(Boolean).join(' · ');
+  const meta = [K.bytes(d.bytes), K.metrics() && d.pages ? d.pages + ' págs.' : null, d.status === 'indexed' ? K.ago(d.at) : null].filter(Boolean).join(' · ');
   return (
     <div className="kb-doc">
       <div style={{ minWidth: 0 }}><div className="kb-doc-n">{d.name}</div><div className="kb-doc-m">{meta}</div></div>
@@ -32,7 +32,7 @@ function KbDocsTab({ k, acc, sub, setSub, guard }) {
   const c = K.counts(k);
   return (
     <>
-      <div className="row between" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mk-meta">{K.n(c.total)} de {K.n(K.LIMITS.docs)} documentos · {K.bytes(c.bytes)} de 5 GB</span>{upload && edit && <button type="button" className="btn btn-sm" onClick={() => setSub('upload')}><I.Upload size={12} /> Subir archivos</button>}</div>
+      <div className="row between" style={{ gap: 8, flexWrap: 'wrap' }}><span className="mk-meta">{K.n(c.total)} de {K.n(K.LIMITS.docs)} documentos · {K.bytes(c.bytes)} de 5 GB</span>{upload && edit && <button type="button" className="btn btn-sm" onClick={() => setSub('upload')}><I.Document size={12} /> Subir archivos</button>}</div>
       {!upload && <div className="mc-alert"><I.Info size={14} /><div>Vienen de <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>. Para agregar, cambiar o quitar documentos, hazlo en el bucket: se refleja en la próxima sincronización.</div></div>}
       {!docs.length && <div className="mk-meta">{upload ? 'Todavía no tiene documentos.' : k.status === 'approval' ? 'Se leen cuando se apruebe el bucket.' : 'Aún no se ha leído nada del bucket.'}</div>}
       {failed.length > 0 && <MkSec title={`No indexados · ${failed.length}`}>{failed.map(d => <KbDocRow key={d.id} d={d} k={k} edit={edit && upload} ask={ask} setAsk={setAsk} />)}<div className="mk-meta" style={{ marginTop: 4 }}>{upload ? 'Los agentes no los ven. Corrígelos y vuelve a subirlos.' : 'Los agentes no los ven. Corrígelos en el bucket: se vuelven a intentar en la próxima sincronización.'}</div></MkSec>}
@@ -43,10 +43,13 @@ function KbDocsTab({ k, acc, sub, setSub, guard }) {
   );
 }
 
-// Cada archivo sube directo a S3 y queda «Subido»; al guardar entra en la knowledge base y empieza a indexarse.
+// Cada archivo sube directo a S3 y queda «Subido»; al guardar, el servidor comprueba cada uno: los que acepta entran en la knowledge base y empiezan a indexarse,
+// los que rechaza («El contenido no es del tipo que dice», «Está vacío»…) se quedan en la lista con su motivo.
+const KB_SAVE_REJECT = (f) => f.bad ? 'El contenido no es del tipo que dice' : /vac[ií]o|empty/i.test(f.name) ? 'Está vacío' : null;
 function KbUpload({ k, onBack, guard }) {
   const I = window.Icons; const S = window.MangoStore; const K = window.KB; const toast = window.useToast?.();
   const [files, setFiles] = React.useState([]); const [drag, setDrag] = React.useState(false); const [trim, setTrim] = React.useState(false); const [leaving, setLeaving] = React.useState(null);
+  const [saving, setSaving] = React.useState(false); const [srvRej, setSrvRej] = React.useState(0);
   const inputRef = React.useRef(null); const timers = React.useRef([]); const filesRef = React.useRef(files); filesRef.current = files;
   const demo = window.useMango(s => s.kbDemoDrop); const demo0 = React.useRef(demo);
   const up = files.filter(f => f.state === 'uploaded'); const going = files.filter(f => f.state === 'uploading');
@@ -54,7 +57,7 @@ function KbUpload({ k, onBack, guard }) {
   React.useEffect(() => { guard.current = (fn) => { if (!filesRef.current.some(f => f.state === 'uploaded')) return true; setLeaving(() => fn); return false; }; return () => { guard.current = null; timers.current.forEach(clearInterval); }; }, []);
   const add = (list) => {
     const arr = Array.from(list || []); if (!arr.length) return;
-    setTrim(arr.length > K.LIMITS.batch);
+    setTrim(arr.length > K.LIMITS.batch); setSrvRej(0);
     const cur = filesRef.current.filter(f => f.state !== 'rejected');
     let docs = c.total + cur.length; let bytes = c.bytes + cur.reduce((s, f) => s + f.bytes, 0);
     let mism = S.get().simKbUpload === 'mismatch';
@@ -74,7 +77,7 @@ function KbUpload({ k, onBack, guard }) {
       const dur = Math.min(2600, 600 + f.bytes / 5e4); const t0 = Date.now();
       const t = setInterval(() => {
         const p = Math.min(1, (Date.now() - t0) / dur);
-        setFiles(fs => fs.map(x => x.id !== f.id ? x : p < 1 ? { ...x, pct: p } : f.bad ? { ...x, state: 'rejected', reason: 'El contenido no es del tipo que dice', pct: 1 } : { ...x, state: 'uploaded', pct: 1 }));
+        setFiles(fs => fs.map(x => x.id !== f.id ? x : p < 1 ? { ...x, pct: p } : { ...x, state: 'uploaded', pct: 1 }));
         if (p >= 1) clearInterval(t);
       }, 120);
       timers.current.push(t);
@@ -82,13 +85,24 @@ function KbUpload({ k, onBack, guard }) {
   };
   React.useEffect(() => { if (demo && demo !== demo0.current) add(K.DEMO_FILES.map(([name, size]) => ({ name, size }))); }, [demo]);
   const back = () => { if (guard.current && guard.current(onBack) === false) return; onBack(); };
-  const save = () => { K.saveUploads(k.id, up.map(f => ({ name: f.name, bytes: f.bytes }))); toast?.({ tone: 'success', msg: (up.length === 1 ? '1 archivo guardado' : up.length + ' archivos guardados') + ' · indexando' }); filesRef.current = []; setFiles([]); onBack(); };
+  const save = () => {
+    setSaving(true); setSrvRej(0);
+    setTimeout(() => {
+      setSaving(false);
+      const cur = filesRef.current; const ups = cur.filter(f => f.state === 'uploaded');
+      const bad = ups.filter(KB_SAVE_REJECT); const ok = ups.filter(f => !KB_SAVE_REJECT(f));
+      if (ok.length) { K.saveUploads(k.id, ok.map(f => ({ name: f.name, bytes: f.bytes }))); toast?.({ tone: 'success', msg: (ok.length === 1 ? '1 archivo guardado' : ok.length + ' archivos guardados') + ' · indexando' }); }
+      if (!bad.length) { filesRef.current = []; setFiles([]); onBack(); return; }
+      const next = cur.filter(f => !ok.includes(f)).map(f => bad.includes(f) ? { ...f, state: 'rejected', reason: KB_SAVE_REJECT(f) } : f);
+      filesRef.current = next; setFiles(next); setSrvRej(bad.length);
+    }, 700);
+  };
   return (
     <>
       <button type="button" className="btn btn-sm btn-ghost sc-res-back" onClick={back}><I.ChevronLeft size={12} /> Documentos</button>
       <div className="sc-res-h">Subir archivos</div>
       <div className={'kb-drop' + (drag ? ' is-drag' : '')} onDragOver={e => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); add(e.dataTransfer.files); }}>
-        <I.Upload size={18} />
+        <I.Document size={18} />
         <div>Arrastra archivos aquí o <button type="button" className="sr-link kb-pick" onClick={() => inputRef.current?.click()}>elígelos en tu equipo</button></div>
         <div className="mk-meta">PDF, DOCX, TXT, MD, CSV o XLSX · hasta {K.LIMITS.fileMB} MB cada uno · {K.LIMITS.batch} por vez</div>
         <input ref={inputRef} type="file" multiple hidden accept=".pdf,.docx,.txt,.md,.csv,.xlsx" onChange={e => { add(e.target.files); e.target.value = ''; }} />
@@ -105,10 +119,11 @@ function KbUpload({ k, onBack, guard }) {
           {f.state !== 'uploading' && <button type="button" className="btn btn-ghost btn-icon" aria-label={'Quitar ' + f.name} onClick={() => setFiles(fs => fs.filter(x => x.id !== f.id))}><I.Close size={12} /></button>}
         </div>
       ))}</div>}
+      {srvRej > 0 && <div className="mc-alert amber" role="alert"><I.Warn size={14} /><div>{srvRej === 1 ? '1 archivo no se guardó: lo rechazó el servidor al guardar.' : srvRej + ' archivos no se guardaron: los rechazó el servidor al guardar.'} Siguen en la lista con su motivo; quítalos o corrígelos y vuelve a subirlos.</div></div>}
       {leaving && <div className="mc-alert amber" role="alert"><I.Warn size={14} /><div style={{ flex: 1 }}>Tienes {up.length} {up.length === 1 ? 'archivo subido' : 'archivos subidos'} sin guardar. Si sales, no se agregan a la knowledge base y se descartan mañana.<div className="row gap-2" style={{ marginTop: 8, flexWrap: 'wrap' }}><button type="button" className="btn btn-sm" onClick={() => { const fn = leaving; filesRef.current = []; setFiles([]); setLeaving(null); fn(); }}>Salir sin guardar</button><button type="button" className="btn btn-sm btn-ghost" onClick={() => setLeaving(null)}>Seguir aquí</button></div></div></div>}
       <div className="kb-up-foot">
-        <button type="button" className="btn btn-sm btn-primary" disabled={!up.length || going.length > 0 || busyKb} onClick={save}>{up.length ? 'Guardar ' + up.length + (up.length === 1 ? ' archivo' : ' archivos') : 'Guardar'}</button>
-        <span className="mk-meta">{busyKb ? 'Espera a que termine la indexación en curso para guardar.' : going.length ? 'Espera a que terminen de subir.' : 'Al guardar empieza la indexación. Lo que subas y no guardes se descarta mañana.'}</span>
+        <button type="button" className="btn btn-sm btn-primary" disabled={!up.length || going.length > 0 || busyKb || saving} onClick={save}>{saving ? 'Guardando…' : up.length ? 'Guardar ' + up.length + (up.length === 1 ? ' archivo' : ' archivos') : 'Guardar'}</button>
+        <span className="mk-meta">{busyKb ? 'Espera a que termine la indexación en curso para guardar.' : going.length ? 'Espera a que terminen de subir.' : 'Al guardar se comprueba cada archivo y empieza la indexación. Lo que subas y no guardes se descarta mañana.'}</span>
       </div>
     </>
   );
@@ -116,18 +131,19 @@ function KbUpload({ k, onBack, guard }) {
 
 function KbTestTab({ k, acc }) {
   const K = window.KB;
-  const [q, setQ] = React.useState(''); const [res, setRes] = React.useState(null); const [busy, setBusy] = React.useState(false);
+  const [q, setQ] = React.useState(''); const [res, setRes] = React.useState(null); const [busy, setBusy] = React.useState(false); const [err, setErr] = React.useState(null);
   const g = <span className="mono">{k.groups.join(', ')}</span>;
   if (!acc.seeDocs) return <KbLocked title="No puedes probar la búsqueda">La prueba devuelve contenido de la knowledge base: solo la usan quienes ven sus documentos y están en sus grupos ({g}).</KbLocked>;
   if (!acc.inGroups) return <KbLocked title="No estás en los grupos de esta knowledge base">La búsqueda se hace con tu identidad, igual que la de un agente: sin estar en {g} no recibirías nada. {acc.owner && acc.admin ? 'Haberla creado o ser administrador no basta.' : acc.owner ? 'Haberla creado no basta.' : 'Ser administrador no basta.'} Sus documentos están en «Documentos».</KbLocked>;
   const c = K.counts(k);
   if (k.status === 'deleting') return <div className="mk-meta">Se está borrando: ya no se puede consultar.</div>;
   if (!c.indexed) return <div className="mk-meta">{k.status === 'approval' ? 'Aún no hay nada indexado: el bucket espera aprobación.' : k.origin === 'upload' ? 'Aún no hay nada indexado: sube archivos para probarla.' : 'Aún no hay nada indexado.'}</div>;
-  const run = () => { if (!q.trim() || busy) return; setBusy(true); setTimeout(() => { setRes(K.search(k.id, q)); setBusy(false); }, 500); };
+  const run = () => { if (!q.trim() || busy) return; setBusy(true); setErr(null); setTimeout(() => { const r = K.search(k.id, q); setBusy(false); if (r.error) { setRes(null); setErr(r.error === 'busy' ? 'Hay demasiadas búsquedas en curso. Inténtalo de nuevo en unos segundos.' : 'No se pudo buscar. Inténtalo de nuevo.'); return; } setRes(r.hits); }, 500); };
   return (
     <>
       <div className="mk-meta" style={{ lineHeight: 1.5 }}>Busca como lo haría un agente, con tu identidad, para ver qué fragmentos recibiría. Queda en Auditoría, sin el texto que buscas.</div>
-      <div className="row gap-2"><input className="input" style={{ flex: 1, minWidth: 0 }} value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && run()} placeholder={'p. ej. ' + (K.SAMPLE_Q[k.id] || 'procedimiento de rollback')} aria-label="Consulta de prueba" autoFocus /><button type="button" className="btn btn-sm btn-primary" onClick={run} disabled={!q.trim() || busy}>{busy ? 'Buscando…' : 'Buscar'}</button></div>
+      <div className="row gap-2"><input className="input" style={{ flex: 1, minWidth: 0 }} value={q} onChange={e => { setQ(e.target.value); setErr(null); }} onKeyDown={e => e.key === 'Enter' && run()} placeholder={'p. ej. ' + (K.SAMPLE_Q[k.id] || 'procedimiento de rollback')} aria-label="Consulta de prueba" autoFocus /><button type="button" className="btn btn-sm btn-primary" onClick={run} disabled={!q.trim() || busy}>{busy ? 'Buscando…' : 'Buscar'}</button></div>
+      {err && <div className="kb-err" role="alert" style={{ marginTop: 0 }}>{err}</div>}
       {res && (res.length ? <div className="kb-hits" aria-live="polite">{res.map((r, i) => (
         <div key={i} className="kb-hit">
           <div className="row between" style={{ gap: 8, alignItems: 'baseline' }}><span className="kb-doc-n" style={{ minWidth: 0 }}>{r.doc}{r.page ? <span className="mk-meta" style={{ fontFamily: 'var(--font-sans)' }}> · p. {r.page}</span> : null}</span><span className="mono mk-meta" title="Puntaje de la búsqueda">{r.score.toFixed(2).replace('.', ',')}</span></div>

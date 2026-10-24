@@ -26,7 +26,7 @@ function KbSourceFacts({ r, compact }) {
       <div><span>Propuso</span><span>{r.by} · {window.fmtAgo(r.at)}</span></div>
       {k && <div><span>La consultan</span><span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.groups.join(', ')}</span></div>}
       {k && !compact && <div><span>Frecuencia</span><span>{K.freqLabel(k.freq)}</span></div>}
-      <div><span>Comprobado</span><span>Es de la cuenta de AWS de la instalación y no es de Mango.</span></div>
+      <div><span>Comprobado</span><span>Es de la cuenta de AWS de la instalación, no es de Mango y no usa una llave propia (KMS).</span></div>
     </div>
   );
 }
@@ -77,7 +77,7 @@ function KbSourceDetail({ r }) {
       <div className="ap-detail-b"><div className="ap-sections">
         <div><h2 className="ap-h2">{K.reqTitle(r)}</h2><p className="ap-impact">{r.prev ? 'Si se aprueba, la siguiente sincronización lee el prefijo nuevo y saca lo que ya no esté ahí. Mientras se decide, sigue leyendo el actual.' : 'Si se aprueba, Mango copia lo que hay en ese prefijo en cada sincronización y lo indexa. Mientras tanto no se lee nada.'}</p></div>
         <KbSourceFacts r={r} />
-        <div className="mk-meta" style={{ lineHeight: 1.5 }}>Solo reciben su contenido las personas de sus grupos, también a través de un agente. El cifrado se comprueba al sincronizar: un bucket con una llave propia del cliente (KMS) no se puede leer en esta versión.</div>
+        <div className="mk-meta" style={{ lineHeight: 1.5 }}>Solo reciben su contenido las personas de sus grupos, también a través de un agente.</div>
         <div><div className="mk-sec-t">historial</div><div className="tk-activity">{tl.map((e, i) => <div key={i} className="tk-act"><span className="tk-dot" style={{ background: e.tone, marginTop: 6 }} /><span style={{ flex: 1 }}><b style={{ fontWeight: 500, color: 'var(--text)' }}>{e.who}</b> {e.what}</span>{e.t && <span className="tk-meta">{e.t}</span>}</div>)}</div></div>
         {K.get(r.kb) && <button className="btn btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => { window.MangoStore.set({ kbOpen: r.kb }); window.MangoNav?.('knowledge'); }}>Abrir knowledge base <I.ArrowRight size={11} /></button>}
       </div></div>

@@ -14,8 +14,9 @@
     creator: { label: 'Creador de agentes', creator: true, groups: ['mango-agent-creator', 'people'] },
   };
   const USER_VIEWS = ['chat', 'inbox', 'dashboard', 'marketplace', 'tickets', 'activity', 'search', 'approvals', 'org', 'schedules'];
-  const OWNER_VIEWS = [...USER_VIEWS, 'governance', 'playground', 'admin', 'budgets', 'evals', 'observability', 'costs', 'skills', 'knowledge', 'schedules', 'mcp'];
-  const CREATOR_VIEWS = [...USER_VIEWS, 'admin', 'mcp', 'knowledge'];
+  // Knowledge Bases no va por vista de rol: la ven solo quienes crean agentes (mango-agent-creator) y los administradores, no por ser finops-central (ver canView).
+  const OWNER_VIEWS = [...USER_VIEWS, 'governance', 'playground', 'admin', 'budgets', 'evals', 'observability', 'costs', 'skills', 'schedules', 'mcp'];
+  const CREATOR_VIEWS = [...USER_VIEWS, 'admin', 'mcp'];
   const PERMS = {
     admin: { views: '*', actions: '*' },
     owner: { views: OWNER_VIEWS, actions: ['agent.edit', 'agent.create', 'agent.clone', 'approval.decide', 'budget.view', 'playground.publish', 'version.rollback'] },
@@ -28,7 +29,8 @@
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.renewed', target: 'session', detail: 'Recuperó la sesión al recargar', read: true, at: ago(3) },
     { actor: 'usuario4@empresa.com', role: 'user', action: 'session.rejected', target: 'session', detail: 'No se pudo crear la sesión tras el ingreso', outcome: 'rejected', error: 'invalid_refresh_token', at: ago(9) },
     { actor: 'Usuario 8', role: 'user', action: 'kb.query', target: 'kb-02', kb: 'Políticas de RH', agent: 'People Docs', hits: 3, read: true, detail: 'People Docs consultó Políticas de RH · 3 fragmentos', at: ago(45) },
-    { actor: 'Sistema', role: 'system', action: 'kb.sync', target: 'kb-07', kb: 'Release Archive', bucket: 's3://empresa-releases/archive/', detail: 'No empezó: el bucket tiene 1.412 documentos y el tope es 1.000.', outcome: 'rejected', error: 'limit', at: ago(95) },
+    { actor: 'Sistema', role: 'system', action: 'kb.sync', target: 'kb-07', kb: 'Release Archive', bucket: 's3://empresa-releases/archive/', detail: 'Sincronizó Release Archive: 1000 documentos indexados · se copió hasta el tope', outcome: 'applied', at: ago(95) },
+    { actor: 'Sistema', role: 'system', action: 'kb.sync', target: 'kb-06', kb: 'Data Dictionary', bucket: 's3://empresa-lakehouse-docs/dictionary/', detail: 'No se pudo sincronizar Data Dictionary: no se pudo leer s3://empresa-lakehouse-docs/dictionary/', outcome: 'rejected', error: 'sync_failed', at: ago(300) },
     { actor: 'usuario6@empresa.com', role: 'admin', action: 'session.started', target: 'session', detail: 'Ingresó con el SSO de la empresa · Okta', at: ago(150) },
     { actor: 'Usuario 3', role: 'owner', action: 'kb.source_propose', target: 'kb-04', kb: 'Security Baseline', bucket: 's3://empresa-security-docs/baseline/', detail: 'Propuso leer s3://empresa-security-docs/baseline/ en Security Baseline', outcome: 'requested', at: ago(150) },
     { actor: 'usuario8@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'rejected', at: ago(200) },
@@ -115,10 +117,10 @@
     { id: 'CHG-10', kind: 'auth', key: 'idp', from: 'none', to: 'sso', by: 'Usuario 1', at: ago(5000), reason: 'Entrar con la cuenta corporativa.', status: 'rejected', decidedBy: 'Usuario 6', decidedAt: ago(4900), note: 'Falta el metadata del IdP.' },
   ];
   const CHG_PREFIX = { member: 'directory.member_', mfa_reset: 'account.mfa_reset_', share: 'agent.share_', group: 'group.', skill: 'skill.', policy: 'policy.', auth: 'settings.' };
-  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox'];
+  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox', 'knowledge'];
 
   let state = {
-    avail: ls('mango-avail3', false),
+    avail: ls('mango-avail4', false),
     accountState: 'active',
     authCfg: { aiPolicyUrl: 'https://intranet.empresa.com/politica-uso-ia', mfa: 'required', mfaEnrolled: true, session: 8, idp: 'none', idpName: 'Okta', convAccess: false, install: 'client', domains: ['empresa.com', 'empresa.mx'], dirPlan: 'Essentials', installName: 'mango-empresa', version: 'v0.1.0', release: 'v0.1.0-g1a2b3c4', awsOrg: 'o-xxxxxxxxxx', mgmtAccount: '111111111111', alertEmail: 'alertas@empresa.com', firstAdmins: ['usuario1@empresa.com', 'usuario6@empresa.com'], pool: 'us-east-1_XXXXXXXXX', region: 'us-east-1', client: 'xxxxxxxxxxxxxxxxxxxxxxxxxx' },
     changes, retired: {},
@@ -147,7 +149,7 @@
     state = { ...state, ...p };
     if ('role' in p) localStorage.setItem('mango-role', JSON.stringify(state.role));
     if ('lang' in p) localStorage.setItem('mango-lang', JSON.stringify(state.lang));
-    if ('avail' in p) localStorage.setItem('mango-avail3', JSON.stringify(state.avail));
+    if ('avail' in p) localStorage.setItem('mango-avail4', JSON.stringify(state.avail));
     emit();
   };
 
@@ -198,7 +200,7 @@
       if (store.onDecide[c.kind]) store.onDecide[c.kind](c, 'withdrawn');
       store.log((CHG_PREFIX[c.kind] || 'settings.') + 'withdraw', c.target || c.key, 'Retiró la propuesta ' + c.id);
     },
-    canView: (view, role = state.role) => { if (state.avail && view === 'budgets' && role !== 'admin') return false; const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
+    canView: (view, role = state.role) => { if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge') return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
     can: (action, role = state.role) => { const p = PERMS[role]; return p.actions === '*' || p.actions.includes(action); },
     actorEmail: () => 'usuario' + (store.actor().match(/\d+/) || ['1'])[0] + '@empresa.com',
     actor: () => (state.actorOverride || ({ admin: 'Usuario 1', owner: 'Usuario 2', user: 'Usuario 4', creator: 'Usuario 3' })[state.role]),

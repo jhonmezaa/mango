@@ -175,13 +175,13 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
     <table>
       <thead><tr><th>Tipo de uso</th><th>Servicio</th><th>Cuenta</th><th style="width:24mm"></th><th class="num">Impacto</th><th class="num">Parte</th></tr></thead>
       <tbody>
-        <tr><td class="mono">BoxUsage:m6i.2xlarge<sup>1</sup></td><td>Amazon EC2</td><td>—</td><td><span class="tb acc" style="width:100%"></span></td><td class="num">351,80</td><td class="num">85 %</td></tr>
+        <tr><td class="mono">BoxUsage:m6i.2xlarge<sup>1</sup></td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:100%"></span></td><td class="num">351,80</td><td class="num">85 %</td></tr>
         <tr><td class="mono">EBS:VolumeUsage.gp3</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:11.1%"></span></td><td class="num">38,90</td><td class="num">9 %</td></tr>
         <tr><td class="mono">DataTransfer-Regional-Bytes</td><td>Amazon EC2</td><td class="mono">111111111111</td><td><span class="tb acc" style="width:6.1%"></span></td><td class="num">21,60</td><td class="num">5 %</td></tr>
         <tr class="total"><td colspan="4">Total</td><td class="num">412,30</td><td class="num">100 %</td></tr>
       </tbody>
     </table>
-    <div class="src">Fuentes: <sup>1</sup> <span class="mono">get_anomalies</span> · causa principal que informa AWS en la anomalía, con el impacto que estima AWS; la anomalía no trae la cuenta. El resto: <span class="mono">get_cost_and_usage</span> · por tipo de uso, ventana de la anomalía contra los 14 días anteriores · USD</div>
+    <div class="src">Fuentes: <sup>1</sup> <span class="mono">get_anomalies</span> · causa principal que informa AWS en la anomalía, con el impacto que estima AWS y la cuenta, si AWS la informa (si no, «—»). El resto: <span class="mono">get_cost_and_usage</span> · por tipo de uso, ventana de la anomalía contra los 14 días anteriores · USD</div>
   </div>
   <div class="foot"><span>Mango · Investigar anomalías de costo · ejecución <span class="mono">sch-10-t3</span></span><span>Página 1 de 2</span></div>
 </div>
@@ -208,7 +208,7 @@ tr.total td{font-weight:600;border-bottom:none;border-top:1px solid var(--ink)}
   </div>
   <div class="about">
     <p><b>De dónde salen los datos.</b> El id, el monitor y las fechas de la anomalía llegan de AWS a Mango. Servicio, cuenta, impacto y causas los leyó el agente FinOps con sus consultas, con el acceso de usuario1@empresa.com. Mango no recalcula las cifras.</p>
-    <p><b>Sobre las cifras.</b> Costo sin amortizar, en USD. Cost Explorer puede tardar hasta un día en completar el costo de un día, y AWS puede ajustar los últimos días.</p>
+    <p><b>Sobre las cifras.</b> Costo en USD, como lo devolvió la consulta. Cost Explorer puede tardar hasta un día en completar el costo de un día, y AWS puede ajustar los últimos días.</p>
     <p><b>Quién lo ve.</b> Solo quien creó la tarea puede descargarlo en Mango. Cada descarga queda en la auditoría de Mango.</p>
     <p><b>Hasta cuándo.</b> Mango lo guarda hasta el 14 ene 2027, como el resultado de su ejecución. Archivo: <span class="mono id">investigar-anomalias-de-costo-2026-10-16-8d09e1c2.pdf</span></p>
   </div>

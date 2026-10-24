@@ -3,7 +3,7 @@ function KnowledgeView({ agents }) {
   const I = window.Icons; const S = window.MangoStore; const K = window.KB;
   const kbs = window.useMango(s => s.kbs) || [];
   window.useMango(s => s.role); window.useMango(s => s.actorOverride);
-  const simQ = window.useMango(s => s.simKbQueries);
+  const metrics = window.useMango(s => s.simKbMetrics);
   const kbOpen = window.useMango(s => s.kbOpen);
   const canCreate = S.can('agent.create');
   const [q, setQ] = React.useState(''); const [st, setSt] = React.useState('all'); const [src, setSrc] = React.useState('all');
@@ -13,7 +13,7 @@ function KnowledgeView({ agents }) {
   const inF = (k, f) => f === 'all' || (f === 'attention' ? K.ATTN.includes(k.status) : K.UNSYNCED.includes(k.status));
   const base = kbs.filter(k => (src === 'all' || k.origin === src) && (!Q || (k.name + ' ' + k.desc + ' ' + k.owner).toLowerCase().includes(Q)));
   const list = base.filter(k => inF(k, st));
-  const docsN = kbs.reduce((s, k) => s + K.counts(k).indexed, 0); const tokN = kbs.reduce((s, k) => s + (k.tokens || 0), 0);
+  const docsN = kbs.reduce((s, k) => s + K.counts(k).total, 0); const bytesN = kbs.reduce((s, k) => s + K.counts(k).bytes, 0); const tokN = kbs.reduce((s, k) => s + (k.tokens || 0), 0);
   const att = kbs.filter(k => K.ATTN.includes(k.status)).length;
   const inUse = kbs.filter(k => K.agentsOf(k, agents).length).length;
   const open = (id) => { setStart(null); setSel(id); };
@@ -27,9 +27,9 @@ function KnowledgeView({ agents }) {
         </div>
         <div className="bg-kpis">
           <div className="card bg-kpi"><span className="bg-kpi-l">Knowledge bases</span><span className="bg-kpi-v">{kbs.length}</span><span className="bg-kpi-s">{inUse} en uso por agentes</span></div>
-          <div className="card bg-kpi"><span className="bg-kpi-l">Documentos indexados</span><span className="bg-kpi-v">{K.n(docsN)}</span><span className="bg-kpi-s">{K.tok(tokN)} tokens</span></div>
+          <div className="card bg-kpi"><span className="bg-kpi-l">Documentos</span><span className="bg-kpi-v">{K.n(docsN)}</span><span className="bg-kpi-s">{K.bytes(bytesN)}{metrics ? ' · ' + K.tok(tokN) + ' tokens' : ''}</span></div>
           <div className="card bg-kpi"><span className="bg-kpi-l">Necesitan atención</span><span className="bg-kpi-v" style={att ? { color: 'var(--amber)' } : null}>{att}</span><span className="bg-kpi-s">{att ? 'Errores, avisos o sin empezar' : 'Todo al día'}</span></div>
-          <div className="card bg-kpi"><span className="bg-kpi-l">Consultas · 30 días</span>{simQ ? <><span className="bg-kpi-v">{K.tok(kbs.reduce((s, k) => s + (k.q30 || 0), 0))}</span><span className="bg-kpi-s">De los agentes que las usan</span></> : <><span className="bg-kpi-v" style={{ color: 'var(--text-muted)' }}>—</span><span className="bg-kpi-s"><window.SoonTag /></span></>}</div>
+          <div className="card bg-kpi"><span className="bg-kpi-l">Consultas · 30 días</span>{metrics ? <><span className="bg-kpi-v">{K.tok(kbs.reduce((s, k) => s + (k.q30 || 0), 0))}</span><span className="bg-kpi-s">De los agentes que las usan</span></> : <><span className="bg-kpi-v" style={{ color: 'var(--text-muted)' }}>—</span><span className="bg-kpi-s"><window.SoonTag /></span></>}</div>
         </div>
         <div className="bg-toolbar">
           <div className="search-wrap" style={{ flex: '1 1 220px', maxWidth: 300 }}><I.Search size={13} /><input className="input" placeholder="Buscar knowledge base" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar" /></div>
@@ -54,7 +54,7 @@ function KnowledgeView({ agents }) {
         </div>
       </div>
       {sel && <KbDetail key={sel} id={sel} agents={agents} start={start} onClose={() => { setSel(null); setStart(null); }} />}
-      {creating && <KbCreate onClose={() => setCreating(false)} onCreated={(id, origin) => { setCreating(false); setStart(origin === 'upload' ? { tab: 'docs', sub: 'upload' } : null); setSel(id); }} />}
+      {creating && <KbCreate onClose={() => setCreating(false)} onCreated={(id, origin, notSent) => { setCreating(false); setStart(origin === 'upload' ? { tab: 'docs', sub: 'upload' } : notSent ? { tab: 'access', notice: 'Se creó la knowledge base, pero no se pudo enviar el bucket. Propónlo en «Acceso y sync».' } : null); setSel(id); }} />}
     </>
   );
 }
@@ -81,7 +81,7 @@ function KbDetail({ id, agents, start, onClose }) {
   const req = reqs.find(r => r.kb === k.id && r.status === 'pending'); const lastReq = reqs.find(r => r.kb === k.id);
   const Ic = I[k.icon] || I.BookOpen;
   const tabs = [['info', 'Resumen'], ['docs', 'Documentos' + (acc.seeDocs && c.failed ? ' · ' + c.failed + ' con error' : '')], ['test', 'Probar búsqueda'], ['access', bucket ? 'Acceso y sync' : 'Acceso']];
-  const syncNow = () => { setSyncErr(null); const r = K.sync(k.id); if (r === 'busy') setSyncErr('Ya hay una sincronización en curso de esta knowledge base. Espera a que termine.'); else if (r === 'started') toast?.({ tone: 'info', msg: 'Sincronizando ' + k.name }); };
+  const syncNow = () => { setSyncErr(null); const r = K.sync(k.id); if (r === 'busy') setSyncErr('Ya hay una sincronización en curso de esta knowledge base. Espera a que termine.'); else if (r === 'failed') setSyncErr('No se pudo empezar la sincronización. Inténtalo de nuevo.'); else if (r === 'started') toast?.({ tone: 'info', msg: 'Sincronizando ' + k.name }); };
   const noSync = ['syncing', 'approval', 'rejected', 'nosource'].includes(k.status);
   return (
     <div className="mk-scrim" onMouseDown={e => e.target === e.currentTarget && tryClose()}>
@@ -99,11 +99,11 @@ function KbDetail({ id, agents, start, onClose }) {
           {tab === 'info' && <KbSummary k={k} acc={acc} c={c} users={users} part={part} req={req} lastReq={lastReq} goTab={goTab} />}
           {tab === 'docs' && <window.KbDocsTab k={k} acc={acc} sub={sub} setSub={setSub} guard={guard} />}
           {tab === 'test' && <window.KbTestTab k={k} acc={acc} />}
-          {tab === 'access' && <KbAccessTab k={k} acc={acc} users={users} req={req} lastReq={lastReq} />}
+          {tab === 'access' && <KbAccessTab k={k} acc={acc} users={users} req={req} lastReq={lastReq} notice={start?.notice} />}
         </div>
         {acc.canEdit && !del && (bucket
           ? <div className="mc-foot"><div className="row gap-2" style={{ flexWrap: 'wrap' }}><button className="btn btn-sm" disabled={noSync} onClick={syncNow}><I.Refresh size={12} /> {k.status === 'syncing' ? 'Sincronizando…' : 'Sincronizar ahora'}</button>{k.status === 'approval' && <span className="mk-meta">Se sincroniza sola cuando se apruebe el bucket.</span>}{['rejected', 'nosource'].includes(k.status) && <span className="mk-meta">Propón un bucket en «Acceso y sync».</span>}</div>{syncErr && <div className="kb-err" role="alert" style={{ marginTop: 8 }}>{syncErr}</div>}</div>
-          : !(tab === 'docs' && sub === 'upload') && <div className="mc-foot"><button className="btn btn-sm" onClick={() => goTab('docs', 'upload')}><I.Upload size={12} /> Subir archivos</button></div>)}
+          : !(tab === 'docs' && sub === 'upload') && <div className="mc-foot"><button className="btn btn-sm" onClick={() => goTab('docs', 'upload')}><I.Document size={12} /> Subir archivos</button></div>)}
       </aside>
     </div>
   );
@@ -111,29 +111,34 @@ function KbDetail({ id, agents, start, onClose }) {
 
 function KbSummary({ k, acc, c, users, part, req, lastReq, goTab }) {
   const I = window.Icons; const K = window.KB;
-  const simQ = window.useMango(s => s.simKbQueries);
+  const metrics = window.useMango(s => s.simKbMetrics);
   const bucket = k.origin === 'bucket';
-  const elapsed = k.syncStarted ? Math.min(0.95, (Date.now() - k.syncStarted) / 3200) : 0;
+  const prep = k.status === 'syncing' && k.prepUntil > Date.now();
+  const elapsed = k.syncStarted ? Math.max(0, Math.min(0.95, (Date.now() - k.syncStarted) / 3200)) : 0;
   const partIds = part.map(x => x.a.id);
+  const used = k.lastSync ? 'Los agentes siguen usando lo indexado ' + K.ago(k.lastSync) + '.' : 'Todavía no hay nada indexado.';
   return (
     <>
       <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55 }}>{k.desc}</p>
       {k.status === 'deleting' && <div className="mc-alert" role="status"><span className="g-spin" /><div><b>Borrando.</b> Ya no se usa en respuestas nuevas. Sale de la lista cuando se comprueba que ningún agente puede recibir sus fragmentos.</div></div>}
-      {k.status === 'syncing' && <div className="mc-alert" role="status"><span className="g-spin" /><div style={{ flex: 1, minWidth: 0 }}>{bucket ? <>Sincronizando desde <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>…</> : 'Indexando los archivos guardados…'}<div className="mk-bar-track" style={{ marginTop: 6 }}><span style={{ width: elapsed * 100 + '%', background: 'var(--blue)' }} /></div></div></div>}
-      {k.status === 'warn' && <div className="mc-alert amber"><I.Warn size={14} /><div>{c.failed} {c.failed === 1 ? 'documento no se pudo indexar: los agentes no lo ven.' : 'documentos no se pudieron indexar: los agentes no los ven.'} {acc.seeDocs && <button className="sr-link" onClick={() => goTab('docs')}>Ver cuáles</button>}</div></div>}
-      {k.status === 'error' && <div className="mc-alert red"><I.X2 size={14} /><div>{K.errText(k)}{acc.canEdit && ' Propón un bucket sin llave propia o crea una knowledge base con archivos subidos.'}</div></div>}
-      {k.status === 'blocked' && <div className="mc-alert amber"><I.Warn size={14} /><div>{K.blockText(k)} {c.indexed ? 'Los agentes siguen usando lo indexado ' + K.ago(k.lastSync) + '.' : 'Todavía no hay nada indexado.'}{acc.canEdit && (k.block?.kind === 'budget' ? ' Vuelve a sincronizar cuando haya presupuesto.' : ' Acota el prefijo o reparte los documentos en varias knowledge bases.')}</div></div>}
+      {prep && <div className="mc-alert" role="status"><span className="g-spin" /><div>Preparando el acceso al bucket aprobado: puede tardar hasta 2 minutos. Después empieza la sincronización.</div></div>}
+      {k.status === 'syncing' && !prep && <div className="mc-alert" role="status"><span className="g-spin" /><div style={{ flex: 1, minWidth: 0 }}>{bucket ? <>Sincronizando desde <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>…</> : 'Indexando los archivos guardados…'}<div className="mk-bar-track" style={{ marginTop: 6 }}><span style={{ width: elapsed * 100 + '%', background: 'var(--blue)' }} /></div></div></div>}
+      {k.status === 'warn' && k.capped && <div className="mc-alert amber"><I.Warn size={14} /><div>{K.capText}{acc.canEdit && K.capHint}</div></div>}
+      {k.status === 'warn' && acc.seeDocs && c.failed > 0 && <div className="mc-alert amber"><I.Warn size={14} /><div>{c.failed} {c.failed === 1 ? 'documento no se pudo indexar: los agentes no lo ven.' : 'documentos no se pudieron indexar: los agentes no los ven.'} <button className="sr-link" onClick={() => goTab('docs')}>Ver cuáles</button></div></div>}
+      {k.status === 'warn' && !acc.seeDocs && !k.capped && <div className="mc-alert amber"><I.Warn size={14} /><div>Algunos documentos no se pudieron indexar: los agentes no los ven.</div></div>}
+      {k.status === 'error' && <div className="mc-alert red"><I.X2 size={14} /><div>{K.errText(k)} {used}{acc.canEdit && ' Vuelve a intentarlo con «Sincronizar ahora». Si sigue fallando, pide a quien administra AWS que revise el bucket.'}</div></div>}
+      {k.status === 'blocked' && <div className="mc-alert amber"><I.Warn size={14} /><div>{K.blockText(k)} {used}{acc.canEdit && K.blockHint}</div></div>}
       {k.status === 'pending' && <div className="mc-alert"><I.Info size={14} /><div>{bucket ? 'Nunca se ha sincronizado: los agentes aún no pueden consultarla.' : 'Todavía no tiene documentos.'}{!bucket && acc.canEdit && <> <button className="sr-link" onClick={() => goTab('docs', 'upload')}>Subir archivos</button></>}</div></div>}
       {k.status === 'approval' && <div className="mc-alert amber"><I.Clock size={14} /><div><b>Pendiente de aprobación.</b> {req?.by === acc.me ? 'Propusiste' : (req?.by || 'Alguien') + ' propuso'} leer <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>. Lo aprueba un administrador distinto de quien lo propuso; mientras tanto no se lee nada.</div></div>}
       {k.status === 'rejected' && <div className="mc-alert red"><I.X2 size={14} /><div><b>Bucket rechazado.</b> {lastReq?.decidedBy || 'Un administrador'} rechazó leer <span className="mono" style={{ overflowWrap: 'anywhere' }}>{k.ref}</span>{lastReq?.note ? ': «' + lastReq.note + '»' : ''}. {acc.canEdit && <button className="sr-link" onClick={() => goTab('access')}>Proponer otro bucket</button>}</div></div>}
-      {k.status === 'nosource' && <div className="mc-alert"><I.Info size={14} /><div><b>Sin bucket.</b> Se retiró la propuesta: no se lee nada. {acc.canEdit && <button className="sr-link" onClick={() => goTab('access')}>Proponer un bucket</button>}</div></div>}
+      {k.status === 'nosource' && <div className="mc-alert"><I.Info size={14} /><div><b>Sin bucket.</b> {k.noSource === 'notsent' ? 'La propuesta del bucket no llegó a enviarse: no se lee nada.' : k.noSource === 'withdrawn' || lastReq?.status === 'withdrawn' ? 'Se retiró la propuesta: no se lee nada.' : 'No tiene un bucket propuesto: no se lee nada.'} {acc.canEdit && <button className="sr-link" onClick={() => goTab('access')}>Proponer un bucket</button>}</div></div>}
       {part.length > 0 && <div className="mc-alert amber"><I.Warn size={14} /><div style={{ minWidth: 0 }}><b>Acceso parcial.</b> Estos grupos usan un agente que la consulta pero no están en esta knowledge base. A esas personas el agente les responde sin su contenido: la búsqueda se hace con la identidad de quien pregunta.
         <div className="kb-gaps">{part.map(x => <div key={x.a.id}><span>{x.a.name}</span><span className="mono">{x.groups.join(', ')}</span></div>)}</div>
         Si deben recibirlo, agrega esos grupos en «Acceso».</div></div>}
       <MkSec title="Contenido">
-        <div className="mk-kv"><span>Documentos</span><span className="mono">{K.n(c.indexed)}{c.failed ? ' · ' + c.failed + ' sin indexar' : ''}{c.busy ? ' · ' + c.busy + ' en curso' : ''}</span></div>
-        <div className="mk-kv"><span>Fragmentos</span><span className="mono">{k.chunks ? K.n(k.chunks) : '—'}</span></div>
-        <div className="mk-kv"><span>Tamaño</span><span className="mono">{k.tokens ? K.tok(k.tokens) + ' tokens' : c.total ? K.bytes(c.bytes) + ' · los tokens se conocen al indexar' : '—'}</span></div>
+        <div className="mk-kv"><span>Documentos</span><span className="mono">{acc.seeDocs ? K.n(c.indexed) + (c.failed ? ' · ' + c.failed + ' sin indexar' : '') + (c.busy ? ' · ' + c.busy + ' en curso' : '') : K.n(c.total)}</span></div>
+        {metrics && <div className="mk-kv"><span>Fragmentos</span><span className="mono">{k.chunks ? K.n(k.chunks) : '—'}</span></div>}
+        <div className="mk-kv"><span>Tamaño</span><span className="mono">{metrics && k.tokens ? K.tok(k.tokens) + ' tokens' : c.total ? K.bytes(c.bytes) + (metrics ? ' · los tokens se conocen al indexar' : '') : '—'}</span></div>
         <div className="mk-kv"><span>Topes</span><span>{K.n(c.total)} de {K.n(K.LIMITS.docs)} documentos · {K.bytes(c.bytes)} de 5 GB</span></div>
         <div className="mk-kv"><span>Embeddings</span><span>Amazon Titan Embeddings v2 · Bedrock</span></div>
       </MkSec>
@@ -148,17 +153,18 @@ function KbSummary({ k, acc, c, users, part, req, lastReq, goTab }) {
         {users.length ? users.map(a => <div key={a.id} className="mk-line row between"><span>{a.name}</span><span className="mk-meta">{partIds.includes(a.id) ? 'Lo usan grupos sin acceso' : a.cat}</span></div>) : <div className="mk-meta">Ninguno todavía. Se asocia en el Agent Builder, con una versión nueva del agente.</div>}
         {users.length > 0 && !c.indexed && <div className="mk-meta" style={{ marginTop: 4 }}>Mientras no tenga nada indexado, responden sin ella.</div>}
       </MkSec>
-      <MkSec title="Uso · 30 días"><div className="mk-kv"><span>Consultas de agentes</span>{simQ ? <span className="mono">{K.n(k.q30 || 0)}</span> : <span><window.SoonTag /></span>}</div></MkSec>
+      <MkSec title="Uso · 30 días"><div className="mk-kv"><span>Consultas de agentes</span>{metrics ? <span className="mono">{K.n(k.q30 || 0)}</span> : <span><window.SoonTag /></span>}</div></MkSec>
     </>
   );
 }
 
-function KbAccessTab({ k, acc, users, req, lastReq }) {
+function KbAccessTab({ k, acc, users, req, lastReq, notice }) {
   const I = window.Icons; const S = window.MangoStore; const K = window.KB; const L = window.Lifecycle; const toast = window.useToast?.();
   const reqs = window.useMango(s => s.kbReqs) || [];
   const groupNames = (S.get().groupDefs || []).map(g => g.id);
   const [groups, setGroups] = React.useState(k.groups); const [freq, setFreq] = React.useState(k.freq || '24h');
-  const [editRef, setEditRef] = React.useState(false); const [ref, setRef] = React.useState(''); const [refErr, setRefErr] = React.useState(null); const [sending, setSending] = React.useState(false);
+  const reopen = !!notice && k.status === 'nosource';
+  const [editRef, setEditRef] = React.useState(reopen); const [ref, setRef] = React.useState(reopen ? k.ref || '' : ''); const [refErr, setRefErr] = React.useState(null); const [sending, setSending] = React.useState(false);
   const [confirmDel, setConfirmDel] = React.useState(false);
   const bucket = k.origin === 'bucket'; const edit = acc.canEdit && k.status !== 'deleting';
   const dirty = JSON.stringify(groups) !== JSON.stringify(k.groups) || (bucket && freq !== k.freq);
@@ -167,25 +173,26 @@ function KbAccessTab({ k, acc, users, req, lastReq }) {
   const canPropose = edit && bucket && !req;
   const save = () => { K.updateCfg(k.id, { groups, ...(bucket ? { freq } : {}) }); toast?.({ tone: 'success', msg: 'Cambios guardados' }); };
   const sendRef = () => {
-    const v = ref.trim(); const e = K.refErr(v) || (L.findSecret(v) && 'No pegues credenciales en la ubicación') || (v === k.ref && k.bucketOk && 'Es el mismo bucket y prefijo de ahora');
+    const v = ref.trim(); const e = K.refErr(v) || (L.findSecret(v) && 'No pegues credenciales en la ubicación');
     if (e) { setRefErr(e); return; }
     setSending(true);
-    setTimeout(() => { setSending(false); const se = K.refServer(v); if (se) { setRefErr(se); return; } K.propose(k.id, v); setEditRef(false); setRef(''); toast?.({ tone: 'success', msg: 'Propuesta enviada · la aprueba otro administrador' }); }, 600);
+    setTimeout(() => { setSending(false); const se = K.checkRef(k.id, v); if (se) { setRefErr(se); return; } K.propose(k.id, v); setEditRef(false); setRef(''); toast?.({ tone: 'success', msg: 'Propuesta enviada · la aprueba otro administrador' }); }, 600);
   };
   const names = users.map(a => a.name).join(', ');
   return (
     <>
+      {notice && k.status === 'nosource' && <div className="mc-alert amber" role="alert"><I.Warn size={14} /><div>{notice}</div></div>}
       <MkSec title="Grupos que pueden consultarla">
         <div className="row gap-1" style={{ flexWrap: 'wrap' }}>{groupNames.map(g => { const on = groups.includes(g); return <button key={g} type="button" disabled={!edit} aria-pressed={on} className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} onClick={() => setGroups(on ? groups.filter(x => x !== g) : [...groups, g])}>{on && <I.Check size={10} />}{g}</button>; })}</div>
         {edit && groups.length > 0 && !mineIn && <div className="mc-alert amber" style={{ marginTop: 8 }}><I.Warn size={14} /><div>No estás en ninguno de estos grupos: verás sus documentos, pero no podrás probar la búsqueda ni recibir su contenido en el chat.</div></div>}
         <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo las personas de estos grupos reciben su contenido, también a través de un agente: la búsqueda se hace con la identidad de quien pregunta. Si un agente que la consulta lo usan otros grupos, se marca «Acceso parcial».</div>
       </MkSec>
       {bucket && <MkSec title="Bucket">
-        <div className="mk-kv"><span>{k.status === 'approval' ? 'Propuesto' : k.status === 'rejected' ? 'Rechazado' : k.status === 'nosource' ? 'Retirado' : 'Lee de'}</span><span className="mono" style={{ fontSize: 12 }}>{k.ref}</span></div>
+        <div className="mk-kv"><span>{k.status === 'approval' ? 'Propuesto' : k.status === 'rejected' ? 'Rechazado' : k.status === 'nosource' ? (k.noSource === 'notsent' ? 'No se envió' : 'Retirado') : 'Lee de'}</span><span className="mono" style={{ fontSize: 12 }}>{k.ref || '—'}</span></div>
         {k.bucketOk && okReq && <div className="mk-kv"><span>Lo aprobó</span><span>{okReq.decidedBy} · {K.ago(okReq.decidedAt)}</span></div>}
         {req && <div className="mc-alert amber" style={{ marginTop: 6 }}><I.Clock size={14} /><div style={{ minWidth: 0 }}>{req.prev ? <>Cambio propuesto a <span className="mono" style={{ overflowWrap: 'anywhere' }}>{req.ref}</span>. Mientras otro administrador lo decide, sigue sincronizando desde el actual.</> : 'Espera a que lo apruebe un administrador distinto de quien lo propuso.'}{req.by === acc.me && <div style={{ marginTop: 8 }}><button type="button" className="btn btn-sm" onClick={() => { K.withdraw(req.id); toast?.({ tone: 'info', msg: 'Propuesta retirada' }); }}>Retirar propuesta</button></div>}</div></div>}
         {!req && lastReq?.prev && lastReq.status === 'rejected' && <div className="mk-meta">Se rechazó el cambio a <span className="mono">{lastReq.ref}</span>{lastReq.note ? ': «' + lastReq.note + '»' : ''}.</div>}
-        {canPropose && !editRef && <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start', marginTop: 6 }} onClick={() => { setEditRef(true); setRef(k.bucketOk ? k.ref : ''); setRefErr(null); }}>{k.bucketOk ? 'Cambiar bucket o prefijo' : 'Proponer otro bucket'}</button>}
+        {canPropose && !editRef && <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start', marginTop: 6 }} onClick={() => { setEditRef(true); setRef(k.bucketOk || k.status === 'nosource' ? k.ref || '' : ''); setRefErr(null); }}>{k.bucketOk ? 'Cambiar bucket o prefijo' : k.status === 'nosource' ? 'Proponer un bucket' : 'Proponer otro bucket'}</button>}
         {editRef && <div className="kb-ref-form">
           <label htmlFor="kb-ref" style={{ fontSize: 12.5, fontWeight: 500 }}>Bucket y prefijo</label>
           <input id="kb-ref" className="input mono" value={ref} onChange={e => { setRef(e.target.value); setRefErr(null); }} placeholder="s3://bucket/prefijo/" autoFocus aria-invalid={!!refErr} />
@@ -193,7 +200,7 @@ function KbAccessTab({ k, acc, users, req, lastReq }) {
           <div className="mk-meta" style={{ lineHeight: 1.5 }}>Es una propuesta nueva: la aprueba un administrador distinto de ti.{k.bucketOk ? ' Mientras tanto sigue sincronizando desde el actual.' : ''}</div>
           <div className="row gap-2"><button type="button" className="btn btn-sm btn-primary" disabled={sending || !ref.trim()} onClick={sendRef}>{sending ? 'Enviando…' : 'Enviar a aprobación'}</button><button type="button" className="btn btn-sm btn-ghost" onClick={() => setEditRef(false)}>Cancelar</button></div>
         </div>}
-        <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo buckets de la cuenta de AWS de la instalación. Lo que hay en el prefijo se copia a Mango en cada sincronización; lo que se borra del bucket sale en la siguiente. Un bucket cifrado con una llave propia del cliente (KMS) no se puede leer en esta versión.</div>
+        <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo buckets de la cuenta de AWS de la instalación. Lo que hay en el prefijo se copia a Mango en cada sincronización; lo que se borra del bucket sale en la siguiente. Al proponerlo se rechazan los buckets de Mango, los de otras cuentas y los cifrados con una llave propia del cliente (KMS), que esta versión no puede leer.</div>
       </MkSec>}
       {bucket ? <MkSec title="Sincronización">
         <div className="tk-quick" style={{ display: 'inline-flex', flexWrap: 'wrap' }}>{K.FREQS.map(([f, l]) => <button key={f} type="button" disabled={!edit} aria-pressed={freq === f} className={freq === f ? 'is-on' : ''} onClick={() => setFreq(f)}>{l}</button>)}</div>
@@ -221,9 +228,9 @@ function KbCreate({ onClose, onCreated }) {
   React.useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
   const save = () => {
     setTried(true); setSrvErr(null); if (errs.length) return;
-    if (!bucket) { const id = K.create(f); toast?.({ tone: 'success', msg: 'Creada · sube sus archivos' }); onCreated(id, 'upload'); return; }
+    if (!bucket) { const { id } = K.create(f); toast?.({ tone: 'success', msg: 'Creada · sube sus archivos' }); onCreated(id, 'upload'); return; }
     setSending(true);
-    setTimeout(() => { setSending(false); const se = K.refServer(f.ref.trim()); if (se) { setSrvErr(se); return; } const id = K.create(f); toast?.({ tone: 'success', msg: 'Creada · el bucket espera aprobación' }); onCreated(id, 'bucket'); }, 650);
+    setTimeout(() => { setSending(false); const se = K.checkRef(null, f.ref.trim()); if (se) { setSrvErr(se); return; } const { id, notSent } = K.create(f); if (!notSent) toast?.({ tone: 'success', msg: 'Creada · el bucket espera aprobación' }); onCreated(id, 'bucket', notSent); }, 650);
   };
   const groupNames = (S.get().groupDefs || []).map(g => g.id);
   const Lb = ({ children, htmlFor }) => <label htmlFor={htmlFor} className="kb-lb">{children}</label>;
@@ -241,7 +248,7 @@ function KbCreate({ onClose, onCreated }) {
           </div>
           {bucket && <div><Lb htmlFor="kb-r">Bucket y prefijo</Lb><input id="kb-r" className="input mono" value={f.ref} onChange={e => { setF({ ...f, ref: e.target.value }); setSrvErr(null); }} placeholder="s3://bucket/prefijo/" aria-invalid={!!(srvErr || (tried && refErr))} />
             {(srvErr || (tried && refErr)) && <div className="kb-err" role="alert">{srvErr || refErr}</div>}
-            <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo buckets de la cuenta de AWS de la instalación; los de Mango y los de otras cuentas se rechazan. Un bucket cifrado con una llave propia del cliente (KMS) no se puede leer en esta versión.</div>
+            <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Solo buckets de la cuenta de AWS de la instalación. Al enviar se rechazan los de Mango, los de otras cuentas y los cifrados con una llave propia del cliente (KMS), que esta versión no puede leer.</div>
           </div>}
           {bucket && <div><Lb>Sincronización</Lb><div className="tk-quick" style={{ display: 'inline-flex', flexWrap: 'wrap' }}>{K.FREQS.map(([v, l]) => <button key={v} type="button" aria-pressed={f.freq === v} className={f.freq === v ? 'is-on' : ''} onClick={() => setF({ ...f, freq: v })}>{l}</button>)}</div></div>}
           <div><Lb>Grupos que pueden consultarla</Lb><div className="row gap-1" style={{ flexWrap: 'wrap' }}>{groupNames.map(g => { const on = f.groups.includes(g); return <button key={g} type="button" aria-pressed={on} className={'tweak-chip ab-chip' + (on ? ' is-on' : '')} onClick={() => setF({ ...f, groups: on ? f.groups.filter(x => x !== g) : [...f.groups, g] })}>{on && <I.Check size={10} />}{g}</button>; })}</div>

@@ -66,6 +66,8 @@ function GroupModal({ g, defs, onClose, goAreas, notify }) {
   const areaChanged = !g.isNew && (f.area || null) !== (g.area || null);
   const needsApproval = g.isNew || typeChanged || areaChanged;
   const used = g.isNew ? [] : L.agentsWithGroup(g.id);
+  // Grupo de área que es la única área de algún líder: si se elimina, ese líder no puede entrar (403 area_required) hasta tener otra.
+  const stranded = !g.isNew && window.MangoPeople?.onlyAreaOf ? window.MangoPeople.onlyAreaOf(g.id) : [];
   const acctAgents = used.filter(a => a.mcp.some(m => L.serverOf(m)?.level === 'accounts'));
   const avail = S.get().avail;
   const RESERVED = ['mango-admin', 'mango-agent-creator', 'finops-central', 'bu-lead'];
@@ -84,7 +86,7 @@ function GroupModal({ g, defs, onClose, goAreas, notify }) {
     S.propose({ kind: 'group', key: g.isNew ? 'create' : 'update', target: data.id, from: g.isNew ? null : { type: g.type, area: g.area }, to: data, title: (g.isNew ? 'Crear grupo ' : 'Cambiar grupo ') + data.id, summary: g.isNew ? 'Nuevo grupo ' + T(data.type) + (data.area ? ' · área ' + data.area : '') : 'Tipo ' + T(g.type) + (g.area ? ' (' + g.area + ')' : '') + ' → ' + T(data.type) + (data.area ? ' (' + data.area + ')' : ''), reason: reason.trim() });
     notify?.('Propuesta enviada · la debe aprobar otro admin'); onClose();
   };
-  const del = () => { setTried(true); if (!reason.trim()) return; S.propose({ kind: 'group', key: 'delete', target: g.id, from: { type: g.type, area: g.area }, to: null, title: 'Eliminar grupo ' + g.id, summary: used.length ? 'Lo usan ' + used.length + ' agentes; perderán este acceso' : 'Ningún agente lo usa', reason: reason.trim() }); notify?.('Propuesta enviada · la debe aprobar otro admin'); onClose(); };
+  const del = () => { setTried(true); if (!reason.trim()) return; S.propose({ kind: 'group', key: 'delete', target: g.id, from: { type: g.type, area: g.area }, to: null, title: 'Eliminar grupo ' + g.id, summary: (used.length ? 'Lo usan ' + used.length + ' agentes; perderán este acceso' : 'Ningún agente lo usa') + (stranded.length ? ' · es la única área de ' + (stranded.length === 1 ? '1 líder de área, que no podrá entrar' : stranded.length + ' líderes de área, que no podrán entrar') : ''), reason: reason.trim() }); notify?.('Propuesta enviada · la debe aprobar otro admin'); onClose(); };
   return (
     <div className="drawer-backdrop" onClick={onClose} style={{ alignItems: 'center', justifyContent: 'center', zIndex: 130 }}>
       <div className="card" role="dialog" aria-modal="true" aria-label={g.isNew ? 'Nuevo grupo' : 'Editar grupo'} onClick={e => e.stopPropagation()} style={{ width: 520, maxWidth: '94vw', padding: 0, display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
@@ -129,6 +131,7 @@ function GroupModal({ g, defs, onClose, goAreas, notify }) {
             <div className="mk-meta" style={{ marginTop: 5 }}>{confirmDel ? 'La eliminación' : g.isNew ? 'El grupo' : 'El cambio de tipo o área'} no se aplica hasta que otro admin lo apruebe.{avail && ' Si nadie lo decide en 72 h, vence.'}</div>
           </div>}
           {!g.isNew && used.length > 0 && <div className="mc-alert"><I.Info size={14} /><div>{used.length === 1 ? 'Un agente usa' : used.length + ' agentes usan'} este grupo: {used.slice(0, 4).map(a => a.name).join(', ')}{used.length > 4 ? '…' : ''}.</div></div>}
+          {confirmDel && stranded.length > 0 && <div className="mc-alert amber" role="status"><I.Warn size={14} /><div>Es la única área de {stranded.length === 1 ? '1 líder de área' : stranded.length + ' líderes de área'}: <span className="mono" style={{ overflowWrap: 'anywhere' }}>{stranded.slice(0, 5).join(', ')}</span>{stranded.length > 5 ? ' y ' + (stranded.length - 5) + ' más' : ''}. Si se elimina, no {stranded.length === 1 ? 'podrá' : 'podrán'} entrar a Mango hasta tener otra. Cámbia{stranded.length === 1 ? 'lo' : 'los'} de área antes en Ajustes › Personas.</div></div>}
         </div>
         <div className="row gap-2" style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', alignItems: 'center' }}>
           {!g.isNew && (confirmDel

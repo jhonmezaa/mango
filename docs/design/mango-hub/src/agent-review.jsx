@@ -123,6 +123,7 @@ function ReviewDetail({ r, agents, setView }) {
   const avail = window.useMango(s => s.avail);
   const sim = window.useMango(s => s.simReview) || null;
   const simDecide = window.useMango(s => s.simReviewDecide) || null;
+  window.useMango(s => s.simReviewKb); window.useMango(s => s.kbs);
   const [mode, setMode] = useState(null);
   const [reason, setReason] = useState('');
   const [tried, setTried] = useState(false);
@@ -131,7 +132,7 @@ function ReviewDetail({ r, agents, setView }) {
   const d = L.diff(r.base, r.snap);
   const uneval = avail && sim === 'rules-uneval';
   const gone = avail && sim === 'gone';
-  const errs = uneval ? [] : [...L.validate(r.snap), ...(!avail && (window.evalBlocks?.(r.agentId) || []).length ? [{ code: 'evals', msg: 'Hay evals obligatorias que no pasan.' }] : [])];
+  const errs = uneval ? [] : [...L.validate(r.snap, { review: r.status === 'review', by: r.by }), ...(!avail && (window.evalBlocks?.(r.agentId) || []).length ? [{ code: 'evals', msg: 'Hay evals obligatorias que no pasan.' }] : [])];
   const mine = r.by === S.actor();
   const isAdmin = S.get().role === 'admin';
   const LIM = { tokens: 'Tokens por respuesta', iterations: 'Iteraciones', seconds: 'Tiempo máximo (s)' };

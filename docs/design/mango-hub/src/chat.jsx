@@ -56,9 +56,8 @@ Total: **$2,490/mes** ($29,880 anualizado). ¿Aplico el lifecycle policy en stag
   ],
   "t5": [
     { type: "user_message", text: "¿Cuál es la política de vacaciones para 2026?", time: "Lun 10:15" },
-    { type: "kb_search", kb: "Políticas de RH", hits: 3 },
     { type: "agent_response", text: "Según la **Política de vacaciones 2026** [1], los cambios principales respecto al año anterior son:\n\n- Los días de vacaciones se acumulan desde el primer mes de trabajo (antes, desde el sexto) [1].\n- Se suman 2 días de **bienestar** por año, que no se acumulan [2].\n- Los días no tomados al cierre del año se pagan al 150 % (antes, al 125 %) [1].\n\nLas vacaciones se piden con al menos 15 días de anticipación [3].",
-      cites: [{ n: 1, kb: "kb-02", doc: "Politica-de-vacaciones-2026.pdf", page: 3, text: "A partir del 1 de enero de 2026, los días de vacaciones se acumulan desde el primer mes de trabajo. Los días no tomados al cierre del año se pagan al 150 % del salario diario." }, { n: 2, kb: "kb-02", doc: "Beneficios-2026.pdf", page: 7, text: "Cada persona dispone de 2 días de bienestar por año calendario. No se acumulan y se piden como cualquier día de vacaciones." }, { n: 3, kb: "kb-02", doc: "Handbook-2026.pdf", page: 22, text: "Las vacaciones se piden en el portal de personas con al menos 15 días de anticipación, salvo acuerdo con el líder del equipo." }] },
+      cites: [{ n: 1, kb: "kb-02", doc: "Politica-de-vacaciones-2026.pdf", page: 3 }, { n: 2, kb: "kb-02", doc: "Beneficios-2026.pdf", page: 7 }, { n: 3, kb: "kb-02", doc: "Handbook-2026.pdf", page: 22 }] },
   ],
   "t6": [
     { type: "user_message", text: "Revísame los findings de GuardDuty de las últimas 24h", time: "Lun 08:45" },
@@ -128,6 +127,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const [streamText, setStreamText] = useState("");
   const [streamPhase, setStreamPhase] = useState(null);
   const [streamSteps, setStreamSteps] = useState([]);
+  const [streamKb, setStreamKb] = useState(null);
   const streamTimers = useRef([]);
   const [artifact, setArtifact] = useState(null);
   const [observe, setObserve] = useState(false);
@@ -230,7 +230,16 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     const done = (id, st, extra) => { steps = steps.map(s => s.id === id ? { ...s, status: st, ...extra } : s); setStreamSteps(steps); };
     const write = (chunk, then) => { let i = 0; const base = txt; streamRef.current = setInterval(() => { i += 3; txt = base + chunk.slice(0, i); setStreamText(txt); if (i >= chunk.length) { clearInterval(streamRef.current); then(); } }, 22); };
     streamTimers.current = timers;
-    setStreamSteps([]); setStreamText('');
+    setStreamSteps([]); setStreamText(''); setStreamKb(null);
+    if (window.KB && agent.id === 'hr-01') {
+      const none = S.get().simChatKb === 'none'; const kbName = (window.KB.get('kb-02') || {}).name || 'Políticas de RH';
+      const answer = none ? 'No encontré nada sobre eso en los documentos que consulto. Si es una política nueva, puede que todavía no esté cargada; pregúntale al equipo de Personas.' : 'Según el **Handbook 2026**, las vacaciones se piden en el portal de personas con al menos **15 días de anticipación**, salvo acuerdo con el líder del equipo [1]. Desde 2026 se acumulan desde el primer mes de trabajo [2].';
+      const cites = none ? [] : [{ n: 1, kb: 'kb-02', doc: 'Handbook-2026.pdf', page: 22 }, { n: 2, kb: 'kb-02', doc: 'Politica-de-vacaciones-2026.pdf', page: 3 }];
+      setStreamPhase({ k: 'think' });
+      at(900, () => { const hits = none ? 0 : 3; setStreamKb({ kb: kbName, hits }); setStreamPhase({ k: 'process' }); S.log('kb.query', 'kb-02', agent.name + ' consultó ' + kbName + ' · ' + hits + ' fragmentos', { kb: kbName, agent: agent.name, hits, read: true }); });
+      at(700, () => { setStreamPhase({ k: 'write' }); write(answer, () => timers.push(setTimeout(() => { setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamKb(null); setMessages(m => [...m, { type: 'agent_response', text: txt, ...(cites.length ? { cites } : {}) }]); }, 200))); });
+      return;
+    }
     setStreamPhase({ k: 'think' }); push({ id: 's0', k: 'think', status: 'run' });
     at(700, () => { done('s0', 'ok'); const run = parallel ? [toolA, toolB] : [toolA]; run.forEach((x, n) => push({ id: 'tA' + n, k: 'tool', name: label(x), tool: x.id, status: 'run', t0: performance.now() })); setStreamPhase(parallel ? { k: 'tool', count: 2 } : { k: 'tool', name: label(toolA) }); });
     if (parallel) at(700, () => { done('tA1', 'fail'); tools.push({ type: 'tool_call', tool: toolB.id, params: toolB.params, ms: 700, measured: true, status: 'error' }); setStreamPhase({ k: 'tool', name: label(toolA) }); });
@@ -265,7 +274,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     streamTimers.current.forEach(clearTimeout); streamTimers.current = [];
     setStreaming(false);
     setMessages(m => [...m, ...(streamText ? [{ type: "agent_response", text: streamText, stopped: true }] : []), { type: "stopped_note" }]);
-    setStreamText(""); setStreamPhase(null); setStreamSteps([]);
+    setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreamKb(null);
   };
 
   const retryError = (idx) => {
@@ -278,7 +287,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
 
   const newChat = () => {
     setActiveThreadId?.(null);
-    setMessages([]); setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreaming(false); setArtifact(null);
+    setMessages([]); setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreamKb(null); setStreaming(false); setArtifact(null);
     toast?.({ tone: 'info', msg: 'Nueva conversación iniciada.' });
   };
 
@@ -327,7 +336,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
               {soon && simAgent === 'tools-missing' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Warn size={14} /><div>Algunas tools de {agent.name} no están disponibles ahora porque se deshabilitó su MCP. Responderá sin ellas hasta que se vuelva a habilitar.</div></div>}
               {soon && simAgent === 'central-denied' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Lock size={14} /><div>Las tools de AWS Billing son solo para usuarios centrales. {agent.name} respondió sin esos datos.</div></div>}
               {items.map(m => m.type === 'self_confirm' ? <window.SelfConfirmCard key={m.idx} msg={m} onConfirm={() => confirmSelf(m.idx, true)} onCancel={() => confirmSelf(m.idx, false)} /> : m.type === 'approval_request' ? <window.ApprovalCard key={m.idx} id={m.approvalId} /> : m.type === 'tool_group' ? <ToolGroup key={m.idx} calls={m.calls} /> : <Message key={m.idx} msg={m} idx={m.idx} onRetry={() => retryError(m.idx)} onEdit={() => setInput(m.text)} agent={agent} onOpenArtifact={setArtifact} />)}
-              {streaming && <StreamingMessage phase={streamPhase} steps={streamSteps} text={streamText} agent={agent} observe={observe} />}
+              {streaming && <StreamingMessage phase={streamPhase} steps={streamSteps} kb={streamKb} text={streamText} agent={agent} observe={observe} />}
             </div>
           )}
         </div>
@@ -801,12 +810,13 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
 
 const PHASE_TXT = (p) => !p ? '' : p.k === 'think' ? 'Pensando' : p.k === 'process' ? 'Procesando resultados' : p.k === 'write' ? 'Escribiendo' : p.count ? 'Consultando ' + p.count + ' tools' : p.name ? 'Consultando ' + p.name : 'Consultando una tool';
 const STEP_TXT = (s) => s.k === 'think' ? 'Pensó' : s.k === 'process' ? 'Procesó resultados' : s.k === 'write' ? 'Escribió' : (s.status === 'fail' ? 'Falló ' : s.status === 'run' ? 'Consultando ' : 'Consultó ') + (s.name || 'una tool');
-function StreamingMessage({ phase, steps = [], text, agent, observe }) {
+function StreamingMessage({ phase, steps = [], kb, text, agent, observe }) {
   const I = window.Icons;
   const [open, setOpen] = useState(false);
   const fails = steps.filter(s => s.status === 'fail').length;
   return (
     <div className="ch-stream" aria-busy="true" style={{marginBottom: 24, maxWidth: 760}}>
+      {kb && window.KbStep && <window.KbStep msg={kb} />}
       {steps.length > 1 && (
         <div className="ch-steps">
           <button className="ch-steps-t" aria-expanded={open} onClick={() => setOpen(o => !o)}><I.ChevronRight size={11} style={{transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s'}} /> {steps.length} pasos{fails ? ' · ' + fails + ' con error' : ''}</button>

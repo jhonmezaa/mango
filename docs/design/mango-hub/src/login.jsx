@@ -28,7 +28,7 @@ function Login({ onLogin }) {
   const [notice, setNotice] = useState(boot === 'otherTab' ? 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.' : null);
   useEffect(() => { if (step !== 'restoring') return; const t = setTimeout(() => setStep('login'), 1600); return () => clearTimeout(t); }, [step]);
   const go = (s, n = null) => { setStep(s); setNotice(n); };
-  const afterAuth = () => { if (accountState === 'nogroup' || fresh) go('pending'); else onLogin(); };
+  const afterAuth = () => { if (accountState === 'nogroup' || fresh) go('pending'); else if (accountState === 'noarea' || accountState === 'twoareas') go('area'); else onLogin(); };
   const mfaOn = cfg.mfa !== 'off';
   const [enrolled, setEnrolled] = useState(cfg.mfaEnrolled);
   useEffect(() => setEnrolled(cfg.mfaEnrolled), [cfg.mfaEnrolled]);
@@ -52,6 +52,7 @@ function Login({ onLogin }) {
         {step === 'forgot' && <ForgotStep email={email} setEmail={setEmail} onBack={() => go('login')} onSent={() => go('reset')} />}
         {step === 'reset' && <ResetStep email={email} onBack={() => go('forgot')} onDone={() => go('login', 'Contraseña actualizada. Ya puedes entrar.')} />}
         {step === 'pending' && <NoAccess email={email || 'usuario1@empresa.com'} onLogout={() => go('login')} />}
+        {step === 'area' && <AreaRequired email={email || 'usuario4@empresa.com'} onEnter={onLogin} onLogout={() => go('login')} />}
         {(step === 'login' || step === 'signup') && <p className="login-foot">{step === 'login'
           ? <>¿No tienes cuenta? <a href="#" onClick={e => { e.preventDefault(); go('signup'); }}>Crear cuenta</a></>
           : <>¿Ya tienes cuenta? <a href="#" onClick={e => { e.preventDefault(); go('login'); }}>Inicia sesión</a></>}</p>}
@@ -311,6 +312,33 @@ function NoAccess({ email, onLogout }) {
         Un administrador de Mango tiene que agregarte a un grupo: ya te ve en su lista como pendiente. Cuando lo haga, vuelve a comprobar y verás los agentes de ese grupo. Si lo necesitas antes, pídeselo al equipo que administra Mango en tu empresa.
       </div>
       {checked && <div className="login-err-box" role="status" style={{ marginTop: 12 }}>Aún no tienes un grupo asignado.</div>}
+      <div className="row gap-2" style={{ marginTop: 16 }}>
+        <button className="login-primary" style={{ flex: 1 }} onClick={check} disabled={checking}>{checking ? 'Comprobando…' : 'Volver a comprobar'}</button>
+      </div>
+      <div style={{ textAlign: 'center', marginTop: 16 }}><button className="login-link" onClick={onLogout}>Cerrar sesión</button></div>
+    </div>
+  );
+}
+
+// 403 area_required: con bu-lead y sin finops-central hace falta exactamente un grupo bu-<área>; si no, toda la app responde 403.
+// «Volver a comprobar» pide tokens nuevos con los grupos actuales: al corregirlo un admin, entra sin volver a iniciar sesión ni esperar a que venzan (hasta 60 min).
+function AreaRequired({ email, onEnter, onLogout }) {
+  const I = window.Icons; const S = window.MangoStore;
+  const st = window.useMango(s => s.accountState);
+  const [checking, setChecking] = useState(false); const [still, setStill] = useState(false);
+  const two = st === 'twoareas'; const areas = two ? ['bu-retail', 'bu-finanzas'] : [];
+  useEffect(() => { S.log('access.denied', 'area_required', 'Entrar a Mango · denegado (403) · líder de área sin exactamente un área', { actor: email, role: 'user', outcome: 'rejected', error: 'area_required' }); }, []);
+  const check = () => { setChecking(true); setStill(false); setTimeout(() => { setChecking(false); if (!['noarea', 'twoareas'].includes(S.get().accountState)) onEnter(); else setStill(true); }, 900); };
+  return (
+    <div className="login-form">
+      <span style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--accent-soft)', color: 'var(--accent-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><I.Lock size={20} /></span>
+      <h1 className="login-title">{two ? 'Tu cuenta tiene más de un área' : 'Tu cuenta no tiene área'}</h1>
+      <p className="login-sub">Tu cuenta <b>{email}</b> es de líder de área (<span className="mono">bu-lead</span>), pero {two ? <>tiene {areas.length} grupos de área: <span className="mono">{areas.join(', ')}</span></> : 'no tiene ningún grupo de área'}. Un líder de área ve el gasto de una sola área, así que no puedes entrar hasta que {two ? 'te quede una' : 'tengas la tuya'}.</p>
+      <div className="login-note">
+        <div style={{ fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Qué sigue</div>
+        Pide a un administrador de Mango que te deje exactamente un grupo de área (<span className="mono">bu-…</span>) en Ajustes › Personas: ya te ve marcado ahí. Cuando lo haga, vuelve a comprobar; no hace falta que cierres sesión.
+      </div>
+      {still && <div className="login-err-box" role="status" style={{ marginTop: 12 }}>{two ? 'Todavía tienes más de un área.' : 'Todavía no tienes un área.'} Si ya te lo corrigieron, espera unos segundos y vuelve a comprobar.</div>}
       <div className="row gap-2" style={{ marginTop: 16 }}>
         <button className="login-primary" style={{ flex: 1 }} onClick={check} disabled={checking}>{checking ? 'Comprobando…' : 'Volver a comprobar'}</button>
       </div>
