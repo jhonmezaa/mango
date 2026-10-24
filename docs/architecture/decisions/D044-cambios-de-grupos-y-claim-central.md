@@ -1,8 +1,8 @@
 # D44 · Cambios de grupos de acceso y claim de «central»
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-01
-- **Precisa / reemplaza a:** en el texto: construye la doble aprobación de grupos de acceso de [D26](D026-reglas-del-ciclo-de-vida.md)
+- **Fecha:** 2026-10-01 · punto (9) el 2026-10-24
+- **Precisa / reemplaza a:** en el texto: construye la doble aprobación de grupos de acceso de [D26](D026-reglas-del-ciclo-de-vida.md); su punto (9) precisa [D60](D060-gestion-de-personas.md) (10)
 - **Precisada por:** —
 
 ## Decisión
@@ -22,5 +22,7 @@
 **(7) Claim `mango_central`.** El pre-token lo añade al access token y al ID token cuando el usuario pertenece a un grupo cuyo tipo en el registro es `central`. Lo calcula desde el registro en cada emisión, nunca desde atributos del usuario ni desde el cliente, y solo puede leer la partición `GROUPS` de `Settings`. **Fail-closed de privilegios:** si el registro no se puede leer, el token se emite sin el claim; el usuario entra, pero sin acceso a datos de cuentas hasta su siguiente token. Un cambio de tipo se refleja en el siguiente token (como máximo 60 minutos después).
 
 **(8) Datos.** En `Settings`, `GROUPS/<id>` gana `version`, y hay dos particiones nuevas: `GROUP_CHANGE/<id de solicitud>` (la solicitud y su decisión) y `GROUP_LOCK/<id de grupo>` (la solicitud abierta). Van aparte para que el pre-token no las lea.
+
+**(9) Eliminar un grupo de área que deja fuera a alguien** (2026-10-24, decisión del usuario por menú, ronda de diseño 18). Cierra lo que [D60](D060-gestion-de-personas.md) (10) dejaba fuera. Antes de proponer la eliminación de un `bu-<área>`, la pantalla pregunta a Personas a quién deja sin su única área (`POST /api/admin/people/only-area`: `ViewPeople`, límite y auditoría de una lectura del directorio, con conteos y nunca correos; responde los cinco primeros correos y cuántos son) y lo avisa. Al proponerla, `mango-api` cuenta otra vez a esas personas y lo guarda en la solicitud (`stranded_leads`), para que lo vea quien aprueba. Es un aviso, nunca un bloqueo: el grupo puede retirarse a propósito. Si el directorio no se puede leer, la propuesta sigue sin el dato. El conteo sale de la copia del directorio que ya usa Personas: Grupos sigue sin cambiar la pertenencia.
 
 Amenaza: TM-M13

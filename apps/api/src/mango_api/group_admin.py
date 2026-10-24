@@ -187,6 +187,9 @@ class GroupChange:
     decided_by_email: str | None = None
     decided_at: datetime | None = None
     note: str | None = None
+    stranded_leads: int | None = None
+    """Deleting an area group: people for whom it was the area that let them in, when it was
+    proposed (D44 (9)); ``None`` when not known."""
 
 
 def new_change_id() -> str:
@@ -263,6 +266,7 @@ def _change_from(item: dict[str, Any]) -> GroupChange:
         decided_by_email=_opt(item, "decided_by_email"),
         decided_at=datetime.fromisoformat(decided_at) if decided_at else None,
         note=_opt(item, "note"),
+        stranded_leads=int(item["stranded_leads"]["N"]) if "stranded_leads" in item else None,
     )
 
 
@@ -349,6 +353,8 @@ class GroupStore:
         item.update({key: _s(value) for key, value in optional.items() if value})
         if change.description is not None:
             item["description"] = _s(change.description)
+        if change.stranded_leads is not None:
+            item["stranded_leads"] = _n(change.stranded_leads)
         try:
             self._db.transact_write_items(
                 TransactItems=[
@@ -741,6 +747,8 @@ class GroupChangeOut(_Strict):
     decided_by_email: str | None
     decided_at: str | None
     note: str | None
+    stranded_leads: int | None
+    """Deleting an area group: people it would leave out, counted when it was proposed."""
 
 
 class GroupsAdminOut(_Strict):
@@ -770,6 +778,9 @@ class GroupAdminDeps:
     audit: AuditLog
     rate_limiter: Limiter
     clock: Callable[[], datetime]
+    stranded: Callable[[str], int] | None = None
+    """How many people an area group is the only area of (Settings > People); a warning,
+    never a refusal (D44 (9))."""
 
 
 @dataclass(frozen=True)
@@ -861,6 +872,7 @@ def _change_out(change: GroupChange, now: datetime) -> GroupChangeOut:
         decided_by_email=change.decided_by_email,
         decided_at=iso(change.decided_at) if change.decided_at else None,
         note=change.note,
+        stranded_leads=change.stranded_leads,
     )
 
 
@@ -1031,6 +1043,22 @@ def _check(
         raise ApiError(422, "system_group", "system groups cannot be deleted")
 
 
+def _is_area(group_id: str) -> bool:
+    return (shape := fixed_shape(group_id)) is not None and shape[0] == TYPE_AREA
+
+
+def _stranded(deps: GroupAdminDeps, group_id: str) -> int | None:
+    """A warning for whoever approves: when the directory cannot say, the proposal goes on
+    without it."""
+    if deps.stranded is None:
+        return None
+    try:
+        return deps.stranded(group_id)
+    except ApiError:
+        logger.warning("the directory could not say who an area group is the only area of")
+        return None
+
+
 def propose(deps: GroupAdminDeps, caller: Caller, body: ProposeIn) -> str:
     actor = caller.user.user_id
     event = "settings.groups.proposed"
@@ -1063,7 +1091,11 @@ def propose(deps: GroupAdminDeps, caller: Caller, body: ProposeIn) -> str:
         created_at=now,
         expires_at=now + CHANGE_LIFETIME,
     )
+    if change.kind == "delete" and _is_area(change.group_id):
+        change = replace(change, stranded_leads=_stranded(deps, change.group_id))
     detail = {**_detail(change), "reason": body.reason, "agents": change.agents}
+    if change.stranded_leads is not None:
+        detail["stranded_leads"] = change.stranded_leads
     if _raises_own_access(caller, change):
         _refuse(
             deps,

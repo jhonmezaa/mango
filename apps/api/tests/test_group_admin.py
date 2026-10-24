@@ -32,6 +32,7 @@ from mango_api.groups import GroupRegistry
 from mango_api.mcp_catalog import McpCatalog
 from mango_api.probe import RateLimiter
 from mango_api.settings_store import SettingsStore
+from mango_api.web import ApiError
 from mango_core.agents import ROOT_SUPERVISOR, AgentDefinition, VersionStatus
 from mango_core.identity import IdentityError
 
@@ -194,6 +195,9 @@ class Env:
     clock: Clock
     store: GroupStore
     limiter: RateLimiter
+    stranded: dict[str, int | None]
+    """What Settings > People answers for each area group; ``None`` fails like a directory
+    that cannot be read."""
 
 
 def _group(db: Any, group_id: str, kind: str, **extra: str) -> None:
@@ -239,6 +243,13 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
         store = GroupStore(db, "settings")
         limiter = RateLimiter(limit=50, window_seconds=3600)
         catalog = _catalog()
+        stranded: dict[str, int | None] = {}
+
+        def count_stranded(group: str) -> int:
+            found = stranded.get(group, 0)
+            if found is None:
+                raise ApiError(502, "upstream_error", "the directory could not be reached")
+            return found
 
         def factory(s: Any) -> app_module.Services:
             return app_module.Services(
@@ -266,12 +277,13 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
                     audit=audit,  # type: ignore[arg-type]
                     rate_limiter=limiter,
                     clock=clock,
+                    stranded=count_stranded,
                 ),
             )
 
         asgi = app_module.create_app(_settings(), services_factory=factory)
         client = TestClient(asgi, base_url=f"http://{HOST}")  # type: ignore[arg-type]
-        yield Env(client, db, audit, authorizer, directory, agents, clock, store, limiter)
+        yield Env(client, db, audit, authorizer, directory, agents, clock, store, limiter, stranded)
 
 
 def _create(group_id: str = "people", **body: Any) -> dict[str, Any]:
@@ -707,6 +719,29 @@ def test_delete_removes_the_group_from_the_registry_and_from_cognito(env: Env) -
     # The name cannot come back while the agent still shares with it.
     again = env.client.post(f"{BASE}/changes", json=_create("platform"), headers=_h("admin"))
     assert (again.status_code, _code(again)) == (409, "group_referenced")
+
+
+def test_deleting_an_area_group_says_who_it_is_the_only_area_of(env: Env) -> None:
+    env.stranded["bu-security"] = 3
+    change_id = _propose(env, _delete("bu-security"))
+    assert _changes(env)[change_id]["stranded_leads"] == 3
+    proposed = env.audit.named("settings.groups.proposed", outcome=None)
+    assert [d.get("stranded_leads") for _, d in proposed] == [3, 3]
+    # A warning, never a refusal: the deletion is approved as any other.
+    assert _decide(env, change_id, "approve", "admin2").status_code == 200
+    assert "bu-security" not in _registry(env)
+
+
+def test_a_deletion_goes_on_when_the_directory_cannot_say(env: Env) -> None:
+    env.stranded["bu-security"] = None
+    change_id = _propose(env, _delete("bu-security"))
+    assert _changes(env)[change_id]["stranded_leads"] is None
+
+
+def test_only_area_groups_count_who_they_leave_out(env: Env) -> None:
+    env.stranded["hr"] = 7
+    change_id = _propose(env, _delete("hr"))
+    assert _changes(env)[change_id]["stranded_leads"] is None
 
 
 def test_a_member_may_take_part_in_deleting_their_group(env: Env) -> None:

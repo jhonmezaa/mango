@@ -44,6 +44,7 @@ function change(
     decided_by_email: null,
     decided_at: null,
     note: null,
+    stranded_leads: null,
     ...overrides,
   };
 }

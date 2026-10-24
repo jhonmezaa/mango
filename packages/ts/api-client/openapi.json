@@ -2561,6 +2561,17 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "stranded_leads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stranded Leads"
           }
         },
         "required": [
@@ -2579,7 +2590,8 @@
           "decided_by",
           "decided_by_email",
           "decided_at",
-          "note"
+          "note",
+          "stranded_leads"
         ],
         "title": "GroupChangeOut",
         "type": "object"
@@ -4076,6 +4088,48 @@
           "items"
         ],
         "title": "ModelsOut",
+        "type": "object"
+      },
+      "OnlyAreaIn": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+            "title": "Group",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group"
+        ],
+        "title": "OnlyAreaIn",
+        "type": "object"
+      },
+      "OnlyAreaOut": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Emails",
+            "type": "array"
+          },
+          "incomplete": {
+            "title": "Incomplete",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "emails",
+          "count",
+          "incomplete"
+        ],
+        "title": "OnlyAreaOut",
         "type": "object"
       },
       "OptionalReasonIn": {
@@ -10516,6 +10570,44 @@
           }
         },
         "summary": "Invite Person"
+      }
+    },
+    "/admin/people/only-area": {
+      "post": {
+        "operationId": "only_area_people",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnlyAreaIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnlyAreaOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Only Area People"
       }
     },
     "/admin/people/search": {

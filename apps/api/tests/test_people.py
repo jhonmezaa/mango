@@ -269,6 +269,7 @@ def _changes(env: Env, token: str = "admin") -> list[dict[str, Any]]:
 
 ENDPOINTS: list[tuple[str, str, dict[str, Any] | None, str]] = [
     ("POST", f"{BASE}/search", {}, "ViewPeople"),
+    ("POST", f"{BASE}/only-area", {"group": "bu-finanzas"}, "ViewPeople"),
     ("GET", f"{BASE}/changes", None, "ViewPeople"),
     ("POST", f"{BASE}/invitations", {"email": "x@example.com"}, "ManagePeople"),
     ("POST", f"{BASE}/new/groups", {"group": "devops"}, "ManagePeople"),
@@ -565,6 +566,37 @@ def test_search_counts_and_lists_the_bu_leads_that_cannot_sign_in(env: Env) -> N
     assert out["area_required"] == 2
     assert env.audit.events[-1][2]["filter"] == "area_required"
     assert _search(env)["area_required"] == 2
+
+
+def test_only_area_lists_who_an_area_group_lets_in(env: Env) -> None:
+    for n in range(6):
+        env.people.put(_user(f"fin-{n}", days=5), "bu-lead", "bu-finanzas")
+    # Not left out: two areas already (already out), central, disabled, not a bu-lead.
+    env.people.put(_user("both", days=5), "bu-lead", "bu-finanzas", "bu-retail")
+    env.people.put(_user("central", days=5), "bu-lead", "bu-finanzas", "finops-central")
+    env.people.put(_user("off", enabled=False, days=5), "bu-lead", "bu-finanzas")
+    env.people.put(_user("member", days=5), "bu-finanzas")
+    response = _post(env, "/only-area", {"group": "bu-finanzas"})
+    assert response.status_code == 200, response.json()
+    assert response.json() == {
+        "emails": [
+            "fin-0@example.com",
+            "fin-1@example.com",
+            "fin-2@example.com",
+            "fin-3@example.com",
+            "fin-4@example.com",
+        ],
+        "count": 7,
+        "incomplete": False,
+    }
+    event, _, detail = env.audit.events[-1]
+    assert (event, detail["scope"], detail["returned"]) == ("directory.list", "only_area", 7)
+    assert "emails" not in detail
+
+
+def test_only_area_takes_area_groups_only(env: Env) -> None:
+    response = _post(env, "/only-area", {"group": "devops"})
+    assert (response.status_code, _code(response)) == (422, "not_an_area")
 
 
 def test_a_bu_lead_moves_to_another_area_in_one_step(env: Env) -> None:

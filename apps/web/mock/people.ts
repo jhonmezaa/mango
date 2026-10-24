@@ -287,6 +287,20 @@ function lacksArea(groups: readonly string[]): boolean {
   return groups.filter((group) => AREA_GROUP.test(group)).length !== 1;
 }
 
+/** Emails of the enabled people `group` is the one area of (`only_area_of`, D44 (9)). */
+export function onlyAreaOf(group: string): string[] {
+  return people
+    .filter(
+      (who) =>
+        who.status !== 'disabled' &&
+        who.groups.includes(group) &&
+        lacksArea(who.groups.filter((g) => g !== group)) &&
+        !lacksArea(who.groups),
+    )
+    .map((who) => who.email)
+    .sort();
+}
+
 /** Enabled and refused at sign-in with `403 area_required`. */
 function areaRequired(who: MockPerson): boolean {
   return who.status !== 'disabled' && lacksArea(who.groups);
@@ -565,6 +579,20 @@ export const handlePeople: ApiHandler = async (req, res, path) => {
   if (path === '/admin/people/search') {
     const body = await readJson(req, ['prefix', 'filter', 'cursor']);
     return answer(body ? search(body) : [422, 'invalid_request']);
+  }
+  if (path === '/admin/people/only-area') {
+    const body = await readJson(req, ['group']);
+    const group = body?.group;
+    if (typeof group !== 'string' || !GROUP_ID.test(group)) return answer([422, 'invalid_request']);
+    if (!AREA_GROUP.test(group)) return answer([422, 'not_an_area']);
+    const emails = onlyAreaOf(group);
+    recordAudit('directory.list', {
+      scope: 'only_area',
+      group,
+      returned: emails.length,
+      outcome: 'applied',
+    });
+    return answer({ emails: emails.slice(0, 5), count: emails.length, incomplete: false });
   }
   if (path === '/admin/people/invitations') {
     const body = await readJson(req, ['email', 'groups']);

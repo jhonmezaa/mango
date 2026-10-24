@@ -1411,6 +1411,10 @@ export type GroupChangeOut = {
      * Status
      */
     status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'expired';
+    /**
+     * Stranded Leads
+     */
+    stranded_leads: number | null;
 };
 
 /**
@@ -2186,6 +2190,34 @@ export type ModelsOut = {
      * Version
      */
     version: number;
+};
+
+/**
+ * OnlyAreaIn
+ */
+export type OnlyAreaIn = {
+    /**
+     * Group
+     */
+    group: string;
+};
+
+/**
+ * OnlyAreaOut
+ */
+export type OnlyAreaOut = {
+    /**
+     * Count
+     */
+    count: number;
+    /**
+     * Emails
+     */
+    emails: Array<string>;
+    /**
+     * Incomplete
+     */
+    incomplete: boolean;
 };
 
 /**
@@ -5605,6 +5637,31 @@ export type InvitePersonResponses = {
 };
 
 export type InvitePersonResponse = InvitePersonResponses[keyof InvitePersonResponses];
+
+export type OnlyAreaPeopleData = {
+    body: OnlyAreaIn;
+    path?: never;
+    query?: never;
+    url: '/admin/people/only-area';
+};
+
+export type OnlyAreaPeopleErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type OnlyAreaPeopleError = OnlyAreaPeopleErrors[keyof OnlyAreaPeopleErrors];
+
+export type OnlyAreaPeopleResponses = {
+    /**
+     * Successful Response
+     */
+    200: OnlyAreaOut;
+};
+
+export type OnlyAreaPeopleResponse = OnlyAreaPeopleResponses[keyof OnlyAreaPeopleResponses];
 
 export type SearchPeopleData = {
     body: MangoApiPeopleSearchIn;

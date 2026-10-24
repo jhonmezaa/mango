@@ -133,6 +133,7 @@ from mango_api.people import (
     MemberChangeStore,
     PeopleDeps,
     installation_router,
+    only_area_of,
     parse_domains,
     people_router,
 )
@@ -634,6 +635,18 @@ def build_services(settings: Settings) -> Services:
         published=published,
         limits=limits,
     )
+    people_deps = PeopleDeps(
+        people=CognitoPeople(cognito, settings.cognito_user_pool_id),
+        store=MemberChangeStore(dynamodb, settings.settings_table),
+        registry=group_registry,
+        audit=audit,
+        clock=now_utc,
+        sign_up_domains=parse_domains(settings.sign_up_domains),
+        reads=limits.limiter("people.reads"),
+        changes=limits.limiter("people.changes"),
+        proposals=limits.limiter("people.proposals"),
+        invitations=limits.limiter("people.invitations"),
+    )
     return Services(
         settings=settings,
         verifier=verifier,
@@ -652,18 +665,7 @@ def build_services(settings: Settings) -> Services:
         mfa_reset_store=ResetStore(dynamodb, settings.settings_table),
         directory=CognitoDirectory(cognito, settings.cognito_user_pool_id),
         directory_quota=LookupQuota(dynamodb, settings.settings_table),
-        people=PeopleDeps(
-            people=CognitoPeople(cognito, settings.cognito_user_pool_id),
-            store=MemberChangeStore(dynamodb, settings.settings_table),
-            registry=group_registry,
-            audit=audit,
-            clock=now_utc,
-            sign_up_domains=parse_domains(settings.sign_up_domains),
-            reads=limits.limiter("people.reads"),
-            changes=limits.limiter("people.changes"),
-            proposals=limits.limiter("people.proposals"),
-            invitations=limits.limiter("people.invitations"),
-        ),
+        people=people_deps,
         approvals=approvals,
         inbox=InboxDeps(
             store=InboxStore(rls.for_user, settings.conversations_table),
@@ -688,6 +690,7 @@ def build_services(settings: Settings) -> Services:
             audit=audit,
             rate_limiter=limits.limiter("group_admin.proposals"),
             clock=now_utc,
+            stranded=lambda group: len(only_area_of(people_deps, group)[0]),
         ),
         agents=AgentsDeps(
             store=agents_store,

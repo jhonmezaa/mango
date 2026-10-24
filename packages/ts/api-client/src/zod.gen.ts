@@ -558,7 +558,8 @@ export const zGroupChangeOutSchema = z.object({
         'rejected',
         'withdrawn',
         'expired'
-    ])
+    ]),
+    stranded_leads: z.int().nullable()
 });
 
 /**
@@ -888,6 +889,22 @@ export const zModelUpdateInSchema = z.object({
 export const zModelsOutSchema = z.object({
     items: z.array(zModelOutSchema),
     version: z.int()
+});
+
+/**
+ * OnlyAreaIn
+ */
+export const zOnlyAreaInSchema = z.object({
+    group: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)
+});
+
+/**
+ * OnlyAreaOut
+ */
+export const zOnlyAreaOutSchema = z.object({
+    count: z.int(),
+    emails: z.array(z.string()),
+    incomplete: z.boolean()
 });
 
 /**
@@ -2692,6 +2709,13 @@ export const zInvitePersonBody = zInviteInSchema;
  * Successful Response
  */
 export const zInvitePersonResponse = zInvitedOutSchema;
+
+export const zOnlyAreaPeopleBody = zOnlyAreaInSchema;
+
+/**
+ * Successful Response
+ */
+export const zOnlyAreaPeopleResponse = zOnlyAreaOutSchema;
 
 export const zSearchPeopleBody = zMangoApiPeopleSearchInSchema;
 

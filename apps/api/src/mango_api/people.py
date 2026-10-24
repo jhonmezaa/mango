@@ -100,6 +100,7 @@ CHANGES_PER_HOUR = 200
 PROPOSALS_PER_HOUR = 20
 INVITATIONS_PER_HOUR = 20
 MAX_INVITE_GROUPS = 10
+ONLY_AREA_SHOWN = 5
 PK_CHANGE = "MEMBER_CHANGE"
 PK_LOCK = "MEMBER_LOCK"
 PK_DIRECTORY = "MEMBER_DIRECTORY"
@@ -677,6 +678,18 @@ class AreaIn(_Strict):
     """The area group the person has now."""
     group: GroupId
     """The area group that replaces it."""
+
+
+class OnlyAreaIn(_Strict):
+    group: GroupId
+
+
+class OnlyAreaOut(_Strict):
+    emails: list[str]
+    """The first ``ONLY_AREA_SHOWN`` of them, by email."""
+    count: int
+    incomplete: bool
+    """The directory is larger than one read covers: the count is a lower bound."""
 
 
 class PersonOut(_Strict):
@@ -1552,6 +1565,48 @@ def _move_area(deps: PeopleDeps, target: _Target, current: str, group: str) -> N
         raise ApiError(502, "upstream_error", "the directory could not be changed; retry") from exc
 
 
+def only_area_of(deps: PeopleDeps, group: str) -> tuple[list[str], bool]:
+    """Emails of the enabled people for whom ``group`` is the area that lets them in: taking
+    it away would leave them a bu-lead without its one area (D44 (9)). Read from the copy of
+    the directory the list of people shares; ``True`` when that copy is incomplete."""
+    snapshot = _snapshot(deps)
+    emails = sorted(
+        u.email
+        for u in snapshot.users
+        if u.enabled
+        and group in (groups := snapshot.of(u))
+        and _lacks_area(groups - {group})
+        and not _lacks_area(groups)
+    )
+    return emails, snapshot.incomplete
+
+
+def only_area(deps: PeopleDeps, caller: Caller, body: OnlyAreaIn) -> OnlyAreaOut:
+    """Who would be left out if an area group were deleted: a read of the directory, with its
+    limit and its audit (counts, never emails)."""
+    actor = caller.user.user_id
+    if not deps.reads.allow(actor):
+        raise rate_limited(deps.reads.retry_after(actor))
+    if not _is_area(body.group):
+        raise ApiError(422, "not_an_area", "that group is not an area group")
+    emails, incomplete = only_area_of(deps, body.group)
+    try:
+        deps.audit.emit(
+            "directory.list",
+            actor,
+            {
+                "scope": "only_area",
+                "group": body.group,
+                "returned": len(emails),
+                "outcome": "applied",
+            },
+            caller.user,
+        )
+    except Exception as exc:
+        raise ApiError(503, "audit_unavailable", "the read could not be audited; retry") from exc
+    return OnlyAreaOut(emails=emails[:ONLY_AREA_SHOWN], count=len(emails), incomplete=incomplete)
+
+
 def change_area(deps: PeopleDeps, caller: Caller, user_id: str, body: AreaIn) -> ActionOut:
     """Move a person from one area group to another in one step (D60 (11)): a bu-lead keeps
     exactly one area all along. Area groups are not sensitive: applied at once, audited."""
@@ -1689,6 +1744,10 @@ def people_router(
     @router.post("/search", response_model=PeopleOut)
     async def search_people(body: SearchIn, caller: View) -> PeopleOut:
         return await run(search, deps, caller, body)
+
+    @router.post("/only-area", response_model=OnlyAreaOut)
+    async def only_area_people(body: OnlyAreaIn, caller: View) -> OnlyAreaOut:
+        return await run(only_area, deps, caller, body)
 
     @router.post("/invitations", response_model=InvitedOut, status_code=201)
     async def invite_person(body: InviteIn, caller: Manage) -> InvitedOut:

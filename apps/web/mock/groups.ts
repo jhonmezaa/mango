@@ -11,6 +11,7 @@ import { agents, publishedVersion } from './agents.ts';
 import { auditedWrite } from './audit.ts';
 import { MOCK_USER } from './cognito.ts';
 import { readBody, sendError, sendJson, type ApiHandler } from './http.ts';
+import { onlyAreaOf } from './people.ts';
 
 type GroupType = 'central' | 'area' | 'general';
 type Kind = 'create' | 'update' | 'delete';
@@ -41,6 +42,7 @@ interface MockGroupChange {
   decided_by_email: string | null;
   decided_at: string | null;
   note: string | null;
+  stranded_leads: number | null;
 }
 
 const HOUR_MS = 3_600_000;
@@ -109,6 +111,7 @@ function seed(
     decided_by_email: null,
     decided_at: null,
     note: null,
+    stranded_leads: null,
     ...change,
   };
 }
@@ -298,6 +301,11 @@ function proposalRefusal(body: Record<string, unknown>): Refusal | MockGroupChan
             description: kind === 'create' ? (description ?? '') : description,
           },
     agents: agentsUsing(groupId).length,
+    // Deleting an area group: who it leaves out, for whoever approves (D44 (9)).
+    stranded_leads:
+      kind === 'delete' && AREA_GROUP.test(groupId) && !ROLE_GROUPS.includes(groupId)
+        ? onlyAreaOf(groupId).length
+        : null,
     proposed_by: MOCK_USER,
     proposed_by_email: MOCK_USER,
     reason,
