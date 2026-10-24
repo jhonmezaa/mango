@@ -61,6 +61,7 @@ No saltarse el paso 1 en una instalación existente: el despliegue final quita e
 ## MCP packs (D36)
 
 - El despliegue copia al bucket de packs lo que haya en `dist/packs/`: el sobre firmado (`<id>-<versión>.pack.json`), el zip y el SBOM de cada pack. Los genera el workflow `packs` (`packs/README.md`).
+- **Antes de publicar una versión con packs firmados de nuevo,** dejar en `dist/packs/` solo los de la ejecución de `packs` en `main` que los firmó: `gh run download <run> -n pack-<id>-signed` por cada pack (sobre, zip, SBOM y statement). `dist.py` empaqueta lo que encuentre ahí sin avisar si es viejo, y una etiqueta publicada no se puede reemplazar: si se publica con los packs anteriores, hace falta un commit nuevo para tener otra etiqueta (visto el 2026-10-24).
 - Solo se aceptan packs firmados con la llave de `packs/signing-key.pub`. En el laboratorio se puede usar una llave de prueba poniendo su PEM en `packs.signingPublicKey` de `infra/config/poc.json`.
 - Sin llave o sin packs firmados el despliegue funciona igual: el catálogo de packs queda vacío y no se puede habilitar ninguno.
 - Habilitar un pack es una ejecución de la máquina `Mango-poc-PackProvisioner` (salida `PackProvisionerArn`) con `{"pack_id", "pack_version", "enablement_id"}`, sobre una habilitación aprobada en la tabla `Settings`.
