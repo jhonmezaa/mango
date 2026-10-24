@@ -60,7 +60,8 @@ const PREFIX = /^[a-z0-9._%+@-]{1,64}$/;
 const CURSOR = /^[0-9]{1,5}$/;
 const GROUP_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const EMAIL = /^[a-z0-9._%+-]{1,64}@(?:[a-z0-9-]+\.)+[a-z]{2,63}$/;
-const FILTERS: readonly string[] = ['all', 'pending', 'invited', 'disabled'];
+const FILTERS: readonly string[] = ['all', 'pending', 'invited', 'disabled', 'area_required'];
+const AREA_GROUP = /^bu-(?!lead$)[a-z0-9-]+$/;
 const PERSON_ROUTE =
   /^\/admin\/people\/([A-Za-z0-9-]{1,64})\/(groups|groups\/remove|disable|enable)$/;
 const CHANGE_ROUTE = /^\/admin\/people\/changes\/([0-9a-f]{32})\/(approve|reject|withdraw)$/;
@@ -243,7 +244,12 @@ function search(body: Record<string, unknown>): Refusal | object {
     .filter(
       (who) =>
         (normalized === null || who.email.startsWith(normalized)) &&
-        (filter === 'all' || (filter === 'pending' ? waiting(who) : who.status === filter)),
+        (filter === 'all' ||
+          (filter === 'pending'
+            ? waiting(who)
+            : filter === 'area_required'
+              ? areaRequired(who)
+              : who.status === filter)),
     )
     // People waiting for access first, then the newest.
     .sort(
@@ -270,8 +276,20 @@ function search(body: Record<string, unknown>): Refusal | object {
     with_access: people.filter(
       (who) => who.status !== 'disabled' && who.groups.length > 0 && !who.groups.includes(ADMIN),
     ).length,
+    area_required: people.filter(areaRequired).length,
     incomplete: false,
   };
+}
+
+/** A bu-lead without finops-central needs exactly one area group (`_lacks_area`, D60 (10)). */
+function lacksArea(groups: readonly string[]): boolean {
+  if (!groups.includes('bu-lead') || groups.includes('finops-central')) return false;
+  return groups.filter((group) => AREA_GROUP.test(group)).length !== 1;
+}
+
+/** Enabled and refused at sign-in with `403 area_required`. */
+function areaRequired(who: MockPerson): boolean {
+  return who.status !== 'disabled' && lacksArea(who.groups);
 }
 
 /** The state rules of a change (`_validate`). */

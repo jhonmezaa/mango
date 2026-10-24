@@ -41,6 +41,7 @@ function directory(items: Person[], overrides: Partial<People> = {}): People {
     pending: 0,
     admins: 3,
     with_access: 4,
+    area_required: 0,
     incomplete: false,
     ...overrides,
   };

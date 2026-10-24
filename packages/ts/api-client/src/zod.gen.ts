@@ -146,6 +146,14 @@ export const zApproveInSchema = z.object({
 });
 
 /**
+ * AreaIn
+ */
+export const zAreaInSchema = z.object({
+    current: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/),
+    group: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)
+});
+
+/**
  * AuditResource
  */
 export const zAuditResourceSchema = z.object({
@@ -2289,6 +2297,7 @@ export const zMangoApiPeoplePersonOutSchema = z.object({
  */
 export const zPeopleOutSchema = z.object({
     admins: z.int(),
+    area_required: z.int(),
     incomplete: z.boolean(),
     items: z.array(zMangoApiPeoplePersonOutSchema),
     next_cursor: z.string().nullable(),
@@ -2305,7 +2314,8 @@ export const zMangoApiPeopleSearchInSchema = z.object({
         'all',
         'pending',
         'invited',
-        'disabled'
+        'disabled',
+        'area_required'
     ]).optional().default('all'),
     prefix: z.string().nullish()
 });
@@ -2689,6 +2699,17 @@ export const zSearchPeopleBody = zMangoApiPeopleSearchInSchema;
  * Successful Response
  */
 export const zSearchPeopleResponse = zPeopleOutSchema;
+
+export const zChangePersonAreaBody = zAreaInSchema;
+
+export const zChangePersonAreaPath = z.object({
+    user_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zChangePersonAreaResponse = zActionOutSchema;
 
 export const zDisablePersonBody = zReasonInSchema;
 

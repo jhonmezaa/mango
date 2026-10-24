@@ -1,7 +1,7 @@
 # D60 · Gestión de personas en la aplicación
 
 - **Estado:** parcial. Construida. Falta su punto (9): el evento «Persona registrada» (`directory.signup`) y la alarma sobre `AdminAddUserToGroup` (TM-P11).
-- **Fecha:** 2026-10-03 · punto (9) revisado el 2026-10-04 · punto (10) el 2026-10-23
+- **Fecha:** 2026-10-03 · punto (9) revisado el 2026-10-04 · punto (10) el 2026-10-23 · punto (11) el 2026-10-24
 - **Precisa / reemplaza a:** precisa [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md), [D26](D026-reglas-del-ciclo-de-vida.md), [D28](D028-implementacion-del-login-propio.md) y [D58](D058-distribucion-para-clientes.md)
 - **Precisada por:** [D61](D061-invitaciones-mfa-y-etiqueta.md) (precisa los puntos 6, 7 y 8); [D62](D062-proveedores-de-correo-publico.md) (precisa); [D66](D066-cambios-de-personas-fuera-del-directorio.md) (precisa el punto 5); [D70](D070-dos-tareas-y-limites-compartidos.md) (precisa: sus límites se cuentan entre todas las tareas)
 - **Tema en el registro original:** Gestión de personas en la aplicación (precisa [D14](D014-login-de-la-poc.md), [D20](D020-login-y-registro.md), [D26](D026-reglas-del-ciclo-de-vida.md), [D28](D028-implementacion-del-login-propio.md) y [D58](D058-distribucion-para-clientes.md))
@@ -34,3 +34,7 @@ Modelo de amenazas: `docs/security/threat-models/people-management-threat-model.
 - `mango-api` registra el código de cada rechazo de identidad y el `sub` del token verificado; nunca el token, las cabeceras ni los claims.
 - La SPA no tiene texto propio para ese estado ni para el rechazo en Personas: espera a la ronda de diseño (D24) y mientras tanto muestra el error genérico.
 - Queda fuera: eliminar desde Grupos un `bu-<área>` que es la única área de un `bu-lead` lo sigue dejando fuera ([D44](D044-cambios-de-grupos-y-claim-central.md) (6): Grupos no lee a los miembros).
+
+**(11) Cambiar de área en un paso, y quién está mal** (2026-10-24, decisión del usuario por menú, ronda de diseño 18). Precisa el punto (10):
+- `POST /api/admin/people/{user_id}/area` con `current` (el `bu-<área>` que tiene) y `group` (el que lo reemplaza) cambia a una persona de área en un solo paso, con la acción de Cedar `ManagePeople`, el límite de cambios por administrador y la auditoría de siempre (`directory.area_change`, con `from_group` y `group`; `requested` antes de escribir). Los dos tienen que ser grupos de área asignables, la persona tiene que estar habilitada y tener el primero y no el segundo. Primero da el nuevo y después quita el anterior; si lo segundo falla, deshace lo primero: nunca queda sin área. Los grupos de área no son sensibles, así que no pide un segundo administrador. Su sesión abierta sigue con el área anterior hasta que se renueve el token (como mucho, una hora). Ya no hace falta quitar `bu-lead` para cambiarlo de área.
+- La búsqueda del directorio cuenta a los `bu-lead` habilitados sin `finops-central` que no tienen exactamente un `bu-<área>` (`area_required`) y los lista con el filtro `area_required`: son los que reciben `403 area_required` al entrar. Sale de la misma copia del directorio y con la misma auditoría de lectura (conteos, nunca correos).

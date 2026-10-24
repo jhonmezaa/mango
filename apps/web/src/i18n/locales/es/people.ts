@@ -16,6 +16,7 @@ export const people = {
     pending: 'Sin acceso',
     invited: 'Invitadas',
     disabled: 'Deshabilitadas',
+    area_required: 'Área por corregir',
   },
   cols: {
     person: 'persona',

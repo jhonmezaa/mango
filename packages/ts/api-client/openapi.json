@@ -1056,6 +1056,27 @@
         "title": "ApproveIn",
         "type": "object"
       },
+      "AreaIn": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+            "title": "Current",
+            "type": "string"
+          },
+          "group": {
+            "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+            "title": "Group",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current",
+          "group"
+        ],
+        "title": "AreaIn",
+        "type": "object"
+      },
       "AuditEventOut": {
         "additionalProperties": false,
         "properties": {
@@ -4910,6 +4931,10 @@
             "title": "Admins",
             "type": "integer"
           },
+          "area_required": {
+            "title": "Area Required",
+            "type": "integer"
+          },
           "incomplete": {
             "title": "Incomplete",
             "type": "boolean"
@@ -4947,6 +4972,7 @@
           "pending",
           "admins",
           "with_access",
+          "area_required",
           "incomplete"
         ],
         "title": "PeopleOut",
@@ -8870,7 +8896,8 @@
               "all",
               "pending",
               "invited",
-              "disabled"
+              "disabled",
+              "area_required"
             ],
             "title": "Filter",
             "type": "string"
@@ -10527,6 +10554,56 @@
           }
         },
         "summary": "Search People"
+      }
+    },
+    "/admin/people/{user_id}/area": {
+      "post": {
+        "operationId": "change_person_area",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9-]{1,64}$",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AreaIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Change Person Area"
       }
     },
     "/admin/people/{user_id}/disable": {

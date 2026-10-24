@@ -273,6 +273,7 @@ ENDPOINTS: list[tuple[str, str, dict[str, Any] | None, str]] = [
     ("POST", f"{BASE}/invitations", {"email": "x@example.com"}, "ManagePeople"),
     ("POST", f"{BASE}/new/groups", {"group": "devops"}, "ManagePeople"),
     ("POST", f"{BASE}/lead/groups/remove", {"group": "bu-lead"}, "ManagePeople"),
+    ("POST", f"{BASE}/lead/area", {"current": "bu-finanzas", "group": "bu-retail"}, "ManagePeople"),
     ("POST", f"{BASE}/new/disable", {"reason": "left"}, "ManagePeople"),
     ("POST", f"{BASE}/gone/enable", {}, "ManagePeople"),
     ("POST", f"{BASE}/changes/{'a' * 32}/approve", {}, "ApprovePeopleChange"),
@@ -326,7 +327,7 @@ def test_search_lists_people_waiting_first_and_hides_unverified_accounts(env: En
         "admin-1",
         "gone",
     ]
-    assert (out["pending"], out["admins"], out["with_access"]) == (1, 3, 2)
+    assert (out["pending"], out["admins"], out["with_access"], out["area_required"]) == (1, 3, 2, 0)
     by_id = {p["user_id"]: p for p in out["items"]}
     assert by_id["new"] == {
         "user_id": "new",
@@ -551,6 +552,82 @@ def test_a_bu_lead_already_without_its_area_can_be_fixed_step_by_step(env: Env) 
     assert _post(env, "/lost/groups", {"group": "bu-retail"}).json()["result"] == "applied"
     env.people.put(_user("both", days=5), "bu-lead", "bu-finanzas", "bu-retail")
     assert _post(env, "/both/groups/remove", {"group": "bu-lead"}).json()["result"] == "applied"
+
+
+def test_search_counts_and_lists_the_bu_leads_that_cannot_sign_in(env: Env) -> None:
+    env.people.put(_user("lost", days=5), "bu-lead")
+    env.people.put(_user("both", days=6), "bu-lead", "bu-finanzas", "bu-retail")
+    # Not refused at sign-in: disabled (cannot sign in anyway) and central (no area needed).
+    env.people.put(_user("off", enabled=False, days=7), "bu-lead")
+    env.people.put(_user("central", days=8), "bu-lead", "finops-central")
+    out = _search(env, filter="area_required")
+    assert [p["user_id"] for p in out["items"]] == ["lost", "both"]
+    assert out["area_required"] == 2
+    assert env.audit.events[-1][2]["filter"] == "area_required"
+    assert _search(env)["area_required"] == 2
+
+
+def test_a_bu_lead_moves_to_another_area_in_one_step(env: Env) -> None:
+    response = _post(env, "/lead/area", {"current": "bu-finanzas", "group": "bu-retail"})
+    assert response.status_code == 200, response.json()
+    assert response.json() == {"result": "applied", "change_id": None}
+    assert env.people.memberships["name-lead"] == {"bu-lead", "bu-retail"}
+    events = [(e, d["outcome"]) for e, _, d in env.audit.events if e == "directory.area_change"]
+    assert events == [("directory.area_change", "requested"), ("directory.area_change", "applied")]
+    detail = next(d for e, _, d in env.audit.events if e == "directory.area_change")
+    assert (detail["target_email"], detail["from_group"], detail["group"]) == (
+        "lead@example.com",
+        "bu-finanzas",
+        "bu-retail",
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "status", "code"),
+    [
+        ("/lead/area", {"current": "bu-finanzas", "group": "devops"}, 422, "not_an_area"),
+        ("/lead/area", {"current": "bu-lead", "group": "bu-retail"}, 422, "not_an_area"),
+        ("/lead/area", {"current": "bu-retail", "group": "bu-finanzas"}, 409, "not_member"),
+        ("/lead/area", {"current": "bu-finanzas", "group": "bu-finanzas"}, 409, "already_member"),
+        ("/gone/area", {"current": "bu-finanzas", "group": "bu-retail"}, 409, "user_disabled"),
+        ("/nobody/area", {"current": "bu-finanzas", "group": "bu-retail"}, 404, "user_not_found"),
+    ],
+)
+def test_an_area_change_is_refused_when_it_is_not_a_move_between_areas(
+    env: Env, path: str, body: dict[str, Any], status: int, code: str
+) -> None:
+    env.people.memberships["name-gone"].add("bu-finanzas")
+    before = {u: set(g) for u, g in env.people.memberships.items()}
+    response = _post(env, path, body)
+    assert (response.status_code, _code(response)) == (status, code)
+    assert env.people.memberships == before
+
+
+def test_an_area_change_that_fails_halfway_keeps_the_old_area(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    removed: list[str] = []
+
+    def remove(username: str, group: str) -> None:
+        removed.append(group)
+        if group == "bu-finanzas":
+            raise DirectoryUnavailableError
+        env.people.memberships[username].discard(group)
+
+    monkeypatch.setattr(env.people, "remove_from_group", remove)
+    response = _post(env, "/lead/area", {"current": "bu-finanzas", "group": "bu-retail"})
+    assert (response.status_code, _code(response)) == (502, "upstream_error")
+    assert removed == ["bu-finanzas", "bu-retail"]
+    assert env.people.memberships["name-lead"] == {"bu-lead", "bu-finanzas"}
+    outcomes = [d["outcome"] for e, _, d in env.audit.events if e == "directory.area_change"]
+    assert outcomes == ["requested", "rejected"]
+
+
+def test_an_area_change_needs_an_administrator_now(env: Env) -> None:
+    env.people.memberships["name-admin-1"].discard("mango-admin")
+    response = _post(env, "/lead/area", {"current": "bu-finanzas", "group": "bu-retail"})
+    assert (response.status_code, _code(response)) == (403, "forbidden")
+    assert env.people.memberships["name-lead"] == {"bu-lead", "bu-finanzas"}
 
 
 def test_taking_finops_central_from_a_bu_lead_without_an_area_is_refused_at_approval(

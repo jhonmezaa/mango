@@ -35,6 +35,7 @@ const directory = (admins: number) => ({
   pending: 0,
   admins,
   with_access: 3,
+  area_required: 0,
   incomplete: false,
 });
 

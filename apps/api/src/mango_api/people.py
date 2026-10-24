@@ -119,7 +119,7 @@ _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\
 Kind = Literal["add", "remove", "disable", "enable"]
 Status = Literal["pending", "applying", "approved", "rejected", "withdrawn"]
 PersonStatus = Literal["active", "invited", "disabled"]
-ListFilter = Literal["all", "pending", "invited", "disabled"]
+ListFilter = Literal["all", "pending", "invited", "disabled", "area_required"]
 # Cognito statuses of an account whose email was never verified: not a person yet.
 _HIDDEN_STATUSES = frozenset({"UNCONFIRMED", "ARCHIVED", "UNKNOWN"})
 _OPEN_STATUSES = frozenset({"pending", "applying"})
@@ -672,6 +672,13 @@ class InviteIn(_Strict):
     groups: Annotated[list[GroupId], Field(max_length=MAX_INVITE_GROUPS)] = []
 
 
+class AreaIn(_Strict):
+    current: GroupId
+    """The area group the person has now."""
+    group: GroupId
+    """The area group that replaces it."""
+
+
 class PersonOut(_Strict):
     user_id: str
     email: str
@@ -690,6 +697,9 @@ class PeopleOut(_Strict):
     """Enabled administrators."""
     with_access: int
     """Enabled people with a group who are not administrators."""
+    area_required: int
+    """Enabled bu-leads without finops-central that do not have exactly one area group: they
+    cannot sign in (D60 (10))."""
     incomplete: bool
     """The directory is larger than one read covers: counts and filters are a lower bound."""
 
@@ -864,6 +874,22 @@ def _waiting(snapshot: Snapshot, user: PoolUser) -> bool:
     return user.person_status == "active" and not snapshot.of(user)
 
 
+def _area_required(snapshot: Snapshot, user: PoolUser) -> bool:
+    """Can sign in as far as Cognito goes, and Mango refuses them: a bu-lead without its one
+    area (D60 (10))."""
+    return user.enabled and _lacks_area(snapshot.of(user))
+
+
+def _in_filter(snapshot: Snapshot, user: PoolUser, wanted: ListFilter) -> bool:
+    if wanted == "all":
+        return True
+    if wanted == "pending":
+        return _waiting(snapshot, user)
+    if wanted == "area_required":
+        return _area_required(snapshot, user)
+    return user.person_status == wanted
+
+
 def search(deps: PeopleDeps, caller: Caller, body: SearchIn) -> PeopleOut:
     actor = caller.user.user_id
     if not deps.reads.allow(actor):
@@ -873,11 +899,7 @@ def search(deps: PeopleDeps, caller: Caller, body: SearchIn) -> PeopleOut:
         u
         for u in snapshot.users
         if (body.prefix is None or u.email.startswith(body.prefix))
-        and (
-            body.filter == "all"
-            or (body.filter == "pending" and _waiting(snapshot, u))
-            or (body.filter != "pending" and u.person_status == body.filter)
-        )
+        and _in_filter(snapshot, u, body.filter)
     ]
     # People waiting for access first, then the newest.
     rows.sort(key=lambda u: (not _waiting(snapshot, u), -u.created_at.timestamp(), u.email))
@@ -913,6 +935,7 @@ def search(deps: PeopleDeps, caller: Caller, body: SearchIn) -> PeopleOut:
             for u in snapshot.users
             if u.enabled and snapshot.of(u) and GROUP_ADMIN not in snapshot.of(u)
         ),
+        area_required=sum(1 for u in snapshot.users if _area_required(snapshot, u)),
         incomplete=snapshot.incomplete,
     )
     try:
@@ -1494,6 +1517,63 @@ def withdraw(deps: PeopleDeps, caller: Caller, change_id: str) -> None:
     _audited(deps, "directory.member_withdraw", caller, _change_detail(found), write)
 
 
+def _is_area(group: str) -> bool:
+    return (shape := fixed_shape(group)) is not None and shape[0] == TYPE_AREA
+
+
+def _validate_area(deps: PeopleDeps, target: _Target, current: str, group: str) -> None:
+    assignable = _assignable(deps)
+    if not all(g in assignable and _is_area(g) for g in (current, group)):
+        raise ApiError(422, "not_an_area", "both groups must be area groups")
+    if not target.user.enabled:
+        raise ApiError(409, "user_disabled", "re-enable the person before changing groups")
+    if current not in target.groups:
+        raise ApiError(409, "not_member", "the person does not have that group")
+    if group in target.groups:
+        raise ApiError(409, "already_member", "the person already has that group")
+    _check_area(target.groups, (target.groups - {current}) | {group})
+
+
+def _move_area(deps: PeopleDeps, target: _Target, current: str, group: str) -> None:
+    """The new area first and then the old one out: if the second step fails, the first is
+    undone, so the person ends with the area they had and never without one."""
+    username = target.user.username
+    try:
+        deps.people.add_to_group(username, group)
+    except DirectoryUnavailableError as exc:
+        raise ApiError(502, "upstream_error", "the directory could not be changed; retry") from exc
+    try:
+        deps.people.remove_from_group(username, current)
+    except DirectoryUnavailableError as exc:
+        try:
+            deps.people.remove_from_group(username, group)
+        except DirectoryUnavailableError:
+            logger.exception("an area change left a person with two area groups")
+        raise ApiError(502, "upstream_error", "the directory could not be changed; retry") from exc
+
+
+def change_area(deps: PeopleDeps, caller: Caller, user_id: str, body: AreaIn) -> ActionOut:
+    """Move a person from one area group to another in one step (D60 (11)): a bu-lead keeps
+    exactly one area all along. Area groups are not sensitive: applied at once, audited."""
+    actor = caller.user.user_id
+    if not deps.changes.allow(actor):
+        raise rate_limited(deps.changes.retry_after(actor))
+    event = "directory.area_change"
+    _require_current_admin(deps, caller, event)
+    target = _target(deps, user_id)
+    _validate_area(deps, target, body.current, body.group)
+    detail: dict[str, Any] = {
+        "target_user": target.user.sub,
+        "target_email": target.user.email,
+        "from_group": body.current,
+        "group": body.group,
+    }
+    _audited(
+        deps, event, caller, detail, lambda: _move_area(deps, target, body.current, body.group)
+    )
+    return ActionOut(result="applied")
+
+
 def invite(deps: PeopleDeps, caller: Caller, body: InviteIn) -> InvitedOut:
     actor = caller.user.user_id
     if not deps.invitations.allow(actor):
@@ -1648,6 +1728,10 @@ def people_router(
         return await run(
             change, deps, caller, user_id, "remove", group=body.group, reason=body.reason
         )
+
+    @router.post("/{user_id}/area", response_model=ActionOut)
+    async def change_person_area(user_id: UserId, body: AreaIn, caller: Manage) -> ActionOut:
+        return await run(change_area, deps, caller, user_id, body)
 
     @router.post("/{user_id}/disable", response_model=ActionOut)
     async def disable_person(user_id: UserId, body: ReasonIn, caller: Manage) -> ActionOut:

@@ -540,6 +540,20 @@ export type ApproveIn = {
 };
 
 /**
+ * AreaIn
+ */
+export type AreaIn = {
+    /**
+     * Current
+     */
+    current: string;
+    /**
+     * Group
+     */
+    group: string;
+};
+
+/**
  * AuditEventOut
  */
 export type AuditEventOut = {
@@ -2607,6 +2621,10 @@ export type PeopleOut = {
      */
     admins: number;
     /**
+     * Area Required
+     */
+    area_required: number;
+    /**
      * Incomplete
      */
     incomplete: boolean;
@@ -4580,7 +4598,7 @@ export type MangoApiPeopleSearchIn = {
     /**
      * Filter
      */
-    filter?: 'all' | 'pending' | 'invited' | 'disabled';
+    filter?: 'all' | 'pending' | 'invited' | 'disabled' | 'area_required';
     /**
      * Prefix
      */
@@ -5612,6 +5630,36 @@ export type SearchPeopleResponses = {
 };
 
 export type SearchPeopleResponse = SearchPeopleResponses[keyof SearchPeopleResponses];
+
+export type ChangePersonAreaData = {
+    body: AreaIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/admin/people/{user_id}/area';
+};
+
+export type ChangePersonAreaErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ChangePersonAreaError = ChangePersonAreaErrors[keyof ChangePersonAreaErrors];
+
+export type ChangePersonAreaResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActionOut;
+};
+
+export type ChangePersonAreaResponse = ChangePersonAreaResponses[keyof ChangePersonAreaResponses];
 
 export type DisablePersonData = {
     body: ReasonIn;
