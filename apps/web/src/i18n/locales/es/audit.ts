@@ -163,6 +163,19 @@ export const audit = {
     schedule: {
       report_download: 'Reporte descargado',
     },
+    kb: {
+      create: 'Knowledge base creada',
+      update: 'Knowledge base editada',
+      upload: 'Documentos agregados',
+      doc_remove: 'Documento quitado',
+      source_propose: 'Bucket propuesto',
+      source_approve: 'Bucket aprobado',
+      source_reject: 'Bucket rechazado',
+      sync: 'Sincronización de knowledge base',
+      search_test: 'Búsqueda de prueba',
+      query: 'Consulta a knowledge base',
+      delete: 'Knowledge base borrada',
+    },
     account: {
       mfa_enroll: 'MFA configurado',
       mfa_reset: 'MFA restablecido · sesiones cerradas',
@@ -265,6 +278,14 @@ export const audit = {
   links: {
     budgets: 'Abrir Presupuestos',
     settings: 'Abrir Ajustes',
+    knowledge: 'Abrir Knowledge Bases',
+  },
+  // Design: why a synchronization of a knowledge base did not apply (panel, «Motivo»).
+  kbSync: {
+    in_progress: 'Ya había una sincronización en curso',
+    budget:
+      'El presupuesto de quien la pidió (o, si es la programada, de quien la creó) no alcanza para los embeddings',
+    sync_failed: 'No se pudo leer el bucket',
   },
   drawer: {
     copy: 'Copiar JSON',

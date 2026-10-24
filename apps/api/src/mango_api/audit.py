@@ -29,9 +29,11 @@ _QUERY_LIMIT = 200
 # Allowed read-only authorization decisions (``exclude=reads``). Events emitted since the
 # ``read_only`` flag exists carry it; older ones are recognized by their action.
 READ_ACTIONS = frozenset({"ViewAdmin", "ViewAudit", "ViewGroups", "ViewApprovals", "ViewInbox"})
-# Events that record a read and nothing else: reading the directory of the people screen, and
-# a session recovered from its cookie (every page load leaves one; nothing changes).
-READ_EVENTS = frozenset({"directory.list", "session.renewed"})
+# Events that record a read and nothing else: reading the directory of the people screen, a
+# session recovered from its cookie (every page load leaves one; nothing changes), and an
+# agent's search of its knowledge bases (one per turn that searches; the design shows it with
+# «Mostrar lecturas»). «Probar búsqueda» (`kb.search`) is not: a person ran it on purpose.
+READ_EVENTS = frozenset({"directory.list", "session.renewed", "kb.retrieve"})
 _SK_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+00:00#[0-9a-f]{32}$")
 _CURSOR_MAX = 128
 

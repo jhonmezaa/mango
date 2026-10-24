@@ -9,6 +9,7 @@ import {
   isPermAction,
   isLateSessionEnd,
   isSessionEndReason,
+  isKbSyncReason,
   isSessionRejectCode,
   outcomeClass,
   TONE_COLOR,
@@ -203,6 +204,14 @@ export function AuditDrawer({
               <div className="mk-kv">
                 <span>{t('audit.drawer.reason')}</span>
                 <span className="break-words">{t(`audit.sessionReject.${row.error}`)}</span>
+              </div>
+            ) : null}
+            {row.event === 'kb.sync' && row.error ? (
+              <div className="mk-kv">
+                <span>{t('audit.drawer.reason')}</span>
+                <span className="break-words">
+                  {isKbSyncReason(row.error) ? t(`audit.kbSync.${row.error}`) : row.error}
+                </span>
               </div>
             ) : null}
             {row.requested && (

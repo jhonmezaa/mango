@@ -151,6 +151,25 @@ const SESSION_LATE_SET: ReadonlySet<string> = new Set<SessionEndReason>([
 ]);
 export const isLateSessionEnd = (reason: string): boolean => SESSION_LATE_SET.has(reason);
 
+/**
+ * How a synchronization ended (`functions/knowledge-sync`, `finish`): it does not record an
+ * `outcome` of the audit's three, so «done» is applied, the asking (`kb.sync_request`) is the
+ * request, and anything else did not apply, with the design's reason code (`KB_SYNC_REASONS`).
+ */
+const KB_SYNC_ERRORS: Readonly<Record<string, string>> = {
+  budget: 'budget',
+  unreadable: 'sync_failed',
+  busy: 'in_progress',
+  error: 'error',
+  abandoned: 'abandoned',
+};
+
+/** Design: reasons of a synchronization that did not apply with a text (`audit.kbSync.*`). */
+export const KB_SYNC_REASONS = ['in_progress', 'budget', 'sync_failed'] as const;
+export type KbSyncReason = (typeof KB_SYNC_REASONS)[number];
+const KB_SYNC_REASON_SET: ReadonlySet<string> = new Set(KB_SYNC_REASONS);
+export const isKbSyncReason = (code: string): code is KbSyncReason => KB_SYNC_REASON_SET.has(code);
+
 /** Design `SESSION_REJECT`: codes of `session.rejected` with a text (`audit.sessionReject.*`). */
 export const SESSION_REJECT_CODES = ['invalid_refresh_token', 'sub_mismatch'] as const;
 export type SessionRejectCode = (typeof SESSION_REJECT_CODES)[number];
@@ -240,6 +259,25 @@ const EVENT_ACTIONS = {
   'mcp.pack.disabled': 'mcp.disable',
   // Design part D (D86): a run's PDF left Mango. Not a read: always shown.
   'schedule.report_download': 'schedule.report_download',
+  // Knowledge Bases (design round 18: `kb.*` in «Disponible hoy»). The API names some of them
+  // otherwise: saving documents is «Documentos agregados», the verified end of a deletion is the
+  // same «Knowledge base borrada», asking for a synchronization and the synchronization are one
+  // action, «Probar búsqueda» is `kb.search` and an agent's search is `kb.retrieve`. Events the
+  // design does not name (the signed upload, the role of a source, the schedule, a removed
+  // source) keep the generic format.
+  'kb.create': 'kb.create',
+  'kb.update': 'kb.update',
+  'kb.delete': 'kb.delete',
+  'kb.deleted': 'kb.delete',
+  'kb.documents_save': 'kb.upload',
+  'kb.document_delete': 'kb.doc_remove',
+  'kb.source_propose': 'kb.source_propose',
+  'kb.source_approve': 'kb.source_approve',
+  'kb.source_reject': 'kb.source_reject',
+  'kb.sync_request': 'kb.sync',
+  'kb.sync': 'kb.sync',
+  'kb.search': 'kb.search_test',
+  'kb.retrieve': 'kb.query',
 } as const;
 type EventAction = (typeof EVENT_ACTIONS)[keyof typeof EVENT_ACTIONS];
 const hasEventAction = (event: string): event is keyof typeof EVENT_ACTIONS =>
@@ -626,15 +664,27 @@ function roleOf(item: AuditEvent): ActorRole | null {
   return null;
 }
 
+function kbSyncOf(
+  event: string,
+  value: string | null,
+): { outcome: Outcome; error: string | null } | null {
+  if (event === 'kb.sync_request') return { outcome: 'requested', error: null };
+  if (event !== 'kb.sync' || value === null) return null;
+  if (value === 'done') return { outcome: 'applied', error: null };
+  return { outcome: 'rejected', error: KB_SYNC_ERRORS[value] ?? value };
+}
+
 export function toAuditRow(item: AuditEvent, index: number): AuditRow {
   const detail = item.detail;
   const known = knownAction(item.event, detail);
   const action = known ?? item.event;
   const outcomeValue = str(detail.outcome);
+  const kbSync = kbSyncOf(item.event, outcomeValue);
   const outcome =
-    outcomeValue === 'requested' || outcomeValue === 'applied' || outcomeValue === 'rejected'
+    kbSync?.outcome ??
+    (outcomeValue === 'requested' || outcomeValue === 'applied' || outcomeValue === 'rejected'
       ? outcomeValue
-      : null;
+      : null);
   // A rejected session is a refusal without an `outcome`: its reason is the code.
   const refused = item.event === 'session.rejected' && outcome === null;
   const rowDetail = detailOf(item.event, known, detail);
@@ -656,7 +706,7 @@ export function toAuditRow(item: AuditEvent, index: number): AuditRow {
     action,
     known,
     outcome: refused ? 'rejected' : shownOutcome,
-    error: refused ? str(detail.reason) : str(detail.error),
+    error: refused ? str(detail.reason) : (kbSync?.error ?? str(detail.error)),
     actor: item.actor_email ?? item.user_id ?? '',
     role: roleOf(item),
     resource: resource ? resource.id : null,

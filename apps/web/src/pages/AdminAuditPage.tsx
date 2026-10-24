@@ -427,10 +427,12 @@ export function AdminAuditPage() {
   const linkOf = (row: AuditRow) =>
     row.category === 'budgets'
       ? { to: '/budgets', label: t('audit.links.budgets') }
-      : // Design `AUDIT_LINK`: the people of the directory are managed in Ajustes too.
-        row.category === 'config' || row.action.startsWith('directory.')
-        ? { to: '/settings', label: t('audit.links.settings') }
-        : null;
+      : row.action.startsWith('kb.')
+        ? { to: '/knowledge', label: t('audit.links.knowledge') }
+        : // Design `AUDIT_LINK`: the people of the directory are managed in Ajustes too.
+          row.category === 'config' || row.action.startsWith('directory.')
+          ? { to: '/settings', label: t('audit.links.settings') }
+          : null;
 
   const crumbs = [t('audit.crumbGov'), t('audit.crumb')];
 

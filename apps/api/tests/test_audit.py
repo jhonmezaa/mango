@@ -192,11 +192,14 @@ def test_reads_can_be_hidden_but_denials_and_writes_stay(log: Any) -> None:
     started = _put(db, t, 9, "session.started", federated=False)
     ended = _put(db, t, 10, "session.ended", reason="sign_out")
     refused = _put(db, t, 11, "session.rejected", reason="sub_mismatch")
+    # An agent's search of its knowledge bases is a read; «Probar búsqueda» is not.
+    _put(db, t, 12, "kb.retrieve", outcome="applied")
+    tested = _put(db, t, 13, "kb.search", outcome="applied")
     everything = audit.page(_query(), now=NOW)
-    assert len(everything.items) == 11
+    assert len(everything.items) == 13
     page = audit.page(_query(exclude_reads=True), now=NOW)
     assert sorted(r["event_id"] for r in page.items) == sorted(
-        [denied, chat, write, invite, started, ended, refused]
+        [denied, chat, write, invite, started, ended, refused, tested]
     )
 
 

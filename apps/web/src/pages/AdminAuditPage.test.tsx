@@ -124,6 +124,23 @@ describe('AdminAuditPage', () => {
     expect(screen.getByText('1 evento')).toBeInTheDocument();
   });
 
+  it('names a knowledge base synchronization that did not apply, why, and where to go', async () => {
+    const user = userEvent.setup();
+    const sync: AuditEvent = {
+      event_id: 'k1'.padEnd(32, '0'),
+      ts: iso(1),
+      event: 'kb.sync',
+      user_id: 'sub-ana',
+      hash: 'd'.repeat(64),
+      detail: { kb_id: '01JC0000000000000000000001', outcome: 'unreadable' },
+    };
+    renderPage({ listAuditEvents: vi.fn(() => page([sync])) });
+    await user.click(await screen.findByText('Sincronización de knowledge base'));
+    const panel = screen.getByRole('dialog', { name: 'Sincronización de knowledge base' });
+    expect(within(panel).getByText('No se pudo leer el bucket')).toBeVisible();
+    expect(within(panel).getByRole('button', { name: /Abrir Knowledge Bases/ })).toBeVisible();
+  });
+
   it('shows the recorded role and the event id', async () => {
     const user = userEvent.setup();
     renderPage({});

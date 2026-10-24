@@ -4,6 +4,7 @@ import { es } from '../../i18n/locales/es';
 import {
   csvCell,
   groupTurnAuthz,
+  isKbSyncReason,
   isLateSessionEnd,
   isSessionEndReason,
   isSessionRejectCode,
@@ -46,6 +47,50 @@ describe('toAuditRow', () => {
       },
     });
     expect(es.audit.actions.schedule.report_download).toBe('Reporte descargado');
+  });
+
+  it('names the events of knowledge bases as the design does (round 18)', () => {
+    const names: [string, string, string][] = [
+      ['kb.create', 'kb.create', 'Knowledge base creada'],
+      ['kb.update', 'kb.update', 'Knowledge base editada'],
+      ['kb.delete', 'kb.delete', 'Knowledge base borrada'],
+      ['kb.deleted', 'kb.delete', 'Knowledge base borrada'],
+      ['kb.documents_save', 'kb.upload', 'Documentos agregados'],
+      ['kb.document_delete', 'kb.doc_remove', 'Documento quitado'],
+      ['kb.source_propose', 'kb.source_propose', 'Bucket propuesto'],
+      ['kb.source_approve', 'kb.source_approve', 'Bucket aprobado'],
+      ['kb.source_reject', 'kb.source_reject', 'Bucket rechazado'],
+      ['kb.search', 'kb.search_test', 'Búsqueda de prueba'],
+      ['kb.retrieve', 'kb.query', 'Consulta a knowledge base'],
+    ];
+    for (const [name, known, label] of names) {
+      const row = toAuditRow(event(name, { kb_id: 'k', outcome: 'applied' }), 0);
+      expect(row).toMatchObject({ known, category: 'config' });
+      const [group, action] = known.split('.') as ['kb', keyof typeof es.audit.actions.kb];
+      expect(es.audit.actions[group][action]).toBe(label);
+    }
+    // What the design does not name keeps the event and the generic summary.
+    expect(toAuditRow(event('kb.source_role', { op: 'ensure' }), 0).known).toBeNull();
+  });
+
+  it('says how a synchronization of a knowledge base ended and why it did not apply', () => {
+    const asked = toAuditRow(event('kb.sync_request', { kb_id: 'k', outcome: 'started' }), 0);
+    expect(asked).toMatchObject({ known: 'kb.sync', outcome: 'requested', error: null });
+    const done = toAuditRow(event('kb.sync', { kb_id: 'k', outcome: 'done' }), 0);
+    expect(done).toMatchObject({ outcome: 'applied', error: null });
+    const reasons: [string, string][] = [
+      ['budget', 'budget'],
+      ['unreadable', 'sync_failed'],
+      ['busy', 'in_progress'],
+      ['error', 'error'],
+    ];
+    for (const [outcome, error] of reasons) {
+      const row = toAuditRow(event('kb.sync', { kb_id: 'k', outcome }), 0);
+      expect(row).toMatchObject({ outcome: 'rejected', error, tone: 'red' });
+    }
+    expect(isKbSyncReason('sync_failed')).toBe(true);
+    expect(isKbSyncReason('error')).toBe(false);
+    expect(es.audit.kbSync.sync_failed).toBe('No se pudo leer el bucket');
   });
 
   it('maps budget writes to the design actions with before/after and outcome', () => {
