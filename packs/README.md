@@ -214,6 +214,8 @@ MANGO_PACK_SNAPSHOT=container mise run pack -- packs/aws-pricing dist/packs
 
 **Cuarentena de 7 días.** `source.exclude_newer` debe tener al menos 7 días. Con ese corte, `uv` ignora todo lo publicado después, también en las dependencias transitivas. Un parche de seguridad puede saltarla declarando `source.quarantine_exception` con el CVE o GHSA; queda en el manifiesto firmado y se revisa en la PR.
 
+Como el corte es uno solo para todo el pack, moverlo para tomar el parche mete también, sin cuarentena, todo lo demás publicado en esos días. Por eso, junto con la excepción, `constraints.txt` acota por arriba cada dependencia que el corte nuevo subiría, hasta que el lock solo cambie el paquete corregido (y los que este exija). Las cotas se quitan cuando el corte cumple 7 días. Primera vez: el 2026-10-24, `fastmcp` 4.1.2 en `aws-billing` (GHSA-vqqp-x5qm-5qp4, GHSA-7xgj-8392-5q4r) y `certifi` 2026.10.19 en `aws-cloudwatch` (GHSA-6q48-6c7w-9gw2), con decisión del dueño.
+
 **Reproducible** quiere decir que cualquiera, con este repositorio en el mismo commit, obtiene el mismo zip y puede comparar su hash con el firmado. Por eso el zip va sin comprimir por defecto (60 MB en Pricing; el límite del Runtime es 250 MB): la salida de la compresión depende de la librería que comprime.
 
 ### Tamaño del zip
@@ -226,7 +228,7 @@ Un pack que no cabe sin comprimir declara `compression: deflate` en su `build.ya
 
 ### Restricciones del lock
 
-`constraints.txt` (opcional) acota por arriba la versión de una dependencia cuando su última versión no publica wheel para la plataforma del Runtime (`aarch64-manylinux2014`). Solo admite líneas `nombre<versión`: no puede añadir paquetes, índices, URLs ni hashes, y no puede nombrar el paquete upstream. El lock sigue fijando todo por hash, y `check-lock` lo vuelve a resolver con las mismas cotas.
+`constraints.txt` (opcional) acota por arriba la versión de una dependencia cuando su última versión no publica wheel para la plataforma del Runtime (`aarch64-manylinux2014`), o mientras dura la cuarentena de las demás dependencias tras una excepción de seguridad (arriba). Solo admite líneas `nombre<versión`: no puede añadir paquetes, índices, URLs ni hashes, y no puede nombrar el paquete upstream. El lock sigue fijando todo por hash, y `check-lock` lo vuelve a resolver con las mismas cotas.
 
 En `aws-cloudwatch`: `numpy`, `pandas`, `scipy` y `statsmodels` solo publican wheels arm64 para `manylinux_2_28` desde hace varias versiones. `pip-audit` no reporta vulnerabilidades en las versiones fijadas. **Al actualizar el pack, revisar si las cotas siguen haciendo falta** (si AgentCore documenta otra plataforma) y repetir la auditoría.
 

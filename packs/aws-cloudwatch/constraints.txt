@@ -5,3 +5,13 @@ numpy<2.3
 pandas<2.3.3
 scipy<1.17
 statsmodels<0.15
+
+# Quarantine of the security patch (packs/README.md, «Cuarentena de 7 días»): the cutoff moved
+# to take the fixed release before its 7 days; these bounds keep every other package at the
+# version the 7-day cutoff of 2026-10-15 resolved to. Drop them when the cutoff is 7 days old.
+boto3<1.43.115
+botocore<1.43.115
+httpcore2<2.14.0
+httpx2<2.14.0
+s3transfer<0.19.3
+starlette<1.9.0

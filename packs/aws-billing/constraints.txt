@@ -1,0 +1,15 @@
+# Quarantine of the security patch (packs/README.md, «Cuarentena de 7 días»): the cutoff moved
+# to take the fixed release before its 7 days; these bounds keep every other package at the
+# version the 7-day cutoff of 2026-10-15 resolved to. Drop them when the cutoff is 7 days old.
+boto3<1.43.115
+botocore<1.43.115
+cachetools<7.2.2
+griffelib<2.4.0
+httpcore2<2.14.0
+httpx2<2.14.0
+joserfc<1.7.6
+platformdirs<4.13.1
+pydantic-settings<2.16.1
+s3transfer<0.19.3
+starlette<1.9.0
+websockets<17.3
