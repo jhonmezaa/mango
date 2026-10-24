@@ -6,6 +6,7 @@ import { ApiError } from '../api/errors';
 import type { ConversationSummary, Me } from '../api/schemas';
 import type { RuntimeConfig } from '../config/runtimeConfig';
 import { FullPageRetry } from '../components/FullPageRetry';
+import { AreaRequired } from '../pages/login/AreaRequired';
 import { LoginLayout } from '../pages/login/LoginLayout';
 import { NoAccess } from '../pages/login/NoAccess';
 import { RestoringSession } from '../pages/login/RestoringSession';
@@ -25,6 +26,7 @@ export function SessionProvider({
     refreshSession,
     logout,
     displayEmail,
+    displayGroups,
     restored,
     federated,
   } = useAuth();
@@ -43,6 +45,8 @@ export function SessionProvider({
   const [meToken, setMeToken] = useState(0);
   // Verified session without a group (403 `no_group`, D20): deny by default.
   const [noGroup, setNoGroup] = useState(false);
+  // A bu-lead without its one area (403 `area_required`, D60 (10)): an administrator fixes it.
+  const [noArea, setNoArea] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
   const [conversationsError, setConversationsError] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -59,6 +63,7 @@ export function SessionProvider({
       (error: unknown) => {
         if (cancelled) return;
         if (error instanceof ApiError && error.code === 'no_group') setNoGroup(true);
+        else if (error instanceof ApiError && error.code === 'area_required') setNoArea(true);
         else setMeError(true);
       },
     );
@@ -149,9 +154,19 @@ export function SessionProvider({
     try {
       setMe(await api.getMe());
       setNoGroup(false);
+      setNoArea(false);
       return true;
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'no_group') return false;
+      if (error instanceof ApiError && error.code === 'no_group') {
+        setNoArea(false);
+        setNoGroup(true);
+        return false;
+      }
+      if (error instanceof ApiError && error.code === 'area_required') {
+        setNoGroup(false);
+        setNoArea(true);
+        return false;
+      }
       throw error;
     }
   }, [api, refreshSession]);
@@ -161,6 +176,20 @@ export function SessionProvider({
       <LoginLayout>
         <NoAccess
           email={displayEmail ?? ''}
+          onRecheck={recheck}
+          onLogout={() => {
+            void logout();
+          }}
+        />
+      </LoginLayout>
+    );
+  }
+  if (noArea && !me) {
+    return (
+      <LoginLayout>
+        <AreaRequired
+          email={displayEmail ?? ''}
+          groups={displayGroups}
           onRecheck={recheck}
           onLogout={() => {
             void logout();

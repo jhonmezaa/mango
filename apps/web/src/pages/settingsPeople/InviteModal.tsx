@@ -4,7 +4,15 @@ import { useTranslation } from 'react-i18next';
 import { GovModal } from '../../components/admin/govKit';
 import { CheckIcon } from '../../components/icons';
 import type { InviteServerError } from './errors';
-import { ADMIN_GROUP, inviteError, isExternal, isSensitive, type GroupOption } from './model';
+import {
+  ADMIN_GROUP,
+  areasOf,
+  inviteError,
+  isExternal,
+  isSensitive,
+  lacksArea,
+  type GroupOption,
+} from './model';
 
 interface Props {
   /** Groups already chosen: `mango-admin` when the first-day card invites the second admin. */
@@ -38,6 +46,13 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
   const local = inviteError(address);
   // A malformed address stays on the field; the other refusals are the answer to the submit.
   const shown = tried ? (local ?? (refused === 'format' ? refused : null)) : null;
+  // A bu-lead needs exactly one area (D60 (10)): said before sending; the API refuses it too.
+  const areas = areasOf(groups);
+  const areaError = lacksArea(groups)
+    ? areas.length
+      ? t('people.inviteModal.areaMany', { groups: areas.join(', ') })
+      : t('people.inviteModal.areaNone')
+    : null;
   const pickable = options.filter(
     (group) => !isSensitive(group.id) || (group.id === ADMIN_GROUP && onlyAdmin),
   );
@@ -45,7 +60,7 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
   const submit = () => {
     setTried(true);
     setRefused(null);
-    if (local || busy) return;
+    if (local || areaError || busy) return;
     setBusy(true);
     void onInvite(address, [...groups])
       .then((result) => {
@@ -144,12 +159,19 @@ export function InviteModal({ preset, admins, options, domains, onClose, onInvit
             ? t('people.inviteModal.bootstrap')
             : t('people.inviteModal.sensitiveLater')}
         </div>
+        {areaError ? (
+          <div className="g-err" role={tried ? 'alert' : 'status'}>
+            {areaError}
+          </div>
+        ) : null}
       </div>
-      {refused !== null && refused !== 'format' ? (
+      {refused !== null && refused !== 'format' && !(refused === 'area' && areaError) ? (
         <div className="g-err" role="alert">
           {refused === 'failed'
             ? t('people.inviteModal.failed')
-            : t(`people.inviteModal.errors.${refused}`)}
+            : refused === 'area'
+              ? t('people.inviteModal.areaNone')
+              : t(`people.inviteModal.errors.${refused}`)}
         </div>
       ) : null}
     </GovModal>

@@ -23,7 +23,7 @@ const APPROVE_REFUSALS = [
   'already_disabled',
   'already_enabled',
 ] as const;
-type ApproveRefusal = (typeof APPROVE_REFUSALS)[number];
+type ApproveRefusal = (typeof APPROVE_REFUSALS)[number] | 'area_required';
 
 /** The caller stopped being an administrator with the session still open (design `forbidden`). */
 function isForbidden(error: unknown): boolean {
@@ -57,6 +57,10 @@ export function decisionErrorKey(error: unknown, approving = false): PeopleError
   if (approving && error instanceof ApiError && error.code === 'user_not_found') {
     return 'people.errors.approve.user_not_found';
   }
+  // A 422: without finops-central the person would be a bu-lead without its one area (D60).
+  if (approving && error instanceof ApiError && error.code === 'area_required') {
+    return 'people.errors.approve.area_required';
+  }
   if (error instanceof ApiError && (error.status === 409 || error.status === 410)) {
     if (error.code === 'busy') return 'people.errors.busy';
     const refusal = APPROVE_REFUSALS.find((code) => code === error.code);
@@ -66,12 +70,14 @@ export function decisionErrorKey(error: unknown, approving = false): PeopleError
   return isForbidden(error) ? 'people.errors.forbidden' : 'people.errors.generic';
 }
 
-export type InviteServerError = 'format' | 'publicDomain' | 'exists';
+/** `area`: a bu-lead without exactly one area (422 `area_required`, D60 (10)). */
+export type InviteServerError = 'format' | 'publicDomain' | 'exists' | 'area';
 
 const INVITE_CODES: Record<string, InviteServerError> = {
   invalid_email: 'format',
   public_domain: 'publicDomain',
   already_exists: 'exists',
+  area_required: 'area',
 };
 
 /** The refusals of an invitation the design has a text for; `null` is its generic failure. */

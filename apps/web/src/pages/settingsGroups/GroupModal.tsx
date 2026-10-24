@@ -1,8 +1,9 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { GovModal } from '../../components/admin/govKit';
-import { InfoIcon, TrashIcon } from '../../components/icons';
+import { useSession } from '../../auth/useSession';
+import { InfoIcon, TrashIcon, WarnIcon } from '../../components/icons';
 import {
   CHANGE_TTL_HOURS,
   DESCRIPTION_MAX_LENGTH,
@@ -69,6 +70,26 @@ export function GroupModal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const { api } = useSession();
+  // Deleting an area group: who it is the only area of (D44 (9)). A warning, never a block; it
+  // says nothing when the directory cannot say.
+  const [stranded, setStranded] = useState<{ emails: string[]; count: number } | null>(null);
+  const areaGroup = group !== null && isAreaGroupName(group.id) ? group.id : null;
+  useEffect(() => {
+    if (!confirmDelete || areaGroup === null) return;
+    const controller = new AbortController();
+    api.call('onlyAreaPeople', { body: { group: areaGroup } }, { signal: controller.signal }).then(
+      (answer) => {
+        setStranded({ emails: answer.emails, count: answer.count });
+      },
+      () => {
+        if (!controller.signal.aborted) setStranded(null);
+      },
+    );
+    return () => {
+      controller.abort();
+    };
+  }, [api, areaGroup, confirmDelete]);
 
   const approval = needsApproval(group, draft);
   const used = group?.agents ?? [];
@@ -387,6 +408,20 @@ export function GroupModal({
                     .map((agent) => agent.name)
                     .join(', ') + (used.length > MAX_NAMES ? '…' : ''),
               })}
+            </div>
+          </div>
+        ) : null}
+        {confirmDelete && stranded && stranded.count > 0 ? (
+          <div className="mc-alert amber" role="status">
+            <WarnIcon size={14} />
+            <div>
+              {t('groups.modal.stranded', { count: stranded.count })}{' '}
+              <span className="mono [overflow-wrap:anywhere]">{stranded.emails.join(', ')}</span>
+              {stranded.count > stranded.emails.length
+                ? t('groups.modal.strandedMore', { count: stranded.count - stranded.emails.length })
+                : ''}
+              {'. '}
+              {t('groups.modal.strandedTail', { count: stranded.count })}
             </div>
           </div>
         ) : null}

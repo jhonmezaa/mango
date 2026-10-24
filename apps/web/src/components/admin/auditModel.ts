@@ -94,6 +94,8 @@ const DIRECTORY_ACTIONS = [
   'directory.invite',
   'directory.group_add',
   'directory.group_remove',
+  // D60 (11): from one area group to another in one step.
+  'directory.area_change',
   'directory.disable',
   'directory.enable',
   'directory.member_propose',
@@ -339,7 +341,7 @@ export type Outcome = 'requested' | 'applied' | 'rejected';
 export type ActorRole = 'lead_admin' | 'admin' | 'owner' | 'user';
 
 /** Filters of Ajustes › Personas, as the API records them with a search. */
-const DIRECTORY_FILTERS = ['all', 'pending', 'invited', 'disabled'] as const;
+const DIRECTORY_FILTERS = ['all', 'pending', 'invited', 'disabled', 'area_required'] as const;
 export type DirectoryFilter = (typeof DIRECTORY_FILTERS)[number];
 
 /** What a `directory.list` read, with the counts the API recorded (never emails or the text). */

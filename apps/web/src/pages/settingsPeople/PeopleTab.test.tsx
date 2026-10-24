@@ -312,7 +312,8 @@ describe('Panel of a person', () => {
       'mango-admin · con aprobación',
       'mango-agent-creator',
       'finops-central · con aprobación',
-      'bu-lead',
+      // Without an area, bu-lead would leave her a bu-lead Mango refuses (D60 (10)).
+      'bu-lead · antes, su área',
       'bu-finanzas · área finanzas',
     ]);
     await user.selectOptions(select, 'bu-finanzas');
@@ -375,7 +376,7 @@ describe('Panel of a person', () => {
     });
     const { user, notify } = renderTab(call);
     const panel = await openPanel(user, ana.email);
-    await user.selectOptions(within(panel).getByRole('combobox'), 'bu-lead');
+    await user.selectOptions(within(panel).getByRole('combobox'), 'mango-agent-creator');
     await user.click(within(panel).getByRole('button', { name: 'Agregar' }));
     await waitFor(() => {
       expect(notify).toHaveBeenCalledWith('Propuesta enviada · la debe aprobar otro admin');
@@ -1360,5 +1361,162 @@ describe('Restablecimientos de MFA', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'No se pudo completar la acción. Inténtalo de nuevo.',
     );
+  });
+});
+
+describe('Líder de área sin área (D60 (10), (11))', () => {
+  const AREA_GROUPS = {
+    ...GROUPS,
+    items: [
+      ...GROUPS.items,
+      {
+        id: 'bu-retail',
+        type: 'area' as const,
+        area: 'retail',
+        description: 'Líderes de Retail',
+        version: 0,
+        system: false,
+        fixed_type: false,
+        agents: [],
+      },
+    ],
+  };
+
+  it('says how many bu-leads cannot sign in, marks them and lists them with their filter', async () => {
+    const lost = person({ email: 'sin-area@example.com', groups: ['bu-lead'] });
+    const both = person({
+      email: 'dos-areas@example.com',
+      groups: ['bu-finanzas', 'bu-lead', 'bu-retail'],
+    });
+    const call = apiWith({
+      searchPeople: ({ body }: Input) =>
+        body?.filter === 'area_required'
+          ? directory([lost, both], { area_required: 2 })
+          : directory([lost, both, person()], { area_required: 2 }),
+    });
+    const { user } = renderTab(call);
+    const banner = await screen.findByText('2 líderes de área no pueden entrar.');
+    expect(banner.closest('[role="status"]')).toHaveTextContent(
+      'Tienen bu-lead y ningún grupo de área, o más de uno: un líder de área necesita exactamente uno.',
+    );
+    expect(screen.getByText('Sin área · no entra')).toBeInTheDocument();
+    expect(screen.getByText('2 áreas · no entra')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ver cuáles' }));
+    expect(screen.getByRole('button', { name: /Área por corregir/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await waitFor(() => {
+      expect(calls(call, 'searchPeople').at(-1)).toMatchObject({
+        body: { filter: 'area_required' },
+      });
+    });
+    expect(screen.queryByText('2 líderes de área no pueden entrar.')).toBeNull();
+  });
+
+  it('hides the filter while nobody needs it', async () => {
+    renderTab(apiWith({ searchPeople: directory([person()]) }));
+    await screen.findByRole('button', { name: /Gestionar/ });
+    expect(screen.queryByRole('button', { name: /Área por corregir/ })).toBeNull();
+  });
+
+  it('moves a bu-lead to another area in one step, and never lets their only one go', async () => {
+    const lead = person({ email: 'lider@example.com', groups: ['bu-finanzas', 'bu-lead'] });
+    let groups = lead.groups;
+    const call = apiWith({
+      getAdminGroups: AREA_GROUPS,
+      searchPeople: () => directory([{ ...lead, groups }]),
+      changePersonArea: ({ body }: Input) => {
+        groups = ['bu-lead', String(body?.group)];
+        return { result: 'applied', change_id: null };
+      },
+    });
+    const { user, notify } = renderTab(call);
+    const panel = await openPanel(user, lead.email);
+    expect(within(panel).getByRole('button', { name: 'Quitar bu-finanzas' })).toBeDisabled();
+    expect(
+      within(panel).getByText(/^Es su única área y un líder de área necesita una/),
+    ).toBeVisible();
+    // A second area would leave her out too: the screen says so before sending.
+    const select = within(panel).getByRole('combobox', { name: 'Agregar a un grupo' });
+    expect(within(select).getByRole('option', { name: /bu-retail/ })).toHaveTextContent(
+      'bu-retail · área retail · usa «Cambiar de área»',
+    );
+    await user.selectOptions(select, 'bu-retail');
+    expect(within(panel).getByRole('status')).toHaveTextContent(
+      'No se puede dar otra área a un líder de área: ya tiene bu-finanzas. Para pasarlo a bu-retail, usa «Cambiar de área».',
+    );
+    expect(within(panel).getByRole('button', { name: 'Agregar' })).toBeDisabled();
+    await user.click(within(panel).getByRole('button', { name: 'Cambiar de área…' }));
+    await user.selectOptions(
+      within(panel).getByRole('combobox', { name: 'Nueva área' }),
+      'bu-retail',
+    );
+    expect(within(panel).getByText(/^Un solo paso: le quita bu-finanzas/)).toBeVisible();
+    await user.click(within(panel).getByRole('button', { name: 'Cambiar' }));
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalledWith('Área cambiada · bu-finanzas → bu-retail');
+    });
+    expect(calls(call, 'changePersonArea')).toEqual([
+      { path: { user_id: lead.user_id }, body: { current: 'bu-finanzas', group: 'bu-retail' } },
+    ]);
+    expect(calls(call, 'addGroup')).toHaveLength(0);
+  });
+
+  it('tells a bu-lead without an area why it cannot enter, and refuses bu-lead without one', async () => {
+    const lost = person({ email: 'sin-area@example.com', groups: ['bu-lead'] });
+    const fresh = person({ email: 'nueva@example.com', groups: ['people'] });
+    const call = apiWith({ searchPeople: directory([lost, fresh], { area_required: 1 }) });
+    const { user } = renderTab(call);
+    let panel = await openPanel(user, lost.email);
+    expect(
+      within(panel).getByText('No puede entrar a Mango.').closest('[role="status"]'),
+    ).toHaveTextContent(
+      'Tiene bu-lead y ningún grupo de área; un líder de área necesita exactamente uno. Dale su grupo de área o quítale bu-lead. En cuanto lo corrijas puede entrar con «Volver a comprobar», sin cerrar sesión.',
+    );
+    await user.click(within(panel).getByRole('button', { name: 'Cerrar' }));
+    panel = await openPanel(user, fresh.email);
+    await user.selectOptions(
+      within(panel).getByRole('combobox', { name: 'Agregar a un grupo' }),
+      'bu-lead',
+    );
+    expect(within(panel).getByRole('status')).toHaveTextContent(
+      'No se puede dar bu-lead: no tiene un grupo de área y un líder de área necesita exactamente uno. Dale antes su grupo bu-<área>.',
+    );
+    expect(within(panel).getByRole('button', { name: 'Agregar' })).toBeDisabled();
+  });
+
+  it('says why approving would leave a bu-lead without its area, and keeps it pending', async () => {
+    const call = apiWith({
+      searchPeople: directory([person()]),
+      getMemberChanges: { items: [change({ kind: 'remove', group: 'finops-central' })] },
+      approveMemberChange: new ApiError(422, 'area_required', 'server words'),
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No se pudo aprobar cccccccc: sin finops-central quedaría como líder de área sin exactamente un área. Déjale antes un área o quítale bu-lead. El cambio sigue pendiente.',
+    );
+    expect(screen.queryByText('server words')).toBeNull();
+  });
+
+  it('does not invite a bu-lead without exactly one area', async () => {
+    const call = apiWith({ getAdminGroups: AREA_GROUPS, searchPeople: directory([person()]) });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: /Invitar persona/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Invitar persona' });
+    await user.type(within(dialog).getByLabelText('Correo'), 'lider@example.com');
+    const groups = within(dialog).getByRole('group', { name: /Grupos/ });
+    await user.click(within(groups).getByRole('button', { name: 'bu-lead' }));
+    expect(within(dialog).getByRole('status')).toHaveTextContent(
+      'Un líder de área necesita exactamente un área: elige también su grupo bu-<área>.',
+    );
+    await user.click(within(groups).getByRole('button', { name: 'bu-finanzas' }));
+    await user.click(within(groups).getByRole('button', { name: 'bu-retail' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Enviar invitación' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Un líder de área necesita exactamente un área: deja solo uno de bu-finanzas, bu-retail.',
+    );
+    expect(calls(call, 'invitePerson')).toHaveLength(0);
   });
 });

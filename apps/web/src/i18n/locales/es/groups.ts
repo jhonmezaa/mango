@@ -67,6 +67,15 @@ export const groups = {
     reasonHintExpires: 'Si nadie lo decide en {{hours}} h, vence.',
     usedBy_one: 'Un agente usa este grupo: {{names}}.',
     usedBy_other: '{{count}} agentes usan este grupo: {{names}}.',
+    // Design: deleting the only area of some bu-leads (D44 (9)); a warning, not a block.
+    stranded_one: 'Es la única área de 1 líder de área:',
+    stranded_other: 'Es la única área de {{count}} líderes de área:',
+    strandedMore_one: ' y {{count}} más',
+    strandedMore_other: ' y {{count}} más',
+    strandedTail_one:
+      'Si se elimina, no podrá entrar a Mango hasta tener otra. Cámbialo de área antes en Ajustes › Personas.',
+    strandedTail_other:
+      'Si se elimina, no podrán entrar a Mango hasta tener otra. Cámbialos de área antes en Ajustes › Personas.',
     delete: 'Eliminar',
     systemGroup: 'Grupo del sistema',
     deleteUsed: 'Lo usan agentes; perderán este acceso.',
@@ -119,6 +128,8 @@ export const groups = {
     summaryDeleteUsed_one: 'Lo usa {{count}} agente; perderá este acceso',
     summaryDeleteUsed_other: 'Lo usan {{count}} agentes; perderán este acceso',
     summaryDeleteUnused: 'Ningún agente lo usa',
+    summaryStranded_one: ' · es la única área de 1 líder de área, que no podrá entrar',
+    summaryStranded_other: ' · es la única área de {{count}} líderes de área, que no podrán entrar',
     mine: 'Tu propuesta',
     by: 'Propuesta de {{who}}',
     approvedBy: 'Aprobó {{who}}',

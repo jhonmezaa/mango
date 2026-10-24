@@ -7,7 +7,7 @@ import { useSession } from '../../auth/useSession';
 import { MfaResetList } from '../../components/account/MfaResetList';
 import { Skel } from '../../components/admin/govKit';
 import type { ToastTone } from '../../components/admin/useToasts';
-import { ChevronRightIcon, InfoIcon, PlusIcon, SearchIcon } from '../../components/icons';
+import { ChevronRightIcon, InfoIcon, PlusIcon, SearchIcon, WarnIcon } from '../../components/icons';
 import { PersonChip } from '../../components/PersonChip';
 import { unitsToMap } from '../../lib/businessUnits';
 import type { GroupsAdmin } from '../settingsGroups/model';
@@ -247,6 +247,7 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
   // The counters are of the whole directory: the last answer stands while another loads.
   const totals = listing?.data ?? null;
   const waiting = totals?.pending ?? 0;
+  const areaRequired = totals?.area_required ?? 0;
   const ownGroups = registry
     ? registry.filter((group) => !SYSTEM_GROUPS.includes(group.id)).length
     : null;
@@ -327,6 +328,16 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           person,
           t('people.toast.groupAdded'),
           (previous) => ({ ...previous, groups: [...previous.groups, group].sort() }),
+        ),
+      changeArea: (current, group) =>
+        changePerson(
+          () => api.call('changePersonArea', { path, body: { current, group } }),
+          person,
+          t('people.toast.areaChanged', { from: current, to: group }),
+          (previous) => ({
+            ...previous,
+            groups: previous.groups.map((other) => (other === current ? group : other)).sort(),
+          }),
         ),
       removeGroup: (group, reason) =>
         changePerson(
@@ -464,6 +475,27 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           </button>
         </div>
       ) : null}
+      {areaRequired > 0 && filter !== 'area_required' && !loading && !failed ? (
+        <div className="pp-pending" role="status">
+          <WarnIcon size={14} />
+          <div className="min-w-0 flex-1">
+            <b>{t('people.areaRequired.lead', { count: areaRequired })}</b>{' '}
+            {areaRequired === 1
+              ? t('people.areaRequired.bodyOne')
+              : t('people.areaRequired.bodyOther')}{' '}
+            <span className="mono">bu-lead</span> {t('people.areaRequired.bodyTail')}
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setFilter('area_required');
+            }}
+          >
+            {t('people.areaRequired.show')}
+          </button>
+        </div>
+      ) : null}
       <div className="pp-toolbar">
         <div className="search-wrap pp-search">
           <SearchIcon size={13} />
@@ -482,7 +514,10 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
           />
         </div>
         <div className="tk-quick" role="group" aria-label={t('people.filterLabel')}>
-          {FILTERS.map((value) => (
+          {FILTERS.filter(
+            // Design: «Área por corregir» only while someone needs it (or it is the one on).
+            (value) => value !== 'area_required' || areaRequired > 0 || filter === value,
+          ).map((value) => (
             <button
               key={value}
               type="button"
@@ -495,6 +530,9 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
               {t(`people.filters.${value}`)}
               {value === 'pending' && waiting > 0 ? (
                 <span className="mk-count">{waiting}</span>
+              ) : null}
+              {value === 'area_required' && areaRequired > 0 ? (
+                <span className="mk-count">{areaRequired}</span>
               ) : null}
             </button>
           ))}
@@ -596,7 +634,9 @@ export function PeopleTab({ notify, onForbidden, onGoTab }: Props) {
                 ? t('people.empty.search', { query: searched.trim().toLowerCase() })
                 : filter === 'pending'
                   ? t('people.empty.pending')
-                  : t('people.empty.other')}
+                  : filter === 'area_required'
+                    ? t('people.empty.area_required')
+                    : t('people.empty.other')}
             </div>
           ) : null}
         </div>

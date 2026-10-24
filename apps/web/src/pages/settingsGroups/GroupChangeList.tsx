@@ -23,9 +23,14 @@ function useSummary() {
   };
   return (change: GroupChange): string => {
     if (change.kind === 'delete') {
-      return change.agents > 0
-        ? t('groups.changes.summaryDeleteUsed', { count: change.agents })
-        : t('groups.changes.summaryDeleteUnused');
+      const agents =
+        change.agents > 0
+          ? t('groups.changes.summaryDeleteUsed', { count: change.agents })
+          : t('groups.changes.summaryDeleteUnused');
+      // Who it leaves without their one area, counted when it was proposed (D44 (9)).
+      return change.stranded_leads
+        ? agents + t('groups.changes.summaryStranded', { count: change.stranded_leads })
+        : agents;
     }
     const after = change.after;
     if (!after) return '';

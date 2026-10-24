@@ -63,7 +63,7 @@ const EMAIL = /^[a-z0-9._%+-]{1,64}@(?:[a-z0-9-]+\.)+[a-z]{2,63}$/;
 const FILTERS: readonly string[] = ['all', 'pending', 'invited', 'disabled', 'area_required'];
 const AREA_GROUP = /^bu-(?!lead$)[a-z0-9-]+$/;
 const PERSON_ROUTE =
-  /^\/admin\/people\/([A-Za-z0-9-]{1,64})\/(groups|groups\/remove|disable|enable)$/;
+  /^\/admin\/people\/([A-Za-z0-9-]{1,64})\/(groups|groups\/remove|disable|enable|area)$/;
 const CHANGE_ROUTE = /^\/admin\/people\/changes\/([0-9a-f]{32})\/(approve|reject|withdraw)$/;
 
 /** Shaped like a Cognito `sub`; the first nine match the directory of `directory.ts`. */
@@ -118,6 +118,11 @@ for (let n = 10; n <= 64; n += 1) {
   // One disabled person holds a sensitive group: re-enabling them needs a second administrator.
   const groups = n === 17 ? ['finops-central'] : n % 11 === 0 ? [] : ROTATION[n % ROTATION.length];
   people.push(person(n, status, n % 13 !== 0, groups ?? [], 3 + n * 2));
+}
+// Design: two bu-leads from before the rule (D60 (10)), one without an area and one with two.
+for (const who of people) {
+  if (who.email === 'usuario10@empresa.com') who.groups = ['bu-lead'];
+  if (who.email === 'usuario18@empresa.com') who.groups = ['bu-lead', 'bu-finanzas', 'bu-retail'];
 }
 
 function seed(hoursAgo: number, change: Partial<MockMemberChange> & { kind: Kind; n: number }) {
@@ -313,6 +318,10 @@ function refusal(kind: Kind, target: MockPerson, group: string | null): Refusal 
     if (target.status === 'disabled') return [409, 'user_disabled'];
     if (kind === 'add' && target.groups.includes(group)) return [409, 'already_member'];
     if (kind === 'remove' && !target.groups.includes(group)) return [409, 'not_member'];
+    const after =
+      kind === 'add' ? [...target.groups, group] : target.groups.filter((own) => own !== group);
+    // `_check_area`: only a change that breaks a bu-lead that was fine is refused.
+    if (lacksArea(after) && !lacksArea(target.groups)) return [422, 'area_required'];
   } else if (kind === 'disable') {
     if (target.status === 'disabled') return [409, 'already_disabled'];
   } else if (target.status !== 'disabled') {
@@ -322,6 +331,22 @@ function refusal(kind: Kind, target: MockPerson, group: string | null): Refusal 
   return removesAdmin && isAdmin(target) && admins().length <= MIN_ADMINS
     ? [409, 'last_admins']
     : null;
+}
+
+/** `change_area` (D60 (11)): from one area group to another in one step. */
+function changeArea(target: MockPerson, current: string, group: string): Refusal | object {
+  const areas = assignable();
+  if (![current, group].every((one) => areas.has(one) && AREA_GROUP.test(one))) {
+    return [422, 'not_an_area'];
+  }
+  if (target.status === 'disabled') return [409, 'user_disabled'];
+  if (!target.groups.includes(current)) return [409, 'not_member'];
+  if (target.groups.includes(group)) return [409, 'already_member'];
+  const detail = { target_user: target.user_id, from_group: current, group };
+  auditedWrite('directory.area_change', detail, () => {
+    target.groups = target.groups.map((own) => (own === current ? group : own)).sort();
+  });
+  return { result: 'applied', change_id: null };
 }
 
 function needsApproval(kind: Kind, target: MockPerson, group: string | null): boolean {
@@ -479,6 +504,7 @@ function invite(body: Record<string, unknown>): Refusal | object {
   if (wanted.some((group) => SENSITIVE.includes(group) && !(bootstrap && group === ADMIN))) {
     return [422, 'sensitive_group'];
   }
+  if (lacksArea(wanted)) return [422, 'area_required'];
   if (people.some((who) => who.email === email)) return [409, 'already_exists'];
   const invited: MockPerson = {
     user_id: idOf(1000 + people.length),
@@ -610,6 +636,15 @@ export const handlePeople: ApiHandler = async (req, res, path) => {
   if (!route) return false;
   const target = people.find((who) => who.user_id === route[1]);
   if (!target) return answer([404, 'user_not_found']);
+  if (route[2] === 'area') {
+    const body = await readJson(req, ['current', 'group']);
+    const current = body?.current;
+    const group = body?.group;
+    if (typeof current !== 'string' || typeof group !== 'string') {
+      return answer([422, 'invalid_request']);
+    }
+    return answer(changeArea(target, current, group));
+  }
   const grouped = route[2] === 'groups' || route[2] === 'groups/remove';
   const body = await readJson(req, grouped ? ['group', 'reason'] : ['reason']);
   const reason = body ? reasonOf(body.reason) : undefined;

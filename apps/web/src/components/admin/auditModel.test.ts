@@ -93,6 +93,20 @@ describe('toAuditRow', () => {
     expect(es.audit.kbSync.sync_failed).toBe('No se pudo leer el bucket');
   });
 
+  it('names the area change of a person (D60 (11))', () => {
+    const row = toAuditRow(
+      event('directory.area_change', {
+        target_user: 'u',
+        from_group: 'bu-finanzas',
+        group: 'bu-retail',
+        outcome: 'applied',
+      }),
+      0,
+    );
+    expect(row).toMatchObject({ known: 'directory.area_change', category: 'access' });
+    expect(es.audit.actions.directory.area_change).toBe('Área cambiada');
+  });
+
   it('maps budget writes to the design actions with before/after and outcome', () => {
     const defaults = toAuditRow(
       event('settings.budget.updated', {

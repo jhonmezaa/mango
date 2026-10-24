@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { hasNoAccess, type Person } from './model';
+import { areasOf, cannotEnter, hasNoAccess, type Person } from './model';
 
 /** Design `STATUS`. */
 const STATUS_BADGE: Record<Person['status'], string> = {
@@ -16,6 +16,18 @@ export function PersonStatusBadge({ person }: { person: Person }) {
     return (
       <span className="badge badge-amber" title={t('people.status.noAccessTitle')}>
         {t('people.status.noAccess')}
+      </span>
+    );
+  }
+  // Design: a bu-lead Mango refuses at sign-in (403 `area_required`, D60 (10)).
+  if (cannotEnter(person)) {
+    const count = areasOf(person.groups).length;
+    return (
+      <span
+        className="badge badge-amber"
+        title={count ? t('people.status.areasTitle', { count }) : t('people.status.noAreaTitle')}
+      >
+        {count ? t('people.status.areas', { count }) : t('people.status.noArea')}
       </span>
     );
   }

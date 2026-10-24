@@ -380,6 +380,58 @@ describe('GroupsTab (design groups-admin.jsx)', () => {
     });
   });
 
+  it('warns who deleting an area group leaves without their only area, without blocking', async () => {
+    const call = apiWith(view(), {
+      onlyAreaPeople: {
+        emails: [
+          'a@example.com',
+          'b@example.com',
+          'c@example.com',
+          'd@example.com',
+          'e@example.com',
+        ],
+        count: 7,
+        incomplete: false,
+      },
+      postGroupChange: { change_id: 'b'.repeat(32) },
+    });
+    const { user } = renderTab(call);
+    await user.click(await screen.findByRole('button', { name: 'Editar bu-finanzas' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar' }));
+    const warning = await within(dialog).findByText(/Es la única área de 7 líderes de área/);
+    expect(warning.closest('[role="status"]')).toHaveTextContent(
+      'Es la única área de 7 líderes de área: a@example.com, b@example.com, c@example.com, d@example.com, e@example.com y 2 más. Si se elimina, no podrán entrar a Mango hasta tener otra. Cámbialos de área antes en Ajustes › Personas.',
+    );
+    expect(bodyOf(call, 'onlyAreaPeople')).toEqual({ group: 'bu-finanzas' });
+    await user.type(within(dialog).getByLabelText('Motivo'), 'Se fusionó con Retail');
+    await user.click(within(dialog).getByRole('button', { name: 'Proponer eliminación' }));
+    await waitFor(() => {
+      expect(bodyOf(call, 'postGroupChange')).toMatchObject({
+        kind: 'delete',
+        group_id: 'bu-finanzas',
+      });
+    });
+  });
+
+  it('repeats in the request who deleting the group leaves out, for whoever approves', async () => {
+    const changes = [
+      change({
+        kind: 'delete',
+        group_id: 'bu-finanzas',
+        before: { type: 'area', area: 'finanzas' },
+        after: null,
+        stranded_leads: 2,
+      }),
+    ];
+    renderTab(apiWith(view(ALL, changes)));
+    expect(
+      await screen.findByText(
+        'Ningún agente lo usa · es la única área de 2 líderes de área, que no podrán entrar',
+      ),
+    ).toBeVisible();
+  });
+
   it('shows what the server refused inside the dialog, in the words of the app', async () => {
     const call = apiWith(view(), {
       postGroupChange: new ApiError(422, 'group_referenced', 'that name is in use <b>'),

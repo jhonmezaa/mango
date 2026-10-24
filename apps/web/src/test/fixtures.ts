@@ -41,6 +41,7 @@ export function authValue(overrides: Partial<AuthContextValue> = {}): AuthContex
     ssoAvailable: false,
     startSso: vi.fn(() => Promise.resolve()),
     displayEmail: null,
+    displayGroups: [],
     refreshSession: vi.fn(() => Promise.resolve(true)),
     logout: vi.fn(() => Promise.resolve()),
     retryRestore: vi.fn(),

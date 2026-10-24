@@ -16,6 +16,8 @@ function json(status: number, body: unknown) {
   });
 }
 const noGroup = () => json(403, { error: { code: 'no_group', message: 'no group assigned yet' } });
+const noArea = () =>
+  json(403, { error: { code: 'area_required', message: 'no area assigned yet' } });
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -133,5 +135,64 @@ describe('SessionProvider: what is shown until the application is ready', () => 
     expect(screen.getByRole('main')).toHaveTextContent('Mango');
     expect(screen.queryByText('Cargando…')).toBeNull();
     expect(screen.queryByText('app')).toBeNull();
+  });
+});
+
+describe('SessionProvider: a bu-lead without its one area (D60 (10))', () => {
+  it('says why it cannot enter, names its areas, and rechecks with fresh tokens', async () => {
+    let profileCalls = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (!url.endsWith('/me')) return Promise.resolve(json(200, { items: [] }));
+      profileCalls += 1;
+      return Promise.resolve(profileCalls <= 2 ? noArea() : json(200, baseMe));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = authValue({
+      displayEmail: 'lider@empresa.com',
+      displayGroups: ['bu-lead', 'bu-retail', 'bu-finanzas'],
+    });
+    const user = userEvent.setup();
+    render(
+      <AuthContext value={auth}>
+        <SessionProvider config={config}>
+          <p>app</p>
+        </SessionProvider>
+      </AuthContext>,
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Tu cuenta tiene más de un área' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('lider@empresa.com')).toBeInTheDocument();
+    expect(screen.getByText('bu-retail, bu-finanzas')).toBeInTheDocument();
+    expect(screen.queryByText('app')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Volver a comprobar' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Todavía tienes más de un área. Si ya te lo corrigieron, espera unos segundos y vuelve a comprobar.',
+    );
+    expect(auth.refreshSession).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'Volver a comprobar' }));
+    expect(await screen.findByText('app')).toBeInTheDocument();
+  });
+
+  it('says it has no area when the token names none', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(url.endsWith('/me') ? noArea() : json(200, { items: [] })),
+      ),
+    );
+    const auth = authValue({ displayGroups: ['bu-lead'] });
+    const user = userEvent.setup();
+    render(
+      <AuthContext value={auth}>
+        <SessionProvider config={config}>
+          <p>app</p>
+        </SessionProvider>
+      </AuthContext>,
+    );
+    expect(await screen.findByRole('heading', { name: 'Tu cuenta no tiene área' })).toBeVisible();
+    expect(screen.getByText(/no tiene ningún grupo de área/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+    expect(auth.logout).toHaveBeenCalledOnce();
   });
 });

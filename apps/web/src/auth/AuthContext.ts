@@ -34,6 +34,8 @@ export interface AuthContextValue {
   startSso: () => Promise<void>;
   /** Email of the signed-in user, from the ID token; display only. */
   displayEmail: string | null;
+  /** Groups of the signed-in user, from the ID token; display only. */
+  displayGroups: readonly string[];
   logout: () => Promise<void>;
   /** Asks the server again whether this browser has a session (status `unavailable`). */
   retryRestore: () => void;

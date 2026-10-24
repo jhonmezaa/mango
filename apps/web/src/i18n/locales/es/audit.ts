@@ -101,6 +101,7 @@ export const audit = {
       invite: 'Persona invitada',
       group_add: 'Grupo asignado a persona',
       group_remove: 'Grupo quitado a persona',
+      area_change: 'Área cambiada',
       disable: 'Acceso deshabilitado',
       enable: 'Acceso rehabilitado',
       member_propose: 'Cambio de persona propuesto',

@@ -6,7 +6,7 @@ import { safeReturnPath } from '../security/safeUrl';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 import { CognitoError } from './cognito/api';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
-import { authTimeOf, displayEmailFromIdToken, subjectOf } from './jwt';
+import { authTimeOf, displayEmailFromIdToken, displayGroupsFromIdToken, subjectOf } from './jwt';
 import {
   createServerSession,
   renewWithRetries,
@@ -95,6 +95,8 @@ interface Props {
  * - Signing out ends the server session (which revokes the refresh token) in every tab. SSO
  *   sessions also end the Cognito managed-login session.
  */
+const NO_GROUPS: readonly string[] = [];
+
 export function AuthProvider({ config, cognito, serverSession: injected, children }: Props) {
   const serverSession = useMemo(
     () => injected ?? createServerSession(config.apiBasePath),
@@ -107,6 +109,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
   const [restored, setRestored] = useState(false);
   const [sessionEndsAt, setSessionEndsAt] = useState<number | null>(null);
   const [displayEmail, setDisplayEmail] = useState<string | null>(null);
+  const [displayGroups, setDisplayGroups] = useState<readonly string[]>(NO_GROUPS);
   const tokens = useRef<Session | null>(null);
   const federated = useRef(false);
   // Same value as the ref, for what is shown (the ref is for callbacks that must not change).
@@ -123,6 +126,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     (next: Session | null) => {
       tokens.current = next;
       setDisplayEmail(next ? displayEmailFromIdToken(next.idToken) : null);
+      setDisplayGroups(next ? displayGroupsFromIdToken(next.idToken) : NO_GROUPS);
       // Same rule as mango-api: the maximum counts from the sign-in, not from a renewal.
       const authTime = next ? authTimeOf(next.accessToken) : null;
       setSessionEndsAt(authTime === null ? null : (authTime + sessionSeconds) * 1000);
@@ -349,6 +353,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       ssoAvailable: Boolean(config.ssoProvider),
       startSso,
       displayEmail,
+      displayGroups,
       logout,
       retryRestore,
       getAccessToken,
@@ -367,6 +372,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       config.ssoProvider,
       startSso,
       displayEmail,
+      displayGroups,
       logout,
       retryRestore,
       getAccessToken,

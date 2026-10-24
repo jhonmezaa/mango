@@ -44,7 +44,17 @@ export const people = {
   empty: {
     search: 'Ningún correo empieza por «{{query}}».',
     pending: 'Nadie está esperando acceso.',
+    area_required: 'Todos los líderes de área tienen exactamente un área.',
     other: 'No hay personas en este estado.',
+  },
+  areaRequired: {
+    lead_one: '1 líder de área no puede entrar.',
+    lead_other: '{{count}} líderes de área no pueden entrar.',
+    // Split around «bu-lead», which is written in monospace.
+    bodyOne: 'Tiene',
+    bodyOther: 'Tienen',
+    bodyTail: 'y ningún grupo de área, o más de uno: un líder de área necesita exactamente uno.',
+    show: 'Ver cuáles',
   },
   waiting: {
     lead_one: '1 persona se registró y aún no tiene acceso a nada.',
@@ -58,6 +68,10 @@ export const people = {
     disabled: 'Deshabilitada',
     noAccess: 'Sin acceso',
     noAccessTitle: 'Se registró y aún no tiene ningún grupo',
+    noArea: 'Sin área · no entra',
+    areas: '{{count}} áreas · no entra',
+    noAreaTitle: 'Tiene bu-lead y ningún grupo de área: no puede entrar a Mango',
+    areasTitle: 'Tiene bu-lead y {{count}} grupos de área: no puede entrar a Mango',
   },
   chip: { remove: 'Quitar {{email}}' },
   firstDay: {
@@ -117,6 +131,16 @@ export const people = {
     yours: 'Tu cuenta',
     external: 'Externa · invitada de otra empresa',
     invited: 'Recibió una contraseña temporal por correo. Al entrar crea la suya y configura MFA.',
+    // Split around «bu-lead», which is written in monospace.
+    area: {
+      lead: 'No puede entrar a Mango.',
+      has: 'Tiene',
+      none: 'y ningún grupo de área; un líder de área necesita exactamente uno.',
+      many: 'y {{count}} grupos de área; un líder de área necesita exactamente uno.',
+      fixNone: 'Dale su grupo de área o quítale bu-lead.',
+      fixMany: 'Quítale los que sobran o quítale bu-lead.',
+      tail: 'En cuanto lo corrijas puede entrar con «Volver a comprobar», sin cerrar sesión.',
+    },
     limits:
       'Desde Mango no se cambia el correo ni la contraseña de otra persona, ni se ven sus conversaciones.',
     groups: {
@@ -141,6 +165,32 @@ export const people = {
       withApproval: ' · con aprobación',
       optionArea: ' · área {{area}}',
       addSubmit: 'Agregar',
+      // 422 `area_required` (D60 (10)): what the server refuses, said before sending.
+      areaLeadNone:
+        'No se puede dar bu-lead: no tiene un grupo de área y un líder de área necesita exactamente uno. Dale antes su grupo bu-<área>.',
+      areaLeadMany:
+        'No se puede dar bu-lead: tiene {{count}} grupos de área ({{groups}}) y un líder de área necesita exactamente uno. Quítale antes los que sobran.',
+      areaSecond:
+        'No se puede dar otra área a un líder de área: ya tiene {{groups}}. Para pasarlo a {{group}}, usa «Cambiar de área».',
+      areaOnly:
+        'No se puede quitar {{group}}: es su única área y un líder de área necesita una. Para pasarlo a otra, usa «Cambiar de área»; para que deje de ser líder, quítale antes bu-lead.',
+      areaOnlyNote:
+        'Es su única área y un líder de área necesita una. Para pasarlo a otra, usa «Cambiar de área»; para que deje de ser líder, quítale antes bu-lead.',
+      areaCentral:
+        'No se puede quitar finops-central: tiene bu-lead y ningún grupo de área, así que no podría entrar. Antes, déjale exactamente un área o quítale bu-lead.',
+      areaCentralMany:
+        'No se puede quitar finops-central: tiene bu-lead y {{count}} grupos de área, así que no podría entrar. Antes, déjale exactamente un área o quítale bu-lead.',
+      areaOnlyTitle: 'Es su única área',
+      areaLeftTitle: 'Quedaría sin un área',
+      optionLeadNone: ' · antes, su área',
+      optionLeadMany: ' · antes, una sola área',
+      optionChangeArea: ' · usa «Cambiar de área»',
+      changeArea: 'Cambiar de área…',
+      newArea: 'Nueva área',
+      chooseArea: 'Elige un grupo de área',
+      change: 'Cambiar',
+      changeHint:
+        'Un solo paso: le quita {{group}} y le da la nueva a la vez, así nunca queda sin área. Se aplica al momento y queda en Auditoría. Su sesión abierta sigue con el área anterior hasta que se renueve (como mucho, una hora).',
       sendToApproval: 'Enviar a aprobación',
       addReasonLabel: 'Motivo',
       reasonRequired: 'Escribe el motivo',
@@ -214,6 +264,8 @@ export const people = {
       'Eres el único administrador: mango-admin se aplica sin segundo aprobador y queda marcado en Auditoría.',
     sensitiveLater:
       'mango-admin y finops-central se piden después, sobre la persona, con aprobación de otro administrador.',
+    areaNone: 'Un líder de área necesita exactamente un área: elige también su grupo bu-<área>.',
+    areaMany: 'Un líder de área necesita exactamente un área: deja solo uno de {{groups}}.',
     cancel: 'Cancelar',
     submit: 'Enviar invitación',
     sending: 'Enviando…',
@@ -274,6 +326,7 @@ export const people = {
     proposed: 'Propuesta enviada · la debe aprobar otro admin',
     groupAdded: 'Grupo agregado',
     groupRemoved: 'Grupo quitado',
+    areaChanged: 'Área cambiada · {{from}} → {{to}}',
     disabled: 'Acceso deshabilitado',
     enabled: 'Acceso rehabilitado',
     mfaProposed: 'Solicitud enviada · la debe aprobar otro admin',
@@ -288,6 +341,8 @@ export const people = {
       'Ya no tienes permiso de administrador: tus acciones en Personas se rechazan. Vuelve a entrar para actualizar tu sesión.',
     // Design `recheck`: the rules are checked again when a change is approved.
     approve: {
+      area_required:
+        'No se pudo aprobar {{id}}: sin finops-central quedaría como líder de área sin exactamente un área. Déjale antes un área o quítale bu-lead. El cambio sigue pendiente.',
       user_disabled:
         'No se pudo aprobar {{id}}: la persona fue deshabilitada. El cambio sigue pendiente.',
       already_member:

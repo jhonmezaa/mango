@@ -3,6 +3,9 @@ import { z } from 'zod';
 const displayClaims = z.object({ email: z.string().max(254).optional() }).loose();
 const authTimeClaims = z.object({ auth_time: z.number().int().positive() }).loose();
 const subjectClaims = z.object({ sub: z.string().min(1).max(256) }).loose();
+const groupClaims = z
+  .object({ 'cognito:groups': z.array(z.string().max(128)).max(100).optional() })
+  .loose();
 
 function payloadOf(token: string): unknown {
   const payload = token.split('.')[1];
@@ -23,6 +26,16 @@ function payloadOf(token: string): unknown {
 export function displayEmailFromIdToken(idToken: string): string | null {
   const parsed = displayClaims.safeParse(payloadOf(idToken));
   return parsed.success ? (parsed.data.email ?? null) : null;
+}
+
+/**
+ * The ID token's groups, for display only: the screen of a bu-lead Mango refuses names its area
+ * groups (403 `area_required`, D60 (10)). Never to authorize: mango-api decides from the
+ * verified access token (REACT-AUTHZ-001).
+ */
+export function displayGroupsFromIdToken(idToken: string): string[] {
+  const parsed = groupClaims.safeParse(payloadOf(idToken));
+  return parsed.success ? (parsed.data['cognito:groups'] ?? []) : [];
 }
 
 /**

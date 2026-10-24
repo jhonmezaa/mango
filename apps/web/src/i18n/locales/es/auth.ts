@@ -111,6 +111,25 @@ export const auth = {
     recheck: 'Volver a comprobar',
     checking: 'Comprobando…',
   },
+  // Design `AreaRequired` (403 `area_required`, D60 (10)): the sentence is split around the group
+  // names, which are written in monospace.
+  area: {
+    titleNone: 'Tu cuenta no tiene área',
+    titleMany: 'Tu cuenta tiene más de un área',
+    lead: 'Tu cuenta <b>{{email}}</b> es de líder de área (',
+    but: '), pero ',
+    none: 'no tiene ningún grupo de área. Un líder de área ve el gasto de una sola área, así que no puedes entrar hasta que tengas la tuya.',
+    many: 'tiene {{count}} grupos de área:',
+    tailMany:
+      '. Un líder de área ve el gasto de una sola área, así que no puedes entrar hasta que te quede una.',
+    nextTitle: 'Qué sigue',
+    nextLead: 'Pide a un administrador de Mango que te deje exactamente un grupo de área',
+    nextTail:
+      'en Ajustes › Personas: ya te ve marcado ahí. Cuando lo haga, vuelve a comprobar; no hace falta que cierres sesión.',
+    stillNone: 'Todavía no tienes un área.',
+    stillMany: 'Todavía tienes más de un área.',
+    stillTail: 'Si ya te lo corrigieron, espera unos segundos y vuelve a comprobar.',
+  },
   policy: {
     ok: 'Cumple la política',
     notYet: 'Aún no cumple',

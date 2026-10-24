@@ -12,7 +12,14 @@ export type MemberChange = OperationOutput<'getMemberChanges'>['items'][number];
 export type ActionResult = OperationOutput<'addGroup'>['result'];
 export type ListFilter = NonNullable<OperationInput<'searchPeople'>['body']['filter']>;
 
-export const FILTERS: readonly ListFilter[] = ['all', 'pending', 'invited', 'disabled'];
+/** Design: «Área por corregir» goes after «Sin acceso», and only while someone needs it. */
+export const FILTERS: readonly ListFilter[] = [
+  'all',
+  'pending',
+  'area_required',
+  'invited',
+  'disabled',
+];
 
 /** Must match `SENSITIVE_GROUPS` in `apps/api/src/mango_api/people.py`. Only labels the UI. */
 const SENSITIVE_GROUPS: ReadonlySet<string> = new Set(['mango-admin', 'finops-central']);
@@ -51,6 +58,43 @@ export function isSensitive(group: string): boolean {
  */
 export function isExternal(email: string, domains: readonly string[]): boolean {
   return domains.length > 0 && !domains.includes(email.slice(email.lastIndexOf('@') + 1));
+}
+
+export const LEAD_GROUP = 'bu-lead';
+export const CENTRAL_GROUP = 'finops-central';
+/** `_AREA_GROUP_RE` of `mango_core.groups`: `bu-<area>`, and `bu-lead` is not one. */
+const AREA_GROUP = /^bu-[a-z0-9-]{2,32}$/;
+
+export function isAreaGroup(group: string): boolean {
+  return group !== LEAD_GROUP && AREA_GROUP.test(group);
+}
+
+export function areasOf(groups: readonly string[]): string[] {
+  return groups.filter(isAreaGroup);
+}
+
+/**
+ * Same rule as the API's `_lacks_area` (D60 (10)): a bu-lead without finops-central needs
+ * exactly one area group, or nothing lets it sign in (403 `area_required`).
+ */
+export function lacksArea(groups: readonly string[]): boolean {
+  return (
+    groups.includes(LEAD_GROUP) && !groups.includes(CENTRAL_GROUP) && areasOf(groups).length !== 1
+  );
+}
+
+/** Design `areaBad`: can sign in as far as Cognito goes, and Mango refuses them. */
+export function cannotEnter(person: Person): boolean {
+  return person.status !== 'disabled' && lacksArea(person.groups);
+}
+
+/**
+ * Same as the API's `_check_area`: a change that leaves a bu-lead without its one area, when it
+ * had it, is refused (422 `area_required`). Whoever is that way already can be fixed step by
+ * step. The screen only spares the round trip: the API decides.
+ */
+export function breaksArea(before: readonly string[], after: readonly string[]): boolean {
+  return lacksArea(after) && !lacksArea(before);
 }
 
 /** Signed up, can sign in and belongs to no group (design `noAccess`). */
