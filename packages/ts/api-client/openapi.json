@@ -1215,6 +1215,38 @@
         "title": "AuditResource",
         "type": "object"
       },
+      "BudgetByOut": {
+        "additionalProperties": false,
+        "description": "Whose budget stopped the last synchronization (D88 (53)).",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "scheduled": {
+            "title": "Scheduled",
+            "type": "boolean"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "scheduled"
+        ],
+        "title": "BudgetByOut",
+        "type": "object"
+      },
       "BudgetDefaultsIn": {
         "additionalProperties": false,
         "properties": {
@@ -3250,6 +3282,16 @@
             ],
             "title": "Agents"
           },
+          "budget_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetByOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "budget_estimate_usd": {
             "anyOf": [
               {
@@ -3387,6 +3429,10 @@
             ],
             "title": "Status Reason"
           },
+          "sync_preparing": {
+            "title": "Sync Preparing",
+            "type": "boolean"
+          },
           "sync_running": {
             "title": "Sync Running",
             "type": "boolean"
@@ -3435,6 +3481,8 @@
           "last_synced_at",
           "status_reason",
           "budget_estimate_usd",
+          "budget_by",
+          "sync_preparing",
           "sources",
           "agents"
         ],

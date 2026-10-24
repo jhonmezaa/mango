@@ -416,11 +416,27 @@ def test_a_synchronization_that_does_not_fit_in_the_budget_ingests_nothing(env: 
     assert meta["status_reason"] == {"S": "budget"}
     assert Decimal(meta["status_estimate_usd"]["N"]) == estimate(10**9, Decimal("0.02"))
     assert "last_attempt_at" in meta and "last_synced_at" not in meta
+    # Whose budget it was, for the screen (D88 (53)): asked by hand, not by a schedule.
+    assert (meta["status_budget_user"], meta["status_budget_email"]) == (
+        {"S": "creator-1"},
+        {"S": "creator1@example.com"},
+    )
+    assert "status_budget_scheduled" not in meta
     # The next one that finishes clears the reason and keeps when it last finished.
     env.agent.statuses = {}
     env.run(kb_id)
     meta = env.meta(kb_id)
     assert meta is not None and "status_reason" not in meta and "last_synced_at" in meta
+    assert "status_budget_user" not in meta and "status_budget_email" not in meta
+
+
+def test_a_scheduled_synchronization_that_does_not_fit_says_so(env: Env) -> None:
+    kb_id = env.kb()
+    env.doc(kb_id, size=10**9)
+    env.run(kb_id, requester={**REQUESTER, "limit": "0.01", "scheduled": "true"})
+    meta = env.meta(kb_id)
+    assert meta is not None
+    assert meta["status_budget_scheduled"] == {"BOOL": True}
 
 
 def test_a_failed_synchronization_releases_its_reservation_and_its_lock(env: Env) -> None:

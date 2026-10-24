@@ -627,6 +627,26 @@ export type AuditResource = {
 };
 
 /**
+ * BudgetByOut
+ *
+ * Whose budget stopped the last synchronization (D88 (53)).
+ */
+export type BudgetByOut = {
+    /**
+     * Email
+     */
+    email: string | null;
+    /**
+     * Scheduled
+     */
+    scheduled: boolean;
+    /**
+     * User Id
+     */
+    user_id: string;
+};
+
+/**
  * BudgetDefaultsIn
  */
 export type BudgetDefaultsIn = {
@@ -1746,6 +1766,7 @@ export type KnowledgeBaseOut = {
      * Agents
      */
     agents: Array<AgentRefOut> | null;
+    budget_by: BudgetByOut | null;
     /**
      * Budget Estimate Usd
      */
@@ -1820,6 +1841,10 @@ export type KnowledgeBaseOut = {
      * Status Reason
      */
     status_reason: 'budget' | 'error' | 'full' | null;
+    /**
+     * Sync Preparing
+     */
+    sync_preparing: boolean;
     /**
      * Sync Running
      */

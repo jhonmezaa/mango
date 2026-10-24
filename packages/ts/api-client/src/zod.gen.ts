@@ -186,6 +186,17 @@ export const zAuditListSchema = z.object({
 });
 
 /**
+ * BudgetByOut
+ *
+ * Whose budget stopped the last synchronization (D88 (53)).
+ */
+export const zBudgetByOutSchema = z.object({
+    email: z.string().nullable(),
+    scheduled: z.boolean(),
+    user_id: z.string()
+});
+
+/**
  * BudgetDefaultsIn
  */
 export const zBudgetDefaultsInSchema = z.object({
@@ -1786,6 +1797,7 @@ export const zStatusSchema = z.enum([
  */
 export const zKnowledgeBaseOutSchema = z.object({
     agents: z.array(zAgentRefOutSchema).nullable(),
+    budget_by: zBudgetByOutSchema.nullable(),
     budget_estimate_usd: z.string().nullable(),
     business_unit: z.string(),
     bytes: z.int(),
@@ -1815,6 +1827,7 @@ export const zKnowledgeBaseOutSchema = z.object({
         'error',
         'full'
     ]).nullable(),
+    sync_preparing: z.boolean(),
     sync_running: z.boolean(),
     sync_schedule: z.enum([
         'manual',

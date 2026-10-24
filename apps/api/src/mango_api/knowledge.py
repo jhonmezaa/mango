@@ -190,6 +190,16 @@ class AgentRefOut(_Strict):
     its documents; ``None`` for the others."""
 
 
+class BudgetByOut(_Strict):
+    """Whose budget stopped the last synchronization (D88 (53))."""
+
+    user_id: str
+    email: str | None
+    """Only for administrators, the owner of the knowledge base and that person."""
+    scheduled: bool
+    """A schedule started it as the owner: «La sincronización programada no empezó»."""
+
+
 class KnowledgeBaseOut(_Strict):
     kb_id: str
     name: str
@@ -218,6 +228,10 @@ class KnowledgeBaseOut(_Strict):
     status_reason: StatusReason | None
     budget_estimate_usd: str | None
     """With ``budget``: what its embeddings would have cost (the design says it)."""
+    budget_by: BudgetByOut | None
+    """With ``budget``: whose budget it was; ``None`` for a record from before."""
+    sync_preparing: bool
+    """The synchronization waits for the access to a source just approved (up to ~2 min)."""
     sources: list[SourceRefOut] | None
     """Of a bucket knowledge base: the active ones and the last decided one if nothing is
     pending; ``[]`` for uploads, ``None`` when they could not be read."""
@@ -896,8 +910,24 @@ def knowledge_base_out(
         if kb.status_reason in ("budget", "error", "full")
         else None,
         budget_estimate_usd=kb.status_estimate_usd if kb.status_reason == "budget" else None,
+        budget_by=_budget_by(kb, caller),
+        sync_preparing=kb.sync_preparing and kb.sync_running,
         sources=None if sources is None else source_refs(sources, can_view=can_view),
         agents=None if serving is None else agent_refs(kb, serving, can_view=can_view),
+    )
+
+
+def _budget_by(kb: KnowledgeBase, caller: Caller) -> BudgetByOut | None:
+    if kb.status_reason != "budget" or not kb.status_budget_user:
+        return None
+    sees_email = caller.user.is_admin or caller.user.user_id in (
+        kb.owner_id,
+        kb.status_budget_user,
+    )
+    return BudgetByOut(
+        user_id=kb.status_budget_user,
+        email=kb.status_budget_email if sees_email else None,
+        scheduled=kb.status_budget_scheduled,
     )
 
 

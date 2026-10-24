@@ -397,6 +397,8 @@ def test_a_schedule_synchronizes_as_the_owner_with_their_limit(env: Env, sources
         "user_id": "creator-1",
         "email": "creator1@example.com",
         "limit": "12",
+        # «La sincronización programada no empezó» if it does not fit (D88 (53)).
+        "scheduled": "true",
     }
     assert started["input"]["mode"] == "sync"
 
@@ -470,10 +472,13 @@ def test_a_new_role_refused_is_waited_for_and_then_copies(env: Env, sources: Sou
     assert state["counts"]["copied"] == 0
     state = _copy_again(env, state)
     assert state["copy_wait_seconds"] == 20
+    # «Preparando el acceso» while it waits (D88 (53)).
+    assert env.meta(kb_id)["sync_preparing"] == {"BOOL": True}  # type: ignore[index]
     state = _copy_again(env, state)
     assert "copy_wait_seconds" not in state
     assert "sources_unavailable" not in state
     assert state["counts"]["copied"] == 1
+    assert "sync_preparing" not in env.meta(kb_id)  # type: ignore[operator]
 
 
 def test_a_new_role_that_may_list_but_not_read_yet_is_waited_for(

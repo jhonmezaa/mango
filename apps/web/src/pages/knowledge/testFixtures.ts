@@ -33,6 +33,8 @@ export function kb(overrides: Partial<KnowledgeBase> = {}): KnowledgeBase {
     last_synced_at: '2026-10-21T10:00:00Z',
     status_reason: null,
     budget_estimate_usd: null,
+    budget_by: null,
+    sync_preparing: false,
     sources: [],
     agents: [],
     ...overrides,

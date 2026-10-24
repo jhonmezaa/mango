@@ -1188,3 +1188,61 @@ def test_why_the_last_synchronization_did_not_finish(env: Env) -> None:
     )
     assert got["last_attempt_at"].startswith("2026-10-22T10:00")
     assert got["last_synced_at"].startswith("2026-10-21T10:00")
+    # A record from before says whose budget it was not: nobody is named.
+    assert (got["budget_by"], got["sync_preparing"]) == (None, False)
+
+
+def _budget_stop(env: Env, kb_id: str, user: str, email: str, scheduled: bool) -> None:
+    values: dict[str, Any] = {
+        ":e": {"S": "error"},
+        ":r": {"S": "budget"},
+        ":w": {"S": user},
+        ":m": {"S": email},
+    }
+    update = "SET #s = :e, status_reason = :r, status_budget_user = :w, status_budget_email = :m"
+    if scheduled:
+        update += ", status_budget_scheduled = :t"
+        values[":t"] = {"BOOL": True}
+    env.db.update_item(
+        TableName="knowledge",
+        Key={"PK": {"S": f"KB#{kb_id}"}, "SK": {"S": "META"}},
+        UpdateExpression=update,
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues=values,
+    )
+
+
+def test_whose_budget_stopped_it_and_who_sees_the_email(env: Env) -> None:
+    kb = env.created()
+    _budget_stop(env, kb["kb_id"], "admin-1", "admin@example.com", scheduled=False)
+    by = {t: env.get(t, kb["kb_id"]).json()["budget_by"] for t in ("admin", "creator", "creator2")}
+    assert by["admin"] == {"user_id": "admin-1", "email": "admin@example.com", "scheduled": False}
+    # The owner of the knowledge base sees it too; another creator of its groups, the id only.
+    assert by["creator"] == by["admin"]
+    assert by["creator2"] == {"user_id": "admin-1", "email": None, "scheduled": False}
+    _budget_stop(env, kb["kb_id"], "creator-1", "creator1@example.com", scheduled=True)
+    assert env.get("creator2", kb["kb_id"]).json()["budget_by"] == {
+        "user_id": "creator-1",
+        "email": None,
+        "scheduled": True,
+    }
+
+
+def test_preparing_the_access_is_said_while_a_synchronization_holds_it(env: Env) -> None:
+    kb = env.created()
+    key = {"PK": {"S": f"KB#{kb['kb_id']}"}, "SK": {"S": "META"}}
+    env.db.update_item(
+        TableName="knowledge",
+        Key=key,
+        UpdateExpression="SET sync_preparing = :t",
+        ExpressionAttributeValues={":t": {"BOOL": True}},
+    )
+    # Without a synchronization holding it, a mark left behind says nothing.
+    assert env.get("creator", kb["kb_id"]).json()["sync_preparing"] is False
+    env.db.update_item(
+        TableName="knowledge",
+        Key=key,
+        UpdateExpression="SET sync_id = :s",
+        ExpressionAttributeValues={":s": {"S": "s1"}},
+    )
+    assert env.get("creator", kb["kb_id"]).json()["sync_preparing"] is True

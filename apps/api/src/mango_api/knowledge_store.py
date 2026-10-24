@@ -97,6 +97,12 @@ class KnowledgeBase:
     """Why the last one did not: ``budget``, ``error`` or ``full`` (the synchronization)."""
     status_estimate_usd: str | None = None
     """With ``budget``: what its embeddings would have cost."""
+    status_budget_user: str | None = None
+    """With ``budget``: whose budget it was, and whether a schedule started it (D88 (53))."""
+    status_budget_email: str | None = None
+    status_budget_scheduled: bool = False
+    sync_preparing: bool = False
+    """A synchronization waits for the role of a source just approved (D88 (53))."""
 
 
 @dataclass(frozen=True)
@@ -208,6 +214,10 @@ def _knowledge_base(item: dict[str, Any]) -> KnowledgeBase:
         status_estimate_usd=item["status_estimate_usd"]["N"]
         if "status_estimate_usd" in item
         else None,
+        status_budget_user=_str(item, "status_budget_user"),
+        status_budget_email=_str(item, "status_budget_email"),
+        status_budget_scheduled=item.get("status_budget_scheduled", {}).get("BOOL") is True,
+        sync_preparing=item.get("sync_preparing", {}).get("BOOL") is True,
     )
 
 

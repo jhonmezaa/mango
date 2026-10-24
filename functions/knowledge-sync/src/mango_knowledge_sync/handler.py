@@ -292,6 +292,11 @@ def copy(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
         state["copy_wait_seconds"] = COPY_WAITS[waits]
         state["copy_waits"] = waits + 1
         state["copy_more"] = False
+        if not state.get("preparing"):
+            deps.store.set_preparing(kb_id, True)
+            state["preparing"] = True
+    elif state.pop("preparing", False):
+        deps.store.set_preparing(kb_id, False)
     # The last step read every source: what it could not read is what the screen says.
     if result.unavailable or result.propagating:
         state["sources_unavailable"] = result.unavailable + result.propagating
@@ -467,7 +472,10 @@ def finish(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
                 synced_at=now if reason is None else None,
                 reason=reason,
                 estimate_usd=Decimal(state["estimate_usd"]) if reason == "budget" else None,
+                budget_of=requester if reason == "budget" else None,
             )
+        elif state.get("preparing"):
+            deps.store.set_preparing(kb_id, False)
         deletions_left = (deleting_kb and not removed) or any(
             d.status is DocumentStatus.DELETING for d in documents
         )
@@ -606,7 +614,7 @@ def scheduled(deps: Deps, state: dict[str, Any]) -> dict[str, Any]:
         logger.warning("scheduled sync of %s not started: %s", kb_id, aws_code(exc))
         out["reason"] = "limit_unavailable"
         return out
-    owner = Requester(record.owner_id, record.owner_email, limit)
+    owner = Requester(record.owner_id, record.owner_email, limit, scheduled=True)
     out["started"] = _start(deps, kb_id, owner, "sync")
     return out
 

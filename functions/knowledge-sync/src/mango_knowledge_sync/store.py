@@ -51,14 +51,22 @@ class Requester:
     user_id: str
     email: str | None
     limit: Decimal
+    scheduled: bool = False
+    """A schedule started it as the owner (D88 (53)): the screen says «programada»."""
 
     def as_json(self) -> dict[str, str]:
-        return {"user_id": self.user_id, "email": self.email or "", "limit": str(self.limit)}
+        out = {"user_id": self.user_id, "email": self.email or "", "limit": str(self.limit)}
+        if self.scheduled:
+            out["scheduled"] = "true"
+        return out
 
     @staticmethod
     def from_json(raw: dict[str, Any]) -> Requester:
         return Requester(
-            str(raw["user_id"]), str(raw.get("email") or "") or None, Decimal(str(raw["limit"]))
+            str(raw["user_id"]),
+            str(raw.get("email") or "") or None,
+            Decimal(str(raw["limit"])),
+            scheduled=raw.get("scheduled") == "true",
         )
 
 
@@ -356,13 +364,15 @@ class SyncStore:
         synced_at: str | None = None,
         reason: str | None = None,
         estimate_usd: Decimal | None = None,
+        budget_of: Requester | None = None,
     ) -> None:
         """Of a knowledge base that is not being deleted: deleting is never undone here.
 
         When a synchronization closes (``attempted_at``), also what the screen says of it
         (D88 (43)): when it last tried, when it last finished, and why it did not, if so
-        (``reason``; ``budget`` with the estimate of its embeddings). A closing without a
-        reason clears the one before."""
+        (``reason``; ``budget`` with the estimate of its embeddings and whose budget it was,
+        ``budget_of``, D88 (53)). A closing without a reason clears the one before, and the
+        closing ends the wait for a new source role (``sync_preparing``)."""
         names = {"#status": "status"}
         values: dict[str, Any] = {":s": _s(status), ":deleting": _s(Status.DELETING)}
         sets, removes = ["#status = :s"], []
@@ -372,6 +382,14 @@ class SyncStore:
                 "last_synced_at": _s(synced_at) if synced_at else None,
                 "status_reason": _s(reason) if reason else None,
                 "status_estimate_usd": _n(estimate_usd) if estimate_usd is not None else None,
+                "status_budget_user": _s(budget_of.user_id) if budget_of else None,
+                "status_budget_email": _s(budget_of.email)
+                if budget_of and budget_of.email
+                else None,
+                "status_budget_scheduled": {"BOOL": True}
+                if budget_of and budget_of.scheduled
+                else None,
+                "sync_preparing": None,
             }
             for name, value in fields.items():
                 names[f"#{name}"] = name
@@ -390,6 +408,25 @@ class SyncStore:
                 UpdateExpression=expression,
                 ConditionExpression="attribute_exists(PK) AND #status <> :deleting",
                 ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
+            )
+        except ClientError:
+            return
+
+    def set_preparing(self, kb_id: str, preparing: bool) -> None:
+        """While a synchronization waits for the role of a source just approved (D88 (53)):
+        the screen says «preparando el acceso»."""
+        update = "SET sync_preparing = :t" if preparing else "REMOVE sync_preparing"
+        values: dict[str, Any] = {":deleting": _s(Status.DELETING)}
+        if preparing:
+            values[":t"] = {"BOOL": True}
+        try:
+            self._call(
+                "update_item",
+                Key={"PK": _pk(kb_id), "SK": _s("META")},
+                UpdateExpression=update,
+                ConditionExpression="attribute_exists(PK) AND #status <> :deleting",
+                ExpressionAttributeNames={"#status": "status"},
                 ExpressionAttributeValues=values,
             )
         except ClientError:

@@ -90,6 +90,9 @@ interface MockKb {
   last_synced_at: string | null;
   status_reason: 'budget' | 'error' | 'full' | null;
   budget_estimate_usd: string | null;
+  budget_by: { user_id: string; email: string | null; scheduled: boolean } | null;
+  /** Until when a synchronization waits for the role of a source just approved (D88 (53)). */
+  prepare_until: number | null;
   sources: MockSource[];
   agents: MockAgent[];
   deleting_at: number | null;
@@ -189,6 +192,8 @@ function base(name: string, extra: Partial<MockKb>): MockKb {
     last_synced_at: ago(3 * HOUR_MS),
     status_reason: null,
     budget_estimate_usd: null,
+    budget_by: null,
+    prepare_until: null,
     sources: [],
     agents: [],
     deleting_at: null,
@@ -234,6 +239,8 @@ const kbs: MockKb[] = [
     status: 'pending',
     status_reason: 'budget',
     budget_estimate_usd: '12.40',
+    // The schedule stopped it, with the budget of its owner.
+    budget_by: { user_id: OTHER.user_id, email: OTHER.email, scheduled: true },
     last_synced_at: null,
     sources: [source('empresa-finops', 'etiquetas/', 'approved')],
   }),
@@ -275,6 +282,8 @@ function settle(): void {
       kb.status = 'ok';
       kb.status_reason = null;
       kb.budget_estimate_usd = null;
+      kb.budget_by = null;
+      kb.prepare_until = null;
       kb.last_attempt_at = new Date().toISOString();
       kb.last_synced_at = kb.last_attempt_at;
       if (kb.origin === 'bucket' && !kb.docs.length) kb.docs = seedDocs(24, 26_000_000);
@@ -328,6 +337,9 @@ function view(kb: MockKb) {
     last_synced_at: kb.last_synced_at,
     status_reason: kb.status_reason,
     budget_estimate_usd: kb.budget_estimate_usd,
+    budget_by: kb.budget_by,
+    sync_preparing:
+      kb.sync_until !== null && kb.prepare_until !== null && Date.now() < kb.prepare_until,
     agents: kb.agents,
     business_unit: 'shared',
     classification: 'internal',
@@ -854,6 +866,8 @@ async function decide(
   if (approve) {
     for (const other of kb.sources) if (other.status === 'approved') other.status = 'removing';
     if (kb.status === 'pending') {
+      // The new role takes a moment in IAM: «preparando el acceso» first (D88 (52), (53)).
+      kb.prepare_until = Date.now() + SYNC_MS / 2;
       kb.sync_until = Date.now() + SYNC_MS;
       kb.status = 'syncing';
     }
