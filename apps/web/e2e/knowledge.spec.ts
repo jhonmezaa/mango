@@ -203,7 +203,9 @@ test.describe('Knowledge Bases: list, panel, create and synchronize', () => {
       .getByRole('option', { name: /Te piden aprobar: Leer un bucket en Security Baseline/ })
       .click();
     await expect(
-      page.getByText('Es de la cuenta de AWS de la instalación, no es de Mango y no usa una llave propia (KMS).'),
+      page.getByText(
+        'Es de la cuenta de AWS de la instalación, no es de Mango y no usa una llave propia (KMS).',
+      ),
     ).toBeVisible();
     await page.getByRole('button', { name: /Ver en Aprobaciones/ }).click();
     await expect(page).toHaveURL(/\/approvals\/pending\/[0-9A-Z]{26}$/);
