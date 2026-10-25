@@ -145,6 +145,10 @@ class Settings:
     """The installation's ``Core`` stack: its tags go on everything created here (D76)."""
     stack_tags: StackTags | None = None
     """Reader of that stack's tags; the handler sets it (it needs an AWS client)."""
+    skills_bucket: str = ""
+    skills_key_arn: str = ""
+    """Bucket of the ``SKILL.md`` of approved skill versions and its key (D92). Empty: a
+    version with skills is not published (``skills_unavailable``)."""
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> Settings:
@@ -178,6 +182,8 @@ class Settings:
                     account_id=account_id,
                     namespace=namespace,
                 ),
+                skills_bucket=env.get("SKILLS_BUCKET", ""),
+                skills_key_arn=env.get("SKILLS_KEY_ARN", ""),
             )
         except KeyError as exc:
             raise ConfigError(f"missing environment variable {exc.args[0]}") from None

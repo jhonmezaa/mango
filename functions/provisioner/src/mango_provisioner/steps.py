@@ -240,6 +240,19 @@ class Provisioner:
         enabled = self._store.enabled_models()
         return tuple(m for m in allowed if m in enabled)
 
+    def _published_skills(self, agent_id: str, published: Published | None) -> tuple[str, ...]:
+        """Skill versions of the version that is live (D92): it keeps fetching them until the
+        new one serves."""
+        if published is None:
+            return ()
+        version = self._store.version(agent_id, published.version)
+        if version is None or not verify_content(version.canonical, published.content_hash):
+            return ()
+        try:
+            return loads_definition(version.canonical).skills
+        except InvalidDefinitionError:
+            return ()
+
     def _audit_detail(self, ctx: Context, outcome: str, **extra: Any) -> dict[str, Any]:
         return {
             "agent": ctx.request.agent_id,
@@ -419,7 +432,8 @@ class Provisioner:
         # The published version keeps serving until the last step: its models stay allowed.
         published = self._store.published(agent_id)
         models = {*self._models(ctx.definition), *self._published_models(agent_id, published)}
-        self._roles.ensure(agent_id, models)
+        skills = {*ctx.definition.skills, *self._published_skills(agent_id, published)}
+        self._roles.ensure(agent_id, models, skills)
         return state
 
     def ensure_harness(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -525,8 +539,9 @@ class Provisioner:
                 harness_version=ref.version,
                 now=self._now(),
             )
-        # The previous version no longer serves: the role keeps only this version's models.
-        self._roles.ensure(request.agent_id, self._models(ctx.definition))
+        # The previous version no longer serves: the role keeps only this version's models
+        # and skills.
+        self._roles.ensure(request.agent_id, self._models(ctx.definition), ctx.definition.skills)
         self._audit.emit(
             EVENT_PUBLISHED,
             self._audit_detail(
@@ -575,7 +590,7 @@ class Provisioner:
                 )
             models = self._published_models(agent_id, published)
             if models and self._roles.exists(agent_id):
-                self._roles.ensure(agent_id, models)
+                self._roles.ensure(agent_id, models, self._published_skills(agent_id, published))
         return {**out, "compensated": True}
 
     def _failed_release_request(self, out: dict[str, Any]) -> Request | None:

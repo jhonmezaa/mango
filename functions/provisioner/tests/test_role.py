@@ -168,3 +168,36 @@ def test_deleting_a_role_that_does_not_exist_makes_no_write(lab: Lab) -> None:
     lab.iam.meta.events.register("before-call.iam", lambda model, **_: calls.append(model.name))
     _roles(lab).delete(AGENT)
     assert calls == ["GetRole"]
+
+
+def test_skills_are_read_only_under_the_prefixes_of_their_versions() -> None:
+    settings = Settings.from_env(
+        {
+            **ENV,
+            "SKILLS_BUCKET": "skills-bucket",
+            "SKILLS_KEY_ARN": "arn:aws:kms:us-east-1:123456789012:key/skills",
+        }
+    )
+    policy = role_policy(settings, AGENT, [MODEL], ["cost-analysis@1", "rightsizing@2"])
+    by_sid = {s["Sid"]: s for s in policy["Statement"]}
+    assert by_sid["ReadSkills"]["Action"] == "s3:GetObject"
+    assert by_sid["ReadSkills"]["Resource"] == [
+        "arn:aws:s3:::skills-bucket/skills/cost-analysis/v1/cost-analysis/*",
+        "arn:aws:s3:::skills-bucket/skills/rightsizing/v2/rightsizing/*",
+    ]
+    assert by_sid["ListSkills"]["Resource"] == "arn:aws:s3:::skills-bucket"
+    assert by_sid["ListSkills"]["Condition"]["StringLike"]["s3:prefix"] == [
+        "skills/cost-analysis/v1/cost-analysis/",
+        "skills/rightsizing/v2/rightsizing/",
+        "skills/cost-analysis/v1/cost-analysis/*",
+        "skills/rightsizing/v2/rightsizing/*",
+    ]
+    assert by_sid["SkillsKey"]["Condition"] == {
+        "StringEquals": {"kms:ViaService": "s3.us-east-1.amazonaws.com"}
+    }
+    # Without skills, the role reads nothing of the bucket.
+    assert "ReadSkills" not in {
+        s["Sid"] for s in role_policy(settings, AGENT, [MODEL])["Statement"]
+    }
+    with pytest.raises(StepError, match="skills_unavailable"):
+        role_policy(SETTINGS, AGENT, [MODEL], ["cost-analysis@1"])

@@ -25,7 +25,10 @@ from mango_core.harness_tools import (
     KNOWLEDGE_TARGET,
     allowed_tool,
     knowledge_allowed_tool,
+    skills_allowed_tool,
 )
+from mango_core.skills import parse_ref as parse_skill_ref
+from mango_core.skills import s3_uri
 from mango_packs.enablement import is_pack_id
 from mango_provisioner.config import ENDPOINT_LIVE, Settings
 from mango_provisioner.errors import RetryableError, StepError, aws_error, error_code
@@ -122,6 +125,20 @@ def allowed_tools(
     return sorted(out)
 
 
+def skill_sources(settings: Settings, definition: AgentDefinition) -> list[dict[str, Any]]:
+    """The approved skill versions of the definition, as the harness fetches them (D92): one
+    S3 directory each, in the bucket of the installation, written once by mango-api."""
+    if not definition.skills:
+        return []
+    if not settings.skills_bucket:
+        raise StepError("skills_unavailable")
+    sources = []
+    for ref in definition.skills:
+        skill_id, version = parse_skill_ref(ref)
+        sources.append({"s3": {"uri": s3_uri(settings.skills_bucket, skill_id, version)}})
+    return sources
+
+
 def harness_config(
     settings: Settings,
     *,
@@ -137,6 +154,9 @@ def harness_config(
     if not definition.system_prompt.strip():
         raise StepError("empty_prompt")
     tools = allowed_tools(settings, definition, pack_tools)
+    skills = skill_sources(settings, definition)
+    if skills:
+        tools = [*tools, skills_allowed_tool()]
     limits = definition.limits
     model: dict[str, Any] = {"modelId": definition.model}
     # Every model call carries an output cap (D74): without it one call can outrun the turn's
@@ -167,6 +187,7 @@ def harness_config(
         if tools
         else [],
         "allowedTools": tools,
+        **({"skills": skills} if skills else {}),
         "memory": {"disabled": {}},
         "maxIterations": limits.max_iterations,
         "maxTokens": limits.max_tokens,
@@ -191,6 +212,9 @@ def harness_config(
         json.dumps([config, environment], sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     config["environmentVariables"] = {**environment, ENV_CONFIG_HASH: fingerprint}
+    # Always sent: an update keeps the skills it is not given, so a version without skills
+    # must say so. Out of the fingerprint while empty, as before skills existed.
+    config.setdefault("skills", [])
     return config
 
 

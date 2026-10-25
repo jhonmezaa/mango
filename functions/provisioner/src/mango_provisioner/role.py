@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from mango_core.skills import parse_ref as parse_skill_ref
+from mango_core.skills import prefix
 from mango_provisioner.config import ROLE_POLICY_NAME, Settings
 from mango_provisioner.errors import StepError, aws_error, error_code
 
@@ -62,8 +64,46 @@ def trust_policy(settings: Settings, agent_id: str) -> dict[str, Any]:
     }
 
 
-def role_policy(settings: Settings, agent_id: str, models: Iterable[str]) -> dict[str, Any]:
-    """Inline policy of an agent role. Same statements for every agent; only models vary."""
+def skill_statements(settings: Settings, refs: Iterable[str]) -> list[dict[str, Any]]:
+    """Reading the ``SKILL.md`` of exactly the skill versions of the agent (D92): the harness
+    lists and downloads each directory with this role. Nothing else of the bucket."""
+    prefixes = sorted({prefix(*parse_skill_ref(ref)) for ref in refs})
+    if not prefixes:
+        return []
+    if not settings.skills_bucket or not settings.skills_key_arn:
+        raise StepError("skills_unavailable")
+    bucket = f"arn:aws:s3:::{settings.skills_bucket}"
+    return [
+        {
+            "Sid": "ReadSkills",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": [f"{bucket}/{p}*" for p in prefixes],
+        },
+        {
+            "Sid": "ListSkills",
+            "Effect": "Allow",
+            "Action": "s3:ListBucket",
+            "Resource": bucket,
+            "Condition": {"StringLike": {"s3:prefix": [*prefixes, *(f"{p}*" for p in prefixes)]}},
+        },
+        {
+            "Sid": "SkillsKey",
+            "Effect": "Allow",
+            "Action": "kms:Decrypt",
+            "Resource": settings.skills_key_arn,
+            "Condition": {
+                "StringEquals": {"kms:ViaService": f"s3.{settings.region}.amazonaws.com"}
+            },
+        },
+    ]
+
+
+def role_policy(
+    settings: Settings, agent_id: str, models: Iterable[str], skills: Iterable[str] = ()
+) -> dict[str, Any]:
+    """Inline policy of an agent role. Same statements for every agent; only the models and
+    the skills vary."""
     runtime = settings.runtime_name(agent_id)
     agentcore = f"arn:aws:bedrock-agentcore:{settings.region}:{settings.account_id}"
     model_resources = sorted({arn for model in models for arn in model_arns(settings, model)})
@@ -130,6 +170,7 @@ def role_policy(settings: Settings, agent_id: str, models: Iterable[str]) -> dic
                     f"{agentcore}:workload-identity-directory/default/workload-identity/{runtime}-*",
                 ],
             },
+            *skill_statements(settings, skills),
         ],
     }
 
@@ -139,14 +180,14 @@ class AgentRoles:
         self._iam = iam
         self._settings = settings
 
-    def ensure(self, agent_id: str, models: Iterable[str]) -> bool:
+    def ensure(self, agent_id: str, models: Iterable[str], skills: Iterable[str] = ()) -> bool:
         """Create the role if needed and set its policy. Returns whether it was created.
 
         An existing role is used only if it still carries the boundary and the expected trust:
         the provisioner never repairs a role someone changed (TM-M6), it fails.
         """
         name = self._settings.role_name(agent_id)
-        document = role_policy(self._settings, agent_id, models)
+        document = role_policy(self._settings, agent_id, models, skills)
         created = False
         role = self._get(name)
         if role is None:

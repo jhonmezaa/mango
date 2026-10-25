@@ -458,3 +458,59 @@ def test_delete_removes_the_endpoint_first(stubbed: tuple[Harnesses, Stubber]) -
     stubber.add_response("delete_harness", {}, {"harnessId": HID})
     harnesses.delete(HID)
     stubber.assert_no_pending_responses()
+
+
+# --- Skills (D92) -----------------------------------------------------------------------------
+
+SKILLED = Settings.from_env(
+    {
+        **ENV,
+        "SKILLS_BUCKET": "skills-bucket",
+        "SKILLS_KEY_ARN": "arn:aws:kms:us-east-1:123456789012:key/skills",
+    }
+)
+
+
+def test_skills_are_fetched_from_their_versions_and_loaded_with_one_tool() -> None:
+    definition = make_definition(skills=["rightsizing@2", "cost-analysis@1"])
+    config = harness_config(
+        SKILLED, agent_id=AGENT, version=3, content_hash="a" * 64, definition=definition
+    )
+    assert config["skills"] == [
+        {"s3": {"uri": "s3://skills-bucket/skills/cost-analysis/v1/cost-analysis/"}},
+        {"s3": {"uri": "s3://skills-bucket/skills/rightsizing/v2/rightsizing/"}},
+    ]
+    assert config["allowedTools"] == ["@mango/finops___get_cost_and_usage", "skills"]
+    # Another version of a skill is another harness configuration.
+    other = harness_config(
+        SKILLED,
+        agent_id=AGENT,
+        version=3,
+        content_hash="a" * 64,
+        definition=make_definition(skills=["rightsizing@3", "cost-analysis@1"]),
+    )
+    assert (
+        other["environmentVariables"]["MANGO_CONFIG_SHA256"]
+        != config["environmentVariables"]["MANGO_CONFIG_SHA256"]
+    )
+
+
+def test_a_version_without_skills_clears_them_and_keeps_its_fingerprint() -> None:
+    # An update keeps the skills it is not given: an empty list says there are none.
+    assert CONFIG["skills"] == []
+    assert "skills" not in CONFIG["allowedTools"]
+    again = harness_config(
+        SKILLED, agent_id=AGENT, version=3, content_hash="a" * 64, definition=make_definition()
+    )
+    assert again["environmentVariables"] == CONFIG["environmentVariables"]
+
+
+def test_skills_without_their_bucket_are_not_published() -> None:
+    with pytest.raises(StepError, match="skills_unavailable"):
+        harness_config(
+            SETTINGS,
+            agent_id=AGENT,
+            version=3,
+            content_hash="a" * 64,
+            definition=make_definition(skills=["cost-analysis@1"]),
+        )
