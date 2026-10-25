@@ -10,9 +10,12 @@ import json
 import logging
 import re
 import secrets
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
@@ -28,7 +31,9 @@ MAX_EXAMINED = 2000
 _QUERY_LIMIT = 200
 # Allowed read-only authorization decisions (``exclude=reads``). Events emitted since the
 # ``read_only`` flag exists carry it; older ones are recognized by their action.
-READ_ACTIONS = frozenset({"ViewAdmin", "ViewAudit", "ViewGroups", "ViewApprovals", "ViewInbox"})
+READ_ACTIONS = frozenset(
+    {"ViewAdmin", "ViewAudit", "ViewGroups", "ViewApprovals", "ViewInbox", "ViewGovernance"}
+)
 # Events that record a read and nothing else: reading the directory of the people screen, a
 # session recovered from its cookie (every page load leaves one; nothing changes), and an
 # agent's search of its knowledge bases (one per turn that searches; the design shows it with
@@ -122,14 +127,34 @@ class AuditQuery:
     exclude_reads: bool = False
     event: str | None = None
     """Exact event name, or a prefix when it ends with ``.`` (e.g. ``settings.``)."""
+    events: tuple[str, ...] = ()
+    """Several names or prefixes, as ``event``: a record matches any of them (D89)."""
+    applied_only: bool = False
+    """Leaves out the ``requested`` (and ``rejected``) halves of a fail-closed audit, keeping
+    what happened: an outcome of ``applied``, or none (D89)."""
 
     def matches(self, record: dict[str, Any]) -> bool:
         if self.exclude_reads and is_read(record):
             return False
-        if self.event is None:
+        if self.applied_only and _outcome(record) not in (None, "applied"):
+            return False
+        names = (*((self.event,) if self.event is not None else ()), *self.events)
+        if not names:
             return True
         name = str(record.get("event", ""))
-        return name.startswith(self.event) if self.event.endswith(".") else name == self.event
+        return any(name.startswith(n) if n.endswith(".") else name == n for n in names)
+
+
+def _outcome(record: dict[str, Any]) -> object:
+    detail = record.get("detail")
+    return detail.get("outcome") if isinstance(detail, dict) else None
+
+
+@dataclass(frozen=True)
+class AuditCount:
+    count: int
+    capped: bool
+    """The examination stopped at its cap: ``count`` is a floor."""
 
 
 @dataclass(frozen=True)
@@ -194,24 +219,46 @@ class AuditLog:
 
     def page(self, query: AuditQuery, now: datetime | None = None) -> AuditPage:
         """Newest first within ``[since, until)``, resuming strictly before ``cursor``.
-
         The index is partitioned by day and kept ``INDEX_TTL``: the range is clamped to it.
         Filters run here, so a page can hold fewer than ``limit`` items while ``next_cursor``
         is set (at most ``MAX_EXAMINED`` items are read per request).
         """
+        after = decode_cursor(query.cursor) if query.cursor else None
+        items: list[dict[str, Any]] = []
+        records = self._scan(query.since, query.until, after, now)
+        for examined, (sort_key, record) in enumerate(records, start=1):
+            if query.matches(record):
+                items.append(record)
+            if len(items) >= query.limit or examined >= MAX_EXAMINED:
+                return AuditPage(items, encode_cursor(sort_key))
+        return AuditPage(items, None)
+
+    def count(self, query: AuditQuery, cap: int, now: datetime | None = None) -> AuditCount:
+        """How many events of ``[since, until)`` match ``query``, examining at most ``cap``
+        (D89): past it the count is a floor and ``capped`` says so."""
+        matched = 0
+        records = self._scan(query.since, query.until, None, now)
+        for examined, (_sort_key, record) in enumerate(records):
+            if examined >= cap:
+                return AuditCount(matched, capped=True)
+            if query.matches(record):
+                matched += 1
+        return AuditCount(matched, capped=False)
+
+    def _scan(
+        self, since: datetime, until: datetime, after: str | None, now: datetime | None
+    ) -> Iterator[tuple[str, dict[str, Any]]]:
+        """Records of ``[since, until)``, newest first, strictly before ``after``."""
         now = now or datetime.now(UTC)
-        since = max(query.since, now - INDEX_TTL - timedelta(days=1))
+        since = max(since, now - INDEX_TTL - timedelta(days=1))
         # Bounded to the index lifetime so the loop over day partitions stays short.
-        until = min(query.until, now + timedelta(minutes=1))
+        until = min(until, now + timedelta(minutes=1))
         low = _iso(since)
         high = _iso(until)
-        after = decode_cursor(query.cursor) if query.cursor else None
         if after is not None and after < high:
             high = after
         if high <= low:
-            return AuditPage([], None)
-        items: list[dict[str, Any]] = []
-        examined = 0
+            return
         day = datetime.fromisoformat(high.split("#", 1)[0]).date()
         while day >= since.date():
             start: dict[str, Any] | None = None
@@ -234,14 +281,64 @@ class AuditLog:
                     sort_key = item["SK"]["S"]
                     if sort_key == after:
                         continue
-                    examined += 1
-                    record = json.loads(item["record"]["S"])
-                    if query.matches(record):
-                        items.append(record)
-                    if len(items) >= query.limit or examined >= MAX_EXAMINED:
-                        return AuditPage(items, encode_cursor(sort_key))
+                    yield sort_key, json.loads(item["record"]["S"])
                 start = resp.get("LastEvaluatedKey")
                 if not start:
                     break
             day -= timedelta(days=1)
-        return AuditPage(items, None)
+
+
+# --- Output models ---------------------------------------------------------------------
+
+
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class AuditResource(_Strict):
+    type: str
+    id: str
+
+
+class AuditEventOut(_Strict):
+    event_id: str
+    ts: str
+    event: str
+    user_id: str | None
+    actor_email: str | None = None
+    actor_role: str | None = None
+    actor_is_admin: bool | None = None
+    resource: AuditResource | None = None
+    detail: dict[str, Any]
+    hash: str
+
+
+def _audit_resource(value: object) -> AuditResource | None:
+    if not isinstance(value, dict):
+        return None
+    kind, ident = value.get("type"), value.get("id")
+    return (
+        AuditResource(type=kind, id=ident)
+        if isinstance(kind, str) and isinstance(ident, str)
+        else None
+    )
+
+
+def audit_event_out(record: dict[str, Any]) -> AuditEventOut:
+    """Known fields only: events written before a field existed simply lack it."""
+    resource = record.get("resource")
+    email = record.get("actor_email")
+    role = record.get("actor_role")
+    is_admin = record.get("actor_is_admin")
+    return AuditEventOut(
+        event_id=str(record.get("event_id", "")),
+        ts=str(record.get("ts", "")),
+        event=str(record.get("event", "")),
+        user_id=record.get("user_id") if isinstance(record.get("user_id"), str) else None,
+        actor_email=email if isinstance(email, str) else None,
+        actor_role=role if isinstance(role, str) else None,
+        actor_is_admin=is_admin if isinstance(is_admin, bool) else None,
+        resource=_audit_resource(resource),
+        detail=record["detail"] if isinstance(record.get("detail"), dict) else {},
+        hash=str(record.get("hash", "")),
+    )

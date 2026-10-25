@@ -194,6 +194,14 @@ def test_any_mango_user_reads_their_inbox(authz: Authorizer) -> None:
         assert authz.is_allowed(user, "ViewInbox", *PLATFORM), user.user_id
 
 
+def test_governance_is_for_administrators_and_central_finops(authz: Authorizer) -> None:
+    # D89: each section is decided again with the action of its own screen.
+    assert authz.is_allowed(ADMIN, "ViewGovernance", *PLATFORM)
+    assert authz.is_allowed(CENTRAL, "ViewGovernance", *PLATFORM)
+    for user in (CREATOR, MEMBER, LEAD, NO_GROUP):
+        assert not authz.is_allowed(user, "ViewGovernance", *PLATFORM), user.user_id
+
+
 def test_any_mango_user_creates_tasks(authz: Authorizer) -> None:
     # D82 (1): anyone signed in creates a task; UseAgent on a published agent, checked by
     # mango-api with the agent's groups and users, is what limits it.

@@ -88,6 +88,9 @@
       "ViewInbox": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "ViewGovernance": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ApproveToolCall": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },

@@ -39,7 +39,13 @@ SECURITY_EXCEPTION_LIMITS = {
     # The row of the MFA reset names no number: the one of the code is kept.
     "mfa_reset.proposals": (5, HOUR, None),
 }
-PER_TASK = {"models.refreshes", "session.starts", "session.renewals", "agents.lists"}
+PER_TASK = {
+    "models.refreshes",
+    "session.starts",
+    "session.renewals",
+    "agents.lists",
+    "governance.reads",  # D89 (6)
+}
 """Limits accepted as one per task. Adding a name here is a decision: record it (D70)."""
 
 

@@ -154,6 +154,13 @@ export const zAreaInSchema = z.object({
 });
 
 /**
+ * AreasSummary
+ */
+export const zAreasSummarySchema = z.object({
+    pending: z.int()
+});
+
+/**
  * AuditResource
  */
 export const zAuditResourceSchema = z.object({
@@ -183,6 +190,15 @@ export const zAuditEventOutSchema = z.object({
 export const zAuditListSchema = z.object({
     items: z.array(zAuditEventOutSchema),
     next_cursor: z.string().nullable()
+});
+
+/**
+ * AuditSummary
+ */
+export const zAuditSummarySchema = z.object({
+    capped: z.boolean(),
+    events_24h: z.int(),
+    recent: z.array(zAuditEventOutSchema)
 });
 
 /**
@@ -217,6 +233,26 @@ export const zBudgetDefaultsInSchema = z.object({
 export const zBudgetDefaultsOutSchema = z.object({
     agent_monthly_usd: z.string(),
     user_monthly_usd: z.string()
+});
+
+/**
+ * BudgetLine
+ */
+export const zBudgetLineSchema = z.object({
+    exhausted: z.boolean(),
+    id: z.string(),
+    limit_usd: z.string(),
+    name: z.string().nullable(),
+    scope: z.enum(['agent', 'user']),
+    spent_usd: z.string()
+});
+
+/**
+ * BudgetsSummary
+ */
+export const zBudgetsSummarySchema = z.object({
+    over_warn: z.array(zBudgetLineSchema),
+    period: z.string()
 });
 
 /**
@@ -1154,6 +1190,41 @@ export const zPolicyChangeOutSchema = z.object({
         'expired'
     ]),
     tool: z.string()
+});
+
+/**
+ * PolicyLine
+ */
+export const zPolicyLineSchema = z.object({
+    pending: z.int(),
+    policy: zPolicyRuleSchema,
+    server_name: z.string(),
+    tool: z.string(),
+    total: z.int()
+});
+
+/**
+ * ApprovalsSummary
+ */
+export const zApprovalsSummarySchema = z.object({
+    approved_7d: z.int(),
+    capped: z.boolean(),
+    mine: z.int(),
+    mine_soon: z.int(),
+    next_expires_at: z.string().nullable(),
+    pending: z.int(),
+    policies: z.array(zPolicyLineSchema),
+    rejected_7d: z.int()
+});
+
+/**
+ * GovernanceOut
+ */
+export const zGovernanceOutSchema = z.object({
+    approvals: zApprovalsSummarySchema.nullable(),
+    areas: zAreasSummarySchema.nullable(),
+    audit: zAuditSummarySchema.nullable(),
+    budgets: zBudgetsSummarySchema.nullable()
 });
 
 /**
@@ -3091,6 +3162,11 @@ export const zResolveUsersBody = zResolveInSchema;
  * Successful Response
  */
 export const zResolveUsersResponse = zResolveOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zGetGovernanceResponse = zGovernanceOutSchema;
 
 /**
  * Successful Response

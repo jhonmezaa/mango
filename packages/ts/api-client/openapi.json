@@ -1036,6 +1036,65 @@
         "title": "ApprovalOut",
         "type": "object"
       },
+      "ApprovalsSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_7d": {
+            "title": "Approved 7D",
+            "type": "integer"
+          },
+          "capped": {
+            "title": "Capped",
+            "type": "boolean"
+          },
+          "mine": {
+            "title": "Mine",
+            "type": "integer"
+          },
+          "mine_soon": {
+            "title": "Mine Soon",
+            "type": "integer"
+          },
+          "next_expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Expires At"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "policies": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyLine"
+            },
+            "title": "Policies",
+            "type": "array"
+          },
+          "rejected_7d": {
+            "title": "Rejected 7D",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pending",
+          "mine",
+          "mine_soon",
+          "next_expires_at",
+          "approved_7d",
+          "rejected_7d",
+          "policies",
+          "capped"
+        ],
+        "title": "ApprovalsSummary",
+        "type": "object"
+      },
       "ApproveIn": {
         "additionalProperties": false,
         "properties": {
@@ -1075,6 +1134,20 @@
           "group"
         ],
         "title": "AreaIn",
+        "type": "object"
+      },
+      "AreasSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pending"
+        ],
+        "title": "AreasSummary",
         "type": "object"
       },
       "AuditEventOut": {
@@ -1215,6 +1288,33 @@
         "title": "AuditResource",
         "type": "object"
       },
+      "AuditSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "capped": {
+            "title": "Capped",
+            "type": "boolean"
+          },
+          "events_24h": {
+            "title": "Events 24H",
+            "type": "integer"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventOut"
+            },
+            "title": "Recent",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events_24h",
+          "capped",
+          "recent"
+        ],
+        "title": "AuditSummary",
+        "type": "object"
+      },
       "BudgetByOut": {
         "additionalProperties": false,
         "description": "Whose budget stopped the last synchronization (D88 (53)).",
@@ -1305,6 +1405,56 @@
         "title": "BudgetDefaultsOut",
         "type": "object"
       },
+      "BudgetLine": {
+        "additionalProperties": false,
+        "properties": {
+          "exhausted": {
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "limit_usd": {
+            "title": "Limit Usd",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "scope": {
+            "enum": [
+              "agent",
+              "user"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "id",
+          "name",
+          "spent_usd",
+          "limit_usd",
+          "exhausted"
+        ],
+        "title": "BudgetLine",
+        "type": "object"
+      },
       "BudgetsOut": {
         "additionalProperties": false,
         "properties": {
@@ -1342,6 +1492,28 @@
           "users"
         ],
         "title": "BudgetsOut",
+        "type": "object"
+      },
+      "BudgetsSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "over_warn": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetLine"
+            },
+            "title": "Over Warn",
+            "type": "array"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "over_warn"
+        ],
+        "title": "BudgetsSummary",
         "type": "object"
       },
       "BusinessUnitsOut": {
@@ -2378,6 +2550,59 @@
           "text"
         ],
         "title": "FragmentOut",
+        "type": "object"
+      },
+      "GovernanceOut": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalsSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "areas": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AreasSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuditSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budgets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetsSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "approvals",
+          "budgets",
+          "areas",
+          "audit"
+        ],
+        "title": "GovernanceOut",
         "type": "object"
       },
       "GroupAdminOut": {
@@ -5222,6 +5447,39 @@
           "note"
         ],
         "title": "PolicyChangeOut",
+        "type": "object"
+      },
+      "PolicyLine": {
+        "additionalProperties": false,
+        "properties": {
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PolicyRule"
+          },
+          "server_name": {
+            "title": "Server Name",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tool",
+          "server_name",
+          "policy",
+          "pending",
+          "total"
+        ],
+        "title": "PolicyLine",
         "type": "object"
       },
       "PolicyRule": {
@@ -12421,6 +12679,34 @@
           }
         },
         "summary": "Resolve Users"
+      }
+    },
+    "/governance": {
+      "get": {
+        "operationId": "get_governance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Governance"
       }
     },
     "/groups": {

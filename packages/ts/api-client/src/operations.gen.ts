@@ -84,6 +84,7 @@ import {
     zGetCatalogResponse,
     zGetConversationPath,
     zGetConversationResponse,
+    zGetGovernanceResponse,
     zGetInstallationResponse,
     zGetKnowledgeBasePath,
     zGetKnowledgeBaseResponse,
@@ -589,6 +590,15 @@ export const operations = {
         query: null,
         body: null,
         response: zGetConversationResponse,
+    },
+    getGovernance: {
+        method: 'GET',
+        path: '/governance',
+        status: 200,
+        pathParams: null,
+        query: null,
+        body: null,
+        response: zGetGovernanceResponse,
     },
     getInstallation: {
         method: 'GET',

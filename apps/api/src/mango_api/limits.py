@@ -21,6 +21,7 @@ from mango_api import (
     admin,
     approvals,
     directory,
+    governance,
     group_admin,
     knowledge,
     mcp,
@@ -188,6 +189,17 @@ LIMITS: dict[str, LimitSpec] = {
             "calls to the very route it makes cheaper. The page asks at most four times a "
             "minute per tab; N times thirty a minute per person is still far below what a "
             "task serves."
+        ),
+    ),
+    "governance.reads": LimitSpec(
+        governance.READS_PER_MINUTE,
+        MINUTE,
+        shared=False,
+        why=(
+            "Stops one person's loop over the Gobernanza summary (D89), which only "
+            "administrators and central FinOps read and which bounds its own reads; a cache of "
+            "30 seconds per person already absorbs reloads. It holds no exception: N times "
+            "thirty a minute per person is still far below what a task serves."
         ),
     ),
     "session.starts": LimitSpec(

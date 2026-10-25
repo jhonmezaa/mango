@@ -527,7 +527,7 @@ def _catalog(deps: ToolPolicyDeps) -> McpCatalog:
         raise ApiError(503, "catalog_unavailable", "please try again") from exc
 
 
-def _rule_out(policy: Policy) -> PolicyRule:
+def policy_rule(policy: Policy) -> PolicyRule:
     return PolicyRule.model_validate(policy.rule())
 
 
@@ -539,8 +539,8 @@ def _change_out(change: PolicyChange, now: datetime) -> PolicyChangeOut:
         change_id=change.change_id,
         tool=change.tool,
         status=shown,
-        before=_rule_out(change.before),
-        after=_rule_out(change.after),
+        before=policy_rule(change.before),
+        after=policy_rule(change.after),
         reason=change.reason,
         proposed_by=change.proposed_by,
         proposed_by_email=change.proposed_by_email,
@@ -575,7 +575,7 @@ def policies_view(deps: ToolPolicyDeps, caller: Caller) -> PoliciesOut:
                 server_name=tool.server.name,
                 description=tool.tool.description,
                 conditions=[c.value for c in tier_inputs(tool).conditions()],
-                policy=_rule_out(policy),
+                policy=policy_rule(policy),
                 version=policy.version,
                 pending_change_id=pending.get(tool.ref),
             )

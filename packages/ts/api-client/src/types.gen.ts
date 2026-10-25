@@ -530,6 +530,44 @@ export type ApprovalOut = {
 };
 
 /**
+ * ApprovalsSummary
+ */
+export type ApprovalsSummary = {
+    /**
+     * Approved 7D
+     */
+    approved_7d: number;
+    /**
+     * Capped
+     */
+    capped: boolean;
+    /**
+     * Mine
+     */
+    mine: number;
+    /**
+     * Mine Soon
+     */
+    mine_soon: number;
+    /**
+     * Next Expires At
+     */
+    next_expires_at: string | null;
+    /**
+     * Pending
+     */
+    pending: number;
+    /**
+     * Policies
+     */
+    policies: Array<PolicyLine>;
+    /**
+     * Rejected 7D
+     */
+    rejected_7d: number;
+};
+
+/**
  * ApproveIn
  */
 export type ApproveIn = {
@@ -551,6 +589,16 @@ export type AreaIn = {
      * Group
      */
     group: string;
+};
+
+/**
+ * AreasSummary
+ */
+export type AreasSummary = {
+    /**
+     * Pending
+     */
+    pending: number;
 };
 
 /**
@@ -627,6 +675,24 @@ export type AuditResource = {
 };
 
 /**
+ * AuditSummary
+ */
+export type AuditSummary = {
+    /**
+     * Capped
+     */
+    capped: boolean;
+    /**
+     * Events 24H
+     */
+    events_24h: number;
+    /**
+     * Recent
+     */
+    recent: Array<AuditEventOut>;
+};
+
+/**
  * BudgetByOut
  *
  * Whose budget stopped the last synchronization (D88 (53)).
@@ -679,6 +745,36 @@ export type BudgetDefaultsOut = {
 };
 
 /**
+ * BudgetLine
+ */
+export type BudgetLine = {
+    /**
+     * Exhausted
+     */
+    exhausted: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Limit Usd
+     */
+    limit_usd: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Scope
+     */
+    scope: 'agent' | 'user';
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+};
+
+/**
  * BudgetsOut
  */
 export type BudgetsOut = {
@@ -699,6 +795,20 @@ export type BudgetsOut = {
      * Version
      */
     version: number;
+};
+
+/**
+ * BudgetsSummary
+ */
+export type BudgetsSummary = {
+    /**
+     * Over Warn
+     */
+    over_warn: Array<BudgetLine>;
+    /**
+     * Period
+     */
+    period: string;
 };
 
 /**
@@ -1311,6 +1421,16 @@ export type FragmentOut = {
      * Text
      */
     text: string;
+};
+
+/**
+ * GovernanceOut
+ */
+export type GovernanceOut = {
+    approvals: ApprovalsSummary | null;
+    areas: AreasSummary | null;
+    audit: AuditSummary | null;
+    budgets: BudgetsSummary | null;
 };
 
 /**
@@ -2771,6 +2891,29 @@ export type PolicyChangeOut = {
      * Tool
      */
     tool: string;
+};
+
+/**
+ * PolicyLine
+ */
+export type PolicyLine = {
+    /**
+     * Pending
+     */
+    pending: number;
+    policy: PolicyRule;
+    /**
+     * Server Name
+     */
+    server_name: string;
+    /**
+     * Tool
+     */
+    tool: string;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -6816,6 +6959,31 @@ export type ResolveUsersResponses = {
 };
 
 export type ResolveUsersResponse = ResolveUsersResponses[keyof ResolveUsersResponses];
+
+export type GetGovernanceData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/governance';
+};
+
+export type GetGovernanceErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetGovernanceError = GetGovernanceErrors[keyof GetGovernanceErrors];
+
+export type GetGovernanceResponses = {
+    /**
+     * Successful Response
+     */
+    200: GovernanceOut;
+};
+
+export type GetGovernanceResponse = GetGovernanceResponses[keyof GetGovernanceResponses];
 
 export type ListGroupsData = {
     body?: never;

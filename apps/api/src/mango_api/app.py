@@ -58,9 +58,11 @@ from mango_api.audit import (
     INDEX_TTL,
     MAX_PAGE,
     READ_ACTIONS,
+    AuditEventOut,
     AuditLog,
     AuditQuery,
     InvalidCursorError,
+    audit_event_out,
 )
 from mango_api.authz import (
     PLATFORM,
@@ -89,6 +91,7 @@ from mango_api.directory import (
     LookupQuota,
     directory_router,
 )
+from mango_api.governance import GovernanceDeps, governance_router
 from mango_api.group_admin import (
     CognitoGroups,
     GroupAdminDeps,
@@ -292,58 +295,9 @@ class AuditParams(_Strict):
     )
 
 
-class AuditResource(_Strict):
-    type: str
-    id: str
-
-
-class AuditEventOut(_Strict):
-    event_id: str
-    ts: str
-    event: str
-    user_id: str | None
-    actor_email: str | None = None
-    actor_role: str | None = None
-    actor_is_admin: bool | None = None
-    resource: AuditResource | None = None
-    detail: dict[str, Any]
-    hash: str
-
-
 class AuditList(_Strict):
     items: list[AuditEventOut]
     next_cursor: str | None
-
-
-def _audit_resource(value: object) -> AuditResource | None:
-    if not isinstance(value, dict):
-        return None
-    kind, ident = value.get("type"), value.get("id")
-    return (
-        AuditResource(type=kind, id=ident)
-        if isinstance(kind, str) and isinstance(ident, str)
-        else None
-    )
-
-
-def _audit_event_out(record: dict[str, Any]) -> AuditEventOut:
-    """Known fields only: events written before a field existed simply lack it."""
-    resource = record.get("resource")
-    email = record.get("actor_email")
-    role = record.get("actor_role")
-    is_admin = record.get("actor_is_admin")
-    return AuditEventOut(
-        event_id=str(record.get("event_id", "")),
-        ts=str(record.get("ts", "")),
-        event=str(record.get("event", "")),
-        user_id=record.get("user_id") if isinstance(record.get("user_id"), str) else None,
-        actor_email=email if isinstance(email, str) else None,
-        actor_role=role if isinstance(role, str) else None,
-        actor_is_admin=is_admin if isinstance(is_admin, bool) else None,
-        resource=_audit_resource(resource),
-        detail=record["detail"] if isinstance(record.get("detail"), dict) else {},
-        hash=str(record.get("hash", "")),
-    )
 
 
 _FIELD_PART_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -1135,26 +1089,56 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         except InvalidCursorError as exc:
             raise ApiError(422, "invalid_request", "invalid fields: cursor") from exc
         return AuditList(
-            items=[_audit_event_out(r) for r in page.items], next_cursor=page.next_cursor
+            items=[audit_event_out(r) for r in page.items], next_cursor=page.next_cursor
         )
 
+    admin_deps = AdminDeps(
+        store=services.settings_store,
+        limits=services.budget_limits,
+        budgets=services.budgets,
+        audit=services.audit,
+        probe=services.probe,
+        agent_id=settings.agent_id,
+        rate_limiter=services.limits.limiter("admin.probe"),
+        organization_cache=OrganizationCache(ttl_seconds=60),
+        clock=now_utc,
+        agent_names=lambda: _agent_names(services),
+        member_rate_limiter=services.limits.limiter("admin.member_access"),
+    )
+    app.include_router(admin_router(admin_deps, current_user, require))
+
+    def platform_allows(caller: Caller, action: str) -> bool:
+        # One section of the Gobernanza summary: the request itself was decided and audited.
+        return services.authorizer.is_allowed(caller.user, action, *PLATFORM)
+
+    governance_sources: Callable[[Caller], list[QueuedSourceOut]] | None = None
+    if services.knowledge is not None:
+        governance_knowledge = services.knowledge
+
+        def governance_sources(caller: Caller) -> list[QueuedSourceOut]:
+            # The pending bucket proposals of Aprobaciones, as the Bandeja (D88 (48), D89).
+            return queued_sources(
+                governance_knowledge,
+                caller,
+                lambda c, action, bases: services.authorizer.allowed_knowledge_bases(
+                    c.user, action, bases
+                ),
+                decided=False,
+            )
+
     app.include_router(
-        admin_router(
-            AdminDeps(
-                store=services.settings_store,
-                limits=services.budget_limits,
-                budgets=services.budgets,
+        governance_router(
+            GovernanceDeps(
+                approvals=services.approvals,
+                admin=admin_deps,
                 audit=services.audit,
-                probe=services.probe,
-                agent_id=settings.agent_id,
-                rate_limiter=services.limits.limiter("admin.probe"),
-                organization_cache=OrganizationCache(ttl_seconds=60),
                 clock=now_utc,
-                agent_names=lambda: _agent_names(services),
-                member_rate_limiter=services.limits.limiter("admin.member_access"),
+                limiter=services.limits.limiter("governance.reads"),
+                sources=governance_sources,
             ),
             current_user,
             require,
+            platform_allows,
         )
     )
 

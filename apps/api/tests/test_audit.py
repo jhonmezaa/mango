@@ -214,6 +214,43 @@ def test_event_filter_exact_or_prefix(log: Any) -> None:
     assert audit.page(_query(event="agent."), now=NOW).items[0]["event"] == "agent.invoke"
 
 
+def test_several_events_and_only_what_happened(log: Any) -> None:
+    # The recent activity of Gobernanza (D89): names or prefixes, without the ``requested`` (or
+    # ``rejected``) half of a fail-closed audit; events without an outcome stay.
+    audit, db, _ = log
+    t = NOW - timedelta(minutes=1)
+    _put(db, t, 1, "settings.budget.updated", outcome="requested")
+    applied = _put(db, t, 2, "settings.budget.updated", outcome="applied")
+    _put(db, t, 3, "settings.bu_mapping.proposed", outcome="rejected")
+    mapping = _put(db, t, 4, "settings.bu_mapping.approved", outcome="applied")
+    exceeded = _put(db, t, 5, "budget.exceeded")
+    _put(db, t, 6, "agent.invoke")
+    query = _query(
+        events=("settings.budget.updated", "settings.bu_mapping.", "budget.exceeded"),
+        applied_only=True,
+    )
+    assert sorted(r["event_id"] for r in audit.page(query, now=NOW).items) == sorted(
+        [applied, mapping, exceeded]
+    )
+
+
+def test_count_skips_reads_and_stops_at_its_cap(log: Any) -> None:
+    audit, db, _ = log
+    for i in range(1, 4):
+        _put(db, NOW - timedelta(minutes=i), i, "settings.budget.updated")
+    _put(db, NOW - timedelta(minutes=5), 7, "policy.decision", action="ViewAdmin", allowed=True)
+    # Across midnight, inside the last 24 hours; and one too old to count.
+    _put(db, NOW - timedelta(hours=20), 8, "agent.invoke")
+    _put(db, NOW - timedelta(hours=25), 9, "agent.invoke")
+    day = AuditQuery(since=NOW - timedelta(days=1), until=NOW, limit=1, exclude_reads=True)
+    counted = audit.count(day, cap=100, now=NOW)
+    assert (counted.count, counted.capped) == (4, False)
+    capped = audit.count(day, cap=2, now=NOW)
+    assert (capped.count, capped.capped) == (2, True)
+    # Exactly the cap examined is not capped.
+    assert audit.count(day, cap=5, now=NOW).capped is False
+
+
 def test_filtered_scan_is_bounded_and_resumable(log: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     import mango_api.audit as audit_module  # noqa: PLC0415
 
