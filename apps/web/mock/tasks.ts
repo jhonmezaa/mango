@@ -693,3 +693,25 @@ export function endedRunsOfMine() {
         .map((item) => ({ task, run: item })),
     );
 }
+
+/** The steps with a tool of the mock user's completed runs, for the Actividad mock (D90). */
+export function toolStepsOfMine() {
+  return [...tasks.values()]
+    .filter((task) => task.owner.user_id === ME.user_id)
+    .flatMap((task) =>
+      task.runs
+        .filter((item) => item.status === 'ok' && item.started_at)
+        .flatMap((item) =>
+          item.steps
+            .filter((step) => step.tool)
+            .map((step, index) => ({
+              task,
+              run: item,
+              tool: step.tool ?? '',
+              at: new Date(
+                Date.parse(item.started_at ?? '') + 4_000 + index * 11_000,
+              ).toISOString(),
+            })),
+        ),
+    );
+}

@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 
 import {
   zAdminAuditResponse,
+  zGetActivityResponse,
   zGetAdminGroupsResponse,
   zGetAdminModelsResponse,
   zGetAgentResponse,
@@ -106,6 +107,29 @@ describe('mock backend', () => {
         error: { code: 'unauthorized', message: 'Missing or invalid token' },
       });
     }
+  });
+
+  it('answers the Actividad with the generated contract and the rules of the API', async () => {
+    const page = zGetActivityResponse.parse(await json('/activity?range=7d'));
+    expect(page.scope).toBe('all');
+    expect(page.retention_days).toBe(30);
+    // Someone else's events carry no conversation, task or run (D23, D90).
+    const others = page.events.filter((event) => !event.mine);
+    expect(others.length).toBeGreaterThan(0);
+    for (const event of others) {
+      expect([event.conversation_id, event.task_id, event.run_id, event.task_name]).toEqual([
+        null,
+        null,
+        null,
+        null,
+      ]);
+    }
+    expect(page.events.some((event) => event.mine && event.conversation_id)).toBe(true);
+    expect(page.events.some((event) => event.kind === 'budget')).toBe(true);
+    // The live mode asks only what is new.
+    const later = new Date(Date.now() + 60_000).toISOString();
+    expect(zGetActivityResponse.parse(await json(`/activity?since=${later}`)).events).toEqual([]);
+    expect((await api('/activity?range=30d')).status).toBe(422);
   });
 
   it('answers unknown routes with the error envelope', async () => {

@@ -1,3 +1,4 @@
+import { activity } from './es/activity';
 import { agentBuilder } from './es/agentBuilder';
 import { agentReview } from './es/agentReview';
 import { approvals } from './es/approvals';
@@ -52,4 +53,5 @@ export const es = {
   inbox,
   knowledge,
   governance,
+  activity,
 } as const;

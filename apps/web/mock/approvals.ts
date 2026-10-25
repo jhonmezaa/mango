@@ -570,3 +570,10 @@ export function approverRequests() {
 export function currentPolicy(): Rule {
   return policy;
 }
+
+/** The requests the Actividad shows the mock user, an administrator: theirs and the approvers tier (D90). */
+export function activityApprovals() {
+  return [...approvals.values()]
+    .filter((item) => item.tier === 'approvers' || item.requested_by === MOCK_USER)
+    .map(out);
+}

@@ -388,3 +388,19 @@ export const handleChatApi: ApiHandler = async (req, res, path) => {
   }
   return false;
 };
+
+/** The tool calls of the mock user's conversations, for the Actividad mock (D90). */
+export function toolCallsOfMine() {
+  return [...conversations.values()].flatMap((conversation) =>
+    conversation.messages.flatMap((message) =>
+      message.tools
+        .filter((tool) => tool.status === 'started')
+        .map((tool) => ({
+          conversation_id: conversation.conversation_id,
+          agent_id: conversation.agent_id,
+          at: message.created_at,
+          tool: tool.name,
+        })),
+    ),
+  );
+}

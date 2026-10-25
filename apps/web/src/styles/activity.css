@@ -1,0 +1,264 @@
+/*
+ * Actividad (design activity.jsx: `ac-grid`, `ac-row`, `ac-main`, `ac-t`, `ac-s`, `ac-target`,
+ * `ac-ms`, `ac-kind`, `ac-more`, `ac-side*`, `ac-ag*`, `ac-silent`, `ac-live-on`, `ac-pulse`).
+ * Ported from the design (Claude Design styles.css, round 19); values are the design's. `bg-kpis`,
+ * `bg-toolbar`, `au-cats`, `au-day-h` and `au-time` are already in admin.css. The `ac-*` helpers
+ * below hold the inline styles of the design's component; the loading skeleton follows the other
+ * screens (the design does not draw one for this view).
+ */
+@layer components {
+  .ac-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 20px;
+    padding: 0 28px 48px;
+    align-items: start;
+  }
+  .ac-row {
+    border-top: 1px solid var(--border);
+  }
+  .ac-row:first-child {
+    border-top: none;
+  }
+  .ac-row.is-fresh {
+    animation: ac-fresh 2.4s ease-out;
+  }
+  .ac-row.is-err .ac-t b {
+    color: var(--red);
+  }
+  .ac-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 16px;
+    text-align: left;
+  }
+  .ac-main:hover {
+    background: var(--row-hover);
+  }
+  .ac-t {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ac-t b {
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .ac-s {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 1px;
+  }
+  .ac-target {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: var(--row-hover);
+    color: var(--text);
+  }
+  .ac-ms {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .ac-kind {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    flex-shrink: 0;
+  }
+  .ac-more {
+    padding: 0 16px 12px 104px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ac-side {
+    position: sticky;
+    top: 16px;
+  }
+  .ac-side-h {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    padding: 12px 14px 6px;
+  }
+  .ac-ag {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    text-align: left;
+  }
+  .ac-ag:hover,
+  .ac-ag.is-on {
+    background: var(--row-hover);
+  }
+  .ac-ag-n {
+    font-size: 13px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ac-silent {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .ac-live-on {
+    border-color: color-mix(in oklab, var(--green) 40%, transparent) !important;
+    color: var(--green) !important;
+  }
+  .ac-pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: mango-pulse 1.6s infinite;
+  }
+
+  .tk-agent-ic {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Inline styles of the design's component. */
+  .ac-ic {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+  }
+  .ac-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .ac-card {
+    padding: 0;
+    overflow: hidden;
+  }
+  .ac-group {
+    margin-bottom: 18px;
+  }
+  .ac-ms.is-err,
+  .ac-err {
+    color: var(--red);
+  }
+  .ac-kind.is-tool {
+    color: var(--blue);
+  }
+  .ac-kind.is-approval,
+  .ac-kind.is-budget {
+    color: var(--amber);
+  }
+  .ac-kind.is-error {
+    color: var(--red);
+  }
+  .ac-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ac-more-btn {
+    margin: 0 auto;
+    display: flex;
+  }
+  .ac-retention {
+    text-align: center;
+  }
+  .ac-ag-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ac-bar {
+    display: block;
+    margin-top: 5px;
+  }
+  .ac-bar > span {
+    background: var(--blue);
+  }
+  .ac-bar > span.is-err {
+    background: var(--amber);
+  }
+  .ac-none {
+    padding: 14px;
+  }
+  .ac-silent-card {
+    margin-top: 12px;
+  }
+  .ac-empty-t {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .ac-search {
+    flex: 1 1 220px;
+    max-width: 300px;
+  }
+  .ac-spacer {
+    flex: 1;
+  }
+  .ac-cats {
+    padding: 0 28px 14px;
+  }
+  .ac-inline-link {
+    font-size: inherit;
+    padding: 0;
+  }
+  .ac-skel-lines {
+    flex: 1;
+  }
+
+  @media (max-width: 1100px) {
+    .ac-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ac-side {
+      position: static;
+      order: -1;
+    }
+  }
+  @media (max-width: 760px) {
+    .ac-grid {
+      padding: 0 16px 32px;
+    }
+    .ac-cats {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .ac-more {
+      padding-left: 16px;
+    }
+    .ac-ms {
+      display: none;
+    }
+  }
+}
+
+@keyframes ac-fresh {
+  from {
+    background: var(--accent-soft);
+  }
+  to {
+    background: transparent;
+  }
+}

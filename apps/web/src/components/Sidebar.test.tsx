@@ -89,6 +89,7 @@ describe('Sidebar navigation', () => {
     window.localStorage.setItem('is_admin', 'true');
     renderSidebar(false);
     // Org Chart is a user view (design USER_VIEWS, oct 2026): the API filters the tree (D38).
+    // So is the Actividad (D90): the API reads each person's own activity.
     await user.click(screen.getByRole('button', { name: 'Operación' }));
     await user.click(screen.getByRole('button', { name: 'Construir' }));
     expect(navLinks()).toEqual([
@@ -97,6 +98,7 @@ describe('Sidebar navigation', () => {
       'Marketplace',
       'Chat con FinOps',
       'Aprobaciones',
+      'Actividad',
       'Schedules',
       'Org Chart',
     ]);
@@ -104,7 +106,6 @@ describe('Sidebar navigation', () => {
       'Inicio, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
-      'Actividad, próximamente',
     ]);
     // Construir only has Schedules (design 2026-10-16, D82 (1)); admin screens and the
     // Catálogo de MCP are hidden.
@@ -129,6 +130,7 @@ describe('Sidebar navigation', () => {
       'Chat con FinOps',
       'Aprobaciones',
       'Gobernanza',
+      'Actividad',
       'Schedules',
       'Org Chart',
     ]);
@@ -136,7 +138,6 @@ describe('Sidebar navigation', () => {
       'Inicio, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
-      'Actividad, próximamente',
       'Playground, próximamente',
       'Skills, próximamente',
       'Observability, próximamente',
@@ -340,6 +341,7 @@ describe('Sidebar navigation', () => {
       'Gobernanza',
       'Presupuestos',
       'Audit log',
+      'Actividad',
       'Brains',
       'Catálogo de MCP',
       'Knowledge Bases',

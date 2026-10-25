@@ -1,5 +1,6 @@
 import type { ComponentType, LazyExoticComponent } from 'react';
 
+import { activityScreen } from '../pages/activity/screen';
 import { agentBuilderScreen } from '../pages/agentBuilder/screen';
 import { agentReviewScreen } from '../pages/agentReview/screen';
 import { approvalsScreen } from '../pages/approvals/screen';
@@ -41,4 +42,5 @@ export const SCREENS: readonly Screen[] = [
   schedulesScreen,
   inboxScreen,
   governanceScreen,
+  activityScreen,
 ];
