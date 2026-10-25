@@ -19,6 +19,120 @@ export type ActionOut = {
 };
 
 /**
+ * ActivityAgent
+ */
+export type ActivityAgent = {
+    /**
+     * Color
+     */
+    color: number;
+    /**
+     * Icon
+     */
+    icon: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Published
+     */
+    published: boolean;
+};
+
+/**
+ * ActivityEvent
+ */
+export type ActivityEvent = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Approval Id
+     */
+    approval_id: string | null;
+    /**
+     * Approval Status
+     */
+    approval_status: string | null;
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Conversation Id
+     */
+    conversation_id: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'tool' | 'error' | 'approval' | 'budget';
+    /**
+     * Mine
+     */
+    mine: boolean;
+    /**
+     * Ms
+     */
+    ms: number | null;
+    /**
+     * Ok
+     */
+    ok: boolean | null;
+    /**
+     * Run Id
+     */
+    run_id: string | null;
+    /**
+     * Task Id
+     */
+    task_id: string | null;
+    /**
+     * Task Name
+     */
+    task_name: string | null;
+    /**
+     * Tool
+     */
+    tool: string | null;
+};
+
+/**
+ * ActivityPage
+ */
+export type ActivityPage = {
+    /**
+     * Agents
+     */
+    agents: Array<ActivityAgent>;
+    /**
+     * Events
+     */
+    events: Array<ActivityEvent>;
+    /**
+     * Retention Days
+     */
+    retention_days: number;
+    /**
+     * Scope
+     */
+    scope: 'mine' | 'all';
+    /**
+     * Truncated
+     */
+    truncated: boolean;
+};
+
+/**
  * AdminModelOut
  */
 export type AdminModelOut = {
@@ -4880,6 +4994,40 @@ export type MangoApiToolPoliciesRejectIn = {
      */
     reason: string;
 };
+
+export type ListRouteData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Range
+         */
+        range?: '1h' | '24h' | '7d';
+        /**
+         * Since
+         */
+        since?: string | null;
+    };
+    url: '/activity';
+};
+
+export type ListRouteErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListRouteError = ListRouteErrors[keyof ListRouteErrors];
+
+export type ListRouteResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActivityPage;
+};
+
+export type ListRouteResponse = ListRouteResponses[keyof ListRouteResponses];
 
 export type AdminAuditData = {
     body?: never;

@@ -15,6 +15,53 @@ export const zActionOutSchema = z.object({
 });
 
 /**
+ * ActivityAgent
+ */
+export const zActivityAgentSchema = z.object({
+    color: z.int(),
+    icon: z.string(),
+    id: z.string(),
+    name: z.string(),
+    published: z.boolean()
+});
+
+/**
+ * ActivityEvent
+ */
+export const zActivityEventSchema = z.object({
+    agent_id: z.string(),
+    approval_id: z.string().nullable(),
+    approval_status: z.string().nullable(),
+    at: z.string(),
+    conversation_id: z.string().nullable(),
+    id: z.string(),
+    kind: z.enum([
+        'tool',
+        'error',
+        'approval',
+        'budget'
+    ]),
+    mine: z.boolean(),
+    ms: z.int().nullable(),
+    ok: z.boolean().nullable(),
+    run_id: z.string().nullable(),
+    task_id: z.string().nullable(),
+    task_name: z.string().nullable(),
+    tool: z.string().nullable()
+});
+
+/**
+ * ActivityPage
+ */
+export const zActivityPageSchema = z.object({
+    agents: z.array(zActivityAgentSchema),
+    events: z.array(zActivityEventSchema),
+    retention_days: z.int(),
+    scope: z.enum(['mine', 'all']),
+    truncated: z.boolean()
+});
+
+/**
  * AgentBudgetOut
  */
 export const zAgentBudgetOutSchema = z.object({
@@ -2513,6 +2560,20 @@ export const zMangoApiToolPoliciesProposeInSchema = z.object({
 export const zMangoApiToolPoliciesRejectInSchema = z.object({
     reason: z.string().min(1).max(500)
 });
+
+export const zListRouteQuery = z.object({
+    range: z.enum([
+        '1h',
+        '24h',
+        '7d'
+    ]).optional().default('24h'),
+    since: z.iso.datetime().nullish()
+});
+
+/**
+ * Successful Response
+ */
+export const zListRouteResponse = zActivityPageSchema;
 
 export const zAdminAuditQuery = z.object({
     limit: z.int().gte(1).lte(200).optional().default(50),
