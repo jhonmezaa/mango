@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** en el texto: sigue [D22](D022-marketplace-compartir-retirar.md) para «Compartir» y deja fuera de las fases A a C las evals obligatorias y las skills de [D26](D026-reglas-del-ciclo-de-vida.md)
-- **Precisada por:** [D65](D065-org-chart-quien-usa-un-agente.md) (precisa)
+- **Precisada por:** [D65](D065-org-chart-quien-usa-un-agente.md) (precisa); [D92](D092-skills-de-solo-instrucciones.md) (construye las skills, en estado propuesta)
 
 ## Decisión
 
