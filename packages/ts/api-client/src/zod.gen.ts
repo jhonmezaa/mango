@@ -208,6 +208,17 @@ export const zAreasSummarySchema = z.object({
 });
 
 /**
+ * AuditAgentOut
+ *
+ * The agent of «Agente aprobado» and «Agente retirado», resolved from the catalog when the
+ * trail is read: the event keeps ids only. A field that cannot be resolved is ``None``.
+ */
+export const zAuditAgentOutSchema = z.object({
+    created_by_email: z.string().nullish(),
+    name: z.string().nullish()
+});
+
+/**
  * AuditResource
  */
 export const zAuditResourceSchema = z.object({
@@ -222,6 +233,7 @@ export const zAuditEventOutSchema = z.object({
     actor_email: z.string().nullish(),
     actor_is_admin: z.boolean().nullish(),
     actor_role: z.string().nullish(),
+    agent: zAuditAgentOutSchema.nullish(),
     detail: z.record(z.string(), z.unknown()),
     event: z.string(),
     event_id: z.string(),

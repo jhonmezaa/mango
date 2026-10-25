@@ -1376,6 +1376,36 @@
         "title": "AreasSummary",
         "type": "object"
       },
+      "AuditAgentOut": {
+        "additionalProperties": false,
+        "description": "The agent of «Agente aprobado» and «Agente retirado», resolved from the catalog when the\ntrail is read: the event keeps ids only. A field that cannot be resolved is ``None``.",
+        "properties": {
+          "created_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "AuditAgentOut",
+        "type": "object"
+      },
       "AuditEventOut": {
         "additionalProperties": false,
         "properties": {
@@ -1411,6 +1441,16 @@
               }
             ],
             "title": "Actor Role"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuditAgentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "detail": {
             "additionalProperties": true,

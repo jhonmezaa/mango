@@ -1494,3 +1494,37 @@ def test_me_takes_create_agent_from_the_cedar_decision(env: Env) -> None:
     assert env.audit.events == []
     env.cedar.fail = True
     assert can("admin") is False
+
+
+# --- Audit trail ---------------------------------------------------------------------------
+
+
+def test_the_audit_trail_names_the_agent_and_who_created_it(env: Env) -> None:
+    """«Agente aprobado» and «Agente retirado» (design round 20): the name and the creator's
+    email come from the catalog when the trail is read; the event keeps ids only."""
+    live = _published(env, name="Asistente de costos")
+    lock = env.client.get(_url(live), headers=_h("admin")).json()["agent"]["lock_version"]
+    retired = env.client.post(
+        f"/api/agents/{live['agent_id']}/retire",
+        headers=_h("admin"),
+        json={"lock_version": lock, "reason": "Duplicado"},
+    )
+    assert retired.status_code == 200
+    lookup = app_module._audit_agents(SimpleNamespace(agents=env.deps))  # type: ignore[arg-type]
+    assert lookup is not None
+    for name in ("agent.version.approved", "agent.retired"):
+        [(_user, detail)] = env.audit.named(name)
+        assert "created_by_email" not in detail
+        found = lookup(detail["agent"], detail["version"], detail["created_by"])
+        assert found is not None
+        assert found.model_dump() == {
+            "name": "Asistente de costos",
+            "created_by_email": "creator1@example.com",
+        }
+    # Never the email of someone else: only the one of the creator the event names.
+    other = lookup(live["agent_id"], 1, "creator-2")
+    assert other is not None and other.created_by_email is None
+    assert lookup(live["agent_id"], 1, None) == other
+    assert lookup(live["agent_id"], 9, "creator-1") is None
+    assert lookup("no-such-agent", 1, "creator-1") is None
+    assert app_module._audit_agents(SimpleNamespace(agents=None)) is None  # type: ignore[arg-type]

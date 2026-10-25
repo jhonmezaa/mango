@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import secrets
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -318,6 +318,23 @@ class AuditResource(_Strict):
     id: str
 
 
+class AuditAgentOut(_Strict):
+    """The agent of «Agente aprobado» and «Agente retirado», resolved from the catalog when the
+    trail is read: the event keeps ids only. A field that cannot be resolved is ``None``."""
+
+    name: str | None = None
+    """The agent's name in that version."""
+    created_by_email: str | None = None
+    """Email of the ``created_by`` of the event, as the token said when they created it."""
+
+
+AgentLookup = Callable[[str, int, str | None], AuditAgentOut | None]
+"""``(agent_id, version, created_by)`` -> what the catalog knows; ``None`` when it does not."""
+AGENT_EVENTS = frozenset({"agent.version.approved", "agent.retired"})
+MAX_AGENT_LOOKUPS = 20
+"""Distinct agent versions one read resolves; the events beyond them go without names."""
+
+
 class AuditEventOut(_Strict):
     event_id: str
     ts: str
@@ -329,6 +346,8 @@ class AuditEventOut(_Strict):
     resource: AuditResource | None = None
     detail: dict[str, Any]
     hash: str
+    agent: AuditAgentOut | None = None
+    """Only on ``AGENT_EVENTS``, when the catalog resolved it."""
 
 
 def _audit_resource(value: object) -> AuditResource | None:
@@ -342,7 +361,7 @@ def _audit_resource(value: object) -> AuditResource | None:
     )
 
 
-def audit_event_out(record: dict[str, Any]) -> AuditEventOut:
+def audit_event_out(record: dict[str, Any], agent: AuditAgentOut | None = None) -> AuditEventOut:
     """Known fields only: events written before a field existed simply lack it."""
     resource = record.get("resource")
     email = record.get("actor_email")
@@ -359,4 +378,36 @@ def audit_event_out(record: dict[str, Any]) -> AuditEventOut:
         resource=_audit_resource(resource),
         detail=record["detail"] if isinstance(record.get("detail"), dict) else {},
         hash=str(record.get("hash", "")),
+        agent=agent,
     )
+
+
+def _agent_key(record: dict[str, Any]) -> tuple[str, int, str | None] | None:
+    detail = record.get("detail")
+    if record.get("event") not in AGENT_EVENTS or not isinstance(detail, dict):
+        return None
+    agent, version, creator = detail.get("agent"), detail.get("version"), detail.get("created_by")
+    if not isinstance(agent, str) or type(version) is not int:
+        return None
+    return agent, version, creator if isinstance(creator, str) else None
+
+
+def audit_events_out(
+    records: Iterable[dict[str, Any]], agents: AgentLookup | None = None
+) -> list[AuditEventOut]:
+    """The output of ``records``, with the agent of ``AGENT_EVENTS`` resolved by ``agents``
+    (at most ``MAX_AGENT_LOOKUPS`` distinct versions). A lookup that fails leaves the event
+    without it: the trail is still answered."""
+    resolved: dict[tuple[str, int, str | None], AuditAgentOut | None] = {}
+    out: list[AuditEventOut] = []
+    for record in records:
+        key = _agent_key(record) if agents is not None else None
+        fresh = key is not None and key not in resolved
+        if agents is not None and key is not None and fresh and len(resolved) < MAX_AGENT_LOOKUPS:
+            try:
+                resolved[key] = agents(*key)
+            except Exception:
+                logger.exception("agent of an audit event not resolved")
+                resolved[key] = None
+        out.append(audit_event_out(record, resolved.get(key) if key is not None else None))
+    return out

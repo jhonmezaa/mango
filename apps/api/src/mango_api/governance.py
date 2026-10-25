@@ -37,7 +37,7 @@ from mango_api.admin import AdminDeps, budgets_view
 from mango_api.approval_policy import Tier
 from mango_api.approvals import ApprovalDeps
 from mango_api.approvals_store import MAX_LIST, ApprovalRecord, Status, iso
-from mango_api.audit import AuditEventOut, AuditLog, AuditQuery, audit_event_out
+from mango_api.audit import AgentLookup, AuditEventOut, AuditLog, AuditQuery, audit_events_out
 from mango_api.knowledge_sources import QueuedSourceOut
 from mango_api.mcp_catalog import InvalidCatalogError
 from mango_api.rate_limits import Limiter
@@ -185,6 +185,9 @@ class GovernanceDeps:
     sources: Callable[[Caller], list[QueuedSourceOut]] | None = None
     """The bucket proposals of Aprobaciones for the caller (D88 (48)); ``None`` without knowledge
     bases."""
+    agents: AgentLookup | None = None
+    """Names the agent and its creator in «Agente aprobado» and «Agente retirado»; ``None``
+    without the agents table."""
     monotonic: Callable[[], float] = time.monotonic
     _cache: dict[tuple[str, Access], tuple[float, GovernanceOut]] = field(default_factory=dict)
 
@@ -294,7 +297,9 @@ def budgets_summary(deps: AdminDeps) -> BudgetsSummary:
     return BudgetsSummary(period=budgets.period, over_warn=[line for _, line in over])
 
 
-def audit_summary(audit: AuditLog, now: datetime) -> AuditSummary:
+def audit_summary(
+    audit: AuditLog, now: datetime, agents: AgentLookup | None = None
+) -> AuditSummary:
     counted = audit.count(
         AuditQuery(since=now - DAY, until=now, limit=1, exclude_reads=True),
         cap=AUDIT_COUNT_CAP,
@@ -314,7 +319,7 @@ def audit_summary(audit: AuditLog, now: datetime) -> AuditSummary:
     return AuditSummary(
         events_24h=counted.count,
         capped=counted.capped,
-        recent=[audit_event_out(r) for r in recent.items],
+        recent=audit_events_out(recent.items, agents),
     )
 
 
@@ -349,7 +354,7 @@ def summary(deps: GovernanceDeps, caller: Caller, access: Access) -> GovernanceO
                 if access.admin
                 else None
             ),
-            audit=audit_summary(deps.audit, now) if access.audit else None,
+            audit=audit_summary(deps.audit, now, deps.agents) if access.audit else None,
         )
     except ApiError:
         raise

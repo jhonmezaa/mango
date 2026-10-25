@@ -13,10 +13,13 @@ import pytest
 from moto import mock_aws
 
 from mango_api.audit import (
+    MAX_AGENT_LOOKUPS,
     MAX_EXAMINED,
+    AuditAgentOut,
     AuditLog,
     AuditQuery,
     InvalidCursorError,
+    audit_events_out,
     decode_cursor,
     encode_cursor,
     resource_of,
@@ -293,3 +296,54 @@ def test_cursor_is_validated() -> None:
     for bad in ("", "not base64!", encode_cursor("DAY#x"), encode_cursor(key + "x"), "a" * 200):
         with pytest.raises(InvalidCursorError):
             decode_cursor(bad)
+
+
+# --- Agent of an event --------------------------------------------------------------------
+
+
+def _record(event: str, **detail: Any) -> dict[str, Any]:
+    return {"event_id": "e" * 32, "ts": "t", "event": event, "user_id": "u", "detail": detail}
+
+
+def test_the_agent_of_approved_and_retired_events_is_resolved_once_per_version() -> None:
+    calls: list[tuple[str, int, str | None]] = []
+
+    def lookup(agent: str, version: int, creator: str | None) -> AuditAgentOut | None:
+        calls.append((agent, version, creator))
+        return None if agent == "gone" else AuditAgentOut(name=agent.upper(), created_by_email="c")
+
+    out = audit_events_out(
+        [
+            _record("agent.version.approved", agent="finops", version=3, created_by="u1"),
+            _record("agent.retired", agent="finops", version=3, created_by="u1", reason="r"),
+            _record("agent.retired", agent="gone", version=1, created_by="u1"),
+            # Not an agent event, or one without the fields to look it up.
+            _record("agent.invoke", agent="finops", version=3),
+            _record("agent.version.approved", agent="finops", version="3"),
+            _record("agent.version.approved", agent="finops", version=True),
+        ],
+        lookup,
+    )
+    assert calls == [("finops", 3, "u1"), ("gone", 1, "u1")]
+    assert [e.agent.name if e.agent else None for e in out] == ["FINOPS", "FINOPS"] + [None] * 4
+    assert audit_events_out([_record("agent.retired", agent="a", version=1)])[0].agent is None
+
+
+def test_agent_lookups_are_bounded_and_a_failure_leaves_the_event_without_it() -> None:
+    calls: list[str] = []
+
+    def lookup(agent: str, version: int, creator: str | None) -> AuditAgentOut | None:
+        calls.append(agent)
+        if agent == "broken":
+            raise RuntimeError("agents table unavailable")
+        return AuditAgentOut(name=agent)
+
+    records = [
+        _record("agent.retired", agent=f"a{n}", version=1, created_by=None)
+        for n in range(MAX_AGENT_LOOKUPS + 5)
+    ]
+    out = audit_events_out([_record("agent.retired", agent="broken", version=1), *records], lookup)
+    assert len(calls) == MAX_AGENT_LOOKUPS
+    assert out[0].agent is None
+    assert sum(1 for e in out if e.agent is not None) == MAX_AGENT_LOOKUPS - 1
+    assert out[0].model_dump()["agent"] is None

@@ -731,6 +731,7 @@ def test_admin_audit_requires_permission(h: Harness) -> None:
                 "resource": None,
                 "detail": {},
                 "hash": "h" * 64,
+                "agent": None,
             }
         ],
         "next_cursor": "c1",

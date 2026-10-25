@@ -716,6 +716,23 @@ export type AreasSummary = {
 };
 
 /**
+ * AuditAgentOut
+ *
+ * The agent of «Agente aprobado» and «Agente retirado», resolved from the catalog when the
+ * trail is read: the event keeps ids only. A field that cannot be resolved is ``None``.
+ */
+export type AuditAgentOut = {
+    /**
+     * Created By Email
+     */
+    created_by_email?: string | null;
+    /**
+     * Name
+     */
+    name?: string | null;
+};
+
+/**
  * AuditEventOut
  */
 export type AuditEventOut = {
@@ -731,6 +748,7 @@ export type AuditEventOut = {
      * Actor Role
      */
     actor_role?: string | null;
+    agent?: AuditAgentOut | null;
     /**
      * Detail
      */

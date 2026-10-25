@@ -24,7 +24,7 @@ from mango_api import governance
 from mango_api.approval_policy import Tier, TierReason
 from mango_api.approvals import ApprovalDeps
 from mango_api.approvals_store import ApprovalRecord, ApprovalStore, Signature, Status, iso
-from mango_api.audit import AuditLog
+from mango_api.audit import AuditAgentOut, AuditLog
 from mango_api.budget import BudgetScope, BudgetService, current_period
 from mango_api.mcp_catalog import McpCatalog
 from mango_api.settings_store import BudgetLimits, SettingsStore
@@ -318,6 +318,31 @@ def test_audit_count_and_recent_governance_activity(env: Env) -> None:
     ]
     # Four events, plus the request's own decision (a read: not counted).
     assert (audit["events_24h"], audit["capped"]) == (4, False)
+
+
+def test_recent_activity_names_the_agent_of_approved_and_retired_events(env: Env) -> None:
+    detail = {"agent": "finops", "version": 3, "created_by": "creator-1", "outcome": "applied"}
+    env.audit.emit("agent.version.approved", "admin-2", detail)
+    env.audit.emit("approval.approve", "user-11", {"approval_id": "a" * 32, "outcome": "applied"})
+    asked: list[tuple[str, int, str | None]] = []
+
+    def lookup(agent: str, version: int, creator: str | None) -> AuditAgentOut:
+        asked.append((agent, version, creator))
+        return AuditAgentOut(name="FinOps", created_by_email="creator1@example.com")
+
+    later = datetime.now(UTC) + timedelta(seconds=1)
+    recent = governance.audit_summary(env.audit, later, lookup).recent
+    # Two events of the same millisecond come in the order of their random ids.
+    assert {e.event: e.agent for e in recent} == {
+        "approval.approve": None,
+        "agent.version.approved": AuditAgentOut(
+            name="FinOps", created_by_email="creator1@example.com"
+        ),
+    }
+    assert asked == [("finops", 3, "creator-1")]
+    # Without the agents table the event goes without it, as before.
+    served = env.get("admin").json()["audit"]["recent"]
+    assert [e["agent"] for e in served] == [None, None]
 
 
 # --- Cost and failures --------------------------------------------------------------------------

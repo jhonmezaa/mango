@@ -49,7 +49,7 @@ from mango_api.agents import (
     agents_using_knowledge_base,
     usable_versions,
 )
-from mango_api.agents_store import AgentsStore, ListedVersions
+from mango_api.agents_store import AgentsStore, AgentVersion, ListedVersions
 from mango_api.approval_executor import GatewayExecutor
 from mango_api.approvals import (
     ApprovalDeps,
@@ -66,11 +66,13 @@ from mango_api.audit import (
     INDEX_TTL,
     MAX_PAGE,
     READ_ACTIONS,
+    AgentLookup,
+    AuditAgentOut,
     AuditEventOut,
     AuditLog,
     AuditQuery,
     InvalidCursorError,
-    audit_event_out,
+    audit_events_out,
 )
 from mango_api.authz import (
     PLATFORM,
@@ -1109,7 +1111,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         except InvalidCursorError as exc:
             raise ApiError(422, "invalid_request", "invalid fields: cursor") from exc
         return AuditList(
-            items=[audit_event_out(r) for r in page.items], next_cursor=page.next_cursor
+            items=audit_events_out(page.items, _audit_agents(services)),
+            next_cursor=page.next_cursor,
         )
 
     admin_deps = AdminDeps(
@@ -1155,6 +1158,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                 clock=now_utc,
                 limiter=services.limits.limiter("governance.reads"),
                 sources=governance_sources,
+                agents=_audit_agents(services),
             ),
             current_user,
             require,
@@ -1660,6 +1664,31 @@ def _agent_names(services: Services) -> dict[str, str]:
         for status in (VersionStatus.RETIRED, VersionStatus.PUBLISHED)
         for version in services.agents.store.by_status(status)
     }
+
+
+def _audit_agents(services: Services) -> AgentLookup | None:
+    """The agent of an audit event and the email of its creator, from the catalog: the name of
+    that version, and the email stored with the version the creator wrote (the one of the event,
+    or the first one, which the creator of the agent wrote). Never another person's email."""
+    if services.agents is None:
+        return None
+    store = services.agents.store
+
+    def lookup(agent_id: str, number: int, created_by: str | None) -> AuditAgentOut | None:
+        version = store.version(agent_id, number)
+        if version is None:
+            return None
+        wrote: AgentVersion | None = version
+        if created_by is not None and version.created_by != created_by and number != 1:
+            wrote = store.version(agent_id, 1)
+        email = (
+            wrote.created_by_email
+            if created_by is not None and wrote is not None and wrote.created_by == created_by
+            else None
+        )
+        return AuditAgentOut(name=version.definition.name, created_by_email=email)
+
+    return lookup
 
 
 def _served_agent(services: Services, agent_id: str) -> PublishedAgent | None:
