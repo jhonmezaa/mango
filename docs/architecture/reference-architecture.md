@@ -11,7 +11,7 @@
 > - [governance](./research/governance.md): identidad, RBAC, budgets, HITL, auditoría
 > - [isb-multiaccount](./research/isb-multiaccount.md): despliegue multi-cuenta de Innovation Sandbox on AWS
 >
-> Diagramas en draw.io: [`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio). Tiene 4 páginas: Overview, Request flow, Multi-account access y Release & upgrade. **Puestas al día el 2026-10-06:** dibujan lo construido, con lo previsto en un bloque aparte de cada página, marcado como «previsto».
+> Diagramas en draw.io: [`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio). Tiene 4 páginas: Overview, Request flow, Multi-account access y Release & upgrade. **Puestas al día el 2026-10-25:** dibujan lo construido, con lo previsto en un bloque aparte de cada página, marcado como «previsto».
 > Modelo de amenazas: [`../security/threat-models/mango-architecture-threat-model.md`](../security/threat-models/mango-architecture-threat-model.md).
 >
 > Hechos críticos verificados en fuentes primarias de AWS el 2026-09-28:
@@ -123,7 +123,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 
 ## 3. Vista general
 
-> Este diagrama está al día (2026-10-25; ese día, la Gobernanza de D89 y la actividad de los agentes de D90 en `mango-api` y sus tablas; el 2026-10-21 cambiaron el bloque de lo previsto, con las knowledge bases de D88, y la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-06 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización; no tiene todavía lo de después de esa fecha (las tareas, la Bandeja, los reportes, el diseño de las knowledge bases, la Gobernanza ni la actividad de los agentes).
+> Este diagrama está al día (2026-10-25; ese día, la Gobernanza de D89 y la actividad de los agentes de D90 en `mango-api` y sus tablas; el 2026-10-21 cambiaron el bloque de lo previsto, con las knowledge bases de D88, y la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-25 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización.
 
 ```mermaid
 flowchart TB
