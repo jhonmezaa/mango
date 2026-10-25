@@ -30,6 +30,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_core.agents import is_agent_id
 from mango_core.agents_table import MAX_VERSION
+from mango_core.playground import provision_input
 from mango_packs.enablement import ENABLEMENT_ID_PATTERN, is_pack_id
 
 if TYPE_CHECKING:
@@ -104,6 +105,26 @@ class ProvisionerClient:
                     {"agent_id": agent_id, "version": version, "content_hash": content_hash},
                     separators=(",", ":"),
                     sort_keys=True,
+                ),
+            )
+        except (ClientError, BotoCoreError) as exc:
+            raise ProvisionerError("the provisioner could not be started") from exc
+        return name
+
+    def refresh_playground(self, now: float | None = None) -> str:
+        """Bring the Playground's test harness up to date with the enabled models (D91 (5)).
+
+        The input names the action and when the catalog changed, nothing else: the provisioner
+        reads the catalog itself.
+        """
+        stamp = int(now if now is not None else time.time())
+        name = f"playground-models-{stamp}-{secrets.token_hex(4)}"
+        try:
+            self._sfn.start_execution(
+                stateMachineArn=self._arn,
+                name=name,
+                input=json.dumps(
+                    provision_input(f"models-{stamp}"), separators=(",", ":"), sort_keys=True
                 ),
             )
         except (ClientError, BotoCoreError) as exc:

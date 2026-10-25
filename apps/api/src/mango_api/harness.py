@@ -264,10 +264,16 @@ def build_request(
     history: list[ChatTurn],
     today: str | None = None,
     inline_tools: tuple[dict[str, Any], ...] = (),
+    test_skills: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
     """``inline_tools``: ``inline_function`` tools of this invocation only, built by mango-api
     (the internal tool of a report, D87 (3)). Their calls come back to mango-api: they reach no
-    system, so the Gateway has nothing to govern (rule 3 as D87 precises it)."""
+    system, so the Gateway has nothing to govern (rule 3 as D87 precises it).
+
+    ``test_skills``: only for the Playground's test harness, which has no skills of its own
+    (D91 (12)): the ``s3`` sources of the tested version's approved skills, built by mango-api
+    from the stored version. Invoke-time skills are added to the harness's, so an agent's own
+    harness never gets them (D92 (4))."""
     date_line = f"Current date (UTC): {today or datetime.now(UTC).date().isoformat()}."
     messages = [
         {"role": turn.role, "content": [{"text": turn.text}]}
@@ -331,6 +337,8 @@ def build_request(
         "timeoutSeconds": limits.timeout_seconds,
         "model": {"bedrockModelConfig": model},
     }
+    if test_skills:
+        request["skills"] = list(test_skills)
     return request
 
 

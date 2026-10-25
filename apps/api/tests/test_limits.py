@@ -20,9 +20,9 @@ from moto import mock_aws
 
 from mango_api import app as app_module
 from mango_api.directory import EMAILS_PER_DAY, LookupQuota
-from mango_api.limits import HOUR, LIMITS, MINUTE, Limits
+from mango_api.limits import HOUR, LEASES, LIMITS, MINUTE, Limits
 from mango_api.probe import RateLimiter
-from mango_api.rate_limits import RateLimitStore, SharedRateLimiter
+from mango_api.rate_limits import MemoryLeases, RateLimitStore, SharedLeases, SharedRateLimiter
 from mango_api.settings import Settings
 
 from .test_admin import _table
@@ -284,3 +284,14 @@ def test_production_refuses_a_token_of_the_tasks_client(
     )
     response = client.get("/api/me", headers={"Authorization": f"Bearer {tasks_token}"})
     assert response.status_code == 401
+
+
+def test_the_leases_count_in_the_store_when_shared() -> None:
+    """At most two tests of the Playground at once per person, between every task (D91 (9))."""
+    spec = LEASES["playground.concurrent"]
+    assert (spec.limit, spec.shared) == (2, True)
+    # Longer than the longest turn plus its read margin: a lease outlives what it covers.
+    assert spec.ttl_seconds > 600
+    shared = Limits(RateLimitStore(object(), "t"))  # type: ignore[arg-type]
+    assert isinstance(shared.leases("playground.concurrent"), SharedLeases)
+    assert isinstance(Limits().leases("playground.concurrent"), MemoryLeases)

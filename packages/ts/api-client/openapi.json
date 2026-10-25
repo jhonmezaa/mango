@@ -4998,6 +4998,52 @@
         "title": "OrganizationalUnit",
         "type": "object"
       },
+      "OverridesIn": {
+        "additionalProperties": false,
+        "description": "What may change without saving (D91 (11)). Absent: the stored version's.",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "maxLength": 32000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          }
+        },
+        "title": "OverridesIn",
+        "type": "object"
+      },
       "OwnerOut": {
         "additionalProperties": false,
         "properties": {
@@ -5718,6 +5764,52 @@
           "incomplete"
         ],
         "title": "PeopleOut",
+        "type": "object"
+      },
+      "PlaygroundRunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "pattern": "^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/OverridesIn",
+            "default": {}
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_id",
+          "version",
+          "message"
+        ],
+        "title": "PlaygroundRunIn",
         "type": "object"
       },
       "PoliciesOut": {
@@ -15435,6 +15527,42 @@
           }
         },
         "summary": "Get Models"
+      }
+    },
+    "/playground/runs": {
+      "post": {
+        "operationId": "run_playground_test",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaygroundRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Run Playground Test"
       }
     },
     "/session": {

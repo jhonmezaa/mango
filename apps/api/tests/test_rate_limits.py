@@ -27,7 +27,9 @@ from mango_api.rate_limits import (
     STORE_UNAVAILABLE_LOG,
     TTL_MARGIN_SECONDS,
     UNAVAILABLE_RETRY_SECONDS,
+    MemoryLeases,
     RateLimitStore,
+    SharedLeases,
     SharedRateLimiter,
 )
 
@@ -431,3 +433,72 @@ def test_a_limit_reached_is_not_that_signal(
         assert not limiter.allow("user-1")
         assert limiter.retry_after("user-1") > 0
     assert _refusals(caplog) == []
+
+
+# --- Leases: how many at a time (D91 (9)) -----------------------------------------------
+
+
+def _leases(db: Recording, clock: list[float], limit: int = 2, ttl: float = 60) -> SharedLeases:
+    return SharedLeases(
+        RateLimitStore(db, TABLE),  # type: ignore[arg-type]
+        "test.leases",
+        limit,
+        ttl,
+        clock=lambda: clock[0],
+        pause=lambda _seconds: None,
+    )
+
+
+def test_two_tasks_share_the_leases_and_a_release_frees_one(db: Recording) -> None:
+    clock = [T0]
+    one, two = _leases(db, clock), _leases(db, clock)
+    first, second = one.acquire("user-1"), two.acquire("user-1")
+    assert first is not None and second is not None
+    # Two at once between both tasks, not two each.
+    assert one.acquire("user-1") is None
+    assert two.acquire("user-2") is not None
+    two.release("user-1", first)
+    assert one.acquire("user-1") is not None
+
+
+def test_a_lease_nobody_released_ends_at_its_deadline(db: Recording) -> None:
+    clock = [T0]
+    leases = _leases(db, clock)
+    assert leases.acquire("user-1") is not None
+    assert leases.acquire("user-1") is not None
+    assert leases.acquire("user-1") is None
+    # The task that held them died: they end on their own.
+    clock[0] += 60 + SKEW_SECONDS + 1
+    assert leases.acquire("user-1") is not None
+
+
+def test_leases_fail_closed_and_a_release_never_raises(
+    db: Recording, caplog: pytest.LogCaptureFixture
+) -> None:
+    clock = [T0]
+    leases = _leases(db, clock)
+    lease = leases.acquire("user-1")
+    assert lease is not None
+    db.fail = EndpointConnectionError(endpoint_url="https://dynamodb")
+    with caplog.at_level(logging.ERROR):
+        assert leases.acquire("user-1") is None
+        leases.release("user-1", lease)
+    assert all(STORE_UNAVAILABLE_LOG in r.getMessage() for r in caplog.records)
+    assert "user-1" not in caplog.text
+
+
+def test_leases_refuse_a_key_that_is_not_an_identifier(db: Recording) -> None:
+    assert _leases(db, [T0]).acquire("../user") is None
+    assert db.calls == []
+
+
+def test_leases_in_memory_keep_the_same_contract() -> None:
+    clock = [0.0]
+    leases = MemoryLeases(1, 10, lambda: clock[0])
+    lease = leases.acquire("user-1")
+    assert lease is not None
+    assert leases.acquire("user-1") is None
+    leases.release("user-1", lease)
+    assert leases.acquire("user-1") is not None
+    clock[0] = 11
+    assert leases.acquire("user-1") is not None

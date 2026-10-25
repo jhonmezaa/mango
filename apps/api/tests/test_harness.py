@@ -1321,3 +1321,34 @@ def test_a_version_with_skills_allows_only_the_tool_that_loads_them() -> None:
     # The skills themselves are the harness's (the provisioner's): never sent per invocation.
     assert "skills" not in request
     assert _request(_invocation())["allowedTools"] == ["@mango/finops___get_cost_and_usage"]
+
+
+def test_only_the_playground_sends_skills_in_the_invocation() -> None:
+    """D91 (12): the test harness has none of its own; an agent's harness never gets them
+    in the invocation (D92 (4))."""
+    agent = harness.AgentInvocation(
+        harness_arn=(
+            "arn:aws:bedrock-agentcore:us-east-1:111111111111:harness/Mango_t_a_x-abcdefghij"
+        ),
+        qualifier="live",
+        system_prompt="p",
+        model="m",
+        limits=harness.AgentLimits(),
+        allowed_tools=(),
+        gateway_url="https://gateway.example.com/mcp",
+        guardrail_id="g",
+        guardrail_version="1",
+        skills=("revisar-costos",),
+    )
+    common = {
+        "session_id": "s" * 40,
+        "actor_id": "u",
+        "access_token": "t",
+        "invocation_signature": "sig",
+        "history": [harness.ChatTurn("user", "hola")],
+    }
+    assert "skills" not in harness.build_request(agent, **common)
+    source = {"s3": {"uri": "s3://b/skills/revisar-costos/v2/revisar-costos/"}}
+    request = harness.build_request(agent, **common, test_skills=(source,))
+    assert request["skills"] == [source]
+    assert "skills" in request["allowedTools"]

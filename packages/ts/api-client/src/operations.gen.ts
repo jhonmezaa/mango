@@ -301,7 +301,7 @@ import {
  * Every route of mango-api that answers JSON: how to call it and the zod schemas of its path
  * parameters, query, body and response. Paths are relative to the API base path.
  *
- * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, POST /session, DELETE /session.
+ * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, POST /playground/runs, POST /session, DELETE /session.
  */
 export const operations = {
     addGroup: {

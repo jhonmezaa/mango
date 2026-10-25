@@ -254,3 +254,14 @@ def test_removals_that_cannot_be_read_are_reported_without_details() -> None:
     with pytest.raises(ProvisionerError) as raised:
         client.cleanups()
     assert "AccessDenied" not in str(raised.value)
+
+
+def test_the_playground_input_names_only_the_action_and_the_catalog_change() -> None:
+    sfn = FakeStepFunctions()
+    name = ProvisionerClient(sfn, ARN).refresh_playground(1_793_000_000)  # type: ignore[arg-type]
+    (call,) = sfn.calls
+    assert json.loads(call["input"]) == {"playground": "ensure", "release": "models-1793000000"}
+    assert call["name"] == name
+    assert name.startswith("playground-models-1793000000-")
+    with pytest.raises(ProvisionerError):
+        ProvisionerClient(FakeStepFunctions("Throttling"), ARN).refresh_playground()  # type: ignore[arg-type]

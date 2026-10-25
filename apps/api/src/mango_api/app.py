@@ -150,6 +150,7 @@ from mango_api.people import (
     parse_domains,
     people_router,
 )
+from mango_api.playground import PlaygroundDeps, PlaygroundHarnesses, playground_router
 from mango_api.presign import PresignSessions
 from mango_api.pricing import Usage, cost, estimate_max_cost, knowledge_cost, turn_price
 from mango_api.probe import AdminProbe, OrganizationCache
@@ -390,6 +391,8 @@ class Services:
     knowledge: KnowledgeDeps | None = None
     # Skills of instructions (D92); set in production once the Skills table exists.
     skills: SkillsDeps | None = None
+    # The Playground's test harness (D91); set in production.
+    playground_harnesses: PlaygroundHarnesses | None = None
     limits: Limits = field(default_factory=Limits)
     """Where every rate limit comes from (D70). In production the shared ones count in
     DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
@@ -642,6 +645,9 @@ def build_services(settings: Settings) -> Services:
         probe=AdminProbe(boto3.client("lambda", region_name=region), settings.admin_probe_function),
         published=published,
         model_catalog=ModelCatalogCache(model_catalog),
+        playground_harnesses=PlaygroundHarnesses(
+            dynamodb, settings.settings_table, namespace=settings.namespace, region=region
+        ),
         cognito_users=CognitoUsers(cognito, settings.cognito_user_pool_id),
         mfa_reset_store=ResetStore(dynamodb, settings.settings_table),
         directory=CognitoDirectory(cognito, settings.cognito_user_pool_id),
@@ -749,6 +755,14 @@ def build_services(settings: Settings) -> Services:
             # Release data inside the image, read on each refresh (a few per day at most).
             capabilities=lambda: load_capabilities(FilePath(settings.model_capabilities_file)),
             clock=now_utc,
+            playground=(
+                ProvisionerClient(
+                    boto3.client("stepfunctions", region_name=region),
+                    settings.provisioner_state_machine_arn,
+                ).refresh_playground
+                if settings.provisioner_state_machine_arn
+                else None
+            ),
         ),
         invocation_key=invocation_key,
         web_sessions=web_sessions,
@@ -1245,6 +1259,36 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 
     if services.agents is not None:
         app.include_router(agents_router(services.agents, current_user, require))
+        if services.playground_harnesses is not None:
+            # D91: whoever edits an agent tests a version of it on the shared test harness.
+            app.include_router(
+                playground_router(
+                    PlaygroundDeps(
+                        store=services.agents.store,
+                        published=services.published,
+                        harnesses=services.playground_harnesses,
+                        catalog=services.model_catalog.catalog,
+                        price=lambda model_id: _model_price(services, model_id),
+                        scopes=lambda caller, agent_id: _budget_scopes(
+                            services, caller.user, agent_id
+                        ),
+                        budgets=services.budgets,
+                        audit=services.audit,
+                        agentcore=services.agentcore,
+                        invocation_key=services.invocation_key,
+                        gateway_url=settings.gateway_url,
+                        guardrail_id=settings.guardrail_id,
+                        guardrail_version=settings.guardrail_version,
+                        knowledge_price=settings.knowledge_embedding_price,
+                        runs=services.limits.limiter("playground.runs"),
+                        concurrent=services.limits.leases("playground.concurrent"),
+                        skills=services.skills.store if services.skills is not None else None,
+                        skills_bucket=settings.skills_bucket,
+                    ),
+                    current_user,
+                    require,
+                )
+            )
         app.include_router(
             mcp_router(services.mcp or McpDeps.catalog_only(services.agents), current_user, require)
         )

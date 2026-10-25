@@ -32,6 +32,7 @@ import logging
 import math
 import random
 import re
+import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
@@ -214,3 +215,128 @@ class SharedRateLimiter:
                 return max(0, math.ceil((self._kept_ms - (now_ms - at)) / 1000))
         # ``cost`` is over the limit: it never fits.
         return math.ceil(self._kept_ms / 1000)
+
+
+# --- Leases: how many at a time ------------------------------------------------------------
+
+
+class Leases(Protocol):
+    def acquire(self, key: str) -> int | None:
+        """A lease for ``key``, or ``None`` when ``key`` already holds the most it may (or the
+        store cannot say: fail closed)."""
+        ...
+
+    def release(self, key: str, lease: int) -> None:
+        """End ``lease``; never raises (it ends on its own at its deadline)."""
+        ...
+
+
+_MAX_LEASE_ID = 999_999
+
+
+class SharedLeases:
+    """At most ``limit`` leases per key at once, counted by every mango-api task (D70).
+
+    Same item and store as a shared limit (``LIMIT#<name>#<key>``): each entry is a lease, as
+    ``(deadline in milliseconds, lease id)``. A lease ends when it is released or at its
+    deadline, so a task that died never holds one for longer than ``ttl_seconds``.
+    """
+
+    def __init__(
+        self,
+        store: RateLimitStore,
+        name: str,
+        limit: int,
+        ttl_seconds: float,
+        *,
+        clock: Callable[[], float] = time.time,
+        pause: Callable[[float], None] = time.sleep,
+        log: logging.Logger = logger,
+    ) -> None:
+        if not _NAME_RE.fullmatch(name):
+            raise ValueError("invalid limit name")
+        self._store = store
+        self._name = name
+        self._limit = limit
+        self._ttl_ms = round((ttl_seconds + SKEW_SECONDS) * 1000)
+        self._clock = clock
+        self._pause = pause
+        self._log = log
+
+    def _partition(self, key: str) -> str:
+        if not _KEY_RE.fullmatch(key):
+            raise RateLimitUnavailableError
+        return f"LIMIT#{self._name}#{key}"
+
+    def _refused(self) -> None:
+        self._log.error("%s a call of %s is refused", STORE_UNAVAILABLE_LOG, self._name)
+
+    def _update(self, key: str, change: Callable[[Hits, int], Hits | None]) -> Hits | None:
+        """Apply ``change`` to the live leases of ``key`` with a conditional write; ``None``
+        when ``change`` refused, ``RateLimitUnavailableError`` when the store cannot say."""
+        partition = self._partition(key)
+        for attempt in range(ATTEMPTS):
+            if attempt:
+                self._pause(random.uniform(0.005, 0.02) * attempt)  # noqa: S311 - jitter
+            stored, version = self._store.read(partition)
+            now_ms = round(self._clock() * 1000)
+            live = [(deadline, lease) for deadline, lease in stored if deadline > now_ms]
+            changed = change(live, now_ms)
+            if changed is None:
+                return None
+            latest = max((deadline for deadline, _ in changed), default=now_ms)
+            expires_at = math.ceil(latest / 1000) + TTL_MARGIN_SECONDS
+            if self._store.write(partition, changed, version, expires_at):
+                return changed
+        raise RateLimitUnavailableError
+
+    def acquire(self, key: str) -> int | None:
+        lease = random.randint(1, _MAX_LEASE_ID)  # noqa: S311 - an id, not a secret
+
+        def take(live: Hits, now_ms: int) -> Hits | None:
+            if len(live) >= self._limit:
+                return None
+            return [*live, (now_ms + self._ttl_ms, lease)]
+
+        try:
+            return lease if self._update(key, take) is not None else None
+        except RateLimitUnavailableError:
+            self._refused()
+            return None
+
+    def release(self, key: str, lease: int) -> None:
+        try:
+            self._update(key, lambda live, _now: [e for e in live if e[1] != lease])
+        except RateLimitUnavailableError:
+            # It ends at its deadline anyway.
+            self._refused()
+
+
+class MemoryLeases:
+    """``SharedLeases`` in the memory of one process (tests, and limits counted per task)."""
+
+    def __init__(
+        self, limit: int, ttl_seconds: float, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self._limit = limit
+        self._ttl = ttl_seconds
+        self._clock = clock
+        self._held: dict[str, dict[int, float]] = {}
+        self._lock = threading.Lock()
+        self._next = 0
+
+    def acquire(self, key: str) -> int | None:
+        with self._lock:
+            now = self._clock()
+            held = {k: v for k, v in self._held.get(key, {}).items() if v > now}
+            if len(held) >= self._limit:
+                self._held[key] = held
+                return None
+            self._next += 1
+            held[self._next] = now + self._ttl
+            self._held[key] = held
+            return self._next
+
+    def release(self, key: str, lease: int) -> None:
+        with self._lock:
+            self._held.get(key, {}).pop(lease, None)

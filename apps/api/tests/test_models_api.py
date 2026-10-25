@@ -723,3 +723,24 @@ def test_the_stored_catalog_stays_readable_by_the_seed_format(env: Env) -> None:
     assert stored[SONNET]["input_usd"] == "3"
     assert stored[SONNET]["in_bedrock"] is True
     assert "confirmed_by" not in stored[SONNET]
+
+
+def test_enabling_or_disabling_brings_the_playground_harness_up_to_date(env: Env) -> None:
+    """The test harness's role names the enabled models (D91 (5)); a price change does not
+    touch it, and a provisioner that cannot start does not undo the change."""
+    started: list[str] = []
+    env.models.playground = lambda: started.append("refresh")
+    assert _enable(env, HAIKU).status_code == 200
+    assert started == ["refresh"]
+    assert _enable(env, HAIKU, input_usd="1").status_code == 200
+    assert started == ["refresh"]
+    assert _disable(env, HAIKU).status_code == 200
+    assert started == ["refresh", "refresh"]
+
+    def down() -> None:
+        raise RuntimeError("step functions down")
+
+    env.models.playground = down
+    response = _enable(env, HAIKU)
+    assert response.status_code == 200
+    assert _item(response.json(), HAIKU)["status"] == "enabled"

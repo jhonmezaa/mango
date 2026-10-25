@@ -1087,6 +1087,17 @@ export const zOrganizationOutSchema = z.object({
 });
 
 /**
+ * OverridesIn
+ *
+ * What may change without saving (D91 (11)). Absent: the stored version's.
+ */
+export const zOverridesInSchema = z.object({
+    model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$/).nullish(),
+    system_prompt: z.string().min(1).max(32000).nullish(),
+    temperature: z.number().gte(0).lte(1).nullish()
+});
+
+/**
  * OwnerOut
  */
 export const zOwnerOutSchema = z.object({
@@ -1221,6 +1232,17 @@ export const zParamsInSchema = z.object({
  */
 export const zPauseInSchema = z.object({
     reason: z.string().min(1).max(200).nullish()
+});
+
+/**
+ * PlaygroundRunIn
+ */
+export const zPlaygroundRunInSchema = z.object({
+    agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/),
+    message: z.string().min(1).max(4000),
+    overrides: zOverridesInSchema.optional().default({}),
+    revision: z.int().gte(1).lte(1000000).nullish(),
+    version: z.int().gte(1).lte(1000000)
 });
 
 /**
@@ -3759,6 +3781,8 @@ export const zMeResponse = zMeResponseSchema;
  * Successful Response
  */
 export const zGetModelsResponse = zModelsOutSchema;
+
+export const zRunPlaygroundTestBody = zPlaygroundRunInSchema;
 
 /**
  * Successful Response

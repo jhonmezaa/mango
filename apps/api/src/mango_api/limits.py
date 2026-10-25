@@ -28,6 +28,7 @@ from mango_api import (
     mcp,
     mfa_reset,
     people,
+    playground,
     skills,
     task_reports,
     tasks,
@@ -35,7 +36,14 @@ from mango_api import (
     web_session,
 )
 from mango_api.probe import RateLimiter
-from mango_api.rate_limits import Limiter, RateLimitStore, SharedRateLimiter
+from mango_api.rate_limits import (
+    Leases,
+    Limiter,
+    MemoryLeases,
+    RateLimitStore,
+    SharedLeases,
+    SharedRateLimiter,
+)
 
 MODEL_REFRESHES_PER_MINUTE = 5
 AGENT_LISTS_PER_MINUTE = 30
@@ -127,6 +135,12 @@ LIMITS: dict[str, LimitSpec] = {
         MINUTE,
         shared=True,
         why="Each run signs with KMS and calls the Gateway with a write tool (D27).",
+    ),
+    "playground.runs": LimitSpec(
+        playground.RUNS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Tests of the Playground per person (D91 (9)): each runs a version nobody approved.",
     ),
     "tasks.runs": LimitSpec(
         tasks.RUNS_PER_HOUR,
@@ -253,6 +267,25 @@ LIMITS: dict[str, LimitSpec] = {
 }
 
 
+@dataclass(frozen=True)
+class LeaseSpec:
+    limit: int
+    ttl_seconds: int
+    """How long a lease lives if nobody releases it: longer than what it covers."""
+    shared: bool
+    why: str
+
+
+LEASES: dict[str, LeaseSpec] = {
+    "playground.concurrent": LeaseSpec(
+        playground.CONCURRENT_RUNS,
+        playground.LEASE_SECONDS,
+        shared=True,
+        why="Tests of the Playground one person runs at once (D91 (9)): each one costs a turn.",
+    ),
+}
+
+
 class Limits:
     """Builds each limiter of ``LIMITS``. Without a store (tests) all of them are in memory;
     with one, the shared ones count in it."""
@@ -264,6 +297,7 @@ class Limits:
         self._clock = clock
         self.issued: dict[str, Limiter] = {}
         """What each name was given: lets a test see what the application runs with."""
+        self.issued_leases: dict[str, Leases] = {}
 
     @property
     def shared(self) -> bool:
@@ -284,3 +318,15 @@ class Limits:
             limiter = RateLimiter(spec.limit, spec.window_seconds, self._clock or time.monotonic)
         self.issued[name] = limiter
         return limiter
+
+    def leases(self, name: str) -> Leases:
+        spec = LEASES[name]
+        leases: Leases
+        if spec.shared and self._store is not None:
+            leases = SharedLeases(
+                self._store, name, spec.limit, spec.ttl_seconds, clock=self._clock or time.time
+            )
+        else:
+            leases = MemoryLeases(spec.limit, spec.ttl_seconds, self._clock or time.monotonic)
+        self.issued_leases[name] = leases
+        return leases

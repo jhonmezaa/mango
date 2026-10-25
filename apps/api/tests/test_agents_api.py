@@ -26,6 +26,7 @@ from mango_api.authz import Authorizer
 from mango_api.groups import GroupRegistry
 from mango_api.mcp_catalog import McpCatalog
 from mango_api.model_catalog import ModelCatalogCache, ModelCatalogStore
+from mango_api.playground import PlaygroundHarnesses
 from mango_api.provisioner import DeprovisionerClient, ProvisionerClient
 from mango_api.published import PublishedAgents
 from mango_core.agents import AgentDefinition
@@ -221,6 +222,10 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
                 invocation_key=b"k" * 32,
                 group_registry=registry,
                 agents=deps,
+                # The Playground (D91): its route reads the harness the provisioner wrote.
+                playground_harnesses=PlaygroundHarnesses(
+                    db, "settings", namespace="test", region="us-east-1", clock=time.time
+                ),
             )
 
         asgi = app_module.create_app(_settings(), services_factory=factory)

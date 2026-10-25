@@ -2682,6 +2682,26 @@ export type OrganizationalUnit = {
 };
 
 /**
+ * OverridesIn
+ *
+ * What may change without saving (D91 (11)). Absent: the stored version's.
+ */
+export type OverridesIn = {
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt?: string | null;
+    /**
+     * Temperature
+     */
+    temperature?: number | null;
+};
+
+/**
  * OwnerOut
  */
 export type OwnerOut = {
@@ -3027,6 +3047,29 @@ export type PeopleOut = {
      * With Access
      */
     with_access: number;
+};
+
+/**
+ * PlaygroundRunIn
+ */
+export type PlaygroundRunIn = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Message
+     */
+    message: string;
+    overrides?: OverridesIn;
+    /**
+     * Revision
+     */
+    revision?: number | null;
+    /**
+     * Version
+     */
+    version: number;
 };
 
 /**
@@ -8625,6 +8668,29 @@ export type GetModelsResponses = {
 };
 
 export type GetModelsResponse = GetModelsResponses[keyof GetModelsResponses];
+
+export type RunPlaygroundTestData = {
+    body: PlaygroundRunIn;
+    path?: never;
+    query?: never;
+    url: '/playground/runs';
+};
+
+export type RunPlaygroundTestErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RunPlaygroundTestError = RunPlaygroundTestErrors[keyof RunPlaygroundTestErrors];
+
+export type RunPlaygroundTestResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type EndSessionData = {
     body?: never;

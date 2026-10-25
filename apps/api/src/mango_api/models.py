@@ -280,6 +280,9 @@ class ModelsDeps:
     clock: Callable[[], datetime]
     capabilities: Callable[[], Mapping[str, ModelCapability]] = dict
     """Release capabilities by foundation model id; raises ``ModelCapabilitiesError``."""
+    playground: Callable[[], object] | None = None
+    """Asks the provisioner to bring the Playground's test harness up to date with the enabled
+    models (D91 (5)); set in production."""
 
 
 def _money(value: Decimal) -> str:
@@ -462,6 +465,14 @@ def update_model(deps: ModelsDeps, caller: Caller, model_id: str, body: ModelUpd
         detail,
         lambda: deps.store.save(catalog.version, models, caller.user.user_id, now),
     )
+    if updated.enabled != entry.enabled and deps.playground is not None:
+        # The test harness's role names the enabled models (D91 (5)). If the provisioner
+        # cannot start now, the next release brings it up to date; tests of the model are
+        # refused until then (``playground_unavailable``).
+        try:
+            deps.playground()
+        except Exception:
+            logger.exception("the playground harness could not be brought up to date")
 
 
 def merge_bedrock(

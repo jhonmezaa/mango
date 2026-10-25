@@ -119,6 +119,22 @@ class PublishedAgents:
         with self._lock:
             self._cache.pop(agent_id, None)
 
+    def for_test(
+        self, version: AgentVersion, *, harness_arn: str, harness_version: str
+    ) -> PublishedAgent:
+        """A version as the Playground's test harness runs it (D91): its tools checked exactly
+        as for a published one, on the shared harness instead of the agent's. Nothing serves
+        it to anyone but whoever tests it; ``AgentUnavailableError`` when it could not be
+        served."""
+        return self._agent(
+            version,
+            content_hash=version.content_hash or "",
+            harness_arn=harness_arn,
+            harness_version=harness_version,
+            qualifier=ENDPOINT_LIVE,
+            retired=False,
+        )
+
     # --- Loading --------------------------------------------------------------------------
 
     def _harness_arn_re(self, agent_id: str) -> re.Pattern[str]:

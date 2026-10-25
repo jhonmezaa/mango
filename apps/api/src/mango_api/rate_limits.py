@@ -20,7 +20,9 @@ from mango_core.rate_limits import (
     TTL_MARGIN_SECONDS,
     UNAVAILABLE_RETRY_SECONDS,
     Hits,
+    Leases,
     Limiter,
+    MemoryLeases,
     RateLimitStore,
     RateLimitUnavailableError,
 )
@@ -33,9 +35,12 @@ __all__ = [
     "TTL_MARGIN_SECONDS",
     "UNAVAILABLE_RETRY_SECONDS",
     "Hits",
+    "Leases",
     "Limiter",
+    "MemoryLeases",
     "RateLimitStore",
     "RateLimitUnavailableError",
+    "SharedLeases",
     "SharedRateLimiter",
 ]
 
@@ -56,3 +61,19 @@ class SharedRateLimiter(_shared.SharedRateLimiter):
         pause: Callable[[float], None] = time.sleep,
     ) -> None:
         super().__init__(store, name, limit, window_seconds, clock=clock, pause=pause, log=logger)
+
+
+class SharedLeases(_shared.SharedLeases):
+    """The shared leases, logging their refusals as ``mango_api.rate_limits``."""
+
+    def __init__(
+        self,
+        store: RateLimitStore,
+        name: str,
+        limit: int,
+        ttl_seconds: float,
+        *,
+        clock: Callable[[], float] = time.time,
+        pause: Callable[[float], None] = time.sleep,
+    ) -> None:
+        super().__init__(store, name, limit, ttl_seconds, clock=clock, pause=pause, log=logger)
