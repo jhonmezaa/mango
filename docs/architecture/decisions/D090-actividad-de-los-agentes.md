@@ -1,7 +1,7 @@
 # D90 · La Actividad: cada llamada a una tool, como metadatos que escribe `mango-api`; cada persona ve lo suyo y un administrador lo de todos
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-24 (los puntos 1 a 6, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió esa noche seguir con las recomendadas; el punto 7, propuesto por un agente, con lo que pide la ronda de diseño 19; aceptada por el dueño el 2026-10-25, por menú: «Aceptar ambas (Recomendada)»)
+- **Fecha:** 2026-10-24 (los puntos 1 a 6, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió esa noche seguir con las recomendadas; el punto 7, propuesto por un agente, con lo que pide la ronda de diseño 19; aceptada por el dueño el 2026-10-25, por menú: «Aceptar ambas (Recomendada)»; lo visto en la instalación, punto 8, nota del 2026-10-25 propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D16](D016-observabilidad-de-agentes.md) (las llamadas a tools se registran, fuera de las trazas, como metadatos sin contenido), [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo por tarea, `activity.reads`) y [D83](D083-la-bandeja.md) (2) (la partición de cada persona guarda también su actividad)
 - **Precisada por:** —
 
@@ -34,3 +34,5 @@ Origen: la vista «Actividad» del menú Gobernanza (D24, `activity.jsx`) estaba
 - **Límite de tasa:** 60 lecturas por minuto y persona, por tarea (`activity.reads`, como `agents.lists`): no sostiene ninguna excepción, y contarlo en la tabla añadiría dos llamadas a una ruta que se lee cada 15 s.
 - **Escribir nunca rompe el turno:** un fallo se registra en el log sin datos del evento y el turno sigue.
 - Modelo de amenazas: [`activity-threat-model.md`](../../security/threat-models/activity-threat-model.md).
+
+**(8) Visto en la instalación (2026-10-25).** Con la versión que trae D90: el change set de `Core` añadió la política `ViewActivity`, sin IAM ni tablas. Un turno de chat con FinOps dejó su llamada en la partición de la persona (la política de sesión de las conversaciones permite escribirla) y su copia en `ACTIVITY#<día>` de `AuditIndex`. Un administrador vio sus llamadas y la de otra persona, esta con «De otra persona: solo ves el agente, la tool y la hora.» y sin enlace a la conversación. Las llamadas reales a tools de datos de cuentas tardaron entre 18 y 23 s.
