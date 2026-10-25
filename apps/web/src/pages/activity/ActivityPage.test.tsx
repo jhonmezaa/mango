@@ -400,26 +400,39 @@ describe('ActivityPage', () => {
   it('says when a live poll failed and keeps the list', async () => {
     vi.useRealTimers();
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: NOW });
-    const call = vi
-      .fn()
-      .mockReturnValueOnce(Promise.resolve(page()))
-      .mockImplementationOnce(() => Promise.reject(new ApiError(503, 'activity_unavailable', 'x')))
-      .mockReturnValue(Promise.resolve(page()));
+    // Only the live polls carry `since`: they fail while `failing` is on, whatever else loads.
+    let failing = true;
+    const polls = () =>
+      call.mock.calls.filter(([, input]) => input.query.since !== undefined).length;
+    const call = vi.fn((_operation: string, input: { query: { since?: string } }) =>
+      input.query.since !== undefined && failing
+        ? Promise.reject(new ApiError(503, 'activity_unavailable', 'x'))
+        : Promise.resolve(page()),
+    );
     renderPage(call);
     expect(await screen.findByText('Tarea · Revisión diaria')).toBeInTheDocument();
+    // The live timer starts after the list is drawn.
+    await act(async () => {
+      await Promise.resolve();
+    });
     await act(async () => {
       vi.advanceTimersByTime(15_000);
       await Promise.resolve();
     });
+    expect(polls()).toBe(1);
     const notice = await screen.findByText(
       'No se pudo buscar actividad nueva. Se vuelve a intentar en 15 s.',
     );
     expect(notice).toHaveAttribute('role', 'status');
     expect(screen.getByText('Tarea · Revisión diaria')).toBeInTheDocument();
+    failing = false;
     await act(async () => {
       vi.advanceTimersByTime(15_000);
       await Promise.resolve();
     });
-    expect(screen.queryByText(/No se pudo buscar actividad nueva/)).not.toBeInTheDocument();
+    expect(polls()).toBe(2);
+    await vi.waitFor(() => {
+      expect(screen.queryByText(/No se pudo buscar actividad nueva/)).not.toBeInTheDocument();
+    });
   });
 });
