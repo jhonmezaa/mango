@@ -322,6 +322,16 @@ def test_approvals_follow_the_rule_of_the_approvals_screen(env: Env) -> None:
     )
 
 
+def test_an_open_request_past_its_time_reads_as_expired(env: Env) -> None:
+    """Design round 20: «vencida» once a pending or approved request passed its time, also
+    before the approvals screen writes it; reading the activity writes nothing."""
+    record = env.request(USER, Tier.SELF)
+    env.now[0] += timedelta(hours=25).total_seconds()
+    (event,) = [e for e in env.get(USER, range="7d").json()["events"] if e["kind"] == "approval"]
+    assert event["approval_status"] == "expired"
+    assert env.approvals.get(record.approval_id).status is Status.PENDING
+
+
 def test_the_agents_of_the_scope_and_the_retention(env: Env) -> None:
     page = env.get(USER).json()
     assert [a["id"] for a in page["agents"]] == ["finops"]

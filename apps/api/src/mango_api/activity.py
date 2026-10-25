@@ -45,7 +45,7 @@ from mango_api.activity_store import (
     Origin,
 )
 from mango_api.approval_policy import Tier
-from mango_api.approvals_store import ApprovalRecord, ApprovalStore
+from mango_api.approvals_store import ApprovalRecord, ApprovalStore, Status
 from mango_api.harness import ToolCall
 from mango_api.probe import RateLimiter
 from mango_api.rate_limits import Limiter
@@ -86,7 +86,8 @@ class ActivityEvent(_Strict):
     ok: bool | None
     approval_id: str | None
     approval_status: str | None
-    """The status of the approval request (``approvals_store.Status``)."""
+    """The status of the approval request (``approvals_store.Status``), ``expired`` once an
+    open one passed its time even if nothing wrote it yet (design round 20, «vencida»)."""
     mine: bool
     """The caller's own: only these carry their conversation, task and run (D23)."""
     conversation_id: str | None
@@ -172,7 +173,7 @@ def _tool_event(record: ActivityRecord, user_id: str) -> ActivityEvent:
     )
 
 
-def _approval_event(record: ApprovalRecord, user_id: str) -> ActivityEvent:
+def _approval_event(record: ApprovalRecord, user_id: str, now: datetime) -> ActivityEvent:
     return ActivityEvent(
         id=f"approval-{record.approval_id}",
         kind="approval",
@@ -182,7 +183,8 @@ def _approval_event(record: ApprovalRecord, user_id: str) -> ActivityEvent:
         ms=None,
         ok=None,
         approval_id=record.approval_id,
-        approval_status=record.status.value,
+        # Read only, as Gobernanza: the approvals screen is what writes the expiry.
+        approval_status=Status.EXPIRED.value if record.expired(now) else record.status.value,
         mine=record.requested_by == user_id,
         conversation_id=None,
         task_id=None,
@@ -235,7 +237,7 @@ def list_activity(
         return at is not None and start < at.astimezone(UTC) <= now
 
     events = [_tool_event(r, user_id) for r in records]
-    events += [_approval_event(r, user_id) for r in approvals if recent(r.created_at)]
+    events += [_approval_event(r, user_id, now) for r in approvals if recent(r.created_at)]
     # The ids of the store and of the requests are opaque: the time orders, the id breaks ties.
     events.sort(key=lambda e: (e.at, e.id), reverse=True)
     if since is not None:
