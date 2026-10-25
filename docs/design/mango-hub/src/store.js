@@ -17,11 +17,12 @@
   // Knowledge Bases no va por vista de rol: la ven solo quienes crean agentes (mango-agent-creator) y los administradores, no por ser finops-central (ver canView).
   const OWNER_VIEWS = [...USER_VIEWS, 'governance', 'playground', 'admin', 'budgets', 'evals', 'observability', 'costs', 'skills', 'schedules', 'mcp'];
   const CREATOR_VIEWS = [...USER_VIEWS, 'admin', 'mcp'];
+  // Gobernanza tampoco: la ven los administradores y finops-central (ver canView). finops-central firma aprobaciones aunque no sea admin.
   const PERMS = {
     admin: { views: '*', actions: '*' },
     owner: { views: OWNER_VIEWS, actions: ['agent.edit', 'agent.create', 'agent.clone', 'approval.decide', 'budget.view', 'playground.publish', 'version.rollback'] },
     user: { views: USER_VIEWS, actions: [] },
-    central: { views: USER_VIEWS, actions: [] },
+    central: { views: USER_VIEWS, actions: ['approval.decide'] },
     creator: { views: CREATOR_VIEWS, actions: ['agent.edit', 'agent.create', 'agent.clone'] },
   };
 
@@ -36,6 +37,7 @@
     { actor: 'usuario8@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'rejected', at: ago(200) },
     { actor: 'Usuario 3', role: 'owner', action: 'kb.upload', target: 'kb-02', kb: 'Políticas de RH', docs: 3, detail: 'Agregó 3 documentos a Políticas de RH', outcome: 'applied', at: ago(260) },
     { actor: 'usuario9@empresa.com', role: 'user', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'disabled', at: ago(300) },
+    { actor: 'Usuario 3', role: 'owner', action: 'budget.block', target: 'fin-01', turn: 'TRN-5085', detail: 'FinOps no respondió: el límite de usuario llegó al 100 % (USD 5,00 de USD 5,00)', at: ago(300.5) },
     { actor: 'usuario3@empresa.com', role: 'owner', action: 'session.started', target: 'session', detail: 'Ingresó con contraseña y MFA', at: ago(320) },
     { actor: 'Usuario 2', role: 'owner', action: 'kb.search_test', target: 'kb-03', kb: 'FinOps Playbooks', hits: 4, detail: 'Probó una búsqueda en FinOps Playbooks · 4 fragmentos', at: ago(330) },
     { actor: 'usuario5@empresa.com', role: 'central', action: 'session.ended', target: 'session', detail: 'Sesión cerrada', reason: 'expired', at: ago(410) },
@@ -43,6 +45,7 @@
     { actor: 'Usuario 4', role: 'user', action: 'chat.query', target: 'fin-01', perm: 'agent.invoke', turn: 'TRN-5102', detail: 'Preguntó a FinOps · consultó Cost Explorer (3 llamadas) · costo USD 0,04', after: { llamadas: 3, costo: 'USD 0,04' }, agentVersion: 3, model: 'us.anthropic.claude-sonnet-4-6-v1:0', at: ago(22) },
     { actor: 'Usuario 4', role: 'user', action: 'access.view', target: 'agent.invoke', turn: 'TRN-5102', detail: 'Usar agente fin-01 · permitido', at: ago(22.1) },
     { actor: 'Usuario 4', role: 'user', action: 'agent.invoke', target: 'fin-01', turn: 'TRN-5102', detail: 'Inició un turno con FinOps', at: ago(22.2) },
+    { actor: 'Usuario 6', role: 'lead_admin', action: 'group.propose', target: 'retail-lideres', detail: 'Propuso: Nuevo grupo de área · área retail — "Los líderes de Retail necesitan ver el gasto de sus OUs."', at: ago(25) },
     { actor: 'Usuario 1', role: 'admin', action: 'access.view', target: 'admin.view', detail: 'Ver administración · permitido', read: true, at: ago(26) },
     { actor: 'Usuario 7', role: 'user', action: 'access.denied', target: 'agent.invoke', turn: 'TRN-5099', detail: 'Usar agente fin-01 · denegado (403) · sin grupo con acceso', at: ago(40) },
     { actor: 'Usuario 7', role: 'user', action: 'agent.invoke', target: 'fin-01', turn: 'TRN-5099', detail: 'Inició un turno con FinOps', at: ago(40.1) },
@@ -69,6 +72,7 @@
     { actor: 'Sec Guardian', role: 'agent', action: 'tool.execute', target: 'ec2.modify_security_group', detail: 'Bloqueó una IP externa tras la aprobación de Usuario 1', outcome: 'applied', at: ago(900) },
     { actor: 'Usuario 2', role: 'owner', action: 'approval.reject', target: 'APR-201', detail: 'Rechazó terminar instancias i-0a8b* — "falta ventana de mantenimiento"', at: ago(1300) },
     { actor: 'Usuario 1', role: 'admin', action: 'settings.update', target: 'auth', detail: 'Activó MFA obligatorio para admins', outcome: 'applied', at: ago(2100) },
+    { actor: 'Usuario 1', role: 'admin', action: 'budget.user', target: 'usuario2@empresa.com', detail: 'Límite propio USD 20,00', at: ago(2600) },
     { actor: 'Sistema', role: 'system', action: 'budget.pause', target: 'data-01', detail: 'Auto-pausa al 100% del presupuesto', outcome: 'applied', at: ago(2900) },
     { actor: 'Usuario 3', role: 'owner', action: 'skill.create', target: 'rightsizing-ecs', detail: 'Creó skill "Rightsizing ECS"', outcome: 'applied', at: ago(3600) },
   ];
@@ -117,7 +121,7 @@
     { id: 'CHG-10', kind: 'auth', key: 'idp', from: 'none', to: 'sso', by: 'Usuario 1', at: ago(5000), reason: 'Entrar con la cuenta corporativa.', status: 'rejected', decidedBy: 'Usuario 6', decidedAt: ago(4900), note: 'Falta el metadata del IdP.' },
   ];
   const CHG_PREFIX = { member: 'directory.member_', mfa_reset: 'account.mfa_reset_', share: 'agent.share_', group: 'group.', skill: 'skill.', policy: 'policy.', auth: 'settings.' };
-  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox', 'knowledge'];
+  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox', 'knowledge', 'governance', 'activity'];
 
   let state = {
     avail: ls('mango-avail4', false),
@@ -200,10 +204,10 @@
       if (store.onDecide[c.kind]) store.onDecide[c.kind](c, 'withdrawn');
       store.log((CHG_PREFIX[c.kind] || 'settings.') + 'withdraw', c.target || c.key, 'Retiró la propuesta ' + c.id);
     },
-    canView: (view, role = state.role) => { if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge') return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
+    canView: (view, role = state.role) => { if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge') return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); if (view === 'governance') return !!(ROLES[role] && (ROLES[role].admin || ROLES[role].central)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
     can: (action, role = state.role) => { const p = PERMS[role]; return p.actions === '*' || p.actions.includes(action); },
     actorEmail: () => 'usuario' + (store.actor().match(/\d+/) || ['1'])[0] + '@empresa.com',
-    actor: () => (state.actorOverride || ({ admin: 'Usuario 1', owner: 'Usuario 2', user: 'Usuario 4', creator: 'Usuario 3' })[state.role]),
+    actor: () => (state.actorOverride || ({ admin: 'Usuario 1', owner: 'Usuario 2', user: 'Usuario 4', creator: 'Usuario 3', central: 'Usuario 5' })[state.role]),
     log: (action, target, detail, extra = {}) => {
       const last = state.audit[0];
       const id = 'AUD-' + (parseInt(last ? last.id.slice(4) : '4100', 10) + 1);

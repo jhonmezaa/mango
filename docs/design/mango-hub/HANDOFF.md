@@ -741,3 +741,29 @@ Regla del servidor: con `bu-lead` y sin `finops-central`, exactamente un grupo `
 - Líder de área: la pantalla de `area_required`, los textos del 422, «Volver a comprobar» con tokens nuevos, «Cambiar de área» en un paso y el aviso al eliminar un grupo de área.
 - Bandeja: los avisos «Tarea» y «Tu solicitud» (ahora también el de bucket).
 - Siguen: «Presupuesto del agente agotado», distinguir el fallo de una tool del tiempo agotado, «Persona registrada», el motivo del aviso de AWS Billing en el turno y la marca «cortado por guardrail».
+
+
+## Gobernanza y Actividad · disponibilidad actual (2026-10-24)
+Archivos: `other-views.jsx` (Governance), `activity.jsx`, `audit-budgets.jsx`, `store.js`, `policies.jsx`, `settings.jsx`, `app.jsx`, `styles.css`. `governance` y `activity` entran en `AVAILABLE`.
+
+### Gobernanza
+- **Quién la ve:** administradores y finops-central, en los dos modos (`canView('governance')`). finops-central firma aprobaciones aunque no sea admin (`approval.decide` en la cuenta «Usuario · finops-central», que ahora es Usuario 5).
+- **Sin admin:** solo lo que puede abrir. Sin fila de presupuestos («Disponible hoy») ni de cambios de áreas, sin «Gasto de equipos», «Eventos auditados · 24 h», actividad reciente ni botón «Audit log»; las políticas van a todo el ancho. Subtítulo: «Qué necesita atención y cómo se están resolviendo las aprobaciones. Presupuestos, cambios de áreas y auditoría los ven los administradores.»; vacío: «No hay aprobaciones que esperen tu firma.».
+- **Necesita atención:** «{n} aprobaciones esperan tu firma» (como en Aprobaciones: sin las que pediste ni las que ya firmaste, más los buckets que te toca decidir; sin riesgo); «{n} presupuestos pasaron el 80 %» (FinOps con el límite por defecto y los límites por usuario; rojo si alguno se agotó); «{n} cambios de áreas pendientes» (abre Ajustes › Áreas y OUs). Sin la fila de agentes que no están en línea: un agente está publicado o retirado.
+- **Indicadores:** «Aprobaciones pendientes» · «La primera vence en {t}»; «Decisiones · 7 días»; «Eventos auditados · 24 h», sin lecturas y con el tope del servidor («Más de 5000»), debajo «Sin lecturas · con hash y Object Lock en S3» (no hay cadena ni digest). Sin «Gasto de equipos»: no hay presupuestos de equipo.
+- **Políticas:** una fila por tool con solicitudes pendientes o de los últimos 7 días, con su regla (condición, aprobadores y vencimiento, `polSummary`) y cuántas solicitudes. No hay nombre de política.
+- **Actividad reciente:** eventos reales de 7 días con los textos de Auditoría (evento; persona · detalle · resultado): solicitudes, aprobaciones, rechazos y vencimientos; cambios de políticas; cambios de presupuesto y turnos bloqueados por presupuesto; cambios de áreas; agentes retirados; versiones aprobadas o rechazadas; grupos y personas en grupos; solicitudes de packs. El Audit log de «Disponible hoy» muestra ahora también esos eventos. Evento nuevo `budget.block` «Turno bloqueado por presupuesto».
+- **Estados nuevos:** cargando (esqueleto, role="status") y error («No se pudo cargar Gobernanza» · «Vuelve a intentarlo en unos segundos.» + «Reintentar»). Demo: panel › «Gobernanza» (normal, cargando, error, más de 5000 eventos).
+- **Correcciones (los dos modos):** «Decisiones · 7 días» contaba como rechazadas las ejecutadas y las vencidas; «esperan tu firma» incluía las propias; los cambios de áreas no aparecían nunca (comparaba con la fecha de hoy y no con la del ejemplo); quien no es admin veía auditoría y cambios de áreas que no puede abrir.
+
+### Actividad
+- **Quién ve qué:** cada persona, lo de sus turnos de chat y sus tareas. Un admin, lo de todos; de otras personas solo agente, tool y hora (fila abierta: «De otra persona: solo ves el agente, la tool y la hora.»). «Abrir conversación» y «Ver ejecución» solo en lo propio; «Ver presupuestos», solo para admins.
+- **Desfase:** lo propio aparece al momento; lo de otras personas, cuando termina su turno, con la hora de cada llamada. Demo: con la cuenta de admin, la primera consulta en vivo trae un turno de otra persona que estaba en curso.
+- **«En vivo»:** cada 15 s; se pausa con la pestaña oculta y al volver consulta enseguida.
+- **Lo que no hay:** parámetros de las tools (no se guardan), tickets, publicaciones y estado de los agentes («de {n} publicados»; «sin actividad en el periodo» solo para admins y sin estado). De presupuesto, solo «no respondió: se agotó el presupuesto».
+- Tools por nombre, como en el chat. Las tareas toman los pasos de sus ejecuciones en Schedules («Tarea · {nombre}» en lo propio).
+- **Retención:** con «7 días», al final: «Aquí se ven hasta 7 días. La actividad se guarda 30 días.».
+
+### Pendiente del producto
+- Confirmar que un admin ve la tool de cada llamada ajena (la nota decía «agente y hora»).
+- `budget.block`: nombre y texto del evento del turno bloqueado.

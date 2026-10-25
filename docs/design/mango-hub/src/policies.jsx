@@ -111,9 +111,9 @@ window.MangoStore.onDecide.policy = (c, d) => { if (d !== 'approved') return; co
     const exp = S.get().approvals.filter(a => (a.status === 'pending' || a.status === 'approved') && a.expiresMin && now - new Date(a.at).getTime() >= a.expiresMin * 60000);
     if (!exp.length) return;
     S.set({ approvals: S.get().approvals.map(a => exp.some(x => x.id === a.id) ? { ...a, status: 'expired', wasApproved: a.status === 'approved', decidedBy: 'Sistema', decidedAt: new Date(new Date(a.at).getTime() + a.expiresMin * 60000).toISOString(), note: 'Venció sin respuesta', expired: true } : a) });
-    exp.forEach(a => S.log('approval.expire', a.id, 'Venció sin ejecutarse: "' + a.action + '"'));
+    exp.forEach(a => S.log('approval.expire', a.id, (a.status === 'approved' ? 'Venció sin ejecutarse: "' : 'Venció sin respuesta: "') + a.action + '"', { actor: 'Sistema', role: 'system' }));
   };
   run(); setInterval(run, 30000);
 })();
 
-Object.assign(window, { PoliciesPanel, polText, approvalTier });
+Object.assign(window, { PoliciesPanel, polText, polSummary, approvalTier });

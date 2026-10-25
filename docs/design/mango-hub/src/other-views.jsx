@@ -496,127 +496,190 @@ function DelegateModal({ from, allNodes, onClose }) {
 }
 
 function Governance({ tickets, agents }) {
-  const I = window.Icons; const S = window.MangoStore;
+  const I = window.Icons; const S = window.MangoStore; const K = window.GovKit;
   const approvals = window.useMango(s => s.approvals);
   const audit = window.useMango(s => s.audit);
   const budgets = window.useMango(s => s.budgets);
-  window.useMango(s => s.role);
-  const go = (v) => window.MangoNav ? window.MangoNav(v) : window.dispatchEvent(new CustomEvent('mango:go', { detail: v }));
-  const money = (n) => window.GovKit ? window.GovKit.usd(n) : '$' + n.toLocaleString();
+  const gb = window.useMango(s => s.govBudgets);
+  const kbReqs = window.useMango(s => s.kbReqs);
+  const pols = window.useMango(s => s.toolPolicies);
+  const avail = window.useMango(s => s.avail);
+  const sim = window.useMango(s => s.simGov) || null;
+  const role = window.useMango(s => s.role); window.useMango(s => s.actorOverride);
+  const me = S.actor();
+  // La ven administradores y finops-central. Sin admin: ve y firma aprobaciones; presupuestos, cambios de áreas y auditoría, solo si puede abrirlos.
+  const seeBudgets = S.canView('budgets'), seeAreas = S.canView('settings'), seeAudit = S.canView('audit');
+  const go = (v, p) => window.MangoNav ? window.MangoNav(v, p) : window.dispatchEvent(new CustomEvent('mango:go', { detail: v }));
+  const money = (n) => K ? K.usd(n) : '$' + n.toLocaleString();
   const left = (ap) => ap.expiresMin ? ap.expiresMin - Math.round((Date.now() - new Date(ap.at).getTime()) / 60000) : null;
-  const live = approvals.filter(ap => ap.status === 'pending' && !(left(ap) != null && left(ap) <= 0));
-  const mine = live.filter(ap => S.can('approval.decide') && !(ap.approvalsGiven || []).includes(S.actor()));
+  const isLive = (ap) => ap.status === 'pending' && !(left(ap) != null && left(ap) <= 0);
+  const live = approvals.filter(isLive);
+  const pendingN = live.length + (kbReqs || []).filter(r => r.status === 'pending' && (role === 'admin' || r.by === me)).length;
+  // Esperan tu firma: como en Aprobaciones (ni las que pediste ni las que ya firmaste), más los buckets que te toca decidir.
+  const mine = live.filter(ap => S.can('approval.decide') && ap.requestedBy !== me && !(ap.approvalsGiven || []).includes(me)).length + (kbReqs || []).filter(r => window.kbNeedsMe ? window.kbNeedsMe(r) : false).length;
   const soon = live.filter(ap => { const l = left(ap); return l != null && l < 60; });
+  const nextLeft = live.map(left).filter(l => l != null && l > 0).sort((x, y) => x - y)[0];
+  const fmtMin = (m) => m < 60 ? m + ' min' : Math.round(m / 60) + ' h';
   const highRisk = live.filter(ap => ap.risk === 'high');
   const week = Date.now() - 7 * 864e5;
-  const decided = approvals.filter(ap => ap.status !== 'pending' && new Date(ap.decidedAt).getTime() >= week);
-  const approved = decided.filter(ap => ap.status === 'approved').length;
-  const overBudget = budgets.filter(bg => bg.spent / bg.limit * 100 >= bg.warn).sort((x, y) => y.spent / y.limit - x.spent / x.limit);
+  const inWeek = (iso) => !!iso && new Date(iso).getTime() >= week;
+  // Aprobada cuenta también si después se ejecutó o falló.
+  const approvedN = approvals.filter(ap => inWeek(ap.decidedAt) && ['approved', 'executing', 'executed', 'failed'].includes(ap.status)).length;
+  const rejectedN = approvals.filter(ap => inWeek(ap.decidedAt) && ap.status === 'rejected').length;
+  const decidedN = approvedN + rejectedN;
+  const pctOf = (b) => b.limit > 0 ? b.spent / b.limit * 100 : 0;
+  const bName = (bg) => bg.scope === 'agent' ? (agents.find(ag => ag.id === bg.target)?.name || bg.target) : 'Equipo ' + bg.target;
+  // Disponible hoy: límite por agente (el por defecto) y por usuario, con la alerta fija en 80 %. No hay presupuestos de equipo.
+  const defs = (gb && gb.defaults) || { user: 0, agent: 0 };
+  const over = (avail
+    ? [...((gb && gb.agents) || []).map(x => ({ name: agents.find(ag => ag.id === 'fin-01')?.name || 'FinOps', spent: x.spent, limit: defs.agent })), ...((gb && gb.users) || []).map(u => ({ name: u.email || K.shortId(u.id), spent: u.spent, limit: u.ownLimit ?? defs.user }))].filter(b => pctOf(b) >= 80)
+    : budgets.filter(bg => pctOf(bg) >= bg.warn).map(bg => ({ name: bName(bg), spent: bg.spent, limit: bg.limit }))).sort((x, y) => pctOf(y) - pctOf(x));
   const teamB = budgets.filter(bg => bg.scope === 'team');
   const teamSpent = teamB.reduce((s, bg) => s + bg.spent, 0), teamLimit = teamB.reduce((s, bg) => s + bg.limit, 0);
   const unhealthy = agents.filter(ag => ag.status === 'degraded' || ag.status === 'offline');
-  const props = (window.GovData?.proposals || []).filter(p => Date.now() - new Date(p.createdAt).getTime() < 7 * 864e5).length;
-  const dayAgo = Date.now() - 864e5;
-  const auditToday = audit.filter(e => new Date(e.at).getTime() >= dayAgo).length;
+  // Propuestas del mapeo de áreas: pendientes mientras no vencen (7 días), como en Ajustes › Áreas y OUs.
+  const props = (window.GovData?.proposals || []).filter(p => K.NOW - new Date(p.createdAt) <= 7 * K.DAY).length;
+  // Los eventos que lista el Audit log, sin lecturas. El servidor cuenta hasta 5000.
+  const auditN = seeAudit && window.auditRows ? window.auditRows(audit, avail).filter(e => !e.read && new Date(e.at).getTime() >= Date.now() - 864e5).length : 0;
+  const auditVal = sim === 'cap' || auditN > 5000 ? 'Más de 5000' : auditN;
   const GOV_ACTIONS = /^(approval|budget|mapping|agent\.(share|archive|delete|restore)|role|settings)/;
-  const govLog = audit.filter(e => GOV_ACTIONS.test(e.action)).slice(0, 7);
-  const bName = (bg) => bg.scope === 'agent' ? (agents.find(ag => ag.id === bg.target)?.name || bg.target) : 'Equipo ' + bg.target;
-  const policies = Object.values(approvals.reduce((m, ap) => {
-    const k = ap.policy || 'Sin política';
-    m[k] = m[k] || { name: k, pending: 0, total: 0, sigs: 1, high: 0 };
-    m[k].total++; if (ap.status === 'pending') m[k].pending++; if (ap.risk === 'high') m[k].high++;
-    m[k].sigs = Math.max(m[k].sigs, ap.approvalsNeeded || 1);
-    return m;
-  }, {})).sort((x, y) => y.pending - x.pending || y.total - x.total);
+  // Disponible hoy: eventos reales de los últimos 7 días, con los textos de Auditoría.
+  const GOV_AVAIL = /^(approval\.(request|approve|reject|expire)|policy\.(propose|approve|reject|withdraw)|budget\.(update|create|delete|user|default|block)|mapping\.(propose|approve|reject|withdraw)|agent\.(retire|approve|reject)|group\.[a-z_]+|directory\.(group_add|group_remove|area_change|member_(propose|approve|reject|withdraw))|mcp\.request)$/;
+  const govLog = !seeAudit ? [] : avail && window.auditRows
+    ? window.auditRows(audit, true).filter(e => !e.read && GOV_AVAIL.test(e.action) && inWeek(e.at)).sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 7)
+    : audit.filter(e => GOV_ACTIONS.test(e.action)).slice(0, 7);
+  // Disponible hoy no hay nombre de política: cada tool de escritura tiene la suya (condición, de 1 a 3 aprobadores y vencimiento).
+  const polRule = (tool) => window.polSummary ? window.polSummary({ cond: 'always', approvers: 1, expiresH: 24, ...((pols || {})[tool] || {}) }) : '';
+  const policies = avail
+    ? Object.values(approvals.filter(ap => isLive(ap) || inWeek(ap.at)).reduce((m, ap) => { const k = ap.tool || '—'; m[k] = m[k] || { name: k, pending: 0, total: 0 }; m[k].total++; if (isLive(ap)) m[k].pending++; return m; }, {})).sort((x, y) => y.pending - x.pending || y.total - x.total)
+    : Object.values(approvals.reduce((m, ap) => {
+      const k = ap.policy || 'Sin política';
+      m[k] = m[k] || { name: k, pending: 0, total: 0, sigs: 1, high: 0 };
+      m[k].total++; if (ap.status === 'pending') m[k].pending++; if (ap.risk === 'high') m[k].high++;
+      m[k].sigs = Math.max(m[k].sigs, ap.approvalsNeeded || 1);
+      return m;
+    }, {})).sort((x, y) => y.pending - x.pending || y.total - x.total);
 
   const attention = [
-    mine.length && { tone: 'amber', icon: 'Lock', title: `${mine.length} ${mine.length === 1 ? 'aprobación espera' : 'aprobaciones esperan'} tu firma`, sub: soon.length ? `${soon.length} vence${soon.length === 1 ? '' : 'n'} en menos de 1 h` : highRisk.length ? `${highRisk.length} de riesgo alto` : 'Revísalas antes de que venzan', cta: 'Revisar', view: 'approvals' },
-    overBudget.length && { tone: overBudget.some(bg => bg.spent >= bg.limit) ? 'red' : 'amber', icon: 'Money', title: `${overBudget.length} ${overBudget.length === 1 ? 'presupuesto pasó' : 'presupuestos pasaron'} su umbral de alerta`, sub: overBudget.slice(0, 2).map(bg => bName(bg) + ' ' + Math.round(bg.spent / bg.limit * 100) + '%').join(' · '), cta: 'Ver presupuestos', view: 'budgets' },
-    props && { tone: 'blue', icon: 'Org', title: `${props} ${props === 1 ? 'cambio de áreas pendiente' : 'cambios de áreas pendientes'}`, sub: 'Deciden qué gasto ve cada líder de área', cta: 'Revisar', view: 'settings' },
-    unhealthy.length && { tone: 'red', icon: 'Warn', title: `${unhealthy.length} ${unhealthy.length === 1 ? 'agente no está' : 'agentes no están'} en línea`, sub: unhealthy.slice(0, 3).map(ag => ag.name).join(', '), cta: 'Ver agentes', view: 'marketplace' },
+    mine > 0 && { tone: 'amber', icon: 'Lock', title: `${mine} ${mine === 1 ? 'aprobación espera' : 'aprobaciones esperan'} tu firma`, sub: soon.length ? `${soon.length} vence${soon.length === 1 ? '' : 'n'} en menos de 1 h` : !avail && highRisk.length ? `${highRisk.length} de riesgo alto` : 'Revísalas antes de que venzan', cta: 'Revisar', view: 'approvals' },
+    seeBudgets && over.length > 0 && { tone: over.some(b => b.spent >= b.limit) ? 'red' : 'amber', icon: 'Money', title: `${over.length} ${over.length === 1 ? 'presupuesto pasó' : 'presupuestos pasaron'} ${avail ? 'el 80 %' : 'su umbral de alerta'}`, sub: over.slice(0, 2).map(b => b.name + ' ' + (avail ? K.pctLabel(pctOf(b)) : Math.round(pctOf(b)) + '%')).join(' · '), cta: 'Ver presupuestos', view: 'budgets' },
+    seeAreas && props > 0 && { tone: 'blue', icon: 'Org', title: `${props} ${props === 1 ? 'cambio de áreas pendiente' : 'cambios de áreas pendientes'}`, sub: 'Deciden qué gasto ve cada líder de área', cta: 'Revisar', view: 'settings', param: 'areas' },
+    !avail && unhealthy.length > 0 && { tone: 'red', icon: 'Warn', title: `${unhealthy.length} ${unhealthy.length === 1 ? 'agente no está' : 'agentes no están'} en línea`, sub: unhealthy.slice(0, 3).map(ag => ag.name).join(', '), cta: 'Ver agentes', view: 'marketplace' },
   ].filter(Boolean);
+  const kpis = [
+    { label: 'Aprobaciones pendientes', value: pendingN, sub: avail ? (!pendingN ? 'Nada pendiente' : nextLeft != null ? 'La primera vence en ' + fmtMin(nextLeft) : 'Sin vencimiento') : highRisk.length ? highRisk.length + ' de riesgo alto' : 'Ninguna de riesgo alto', view: 'approvals' },
+    { label: 'Decisiones · 7 días', value: decidedN, sub: decidedN ? `${approvedN} ${approvedN === 1 ? 'aprobada' : 'aprobadas'} · ${rejectedN} ${rejectedN === 1 ? 'rechazada' : 'rechazadas'}` : 'Sin decisiones esta semana', view: 'approvals' },
+    !avail && seeBudgets && { label: 'Gasto de equipos', value: teamLimit ? Math.round(teamSpent / teamLimit * 100) + '%' : '—', sub: `${money(teamSpent)} de ${money(teamLimit)}`, view: 'budgets' },
+    seeAudit && { label: 'Eventos auditados · 24 h', value: auditVal, sub: avail ? 'Sin lecturas · con hash y Object Lock en S3' : 'Registro encadenado y verificable', view: 'audit' },
+  ].filter(Boolean);
+  const hidden = [!seeBudgets && 'presupuestos', !seeAreas && 'cambios de áreas', !seeAudit && 'auditoría'].filter(Boolean);
+  const joinY = (l) => l.length > 1 ? l.slice(0, -1).join(', ') + ' y ' + l[l.length - 1] : l[0];
+  const subtitle = !hidden.length ? 'Qué necesita atención y cómo están funcionando los controles: aprobaciones, presupuestos y acceso.'
+    : 'Qué necesita atención y cómo se están resolviendo las aprobaciones. ' + joinY(hidden).replace(/^./, c => c.toUpperCase()) + ' los ven los administradores.';
+  const okText = !hidden.length ? 'No hay aprobaciones, alertas ni cambios pendientes.' : seeBudgets ? 'No hay aprobaciones que esperen tu firma ni presupuestos en alerta.' : 'No hay aprobaciones que esperen tu firma.';
 
   const TONE = { amber: 'var(--amber)', red: 'var(--red)', blue: 'var(--blue)', green: 'var(--green)' };
-  const ACT = { 'approval.approve': 'aprobó', 'approval.reject': 'rechazó', 'approval.request': 'pidió aprobación', 'budget.update': 'editó un presupuesto', 'budget.create': 'creó un presupuesto', 'budget.alert': 'alerta de presupuesto', 'budget.pause': 'pausa por presupuesto', 'budget.user': 'cambió un límite de usuario', 'budget.default': 'cambió el límite por defecto', 'mapping.propose': 'propuso un cambio de áreas', 'mapping.approve': 'aprobó un cambio de áreas', 'mapping.reject': 'rechazó un cambio de áreas', 'mapping.withdraw': 'retiró un cambio de áreas', 'agent.share': 'cambió el acceso a un agente', 'agent.archive': 'archivó un agente', 'agent.delete': 'eliminó un agente', 'agent.restore': 'restauró un agente', 'role.assign': 'asignó un rol', 'settings.update': 'cambió la configuración' };
+  const ACT = { 'approval.approve': 'aprobó', 'approval.reject': 'rechazó', 'approval.request': 'pidió aprobación', 'approval.expire': 'venció una solicitud', 'budget.update': 'editó un presupuesto', 'budget.create': 'creó un presupuesto', 'budget.alert': 'alerta de presupuesto', 'budget.pause': 'pausa por presupuesto', 'budget.block': 'turno bloqueado por presupuesto', 'budget.user': 'cambió un límite de usuario', 'budget.default': 'cambió el límite por defecto', 'mapping.propose': 'propuso un cambio de áreas', 'mapping.approve': 'aprobó un cambio de áreas', 'mapping.reject': 'rechazó un cambio de áreas', 'mapping.withdraw': 'retiró un cambio de áreas', 'agent.share': 'cambió el acceso a un agente', 'agent.archive': 'archivó un agente', 'agent.delete': 'eliminó un agente', 'agent.restore': 'restauró un agente', 'role.assign': 'asignó un rol', 'settings.update': 'cambió la configuración' };
   const ago = (iso) => window.fmtAgo ? window.fmtAgo(iso) : '';
+  const gridStyle = seeAudit ? undefined : { gridTemplateColumns: 'minmax(0,1fr)' };
+  const secs = [['pol', 'políticas que piden aprobación'], seeAudit && ['act', 'actividad reciente']].filter(Boolean);
+  const Sk = K.Skel;
 
   const Kpi = ({ label, value, sub, view }) => (
     <button className="card gv-kpi" onClick={() => go(view)}>
       <span className="gv-kpi-l">{label}</span>
       <span className="gv-kpi-v">{value}</span>
-      <span className="gv-kpi-s">{sub}</span>
+      <span className="gv-kpi-s" title={sub}>{sub}</span>
     </button>
+  );
+
+  let body;
+  if (sim === 'loading') body = (
+    <div className="gv-body" role="status" aria-label="Cargando gobernanza">
+      <section><div className="mk-sec-t">necesita atención</div><div className="card gv-attn">{[0, 1, 2].map(i => <div key={i} className="gv-attn-row" style={{ pointerEvents: 'none' }}><Sk w={30} h={30} r={8} /><span style={{ flex: 1, display: 'grid', gap: 7 }}><Sk w="44%" /><Sk w="66%" h={10} /></span></div>)}</div></section>
+      <section className="gv-kpis" style={{ '--gv-n': kpis.length }}>{kpis.map(k => <div key={k.label} className="card gv-kpi"><span className="gv-kpi-l">{k.label}</span><Sk w={64} h={24} /><Sk w="70%" h={10} /></div>)}</section>
+      <div className="gv-grid" style={gridStyle}>{secs.map(([k, t]) => <section key={k}><div className="gv-sec-h"><div className="mk-sec-t" style={{ margin: 0 }}>{t}</div></div><div className="card" style={{ padding: 0 }}>{[0, 1, 2].map(i => <div key={i} className="gv-pol" style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}><span style={{ flex: 1, display: 'grid', gap: 7 }}><Sk w="48%" /><Sk w="80%" h={10} /></span></div>)}</div></section>)}</div>
+    </div>
+  );
+  else if (sim === 'error') body = <div className="gv-body"><div role="alert"><K.ErrorState title="No se pudo cargar Gobernanza" body="Vuelve a intentarlo en unos segundos." onRetry={() => S.set({ simGov: null })} /></div></div>;
+  else body = (
+    <div className="gv-body">
+      <section>
+        <div className="mk-sec-t">necesita atención</div>
+        <div className="card gv-attn">
+          {attention.length === 0 && (
+            <div className="gv-ok"><span className="g-dot-lg green" style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--green-soft)', color: 'var(--green)' }}><I.Check size={14} /></span><div><div style={{ fontWeight: 600, fontSize: 13.5 }}>Todo en orden</div><div className="mk-meta">{okText}</div></div></div>
+          )}
+          {attention.map((it, i) => { const Ic = I[it.icon]; return (
+            <button key={i} className="gv-attn-row" onClick={() => go(it.view, it.param)}>
+              <span className="gv-ic" style={{ color: TONE[it.tone], background: `color-mix(in oklab, ${TONE[it.tone]} 12%, transparent)` }}><Ic size={14} /></span>
+              <span style={{ flex: 1, minWidth: 0 }}><span className="gv-t">{it.title}</span><span className="gv-s">{it.sub}</span></span>
+              <span className="gv-cta">{it.cta} <I.ArrowRight size={11} /></span>
+            </button>
+          ); })}
+        </div>
+      </section>
+
+      <section className="gv-kpis" style={{ '--gv-n': kpis.length }}>{kpis.map(k => <Kpi key={k.label} {...k} />)}</section>
+
+      <div className="gv-grid" style={gridStyle}>
+        <section>
+          <div className="gv-sec-h"><div className="mk-sec-t" style={{ margin: 0 }}>políticas que piden aprobación</div>{avail && <span className="mk-meta">por tool · 7 días</span>}</div>
+          <div className="card" style={{ padding: 0 }}>
+            {policies.length === 0 && <div className="mk-meta" style={{ padding: '14px 16px' }}>{avail ? 'Ninguna tool de escritura tuvo solicitudes en los últimos 7 días.' : 'Sin solicitudes de aprobación.'}</div>}
+            {policies.map((p, i) => (
+              <div key={p.name} className="gv-pol" style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  {avail ? <div className="gv-t mono" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', fontSize: 12.5, fontWeight: 500 }}>{p.name}</div> : <div className="gv-t" style={{ whiteSpace: 'normal' }}>{p.name}</div>}
+                  <div className="gv-s" style={avail ? { whiteSpace: 'normal' } : undefined}>{avail ? polRule(p.name) + ' · ' + p.total + (p.total === 1 ? ' solicitud' : ' solicitudes') : <>{p.sigs > 1 ? p.sigs + ' firmas de personas distintas' : '1 firma'} · {p.total} {p.total === 1 ? 'solicitud' : 'solicitudes'}{p.high ? ' · ' + p.high + ' de riesgo alto' : ''}</>}</div>
+                </div>
+                {p.pending > 0 ? <span className="badge badge-amber">{p.pending} pendiente{p.pending === 1 ? '' : 's'}</span> : <span className="badge">Al día</span>}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {seeAudit && <section>
+          <div className="gv-sec-h">
+            <div className="mk-sec-t" style={{ margin: 0 }}>actividad reciente</div>
+            <button className="sr-link" onClick={() => go('audit')}>Ver todo</button>
+          </div>
+          <div className="card" style={{ padding: 0 }}>
+            {govLog.length === 0 && <div className="mk-meta" style={{ padding: '14px 16px' }}>{avail ? 'Sin eventos de gobernanza en los últimos 7 días.' : 'Sin actividad de gobernanza reciente.'}</div>}
+            {govLog.map(e => avail ? (
+              <div key={e.id} className="tk-act gv-act">
+                <span className="tk-dot" style={{ marginTop: 6, background: window.actionTone ? window.actionTone(e.action) : 'var(--text-dim)' }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ fontWeight: 500, color: 'var(--text)' }}>{(window.AUDIT_ACTIONS || {})[e.action] || e.action}</b>
+                  <span className="gv-s" style={{ whiteSpace: 'normal' }}>{e.actor}{e.detail ? ' · ' + e.detail : ''}{e.outcome && window.auditOutcome ? ' · ' + window.auditOutcome(e) : ''}</span>
+                </span>
+                <span className="tk-meta">{ago(e.at)}</span>
+              </div>
+            ) : (
+              <div key={e.id} className="tk-act gv-act">
+                <span className="tk-dot" style={{ marginTop: 6, background: /reject|alert|pause|block|delete/.test(e.action) ? 'var(--red)' : /approve|restore/.test(e.action) ? 'var(--green)' : /request|propose/.test(e.action) ? 'var(--amber)' : 'var(--text-dim)' }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ fontWeight: 500, color: 'var(--text)' }}>{e.actor}</b> {ACT[e.action] || e.action}
+                  {e.detail && <span className="gv-s" style={{ whiteSpace: 'normal' }}>{e.detail}</span>}
+                </span>
+                <span className="tk-meta">{ago(e.at)}</span>
+              </div>
+            ))}
+          </div>
+        </section>}
+      </div>
+    </div>
   );
 
   return (
     <>
-      <Topbar crumbs={['Gobernanza']} actions={<button className="btn btn-sm" onClick={() => go('audit')}><I.Lock size={12} /> Audit log</button>} />
+      <Topbar crumbs={['Gobernanza']} actions={seeAudit ? <button className="btn btn-sm" onClick={() => go('audit')}><I.Lock size={12} /> Audit log</button> : null} />
       <div className="content">
         <div className="page-head">
           <h1 className="page-title">Gobernanza</h1>
-          <p className="page-subtitle">Qué necesita atención y cómo están funcionando los controles: aprobaciones, presupuestos y acceso.</p>
+          <p className="page-subtitle">{subtitle}</p>
         </div>
-        <div className="gv-body">
-          <section>
-            <div className="mk-sec-t">necesita atención</div>
-            <div className="card gv-attn">
-              {attention.length === 0 && (
-                <div className="gv-ok"><span className="g-dot-lg green" style={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--green-soft)', color: 'var(--green)' }}><I.Check size={14} /></span><div><div style={{ fontWeight: 600, fontSize: 13.5 }}>Todo en orden</div><div className="mk-meta">No hay aprobaciones, alertas ni cambios pendientes.</div></div></div>
-              )}
-              {attention.map((it, i) => { const Ic = I[it.icon]; return (
-                <button key={i} className="gv-attn-row" onClick={() => go(it.view)}>
-                  <span className="gv-ic" style={{ color: TONE[it.tone], background: `color-mix(in oklab, ${TONE[it.tone]} 12%, transparent)` }}><Ic size={14} /></span>
-                  <span style={{ flex: 1, minWidth: 0 }}><span className="gv-t">{it.title}</span><span className="gv-s">{it.sub}</span></span>
-                  <span className="gv-cta">{it.cta} <I.ArrowRight size={11} /></span>
-                </button>
-              ); })}
-            </div>
-          </section>
-
-          <section className="gv-kpis">
-            <Kpi label="Aprobaciones pendientes" value={live.length} sub={highRisk.length ? highRisk.length + ' de riesgo alto' : 'Ninguna de riesgo alto'} view="approvals" />
-            <Kpi label="Decisiones · 7 días" value={decided.length} sub={decided.length ? `${approved} ${approved === 1 ? 'aprobada' : 'aprobadas'} · ${decided.length - approved} ${decided.length - approved === 1 ? 'rechazada' : 'rechazadas'}` : 'Sin decisiones esta semana'} view="approvals" />
-            <Kpi label="Gasto de equipos" value={teamLimit ? Math.round(teamSpent / teamLimit * 100) + '%' : '—'} sub={`${money(teamSpent)} de ${money(teamLimit)}`} view="budgets" />
-            <Kpi label="Eventos auditados · 24 h" value={auditToday} sub="Registro encadenado y verificable" view="audit" />
-          </section>
-
-          <div className="gv-grid">
-            <section>
-              <div className="gv-sec-h"><div className="mk-sec-t" style={{ margin: 0 }}>políticas que piden aprobación</div></div>
-              <div className="card" style={{ padding: 0 }}>
-                {policies.map((p, i) => (
-                  <div key={p.name} className="gv-pol" style={{ borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div className="gv-t" style={{ whiteSpace: 'normal' }}>{p.name}</div>
-                      <div className="gv-s">{p.sigs > 1 ? p.sigs + ' firmas de personas distintas' : '1 firma'} · {p.total} {p.total === 1 ? 'solicitud' : 'solicitudes'}{p.high ? ' · ' + p.high + ' de riesgo alto' : ''}</div>
-                    </div>
-                    {p.pending > 0 ? <span className="badge badge-amber">{p.pending} pendiente{p.pending === 1 ? '' : 's'}</span> : <span className="badge">Al día</span>}
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section>
-              <div className="gv-sec-h">
-                <div className="mk-sec-t" style={{ margin: 0 }}>actividad reciente</div>
-                <button className="sr-link" onClick={() => go('audit')}>Ver todo</button>
-              </div>
-              <div className="card" style={{ padding: 0 }}>
-                {govLog.length === 0 && <div className="mk-meta" style={{ padding: '14px 16px' }}>Sin actividad de gobernanza reciente.</div>}
-                {govLog.map(e => (
-                  <div key={e.id} className="tk-act gv-act">
-                    <span className="tk-dot" style={{ marginTop: 6, background: /reject|alert|pause|delete/.test(e.action) ? 'var(--red)' : /approve|restore/.test(e.action) ? 'var(--green)' : /request|propose/.test(e.action) ? 'var(--amber)' : 'var(--text-dim)' }} />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <b style={{ fontWeight: 500, color: 'var(--text)' }}>{e.actor}</b> {ACT[e.action] || e.action}
-                      {e.detail && <span className="gv-s" style={{ whiteSpace: 'normal' }}>{e.detail}</span>}
-                    </span>
-                    <span className="tk-meta">{ago(e.at)}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        </div>
+        {body}
       </div>
     </>
   );

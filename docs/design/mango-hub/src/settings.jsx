@@ -10,7 +10,7 @@ const CHG_STATUS = { pending: ['Pendiente', 'badge-amber'], approved: ['Aprobado
 const MFA_RESET_TTL = 72 * 36e5;
 const chgStatus = (c) => c.status === 'pending' && (c.kind === 'mfa_reset' || c.kind === 'member') && Date.now() - new Date(c.at).getTime() > MFA_RESET_TTL ? 'expired' : c.status;
 
-function Settings({ models }) {
+function Settings({ models, initialTab }) {
   const I = window.Icons; const S = window.MangoStore;
   const avail = window.useMango(s => s.avail);
   const SECTIONS = [
@@ -18,7 +18,7 @@ function Settings({ models }) {
     ['billing', 'Billing y límites', 'Money'], ['notifications', 'Notificaciones', 'Chat'], ['observability', 'Observabilidad', 'Activity'], ['branding', 'Marca y tema', 'Sun'],
   ];
   const [section, setSection] = useState('install');
-  const [tab, setTab] = useState(() => window.MangoPeople?.adminCount() === 1 ? 'people' : 'general');
+  const [tab, setTab] = useState(() => ['general', 'people', 'groups', 'areas', 'conn'].includes(initialTab) ? initialTab : window.MangoPeople?.adminCount() === 1 ? 'people' : 'general');
   const simConn = window.useMango(x => x.simConn);
   useEffect(() => { if (avail && !['install', 'auth'].includes(section)) setSection('install'); }, [avail]);
   const toastS = window.useToast?.();

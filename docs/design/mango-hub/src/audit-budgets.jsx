@@ -5,7 +5,7 @@ const AUDIT_ACTIONS = {
   'agent.create': 'Agente creado', 'agent.update': 'Agente editado', 'agent.clone': 'Agente duplicado', 'agent.rollback': 'Versión restaurada', 'agent.archive': 'Agente archivado', 'agent.restore': 'Agente restaurado', 'agent.delete': 'Agente eliminado', 'agent.share': 'Acceso a agente cambiado',
   'agent.draft': 'Borrador guardado', 'agent.submit': 'Enviado a aprobación', 'agent.approve': 'Agente aprobado', 'agent.reject': 'Agente rechazado', 'agent.publish': 'Agente publicado', 'agent.retry': 'Publicación reintentada', 'agent.reopen': 'Reabierto como borrador', 'agent.publish_start': 'Publicación iniciada', 'agent.publish_failed': 'Publicación fallida', 'directory.lookup': 'Búsqueda en el directorio', 'directory.signup': 'Persona registrada', 'directory.list': 'Lectura del directorio', 'policy.decision': 'Acceso permitido', 'session.started': 'Sesión iniciada', 'session.renewed': 'Sesión recuperada', 'session.ended': 'Sesión cerrada', 'session.rejected': 'Sesión rechazada', 'directory.invite': 'Persona invitada', 'directory.group_add': 'Grupo asignado a persona', 'directory.group_remove': 'Grupo quitado a persona', 'directory.area_change': 'Área cambiada', 'directory.disable': 'Acceso deshabilitado', 'directory.enable': 'Acceso rehabilitado', 'directory.member_propose': 'Cambio de persona propuesto', 'directory.member_approve': 'Cambio de persona aprobado', 'directory.member_reject': 'Cambio de persona rechazado', 'directory.member_withdraw': 'Cambio de persona retirado',
   'approval.request': 'Aprobación solicitada', 'approval.execute': 'Acción ejecutada', 'approval.execute_failed': 'La ejecución falló', 'approval.cancel': 'Solicitud cancelada', 'approval.expire': 'Solicitud vencida', 'approval.self_confirm': 'Acción confirmada por el usuario', 'approval.self_cancel': 'Acción cancelada por el usuario', 'policy.propose': 'Cambio de política propuesto', 'policy.approve': 'Política aprobada', 'policy.reject': 'Cambio de política rechazado', 'policy.withdraw': 'Cambio de política retirado', 'group.propose': 'Cambio de grupo propuesto', 'group.approve': 'Cambio de grupo aprobado', 'group.reject': 'Cambio de grupo rechazado', 'group.withdraw': 'Cambio de grupo retirado', 'skill.propose': 'Versión de skill propuesta', 'skill.approve': 'Versión de skill aprobada', 'skill.reject': 'Versión de skill rechazada', 'skill.withdraw': 'Versión de skill retirada', 'eval.real_conversations': 'Evals con conversaciones reales', 'approval.approve': 'Aprobación concedida', 'approval.reject': 'Aprobación rechazada',
-  'budget.alert': 'Alerta de presupuesto', 'budget.pause': 'Pausa por presupuesto', 'budget.update': 'Presupuesto editado', 'budget.create': 'Presupuesto creado', 'budget.delete': 'Presupuesto eliminado', 'budget.user': 'Límite de usuario', 'budget.default': 'Límite por defecto',
+  'budget.alert': 'Alerta de presupuesto', 'budget.pause': 'Pausa por presupuesto', 'budget.block': 'Turno bloqueado por presupuesto', 'budget.update': 'Presupuesto editado', 'budget.create': 'Presupuesto creado', 'budget.delete': 'Presupuesto eliminado', 'budget.user': 'Límite de usuario', 'budget.default': 'Límite por defecto',
   'mcp.connect': 'MCP conectado', 'mcp.request': 'MCP solicitado', 'mcp.approve': 'MCP aprobado', 'mcp.reject': 'MCP rechazado', 'mcp.enable': 'MCP habilitado', 'mcp.disable_request': 'Deshabilitación de MCP pedida', 'mcp.disable': 'MCP deshabilitado', 'mcp.retry': 'Instalación reintentada', 'mcp.install_error': 'Instalación fallida', 'mcp.update_approve': 'Actualización de MCP aprobada', 'mcp.params_request': 'Cambio de parámetros pedido', 'mcp.params_approve': 'Parámetros de MCP aprobados', 'mcp.params_reject': 'Parámetros de MCP rechazados', 'mcp.update_reject': 'Actualización de MCP rechazada',
   'mapping.propose': 'Cambio de áreas propuesto', 'mapping.approve': 'Cambio de áreas aprobado', 'mapping.reject': 'Cambio de áreas rechazado', 'mapping.withdraw': 'Cambio de áreas retirado',
   'model.enable': 'Modelo habilitado', 'model.disable': 'Modelo deshabilitado', 'model.price': 'Precio de modelo cambiado', 'model.catalog_sync': 'Catálogo de Bedrock consultado', 'mcp.withdraw': 'Solicitud de MCP retirada', 'mcp.update_request': 'Actualización de MCP pedida',
@@ -36,11 +36,17 @@ const SESSION_LATE = ['disabled', 'group_removed', 'mfa_reset', 'rejected', 'rev
 const SESSION_REJECT = { invalid_refresh_token: 'El ingreso no sirve para crear la sesión', sub_mismatch: 'El ingreso es de otra persona' };
 const ROLE_SHORT = { lead_admin: 'Admin', admin: 'Admin', owner: 'Creador', creator: 'Creador', central: 'Central', user: 'Usuario', agent: 'Agente', system: 'Sistema' };
 const AuActor = ({ r }) => { const a = String(r.actor); const i = a.lastIndexOf('@'); const k = i > 8 ? i - 6 : 0; return <span className="au-actor" title={a + (r.role !== 'system' ? ' · ' + (ROLE_L[r.role] || r.role) : '')}><span className="au-name">{k > 0 ? <><span className="au-local">{a.slice(0, k)}</span><span className="au-dom">{a.slice(k)}</span></> : <span className="au-whole">{a}</span>}</span>{r.role !== 'system' && <span className="au-role">{ROLE_SHORT[r.role] || ROLE_L[r.role] || r.role}</span>}</span>; };
-const AUDIT_AVAILABLE = /^(budget|mapping|account|access|directory|approval|kb)\./;
+// También los que muestra Gobernanza: cambios de políticas y de grupos, agentes retirados, versiones aprobadas o rechazadas y solicitudes de packs.
+const AUDIT_AVAILABLE = /^(budget|mapping|account|access|directory|approval|kb|group)\.|^policy\.(propose|approve|reject|withdraw)$|^agent\.(retire|approve|reject)$|^mcp\.request$/;
 // Contraseña y MFA van directo al proveedor de identidad y aún no se registran en Mango
 const auditAvail = (r) => r.action === 'policy.decision' || /^session\./.test(r.action) || (AUDIT_AVAILABLE.test(r.action) && !/^account\.(password_set|mfa_enroll)$/.test(r.action)) || (/^(chat\.query|agent\.invoke)$/.test(r.action) && r.target === 'fin-01');
 const auditCat = (action) => (AUDIT_CATS.find(c => c[2].test(action)) || AUDIT_CATS[AUDIT_CATS.length - 1])[0];
-const actionTone = (a) => /[._]request$/.test(a) ? 'var(--amber)' : /reject|fail|pause|error|denied|delete|disable|retire/.test(a) ? 'var(--red)' : /alert|request|submit|propose/.test(a) ? 'var(--amber)' : /approve|create|publish|enable|restore/.test(a) ? 'var(--green)' : 'var(--text-dim)';
+// Lo que lista el Audit log antes de los filtros (Gobernanza cuenta y muestra lo mismo). Con «Disponible hoy», solo funciones disponibles y presupuestos de FinOps.
+const auditScope = (all, avail) => { if (!avail) return all; const ids = new Set((window.MangoData?.agents || []).map(x => x.id)); return all.filter(r => auditAvail(r) && !(/^budget\./.test(r.action) && ids.has(r.target) && r.target !== 'fin-01')); };
+// Inicio y autorización de un turno completado se agrupan en su «Consulta del agente»; si el turno falló, quedan sueltos
+const auditTurns = (list) => { const done = new Set(list.filter(r => r.action === 'chat.query' && r.turn).map(r => r.turn)); return list.filter(r => !(r.turn && r.action !== 'chat.query' && done.has(r.turn))); };
+const auditRows = (all, avail) => mergeAudit(auditTurns(auditScope(all, avail)));
+const actionTone = (a) => /[._]request$/.test(a) ? 'var(--amber)' : /reject|fail|pause|block|error|denied|delete|disable|retire/.test(a) ? 'var(--red)' : /alert|request|submit|propose/.test(a) ? 'var(--amber)' : /approve|create|publish|enable|restore/.test(a) ? 'var(--green)' : 'var(--text-dim)';
 const auditHash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8); };
 const ROLE_L = { lead_admin: 'Líder de área · Admin', admin: 'FinOps central · Admin', owner: 'FinOps central', central: 'FinOps central · Usuario', user: 'Líder de área', agent: 'Agente', system: 'Sistema' };
 const AUDIT_LINK = [[/^agent\.(submit|approve|reject|publish)/, 'review', 'Abrir en Revisión'], [/^agent\./, 'marketplace', 'Ver agentes'], [/^approval\./, 'approvals', 'Abrir Aprobaciones'], [/^budget\./, 'budgets', 'Abrir Presupuestos'], [/^mcp\./, 'mcp', 'Abrir Catálogo de MCP'], [/^model\./, 'models', 'Abrir Brains'], [/^skill\./, 'skills', 'Abrir Skills'], [/^kb\./, 'knowledge', 'Abrir Knowledge Bases'], [/^schedule\./, 'schedules', 'Abrir Schedules'], [/^eval\./, 'evals', 'Abrir Evals'], [/^(mapping|group|settings|directory)\./, 'settings', 'Abrir Ajustes'], [/^ticket\./, 'tickets', 'Abrir ticket']];
@@ -57,12 +63,9 @@ function AuditLogInner() {
   const toast = window.useToast?.();
   const auditAll = window.useMango(s => s.audit);
   const avail = window.useMango(s => s.avail);
-  const agentIds = new Set((window.MangoData?.agents || []).map(x => x.id));
   const [reads, setReads] = useStateAB(false);
-  const auditFull = avail ? auditAll.filter(r => auditAvail(r) && !(/^budget\./.test(r.action) && agentIds.has(r.target) && r.target !== 'fin-01')) : auditAll;
-  // Inicio y autorización de un turno completado se agrupan en su «Consulta del agente»; si el turno falló, quedan sueltos
-  const doneTurns = new Set(auditFull.filter(r => r.action === 'chat.query' && r.turn).map(r => r.turn));
-  const audit = auditFull.filter(r => !(r.turn && r.action !== 'chat.query' && doneTurns.has(r.turn)));
+  const auditFull = auditScope(auditAll, avail);
+  const audit = auditTurns(auditFull);
   const [q, setQ] = useStateAB('');
   const [actor, setActor] = useStateAB('all');
   const [cat, setCat] = useStateAB('all');
@@ -508,4 +511,4 @@ function BudgetModal({ b, agents: allAgents, agentsIn, budgets, onClose, onSave,
   );
 }
 
-Object.assign(window, { AuditLog, BudgetsView });
+Object.assign(window, { AuditLog, BudgetsView, AUDIT_ACTIONS, auditRows, auditOutcome, actionTone });

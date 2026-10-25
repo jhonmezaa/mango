@@ -101,6 +101,7 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
         <Chips label="Conectividad · resultado de la prueba" opts={[['none', 'Todo bien'], ['connerr', 'Chequeo con error'], ['apierr', 'Falla la API'], ['ratelimit', 'Límite por minuto'], ['member-fail', 'Cuentas miembro · falla'], ['member-none', 'Sin cuentas miembro'], ['member-many', 'Más de 50 cuentas']]} value={simConn || 'none'} onPick={(v) => S.set({ simConn: v })} />
         <Chips label="Conectividad · comprobación diaria" opts={[[null, 'Con problemas'], ['ok', 'Todas válidas'], ['noid', 'Rol intermedio sin exigir identidad'], ['loading', 'Leyendo'], ['error', 'No se pudo leer'], ['never', 'Aún no ha corrido']]} value={S.get().simDaily || null} onPick={(v) => S.set({ simDaily: v })} />
         <Chips label="Bandeja" opts={[[null, 'Normal'], ['loading', 'Cargando'], ['error', 'Error al cargar'], ['save', 'Falla al marcar o archivar'], ['more', 'Falla «Mostrar más»'], ['emptypage', 'Página vacía con cursor'], ['gone', 'Ejecución que ya no existe']]} value={S.get().simInbox || null} onPick={(v) => S.set({ simInbox: v })} />
+        <Chips label="Gobernanza" opts={[[null, 'Normal'], ['loading', 'Cargando'], ['error', 'Error al cargar'], ['cap', 'Más de 5000 eventos en 24 h']]} value={S.get().simGov || null} onPick={(v) => S.set({ simGov: v })} />
         <Chips label="Knowledge Bases · «Sincronizar ahora»" opts={[[null, 'Arranca'], ['busy', 'Ya hay una en curso']]} value={S.get().simKbSync || null} onPick={(v) => S.set({ simKbSync: v })} />
         <Chips label="Knowledge Bases · al guardar archivos" opts={[[null, 'Normal'], ['mismatch', 'Un PDF no es del tipo que dice']]} value={S.get().simKbUpload || null} onPick={(v) => S.set({ simKbUpload: v })} />
         <Chips label="Knowledge Bases · respuesta del servidor" opts={[[null, 'Normal'], ['check', 'No se pudo comprobar el bucket'], ['pending', 'Ya hay una propuesta pendiente'], ['notsent', 'Al crear · no se pudo enviar el bucket'], ['syncfail', 'No se pudo empezar la sincronización'], ['searchbusy', 'Búsqueda saturada'], ['searchfail', 'Búsqueda falla']]} value={S.get().simKbSrv || null} onPick={(v) => S.set({ simKbSrv: v })} />
@@ -330,7 +331,7 @@ function App() {
     case 'observability': content = <window.ObservabilityView agents={agents} openChat={openChat} />; break;
     case 'knowledge': content = <window.KnowledgeView agents={agents} />; break;
     case 'costs': content = <window.CostsView agents={agents} />; break;
-    case 'settings': content = <Settings models={models} mcpServers={mcpServers} groups={groups} />; break;
+    case 'settings': content = <Settings models={models} mcpServers={mcpServers} groups={groups} initialTab={routeParam} />; break;
     default: content = null;
   }
   const notFound = content === null;
