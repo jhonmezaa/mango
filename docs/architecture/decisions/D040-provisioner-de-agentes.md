@@ -3,7 +3,7 @@
 - **Estado:** parcial. Rigen (1), (2), (4) y (5). El punto (3) ya no rige: con [D56](D056-tools-de-escritura-con-aprobacion.md) el provisioner publica agentes con tools de escritura de conectores de Mango marcadas en `approval_tools` (`functions/provisioner/src/mango_provisioner/harness.py`).
 - **Fecha:** 2026-10-01 (el rol vinculado de identidad de AgentCore, visto en una primera instalación y decidido por el dueño el 2026-10-07, punto 5, con el detalle propuesto por un agente y aceptado por el dueño ese día; ese permiso, visto en una instalación, 2026-10-08, punto 6; IAM exige el boundary de agentes también para borrar un rol, decidido por el dueño el 2026-10-09, punto 7; lo que dos instalaciones mostraron de ese punto, nota propuesta por un agente y aceptada por el dueño el 2026-10-09, punto 8)
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (deja sin efecto el punto 3)
+- **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (deja sin efecto el punto 3); [D91](D091-playground.md) (precisa el punto 1: el Playground no sirve desde `PUBLISHED#`; el provisioner crea además el harness de pruebas)
 
 ## Decisión
 

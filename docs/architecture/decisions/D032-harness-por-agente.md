@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** —
-- **Precisada por:** —
+- **Precisada por:** [D91](D091-playground.md) (precisa: un harness de pruebas compartido de la instalación, que no es de un agente)
 
 ## Decisión
 

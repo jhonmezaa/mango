@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-29 · ajuste del 2026-10-01
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D33](D033-autorizacion-de-agentes-y-tools.md) (ajusta); [D34](D034-guardrail-y-agentes-de-la-release.md) (ajusta: guardrail base compartido)
+- **Precisada por:** [D33](D033-autorizacion-de-agentes-y-tools.md) (ajusta); [D34](D034-guardrail-y-agentes-de-la-release.md) (ajusta: guardrail base compartido); [D91](D091-playground.md) (precisa: nadie usa una versión antes de aprobarse; quien la edita la prueba en el Playground)
 
 ## Decisión
 
