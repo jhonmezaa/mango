@@ -40,6 +40,15 @@ export const gov = {
   denied: {
     title: 'No tienes acceso a esta sección',
     body: 'Presupuestos, Ajustes y el Audit log son solo para admins. Un admin de Mango puede darte acceso.',
+    // Design round 20 (`DENIED`): each of these views with its own notice.
+    governance: {
+      title: 'No tienes acceso a Gobernanza',
+      body: 'Gobernanza es para administradores y para FinOps central. Un admin de Mango puede darte acceso.',
+    },
+    activity: {
+      title: 'No tienes acceso a Actividad',
+      body: 'Tu cuenta no tiene permiso para ver la actividad. Un admin de Mango puede darte acceso.',
+    },
   },
   rel: {
     now: 'ahora',

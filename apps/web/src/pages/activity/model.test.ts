@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  approvalState,
   groupByHour,
   hourLabel,
   inRange,
@@ -82,8 +83,34 @@ describe('activity model', () => {
 
   it('exports formula-safe CSV', () => {
     const csv = toCsv([
-      { at: 'x', agent: '=HYPERLINK("a")', kind: 'k', text: 't', target: '', ms: null, ok: false },
+      {
+        at: 'x',
+        agent: '=HYPERLINK("a")',
+        kind: 'k',
+        text: 't',
+        target: '',
+        ms: null,
+        result: 'error',
+      },
     ]);
     expect(csv.split('\n')[1]).toBe(`"x","'=HYPERLINK(""a"")","k","t","","","error"`);
+  });
+
+  it('names the state of an approval as the design (round 20 `ACT_AP`)', () => {
+    const state = (approval_status: string | null) =>
+      approvalState(event({ kind: 'approval', ms: null, ok: null, approval_status }));
+    // Approved and not run yet is still pending.
+    expect(['pending', 'approved', 'executing'].map(state)).toEqual([
+      'pending',
+      'pending',
+      'pending',
+    ]);
+    expect(['executed', 'rejected', 'expired'].map(state)).toEqual([
+      'executed',
+      'rejected',
+      'expired',
+    ]);
+    // A state the design does not name has none.
+    expect(['failed', 'cancelled', null].map(state)).toEqual([null, null, null]);
   });
 });

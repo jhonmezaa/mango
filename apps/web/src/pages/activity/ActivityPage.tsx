@@ -14,18 +14,22 @@ import {
   PlayIcon,
   SearchIcon,
   TerminalIcon,
+  WarnIcon,
   X2Icon,
   type IconProps,
 } from '../../components/icons';
 import { agentIconStyle } from '../../components/marketplace/agentIcons';
 import { Topbar } from '../../components/Topbar';
 import { canView } from '../../layouts/navigation';
+import { formatDuration } from '../../lib/format';
 import {
+  CAP,
   KINDS,
   LIVE_LOOKBACK_MS,
   LIVE_MS,
   PAGE,
   RANGES,
+  approvalState,
   groupByHour,
   hourLabel,
   inRange,
@@ -52,7 +56,10 @@ const KIND_ICON: Record<Kind, ComponentType<IconProps>> = {
   budget: MoneyIcon,
   error: X2Icon,
 };
-const SKELETON_ROWS = [0, 1, 2, 3, 4] as const;
+/** Design round 20: the widths of the loading rows and of «agentes más activos». */
+const SKELETON_ROWS = ['62%', '48%', '70%', '55%', '66%', '44%'] as const;
+const SKELETON_AGENTS = ['70%', '52%', '60%'] as const;
+const KPI_KEYS = ['events', 'agents', 'errors', 'latency'] as const;
 
 function AgentMark({ agent }: { agent: ActivityAgent | undefined }) {
   const { Icon, colorClass } = agentIconStyle(agent?.icon ?? 'Bot', agent?.color ?? 0);
@@ -63,27 +70,37 @@ function AgentMark({ agent }: { agent: ActivityAgent | undefined }) {
   );
 }
 
+/** Design round 20: the skeleton of the list and of «agentes más activos». */
 function Loading() {
   const { t } = useTranslation();
   return (
     <div className="ac-grid" role="status" aria-label={t('activity.loading')}>
-      <div className="card ac-card">
-        {SKELETON_ROWS.map((row) => (
-          <div key={row} className="ac-main ac-skel">
-            <Skel w={36} h={10} />
-            <Skel w={24} h={24} />
-            <span className="ac-skel-lines">
-              <Skel w="56%" />
-            </span>
-          </div>
-        ))}
+      <div>
+        <div className="au-day-h">
+          <Skel w={92} h={10} />
+        </div>
+        <div className="card ac-card">
+          {SKELETON_ROWS.map((width) => (
+            <div key={width} className="ac-row">
+              <div className="ac-main ac-skel">
+                <Skel w={34} h={10} />
+                <Skel w={24} h={24} className="ac-skel-ic" />
+                <span className="ac-skel-lines">
+                  <Skel w={width} />
+                </span>
+                <Skel w={40} h={10} />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
       <aside className="ac-side">
         <div className="card ac-card">
           <div className="ac-side-h">{t('activity.mostActive')}</div>
-          {SKELETON_ROWS.slice(0, 3).map((row) => (
-            <div key={row} className="ac-ag">
-              <Skel w="60%" />
+          {SKELETON_AGENTS.map((width) => (
+            <div key={width} className="ac-ag ac-skel-ag">
+              <Skel w={width} />
+              <Skel h={4} className="ac-skel-bar" />
             </div>
           ))}
         </div>
@@ -92,8 +109,37 @@ function Loading() {
   );
 }
 
+/** Design round 20: the four indicators while the activity loads. */
+function LoadingKpis({ range }: { range: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="bg-kpis" aria-hidden="true">
+      {KPI_KEYS.map((key) => (
+        <div key={key} className="card bg-kpi">
+          <span className="bg-kpi-l">{t(`activity.kpi.${key}`, { range })}</span>
+          <Skel w={64} h={22} />
+          <Skel w="62%" h={10} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The right of a row (design round 20 `slotOf`): an approval's state, «error» or the latency. */
+function Slot({ event }: { event: ActivityEvent }) {
+  const { t } = useTranslation();
+  if (event.kind === 'approval') {
+    const state = approvalState(event);
+    return state ? (
+      <span className={`mono ac-ms is-${state}`}>{t(`activity.approval.${state}`)}</span>
+    ) : null;
+  }
+  if (event.ok === false) return <span className="mono ac-ms is-err">{t('activity.error')}</span>;
+  return event.ms !== null ? <span className="mono ac-ms">{formatDuration(event.ms)}</span> : null;
+}
+
 /**
- * Actividad (design activity.jsx, round 19 «Disponible hoy», D90): tool calls with their result
+ * Actividad (design activity.jsx, rounds 19 and 20 «Disponible hoy», D90): tool calls with their result
  * and latency, the approvals agents asked for and the turns an agent's budget blocked, from
  * GET /api/activity. Everyone sees their own activity; an administrator sees everyone's (the API
  * decides: `scope`), and of someone else's event only the agent, the tool, the result and the
@@ -110,6 +156,8 @@ export function ActivityPage() {
   const [now, setNow] = useState(0);
   const [reloadToken, setReloadToken] = useState(0);
   const [live, setLive] = useState(true);
+  // Design round 20: a live poll that failed says so in the toolbar; the list stays.
+  const [pollFailed, setPollFailed] = useState(false);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [kind, setKind] = useState<Kind | 'all'>('all');
   const [agentFilter, setAgentFilter] = useState('all');
@@ -129,6 +177,7 @@ export function ActivityPage() {
         setEvents(page.events);
         setNow(Date.now());
         setFresh(new Set());
+        setPollFailed(false);
         setState({ kind: 'ready', page });
       },
       (error: unknown) => {
@@ -153,12 +202,14 @@ export function ActivityPage() {
           const before = new Set(eventsRef.current.map((event) => event.id));
           const added = page.events.filter((event) => !before.has(event.id));
           setNow(Date.now());
+          setPollFailed(false);
           if (!added.length) return;
           setEvents((current) => merge(current, added));
           setFresh(new Set(added.map((event) => event.id)));
         },
         () => {
-          // A missed poll changes nothing on screen: the next one tries again.
+          // The list stays; the next poll tries again (design round 20).
+          if (!controller.signal.aborted) setPollFailed(true);
         },
       );
     };
@@ -187,6 +238,9 @@ export function ActivityPage() {
   }, [api, live, ready, range]);
 
   const page = state.kind === 'ready' ? state.page : null;
+  // Design round 20: «En vivo» and «Exportar CSV» are off while loading, on error and without access.
+  const blocked = page === null;
+  const capped = page?.truncated === true;
   const everyone = page?.scope === 'all';
   const agents = useMemo(() => page?.agents ?? [], [page]);
   const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
@@ -232,6 +286,15 @@ export function ActivityPage() {
     setState({ kind: 'loading' });
     setReloadToken((value) => value + 1);
   };
+  // Design round 20: the «resultado» column says the state of an approval and «bloqueado».
+  const resultOf = (event: ActivityEvent) => {
+    if (event.kind === 'approval') {
+      const state = approvalState(event);
+      return state ? t(`activity.approval.${state}`) : '';
+    }
+    if (event.kind === 'budget') return t('activity.blocked');
+    return event.ok === false ? 'error' : 'ok';
+  };
   const exportCsv = () => {
     const csv = toCsv(
       rows.map((event) => ({
@@ -241,7 +304,7 @@ export function ActivityPage() {
         text: textOf(event),
         target: event.tool ?? '',
         ms: event.ms,
-        ok: event.ok,
+        result: resultOf(event),
       })),
     );
     const url = URL.createObjectURL(new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' }));
@@ -256,12 +319,22 @@ export function ActivityPage() {
     notify(t('activity.exported', { count: rows.length }));
   };
 
-  let body;
+  const crumbs = [t('activity.crumb'), t('activity.title')];
   if (state.kind === 'error' && state.forbidden) {
-    body = <Denied />;
-  } else if (state.kind === 'error') {
+    return (
+      <>
+        <Topbar crumbs={crumbs} />
+        <div className="content">
+          <Denied view="activity" />
+        </div>
+      </>
+    );
+  }
+
+  let body;
+  if (state.kind === 'error') {
     body = (
-      <div className="ac-grid">
+      <div className="ac-grid is-one">
         <div role="alert">
           <GovErrorState
             title={t('activity.errorTitle')}
@@ -329,11 +402,7 @@ export function ActivityPage() {
                               <span className="ac-s">{t('activity.task', { name: sub })}</span>
                             ) : null}
                           </span>
-                          {event.ok === false ? (
-                            <span className="mono ac-ms is-err">{t('activity.error')}</span>
-                          ) : event.ms !== null ? (
-                            <span className="mono ac-ms">{t('activity.ms', { ms: event.ms })}</span>
-                          ) : null}
+                          <Slot event={event} />
                           <span
                             className={`ac-kind is-${event.kind}`}
                             title={t(`activity.kinds.${event.kind}`)}
@@ -344,7 +413,7 @@ export function ActivityPage() {
                         {open ? (
                           <div className="ac-more">
                             {!event.mine ? (
-                              <div className="mk-meta">{t('activity.others')}</div>
+                              <div className="mk-meta">{t(`activity.others.${event.kind}`)}</div>
                             ) : null}
                             <div className="ac-actions">
                               <button
@@ -388,9 +457,12 @@ export function ActivityPage() {
             >
               {t('activity.more', { count: rows.length - limit })}
             </button>
-          ) : range === '7d' && rows.length > 0 ? (
+          ) : rows.length > 0 && (capped || range === '7d') ? (
             <div className="mk-meta ac-retention">
-              {t('activity.retention', { days: page.retention_days })}
+              {capped ? <span>{t('activity.capped', { cap: CAP })}</span> : null}
+              {range === '7d' ? (
+                <span>{t('activity.retention', { days: page.retention_days })}</span>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -446,13 +518,14 @@ export function ActivityPage() {
   return (
     <>
       <Topbar
-        crumbs={[t('activity.crumb'), t('activity.title')]}
+        crumbs={crumbs}
         actions={
           <>
             <button
               type="button"
-              className={live ? 'btn btn-sm ac-live-on' : 'btn btn-sm'}
+              className={live && !blocked ? 'btn btn-sm ac-live-on' : 'btn btn-sm'}
               aria-pressed={live}
+              disabled={blocked}
               title={t('activity.liveTitle')}
               onClick={() => {
                 setLive((value) => !value);
@@ -471,7 +544,7 @@ export function ActivityPage() {
             <button
               type="button"
               className="btn btn-sm"
-              disabled={!rows.length}
+              disabled={blocked || !rows.length}
               onClick={exportCsv}
             >
               <DownloadIcon size={12} /> {t('activity.export')}
@@ -502,48 +575,54 @@ export function ActivityPage() {
             )}
           </p>
         </div>
-        <div className="bg-kpis">
-          <div className="card bg-kpi">
-            <span className="bg-kpi-l">{t('activity.kpi.events', { range: rangeLabel })}</span>
-            <span className="bg-kpi-v">
-              {page ? period.length : state.kind === 'loading' ? <Skel w={48} h={22} /> : '—'}
-            </span>
-            <span className="bg-kpi-s">{t('activity.kpi.calls', { count: stats.calls })}</span>
+        {state.kind === 'loading' ? (
+          <LoadingKpis range={rangeLabel} />
+        ) : page ? (
+          <div className="bg-kpis">
+            <div className="card bg-kpi">
+              <span className="bg-kpi-l">{t('activity.kpi.events', { range: rangeLabel })}</span>
+              <span className="bg-kpi-v">
+                {capped ? t('activity.kpi.capped', { cap: CAP }) : period.length}
+              </span>
+              <span className="bg-kpi-s">
+                {capped
+                  ? t('activity.kpi.cappedShown', { cap: CAP })
+                  : t('activity.kpi.calls', { count: stats.calls })}
+              </span>
+            </div>
+            <div className="card bg-kpi">
+              <span className="bg-kpi-l">{t('activity.kpi.agents')}</span>
+              <span className="bg-kpi-v">{stats.activeAgents}</span>
+              <span className="bg-kpi-s">
+                {everyone
+                  ? t('activity.kpi.published', { count: published.length })
+                  : t('activity.kpi.mine')}
+              </span>
+            </div>
+            <div className="card bg-kpi">
+              <span className="bg-kpi-l">{t('activity.kpi.errors')}</span>
+              <span className={stats.errors ? 'bg-kpi-v ac-err' : 'bg-kpi-v'}>
+                {stats.calls
+                  ? `${((stats.errors / stats.calls) * 100).toFixed(1).replace('.', ',')}%`
+                  : '—'}
+              </span>
+              <span className="bg-kpi-s">
+                {t('activity.kpi.errorsOf', { errors: stats.errors, calls: stats.calls })}
+              </span>
+            </div>
+            <div className="card bg-kpi">
+              <span className="bg-kpi-l">{t('activity.kpi.latency')}</span>
+              <span className="bg-kpi-v">
+                {stats.avgMs !== null ? formatDuration(stats.avgMs) : '—'}
+              </span>
+              <span className="bg-kpi-s">
+                {stats.avgMs !== null
+                  ? t('activity.kpi.measured', { count: stats.measured })
+                  : t('activity.kpi.unmeasured')}
+              </span>
+            </div>
           </div>
-          <div className="card bg-kpi">
-            <span className="bg-kpi-l">{t('activity.kpi.agents')}</span>
-            <span className="bg-kpi-v">
-              {page ? stats.activeAgents : state.kind === 'loading' ? <Skel w={48} h={22} /> : '—'}
-            </span>
-            <span className="bg-kpi-s">
-              {everyone
-                ? t('activity.kpi.published', { count: published.length })
-                : t('activity.kpi.mine')}
-            </span>
-          </div>
-          <div className="card bg-kpi">
-            <span className="bg-kpi-l">{t('activity.kpi.errors')}</span>
-            <span className={stats.errors ? 'bg-kpi-v ac-err' : 'bg-kpi-v'}>
-              {stats.calls
-                ? `${((stats.errors / stats.calls) * 100).toFixed(1).replace('.', ',')}%`
-                : '—'}
-            </span>
-            <span className="bg-kpi-s">
-              {t('activity.kpi.errorsOf', { errors: stats.errors, calls: stats.calls })}
-            </span>
-          </div>
-          <div className="card bg-kpi">
-            <span className="bg-kpi-l">{t('activity.kpi.latency')}</span>
-            <span className="bg-kpi-v">
-              {stats.avgMs !== null ? t('activity.ms', { ms: stats.avgMs }) : '—'}
-            </span>
-            <span className="bg-kpi-s">
-              {stats.avgMs !== null
-                ? t('activity.kpi.measured', { count: stats.measured })
-                : t('activity.kpi.unmeasured')}
-            </span>
-          </div>
-        </div>
+        ) : null}
         <div className="bg-toolbar">
           <div className="search-wrap ac-search">
             <SearchIcon size={13} />
@@ -585,49 +664,56 @@ export function ActivityPage() {
             }}
           >
             <option value="all">{t('activity.allAgents')}</option>
-            {agentOptions.map((agent) => (
+            {(blocked ? [] : agentOptions).map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.name}
               </option>
             ))}
           </select>
           <div className="ac-spacer" />
+          {pollFailed && live && page ? (
+            <span className="ac-poll" role="status">
+              <WarnIcon size={12} /> {t('activity.pollFailed')}
+            </span>
+          ) : null}
           {anyFilter ? (
             <button type="button" className="btn btn-sm btn-ghost" onClick={clear}>
               {t('activity.clear')}
             </button>
           ) : null}
         </div>
-        <div className="au-cats ac-cats" role="group" aria-label={t('activity.kindGroup')}>
-          <button
-            type="button"
-            className={kind === 'all' ? 'is-on' : ''}
-            aria-pressed={kind === 'all'}
-            onClick={() => {
-              setKind('all');
-            }}
-          >
-            {t('activity.all')}
-            <span>{base.length}</span>
-          </button>
-          {KINDS.map((key) => {
-            const count = base.filter((event) => event.kind === key).length;
-            return count || kind === key ? (
-              <button
-                key={key}
-                type="button"
-                className={kind === key ? 'is-on' : ''}
-                aria-pressed={kind === key}
-                onClick={() => {
-                  setKind(key);
-                }}
-              >
-                {t(`activity.kinds.${key}`)}
-                <span>{count}</span>
-              </button>
-            ) : null;
-          })}
-        </div>
+        {page ? (
+          <div className="au-cats ac-cats" role="group" aria-label={t('activity.kindGroup')}>
+            <button
+              type="button"
+              className={kind === 'all' ? 'is-on' : ''}
+              aria-pressed={kind === 'all'}
+              onClick={() => {
+                setKind('all');
+              }}
+            >
+              {t('activity.all')}
+              <span>{base.length}</span>
+            </button>
+            {KINDS.map((key) => {
+              const count = base.filter((event) => event.kind === key).length;
+              return count || kind === key ? (
+                <button
+                  key={key}
+                  type="button"
+                  className={kind === key ? 'is-on' : ''}
+                  aria-pressed={kind === key}
+                  onClick={() => {
+                    setKind(key);
+                  }}
+                >
+                  {t(`activity.kinds.${key}`)}
+                  <span>{count}</span>
+                </button>
+              ) : null;
+            })}
+          </div>
+        ) : null}
         {body}
       </div>
       {stack}

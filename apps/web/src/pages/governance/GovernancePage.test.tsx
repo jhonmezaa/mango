@@ -225,6 +225,13 @@ describe('GovernancePage', () => {
 
   it('says it is not allowed when the API answers 403', async () => {
     renderPage(vi.fn(() => Promise.reject(new ApiError(403, 'forbidden', 'x'))));
-    expect(await screen.findByText(/No tienes acceso|permiso/)).toBeInTheDocument();
+    // Design round 20: the notice of Gobernanza, not the shared one.
+    expect(await screen.findByText('No tienes acceso a Gobernanza')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Gobernanza es para administradores y para FinOps central. Un admin de Mango puede darte acceso.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Gobernanza' })).not.toBeInTheDocument();
   });
 });

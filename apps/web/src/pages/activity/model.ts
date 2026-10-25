@@ -1,7 +1,7 @@
 import type { OperationOutput } from '../../api/operations';
 import { csvCell } from '../../components/admin/auditModel';
 
-// What the Actividad view derives from GET /api/activity (design activity.jsx, round 19
+// What the Actividad view derives from GET /api/activity (design activity.jsx, rounds 19 and 20
 // «Disponible hoy», D90). The server decides whose activity each person reads and what an event
 // of someone else carries (no conversation, task or run): nothing here decides authorization.
 
@@ -19,6 +19,8 @@ export const RANGES: readonly { key: Range; ms: number }[] = [
 /** Design: the kinds in the order of their chips (tickets and publications are not in this mode). */
 export const KINDS: readonly Kind[] = ['tool', 'approval', 'budget', 'error'];
 export const PAGE = 50;
+/** Design round 20 (`ACT_CAP`): the API sends at most this many events of a period. */
+export const CAP = 1000;
 /** Design round 19: «En vivo» asks every 15 s. */
 export const LIVE_MS = 15_000;
 /**
@@ -79,6 +81,28 @@ export function linkOf(event: ActivityEvent, canSeeBudgets: boolean): Link | nul
 /** The line under a row (design `subOf`): only one's own task names it. */
 export function subOf(event: ActivityEvent): string | null {
   return event.mine && event.task_name ? event.task_name : null;
+}
+
+export type ApprovalState = 'pending' | 'executed' | 'rejected' | 'expired';
+
+/**
+ * Design round 20 (`ACT_AP`): the state of an approval, shown where the latency goes. Approved and
+ * not run yet is still pending; the API says `expired` once an open request passed its time. A
+ * state the design does not name (failed, cancelled) has none.
+ */
+export function approvalState(event: ActivityEvent): ApprovalState | null {
+  switch (event.approval_status) {
+    case 'pending':
+    case 'approved':
+    case 'executing':
+      return 'pending';
+    case 'executed':
+    case 'rejected':
+    case 'expired':
+      return event.approval_status;
+    default:
+      return null;
+  }
 }
 
 export interface Stats {
@@ -177,22 +201,15 @@ export interface CsvRow {
   text: string;
   target: string;
   ms: number | null;
-  ok: boolean | null;
+  /** Design round 20: «ok», «error», the state of an approval or «bloqueado». */
+  result: string;
 }
 
 /** Design `exportCsv`, with formula-safe cells (a spreadsheet must not run `=…`). */
 export function toCsv(rows: CsvRow[]): string {
   const header = 'fecha,agente,tipo,evento,objetivo,ms,resultado';
   const lines = rows.map((row) =>
-    [
-      row.at,
-      row.agent,
-      row.kind,
-      row.text,
-      row.target,
-      row.ms ?? '',
-      row.ok === false ? 'error' : 'ok',
-    ]
+    [row.at, row.agent, row.kind, row.text, row.target, row.ms ?? '', row.result]
       .map(csvCell)
       .join(','),
   );

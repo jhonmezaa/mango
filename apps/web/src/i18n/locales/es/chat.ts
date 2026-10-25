@@ -167,7 +167,6 @@ export const chat = {
     count_one: '{{count}} herramienta',
     count_other: '{{count}} herramientas',
     seconds: '{{seconds}} s',
-    ms: '{{ms}} ms',
     params: 'Parámetros de la tool',
     failed: 'Falló',
     status: {

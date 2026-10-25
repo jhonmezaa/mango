@@ -162,8 +162,9 @@ describe('ActivityPage', () => {
     const first = rows[0];
     if (!first) throw new Error('rows are drawn');
     await user.click(first);
+    // Design round 20 (`ACT_OTHER`): the note names what a call of someone else shows.
     expect(
-      screen.getByText('De otra persona: solo ves el agente, la tool y la hora.'),
+      screen.getByText('De otra persona: solo ves el agente, la tool, la hora y la latencia.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Abrir conversación/ })).not.toBeInTheDocument();
     const own = rows[1];
@@ -265,13 +266,160 @@ describe('ActivityPage', () => {
     renderPage(call);
     const alert = await screen.findByRole('alert');
     expect(within(alert).getByText('No se pudo cargar la actividad')).toBeInTheDocument();
+    // Design round 20: on error there are no indicators nor kinds, and the actions are off.
+    expect(screen.queryByText('Eventos · 24 h')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Tipo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /En vivo/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Exportar CSV/ })).toBeDisabled();
     await user.click(within(alert).getByRole('button', { name: /Reintentar/ }));
-    expect(screen.getByRole('status', { name: 'Cargando actividad' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Cargando la actividad' })).toBeInTheDocument();
     expect(call).toHaveBeenCalledTimes(2);
+    // Loading: the four indicators as skeletons, the filters stay, the actions are off.
+    for (const label of ['Eventos · 24 h', 'Agentes con actividad', 'Tools con error']) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getByText('Latencia media')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Periodo' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Tipo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /En vivo/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Exportar CSV/ })).toBeDisabled();
   });
 
-  it('says it is not allowed when the API answers 403', async () => {
+  it('says Actividad is not allowed when the API answers 403', async () => {
     renderPage(vi.fn(() => Promise.reject(new ApiError(403, 'forbidden', 'x'))));
-    expect(await screen.findByText(/No tienes acceso|permiso/)).toBeInTheDocument();
+    // Design round 20: its own notice, and nothing of the view around it.
+    expect(await screen.findByText('No tienes acceso a Actividad')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Tu cuenta no tiene permiso para ver la actividad. Un admin de Mango puede darte acceso.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /En vivo/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Eventos · 24 h')).not.toBeInTheDocument();
+  });
+
+  it('shows durations, the state of approvals and what someone else shows by kind', async () => {
+    const user = userEvent.setup();
+    const approval = (id: string, approval_status: string, mine = true) =>
+      event({
+        id,
+        kind: 'approval',
+        tool: 'create_budget',
+        ms: null,
+        ok: null,
+        approval_id: id.padEnd(32, '0'),
+        approval_status,
+        conversation_id: null,
+        mine,
+        at: iso(-20),
+      });
+    renderPage(
+      answering(
+        page({
+          scope: 'all',
+          events: [
+            event({ id: 'slow', ms: 19_319, at: iso(-1) }),
+            event({ id: 'slower', ms: 74_300, at: iso(-2) }),
+            approval('a1', 'approved'),
+            approval('a2', 'executed'),
+            approval('a3', 'rejected'),
+            approval('a4', 'expired', false),
+            approval('a5', 'failed'),
+            event({ id: 'err', kind: 'error', ok: false, ms: 900, mine: false, at: iso(-30) }),
+            event({ id: 'bud', kind: 'budget', tool: null, ms: null, ok: null, mine: false }),
+          ],
+        }),
+      ),
+      adminMe,
+    );
+    expect(await screen.findByText('19,3 s')).toBeInTheDocument();
+    expect(screen.getByText('1 min 14 s')).toBeInTheDocument();
+    // «Latencia media» over the three measured calls.
+    expect(screen.getByText('31,5 s')).toBeInTheDocument();
+    expect(screen.getByText('pendiente')).toHaveClass('ac-ms', 'is-pending');
+    expect(screen.getByText('ejecutada')).toHaveClass('is-executed');
+    expect(screen.getByText('rechazada')).toHaveClass('is-rejected');
+    expect(screen.getByText('vencida')).toHaveClass('is-expired');
+    // A state the design does not name has none.
+    expect(document.querySelectorAll('.ac-ms[class*="is-"]').length).toBe(5);
+    const rowOf = (text: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('.ac-main')].find((row) =>
+        row.textContent.includes(text),
+      );
+    for (const [text, note] of [
+      ['vencida', 'la hora y el estado.'],
+      ['falló al llamar a', 'la hora y el resultado.'],
+      ['no respondió', 'De otra persona: solo ves el agente y la hora.'],
+    ] as const) {
+      const row = rowOf(text);
+      if (!row) throw new Error(`row ${text}`);
+      await user.click(row);
+      expect(screen.getByText(note, { exact: false })).toBeInTheDocument();
+    }
+  });
+
+  it('exports the state of approvals and «bloqueado» in the result column', async () => {
+    const user = userEvent.setup();
+    const blobs: Blob[] = [];
+    const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      blobs.push(blob as Blob);
+      return 'blob:x';
+    });
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    try {
+      renderPage(answering(page()));
+      await user.click(await screen.findByRole('button', { name: /Exportar CSV/ }));
+      const [blob] = blobs;
+      if (!blob) throw new Error('a file is made');
+      const results = (await blob.text())
+        .split('\n')
+        .slice(1)
+        .map((line) => line.split(',').at(-1));
+      expect(results).toEqual(['"ok"', '"ok"', '"error"', '"pendiente"', '"bloqueado"']);
+    } finally {
+      create.mockRestore();
+      revoke.mockRestore();
+      click.mockRestore();
+    }
+  });
+
+  it('says the period has more than 1000 events when the API cut it', async () => {
+    renderPage(answering(page({ truncated: true })));
+    expect(await screen.findByText('Más de 1000')).toBeInTheDocument();
+    expect(screen.getByText('Se muestran los 1000 más recientes')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Este periodo tiene más de 1000 eventos. Se muestran los 1000 más recientes.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says when a live poll failed and keeps the list', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], now: NOW });
+    const call = vi
+      .fn()
+      .mockReturnValueOnce(Promise.resolve(page()))
+      .mockImplementationOnce(() => Promise.reject(new ApiError(503, 'activity_unavailable', 'x')))
+      .mockReturnValue(Promise.resolve(page()));
+    renderPage(call);
+    expect(await screen.findByText('Tarea · Revisión diaria')).toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+    const notice = await screen.findByText(
+      'No se pudo buscar actividad nueva. Se vuelve a intentar en 15 s.',
+    );
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(screen.getByText('Tarea · Revisión diaria')).toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/No se pudo buscar actividad nueva/)).not.toBeInTheDocument();
   });
 });

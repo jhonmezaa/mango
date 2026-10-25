@@ -22,11 +22,17 @@ describe('formatRelative', () => {
 });
 
 describe('formatDuration', () => {
-  it('uses ms below one second and Spanish decimals above', () => {
+  it('uses ms below one second, seconds with a comma below one minute, then minutes', () => {
     expect(formatDuration(0)).toBe('0 ms');
     expect(formatDuration(999.4)).toBe('999 ms');
-    expect(formatDuration(1000)).toBe('1 s');
+    expect(formatDuration(1000)).toBe('1,0 s');
     expect(formatDuration(1240)).toBe('1,2 s');
+    // Design round 20: the first call measured in an installation, and the longest example.
+    expect(formatDuration(19_319)).toBe('19,3 s');
+    expect(formatDuration(59_949)).toBe('59,9 s');
+    expect(formatDuration(59_950)).toBe('1 min');
+    expect(formatDuration(74_300)).toBe('1 min 14 s');
+    expect(formatDuration(600_000)).toBe('10 min');
   });
 
   it('never shows negative durations', () => {

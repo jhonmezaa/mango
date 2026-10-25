@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// Actividad (D90, design round 19 «Disponible hoy») against the local mock, as an administrator:
+// Actividad (D90, design rounds 19 and 20 «Disponible hoy») against the local mock, as an administrator:
 // the KPIs, someone else's turn without its conversation, one's own conversation opening from its
 // row, the filters and a phone width without horizontal scroll. The app keeps its tokens in
 // memory only, so every step navigates inside the SPA.
@@ -44,7 +44,7 @@ test('Actividad shows everyone’s activity to an administrator, metadata only',
     .click();
   await page.locator('.ac-main').first().click();
   await expect(
-    page.getByText('De otra persona: solo ves el agente, la tool y la hora.'),
+    page.getByText('De otra persona: solo ves el agente, la tool, la hora y el resultado.'),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /Abrir conversación/ })).toHaveCount(0);
 });
@@ -63,11 +63,44 @@ test('Actividad opens one’s own conversation from its row', async ({ page }) =
   await expect(page).toHaveURL(/\/c\/[A-Za-z0-9_-]+$/);
 });
 
+test('Actividad shows latencies in seconds and the state of an approval', async ({ page }) => {
+  await signIn(page);
+  await openActivity(page);
+  await page.getByRole('button', { name: '7 días' }).click();
+  // Design round 20 (`fmtDur`): the longest call of the mock, 74.300 ms.
+  await expect(page.getByText('1 min 14 s', { exact: true })).toBeVisible();
+  const states = page.locator(
+    '.ac-ms.is-pending, .ac-ms.is-executed, .ac-ms.is-rejected, .ac-ms.is-expired',
+  );
+  await expect(states.first()).toBeVisible();
+});
+
+test('Actividad says when a live poll failed and keeps the list', async ({ page }) => {
+  // The clock of the page only, to reach the next poll of «En vivo» (every 15 s).
+  await page.clock.install();
+  await signIn(page);
+  await openActivity(page);
+  await expect(page.locator('.ac-row').first()).toBeVisible();
+  const rows = await page.locator('.ac-row').count();
+  // Only the live polls carry `since`: the first read already answered.
+  await page.route(/\/api\/activity\?.*since=/, (route) =>
+    route.fulfill({ status: 503, json: { error: { code: 'activity_unavailable', message: 'x' } } }),
+  );
+  await page.clock.runFor(16_000);
+  await expect(
+    page.getByText('No se pudo buscar actividad nueva. Se vuelve a intentar en 15 s.'),
+  ).toBeVisible();
+  await expect(page.locator('.ac-row')).toHaveCount(rows);
+});
+
 test('Actividad fits a phone width', async ({ page }) => {
   await signIn(page);
   await openActivity(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText('Tools con error', { exact: true })).toBeVisible();
+  // Design round 20: at 760 px and below the latency stays and the kind icon goes.
+  await expect(page.locator('.ac-ms').first()).toBeVisible();
+  await expect(page.locator('.ac-kind').first()).toBeHidden();
   const overflow = await page.evaluate<number>(
     'document.documentElement.scrollWidth - document.documentElement.clientWidth',
   );

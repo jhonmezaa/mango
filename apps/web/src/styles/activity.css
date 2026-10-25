@@ -1,10 +1,10 @@
 /*
  * Actividad (design activity.jsx: `ac-grid`, `ac-row`, `ac-main`, `ac-t`, `ac-s`, `ac-target`,
  * `ac-ms`, `ac-kind`, `ac-more`, `ac-side*`, `ac-ag*`, `ac-silent`, `ac-live-on`, `ac-pulse`).
- * Ported from the design (Claude Design styles.css, round 19); values are the design's. `bg-kpis`,
- * `bg-toolbar`, `au-cats`, `au-day-h` and `au-time` are already in admin.css. The `ac-*` helpers
- * below hold the inline styles of the design's component; the loading skeleton follows the other
- * screens (the design does not draw one for this view).
+ * Ported from the design (Claude Design styles.css, rounds 19 and 20); values are the design's.
+ * `bg-kpis`, `bg-toolbar`, `au-cats`, `au-day-h` and `au-time` are already in admin.css. The
+ * `ac-*` helpers below hold the inline styles of the design's component, its loading skeleton
+ * included (round 20).
  */
 @layer components {
   .ac-grid {
@@ -158,8 +158,33 @@
     margin-bottom: 18px;
   }
   .ac-ms.is-err,
+  .ac-ms.is-rejected,
   .ac-err {
     color: var(--red);
+  }
+  /* Design round 20 (`ACT_AP`): the state of an approval. */
+  .ac-ms.is-pending {
+    color: var(--amber);
+  }
+  .ac-ms.is-executed {
+    color: var(--green);
+  }
+  .ac-ms.is-expired {
+    color: var(--text-muted);
+  }
+  .ac-poll {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .ac-poll svg {
+    color: var(--amber);
+    flex-shrink: 0;
+  }
+  .ac-grid.is-one {
+    grid-template-columns: minmax(0, 1fr);
   }
   .ac-kind.is-tool {
     color: var(--blue);
@@ -183,6 +208,8 @@
   }
   .ac-retention {
     text-align: center;
+    display: grid;
+    gap: 4px;
   }
   .ac-ag-row {
     display: flex;
@@ -226,6 +253,20 @@
   }
   .ac-skel-lines {
     flex: 1;
+    min-width: 0;
+  }
+  .ac-skel {
+    pointer-events: none;
+  }
+  .ac-skel-ic {
+    border-radius: 6px;
+  }
+  .ac-skel-ag {
+    display: grid;
+    gap: 8px;
+  }
+  .ac-skel-bar {
+    border-radius: 2px;
   }
 
   @media (max-width: 1100px) {
@@ -248,7 +289,8 @@
     .ac-more {
       padding-left: 16px;
     }
-    .ac-ms {
+    /* Design round 20: the latency, result or state stays; the kind icon goes. */
+    .ac-kind {
       display: none;
     }
   }

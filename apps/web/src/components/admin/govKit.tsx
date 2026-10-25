@@ -298,13 +298,17 @@ export function GovErrorState({
   );
 }
 
-/** Shown when the account is not an admin (design `Denied`). The server authorizes anyway. */
-export function Denied() {
+/**
+ * Shown when the account may not open the view (design `Denied`): Gobernanza and Actividad with
+ * their own notice (round 20), the others with the shared one. The server authorizes anyway.
+ */
+export function Denied({ view }: { view?: 'governance' | 'activity' }) {
   const { t } = useTranslation();
+  const key = view ? (`gov.denied.${view}` as const) : 'gov.denied';
   return (
     <div className="g-denied">
-      <Empty icon={LockIcon} title={t('gov.denied.title')}>
-        {t('gov.denied.body')}
+      <Empty icon={LockIcon} title={t(`${key}.title`)}>
+        {t(`${key}.body`)}
       </Empty>
     </div>
   );

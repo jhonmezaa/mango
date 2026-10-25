@@ -341,10 +341,20 @@ export function GovernancePage() {
   const now = state.kind === 'ready' ? state.loadedAt : 0;
   const kpis = kpisOf(t, data, visible, now);
 
-  let body;
+  // Design round 20: its own notice, without the rest of the view.
   if (state.kind === 'error' && state.forbidden) {
-    body = <Denied />;
-  } else if (state.kind === 'error') {
+    return (
+      <>
+        <Topbar crumbs={[t('governance.title')]} />
+        <div className="content">
+          <Denied view="governance" />
+        </div>
+      </>
+    );
+  }
+
+  let body;
+  if (state.kind === 'error') {
     body = (
       <div className="gv-body">
         <div role="alert">

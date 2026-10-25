@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { DisplayToolCall } from '../../hooks/chatState';
+import { formatDuration } from '../../lib/format';
 import { Badge } from '../Badge';
 import { ChevronDownIcon, ChevronRightIcon, TerminalIcon } from '../icons';
 import { Soon } from '../Soon';
@@ -41,9 +42,7 @@ function ToolRow({ tool }: { tool: DisplayToolCall }) {
         <span className="tool-row-name mono">{tool.name}</span>
         {tool.status === 'error' ? <Badge tone="red">{t('chat.tools.failed')}</Badge> : null}
         {tool.durationMs !== undefined && (
-          <span className="tool-row-time mono">
-            {t('chat.tools.ms', { ms: Math.round(tool.durationMs) })}
-          </span>
+          <span className="tool-row-time mono">{formatDuration(tool.durationMs)}</span>
         )}
         <ChevronDownIcon size={10} className={open ? 'tool-chevron is-open' : 'tool-chevron'} />
       </button>

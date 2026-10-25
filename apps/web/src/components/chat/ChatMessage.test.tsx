@@ -45,11 +45,11 @@ describe('ChatMessage: tool group', () => {
       status: 'done',
       tools: [
         { name: 'get_cost_and_usage', status: 'completed', startedAt: 0, durationMs: 820 },
-        { name: 'get_cost_forecast', status: 'completed', startedAt: 0, durationMs: 1120 },
+        { name: 'get_cost_forecast', status: 'completed', startedAt: 0, durationMs: 74_300 },
       ],
     });
     const head = screen.getByRole('button', { name: /2 herramientas/ });
-    expect(head).toHaveTextContent('2 herramientas· 1,9 s');
+    expect(head).toHaveTextContent('2 herramientas· 75,1 s');
     expect(head).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('get_cost_and_usage')).toBeNull();
 
@@ -57,6 +57,8 @@ describe('ChatMessage: tool group', () => {
     const list = screen.getByRole('list', { name: 'Herramientas del agente' });
     expect(within(list).getByText('get_cost_and_usage')).toBeInTheDocument();
     expect(within(list).getByText('820 ms')).toBeInTheDocument();
+    // Design round 20 (`fmtDur`): minutes and seconds past one minute.
+    expect(within(list).getByText('1 min 14 s')).toBeInTheDocument();
 
     // Parameters are not in the SSE event: the row expands to "Próximamente".
     await user.click(within(list).getAllByRole('button')[0] as HTMLElement);

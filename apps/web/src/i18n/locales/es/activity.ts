@@ -1,4 +1,4 @@
-// Actividad (design activity.jsx, round 19 «Disponible hoy», D90): what the agents did in the
+// Actividad (design activity.jsx, rounds 19 and 20 «Disponible hoy», D90): what the agents did in the
 // chats and tasks. Parameters of the tools, tickets, publications and the state of an agent are
 // not in this mode.
 export const activity = {
@@ -18,6 +18,9 @@ export const activity = {
   kpi: {
     events: 'Eventos · {{range}}',
     calls: '{{count}} llamadas a tools',
+    // Design round 20 (`ACT_CAP`): the design writes «1000», without the thousands separator.
+    capped: 'Más de {{cap}}',
+    cappedShown: 'Se muestran los {{cap}} más recientes',
     agents: 'Agentes con actividad',
     published: 'de {{count}} publicados',
     mine: 'En tus conversaciones y tareas',
@@ -50,13 +53,27 @@ export const activity = {
   },
   task: 'Tarea · {{name}}',
   error: 'error',
-  ms: '{{ms}} ms',
+  // Design round 20 (`ACT_AP`): the state of an approval, where the latency goes.
+  approval: {
+    pending: 'pendiente',
+    executed: 'ejecutada',
+    rejected: 'rechazada',
+    expired: 'vencida',
+  },
+  // The «resultado» column of the CSV for a turn the budget blocked.
+  blocked: 'bloqueado',
   yesterday: 'Ayer',
   emptyTitle: 'Sin actividad',
   emptyFiltered: 'Nada coincide con los filtros.',
   emptyPeriod: 'No hubo actividad en este periodo.',
   clearFilters: 'Limpiar filtros',
-  others: 'De otra persona: solo ves el agente, la tool y la hora.',
+  // Design round 20 (`ACT_OTHER`): what the row of someone else shows, by kind.
+  others: {
+    tool: 'De otra persona: solo ves el agente, la tool, la hora y la latencia.',
+    error: 'De otra persona: solo ves el agente, la tool, la hora y el resultado.',
+    approval: 'De otra persona: solo ves el agente, la tool, la hora y el estado.',
+    budget: 'De otra persona: solo ves el agente y la hora.',
+  },
   only: 'Solo {{name}}',
   links: {
     chat: 'Abrir conversación',
@@ -66,12 +83,14 @@ export const activity = {
   },
   more: 'Mostrar más · quedan {{count}}',
   retention: 'Aquí se ven hasta 7 días. La actividad se guarda {{days}} días.',
+  capped: 'Este periodo tiene más de {{cap}} eventos. Se muestran los {{cap}} más recientes.',
+  // Design round 20: a live poll that failed; the list stays.
+  pollFailed: 'No se pudo buscar actividad nueva. Se vuelve a intentar en 15 s.',
   mostActive: 'agentes más activos',
   errShort: ' · {{count}} err',
   noActivity: 'Sin actividad.',
   silent: 'sin actividad en el periodo',
-  // Not drawn by the design for this view: the pattern of the other screens (brief 2026-10-24).
-  loading: 'Cargando actividad',
+  loading: 'Cargando la actividad',
   errorTitle: 'No se pudo cargar la actividad',
   errorBody: 'Vuelve a intentarlo en unos segundos.',
 };

@@ -16,43 +16,47 @@ const RETENTION_DAYS = 30;
 const RANGES: Record<string, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 7 * 86_400_000 };
 const MINUTE = 60_000;
 
-/** Turns of other people: [minutes ago, calls [tool, ms] (ms null: the call failed)]. */
+/**
+ * Turns of other people: [minutes ago, calls [tool, ms] (ms null: the call failed)]. Design round
+ * 20 (`ACT_AV_TURNS`): the tools of account data take seconds (the first measured in an
+ * installation: get_cost_and_usage, 19.319 ms) and the longest more than a minute.
+ */
 const OTHERS: [number, [string, number | null][]][] = [
   [
     6,
     [
-      ['get_cost_and_usage', 820],
-      ['get_dimension_values', 230],
-      ['get_cost_and_usage', 760],
+      ['get_cost_and_usage', 14_820],
+      ['get_dimension_values', 3_140],
+      ['get_cost_and_usage', 11_260],
     ],
   ],
   [
     22,
     [
-      ['get_cost_and_usage', 810],
-      ['get_dimension_values', 240],
+      ['get_cost_and_usage', 16_400],
+      ['get_dimension_values', 2_410],
     ],
   ],
   [
     120,
     [
-      ['get_dimension_values', 260],
+      ['get_dimension_values', 3_380],
       ['get_cost_and_usage', null],
     ],
   ],
   [
     190,
     [
-      ['get_cost_forecast', 1240],
-      ['get_cost_and_usage', 700],
+      ['get_cost_forecast', 9_620],
+      ['get_cost_and_usage', 74_300],
     ],
   ],
-  [1500, [['get_cost_and_usage', 680]]],
+  [1500, [['get_cost_and_usage', 10_980]]],
   [
     4300,
     [
-      ['get_dimension_values', 250],
-      ['get_cost_and_usage', 1010],
+      ['get_dimension_values', 2_650],
+      ['get_cost_and_usage', 20_480],
     ],
   ],
 ];
@@ -80,6 +84,13 @@ const hash = (text: string) => {
   let value = 0;
   for (let i = 0; i < text.length; i += 1) value = (value * 31 + text.charCodeAt(i)) >>> 0;
   return value;
+};
+/** Design round 20 (`actMs`): a stable latency of seconds for each call of a tool. */
+const msOf = (tool: string, seed: string) => {
+  const value = hash(seed);
+  if (tool === 'get_dimension_values') return 1600 + (value % 3400);
+  if (tool === 'get_cost_forecast') return 6500 + (value % 9000);
+  return 8000 + (value % 19000);
 };
 const eventId = (at: number, seed: string) =>
   `${String(at).padStart(13, '0')}${hash(seed).toString(16).padStart(8, '0')}${'0'.repeat(8)}`;
@@ -109,7 +120,7 @@ function events(): Event[] {
       agent_id: call.agent_id,
       at: new Date(at).toISOString(),
       tool: call.tool,
-      ms: 240 + (hash(`${call.conversation_id}${String(index)}`) % 980),
+      ms: msOf(call.tool, `${call.conversation_id}${String(index)}`),
       ok: true,
       mine: true,
       conversation_id: call.conversation_id,
@@ -122,7 +133,7 @@ function events(): Event[] {
       agent_id: step.task.agent_id,
       at: step.at,
       tool: step.tool,
-      ms: 240 + (hash(`${step.run.run_id}${String(index)}`) % 980),
+      ms: msOf(step.tool, `${step.run.run_id}${String(index)}`),
       ok: true,
       mine: true,
       task_id: step.task.task_id,

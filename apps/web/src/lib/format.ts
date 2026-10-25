@@ -2,7 +2,6 @@ const LOCALE = 'es';
 
 const relative = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto', style: 'short' });
 const dateTime = new Intl.DateTimeFormat(LOCALE, { dateStyle: 'medium', timeStyle: 'short' });
-const seconds = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
 
 function parse(value: string): Date | null {
   const date = new Date(value);
@@ -27,10 +26,16 @@ export function formatDateTime(value: string): string {
   return date ? dateTime.format(date) : value;
 }
 
-/** Client-measured tool duration: "820 ms" or "1,2 s". */
+/**
+ * A tool's duration (design round 20 `fmtDur`): «820 ms» below one second, «19,3 s» below one
+ * minute and «1 min 14 s» up to the ceiling of a turn (600 s, «10 min»).
+ */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${String(Math.max(0, Math.round(ms)))} ms`;
-  return `${seconds.format(ms / 1000)} s`;
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+  const total = Math.round(ms / 1000);
+  const rest = total % 60;
+  return `${String(Math.floor(total / 60))} min${rest ? ` ${String(rest)} s` : ''}`;
 }
 
 /** Two-letter avatar from the user identifier (rendered as text). */
