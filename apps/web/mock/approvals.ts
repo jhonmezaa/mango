@@ -561,3 +561,12 @@ export function signableApprovals() {
     .filter((item) => item.can_sign)
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
+
+/** The requests of the approvers tier as the API reads them, and the policy now (Gobernanza mock, D89). */
+export function approverRequests() {
+  return [...approvals.values()].filter((item) => item.tier === 'approvers').map(out);
+}
+
+export function currentPolicy(): Rule {
+  return policy;
+}

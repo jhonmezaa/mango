@@ -145,3 +145,8 @@ export const handleAudit: ApiHandler = (req, res, path, url) => {
   sendJson(res, 200, auditPage(url.searchParams));
   return Promise.resolve(true);
 };
+
+/** Every event, newest first, as the index holds them (Gobernanza mock, D89). */
+export function auditEvents(): readonly MockAuditEvent[] {
+  return audit;
+}

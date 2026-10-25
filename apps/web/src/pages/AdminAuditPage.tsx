@@ -1,4 +1,3 @@
-import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -7,22 +6,19 @@ import { ApiError } from '../api/errors';
 import type { AuditEvent } from '../api/schemas';
 import { useSession } from '../auth/useSession';
 import { AuditDrawer } from '../components/admin/AuditDrawer';
+import { auditDetail, auditLabel, auditOutcome } from '../components/admin/auditText';
 import {
   AUDIT_CATEGORIES,
   TONE_COLOR,
   csvCell,
   dayKey,
   groupTurnAuthz,
-  isPermAction,
   mergeRequested,
   outcomeClass,
-  outcomeKey,
   toAuditRow,
   type AuditCategory,
   type AuditRow,
-  type DirectoryRead,
 } from '../components/admin/auditModel';
-import { usd } from '../components/admin/govFormat';
 import { Denied, GovErrorState, Skel } from '../components/admin/govKit';
 import { useToasts } from '../components/admin/useToasts';
 import { CloseIcon, DownloadIcon, SearchIcon, ShieldIcon } from '../components/icons';
@@ -77,24 +73,6 @@ const dayFormat = new Intl.DateTimeFormat('es-MX', {
  * The sentence of a read of the directory, from what the API recorded (design rounds of
  * 2026-10-05): what was read, the filter when it is not «Todas», and the count.
  */
-function directoryReadText(t: TFunction, read: DirectoryRead): string {
-  const { returned } = read;
-  if (read.scope === 'people') {
-    return [
-      t(`audit.detail.directoryRead.${read.searched ? 'searched' : 'people'}`),
-      ...(read.filter && read.filter !== 'all' ? [t(`people.filters.${read.filter}`)] : []),
-      ...(returned === null ? [] : [t('audit.detail.directoryRead.results', { count: returned })]),
-    ].join(' · ');
-  }
-  const text =
-    returned === null
-      ? t('audit.detail.directoryRead.changesUnknown')
-      : t('audit.detail.directoryRead.changes', { count: returned });
-  return read.missing > 0
-    ? `${text} · ${t('audit.detail.directoryRead.missing', { count: read.missing })}`
-    : text;
-}
-
 const isCategory = (value: string | null): value is AuditCategory =>
   (AUDIT_CATEGORIES as readonly string[]).includes(value ?? '');
 
@@ -238,77 +216,10 @@ export function AdminAuditPage() {
     (row: AuditRow) => (row.role ? t(`audit.rolesShort.${row.role}`) : ''),
     [t],
   );
-  const labelOf = useCallback(
-    (row: AuditRow) => (row.known ? t(`audit.actions.${row.known}`) : row.event),
-    [t],
-  );
-  const detailOf = useCallback(
-    (row: AuditRow) => {
-      const d = row.detail;
-      const text =
-        d.kind === 'defaults'
-          ? t('audit.detail.defaults', {
-              user: d.user ? usd(d.user) : '—',
-              agent: d.agent ? usd(d.agent) : '—',
-            })
-          : d.kind === 'userDefault'
-            ? t('audit.detail.userDefault')
-            : d.kind === 'userOwn'
-              ? t('audit.detail.userOwn', { amount: usd(d.amount) })
-              : d.kind === 'propose'
-                ? t('audit.detail.propose', { reason: d.reason })
-                : d.kind === 'approve'
-                  ? d.version === null
-                    ? t('audit.detail.approveNoVersion')
-                    : t('audit.detail.approve', { version: d.version })
-                  : d.kind === 'reject'
-                    ? t('audit.detail.reject', { reason: d.reason })
-                    : d.kind === 'withdraw'
-                      ? t('audit.detail.withdraw', { id: d.changeId })
-                      : d.kind === 'access'
-                        ? t(d.allowed ? 'audit.detail.accessView' : 'audit.detail.accessDenied', {
-                            action: isPermAction(d.action)
-                              ? t(`audit.perms.${d.action}`)
-                              : d.action,
-                          })
-                        : d.kind === 'chat'
-                          ? [
-                              t('audit.detail.chat', { agent: d.agent, count: d.tools }),
-                              ...(d.cost
-                                ? [t('audit.detail.chatCost', { amount: usd(d.cost) })]
-                                : []),
-                            ].join(' · ')
-                          : d.kind === 'catalogSync'
-                            ? d.added > 0
-                              ? t('audit.detail.catalogSync', { count: d.added })
-                              : t('audit.detail.catalogSyncNone')
-                            : d.kind === 'directoryRead'
-                              ? directoryReadText(t, d.read)
-                              : d.kind === 'reportDownload'
-                                ? t('audit.detail.reportDownload', {
-                                    run: (d.run ?? '').slice(0, 8) || '—',
-                                  })
-                                : d.kind === 'session'
-                                  ? d.sso
-                                    ? // The name comes from `config.json`, shown as text.
-                                      [
-                                        t('audit.detail.session.startedSso'),
-                                        ...(idpName ? [idpName] : []),
-                                      ].join(' · ')
-                                    : t(`audit.detail.${d.action}`)
-                                  : d.text;
-      return text;
-    },
-    [t, idpName],
-  );
+  const labelOf = useCallback((row: AuditRow) => auditLabel(t, row), [t]);
+  const detailOf = useCallback((row: AuditRow) => auditDetail(t, row, idpName), [t, idpName]);
   // Design `auditOutcome`: what the API recorded about the write, plus its error code.
-  const outcomeOf = useCallback(
-    (row: AuditRow) => {
-      const key = outcomeKey(row);
-      return key ? `${t(`audit.outcome.${key}`)}${row.error ? ` · ${row.error}` : ''}` : '';
-    },
-    [t],
-  );
+  const outcomeOf = useCallback((row: AuditRow) => auditOutcome(t, row), [t]);
 
   const actors = useMemo(() => {
     const values = new Set(all.map((row) => row.actor));

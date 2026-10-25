@@ -1,0 +1,226 @@
+/*
+ * Gobernanza (design other-views.jsx `Governance`: `gv-body`, `gv-attn`, `gv-attn-row`, `gv-t`,
+ * `gv-s`, `gv-cta`, `gv-ok`, `gv-kpis`, `gv-kpi*`, `gv-grid`, `gv-pol`, `gv-sec-h`, `gv-act`).
+ * Ported from the design (Claude Design styles.css, round 19); values are the design's. `gv-ic`
+ * is already in admin.css. The `gv-*` helpers below hold the inline styles of the design's
+ * component; the number of indicators is a data attribute (the design's `--gv-n`).
+ */
+@layer components {
+  .gv-body {
+    padding: 20px 32px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .gv-attn {
+    padding: 0;
+    overflow: hidden;
+  }
+  .gv-attn-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 13px 16px;
+    text-align: left;
+    border-top: 1px solid var(--border);
+  }
+  .gv-attn-row:first-child {
+    border-top: none;
+  }
+  .gv-attn-row:hover {
+    background: var(--row-hover);
+  }
+  .gv-attn-row.is-skel {
+    pointer-events: none;
+  }
+  .gv-ic.is-amber {
+    color: var(--amber);
+    background: color-mix(in oklab, var(--amber) 12%, transparent);
+  }
+  .gv-ic.is-red {
+    color: var(--red);
+    background: color-mix(in oklab, var(--red) 12%, transparent);
+  }
+  .gv-ic.is-blue {
+    color: var(--blue);
+    background: color-mix(in oklab, var(--blue) 12%, transparent);
+  }
+  .gv-t {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gv-s {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gv-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12.5px;
+    color: var(--accent-ink);
+    white-space: nowrap;
+  }
+  .gv-ok {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 16px;
+  }
+  .gv-ok-ic {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--green-soft);
+    color: var(--green);
+    flex-shrink: 0;
+  }
+  .gv-ok-t {
+    font-weight: 600;
+    font-size: 13.5px;
+  }
+  .gv-grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .gv-skel-lines {
+    flex: 1;
+    display: grid;
+    gap: 7px;
+  }
+  .gv-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .gv-kpis[data-n='1'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gv-kpis[data-n='2'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .gv-kpis[data-n='3'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .gv-kpi {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    text-align: left;
+    transition: border-color 0.12s;
+  }
+  .gv-kpi:hover {
+    border-color: var(--border-strong);
+  }
+  .gv-kpi-l {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .gv-kpi-v {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .gv-kpi-s {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gv-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .gv-grid.is-single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gv-card {
+    padding: 0;
+  }
+  .gv-pol {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .gv-pol + .gv-pol {
+    border-top: 1px solid var(--border);
+  }
+  .gv-pol-tool {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .gv-wrap {
+    white-space: normal;
+  }
+  .gv-empty {
+    padding: 14px 16px;
+  }
+  .gv-sec-h {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 20px;
+    margin-bottom: 8px;
+  }
+  .gv-sec-h .mk-sec-t {
+    margin: 0;
+  }
+  .gv-sec-h .sr-link {
+    padding: 0;
+  }
+  .gv-act {
+    padding: 12px 16px !important;
+  }
+  .gv-act .tk-dot {
+    margin-top: 6px;
+  }
+  .gv-act b {
+    font-weight: 500;
+    color: var(--text);
+  }
+  .gv-body section > .mk-sec-t {
+    height: 20px;
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  @media (max-width: 1000px) {
+    .gv-kpis,
+    .gv-kpis[data-n] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .gv-kpis[data-n='1'] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .gv-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 760px) {
+    .gv-body {
+      padding: 16px;
+    }
+  }
+}

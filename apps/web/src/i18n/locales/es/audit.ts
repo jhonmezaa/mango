@@ -63,6 +63,7 @@ export const audit = {
     budget: {
       default: 'Límite por defecto',
       user: 'Límite de usuario',
+      block: 'Turno bloqueado por presupuesto',
     },
     mapping: {
       propose: 'Cambio de áreas propuesto',

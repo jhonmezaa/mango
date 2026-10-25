@@ -164,7 +164,7 @@ function currentPeriod(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
-function budgetsView() {
+export function budgetsView() {
   return {
     period: currentPeriod(),
     version: budgets.version,
@@ -188,7 +188,7 @@ function budgetsView() {
 }
 
 /** Pending changes that have not expired (the API filters the rest out). */
-function livePending(): MockChange[] {
+export function livePending(): MockChange[] {
   const now = Date.now();
   return businessUnits.pending.filter((change) => Date.parse(change.expires_at) > now);
 }

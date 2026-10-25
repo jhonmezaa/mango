@@ -120,13 +120,15 @@ describe('Sidebar navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Construir' }));
     await user.click(screen.getByRole('button', { name: 'Operación' }));
     // Of the owner views, the Org Chart is available (read only; the API filters it, D38), the
-    // Marketplace and Schedules (D78: the API lists only the caller's tasks).
+    // Marketplace, Schedules (D78: the API lists only the caller's tasks) and Gobernanza (D89:
+    // the API sends only the sections each one may read).
     expect(navLinks()).toEqual([
       'Chat',
       'Bandeja',
       'Marketplace',
       'Chat con FinOps',
       'Aprobaciones',
+      'Gobernanza',
       'Schedules',
       'Org Chart',
     ]);
@@ -134,7 +136,6 @@ describe('Sidebar navigation', () => {
       'Inicio, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
-      'Gobernanza, próximamente',
       'Actividad, próximamente',
       'Playground, próximamente',
       'Skills, próximamente',
@@ -336,6 +337,7 @@ describe('Sidebar navigation', () => {
       'Chat con FinOps',
       'Aprobaciones',
       'Revisión de agentes',
+      'Gobernanza',
       'Presupuestos',
       'Audit log',
       'Brains',

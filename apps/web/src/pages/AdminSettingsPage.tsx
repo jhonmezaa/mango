@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ComponentType, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 
 import { useSession } from '../auth/useSession';
 import { AuthSettings } from '../components/account/AuthSettings';
@@ -28,6 +29,8 @@ import { PeopleTab } from './settingsPeople/PeopleTab';
 // Design order.
 const TABS = ['general', 'people', 'groups', 'areas', 'conn'] as const;
 type Tab = (typeof TABS)[number];
+const isTab = (value: string | undefined): value is Tab =>
+  (TABS as readonly string[]).includes(value ?? '');
 
 // General sections (design order). "Instalación" and "Autenticación" are available today.
 const SECTIONS = [
@@ -94,7 +97,10 @@ export function AdminSettingsPage() {
   const { notify, stack } = useToasts();
   // `null` until the person picks a tab: the page opens on General, or on Personas while the
   // installation has a single administrator (design: «recién instalada»).
-  const [picked, setPicked] = useState<Tab | null>(null);
+  // The path may name the tab to open (design round 19, `/settings/areas`); anything else opens
+  // as before.
+  const { tab: fromPath } = useParams();
+  const [picked, setPicked] = useState<Tab | null>(() => (isTab(fromPath) ? fromPath : null));
   const [onlyAdmin, setOnlyAdmin] = useState(false);
   const [forbidden, setForbidden] = useState(false);
   const tab: Tab = picked ?? (onlyAdmin ? 'people' : 'general');

@@ -2,7 +2,7 @@
 
 > Fecha: 2026-10-24 · Skill: `security-threat-model`. Decisiones: D17, D24, D27, D44, D70 y **D89** (esta, `propuesta`).
 > Amplía `admin-v0-threat-model.md` (presupuestos y áreas), `write-tools-approval-threat-model.md` (aprobaciones) e `inbox-threat-model.md` (la misma regla de «no enseñar más que la pantalla de origen»).
-> Alcance: `apps/api/src/mango_api/governance.py` (nuevo), el filtro de varios eventos y el conteo acotado de `audit.py`, la política Cedar `policies/cedar/platform/governance-view.cedar` y la acción `ViewGovernance` del schema. La pantalla `apps/web/src/pages/governance/` llega en otro PR, tras la ronda de diseño.
+> Alcance: `apps/api/src/mango_api/governance.py` (nuevo), el filtro de varios eventos y el conteo acotado de `audit.py`, la política Cedar `policies/cedar/platform/governance-view.cedar` y la acción `ViewGovernance` del schema. Desde v0.2, la pantalla `apps/web/src/pages/governance/` (ronda de diseño 19).
 > v0.1 se escribe **antes** de construir (regla de `AGENTS.md`), con las respuestas por menú del 2026-10-24 (propuesta de la fase 1): admins y `finops-central`, cada sección con su permiso de hoy; un resumen en el servidor; conteo de 24 h sin lecturas y con tope; políticas por tool; lista cerrada de eventos de gobernanza. Nada está desplegado.
 
 ## Executive summary
@@ -135,3 +135,10 @@ Revisión enfocada de la rama, sin cambios de IAM (el resumen lee con el rol de 
 - **Riesgo residual aceptado:** la caché sirve hasta 30 s lo que la persona ya veía aunque sus grupos cambien sin cambiar sus permisos de sección (por ejemplo, las KBs que puede firmar).
 
 Queda **sin ver en una instalación**: que la política `ViewGovernance` se cree en el almacén de políticas con el change set y que la ruta responda con datos reales.
+
+## La pantalla (v0.2, 2026-10-24)
+
+- **Nada decide autorización en el cliente:** la pantalla dibuja las secciones que la API manda y oculta las `null`; antes de la respuesta solo elige el esqueleto con `canView` (lo mismo que la navegación). Un 403 muestra «No tienes acceso a esta sección».
+- **Texto plano:** el actor, el detalle y el resultado de cada evento, los nombres de agentes y correos de presupuestos y los nombres de tool se pintan como texto de React (sin `dangerouslySetInnerHTML` ni Markdown); un test lo comprueba con `<img onerror>` como correo del actor.
+- **Enlaces internos:** cada fila y cada indicador navegan a rutas fijas de la SPA (`/approvals`, `/budgets`, `/settings/areas`, `/audit`), nunca a una URL de la respuesta.
+- **CSP:** sin `<style>` en runtime; el número de indicadores es un atributo de datos con su regla en `governance.css`, y el único estilo en línea (el color del punto de cada evento) va por la prop `style` de React, que la CSP permite (CSSOM).

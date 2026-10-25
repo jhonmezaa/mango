@@ -229,6 +229,8 @@ const isPackRequestKind = (kind: unknown): kind is PackRequestKind =>
  * action (AUDIT_ACTIONS).
  */
 const EVENT_ACTIONS = {
+  // The turn refused by its budget (design round 19 `budget.block`).
+  'budget.exceeded': 'budget.block',
   'agent.created': 'agent.create',
   'agent.retired': 'agent.retire',
   'agent.version.saved': 'agent.draft',

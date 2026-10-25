@@ -16,6 +16,7 @@ describe('SCREENS', () => {
       ['approvals', 'approvals/*'],
       ['schedules', 'schedules/*'],
       ['inbox', 'inbox/*'],
+      ['governance', 'governance/*'],
     ]);
   });
 

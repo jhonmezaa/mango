@@ -98,6 +98,15 @@ export function AppRoutes() {
             </Lazy>
           }
         />
+        {/* Design round 19: Ajustes opens on the tab the path names (`/settings/areas`). */}
+        <Route
+          path="settings/:tab"
+          element={
+            <Lazy>
+              <AdminSettingsPage />
+            </Lazy>
+          }
+        />
         {SOON_VIEWS.map((view) => (
           <Route key={view} path={`${view}/*`} element={<Soon view={view} />} />
         ))}

@@ -7,6 +7,7 @@ import { brains } from './es/brains';
 import { budgets } from './es/budgets';
 import { agent, agentPicker, chat, markdown } from './es/chat';
 import { admin, gov } from './es/governance';
+import { governance } from './es/governanceView';
 import { groups } from './es/groups';
 import { inbox } from './es/inbox';
 import { knowledge } from './es/knowledge';
@@ -50,4 +51,5 @@ export const es = {
   schedules,
   inbox,
   knowledge,
+  governance,
 } as const;
