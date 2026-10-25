@@ -138,6 +138,8 @@ export interface ProvisionerProps {
    * provisioner publishes a release approval only for exactly these (TM-M16).
    */
   readonly releaseAgents: Record<string, string>;
+  /** Bucket and key of the approved skill versions (D92): written into agent roles. */
+  readonly skills: { bucketName: string; keyArn: string };
 }
 
 /**
@@ -501,6 +503,9 @@ export class Provisioner extends Construct {
         // D39: the session lifecycle mango-api assumes when it reuses a runtime session.
         AGENT_SESSION_IDLE_SECONDS: String(SESSION_IDLE_SECONDS),
         AGENT_SESSION_MAX_SECONDS: String(SESSION_MAX_SECONDS),
+        // D92: where the harness fetches the skills of a version, and their key.
+        SKILLS_BUCKET: props.skills.bucketName,
+        SKILLS_KEY_ARN: props.skills.keyArn,
       },
       environmentEncryption: props.configKey,
     }).function;

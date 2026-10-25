@@ -24,6 +24,7 @@ import { Edge } from "../constructs/edge.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
+import { Skills } from "../constructs/skills.js";
 import { Presign } from "../constructs/presign.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
@@ -154,6 +155,15 @@ export class CoreStack extends Stack {
       memberChainPacks: memberChainPacks(packRelease),
     });
     const agentPlatform = new AgentPlatform(this, "AgentPlatform", { installation: cfg });
+    // D92: skills of instructions, versioned and approved; their SKILL.md is read by the
+    // harness of each agent with that agent's role.
+    const skills = new Skills(this, "Skills", {
+      installation: cfg,
+      dataKey: governance.dataKey,
+      accessLogs,
+    });
+    skills.allowAgents(agentPlatform.boundary);
+    skills.grantApi(apiTaskRole);
     // Marketplace v1 (D18, D32): agents are published by SDK, not by this stack. The agents
     // of the release (FinOps) are seeded as approved versions and published the same way (D34).
     const shipped = releaseAgents(cfg);
@@ -169,6 +179,7 @@ export class CoreStack extends Stack {
       configKey: tools.configKey,
       gatewayUrl: tools.gatewayUrl,
       releaseAgents: releaseHashes,
+      skills: { bucketName: skills.bucket.bucketName, keyArn: skills.key.keyArn },
     });
     const releaseAgentSeeds = new ReleaseAgents(this, "ReleaseAgents", {
       agents: shipped,
@@ -522,6 +533,7 @@ export class CoreStack extends Stack {
         ...tasks.apiEnvironment,
         ...taskReports.apiEnvironment,
         ...knowledge.apiEnvironment,
+        ...skills.apiEnvironment,
         ...presign.apiEnvironment,
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
         // D60: who may be invited, and what Settings > General > Installation shows to

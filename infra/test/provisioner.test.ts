@@ -379,18 +379,35 @@ describe("agent permissions boundary", () => {
       "bedrock:InvokeModelWithResponseStream",
       "cloudwatch:PutMetricData",
       "ecr-public:GetAuthorizationToken",
+      "kms:Decrypt",
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:DescribeLogStreams",
       "logs:PutLogEvents",
+      "s3:GetObject",
+      "s3:ListBucket",
       "sts:GetServiceBearerToken",
       "xray:PutTelemetryRecords",
       "xray:PutTraceSegments",
     ]);
   });
 
+  it("reads only the skills bucket, with its own key through S3 (D92)", () => {
+    const skills = statements.filter((s) => ["ReadSkills", "ListSkills", "SkillsKey"].includes(s.Sid ?? ""));
+    expect(skills.flatMap(actions).sort()).toEqual(["kms:Decrypt", "s3:GetObject", "s3:ListBucket"]);
+    const bucket = Object.keys(resources).find((id) => id.startsWith("SkillsBucket") && resources[id]!.Type === "AWS::S3::Bucket")!;
+    const key = Object.keys(resources).find((id) => id.startsWith("SkillsKey") && resources[id]!.Type === "AWS::KMS::Key")!;
+    expect(JSON.stringify(bySid(statements, "ReadSkills").Resource)).toContain(bucket);
+    expect(JSON.stringify(bySid(statements, "ReadSkills").Resource)).toContain("/skills/*");
+    expect(JSON.stringify(bySid(statements, "ListSkills").Resource)).toContain(bucket);
+    expect(bySid(statements, "SkillsKey").Resource).toEqual({ "Fn::GetAtt": [key, "Arn"] });
+    expect(JSON.stringify(bySid(statements, "SkillsKey").Condition)).toContain("kms:ViaService");
+  });
+
   it("gives no access to IAM, data stores, secrets, role assumption or other compute", () => {
-    for (const action of granted) {
+    // The one exception is the skills bucket and its key (D92), checked above.
+    const skillActions = new Set(["kms:Decrypt", "s3:GetObject", "s3:ListBucket"]);
+    for (const action of granted.filter((a) => !skillActions.has(a))) {
       expect(action).not.toMatch(/^(iam|dynamodb|s3|secretsmanager|ssm|kms|lambda|states|ec2|organizations|ce):/);
       expect(action).not.toBe("sts:AssumeRole");
       expect(action.endsWith("*")).toBe(false);
@@ -550,6 +567,8 @@ describe("provisioner function and state machine", () => {
       "RELEASE_AGENTS",
       "RUNTIME_LOGS_KEY_ARN",
       "SETTINGS_TABLE",
+      "SKILLS_BUCKET",
+      "SKILLS_KEY_ARN",
     ]);
     expect(env.AGENT_BOUNDARY_ARN).toEqual({ Ref: boundaryId });
     expect(env.MANGO_NAMESPACE).toBe(ns);
