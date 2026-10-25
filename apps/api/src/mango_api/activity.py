@@ -323,7 +323,7 @@ def activity_router(
         return caller
 
     @router.get("", response_model=ActivityPage)
-    async def list_route(
+    async def get_activity(
         caller: Annotated[Caller, Depends(view_activity)],
         period: Annotated[Range, Query(alias="range")] = "24h",
         since: Annotated[AwareDatetime | None, Query()] = None,

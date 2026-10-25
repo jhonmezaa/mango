@@ -2561,7 +2561,7 @@ export const zMangoApiToolPoliciesRejectInSchema = z.object({
     reason: z.string().min(1).max(500)
 });
 
-export const zListRouteQuery = z.object({
+export const zGetActivityQuery = z.object({
     range: z.enum([
         '1h',
         '24h',
@@ -2573,7 +2573,7 @@ export const zListRouteQuery = z.object({
 /**
  * Successful Response
  */
-export const zListRouteResponse = zActivityPageSchema;
+export const zGetActivityResponse = zActivityPageSchema;
 
 export const zAdminAuditQuery = z.object({
     limit: z.int().gte(1).lte(200).optional().default(50),

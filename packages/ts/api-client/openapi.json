@@ -9676,7 +9676,7 @@
   "paths": {
     "/activity": {
       "get": {
-        "operationId": "list_route",
+        "operationId": "get_activity",
         "parameters": [
           {
             "in": "query",
@@ -9733,7 +9733,7 @@
             "description": "Error"
           }
         },
-        "summary": "List Route"
+        "summary": "Get Activity"
       }
     },
     "/admin/audit": {

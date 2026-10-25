@@ -4995,7 +4995,7 @@ export type MangoApiToolPoliciesRejectIn = {
     reason: string;
 };
 
-export type ListRouteData = {
+export type GetActivityData = {
     body?: never;
     path?: never;
     query?: {
@@ -5011,23 +5011,23 @@ export type ListRouteData = {
     url: '/activity';
 };
 
-export type ListRouteErrors = {
+export type GetActivityErrors = {
     /**
      * Error
      */
     default: ErrorBody;
 };
 
-export type ListRouteError = ListRouteErrors[keyof ListRouteErrors];
+export type GetActivityError = GetActivityErrors[keyof GetActivityErrors];
 
-export type ListRouteResponses = {
+export type GetActivityResponses = {
     /**
      * Successful Response
      */
     200: ActivityPage;
 };
 
-export type ListRouteResponse = ListRouteResponses[keyof ListRouteResponses];
+export type GetActivityResponse = GetActivityResponses[keyof GetActivityResponses];
 
 export type AdminAuditData = {
     body?: never;
