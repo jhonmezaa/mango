@@ -641,6 +641,16 @@
             "title": "Role",
             "type": "string"
           },
+          "skills": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]{0,3}$",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Skills",
+            "type": "array"
+          },
           "system_prompt": {
             "default": "",
             "title": "System Prompt",
@@ -2004,20 +2014,6 @@
         "title": "CatalogTool",
         "type": "object"
       },
-      "ChangeCreatedOut": {
-        "additionalProperties": false,
-        "properties": {
-          "change_id": {
-            "title": "Change Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "change_id"
-        ],
-        "title": "ChangeCreatedOut",
-        "type": "object"
-      },
       "ChangeKind": {
         "enum": [
           "enable",
@@ -2363,6 +2359,13 @@
             "title": "Role",
             "type": "string"
           },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
           "system_prompt": {
             "title": "System Prompt",
             "type": "string"
@@ -2398,7 +2401,8 @@
           "limits",
           "groups",
           "users",
-          "knowledge_bases"
+          "knowledge_bases",
+          "skills"
         ],
         "title": "DefinitionOut",
         "type": "object"
@@ -4627,6 +4631,151 @@
           "items"
         ],
         "title": "ModelsOut",
+        "type": "object"
+      },
+      "NewSkillIn": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "maxLength": 24,
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 280,
+            "title": "Description",
+            "type": "string"
+          },
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]{0,3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of"
+          },
+          "instructions": {
+            "maxLength": 40000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "outputs": {
+            "default": [],
+            "items": {
+              "maxLength": 80,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Outputs",
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "category",
+          "instructions",
+          "servers",
+          "reason"
+        ],
+        "title": "NewSkillIn",
+        "type": "object"
+      },
+      "NewVersionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "base_version": {
+            "maximum": 9999.0,
+            "minimum": 1.0,
+            "title": "Base Version",
+            "type": "integer"
+          },
+          "category": {
+            "maxLength": 24,
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 280,
+            "title": "Description",
+            "type": "string"
+          },
+          "instructions": {
+            "maxLength": 40000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "outputs": {
+            "default": [],
+            "items": {
+              "maxLength": 80,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Outputs",
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "category",
+          "instructions",
+          "servers",
+          "reason",
+          "base_version"
+        ],
+        "title": "NewVersionIn",
         "type": "object"
       },
       "OnlyAreaIn": {
@@ -7570,6 +7719,577 @@
         "title": "SignedFileOut",
         "type": "object"
       },
+      "SkillAgentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_version": {
+            "title": "Agent Version",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "skill_version": {
+            "title": "Skill Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "agent_version",
+          "skill_version"
+        ],
+        "title": "SkillAgentOut",
+        "type": "object"
+      },
+      "SkillChangeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "outputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Outputs",
+            "type": "array"
+          },
+          "own": {
+            "title": "Own",
+            "type": "boolean"
+          },
+          "proposed_by": {
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "proposed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By Email"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "withdrawn",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Variables",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "change_id",
+          "skill_id",
+          "version",
+          "status",
+          "name",
+          "category",
+          "description",
+          "instructions",
+          "outputs",
+          "servers",
+          "variables",
+          "reason",
+          "proposed_by",
+          "proposed_by_email",
+          "created_at",
+          "expires_at",
+          "duplicate_of",
+          "decided_by",
+          "decided_by_email",
+          "decided_at",
+          "note",
+          "own"
+        ],
+        "title": "SkillChangeOut",
+        "type": "object"
+      },
+      "SkillDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agents_using": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAgentOut"
+            },
+            "title": "Agents Using",
+            "type": "array"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/SkillChangeOut"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "outputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Outputs",
+            "type": "array"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/SkillOut"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Variables",
+            "type": "array"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/SkillVersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skill",
+          "instructions",
+          "outputs",
+          "variables",
+          "agents_using",
+          "versions",
+          "changes"
+        ],
+        "title": "SkillDetailOut",
+        "type": "object"
+      },
+      "SkillOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "title": "Agents",
+            "type": "integer"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "data_tier": {
+            "enum": [
+              "public",
+              "account_data",
+              "write"
+            ],
+            "title": "Data Tier",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "outdated_agents": {
+            "title": "Outdated Agents",
+            "type": "integer"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email"
+          },
+          "pending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillChangeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runs_30d": {
+            "title": "Runs 30D",
+            "type": "integer"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/SkillServerOut"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "updated_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Email"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "writes": {
+            "title": "Writes",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "description",
+          "version",
+          "servers",
+          "data_tier",
+          "writes",
+          "available",
+          "agents",
+          "outdated_agents",
+          "runs_30d",
+          "owner",
+          "owner_email",
+          "updated_by",
+          "updated_by_email",
+          "updated_at",
+          "pending"
+        ],
+        "title": "SkillOut",
+        "type": "object"
+      },
+      "SkillServerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "data_tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "public",
+                  "account_data",
+                  "write"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Tier"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "tools": {
+            "title": "Tools",
+            "type": "integer"
+          },
+          "writes": {
+            "title": "Writes",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "data_tier",
+          "tools",
+          "writes"
+        ],
+        "title": "SkillServerOut",
+        "type": "object"
+      },
+      "SkillVersionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "title": "Approved At",
+            "type": "string"
+          },
+          "approved_by": {
+            "title": "Approved By",
+            "type": "string"
+          },
+          "approved_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By Email"
+          },
+          "markdown_sha256": {
+            "title": "Markdown Sha256",
+            "type": "string"
+          },
+          "proposed_by": {
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "proposed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By Email"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "proposed_by",
+          "proposed_by_email",
+          "approved_by",
+          "approved_by_email",
+          "approved_at",
+          "markdown_sha256"
+        ],
+        "title": "SkillVersionOut",
+        "type": "object"
+      },
+      "SkillsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "can_approve": {
+            "title": "Can Approve",
+            "type": "boolean"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/SkillChangeOut"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "max_per_agent": {
+            "title": "Max Per Agent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "changes",
+          "categories",
+          "max_per_agent",
+          "can_approve"
+        ],
+        "title": "SkillsOut",
+        "type": "object"
+      },
       "SourceDecideIn": {
         "additionalProperties": false,
         "properties": {
@@ -8992,6 +9712,20 @@
         "title": "ViolationOut",
         "type": "object"
       },
+      "mango_api__admin__ChangeCreatedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "change_id"
+        ],
+        "title": "ChangeCreatedOut",
+        "type": "object"
+      },
       "mango_api__admin__ChangeOut": {
         "additionalProperties": false,
         "properties": {
@@ -9122,6 +9856,20 @@
           "reason"
         ],
         "title": "RejectIn",
+        "type": "object"
+      },
+      "mango_api__group_admin__ChangeCreatedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "change_id"
+        ],
+        "title": "ChangeCreatedOut",
         "type": "object"
       },
       "mango_api__group_admin__ProposeIn": {
@@ -9543,6 +10291,41 @@
         "title": "SearchIn",
         "type": "object"
       },
+      "mango_api__skills__ChangeCreatedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          },
+          "skill_id": {
+            "title": "Skill Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_id",
+          "change_id"
+        ],
+        "title": "ChangeCreatedOut",
+        "type": "object"
+      },
+      "mango_api__skills__RejectIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RejectIn",
+        "type": "object"
+      },
       "mango_api__tasks__PersonOut": {
         "additionalProperties": false,
         "properties": {
@@ -9595,6 +10378,20 @@
           "reason"
         ],
         "title": "RetireIn",
+        "type": "object"
+      },
+      "mango_api__tool_policies__ChangeCreatedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "change_id"
+        ],
+        "title": "ChangeCreatedOut",
         "type": "object"
       },
       "mango_api__tool_policies__ProposeIn": {
@@ -10064,7 +10861,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChangeCreatedOut"
+                  "$ref": "#/components/schemas/mango_api__admin__ChangeCreatedOut"
                 }
               }
             },
@@ -10318,7 +11115,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChangeCreatedOut"
+                  "$ref": "#/components/schemas/mango_api__group_admin__ChangeCreatedOut"
                 }
               }
             },
@@ -12558,7 +13355,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChangeCreatedOut"
+                  "$ref": "#/components/schemas/mango_api__tool_policies__ChangeCreatedOut"
                 }
               }
             },
@@ -14719,6 +15516,312 @@
           }
         },
         "summary": "Renew Session"
+      }
+    },
+    "/skills": {
+      "get": {
+        "operationId": "get_skills",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Skills"
+      },
+      "post": {
+        "operationId": "post_skill",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mango_api__skills__ChangeCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post Skill"
+      }
+    },
+    "/skills/changes/{change_id}/approve": {
+      "post": {
+        "operationId": "approve_skill_change",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve Skill Change"
+      }
+    },
+    "/skills/changes/{change_id}/reject": {
+      "post": {
+        "operationId": "reject_skill_change",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mango_api__skills__RejectIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reject Skill Change"
+      }
+    },
+    "/skills/changes/{change_id}/withdraw": {
+      "post": {
+        "operationId": "withdraw_skill_change",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Withdraw Skill Change"
+      }
+    },
+    "/skills/{skill_id}": {
+      "get": {
+        "operationId": "get_skill_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "maxLength": 40,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Skill Detail"
+      }
+    },
+    "/skills/{skill_id}/versions": {
+      "post": {
+        "operationId": "post_skill_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "maxLength": 40,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewVersionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mango_api__skills__ChangeCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post Skill Version"
       }
     },
     "/tasks": {

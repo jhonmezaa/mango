@@ -107,6 +107,7 @@ export const zAgentDefinitionSchema = z.object({
     name: z.string(),
     reports_to: z.string().nullish(),
     role: z.string().optional().default(''),
+    skills: z.array(z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]{0,3}$/)).max(10).optional().default([]),
     system_prompt: z.string().optional().default(''),
     tools: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}\.[A-Za-z0-9_-]{1,64}$/)).max(50).optional().default([]),
     users: z.array(z.string().regex(/^[A-Za-z0-9-]{1,64}$/)).max(50).optional().default([])
@@ -336,13 +337,6 @@ export const zCatalogToolSchema = z.object({
     ref: z.string(),
     requires_service: z.string().nullish(),
     unclassified: z.boolean().optional().default(false)
-});
-
-/**
- * ChangeCreatedOut
- */
-export const zChangeCreatedOutSchema = z.object({
-    change_id: z.string()
 });
 
 /**
@@ -825,6 +819,7 @@ export const zDefinitionOutSchema = z.object({
     name: z.string(),
     reports_to: z.string().nullable(),
     role: z.string(),
+    skills: z.array(z.string()),
     system_prompt: z.string(),
     tools: z.array(z.string()),
     users: z.array(z.string())
@@ -995,6 +990,34 @@ export const zModelUpdateInSchema = z.object({
 export const zModelsOutSchema = z.object({
     items: z.array(zModelOutSchema),
     version: z.int()
+});
+
+/**
+ * NewSkillIn
+ */
+export const zNewSkillInSchema = z.object({
+    category: z.string().max(24),
+    description: z.string().max(280).optional().default(''),
+    duplicate_of: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]{0,3}$/).nullish(),
+    instructions: z.string().min(1).max(40000),
+    name: z.string().min(1).max(96),
+    outputs: z.array(z.string().max(80)).max(10).optional().default([]),
+    reason: z.string().min(1).max(500),
+    servers: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/)).min(1).max(10)
+});
+
+/**
+ * NewVersionIn
+ */
+export const zNewVersionInSchema = z.object({
+    base_version: z.int().gte(1).lte(9999),
+    category: z.string().max(24),
+    description: z.string().max(280).optional().default(''),
+    instructions: z.string().min(1).max(40000),
+    name: z.string().min(1).max(96),
+    outputs: z.array(z.string().max(80)).max(10).optional().default([]),
+    reason: z.string().min(1).max(500),
+    servers: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/)).min(1).max(10)
 });
 
 /**
@@ -1739,6 +1762,131 @@ export const zSignedFileOutSchema = z.object({
 });
 
 /**
+ * SkillAgentOut
+ */
+export const zSkillAgentOutSchema = z.object({
+    agent_version: z.int(),
+    id: z.string(),
+    name: z.string(),
+    skill_version: z.int()
+});
+
+/**
+ * SkillChangeOut
+ */
+export const zSkillChangeOutSchema = z.object({
+    category: z.string(),
+    change_id: z.string(),
+    created_at: z.string(),
+    decided_at: z.string().nullable(),
+    decided_by: z.string().nullable(),
+    decided_by_email: z.string().nullable(),
+    description: z.string(),
+    duplicate_of: z.string().nullable(),
+    expires_at: z.string(),
+    instructions: z.string(),
+    name: z.string(),
+    note: z.string().nullable(),
+    outputs: z.array(z.string()),
+    own: z.boolean(),
+    proposed_by: z.string(),
+    proposed_by_email: z.string().nullable(),
+    reason: z.string(),
+    servers: z.array(z.string()),
+    skill_id: z.string(),
+    status: z.enum([
+        'pending',
+        'approved',
+        'rejected',
+        'withdrawn',
+        'expired'
+    ]),
+    variables: z.array(z.string()),
+    version: z.int()
+});
+
+/**
+ * SkillServerOut
+ */
+export const zSkillServerOutSchema = z.object({
+    data_tier: z.enum([
+        'public',
+        'account_data',
+        'write'
+    ]).nullable(),
+    enabled: z.boolean(),
+    id: z.string(),
+    name: z.string().nullable(),
+    tools: z.int(),
+    writes: z.boolean()
+});
+
+/**
+ * SkillOut
+ */
+export const zSkillOutSchema = z.object({
+    agents: z.int(),
+    available: z.boolean(),
+    category: z.string(),
+    data_tier: z.enum([
+        'public',
+        'account_data',
+        'write'
+    ]),
+    description: z.string(),
+    id: z.string(),
+    name: z.string(),
+    outdated_agents: z.int(),
+    owner: z.string().nullable(),
+    owner_email: z.string().nullable(),
+    pending: zSkillChangeOutSchema.nullable(),
+    runs_30d: z.int(),
+    servers: z.array(zSkillServerOutSchema),
+    updated_at: z.string().nullable(),
+    updated_by: z.string().nullable(),
+    updated_by_email: z.string().nullable(),
+    version: z.int(),
+    writes: z.boolean()
+});
+
+/**
+ * SkillVersionOut
+ */
+export const zSkillVersionOutSchema = z.object({
+    approved_at: z.string(),
+    approved_by: z.string(),
+    approved_by_email: z.string().nullable(),
+    markdown_sha256: z.string(),
+    proposed_by: z.string(),
+    proposed_by_email: z.string().nullable(),
+    version: z.int()
+});
+
+/**
+ * SkillDetailOut
+ */
+export const zSkillDetailOutSchema = z.object({
+    agents_using: z.array(zSkillAgentOutSchema),
+    changes: z.array(zSkillChangeOutSchema),
+    instructions: z.string(),
+    outputs: z.array(z.string()),
+    skill: zSkillOutSchema,
+    variables: z.array(z.string()),
+    versions: z.array(zSkillVersionOutSchema)
+});
+
+/**
+ * SkillsOut
+ */
+export const zSkillsOutSchema = z.object({
+    can_approve: z.boolean(),
+    categories: z.array(z.string()),
+    changes: z.array(zSkillChangeOutSchema),
+    items: z.array(zSkillOutSchema),
+    max_per_agent: z.int()
+});
+
+/**
  * SourceDecideIn
  */
 export const zSourceDecideInSchema = z.object({
@@ -2287,6 +2435,13 @@ export const zVersionOutSchema = z.object({
 });
 
 /**
+ * ChangeCreatedOut
+ */
+export const zMangoApiAdminChangeCreatedOutSchema = z.object({
+    change_id: z.string()
+});
+
+/**
  * ChangeOut
  */
 export const zMangoApiAdminChangeOutSchema = z.object({
@@ -2336,6 +2491,13 @@ export const zMangoApiAgentsRetireInSchema = z.object({
  */
 export const zMangoApiApprovalsRejectInSchema = z.object({
     reason: z.string().min(1).max(500)
+});
+
+/**
+ * ChangeCreatedOut
+ */
+export const zMangoApiGroupAdminChangeCreatedOutSchema = z.object({
+    change_id: z.string()
 });
 
 /**
@@ -2481,6 +2643,21 @@ export const zMangoApiPeopleSearchInSchema = z.object({
 });
 
 /**
+ * ChangeCreatedOut
+ */
+export const zMangoApiSkillsChangeCreatedOutSchema = z.object({
+    change_id: z.string(),
+    skill_id: z.string()
+});
+
+/**
+ * RejectIn
+ */
+export const zMangoApiSkillsRejectInSchema = z.object({
+    reason: z.string().min(1).max(500)
+});
+
+/**
  * PersonOut
  */
 export const zMangoApiTasksPersonOutSchema = z.object({
@@ -2539,6 +2716,13 @@ export const zTaskListOutSchema = z.object({
  */
 export const zMangoApiTasksRetireInSchema = z.object({
     reason: z.string().min(1).max(200)
+});
+
+/**
+ * ChangeCreatedOut
+ */
+export const zMangoApiToolPoliciesChangeCreatedOutSchema = z.object({
+    change_id: z.string()
 });
 
 /**
@@ -2634,7 +2818,7 @@ export const zPostChangeBody = zProposalInSchema;
 /**
  * Successful Response
  */
-export const zPostChangeResponse = zChangeCreatedOutSchema;
+export const zPostChangeResponse = zMangoApiAdminChangeCreatedOutSchema;
 
 export const zApproveChangeBody = zEmptyInSchema;
 
@@ -2686,7 +2870,7 @@ export const zPostGroupChangeBody = zMangoApiGroupAdminProposeInSchema;
 /**
  * Successful Response
  */
-export const zPostGroupChangeResponse = zChangeCreatedOutSchema;
+export const zPostGroupChangeResponse = zMangoApiGroupAdminChangeCreatedOutSchema;
 
 export const zApproveGroupChangeBody = zEmptyInSchema;
 
@@ -3147,7 +3331,7 @@ export const zProposeToolPolicyPath = z.object({
 /**
  * Successful Response
  */
-export const zProposeToolPolicyResponse = zChangeCreatedOutSchema;
+export const zProposeToolPolicyResponse = zMangoApiToolPoliciesChangeCreatedOutSchema;
 
 export const zGetApprovalPath = z.object({
     approval_id: z.string().regex(/^[0-9a-f]{32}$/)
@@ -3592,6 +3776,71 @@ export const zRenewSessionResponse = z.union([
     zRenewedOutSchema,
     z.void()
 ]);
+
+/**
+ * Successful Response
+ */
+export const zGetSkillsResponse = zSkillsOutSchema;
+
+export const zPostSkillBody = zNewSkillInSchema;
+
+/**
+ * Successful Response
+ */
+export const zPostSkillResponse = zMangoApiSkillsChangeCreatedOutSchema;
+
+export const zApproveSkillChangeBody = zEmptyInSchema;
+
+export const zApproveSkillChangePath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zApproveSkillChangeResponse = zSkillsOutSchema;
+
+export const zRejectSkillChangeBody = zMangoApiSkillsRejectInSchema;
+
+export const zRejectSkillChangePath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRejectSkillChangeResponse = zSkillsOutSchema;
+
+export const zWithdrawSkillChangeBody = zEmptyInSchema;
+
+export const zWithdrawSkillChangePath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zWithdrawSkillChangeResponse = zSkillsOutSchema;
+
+export const zGetSkillDetailPath = z.object({
+    skill_id: z.string().max(40).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetSkillDetailResponse = zSkillDetailOutSchema;
+
+export const zPostSkillVersionBody = zNewVersionInSchema;
+
+export const zPostSkillVersionPath = z.object({
+    skill_id: z.string().max(40).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zPostSkillVersionResponse = zMangoApiSkillsChangeCreatedOutSchema;
 
 /**
  * Successful Response

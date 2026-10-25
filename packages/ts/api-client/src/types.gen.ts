@@ -318,6 +318,10 @@ export type AgentDefinition = {
      */
     role?: string;
     /**
+     * Skills
+     */
+    skills?: Array<string>;
+    /**
      * System Prompt
      */
     system_prompt?: string;
@@ -1089,16 +1093,6 @@ export type CatalogTool = {
 };
 
 /**
- * ChangeCreatedOut
- */
-export type ChangeCreatedOut = {
-    /**
-     * Change Id
-     */
-    change_id: string;
-};
-
-/**
  * ChangeKind
  */
 export type ChangeKind = 'enable' | 'params' | 'update';
@@ -1308,6 +1302,10 @@ export type DefinitionOut = {
      * Role
      */
     role: string;
+    /**
+     * Skills
+     */
+    skills: Array<string>;
     /**
      * System Prompt
      */
@@ -2467,6 +2465,82 @@ export type ModelsOut = {
      * Version
      */
     version: number;
+};
+
+/**
+ * NewSkillIn
+ */
+export type NewSkillIn = {
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Duplicate Of
+     */
+    duplicate_of?: string | null;
+    /**
+     * Instructions
+     */
+    instructions: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Outputs
+     */
+    outputs?: Array<string>;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Servers
+     */
+    servers: Array<string>;
+};
+
+/**
+ * NewVersionIn
+ */
+export type NewVersionIn = {
+    /**
+     * Base Version
+     */
+    base_version: number;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Instructions
+     */
+    instructions: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Outputs
+     */
+    outputs?: Array<string>;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Servers
+     */
+    servers: Array<string>;
 };
 
 /**
@@ -3938,6 +4012,318 @@ export type SignedFileOut = {
 };
 
 /**
+ * SkillAgentOut
+ */
+export type SkillAgentOut = {
+    /**
+     * Agent Version
+     */
+    agent_version: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Skill Version
+     */
+    skill_version: number;
+};
+
+/**
+ * SkillChangeOut
+ */
+export type SkillChangeOut = {
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Change Id
+     */
+    change_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Decided At
+     */
+    decided_at: string | null;
+    /**
+     * Decided By
+     */
+    decided_by: string | null;
+    /**
+     * Decided By Email
+     */
+    decided_by_email: string | null;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Duplicate Of
+     */
+    duplicate_of: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Instructions
+     */
+    instructions: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Note
+     */
+    note: string | null;
+    /**
+     * Outputs
+     */
+    outputs: Array<string>;
+    /**
+     * Own
+     */
+    own: boolean;
+    /**
+     * Proposed By
+     */
+    proposed_by: string;
+    /**
+     * Proposed By Email
+     */
+    proposed_by_email: string | null;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Servers
+     */
+    servers: Array<string>;
+    /**
+     * Skill Id
+     */
+    skill_id: string;
+    /**
+     * Status
+     */
+    status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'expired';
+    /**
+     * Variables
+     */
+    variables: Array<string>;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * SkillDetailOut
+ */
+export type SkillDetailOut = {
+    /**
+     * Agents Using
+     */
+    agents_using: Array<SkillAgentOut>;
+    /**
+     * Changes
+     */
+    changes: Array<SkillChangeOut>;
+    /**
+     * Instructions
+     */
+    instructions: string;
+    /**
+     * Outputs
+     */
+    outputs: Array<string>;
+    skill: SkillOut;
+    /**
+     * Variables
+     */
+    variables: Array<string>;
+    /**
+     * Versions
+     */
+    versions: Array<SkillVersionOut>;
+};
+
+/**
+ * SkillOut
+ */
+export type SkillOut = {
+    /**
+     * Agents
+     */
+    agents: number;
+    /**
+     * Available
+     */
+    available: boolean;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Data Tier
+     */
+    data_tier: 'public' | 'account_data' | 'write';
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Outdated Agents
+     */
+    outdated_agents: number;
+    /**
+     * Owner
+     */
+    owner: string | null;
+    /**
+     * Owner Email
+     */
+    owner_email: string | null;
+    pending: SkillChangeOut | null;
+    /**
+     * Runs 30D
+     */
+    runs_30d: number;
+    /**
+     * Servers
+     */
+    servers: Array<SkillServerOut>;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
+    /**
+     * Updated By
+     */
+    updated_by: string | null;
+    /**
+     * Updated By Email
+     */
+    updated_by_email: string | null;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Writes
+     */
+    writes: boolean;
+};
+
+/**
+ * SkillServerOut
+ */
+export type SkillServerOut = {
+    /**
+     * Data Tier
+     */
+    data_tier: 'public' | 'account_data' | 'write' | null;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Tools
+     */
+    tools: number;
+    /**
+     * Writes
+     */
+    writes: boolean;
+};
+
+/**
+ * SkillVersionOut
+ */
+export type SkillVersionOut = {
+    /**
+     * Approved At
+     */
+    approved_at: string;
+    /**
+     * Approved By
+     */
+    approved_by: string;
+    /**
+     * Approved By Email
+     */
+    approved_by_email: string | null;
+    /**
+     * Markdown Sha256
+     */
+    markdown_sha256: string;
+    /**
+     * Proposed By
+     */
+    proposed_by: string;
+    /**
+     * Proposed By Email
+     */
+    proposed_by_email: string | null;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * SkillsOut
+ */
+export type SkillsOut = {
+    /**
+     * Can Approve
+     */
+    can_approve: boolean;
+    /**
+     * Categories
+     */
+    categories: Array<string>;
+    /**
+     * Changes
+     */
+    changes: Array<SkillChangeOut>;
+    /**
+     * Items
+     */
+    items: Array<SkillOut>;
+    /**
+     * Max Per Agent
+     */
+    max_per_agent: number;
+};
+
+/**
  * SourceDecideIn
  */
 export type SourceDecideIn = {
@@ -4644,6 +5030,16 @@ export type ViolationOut = {
 };
 
 /**
+ * ChangeCreatedOut
+ */
+export type MangoApiAdminChangeCreatedOut = {
+    /**
+     * Change Id
+     */
+    change_id: string;
+};
+
+/**
  * ChangeOut
  */
 export type MangoApiAdminChangeOut = {
@@ -4725,6 +5121,16 @@ export type MangoApiApprovalsRejectIn = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * ChangeCreatedOut
+ */
+export type MangoApiGroupAdminChangeCreatedOut = {
+    /**
+     * Change Id
+     */
+    change_id: string;
 };
 
 /**
@@ -4938,6 +5344,30 @@ export type MangoApiPeopleSearchIn = {
 };
 
 /**
+ * ChangeCreatedOut
+ */
+export type MangoApiSkillsChangeCreatedOut = {
+    /**
+     * Change Id
+     */
+    change_id: string;
+    /**
+     * Skill Id
+     */
+    skill_id: string;
+};
+
+/**
+ * RejectIn
+ */
+export type MangoApiSkillsRejectIn = {
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
  * PersonOut
  */
 export type MangoApiTasksPersonOut = {
@@ -4963,6 +5393,16 @@ export type MangoApiTasksRetireIn = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * ChangeCreatedOut
+ */
+export type MangoApiToolPoliciesChangeCreatedOut = {
+    /**
+     * Change Id
+     */
+    change_id: string;
 };
 
 /**
@@ -5222,7 +5662,7 @@ export type PostChangeResponses = {
     /**
      * Successful Response
      */
-    201: ChangeCreatedOut;
+    201: MangoApiAdminChangeCreatedOut;
 };
 
 export type PostChangeResponse = PostChangeResponses[keyof PostChangeResponses];
@@ -5387,7 +5827,7 @@ export type PostGroupChangeResponses = {
     /**
      * Successful Response
      */
-    201: ChangeCreatedOut;
+    201: MangoApiGroupAdminChangeCreatedOut;
 };
 
 export type PostGroupChangeResponse = PostGroupChangeResponses[keyof PostGroupChangeResponses];
@@ -6838,7 +7278,7 @@ export type ProposeToolPolicyResponses = {
     /**
      * Successful Response
      */
-    201: ChangeCreatedOut;
+    201: MangoApiToolPoliciesChangeCreatedOut;
 };
 
 export type ProposeToolPolicyResponse = ProposeToolPolicyResponses[keyof ProposeToolPolicyResponses];
@@ -8264,6 +8704,206 @@ export type RenewSessionResponses = {
 };
 
 export type RenewSessionResponse = RenewSessionResponses[keyof RenewSessionResponses];
+
+export type GetSkillsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/skills';
+};
+
+export type GetSkillsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetSkillsError = GetSkillsErrors[keyof GetSkillsErrors];
+
+export type GetSkillsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillsOut;
+};
+
+export type GetSkillsResponse = GetSkillsResponses[keyof GetSkillsResponses];
+
+export type PostSkillData = {
+    body: NewSkillIn;
+    path?: never;
+    query?: never;
+    url: '/skills';
+};
+
+export type PostSkillErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PostSkillError = PostSkillErrors[keyof PostSkillErrors];
+
+export type PostSkillResponses = {
+    /**
+     * Successful Response
+     */
+    201: MangoApiSkillsChangeCreatedOut;
+};
+
+export type PostSkillResponse = PostSkillResponses[keyof PostSkillResponses];
+
+export type ApproveSkillChangeData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/skills/changes/{change_id}/approve';
+};
+
+export type ApproveSkillChangeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ApproveSkillChangeError = ApproveSkillChangeErrors[keyof ApproveSkillChangeErrors];
+
+export type ApproveSkillChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillsOut;
+};
+
+export type ApproveSkillChangeResponse = ApproveSkillChangeResponses[keyof ApproveSkillChangeResponses];
+
+export type RejectSkillChangeData = {
+    body: MangoApiSkillsRejectIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/skills/changes/{change_id}/reject';
+};
+
+export type RejectSkillChangeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RejectSkillChangeError = RejectSkillChangeErrors[keyof RejectSkillChangeErrors];
+
+export type RejectSkillChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillsOut;
+};
+
+export type RejectSkillChangeResponse = RejectSkillChangeResponses[keyof RejectSkillChangeResponses];
+
+export type WithdrawSkillChangeData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/skills/changes/{change_id}/withdraw';
+};
+
+export type WithdrawSkillChangeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type WithdrawSkillChangeError = WithdrawSkillChangeErrors[keyof WithdrawSkillChangeErrors];
+
+export type WithdrawSkillChangeResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillsOut;
+};
+
+export type WithdrawSkillChangeResponse = WithdrawSkillChangeResponses[keyof WithdrawSkillChangeResponses];
+
+export type GetSkillDetailData = {
+    body?: never;
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/skills/{skill_id}';
+};
+
+export type GetSkillDetailErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetSkillDetailError = GetSkillDetailErrors[keyof GetSkillDetailErrors];
+
+export type GetSkillDetailResponses = {
+    /**
+     * Successful Response
+     */
+    200: SkillDetailOut;
+};
+
+export type GetSkillDetailResponse = GetSkillDetailResponses[keyof GetSkillDetailResponses];
+
+export type PostSkillVersionData = {
+    body: NewVersionIn;
+    path: {
+        /**
+         * Skill Id
+         */
+        skill_id: string;
+    };
+    query?: never;
+    url: '/skills/{skill_id}/versions';
+};
+
+export type PostSkillVersionErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PostSkillVersionError = PostSkillVersionErrors[keyof PostSkillVersionErrors];
+
+export type PostSkillVersionResponses = {
+    /**
+     * Successful Response
+     */
+    201: MangoApiSkillsChangeCreatedOut;
+};
+
+export type PostSkillVersionResponse = PostSkillVersionResponses[keyof PostSkillVersionResponses];
 
 export type ListTasksOfCallerData = {
     body?: never;
