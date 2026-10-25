@@ -203,6 +203,26 @@ def test_reads_can_be_hidden_but_denials_and_writes_stay(log: Any) -> None:
     )
 
 
+def test_a_scope_decision_of_the_actividad_is_a_read_even_when_denied(log: Any) -> None:
+    # Someone who is not an administrator reads the Actividad (D90): the ViewAudit decision only
+    # chooses whose activity is read. It must not show as a refused access nor count.
+    audit, db, _ = log
+    t = NOW - timedelta(minutes=1)
+    scope = {"action": "ViewAudit", "resource": "Mango::Platform::mango", "read_only": True}
+    _put(db, t, 1, "policy.decision", **scope, allowed=False, purpose="activity")
+    _put(db, t, 2, "policy.decision", **scope, allowed=True, purpose="activity")
+    # A real denial stays, also when read-only or with a purpose that is not in the list.
+    denied = _put(db, t, 3, "policy.decision", action="ViewAudit", allowed=False)
+    read_denied = _put(db, t, 4, "policy.decision", **scope, allowed=False)
+    other = _put(db, t, 5, "policy.decision", **scope, allowed=False, purpose="other")
+    listed = _put(db, t, 6, "policy.decision", **scope, allowed=False, purpose=["activity"])
+    shown = audit.page(_query(exclude_reads=True), now=NOW)
+    stay = [denied, read_denied, other, listed]
+    assert sorted(r["event_id"] for r in shown.items) == sorted(stay)
+    day = AuditQuery(since=NOW - timedelta(days=1), until=NOW, limit=1, exclude_reads=True)
+    assert audit.count(day, cap=100, now=NOW).count == 4
+
+
 def test_event_filter_exact_or_prefix(log: Any) -> None:
     audit, db, _ = log
     t = NOW - timedelta(minutes=1)

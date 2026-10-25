@@ -20,6 +20,7 @@ from mango_api.activity import ActivityDeps, AgentView, TurnActivity
 from mango_api.activity_store import RETENTION, ActivityStore, Origin
 from mango_api.approval_policy import Tier, TierReason
 from mango_api.approvals_store import ApprovalRecord, ApprovalStore, Status
+from mango_api.audit import is_read
 from mango_api.budget import BudgetExceededError, BudgetScope, BudgetService
 from mango_api.harness import ToolCall
 
@@ -248,6 +249,19 @@ def test_a_person_never_gets_everyone_s_activity(env: Env) -> None:
     assert page["scope"] == "mine"
     assert page["events"] == [] or all(e["agent_id"] == "finops" for e in page["events"])
     assert (USER, "ViewAudit", False) in env.authorizer.decisions
+
+
+def test_reading_the_activity_leaves_only_reads_in_the_audit(env: Env) -> None:
+    # Someone who is not an administrator (live mode: every 15 s) leaves no denial in the audit
+    # trail, nor in the counts of Gobernanza: the ViewAudit decision only chose the scope.
+    for user in (USER, ADMIN):
+        env.audit.events.clear()
+        assert env.get(user).status_code == 200
+        decisions = [
+            {"event": e, "detail": d} for e, _, d in env.audit.events if e == "policy.decision"
+        ]
+        assert {d["detail"]["action"] for d in decisions} == {"ViewActivity", "ViewAudit"}
+        assert all(is_read(d) for d in decisions)
 
 
 def test_without_view_activity_nothing_is_read(env: Env) -> None:

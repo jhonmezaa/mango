@@ -108,10 +108,19 @@ flowchart LR
 Revisión enfocada de la rama del servidor, sin IAM nuevo (la Actividad usa el rol de datos con RLS y la tabla índice que `mango-api` ya escribe) y con una política Cedar nueva (`ViewActivity`). Sin hallazgos que crucen una frontera:
 
 - **Partición:** `ActivityStore.mine` y la escritura de la copia propia piden el cliente con el `sub` del token verificado (o, en una tarea, el de su dueño, que es el actor del turno); un test registra a quién se pidió cada cliente y que `scope=all` no toca ninguna partición de persona.
-- **Lo de todos:** `views_all` (`ViewAudit`) se decide y se audita antes de leer nada; sin él, la ruta solo lee la partición propia (test).
+- **Lo de todos:** `views_all` (`ViewAudit`) se decide y se audita antes de leer nada; sin él, la ruta solo lee la partición propia (test). La decisión se audita como lectura (`read_only`, `purpose: "activity"`), también cuando se deniega: hasta el 2026-10-25 una denegación no contaba como lectura (ver la revisión de la release, abajo).
 - **Forma de la respuesta:** de un evento ajeno salen agente, tool, resultado, latencia y hora; nunca la persona, la conversación, la tarea, la ejecución ni el nombre de la tarea (que además solo existe en la copia propia; test).
 - **Contenido:** el registro solo recibe `ToolCall` (nombre de la versión, ok, ms); un test fija qué atributos existen en las dos copias.
 - **Abuso:** 60 lecturas por minuto y persona; 1.000 eventos por respuesta; `since` exige zona horaria y se acota al periodo y a «ahora». Encontrado y corregido en esta revisión: un `since` futuro producía una consulta inválida a DynamoDB (límite inferior mayor que el superior) y un 503 con traza en el log; ahora responde vacío (test).
 - **Turno:** `TurnActivity` nunca lanza; el log de un fallo no lleva datos del evento.
 
-Queda **sin ver en una instalación**: que la política `ViewActivity` se cree con el change set, y que la política de sesión de `Mango-<ns>-ConversationData` deje escribir y leer los ítems `ACT#` (usa `PutItem` y `Query`, ya permitidos).
+Queda **sin ver en una instalación**: que la política `ViewActivity` se cree con el change set, y que la política de sesión de `Mango-<ns>-ConversationData` deje escribir y leer los ítems `ACT#` (usa `PutItem` y `Query`, ya permitidos). Las dos cosas se vieron en la instalación el 2026-10-25: la política está en el almacén y un turno real escribió sus `ACT#`.
+
+## Revisión `security-audit` de la release instalada (2026-10-25, modo guía)
+
+La revisión de la release encontró un hallazgo de severidad baja: la decisión de `ViewAudit` que elige el alcance se auditaba como lectura solo si se permitía. Para quien no es administrador quedaba como una denegación, visible en Auditoría aunque se excluyeran las lecturas y contada en Gobernanza. Con «En vivo» eran unas 240 por hora y pestaña. Una persona con sesión podía así llenar el registro de denegaciones falsas y sacar de la «actividad reciente» de Gobernanza (2.000 eventos examinados) los eventos reales. No se perdía ningún evento.
+
+- **Arreglo:** `audit.is_read` trata como lectura una `policy.decision` con `read_only` y un `purpose` de una lista cerrada (`SCOPE_PURPOSES`, hoy solo `activity`), se permita o no. Cualquier otra denegación sigue a la vista, también una con `read_only` pero sin propósito o con otro.
+- **Tests:**
+  - una lectura de la Actividad, de un administrador o de quien no lo es, solo deja lecturas en la auditoría;
+  - la denegación de alcance no aparece con `exclude_reads` ni suma en `audit.count`, y las denegaciones reales sí.

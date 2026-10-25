@@ -47,6 +47,12 @@ READ_ACTIONS = frozenset(
 # agent's search of its knowledge bases (one per turn that searches; the design shows it with
 # «Mostrar lecturas»). «Probar búsqueda» (`kb.search`) is not: a person ran it on purpose.
 READ_EVENTS = frozenset({"directory.list", "session.renewed", "kb.retrieve"})
+# Read-only decisions that only shape the answer of a route the caller may already read, so a
+# denial is not a refused access: whose activity the Actividad reads (``ViewAudit``, D90).
+# Without this, every read of the Actividad by someone who is not an administrator left a
+# denial in the audit trail and in the counts of Gobernanza. A closed list: any other denial
+# stays visible.
+SCOPE_PURPOSES = frozenset({"activity"})
 _SK_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+00:00#[0-9a-f]{32}$")
 _CURSOR_MAX = 128
 
@@ -114,13 +120,17 @@ def resource_of(event: str, detail: dict[str, Any]) -> dict[str, str] | None:
 
 
 def is_read(record: dict[str, Any]) -> bool:
-    """An allowed, read-only authorization decision or a read event (hidden with
+    """An allowed, read-only authorization decision, a read-only decision that only shapes an
+    answer (``SCOPE_PURPOSES``, allowed or not) or a read event (hidden with
     ``exclude=reads``). Still recorded, and listed when reads are asked for."""
     if record.get("event") in READ_EVENTS:
         return True
     detail = record.get("detail")
     if record.get("event") != "policy.decision" or not isinstance(detail, dict):
         return False
+    purpose = detail.get("purpose")
+    if detail.get("read_only") is True and isinstance(purpose, str) and purpose in SCOPE_PURPOSES:
+        return True
     return detail.get("allowed") is True and (
         detail.get("read_only") is True or detail.get("action") in READ_ACTIONS
     )
