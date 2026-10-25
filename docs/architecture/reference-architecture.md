@@ -123,7 +123,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 
 ## 3. Vista general
 
-> Este diagrama está al día (2026-10-21; ese día cambiaron el bloque de lo previsto, con las knowledge bases de D88, y la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-06 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización; no tiene todavía lo de después de esa fecha (las tareas, la Bandeja, los reportes ni el diseño de las knowledge bases).
+> Este diagrama está al día (2026-10-25; ese día, la Gobernanza de D89 y la actividad de los agentes de D90 en `mango-api` y sus tablas; el 2026-10-21 cambiaron el bloque de lo previsto, con las knowledge bases de D88, y la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-06 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización; no tiene todavía lo de después de esa fecha (las tareas, la Bandeja, los reportes, el diseño de las knowledge bases, la Gobernanza ni la actividad de los agentes).
 
 ```mermaid
 flowchart TB
@@ -144,9 +144,9 @@ flowchart TB
   CF -- "VPC origin (HTTP en la PoC, D15)<br/>access token · SSE · cookie de sesión (D63)" --> ALB["ALB interno<br/>reparto por peticiones abiertas (D70)"]
 
   subgraph CP["PLANO DE CONTROL MANGO (nuestro)"]
-    API["mango-api (FastAPI)<br/>2 tareas de Fargate en 2 zonas (D70)<br/>chat SSE · Marketplace y Builder · aprobaciones<br/>personas y grupos · presupuestos · auditoría<br/>tareas sin chat: lee la cola de ejecuciones (D78)"]
+    API["mango-api (FastAPI)<br/>2 tareas de Fargate en 2 zonas (D70)<br/>chat SSE · Marketplace y Builder · aprobaciones<br/>personas y grupos · presupuestos · auditoría<br/>gobernanza: un resumen (D89) · actividad de los agentes (D90)<br/>tareas sin chat: lee la cola de ejecuciones (D78)"]
     AVP["Verified Permissions<br/>(Cedar L1)"]
-    DDB[("DynamoDB, 9 tablas<br/>Conversations y Bandeja (RLS LeadingKeys) · Budgets · Agents<br/>Settings · Approvals · AuditIndex<br/>WebSessions · RateLimits · Tasks")]
+    DDB[("DynamoDB, 9 tablas<br/>Conversations, Bandeja y actividad propia (RLS LeadingKeys) · Budgets · Agents<br/>Settings · Approvals · AuditIndex (y la actividad de todos, D90)<br/>WebSessions · RateLimits · Tasks")]
     SCH["EventBridge Scheduler<br/>grupo Mango-ns-tasks, por SDK (D78)"]
     TQ[("SQS TaskRuns + DLQ<br/>horario, a pedido y eventos (D78)<br/>y esperas de un evento (D81)")]
     SFN["Step Functions + Lambda<br/>provisioner y deprovisioner de agentes<br/>provisioner de packs (por SDK, D25)"]
@@ -234,7 +234,7 @@ flowchart TB
   DDB -.-> CUR
 ```
 
-Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no hay router; el Gateway tiene tres clases de target (un conector, el ejecutor de escrituras aprobadas y los packs); los packs corren en una red cerrada propia; `mango-api` son dos tareas con sesión por cookie y límites de tasa compartidos; y hay dos funciones de conciliación, alarmas y un tablero. Desde D78, las tareas sin chat: Scheduler y una cola que lee `mango-api`, y un segundo cliente de Cognito para el token de cada ejecución. Desde D86 y D87, el PDF de una ejecución: una función que lo dibuja y un bucket propio, del que la persona descarga con un enlace de 5 minutos; la tool interna con la que el agente entrega los datos no pasa por el Gateway porque no toca ningún sistema (P2). Las cifras de alarmas son las de la plantilla sintetizada con la configuración de ejemplo el 2026-10-21.
+Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no hay router; el Gateway tiene tres clases de target (un conector, el ejecutor de escrituras aprobadas y los packs); los packs corren en una red cerrada propia; `mango-api` son dos tareas con sesión por cookie y límites de tasa compartidos; y hay dos funciones de conciliación, alarmas y un tablero. Desde D78, las tareas sin chat: Scheduler y una cola que lee `mango-api`, y un segundo cliente de Cognito para el token de cada ejecución. Desde D86 y D87, el PDF de una ejecución: una función que lo dibuja y un bucket propio, del que la persona descarga con un enlace de 5 minutos; la tool interna con la que el agente entrega los datos no pasa por el Gateway porque no toca ningún sistema (P2). Desde D89, `mango-api` da a Gobernanza un resumen de aprobaciones, presupuestos, áreas y auditoría, cada parte con el permiso de su pantalla. Desde D90, registra cada llamada a una tool de un turno, solo nombre, resultado y latencia: al momento en la partición de la persona, en `Conversations`, y al terminar el turno en `AuditIndex`, para los administradores. No hay tablas ni roles nuevos. Las cifras de alarmas son las de la plantilla sintetizada con la configuración de ejemplo el 2026-10-21.
 
 ---
 
