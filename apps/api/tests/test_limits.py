@@ -47,6 +47,8 @@ PER_TASK = {
     "governance.reads",  # D89 (6)
     # D90: the reads of the Actividad, whose live mode asks every 15 s.
     "activity.reads",
+    # D92 (9): the reads of the skills catalog (30 days of activations each).
+    "skills.reads",
 }
 """Limits accepted as one per task. Adding a name here is a decision: record it (D70)."""
 
@@ -122,6 +124,8 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             tasks_client_secret_arn=tasks_secret["ARN"],
             knowledge_table="knowledge",
             knowledge_bucket="knowledge-documents",
+            skills_table="skills",
+            skills_bucket="skills-bucket",
         )
         built: list[Any] = []
 
@@ -162,6 +166,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
     assert services.web_sessions is not None
     assert services.agents is not None
     assert services.tasks is not None
+    assert services.skills is not None
     held = {
         "people.reads": services.people.reads,
         "people.changes": services.people.changes,
@@ -177,6 +182,8 @@ def test_production_routes_hold_the_limiters_of_the_registry(
         "agents.lists": services.agents.list_limiter,
         "tasks.runs": services.tasks.runs,
         "tasks.changes": services.tasks.changes,
+        "skills.proposals": services.skills.rate_limiter,
+        "skills.reads": services.skills.reads,
     }
     for name, limiter in held.items():
         assert limiter is issued[name], f"{name} is not the limiter of the registry"
@@ -216,6 +223,7 @@ def test_routes_do_not_build_limiters_outside_the_registry() -> None:
         "approvals.py",
         "admin.py",
         "activity.py",
+        "skills.py",
     }
     builders = {
         path.name

@@ -1231,3 +1231,93 @@ def test_a_tool_outside_the_published_version_is_not_told() -> None:
 
 def test_a_call_without_an_answer_is_not_told() -> None:
     assert _calls([_tool_at("t1", 0), _stop(0)], [0.0, 1.0]) == []
+
+
+# --- Skills (D92) ---------------------------------------------------------------------------
+
+
+def _skill_call(tool_id: str, index: int, raw_input: str) -> list[dict[str, Any]]:
+    delta = {"toolUse": {"input": raw_input}}
+    return [
+        _tool_at(tool_id, index, "skills"),
+        {"contentBlockDelta": {"contentBlockIndex": index, "delta": delta}},
+        _stop(index),
+    ]
+
+
+def test_loading_a_skill_is_counted_and_never_shown() -> None:
+    stream = [
+        *_skill_call("s1", 0, '{"skill_name": "cost-analysis"}'),
+        _tool_result("s1"),
+        # The model writes the name: one that is not a skill of the version is not counted.
+        *_skill_call("s2", 1, '{"skill_name": "AKIA-inventada"}'),
+        _tool_result("s2"),
+        *_skill_call("s3", 2, '{"skill_name": "cost-analysis"}'),
+        _tool_result("s3", "error"),
+        *_skill_call("s4", 3, "no es json"),
+        _tool_result("s4"),
+        _tool_at("t1", 4),
+        _stop(4),
+        _tool_result("t1"),
+        _text("Listo"),
+    ]
+    loaded: list[str] = []
+    calls: list[harness.ToolCall] = []
+    result = harness.InvocationResult()
+    request = {"allowedTools": ["@mango/x___t", "skills"]}
+    events = list(
+        harness.run(
+            _Client(stream),  # type: ignore[arg-type]
+            request,
+            result,
+            on_call=calls.append,
+            skills=frozenset({"cost-analysis"}),
+            on_skill=loaded.append,
+            clock=lambda: 0.0,
+        )
+    )
+    assert loaded == ["cost-analysis"]
+    tools = [e.data for e in events if e.kind == "tool"]
+    assert tools == [{"name": "t", "status": "started"}, {"name": "t", "status": "completed"}]
+    statuses = [e.data for e in events if e.kind == "status"]
+    assert all(s.get("tool") != "skills" for s in statuses)
+    assert [c.name for c in calls] == ["t"]
+    assert result.tools == [
+        {"name": "t", "status": "started"},
+        {"name": "t", "status": "completed"},
+    ]
+
+
+def _invocation(**extra: Any) -> harness.AgentInvocation:
+    return harness.AgentInvocation(
+        harness_arn="arn:aws:bedrock-agentcore:us-east-1:111122223333:harness/h",
+        qualifier="live",
+        system_prompt="Eres un analista.",
+        model="m",
+        limits=harness.AgentLimits(),
+        allowed_tools=("@mango/finops___get_cost_and_usage",),
+        gateway_url="https://gateway.example.com/mcp",
+        guardrail_id="g",
+        guardrail_version="1",
+        **extra,
+    )
+
+
+def _request(agent: harness.AgentInvocation) -> dict[str, Any]:
+    return harness.build_request(
+        agent,
+        session_id="s" * 33,
+        actor_id="user-1",
+        access_token="token",
+        invocation_signature="sig",
+        history=[harness.ChatTurn("user", "hola")],
+        today="2026-10-25",
+    )
+
+
+def test_a_version_with_skills_allows_only_the_tool_that_loads_them() -> None:
+    request = _request(_invocation(skills=("cost-analysis",)))
+    assert request["allowedTools"] == ["@mango/finops___get_cost_and_usage", "skills"]
+    # The skills themselves are the harness's (the provisioner's): never sent per invocation.
+    assert "skills" not in request
+    assert _request(_invocation())["allowedTools"] == ["@mango/finops___get_cost_and_usage"]

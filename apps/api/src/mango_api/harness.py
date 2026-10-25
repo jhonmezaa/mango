@@ -31,9 +31,11 @@ from mango_core.harness_tools import (
     GATEWAY_MCP_SERVER,
     KNOWLEDGE_TARGET,
     KNOWLEDGE_TOOL,
+    SKILLS_TOOL,
     allowed_inline_tool,
     allowed_tool,
     gateway_tool_name,
+    skills_allowed_tool,
 )
 
 if TYPE_CHECKING:
@@ -246,6 +248,10 @@ class AgentInvocation:
     gateway_url: str
     guardrail_id: str
     guardrail_version: str
+    skills: tuple[str, ...] = ()
+    """Ids of the skills of the version (D92). The provisioner put them in the harness; the
+    invocation only allows the tool that loads them, and never sends ``skills``: invoke-time
+    skills are added to the harness's, never instead of them."""
 
 
 def build_request(
@@ -318,6 +324,7 @@ def build_request(
         "allowedTools": [
             *agent.allowed_tools,
             *(allowed_inline_tool(str(t["name"])) for t in inline_tools),
+            *([skills_allowed_tool()] if agent.skills else []),
         ],
         "maxIterations": limits.max_iterations,
         "maxTokens": limits.max_tokens,
@@ -341,6 +348,53 @@ def _captured_tool(raw: str, capture: frozenset[str]) -> str | None:
         if raw == name or (raw.endswith(name) and raw[-len(name) - 1] in _NAME_BOUNDARIES):
             return name
     return None
+
+
+MAX_SKILL_INPUT_CHARS = 512
+"""Input kept of a call to the skills tool: only the name of a skill is expected."""
+
+
+class _SkillCalls:
+    """Calls to the built-in ``skills`` tool (D92): loading a skill's instructions.
+
+    They are plumbing of the harness, not tools of the agent: the chat, the phase of the turn
+    and the Actividad never see them (D92 (9)). Each one that loads a skill of the version is
+    told to ``on_skill`` once its answer arrives, by the skill's id: the model writes the
+    input, so a name that is not a skill of the version is never told."""
+
+    def __init__(self, skills: frozenset[str], on_skill: Callable[[str], None] | None) -> None:
+        self._skills = skills
+        self._on_skill = on_skill
+        self._blocks: dict[int, str] = {}
+        self._inputs: dict[str, str] = {}
+
+    def start(self, index: int, tool_id: str, raw_name: str) -> bool:
+        """Whether the call is one of these (and so must not be shown)."""
+        if raw_name != SKILLS_TOOL:
+            return False
+        self._blocks[index] = tool_id
+        self._inputs[tool_id] = ""
+        return True
+
+    def add(self, index: int, piece: str) -> None:
+        tool_id = self._blocks.get(index)
+        if tool_id is not None and len(self._inputs[tool_id]) < MAX_SKILL_INPUT_CHARS:
+            self._inputs[tool_id] = (self._inputs[tool_id] + piece)[:MAX_SKILL_INPUT_CHARS]
+
+    def answer(self, tool_id: str, *, failed: bool) -> bool:
+        """Whether the answer belongs to one of these calls (and so must not be shown)."""
+        raw = self._inputs.pop(tool_id, None)
+        if raw is None:
+            return False
+        if failed or self._on_skill is None:
+            return True
+        try:
+            name = json.loads(raw).get("skill_name") if raw else None
+        except (ValueError, AttributeError):
+            name = None
+        if isinstance(name, str) and name in self._skills:
+            self._on_skill(name)
+        return True
 
 
 class _WriteCalls:
@@ -556,6 +610,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     inline: frozenset[str] = frozenset(),
     record: frozenset[str] = frozenset(),
     on_call: Callable[[ToolCall], None] | None = None,
+    skills: frozenset[str] = frozenset(),
+    on_skill: Callable[[str], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> Iterator[StreamEvent]:
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
@@ -582,6 +638,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     (the Actividad, D90): name, result and time, nothing of its input or answer. It must not
     raise. A write tool refused by the Gateway, or an inline call, gets no answer in the
     stream and is not told: its approval request or its report says what happened.
+
+    Calls to the built-in ``skills`` tool load one of the version's ``skills`` (D92): they are
+    never shown, and ``on_skill`` is told the id of each skill loaded. It must not raise.
     """
     progress = _Progress()
     # The tool name in the stream is written by the model and the guardrail does not check it:
@@ -609,6 +668,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     inline_calls = _WriteCalls(inline, kind=INLINE_CALL, max_chars=MAX_INLINE_INPUT_CHARS)
     recorded = _Recorded(record)
     searches = _Searches(request.get("allowedTools", []))
+    skill_calls = _SkillCalls(skills, on_skill)
     # Write tool calls in flight: the Gateway refuses them, whatever the harness does next.
     refused: set[str] = set()
     asked = False
@@ -640,6 +700,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 tool_id = start["toolUse"].get("toolUseId", "")
                 index = block.get("contentBlockIndex", -1)
                 raw_name = str(start["toolUse"].get("name", ""))
+                if skill_calls.start(index, tool_id, raw_name):
+                    continue
                 if write_calls.start(index, raw_name):
                     refused.add(tool_id)
                     asked = True
@@ -667,6 +729,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 write_calls.drop()
                 inline_calls.drop()
                 tool_id = start["toolResult"].get("toolUseId", "")
+                if skill_calls.answer(tool_id, failed=start["toolResult"].get("status") == "error"):
+                    continue
                 recorded.answer(block.get("contentBlockIndex", -1), tool_id)
                 name = tool_names.get(tool_id, "tool")
                 status = "completed" if start["toolResult"].get("status") != "error" else "error"
@@ -695,6 +759,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             tool_delta = delta.get("toolUse")
             piece = tool_delta.get("input") if tool_delta else None
             if isinstance(piece, str):
+                skill_calls.add(index, piece)
                 write_calls.add(index, piece)
                 inline_calls.add(index, piece)
                 recorded.add(index, piece)

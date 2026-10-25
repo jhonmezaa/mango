@@ -128,6 +128,10 @@ class Settings:
     knowledge_embedding_price: Decimal = Decimal(0)
     """USD per million tokens of the embedding model of the knowledge bases (rule 7): what a
     search of an agent adds to its turn (D88 (14))."""
+    skills_table: str = ""
+    skills_bucket: str = ""
+    """Skills of instructions (D92): their table and the bucket of their ``SKILL.md``; empty
+    until the skills construct is deployed."""
     presign_role_arn: str = ""
     """``Mango-<ns>-Presign``: the only credentials that sign URLs a browser uses."""
     """``Mango-<ns>-KnowledgeSync`` (D88 (11)): indexes, deletes and verifies documents."""
@@ -216,6 +220,8 @@ class Settings:
             knowledge_sync_state_machine_arn=env.get("KNOWLEDGE_SYNC_STATE_MACHINE_ARN", ""),
             knowledge_base_id=env.get("KNOWLEDGE_BASE_ID", ""),
             knowledge_embedding_price=_price(env.get("KNOWLEDGE_EMBEDDING_PRICE", "0")),
+            skills_table=env.get("SKILLS_TABLE", ""),
+            skills_bucket=env.get("SKILLS_BUCKET", ""),
             presign_role_arn=env.get("PRESIGN_ROLE_ARN", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h

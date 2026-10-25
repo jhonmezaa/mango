@@ -158,6 +158,8 @@ from mango_api.published import AgentUnavailableError, PublishedAgent, Published
 from mango_api.rate_limits import RateLimitStore
 from mango_api.settings import ModelPrice, Settings
 from mango_api.settings_store import BudgetLimits, SettingsStore, SettingsUnavailableError
+from mango_api.skills import SkillsDeps, skills_router
+from mango_api.skills_store import SkillStore
 from mango_api.task_identity import TaskTokens
 from mango_api.task_reports import LambdaRenderer, S3Links, TaskReports
 from mango_api.task_worker import (
@@ -198,6 +200,7 @@ from mango_core.identity import (
     UserContext,
     user_from_claims,
 )
+from mango_core.skills import parse_ref as parse_skill_ref
 
 logger = logging.getLogger("mango_api")
 
@@ -385,6 +388,8 @@ class Services:
     activity: ActivityDeps | None = None
     # Knowledge bases (D88); set in production once mango-api may use the Knowledge table.
     knowledge: KnowledgeDeps | None = None
+    # Skills of instructions (D92); set in production once the Skills table exists.
+    skills: SkillsDeps | None = None
     limits: Limits = field(default_factory=Limits)
     """Where every rate limit comes from (D70). In production the shared ones count in
     DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
@@ -525,6 +530,16 @@ def build_services(settings: Settings) -> Services:
     agents_store = AgentsStore(dynamodb, settings.agents_table)
     knowledge_store = (
         KnowledgeStore(dynamodb, settings.knowledge_table) if settings.knowledge_table else None
+    )
+    skill_store = (
+        SkillStore(
+            dynamodb,
+            settings.skills_table,
+            boto3.client("s3", region_name=region),
+            settings.skills_bucket,
+        )
+        if settings.skills_table and settings.skills_bucket
+        else None
     )
     model_catalog = ModelCatalogStore(dynamodb, settings.settings_table)
     # Release data inside the image: read once, and fail closed if it is not there. Packs
@@ -692,8 +707,20 @@ def build_services(settings: Settings) -> Services:
             if settings.deprovisioner_state_machine_arn
             else None,
             knowledge=knowledge_store,
+            skills=skill_store,
             clock=now_utc,
         ),
+        skills=SkillsDeps(
+            store=skill_store,
+            agents=agents_store,
+            catalog=mcp_catalog,
+            audit=audit,
+            rate_limiter=limits.limiter("skills.proposals"),
+            clock=now_utc,
+            reads=limits.limiter("skills.reads"),
+        )
+        if skill_store is not None
+        else None,
         mcp=McpDeps(
             catalog=mcp_catalog,
             agents=agents_store,
@@ -1213,6 +1240,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 
     if services.group_admin is not None:
         app.include_router(group_admin_router(services.group_admin, current_user, require))
+    if services.skills is not None:
+        app.include_router(skills_router(services.skills, current_user, require))
 
     if services.agents is not None:
         app.include_router(agents_router(services.agents, current_user, require))
@@ -1568,6 +1597,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     result,
                     write_tools,
                     on_call=activity.call if activity is not None else None,
+                    skills=frozenset(parse_skill_ref(r)[0] for r in agent.definition.skills),
+                    on_skill=_skill_counter(services),
                 ):
                     if event.kind != harness.WRITE_CALL:
                         put(sse(event.kind, event.data))
@@ -1775,7 +1806,23 @@ def _agent_invocation(
         gateway_url=settings.gateway_url,
         guardrail_id=settings.guardrail_id,
         guardrail_version=settings.guardrail_version,
+        skills=tuple(parse_skill_ref(ref)[0] for ref in agent.definition.skills),
     )
+
+
+def _skill_counter(services: Services) -> Callable[[str], None] | None:
+    """Counts each skill a turn loads (D92 (8)); a failure is logged, never the turn's."""
+    if services.skills is None:
+        return None
+    store, clock = services.skills.store, services.skills.clock
+
+    def count(skill_id: str) -> None:
+        try:
+            store.count_run(skill_id, clock())
+        except Exception:
+            logger.exception("could not count a skill activation")
+
+    return count
 
 
 def _sign_invocation(services: Services, caller: Caller, agent: PublishedAgent) -> str:
@@ -2222,6 +2269,8 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
                 else frozenset()
             ),
             on_call=activity.call if activity is not None else None,
+            skills=frozenset(parse_skill_ref(r)[0] for r in agent.definition.skills),
+            on_skill=_skill_counter(services),
         ):
             # The internal tool hands data over: it is not a query, so not a step (D86 (6)).
             if (

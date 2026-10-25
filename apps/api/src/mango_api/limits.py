@@ -28,6 +28,7 @@ from mango_api import (
     mcp,
     mfa_reset,
     people,
+    skills,
     task_reports,
     tasks,
     tool_policies,
@@ -102,6 +103,12 @@ LIMITS: dict[str, LimitSpec] = {
         HOUR,
         shared=True,
         why="Changes of the group registry that wait for a second administrator (D26).",
+    ),
+    "skills.proposals": LimitSpec(
+        skills.PROPOSALS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="New skills and versions that wait for an administrator (D92).",
     ),
     "tool_policies.proposals": LimitSpec(
         tool_policies.PROPOSALS_PER_HOUR,
@@ -178,6 +185,12 @@ LIMITS: dict[str, LimitSpec] = {
             "Stops a loop of the screen. Each refresh is two free list calls to Bedrock by an "
             "administrator and writes nothing by itself; N times five a minute is harmless."
         ),
+    ),
+    "skills.reads": LimitSpec(
+        skills.READS_PER_MINUTE,
+        MINUTE,
+        shared=False,
+        why="Each load of the skills catalog reads 30 days of activations (D92).",
     ),
     "activity.reads": LimitSpec(
         activity.READS_PER_MINUTE,

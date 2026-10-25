@@ -20,6 +20,7 @@ from typing import Protocol
 from mango_api.knowledge_store import KnowledgeBase
 from mango_api.mcp_catalog import McpCatalog
 from mango_api.model_catalog import ModelCatalog
+from mango_api.skills_store import SkillVersion
 from mango_core.agents import ROOT_SUPERVISOR, AgentDefinition, dumps_definition
 from mango_core.groups import GroupDef
 from mango_core.knowledge import Status as KnowledgeStatus
@@ -48,6 +49,9 @@ class RuleContext:
     knowledge: Mapping[str, KnowledgeBase] = field(default_factory=dict)
     """The knowledge bases the version names, as the Knowledge table has them now (D88 (15)).
     One that is not here does not exist."""
+    skills: Mapping[str, SkillVersion] = field(default_factory=dict)
+    """The approved skill versions the version names, by ``<id>@<version>`` (D92). One that is
+    not here was never approved."""
 
 
 @dataclass(frozen=True)
@@ -153,8 +157,9 @@ def _models(definition: AgentDefinition, models: ModelCatalog) -> list[Violation
     disabled = tuple(m for m, entry in entries.items() if entry is None or not entry.enabled)
     if disabled:
         out.append(Violation("model_not_enabled", "allowed_models", disabled))
-    # The knowledge bases are searched with a tool too (``knowledge-retrieve``, D88 (14)).
-    if definition.tools or definition.knowledge_bases:
+    # The knowledge bases are searched with a tool too (``knowledge-retrieve``, D88 (14)), and
+    # skills are loaded with one (``skills``, D92).
+    if definition.tools or definition.knowledge_bases or definition.skills:
         no_tools = tuple(m for m, e in entries.items() if e is not None and not e.supports_tools)
         if no_tools:
             out.append(Violation("model_without_tools", "allowed_models", no_tools))
@@ -217,6 +222,32 @@ def _knowledge(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]
     return [Violation("knowledge_base_unavailable", "knowledge_bases", gone)] if gone else []
 
 
+def _skills(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]:
+    """Every skill is an approved version; the MCP servers it relies on are enabled and the
+    version has at least one tool of each, or its instructions could not be followed (D92)."""
+    missing: list[str] = []
+    disabled: list[str] = []
+    without_tools: list[str] = []
+    servers_with_tools = {ref.partition(".")[0] for ref in definition.tools}
+    for ref in definition.skills:
+        skill = ctx.skills.get(ref)
+        if skill is None:
+            missing.append(ref)
+            continue
+        if not all(ctx.catalog.server_enabled(s) for s in skill.content.servers):
+            disabled.append(ref)
+        elif not set(skill.content.servers) <= servers_with_tools:
+            without_tools.append(ref)
+    out: list[Violation] = []
+    if missing:
+        out.append(Violation("skill_unavailable", "skills", tuple(missing)))
+    if disabled:
+        out.append(Violation("skill_server_not_enabled", "skills", tuple(disabled)))
+    if without_tools:
+        out.append(Violation("skill_server_without_tools", "skills", tuple(without_tools)))
+    return out
+
+
 def added_knowledge_violations(
     added: Sequence[str], knowledge: Mapping[str, KnowledgeBase], usable: Collection[str]
 ) -> list[Violation]:
@@ -267,4 +298,5 @@ def validate_for_review(
         *_tools(definition, ctx),
         *_access(definition, ctx),
         *_knowledge(definition, ctx),
+        *_skills(definition, ctx),
     ]

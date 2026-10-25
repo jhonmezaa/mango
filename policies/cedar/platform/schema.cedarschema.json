@@ -124,6 +124,13 @@
       },
       "ApproveKbSource": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["KnowledgeBase"] }
+      },
+      "ViewSkills": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ProposeSkill": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ApproveSkill": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       }
     }
   }

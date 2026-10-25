@@ -332,3 +332,17 @@ def test_lists_of_knowledge_bases_are_decided_in_one_batch(authz: Authorizer) ->
     allowed = authz.allowed_knowledge_bases(CREATOR, "EditKnowledgeBase", bases)
     assert allowed == {b.kb_id for b in bases[:35]}
     assert authz.allowed_knowledge_bases(MEMBER, "EditKnowledgeBase", bases) == frozenset()
+
+
+@pytest.mark.parametrize("action", ["ViewSkills", "ProposeSkill"])
+def test_skills_are_seen_and_proposed_by_admins_and_creators(
+    authz: Authorizer, action: str
+) -> None:
+    allowed = {u.user_id for u in EVERYONE if authz.is_allowed(u, action, *PLATFORM)}
+    assert allowed == {"admin-1", "creator-1", "creator-2"}
+    assert not authz.is_allowed(FORMER_CREATOR, action, *PLATFORM)
+
+
+def test_skill_versions_are_approved_by_admins_only(authz: Authorizer) -> None:
+    allowed = {u.user_id for u in EVERYONE if authz.is_allowed(u, "ApproveSkill", *PLATFORM)}
+    assert allowed == {"admin-1"}

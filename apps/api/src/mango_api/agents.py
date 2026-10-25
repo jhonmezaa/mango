@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from typing import Annotated, Any, Literal
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, Path, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -73,6 +74,7 @@ from mango_api.provisioner import (
 )
 from mango_api.published import AgentUnavailableError, PublishedAgents
 from mango_api.rate_limits import Limiter
+from mango_api.skills_store import SkillStore, SkillVersion, StoredSkillError
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core.agents import (
     AGENT_ID_PATTERN,
@@ -89,6 +91,7 @@ from mango_core.agents import content_hash as hash_content
 from mango_core.agents_table import EXPIRED_STEP, MAX_VERSION, iso
 from mango_core.identity import UserContext
 from mango_core.knowledge import Status as KnowledgeStatus
+from mango_core.skills import parse_ref as parse_skill_ref
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +118,15 @@ _LIMIT_FIELDS = (
     "max_tokens_per_call",
     "temperature",
 )
-_SET_FIELDS = ("allowed_models", "tools", "approval_tools", "groups", "users", "knowledge_bases")
+_SET_FIELDS = (
+    "allowed_models",
+    "tools",
+    "approval_tools",
+    "groups",
+    "users",
+    "knowledge_bases",
+    "skills",
+)
 _IN_USE_STATUSES = (VersionStatus.APPROVED, VersionStatus.PUBLISHED, VersionStatus.FAILED)
 """Versions that serve, or may serve without another review: a failed one is retried as it is."""
 
@@ -190,6 +201,8 @@ class DefinitionOut(_Strict):
     groups: list[str]
     users: list[str]
     knowledge_bases: list[str]
+    skills: list[str]
+    """``<id>@<version>`` of the approved skill versions the agent uses (D92)."""
 
 
 class KnowledgeBaseRefOut(_Strict):
@@ -466,7 +479,7 @@ def _seconds_to_next_utc_day(now: datetime) -> int:
     return max(1, int((tomorrow - now).total_seconds()))
 
 
-def _api_error(exc: Exception, now: datetime) -> ApiError | None:
+def _api_error(exc: Exception, now: datetime) -> ApiError | None:  # noqa: PLR0912 - one per error
     """Domain errors of the store and the catalogs as HTTP errors, in one place."""
     error: ApiError | None = None
     if isinstance(exc, ApiError):
@@ -496,6 +509,8 @@ def _api_error(exc: Exception, now: datetime) -> ApiError | None:
         error = ApiError(503, "agent_unavailable", "please try again")
     elif isinstance(exc, KnowledgeStoreUnavailableError):
         error = ApiError(503, "knowledge_unavailable", "please try again")
+    elif isinstance(exc, StoredSkillError):
+        error = ApiError(503, "skills_unavailable", "please try again")
     elif isinstance(exc, InvalidDefinitionError):
         # A stored definition that no longer parses: fail closed, without its content.
         error = ApiError(500, "error", "the agent could not be read")
@@ -529,6 +544,9 @@ class AgentsDeps:
     knowledge: KnowledgeStore | None = None
     """The registry of knowledge bases (D88); set in production. Without it a version that
     names one does not pass the rules (fail closed)."""
+    skills: SkillStore | None = None
+    """The approved skill versions (D92); set in production. Without it a version that names
+    one does not pass the rules (fail closed)."""
 
 
 class _PendingOrg:
@@ -559,6 +577,17 @@ def _knowledge_bases(deps: AgentsDeps, kb_ids: Sequence[str]) -> dict[str, Knowl
     return {kb_id: kb for kb_id in kb_ids if (kb := deps.knowledge.get(kb_id)) is not None}
 
 
+def _skill_versions(deps: AgentsDeps, refs: Sequence[str]) -> dict[str, SkillVersion]:
+    """The approved versions among the skills of a definition (at most ``MAX_PER_AGENT``
+    reads)."""
+    if deps.skills is None or not refs:
+        return {}
+    try:
+        return deps.skills.approved({ref: parse_skill_ref(ref) for ref in refs})
+    except (ClientError, BotoCoreError) as exc:
+        raise StoredSkillError("skills table unavailable") from exc
+
+
 def _rule_context(
     deps: AgentsDeps, definition: AgentDefinition, *, approving: bool = False
 ) -> RuleContext:
@@ -568,6 +597,7 @@ def _rule_context(
         groups={g.id: g for g in deps.groups.list_groups()},
         org=_PendingOrg(deps.store) if approving else deps.store,
         knowledge=_knowledge_bases(deps, definition.knowledge_bases),
+        skills=_skill_versions(deps, definition.skills),
     )
 
 
@@ -603,6 +633,7 @@ def _definition_out(definition: AgentDefinition) -> DefinitionOut:
         groups=list(definition.groups),
         users=list(definition.users),
         knowledge_bases=list(definition.knowledge_bases),
+        skills=list(definition.skills),
     )
 
 

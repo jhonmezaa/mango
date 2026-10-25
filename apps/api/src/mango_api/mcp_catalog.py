@@ -330,6 +330,18 @@ class McpCatalog:
     def tool(self, ref: str) -> CatalogTool | None:
         return self._tools.get(ref)
 
+    def server(self, server_id: str) -> McpServer | None:
+        """A connector, or a pack of the release that fits the catalog."""
+        if (connector := self._connectors.get(server_id)) is not None:
+            return connector
+        pack = self._packs.get(server_id)
+        return pack.server if pack is not None else None
+
+    def server_enabled(self, server_id: str) -> bool:
+        """The server serves at least one tool now (a connector always does)."""
+        server = self.server(server_id)
+        return server is not None and any(t.enabled for t in self.tools_of(server))
+
     def pack_tool_unavailable(self, ref: str) -> bool:
         """``ref`` names a pack of the release that does not serve that tool now: the pack is
         not installed, or its installed version does not have the tool (spec §4.4)."""

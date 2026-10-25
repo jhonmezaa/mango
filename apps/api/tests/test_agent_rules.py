@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -21,9 +22,11 @@ from mango_api.agent_rules import (
 from mango_api.knowledge_store import KnowledgeBase
 from mango_api.mcp_catalog import ConnectorManifest, McpCatalog, McpServer
 from mango_api.model_catalog import ModelCatalog, ModelEntry
+from mango_api.skills_store import SkillVersion
 from mango_core.agents import ROOT_SUPERVISOR, AgentDefinition
 from mango_core.groups import GroupDef
 from mango_core.knowledge import Status
+from mango_core.skills import SkillContent
 
 CONNECTORS = Path(__file__).parents[3] / "connectors"
 SONNET = "us.anthropic.claude-sonnet-4-6"
@@ -390,3 +393,48 @@ def test_the_web_knows_every_rule_code_the_api_reports() -> None:
     listed = set(re.findall(r"^  '([a-z_]+)',$", web, flags=re.MULTILINE))
     assert reported
     assert listed == reported
+
+
+# --- Skills (D92) ---------------------------------------------------------------------------------
+
+
+def _skill(skill_id: str, version: int, servers: list[str]) -> SkillVersion:
+    content = SkillContent(
+        name=skill_id, category="FinOps", instructions="Haz algo.", servers=tuple(servers)
+    )
+    return SkillVersion(
+        skill_id=skill_id,
+        version=version,
+        content=content,
+        markdown_sha256="0" * 64,
+        proposed_by="creator-1",
+        proposed_by_email=None,
+        approved_by="admin-1",
+        approved_by_email=None,
+        approved_at=datetime(2026, 10, 25, tzinfo=UTC),
+        change_id="0" * 32,
+    )
+
+
+def test_skills_must_be_approved_and_have_their_servers() -> None:
+    skills = {
+        "costs@1": _skill("costs", 1, ["cost-explorer"]),
+        "alarms@2": _skill("alarms", 2, ["cloudwatch"]),
+        "sap@1": _skill("sap", 1, ["sap"]),
+    }
+    ctx = replace(_ctx(), skills=skills)
+    assert _codes(_definition(skills=["costs@1"]), ctx) == []
+    violations = validate_for_review(
+        SELF, _definition(skills=["costs@2", "alarms@2", "sap@1"]), ctx
+    )
+    assert violations == [
+        Violation("skill_unavailable", "skills", ("costs@2",)),
+        Violation("skill_server_not_enabled", "skills", ("sap@1",)),
+        Violation("skill_server_without_tools", "skills", ("alarms@2",)),
+    ]
+
+
+def test_skills_need_a_model_with_tools() -> None:
+    ctx = replace(_ctx(), skills={"costs@1": _skill("costs", 1, ["cost-explorer"])})
+    ctx = replace(ctx, models=ModelCatalog((_model(SONNET, tools=False),), version=1))
+    assert "model_without_tools" in _codes(_definition(skills=["costs@1"]), ctx)

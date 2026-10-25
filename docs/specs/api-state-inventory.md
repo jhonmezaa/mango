@@ -20,6 +20,7 @@ Los compartidos se cuentan en la tabla `Mango-<ns>-RateLimits` (`rate_limits.py`
 | `people.changes` | 200 por hora | Cambios de grupos y de acceso | Compartido | Cada uno escribe en el user pool |
 | `people.proposals` | 20 por hora | Cambios que esperan a otro administrador | Compartido | Acota ruido en la doble aprobación |
 | `group_admin.proposals` | 20 por hora | Cambios del registro de grupos | Compartido | Igual |
+| `skills.proposals` | 20 por hora | Skills nuevas y versiones que esperan a un administrador (D92) | Compartido | Igual |
 | `tool_policies.proposals` | 10 por hora | Cambios de políticas de tools de escritura | Compartido | Igual |
 | `mcp.writes` | 10 por minuto | Solicitudes y ejecuciones de packs MCP | Compartido | Costo: pueden iniciar una máquina de estados (TM-B20) |
 | `approvals.runs` | 10 por minuto | Ejecuciones de una tool de escritura aprobada | Compartido | Costo: cada una firma con KMS y llama al Gateway |
@@ -29,6 +30,7 @@ Los compartidos se cuentan en la tabla `Mango-<ns>-RateLimits` (`rate_limits.py`
 | `session.starts` | 10 cada 5 min | Crear una sesión web | **Por tarea** | Frena el bucle de una persona antes de que gaste la cuota de Cognito, que es de toda la cuenta. Desde D72 no hay un límite por IP detrás: la renovación es una operación firmada que no pasa por el WAF del user pool. Entrar no debe depender de una tabla más |
 | `session.renewals` | 30 cada 5 min, por sesión | Renovar el access token | **Por tarea** | Igual, y está en el camino de cada recarga de la página |
 | `agents.lists` | 30 por minuto | Listas de agentes: `GET /api/agents` (Marketplace) y `GET /api/agents/org` (organigrama), contadas juntas | **Por tarea** | Frena el bucle de una persona sobre dos rutas que cualquiera con sesión puede leer, cuestan varias lecturas y escriben un evento de auditoría cada una. No sostiene ninguna excepción, y contarlo en la tabla añadiría dos llamadas a la ruta que se quiere abaratar. La pantalla pide como mucho cuatro veces por minuto por pestaña; N veces 30 sigue muy por debajo de lo que sirve una tarea (D70 (11)) |
+| `skills.reads` | 60 por minuto | Catálogo y detalle de skills: `GET /api/skills` y `GET /api/skills/{id}`, contados juntos | **Por tarea** | Frena el bucle de una persona sobre una ruta que lee 30 días de activaciones en cada carga. No sostiene ninguna excepción; la leen solo administradores y creadores (D92) |
 | `governance.reads` | 30 por minuto | Resumen de Gobernanza: `GET /api/governance` | **Por tarea** | Frena el bucle de una persona sobre una ruta que solo leen administradores y `finops-central`, que acota sus propias lecturas y que la caché de 30 s ya protege de las recargas. No sostiene ninguna excepción; N veces 30 sigue muy por debajo de lo que sirve una tarea (D89 (6)) |
 
 Ya se contaban en DynamoDB antes de D70, y no cambian: el cupo diario de correos del directorio (200 por día, `Settings`), los envíos a revisión por creador y día (`Agents`), una solicitud abierta por objeto en cada flujo de doble aprobación, y el presupuesto (`Budgets`).
