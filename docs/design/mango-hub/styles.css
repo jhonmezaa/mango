@@ -1600,7 +1600,8 @@ input[type="range"],input[type="checkbox"],input[type="radio"]{accent-color:var(
 .ac-live-on{border-color:color-mix(in oklab,var(--green) 40%,transparent)!important;color:var(--green)!important}
 .ac-pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
 @media (max-width:1100px){.ac-grid{grid-template-columns:minmax(0,1fr)}.ac-side{position:static;order:-1}}
-@media (max-width:760px){.ac-grid{padding:0 16px 32px}.au-cats{padding-left:16px!important;padding-right:16px!important}.ac-more{padding-left:16px}.ac-ms{display:none}}
+@media (max-width:760px){.ac-grid{padding:0 16px 32px}.au-cats{padding-left:16px!important;padding-right:16px!important}.ac-more{padding-left:16px}.ac-kind{display:none}}
+.ac-poll{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)}.ac-poll svg{color:var(--amber);flex-shrink:0}
 .tk-quick button{white-space:nowrap}
 .tk-quick{flex-wrap:nowrap!important}
 

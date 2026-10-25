@@ -64,6 +64,7 @@
     { actor: 'Usuario 6', role: 'lead_admin', action: 'access.view', target: 'agent.invoke', turn: 'TRN-5090', detail: 'Usar agente fin-01 · permitido', at: ago(190.1) },
     { actor: 'Usuario 6', role: 'lead_admin', action: 'agent.invoke', target: 'fin-01', turn: 'TRN-5090', detail: 'Inició un turno con FinOps', at: ago(190.2) },
     { actor: 'Sistema', role: 'system', action: 'budget.alert', target: 'fin-01', detail: 'FinOps llegó al 80% del límite por defecto (USD 24,00 de USD 30,00)', at: ago(220) },
+    { actor: 'usuario1@empresa.com', role: 'admin', action: 'agent.approve', target: 'fin-01', version: 3, createdBy: 'usuario3@empresa.com', outcome: 'applied', at: ago(480) },
     { actor: 'Usuario 3', role: 'owner', action: 'agent.rollback', target: 'dev-01', detail: 'Restauró versión v6 del system prompt', before: { version: 7 }, after: { version: 6 }, outcome: 'applied', at: ago(410) },
     { actor: 'usuario1@empresa.com', role: 'admin', action: 'directory.group_add', target: 'usuario4@empresa.com', detail: 'Agregó a usuario4@empresa.com al grupo bu-finanzas', outcome: 'applied', at: ago(640) },
     { actor: 'usuario1@empresa.com', role: 'admin', action: 'policy.decision', target: 'ManagePeople', detail: 'Gestionar personas · permitido', at: ago(640.01) },
@@ -207,6 +208,7 @@
     canView: (view, role = state.role) => { if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge') return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); if (view === 'governance') return !!(ROLES[role] && (ROLES[role].admin || ROLES[role].central)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
     can: (action, role = state.role) => { const p = PERMS[role]; return p.actions === '*' || p.actions.includes(action); },
     actorEmail: () => 'usuario' + (store.actor().match(/\d+/) || ['1'])[0] + '@empresa.com',
+    emailOf: (n) => !n ? null : String(n).includes('@') ? n : /\d+/.test(n) ? 'usuario' + String(n).match(/\d+/)[0] + '@empresa.com' : null,
     actor: () => (state.actorOverride || ({ admin: 'Usuario 1', owner: 'Usuario 2', user: 'Usuario 4', creator: 'Usuario 3', central: 'Usuario 5' })[state.role]),
     log: (action, target, detail, extra = {}) => {
       const last = state.audit[0];

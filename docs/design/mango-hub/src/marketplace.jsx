@@ -38,7 +38,7 @@ function Marketplace({ agents, setAgents, setView, openChat, pinnedIds, setPinne
 
   const pinned = pinnedIds || [];
   const isPinned = (id) => pinned.includes(id);
-  const retire = (a, reason) => { S.set({ retired: { ...S.get().retired, [a.id]: { by: S.actor(), at: new Date().toISOString(), reason, cleanup: 'running' } } }); setTimeout(() => { const r = S.get().retired[a.id]; if (r && r.cleanup === 'running') S.set({ retired: { ...S.get().retired, [a.id]: { ...r, cleanup: 'done' } } }); }, 6000); setConfirmDel(null); S.log('agent.retire', a.id, `Retiró ${a.name}: ${reason}`); toast?.({ tone: 'success', msg: `"${a.name}" retirado · el historial se conserva` }); };
+  const retire = (a, reason) => { S.set({ retired: { ...S.get().retired, [a.id]: { by: S.actor(), at: new Date().toISOString(), reason, cleanup: 'running' } } }); setTimeout(() => { const r = S.get().retired[a.id]; if (r && r.cleanup === 'running') S.set({ retired: { ...S.get().retired, [a.id]: { ...r, cleanup: 'done' } } }); }, 6000); setConfirmDel(null); S.log('agent.retire', a.id, `Retiró ${a.name}: ${reason}`, { version: (S.get().versions || {})[a.id]?.[0]?.v ?? null, createdBy: S.emailOf(a.owner), reason, outcome: 'applied' }); toast?.({ tone: 'success', msg: `"${a.name}" retirado · el historial se conserva` }); };
   const isAdmin = S.get().role === 'admin';
   const clone = (a) => {
     const L = window.Lifecycle;

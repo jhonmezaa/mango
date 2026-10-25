@@ -29,6 +29,12 @@ const AUDIT_CATS = [
 const AUDIT_OUTCOME = { requested: 'solicitado', applied: 'aplicado', rejected: 'no se aplicó' };
 // Si la acción misma es un rechazo, «aplicado» se lee como «registrado».
 const auditOutcome = (r) => !r.outcome ? '' : (r.outcome === 'applied' && /reject/.test(r.action) ? 'registrado' : AUDIT_OUTCOME[r.outcome]) + (r.error ? ' · ' + r.error : '');
+// Agente aprobado y retirado: el producto guarda el agente, la versión, quién lo creó, quién decidió (el actor) y, al retirar, el motivo.
+// El hash del contenido y los ids de usuario no son texto: la persona va por su correo y, si no se resuelve, se omite. Siguen en «Copiar JSON».
+const auditAgentName = (r) => r.agentName || (window.MangoData?.agents || []).find(a => a.id === r.target)?.name || r.target;
+const auditDetail = (r) => r.action === 'agent.approve' || r.action === 'agent.retire'
+  ? [auditAgentName(r) + (r.version != null ? ' · v' + r.version : ''), r.action === 'agent.approve' && r.createdBy && 'creado por ' + r.createdBy, r.action === 'agent.retire' && r.reason && 'motivo: “' + r.reason + '”'].filter(Boolean).join(' · ')
+  : r.detail;
 // El backend escribe «solicitado» antes de tocar nada y luego el resultado: se muestran como una sola fila con el resultado final.
 const mergeAudit = (list) => { const hide = new Set(); const out = list.map(r => { if (r.outcome !== 'applied' && r.outcome !== 'rejected') return r; const q = list.find(x => x !== r && !hide.has(x.id) && x.outcome === 'requested' && x.action === r.action && x.target === r.target && x.actor === r.actor && new Date(r.at) - new Date(x.at) >= 0 && new Date(r.at) - new Date(x.at) < 120000); if (!q) return r; hide.add(q.id); return { ...r, requestedAt: q.at, requestedId: q.id }; }); return out.filter(r => !hide.has(r.id)); };
 const SESSION_END = { logout: 'La persona cerró sesión', expired: 'Venció: pasó la duración máxima de la sesión', disabled: 'Un administrador deshabilitó su acceso', group_removed: 'Se le quitó un grupo sensible', mfa_reset: 'Se restableció su MFA', rejected: 'El proveedor de identidad no la renovó: se revocó o venció allí, o la cuenta se deshabilitó fuera de Mango', revoked: 'Un administrador cerró sus sesiones (sin detalle del motivo)' };
@@ -80,7 +86,7 @@ function AuditLogInner() {
   const Q = q.trim().toLowerCase();
   const merged = useMemoAB(() => mergeAudit(audit), [audit]);
   const base = merged.filter(r => (reads || !r.read) && new Date(r.at).getTime() >= since && (actor === 'all' || r.actor === actor) && (!target || r.target === target)
-    && (!Q || [r.id, r.actor, r.target, r.detail, AUDIT_ACTIONS[r.action], r.action, auditOutcome(r)].join(' ').toLowerCase().includes(Q)));
+    && (!Q || [r.id, r.actor, r.target, auditDetail(r), AUDIT_ACTIONS[r.action], r.action, auditOutcome(r)].join(' ').toLowerCase().includes(Q)));
   const rows = base.filter(r => cat === 'all' || auditCat(r.action) === cat);
   const anyFilter = Q || actor !== 'all' || cat !== 'all' || range !== 'all' || target || reads;
   const clear = () => { setQ(''); setActor('all'); setCat('all'); setRange('all'); setTarget(null); setReads(false); };
@@ -94,7 +100,7 @@ function AuditLogInner() {
   };
   const exportCsv = () => {
     const esc = (v) => { let s = String(v ?? ''); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
-    const csv = ['id,fecha,actor,rol,evento,accion,recurso,detalle,resultado,antes,despues,hash', ...rows.map(r => [r.id, r.at, r.actor, r.role, AUDIT_ACTIONS[r.action] || r.action, r.action, r.target, r.detail, auditOutcome(r), r.before ? JSON.stringify(r.before) : '', r.after ? JSON.stringify(r.after) : '', r.hash].map(esc).join(','))].join('\n');
+    const csv = ['id,fecha,actor,rol,evento,accion,recurso,detalle,resultado,antes,despues,hash', ...rows.map(r => [r.id, r.at, r.actor, r.role, AUDIT_ACTIONS[r.action] || r.action, r.action, r.target, auditDetail(r), auditOutcome(r), r.before ? JSON.stringify(r.before) : '', r.after ? JSON.stringify(r.after) : '', r.hash].map(esc).join(','))].join('\n');
     const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' }));
     const el = document.createElement('a'); el.href = url; el.download = 'mango-audit-' + new Date().toISOString().slice(0, 10) + '.csv'; el.click(); URL.revokeObjectURL(url);
     toast?.({ tone: 'success', msg: rows.length + ' eventos exportados' });
@@ -158,7 +164,7 @@ function AuditLogInner() {
                     <span className="au-ev"><span className="tk-dot" style={{ background: actionTone(r.action) }} />{AUDIT_ACTIONS[r.action] || r.action}</span>
                     <AuActor r={r} />
                     <span className="mono au-target">{r.target}</span>
-                    <span className="au-detail">{r.detail}{r.outcome && <span className={'au-outcome' + (r.outcome === 'rejected' ? ' fail' : '')}> · {auditOutcome(r)}</span>}</span>
+                    <span className="au-detail">{auditDetail(r)}{r.outcome && <span className={'au-outcome' + (r.outcome === 'rejected' ? ' fail' : '')}> · {auditOutcome(r)}</span>}</span>
                     {(r.before || r.after) && <span className="au-diff" title="Incluye valores antes y después">Δ</span>}
                   </button>
                 ))}
@@ -200,7 +206,7 @@ function AuditDetail({ r, audit, onClose, onActor, onTarget }) {
           <button className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}><I.Close size={14} /></button>
         </div>
         <div className="mk-drawer-b">
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55 }}>{r.detail}</p>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55 }}>{auditDetail(r)}</p>
           <MkSec title="Evento">
             <div className="mk-kv"><span>Actor</span><span className="row gap-2" style={{ flexWrap: 'wrap' }}><span className="au-mail">{String(r.actor).includes('@') ? <>{String(r.actor).split('@')[0]}<wbr />@{String(r.actor).split('@').slice(1).join('@')}</> : r.actor}</span> <span className="au-role">{ROLE_L[r.role] || r.role}</span></span></div>
             <div className="mk-kv"><span>Acción</span><span className="mono" style={{ fontSize: 12 }}>{r.action}</span></div>
@@ -213,6 +219,12 @@ function AuditDetail({ r, audit, onClose, onActor, onTarget }) {
             {r.requestedAt && <div className="mk-kv"><span>Solicitado</span><span className="au-steps">{new Date(r.requestedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} · <span className="mono">{r.requestedId}</span> · se registra antes de aplicar</span></div>}
             <div className="mk-kv"><span>Hace</span><span>{window.fmtAgo(r.at)}</span></div>
           </MkSec>
+          {(r.action === 'agent.approve' || r.action === 'agent.retire') && <MkSec title="Agente">
+            <div className="mk-kv"><span>Agente</span><span>{auditAgentName(r)}</span></div>
+            {r.version != null && <div className="mk-kv"><span>Versión</span><span className="mono" style={{ fontSize: 12 }}>v{r.version}</span></div>}
+            {r.createdBy && <div className="mk-kv"><span>Creado por</span><span className="au-mail">{r.createdBy}</span></div>}
+            {r.action === 'agent.retire' && r.reason && <div className="mk-kv"><span>Motivo</span><span>{r.reason}</span></div>}
+          </MkSec>}
           {r.action === 'schedule.report_download' && <MkSec title="Descarga">
             {r.task && <div className="mk-kv"><span>Tarea</span><span>{r.task}</span></div>}
             {r.run && <div className="mk-kv"><span>Ejecución</span><span className="mono" style={{ fontSize: 12 }}>{r.run}</span></div>}
@@ -511,4 +523,4 @@ function BudgetModal({ b, agents: allAgents, agentsIn, budgets, onClose, onSave,
   );
 }
 
-Object.assign(window, { AuditLog, BudgetsView, AUDIT_ACTIONS, auditRows, auditOutcome, actionTone });
+Object.assign(window, { AuditLog, BudgetsView, AUDIT_ACTIONS, auditRows, auditOutcome, auditDetail, actionTone });

@@ -253,7 +253,7 @@
         return;
       }
       setRevs(x => x.id === id ? { ...x, status: 'approved', reviewer: S.actor(), decidedAt: new Date().toISOString() } : null);
-      S.log('agent.approve', r.agentId || id, `Aprobó ${r.kind === 'new' ? 'el agente nuevo' : 'el cambio de'} ${r.snap.name}`);
+      S.log('agent.approve', r.agentId || id, `Aprobó ${r.kind === 'new' ? 'el agente nuevo' : 'el cambio de'} ${r.snap.name}`, { agentName: r.snap.name, version: r.agentId ? ((S.get().versions || {})[r.agentId]?.[0]?.v || 0) + 1 : 1, createdBy: S.emailOf(r.by), outcome: 'applied' });
       S.log('agent.publish_start', r.agentId || id, `Inició la publicación de ${r.snap.name}`);
       setTimeout(() => {
         const agentId = r.agentId || (r.snap.cat || 'agt').toLowerCase().slice(0, 3) + '-' + String(20 + parseInt(id.slice(4))).padStart(2, '0');

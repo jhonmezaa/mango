@@ -651,7 +651,7 @@ function Governance({ tickets, agents }) {
                 <span className="tk-dot" style={{ marginTop: 6, background: window.actionTone ? window.actionTone(e.action) : 'var(--text-dim)' }} />
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <b style={{ fontWeight: 500, color: 'var(--text)' }}>{(window.AUDIT_ACTIONS || {})[e.action] || e.action}</b>
-                  <span className="gv-s" style={{ whiteSpace: 'normal' }}>{e.actor}{e.detail ? ' · ' + e.detail : ''}{e.outcome && window.auditOutcome ? ' · ' + window.auditOutcome(e) : ''}</span>
+                  <span className="gv-s" style={{ whiteSpace: 'normal' }}>{e.actor}{(window.auditDetail ? window.auditDetail(e) : e.detail) ? ' · ' + (window.auditDetail ? window.auditDetail(e) : e.detail) : ''}{e.outcome && window.auditOutcome ? ' · ' + window.auditOutcome(e) : ''}</span>
                 </span>
                 <span className="tk-meta">{ago(e.at)}</span>
               </div>
@@ -671,6 +671,7 @@ function Governance({ tickets, agents }) {
     </div>
   );
 
+  if (sim === 'denied') return <><Topbar crumbs={['Gobernanza']} /><div className="content"><K.Denied view="governance" /></div></>;
   return (
     <>
       <Topbar crumbs={['Gobernanza']} actions={seeAudit ? <button className="btn btn-sm" onClick={() => go('audit')}><I.Lock size={12} /> Audit log</button> : null} />

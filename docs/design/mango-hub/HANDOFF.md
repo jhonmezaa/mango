@@ -757,7 +757,7 @@ Archivos: `other-views.jsx` (Governance), `activity.jsx`, `audit-budgets.jsx`, `
 - **Correcciones (los dos modos):** «Decisiones · 7 días» contaba como rechazadas las ejecutadas y las vencidas; «esperan tu firma» incluía las propias; los cambios de áreas no aparecían nunca (comparaba con la fecha de hoy y no con la del ejemplo); quien no es admin veía auditoría y cambios de áreas que no puede abrir.
 
 ### Actividad
-- **Quién ve qué:** cada persona, lo de sus turnos de chat y sus tareas. Un admin, lo de todos; de otras personas solo agente, tool y hora (fila abierta: «De otra persona: solo ves el agente, la tool y la hora.»). «Abrir conversación» y «Ver ejecución» solo en lo propio; «Ver presupuestos», solo para admins.
+- **Quién ve qué:** cada persona, lo de sus turnos de chat y sus tareas. Un admin, lo de todos; de otras personas solo metadatos (texto de la fila abierta: *sustituido, ver «Gobernanza y Actividad tras la instalación»*). «Abrir conversación» y «Ver ejecución» solo en lo propio; «Ver presupuestos», solo para admins.
 - **Desfase:** lo propio aparece al momento; lo de otras personas, cuando termina su turno, con la hora de cada llamada. Demo: con la cuenta de admin, la primera consulta en vivo trae un turno de otra persona que estaba en curso.
 - **«En vivo»:** cada 15 s; se pausa con la pestaña oculta y al volver consulta enseguida.
 - **Lo que no hay:** parámetros de las tools (no se guardan), tickets, publicaciones y estado de los agentes («de {n} publicados»; «sin actividad en el periodo» solo para admins y sin estado). De presupuesto, solo «no respondió: se agotó el presupuesto».
@@ -765,5 +765,41 @@ Archivos: `other-views.jsx` (Governance), `activity.jsx`, `audit-budgets.jsx`, `
 - **Retención:** con «7 días», al final: «Aquí se ven hasta 7 días. La actividad se guarda 30 días.».
 
 ### Pendiente del producto
-- Confirmar que un admin ve la tool de cada llamada ajena (la nota decía «agente y hora»).
+- Confirmado por el producto: un admin ve la tool de cada llamada ajena, con el resultado o la latencia.
 - `budget.block`: nombre y texto del evento del turno bloqueado.
+
+
+## Gobernanza y Actividad tras la instalación (2026-10-25)
+Archivos: `activity.jsx`, `other-views.jsx`, `audit-budgets.jsx`, `gov/kit.jsx`, `app.jsx`, `chat.jsx`, `lifecycle.js`, `marketplace.jsx`, `store.js`, `styles.css`.
+
+### Actividad
+- **De otra persona** (fila abierta): el texto nombra lo que muestra la fila. Llamada: «De otra persona: solo ves el agente, la tool, la hora y la latencia.» · error: «… la tool, la hora y el resultado.» · aprobación: «… la tool, la hora y el estado.» · turno bloqueado: «De otra persona: solo ves el agente y la hora.».
+- **Sin texto que no existe:** la fila con error no lleva línea debajo (la respuesta de la tool no se guarda). «pidió aprobación para {tool}» va sin descripción (esta vista no tiene el catálogo).
+- **Estado de la aprobación**, a la derecha (donde va la latencia): «pendiente» (ámbar; también aprobada sin ejecutar), «ejecutada» (verde), «rechazada» (rojo), «vencida» (gris). En el CSV va en «resultado»; el turno bloqueado, «bloqueado».
+- **Latencia:** «N ms» bajo 1 s; «N,N s» bajo 1 min (19.319 ms → «19,3 s»); «M min S s» hasta el techo del turno (600 s → «10 min»). También en «Latencia media» y en la fila de la tool del chat (`window.fmtDur`). El CSV conserva los ms. Ejemplos en segundos: las llamadas de un turno van una tras otra y los pasos de una tarea reparten la duración de su ejecución (cuadran con Schedules).
+- **≤760 px:** se ve la columna de latencia, resultado o estado; se oculta el ícono de tipo.
+- **Tope de 1000 por consulta:** «Eventos · {periodo}» dice «Más de 1000» · «Se muestran los 1000 más recientes». Al final de la lista: «Este periodo tiene más de 1000 eventos. Se muestran los 1000 más recientes.». Indicadores, tipos y «agentes más activos» se calculan sobre esos 1000.
+- **Cargando:** esqueleto de indicadores, filas y «agentes más activos» (role="status"). La barra de filtros se queda: cambiar de periodo vuelve a consultar.
+- **Error:** «No se pudo cargar la actividad» · «Vuelve a intentarlo en unos segundos.» + «Reintentar».
+- **Sin acceso (403):** «No tienes acceso a Actividad» · «Tu cuenta no tiene permiso para ver la actividad. Un admin de Mango puede darte acceso.».
+- En los tres, «En vivo» y «Exportar CSV» se desactivan.
+- **Falla «En vivo»** (*cambio para el producto*): la lista se queda y en la barra aparece «No se pudo buscar actividad nueva. Se vuelve a intentar en 15 s.» (role="status") hasta que una consulta funcione.
+- Demo: panel › «Actividad» (normal, cargando, error, falla «En vivo», sin acceso, más de 1000 eventos en 7 días; esta última con la cuenta de admin, pasa a «7 días»).
+
+### Gobernanza · sin acceso (403)
+- Aviso propio: «No tienes acceso a Gobernanza» · «Gobernanza es para administradores y para FinOps central. Un admin de Mango puede darte acceso.».
+- `GovKit.Denied` recibe la vista. Presupuestos, Ajustes y Audit log siguen con el aviso compartido.
+- Demo: panel › «Gobernanza» › «Sin acceso (403)», o entra por URL con «Líder de área» o «Creador».
+
+### «Agente aprobado» y «Agente retirado» (Gobernanza y Audit log)
+- Texto propio, como el resto (persona · detalle · resultado). La persona es quien aprobó o retiró (el actor del evento).
+  - Aprobado: «{agente} · v{n} · creado por {correo}».
+  - Retirado: «{agente} · v{n} · motivo: “{motivo}”».
+- Panel del evento: sección «Agente» con Agente, Versión, Creado por y, al retirar, Motivo.
+- No se muestran el hash del contenido ni los identificadores de usuario. La persona va por su correo; si el identificador no se resuelve, se omite. Los datos crudos siguen en «Copiar JSON».
+- El agente va por nombre; si ya no está en el catálogo, por su id.
+- Ejemplo: «Agente aprobado» de FinOps v3, hace 8 h. Para «Agente retirado», retira un agente desde Agentes con la cuenta de admin.
+
+### Pendiente del producto
+- Resolver `created_by` a correo para el texto de «Agente aprobado».
+- Falla de «En vivo»: confirmar el texto.

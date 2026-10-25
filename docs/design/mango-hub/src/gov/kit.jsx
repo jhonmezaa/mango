@@ -141,12 +141,16 @@ function ErrorState({ title, body, onRetry }) {
   );
 }
 
-function Denied() {
+// Cada vista con su aviso; Presupuestos, Ajustes y el Audit log comparten el de siempre.
+const DENIED = {
+  governance: ['No tienes acceso a Gobernanza', 'Gobernanza es para administradores y para FinOps central. Un admin de Mango puede darte acceso.'],
+  activity: ['No tienes acceso a Actividad', 'Tu cuenta no tiene permiso para ver la actividad. Un admin de Mango puede darte acceso.'],
+};
+function Denied({ view }) {
+  const [t, b] = DENIED[view] || ['No tienes acceso a esta sección', 'Presupuestos, Ajustes y el Audit log son solo para admins. Un admin de Mango puede darte acceso.'];
   return (
     <div className="g-denied">
-      <Empty icon="Lock" title="No tienes acceso a esta sección">
-        Presupuestos, Ajustes y el Audit log son solo para admins. Un admin de Mango puede darte acceso.
-      </Empty>
+      <Empty icon="Lock" title={t}>{b}</Empty>
     </div>
   );
 }

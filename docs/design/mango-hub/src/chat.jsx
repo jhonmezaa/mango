@@ -505,7 +505,7 @@ function ToolCallRow({ call, first }) {
         <span className={`dot dot-${call.status === 'ok' ? 'green' : 'red'}`} />
         <span className="mono" style={{fontSize: 11.5, flex: 1, minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{call.tool}</span>
         {call.status === 'error' && <span className="badge badge-red">Falló</span>}
-        {call.measured && call.ms != null && <span className="mono" style={{fontSize: 11, color:'var(--text-dim)'}}>{call.ms} ms</span>}
+        {call.measured && call.ms != null && <span className="mono" style={{fontSize: 11, color:'var(--text-dim)'}}>{window.fmtDur ? window.fmtDur(call.ms) : call.ms + ' ms'}</span>}
         <I.ChevronDown size={10} style={{color:'var(--text-dim)', transform: open ? 'rotate(180deg)' : 'none'}} />
       </button>
       {call.error && <div style={{margin: '-2px 12px 8px 26px', fontSize: 12, color: 'var(--text-muted)'}}>{call.error}</div>}
@@ -745,7 +745,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
           <I.ChevronRight size={10} style={{transform: expanded ? 'rotate(90deg)':'rotate(0)', transition:'transform 0.15s', color:'var(--text-dim)'}} />
           <I.Terminal size={11} style={{color: msg.status === 'ok' ? 'var(--green)' : 'var(--red)'}} />
           <span className="mono" style={{fontSize: 11, minWidth: 0, overflow:'hidden', textOverflow:'ellipsis'}}>{msg.tool}</span>
-          {msg.measured && msg.ms != null && <span className="mono" style={{fontSize: 10.5, color:'var(--text-dim)', flexShrink: 0}}>· {msg.ms} ms</span>}
+          {msg.measured && msg.ms != null && <span className="mono" style={{fontSize: 10.5, color:'var(--text-dim)', flexShrink: 0}}>· {window.fmtDur ? window.fmtDur(msg.ms) : msg.ms + ' ms'}</span>}
         </button>
         {expanded && soon && <div style={{marginTop: 4}}><window.Soon on><span style={{fontSize: 11.5}}>Parámetros de la tool</span></window.Soon></div>}
         {expanded && !soon && (
