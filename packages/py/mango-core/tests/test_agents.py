@@ -216,3 +216,29 @@ def test_knowledge_bases_are_left_out_of_the_canonical_form_while_empty() -> Non
 def test_knowledge_bases_are_ulids_and_at_most_five(value: list[str]) -> None:
     with pytest.raises(ValidationError):
         _definition(knowledge_bases=value)
+
+
+def test_skills_are_left_out_of_the_canonical_form_while_empty() -> None:
+    # Versions written before the field keep their bytes and their hash (D92).
+    assert "skills" not in json.loads(dumps_definition(_definition()))
+    canonical = dumps_definition(_definition(skills=["rightsizing@2", "cost-analysis@1"]))
+    assert json.loads(canonical)["skills"] == ["cost-analysis@1", "rightsizing@2"]
+    assert dumps_definition(loads_definition(canonical)) == canonical
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ["Cost@1"],
+        ["cost@0"],
+        ["cost"],
+        ["cost--analysis@1"],
+        ["-cost@1"],
+        ["cost@1", "cost@2"],
+        [f"{'a' * 41}@1"],
+        [f"skill-{i}@1" for i in range(11)],
+    ],
+)
+def test_skills_are_one_version_of_each_and_at_most_ten(value: list[str]) -> None:
+    with pytest.raises(ValidationError):
+        _definition(skills=value)

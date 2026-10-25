@@ -33,6 +33,8 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 from mango_core.knowledge import ID_PATTERN as KNOWLEDGE_BASE_ID_PATTERN
+from mango_core.skills import MAX_PER_AGENT as MAX_SKILLS
+from mango_core.skills import SKILL_REF_PATTERN, parse_ref
 
 ROOT_SUPERVISOR = "platform"
 """``reports_to`` value of an agent at the top of the organization chart (D30)."""
@@ -135,6 +137,15 @@ def _supervisor(value: str | None) -> str | None:
     raise ValueError("must be an agent id or the root supervisor")
 
 
+def _skill_refs(values: tuple[str, ...]) -> tuple[str, ...]:
+    """One version of each skill, sorted."""
+    refs = _sorted_unique(values)
+    ids = [parse_ref(ref)[0] for ref in refs]
+    if len(set(ids)) != len(ids):
+        raise ValueError("one version of each skill")
+    return refs
+
+
 def _temperature(value: float | None) -> float | None:
     # Two decimals keep the canonical JSON free of float noise.
     return None if value is None else round(value, 2)
@@ -150,6 +161,7 @@ ModelId = Annotated[str, Field(pattern=MODEL_ID_PATTERN)]
 GroupId = Annotated[str, Field(pattern=GROUP_ID_PATTERN)]
 UserId = Annotated[str, Field(pattern=USER_ID_PATTERN)]
 KnowledgeBaseId = Annotated[str, Field(pattern=KNOWLEDGE_BASE_ID_PATTERN)]
+SkillRef = Annotated[str, Field(pattern=SKILL_REF_PATTERN)]
 ToolRefs = Annotated[
     tuple[ToolRef, ...], Field(max_length=MAX_TOOLS), AfterValidator(_sorted_unique)
 ]
@@ -219,12 +231,17 @@ class AgentDefinition(_Frozen):
     ] = ()
     """Ids of the knowledge bases the agent searches (D88 (15)). They answer only the people
     in their groups, whoever the agent is shared with (D88 (22))."""
+    skills: Annotated[
+        tuple[SkillRef, ...], Field(max_length=MAX_SKILLS), AfterValidator(_skill_refs)
+    ] = ()
+    """Approved skill versions the agent uses, ``<id>@<version>`` (D92): fixed by the version,
+    so a new version of a skill reaches the agent with its next approved version."""
 
 
 # --- Canonical form and hash ------------------------------------------------------------
 
 
-_OMITTED_WHEN_EMPTY = ("knowledge_bases",)
+_OMITTED_WHEN_EMPTY = ("knowledge_bases", "skills")
 """Fields added after agents were published: left out while empty, so the bytes and the hash
 of every version written before them (and of the release agents, which the stack writes from
 TypeScript) stay the same."""

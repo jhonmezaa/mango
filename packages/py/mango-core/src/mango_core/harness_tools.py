@@ -47,3 +47,15 @@ def knowledge_gateway_tool() -> str:
 def knowledge_allowed_tool() -> str:
     """``allowedTools`` entry of the knowledge search tool."""
     return allowed_tool(KNOWLEDGE_TARGET, KNOWLEDGE_TOOL)
+
+
+SKILLS_TOOL = "skills"
+"""Built-in tool of the harness that loads the instructions of one of its skills (D92): the
+``AgentSkills`` plugin of Strands, which the harness runs. A version with skills has it, and
+only such a version."""
+
+
+def skills_allowed_tool() -> str:
+    """``allowedTools`` entry of the skills tool: a plain name, as built-in tools are matched
+    (``shell``, ``file_operations``; seen in an installation on 2026-10-19)."""
+    return SKILLS_TOOL
