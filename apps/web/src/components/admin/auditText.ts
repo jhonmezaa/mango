@@ -1,6 +1,12 @@
 import type { TFunction } from 'i18next';
 
-import { isPermAction, outcomeKey, type AuditRow, type DirectoryRead } from './auditModel';
+import {
+  isPermAction,
+  outcomeKey,
+  type AuditRow,
+  type DetailText,
+  type DirectoryRead,
+} from './auditModel';
 import { usd } from './govFormat';
 
 // The words of an audit row, shared by Auditoría and the recent activity of Gobernanza (D89):
@@ -22,6 +28,23 @@ function directoryReadText(t: TFunction, read: DirectoryRead): string {
   return read.missing > 0
     ? `${text} · ${t('audit.detail.directoryRead.missing', { count: read.missing })}`
     : text;
+}
+
+/**
+ * Design round 20 `auditDetail`: «{agente} · v{n} · creado por {correo}» when approved and
+ * «{agente} · v{n} · motivo: “{motivo}”» when retired; what is not known is left out.
+ */
+function agentText(t: TFunction, d: Extract<DetailText, { kind: 'agent' }>): string {
+  return [
+    d.name,
+    ...(d.version === null ? [] : [t('audit.detail.agent.version', { version: d.version })]),
+    ...(d.action === 'approve' && d.createdBy
+      ? [t('audit.detail.agent.createdBy', { email: d.createdBy })]
+      : []),
+    ...(d.action === 'retire' && d.reason
+      ? [t('audit.detail.agent.reason', { reason: d.reason })]
+      : []),
+  ].join(' · ');
 }
 
 /** The action's name in the design's words, or the raw event name when it has none. */
@@ -67,19 +90,21 @@ export function auditDetail(t: TFunction, row: AuditRow, idpName: string | null)
                           : t('audit.detail.catalogSyncNone')
                         : d.kind === 'directoryRead'
                           ? directoryReadText(t, d.read)
-                          : d.kind === 'reportDownload'
-                            ? t('audit.detail.reportDownload', {
-                                run: (d.run ?? '').slice(0, 8) || '—',
-                              })
-                            : d.kind === 'session'
-                              ? d.sso
-                                ? // The name comes from `config.json`, shown as text.
-                                  [
-                                    t('audit.detail.session.startedSso'),
-                                    ...(idpName ? [idpName] : []),
-                                  ].join(' · ')
-                                : t(`audit.detail.${d.action}`)
-                              : d.text;
+                          : d.kind === 'agent'
+                            ? agentText(t, d)
+                            : d.kind === 'reportDownload'
+                              ? t('audit.detail.reportDownload', {
+                                  run: (d.run ?? '').slice(0, 8) || '—',
+                                })
+                              : d.kind === 'session'
+                                ? d.sso
+                                  ? // The name comes from `config.json`, shown as text.
+                                    [
+                                      t('audit.detail.session.startedSso'),
+                                      ...(idpName ? [idpName] : []),
+                                    ].join(' · ')
+                                  : t(`audit.detail.${d.action}`)
+                                : d.text;
   return text;
 }
 

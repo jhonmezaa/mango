@@ -202,6 +202,46 @@ describe('GovernancePage', () => {
     expect(await screen.findByText('Más de 5000')).toBeInTheDocument();
   });
 
+  it('names the approved and retired agent and its creator in the activity (round 20)', async () => {
+    const audit = full().audit;
+    if (!audit) throw new Error('an administrator reads the audit trail');
+    const agentEvent = (id: string, event: string, detail: Record<string, unknown>) => ({
+      event_id: id.repeat(32),
+      ts: iso(-5),
+      event,
+      user_id: 'admin-2',
+      actor_email: 'admin2@example.com',
+      detail: {
+        agent: 'finops',
+        version: 3,
+        created_by: 'sub-luis',
+        outcome: 'applied',
+        ...detail,
+      },
+      hash: 'h',
+      agent: { name: 'FinOps', created_by_email: 'luis@example.com' },
+    });
+    renderPage(
+      answering({
+        ...full(),
+        audit: {
+          ...audit,
+          recent: [
+            agentEvent('a', 'agent.version.approved', { approved_by: 'admin-2' }),
+            agentEvent('b', 'agent.retired', { retired_by: 'admin-2', reason: 'Duplicado' }),
+          ],
+        },
+      }),
+    );
+    expect(
+      await screen.findByText('FinOps · v3 · creado por luis@example.com', { exact: false }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('FinOps · v3 · motivo: “Duplicado”', { exact: false }),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('sub-luis');
+  });
+
   it('opens each screen from its row and indicator', async () => {
     const user = userEvent.setup();
     renderPage(answering(full()));

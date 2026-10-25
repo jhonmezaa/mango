@@ -109,6 +109,17 @@ export const auditEventSchema = z.object({
   resource: auditResourceSchema.nullable().optional(),
   detail: z.record(z.string(), z.unknown()).default({}),
   hash: z.string().max(128),
+  /**
+   * «Agente aprobado» and «Agente retirado» only (design round 20): the agent's name and the
+   * creator's email, resolved by the API from the catalog when it reads the trail (D89 (9)).
+   */
+  agent: z
+    .object({
+      name: z.string().max(256).nullable().optional(),
+      created_by_email: z.string().max(254).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 export type AuditEvent = z.infer<typeof auditEventSchema>;
 

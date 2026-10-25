@@ -4,6 +4,7 @@
  * (packages/ts/api-client).
  */
 import { agentOut, agents, versionOf, type MockAgent, type MockAgentVersion } from './agents.ts';
+import { auditedWrite } from './audit.ts';
 import { MOCK_USER } from './cognito.ts';
 import { readObject, sendError, sendJson, type ApiHandler } from './http.ts';
 
@@ -106,12 +107,22 @@ export const handleMarketplace: ApiHandler = async (req, res, path) => {
       sendError(res, 409, 'version_conflict', 'The agent changed or is not published');
       return true;
     }
-    agent.status = 'retired';
-    agent.lock_version += 1;
-    agent.retired_by = MOCK_USER;
-    agent.retired_at = new Date().toISOString();
-    agent.retire_reason = reason;
-    version.status = 'retired';
+    // As mango_api.agents.retire: ids only; the reader resolves the names (D89 (9)).
+    const detail = {
+      agent: agent.agent_id,
+      version: version.number,
+      created_by: agent.created_by,
+      retired_by: MOCK_USER,
+      reason,
+    };
+    auditedWrite('agent.retired', detail, () => {
+      agent.status = 'retired';
+      agent.lock_version += 1;
+      agent.retired_by = MOCK_USER;
+      agent.retired_at = new Date().toISOString();
+      agent.retire_reason = reason;
+      version.status = 'retired';
+    });
     sendJson(res, 200, agentOut(agent, version));
     return true;
   }

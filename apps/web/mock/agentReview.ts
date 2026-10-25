@@ -10,6 +10,7 @@
  */
 import { knowledgeRefs } from './knowledge.ts';
 import { diffDefinitions } from './agentDiff.ts';
+import { auditedWrite } from './audit.ts';
 import { MOCK_USER } from './cognito.ts';
 import {
   OTHER_ADMIN,
@@ -270,15 +271,32 @@ export const handleAgentReview: ApiHandler = async (req, res, path) => {
   } else if (action === 'approve' && isAuthor(version)) {
     sendError(res, 403, 'same_approver', 'another administrator must review this version');
   } else {
-    Object.assign(version, {
-      status: 'approved',
-      // A retry keeps the approver (spec §3).
-      approved_by: action === 'approve' ? MOCK_USER : version.approved_by,
-      approved_at: action === 'approve' ? now : version.approved_at,
-      failed_step: null,
-      failure: null,
-      updated_at: now,
-    } satisfies Partial<MockAgentVersion>);
+    const approve = () =>
+      Object.assign(version, {
+        status: 'approved',
+        // A retry keeps the approver (spec §3).
+        approved_by: action === 'approve' ? MOCK_USER : version.approved_by,
+        approved_at: action === 'approve' ? now : version.approved_at,
+        failed_step: null,
+        failure: null,
+        updated_at: now,
+      } satisfies Partial<MockAgentVersion>);
+    if (action === 'approve') {
+      // As mango_api.agents.approve: ids only; the reader resolves the names (D89 (9)).
+      auditedWrite(
+        'agent.version.approved',
+        {
+          agent: agent.agent_id,
+          version: version.number,
+          created_by: version.created_by,
+          approved_by: MOCK_USER,
+          content_hash: hash,
+        },
+        approve,
+      );
+    } else {
+      approve();
+    }
     startPublishing(agent, version);
     sendJson(res, 200, versionOut(agent, version));
   }

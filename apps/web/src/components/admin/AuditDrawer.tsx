@@ -88,6 +88,9 @@ export function AuditDrawer({
   // Design «Lectura»: what a read of the directory read, in words (never the raw keys).
   const read = row.detail.kind === 'directoryRead' ? row.detail.read : null;
   const download = row.detail.kind === 'reportDownload' ? row.detail : null;
+  // Design round 20: «Agente aprobado» and «Agente retirado» name the agent and its creator.
+  const agent = row.detail.kind === 'agent' ? row.detail : null;
+  const createdAt = agent?.createdBy ? agent.createdBy.indexOf('@') : -1;
   // The email may only break before the «@», never in the middle of a word (design `.au-mail`).
   const at = row.actor.indexOf('@');
 
@@ -234,6 +237,42 @@ export function AuditDrawer({
               <span>{formatRelative(row.ts)}</span>
             </div>
           </Sec>
+          {agent && (
+            <Sec title={t('audit.drawer.agent')}>
+              <div className="mk-kv">
+                <span>{t('audit.drawer.agent')}</span>
+                <span>{agent.name}</span>
+              </div>
+              {agent.version !== null ? (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.agentVersionShort')}</span>
+                  <span className="mono text-[12px]">v{agent.version}</span>
+                </div>
+              ) : null}
+              {agent.createdBy ? (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.createdBy')}</span>
+                  <span className="au-mail">
+                    {createdAt > 0 ? (
+                      <>
+                        {agent.createdBy.slice(0, createdAt)}
+                        <wbr />
+                        {agent.createdBy.slice(createdAt)}
+                      </>
+                    ) : (
+                      agent.createdBy
+                    )}
+                  </span>
+                </div>
+              ) : null}
+              {agent.action === 'retire' && agent.reason ? (
+                <div className="mk-kv">
+                  <span>{t('audit.drawer.reason')}</span>
+                  <span>{agent.reason}</span>
+                </div>
+              ) : null}
+            </Sec>
+          )}
           {download && (
             <Sec title={t('audit.drawer.download')}>
               {download.task ? (

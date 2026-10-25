@@ -1,6 +1,7 @@
 /** Audit log of the mock: the events the API would write, newest first. */
 import { createHash, randomBytes } from 'node:crypto';
 
+import { agents, versionOf } from './agents.ts';
 import { MOCK_USER } from './cognito.ts';
 import { sendJson, type ApiHandler } from './http.ts';
 
@@ -15,6 +16,7 @@ interface MockAuditEvent {
   resource?: { type: string; id: string };
   detail: Record<string, unknown>;
   hash: string;
+  agent?: { name: string | null; created_by_email: string | null } | null;
 }
 /** Newest first, like the API. */
 const audit: MockAuditEvent[] = [];
@@ -85,6 +87,31 @@ export function recordAudit(
   audit.length = Math.min(audit.length, 500);
 }
 
+const AGENT_EVENTS = new Set(['agent.version.approved', 'agent.retired']);
+
+/**
+ * Mirror of mango_api.audit.audit_events_out (D89 (9)): the agent of an approved or retired event
+ * and the email of its creator, from the catalog when the trail is read; never another email.
+ */
+function withAgent(item: MockAuditEvent): MockAuditEvent {
+  if (!AGENT_EVENTS.has(item.event)) return item;
+  const { agent: id, version: number, created_by: creator } = item.detail;
+  const agent = typeof id === 'string' ? agents.get(id) : undefined;
+  const version = agent && typeof number === 'number' ? versionOf(agent, number) : null;
+  if (!version) return item;
+  const wrote = version.created_by === creator ? version : agent ? versionOf(agent, 1) : null;
+  return {
+    ...item,
+    agent: {
+      name: version.definition.name,
+      created_by_email:
+        wrote && typeof creator === 'string' && wrote.created_by === creator
+          ? wrote.created_by_email
+          : null,
+    },
+  };
+}
+
 /** GET /api/admin/audit: cursor, range and filters as in mango_api.audit.AuditLog.page. */
 function auditPage(params: URLSearchParams): {
   items: MockAuditEvent[];
@@ -116,7 +143,7 @@ function auditPage(params: URLSearchParams): {
   const items = matches.slice(0, limit);
   const last = items.at(-1);
   return {
-    items,
+    items: items.map(withAgent),
     next_cursor:
       matches.length > limit && last ? Buffer.from(keyOf(last)).toString('base64url') : null,
   };
@@ -148,5 +175,5 @@ export const handleAudit: ApiHandler = (req, res, path, url) => {
 
 /** Every event, newest first, as the index holds them (Gobernanza mock, D89). */
 export function auditEvents(): readonly MockAuditEvent[] {
-  return audit;
+  return audit.map(withAgent);
 }

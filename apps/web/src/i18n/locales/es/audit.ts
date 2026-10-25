@@ -203,6 +203,12 @@ export const audit = {
     chatCost: 'costo {{amount}}',
     catalogSyncNone: 'Consultó el catálogo de Bedrock · sin modelos nuevos',
     reportDownload: 'Descargó el reporte · ejecución {{run}}',
+    // Design round 20 (`auditDetail`): «Agente aprobado» and «Agente retirado».
+    agent: {
+      version: 'v{{version}}',
+      createdBy: 'creado por {{email}}',
+      reason: 'motivo: “{{reason}}”',
+    },
     catalogSync_one: 'Consultó el catálogo de Bedrock · {{count}} modelo nuevo',
     catalogSync_other: 'Consultó el catálogo de Bedrock · {{count}} modelos nuevos',
     // Design round of 2026-10-05: the two reads of Ajustes › Personas, with counts only.
@@ -313,6 +319,9 @@ export const audit = {
     denied: 'Denegado',
     authzNote:
       'Cada turno del chat registra su inicio y verifica el permiso de uso del agente. Si el turno termina, ambos se agrupan aquí; si falla antes, se ven como filas sueltas.',
+    agent: 'Agente',
+    agentVersionShort: 'Versión',
+    createdBy: 'Creado por',
     download: 'Descarga',
     downloadTask: 'Tarea',
     downloadRun: 'Ejecución',

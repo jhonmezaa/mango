@@ -163,6 +163,26 @@ test.describe('Marketplace: create, review and use an agent', () => {
     await expect(retired).toContainText('Retirado');
   });
 
+  test('the audit log names the approved and retired agents and who created them', async () => {
+    await open(page, 'Audit log');
+    // Design round 20: the agent by its name, its version and the creator's email; no ids.
+    const approved = page.getByText(
+      new RegExp(
+        `^${OTHERS_AGENT.replace(/[<>/]/g, '.')} · v\\d+ · creado por \\S+@\\S+ · aplicado$`,
+      ),
+    );
+    await expect(approved.first()).toBeVisible();
+    await expect(
+      page.getByText(
+        new RegExp(`^${RETRIED_AGENT} · v\\d+ · motivo: “Prueba de extremo a extremo” · aplicado$`),
+      ),
+    ).toBeVisible();
+    await approved.first().click();
+    const drawer = page.getByRole('dialog', { name: 'Agente aprobado' });
+    await expect(drawer.getByText('Creado por', { exact: true })).toBeVisible();
+    await drawer.getByRole('button', { name: 'Cerrar' }).click();
+  });
+
   test('nothing was logged as an error, and a reload keeps the session', async () => {
     expect(consoleErrors).toEqual([]);
     // The session cookie of the server (D63); `sessionReload.spec.ts` covers signing out.

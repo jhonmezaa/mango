@@ -371,6 +371,17 @@ export type DetailText =
   | { kind: 'session'; action: SessionAction; sso: boolean }
   | { kind: 'directoryRead'; read: DirectoryRead }
   | { kind: 'reportDownload'; task: string | null; run: string | null; file: string | null }
+  | {
+      /** «Agente aprobado» and «Agente retirado» (design round 20 `auditDetail`). */
+      kind: 'agent';
+      action: 'approve' | 'retire';
+      /** The name the API resolved, else the agent's id. */
+      name: string;
+      version: number | null;
+      /** The creator's email when the API resolved it; never a user id. */
+      createdBy: string | null;
+      reason: string | null;
+    }
   | { kind: 'raw'; text: string };
 
 export interface AuditRow {
@@ -540,9 +551,23 @@ function detailOf(
   event: string,
   known: KnownAction | null,
   detail: Record<string, unknown>,
+  agent: AuditEvent['agent'],
 ): DetailText {
   const after = obj(detail.after);
   switch (known) {
+    case 'agent.approve':
+    case 'agent.retire': {
+      // Design round 20: names and emails only; the hash and user ids stay in «Copiar JSON».
+      const version = detail.version;
+      return {
+        kind: 'agent',
+        action: known === 'agent.approve' ? 'approve' : 'retire',
+        name: agent?.name ?? str(detail.agent) ?? '',
+        version: typeof version === 'number' && Number.isInteger(version) ? version : null,
+        createdBy: agent?.created_by_email ?? null,
+        reason: known === 'agent.retire' ? str(detail.reason) : null,
+      };
+    }
     case 'budget.default':
       return {
         kind: 'defaults',
@@ -691,7 +716,7 @@ export function toAuditRow(item: AuditEvent, index: number): AuditRow {
       : null);
   // A rejected session is a refusal without an `outcome`: its reason is the code.
   const refused = item.event === 'session.rejected' && outcome === null;
-  const rowDetail = detailOf(item.event, known, detail);
+  const rowDetail = detailOf(item.event, known, detail, item.agent);
   // Design: the `outcome` of a read of the directory is not shown.
   const shownOutcome = rowDetail.kind === 'directoryRead' && outcome === 'applied' ? null : outcome;
   const time = Date.parse(item.ts);

@@ -10,6 +10,7 @@ import { TestProviders } from '../test/TestProviders';
 import { AdminAuditPage } from './AdminAuditPage';
 
 const now = Date.now();
+const XSS = '<img src=x onerror=alert(1)>';
 const iso = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
 
 const EVENTS: AuditEvent[] = [
@@ -604,6 +605,83 @@ describe('AdminAuditPage', () => {
     expect(first).toContain('"FinOps central · Admin"');
     expect(first).toContain(`"${'a'.repeat(64)}"`);
     click.mockRestore();
+  });
+
+  it('names the approved and retired agent and its creator, never ids (design round 20)', async () => {
+    const user = userEvent.setup();
+    const createObjectURL = vi.fn(() => 'blob:x');
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const agentEvent = (
+      id: string,
+      event: string,
+      detail: Record<string, unknown>,
+      agent: AuditEvent['agent'],
+    ): AuditEvent => ({
+      event_id: id.padEnd(32, '0'),
+      ts: iso(1),
+      event,
+      user_id: 'sub-ana',
+      actor_email: 'ana@example.com',
+      actor_role: 'finops-central',
+      actor_is_admin: true,
+      resource: { type: 'agent', id: 'finops' },
+      hash: 'd'.repeat(64),
+      detail: { agent: 'finops', ...detail, outcome: 'applied' },
+      agent,
+    });
+    const items = [
+      agentEvent(
+        'a1',
+        'agent.version.approved',
+        {
+          version: 3,
+          created_by: 'sub-luis',
+          approved_by: 'sub-ana',
+          content_hash: 'f'.repeat(64),
+        },
+        { name: 'FinOps', created_by_email: 'luis@example.com' },
+      ),
+      agentEvent(
+        'a2',
+        'agent.retired',
+        { version: 3, created_by: 'sub-luis', retired_by: 'sub-ana', reason: XSS },
+        { name: 'FinOps', created_by_email: 'luis@example.com' },
+      ),
+      // Not in the catalog any more: its id, and no creator.
+      agentEvent('a3', 'agent.version.approved', { version: 1, created_by: 'sub-x' }, null),
+    ];
+    renderPage({ listAuditEvents: vi.fn(() => page(items)) });
+    expect(
+      await screen.findByText('FinOps · v3 · creado por luis@example.com', { exact: false }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`FinOps · v3 · motivo: “${XSS}”`, { exact: false }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('finops · v1', { exact: false })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('sub-luis');
+    expect(document.body.textContent).not.toContain('f'.repeat(64));
+    expect(document.querySelector('img')).toBeNull();
+
+    // The search finds what the row says: the retired one names its reason, not its creator.
+    await user.type(screen.getByLabelText('Buscar en el audit log'), 'luis@example');
+    expect(screen.getAllByText(/creado por|motivo:/)).toHaveLength(1);
+    await user.clear(screen.getByLabelText('Buscar en el audit log'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Exportar CSV/ }));
+    const blob = (createObjectURL.mock.calls[0] as unknown as [Blob])[0];
+    const csv = await blob.text();
+    expect(csv).toContain('"FinOps · v3 · creado por luis@example.com"');
+    click.mockRestore();
+
+    await user.click(screen.getByText(/FinOps · v3 · motivo/));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByRole('heading', { name: 'Agente', level: 3 })).toBeInTheDocument();
+    expect(within(drawer).getByText('Creado por')).toBeInTheDocument();
+    expect(within(drawer).getByText('v3')).toBeInTheDocument();
+    expect(within(drawer).getAllByText(XSS).length).toBeGreaterThan(0);
   });
 
   it('shows a request and its result as one row, and both in the CSV', async () => {
