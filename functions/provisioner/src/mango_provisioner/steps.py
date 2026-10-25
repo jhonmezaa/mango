@@ -7,6 +7,9 @@ Publishing an approved version::
 
 and on any error: ``compensate -> mark_failed``.
 
+The same steps also keep the Playground's test harness (D91), which is not an agent: an input
+``{"playground": "ensure", ...}`` runs them in ``mango_provisioner.playground``.
+
 Rules every step follows:
 
 * **Input is identifiers only** (``agent_id``, ``version``, ``content_hash``). Each step reads
@@ -49,10 +52,12 @@ from mango_core.agents import (
     verify_content,
 )
 from mango_core.agents_table import MAX_VERSION
+from mango_core.playground import is_provision_input
 from mango_provisioner.audit import EVENT_PUBLISHED, EVENT_RELEASE_UPDATE, AuditWriter
 from mango_provisioner.config import RELEASE_APPROVER_PREFIX, Settings
 from mango_provisioner.errors import BusyError, RetryableError, StepError
 from mango_provisioner.harness import Harnesses, HarnessRef, harness_config
+from mango_provisioner.playground import Playground, is_playground_state
 from mango_provisioner.release import (
     Decision,
     Outcome,
@@ -184,6 +189,15 @@ class Provisioner:
         self._logs = logs
         self._audit = audit
         self._now = clock
+        self._playground = Playground(
+            settings,
+            store=store,
+            roles=roles,
+            harnesses=harnesses,
+            logs=logs,
+            audit=audit,
+            clock=clock,
+        )
 
     # --- Shared checks --------------------------------------------------------------------
 
@@ -268,6 +282,8 @@ class Provisioner:
     # --- Forward steps --------------------------------------------------------------------
 
     def load(self, raw_input: object, execution: object) -> dict[str, Any]:
+        if is_provision_input(raw_input):
+            return self._playground.load(raw_input, execution)
         if is_release_input(raw_input):
             return self._load_release(parse_release_input(raw_input, execution))
         request = parse_input(raw_input, execution)
@@ -427,6 +443,8 @@ class Provisioner:
         }
 
     def ensure_role(self, state: dict[str, Any]) -> dict[str, Any]:
+        if is_playground_state(state):
+            return self._playground.ensure_role(state)
         ctx = self._context(_request(state))
         agent_id = ctx.request.agent_id
         # The published version keeps serving until the last step: its models stay allowed.
@@ -437,6 +455,8 @@ class Provisioner:
         return state
 
     def ensure_harness(self, state: dict[str, Any]) -> dict[str, Any]:
+        if is_playground_state(state):
+            return self._playground.ensure_harness(state)
         ctx = self._context(_request(state))
         request = ctx.request
         config = harness_config(
@@ -464,6 +484,8 @@ class Provisioner:
         }
 
     def check_harness(self, state: dict[str, Any]) -> dict[str, Any]:
+        if is_playground_state(state):
+            return self._playground.check_harness(state)
         request = _request(state)
         status = self._harnesses.status(request.agent_id, _harness_ref(state))
         if status.ready:
@@ -471,6 +493,8 @@ class Provisioner:
         return self._waiting(state, "harness_timeout")
 
     def point_live(self, state: dict[str, Any]) -> dict[str, Any]:
+        if is_playground_state(state):
+            return self._playground.point_live(state)
         ctx = self._context(_request(state))
         ref = _harness_ref(state)
         self._harnesses.point_live(
@@ -479,6 +503,8 @@ class Provisioner:
         return {**state, "ready": False, "attempts": 0}
 
     def check_live(self, state: dict[str, Any]) -> dict[str, Any]:
+        if is_playground_state(state):
+            return self._playground.check_live(state)
         ref = _harness_ref(state)
         if self._harnesses.live_ready(ref.harness_id, ref.version):
             return {**state, "ready": True, "attempts": 0}
@@ -492,6 +518,8 @@ class Provisioner:
         return {**state, "ready": False, "attempts": attempts}
 
     def govern_logs(self, state: dict[str, Any]) -> dict[str, Any]:
+        if is_playground_state(state):
+            return self._playground.govern_logs(state)
         ctx = self._context(_request(state))
         runtime_id = state.get("runtime_id")
         if not isinstance(runtime_id, str) or not self._settings.runtime_id_pattern(
@@ -502,6 +530,8 @@ class Provisioner:
         return state
 
     def publish(self, state: dict[str, Any]) -> dict[str, Any]:
+        if is_playground_state(state):
+            return self._playground.publish(state)
         request = _request(state)
         ref = _harness_ref(state)
         harness_arn = self._settings.harness_arn(ref.harness_id)
@@ -557,6 +587,8 @@ class Provisioner:
     def compensate(self, state: object) -> dict[str, Any]:
         """Put the agent's resources back to what is published (see module docstring)."""
         out: dict[str, Any] = dict(state) if isinstance(state, dict) else {}
+        if out.get("playground") is not None:
+            return self._playground.compensate(out)
         try:
             request = _request(out)
         except StepError:
@@ -631,6 +663,9 @@ class Provisioner:
         if out.get("compensation_error") is not None:
             code = f"{code};{COMPENSATION_FAILED}"[:80]
         result = {**out, "failed_step": step, "failure": code, "marked": False}
+        if out.get("playground") is not None:
+            # Also when ``load`` failed and the state is still the execution input.
+            return self._playground.mark_failed(out, step, code)
         try:
             request = _request(out)
         except StepError:

@@ -141,9 +141,14 @@ def variables(instructions: str) -> list[str]:
     return list(dict.fromkeys(m.group(1) for m in _VARIABLE_RE.finditer(instructions)))
 
 
+BUCKET_PREFIX = "skills/"
+"""Where the approved versions live in the skills bucket, and nothing else (``SKILLS_PREFIX`` of
+``infra/lib/constructs/skills.ts``)."""
+
+
 def prefix(skill_id: str, version: int) -> str:
     """Directory of one version in the skills bucket (what the harness fetches)."""
-    return f"skills/{skill_id}/v{version}/{skill_id}/"
+    return f"{BUCKET_PREFIX}{skill_id}/v{version}/{skill_id}/"
 
 
 def object_key(skill_id: str, version: int) -> str:

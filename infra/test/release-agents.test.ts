@@ -240,9 +240,13 @@ describe("publication of the release agents", () => {
       .filter((r) => r.Type === "AWS::IAM::Policy" && r.Properties.Roles.some((x: { Ref: string }) => /^AWS679f53fac/.test(x.Ref)))
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
       .filter((s) => JSON.stringify(s.Action).includes("states:"));
-    expect(grants).toHaveLength(1);
-    expect(grants[0]!.Action).toBe("states:StartExecution");
-    expect(grants[0]!.Resource).toEqual({ Ref: machineId });
+    // One for the release agents and one for the Playground's test harness (D91), on the
+    // same provider role: both only start the agent provisioner.
+    expect(grants).toHaveLength(2);
+    for (const grant of grants) {
+      expect(grant.Action).toBe("states:StartExecution");
+      expect(grant.Resource).toEqual({ Ref: machineId });
+    }
   });
 
   it("tells the provisioner which release approvals are genuine", () => {
@@ -307,5 +311,24 @@ describe("FinOps is not a resource of the stack any more (D32, D34)", () => {
       (p) => p.Properties.Definition.Static.Statement as string,
     );
     expect(statements.filter((s) => /Mango::Agent::"/.test(s))).toEqual([]);
+  });
+});
+
+describe("the Playground's test harness (D91)", () => {
+  const [ensureId, ensure] = customResource("playground-harness");
+
+  it("starts the agent provisioner with the action and the release only", () => {
+    const parsed = JSON.parse(call(ensure));
+    expect([parsed.service, parsed.action]).toEqual(["SFN", "startExecution"]);
+    expect(parsed.parameters.stateMachineArn).toBe("<token>");
+    expect(JSON.parse(parsed.parameters.input)).toEqual({ playground: "ensure", release: "v0.0.0-unpublished" });
+    // Every deployment of a release sends it again; nothing on delete (the uninstall sweeps).
+    expect(call(ensure, "Update")).toBe(call(ensure));
+    expect(ensure.Properties.Delete).toBeUndefined();
+  });
+
+  it("waits for the provisioner of this release", () => {
+    expect(ensure.DependsOn).toEqual(expect.arrayContaining([machineId, functionId]));
+    expect(ensureId).toMatch(/^PlaygroundHarness/);
   });
 });

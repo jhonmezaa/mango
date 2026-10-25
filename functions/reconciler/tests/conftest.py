@@ -26,6 +26,7 @@ from mango_core.agents_table import (
     release_key,
     version_key,
 )
+from mango_core.playground import PLAYGROUND_ID
 from mango_reconciler.checks import Report
 from mango_reconciler.config import Settings
 from mango_reconciler.handler import Reconciler
@@ -321,6 +322,24 @@ class Lab:
             "MANGO_CONFIG_SHA256": "f" * 64,
         }
 
+    def drop_harness(self, agent_id: str) -> None:
+        """The harness of ``agent_id`` is gone; the Playground's stays."""
+        name = self.settings.harness_name(agent_id)
+        for harness_id in [i for i, h in self.agentcore.harnesses.items() if h["name"] == name]:
+            del self.agentcore.harnesses[harness_id]
+
+    def playground(self) -> dict[str, Any]:
+        """The Playground's test harness and its role as the provisioner leaves them (D91)."""
+        self.create_role(PLAYGROUND_ID)
+        harness = self.agentcore.add(self.settings.harness_name(PLAYGROUND_ID))
+        number = self.agentcore.add_version(
+            harness,
+            role_arn=self.settings.role_arn(PLAYGROUND_ID),
+            markers={"MANGO_AGENT_ID": PLAYGROUND_ID, "MANGO_CONFIG_SHA256": "e" * 64},
+        )
+        harness["live"] = {"status": "READY", "liveVersion": number}
+        return harness
+
     def publish(self, agent_id: str = AGENT, version: int = 1) -> dict[str, Any]:
         """A published agent exactly as a successful provisioner execution leaves it."""
         settings = self.settings
@@ -378,4 +397,7 @@ def lab(monkeypatch: pytest.MonkeyPatch) -> Iterator[Lab]:
                 }
             ),
         )
-        yield Lab(dynamodb, iam)
+        lab = Lab(dynamodb, iam)
+        # Every installation has it (D91); tests of its absence remove it.
+        lab.playground()
+        yield lab

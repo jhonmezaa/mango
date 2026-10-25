@@ -89,12 +89,13 @@ describe("Admin v0 infrastructure (D17)", () => {
         expect(["MCP#*", "MCP_INSTALLED#*"]).toContain(keys[0]);
         continue;
       }
-      // CDK custom resource provider (seed), and the daily account health (D84): PutItem only,
-      // one partition each.
+      // CDK custom resource provider (seed), the daily account health (D84) and the agent
+      // provisioner, which says which harness the Playground invokes (D91): PutItem only, one
+      // partition each.
       expect(actions(statement)).toEqual(["dynamodb:PutItem"]);
       const keys = statement.Condition?.["ForAllValues:StringEquals"]?.["dynamodb:LeadingKeys"];
       expect(keys).toHaveLength(1);
-      expect(["BUDGETS", "BU_MAPPING", "GROUPS", "MODELS", "ACCOUNT_HEALTH"]).toContainEqual((keys as string[])[0]);
+      expect(["BUDGETS", "BU_MAPPING", "GROUPS", "MODELS", "ACCOUNT_HEALTH", "PLAYGROUND"]).toContainEqual((keys as string[])[0]);
     }
     expect(writers.some((g) => g.roles.includes(connectorRoleId))).toBe(false);
     expect(writers.some((g) => g.roles.includes(probeRoleId))).toBe(false);

@@ -27,6 +27,7 @@ from mango_core.harness_tools import (
     knowledge_allowed_tool,
     skills_allowed_tool,
 )
+from mango_core.playground import PLAYGROUND_ID
 from mango_core.skills import parse_ref as parse_skill_ref
 from mango_core.skills import s3_uri
 from mango_packs.enablement import is_pack_id
@@ -215,6 +216,63 @@ def harness_config(
     # Always sent: an update keeps the skills it is not given, so a version without skills
     # must say so. Out of the fingerprint while empty, as before skills existed.
     config.setdefault("skills", [])
+    return config
+
+
+PLAYGROUND_IDLE_SECONDS = 60
+"""Idle time of a Playground session: one test per session, never continued (D91)."""
+PLAYGROUND_PROMPT = "Mango Playground. Every invocation sets its own instructions."
+
+
+def playground_config(settings: Settings, models: frozenset[str]) -> dict[str, Any]:
+    """Configuration of the Playground's shared test harness (D91).
+
+    mango-api sends the prompt, the model, the tools and the limits of the tested version on
+    every invocation; these defaults only make a valid harness and never serve a test. What
+    the harness fixes is its role, whose policy names the enabled models.
+    """
+    if not models:
+        raise StepError("model_not_enabled")
+    model: dict[str, Any] = {
+        "modelId": min(models),
+        "maxTokens": 1024,
+        "additionalParams": {
+            "guardrailConfig": {
+                "guardrailIdentifier": settings.guardrail_id,
+                "guardrailVersion": settings.guardrail_version,
+                "trace": "disabled",
+            }
+        },
+    }
+    config: dict[str, Any] = {
+        "executionRoleArn": settings.role_arn(PLAYGROUND_ID),
+        # None of its own (D91 (12)): the skills of the tested version come in the invocation,
+        # which adds them to the harness's.
+        "skills": [],
+        "model": {"bedrockModelConfig": model},
+        "systemPrompt": [{"text": PLAYGROUND_PROMPT}],
+        # No tools of its own: an empty allow-list also disables the built-in shell and file
+        # tools. Each test brings the Gateway and the exact tools of its version.
+        "tools": [],
+        "allowedTools": [],
+        "memory": {"disabled": {}},
+        "maxIterations": 1,
+        "maxTokens": 1024,
+        "timeoutSeconds": 60,
+        "environment": {
+            "agentCoreRuntimeEnvironment": {
+                "lifecycleConfiguration": {
+                    "idleRuntimeSessionTimeout": PLAYGROUND_IDLE_SECONDS,
+                    "maxLifetime": settings.session_max_seconds,
+                }
+            }
+        },
+    }
+    environment = {**REDACT_GENAI_CONTENT, ENV_AGENT_ID: PLAYGROUND_ID}
+    fingerprint = hashlib.sha256(
+        json.dumps([config, environment], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    config["environmentVariables"] = {**environment, ENV_CONFIG_HASH: fingerprint}
     return config
 
 

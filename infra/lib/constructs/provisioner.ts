@@ -18,6 +18,7 @@ import { acknowledge, REASONS } from "../nag.js";
 import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "./agent-platform.js";
 import { AGENTS_PUBLISHED_PARTITION, MODELS_PARTITION } from "./governance.js";
 import { PACK_INSTALLED_PARTITION } from "./pack-provisioner.js";
+import { PLAYGROUND_PARTITION } from "./playground.js";
 import { PythonFunction } from "./python-function.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -451,6 +452,18 @@ export class Provisioner extends Construct {
     );
     role.addToPolicy(
       new iam.PolicyStatement({
+        sid: "WritePlaygroundHarness",
+        // D91: which harness the Playground invokes. Only this role writes it; mango-api reads.
+        actions: ["dynamodb:PutItem"],
+        resources: [props.settingsTable.tableArn],
+        conditions: {
+          "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [PLAYGROUND_PARTITION] },
+          StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
+        },
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
         sid: "WriteAuditIndex",
         actions: ["dynamodb:PutItem"],
         resources: [props.auditIndex.tableArn],
@@ -558,7 +571,9 @@ export class Provisioner extends Construct {
 
   /**
    * mango-api starts executions with `{agent_id, version, content_hash}` (TM-M1, TM-M2); the stack
-   * starts those of the release agents with `{agent_id, content_hash, release}` (D80).
+   * starts those of the release agents with `{agent_id, content_hash, release}` (D80). Both start
+   * `{playground: "ensure", release}` for the Playground's test harness (D91): the stack on every
+   * release, mango-api when the enabled models change.
    */
   grantStart(grantee: iam.IGrantable): void {
     grantee.grantPrincipal.addToPrincipalPolicy(

@@ -41,6 +41,7 @@ import {
   payerChainPacks,
 } from "../constructs/pack-platform.js";
 import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-provisioner.js";
+import { PLAYGROUND_PARTITION, PlaygroundHarness } from "../constructs/playground.js";
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
 import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
@@ -187,6 +188,12 @@ export class CoreStack extends Stack {
       dataKey: governance.dataKey,
       stateMachine: provisioner.stateMachine,
       provisioner: provisioner.function,
+    });
+    // D91: the Playground's shared test harness, kept by the same provisioner.
+    new PlaygroundHarness(this, "PlaygroundHarness", {
+      stateMachine: provisioner.stateMachine,
+      provisioner: provisioner.function,
+      release: props.release?.label ?? "v0.0.0-unpublished",
     });
     // D48: retiring an agent deletes its harness and its role, by SDK and with a role of its
     // own that can only delete. The agents of the release keep theirs.
@@ -422,7 +429,8 @@ export class CoreStack extends Stack {
     // Admin v0 (D17): only mango-api writes settings; only it may invoke the AdminProbe.
     governance.settings.grantReadWriteData(apiTaskRole);
     // What is installed for a pack is written by the pack provisioner only: mango-api decides
-    // enablements (dual approval), never what the provisioner believes it deployed.
+    // enablements (dual approval), never what the provisioner believes it deployed. The same
+    // for the harness the Playground invokes (D91): the agent provisioner's to say.
     apiTaskRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "InstalledPacksAreProvisionerOnly",
@@ -432,7 +440,9 @@ export class CoreStack extends Stack {
         actions: ["dynamodb:BatchWriteItem", "dynamodb:DeleteItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
         resources: [governance.settings.tableArn],
         conditions: {
-          "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": [`${PACK_INSTALLED_PARTITION}*`] },
+          "ForAnyValue:StringLike": {
+            "dynamodb:LeadingKeys": [`${PACK_INSTALLED_PARTITION}*`, PLAYGROUND_PARTITION],
+          },
         },
       }),
     );

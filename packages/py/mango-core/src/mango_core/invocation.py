@@ -10,6 +10,10 @@ read. The signature (v2) names the user, the agent, its published version, the e
 that version and an expiry. The interceptor rejects requests without a valid, unexpired
 signature for the token's subject, and ``tools/call`` for a tool outside the list.
 
+A test of the Playground (D91) carries the claim ``pg``: it runs a version nobody approved,
+for whoever edits it, and the interceptor refuses every write tool under it, approval or not.
+Without the claim, the invocation is an ordinary one.
+
 A version with knowledge bases also names them (``kbs``, D88 (14)): the interceptor hands them
 to the ``knowledge-retrieve`` tool, which searches only those, and of those only the ones the
 person can use. The model never names them. Without the claim, the list is empty.
@@ -56,6 +60,8 @@ class Invocation:
     expires_at: int
     knowledge_bases: tuple[str, ...] = ()
     """Knowledge bases of the agent version (ids, sorted); the tool searches no other."""
+    playground: bool = False
+    """A test of the Playground (D91): no write tool goes through, approval or not."""
 
 
 def _mac(key: bytes, signed: str) -> str:
@@ -71,9 +77,11 @@ def sign(
     agent_version: int,
     tools: Iterable[str],
     knowledge_bases: Iterable[str] = (),
+    playground: bool = False,
 ) -> str:
     """Signature of one harness invocation. ``tools`` are Gateway names (``target___tool``);
-    ``knowledge_bases``, the ids of the version's knowledge bases."""
+    ``knowledge_bases``, the ids of the version's knowledge bases; ``playground``, a test of
+    a version that may not be approved (D91)."""
     names = sorted(set(tools))
     kbs = sorted(set(knowledge_bases))
     if (
@@ -96,6 +104,9 @@ def sign(
     if kbs:
         # Only when there are some: a signature without knowledge bases stays as it was.
         claims["kbs"] = kbs
+    if playground:
+        # Only on a test: every other signature stays as it was.
+        claims["pg"] = True
     payload = json.dumps(claims, separators=(",", ":"), sort_keys=True)
     encoded = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     signed = f"{_VERSION}.{encoded}"
@@ -120,6 +131,7 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
     sub, exp = payload.get("sub"), payload.get("exp")
     agent, ver, tools = payload.get("agent"), payload.get("ver"), payload.get("tools")
     kbs = payload.get("kbs", [])
+    playground = payload.get("pg", False)
     if (
         not isinstance(sub, str)
         or not hmac.compare_digest(sub.encode(), subject.encode())
@@ -134,6 +146,7 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
         or not isinstance(kbs, list)
         or len(kbs) > _MAX_KNOWLEDGE_BASES
         or not all(isinstance(kb, str) and _KB_RE.fullmatch(kb) for kb in kbs)
+        or not isinstance(playground, bool)
     ):
         return None
     return Invocation(
@@ -143,6 +156,7 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
         tools=frozenset(tools),
         expires_at=exp,
         knowledge_bases=tuple(sorted(set(kbs))),
+        playground=playground,
     )
 
 

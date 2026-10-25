@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 from mango_core import approval, approval_use, invocation
 from mango_gateway_interceptor.handler import (
     APPROVAL_REQUIRED_MESSAGE,
+    PLAYGROUND_WRITE_MESSAGE,
     Approvals,
     PackIdentities,
     _approvals,
@@ -49,12 +50,19 @@ def _headers(
     signed_for: str | None = None,
     ttl: int = 300,
     tools: tuple[str, ...] = (TOOL,),
+    playground: bool = False,
 ) -> dict[str, str]:
     expires = int(time.time()) + ttl
     return {
         "Authorization": f"Bearer {_token(sub)}",
         invocation.HEADER: invocation.sign(
-            KEY, signed_for or sub, expires, agent_id="finops", agent_version=1, tools=tools
+            KEY,
+            signed_for or sub,
+            expires,
+            agent_id="finops",
+            agent_version=1,
+            tools=tools,
+            playground=playground,
         ),
     }
 
@@ -449,8 +457,9 @@ def _write_call(
     spent: _Spent,
     *,
     sub: str = "user-1",
+    playground: bool = False,
 ) -> dict[str, Any]:
-    headers = _headers(sub, tools=(WRITE_TOOL, TOOL))
+    headers = _headers(sub, tools=(WRITE_TOOL, TOOL), playground=playground)
     if token is not None:
         headers[approval.HEADER] = token
     event = _event("tools/call", arguments, headers, name=WRITE_TOOL)
@@ -626,3 +635,24 @@ def test_the_knowledge_search_needs_its_name_in_the_signature() -> None:
     # A version without knowledge bases is signed without the tool: the call is refused.
     event = _event("tools/call", {"query": "q"}, _headers(), name=KNOWLEDGE)
     assert _denied(handle(event, KEY, frozenset({"finops", "knowledge"})))
+
+
+def test_a_playground_test_never_writes_even_with_a_valid_approval() -> None:
+    # D91 (2): a version nobody approved never changes anything; the approval is not spent.
+    spent = _Spent()
+    result = _write_call(dict(WRITE_ARGS), _approval_token(), spent, playground=True)
+    assert _refusal(result) == (403, PLAYGROUND_WRITE_MESSAGE)
+    assert spent.used == []
+
+
+def test_a_playground_test_without_an_approval_is_refused_as_a_test() -> None:
+    spent = _Spent()
+    result = _write_call(dict(WRITE_ARGS), None, spent, playground=True)
+    assert _refusal(result) == (403, PLAYGROUND_WRITE_MESSAGE)
+    assert spent.used == []
+
+
+def test_a_playground_test_reads_like_a_turn() -> None:
+    headers = _headers(playground=True)
+    result = handle(_event("tools/call", {"start_date": "2026-09-01"}, headers), KEY, TARGETS)
+    assert _args(result) == {"start_date": "2026-09-01", "_mango_ctx": {"token": _token()}}

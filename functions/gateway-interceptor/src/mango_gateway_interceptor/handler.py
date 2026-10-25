@@ -37,6 +37,10 @@ a token mango-api signed with a KMS key only it can use, bound to this user, thi
 the hash of these arguments, which is then spent on the request it names (single use). An
 agent calling such a tool on its own has no token and is refused here; mango-api turns that
 call into a request for confirmation. Anything that cannot be verified fails closed.
+
+A test of the Playground (D91, signature claim ``pg``) runs a version nobody approved: none of
+those write tools goes through under it, whatever approval it carries, and no approval is
+read or spent.
 """
 
 from __future__ import annotations
@@ -74,6 +78,10 @@ _APPROVAL_TOOLS_ENV = "APPROVAL_TOOLS"
 _APPROVAL_KEY_ENV = "APPROVAL_KEY_ARN"
 _APPROVALS_TABLE_ENV = "APPROVALS_TABLE"
 _CENTRAL_CLAIM = "mango_central"
+PLAYGROUND_WRITE_MESSAGE = (
+    "This is a test in Mango's Playground: actions that change resources never run here. It "
+    "was NOT executed and nothing was requested: do not call this tool again."
+)
 APPROVAL_REQUIRED_MESSAGE = (
     "This action changes resources and needs a person's confirmation in Mango. It was NOT "
     "executed. A confirmation request was shown to the user: do not call this tool again; "
@@ -364,6 +372,9 @@ def _approved(
     that needs none. A write tool without a valid approval is refused (TM-W1 to TM-W3)."""
     if approvals is None or name not in approvals.tools:
         return None
+    if signed.playground:
+        # Before the approval is read: a test never spends one, nor runs with one (D91 (2)).
+        raise _RefusedError(403, _FORBIDDEN, PLAYGROUND_WRITE_MESSAGE, "playground_write")
     token = _header(headers, approval.HEADER)
     if not token:
         # An agent calling the tool on its own: mango-api asks a person to confirm it.

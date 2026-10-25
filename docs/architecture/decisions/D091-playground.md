@@ -2,7 +2,7 @@
 
 - **Estado:** propuesta
 - **Fecha:** 2026-10-25
-- **Precisa / reemplaza a:** precisa [D18](D018-creacion-y-publicacion-de-agentes.md) (nadie **usa** una versión antes de aprobarse; quien la edita la **prueba**), [D32](D032-harness-por-agente.md) (un harness más, que no es de un agente), [D33](D033-autorizacion-de-agentes-y-tools.md) (la firma de una prueba lleva una marca propia y el interceptor no deja pasar ninguna escritura con ella), [D40](D040-provisioner-de-agentes.md) (1) (el Playground no sirve desde el puntero `PUBLISHED#`), [D41](D041-alertas-y-reconciliacion.md) (el conciliador diario espera el harness de pruebas) y [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite de tasa nuevo, contado entre las tareas)
+- **Precisa / reemplaza a:** precisa [D18](D018-creacion-y-publicacion-de-agentes.md) (nadie **usa** una versión antes de aprobarse; quien la edita la **prueba**), [D32](D032-harness-por-agente.md) (un harness más, que no es de un agente), [D33](D033-autorizacion-de-agentes-y-tools.md) (la firma de una prueba lleva una marca propia y el interceptor no deja pasar ninguna escritura con ella), [D40](D040-provisioner-de-agentes.md) (1) (el Playground no sirve desde el puntero `PUBLISHED#`), [D41](D041-alertas-y-reconciliacion.md) (el conciliador diario espera el harness de pruebas) [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite de tasa nuevo, contado entre las tareas) y [D92](D092-skills-de-solo-instrucciones.md) (4) (en el harness de pruebas, y solo ahí, `mango-api` manda las skills en la invocación, punto 12)
 - **Precisada por:** —
 
 ## Decisión
@@ -41,3 +41,9 @@ Origen: la vista «Playground» del menú Construir (D24, `playground.jsx`) esta
 - **La firma de una prueba** nombra a la persona, el agente, la versión probada, sus tools y knowledge bases, y la marca `pg`.
 - **El conciliador diario** (D41) espera el harness y el rol de pruebas y no los marca huérfanos; sí avisa si faltan.
 - **Si el harness de pruebas no existe** o falla, la prueba responde 503 y no cobra nada (D75 (10)); la alarma del provisioner avisa de una creación fallida.
+
+**(12) Las skills de la versión probada van en la invocación del harness de pruebas (2026-10-25, respondido ese día por menú: «En la invocación de pruebas (Recomendada)»; la primera respuesta, «Probar sin skills y avisar», fue un error al navegar el menú y se corrigió el mismo día).** Precisa D92 (4), que dice que `mango-api` nunca manda `skills` en `InvokeHarness` porque las de la invocación se suman a las del harness.
+- **Solo en el harness de pruebas.** No tiene skills propias (el provisioner lo crea y lo actualiza con `skills: []`), así que sumar las de la invocación es poner exactamente las de la versión probada. Los harnesses de los agentes siguen como dice D92 (4): las skills en el harness, nunca en la invocación.
+- **Las arma el servidor.** `mango-api` las toma de la versión guardada (cada `<id>@<N>` es una versión aprobada en el registro de skills), como fuentes `s3` del bucket de skills; el cliente no las nombra ni las cambia, como las tools. Una versión que nombra una skill que no existe o no está aprobada no se prueba (422).
+- **El rol de pruebas lee `skills/` entero** del bucket de skills (`s3:GetObject` y `s3:ListBucket` con ese prefijo, y la llave por S3): ahí solo se escriben versiones aprobadas, que ya ven administradores y creadores. El boundary de agentes ya era ese techo (D92 (4)). Sin bucket de skills en la instalación, el rol no lee nada, el registro del harness lo dice y una versión con skills no se prueba (503).
+- **Como en el chat, las cargas no se muestran** (D92 (8)), y tampoco se cuentan como ejecuciones de la skill (D92 (7)): una prueba no es un uso.

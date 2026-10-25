@@ -40,8 +40,9 @@ def test_published_agents_as_the_provisioner_leaves_them_have_no_findings(lab: L
         "PublishedAgents": 2,
         "RetiredAgents": 0,
         "AgentsInProgress": 0,
-        "Harnesses": 2,
-        "AgentRoles": 2,
+        # And the Playground's test harness and role (D91), which every installation has.
+        "Harnesses": 3,
+        "AgentRoles": 3,
         "PackRuntimes": 0,
         "VersionsInReview": 0,
         "VersionsApproved": 0,
@@ -358,14 +359,15 @@ def test_resources_of_an_agent_retired_just_now_are_counted_but_do_not_alarm(lab
 def test_retired_agent_whose_resources_are_gone_has_no_findings(lab: Lab) -> None:
     """What the deprovisioner leaves: the records stay, the harness and the role do not."""
     _retire(lab, ago=timedelta(days=3))
-    lab.agentcore.harnesses.clear()
+    lab.drop_harness(AGENT)
     name = lab.settings.role_name(AGENT)
     lab.iam.delete_role_policy(RoleName=name, PolicyName="agent")
     lab.iam.delete_role(RoleName=name)
     report = lab.run()
     assert report.findings == ()
     assert report.stats["RetiredAgents"] == 1
-    assert (report.stats["Harnesses"], report.stats["AgentRoles"]) == (0, 0)
+    # Only the Playground's are left (D91).
+    assert (report.stats["Harnesses"], report.stats["AgentRoles"]) == (1, 1)
 
 
 def test_resources_left_after_the_grace_period_alarm_as_a_failed_removal(lab: Lab) -> None:
@@ -386,7 +388,7 @@ def test_resources_left_after_the_grace_period_alarm_as_a_failed_removal(lab: La
 def test_only_what_is_left_is_reported(lab: Lab) -> None:
     """The harness went and the role did not (for example, a role changed by hand)."""
     _retire(lab, ago=timedelta(days=1))
-    lab.agentcore.harnesses.clear()
+    lab.drop_harness(AGENT)
     finding = only(lab, "deprovision_incomplete")
     assert finding.resource == lab.settings.role_name(AGENT)
     assert lab.codes() == ["deprovision_incomplete"]
@@ -781,3 +783,58 @@ def test_many_findings_are_all_counted_but_reported_up_to_a_limit(
 def test_detail_values_are_bounded() -> None:
     finding = Finding("x", Severity.DRIFT, detail={"inline": "p" * 5000})
     assert len(finding.as_dict()["detail"]["inline"]) == 200
+
+
+# --- The Playground's test harness (D91) -----------------------------------------------------
+
+
+def _playground_harness(lab: Lab) -> dict[str, Any]:
+    name = lab.settings.harness_name("playground")
+    return next(h for h in lab.agentcore.harnesses.values() if h["name"] == name)
+
+
+def test_the_playground_harness_and_role_are_expected_not_orphans(lab: Lab) -> None:
+    report = lab.run()
+    assert report.findings == ()
+    assert (report.stats["Harnesses"], report.stats["AgentRoles"]) == (1, 1)
+
+
+def test_a_missing_playground_harness_alarms(lab: Lab) -> None:
+    lab.drop_harness("playground")
+    finding = only(lab, "playground_harness_missing")
+    assert finding.severity is Severity.DRIFT
+    assert finding.resource == "Mango_test_a_playground"
+
+
+def test_a_missing_playground_role_alarms(lab: Lab) -> None:
+    name = lab.settings.role_name("playground")
+    lab.iam.delete_role_policy(RoleName=name, PolicyName="agent")
+    lab.iam.delete_role(RoleName=name)
+    assert lab.codes() == ["playground_role_missing"]
+
+
+def test_a_playground_harness_whose_live_is_not_its_latest_version_alarms(lab: Lab) -> None:
+    harness = _playground_harness(lab)
+    lab.agentcore.add_version(
+        harness,
+        role_arn=lab.settings.role_arn("playground"),
+        markers={"MANGO_AGENT_ID": "playground"},
+    )
+    finding = only(lab, "playground_harness_drift")
+    assert finding.detail == {"reason": "live"}
+
+
+def test_a_playground_harness_run_by_another_role_alarms(lab: Lab) -> None:
+    harness = _playground_harness(lab)
+    number = lab.agentcore.add_version(
+        harness, role_arn=lab.settings.role_arn(AGENT), markers={"MANGO_AGENT_ID": "playground"}
+    )
+    harness["live"] = {"status": "READY", "liveVersion": number}
+    finding = only(lab, "playground_harness_drift")
+    assert finding.detail == {"reason": "content"}
+
+
+def test_the_playground_role_keeps_the_boundary_rule(lab: Lab) -> None:
+    name = lab.settings.role_name("playground")
+    lab.iam.delete_role_permissions_boundary(RoleName=name)
+    assert "role_without_boundary" in lab.codes()

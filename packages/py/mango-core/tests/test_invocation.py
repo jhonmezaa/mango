@@ -172,3 +172,34 @@ def test_a_signed_claim_that_is_not_a_list_of_ids_is_refused(kbs: object) -> Non
         "kbs": kbs,
     }
     assert verify(KEY, "user-1", _forge(payload), now=NOW) is None
+
+
+def test_a_playground_test_is_signed_as_such() -> None:
+    signed = verify(KEY, "user-1", _sign(playground=True), now=NOW)
+    assert signed is not None
+    assert signed.playground is True
+
+
+def test_an_ordinary_signature_is_not_a_playground_test() -> None:
+    # Without the claim, nothing changes in the signature of a chat turn or a task run.
+    value = _sign()
+    payload = json.loads(base64.urlsafe_b64decode(value.split(".")[1] + "=="))
+    assert "pg" not in payload
+    signed = verify(KEY, "user-1", value, now=NOW)
+    assert signed is not None
+    assert signed.playground is False
+
+
+def test_the_playground_claim_is_under_the_mac() -> None:
+    # Dropping the claim from a test's payload breaks its MAC: a test never passes for a turn.
+    _, encoded, mac = _sign(playground=True).split(".")
+    payload = json.loads(base64.urlsafe_b64decode(encoded + "=="))
+    del payload["pg"]
+    stripped = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    assert verify(KEY, "user-1", f"v2.{stripped}.{mac}", now=NOW) is None
+
+
+@pytest.mark.parametrize("value", [1, "true", None, []])
+def test_a_playground_claim_that_is_not_a_boolean_is_refused(value: object) -> None:
+    payload = {"sub": "user-1", "exp": EXPIRES, "agent": "finops", "ver": 3, "tools": TOOLS}
+    assert verify(KEY, "user-1", _forge({**payload, "pg": value}), now=NOW) is None

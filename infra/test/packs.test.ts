@@ -464,7 +464,10 @@ describe("mango-api and the pack provisioner", () => {
       "dynamodb:UpdateItem",
     ]);
     expect(deny.Resource).toEqual({ "Fn::GetAtt": [settingsId, "Arn"] });
-    expect(deny.Condition).toEqual({ "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*"] } });
+    // Also the harness the Playground invokes (D91): the agent provisioner's to say.
+    expect(deny.Condition).toEqual({
+      "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*", "PLAYGROUND"] },
+    });
   });
 
   it("the deny covers every write action it is allowed on the Settings table", () => {
@@ -800,12 +803,24 @@ describe("release packs (D36): only what the release key signed", () => {
     const onSettings = statementsOf(agentProvisionerRoleId).filter((s) =>
       JSON.stringify(s.Resource).includes(settingsId),
     );
-    expect(onSettings.map((s) => s.Sid).sort()).toEqual(["ReadInstalledPacks", "ReadModelCatalog"]);
+    expect(onSettings.map((s) => s.Sid).sort()).toEqual([
+      "ReadInstalledPacks",
+      "ReadModelCatalog",
+      "WritePlaygroundHarness",
+    ]);
     const read = bySid(onSettings, "ReadInstalledPacks");
     expect(actions(read)).toEqual(["dynamodb:GetItem"]);
     expect(read.Condition).toEqual({ "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*"] } });
-    // Read only: enablements and what is installed are never written by this role.
-    expect(onSettings.every((s) => actions(s).every((a) => a === "dynamodb:GetItem"))).toBe(true);
+    // Enablements and what is installed are never written by this role; the only write is the
+    // harness of the Playground (D91), in its own partition.
+    const write = bySid(onSettings, "WritePlaygroundHarness");
+    expect(actions(write)).toEqual(["dynamodb:PutItem"]);
+    expect(write.Condition).toEqual({
+      "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["PLAYGROUND"] },
+      StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
+    });
+    const others = onSettings.filter((s) => s.Sid !== "WritePlaygroundHarness");
+    expect(others.every((s) => actions(s).every((a) => a === "dynamodb:GetItem"))).toBe(true);
   });
 
   it("customer installations only trust the key of the release", () => {

@@ -3,7 +3,7 @@
 - **Estado:** propuesta
 - **Fecha:** 2026-10-25 (los puntos 1 a 9, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal que lanzó al que la registra; propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) (construye sus skills sin scripts) y [D38](D038-alcance-de-marketplace-v1.md) (saca las skills del aplazamiento); precisa [D32](D032-harness-por-agente.md) (las skills van en el harness, nunca en la invocación); precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo por tarea, `skills.reads`); respeta [D25](D025-recursos-creados-en-runtime.md)
-- **Precisada por:** —
+- **Precisada por:** [D91](D091-playground.md) (12) (en el harness de pruebas del Playground, que no tiene skills propias, `mango-api` manda en la invocación las de la versión probada, y su rol lee `skills/` entero)
 
 ## Decisión
 

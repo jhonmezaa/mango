@@ -31,6 +31,7 @@ from mango_core.agents_table import (
     unlock_item,
     version_key,
 )
+from mango_core.playground import PlaygroundHarness
 from mango_packs.enablement import installed_key
 from mango_provisioner.errors import (
     BusyError,
@@ -248,6 +249,15 @@ class ProvisionerStore:
         if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
             raise StepError("installed_pack_invalid")
         return frozenset(tools)
+
+    # --- The Playground's test harness (D91) -----------------------------------------------
+
+    def write_playground(self, deployed: PlaygroundHarness) -> None:
+        """What mango-api invokes for a test: only this function writes the item (IAM)."""
+        try:
+            self._db.put_item(TableName=self._settings, Item=deployed.item())
+        except (ClientError, BotoCoreError) as exc:
+            raise aws_error("PutItem", exc) from None
 
     # --- Lock (one execution per agent, TM-M9) --------------------------------------------
 

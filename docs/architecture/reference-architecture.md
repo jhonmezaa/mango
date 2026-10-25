@@ -60,7 +60,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | Bandeja (2026-10-16) | Hecho (D83). Cada persona ve las aprobaciones que puede firmar (derivadas en cada lectura con la regla de Aprobaciones, D56), desde D88 (49) también las propuestas de bucket de las knowledge bases que puede firmar (derivadas igual, con la regla de D88 (48)), y un aviso por cada ejecución de sus tareas que terminó completada o fallida, con la primera línea del informe o el motivo; leído, no leído y archivado (un botón, no una pestaña); contador en la barra lateral; páginas de 20 con «Mostrar más»; en pantalla angosta el detalle reemplaza la lista (D83 (6)); 90 días. Los avisos viven en la tabla `Conversations`, en la partición de su destinatario y con la misma RLS (`dynamodb:LeadingKeys`); L1 `ViewInbox`. Menciones, tickets, presupuesto y sistema son «Próximamente». Comprobado con tests, e2e contra el mock y en el navegador. En una instalación, el aviso de una ejecución terminada llegó a la Bandeja de su dueño (D83 (5)); las aprobaciones, todavía sin ver | `apps/api/src/mango_api/inbox.py`, `inbox_store.py`, `task_worker.py`; `policies/cedar/platform/inbox-view.cedar`; `apps/web/src/pages/inbox/` | D56, D78, D83 |
 | Vista Gobernanza (2026-10-24) | **Hecho y visto en una instalación el 2026-10-25** (D89, vigente desde 2026-10-25; D89 (8); la variante de `finops-central`, solo en Cedar y tests): el resumen `GET /api/governance` (L1 `ViewGovernance`, administradores y `finops-central`), con cada sección decidida con el permiso de su pantalla: aprobaciones del tramo de aprobadores y propuestas de bucket en conteos, agentes y personas al 80 % o más de su presupuesto, cambios de áreas pendientes, eventos de 24 h sin lecturas (tope de 5.000) y los 7 últimos de gobernanza; límite de 30 por minuto y caché de 30 s por persona; el cliente TypeScript regenerado. Desde el 2026-10-24, la pantalla (`apps/web/src/pages/governance/`) con el diseño de la ronda 19: modo «Disponible hoy», variante de `finops-central` (sin presupuestos, áreas ni auditoría; políticas a todo el ancho), carga y error; la actividad con los textos de Auditoría (`budget.exceeded` es «Turno bloqueado por presupuesto»); «Revisar» de áreas abre Ajustes › Áreas y OUs (`/settings/areas`). Comprobado con tests, e2e contra el mock y capturas. Desde D89 (9), «Agente aprobado» y «Agente retirado» traen el nombre del agente y el correo de quien lo creó, resueltos al leer desde el catálogo. Salud de los agentes y gasto de equipos: «Próximamente». Modelo de amenazas: `governance-threat-model.md` | `apps/api/src/mango_api/governance.py`, `audit.py`; `policies/cedar/platform/governance-view.cedar`; `apps/web/src/pages/governance/` | D17, D27, D70, D89 |
 | Actividad (2026-10-24) | **Hecho y visto en una instalación el 2026-10-25** (D90, vigente desde 2026-10-25; D90 (8)). `mango-api` registra cada llamada a una tool de la versión (nombre, resultado y latencia, nunca argumentos ni resultados) en la partición de la persona, al momento, y en particiones por día de `AuditIndex` al terminar el turno; también el turno que bloqueó el presupuesto del agente. `GET /api/activity` (L1 `ViewActivity`): lo propio para cada persona; lo de todos, solo metadatos, para quien tiene `ViewAudit`; 30 días. La pantalla, con el diseño de la ronda 19 (modo «Disponible hoy»): KPI, filtros, «En vivo» cada 15 s con la pestaña visible, «Exportar CSV» con celdas a prueba de fórmulas, «agentes más activos» y, para administradores, «sin actividad en el periodo»; carga y error con el patrón de las otras pantallas (brief `sync-2026-10-24-actividad.md`). Comprobado con tests, e2e contra el mock y en el navegador. Desde D90 (9), una aprobación abierta que pasó su vencimiento llega como `expired` | `apps/api/src/mango_api/activity.py`, `activity_store.py`, `harness.py`; `policies/cedar/platform/activity-view.cedar`; `apps/web/src/pages/activity/` | D16, D23, D56, D83, D90 |
-| Playground: probar un borrador antes de enviarlo (2026-10-25) | **Decidido, sin construir** (D91, propuesta): un harness de pruebas compartido, `Mango_<ns>_a_playground`, que crea el provisioner; prueba quien edita el agente, como sí mismo, con las tools de lectura reales y las de escritura simuladas, reserva de presupuesto en la persona y el agente, y un límite de tasa por persona. La pantalla sigue en «Próximamente» hasta que Claude Design dibuje su modo «Disponible hoy» | — | D91 |
+| Playground: probar un borrador antes de enviarlo (2026-10-25) | **En construcción** (D91, propuesta). Construido, con tests y sin ver en una instalación: el harness de pruebas compartido, `Mango_<ns>_a_playground`, y su rol bajo el boundary de agentes, que el provisioner crea y pone al día en cada versión (con los modelos habilitados del catálogo) y anota en `Settings` (`PLAYGROUND`/`HARNESS`, que `mango-api` no puede escribir); la marca `pg` de la firma, con la que el interceptor rechaza toda tool de escritura; y el conciliador diario, que espera el harness y el rol y avisa si faltan. **Sin construir:** la ruta de `mango-api` que ejecuta una prueba (como quien edita el agente, con reserva de presupuesto y límite de tasa) y la pantalla, que sigue en «Próximamente» hasta que Claude Design dibuje su modo «Disponible hoy» | `functions/provisioner/src/mango_provisioner/playground.py`; `infra/lib/constructs/playground.ts`; `packages/py/mango-core/src/mango_core/playground.py` | D91 |
 | Skills de solo instrucciones (2026-10-25) | **API hecha, sin pantalla y sin ver en una instalación** (D92, en estado propuesta). Admins y creadores proponen skills y versiones; aprueba otro admin; cada versión aprobada se escribe una vez como `SKILL.md` en un bucket propio y la versión del agente la fija (`skills: <id>@<N>`). El provisioner las pone en el harness y da al rol del agente lectura solo de sus versiones; `mango-api` cuenta las activaciones y no las muestra. Sin scripts. La web espera a Claude Design; el patrón de `allowedTools` de la tool `skills` está por verificar en una instalación | `apps/api/src/mango_api/skills.py` y `skills_store.py`; `packages/py/mango-core/src/mango_core/skills.py`; `infra/lib/constructs/skills.ts`; `functions/provisioner/src/mango_provisioner/harness.py` y `role.py` | D26, D38, D92 |
 | Evals | No hecho | Sin pantalla ni API | D26, D38 |
 | Delegación entre agentes | No hecho (fase 2) | — | D30 |
@@ -125,7 +125,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 
 ## 3. Vista general
 
-> Este diagrama está al día (2026-10-25; ese día entró en el bloque de lo previsto el Playground de D91, y la Gobernanza de D89 y la actividad de los agentes de D90 en `mango-api` y sus tablas, y las knowledge bases de D88, vistas en una instalación el 2026-10-23, pasaron del bloque de lo previsto al cuerpo, y se añadió el bucket de skills de D92 con su tabla `Skills`; el 2026-10-21 cambió la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-25 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización.
+> Este diagrama está al día (2026-10-25; ese día entró el harness de pruebas del Playground de D91, con su ruta de `mango-api` aún prevista, y la Gobernanza de D89 y la actividad de los agentes de D90 en `mango-api` y sus tablas, y las knowledge bases de D88, vistas en una instalación el 2026-10-23, pasaron del bloque de lo previsto al cuerpo, y se añadió el bucket de skills de D92 con su tabla `Skills`; el 2026-10-21 cambió la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-25 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización.
 
 ```mermaid
 flowchart TB
@@ -185,6 +185,7 @@ flowchart TB
     RT["Un harness por agente (D32)<br/>microVM por sesión · memoria desactivada (D13)"]
     GW["Gateway MCP<br/>JWT de Cognito · interceptor: firma de la invocación,<br/>tools del agente, solo tools de pack read (D84)<br/>y approval token · Policy (Cedar L2)"]
     PK["Runtimes de MCP packs (D36)<br/>aws-pricing · aws-billing · aws-cloudwatch"]
+    PG["Harness de pruebas del Playground (D91)<br/>Mango_ns_a_playground · rol con los modelos habilitados<br/>firma con la marca pg: ninguna escritura"]
   end
 
   API -- "InvokeHarness<br/>(sesión calculada en el servidor, token del usuario, firma)" --> RT
@@ -192,8 +193,13 @@ flowchart TB
   SFN -- "crea y borra harness, roles,<br/>Runtimes y targets" --> RT
   SFN --> PK
   RT -- "tools/call" --> GW
+  SFN -- "lo pone al día en cada versión<br/>y al cambiar los modelos (D91)" --> PG
+  API -. "una prueba de quien edita el agente<br/>(D91, ruta sin construir)" .-> PG
+  PG -- "tools/call" --> GW
+  PG --> BR
   RT --> BR["Bedrock: modelos del catálogo<br/>guardrail base compartido (D34)"]
   RT -- "skills de su versión, con el rol del agente (D92)" --> S3SK
+  PG -- "skills de la versión probada,<br/>con el rol de pruebas (D91 (12))" --> S3SK
 
   subgraph KNOW["KNOWLEDGE BASES (D88)"]
     KR["Lambda: knowledge-retrieve<br/>(target knowledge del Gateway)<br/>filtro kb_id y área desde el token"]
@@ -233,6 +239,7 @@ flowchart TB
   API & SFN & BREC & CAE -- "AuditEvent (hash por evento)" --> FH["Firehose"] --> S3A[("S3 Object Lock + KMS<br/>cuenta de la instalación")]
 
   RT -. "trazas sin contenido (D16)" .-> SP[("CloudWatch<br/>aws/spans")]
+  PG -. "trazas sin contenido" .-> SP
   BREC -- "lee los tokens de un turno cortado" --> SP
 
   subgraph OPS["Operación (D71)"]
@@ -245,7 +252,6 @@ flowchart TB
     KBP["Knowledge bases de Confluence, Drive y GitHub<br/>Managed KB · ACL por documento"]
     EXT["Sistemas externos: SAP, Google Drive<br/>(OBO / 3LO con AgentCore Identity)"]
     MEMO["Memory y Evaluations de AgentCore"]
-    PG["Playground (D91, propuesta): harness de pruebas compartido<br/>Mango_ns_a_playground, que crea el provisioner<br/>prueba quien edita el agente, como sí mismo · escritura simulada"]
     CUR["Reconciliación del gasto contra CUR"]
   end
 
@@ -254,8 +260,6 @@ flowchart TB
   KBB -.-> KBP
   GW -.-> EXT
   RT -.-> MEMO
-  API -. "InvokeHarness con la versión probada<br/>firma con la marca pg" .-> PG
-  PG -.-> GW
   DDB -.-> CUR
 ```
 
@@ -271,7 +275,7 @@ Qué cambió respecto al diagrama del plan: el ingreso es propio y no un SSO; no
 |---|---|---|
 | **AgentCore Runtime + harness por defecto** | Cada agente del marketplace es un *harness* con modelo, prompt, tools (referencias al Gateway) y límites. Hay **un harness por agente**: cada versión aprobada es un `UpdateHarness` y `mango-api` invoca el endpoint `live` (D32). Lo crea el provisioner (Step Functions + Lambda) por SDK, sin contenedor. El primer Runtime de una cuenta hace que AgentCore cree su rol vinculado de identidad con los permisos de quien llama: los dos provisioners pueden crear ese rol y ningún otro de ese tipo, salvo el de red en el de packs (D40 (5), D43 (4)). Memoria desactivada (D13). Skills de solo instrucciones desde S3, puestas por el provisioner en el harness y nunca en la invocación (D92), sin `shell` ni `file_operations` | Hecho |
 | **Fuente de verdad = definición del agente en DynamoDB** | Tabla `Agents`. Qué versión sirve un agente lo dice el puntero `PUBLISHED#<id>`, que solo escribe el provisioner (D40). `mango-api` arma cada invocación desde la versión publicada; solo el Playground (D91, sin construir) arma una desde una versión sin aprobar, para quien la edita. Como el harness exporta a Strands, la misma definición podría correr en un runtime propio si hiciera falta salir de AgentCore | Hecho |
-| **Harness de pruebas compartido (Playground)** | Un harness más, `Mango_<ns>_a_playground`, con su rol `Mango-<ns>-agent-playground` bajo el boundary de agentes y los modelos habilitados del catálogo, que el provisioner crea al instalar, en cada actualización y cuando cambian los modelos habilitados. `mango-api` lo invoca con el prompt, el modelo, la temperatura, las tools y los límites de la versión probada, una sesión nueva por prueba y sin historial. Prueba solo quien edita el agente (`EditAgent`); la prueba no se guarda ni sirve a nadie más (D91) | Decidido (D91, propuesta), sin construir |
+| **Harness de pruebas compartido (Playground)** | Un harness más, `Mango_<ns>_a_playground`, sin skills propias, con su rol `Mango-<ns>-agent-playground` bajo el boundary de agentes, los modelos habilitados del catálogo y la lectura de las versiones aprobadas de skills (`skills/`, D91 (12)), que el provisioner crea al instalar, en cada actualización y cuando cambian los modelos habilitados. `mango-api` lo invoca con el prompt, el modelo, la temperatura, las tools y los límites de la versión probada, una sesión nueva por prueba y sin historial. Prueba solo quien edita el agente (`EditAgent`); la prueba no se guarda ni sirve a nadie más (D91) | Construido el harness, su rol y su puesta al día, sin ver en una instalación; la ruta de `mango-api` que lo invoca, sin construir (D91, propuesta) |
 | **Strands code-defined en Runtime para casos avanzados** | Supervisor multi-dominio y prompts por etapa. El harness solo soporta *agent-as-tool* y no *routing* multi-agente | Previsto |
 | **Claude Agent SDK en Runtime** solo para agentes "trabajador de archivos/código" | Necesitan filesystem y skills estilo Claude Code | Previsto |
 | **Contrato interno `AgentInvoker`** en mango-api | Ocultaría harness, runtime code-defined u otro backend futuro. Hoy la invocación del harness vive en un solo módulo (`apps/api/src/mango_api/harness.py`), sin esa interfaz | Previsto |
@@ -309,7 +313,7 @@ Límites a tener presentes:
 - **Skills** en formato AgentSkills.io (`SKILL.md`), **solo de instrucciones** (D92, en estado propuesta; API hecha, sin pantalla):
   - Las proponen admins y creadores de agentes en la app; cada versión la aprueba otro admin (72 h) y es inmutable. Detección de secretos y frontmatter armado por `mango-api`.
   - Cada versión aprobada se escribe una vez en el bucket de skills (`skills/<id>/v<N>/<id>/SKILL.md`, llave KMS propia, `If-None-Match`). Datos en la tabla `Skills`.
-  - La versión del agente fija `<id>@<N>` (hasta 10). El provisioner las pone en el harness como fuentes `s3` y suma la tool `skills` a `allowedTools`; el rol del agente solo lee los prefijos de sus versiones. `mango-api` nunca manda `skills` en la invocación (se sumarían a las del harness, D92 (4)).
+  - La versión del agente fija `<id>@<N>` (hasta 10). El provisioner las pone en el harness como fuentes `s3` y suma la tool `skills` a `allowedTools`; el rol del agente solo lee los prefijos de sus versiones. `mango-api` nunca manda `skills` en la invocación a un harness de agente (se sumarían a las del harness, D92 (4)). La excepción es el harness de pruebas del Playground, que no tiene skills propias: su rol lee `skills/` entero y cada prueba nombra en la invocación las de la versión probada, armadas en el servidor (D91 (12)).
   - El harness las descarga una vez por sesión, pone nombre y descripción en el prompt y carga el cuerpo con la tool `skills`. `mango-api` cuenta cada carga (31 días) y no la muestra en el chat ni en Actividad.
   - **Previsto:** skills con scripts firmados en la release (D26), que correrían con `shell` *dentro de la microVM de la sesión* y piden una decisión propia; `references/` y `assets/`; el flujo de aprobación de **Agent Registry** en la fase 2 como catálogo gobernado de tools/skills/MCP.
 - **Cómo entran los MCP (D19):** conectores propios de Mango y **MCP packs** curados (servidores de awslabs empaquetados en un zip, escaneados y firmados en el CI de Mango, hospedados en AgentCore Runtime). Se habilitan desde la app con doble aprobación. Los MCP remotos del cliente son previstos (v1.x). Nunca se instalan paquetes arbitrarios en la cuenta del cliente. Detalle en `docs/specs/marketplace-v1.md`.
@@ -330,13 +334,13 @@ Límites a tener presentes:
   - Hoy la persona elige el agente en el marketplace, y la conversación guarda el agente de su primer turno (D42).
   - Plan: si el usuario no elige ("Asistente Mango"), un clasificador Haiku con structured output elige entre las Agent Cards *ya filtradas por RBAC*, con umbral de confianza. Viviría fuera de AgentCore para que la decisión sea barata, auditable y posterior al RBAC.
 - **Step Functions** para operaciones largas, siempre por **llamadas SDK** (nunca CodeBuild + CDK):
-  - Publicar un agente (`AgentProvisioner`), retirarlo (`AgentDeprovisioner`, D48) e instalar un pack (`PackProvisioner`, D43).
+  - Publicar un agente (`AgentProvisioner`), retirarlo (`AgentDeprovisioner`, D48) e instalar un pack (`PackProvisioner`, D43). La misma máquina de publicar agentes pone al día el harness de pruebas del Playground en cada versión (D91), sin permisos nuevos salvo escribir `PLAYGROUND`/`HARNESS` en `Settings`.
   - Cada una tiene su rol. Los dos que crean Runtimes crean roles solo bajo su prefijo y con su permissions boundary; fuera de eso solo pueden crear los roles vinculados al servicio que AgentCore necesita en la cuenta: el de identidad (los dos; D40 (5), D43 (4)) y el de red (el de packs, D54).
   - El que retira solo borra. De IAM solo puede borrar un rol de agente y sus políticas inline, y solo si el rol lleva el boundary de agentes: lo exige IAM en las dos acciones, además del código de la función (D48 (7)). No desadjunta políticas.
   - Los dos que crean roles tampoco pueden borrar ni cambiar uno ajeno: escribir la política de un rol, borrarla y borrar el rol exigen en IAM que el rol lleve su boundary (D40 (7), D43 (7)). Leer un rol y etiquetarlo no llevan esa condición.
   - Sincronización de KBs (`Mango-<ns>-KnowledgeSync`, construida en D88 (32) y visto en una instalación el 2026-10-23 (D88 (55))), con el lock y la ingesta incremental de bedrock-chat; y la creación por SDK del rol de lectura de cada fuente de bucket, una vez aprobada, con su boundary (`Mango-<ns>-KnowledgeSources`, D88 (10), (20) y (39)).
   - Las aprobaciones HITL **no** pasan por Step Functions (D56 (2)); ver §4.5.
-- **Trabajos programados:** la reconciliación diaria de agentes, de solo lectura (D41), y la conciliación del presupuesto cada 5 minutos (D73). Las dos son Lambdas con cola de mensajes fallidos.
+- **Trabajos programados:** la reconciliación diaria de agentes, de solo lectura (D41), y la conciliación del presupuesto cada 5 minutos (D73). Las dos son Lambdas con cola de mensajes fallidos La diaria espera además el harness y el rol de pruebas del Playground y avisa si faltan o cambiaron (D91).
 
 ### 4.4 RAG / Knowledge
 
@@ -434,7 +438,7 @@ Límites a tener presentes:
 - **Aprobación de terceros** (por encima): la solicitud vive en `mango-api`; el aprobador se autoriza por AVP `ApproveToolCall` con separación de funciones. **Aprobar no ejecuta nada:** quien pidió la acción la ejecuta con su propia sesión antes del vencimiento, y todo pasa por el Gateway y Cedar. No existe una identidad de servicio que escriba (D56 (2), que sustituye al `waitForTaskToken` de Step Functions de la versión original de este texto).
 - **No evadible:** el interceptor del Gateway y el approval executor exigen un *approval token* firmado con KMS, de un solo uso y ligado a `hash(tool, args)`. Los dos tramos lo emiten.
 - Hoy hay una tool de escritura, `aws-budgets.create_budget`, y ningún agente de la release la usa.
-- **Una prueba del Playground nunca escribe (D91, sin construir):** `mango-api` no crea la solicitud y el interceptor rechaza toda tool de escritura con una firma marcada `pg`, aunque traiga una aprobación. La pantalla la muestra como «pediría aprobación».
+- **Una prueba del Playground nunca escribe (D91; construida la regla del interceptor, sin construir la ruta de `mango-api`):** `mango-api` no crea la solicitud y el interceptor rechaza toda tool de escritura con una firma marcada `pg`, aunque traiga una aprobación. La pantalla la muestra como «pediría aprobación».
 - **Una tarea nunca escribe (D78):** su token no consigue approval tokens; si el agente pide una escritura, queda la solicitud a nombre del dueño y la ejecución termina «Espera aprobación».
 
 **Audit:**

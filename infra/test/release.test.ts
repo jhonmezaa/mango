@@ -211,9 +211,11 @@ describe("Core template of a release", () => {
     const keys = [...first!.matchAll(/"(?:S3Key|SourceObjectKeys)":(\[[^\]]*\]|"[^"]*")/g)].flatMap((m) => m[1]!.match(/[^"[\],]+/g)!);
     expect(keys.length).toBeGreaterThan(15);
     for (const key of keys) expect(key).toMatch(/^mango\/assets\/[0-9a-f]{64}\.zip$/);
-    // The label is in two places: the API task (MANGO_RELEASE) and the stack tagger, which has
-    // to run on every version (D77 (2)). Nothing else changes between the two templates.
-    expect(first!.split("v0.1.0-g1a2b3c4")).toHaveLength(3);
+    // The label is in four places: the API task (MANGO_RELEASE), the stack tagger, which has
+    // to run on every version (D77 (2)), and the create and update calls that start the
+    // Playground's test harness, which the provisioner brings up to date on every version
+    // (D91). Nothing else changes between the two templates.
+    expect(first!.split("v0.1.0-g1a2b3c4")).toHaveLength(5);
     const tagger = Object.values(JSON.parse(first!).Resources as Record<string, Resource>).find(
       (r) => r.Type === "Custom::MangoStackTags",
     )!;

@@ -4,6 +4,10 @@ What is live is decided by the ``PUBLISHED#<id>`` pointer, which only the provis
 write, never by ``META`` (mango-api can write that). Harness versions are immutable, so a
 ``live`` endpoint that serves the version in the pointer serves exactly what was deployed.
 
+The Playground's shared test harness (D91) is not an agent and has no pointer: its harness
+and role are expected, checked for what the provisioner always leaves (``live`` ready, its own
+role, its marker, the boundary and the trust) and reported when missing.
+
 Findings carry identifiers, codes and version numbers only: no definition ever gets here.
 """
 
@@ -19,6 +23,7 @@ from typing import Any
 
 from mango_core.agents import AgentStatus, VersionStatus
 from mango_core.agents_table import AGENT_PREFIX, RELEASE_PREFIX
+from mango_core.playground import PLAYGROUND_ID
 from mango_reconciler.config import (
     CLOCK_SKEW,
     DEPROVISION_GRACE,
@@ -199,10 +204,19 @@ class _Evaluation:
         self, harnesses: Sequence[Harness], deployed: Mapping[str, HarnessVersion | None]
     ) -> None:
         for harness in harnesses:
+            if harness.agent_id == PLAYGROUND_ID:
+                self._playground_harness(harness)
+                continue
             pointer = self.owner(harness.agent_id, harness.harness_id, "harness")
             if pointer is not None and harness.agent_id is not None:
                 self._harness(harness.agent_id, harness, pointer, deployed.get(harness.harness_id))
         existing = {h.agent_id for h in harnesses}
+        if PLAYGROUND_ID not in existing:
+            self.drift(
+                "playground_harness_missing",
+                None,
+                self.settings.harness_name(PLAYGROUND_ID),
+            )
         for agent_id in self.active():
             if agent_id not in existing:
                 self.drift(
@@ -262,6 +276,19 @@ class _Evaluation:
                 actual=latest.version,
             )
 
+    def _playground_harness(self, harness: Harness) -> None:
+        """What the provisioner leaves after keeping the test harness (D91): ``live`` ready on
+        its latest version, run by its own role, with its marker."""
+        resource = harness.harness_id
+        live, latest = harness.live, harness.latest
+        if live is None or live.status != READY or live.live_version != latest.version:
+            self.drift("playground_harness_drift", None, resource, reason="live")
+        if (
+            latest.execution_role_arn != self.settings.role_arn(PLAYGROUND_ID)
+            or latest.markers.get(ENV_AGENT_ID) != PLAYGROUND_ID
+        ):
+            self.drift("playground_harness_drift", None, resource, reason="content")
+
     def _leftover(self, agent_id: str, latest: HarnessVersion, pointer: Pointer) -> bool:
         """Harness versions of failed attempts cannot be deleted; they are not drift.
 
@@ -301,8 +328,11 @@ class _Evaluation:
                     inline=",".join(role.inline_policies),
                     attached=str(len(role.attached_policies)),
                 )
-            self.owner(role.agent_id, role.name, "role")
+            if role.agent_id != PLAYGROUND_ID:
+                self.owner(role.agent_id, role.name, "role")
         existing = {r.agent_id for r in roles}
+        if PLAYGROUND_ID not in existing:
+            self.drift("playground_role_missing", None, self.settings.role_name(PLAYGROUND_ID))
         for agent_id in self.active():
             if agent_id not in existing:
                 self.drift("role_missing", agent_id, self.settings.role_name(agent_id))
