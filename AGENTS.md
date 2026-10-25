@@ -11,6 +11,10 @@ Plataforma empresarial de orquestación de agentes de IA, 100 % sobre AWS. Se **
 - Cuando se tome una decisión nueva, regístrala con fecha: un archivo en `docs/architecture/decisions/` y su línea en el índice de §8, como explica el `README.md` de esa carpeta.
 - Una decisión que añade un agente nace con estado `propuesta`: va en su informe y en la descripción de su PR, y pasa a `vigente` cuando el dueño del repositorio la acepta.
 - **El cuerpo del documento se actualiza en el mismo cambio** que registra o precisa una decisión: las secciones, el diagrama de §3 y la fila de «Estado de lo construido» que esa decisión toque, no solo su archivo y el índice de §8. Un cambio que deja el cuerpo contando algo que una decisión ya cambió no está terminado. El informe del trabajo dice qué partes del documento se actualizaron.
+- **Los diagramas de draw.io se mantienen al día**, como el de §3 ([`docs/architecture/diagrams/mango-reference-architecture.drawio`](docs/architecture/diagrams/mango-reference-architecture.drawio): vista general, flujo de un turno, acceso multi-cuenta y release).
+  - Un cambio que añade o cambia algo que dibuja una de sus páginas actualiza esa página en el mismo cambio. Por ejemplo: un componente, una tabla, un flujo, un rol entre cuentas o un paso de la release.
+  - No se deja para después con una nota de lo que falta.
+  - El informe del trabajo dice qué páginas se actualizaron, o que ninguna lo necesitaba.
 
 ## Stack
 
