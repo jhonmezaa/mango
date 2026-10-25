@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from mango_api import (
+    activity,
     admin,
     approvals,
     directory,
@@ -176,6 +177,17 @@ LIMITS: dict[str, LimitSpec] = {
         why=(
             "Stops a loop of the screen. Each refresh is two free list calls to Bedrock by an "
             "administrator and writes nothing by itself; N times five a minute is harmless."
+        ),
+    ),
+    "activity.reads": LimitSpec(
+        activity.READS_PER_MINUTE,
+        MINUTE,
+        shared=False,
+        why=(
+            "Stops one person's loop over the Actividad (D90), which anyone signed in may read "
+            "and whose live mode asks every 15 s. It holds no exception, and counting it in "
+            "the table would add two calls to a route read that often. N times sixty a minute "
+            "per person reads at most N times sixty pages of 1,000 small items."
         ),
     ),
     "agents.lists": LimitSpec(

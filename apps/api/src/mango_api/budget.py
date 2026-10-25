@@ -30,6 +30,11 @@ if TYPE_CHECKING:
 class BudgetExceededError(Exception):
     """A scope has no remaining budget for the estimated cost."""
 
+    def __init__(self, scope: str | None = None) -> None:
+        super().__init__("budget exceeded")
+        self.scope = scope
+        """The key of the scope that ran out (``USER#…`` or ``AGENT#…``), when known."""
+
 
 class BudgetUnavailableError(Exception):
     """The reservation could not be recorded (e.g. sustained write contention); retry later."""
@@ -63,6 +68,17 @@ def current_period(now: datetime | None = None) -> str:
 
 def _n(value: Decimal) -> dict[str, str]:
     return {"N": str(value)}
+
+
+def _failed_scope(exc: Exception, scopes: list[BudgetScope], turn: object) -> str | None:
+    """The scope whose condition refused the reservation: the reasons come in the order of the
+    transaction's items, the turn's record first when there is one."""
+    reasons = getattr(exc, "response", {}).get("CancellationReasons", [])
+    offset = 1 if turn is not None else 0
+    for position, reason in enumerate(reasons):
+        if reason.get("Code") == "ConditionalCheckFailed" and 0 <= position - offset < len(scopes):
+            return scopes[position - offset].key
+    return None
 
 
 class BudgetService:
@@ -130,7 +146,7 @@ class BudgetService:
                     for reason in exc.response.get("CancellationReasons", [])
                 }
                 if "ConditionalCheckFailed" in reasons:
-                    raise BudgetExceededError("budget exceeded") from exc
+                    raise BudgetExceededError(_failed_scope(exc, scopes, turn)) from exc
                 if not reasons <= _RETRYABLE_REASONS or attempt == MAX_RESERVE_ATTEMPTS:
                     raise BudgetUnavailableError("budget reservation not recorded") from exc
                 # Full jitter so competing turns do not collide again.

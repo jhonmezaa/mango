@@ -91,6 +91,9 @@
       "ViewGovernance": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "ViewActivity": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ApproveToolCall": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },

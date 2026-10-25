@@ -34,12 +34,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from mango_api import harness, knowledge_citations, sessions
+from mango_api.activity import (
+    ActivityDeps,
+    AgentView,
+    TurnActivity,
+    activity_router,
+)
+from mango_api.activity_store import ActivityStore, Origin
 from mango_api.admin import AdminDeps, admin_router, now_utc
 from mango_api.agents import (
     AgentsDeps,
     agents_router,
     agents_serving_knowledge,
     agents_using_knowledge_base,
+    usable_versions,
 )
 from mango_api.agents_store import AgentsStore, ListedVersions
 from mango_api.approval_executor import GatewayExecutor
@@ -371,6 +379,8 @@ class Services:
     """SQS client the worker reads the runs with; ``None`` keeps the worker off (tests)."""
     # La Bandeja (D83): notices of each person, in their conversations partition.
     inbox: InboxDeps | None = None
+    # La Actividad (D90): what the agents did, metadata only.
+    activity: ActivityDeps | None = None
     # Knowledge bases (D88); set in production once mango-api may use the Knowledge table.
     knowledge: KnowledgeDeps | None = None
     limits: Limits = field(default_factory=Limits)
@@ -626,6 +636,16 @@ def build_services(settings: Settings) -> Services:
             published=published,
             approvals=approvals,
             clock=now_utc,
+        ),
+        activity=ActivityDeps(
+            store=ActivityStore(
+                rls.for_user, settings.conversations_table, dynamodb, settings.audit_index_table
+            ),
+            # Set by create_app, which has the agents and the authorizer.
+            agents=lambda _caller, _everyone: [],
+            approvals=approvals.store if approvals is not None else None,
+            clock=now_utc,
+            reads=limits.limiter("activity.reads"),
         ),
         tool_policies=ToolPolicyDeps(
             store=policy_store,
@@ -1264,6 +1284,46 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 
         app.include_router(inbox_router(services.inbox, current_user, require, inbox_can_decide))
 
+    if services.activity is not None:
+        if services.agents is not None:
+            agents_deps = services.agents
+
+            def activity_agents(caller: Caller, everyone: bool) -> list[AgentView]:
+                return [
+                    AgentView(
+                        agent_id=v.agent_id,
+                        name=v.definition.name,
+                        icon=v.definition.icon,
+                        color=v.definition.color,
+                        published=v.status is VersionStatus.PUBLISHED,
+                    )
+                    for v in usable_versions(agents_deps, caller.user, everyone=everyone)
+                ]
+
+            services.activity.agents = activity_agents
+
+        def activity_views_all(caller: Caller) -> bool:
+            """Whose activity is read (D90 (1)): everyone's for who may read the audit trail.
+            A decision that shapes the answer, audited as a read."""
+            allowed = services.authorizer.is_allowed(caller.user, "ViewAudit", *PLATFORM)
+            services.audit.emit(
+                "policy.decision",
+                caller.user.user_id,
+                {
+                    "action": "ViewAudit",
+                    "resource": "Mango::Platform::mango",
+                    "allowed": allowed,
+                    "read_only": True,
+                    "purpose": "activity",
+                },
+                caller.user,
+            )
+            return allowed
+
+        app.include_router(
+            activity_router(services.activity, current_user, require, activity_views_all)
+        )
+
     if services.tasks is not None:
 
         def task_allowed(
@@ -1409,14 +1469,21 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
         try:
             await asyncio.to_thread(services.budgets.reserve, scopes, estimate, period, pending)
-        except BudgetExceededError:
+        except BudgetExceededError as exc:
             await asyncio.to_thread(
                 services.audit.emit,
                 "budget.exceeded",
                 user.user_id,
-                {**turn, "estimate": str(estimate)},
+                {**turn, "estimate": str(estimate), "scope": _budget_kind(exc)},
                 user,
             )
+            if _budget_kind(exc) == "agent":
+                blocked = _turn_activity(
+                    services,
+                    Origin(user.user_id, agent_id, agent.version, conversation_id=conversation_id),
+                )
+                if blocked is not None:
+                    await asyncio.to_thread(blocked.budget_blocked)
             return _error(402, "budget_exceeded", "monthly AI budget exhausted")
         except BudgetUnavailableError:
             return _error(503, "budget_unavailable", "please try again")
@@ -1480,6 +1547,10 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             requested: set[str] = set()
             approval_ids: list[str] = []
             answered = False
+            activity = _turn_activity(
+                services,
+                Origin(user.user_id, agent_id, agent.version, conversation_id=conversation_id),
+            )
             try:
                 services.audit.emit(
                     "agent.invoke",
@@ -1487,7 +1558,13 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     {**detail, "session": "reused" if session.reused else "new"},
                     user,
                 )
-                for event in harness.run(agentcore, request, result, write_tools):
+                for event in harness.run(
+                    agentcore,
+                    request,
+                    result,
+                    write_tools,
+                    on_call=activity.call if activity is not None else None,
+                ):
                     if event.kind != harness.WRITE_CALL:
                         put(sse(event.kind, event.data))
                         continue
@@ -1544,6 +1621,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                 settled = _settle_turn(
                     services, user=user, turn=pending, price=price, detail=detail, result=result
                 )
+                if activity is not None:
+                    activity.end()
             # Only a turn whose reservation is closed leaves its session open to the next one:
             # the traces of a session with a pending turn belong to that turn alone (D73).
             if answered and settled:
@@ -1841,6 +1920,33 @@ def _settle_turn(
     return final and recorded
 
 
+def _budget_kind(exc: BudgetExceededError) -> str | None:
+    """Which budget stopped a turn: the person's or the agent's (``None`` if unknown)."""
+    if exc.scope is None:
+        return None
+    return "agent" if exc.scope.startswith("AGENT#") else "user"
+
+
+def _turn_activity(services: Services, origin: Origin) -> TurnActivity | None:
+    """What a turn tells the Actividad (D90); ``None`` without it."""
+    if services.activity is None:
+        return None
+    return TurnActivity(services.activity.store, origin)
+
+
+def _task_origin(
+    user: UserContext, agent_id: str, version: int, automation: Automation, run: Run
+) -> Origin:
+    return Origin(
+        user.user_id,
+        agent_id,
+        version,
+        task_id=automation.automation_id,
+        run_id=run.run_id,
+        task_name=automation.name,
+    )
+
+
 def _budget_scopes(services: Services, user: UserContext, agent_id: str) -> list[BudgetScope]:
     """Limits from the Settings table (defaults + own override), cached ≤ 30 s (D17)."""
     try:
@@ -1990,13 +2096,23 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     )
     try:
         services.budgets.reserve(scopes, estimate, period, pending)
-    except BudgetExceededError:
+    except BudgetExceededError as exc:
         services.audit.emit(
             "budget.exceeded",
             user.user_id,
-            {**turn, "estimate": str(estimate), "task_id": automation.automation_id},
+            {
+                **turn,
+                "estimate": str(estimate),
+                "task_id": automation.automation_id,
+                "scope": _budget_kind(exc),
+            },
             user,
         )
+        blocked = _turn_activity(
+            services, _task_origin(user, agent_id, agent.version, automation, run)
+        )
+        if blocked is not None and _budget_kind(exc) == "agent":
+            blocked.budget_blocked()
         return TurnOutcome(status=RunStatus.SKIPPED, reason="budget_exceeded")
     except BudgetUnavailableError:
         return TurnOutcome(status=RunStatus.FAILED, reason="budget_unavailable")
@@ -2060,6 +2176,9 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     approval_ids: list[str] = []
     handed: str | None = None
     answered = False
+    activity = _turn_activity(
+        services, _task_origin(user, agent_id, agent.version, automation, run)
+    )
     try:
         services.audit.emit("agent.invoke", user.user_id, {**detail, "session": "new"}, user)
         for event in harness.run(
@@ -2073,6 +2192,7 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
                 if report_type
                 else frozenset()
             ),
+            on_call=activity.call if activity is not None else None,
         ):
             # The internal tool hands data over: it is not a query, so not a step (D86 (6)).
             if (
@@ -2099,6 +2219,8 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
             logger.exception("task turn failed")
     finally:
         _settle_turn(services, user=user, turn=pending, price=price, detail=detail, result=result)
+        if activity is not None:
+            activity.end()
     spent = str(cost(result.usage, price).quantize(Decimal("0.0001")))
     if not answered:
         return TurnOutcome(

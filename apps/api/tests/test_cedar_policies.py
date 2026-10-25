@@ -202,6 +202,12 @@ def test_governance_is_for_administrators_and_central_finops(authz: Authorizer) 
         assert not authz.is_allowed(user, "ViewGovernance", *PLATFORM), user.user_id
 
 
+def test_any_mango_user_reads_their_activity(authz: Authorizer) -> None:
+    # D90: their own partition decides what each one sees; everyone's needs ViewAudit.
+    for user in (*EVERYONE, CENTRAL, NO_GROUP):
+        assert authz.is_allowed(user, "ViewActivity", *PLATFORM), user.user_id
+
+
 def test_any_mango_user_creates_tasks(authz: Authorizer) -> None:
     # D82 (1): anyone signed in creates a task; UseAgent on a published agent, checked by
     # mango-api with the agent's groups and users, is what limits it.

@@ -1175,3 +1175,59 @@ def test_a_recorded_call_says_when_its_answer_arrived() -> None:
     (call,) = result.calls
     assert call["name"] == "get_anomalies"
     assert datetime.fromisoformat(call["at"]).tzinfo is not None
+
+
+# --- What a turn tells the Actividad (D90) ---------------------------------------------------
+
+
+def _stop(index: int) -> dict[str, Any]:
+    return {"contentBlockStop": {"contentBlockIndex": index}}
+
+
+def _tool_at(tool_id: str, index: int, name: str = "x___t") -> dict[str, Any]:
+    start = {"toolUse": {"toolUseId": tool_id, "name": name}}
+    return {"contentBlockStart": {"contentBlockIndex": index, "start": start}}
+
+
+def _calls(stream: list[dict[str, Any]], ticks: list[float]) -> list[harness.ToolCall]:
+    seen: list[harness.ToolCall] = []
+    clock = iter(ticks)
+    result = harness.InvocationResult()
+    request = {"allowedTools": ["@mango/x___t"]}
+    list(
+        harness.run(
+            _Client(stream),  # type: ignore[arg-type]
+            request,
+            result,
+            on_call=seen.append,
+            clock=lambda: next(clock),
+        )
+    )
+    return seen
+
+
+def test_each_answered_call_is_told_with_its_result_and_the_time_of_the_tool() -> None:
+    stream = [
+        _tool_at("t1", 0),
+        _stop(0),
+        _tool_result("t1"),
+        _tool_at("t2", 1),
+        _stop(1),
+        _tool_result("t2", "error"),
+    ]
+    # Start of the call (0.0), end of the model's call (1.0), answer (1.25); then 2.0, 2.5, 4.0.
+    calls = _calls(stream, [0.0, 1.0, 1.25, 2.0, 2.5, 4.0])
+    assert calls == [
+        harness.ToolCall(name="t", ok=True, ms=250),
+        harness.ToolCall(name="t", ok=False, ms=1500),
+    ]
+
+
+def test_a_tool_outside_the_published_version_is_not_told() -> None:
+    # The name is model output (TM-LP1): an invented one is never stored as a call.
+    stream = [_tool_at("t9", 0, "AKIA"), _stop(0), _tool_result("t9", "error")]
+    assert _calls(stream, [0.0, 1.0, 2.0]) == []
+
+
+def test_a_call_without_an_answer_is_not_told() -> None:
+    assert _calls([_tool_at("t1", 0), _stop(0)], [0.0, 1.0]) == []

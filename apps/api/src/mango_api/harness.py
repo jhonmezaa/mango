@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -182,6 +183,18 @@ class _Progress:
         if data != self._last:
             self._last = data
             yield StreamEvent("status", dict(data))
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """One answered tool call, metadata only (D90): never its input or its answer."""
+
+    name: str
+    """As shown (without its prefix), and only a tool of the published version (TM-LP1)."""
+    ok: bool
+    ms: int
+    """From the end of the model's tool call to the arrival of its answer: the time the tool
+    took, without the time the model spent writing the call."""
 
 
 @dataclass
@@ -542,6 +555,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     *,
     inline: frozenset[str] = frozenset(),
     record: frozenset[str] = frozenset(),
+    on_call: Callable[[ToolCall], None] | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> Iterator[StreamEvent]:
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
 
@@ -562,6 +577,11 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     calls back: each one is reported as an ``inline_call`` event with its input once its
     message has ended as a tool call, and the turn ends there, as with a write tool. ``record``
     names tools (as shown, without their prefix) whose calls are kept in ``result.calls``.
+
+    ``on_call`` is told of each tool call of the published version once its answer arrives
+    (the Actividad, D90): name, result and time, nothing of its input or answer. It must not
+    raise. A write tool refused by the Gateway, or an inline call, gets no answer in the
+    stream and is not told: its approval request or its report says what happened.
     """
     progress = _Progress()
     # The tool name in the stream is written by the model and the guardrail does not check it:
@@ -580,6 +600,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             result.harness_missing = True
         raise
     tool_names: dict[str, str] = {}
+    # Tool call ids by their block, and when their block ended (the model finished the call).
+    tool_blocks: dict[int, str] = {}
+    called_at: dict[str, float] = {}
     running: set[str] = set()
     text_blocks: set[int] = set()
     write_calls = _WriteCalls(capture)
@@ -627,6 +650,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 recorded.call(index, tool_id, name)
                 searches.call(tool_id, raw_name)
                 tool_names[tool_id] = name
+                tool_blocks[index] = tool_id
+                called_at[tool_id] = clock()
                 running.add(tool_id)
                 # Text before and after a tool call are separate model blocks; keep them as
                 # separate paragraphs instead of gluing sentences together.
@@ -650,6 +675,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 )
                 result.tools.append({"name": name, "status": status})
                 yield StreamEvent("tool", {"name": name, "status": status})
+                if on_call is not None and tool_id in called_at and name in known_tools:
+                    elapsed = max(0, round((clock() - called_at.pop(tool_id)) * 1000))
+                    on_call(ToolCall(name=name, ok=status != "error", ms=elapsed))
                 running.discard(tool_id)
                 refused.discard(tool_id)
                 if not running:
@@ -676,6 +704,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                     searches.add(index, part)
         elif "contentBlockStop" in event:
             index = event["contentBlockStop"].get("contentBlockIndex", -1)
+            if index in tool_blocks:
+                called_at[tool_blocks.pop(index)] = clock()
             write_calls.stop(index)
             inline_calls.stop(index)
             recorded.stop(index)

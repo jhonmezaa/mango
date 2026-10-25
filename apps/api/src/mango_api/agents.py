@@ -952,6 +952,19 @@ def list_agents(deps: AgentsDeps, caller: Caller) -> AgentList:
     return AgentList(items=items)
 
 
+def usable_versions(deps: AgentsDeps, user: UserContext, *, everyone: bool) -> list[AgentVersion]:
+    """Published and retired agents ``user`` may use (``UseAgent``), or every one of them for
+    who sees everyone's activity (D90 (1)). Not audited here: the route that asks is."""
+    versions = [
+        *_listed(deps, VersionStatus.PUBLISHED),
+        *_listed(deps, VersionStatus.RETIRED),
+    ]
+    if everyone:
+        return versions
+    allowed = deps.authorizer.allowed_agents(user, "UseAgent", [_use_resource(v) for v in versions])
+    return [v for v in versions if v.agent_id in allowed]
+
+
 def _editable(deps: AgentsDeps, user: UserContext, agent_ids: list[str]) -> frozenset[str]:
     """Agents ``user`` may edit, by the rule of the routes of the Builder (``agent_action``):
     the Cedar decision on ``EditAgent`` and, in process, administrator or who created it."""

@@ -45,6 +45,8 @@ PER_TASK = {
     "session.renewals",
     "agents.lists",
     "governance.reads",  # D89 (6)
+    # D90: the reads of the Actividad, whose live mode asks every 15 s.
+    "activity.reads",
 }
 """Limits accepted as one per task. Adding a name here is a decision: record it (D70)."""
 
@@ -207,7 +209,14 @@ def test_routes_do_not_build_limiters_outside_the_registry() -> None:
     """A limiter built by hand in ``app.py`` would be per task without the registry knowing.
     The defaults of the dependency containers are in memory on purpose (tests); production
     replaces every one of them (the tests above)."""
-    defaults = {"people.py", "web_session.py", "mcp.py", "approvals.py", "admin.py"}
+    defaults = {
+        "people.py",
+        "web_session.py",
+        "mcp.py",
+        "approvals.py",
+        "admin.py",
+        "activity.py",
+    }
     builders = {
         path.name
         for path in SOURCES.glob("*.py")
