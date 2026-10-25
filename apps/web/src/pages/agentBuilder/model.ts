@@ -159,6 +159,7 @@ export function blankDefinition(context: BuilderContext): Definition {
     groups: [],
     users: [],
     knowledge_bases: [],
+    skills: [],
   };
 }
 
@@ -216,6 +217,8 @@ export function toInput(
     users: sortedUnique(definition.users),
     // No picker yet (D88, awaiting its design round): the ones the version has are kept.
     knowledge_bases: sortedUnique(definition.knowledge_bases),
+    // No picker yet (D92, awaiting its design round): the ones the version has are kept.
+    skills: sortedUnique(definition.skills),
   };
 }
 
@@ -335,6 +338,10 @@ const RULE_KEYS: Record<RuleCode, ProblemKey> = {
   account_data_for_users: 'serverAccountDataUsers',
   knowledge_base_unavailable: 'serverKbMissing',
   knowledge_base_not_usable: 'serverKbForbidden',
+  // Skills (D92): the Builder has no section for them yet (Claude Design, next round).
+  skill_unavailable: 'serverSkill',
+  skill_server_not_enabled: 'serverSkill',
+  skill_server_without_tools: 'serverSkill',
 };
 
 /** Design `AB_SERVER_ERR`: where each rule points; the rest follow their field. */
@@ -571,6 +578,7 @@ export function changeCount(base: Definition, definition: Definition): number {
     setChanges(base.allowed_models, definition.allowed_models) +
     setChanges(base.tools, definition.tools) +
     setChanges(base.knowledge_bases, definition.knowledge_bases) +
+    setChanges(base.skills, definition.skills) +
     setChanges(base.groups, definition.groups) +
     setChanges(base.users, definition.users)
   );

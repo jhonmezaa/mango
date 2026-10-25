@@ -26,6 +26,7 @@ const SET_FIELDS = [
   'tools',
   'approval_tools',
   'knowledge_bases',
+  'skills',
   'groups',
   'users',
 ] as const;

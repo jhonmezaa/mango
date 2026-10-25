@@ -23,6 +23,9 @@ export const RULE_CODES = [
   'account_data_for_users',
   'knowledge_base_unavailable',
   'knowledge_base_not_usable',
+  'skill_unavailable',
+  'skill_server_not_enabled',
+  'skill_server_without_tools',
 ] as const;
 export type RuleCode = (typeof RULE_CODES)[number];
 

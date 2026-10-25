@@ -148,6 +148,8 @@ export const agentBuilder = {
       'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.',
     serverKbForbidden:
       'Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.',
+    serverSkill:
+      'Una de las skills no está aprobada o requiere un MCP que el agente no tiene habilitado. Quítala para enviar.',
     serverAccountDataArea:
       'Tiene tools solo para grupos centrales y es visible para grupos que no son centrales ({{items}}). Quita esos grupos o esas tools.',
     serverAccountDataUsers:

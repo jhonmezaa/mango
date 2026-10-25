@@ -74,6 +74,7 @@ const DEFINITION: Version['definition'] = {
   groups: ['bu-retail', 'finops-central'],
   users: [],
   knowledge_bases: [],
+  skills: [],
 };
 
 /** A change to a published agent: every kind of difference the backend reports. */

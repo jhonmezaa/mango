@@ -293,6 +293,7 @@ function parseDefinition(value: unknown): MockAgentDefinition | null {
     groups: sortedUnique(data.groups),
     users: sortedUnique(data.users),
     knowledge_bases: sortedUnique(data.knowledge_bases),
+    skills: sortedUnique(data.skills),
   };
 }
 

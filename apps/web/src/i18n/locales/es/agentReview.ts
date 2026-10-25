@@ -219,6 +219,11 @@ export const agentReview = {
       'Hay knowledge bases que ya no existen o se están borrando: {{items}}. Hay que quitarlas.',
     knowledge_base_not_usable:
       'Quien editó esta versión no está en los grupos de estas knowledge bases: {{items}}. Hay que quitarlas.',
+    skill_unavailable: 'Hay skills que no están aprobadas en esa versión: {{items}}.',
+    skill_server_not_enabled:
+      'Hay skills cuyos MCP no están habilitados: {{items}}. Hay que quitarlas o pedir que se habilite su MCP.',
+    skill_server_without_tools:
+      'Hay skills que requieren un MCP del que el agente no tiene ninguna tool: {{items}}.',
     unknown: 'Incumple una regla de publicación ({{code}}).',
   },
 } as const;

@@ -189,6 +189,7 @@ export function definition(overrides: Partial<Definition> = {}): Definition {
     groups: ['finops-central'],
     users: [],
     knowledge_bases: [],
+    skills: [],
     ...overrides,
   };
 }
