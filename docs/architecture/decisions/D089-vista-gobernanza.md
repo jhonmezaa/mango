@@ -1,7 +1,7 @@
 # D89 · La vista Gobernanza: un resumen en el servidor, cada sección con el permiso de su pantalla
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-24 (los puntos 1 a 7, elegidos por menú ese día con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió seguir con las recomendadas; el cómo, propuesto por un agente)
+- **Estado:** vigente
+- **Fecha:** 2026-10-24 (los puntos 1 a 7, elegidos por menú ese día con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió seguir con las recomendadas; el cómo, propuesto por un agente; aceptada por el dueño el 2026-10-25, por menú: «Aceptar ambas (Recomendada)»)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo contado por tarea, punto 6)
 - **Precisada por:** —
 
