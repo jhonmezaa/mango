@@ -88,10 +88,10 @@ const USER_VIEWS: ReadonlySet<ViewKey> = new Set([
 
 /**
  * Design store.js CREATOR_VIEWS: agent creators also get the Catálogo de MCP (the Agent Builder,
- * `admin` in the design, has no navigation entry of its own) and the Playground (round 21, D91
- * (4): it is for whoever edits agents).
+ * `admin` in the design, has no navigation entry of its own), the Playground (round 21, D91
+ * (4): it is for whoever edits agents) and Skills (round 21, `ViewSkills`).
  */
-const CREATOR_VIEWS: ReadonlySet<ViewKey> = new Set(['mcp', 'knowledge', 'playground']);
+const CREATOR_VIEWS: ReadonlySet<ViewKey> = new Set(['mcp', 'knowledge', 'playground', 'skills']);
 
 /**
  * Design store.js OWNER_VIEWS: FinOps central without Admin also sees these (all "Próximamente"
@@ -101,7 +101,6 @@ const CREATOR_VIEWS: ReadonlySet<ViewKey> = new Set(['mcp', 'knowledge', 'playgr
 const OWNER_VIEWS: ReadonlySet<ViewKey> = new Set([
   ...USER_VIEWS,
   'governance',
-  'skills',
   'schedules',
   'observability',
   'evals',

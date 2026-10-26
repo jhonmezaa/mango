@@ -39,6 +39,7 @@ import { handleOrgChart } from './orgChart.ts';
 import { handlePeople } from './people.ts';
 import { handlePlayground } from './playground.ts';
 import { handleSession } from './session.ts';
+import { handleSkills } from './skills.ts';
 import { handleTasks } from './tasks.ts';
 
 /**
@@ -61,6 +62,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleBrains,
   handleMcpCatalog,
   handleKnowledge,
+  handleSkills,
   handleMarketplace,
   handleAgentBuilder,
   handleAgentReview,

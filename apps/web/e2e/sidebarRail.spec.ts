@@ -58,12 +58,12 @@ test('the collapsed rail opens each group in a floating menu, by pointer and key
   await expect(menu).toHaveCount(0);
   await expect(gov).toBeFocused();
 
-  // «Próximamente» views are listed but do not navigate.
-  const build = nav.getByRole('button', { name: /^Construir/ });
-  await build.click();
+  // «Próximamente» views are listed but do not navigate (Construir has none left since round 21).
+  const ops = nav.getByRole('button', { name: /^Operación/ });
+  await ops.click();
   const soon = page
-    .getByRole('menu', { name: 'Construir' })
-    .getByRole('menuitem', { name: 'Skills, próximamente' });
+    .getByRole('menu', { name: 'Operación' })
+    .getByRole('menuitem', { name: 'Observability, próximamente' });
   await expect(soon).toHaveAttribute('aria-disabled', 'true');
   // A click outside (on the page title, not on a row that opens something) closes it.
   await page.getByRole('heading', { level: 1, name: 'Audit log' }).click();

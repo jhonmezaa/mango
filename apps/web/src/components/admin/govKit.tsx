@@ -303,7 +303,7 @@ export function GovErrorState({
  * their own notice (round 20), the Playground too (round 21), the others with the shared one.
  * The server authorizes anyway.
  */
-export function Denied({ view }: { view?: 'governance' | 'activity' | 'playground' }) {
+export function Denied({ view }: { view?: 'governance' | 'activity' | 'playground' | 'skills' }) {
   const { t } = useTranslation();
   const key = view ? (`gov.denied.${view}` as const) : 'gov.denied';
   return (

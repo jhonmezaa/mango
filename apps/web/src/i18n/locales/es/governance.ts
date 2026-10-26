@@ -53,6 +53,11 @@ export const gov = {
       title: 'No tienes acceso al Playground',
       body: 'El Playground es para quien edita agentes: creadores de agentes y administradores. Un admin de Mango puede darte acceso.',
     },
+    // Design round 21.
+    skills: {
+      title: 'No tienes acceso a Skills',
+      body: 'Skills es para administradores y creadores de agentes. Un admin de Mango puede darte acceso.',
+    },
   },
   rel: {
     now: 'ahora',

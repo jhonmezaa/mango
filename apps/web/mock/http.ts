@@ -48,13 +48,17 @@ export function redirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
-export async function readBody(req: IncomingMessage): Promise<string> {
+/** `maxBytes`: a domain whose bodies are larger (the 20.000 characters of a skill). */
+export async function readBody(
+  req: IncomingMessage,
+  maxBytes: number = MAX_BODY_BYTES,
+): Promise<string> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     const buffer = chunk as Buffer;
     size += buffer.length;
-    if (size > MAX_BODY_BYTES) throw new Error('body too large');
+    if (size > maxBytes) throw new Error('body too large');
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString('utf8');

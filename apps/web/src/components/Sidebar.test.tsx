@@ -139,13 +139,12 @@ describe('Sidebar navigation', () => {
       'Inicio, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
-      'Skills, próximamente',
       'Observability, próximamente',
       'Evals, próximamente',
       'Costos, próximamente',
     ]);
-    // Admin-only screens stay hidden.
-    for (const label of ['Presupuestos', 'Audit log', 'Revisión de agentes', 'Brains']) {
+    // Admin-only screens stay hidden, and Skills is for creators and admins (design round 21).
+    for (const label of ['Presupuestos', 'Audit log', 'Revisión de agentes', 'Brains', 'Skills']) {
       expect(screen.queryByText(label)).toBeNull();
     }
   });
@@ -401,8 +400,9 @@ describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
   it('lists «Próximamente» views as disabled items that do not navigate', async () => {
     const user = userEvent.setup();
     renderRail();
-    await user.click(railGroup(/^Construir/));
-    const soon = screen.getByRole('menuitem', { name: 'Skills, próximamente' });
+    // Construir has no «Próximamente» view left since Playground and Skills (round 21).
+    await user.click(railGroup(/^Operación/));
+    const soon = screen.getByRole('menuitem', { name: 'Observability, próximamente' });
     expect(soon).toHaveAttribute('aria-disabled', 'true');
     expect(soon).not.toHaveAttribute('href');
     expect(within(soon).getByText('Próximamente')).toBeInTheDocument();

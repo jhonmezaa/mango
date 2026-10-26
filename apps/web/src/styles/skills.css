@@ -1,0 +1,223 @@
+/*
+ * Skills (design skills.jsx, D92). Ported from the design's styles.css (`sk-tr`, `sk-mcp`,
+ * `sk-ins`); values are the design's. The rest are the inline styles of skills.jsx as classes.
+ * The classes it shares with other screens (`mc-*`, `mk-*`, `ab-*`, `chg*`) are in agents.css,
+ * admin.css, agentBuilder.css and account.css.
+ */
+@layer components {
+  .sk-tr {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) minmax(180px, 1.4fr) 150px 70px 120px 130px;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: left;
+  }
+  .sk-tr.mc-th {
+    border-top: none;
+  }
+  .sk-tr:hover:not(.mc-th, .is-skel, .is-pending) {
+    background: var(--row-hover);
+  }
+  .sk-tr.is-pending {
+    opacity: 0.7;
+    cursor: default;
+  }
+  .sk-tr.is-skel {
+    cursor: default;
+  }
+  .sk-ellipsis {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sk-mcp {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: var(--row-hover);
+    white-space: nowrap;
+  }
+  .sk-mcp.off {
+    background: var(--red-soft);
+    color: var(--red);
+  }
+  .sk-ins {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 280px;
+    overflow: auto;
+  }
+  .sk-ins mark {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    border-radius: 3px;
+    padding: 0 2px;
+  }
+  .sk-desc {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .sk-version {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: baseline;
+  }
+
+  /* Requests (design `ChangeList` and `SkChangeBody`). */
+  .sk-changes {
+    margin-top: 22px;
+  }
+  .sk-changes .g-sec-t {
+    margin-bottom: 4px;
+  }
+  .sk-changes .g-sec-meta {
+    margin-bottom: 10px;
+  }
+  .sk-chg-body {
+    margin-top: 10px;
+    display: grid;
+    gap: 8px;
+  }
+  .sk-chg-field {
+    font-size: 12.5px;
+  }
+  .sk-chg-old {
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+  .sk-chg-text {
+    max-height: 320px;
+    overflow: auto;
+  }
+  .sk-diff {
+    margin: 0;
+    font-size: 11.5px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: auto;
+    max-height: 320px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .sk-diff > div {
+    padding: 1px 10px;
+    color: var(--text-muted);
+  }
+  .sk-diff > .is-add {
+    background: var(--green-soft);
+    color: var(--text);
+  }
+  .sk-diff > .is-rem {
+    background: var(--red-soft);
+    color: var(--text);
+  }
+
+  /* Editor (design `SkillEditor`). */
+  .sk-edit {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 20px;
+  }
+  .sk-edit-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .sk-edit-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .sk-lb {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .sk-lb > label,
+  .sk-lb > span:first-child {
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .sk-ins-input {
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+  .sk-invalid {
+    border-color: var(--red);
+  }
+  .sk-out-input {
+    flex: 1 1 160px;
+    max-width: 220px;
+    font-size: 12.5px;
+  }
+  .sk-servers {
+    max-height: 360px;
+  }
+  .sk-servers .ab-item:disabled:not(.is-on) {
+    cursor: not-allowed;
+  }
+  .sk-servers .ab-item.is-dim {
+    opacity: 0.5;
+  }
+  .sk-err {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--red);
+  }
+  .sk-edit + .sk-err {
+    margin-top: 14px;
+  }
+  .sk-edit-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+  }
+  .sk-edit-foot > .input {
+    flex: 1;
+    max-width: 360px;
+  }
+
+  @media (max-width: 1100px) {
+    .sk-tr {
+      grid-template-columns: minmax(200px, 2fr) minmax(160px, 1.4fr) 140px 110px;
+    }
+    .sk-tr > :nth-child(4),
+    .sk-tr > :nth-child(5) {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .sk-tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .sk-tr > :nth-child(2),
+    .sk-tr > :nth-child(6) {
+      display: none;
+    }
+    .sk-edit,
+    .sk-edit-pair {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
