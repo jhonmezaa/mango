@@ -43,7 +43,7 @@ Controles que se construyen:
 - **Tabla `Mango-<ns>-Conversations`** (DynamoDB, CMK, PITR, `RETAIN`, TTL `ttl`): partición `USER#<sub>`; avisos `INBOX#<id>` y estado de aprobaciones `INBOXSTATE#APPROVAL#<id>`.
 - **Rol `Mango-<ns>-ConversationData`**: lo asume `mango-api` por persona con la política de sesión `LeadingKeys`.
 - **Tabla de aprobaciones** (solo lectura desde la Bandeja) y **Verified Permissions** (L1).
-- **SPA**: página `inbox`, contador en la barra lateral (consulta cada 60 s y al volver a la pestaña).
+- **SPA**: página `inbox`, contador en la barra lateral (consulta cada 60 s y al volver a la pestaña). Desde D83 (7) (2026-10-25) la misma respuesta trae `to_sign`, cuántas aprobaciones y propuestas de bucket puede firmar quien mira (el punto de Gobernanza de la barra colapsada): sale de la misma lectura y solo cuenta lo que esa persona ya ve en la Bandeja, así que no enseña nada nuevo ni añade consultas.
 
 ### Data flows and trust boundaries
 

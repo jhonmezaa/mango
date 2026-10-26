@@ -95,6 +95,11 @@ function unread(): number {
   return Math.min(99, [...approvals, ...runs].filter((i) => !i.read && !i.archived).length);
 }
 
+/** What the caller may sign now, read, archived or not (the sidebar's Gobernanza dot). */
+function counts() {
+  return { unread: unread(), to_sign: Math.min(99, items().approvals.length) };
+}
+
 function visible(item: { read: boolean; archived: boolean; kind: string }, view: string) {
   if (view === 'archived') return item.archived;
   if (item.archived) return false;
@@ -124,7 +129,7 @@ export const handleInbox: ApiHandler = async (req, res, path, url) => {
     return true;
   }
   if (path === '/inbox/unread' && req.method === 'GET') {
-    sendJson(res, 200, { unread: unread() });
+    sendJson(res, 200, counts());
     return true;
   }
   if (path === '/inbox/read-all' && req.method === 'POST') {
@@ -133,7 +138,7 @@ export const handleInbox: ApiHandler = async (req, res, path, url) => {
       const key = `${item.kind}:${item.item_id}`;
       state.set(key, { read: true, archived: state.get(key)?.archived ?? false });
     }
-    sendJson(res, 200, { unread: unread() });
+    sendJson(res, 200, counts());
     return true;
   }
   const match = ITEM_ROUTE.exec(path);

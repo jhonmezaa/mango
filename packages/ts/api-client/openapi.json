@@ -9179,13 +9179,18 @@
       "UnreadOut": {
         "additionalProperties": false,
         "properties": {
+          "to_sign": {
+            "title": "To Sign",
+            "type": "integer"
+          },
           "unread": {
             "title": "Unread",
             "type": "integer"
           }
         },
         "required": [
-          "unread"
+          "unread",
+          "to_sign"
         ],
         "title": "UnreadOut",
         "type": "object"

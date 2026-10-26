@@ -2313,6 +2313,7 @@ export const zTriggerOutSchema = z.object({
  * UnreadOut
  */
 export const zUnreadOutSchema = z.object({
+    to_sign: z.int(),
     unread: z.int()
 });
 

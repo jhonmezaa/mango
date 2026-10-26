@@ -112,6 +112,9 @@ class InboxPage(_Strict):
 
 class UnreadOut(_Strict):
     unread: int
+    to_sign: int
+    """What the caller may sign now (approvals and bucket proposals), read, archived or not:
+    the sidebar's Gobernanza dot. Capped like ``unread``."""
 
 
 class StateIn(_Strict):
@@ -292,7 +295,10 @@ def unread_view(deps: InboxDeps, caller: Caller, can_decide: bool) -> UnreadOut:
     user_id = caller.user.user_id
     try:
         approvals = _approval_items(deps, caller, can_decide)
-        return UnreadOut(unread=_unread(approvals, deps.store.unread_runs(user_id)))
+        return UnreadOut(
+            unread=_unread(approvals, deps.store.unread_runs(user_id)),
+            to_sign=min(UNREAD_SHOWN, len(approvals)),
+        )
     except (InboxStoreUnavailableError, ClientError, BotoCoreError) as exc:
         raise _unavailable() from exc
 

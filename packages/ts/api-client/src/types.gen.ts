@@ -4767,6 +4767,10 @@ export type TriggerOut = {
  */
 export type UnreadOut = {
     /**
+     * To Sign
+     */
+    to_sign: number;
+    /**
      * Unread
      */
     unread: number;

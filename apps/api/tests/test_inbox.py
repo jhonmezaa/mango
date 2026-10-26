@@ -323,13 +323,23 @@ def test_unread_count_mark_all_read_and_archive(env: Env) -> None:
     env.run()
     env.run()
     env.request(by=APPROVER2)
-    assert env.client.get(f"{URL}/unread", headers=_h("approver")).json() == {"unread": 1}
+    assert env.client.get(f"{URL}/unread", headers=_h("approver")).json() == {
+        "unread": 1,
+        "to_sign": 1,
+    }
     env.run(owner=APPROVER)
-    assert env.client.get(f"{URL}/unread", headers=_h("approver")).json() == {"unread": 2}
+    assert env.client.get(f"{URL}/unread", headers=_h("approver")).json() == {
+        "unread": 2,
+        "to_sign": 1,
+    }
     done = env.client.post(f"{URL}/read-all", headers=_h("approver"), json={})
-    assert done.json() == {"unread": 0}
+    # Read or not, the request still waits for the approver's signature.
+    assert done.json() == {"unread": 0, "to_sign": 1}
     # The requester is central FinOps too: two runs and the request they can sign.
-    assert env.client.get(f"{URL}/unread", headers=_h("requester")).json() == {"unread": 3}
+    assert env.client.get(f"{URL}/unread", headers=_h("requester")).json() == {
+        "unread": 3,
+        "to_sign": 1,
+    }
     item = env.get("requester", view="unread").json()["items"][-1]
     env.put("requester", "run", item["item_id"], {"archived": True})
     assert len(env.get("requester").json()["items"]) == 2
@@ -452,7 +462,8 @@ def test_reading_and_archiving_a_bucket_proposal_is_per_person(env: Env) -> None
     # «Marcar todo como leído» reaches them too.
     env.inbox.sources = lambda caller: [_source(), _source("01JD0000000000000000000003")]
     assert env.client.post(f"{URL}/read-all", headers=_h("approver"), json={}).json() == {
-        "unread": 0
+        "unread": 0,
+        "to_sign": 2,
     }
 
 

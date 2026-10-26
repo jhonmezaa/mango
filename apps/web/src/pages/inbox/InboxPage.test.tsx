@@ -148,7 +148,7 @@ describe('InboxPage', () => {
     const call = apiWith({
       listInbox: () => page([item]),
       setInboxState: ({ body }) => ({ ...item, ...(body as object) }),
-      unreadInbox: () => ({ unread: 0 }),
+      unreadInbox: () => ({ unread: 0, to_sign: 0 }),
     });
     renderPage(call);
     await user.click((await list()).getByRole('option'));
@@ -168,7 +168,7 @@ describe('InboxPage', () => {
     const call = apiWith({
       listInbox: () => page([item]),
       setInboxState: ({ body }) => ({ ...item, ...(body as object) }),
-      unreadInbox: () => ({ unread: 0 }),
+      unreadInbox: () => ({ unread: 0, to_sign: 0 }),
     });
     renderPage(call);
     await user.click((await list()).getByRole('option'));
@@ -198,7 +198,7 @@ describe('InboxPage', () => {
     const user = userEvent.setup();
     const call = apiWith({
       listInbox: () => page([runItem()], { unread: 1 }),
-      readAllInbox: () => ({ unread: 0 }),
+      readAllInbox: () => ({ unread: 0, to_sign: 0 }),
     });
     renderPage(call);
     expect(await screen.findByText('1 sin leer')).toBeVisible();
@@ -303,7 +303,7 @@ describe('bucket proposals of knowledge bases (D88 (49))', () => {
   it('pins one to sign with its card, its decision and where to go', async () => {
     const call = apiWith({
       listInbox: () => page([sourceItem()]),
-      unreadInbox: () => ({ unread: 1 }),
+      unreadInbox: () => ({ unread: 1, to_sign: 0 }),
       putInboxState: ({ path }) => ({ ...sourceItem(), read: true, item_id: path?.item_id }),
       approveSource: () => ({}),
     });
@@ -331,7 +331,7 @@ describe('bucket proposals of knowledge bases (D88 (49))', () => {
     renderPage(
       apiWith({
         listInbox: () => page([], { next_cursor: `${String(NOW)}${'e'.repeat(16)}` }),
-        unreadInbox: () => ({ unread: 0 }),
+        unreadInbox: () => ({ unread: 0, to_sign: 0 }),
       }),
     );
     expect(await screen.findByText('Nada entre los avisos más recientes.')).toBeInTheDocument();
