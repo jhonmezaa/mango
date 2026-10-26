@@ -1,9 +1,9 @@
 # D93 · MCP remotos de terceros: perfiles curados y firmados en la release, token de cada persona por 3LO y solo lectura (piloto Azure DevOps)
 
-- **Estado:** vigente
+- **Estado:** parcial. Rige todo salvo el punto (4), que reemplaza [D94](D094-consentimiento-iniciado-por-el-gateway.md): el consentimiento lo inicia el Gateway y `mango-api` lo muestra y lo cierra.
 - **Fecha:** 2026-10-25 (los puntos 1 a 6, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió seguir con las recomendadas; el cómo, puntos 7 a 12, propuesto por un agente) · 2026-10-26 (el registro y el plan de la prueba en vivo, elegidos por el dueño ese día, por menú: «Registrar y planear prueba en vivo»; la llave que firma el catálogo aprobado, punto 9, elegida por el dueño ese día, por menú: «KMS propia, firma el provisioner (Recomendada)») · aceptada por el dueño el 2026-10-26, en el chat: «acepto lo que espera mi ok»
 - **Precisa / reemplaza a:** precisa [D19](D019-catalogo-de-mcp.md) (3) (los MCP remotos pasan a ser SaaS de terceros con perfil curado y firmado, no una URL del cliente); precisa [D84](D084-gobernanza-de-tools.md) (5) (el interceptor lee las tools `read` de un remoto de un catálogo aprobado y firmado, no de `PACK_TOOLS`); precisa [D54](D054-egress-de-packs.md) y R6 de [D11](D011-requisitos-de-seguridad.md) (para un target SaaS el control es el host fijo del perfil, no una red); precisa [D13](D013-identidad-hasta-las-tools.md) (un interceptor `RESPONSE` y el borrado de `_meta`); reutiliza [D46](D046-api-del-catalogo-de-mcp.md) (4) a (6); respeta [D25](D025-recursos-creados-en-runtime.md) y [D56](D056-tools-de-escritura-con-aprobacion.md) (5)
-- **Precisada por:** —
+- **Precisada por:** [D94](D094-consentimiento-iniciado-por-el-gateway.md) (reemplaza el punto 4 y precisa el 8, el 10 y el 11)
 
 ## Decisión
 
