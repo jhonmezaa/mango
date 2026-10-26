@@ -319,7 +319,8 @@ describe('AdminAuditPage', () => {
     expect(within(view).getByText('Ver auditoría · permitido')).toBeInTheDocument();
     const denied = screen.getByText('Acceso denegado').closest('button') as HTMLElement;
     expect(within(denied).getByText('Ver auditoría · denegado (403)')).toBeInTheDocument();
-    expect(denied.querySelector('.tk-dot')).toHaveStyle({ background: 'var(--red)' });
+    // The inline declaration: jsdom computes var() and the test sheet defines no --red.
+    expect(denied.querySelector<HTMLElement>('.tk-dot')?.style.background).toBe('var(--red)');
     // The actor of a chat query is the user who asked; the agent is the resource.
     const chat = screen.getByText('Consulta del agente').closest('button') as HTMLElement;
     expect(chat.querySelector('.au-name')).toHaveTextContent('eva@example.com');
