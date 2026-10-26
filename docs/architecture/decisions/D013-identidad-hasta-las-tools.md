@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-28 · complemento del 2026-09-29
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D33](D033-autorizacion-de-agentes-y-tools.md) (firma v2 en lugar de la v1)
+- **Precisada por:** [D33](D033-autorizacion-de-agentes-y-tools.md) (firma v2 en lugar de la v1); [D93](D093-mcp-remotos-de-terceros.md) (un interceptor `RESPONSE` y el borrado de `_meta` hacia los MCP remotos; en estado propuesta)
 
 ## Decisión
 

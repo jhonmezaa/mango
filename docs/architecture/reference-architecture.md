@@ -82,7 +82,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 | Migraciones de datos y modo mantenimiento | No hecho | — | D9, §4.12 |
 | Diagnóstico exportable y stack de soporte | No hecho | — | D7, §4.11 |
 | Acceso de admins a conversaciones | No hecho | — | D23 |
-| Clientes M2M y MCP remotos del cliente | No hecho | — | §4.5, D19 (3) |
+| Clientes M2M y MCP remotos del cliente | No hecho. Los MCP remotos de terceros tienen diseño (D93, en estado propuesta, 2026-10-26): perfiles curados y firmados en la release, token de cada persona por 3LO en el vault de Identity, solo lectura y consentimiento iniciado por `mango-api`; piloto Azure DevOps. Esperan una prueba en vivo antes de construir. Los clientes M2M siguen sin diseño | — | §4.2, §4.5, D19 (3), D93 |
 | Plantilla de SCP y tests de aislamiento | No hecho | No existen `policies/scp` ni `tests/isolation` | D11 |
 
 ---
@@ -125,7 +125,7 @@ Cada fila se comprobó contra el código de `main`: el archivo citado existe y h
 
 ## 3. Vista general
 
-> Este diagrama está al día (2026-10-25; ese día entró el harness de pruebas del Playground de D91, con su ruta de `mango-api`, y la Gobernanza de D89 y la actividad de los agentes de D90 en `mango-api` y sus tablas, y las knowledge bases de D88, vistas en una instalación el 2026-10-23, pasaron del bloque de lo previsto al cuerpo, y se añadió el bucket de skills de D92 con su tabla `Skills`; el 2026-10-21 cambió la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-25 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización.
+> Este diagrama está al día (2026-10-26; ese día se añadieron a lo previsto los MCP remotos de terceros de D93; el 2026-10-25 entró el harness de pruebas del Playground de D91, con su ruta de `mango-api`, y la Gobernanza de D89 y la actividad de los agentes de D90 en `mango-api` y sus tablas, y las knowledge bases de D88, vistas en una instalación el 2026-10-23, pasaron del bloque de lo previsto al cuerpo, y se añadió el bucket de skills de D92 con su tabla `Skills`; el 2026-10-21 cambió la cifra de alarmas, con las de sus recursos fijos): lo construido va con línea continua y lo previsto, aparte y con línea discontinua. El archivo de draw.io ([`diagrams/mango-reference-architecture.drawio`](./diagrams/mango-reference-architecture.drawio)) se puso al día el 2026-10-26 y dibuja con más detalle la vista general, el flujo de un turno de chat, el acceso multi-cuenta y la release con su actualización.
 
 ```mermaid
 flowchart TB
@@ -251,6 +251,7 @@ flowchart TB
     ROUTER["Router «Asistente Mango»"]
     KBP["Knowledge bases de Confluence, Drive y GitHub<br/>Managed KB · ACL por documento"]
     EXT["Sistemas externos: SAP, Google Drive<br/>(OBO / 3LO con AgentCore Identity)"]
+    RMCP["MCP remotos de terceros (D93, propuesta)<br/>Azure DevOps: target mcpServer 3LO, solo lectura<br/>token de cada persona en el vault de Identity<br/>interceptor RESPONSE · consentimiento y callback en mango-api"]
     MEMO["Memory y Evaluations de AgentCore"]
     CUR["Reconciliación del gasto contra CUR"]
   end
@@ -259,6 +260,8 @@ flowchart TB
   API -.-> ROUTER
   KBB -.-> KBP
   GW -.-> EXT
+  GW -.-> RMCP
+  API -.-> RMCP
   RT -.-> MEMO
   DDB -.-> CUR
 ```
@@ -294,7 +297,13 @@ Límites a tener presentes:
   - `ops`: el approval executor (Lambda), que ejecuta las escrituras aprobadas (D56).
   - Uno por MCP pack habilitado, de tipo `mcpServer`, hacia su Runtime (D36).
 - **`knowledge-retrieve`** (target `knowledge`, Lambda de clase `read`, D88 (14), (36)): conector de Mango que recibe el token y las KBs que `mango-api` firmó para la versión. Una versión con KBs lo tiene sin nombrarlo, y no está en el catálogo.
-- **Previstos:** targets OpenAPI (SAP OData), MCP de terceros con 3LO (Drive) y Runtime como *agent-as-tool*.
+- **Previstos:** targets OpenAPI (SAP OData), Runtime como *agent-as-tool* y **MCP remotos de terceros** (D93, en estado propuesta; piloto Azure DevOps; Drive seguiría el mismo patrón):
+  - un **perfil curado y firmado en la release** por servicio: host fijo, proveedor de Identity y scopes de lectura, toolsets, el esquema de cada tool con su hash y su clase D84, las cabeceras que se fuerzan y la marca «los datos salen de AWS». Nunca una URL libre;
+  - un target `mcpServer` por registro (`remote-*`) con OAuth `AUTHORIZATION_CODE` (3LO) y el esquema fijo del perfil (`mcpToolSchema`): no se sincroniza con el servidor. El token de cada persona queda en el vault de AgentCore Identity y el destino la ve con su propia identidad (regla 5);
+  - **solo lectura** en cuatro capas: `X-MCP-Readonly`, el esquema solo con tools `read`, el interceptor y los scopes de la app del cliente;
+  - un administrador pide habilitarlo con los datos de su tenant y el secreto de su app (que va a Identity por API y no vuelve), y otro lo aprueba (D46);
+  - el consentimiento lo inicia `mango-api` (chat y «Mis conexiones») con su callback `/api/oauth/callback` (sesión web y `state` de un solo uso). Un interceptor `RESPONSE` nuevo quita del resultado la URL de consentimiento del Gateway, para que nunca llegue al modelo. El interceptor `REQUEST` borra el `_meta` del modelo y lee las tools aprobadas de un ítem de `Settings` firmado por el provisioner con `alias/Mango-<ns>-remote-mcp`;
+  - antes de construir, una prueba en vivo de lo que la documentación no dice (D93 (11)).
 - **Fuera del Gateway, sin tocar ningún sistema (D87 (3)):** la tool interna `mango_report`, una `inline_function` del harness que `mango-api` añade solo a las ejecuciones de una tarea con reporte. El harness devuelve su llamada a `mango-api`, que valida los datos (`mango_core.task_reports`) y termina ahí el turno; no cuenta como paso.
 - **Conectores y packs:**
 
@@ -307,6 +316,7 @@ Límites a tener presentes:
   | AWS Budgets | Conector de Mango `aws-budgets`: `create_budget`, la única tool de escritura (D56) | `OperateBroker` → `BudgetsOperator` en la pagadora, solo con un approval token válido | Hecho |
   | SAP | OpenAPI (BTP/OData) o MCP de SAP, **VPC egress** a la red del cliente | OAuth **OBO** vía Identity; escritura siempre con aprobación | Previsto |
   | Google Drive | Lectura: Managed KB (ACL nativa). Acciones: MCP con **3LO** + Consent Portal | Token del usuario en el vault de Identity | Previsto |
+  | Azure DevOps | MCP remoto de Microsoft (`mcp.dev.azure.com/{organización}`) como target `mcpServer` con 3LO y esquema fijo del perfil; solo lectura (D93) | Token de la persona en el vault de Identity, emitido por una app single-tenant del Entra del cliente con permisos delegados de lectura | Previsto (D93, propuesta; espera la prueba en vivo) |
 
 - **Clase de cada tool (D84):** el manifiesto firmado de cada pack clasifica cada tool como `read`, `write` o `destructive`. Sin clase cuenta como `write`, que pide aprobación y que un pack no tiene (D56 (5)). Una `destructive` no se habilita nunca, ni con aprobación: la release no distribuye un pack que la tenga, el provisioner lo rechaza y ningún agente la recibe. El pipeline falla si el manifiesto clasifica una tool por debajo de lo que anota el propio servidor (`readOnlyHint`, `destructiveHint`), y el interceptor del Gateway solo deja pasar las tools de pack que la release clasifica `read`. Un conector de Mango no declara tools `destructive`.
 - **Red de los packs (D54):** los Runtimes de packs corren en una VPC propia sin internet ni NAT. Solo alcanzan los endpoints de VPC de los servicios que declara su manifiesto firmado, con un DNS Firewall que resuelve esos nombres y nada más, y registro de consultas (D71 (13), (14)).
@@ -316,7 +326,7 @@ Límites a tener presentes:
   - La versión del agente fija `<id>@<N>` (hasta 10). El provisioner las pone en el harness como fuentes `s3` y suma la tool `skills` a `allowedTools`; el rol del agente solo lee los prefijos de sus versiones. `mango-api` nunca manda `skills` en la invocación a un harness de agente (se sumarían a las del harness, D92 (4)). La excepción es el harness de pruebas del Playground, que no tiene skills propias: su rol lee `skills/` entero y cada prueba nombra en la invocación las de la versión probada, armadas en el servidor (D91 (12)).
   - El harness las descarga una vez por sesión, pone nombre y descripción en el prompt y carga el cuerpo con la tool `skills`. `mango-api` cuenta cada carga (31 días) y no la muestra en el chat ni en Actividad.
   - **Previsto:** skills con scripts firmados en la release (D26), que correrían con `shell` *dentro de la microVM de la sesión* y piden una decisión propia; `references/` y `assets/`; el flujo de aprobación de **Agent Registry** en la fase 2 como catálogo gobernado de tools/skills/MCP.
-- **Cómo entran los MCP (D19):** conectores propios de Mango y **MCP packs** curados (servidores de awslabs empaquetados en un zip, escaneados y firmados en el CI de Mango, hospedados en AgentCore Runtime). Se habilitan desde la app con doble aprobación. Los MCP remotos del cliente son previstos (v1.x). Nunca se instalan paquetes arbitrarios en la cuenta del cliente. Detalle en `docs/specs/marketplace-v1.md`.
+- **Cómo entran los MCP (D19):** conectores propios de Mango y **MCP packs** curados (servidores de awslabs empaquetados en un zip, escaneados y firmados en el CI de Mango, hospedados en AgentCore Runtime). Se habilitan desde la app con doble aprobación. Los MCP remotos son previstos: desde D93 (en estado propuesta), SaaS de terceros con perfil curado y firmado en la release, 3LO por persona y solo lectura. Nunca se instalan paquetes arbitrarios en la cuenta del cliente. Detalle en `docs/specs/marketplace-v1.md`.
 
 ### 4.3 Plano de control y streaming
 
@@ -804,7 +814,7 @@ Salen de [`docs/security/threat-models/mango-architecture-threat-model.md`](../s
 | R3 | **UI de aprobación con argumentos canónicos y diff** renderizados por el backend, nunca el resumen del LLM. SoD obligatoria (el aprobador es distinto del solicitante) | TM-002 | Construido (D56) |
 | R4 | **Namespaces de AgentCore Memory por usuario** (`/{agent}/{user}`). La memoria compartida por área solo con opt-in explícito. Tests de aislamiento usuario↔usuario y área↔área en CI | TM-007 | Espera a que haya memoria: hoy está desactivada (D13) |
 | R5 | **Firma de releases** (manifiesto firmado con KMS), verificada antes de cada `UpdateStack`. Bucket de releases con Object Lock | TM-008 | Firma construida (D36, D58 (4)). La verificación la corre quien instala (`deployment/verify-release.py`); CloudFormation no la exige |
-| R6 | **Egress restringido** de la microVM de AgentCore y de los conectores a destinos en allowlist. Bloqueo de rangos privados salvo los hosts declarados (p. ej. SAP) | TM-009, TM-014 | **Construido para los Runtimes de packs (D54, 2026-10-02)**; pendiente para conectores y hosts externos |
+| R6 | **Egress restringido** de la microVM de AgentCore y de los conectores a destinos en allowlist. Bloqueo de rangos privados salvo los hosts declarados (p. ej. SAP) | TM-009, TM-014 | **Construido para los Runtimes de packs (D54, 2026-10-02)**. Para los targets SaaS del Gateway (MCP remotos, D93, en estado propuesta) el control es el host fijo del perfil firmado, no una red. Pendiente para conectores y otros hosts externos |
 | R7 | **Guardrails de recurso por agente de escritura:** allowlists de tipos, AMIs y regiones, tags obligatorios (`mango:agent`, `mango:user`, `mango:approval`) y límites de cantidad. Se aplican en Cedar L2 **y** en la session policy. Estimación de costo en la aprobación, con escalado por umbral | TM-016 | Falta |
 | R8 | **Plantilla de SCPs recomendadas** al cliente: protege los roles `Mango-<ns>-*` y restringe lo que `Operator-*` puede crear. Se entrega con la instalación y es opcional | TM-004, TM-016 | Falta |
 
@@ -1112,6 +1122,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D90 | La Actividad: cada llamada a una tool, como metadatos que escribe `mango-api`; cada persona ve lo suyo y un administrador lo de todos | vigente | 2026-10-24 (los puntos 1 a 6, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió esa noche seguir con las recomendadas; el punto 7, propuesto por un agente, con lo que pide la ronda de diseño 19; aceptada por el dueño el 2026-10-25, por menú: «Aceptar ambas (Recomendada)»; lo visto en la instalación, punto 8, nota del 2026-10-25 propuesta por un agente; el estado «vencida» de una aprobación, punto 9, nota del 2026-10-25 propuesta por un agente, con lo que pide la ronda de diseño 20) | [D090-actividad-de-los-agentes.md](decisions/D090-actividad-de-los-agentes.md) |
 | D91 | El Playground: quien edita un agente prueba su borrador en un harness de pruebas compartido, como sí mismo, sin escrituras y con presupuesto | vigente | 2026-10-25 (aceptada por el dueño el 2026-10-26, por menú: «Aceptar ambas (Recomendada)») | [D091-playground.md](decisions/D091-playground.md) |
 | D92 | Skills de solo instrucciones: nativas del harness desde S3, aprobadas por versión y fijadas por la versión del agente | vigente | 2026-10-25 (los puntos 1 a 9, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal que lanzó al que la registra; propuesta por un agente; aceptada por el dueño el 2026-10-26, por menú: «Aceptar ambas (Recomendada)») | [D092-skills-de-solo-instrucciones.md](decisions/D092-skills-de-solo-instrucciones.md) |
+| D93 | MCP remotos de terceros: perfiles curados y firmados en la release, token de cada persona por 3LO y solo lectura (piloto Azure DevOps) | propuesta | 2026-10-25 (los puntos 1 a 6, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió seguir con las recomendadas; el cómo, puntos 7 a 12, propuesto por un agente) · 2026-10-26 (el registro y el plan de la prueba en vivo, elegidos por el dueño ese día, por menú: «Registrar y planear prueba en vivo»; la llave que firma el catálogo aprobado, punto 9, elegida por el dueño ese día, por menú: «KMS propia, firma el provisioner (Recomendada)») | [D093-mcp-remotos-de-terceros.md](decisions/D093-mcp-remotos-de-terceros.md) |
 
 Preguntas abiertas (2026-10-05):
 - **Hoja de ruta:** las siete decisiones A1 a A7 de `docs/specs/roadmap-agentes-proactivos-propuesta.md` §6. La propuesta sigue sin aprobar. Lo aprobado desde entonces es el hito 1, «instalable por una empresa real» (2026-10-05), del que salen D70 a D74.
@@ -1123,6 +1134,7 @@ Notas a futuro (no decididas):
   - los MCP de Azure o GCP entran por el Gateway como MCP remoto o como MCP pack (D19), sin CodeBuild;
   - preferencia de credenciales: (1) identidad del usuario (OAuth OBO/3LO con AgentCore Identity, p. ej. Entra ID); (2) federación sin secretos (Workload Identity Federation de GCP con el rol IAM del conector; credencial federada de Entra ID, a validar qué emite el token OIDC del lado AWS); (3) como último recurso, un secreto en AgentCore Identity, creado por API desde la app y sin volver al navegador;
   - queda por definir el mapeo de áreas a suscripciones o proyectos y el modelo de amenazas de identidad federada.
+  - **2026-10-26 (D93, en estado propuesta):** un SaaS de otra nube usado como tool, como Azure DevOps, no es infraestructura en otra nube. Entra como MCP remoto con la preferencia (1): 3LO con el proveedor de Microsoft de AgentCore Identity. El secreto de la app del cliente es la credencial del cliente OAuth, no una identidad, y vive solo en Identity.
 - **Modelos fuera de Bedrock (Gemini, OpenAI, otros vía LiteLLM), 2026-09-29.** El harness los soporta (`CfnHarness` → `geminiModelConfig`, `openAiModelConfig`, `liteLlmModelConfig`, con `apiKeyArn`). Por ahora solo Bedrock. Si se habilita:
   - como **proveedor externo** desactivado por defecto por instalación, con doble aprobación de admins y la marca "los datos salen de AWS" en el catálogo de modelos;
   - la API key se guarda por API (AgentCore Identity o Secrets Manager) y nunca vuelve al navegador; sin CodeBuild;

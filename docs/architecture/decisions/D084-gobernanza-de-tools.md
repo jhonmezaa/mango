@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-16 (las dos reglas, tomadas por el dueño ese día, por menú: «Nunca se habilitan (Recomendada)» y «Como sistema, solo comprobar (Recomendada)»; el cómo, puntos 3 a 10, propuesto por un agente y aceptado por el dueño el 2026-10-16, por menú («Aceptar el cómo de D84 (Recomendada)»); lo que mostró la primera instalación, punto 11, nota propuesta por un agente el 2026-10-16; lo que resolvió el diseño, punto 12, nota del 2026-10-16 propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D17](D017-admin-v0.md) (la sonda ya no solo entra en nombre de un administrador), [D19](D019-catalogo-de-mcp.md) («tools con lectura/escritura» del manifiesto) y [D56](D056-tools-de-escritura-con-aprobacion.md) (5)
-- **Precisada por:** —
+- **Precisada por:** [D93](D093-mcp-remotos-de-terceros.md) (precisa (5): de un MCP remoto, el interceptor deja pasar solo las tools `read` de su catálogo aprobado y firmado, no de `PACK_TOOLS`; en estado propuesta)
 
 ## Decisión
 
