@@ -63,7 +63,7 @@ test('the collapsed rail opens each group in a floating menu, by pointer and key
   await build.click();
   const soon = page
     .getByRole('menu', { name: 'Construir' })
-    .getByRole('menuitem', { name: 'Playground, próximamente' });
+    .getByRole('menuitem', { name: 'Skills, próximamente' });
   await expect(soon).toHaveAttribute('aria-disabled', 'true');
   // A click outside (on the page title, not on a row that opens something) closes it.
   await page.getByRole('heading', { level: 1, name: 'Audit log' }).click();

@@ -17,14 +17,7 @@ const USER: ViewKey[] = [
   'schedules',
   'org',
 ];
-const OWNER_EXTRA: ViewKey[] = [
-  'governance',
-  'playground',
-  'skills',
-  'observability',
-  'evals',
-  'costs',
-];
+const OWNER_EXTRA: ViewKey[] = ['governance', 'skills', 'observability', 'evals', 'costs'];
 const NOT_CREATOR = { create_agent: false };
 const CREATOR = { create_agent: true };
 
@@ -59,6 +52,8 @@ describe('canView (UX only: the API authorizes every request)', () => {
       'models',
       'mcp',
       'knowledge',
+      // Round 21 (D91 (4)): for whoever edits agents, not for FinOps central as such.
+      'playground',
     ] as const) {
       expect(views).not.toContain(hidden);
     }
@@ -69,12 +64,12 @@ describe('canView (UX only: the API authorizes every request)', () => {
     expect(canView({ role: 'bu-lead', is_admin: false, can: NOT_CREATOR }, 'org')).toBe(true);
   });
 
-  it('adds the Catálogo de MCP and Knowledge Bases for agent creators (design CREATOR_VIEWS)', () => {
+  it('adds the Catálogo de MCP, Knowledge Bases and the Playground for agent creators (design CREATOR_VIEWS)', () => {
     const views = visible({ role: null, is_admin: false, can: CREATOR });
-    expect([...views].sort()).toEqual([...USER, 'mcp', 'knowledge'].sort());
+    expect([...views].sort()).toEqual([...USER, 'mcp', 'knowledge', 'playground'].sort());
     const central = visible({ role: 'finops-central', is_admin: false, can: CREATOR });
     expect([...central].sort()).toEqual(
-      [...new Set([...USER, ...OWNER_EXTRA, 'mcp', 'knowledge'])].sort(),
+      [...new Set([...USER, ...OWNER_EXTRA, 'mcp', 'knowledge', 'playground'])].sort(),
     );
   });
 });

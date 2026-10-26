@@ -16,6 +16,7 @@ import { marketplace } from './es/marketplace';
 import { mcpCatalog } from './es/mcpCatalog';
 import { orgChart } from './es/orgChart';
 import { people } from './es/people';
+import { playground } from './es/playground';
 import { schedules } from './es/schedules';
 import { settings } from './es/settings';
 import { app, common, config, errors, nav, notFound, roles, soon } from './es/shell';
@@ -54,4 +55,5 @@ export const es = {
   knowledge,
   governance,
   activity,
+  playground,
 } as const;

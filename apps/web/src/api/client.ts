@@ -15,6 +15,7 @@ import { parseChatEvent, type ChatEvent } from './chatEvents';
 import { ApiError, NotAuthenticatedError, apiErrorFromResponse } from './errors';
 import { mfaResetCreatedSchema, mfaResetIdSchema, mfaResetListSchema } from './mfaResetSchemas';
 import { createOperationCaller } from './operations';
+import { parsePlaygroundEvent, type PlaygroundEvent } from './playgroundEvents';
 import {
   MESSAGE_MAX_LENGTH,
   agentIdSchema,
@@ -26,7 +27,7 @@ import {
   meSchema,
   modelIdSchema,
 } from './schemas';
-import { SseParser } from './sse';
+import { SseParser, type SseMessage } from './sse';
 
 export interface ApiClientOptions {
   /** Same-origin path prefix, already validated by the runtime config (e.g. `/api`). */
@@ -53,6 +54,18 @@ export interface StreamChatRequest {
   onEvent: (event: ChatEvent) => void;
 }
 
+/** One Playground test (D91): a stored version, one question and the three allowed changes. */
+export interface StreamPlaygroundRequest {
+  agentId: string;
+  version: number;
+  /** Revision of the draft on screen; the API answers 409 if it changed. Null for a published one. */
+  revision: number | null;
+  message: string;
+  overrides: { systemPrompt?: string; model?: string; temperature?: number };
+  signal?: AbortSignal;
+  onEvent: (event: PlaygroundEvent) => void;
+}
+
 export interface AuditListOptions {
   /** 1..200 (API maximum). */
   limit?: number;
@@ -68,6 +81,23 @@ export interface AuditListOptions {
 export const AUDIT_PAGE_MAX = 200;
 
 export type ApiClient = ReturnType<typeof createApiClient>;
+
+/** Reads a text/event-stream body to its end, handing each event over as it completes. */
+async function readEvents(response: Response, onMessage: (message: SseMessage) => void) {
+  if (!response.body) throw new ApiError(502, 'empty_stream', 'Empty response stream');
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  const parser = new SseParser();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (const raw of parser.push(value)) onMessage(raw);
+    }
+    parser.end();
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 export function createApiClient(options: ApiClientOptions) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
@@ -263,23 +293,49 @@ export function createApiClient(options: ApiClientOptions) {
       };
       if (request.signal) init.signal = request.signal;
       const response = await authorizedFetch('/chat', init);
-      if (!response.body) throw new ApiError(502, 'empty_stream', 'Empty response stream');
+      await readEvents(response, (raw) => {
+        const event = parseChatEvent(raw);
+        if (event) request.onEvent(event);
+      });
+    },
 
-      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-      const parser = new SseParser();
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          for (const raw of parser.push(value)) {
-            const event = parseChatEvent(raw);
-            if (event) request.onEvent(event);
-          }
-        }
-        parser.end();
-      } finally {
-        reader.releaseLock();
+    /**
+     * POST /api/playground/runs, read like the chat stream. Only the fields of the contract go
+     * out; the version is the stored one and the API checks who may edit it (D91).
+     */
+    async streamPlayground(request: StreamPlaygroundRequest): Promise<void> {
+      const message = request.message.trim();
+      if (message.length < 1 || message.length > MESSAGE_MAX_LENGTH) {
+        throw new ApiError(422, 'invalid_message', 'Message length out of range');
       }
+      const { systemPrompt, model, temperature } = request.overrides;
+      const counter = (value: number | null) =>
+        value === null || (Number.isInteger(value) && value >= 1 && value <= 1_000_000);
+      const inRange = temperature === undefined || (temperature >= 0 && temperature <= 1);
+      if (!counter(request.version) || !counter(request.revision) || !inRange) {
+        throw new ApiError(422, 'invalid_request', 'Playground request out of range');
+      }
+      const init: RequestInit = {
+        method: 'POST',
+        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: agentIdSchema.parse(request.agentId),
+          version: request.version,
+          ...(request.revision === null ? {} : { revision: request.revision }),
+          message,
+          overrides: {
+            ...(systemPrompt === undefined ? {} : { system_prompt: systemPrompt }),
+            ...(model === undefined ? {} : { model: modelIdSchema.parse(model) }),
+            ...(temperature === undefined ? {} : { temperature }),
+          },
+        }),
+      };
+      if (request.signal) init.signal = request.signal;
+      const response = await authorizedFetch('/playground/runs', init);
+      await readEvents(response, (raw) => {
+        const event = parsePlaygroundEvent(raw);
+        if (event) request.onEvent(event);
+      });
     },
   };
 }

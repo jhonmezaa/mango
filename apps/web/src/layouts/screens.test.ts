@@ -18,6 +18,7 @@ describe('SCREENS', () => {
       ['inbox', 'inbox/*'],
       ['governance', 'governance/*'],
       ['activity', 'activity/*'],
+      ['playground', 'playground/*'],
     ]);
   });
 

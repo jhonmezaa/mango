@@ -37,6 +37,7 @@ import { handleMarketplace } from './marketplace.ts';
 import { handleMcpCatalog } from './mcpCatalog.ts';
 import { handleOrgChart } from './orgChart.ts';
 import { handlePeople } from './people.ts';
+import { handlePlayground } from './playground.ts';
 import { handleSession } from './session.ts';
 import { handleTasks } from './tasks.ts';
 
@@ -46,6 +47,7 @@ import { handleTasks } from './tasks.ts';
  */
 const API_HANDLERS: readonly ApiHandler[] = [
   handleChatApi,
+  handlePlayground,
   handleApprovals,
   handleTasks,
   handleInbox,

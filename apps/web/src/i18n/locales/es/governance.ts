@@ -49,6 +49,10 @@ export const gov = {
       title: 'No tienes acceso a Actividad',
       body: 'Tu cuenta no tiene permiso para ver la actividad. Un admin de Mango puede darte acceso.',
     },
+    playground: {
+      title: 'No tienes acceso al Playground',
+      body: 'El Playground es para quien edita agentes: creadores de agentes y administradores. Un admin de Mango puede darte acceso.',
+    },
   },
   rel: {
     now: 'ahora',

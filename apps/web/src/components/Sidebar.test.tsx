@@ -139,7 +139,6 @@ describe('Sidebar navigation', () => {
       'Inicio, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
-      'Playground, próximamente',
       'Skills, próximamente',
       'Observability, próximamente',
       'Evals, próximamente',
@@ -403,7 +402,7 @@ describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
     const user = userEvent.setup();
     renderRail();
     await user.click(railGroup(/^Construir/));
-    const soon = screen.getByRole('menuitem', { name: 'Playground, próximamente' });
+    const soon = screen.getByRole('menuitem', { name: 'Skills, próximamente' });
     expect(soon).toHaveAttribute('aria-disabled', 'true');
     expect(soon).not.toHaveAttribute('href');
     expect(within(soon).getByText('Próximamente')).toBeInTheDocument();

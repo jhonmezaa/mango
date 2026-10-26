@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatEvent } from './chatEvents';
 import { createApiClient } from './client';
 import { ApiError, NotAuthenticatedError, sessionUnavailableError } from './errors';
+import type { PlaygroundEvent } from './playgroundEvents';
 
 function sseResponse(chunks: string[], status = 200): Response {
   const encoder = new TextEncoder();
@@ -330,6 +331,93 @@ describe('createApiClient', () => {
       await expect(
         client.streamChat({ conversationId: 'c1', message: 'hola', onEvent: vi.fn() }),
       ).rejects.toMatchObject({ status: 402, code: 'budget_exceeded' });
+    });
+  });
+
+  describe('streamPlayground', () => {
+    const base = {
+      agentId: 'k3fq7zr2m5xw6n4a',
+      version: 3,
+      revision: 7,
+      message: '  ¿Qué puedes hacer?  ',
+      overrides: {},
+    };
+
+    it('posts only the fields of the contract and emits the parsed events', async () => {
+      const fetchMock = vi.fn<typeof fetch>(() =>
+        Promise.resolve(
+          sseResponse([
+            'event: tool\ndata: {"name":"get_cost_and_usage","status":"started"}\n\n',
+            'event: simulated_write\ndata: {"tool":"stop_instances"}\n\n',
+            'event: done\ndata: {"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":4},"cost_usd":"0.0010","duration_ms":1200,"flags":{"guardrail":false,"token_cap":false,"time_limit":false,"iteration_limit":false}}\n\n',
+          ]),
+        ),
+      );
+      const { client } = setup(fetchMock);
+      const events: PlaygroundEvent[] = [];
+      await client.streamPlayground({
+        ...base,
+        overrides: { systemPrompt: 'Nuevo', model: 'model.fast', temperature: 0.4 },
+        onEvent: (event) => events.push(event),
+        // Never part of the contract: tools, limits and access come from the stored version.
+        ...({ tools: ['*'], limits: {} } as object),
+      });
+      const [url, init] = fetchMock.mock.calls[0] ?? [];
+      expect(url).toBe('/api/playground/runs');
+      expect(JSON.parse(init?.body as string)).toEqual({
+        agent_id: 'k3fq7zr2m5xw6n4a',
+        version: 3,
+        revision: 7,
+        message: '¿Qué puedes hacer?',
+        overrides: { system_prompt: 'Nuevo', model: 'model.fast', temperature: 0.4 },
+      });
+      expect(events.map((event) => event.type)).toEqual(['tool', 'simulated_write', 'done']);
+    });
+
+    it('leaves out the revision of a published version and the changes not made', async () => {
+      const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(sseResponse([])));
+      const { client } = setup(fetchMock);
+      await client.streamPlayground({ ...base, revision: null, onEvent: vi.fn() });
+      expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+        agent_id: 'k3fq7zr2m5xw6n4a',
+        version: 3,
+        message: '¿Qué puedes hacer?',
+        overrides: {},
+      });
+    });
+
+    it('refuses what the API would reject before calling it', async () => {
+      const fetchMock = vi.fn<typeof fetch>();
+      const { client } = setup(fetchMock);
+      const onEvent = vi.fn();
+      for (const request of [
+        { ...base, agentId: '../me' },
+        { ...base, version: 0 },
+        { ...base, revision: 1.5 },
+        { ...base, message: '   ' },
+        { ...base, message: 'x'.repeat(4001) },
+        { ...base, overrides: { temperature: 2 } },
+        { ...base, overrides: { model: '<script>' } },
+      ]) {
+        await expect(client.streamPlayground({ ...request, onEvent })).rejects.toThrow();
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a 429 with its Retry-After', async () => {
+      const { client } = setup(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'x' } }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', 'Retry-After': '42' },
+          }),
+        ),
+      );
+      await expect(client.streamPlayground({ ...base, onEvent: vi.fn() })).rejects.toMatchObject({
+        status: 429,
+        code: 'rate_limited',
+        retryAfter: 42,
+      });
     });
   });
 });
