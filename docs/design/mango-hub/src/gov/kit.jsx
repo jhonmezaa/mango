@@ -144,6 +144,8 @@ function ErrorState({ title, body, onRetry }) {
 // Cada vista con su aviso; Presupuestos, Ajustes y el Audit log comparten el de siempre.
 const DENIED = {
   governance: ['No tienes acceso a Gobernanza', 'Gobernanza es para administradores y para FinOps central. Un admin de Mango puede darte acceso.'],
+  skills: ['No tienes acceso a Skills', 'Skills es para administradores y creadores de agentes. Un admin de Mango puede darte acceso.'],
+  playground: ['No tienes acceso al Playground', 'El Playground es para quien edita agentes: creadores de agentes y administradores. Un admin de Mango puede darte acceso.'],
   activity: ['No tienes acceso a Actividad', 'Tu cuenta no tiene permiso para ver la actividad. Un admin de Mango puede darte acceso.'],
 };
 function Denied({ view }) {

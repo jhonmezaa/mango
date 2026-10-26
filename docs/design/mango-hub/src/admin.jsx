@@ -18,7 +18,7 @@ const AB_TEMPLATES = [
 ];
 const AB_SECTIONS = [
   { id: 'identity', label: 'Información básica' }, { id: 'org', label: 'Organización' }, { id: 'brain', label: 'Modelo e instrucciones' },
-  { id: 'tools', label: 'Tools' }, { id: 'kbs', label: 'Knowledge bases' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
+  { id: 'tools', label: 'Tools' }, { id: 'kbs', label: 'Knowledge bases' }, { id: 'skills', label: 'Skills' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
 ];
 const AB_SERVER_ERR = {
   cycle: ['org', 'El supervisor elegido reporta, directa o indirectamente, a este agente. Elige otro para no crear un ciclo.'],
@@ -40,6 +40,10 @@ const AB_SERVER_ERR = {
   // Knowledge bases
   'kb-missing': ['kbs', 'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.'],
   'kb-forbidden': ['kbs', 'Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.'],
+  // Skills (textos provisionales del producto)
+  'skill-unapproved': ['skills', 'Una de las skills ya no está aprobada en la versión elegida. Pásala a la última versión o quítala.'],
+  'skill-mcp-off': ['skills', 'Una de las skills requiere un MCP que no está habilitado. Quítala o pide que lo habiliten.'],
+  'skill-mcp-missing': ['skills', 'Una de las skills requiere un MCP del que el agente no tiene ninguna tool. Agrega una de sus tools o quita la skill.'],
 };
 const AB_BLANK = { manager: null, role: '', name: '', desc: '', cat: 'FinOps', icon: 'Bot', color: 0, model: 'Sonnet 4.6', allowedModels: ['Sonnet 4.6'], prompt: '', tools: [], kbs: [], groups: [], limits: { tokens: 4096, iterations: 8, seconds: 120 }, budget: 500 };
 
@@ -133,7 +137,7 @@ function AgentAdmin({ agents, models, setView, routeId }) {
   const toggleGroup = (g) => set({ groups: snap.groups.includes(g) ? snap.groups.filter(x => x !== g) : [...snap.groups, g] });
   const finalSnap = () => ({ ...snap, role: (snap.role || '').trim(), name: snap.name.trim(), desc: snap.desc.trim() || `Agente ${snap.cat}` });
 
-  const serverFail = (save) => { if (!simB || (save && simB === 'daily') || (!avail && !/^kb-/.test(simB))) return false; const [sec, msg] = AB_SERVER_ERR[simB]; setErrKind(save ? 'save' : 'submit'); setErrors([{ sec, code: simB, msg }]); goSec(null); return true; };
+  const serverFail = (save) => { if (!simB || (save && simB === 'daily') || (!avail && !/^(kb|skill)-/.test(simB))) return false; const [sec, msg] = AB_SERVER_ERR[simB]; setErrKind(save ? 'save' : 'submit'); setErrors([{ sec, code: simB, msg }]); goSec(null); return true; };
   const saveDraft = () => {
     setErrKind('save');
     if (!snap.name.trim()) { setErrors([{ sec: 'identity', code: 'name', msg: 'Ponle un nombre para guardar el borrador.' }]); goSec(null); return; }
@@ -316,6 +320,10 @@ function AgentAdmin({ agents, models, setView, routeId }) {
 
               <ABSection id="kbs" title="Knowledge bases" desc={'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.'}>
                 {window.KbAgentSection && <window.KbAgentSection snap={snap} set={set} setView={setView} />}
+              </ABSection>
+
+              <ABSection id="skills" title="Skills" desc="Playbooks que el agente carga cuando le sirven. Cada una queda fijada en una versión aprobada; una versión nueva de la skill llega al agente con su siguiente aprobación.">
+                {window.SkAgentSection && <window.SkAgentSection snap={snap} set={set} setView={setView} />}
               </ABSection>
 
               <ABSection id="limits" title={avail ? 'Límites' : 'Límites y presupuesto'} desc={avail ? 'Topes por ejecución. El presupuesto no es parte de la versión.' : 'Topes por ejecución y gasto mensual del agente.'}>

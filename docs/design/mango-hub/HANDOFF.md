@@ -803,3 +803,74 @@ Archivos: `activity.jsx`, `other-views.jsx`, `audit-budgets.jsx`, `gov/kit.jsx`,
 ### Pendiente del producto
 - Resolver `created_by` a correo para el texto de «Agente aprobado».
 - Falla de «En vivo»: confirmar el texto.
+
+
+## Playground y Skills · disponibilidad actual (2026-10-25)
+Archivos: `playground.jsx`, `skills.jsx`, `admin.jsx`, `agent-review.jsx`, `lifecycle.js`, `settings.jsx` (`ChangeList`), `gov/kit.jsx`, `store.js`, `app.jsx`. `playground` y `skills` entran en `AVAILABLE`. Todo lo de abajo es el modo «Disponible hoy»; «Diseño completo» no cambia.
+
+### Playground
+- **Quién:** creadores de agentes (mango-agent-creator) y administradores (`canView`, ya no por OWNER_VIEWS). «Qué probar»: «Tus borradores» (abiertos y rechazados, con el motivo) y «Publicados que editas» (admin: todos; si no, los que creó; misma regla que «Editar» en el Org Chart).
+- **Se cambia solo para la sesión:** system prompt, modelo y temperatura (0–1). Tools, knowledge bases, skills, límites y acceso, en el Agent Builder. Las skills de la versión se listan de solo lectura: «Se cargan igual que en el agente publicado.».
+- **Modelo:** los habilitados en Brains; con tools, solo los que admiten tools (`caps.tools`) · «Solo modelos que admiten tools.». Modelo que ya no está habilitado: el selector queda en «Elige un modelo», «{modelo} ya no está habilitado. Elige otro para probar y enviar.» y la misma línea en «Antes de enviar».
+- **Costo:** bajo «Qué probar»: «… Nada de lo que pruebes aquí llega a los usuarios. Cada prueba cuesta como un turno de chat y se cobra a tu presupuesto mensual y al del agente.». Al comparar: «Son dos pruebas por pregunta, una por columna, y se cobran las dos.».
+- **Tools:** «Las de lectura se ejecutan de verdad, con tu identidad: lo que no puedes consultar en el chat tampoco lo consulta aquí. Las de escritura nunca se ejecutan: la prueba se detiene cuando el agente pide una.». «No disponible» = pack no instalado (el agente responde sin ella).
+- **Escritura pedida:** en la traza, la tool con «pediría aprobación · no se ejecuta» y la insignia «pidió escritura»; la tarjeta termina con «La prueba se detuvo aquí: el agente pidió {tool}, que es de escritura. En el Playground no se ejecuta ni se crea una solicitud en Aprobaciones.».
+- **Preguntas sugeridas** (*textos para el producto*; fijos, sin datos, iguales para cualquier agente): «Explica qué puedes hacer y con qué herramientas», «Dame un ejemplo de una pregunta que respondes bien y respóndela», «¿Qué haces si te falta un dato para responder?» y «Prueba de seguridad» (`PG_ATTACK`). «Ejecutar todas» manda esas 4 (8 pruebas al comparar). Si el producto prefiere textos por categoría, van en `PG_FIXED`.
+- **Cola:** corren hasta 2 a la vez; el resto, en la tarjeta: «En cola · empieza cuando termine otra prueba. Corren hasta 2 a la vez.».
+- **Tarjeta:** texto, tools con su duración y «bien», tiempo, tokens de entrada y salida, costo en USD. Insignias: «Guardrail» (ámbar, «El guardrail base bloqueó la entrada o la salida»), «Supera tokens», «Tope de iteraciones», «Supera tiempo». 👍/👎 con «Solo en esta pantalla: no se guardan». «Guardar como caso» desactivado con «Próximamente» (no hay evals; también Costos › «Playground» y Evals › «Desde Playground»).
+- **Vacío:** «Cada prueba es una pregunta sola, sin historial, y solo la ves tú. No se guarda: al salir de esta pantalla se pierde.».
+- Las respuestas de `pgRespond` son del prototipo; el producto da la del modelo.
+
+**Bloqueos** (aviso sobre las respuestas; «Ejecutar», «Ejecutar todas» y las sugeridas se desactivan):
+- **Posible secreto:** ya no deja probar. «Hay un posible secreto en el prompt» · «Quítalo para probar: el prompt se manda al modelo y un secreto no puede llegar a su contexto. Tampoco se podrá enviar a aprobación.». Bajo el prompt: «Posible secreto en el prompt. Quítalo para probar y para enviar a aprobación.».
+- **Sin presupuesto, tuyo:** «Tu presupuesto mensual se agotó» · «Las pruebas se cobran a tu presupuesto y al del agente, como un turno de chat. No puedes probar hasta el próximo mes o hasta que un admin lo suba.».
+- **Sin presupuesto, del agente:** «El presupuesto mensual de {agente} se agotó» · «No se puede probar ni usar este agente hasta el próximo mes o hasta que un admin lo suba.».
+- **Límite:** «Llegaste al límite de pruebas» · «Puedes hacer hasta 60 pruebas por hora y 2 a la vez. Podrás probar de nuevo en {n} s.» (cuenta atrás con los segundos que da el servidor).
+
+**Estados**
+- No disponible en la instalación (pantalla entera): «El Playground no está disponible en esta instalación» · «Esta instalación de Mango no tiene el Playground. Los agentes se siguen creando y enviando a aprobación desde el Agent Builder.».
+- Cargando la lista: esqueleto del panel. Error: «No se pudieron cargar tus agentes» + «Reintentar».
+- Cargando la versión elegida: esqueleto bajo «Qué probar». Error: «No se pudo cargar esta versión» · «Elige otra o inténtalo de nuevo.» + «Reintentar». Guardar y enviar se desactivan.
+- Nada que probar: «No tienes nada que probar» · «Aquí aparecen tus borradores y los agentes publicados que puedes editar.» + «Crear agente».
+- Falla a mitad: la tarjeta conserva lo recibido y «No se pudo completar la respuesta.» + «Reintentar» (role="alert").
+- Borrador cambiado en otra pestaña (al guardar): «Este borrador cambió en otra pestaña» · «No se guardó. Recarga para ver la última versión; perderás los cambios de esta pantalla.» + «Recargar».
+- Sin acceso (403): «No tienes acceso al Playground» · «El Playground es para quien edita agentes: creadores de agentes y administradores. …».
+- Demo: panel › «Playground».
+
+### Skills
+- **Quién:** administradores y creadores de agentes (como Knowledge Bases; ya no exige finops-central). Proponen los dos; aprueba o rechaza, con motivo, un administrador distinto de quien propuso. Quien propuso solo la retira. Vence a las 72 h (en «Disponible hoy», `chgStatus` y `decideChange`).
+- **Sin «Incluida con Mango» ni «Scripts»:** en «Disponible hoy» no se listan las skills con scripts; la cabecera: «Playbooks reutilizables sobre uno o más MCP, escritos como instrucciones. Cada versión la aprueba un administrador distinto de quien la propone: hasta entonces, los agentes siguen con la anterior.».
+- **Ejecuciones · 30 d:** texto emergente «Veces que un agente cargó la skill en los últimos 30 días»; «Sin datos» con 0.
+- **Detalle:** «Dueño» = «{correo} · propuso la v1»; «Última versión» = «v{n} · aprobó {correo} · {hace}». Sección nueva «Versiones · {n}»: «v{n} · Propuso {correo} · aprobó {correo} · {hace}».
+- **Editor:** contador al pasar de 18.000 caracteres («{n} / 20.000»), tope de 20.000; hasta 10 entregas (el campo desaparece al llegar) y 10 MCP («{n} de 10»; el resto se desactiva). Mismos errores de antes más «Hasta 10 MCP», «Hasta 10 entregas».
+- **Topes del servidor** (*textos para el producto*): 200 skills: «La instalación llegó al máximo de 200 skills. No se pueden crear más.» · 20 propuestas abiertas: «Ya hay 20 propuestas de skills abiertas, el máximo. Espera a que se decida alguna o retira una tuya.». Van bajo el editor (role="alert"); el editor no se cierra.
+- **Tarjeta de aprobación** (`SkChangeBody` en `ChangeList`, solo pendientes): campos que cambian (nombre, categoría, descripción, MCP, entrega) y el texto completo de las instrucciones. En una versión nueva, «Comparar con v{n}» cambia a un diff por líneas contra la versión aprobada (y «Ver texto completo» vuelve). Nota de la lista: «Las proponen administradores y creadores de agentes; las aprueba o rechaza un administrador distinto. Vencen a las 72 h.».
+- **Estados:** cargando (filas de esqueleto), error («No se pudieron cargar las skills» + «Reintentar»), sin acceso («No tienes acceso a Skills» · «Skills es para administradores y creadores de agentes. …»). Demo: panel › «Skills».
+
+### Agent Builder · Skills (sección nueva, entre Knowledge bases y Límites)
+- Hasta 10 skills por versión, cada una fijada como `skill@vN` (`snap.skills`). Fila: nombre, `id@vN`, sus MCP; si hay una versión aprobada más nueva, insignia «v{m} disponible» y «Pasar a v{m}»; «Quitar».
+- «Agregar skill…» lista las aprobadas en su última versión; las que tienen un MCP sin habilitar salen desactivadas («· MCP no habilitado»). Al llegar a 10: «Ya tiene 10 skills, el máximo». Debajo: «Se agregan en su última versión aprobada. Si la skill recibe una versión nueva, el agente sigue con la suya hasta que pases a la nueva y se apruebe esta versión del agente.».
+- Los agentes publicados no traen skills en «Disponible hoy» (hasta ahora no había dónde elegirlas).
+- **Errores** (validación local y del servidor; *textos provisionales*):
+  - No aprobada: «La skill {nombre} v{n} ya no está aprobada. Pásala a la última versión o quítala.»
+  - MCP no habilitado: «La skill {nombre} requiere {MCP}, que no está habilitado. Quítala o pide que lo habiliten.»
+  - MCP sin tools en el agente (ámbar en la fila): «La skill {nombre} requiere {MCP} y el agente no tiene ninguna de sus tools. Agrega una o quita la skill.»
+  - Más de 10: «Un agente puede usar hasta 10 skills. Quita alguna.»
+  - Del servidor, sin nombre (panel › «Builder · error del servidor al enviar»): «Una de las skills ya no está aprobada en la versión elegida. …», «Una de las skills requiere un MCP que no está habilitado. …», «Una de las skills requiere un MCP del que el agente no tiene ninguna tool. …».
+- **Diff y Revisión:** `diff().skills`; cuenta un cambio por skill. Revisión: bloque «skills · {n} agregadas, {m} quitadas, {k} cambian de versión», con «~ {skill} · v2 → v3» para el cambio de versión y los errores de cada una. Historial de versiones: fila «skills».
+
+### Pendiente del producto
+- Chat: el popover «Skills y tools» y el botón «Skill» del compositor siguen en «Próximamente». **Falta decidir qué hace el botón «Skill».**
+- Confirmar los textos marcados y si las preguntas sugeridas van por categoría.
+- Que el 429 del Playground traiga los segundos de espera, y que el «sin presupuesto» diga de quién.
+
+
+## Barra lateral colapsada · riel corto (2026-10-25)
+Archivos: `shell.jsx` (`RailGroup`), `styles.css` (`.sb-rail-group`, `.sb-fly*`). La barra expandida y el menú del móvil no cambian.
+- **Riel:** vistas principales · agentes fijados (hasta 4; con más, 3 + «Más agentes fijados ({n})») · un ícono por grupo: Gobernanza (Shield), Construir (Skill), Operación (Activity). Un grupo sin vistas visibles (`S.canView`) no aparece.
+- **Ícono de grupo:** fondo y barra de acento a la izquierda si la vista actual está dentro; punto de acento si algo dentro tiene contador (aprobaciones pendientes, revisiones). Botón con `aria-haspopup="menu"`, `aria-expanded` y `aria-label` «{grupo}, contiene la vista actual, {n} pendientes».
+- **Menú flotante** (a la derecha del riel, alineado con el ícono, ajustado al alto de la ventana): título del grupo; cada vista con ícono, nombre y, a la derecha, «Próximamente», su contador o ✓ si es la actual (fondo de acento, `aria-current="page"`). Las «Próximamente» no navegan.
+- **Abrir y cerrar:** al pasar el cursor (120 ms) se abre y se cierra al salir (220 ms). Clic: lo fija abierto; otro clic lo cierra. Clic fuera o elegir una vista lo cierra.
+- **Teclado:** Enter, Espacio, → o ↓ abren y llevan el foco a la primera vista; ↑/↓, Inicio/Fin recorren; Esc cierra y devuelve el foco al ícono; Tab cierra.
+- El estado colapsado sigue guardado por persona (`mango-sb-collapsed`).
+- **Títulos en el riel:** al pasar el cursor o con foco, cada ícono muestra su nombre en una etiqueta flotante a la derecha (`.sb-tip`, fuera del scroll del riel): vistas principales (con su contador, «· {n}», o «· Próximamente»), agentes fijados, «Más agentes fijados ({n})», «Expandir» y la cuenta. Los íconos de grupo no la llevan: su menú ya muestra el nombre. Se oculta al hacer scroll y mientras hay un menú abierto. Sustituye al `title` nativo.

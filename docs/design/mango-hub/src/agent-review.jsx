@@ -214,6 +214,7 @@ function ReviewDetail({ r, agents, setView }) {
           </div>
 
           {window.RvKbs && <window.RvKbs r={r} d={d} isNew={isNew} />}
+          {window.RvSkills && <window.RvSkills r={r} d={d} isNew={isNew} />}
 
           <div>
             <div className="mk-sec-t">{avail ? 'acceso' : 'grupos que pueden usarlo'}</div>

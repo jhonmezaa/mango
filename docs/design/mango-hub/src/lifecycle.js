@@ -75,6 +75,7 @@
     budget: a.budgetMax,
     color: a.colorIdx || 0, perCall: 4096, temperature: 0.2, users: [], approval: [],
     kbs: a.kbs || (D.knowledgeBases || []).filter(k => (k.usedBy || []).includes(a.id)).map(k => k.id),
+    skills: a.skills || (S.get().avail ? [] : (S.get().skills || []).filter(s => (s.usedBy || []).includes(a.id)).map(s => s.id + '@' + ((s.agentV || {})[a.id] || s.version))),
   });
   const agentById = (id) => (D.agents || []).find(a => a.id === id);
   const managerName = (id) => !id ? '—' : id === 'platform' ? 'Platform Admin' : agentById(id)?.name || id;
@@ -144,13 +145,14 @@
       const out = !mine && simKb !== 'groups' ? [] : sel.filter(id => { const k = now.find(x => x.id === id); return k && k.status !== 'deleting' && !gone.includes(id) && (simKb === 'groups' || !k.groups.some(g => mine.includes(g))); });
       if (out.length) errs.push({ sec: 'kbs', code: 'kbs-editor', msg: 'Quien editó esta versión no está en los grupos de estas knowledge bases: ' + out.join(', ') + '. Hay que quitarlas.' });
     }
+    if (window.skAgentErrors) errs.push(...window.skAgentErrors(snap));
     if (!(snap.groups || []).length) errs.push({ sec: 'access', code: 'groups', msg: 'Elige al menos un grupo que pueda usarlo.' });
     const sec = secretIn(snap);
     if (sec) errs.push({ sec: sec.sec, code: 'secret', msg: `Se detectó un posible secreto (${sec.type}) en ${sec.field}. Quítalo; usa una conexión segura en su lugar.` });
     if (opts.submitting && counts().today >= LIMITS.perDay) errs.push({ sec: null, code: 'daily', msg: `Alcanzaste el límite de ${LIMITS.perDay} envíos a revisión por día. Podrás enviar de nuevo mañana.` });
     return errs;
   };
-  const KNOWN = ['name', 'desc', 'cat', 'icon', 'color', 'manager', 'role', 'model', 'allowedModels', 'prompt', 'tools', 'kbs', 'approval', 'groups', 'users', 'limits', 'perCall', 'temperature', 'budget'];
+  const KNOWN = ['name', 'desc', 'cat', 'icon', 'color', 'manager', 'role', 'model', 'allowedModels', 'prompt', 'tools', 'kbs', 'skills', 'approval', 'groups', 'users', 'limits', 'perCall', 'temperature', 'budget'];
   const diff = (base, snap) => {
     const b = base || { name: '', desc: '', model: '', prompt: '', tools: [], groups: [], limits: {}, budget: 0 };
     const set = (a, x) => ({ add: x.filter(v => !a.includes(v)), rem: a.filter(v => !x.includes(v)) });
@@ -168,12 +170,13 @@
       prompt: b.prompt !== snap.prompt,
       tools: set(b.tools || [], snap.tools || []),
       kbs: set(b.kbs || [], snap.kbs || []),
+      skills: set(b.skills || [], snap.skills || []),
       groups: set(b.groups || [], snap.groups || []),
       limits: ['tokens', 'iterations', 'seconds'].filter(k => (b.limits || {})[k] !== (snap.limits || {})[k]).map(k => [k, (b.limits || {})[k], snap.limits[k]]),
       budget: b.budget !== snap.budget ? [b.budget, snap.budget] : null,
     };
   };
-  const diffCount = (d) => { const S2 = window.MangoStore.get().avail; return (d.name ? 1 : 0) + (d.desc ? 1 : 0) + (d.manager ? 1 : 0) + (d.role ? 1 : 0) + (d.model ? 1 : 0) + (d.allowed ? d.allowed.add.length + d.allowed.rem.length : 0) + (d.prompt ? 1 : 0) + d.tools.add.length + d.tools.rem.length + (S2 || !d.kbs ? 0 : d.kbs.add.length + d.kbs.rem.length) + d.groups.add.length + d.groups.rem.length + d.limits.length + (S2 ? ((d.cat ? 1 : 0) + (d.icon ? 1 : 0) + (d.color ? 1 : 0) + (d.perCall ? 1 : 0) + (d.temperature ? 1 : 0) + (d.approval ? d.approval.add.length + d.approval.rem.length : 0) + (d.users ? d.users.add.length + d.users.rem.length : 0) + (d.extra || []).length) : (d.budget ? 1 : 0)); };
+  const diffCount = (d) => { const S2 = window.MangoStore.get().avail; return (d.name ? 1 : 0) + (d.desc ? 1 : 0) + (d.manager ? 1 : 0) + (d.role ? 1 : 0) + (d.model ? 1 : 0) + (d.allowed ? d.allowed.add.length + d.allowed.rem.length : 0) + (d.prompt ? 1 : 0) + d.tools.add.length + d.tools.rem.length + (d.skills ? new Set([...d.skills.add, ...d.skills.rem].map(x => x.split('@')[0])).size : 0) + (S2 || !d.kbs ? 0 : d.kbs.add.length + d.kbs.rem.length) + d.groups.add.length + d.groups.rem.length + d.limits.length + (S2 ? ((d.cat ? 1 : 0) + (d.icon ? 1 : 0) + (d.color ? 1 : 0) + (d.perCall ? 1 : 0) + (d.temperature ? 1 : 0) + (d.approval ? d.approval.add.length + d.approval.rem.length : 0) + (d.users ? d.users.add.length + d.users.rem.length : 0) + (d.extra || []).length) : (d.budget ? 1 : 0)); };
   const uidOf = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return 'agt_' + (h >>> 0).toString(36).padStart(7, '0').slice(0, 7); };
   const revLabel = (r) => !S.get().avail ? r.id : uidOf(r.agentId || r.id) + ' · v' + (r.ver || 1);
   const reviewerLabel = (r) => !r.reviewer ? '—' : !S.get().avail ? r.reviewer : r.legacy ? uidOf('sub' + r.reviewer).replace('agt_', 'sub_') + '…' : 'usuario' + (r.reviewer.match(/\d+/) || ['1'])[0] + '@empresa.com';

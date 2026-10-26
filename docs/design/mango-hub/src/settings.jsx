@@ -8,7 +8,7 @@ const SET_LABELS = {
 const setVal = (key, v) => { const L = SET_LABELS[key]; if (key === 'idp' && v !== 'none') return window.MangoStore.get().authCfg.idpName; return L.fmt ? L.fmt(v) : L.v[String(v)]; };
 const CHG_STATUS = { pending: ['Pendiente', 'badge-amber'], approved: ['Aprobado', 'badge-green'], rejected: ['Rechazado', 'badge-red'], withdrawn: ['Retirado', 'badge'], expired: ['Vencido', 'badge'] };
 const MFA_RESET_TTL = 72 * 36e5;
-const chgStatus = (c) => c.status === 'pending' && (c.kind === 'mfa_reset' || c.kind === 'member') && Date.now() - new Date(c.at).getTime() > MFA_RESET_TTL ? 'expired' : c.status;
+const chgStatus = (c) => c.status === 'pending' && (c.kind === 'mfa_reset' || c.kind === 'member' || (c.kind === 'skill' && window.MangoStore.get().avail)) && Date.now() - new Date(c.at).getTime() > MFA_RESET_TTL ? 'expired' : c.status;
 
 function Settings({ models, initialTab }) {
   const I = window.Icons; const S = window.MangoStore;
@@ -274,7 +274,7 @@ function ChangeList({ keys, kind = 'auth', target, title = 'Cambios propuestos',
   return (
     <section style={{ marginTop: 22 }}>
       <div className="g-sec-t" style={{ marginBottom: 4 }}>{title}</div>
-      <div className="g-sec-meta" style={{ marginBottom: 10 }}>Los propone un admin y los aprueba otro distinto.</div>
+      <div className="g-sec-meta" style={{ marginBottom: 10 }}>{kind === 'skill' ? 'Las proponen administradores y creadores de agentes; las aprueba o rechaza un administrador distinto. Vencen a las 72 h.' : 'Los propone un admin y los aprueba otro distinto.'}</div>
       <div className="chg-list">
         {list.map(c => { const status = chgStatus(c); const st = CHG_STATUS[status] || CHG_STATUS.pending; const mine = c.by === me; return (
           <article key={c.id} className="chg">
@@ -291,6 +291,7 @@ function ChangeList({ keys, kind = 'auth', target, title = 'Cambios propuestos',
               </div>}
             </div>
             <div className="chg-diff">{c.kind === 'auth' ? <><span className="old">{setVal(c.key, c.from)}</span><span aria-hidden="true">→</span><span className="new">{setVal(c.key, c.to)}</span></> : <span className="new">{c.summary}</span>}</div>
+            {c.kind === 'skill' && window.SkChangeBody && <window.SkChangeBody c={c} />}
             {c.reason && <div className="chg-why"><span className="g-diff-k">Motivo</span> {c.reason}</div>}
             {c.note && <div className="chg-why"><span className="g-diff-k">Motivo del rechazo</span> {c.note}</div>}
             {rej === c.id && <div className="g-field" style={{ marginTop: 10 }}>
