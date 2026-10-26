@@ -1,7 +1,7 @@
 # D91 · El Playground: quien edita un agente prueba su borrador en un harness de pruebas compartido, como sí mismo, sin escrituras y con presupuesto
 
-- **Estado:** propuesta
-- **Fecha:** 2026-10-25
+- **Estado:** vigente
+- **Fecha:** 2026-10-25 (aceptada por el dueño el 2026-10-26, por menú: «Aceptar ambas (Recomendada)»)
 - **Precisa / reemplaza a:** precisa [D18](D018-creacion-y-publicacion-de-agentes.md) (nadie **usa** una versión antes de aprobarse; quien la edita la **prueba**), [D32](D032-harness-por-agente.md) (un harness más, que no es de un agente), [D33](D033-autorizacion-de-agentes-y-tools.md) (la firma de una prueba lleva una marca propia y el interceptor no deja pasar ninguna escritura con ella), [D40](D040-provisioner-de-agentes.md) (1) (el Playground no sirve desde el puntero `PUBLISHED#`), [D41](D041-alertas-y-reconciliacion.md) (el conciliador diario espera el harness de pruebas) [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite de tasa nuevo, contado entre las tareas) y [D92](D092-skills-de-solo-instrucciones.md) (4) (en el harness de pruebas, y solo ahí, `mango-api` manda las skills en la invocación, punto 12)
 - **Precisada por:** —
 
