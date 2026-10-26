@@ -14,12 +14,12 @@ function RemoteCatalogTab({ onOpen }) {
   return <div style={{ display: 'grid', gap: 14 }}>
     <p className="rm-p" style={{ margin: 0, maxWidth: 720 }}>Servicios MCP de terceros revisados y firmados que trae esta versión de Mango. No se conectan por URL: se habilita un perfil para una organización, y cada persona conecta su propia cuenta.</p>
     <div className="rm-grid">
-      {RM.PROFILES.map(p => { const list = RM.regsOf(p.id); const act = list.find(r => r.status === 'active'); const pend = list.filter(r => r.status === 'pending'); const dis = list.find(r => r.status === 'disabled');
+      {RM.PROFILES.map(p => { const list = RM.regsOf(p.id); const act = list.find(r => r.status === 'active'); const pend = list.filter(r => r.status === 'pending'); const dis = list.find(r => r.status === 'disabled'); const mid = list.find(r => r.status === 'creating' || r.status === 'failed');
         return <button key={p.id} className="card rm-pcard" onClick={() => onOpen(p.id)}>
-          <div className="row gap-3" style={{ alignItems: 'flex-start' }}><RmTile p={p} /><div style={{ flex: 1, minWidth: 0 }}><div className="mk-name">{p.name}</div><div className="mk-meta">Operado por {p.operator} · <span className="mono">{p.host}</span></div></div><RmStatus r={act || pend[0] || dis} /></div>
+          <div className="row gap-3" style={{ alignItems: 'flex-start' }}><RmTile p={p} /><div style={{ flex: 1, minWidth: 0 }}><div className="mk-name">{p.name}</div><div className="mk-meta">Operado por {p.operator} · <span className="mono">{p.host}</span></div></div><RmStatus r={act || mid || pend[0] || dis} /></div>
           <RmBadges p={p} compact />
           <div className="rm-sets">{p.toolsets.map(t => <span key={t.id} className="rm-set">{t.label}</span>)}</div>
-          <div className="mk-meta rm-pcard-f">{act ? <>Habilitado para <span className="mono">{act.org}</span> · {act.groups.length} {act.groups.length === 1 ? 'grupo' : 'grupos'}</> : pend.length ? <>Solicitud pendiente · <span className="mono">{pend[0].org}</span></> : dis ? <>Deshabilitado para <span className="mono">{dis.org}</span></> : 'Ninguna organización habilitada'}<span style={{ marginLeft: 'auto' }} className="row gap-1">Ver ficha <I.ArrowRight size={11} /></span></div>
+          <div className="mk-meta rm-pcard-f">{act ? <>Habilitado para <span className="mono">{act.org}</span> · {act.groups.length} {act.groups.length === 1 ? 'grupo' : 'grupos'}</> : mid ? <>{mid.status === 'creating' ? 'Creándose' : 'Falló al habilitarse'} · <span className="mono">{mid.org}</span></> : pend.length ? <>Solicitud pendiente · <span className="mono">{pend[0].org}</span></> : dis ? <>Deshabilitado para <span className="mono">{dis.org}</span></> : 'Ninguna organización habilitada'}<span style={{ marginLeft: 'auto' }} className="row gap-1">Ver ficha <I.ArrowRight size={11} /></span></div>
         </button>; })}
     </div>
   </div>;
@@ -99,6 +99,8 @@ function RemoteDetail({ pid, regId, onClose }) {
       {reg.status === 'pending' && <div className="rm-steps" aria-label="Paso 2 de 2"><span className="is-done">1 · Pedido por {own ? 'ti' : reg.by}</span><span className="is-on">2 · Otra persona administradora aprueba</span></div>}
       {reg.status === 'pending' && <div className="rm-redirect"><RmCopy value={reg.redirect} /><div className="rm-hint">Pégala en la app de Entra como URI de redirección de plataforma <b>Web</b>. La genera Mango en AWS; es la única dirección de este flujo.</div></div>}
       {reg.status === 'active' && <SecretAlert r={reg} onRotate={isAdmin ? () => setModal('rotate') : null} />}
+      {reg.status === 'creating' && <div className="mc-alert" role="status"><span className="g-spin" /><div><b>Creándose.</b> Aprobado por {reg.approvedBy === me ? 'ti' : reg.approvedBy}. Mango está creando la conexión con {p.name}; tarda unos segundos. Puedes cerrar este panel.</div></div>}
+      {reg.status === 'failed' && <div className="mc-alert red" role="alert"><I.X2 size={14} /><div><b>No se pudo habilitar {p.name}</b><div>Revisa los datos de la app de Entra y vuelve a pedirlo.</div></div></div>}
       {reg.status === 'disabled' && <div className="mc-alert"><I.Info size={14} /><div>Deshabilitado por {reg.disabledBy} · {window.fmtAgo(reg.disabledAt)}{reg.reason ? <>: «{reg.reason}»</> : null}</div></div>}
       <Sec title="Registro">
         <KV k="Organización"><span className="mono">{p.host}/{reg.org}</span></KV>
@@ -119,6 +121,8 @@ function RemoteDetail({ pid, regId, onClose }) {
     else if (reg.status === 'pending') foot = <>{err && <div className="g-err" role="alert" style={{ marginBottom: 10 }}>{err}</div>}{own
       ? <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}><span className="ap-reason"><I.Lock size={12} /> Otra persona administradora tiene que aprobarlo.</span><button className="btn btn-sm" onClick={() => { RM.withdraw(reg.id); toast?.({ tone: 'success', msg: 'Solicitud retirada · se borró lo que se había creado' }); setMode(null); }}>Retirar solicitud</button></div>
       : <div className="row gap-2"><button className="btn btn-sm btn-primary" onClick={() => { const r = RM.approve(reg.id); if (r.error) { setErr(r.error); return; } toast?.({ tone: 'success', msg: p.name + ' habilitado para ' + reg.org }); setMode({ k: 'reg', id: reg.id }); }}><I.Check size={12} /> Aprobar</button><button className="btn btn-sm" onClick={() => setMode({ ...mode, reject: true })}>Rechazar</button></div>}</>;
+    else if (reg.status === 'creating') foot = <div className="ap-reason"><span className="g-spin" /> Creando la conexión · no hace falta hacer nada.</div>;
+    else if (reg.status === 'failed') foot = <button className="btn btn-sm btn-primary" onClick={() => openForm(reg)}>Pedir de nuevo</button>;
     else if (reg.status === 'active') foot = <div className="row gap-2" style={{ flexWrap: 'wrap' }}><button className="btn btn-sm" onClick={() => setModal('rotate')}>Rotar secreto</button><button className="btn btn-sm" disabled={list.some(r => r.replaces === reg.id)} title={list.some(r => r.replaces === reg.id) ? 'Ya hay un cambio pendiente' : undefined} onClick={() => openForm(reg, reg.id)}>Cambiar tenant o app</button><button className="btn btn-sm" onClick={() => setModal('disable')}>Deshabilitar</button></div>;
     else foot = <button className="btn btn-sm btn-primary" onClick={() => openForm(reg)}>Pedir de nuevo</button>;
   } else {
@@ -129,6 +133,14 @@ function RemoteDetail({ pid, regId, onClose }) {
       <Sec title={'Organizaciones · ' + list.length}>
         {list.length ? list.map(r => <button key={r.id} className="mk-line row between rm-regrow" onClick={() => setMode({ k: 'reg', id: r.id })}><span className="row gap-2" style={{ minWidth: 0 }}><span className="mono" style={{ fontSize: 12.5 }}>{r.org}</span>{r.replaces && <span className="badge">Cambio de tenant o app</span>}<span className="mk-meta">{r.toolsets.length} toolsets · {r.groups.length} {r.groups.length === 1 ? 'grupo' : 'grupos'}</span></span><span className="row gap-2"><RmStatus r={r} /><I.ChevronRight size={12} /></span></button>) : <div className="mk-meta">Ninguna organización habilitada todavía.</div>}
       </Sec>
+      {RM.histOf(pid).length > 0 && <Sec title={'Historial de solicitudes · ' + RM.histOf(pid).length}>
+        {RM.histOf(pid).map(r => <div key={r.id} className="mk-line rm-hist">
+          <div className="row between" style={{ gap: 8 }}><span className="row gap-2" style={{ minWidth: 0 }}><span className="mono" style={{ fontSize: 12.5 }}>{r.org}</span><RmStatus r={r} /></span><span className="mk-meta">{window.fmtAgo(r.decidedAt || r.at)}</span></div>
+          <div className="mk-meta">Pidió {r.by === me ? 'tú' : r.by} · {r.status === 'withdrawn' ? 'la retiró ' + (r.decidedBy === r.by ? 'quien la pidió' : r.decidedBy) : 'rechazó ' + (r.decidedBy === me ? 'tú' : r.decidedBy)} · {r.toolsets.length} toolsets · {r.groups.join(', ')}</div>
+          {r.reason && <div className="rm-hist-why">«{r.reason}»</div>}
+        </div>)}
+        <div className="mk-meta" style={{ marginTop: 6 }}>Al rechazar o retirar se borra lo que se había creado, incluido el secreto. Queda el registro de quién pidió qué.</div>
+      </Sec>}
       <Sec title={'Tools · ' + toolCount(p) + ' · todas de lectura'}>
         {p.toolsets.map(t => <div key={t.id} className="rm-tset"><div className="rm-tset-h">{t.label}</div>{t.tools.map(n => <div key={n} className="mk-line row between"><span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{n}</span><span className="badge">Lectura</span></div>)}</div>)}
         <div className="mk-meta" style={{ marginTop: 6 }}>Ningún perfil trae tools de escritura: no existen en Mango.</div>
@@ -163,8 +175,8 @@ function RemoteDetail({ pid, regId, onClose }) {
 // —— Mis conexiones (menú de la persona) ——
 function MyConnections() {
   const I = window.Icons; useRm(); const toast = window.useToast?.();
-  const [open, setOpen] = useState(false);
-  useEffect(() => { const o = () => setOpen(true), c = () => setOpen(false); window.addEventListener('mango:my-connections', o); window.addEventListener('mango:close-connections', c); return () => { window.removeEventListener('mango:my-connections', o); window.removeEventListener('mango:close-connections', c); }; }, []);
+  const [open, setOpen] = useState(false); const [already, setAlready] = useState({});
+  useEffect(() => { const o = () => { setOpen(true); setAlready({}); }, c = () => setOpen(false); window.addEventListener('mango:my-connections', o); window.addEventListener('mango:close-connections', c); return () => { window.removeEventListener('mango:my-connections', o); window.removeEventListener('mango:close-connections', c); }; }, []);
   if (!open || S.get().avail) return null;
   const list = RM.mine();
   return <window.Modal open onClose={() => setOpen(false)} title="Mis conexiones" width={520}>
@@ -176,12 +188,12 @@ function MyConnections() {
         <RmTile p={p} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="row gap-2" style={{ flexWrap: 'wrap' }}><span className="mk-name">{p.name}</span><span className="mk-meta mono">{r.org}</span></div>
-          <div className="rm-conn-s" role="status">{state === 'off' ? <>Un administrador deshabilitó {p.name}.</> : state === 'opening' ? <span className="row gap-2"><span className="g-spin" /> Abriendo {p.idp}…</span> : state === 'on' ? <span className="row gap-2"><span className="dot dot-green" /> Conectado{c.at ? ' · ' + window.fmtAgo(c.at) : ''}.</span> : state === 'blocked' ? <>Por ahora no se puede conectar: un administrador tiene que renovar la configuración de {p.name}.</> : <>No has conectado tu cuenta.</>}</div>
+          <div className="rm-conn-s" role="status">{already[p.id] && state === 'on' ? <span className="row gap-2"><span className="dot dot-green" /> Tu cuenta ya estaba conectada.</span> : state === 'off' ? <>Un administrador deshabilitó {p.name}.</> : state === 'opening' ? <span className="row gap-2"><span className="g-spin" /> Abriendo {p.idp}…</span> : state === 'on' ? <span className="row gap-2"><span className="dot dot-green" /> Conectado{c.at ? ' · ' + window.fmtAgo(c.at) : ''}.</span> : state === 'blocked' ? <>Por ahora no se puede conectar: un administrador tiene que renovar la configuración de {p.name}.</> : <>No has conectado tu cuenta.</>}</div>
         </div>
-        {state === 'none' && <button className="btn btn-sm btn-primary" onClick={() => RM.connect(p.id, 'connections')}>Conectar</button>}
+        {state === 'none' && <button className="btn btn-sm btn-primary" onClick={() => { if (RM.connect(p.id, 'connections') === 'already') setAlready({ ...already, [p.id]: true }); }}>Conectar</button>}
         {state === 'on' && <window.Soon on><button className="btn btn-sm">Desconectar</button></window.Soon>}
       </div>; })}</div>}
-    <div className="rm-hint" style={{ marginTop: 14 }}>Al conectar vas a iniciar sesión en Microsoft. Si ya estabas conectado, Mango lo confirma sin abrirlo.</div>
+    {list.length > 0 && (idps => <div className="rm-hint" style={{ marginTop: 14 }}>Al conectar vas a iniciar sesión en {idps.join(' o ')}. Si tu cuenta ya estaba conectada, Mango lo confirma sin abrir {idps.length === 1 ? idps[0] : 'el proveedor'}.</div>)([...new Set(list.map(r => RM.profile(r.profile).idp))])}
   </window.Modal>;
 }
 
@@ -192,6 +204,7 @@ const RET = {
   nosession: ['Lock', 'muted', () => 'Inicia sesión en Mango para terminar', () => 'Este navegador no tiene tu sesión de Mango abierta. Después de ingresar vuelves aquí y la conexión se completa.'],
   notyours: ['Lock', 'red', () => 'Este enlace no es tuyo', () => 'Pide la conexión desde tu propia sesión.'],
   denied: ['X2', 'red', (p) => p.idp + ' no autorizó la conexión', (p) => 'Si no fuiste tú quien canceló, consulta con el administrador de ' + p.idp + ' de tu empresa.'],
+  conditional: ['Shield', 'amber', () => 'Una regla de acceso de tu empresa bloqueó la conexión', (p) => 'El Acceso condicional de ' + p.idp + ' no dejó iniciar sesión desde este dispositivo o esta red, o pidió un paso que no se completó. Consulta con el administrador de ' + p.idp + ' de tu empresa.'],
   error: ['Warn', 'amber', () => 'No se pudo conectar tu cuenta', () => 'Inténtalo de nuevo en unos minutos.'],
 };
 function RemoteReturn({ setView }) {
@@ -222,7 +235,7 @@ function RemoteReturn({ setView }) {
 // —— Ajustes › Conectividad ——
 function RemoteConnBlock() {
   const I = window.Icons; useRm(); const [modal, setModal] = useState(null);
-  const list = RM.regs().filter(r => r.status !== 'pending');
+  const list = RM.regs().filter(r => ['active', 'disabled', 'creating', 'failed'].includes(r.status));
   const pend = RM.pending().length;
   const open = (pid, id) => { S.set({ rmOpen: { pid, id } }); window.MangoNav?.('mcp'); };
   return <div style={{ marginTop: 28 }}>
@@ -237,6 +250,8 @@ function RemoteConnBlock() {
             <div className="mk-meta">Grupos: <span className="mono">{r.groups.join(', ')}</span></div>
             {r.status === 'active' && <div className="row gap-2" style={{ fontSize: 12.5 }}><I.Lock size={11} /><span className="mk-meta">Secreto de la app de Entra ·</span><SecretLine r={r} /></div>}
             {r.status === 'disabled' && <div className="mk-meta">Deshabilitado por {r.disabledBy} · {window.fmtAgo(r.disabledAt)}</div>}
+            {r.status === 'creating' && <div className="mk-meta row gap-2"><span className="g-spin" /> Creando la conexión · unos segundos</div>}
+            {r.status === 'failed' && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>No se pudo habilitar {p.name}. Revisa los datos de la app de Entra y vuelve a pedirlo.</div>}
           </div>
         </div>
         {r.status === 'active' && <SecretAlert r={r} />}

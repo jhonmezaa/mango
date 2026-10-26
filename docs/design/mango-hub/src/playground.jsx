@@ -161,7 +161,14 @@ function Playground({ agents, models }) {
   const canEdit = S.can('agent.create');
   const secret = L.findSecret(snap.prompt);
   const verState = av && (sim === 'ver-loading' || sim === 'ver-error') ? sim : null;
-  const block = !av ? null
+  const skillRows0 = (snap.skills || []).map(x => { const [id, v] = x.split('@'); const s = (S.get().skills || []).find(k => k.id === id); return { x, name: s?.name || id, v }; });
+  const offSkill = sim === 'skill-off' ? (skillRows0[0] || { x: 'rightsizing-ecs@2', name: 'Rightsizing ECS', v: '2' }) : null;
+  const noToolsModel = sim === 'no-tools-model';
+  const block = sim === 'retired' ? { tone: 'error', title: 'Este agente se retiró', body: 'Ya no se puede probar. Elige otro en «Qué probar».' }
+    : sim === 'not-testable' ? { tone: 'warn', title: 'Esta versión no se puede probar', body: 'Solo se prueban los borradores y la versión publicada. Elige otra.' }
+    : noToolsModel ? { tone: 'warn', title: 'Elige un modelo para probar', body: snap.model + ' no admite tools y este agente usa tools o knowledge bases.' }
+    : offSkill ? { tone: 'error', title: 'Una skill de esta versión ya no está aprobada', body: offSkill.name + ' v' + offSkill.v + ' ya no está aprobada. Cámbiala en el Agent Builder para probar.', action: <button className="btn btn-sm" onClick={() => window.MangoNav?.('admin', srcRev?.agentId || srcAgent?.id)}>Abrir en el Agent Builder</button> }
+    : !av ? null
     : verState ? { tone: 'info', silent: true }
     : secret ? { tone: 'error', title: 'Hay un posible secreto en el prompt', body: 'Quítalo para probar: el prompt se manda al modelo y un secreto no puede llegar a su contexto. Tampoco se podrá enviar a aprobación.' }
     : modelOff ? { tone: 'warn', title: 'Elige un modelo para probar', body: snap.model + ' ya no está habilitado en Brains.' }
@@ -191,12 +198,15 @@ function Playground({ agents, models }) {
     const id = Date.now() + Math.random();
     const entries = cols.map(([sn, m, label], k) => {
       const r = pgRespond(text, sn, m, L, av);
+      const RM = window.RM; const needRemote = !av && RM && (sim === 'remote-consent' || (sn.remoteTools || []).length > 0) && RM.conn('azure-devops').status !== 'connected';
+      if (needRemote) { r.text = 'Necesito que conectes tu cuenta de Azure DevOps para responder.'; r.calls = []; r.remote = 'azure-devops'; }
+      else if (sim === 'tool-fail' && r.calls.length) { r.calls = r.calls.map((c, i) => i === 0 ? { ...c, status: 'fail' } : c); r.text += '\n\n_Una tool falló; respondí con lo demás._'; }
       const tin = 900 + Math.ceil((sn.prompt || '').length / 4) + r.calls.length * 420;
       const tout = Math.round(r.text.length / 3.6);
       const mo = (models || []).find(x => (x.short || x.name) === m) || {};
       const cost = (tin * (mo.inputPrice || 3) + tout * (mo.outputPrice || 15)) / 1e6;
       const ms = (pgFast(m) ? 700 : 1800) + r.calls.reduce((s, c) => s + c.ms, 0);
-      return { key: id + '-' + k, label, model: m, full: r.text, guard: r.guard, calls: r.calls, stopped: r.stopped, shown: '', state: 'queued', fail: av && sim === 'fail' && k === 0, ms, tin, tout, cost, overTokens: tout > (sn.limits?.tokens || 4096), overTime: ms / 1000 > (sn.limits?.seconds || 120), hitIter: r.hitIter };
+      return { key: id + '-' + k, label, model: m, remote: r.remote, full: r.text, guard: r.guard, calls: r.calls, stopped: r.stopped, shown: '', state: 'queued', fail: av && sim === 'fail' && k === 0, ms, tin, tout, cost, overTokens: tout > (sn.limits?.tokens || 4096), overTime: ms / 1000 > (sn.limits?.seconds || 120), hitIter: r.hitIter };
     });
     setRuns(rs => [{ id, input: text, entries }, ...rs]);
     entries.forEach(e => queue.current.push([id, e]));
@@ -231,7 +241,7 @@ function Playground({ agents, models }) {
       </>)}
       <div className="pg-grid" style={{ flex: 1, display: 'grid', gridTemplateColumns: '340px minmax(0,1fr)', overflow: 'hidden' }}>
         <div className="pg-side">
-          {saveErr && <div style={{ marginTop: 14 }}><K.Banner tone="error" title="Este borrador cambió en otra pestaña" action={<button className="btn btn-sm" onClick={() => { setSnap(JSON.parse(JSON.stringify(baseSnap))); setSaveErr(false); S.set({ simPg: null }); }}><I.Refresh size={11} /> Recargar</button>}>No se guardó. Recarga para ver la última versión; perderás los cambios de esta pantalla.</K.Banner></div>}
+          {saveErr && <div style={{ marginTop: 14 }}><K.Banner tone="error" title="Este borrador cambió en otra pestaña"><div>No se guardó. Recarga para ver la última versión; perderás los cambios de esta pantalla.</div><button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => { setSnap(JSON.parse(JSON.stringify(baseSnap))); setSaveErr(false); S.set({ simPg: null }); }}><I.Refresh size={11} /> Recargar</button></K.Banner></div>}
           <Lb htmlFor="pg-src">Qué probar</Lb>
           <select id="pg-src" className="input" style={{ width: '100%' }} value={src} onChange={e => setSrc(e.target.value)}>
             {drafts.length > 0 && <optgroup label="Tus borradores">{drafts.map(r => <option key={r.id} value={'rev:' + r.id}>{r.snap.name} · {L.REV_STATUS[r.status][0].toLowerCase()}</option>)}</optgroup>}
@@ -246,6 +256,7 @@ function Playground({ agents, models }) {
           <Lb htmlFor="pg-model">Modelo</Lb>
           <select id="pg-model" className="input" style={{ width: '100%', borderColor: modelOff ? 'var(--red)' : undefined }} value={modelOff ? '' : snap.model} onChange={e => { setSnap({ ...snap, model: e.target.value }); if (sim === 'model-off') S.set({ simPg: null }); }}>{modelOff && <option value="" disabled>Elige un modelo</option>}{modelNames.map(m => <option key={m}>{m}</option>)}</select>
           {modelOff && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 5 }}>{snap.model} ya no está habilitado. Elige otro para probar y enviar.</div>}
+          {noToolsModel && !modelOff && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 5 }}>{snap.model} no admite tools. Elige uno que las admita.</div>}
           {av && (snap.tools || []).length > 0 && <div className="mk-meta" style={{ marginTop: 5 }}>Solo modelos que admiten tools.</div>}
 
           <Lb htmlFor="pg-prompt" hint={'≈ ' + Math.ceil((snap.prompt || '').length / 4) + ' tokens'}>System prompt</Lb>
@@ -263,9 +274,12 @@ function Playground({ agents, models }) {
           </div>
           <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.45 }}>{av ? 'Las de lectura se ejecutan de verdad, con tu identidad: lo que no puedes consultar en el chat tampoco lo consulta aquí. Las de escritura nunca se ejecutan: la prueba se detiene cuando el agente pide una. Se cambian en el Agent Builder.' : 'Las tools se editan en el Agent Builder. Aquí las de escritura se simulan: nunca se ejecutan.'}</div>
 
-          {av && skillRows.length > 0 && <>
-            <Lb>Skills · {skillRows.length}</Lb>
-            <div className="pg-tools">{skillRows.map(s => <div key={s.x} className="pg-tool"><span>{s.name}</span><span className="mono mk-meta">v{s.v}</span></div>)}</div>
+          {sim === 'skills-err' ? <>
+            <Lb>Skills</Lb>
+            <K.Banner tone="warn" title="No se pudieron cargar las skills de esta versión"><div>La prueba corre igual, sin ellas. Inténtalo de nuevo en unos segundos.</div><button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => S.set({ simPg: null })}><I.Refresh size={11} /> Reintentar</button></K.Banner>
+          </> : (skillRows.length > 0 || offSkill) && <>
+            <Lb>Skills · {Math.max(skillRows.length, offSkill ? 1 : 0)}</Lb>
+            <div className="pg-tools">{(skillRows.length ? skillRows : [offSkill]).map(s => { const off = offSkill && s.x === offSkill.x; return <div key={s.x} className={'pg-tool' + (off ? ' off' : '')}><span>{s.name}</span>{off ? <span className="badge badge-red">Ya no aprobada</span> : <span className="mono mk-meta">v{s.v}</span>}</div>; })}</div>
             <div className="mk-meta" style={{ marginTop: 6 }}>Se cargan igual que en el agente publicado. Se cambian en el Agent Builder.</div>
           </>}
 
@@ -290,7 +304,7 @@ function Playground({ agents, models }) {
           </>}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="pg-main" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div className="pg-head">
             <div className="row gap-1" style={{ flexWrap: 'wrap', flex: 1 }}>
               {samples.map(s => <button key={s} className="tk-chip" disabled={!canRun} onClick={() => runOne(s)}>{s}</button>)}
@@ -302,8 +316,8 @@ function Playground({ agents, models }) {
               {runs.length > 0 && <button className="btn btn-sm btn-ghost" onClick={() => { reset(); setRuns([]); setVote({}); }}>Limpiar</button>}
             </div>
           </div>
-          {block && !block.silent && <div style={{ padding: '14px 24px 0' }}><K.Banner tone={block.tone} title={block.title}>{block.body}</K.Banner></div>}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+          {block && !block.silent && <div style={{ padding: '14px 24px 0' }}><K.Banner tone={block.tone} title={block.title}>{block.body}{block.action && <div style={{ marginTop: 8 }}>{block.action}</div>}</K.Banner></div>}
+          <div className="pg-runs" style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
             {runs.length === 0 && (
               <div style={{ maxWidth: 460, margin: '10vh auto', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <I.Play size={20} style={{ color: 'var(--accent-ink)', marginBottom: 12 }} />
@@ -328,12 +342,14 @@ function Playground({ agents, models }) {
                           <button className="pg-trace-t" onClick={() => setOpenTrace(t => ({ ...t, [e.key]: !tOpen }))} aria-expanded={!!tOpen}>
                             <I.ChevronRight size={10} style={{ transform: tOpen ? 'rotate(90deg)' : 'none' }} />{callsShown.length} {callsShown.length === 1 ? 'tool' : 'tools'}
                             {callsShown.some(c => c.status === 'approval') && <span className="badge badge-amber" style={{ fontSize: 10.5 }}>{av ? 'pidió escritura' : '1 simulada'}</span>}
-                            {callsShown.some(c => c.status === 'unavailable') && <span className="badge badge-red" style={{ fontSize: 10.5 }}>no disponible</span>}
+                            {(n => n > 0 && <span className="badge badge-red" style={{ fontSize: 10.5 }}>{n === 1 ? '1 falló' : n + ' fallaron'}</span>)(callsShown.filter(c => c.status === 'fail' || (av && c.status === 'unavailable')).length)}
+                            {!av && callsShown.some(c => c.status === 'unavailable') && <span className="badge badge-red" style={{ fontSize: 10.5 }}>no disponible</span>}
                           </button>
                         )}
-                        {tOpen && <div className="pg-trace">{callsShown.map(c => <div key={c.id}><span className={'tk-dot'} style={{ background: c.status === 'ok' ? 'var(--green)' : c.status === 'approval' ? 'var(--amber)' : 'var(--red)' }} /><span className="mono" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{c.id}</span><span className="mk-meta">{c.status === 'ok' ? (av ? (c.ms / 1000).toFixed(1).replace('.', ',') + ' s · bien' : c.ms + ' ms') : c.status === 'approval' ? (av ? 'pediría aprobación · no se ejecuta' : 'pediría aprobación') : av ? 'pack no instalado' : 'MCP no habilitado'}</span></div>)}</div>}
+                        {tOpen && <div className="pg-trace">{callsShown.map(c => { const secs = (Math.max(c.ms, 100) / 1000).toFixed(1).replace('.', ','); const failed = c.status === 'fail' || (av && c.status === 'unavailable'); const running = e.state === 'running' && c.status !== 'approval'; return <div key={c.id}><span className={'tk-dot'} style={{ background: running ? 'var(--text-dim)' : c.status === 'ok' ? 'var(--green)' : c.status === 'approval' ? 'var(--amber)' : 'var(--red)' }} /><span className="mono" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{c.id}</span><span className="mk-meta" style={failed && !running ? { color: 'var(--red)' } : null}>{running ? '…' : failed ? secs + ' s · falló' : c.status === 'ok' ? (av ? secs + ' s · bien' : c.ms + ' ms') : c.status === 'approval' ? (av ? 'pediría aprobación · no se ejecuta' : 'pediría aprobación') : 'MCP no habilitado'}</span></div>; })}</div>}
                         {e.state === 'queued' ? <div className="mk-meta" style={{ flex: 1 }}>En cola · empieza cuando termine otra prueba. Corren hasta 2 a la vez.</div>
                           : <div className="md" style={{ fontSize: 14, lineHeight: 1.65, flex: 1 }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(e.shown || '…') }} />}
+                        {done && e.remote && window.ConnectCard && <div className="pg-connect"><window.ConnectCard pid={e.remote} /></div>}
                         {done && e.stopped && <div className="mc-alert amber" style={{ marginTop: 10, fontSize: 12.5 }}><I.Lock size={13} /><div>La prueba se detuvo aquí: el agente pidió <span className="mono">{e.stopped}</span>, que es de escritura. En el Playground no se ejecuta ni se crea una solicitud en Aprobaciones.</div></div>}
                         {e.state === 'error' && <div className="mc-alert red" role="alert" style={{ marginTop: 10, fontSize: 12.5, alignItems: 'center' }}><I.X2 size={13} /><div style={{ flex: 1 }}>No se pudo completar la respuesta.</div><button className="btn btn-sm" disabled={!canRun} onClick={() => runOne(r.input)}><I.Refresh size={11} /> Reintentar</button></div>}
                         {done && (

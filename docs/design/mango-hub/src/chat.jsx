@@ -615,7 +615,7 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
   }, [toolsOpen]);
   const mcpServers = window.MangoData?.mcpServers || [];
   const allSkills = window.MangoData?.skills || [];
-  const agentSkills = allSkills.filter(s => s.usedBy?.includes(agent.id));
+  const agentSkills = (window.MangoStore.get().skills || allSkills).filter(s => s.usedBy?.includes(agent.id)).slice(0, 10);
   const agentMcp = agent.mcp.map(id => mcpServers.find(m => m.id === id)).filter(Boolean);
   const soon = window.useSoon();
   return (
@@ -647,13 +647,14 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
           {toolsOpen && (
             <div className="tools-pop">
               <div style={{padding:'12px 14px', borderBottom:'1px solid var(--border)'}}>
-                <div style={{fontSize: 12.5, fontWeight: 600}}>Qué puede hacer {agent.name}</div>
-                <div style={{fontSize: 11, color:'var(--text-dim)', marginTop: 2}}>Skills y tools configuradas por el admin</div>
+                <div style={{fontSize: 12.5, fontWeight: 600}}>Qué puede usar {agent.name}</div>
+                <div style={{fontSize: 11.5, color:'var(--text-muted)', marginTop: 3, lineHeight: 1.45}}>Lo fija la versión que te responde. Cambiarlo es una versión nueva del agente, con su aprobación.</div>
               </div>
 
               <div style={{padding:'12px 14px 8px'}}>
-                <div style={{fontSize: 10.5, color:'var(--text-muted)', fontWeight: 500, marginBottom: 8}}>Skills · {agentSkills.length}</div>
-                {agentSkills.length === 0 && <div style={{fontSize: 11.5, color:'var(--text-dim)'}}>Sin skills asignadas.</div>}
+                <div style={{fontSize: 10.5, color:'var(--text-muted)', fontWeight: 500, marginBottom: 4}}>Skills · {agentSkills.length}</div>
+                <div style={{fontSize: 11.5, color:'var(--text-muted)', lineHeight: 1.45, marginBottom: 8}}>Son instrucciones: no ejecutan nada. El agente carga una cuando le sirve; si quieres que use alguna, pídelo en tu mensaje y puede seguirlo o no.</div>
+                {agentSkills.length === 0 && <div style={{fontSize: 11.5, color:'var(--text-dim)'}}>Esta versión no tiene skills.</div>}
                 {agentSkills.map(s => {
                   const Ic = I[s.icon] || I.Skill;
                   return (
@@ -662,7 +663,7 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
                         <Ic size={11} />
                       </span>
                       <div style={{flex: 1, minWidth: 0}}>
-                        <div style={{fontSize: 12, fontWeight: 600}}>{s.name}{s.writeAction && <span className="badge badge-amber" style={{marginLeft: 6, fontSize: 9}}>write</span>}</div>
+                        <div className="row between" style={{gap: 8}}><span style={{fontSize: 12, fontWeight: 600}}>{s.name}</span><span className="mono" style={{fontSize: 10.5, color:'var(--text-muted)'}}>v{(s.agentV || {})[agent.id] || s.version || 1}</span></div>
                         <div style={{fontSize: 11, color:'var(--text-muted)', marginTop: 2, lineHeight: 1.4, textWrap:'pretty'}}>{s.desc}</div>
                       </div>
                     </div>
@@ -903,7 +904,6 @@ function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attach
         <div className="row between ch-compose-bar">
           <div className="row gap-1">
             <window.Soon on={soon}><button className="btn btn-ghost btn-icon" title="Adjuntar archivos" aria-label="Adjuntar archivos" onClick={() => fileRef.current?.click()}><I.Paperclip size={14} /></button></window.Soon>
-            <window.Soon on={soon}><button className="btn btn-ghost btn-sm"><I.Skill size={12} /> Skill</button></window.Soon>
 
           </div>
           <div className="row gap-2 ch-send-row">

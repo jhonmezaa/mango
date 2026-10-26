@@ -887,5 +887,28 @@ Brief D93/D94. Solo en **Diseño completo**; en «Disponible hoy» todo sigue en
 - **Ajustes › Conectividad**: bloque «Servicios externos» con org, toolsets, grupos, estado, vencimiento del secreto (avisos a 30 y 7 días y vencido), «Rotar secreto», «Deshabilitar».
 - **Bandeja**: «Conecta tu cuenta de {servicio}» por tarea programada sin conexión (con «Ir a Mis conexiones», sin URL de Microsoft); solicitudes de alta fijadas arriba para admins; **propuesta**: el aviso del secreto por vencer o vencido también va a la Bandeja de los admins (pregunta abierta del brief).
 - **Agent Builder › Tools**: grupo por registro activo con las marcas; quien no está en sus grupos ve «{servicio} no está habilitado para tus grupos.». **Propuesta**: aviso en el Builder cuando el agente es visible para grupos o personas fuera del registro. Las tools remotas van en `snap.remoteTools`, aparte de `snap.tools`.
-- Pendiente: Playground (mismo patrón que el chat), Actividad sin cambios.
+- Actividad sin cambios.
 - Panel de demo: registro, secreto, tu cuenta, error al pedir o aprobar, «Chat · servicio externo», «Vuelta desde Microsoft».
+
+
+## Lo que queda tras la ronda 22 (2026-10-26)
+**MCP remotos**
+- **A1 · enlaces**: `RM.classifyLink` saca la organización de la ruta (`dev.azure.com/{org}/…`) o del subdominio (`{org}.visualstudio.com`). Solo una organización registrada en la instalación (habilitada, deshabilitada o creándose) se presenta como «Tu organización de {servicio} ({org})», en texto gris y sin insignia, con «Mango solo comprueba la dirección, no lo que hay en la página». Otra organización del mismo host va como externa: insignia roja corta «Otra organización» y debajo «{org} está en {servicio}, pero no es una organización registrada por tu empresa.» (otro dominio: «Otro dominio» · «No es un dominio de {servicio}.»), «Cancelar» como botón principal y el aviso de no escribir datos. En el mensaje, la etiqueta roja muestra `host/org`. La demo trae los tres casos: la organización registrada, otra organización y otro dominio.
+- **A2 · estados**: «Creándose» (insignia azul con spinner; unos segundos tras aprobar) → «Habilitado» o «Falló» («No se pudo habilitar {servicio}» · «Revisa los datos de la app de Entra y vuelve a pedirlo.», con «Pedir de nuevo»). Rechazar y retirar borran secreto y URL, pero la solicitud queda en «Historial de solicitudes» de la ficha: org, estado, quién pidió, quién rechazó o retiró, motivo.
+- **A3 · Playground**: si el agente tiene tools remotas y tu cuenta no está conectada, la prueba responde «Necesito que conectes…» y debajo va la misma tarjeta de Mango que en el chat.
+- **A4 · Acceso condicional** (provisional, P9 sin probar): «Una regla de acceso de tu empresa bloqueó la conexión» · «El Acceso condicional de {proveedor} no dejó iniciar sesión desde este dispositivo o esta red, o pidió un paso que no se completó. Consulta con el administrador de {proveedor} de tu empresa.».
+- **A5**: el pie de Mis conexiones usa los proveedores de los perfiles listados.
+- **A6**: «Conectar» con la cuenta ya conectada en el servidor muestra en la fila «Tu cuenta ya estaba conectada.» sin abrir el proveedor.
+
+**Playground** (las cajas de bloqueo van arriba de las pruebas, como las demás; además, hay una pista junto al campo afectado del panel izquierdo)
+- model_without_tools: «Elige un modelo para probar» · «{modelo} no admite tools y este agente usa tools o knowledge bases.»; bajo el selector, «{modelo} no admite tools. Elige uno que las admita.».
+- version_not_testable: «Esta versión no se puede probar» · «Solo se prueban los borradores y la versión publicada. Elige otra.».
+- skill_unavailable: «Una skill de esta versión ya no está aprobada» · «{skill} v{n} ya no está aprobada. Cámbiala en el Agent Builder para probar.», con «Abrir en el Agent Builder»; la skill queda marcada «Ya no aprobada» en el panel.
+- skills_unavailable: no bloquea. En el lugar de las skills: «No se pudieron cargar las skills de esta versión» · «La prueba corre igual, sin ellas. Inténtalo de nuevo en unos segundos.» · «Reintentar».
+- agent_retired: «Este agente se retiró» · «Ya no se puede probar. Elige otro en «Qué probar».».
+- Traza: «{n,n} s · falló» en rojo, con la insignia «1 falló» / «N fallaron»; «…» mientras corre. En «Disponible hoy» la traza ya no dice «pack no instalado» ni «no disponible»: una tool así sale como «falló». La insignia «No disponible» queda solo en el panel izquierdo.
+- «Este borrador cambió en otra pestaña»: «Recargar» va dentro del cuerpo, como en el producto.
+- Móvil (≤900 px): el panel izquierdo ya no tiene scroll propio; se desplaza toda la pantalla.
+- Sesión que vence: igual que en el chat, termina la sesión (nada nuevo que dibujar).
+
+**Chat · botón «Skill»**: **se quita** del compositor, porque sugería forzar una skill y eso no se puede. El popover «Skills y tools» se queda (en «Disponible hoy» sigue Próximamente hasta que exista): «Qué puede usar {agente}» · «Lo fija la versión que te responde. Cambiarlo es una versión nueva del agente, con su aprobación.». Las skills de la versión (hasta 10) van con nombre, descripción y versión, y la nota «Son instrucciones: no ejecutan nada. El agente carga una cuando le sirve; si quieres que use alguna, pídelo en tu mensaje y puede seguirlo o no.». Se quitó la insignia «write» de las skills. No se muestra qué skill se usó en un turno.

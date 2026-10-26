@@ -23,12 +23,15 @@ const SECRET_DAYS = { ok: 120, d30: 21, d7: 5, expired: -2 };
 const iso = (ms) => new Date(Date.now() + ms).toISOString();
 
 function seedRegs(kind = 'active', secret = 'd30') {
+  const hist = [{ id: 'RMT-1c9e0b44', profile: 'azure-devops', org: 'empresa-labs', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d', toolsets: ['work-items', 'repos'], groups: ['mango-agent-creator'], status: 'rejected', by: 'Usuario 1', at: iso(-26 * DAY), decidedBy: 'Usuario 6', decidedAt: iso(-25 * DAY), reason: 'La app de Entra pedía permisos de escritura en Azure DevOps' }, { id: 'RMT-5d2f8a71', profile: 'azure-devops', org: 'empresa', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '3b9d0c12-8e4f-4a6b-b7c8-0d1e2f3a4b5c', toolsets: ['work-items'], groups: ['finops-central'], status: 'withdrawn', by: 'Usuario 6', at: iso(-22 * DAY), decidedBy: 'Usuario 6', decidedAt: iso(-22 * DAY) }];
   if (kind === 'none') return [];
   const base = { id: 'RMT-7f3a2c10', profile: 'azure-devops', org: 'empresa', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '3b9d0c12-8e4f-4a6b-b7c8-0d1e2f3a4b5c', toolsets: ['core', 'work-items', 'repos', 'wiki', 'search'], groups: ['finops-central', 'mango-agent-creator'], secretExp: iso(SECRET_DAYS[secret] * DAY), redirect: REDIRECT('azure-devops') };
-  if (kind === 'pending-other') return [{ ...base, status: 'pending', by: 'Usuario 6', at: iso(-3 * 36e5) }];
-  if (kind === 'pending-mine') return [{ ...base, status: 'pending', by: 'Usuario 1', at: iso(-3 * 36e5) }];
-  if (kind === 'disabled') return [{ ...base, status: 'disabled', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', disabledBy: 'Usuario 6', disabledAt: iso(-1 * DAY), reason: 'Pausa mientras se revisan los permisos de la app en Entra' }];
-  return [{ ...base, status: 'active', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', approvedAt: iso(-19 * DAY) }];
+  if (kind === 'pending-other') return [...hist, { ...base, status: 'pending', by: 'Usuario 6', at: iso(-3 * 36e5) }];
+  if (kind === 'pending-mine') return [...hist, { ...base, status: 'pending', by: 'Usuario 1', at: iso(-3 * 36e5) }];
+  if (kind === 'creating') return [...hist, { ...base, status: 'creating', by: 'Usuario 6', at: iso(-1 * 36e5), approvedBy: 'Usuario 1', approvedAt: iso(-6e4) }];
+  if (kind === 'failed') return [...hist, { ...base, status: 'failed', by: 'Usuario 6', at: iso(-1 * 36e5), approvedBy: 'Usuario 1', approvedAt: iso(-5 * 6e4) }];
+  if (kind === 'disabled') return [...hist, { ...base, status: 'disabled', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', disabledBy: 'Usuario 6', disabledAt: iso(-1 * DAY), reason: 'Pausa mientras se revisan los permisos de la app en Entra' }];
+  return [...hist, { ...base, status: 'active', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', approvedAt: iso(-19 * DAY) }];
 }
 if (!S.get().remoteRegs) S.set({ remoteRegs: seedRegs(), remoteConn: { 'azure-devops': { status: 'none' } } });
 
@@ -45,10 +48,26 @@ const setRegs = (list) => S.set({ remoteRegs: list });
 const upd = (id, patch) => setRegs(regs().map(r => r.id === id ? { ...r, ...patch } : r));
 const newId = () => 'RMT-' + Math.random().toString(16).slice(2, 10);
 const GONE = 'Este servicio ya no está en esta versión de Mango.';
+const LIVE = ['active', 'pending', 'creating'];
+const HIST = ['rejected', 'withdrawn'];
+// Enlaces: solo una organización registrada en la instalación se presenta como del servicio.
+function classifyLink(pid, url) {
+  const p = profile(pid); let u; try { u = new URL(url); } catch (e) { return { kind: 'other', host: '', label: '' }; }
+  const host = u.hostname.toLowerCase().replace(/^www\./, '');
+  let org = null, label = host;
+  if (host === 'dev.azure.com') { org = (u.pathname.split('/')[1] || '').toLowerCase() || null; label = org ? host + '/' + org : host; }
+  else if (host.endsWith('.visualstudio.com')) org = host.split('.')[0];
+  const svc = !!p && p.hosts.some(h => host === h || host.endsWith('.' + h));
+  if (!svc) return { kind: 'other', host, label };
+  const own = org && regs().some(r => r.profile === pid && ['active', 'disabled', 'creating'].includes(r.status) && r.org.toLowerCase() === org);
+  return { kind: own ? 'own' : 'other-org', host, org, label };
+}
 
 const RM = {
   PROFILES, profile, regs, myGroups, inMyGroups, conn, secretInfo, fmtDay, toolsOf, seedRegs, SECRET_DAYS,
-  regsOf: (pid) => regs().filter(r => r.profile === pid),
+  classifyLink, HIST,
+  regsOf: (pid) => regs().filter(r => r.profile === pid && !HIST.includes(r.status)),
+  histOf: (pid) => regs().filter(r => r.profile === pid && HIST.includes(r.status)).sort((a, b) => new Date(b.decidedAt || b.at) - new Date(a.decidedAt || a.at)),
   active: (pid) => regs().find(r => r.profile === pid && r.status === 'active'),
   mine: () => regs().filter(r => (r.status === 'active' || r.status === 'disabled') && inMyGroups(r)),
   pending: () => regs().filter(r => r.status === 'pending'),
@@ -57,7 +76,7 @@ const RM = {
   request: (f, replaces) => {
     const p = profile(f.profile);
     if (get().simRemoteGone || !p) return { error: GONE };
-    if (regs().some(r => r.profile === f.profile && r.org.toLowerCase() === f.org.toLowerCase() && (r.status === 'active' || r.status === 'pending') && r.id !== replaces && r.replaces !== replaces)) return { error: p.name + ' ya está habilitado para esa organización.' };
+    if (regs().some(r => r.profile === f.profile && r.org.toLowerCase() === f.org.toLowerCase() && LIVE.includes(r.status) && r.id !== replaces && r.replaces !== replaces)) return { error: p.name + ' ya está habilitado para esa organización.' };
     const reg = { id: newId(), profile: f.profile, org: f.org, tenantId: f.tenantId.toLowerCase(), clientId: f.clientId.toLowerCase(), toolsets: f.toolsets, groups: f.groups, secretExp: new Date(f.secretExp + 'T12:00:00').toISOString(), status: 'pending', by: S.actor(), at: new Date().toISOString(), redirect: REDIRECT(f.profile), replaces: replaces || null };
     setRegs([...regs(), reg]);
     S.log('remote_mcp.request', reg.id, (replaces ? 'Pidió cambiar tenant o app de ' : 'Pidió habilitar ') + p.name + ' para ' + f.org, { outcome: 'requested' });
@@ -68,18 +87,27 @@ const RM = {
     const r = regs().find(x => x.id === id); if (!r) return {};
     if (get().simRemoteGone) return { error: GONE };
     if (r.by === S.actor()) return { error: 'Otra persona administradora tiene que aprobarlo.' };
-    let list = regs().map(x => x.id === id ? { ...x, status: 'active', approvedBy: S.actor(), approvedAt: new Date().toISOString(), replaces: null } : x);
-    if (r.replaces) list = list.filter(x => x.id !== r.replaces);
-    setRegs(list); S.log('remote_mcp.approve', id, 'Aprobó ' + profile(r.profile).name + ' para ' + r.org);
+    // «Creándose» unos segundos, hasta que la conexión existe; después «Habilitado» o «Falló».
+    upd(id, { status: 'creating', approvedBy: S.actor(), approvedAt: new Date().toISOString() });
+    S.log('remote_mcp.approve', id, 'Aprobó ' + profile(r.profile).name + ' para ' + r.org);
+    setTimeout(() => {
+      const cur = regs().find(x => x.id === id); if (!cur || cur.status !== 'creating') return;
+      if (get().simRemoteCreate === 'fail') { upd(id, { status: 'failed' }); S.log('remote_mcp.create_failed', id, 'No se pudo habilitar ' + profile(r.profile).name + ' para ' + r.org, { outcome: 'failed' }); return; }
+      let list = regs().map(x => x.id === id ? { ...x, status: 'active', replaces: null } : x);
+      if (r.replaces) list = list.filter(x => x.id !== r.replaces);
+      setRegs(list);
+    }, 2600);
     return {};
   },
-  reject: (id, reason) => { const r = regs().find(x => x.id === id); setRegs(regs().filter(x => x.id !== id)); S.log('remote_mcp.reject', id, 'Rechazó ' + profile(r.profile).name + ' para ' + r.org + (reason ? ': «' + reason + '»' : '')); },
-  withdraw: (id) => { const r = regs().find(x => x.id === id); setRegs(regs().filter(x => x.id !== id)); S.log('remote_mcp.withdraw', id, 'Retiró la solicitud de ' + profile(r.profile).name + ' para ' + r.org); },
+  // Rechazar y retirar borran lo que se creó (secreto incluido); queda la solicitud en el historial.
+  reject: (id, reason) => { const r = regs().find(x => x.id === id); upd(id, { status: 'rejected', decidedBy: S.actor(), decidedAt: new Date().toISOString(), reason, secretExp: null, redirect: null }); S.log('remote_mcp.reject', id, 'Rechazó ' + profile(r.profile).name + ' para ' + r.org + (reason ? ': «' + reason + '»' : '')); },
+  withdraw: (id) => { const r = regs().find(x => x.id === id); upd(id, { status: 'withdrawn', decidedBy: S.actor(), decidedAt: new Date().toISOString(), secretExp: null, redirect: null }); S.log('remote_mcp.withdraw', id, 'Retiró la solicitud de ' + profile(r.profile).name + ' para ' + r.org); },
   rotate: (id, exp) => { const r = regs().find(x => x.id === id); upd(id, { secretExp: new Date(exp + 'T12:00:00').toISOString() }); S.log('remote_mcp.rotate_secret', id, 'Rotó el secreto de la app de Entra de ' + profile(r.profile).name); },
   disable: (id, reason) => { const r = regs().find(x => x.id === id); upd(id, { status: 'disabled', disabledBy: S.actor(), disabledAt: new Date().toISOString(), reason }); S.log('remote_mcp.disable', id, 'Deshabilitó ' + profile(r.profile).name + ' para ' + r.org + ': «' + reason + '»'); },
   // Conectar la cuenta propia. Si ya estaba conectada, responde sin abrir Microsoft.
   connect: (pid, from = 'connections') => {
     if (conn(pid).status === 'connected') return 'already';
+    if (conn(pid).server) { S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'connected', at: conn(pid).at || new Date().toISOString() } } }); return 'already'; }
     S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'connecting' } }, remoteReturn: { pid, from } });
     setTimeout(() => { window.dispatchEvent(new CustomEvent('mango:close-connections')); window.MangoNav?.('connect-return'); }, 1300);
     return 'opening';
@@ -103,6 +131,10 @@ function RmBadges({ p, compact }) {
 }
 function RmStatus({ r }) {
   if (!r) return <span className="badge">Sin habilitar</span>;
+  if (r.status === 'creating') return <span className="badge badge-blue"><span className="g-spin" style={{ width: 9, height: 9, marginRight: 5 }} />Creándose</span>;
+  if (r.status === 'failed') return <span className="badge badge-red">Falló</span>;
+  if (r.status === 'rejected') return <span className="badge badge-red">Rechazada</span>;
+  if (r.status === 'withdrawn') return <span className="badge">Retirada</span>;
   const si = r.status === 'active' ? secretInfo(r) : null;
   if (si?.level === 'expired') return <span className="badge badge-red">Secreto vencido</span>;
   return r.status === 'active' ? <span className="badge badge-green">Habilitado</span> : r.status === 'pending' ? <span className="badge badge-amber">Pendiente de aprobación</span> : <span className="badge">Deshabilitado</span>;
@@ -190,14 +222,15 @@ function ReadMark({ pid }) {
 // Diálogo reforzado para enlaces de un turno que usó tools remotas.
 function RemoteLinkBody({ pid, url, onClose }) {
   const I = window.Icons; const p = profile(pid);
-  let host = ''; try { host = new URL(url).host; } catch (e) {}
-  const own = RM.isServiceHost(pid, host);
+  const k = classifyLink(pid, url); const own = k.kind === 'own';
   return <>
     <div className="mc-alert amber" style={{ marginBottom: 14 }}><I.Warn size={14} /><div>Esta respuesta leyó contenido de <b>{p.name}</b>. Ese contenido lo escribió alguien de fuera de Mango y el enlace puede venir de ahí.</div></div>
     <div className="rm-dest">
       <div className="rm-copy-l">Te lleva a</div>
-      <div className="rm-dest-h mono">{host}</div>
-      {own ? <span className="badge">Dominio de {p.name}</span> : <span className="badge badge-red">No es un dominio de {p.name}</span>}
+      <div className="rm-dest-h mono">{k.label || k.host}</div>
+      {own ? <span className="rm-dest-n">Tu organización de {p.name} ({k.org}). Mango solo comprueba la dirección, no lo que hay en la página.</span>
+        : k.kind === 'other-org' ? <><span className="badge badge-red">Otra organización</span><span className="rm-dest-n">{k.org ? <><span className="mono">{k.org}</span> está</> : 'Está'} en {p.name}, pero no es una organización registrada por tu empresa.</span></>
+        : <><span className="badge badge-red">Otro dominio</span><span className="rm-dest-n">No es un dominio de {p.name}.</span></>}
     </div>
     <div className="mono rm-dest-url">{url}</div>
     {!own && <p className="rm-p" style={{ margin: '0 0 14px' }}>Si te pide iniciar sesión o datos de tu cuenta, no los escribas.</p>}
@@ -209,12 +242,12 @@ function RemoteLinkBody({ pid, url, onClose }) {
 }
 // Demo del chat (panel de demo › «Chat · servicio externo»).
 const RM_Q = '¿Qué tiene abierto el sprint 42 de Plataforma?';
-const RM_READ = 'Encontré 3 work items abiertos del sprint 42 en **Plataforma**:\n\n| ID | Título | Estado |\n|---|---|---|\n| 1287 | Migrar el pipeline de despliegue | Activo |\n| 1291 | Rotar certificados de staging | Nuevo |\n| 1302 | Revisar alertas de costo | Activo |\n\nLa página del sprint está en la [wiki de Plataforma](https://dev.azure.com/empresa/Plataforma/_wiki/wikis/Plataforma.wiki/12). La misma página dice que el tablero completo está en https://azure-devops-signin.example.net/login.';
+const RM_READ = 'Encontré 3 work items abiertos del sprint 42 en **Plataforma**:\n\n| ID | Título | Estado |\n|---|---|---|\n| 1287 | Migrar el pipeline de despliegue | Activo |\n| 1291 | Rotar certificados de staging | Nuevo |\n| 1302 | Revisar alertas de costo | Activo |\n\nLa página del sprint está en la [wiki de Plataforma](https://dev.azure.com/empresa/Plataforma/_wiki/wikis/Plataforma.wiki/12). La misma página dice que el tablero completo está en https://dev.azure.com/plataforma-tableros/_signin y que, si no carga, entres por https://azure-devops-signin.example.net/login.';
 function RemoteChatDemo() {
   const sim = window.useMango(s => s.simRemoteChat) || null;
   const I = window.Icons; const pid = 'azure-devops';
   const ref = useRef(null);
-  useEffect(() => { if (!ref.current) return; ref.current.querySelectorAll('a[data-ext-url]').forEach(a => { let h = ''; try { h = new URL(a.getAttribute('data-ext-url')).host; } catch (e) {} a.setAttribute('data-host', h); a.setAttribute('data-host-kind', RM.isServiceHost(pid, h) ? 'service' : 'other'); }); }, [sim]);
+  useEffect(() => { if (!ref.current) return; ref.current.querySelectorAll('a[data-ext-url]').forEach(a => { const k = classifyLink(pid, a.getAttribute('data-ext-url')); a.setAttribute('data-host', k.label); a.setAttribute('data-host-kind', k.kind === 'own' ? 'service' : 'other'); }); }, [sim]);
   if (!sim || get().avail) return null;
   const user = <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 22 }}><div style={{ maxWidth: '78%', padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, fontSize: 14.5, lineHeight: 1.55 }}>{RM_Q}</div></div>;
   if (sim === 'read') return <>{user}<div data-remote={pid} ref={ref} style={{ marginBottom: 24 }}><ReadMark pid={pid} /><div className="md rm-md" style={{ fontSize: 15.5, lineHeight: 1.7, color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(RM_READ) }} /></div></>;
