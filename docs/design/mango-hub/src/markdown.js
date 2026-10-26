@@ -11,7 +11,7 @@
     let out = esc(s)
       .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, '<span class="md-img-blocked" title="Las imágenes del agente no se cargan">[Imagen bloqueada]</span>')
       .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (_, t, u) => link(t, u.replace(/&amp;/g, '&')))
-      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, p, u) => p + link(u, u.replace(/&amp;/g, '&')))
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, p, u) => { const m = u.match(/[.,;:!?]+$/); const tail = m ? m[0] : ''; const v = tail ? u.slice(0, -tail.length) : u; return p + link(v, v.replace(/&amp;/g, '&')) + tail; })
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
       .replace(/(^|\W)_([^_]+)_(?=\W|$)/g, '$1<em>$2</em>');

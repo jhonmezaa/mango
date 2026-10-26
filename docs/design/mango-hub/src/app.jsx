@@ -115,6 +115,14 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
         <div className="tweak-row"><div className="tweak-label">Knowledge Bases · subida abierta</div><div className="tweak-chips"><button className="tweak-chip" onClick={() => S.set({ kbDemoDrop: Date.now() })}>Agregar 5 archivos de ejemplo</button></div></div>
         <Chips label="Schedules · reporte PDF (Diseño completo)" opts={[[null, 'Normal'], ['dlfail', 'Falla la descarga'], ['genfail', 'Ejecutar ahora · falla el PDF']]} value={S.get().simReport || null} onPick={(v) => S.set({ simReport: v })} />
         <Chips label="Catálogo de MCP · EC2 Operations con tool destructiva y sin clasificar" opts={[[false, 'No'], [true, 'Sí']]} value={!!S.get().simDestructive} onPick={(v) => S.set({ simDestructive: v, mcpCatalog: (S.get().mcpCatalog || []).map(s => s.id !== 'aws-ec2-ops' ? s : { ...s, tools: [...s.tools.filter(t => !t.demo), ...(v ? [{ name: 'terminate_instances', write: true, destructive: true, desc: 'Terminar instancias', scope: 'org', demo: true }, { name: 'modify_instance_attribute', write: true, unclassified: true, desc: 'Cambiar atributos de una instancia', scope: 'org', demo: true }] : [])] }) })} />
+        {!avail && <>
+          <Chips label="Servicios externos · registro de Azure DevOps" opts={[['none', 'Sin registrar'], ['pending-other', 'Pendiente · pidió Usuario 6'], ['pending-mine', 'Pendiente · pediste tú'], ['active', 'Habilitado'], ['disabled', 'Deshabilitado']]} value={S.get().simRemoteReg || 'active'} onPick={(v) => S.set({ simRemoteReg: v, remoteRegs: window.RM.seedRegs(v, S.get().simRemoteSecret || 'd30') })} />
+          <Chips label="Servicios externos · secreto de la app de Entra" opts={[['ok', 'Vigente'], ['d30', 'Vence en 21 días'], ['d7', 'Vence en 5 días'], ['expired', 'Vencido']]} value={S.get().simRemoteSecret || 'd30'} onPick={(v) => S.set({ simRemoteSecret: v, remoteRegs: (S.get().remoteRegs || []).map(r => ({ ...r, secretExp: new Date(Date.now() + window.RM.SECRET_DAYS[v] * 864e5).toISOString() })) })} />
+          <Chips label="Servicios externos · tu cuenta" opts={[['none', 'Sin conectar'], ['connected', 'Conectada']]} value={(S.get().remoteConn || {})['azure-devops']?.status === 'connected' ? 'connected' : 'none'} onPick={(v) => S.set({ remoteConn: { 'azure-devops': v === 'connected' ? { status: 'connected', at: new Date(Date.now() - 3 * 864e5).toISOString() } : { status: 'none' } } })} />
+          <Chips label="Servicios externos · al pedir o aprobar" opts={[[false, 'Funciona'], [true, 'El perfil ya no está en la versión']]} value={!!S.get().simRemoteGone} onPick={(v) => S.set({ simRemoteGone: v })} />
+          <Chips label="Chat · servicio externo" opts={[[null, 'Nada'], ['consent', 'Falta conectar la cuenta'], ['expired', 'El enlace venció'], ['read', 'Respuesta que leyó Azure DevOps']]} value={S.get().simRemoteChat || null} onPick={(v) => { S.set({ simRemoteChat: v }); if (v) setView('chat'); }} />
+          <Chips label="Vuelta desde Microsoft" opts={[['ok', 'Conectada'], ['expired', 'Venció'], ['nosession', 'Sin sesión de Mango'], ['notyours', 'Enlace de otra persona'], ['denied', 'Microsoft no autorizó'], ['error', 'Error inesperado']]} value={S.get().simRemoteReturn || 'ok'} onPick={(v) => { S.set({ simRemoteReturn: v, remoteReturn: S.get().remoteReturn || { pid: 'azure-devops', from: 'connections' } }); setView('connect-return'); }} />
+        </>}
         <div className="tweak-row">
           <div className="tweak-label">Simular error</div>
           <div className="tweak-chips">
@@ -334,6 +342,7 @@ function App() {
     case 'observability': content = <window.ObservabilityView agents={agents} openChat={openChat} />; break;
     case 'knowledge': content = <window.KnowledgeView agents={agents} />; break;
     case 'costs': content = <window.CostsView agents={agents} />; break;
+    case 'connect-return': content = window.RemoteReturn ? <window.RemoteReturn setView={setView} /> : null; break;
     case 'settings': content = <Settings models={models} mcpServers={mcpServers} groups={groups} initialTab={routeParam} />; break;
     default: content = null;
   }
@@ -341,6 +350,7 @@ function App() {
   const home = () => { S.set({ simError: null }); setView('chat'); };
   const viewLabel = (v) => v === 'dashboard' ? 'Inicio' : window.t('nav.' + v);
   if (notFound) content = <><Topbar crumbs={[window.t('err.notfound.t')]} /><window.ErrorState kind="notfound" view={view} onHome={home} /></>;
+  else if (view === 'connect-return' && !availNow) {}
   else if (S.isSoon(view)) content = <window.SoonView view={view} label={viewLabel(view)} />;
   else if (!S.canView(view) && ['audit', 'budgets', 'settings', 'governance', 'skills', 'playground'].includes(view)) content = <><Topbar crumbs={[viewLabel(view)]} /><div className="content"><window.GovKit.Denied view={view} /></div></>;
   else if (!S.canView(view)) content = <><Topbar crumbs={[viewLabel(view)]} /><window.ErrorState kind="403" view={view} onHome={home} /></>;
@@ -365,6 +375,7 @@ function App() {
         { label: 'Inicia una conversación', view: 'chat', done: visited.includes('chat') },
         { label: role === 'user' ? 'Revisa tus aprobaciones' : 'Configura un presupuesto', view: role === 'user' ? 'approvals' : 'budgets', done: visited.includes(role === 'user' ? 'approvals' : 'budgets') },
       ]} />}
+      {window.MyConnections && <window.MyConnections />}
       <window.Onboarding open={tour} onClose={closeTour} setView={(v) => { closeTour(); setView(v); }} role={role} />
       <TweaksPanel visible={tweaksVisible} onClose={() => setTweaksVisible(false)} settings={settings} setSettings={setSettings} view={view} setView={setView} />
       <window.CmdK open={cmdk} onClose={() => setCmdk(false)} agents={agents} tickets={tickets} threads={threads} setView={setView} openChat={openChat} />

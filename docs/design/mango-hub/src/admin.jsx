@@ -312,8 +312,9 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                     );
                   })}
                 </div>
+                {!avail && window.RemoteBuilderTools && <window.RemoteBuilderTools snap={snap} set={set} />}
                 <div className="row between" style={{ fontSize: 12, color: 'var(--text-muted)', gap: 8, flexWrap: 'wrap' }}>
-                  <span>{snap.tools.length} {snap.tools.length === 1 ? 'tool elegida' : 'tools elegidas'}{writeSel.length ? ` · ${writeSel.length} de escritura: confirmación o aprobación, según su política` : ''}</span>
+                  <span>{snap.tools.length + (avail ? 0 : (snap.remoteTools || []).length)} {snap.tools.length + (avail ? 0 : (snap.remoteTools || []).length) === 1 ? 'tool elegida' : 'tools elegidas'}{writeSel.length ? ` · ${writeSel.length} de escritura: confirmación o aprobación, según su política` : ''}</span>
                   <button type="button" className="sr-link" onClick={() => setView('mcp')}>¿Falta un MCP? Ver catálogo</button>
                 </div>
               </ABSection>

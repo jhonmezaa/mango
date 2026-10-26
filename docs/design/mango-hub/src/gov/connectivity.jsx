@@ -82,6 +82,7 @@ function Connectivity({ state, retry, sim }) {
       </div>
       {window.MangoStore.get().avail && run?.status === 'done' && !running && <MemberAccounts sim={sim} />}
       <DailyCheck sim={sim} />
+      {!window.MangoStore.get().avail && window.RemoteConnBlock && <window.RemoteConnBlock />}
     </section>
   );
 }

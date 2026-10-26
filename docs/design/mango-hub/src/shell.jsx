@@ -138,6 +138,7 @@ function Sidebar({ view, setView, agents, user, collapsed, setCollapsed, pinnedI
                 <div className="sb-menu-sep" />
                 <div style={{ padding: '6px 10px 8px', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}><span className="row gap-2" style={{ color: 'var(--text)', fontWeight: 500, marginBottom: 2 }}><I.Lock size={12} /> Contraseña y MFA</span>Para cambiar tu contraseña usa «Olvidé mi contraseña» al iniciar sesión. Para restablecer tu MFA, pídeselo a un admin.</div>
                 <div className="sb-menu-sep" />
+                {!avail && window.RM && <><button role="menuitem" className="row gap-2 sb-menu-item" onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent('mango:my-connections')); }}><I.External size={14} /> Mis conexiones</button><div className="sb-menu-sep" /></>}
                 <div className="row between sb-menu-item" style={{ cursor: 'default' }} aria-disabled="true"><span className="row gap-2" style={{ opacity: .55 }}><I.Globe size={14} /> {t('sb.lang')} · Español</span><window.SoonTag /></div>
                 <div className="sb-menu-sep" />
                 <button role="menuitem" className="row gap-2 sb-menu-item" onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent('mango:toggle-theme')); }}><I.Moon size={14} /> Cambiar tema</button>

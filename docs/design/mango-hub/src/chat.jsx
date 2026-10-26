@@ -138,9 +138,10 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [extUrl, setExtUrl] = useState(null);
+  const [extRemote, setExtRemote] = useState(null);
   const simChat = window.useMango(s => s.simChat);
   useEffect(() => {
-    const h = (e) => { const a = e.target.closest && e.target.closest('a[data-ext-url]'); if (!a) return; e.preventDefault(); setExtUrl(a.getAttribute('data-ext-url')); };
+    const h = (e) => { const a = e.target.closest && e.target.closest('a[data-ext-url]'); if (!a) return; e.preventDefault(); setExtRemote(a.closest('[data-remote]')?.getAttribute('data-remote') || null); setExtUrl(a.getAttribute('data-ext-url')); };
     document.addEventListener('click', h); return () => document.removeEventListener('click', h);
   }, []);
   const approvals = window.useMango(s => s.approvals);
@@ -295,7 +296,8 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const shown = soon ? messages.map(m => m.type === 'ticket_created' ? null : m.type === 'agent_response' ? { ...m, text: soonOffers.reduce((x, [re, r]) => x.replace(re, r), m.text) } : m) : messages;
   const convError = simChat === 'conv-error' && activeThreadId;
   const convLoading = simChat === 'loading' && activeThreadId;
-  const isEmpty = messages.length === 0 && !convError && !convLoading;
+  const rmDemo = window.useMango(s => s.simRemoteChat) && !soon;
+  const isEmpty = messages.length === 0 && !convError && !convLoading && !rmDemo;
   const listState = simChat === 'loading' ? 'loading' : simChat === 'history-error' ? 'error' : null;
   const listThreads = simChat === 'empty' ? [] : threads;
   const items = [];
@@ -336,6 +338,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
               {soon && simAgent === 'tools-missing' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Warn size={14} /><div>Algunas tools de {agent.name} no están disponibles ahora porque se deshabilitó su MCP. Responderá sin ellas hasta que se vuelva a habilitar.</div></div>}
               {soon && simAgent === 'central-denied' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Lock size={14} /><div>Las tools de AWS Billing son solo para usuarios centrales. {agent.name} respondió sin esos datos.</div></div>}
               {items.map(m => m.type === 'self_confirm' ? <window.SelfConfirmCard key={m.idx} msg={m} onConfirm={() => confirmSelf(m.idx, true)} onCancel={() => confirmSelf(m.idx, false)} /> : m.type === 'approval_request' ? <window.ApprovalCard key={m.idx} id={m.approvalId} /> : m.type === 'tool_group' ? <ToolGroup key={m.idx} calls={m.calls} /> : <Message key={m.idx} msg={m} idx={m.idx} onRetry={() => retryError(m.idx)} onEdit={() => setInput(m.text)} agent={agent} onOpenArtifact={setArtifact} />)}
+              {window.RemoteChatDemo && <window.RemoteChatDemo />}
               {streaming && <StreamingMessage phase={streamPhase} steps={streamSteps} kb={streamKb} text={streamText} agent={agent} observe={observe} />}
             </div>
           )}
@@ -346,14 +349,15 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
         </div>
       </div>
       {artifact && <ArtifactPanel artifact={artifact} onClose={() => setArtifact(null)} agent={agent} />}
-      <window.Modal open={!!extUrl} onClose={() => setExtUrl(null)} title="Abrir enlace externo" width={440}>
+      <window.Modal open={!!extUrl} onClose={() => setExtUrl(null)} title="Abrir enlace externo" width={extRemote ? 480 : 440}>
+        {extRemote && window.RemoteLinkBody ? <window.RemoteLinkBody pid={extRemote} url={extUrl} onClose={() => setExtUrl(null)} /> : <>
         <p style={{margin:'0 0 10px', fontSize: 13.5, color:'var(--text-muted)', lineHeight: 1.55}}>Este enlace lo escribió el agente y te lleva fuera de Mango. Revisa la dirección completa antes de abrirla.</p>
         <div style={{fontSize: 14, fontWeight: 600, color:'var(--text-strong)', wordBreak:'break-all', marginBottom: 6}}>{(() => { try { return new URL(extUrl).host; } catch (e) { return ''; } })()}</div>
         <div className="mono" style={{fontSize: 12, padding:'8px 10px', border:'1px solid var(--border)', borderRadius: 6, background:'var(--input-bg)', wordBreak:'break-all', marginBottom: 16}}>{extUrl}</div>
         <div className="row gap-2" style={{justifyContent:'flex-end'}}>
           <button className="btn btn-sm" data-autofocus onClick={() => setExtUrl(null)}>Cancelar</button>
           <button className="btn btn-sm btn-primary" onClick={() => { window.open(extUrl, '_blank', 'noopener,noreferrer'); setExtUrl(null); }}>Abrir enlace</button>
-        </div>
+        </div></>}
       </window.Modal>
       {threadsOpen && <window.Drawer open onClose={() => setThreadsOpen(false)} title="Historial" width={340}>
         <div className="chat-threads-drawer"><ThreadList state={listState} threads={listThreads} agents={agents} activeAgentId={activeAgentId} activeThreadId={activeThreadId} onSelect={(t) => { setActiveAgentId(t.agentId); setActiveThreadId?.(t.id); setThreadsOpen(false); }} onNew={() => { newChat(); setThreadsOpen(false); }} /></div>

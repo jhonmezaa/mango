@@ -692,6 +692,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const approvals = window.useMango(st => st.approvals);
   const scheds = window.useMango(st => st.schedules) || [];
   const kbReqs = window.useMango(st => st.kbReqs);
+  const rmRegs = window.useMango(st => st.remoteRegs);
+  const rmConn = window.useMango(st => st.remoteConn);
   const role = window.useMango(st => st.role);
   const avail = window.useMango(st => st.avail);
   const sim = window.useMango(st => st.simInbox) || null;
@@ -733,8 +735,10 @@ function Inbox({ tickets, agents, setView, openChat }) {
       { id: 't-404', type: 'ticket', agent: 'dev-01', title: 'MNG-404 se cerró', body: (tk('MNG-404') || {}).title || 'Ticket resuelto por el agente', at: exAt.t2, ticketId: 'MNG-404' },
       { id: 's-sap', type: 'system', agent: 'sap-01', title: 'Heartbeat restaurado en SAP Procure', body: 'El agente volvió a responder tras 12 minutos sin heartbeat. No se perdieron solicitudes.', at: exAt.s },
     ];
-    return { pinned: [...pinned, ...kbPinned].sort(byAt), rest: [...runs, ...tasks, ...reqs, ...kbMine, ...ex].sort(byAt) };
-  }, [approvals, scheds, kbReqs, role, avail, sim, actorOv, tickets]);
+    // Servicios externos (diseño): tarea sin conexión, solicitudes de alta y secreto de Entra por vencer.
+    const rm = window.RM?.inboxItems ? window.RM.inboxItems(me, S.get().role === 'admin') : { pinned: [], rest: [] };
+    return { pinned: [...pinned, ...kbPinned, ...rm.pinned].sort(byAt), rest: [...runs, ...tasks, ...reqs, ...kbMine, ...rm.rest, ...ex].sort(byAt) };
+  }, [approvals, scheds, kbReqs, role, avail, sim, actorOv, tickets, rmRegs, rmConn]);
   const [state, setState] = React.useState(() => { try { return JSON.parse(localStorage.getItem('mango-inbox') || '{}'); } catch { return {}; } });
   const [tab, setTab] = React.useState('all');
   const [arch, setArch] = React.useState(false);
@@ -752,7 +756,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const all = [...pinned, ...rest].map(deco);
   const unread = all.filter(i => !i.read && !i.archived).length;
   React.useEffect(() => { S.set({ inboxUnread: unread }); }, [unread]);
-  const inTab = (i) => arch ? i.archived : !i.archived && (tab === 'all' || (tab === 'unread' && !i.read) || (tab === 'approvals' && (i.type === 'approval' || i.type === 'request' || i.type === 'kbsource')) || (tab === 'mentions' && i.type === 'mention'));
+  const inTab = (i) => arch ? i.archived : !i.archived && (tab === 'all' || (tab === 'unread' && !i.read) || (tab === 'approvals' && (i.type === 'approval' || i.type === 'request' || i.type === 'kbsource' || i.type === 'remoteReq')) || (tab === 'mentions' && i.type === 'mention'));
   // Cada pestaña pide sus páginas con su filtro. El servidor lee hasta 300 avisos por página: si ninguno es de la pestaña, la página llega vacía y con cursor
   // (demo «Página vacía con cursor»): se dice «Nada entre los avisos más recientes.» y «Mostrar más» trae los siguientes. Sin cursor, «Nada por aquí.» y sin botón.
   const paged = arch || tab === 'all' || tab === 'unread';
@@ -769,9 +773,9 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const markAll = () => { const n = { ...state }; all.forEach(i => { n[i.id] = { ...n[i.id], read: true }; }); save(n); };
   const loadMore = () => { setMore('loading'); setTimeout(() => { if (S.get().simInbox === 'more') { setMore('error'); return; } setPages(p => p + 1); setMore(null); }, 700); };
   const current = all.find(i => i.id === sel);
-  const ICON = { kbsource: ['BookOpen', 'var(--amber)'], approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
-  const iconOf = (it) => it.type === 'request' ? (it.ok ? ['Check2', 'var(--green)'] : ['X2', 'var(--red)']) : it.type === 'task' ? (it.kind === 'retired' ? ['Archive', 'var(--text-muted)'] : ['Pause', 'var(--amber)']) : ICON[it.type];
-  const TYPE = { kbsource: 'Aprobación', approval: 'Aprobación', request: 'Tu solicitud', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución', task: 'Tarea' };
+  const ICON = { remoteReq: ['External', 'var(--amber)'], remoteTask: ['External', 'var(--amber)'], remoteSecret: ['Lock', 'var(--amber)'], kbsource: ['BookOpen', 'var(--amber)'], approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
+  const iconOf = (it) => it.type === 'remoteSecret' && it.expired ? ['Lock', 'var(--red)'] : it.type === 'request' ? (it.ok ? ['Check2', 'var(--green)'] : ['X2', 'var(--red)']) : it.type === 'task' ? (it.kind === 'retired' ? ['Archive', 'var(--text-muted)'] : ['Pause', 'var(--amber)']) : ICON[it.type];
+  const TYPE = { remoteReq: 'Aprobación', remoteTask: 'Tarea', remoteSecret: 'Servicio externo', kbsource: 'Aprobación', approval: 'Aprobación', request: 'Tu solicitud', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución', task: 'Tarea' };
   const loadErr = sim === 'error'; const loading = sim === 'loading';
 
   return (
@@ -838,7 +842,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   </span>
                 </div>
                 <h2 id="inbox-detail-h" tabIndex={-1} style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', margin: '0 0 6px', outline: 'none' }}>{current.title}</h2>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : current.type === 'kbsource' || current.kbReqId ? 'Knowledge Bases' : 'Sistema'} · {window.fmtAgo(current.at)}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{ag ? ag.name : current.type === 'kbsource' || current.kbReqId ? 'Knowledge Bases' : current.pid ? 'Servicios externos' : 'Sistema'} · {window.fmtAgo(current.at)}</div>
                 {current.impact && <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 8px' }}>{current.impact}.</p>}
                 {current.type !== 'mention' && (current.mono ? <p className="mono" style={{ fontSize: 12.5, lineHeight: 1.6, margin: '0 0 22px', overflowWrap: 'anywhere' }}>{current.body}</p> : <p style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 22px' }}>{current.body}</p>)}
                 {current.reason && <div className="mc-alert" style={{ marginBottom: 18 }}><I.Info size={14} /><div>Motivo: {current.reason}</div></div>}
@@ -859,6 +863,8 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   {current.type === 'run' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId, run: current.ok ? current.runId : null, ref: current.runId } }); setView('schedules'); }}>{current.ok ? 'Ver resultado' : 'Ver ejecución'} <I.ArrowRight size={11} /></button>}
                   {pdf && <window.ScRepDl s={sc} r={run} btn />}
                   {current.type === 'task' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId } }); setView('schedules'); }}>Ver tarea <I.ArrowRight size={11} /></button>}
+                  {current.type === 'remoteTask' && <button className="btn btn-sm btn-primary" onClick={() => window.dispatchEvent(new CustomEvent('mango:my-connections'))}>Ir a Mis conexiones <I.ArrowRight size={11} /></button>}
+                  {(current.type === 'remoteReq' || current.type === 'remoteSecret') && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ rmOpen: { pid: current.pid, id: current.regId } }); setView('mcp'); }}>{current.type === 'remoteReq' ? 'Revisar la solicitud' : 'Rotar secreto'} <I.ArrowRight size={11} /></button>}
                   {current.type === 'mention' && !replying && <button className="btn btn-sm btn-primary" onClick={() => setReplying(true)}><I.Chat size={12} /> Responder</button>}
                 </div>
               </div>

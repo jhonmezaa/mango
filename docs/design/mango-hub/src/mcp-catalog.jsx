@@ -19,6 +19,13 @@ function McpCatalog({ agents, setView }) {
   const [status, setStatus] = useState('all');
   const [level, setLevel] = useState('all');
   const [sel, setSel] = useState(null);
+  const avail = window.useMango(s => s.avail);
+  const [rsel, setRsel] = useState(null);
+  const rmOpen = window.useMango(s => s.rmOpen);
+  window.useMango(s => s.remoteRegs);
+  useEffect(() => { if (!rmOpen) return; setTab('remote'); if (rmOpen.pid) setRsel({ pid: rmOpen.pid, id: rmOpen.id }); window.MangoStore.set({ rmOpen: null }); }, [rmOpen]);
+  useEffect(() => { if (avail && tab === 'remote') setTab('catalog'); }, [avail]);
+  const rmPend = !avail && window.RM ? window.RM.pending().length : 0;
   const isAdmin = S.get().role === 'admin';
   const requests = cat.filter(s => s.status === 'pending' || s.update || s.paramReq);
   const allTools = cat.flatMap(s => s.tools.map(t => ({ s, t })));
@@ -31,19 +38,20 @@ function McpCatalog({ agents, setView }) {
 
   return (
     <>
-      <Topbar crumbs={['Construir', 'Catálogo de MCP']} actions={
+      <Topbar crumbs={['Construir', 'Catálogo de MCP']} actions={!avail && window.RM ? <button className="btn btn-sm" onClick={() => setTab('remote')}><I.Plus size={12} /> Agregar servicio externo</button> :
         <button className="btn btn-sm" disabled title="Próximamente. Solo admitirá autenticación OAuth: sin Access Key/Secret ni Basic Auth."><I.Plus size={12} /> Conectar MCP por URL <span className="badge" style={{ fontSize: 10.5, marginLeft: 4 }}>Próximamente</span></button>
       } />
       <div className="content">
         <div className="page-head">
           <h1 className="page-title">Catálogo de MCP</h1>
-          <p className="page-subtitle">Conectores incluidos en Mango y MCP packs de AWS. Un pack lo pide un administrador y lo aprueba otro distinto; después la plataforma lo instala.</p>
+          <p className="page-subtitle">Conectores incluidos en Mango{avail ? ' y MCP packs de AWS' : ', MCP packs de AWS y servicios externos con perfil'}. Un pack lo pide un administrador y lo aprueba otro distinto; después la plataforma lo instala.</p>
         </div>
         <div className="ap-bar">
           <div className="mk-tabs" role="tablist">
             <button role="tab" aria-selected={tab === 'catalog'} className={tab === 'catalog' ? 'is-on' : ''} onClick={() => setTab('catalog')}>Catálogo<span className="mk-count">{cat.length}</span></button>
             <button role="tab" aria-selected={tab === 'tools'} className={tab === 'tools' ? 'is-on' : ''} onClick={() => setTab('tools')}>Tools<span className="mk-count">{allTools.length}</span></button>
-            <button role="tab" aria-selected={tab === 'requests'} className={tab === 'requests' ? 'is-on' : ''} onClick={() => setTab('requests')}>Solicitudes pendientes{requests.length > 0 && <span className="mk-count">{requests.length}</span>}</button>
+            {!avail && window.RM && <button role="tab" aria-selected={tab === 'remote'} className={tab === 'remote' ? 'is-on' : ''} onClick={() => setTab('remote')}>Servicios externos<span className="mk-count">{window.RM.PROFILES.length}</span></button>}
+            <button role="tab" aria-selected={tab === 'requests'} className={tab === 'requests' ? 'is-on' : ''} onClick={() => setTab('requests')}>Solicitudes pendientes{requests.length + rmPend > 0 && <span className="mk-count">{requests.length + rmPend}</span>}</button>
           </div>
           {tab === 'catalog' && (
             <div className="ap-filters">
@@ -71,10 +79,11 @@ function McpCatalog({ agents, setView }) {
               </div>
             )
           ) : (
-            tab === 'tools' ? <McpToolsTable rows={allTools} onOpen={setSel} /> : <McpRequests requests={requests} isAdmin={isAdmin} onOpen={setSel} />
+            tab === 'remote' ? <window.RemoteCatalogTab onOpen={(pid) => setRsel({ pid })} /> : tab === 'tools' ? <McpToolsTable rows={allTools} onOpen={setSel} /> : <>{!avail && window.RemoteRequests && <window.RemoteRequests onOpen={(pid, id) => setRsel({ pid, id })} />}{(requests.length > 0 || !rmPend) && <McpRequests requests={requests} isAdmin={isAdmin} onOpen={setSel} />}</>
           )}
         </div>
       </div>
+      {rsel && window.RemoteDetail && <window.RemoteDetail key={rsel.pid + (rsel.id || '')} pid={rsel.pid} regId={rsel.id} onClose={() => setRsel(null)} />}
       {selected && <McpDetail s={selected} isAdmin={isAdmin} onClose={() => setSel(null)} setView={setView} />}
     </>
   );
