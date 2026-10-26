@@ -7,7 +7,7 @@ requires-python = ">=3.13,<3.14"
 # Pillow comes with ReportLab; the reports draw no images, so it never decodes anything here. Its
 # arm64 wheels are manylinux_2_28 only: the function is bundled for that tag
 # (`infra/lib/constructs/task-reports.ts`).
-dependencies = ["boto3>=1.43.104", "mango-core[agents]", "reportlab>=4.4,<5"]
+dependencies = ["boto3>=1.43.104", "mango-core[agents]", "reportlab>=4.4,<6"]
 
 [tool.uv.sources]
 mango-core = { workspace = true }
