@@ -22,6 +22,7 @@ import {
   ZapIcon,
   type IconProps,
 } from '../../components/icons';
+import type { Skill } from '../skills/model';
 
 // Data of the review screen, as the generated client returns it. Everything here is API data:
 // it is rendered as text and never decides authorization (the API does).
@@ -207,6 +208,7 @@ const SHOWN_SETS = new Set([
   'tools',
   'approval_tools',
   'knowledge_bases',
+  'skills',
   'groups',
   'users',
 ]);
@@ -239,6 +241,8 @@ export interface ReferenceData {
   agentNames: ReadonlyMap<string, string>;
   /** Name and groups of each knowledge base the reviewer sees, for the ones a version removes. */
   knowledge: ReadonlyMap<string, { name: string; groups: readonly string[] }>;
+  /** The approved skills by id (D92); null while they are not known (no checks are shown). */
+  skills: ReadonlyMap<string, Skill> | null;
 }
 
 export const NO_REFERENCE: ReferenceData = {
@@ -246,6 +250,7 @@ export const NO_REFERENCE: ReferenceData = {
   groupTypes: new Map(),
   agentNames: new Map(),
   knowledge: new Map(),
+  skills: null,
 };
 
 export function knowledgeIndex(list: {
@@ -338,4 +343,30 @@ export function ruleText(t: TFunction, violation: Violation): string {
   return isRuleCode(violation.code)
     ? t(`agentReview.rules.${violation.code}`, { items: violation.items.join(', ') })
     : t('agentReview.rules.unknown', { code: violation.code });
+}
+
+export function skillIndex(list: { items: readonly Skill[] }): ReadonlyMap<string, Skill> {
+  return new Map(list.items.map((skill) => [skill.id, skill]));
+}
+
+/**
+ * The skills a version adds, removes or moves to another version (design `RvSkills`): a skill
+ * whose id is both added and removed changes version, and counts once.
+ */
+export function skillChanges(
+  added: readonly string[],
+  removed: readonly string[],
+): { added: string[]; removed: string[]; changed: { ref: string; from: string }[] } {
+  const idOf = (ref: string) => ref.split('@')[0] ?? ref;
+  const removedById = new Map(removed.map((ref) => [idOf(ref), ref]));
+  const addedIds = new Set(added.map(idOf));
+  const changed = added.flatMap((ref) => {
+    const from = removedById.get(idOf(ref));
+    return from ? [{ ref, from }] : [];
+  });
+  return {
+    added: added.filter((ref) => !removedById.has(idOf(ref))),
+    removed: removed.filter((ref) => !addedIds.has(idOf(ref))),
+    changed,
+  };
 }

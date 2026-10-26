@@ -1,3 +1,4 @@
+import { list as skillList, skill } from '../skills/testFixtures';
 import type { BuilderContext, Definition, OrgNode, Quotas, Version } from './model';
 
 // Fixtures of the Agent Builder tests: a small installation and version records of the contract.
@@ -133,6 +134,26 @@ export const context: BuilderContext = {
     { id: 'todos', type: 'general', area: null, description: 'Toda la organización' },
   ],
   knowledge: [],
+  // Two approved skills (D92): one over Cost Explorer, at v3; one over a server that is off.
+  skills: skillList([
+    skill(),
+    skill({
+      id: 'facturas',
+      name: 'Facturas',
+      version: 1,
+      available: false,
+      servers: [
+        {
+          id: 'billing',
+          name: 'Billing',
+          enabled: false,
+          data_tier: 'account_data',
+          tools: 1,
+          writes: false,
+        },
+      ],
+    }),
+  ]),
 };
 
 const node = (id: string, name: string, reportsTo: string): OrgNode => ({

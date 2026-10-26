@@ -31,6 +31,7 @@ import { diffDefinitions } from './agentDiff.ts';
 import { MOCK_USER } from './cognito.ts';
 import { readBody, sendError, sendJson, type ApiHandler } from './http.ts';
 import { catalogTool, catalogView } from './mcpCatalog.ts';
+import { skillViolations } from './skills.ts';
 
 const MAX_DRAFTS = 20;
 const MAX_SUBMISSIONS_PER_DAY = 5;
@@ -166,6 +167,7 @@ export function validateForReview(agentId: string, definition: MockAgentDefiniti
     (ref) => catalogTool(ref)?.write && !definition.approval_tools.includes(ref),
   );
   if (unmarked.length > 0) add('write_tool_without_approval', 'approval_tools', unmarked);
+  out.push(...skillViolations(definition));
 
   const groups = new Map<string, { type: string }>(MOCK_GROUPS.map((group) => [group.id, group]));
   const unknown = definition.groups.filter((id) => !groups.has(id));

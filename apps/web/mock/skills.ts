@@ -442,6 +442,33 @@ function checkServers(res: ServerResponse, ids: string[]): boolean {
   return off.length === 0;
 }
 
+/**
+ * The rule of the API for the skills of an agent version (`agent_rules._skills`): every one is
+ * an approved version, its servers are enabled and the version has a tool of each.
+ */
+export function skillViolations(definition: { skills: string[]; tools: string[] }) {
+  const catalog = servers();
+  const withTools = new Set(definition.tools.map((ref) => ref.split('.')[0]));
+  const missing: string[] = [];
+  const disabled: string[] = [];
+  const withoutTools: string[] = [];
+  for (const ref of definition.skills) {
+    const [id, version] = ref.split('@');
+    const content = skills.find((skill) => skill.id === id)?.versions[Number(version) - 1];
+    if (!content) missing.push(ref);
+    else if (!content.servers.every((server) => catalog.get(server)?.enabled)) disabled.push(ref);
+    else if (!content.servers.every((server) => withTools.has(server))) withoutTools.push(ref);
+  }
+  const rules: [string, string[]][] = [
+    ['skill_unavailable', missing],
+    ['skill_server_not_enabled', disabled],
+    ['skill_server_without_tools', withoutTools],
+  ];
+  return rules
+    .filter(([, items]) => items.length > 0)
+    .map(([code, items]) => ({ code, field: 'skills', items }));
+}
+
 const CHANGE_ROUTE = /^\/skills\/changes\/([0-9a-f]{32})\/(approve|reject|withdraw)$/;
 const SKILL_ROUTE = /^\/skills\/([a-z0-9][a-z0-9-]{0,39})(\/versions)?$/;
 

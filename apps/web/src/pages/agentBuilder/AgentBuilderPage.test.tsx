@@ -42,6 +42,7 @@ function fakeApi(handlers: Record<string, Handler> = {}) {
     listGroups: () => ({ items: context.groups }),
     getOrg: () => ({ root: 'platform', nodes: orgNodes }),
     listKnowledgeBases: () => ({ items: [], can_create: true }),
+    getSkills: () => context.skills,
     ...handlers,
   };
   const call = vi.fn((id: string, input: Parameters<Handler>[0] = {}) => {

@@ -373,3 +373,51 @@ describe('changeCount with knowledge bases', () => {
     expect(changeCount(base, next)).toBe(2);
   });
 });
+
+describe('skills of a version (D92)', () => {
+  it('names each skill that cannot be sent, under «Skills»', () => {
+    const problems = precheck(
+      definition({
+        tools: [],
+        skills: ['revision-de-costos@7', 'facturas@1', 'otra@1'],
+      }),
+      context,
+    ).filter((item) => item.section === 'skills');
+    expect(problems.map(({ key, items, tools }) => ({ key, items, tools }))).toEqual([
+      { key: 'skillUnapproved', items: ['Revisión de costos v7'], tools: undefined },
+      { key: 'skillServerOff', items: ['Facturas'], tools: ['Billing'] },
+      { key: 'skillUnapproved', items: ['otra v1'], tools: undefined },
+    ]);
+  });
+
+  it('asks for a tool of each server of a skill', () => {
+    const missing = precheck(definition({ tools: [], skills: ['revision-de-costos@2'] }), context);
+    expect(keys(missing)).toContain('skillServerMissing');
+    const fine = precheck(
+      definition({ tools: ['cost-explorer.per_user'], skills: ['revision-de-costos@2'] }),
+      context,
+    );
+    expect(keys(fine).filter((key) => key.startsWith('skill'))).toEqual([]);
+  });
+
+  it('caps the skills of a version and, without the list, leaves the rest to the server', () => {
+    const many = Array.from({ length: 11 }, (_, i) => `s${String(i)}@1`);
+    expect(
+      precheck(definition({ skills: many }), { ...context, skills: null }).filter(
+        (item) => item.section === 'skills',
+      ),
+    ).toMatchObject([{ key: 'skillsMax', max: 10 }]);
+  });
+
+  it('maps the rules of the server to the section, without names', () => {
+    expect(
+      problemOfViolation({ code: 'skill_unavailable', field: 'skills', items: ['a@2'] }),
+    ).toMatchObject({ key: 'serverSkillUnapproved', section: 'skills' });
+    expect(
+      problemOfViolation({ code: 'skill_server_not_enabled', field: 'skills', items: ['a@2'] }),
+    ).toMatchObject({ key: 'serverSkillServerOff', section: 'skills' });
+    expect(
+      problemOfViolation({ code: 'skill_server_without_tools', field: 'skills', items: ['a@2'] }),
+    ).toMatchObject({ key: 'serverSkillServerMissing', section: 'skills' });
+  });
+});

@@ -109,26 +109,33 @@ async function loadDraft(
 async function load(api: ApiClient, target: Target | null, isAdmin: boolean): Promise<BuilderData> {
   // Independent reads go out together; only the draft waits for `mine`.
   const mine = api.call('getMine');
-  const [mineOut, models, catalog, groups, org, budgets, knowledge, stored] = await Promise.all([
-    mine,
-    api.call('getModels'),
-    api.call('getCatalog'),
-    api.call('listGroups'),
-    api.call('getOrg'),
-    // Presupuestos is an admin API; without it the page only hides the amount.
-    isAdmin ? api.getBudgets().catch(() => null) : null,
-    // Without the list the section says so and the version keeps the ones it has (D88 (35)).
-    api.call('listKnowledgeBases').then(
-      (data) => data.items,
-      () => null,
-    ),
-    target === null ? null : loadDraft(api, target, mine),
-  ]);
+  const [mineOut, models, catalog, groups, org, budgets, knowledge, skills, stored] =
+    await Promise.all([
+      mine,
+      api.call('getModels'),
+      api.call('getCatalog'),
+      api.call('listGroups'),
+      api.call('getOrg'),
+      // Presupuestos is an admin API; without it the page only hides the amount.
+      isAdmin ? api.getBudgets().catch(() => null) : null,
+      // Without the list the section says so and the version keeps the ones it has (D88 (35)).
+      api.call('listKnowledgeBases').then(
+        (data) => data.items,
+        () => null,
+      ),
+      // The same for the skills (D92): their section says so and keeps what the version has.
+      api.call('getSkills').then(
+        (data) => data,
+        () => null,
+      ),
+      target === null ? null : loadDraft(api, target, mine),
+    ]);
   const context: BuilderContext = {
     models: models.items,
     catalog: catalog.items,
     groups: groups.items,
     knowledge,
+    skills,
   };
   const draft: Draft = stored ?? {
     kind: 'new',

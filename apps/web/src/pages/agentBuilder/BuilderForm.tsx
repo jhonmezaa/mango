@@ -15,6 +15,7 @@ import { formatRelative } from '../../lib/format';
 import { BuilderAside } from './BuilderAside';
 import { problemText } from './problemText';
 import { KnowledgeSection } from './KnowledgeSection';
+import { SkillsSection } from './SkillsSection';
 import { BuilderBarMenu } from './BuilderBarMenu';
 import {
   SECTION_IDS,
@@ -548,6 +549,12 @@ export function BuilderForm({ data }: { data: BuilderData }) {
                 agentGroups={snap.groups}
                 userCount={snap.users.length}
                 myGroups={me.groups}
+                onChange={change}
+              />
+              <SkillsSection
+                selected={snap.skills}
+                skills={context.skills}
+                tools={snap.tools}
                 onChange={change}
               />
               <LimitsSection

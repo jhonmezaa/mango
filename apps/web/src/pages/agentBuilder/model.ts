@@ -2,6 +2,7 @@ import { isRuleCode, type RuleCode } from '../../agents/rules';
 import { ApiError } from '../../api/errors';
 import type { OperationInput, OperationOutput } from '../../api/operations';
 import type { KnowledgeBase } from '../knowledge/model';
+import type { Skill, SkillsList } from '../skills/model';
 import type { agentBuilder } from '../../i18n/locales/es/agentBuilder';
 
 // Data and rules of the Agent Builder (design admin.jsx and lifecycle.js). The checks here only
@@ -23,6 +24,7 @@ export const SECTION_IDS = [
   'brain',
   'tools',
   'kbs',
+  'skills',
   'limits',
   'access',
 ] as const;
@@ -103,6 +105,8 @@ export interface BuilderContext {
   groups: readonly Group[];
   /** The knowledge bases the caller sees (D88); null when they could not be read. */
   knowledge: readonly KnowledgeBase[] | null;
+  /** The approved skills (D92); null when they could not be read. */
+  skills: SkillsList | null;
 }
 
 export interface ToolInfo {
@@ -217,7 +221,6 @@ export function toInput(
     users: sortedUnique(definition.users),
     // No picker yet (D88, awaiting its design round): the ones the version has are kept.
     knowledge_bases: sortedUnique(definition.knowledge_bases),
-    // No picker yet (D92, awaiting its design round): the ones the version has are kept.
     skills: sortedUnique(definition.skills),
   };
 }
@@ -309,6 +312,7 @@ const FIELD_SECTION: Record<string, SectionId> = {
   tools: 'tools',
   approval_tools: 'tools',
   knowledge_bases: 'kbs',
+  skills: 'skills',
   groups: 'access',
   users: 'access',
 };
@@ -338,10 +342,10 @@ const RULE_KEYS: Record<RuleCode, ProblemKey> = {
   account_data_for_users: 'serverAccountDataUsers',
   knowledge_base_unavailable: 'serverKbMissing',
   knowledge_base_not_usable: 'serverKbForbidden',
-  // Skills (D92): the Builder has no section for them yet (Claude Design, next round).
-  skill_unavailable: 'serverSkill',
-  skill_server_not_enabled: 'serverSkill',
-  skill_server_without_tools: 'serverSkill',
+  // Skills (D92): the server names no skill in its text (design `AB_SERVER_ERR`).
+  skill_unavailable: 'serverSkillUnapproved',
+  skill_server_not_enabled: 'serverSkillServerOff',
+  skill_server_without_tools: 'serverSkillServerMissing',
 };
 
 /** Design `AB_SERVER_ERR`: where each rule points; the rest follow their field. */
@@ -454,6 +458,8 @@ export function precheck(
       out.push(problem('knowledge_base_unavailable:knowledge_bases', 'kbMissing', 'kbs', gone));
     }
   }
+
+  out.push(...skillProblems(definition, context));
 
   const secret = firstSecret(definition);
   if (secret) {
@@ -591,3 +597,74 @@ export function promptTokens(prompt: string): number {
 
 /** Agent ids as the API accepts them in a path: a generated id or a release slug. */
 export const AGENT_ID_PATTERN = /^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/;
+
+// --- Skills (D92) ------------------------------------------------------------------------------
+
+/** At most this many skills per version, unless the API says otherwise (`max_per_agent`). */
+export const MAX_SKILLS = 10;
+
+/** `id@vN` of a version as its parts (`mango_core.skills.parse_ref`). */
+export function parseSkillRef(ref: string): { id: string; version: number } {
+  const [id = '', version = ''] = ref.split('@');
+  return { id, version: Number(version.replace(/^v/, '')) || 0 };
+}
+
+export function skillRef(skill: Pick<Skill, 'id' | 'version'>): string {
+  return `${skill.id}@${String(skill.version)}`;
+}
+
+export type SkillIssue =
+  | { kind: 'unapproved'; version: number }
+  | { kind: 'serverOff'; server: string }
+  | { kind: 'serverMissing'; server: string };
+
+/**
+ * What stops a skill of the version from being sent (design `skIssues`, the server's
+ * `_skills`): a version that is not approved, a server that is not enabled, or a server of which
+ * the agent has no tool. `skill` is the latest approved version, or undefined if there is none.
+ */
+export function skillIssues(
+  ref: string,
+  skill: Skill | undefined,
+  tools: readonly string[],
+): SkillIssue[] {
+  const { version } = parseSkillRef(ref);
+  if (!skill || version < 1 || version > skill.version) return [{ kind: 'unapproved', version }];
+  const off = skill.servers.filter((server) => !server.enabled);
+  if (off.length)
+    return off.map((server) => ({ kind: 'serverOff', server: server.name ?? server.id }));
+  const withTools = new Set(tools.map((tool) => tool.split('.')[0]));
+  return skill.servers
+    .filter((server) => !withTools.has(server.id))
+    .map((server) => ({ kind: 'serverMissing', server: server.name ?? server.id }));
+}
+
+const ISSUE_KEYS = {
+  unapproved: 'skillUnapproved',
+  serverOff: 'skillServerOff',
+  serverMissing: 'skillServerMissing',
+} as const satisfies Record<SkillIssue['kind'], ProblemKey>;
+
+/** The skills of a version that cannot be sent, one problem per skill and issue (design). */
+function skillProblems(definition: Definition, context: BuilderContext): Problem[] {
+  const out: Problem[] = [];
+  const max = context.skills?.max_per_agent ?? MAX_SKILLS;
+  if (definition.skills.length > max) {
+    out.push({ ...problem('skills_max:skills', 'skillsMax', 'skills'), max });
+  }
+  // Unknown while the list could not be read: then only the server says.
+  if (context.skills === null) return out;
+  const byId = new Map(context.skills.items.map((skill) => [skill.id, skill]));
+  for (const ref of definition.skills) {
+    const skill = byId.get(parseSkillRef(ref).id);
+    const name = skill?.name ?? parseSkillRef(ref).id;
+    for (const issue of skillIssues(ref, skill, definition.tools)) {
+      const items = issue.kind === 'unapproved' ? [`${name} v${String(issue.version)}`] : [name];
+      out.push({
+        ...problem(`skill_${issue.kind}:skills:${ref}`, ISSUE_KEYS[issue.kind], 'skills', items),
+        ...(issue.kind === 'unapproved' ? {} : { tools: [issue.server] }),
+      });
+    }
+  }
+  return out;
+}

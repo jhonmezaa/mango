@@ -25,6 +25,7 @@ import {
   AGENT_ICONS,
   agentNameIndex,
   knowledgeIndex,
+  skillIndex,
   authorOf,
   groupTypeIndex,
   isForbidden,
@@ -185,6 +186,10 @@ function ReviewQueue({ crumbs }: { crumbs: string[] }) {
     );
     api.call('listKnowledgeBases').then(
       keep((list) => ({ knowledge: knowledgeIndex(list) })),
+      ignore,
+    );
+    api.call('getSkills').then(
+      keep((list) => ({ skills: skillIndex(list) })),
       ignore,
     );
     return () => {

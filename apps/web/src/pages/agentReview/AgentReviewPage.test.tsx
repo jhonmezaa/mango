@@ -7,6 +7,7 @@ import type { ApiClient } from '../../api/client';
 import { ApiError } from '../../api/errors';
 import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
+import { list as skillList, skill } from '../skills/testFixtures';
 import { AgentReviewPage } from './AgentReviewPage';
 import type { Review, Reviews, Version } from './reviewModel';
 
@@ -297,6 +298,60 @@ describe('AgentReviewPage (design agent-review.jsx)', () => {
     expect(await within(panel).findByText('Runbooks 2025')).toBeInTheDocument();
     // Not repeated under «otros cambios».
     expect(within(panel).queryByText('knowledge_bases')).toBeNull();
+  });
+
+  it('lists the skills a version adds, removes and moves to another version (D92)', async () => {
+    const changed = version({
+      definition: {
+        ...DEFINITION,
+        skills: ['revision-de-costos@3', 'precios@1', 'nueva@1'],
+      },
+    });
+    changed.diff.sets.push({
+      field: 'skills',
+      added: ['nueva@1', 'revision-de-costos@3'],
+      removed: ['revision-de-costos@2', 'vieja@4'],
+    });
+    setup(
+      { queue: [review()], history: [] },
+      {
+        readVersion: () => Promise.resolve(changed),
+        getSkills: () =>
+          Promise.resolve(
+            skillList([
+              skill(),
+              skill({
+                id: 'nueva',
+                name: 'Nueva skill',
+                version: 1,
+                servers: [
+                  {
+                    id: 'aws-pricing',
+                    name: 'AWS Pricing',
+                    enabled: true,
+                    data_tier: 'public',
+                    tools: 2,
+                    writes: false,
+                  },
+                ],
+              }),
+              skill({ id: 'vieja', name: 'Vieja', version: 4 }),
+            ]),
+          ),
+      },
+    );
+    const panel = await detail();
+    expect(
+      await within(panel).findByText('skills · 1 agregadas, 1 quitadas, 1 cambian de versión'),
+    ).toBeInTheDocument();
+    expect(await within(panel).findByText('Nueva skill')).toBeInTheDocument();
+    expect(within(panel).getByText('revision-de-costos · v2 → v3')).toBeInTheDocument();
+    expect(within(panel).getByText('vieja@4')).toBeInTheDocument();
+    // The agent has no tool of AWS Pricing: the reviewer sees why it would not publish.
+    expect(
+      within(panel).getByText(/La skill Nueva skill requiere AWS Pricing y el agente no tiene/),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText('skills', { exact: true })).toBeNull();
   });
 
   it('opens the first version of the queue with the diff the backend computed', async () => {

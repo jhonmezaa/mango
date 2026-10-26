@@ -16,6 +16,7 @@ import {
   toolIndex,
   type Diff,
   type Review,
+  skillChanges,
 } from './reviewModel';
 
 function review(overrides: Partial<Review>): Review {
@@ -159,12 +160,14 @@ describe('reviewModel', () => {
       ],
       sets: [
         { field: 'tools', added: ['x.y'], removed: [] },
-        { field: 'skills', added: ['s'], removed: [] },
+        { field: 'skills', added: ['s@1'], removed: [] },
+        { field: 'memories', added: ['m'], removed: [] },
       ],
     };
+    // Skills have a section of their own since D92.
     expect(otherChanges(diff)).toEqual({
       fields: [{ field: 'memory', before: null, after: 'long' }],
-      sets: [{ field: 'skills', added: ['s'], removed: [] }],
+      sets: [{ field: 'memories', added: ['m'], removed: [] }],
     });
   });
 
@@ -205,5 +208,15 @@ describe('reviewModel', () => {
       ],
     });
     expect(tools.get('pack.stop')).toEqual({ dataTier: 'write', write: true, enabled: false });
+  });
+});
+
+describe('skillChanges (design RvSkills)', () => {
+  it('counts a skill that moves to another version once', () => {
+    expect(skillChanges(['a@3', 'b@1'], ['a@2', 'c@1'])).toEqual({
+      added: ['b@1'],
+      removed: ['c@1'],
+      changed: [{ ref: 'a@3', from: 'a@2' }],
+    });
   });
 });

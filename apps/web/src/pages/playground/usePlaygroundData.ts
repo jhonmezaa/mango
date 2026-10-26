@@ -36,13 +36,14 @@ async function load(api: ApiClient, isAdmin: boolean): Promise<PlaygroundData> {
   return {
     drafts: draftSources(mine.items),
     published: publishedSources(agents.items, isAdmin),
-    // Knowledge bases are not read: the Playground only checks what the Builder checks before
-    // sending, and the server checks the rest.
+    // Knowledge bases are not read and skills are not checked here: the Playground only checks
+    // what the Builder checks before sending, and the server checks the rest.
     context: {
       models: models.items,
       catalog: catalog.items,
       groups: groups.items,
       knowledge: null,
+      skills: null,
     },
     skillNames: skills,
   };

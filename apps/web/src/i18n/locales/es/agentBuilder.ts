@@ -37,6 +37,7 @@ export const agentBuilder = {
     brain: 'Modelo e instrucciones',
     tools: 'Tools',
     kbs: 'Knowledge bases',
+    skills: 'Skills',
     limits: 'Límites',
     access: 'Acceso',
   },
@@ -107,6 +108,25 @@ export const agentBuilder = {
     count: '{{count}} de 5 · solo aparecen las que puedes usar: estás en sus grupos',
     link: 'Ver Knowledge Bases',
   },
+  skills: {
+    desc: 'Playbooks que el agente carga cuando le sirven. Cada una queda fijada en una versión aprobada; una versión nueva de la skill llega al agente con su siguiente aprobación.',
+    available: 'v{{version}} disponible',
+    upgrade: 'Pasar a v{{version}}',
+    remove: 'Quitar {{name}}',
+    none: 'Sin skills. El agente responde solo con su prompt, sus tools y sus knowledge bases.',
+    addLabel: 'Agregar skill',
+    add: 'Agregar skill…',
+    full: 'Ya tiene {{max}} skills, el máximo',
+    noneLeft: 'No quedan skills aprobadas',
+    option: '{{name}} · v{{version}}',
+    optionOff: '{{name}} · v{{version}} · MCP no habilitado',
+    count: '{{count}} de {{max}}',
+    link: 'Ver catálogo de skills',
+    hint: 'Se agregan en su última versión aprobada. Si la skill recibe una versión nueva, el agente sigue con la suya hasta que pases a la nueva y se apruebe esta versión del agente.',
+    // Provisional: the design has no state for a list that could not be read.
+    unavailable: 'No se pudieron cargar las skills. Las que ya tiene el agente se conservan.',
+    retry: 'Reintentar',
+  },
   problems: {
     nameRequired: 'Falta el nombre del agente.',
     nameRequiredToSave: 'Ponle un nombre para guardar el borrador.',
@@ -148,8 +168,20 @@ export const agentBuilder = {
       'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.',
     serverKbForbidden:
       'Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.',
-    serverSkill:
-      'Una de las skills no está aprobada o requiere un MCP que el agente no tiene habilitado. Quítala para enviar.',
+    // Skills (D92, design round 21; texts marked provisional in the design).
+    skillUnapproved:
+      'La skill {{items}} ya no está aprobada. Pásala a la última versión o quítala.',
+    skillServerOff:
+      'La skill {{items}} requiere {{tools}}, que no está habilitado. Quítala o pide que lo habiliten.',
+    skillServerMissing:
+      'La skill {{items}} requiere {{tools}} y el agente no tiene ninguna de sus tools. Agrega una o quita la skill.',
+    skillsMax: 'Un agente puede usar hasta {{max}} skills. Quita alguna.',
+    serverSkillUnapproved:
+      'Una de las skills ya no está aprobada en la versión elegida. Pásala a la última versión o quítala.',
+    serverSkillServerOff:
+      'Una de las skills requiere un MCP que no está habilitado. Quítala o pide que lo habiliten.',
+    serverSkillServerMissing:
+      'Una de las skills requiere un MCP del que el agente no tiene ninguna tool. Agrega una de sus tools o quita la skill.',
     serverAccountDataArea:
       'Tiene tools solo para grupos centrales y es visible para grupos que no son centrales ({{items}}). Quita esos grupos o esas tools.',
     serverAccountDataUsers:

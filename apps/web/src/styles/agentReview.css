@@ -499,3 +499,12 @@
     cursor: not-allowed;
   }
 }
+
+/* Design `RvSkills` (D92): why a skill of the version could not be published. */
+@layer components {
+  .rv-sk-issue {
+    display: block;
+    font-size: 12px;
+    color: var(--red);
+  }
+}

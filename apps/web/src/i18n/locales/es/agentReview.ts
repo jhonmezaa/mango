@@ -188,6 +188,15 @@ export const agentReview = {
     gapOne: 'usa el agente y no está en sus grupos: les responde sin su contenido.',
     gapMany: 'usan el agente y no están en sus grupos: les responde sin su contenido.',
   },
+  // Design `RvSkills` (D92).
+  skills: {
+    titleNew: 'skills · {{count}}',
+    titleChanged:
+      'skills · {{added}} agregadas, {{removed}} quitadas, {{changed}} cambian de versión',
+    same: 'Sin cambios en skills ({{count}}).',
+    version: '{{id}} · v{{from}} → v{{to}}',
+    changed: 'Cambia de versión',
+  },
   // Submit rules by code (`violations[].code` of the API); the server never sends the text.
   rules: {
     prompt_required: 'Faltan las instrucciones.',

@@ -7,12 +7,15 @@ import { Badge, type BadgeTone } from '../../components/Badge';
 import { RefreshIcon } from '../../components/icons';
 import { usePeople } from '../../directory/usePeople';
 import { formatRelative } from '../../lib/format';
+import { parseSkillRef, skillIssues } from '../agentBuilder/model';
+import type { Skill } from '../skills/model';
 import {
   ROOT_SUPERVISOR,
   fieldChange,
   otherChanges,
   ruleText,
   setChange,
+  skillChanges,
   type Diff,
   type FieldValue,
   type ReferenceData,
@@ -213,6 +216,73 @@ function KnowledgeRow({
   );
 }
 
+/**
+ * One skill added, removed or moved to another version (design `RvSkills`), named from the
+ * catalog when the reviewer sees it. An added one says why it could not be published.
+ */
+function SkillRow({
+  skillRefValue,
+  kind,
+  from,
+  skills,
+  tools,
+}: {
+  skillRefValue: string;
+  kind: 'add' | 'rem' | 'chg';
+  from?: string;
+  skills: ReadonlyMap<string, Skill> | null;
+  tools: readonly string[];
+}) {
+  const { t } = useTranslation();
+  const { id, version } = parseSkillRef(skillRefValue);
+  const skill = skills?.get(id);
+  const name = skill?.name ?? id;
+  const issues = kind === 'rem' || skills === null ? [] : skillIssues(skillRefValue, skill, tools);
+  return (
+    <li className={`rv-tool ${kind === 'rem' ? 'rem' : 'add'}`}>
+      {kind === 'chg' ? (
+        <>
+          <span className="rv-sign" aria-hidden="true">
+            ~
+          </span>
+          <span className="sr-only">{t('agentReview.skills.changed')}</span>
+        </>
+      ) : (
+        <Sign kind={kind} />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block">{name}</span>
+        <span className="mono mk-meta text-[11.5px]">
+          {kind === 'chg' && from
+            ? t('agentReview.skills.version', {
+                id,
+                from: parseSkillRef(from).version,
+                to: version,
+              })
+            : skillRefValue}
+        </span>
+        {issues.map((issue) => (
+          <span
+            key={`${issue.kind}:${'server' in issue ? issue.server : ''}`}
+            className="rv-sk-issue"
+          >
+            {issue.kind === 'unapproved'
+              ? t('agentBuilder.problems.skillUnapproved', {
+                  items: `${name} v${String(issue.version)}`,
+                })
+              : t(
+                  issue.kind === 'serverOff'
+                    ? 'agentBuilder.problems.skillServerOff'
+                    : 'agentBuilder.problems.skillServerMissing',
+                  { items: name, tools: issue.server },
+                )}
+          </span>
+        ))}
+      </span>
+    </li>
+  );
+}
+
 /** The stored status of a knowledge base, as the Knowledge Bases screen names it. */
 const KB_STATUS: Readonly<Record<string, 'pending' | 'syncing' | 'warn' | 'error' | 'deleting'>> = {
   pending: 'pending',
@@ -282,6 +352,11 @@ export function VersionDiff({
   const kbs = setChange(diff, 'knowledge_bases');
   const kbRefs = new Map((version.knowledge_bases ?? []).map((ref) => [ref.kb_id, ref]));
   const kbAdded = isNew ? definition.knowledge_bases : kbs.added;
+  const skillSet = setChange(diff, 'skills');
+  const skills = isNew
+    ? { added: definition.skills, removed: [], changed: [] }
+    : skillChanges(skillSet.added, skillSet.removed);
+  const skillsChanged = skills.added.length + skills.removed.length + skills.changed.length > 0;
   // People by email for whoever may look them up (creators and administrators; the server
   // decides). An identifier the directory does not answer for stays as it is.
   const people = usePeople(
@@ -529,6 +604,57 @@ export function VersionDiff({
           ) : (
             <div className="mk-meta rv-none">
               {t('agentReview.kbs.same', { count: definition.knowledge_bases.length })}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {(!isNew || definition.skills.length > 0) && (
+        <Section
+          title={
+            isNew
+              ? t('agentReview.skills.titleNew', { count: definition.skills.length })
+              : t('agentReview.skills.titleChanged', {
+                  added: skills.added.length,
+                  removed: skills.removed.length,
+                  changed: skills.changed.length,
+                })
+          }
+        >
+          {skillsChanged ? (
+            <ul className="rv-tools">
+              {skills.added.map((ref) => (
+                <SkillRow
+                  key={ref}
+                  skillRefValue={ref}
+                  kind="add"
+                  skills={refs.skills}
+                  tools={definition.tools}
+                />
+              ))}
+              {skills.changed.map(({ ref, from }) => (
+                <SkillRow
+                  key={`~${ref}`}
+                  skillRefValue={ref}
+                  from={from}
+                  kind="chg"
+                  skills={refs.skills}
+                  tools={definition.tools}
+                />
+              ))}
+              {skills.removed.map((ref) => (
+                <SkillRow
+                  key={`-${ref}`}
+                  skillRefValue={ref}
+                  kind="rem"
+                  skills={refs.skills}
+                  tools={definition.tools}
+                />
+              ))}
+            </ul>
+          ) : (
+            <div className="mk-meta rv-none">
+              {t('agentReview.skills.same', { count: definition.skills.length })}
             </div>
           )}
         </Section>
