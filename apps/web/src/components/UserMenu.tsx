@@ -243,7 +243,7 @@ export function UserMenu({
         aria-controls={open ? menuId : undefined}
         aria-label={t('nav.accountMenu', { user: displayName })}
         aria-describedby={roleId}
-        title={collapsed ? `${displayName} · ${roleLabel}` : undefined}
+        data-tip={collapsed && !open ? displayName : undefined}
         onClick={() => {
           setOpen((value) => !value);
         }}

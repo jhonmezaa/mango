@@ -1,4 +1,4 @@
-import { useState, type Ref } from 'react';
+import { useState, type FocusEvent, type MouseEvent, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 
@@ -12,13 +12,15 @@ import {
   VIEW_ICONS,
   viewForPath,
   viewPath,
+  visibleGroups,
   type GroupId,
   type ViewKey,
 } from '../layouts/navigation';
 import { readPreference, writePreference } from '../preferences/storage';
 import { useShell } from '../layouts/ShellContext';
-import { ChevronDownIcon, ChevronLeftIcon, CloseIcon } from './icons';
+import { ChevronDownIcon, ChevronLeftIcon, CloseIcon, MoreHorizontalIcon } from './icons';
 import { agentIconStyle } from './marketplace/agentIcons';
+import { RailGroup, type Fly } from './RailGroup';
 import { SoonTag } from './Soon';
 import { UserMenu } from './UserMenu';
 
@@ -26,6 +28,8 @@ const GROUPS_KEY = 'mango-sb-groups';
 const GROUP_IDS: readonly GroupId[] = ['gov', 'build', 'ops'];
 // Design (shell.jsx): Gobernanza starts open, the others follow the active view.
 const DEFAULT_OPEN_GROUPS: Partial<Record<GroupId, boolean>> = { gov: true };
+/** Pinned agents shown in the collapsed rail; past it, PIN_CAP - 1 and «Más agentes fijados». */
+const PIN_CAP = 4;
 
 /** Open state of the collapsible nav groups, validated (storage content is untrusted). */
 function readOpenGroups(): Partial<Record<GroupId, boolean>> {
@@ -87,7 +91,8 @@ function NavItem({ view, active, collapsed, sub = false, onNavigate }: NavItemPr
         aria-disabled="true"
         className={`${className} is-soon`}
         aria-label={t('soon.item', { label })}
-        title={t('soon.itemTitle', { label })}
+        title={collapsed ? undefined : t('soon.itemTitle', { label })}
+        data-tip={collapsed ? t('soon.itemTitle', { label }) : undefined}
       >
         {Icon && (
           <span className="sb-item-icon">
@@ -113,7 +118,7 @@ function NavItem({ view, active, collapsed, sub = false, onNavigate }: NavItemPr
             ? t('nav.withUnread', { label, count: badge ?? 0 })
             : undefined
       }
-      title={collapsed ? label : undefined}
+      data-tip={collapsed ? (badgeText ? `${label} · ${badgeText}` : label) : undefined}
       onClick={onNavigate}
     >
       {Icon && (
@@ -150,9 +155,12 @@ export function Sidebar({
 }: Props) {
   const { t } = useTranslation();
   const { me, agents } = useSession();
-  const { pinnedAgentIds, togglePinnedAgent } = useShell();
+  const { pinnedAgentIds, togglePinnedAgent, toSign } = useShell();
   const { pathname } = useLocation();
   const [openGroups, setOpenGroups] = useState(readOpenGroups);
+  // Collapsed rail: the open group menu, and the floating title of the hovered or focused icon.
+  const [fly, setFly] = useState<Fly | null>(null);
+  const [tip, setTip] = useState<{ text: string; top: number } | null>(null);
 
   const isCollapsed = mode !== 'mobile' && collapsed;
   const activeView = viewForPath(pathname);
@@ -169,6 +177,22 @@ export function Sidebar({
     }
   }
 
+  // Design shell.jsx: rail titles are `.sb-tip` labels outside the rail's scroll, not `title`.
+  const showTip = (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
+    if (!isCollapsed) return;
+    const node = (event.target as Element).closest<HTMLElement>('[data-tip]');
+    if (!node || !event.currentTarget.contains(node)) {
+      setTip(null);
+      return;
+    }
+    const rect = node.getBoundingClientRect();
+    setTip({ text: node.dataset.tip ?? '', top: rect.top + rect.height / 2 });
+  };
+  const hideTip = (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Element) || !next.closest('[data-tip]')) setTip(null);
+  };
+
   const toggleGroup = (id: GroupId, isOpen: boolean) => {
     const next = { ...openGroups, [id]: !isOpen };
     setOpenGroups(next);
@@ -181,14 +205,15 @@ export function Sidebar({
   if (mode === 'mobile' && mobileOpen) classes.push('open');
 
   const primary = NAV_PRIMARY.filter((view) => canView(me, view));
-  const groups = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((view) => canView(me, view)),
-  })).filter((group) => group.items.length > 0);
+  const groups = visibleGroups(me);
   const pinned = pinnedAgentIds.flatMap((id) => {
     const agent = agents?.find((item) => item.id === id);
     return agent && isChatable(agent) ? [agent] : [];
   });
+  const pinOverflow = isCollapsed && pinned.length > PIN_CAP;
+  const pinnedShown = pinOverflow ? pinned.slice(0, PIN_CAP - 1) : pinned;
+  // Design badgeOf: Aprobaciones counts what the caller may sign (D83); Revisión has no count.
+  const badgeOf = (view: ViewKey) => (view === 'approvals' && toSign ? toSign : null);
 
   const workspaceContent = (
     <>
@@ -208,6 +233,10 @@ export function Sidebar({
     <aside
       ref={ref}
       className={classes.join(' ')}
+      onMouseOver={showTip}
+      onFocus={showTip}
+      onMouseLeave={hideTip}
+      onBlur={hideTip}
       {...(mode === 'mobile'
         ? { role: 'dialog', 'aria-modal': mobileOpen, 'aria-label': t('nav.label') }
         : {})}
@@ -230,9 +259,8 @@ export function Sidebar({
                   ? t('nav.expand')
                   : t('nav.collapse')
             }
-            title={
-              mode === 'mobile' ? undefined : isCollapsed ? t('nav.expand') : t('nav.collapse')
-            }
+            title={mode === 'mobile' || isCollapsed ? undefined : t('nav.collapse')}
+            data-tip={mode !== 'mobile' && isCollapsed ? t('nav.rail.expand') : undefined}
           >
             {workspaceContent}
             {!isCollapsed && <ChevronLeftIcon size={14} className="sb-ws-chevron" />}
@@ -240,7 +268,13 @@ export function Sidebar({
         )}
       </div>
 
-      <nav className="sb-nav" aria-label={t('nav.label')}>
+      <nav
+        className="sb-nav"
+        aria-label={t('nav.label')}
+        onScroll={() => {
+          setTip(null);
+        }}
+      >
         <ul className="sb-group">
           {primary.map((view) => (
             <li key={view}>
@@ -263,7 +297,7 @@ export function Sidebar({
                 {t('nav.pinned')}
               </li>
             )}
-            {pinned.map((agent) => {
+            {pinnedShown.map((agent) => {
               const { Icon } = agentIconStyle(agent.icon, agent.color);
               return (
                 <li key={agent.id} className="sb-item sb-item-agent">
@@ -271,7 +305,7 @@ export function Sidebar({
                     to={chatPath(agent.id)}
                     className="sb-item-main"
                     aria-label={t('nav.chatWith', { name: agent.name })}
-                    title={isCollapsed ? agent.name : undefined}
+                    data-tip={isCollapsed ? agent.name : undefined}
                     onClick={onNavigate}
                   >
                     <span className="sb-item-icon">
@@ -295,6 +329,25 @@ export function Sidebar({
                 </li>
               );
             })}
+            {pinOverflow ? (
+              <li>
+                <RailGroup
+                  id="pins"
+                  title={t('nav.pinned')}
+                  Icon={MoreHorizontalIcon}
+                  label={t('nav.rail.morePinned', { count: pinned.length - PIN_CAP + 1 })}
+                  items={pinned.slice(PIN_CAP - 1).map((agent) => ({
+                    key: agent.id,
+                    label: agent.name,
+                    Icon: agentIconStyle(agent.icon, agent.color).Icon,
+                    to: chatPath(agent.id),
+                  }))}
+                  fly={fly}
+                  setFly={setFly}
+                  onNavigate={onNavigate}
+                />
+              </li>
+            ) : null}
           </ul>
         ) : null}
 
@@ -308,18 +361,27 @@ export function Sidebar({
           )}
           {isCollapsed ? (
             <ul className="m-0 list-none p-0" aria-label={t('nav.platform')}>
-              {groups.flatMap((group) =>
-                group.items.map((view) => (
-                  <li key={view}>
-                    <NavItem
-                      view={view}
-                      active={activeView === view}
-                      collapsed
-                      onNavigate={onNavigate}
-                    />
-                  </li>
-                )),
-              )}
+              {groups.map((group) => (
+                <li key={group.id}>
+                  <RailGroup
+                    id={group.id}
+                    title={t(`nav.groups.${group.id}`)}
+                    Icon={group.icon}
+                    items={group.items.map((view) => ({
+                      key: view,
+                      label: t(`nav.${view}`),
+                      Icon: VIEW_ICONS[view],
+                      ...(isAvailable(view)
+                        ? { to: viewPath(view), badge: badgeOf(view), active: activeView === view }
+                        : {}),
+                    }))}
+                    containsActive={activeGroup === group.id}
+                    fly={fly}
+                    setFly={setFly}
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              ))}
             </ul>
           ) : (
             groups.map((group) => {
@@ -368,6 +430,11 @@ export function Sidebar({
       <div className="sb-footer">
         <UserMenu collapsed={isCollapsed} onNavigate={onNavigate} />
       </div>
+      {isCollapsed && tip && !fly ? (
+        <div className="sb-tip" role="tooltip" style={{ top: tip.top }}>
+          {tip.text}
+        </div>
+      ) : null}
     </aside>
   );
 }

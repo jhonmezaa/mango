@@ -186,4 +186,18 @@ describe('AppLayout', () => {
     expect(within(banner).queryByRole('button', { name: 'Ajustes' })).toBeNull();
     expect(within(banner).getByRole('button', { name: 'Nueva conversación' })).toBeInTheDocument();
   });
+
+  it('lights the rail Gobernanza dot with what the caller may sign (GET /api/inbox/unread)', async () => {
+    window.localStorage.setItem('mango-sb-collapsed', '1');
+    const call = vi.fn((operation: string) =>
+      operation === 'unreadInbox'
+        ? Promise.resolve({ unread: 0, to_sign: 3 })
+        : Promise.reject(new Error('not in this test')),
+    );
+    renderLayout(true, { api: { call } as unknown as SessionContextValue['api'] });
+    expect(
+      await screen.findByRole('button', { name: 'Gobernanza, 3 pendientes' }),
+    ).toBeInTheDocument();
+    expect(call).toHaveBeenCalledWith('unreadInbox', {}, expect.anything());
+  });
 });

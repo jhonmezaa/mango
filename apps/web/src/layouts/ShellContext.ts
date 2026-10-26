@@ -13,6 +13,8 @@ export interface ShellContextValue {
   inboxUnread: number | null;
   /** The Bandeja tells the shell the count its own responses carry. */
   setInboxUnread: (count: number) => void;
+  /** What the caller may sign now (D83 `to_sign`): the rail's Gobernanza dot; null until known. */
+  toSign: number | null;
 }
 
 export const ShellContext = createContext<ShellContextValue>({
@@ -23,6 +25,7 @@ export const ShellContext = createContext<ShellContextValue>({
   openAgentPicker: () => undefined,
   inboxUnread: null,
   setInboxUnread: () => undefined,
+  toSign: null,
 });
 
 export function useShell(): ShellContextValue {

@@ -86,6 +86,15 @@ export const nav = {
     hint: 'Para cambiar tu contraseña usa «Olvidé mi contraseña» al iniciar sesión. Para restablecer tu MFA, pídeselo a un admin.',
   },
   groupsLabel: 'Grupos:',
+  // Collapsed rail (design shell.jsx `RailGroup` and `.sb-tip`).
+  rail: {
+    expand: 'Expandir',
+    containsCurrent: 'contiene la vista actual',
+    pending_one: '{{count}} pendiente',
+    pending_other: '{{count}} pendientes',
+    currentView: 'vista actual',
+    morePinned: 'Más agentes fijados ({{count}})',
+  },
 } as const;
 
 export const soon = {

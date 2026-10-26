@@ -1,9 +1,10 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { Agent } from '../agents/agents';
 import type { Me } from '../api/schemas';
 import { agentFixture, baseMe, finopsAgent, sessionValue } from '../test/fixtures';
 import { useShell } from '../layouts/ShellContext';
@@ -328,28 +329,210 @@ describe('Sidebar navigation', () => {
       'page',
     );
   });
+});
 
-  it('keeps every destination labelled in the collapsed rail, without group headers', () => {
-    renderSidebar(true, '/', true);
-    expect(navLinks()).toEqual([
-      'Chat',
-      'Bandeja',
-      'Marketplace',
-      'Chat con FinOps',
-      'Aprobaciones',
-      'Revisión de agentes',
-      'Gobernanza',
-      'Presupuestos',
-      'Audit log',
-      'Actividad',
-      'Brains',
-      'Catálogo de MCP',
-      'Knowledge Bases',
-      'Schedules',
-      'Org Chart',
-    ]);
-    expect(soonItems()).toContain('Playground, próximamente');
-    expect(screen.queryByRole('button', { name: 'Gobernanza' })).toBeNull();
-    expect(screen.queryByText('Próximamente')).toBeNull();
+function renderRail(
+  path = '/',
+  { toSign = null, agents }: { toSign?: number | null; agents?: Agent[] } = {},
+) {
+  const me: Me = { ...baseMe, is_admin: true };
+  return render(
+    <TestProviders
+      session={sessionValue({ me, ...(agents ? { agents } : {}) })}
+      path={path}
+      toSign={toSign}
+    >
+      <Sidebar mode="full" collapsed onToggleCollapsed={noop} onNavigate={noop} />
+    </TestProviders>,
+  );
+}
+
+const railGroup = (name: RegExp) => screen.getByRole('button', { name });
+
+/** Moves the fake clock inside act, so the timers' state updates are flushed. */
+function advance(ms: number) {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
+describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
+  it('shows the main views and pinned agents, and one icon per group instead of its views', () => {
+    renderRail();
+    expect(navLinks()).toEqual(['Chat', 'Bandeja', 'Marketplace', 'Chat con FinOps']);
+    for (const name of ['Gobernanza', 'Construir', 'Operación']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toHaveAttribute('aria-haspopup', 'menu');
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+    }
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('marks the group that holds the current view and the view inside its menu', async () => {
+    const user = userEvent.setup();
+    renderRail('/audit');
+    const gov = railGroup(/^Gobernanza/);
+    expect(gov).toHaveAccessibleName('Gobernanza, contiene la vista actual');
+    expect(gov).toHaveClass('is-current');
+    expect(railGroup(/^Construir/)).not.toHaveClass('is-current');
+    await user.click(gov);
+    const menu = screen.getByRole('menu', { name: 'Gobernanza' });
+    expect(gov).toHaveAttribute('aria-expanded', 'true');
+    expect(gov).toHaveAttribute('aria-controls', menu.id);
+    const current = within(menu).getByRole('menuitem', { name: 'Audit log, vista actual' });
+    expect(current).toHaveAttribute('aria-current', 'page');
+    expect(current).toHaveAttribute('href', '/audit');
+  });
+
+  it('shows a dot when there is something to sign, with its count in the menu', async () => {
+    const user = userEvent.setup();
+    const { container } = renderRail('/', { toSign: 2 });
+    const gov = railGroup(/^Gobernanza/);
+    expect(gov).toHaveAccessibleName('Gobernanza, 2 pendientes');
+    expect(gov.querySelector('.sb-dot-badge')).not.toBeNull();
+    expect(railGroup(/^Construir/).querySelector('.sb-dot-badge')).toBeNull();
+    await user.click(gov);
+    expect(screen.getByRole('menuitem', { name: 'Aprobaciones (2)' })).toHaveAttribute(
+      'href',
+      '/approvals',
+    );
+    expect(container.querySelectorAll('.sb-dot-badge')).toHaveLength(1);
+  });
+
+  it('lists «Próximamente» views as disabled items that do not navigate', async () => {
+    const user = userEvent.setup();
+    renderRail();
+    await user.click(railGroup(/^Construir/));
+    const soon = screen.getByRole('menuitem', { name: 'Playground, próximamente' });
+    expect(soon).toHaveAttribute('aria-disabled', 'true');
+    expect(soon).not.toHaveAttribute('href');
+    expect(within(soon).getByText('Próximamente')).toBeInTheDocument();
+  });
+
+  it('opens on hover after 120 ms and closes 220 ms after the pointer leaves, unless clicked', () => {
+    vi.useFakeTimers();
+    try {
+      renderRail();
+      const gov = railGroup(/^Gobernanza/);
+      const wrapper = gov.parentElement as HTMLElement;
+      fireEvent.mouseEnter(wrapper);
+      advance(100);
+      expect(screen.queryByRole('menu')).toBeNull();
+      advance(20);
+      expect(screen.getByRole('menu', { name: 'Gobernanza' })).toBeInTheDocument();
+      fireEvent.mouseLeave(wrapper);
+      advance(200);
+      expect(screen.getByRole('menu')).toBeInTheDocument();
+      advance(20);
+      expect(screen.queryByRole('menu')).toBeNull();
+      // A click keeps it open; another click, or a click outside, closes it.
+      fireEvent.click(gov);
+      fireEvent.mouseLeave(wrapper);
+      advance(500);
+      expect(screen.getByRole('menu')).toBeInTheDocument();
+      fireEvent.click(gov);
+      expect(screen.queryByRole('menu')).toBeNull();
+      fireEvent.click(gov);
+      fireEvent.mouseDown(document.body);
+      expect(screen.queryByRole('menu')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('works with the keyboard: opens on the first view, moves, Esc returns the focus, Tab closes', async () => {
+    const user = userEvent.setup();
+    renderRail();
+    const gov = railGroup(/^Gobernanza/);
+    gov.focus();
+    await user.keyboard('{Enter}');
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
+    expect(items[0]).toHaveAccessibleName('Aprobaciones');
+    expect(items[0]).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(items[1]).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(items.at(-1)).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(items[0]).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(items.at(-1)).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(items[0]).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(gov).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    await user.tab();
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('opens one menu at a time, and choosing a view closes it', async () => {
+    const user = userEvent.setup();
+    renderRail();
+    await user.click(railGroup(/^Gobernanza/));
+    await user.click(railGroup(/^Operación/));
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+    await user.click(screen.getByRole('menuitem', { name: 'Org Chart' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('shows up to 4 pinned agents; past that, 3 and «Más agentes fijados» with the rest', async () => {
+    const user = userEvent.setup();
+    const extra = ['a', 'b', 'c', 'd'].map((letter, index) =>
+      agentFixture({ id: letter.repeat(16), name: `Agente ${String(index + 1)}` }),
+    );
+    window.localStorage.setItem(
+      'mango-pinned-agents',
+      JSON.stringify(['finops', ...extra.map((agent) => agent.id)]),
+    );
+    renderRail('/', { agents: [finopsAgent, ...extra] });
+    const pinned = screen.getByRole('list', { name: 'Agentes fijados' });
+    expect(
+      within(pinned)
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('aria-label')),
+    ).toEqual(['Chat con FinOps', 'Chat con Agente 1', 'Chat con Agente 2']);
+    const more = within(pinned).getByRole('button', { name: 'Más agentes fijados (2)' });
+    await user.click(more);
+    const menu = screen.getByRole('menu', { name: 'Agentes fijados' });
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.getAttribute('href')),
+    ).toEqual([`/?agent=${'c'.repeat(16)}`, `/?agent=${'d'.repeat(16)}`]);
+  });
+
+  it('keeps exactly 4 pinned agents in the rail without the extra menu', () => {
+    const extra = ['a', 'b', 'c'].map((letter) =>
+      agentFixture({ id: letter.repeat(16), name: letter }),
+    );
+    window.localStorage.setItem(
+      'mango-pinned-agents',
+      JSON.stringify(['finops', ...extra.map((agent) => agent.id)]),
+    );
+    renderRail('/', { agents: [finopsAgent, ...extra] });
+    const pinned = screen.getByRole('list', { name: 'Agentes fijados' });
+    expect(within(pinned).getAllByRole('link')).toHaveLength(4);
+    expect(within(pinned).queryByRole('button')).toBeNull();
+  });
+
+  it('shows floating titles instead of `title`, hidden while a menu is open or on scroll', async () => {
+    const user = userEvent.setup();
+    const { container } = renderRail();
+    const bandeja = screen.getByRole('link', { name: 'Bandeja' });
+    expect(bandeja).not.toHaveAttribute('title');
+    await user.hover(bandeja);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Bandeja');
+    expect(screen.getByRole('button', { name: 'Expandir sidebar' })).toHaveAttribute(
+      'data-tip',
+      'Expandir',
+    );
+    fireEvent.scroll(container.querySelector('.sb-nav') as Element);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    await user.hover(bandeja);
+    await user.click(railGroup(/^Gobernanza/));
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });

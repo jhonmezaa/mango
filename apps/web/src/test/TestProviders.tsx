@@ -11,9 +11,11 @@ import { authValue, sessionValue } from './fixtures';
 function TestShell({
   children,
   onOpenAgentPicker,
+  toSign,
 }: {
   children: ReactNode;
   onOpenAgentPicker: () => void;
+  toSign: number | null;
 }) {
   const [pinned, setPinned] = useState(readPinnedAgents);
   const [inboxUnread, setInboxUnread] = useState<number | null>(null);
@@ -28,8 +30,9 @@ function TestShell({
       openAgentPicker: onOpenAgentPicker,
       inboxUnread,
       setInboxUnread,
+      toSign,
     }),
-    [pinned, onOpenAgentPicker, inboxUnread],
+    [pinned, onOpenAgentPicker, inboxUnread, toSign],
   );
   return <ShellContext value={shell}>{children}</ShellContext>;
 }
@@ -42,6 +45,7 @@ export function TestProviders({
   auth = authValue(),
   path = '/',
   onOpenAgentPicker = noop,
+  toSign = null,
 }: {
   children: ReactNode;
   session?: SessionContextValue;
@@ -49,11 +53,13 @@ export function TestProviders({
   /** Where the router starts; an object carries router state too. */
   path?: string | { pathname: string; state: unknown };
   onOpenAgentPicker?: () => void;
+  /** What the caller may sign, as `GET /api/inbox/unread` would report it. */
+  toSign?: number | null;
 }) {
   return (
     <AuthContext value={auth}>
       <SessionContext value={session}>
-        <TestShell onOpenAgentPicker={onOpenAgentPicker}>
+        <TestShell onOpenAgentPicker={onOpenAgentPicker} toSign={toSign}>
           <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
         </TestShell>
       </SessionContext>

@@ -64,13 +64,16 @@ export function AppLayout() {
 
   // Bandeja counter (D83): what the API counts for this person; nothing is decided here.
   const [inboxUnread, setInboxUnread] = useState<number | null>(null);
+  const [toSign, setToSign] = useState<number | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     const load = () => {
       if (document.visibilityState === 'hidden') return;
       api.call('unreadInbox', {}, { signal: controller.signal }).then(
         (result) => {
-          if (!controller.signal.aborted) setInboxUnread(result.unread);
+          if (controller.signal.aborted) return;
+          setInboxUnread(result.unread);
+          setToSign(result.to_sign);
         },
         () => undefined,
       );
@@ -104,8 +107,9 @@ export function AppLayout() {
       },
       inboxUnread,
       setInboxUnread,
+      toSign,
     }),
-    [isMobile, pinnedAgentIds, togglePinned, inboxUnread],
+    [isMobile, pinnedAgentIds, togglePinned, inboxUnread, toSign],
   );
 
   const classes = ['app'];

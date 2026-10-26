@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { VIEW_ICONS, canView, type ViewKey } from './navigation';
+import { ShieldIcon } from '../components/icons';
+import { VIEW_ICONS, canView, visibleGroups, type ViewKey } from './navigation';
 
 const ALL = Object.keys(VIEW_ICONS) as ViewKey[];
 const USER: ViewKey[] = [
@@ -75,5 +76,21 @@ describe('canView (UX only: the API authorizes every request)', () => {
     expect([...central].sort()).toEqual(
       [...new Set([...USER, ...OWNER_EXTRA, 'mcp', 'knowledge'])].sort(),
     );
+  });
+});
+
+describe('visibleGroups', () => {
+  it('keeps each group with the views the account sees, and drops a group left without any', () => {
+    const user = { role: null, is_admin: false, can: NOT_CREATOR };
+    const groups = visibleGroups(user, [
+      { id: 'gov', icon: ShieldIcon, items: ['approvals', 'budgets', 'audit'] },
+      { id: 'build', icon: ShieldIcon, items: ['models', 'mcp', 'knowledge'] },
+    ]);
+    expect(groups.map((group) => [group.id, group.items])).toEqual([['gov', ['approvals']]]);
+    expect(visibleGroups({ ...user, is_admin: true }).map((group) => group.id)).toEqual([
+      'gov',
+      'build',
+      'ops',
+    ]);
   });
 });

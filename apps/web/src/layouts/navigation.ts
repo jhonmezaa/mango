@@ -117,11 +117,13 @@ export const NAV_PRIMARY: readonly ViewKey[] = [
   'search',
 ];
 
-export const NAV_GROUPS: readonly {
+export interface NavGroup {
   id: GroupId;
   icon: ComponentType<IconProps>;
   items: readonly ViewKey[];
-}[] = [
+}
+
+export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'gov',
     icon: ShieldIcon,
@@ -171,6 +173,16 @@ export function viewForPath(pathname: string): ViewKey | null {
   if (pathname === '/' || pathname.startsWith('/c/') || pathname.startsWith('/chat')) return 'chat';
   const segment = pathname.split('/')[1] ?? '';
   return Object.hasOwn(VIEW_ICONS, segment) ? (segment as ViewKey) : null;
+}
+
+/** The groups with the views the account can see; a group left without views is not shown. */
+export function visibleGroups(
+  me: Pick<Me, 'is_admin' | 'role' | 'can'>,
+  groups: readonly NavGroup[] = NAV_GROUPS,
+): NavGroup[] {
+  return groups
+    .map((group) => ({ ...group, items: group.items.filter((view) => canView(me, view)) }))
+    .filter((group) => group.items.length > 0);
 }
 
 export function isAvailable(view: ViewKey): boolean {
