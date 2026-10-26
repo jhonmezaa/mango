@@ -1,6 +1,6 @@
 # MCP remotos de terceros (Azure DevOps): modelo de amenazas (v0.2)
 
-> Fecha: 2026-10-25 (borrador de diseño) · 2026-10-26 (registro con D93) · Skill: `security-threat-model`. Decisiones: D13, D19 (3), D25, D46, D54, D56 (5), D63, D84 y **D93** (esta, `propuesta`).
+> Fecha: 2026-10-25 (borrador de diseño) · 2026-10-26 (registro con D93) · Skill: `security-threat-model`. Decisiones: D13, D19 (3), D25, D46, D54, D56 (5), D63, D84 y **D93** (esta, `vigente` desde el 2026-10-26).
 > Amplía `mcp-pack-provisioner-threat-model.md` (provisioner, Cedar L2 por target), `pack-egress-threat-model.md` (R6) e `identity-propagation-threat-model.md` (firma de la invocación, interceptor).
 > Diseño antes de construir: no hay código. Fuentes con URL en el texto de [D93](../../architecture/decisions/D093-mcp-remotos-de-terceros.md). Supuestos 1 a 3 confirmados por el dueño el 2026-10-25, por menú; la llave del catálogo aprobado (TM-012), elegida por el dueño el 2026-10-26, por menú. Sin ids de tenants, organizaciones ni cuentas: los ids de Microsoft que aparecen son públicos.
 
