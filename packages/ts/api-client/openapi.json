@@ -1869,6 +1869,47 @@
         "title": "BusinessUnitsOut",
         "type": "object"
       },
+      "CallbackIn": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "maxLength": 1024,
+            "pattern": "^urn:ietf:params:oauth:request_uri:[A-Za-z0-9._~-]{1,990}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "CallbackIn",
+        "type": "object"
+      },
+      "CallbackOut": {
+        "additionalProperties": false,
+        "properties": {
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "registration_id": {
+            "title": "Registration Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "connected",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "registration_id",
+          "profile_id"
+        ],
+        "title": "CallbackOut",
+        "type": "object"
+      },
       "CatalogAgent": {
         "additionalProperties": false,
         "properties": {
@@ -2166,6 +2207,140 @@
           "document"
         ],
         "title": "CitationOut",
+        "type": "object"
+      },
+      "ConnectOut": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Url"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "status": {
+            "enum": [
+              "already_connected",
+              "consent_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ConnectOut",
+        "type": "object"
+      },
+      "ConnectionEmptyIn": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "ConnectionEmptyIn",
+        "type": "object"
+      },
+      "ConnectionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "connected_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected At"
+          },
+          "link_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Link Hosts",
+            "type": "array"
+          },
+          "organization": {
+            "title": "Organization",
+            "type": "string"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "registration_id": {
+            "title": "Registration Id",
+            "type": "string"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "not_connected",
+              "connected",
+              "disabled",
+              "secret_expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "registration_id",
+          "profile_id",
+          "service",
+          "provider",
+          "organization",
+          "link_hosts",
+          "status"
+        ],
+        "title": "ConnectionOut",
+        "type": "object"
+      },
+      "ConnectionsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOut"
+            },
+            "title": "Connections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "connections"
+        ],
+        "title": "ConnectionsOut",
         "type": "object"
       },
       "ConnectivityCheck": {
@@ -17110,6 +17285,134 @@
         "summary": "Me"
       }
     },
+    "/me/connections": {
+      "get": {
+        "operationId": "list_my_connections",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List My Connections"
+      }
+    },
+    "/me/connections/{reg}/connect": {
+      "post": {
+        "operationId": "connect_my_account",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionEmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Connect My Account"
+      }
+    },
+    "/me/connections/{reg}/disconnect": {
+      "post": {
+        "operationId": "disconnect_my_account",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionEmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Disconnect My Account"
+      }
+    },
     "/models": {
       "get": {
         "operationId": "get_models",
@@ -17136,6 +17439,44 @@
           }
         },
         "summary": "Get Models"
+      }
+    },
+    "/oauth/callback": {
+      "post": {
+        "operationId": "complete_consent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Complete Consent"
       }
     },
     "/playground/runs": {

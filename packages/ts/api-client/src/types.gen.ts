@@ -996,6 +996,34 @@ export type BusinessUnitsOut = {
 };
 
 /**
+ * CallbackIn
+ */
+export type CallbackIn = {
+    /**
+     * Session Id
+     */
+    session_id: string;
+};
+
+/**
+ * CallbackOut
+ */
+export type CallbackOut = {
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Registration Id
+     */
+    registration_id: string;
+    /**
+     * Status
+     */
+    status: 'connected';
+};
+
+/**
  * CatalogAgent
  */
 export type CatalogAgent = {
@@ -1178,6 +1206,79 @@ export type CitationOut = {
      * Page
      */
     page?: number | null;
+};
+
+/**
+ * ConnectOut
+ */
+export type ConnectOut = {
+    /**
+     * Authorization Url
+     */
+    authorization_url?: string | null;
+    /**
+     * Expires At
+     */
+    expires_at?: string | null;
+    /**
+     * Status
+     */
+    status: 'already_connected' | 'consent_required';
+};
+
+/**
+ * ConnectionEmptyIn
+ */
+export type ConnectionEmptyIn = {
+    [key: string]: never;
+};
+
+/**
+ * ConnectionOut
+ */
+export type ConnectionOut = {
+    /**
+     * Connected At
+     */
+    connected_at?: string | null;
+    /**
+     * Link Hosts
+     */
+    link_hosts: Array<string>;
+    /**
+     * Organization
+     */
+    organization: string;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Provider
+     */
+    provider: string | null;
+    /**
+     * Registration Id
+     */
+    registration_id: string;
+    /**
+     * Service
+     */
+    service: string;
+    /**
+     * Status
+     */
+    status: 'not_connected' | 'connected' | 'disabled' | 'secret_expired';
+};
+
+/**
+ * ConnectionsOut
+ */
+export type ConnectionsOut = {
+    /**
+     * Connections
+     */
+    connections: Array<ConnectionOut>;
 };
 
 /**
@@ -9516,6 +9617,91 @@ export type MeResponses = {
 
 export type MeResponse2 = MeResponses[keyof MeResponses];
 
+export type ListMyConnectionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/me/connections';
+};
+
+export type ListMyConnectionsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListMyConnectionsError = ListMyConnectionsErrors[keyof ListMyConnectionsErrors];
+
+export type ListMyConnectionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConnectionsOut;
+};
+
+export type ListMyConnectionsResponse = ListMyConnectionsResponses[keyof ListMyConnectionsResponses];
+
+export type ConnectMyAccountData = {
+    body: ConnectionEmptyIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+    };
+    query?: never;
+    url: '/me/connections/{reg}/connect';
+};
+
+export type ConnectMyAccountErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ConnectMyAccountError = ConnectMyAccountErrors[keyof ConnectMyAccountErrors];
+
+export type ConnectMyAccountResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConnectOut;
+};
+
+export type ConnectMyAccountResponse = ConnectMyAccountResponses[keyof ConnectMyAccountResponses];
+
+export type DisconnectMyAccountData = {
+    body: ConnectionEmptyIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+    };
+    query?: never;
+    url: '/me/connections/{reg}/disconnect';
+};
+
+export type DisconnectMyAccountErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DisconnectMyAccountError = DisconnectMyAccountErrors[keyof DisconnectMyAccountErrors];
+
+export type DisconnectMyAccountResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConnectionOut;
+};
+
+export type DisconnectMyAccountResponse = DisconnectMyAccountResponses[keyof DisconnectMyAccountResponses];
+
 export type GetModelsData = {
     body?: never;
     path?: never;
@@ -9540,6 +9726,31 @@ export type GetModelsResponses = {
 };
 
 export type GetModelsResponse = GetModelsResponses[keyof GetModelsResponses];
+
+export type CompleteConsentData = {
+    body: CallbackIn;
+    path?: never;
+    query?: never;
+    url: '/oauth/callback';
+};
+
+export type CompleteConsentErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type CompleteConsentError = CompleteConsentErrors[keyof CompleteConsentErrors];
+
+export type CompleteConsentResponses = {
+    /**
+     * Successful Response
+     */
+    200: CallbackOut;
+};
+
+export type CompleteConsentResponse = CompleteConsentResponses[keyof CompleteConsentResponses];
 
 export type RunPlaygroundTestData = {
     body: PlaygroundRunIn;

@@ -76,9 +76,11 @@ from mango_api.audit import (
 )
 from mango_api.authz import (
     PLATFORM,
+    REMOTE_MCP_TYPE,
     AgentResource,
     Authorizer,
     KnowledgeBaseResource,
+    RemoteMcpResource,
     TaskResource,
 )
 from mango_api.budget import (
@@ -87,6 +89,13 @@ from mango_api.budget import (
     BudgetService,
     BudgetUnavailableError,
     current_period,
+)
+from mango_api.connections import (
+    ConnectionRecords,
+    ConnectionsDeps,
+    ConsentCompleter,
+    PendingConsents,
+    connections_router,
 )
 from mango_api.conversations import (
     CONVERSATION_ID_RE,
@@ -101,6 +110,7 @@ from mango_api.directory import (
     LookupQuota,
     directory_router,
 )
+from mango_api.gateway_mcp import GatewayConnections
 from mango_api.governance import GovernanceDeps, governance_router
 from mango_api.group_admin import (
     CognitoGroups,
@@ -166,6 +176,7 @@ from mango_api.remote_mcp import RemoteMcpDeps, remote_mcp_router
 from mango_api.remote_mcp_store import (
     ApprovedRemotes,
     IdentityProviders,
+    Registration,
     RemoteStore,
     StackTags,
     gateway_id_of,
@@ -382,6 +393,8 @@ class Services:
     mcp: McpDeps | None = None
     # Remote MCP registrations (D93, D98); set in production (build_services).
     remote_mcp: RemoteMcpDeps | None = None
+    # «Mis conexiones» of remote MCPs (D97, D98); set in production (build_services).
+    connections: ConnectionsDeps | None = None
     # Emails of the people an agent is shared with (D33); set in production (build_services).
     directory: CognitoDirectory | None = None
     directory_quota: LookupQuota | None = None
@@ -567,6 +580,38 @@ def _remote_mcp_deps(
     )
 
 
+def _connections_deps(
+    settings: Settings,
+    *,
+    dynamodb: Any,
+    rls: RlsClientFactory,
+    remote: RemoteMcpDeps,
+    audit: AuditLog,
+    invocation_key: bytes,
+    limits: Limits,
+) -> ConnectionsDeps:
+    """«Mis conexiones» (D98 (17)): the registrations and the approved catalog of the remote
+    MCP domain, the person's connection records (RLS) and the Gateway they are probed through."""
+    region = settings.region
+    return ConnectionsDeps(
+        registrations=remote.store,
+        release=remote.release,
+        records=ConnectionRecords(rls.for_user, settings.conversations_table),
+        consents=PendingConsents(dynamodb, settings.settings_table, region=region),
+        audit=audit,
+        clock=now_utc,
+        region=region,
+        app_origin=settings.app_origin,
+        connects=limits.limiter("connections.connects"),
+        disconnects=limits.limiter("connections.disconnects"),
+        callbacks=limits.limiter("connections.callbacks"),
+        enabled=settings.remote_mcp_enabled,
+        approved=remote.approved,
+        gateway=GatewayConnections(gateway_url=settings.gateway_url, invocation_key=invocation_key),
+        completer=ConsentCompleter(boto3.client("bedrock-agentcore", region_name=region)),
+    )
+
+
 def build_services(settings: Settings) -> Services:
     region = settings.region
     dynamodb = boto3.client("dynamodb", region_name=region)
@@ -697,6 +742,14 @@ def build_services(settings: Settings) -> Services:
         proposals=limits.limiter("people.proposals"),
         invitations=limits.limiter("people.invitations"),
     )
+    remote_mcp = _remote_mcp_deps(
+        settings,
+        dynamodb=dynamodb,
+        group_registry=group_registry,
+        authorizer=authorizer,
+        audit=audit,
+        limits=limits,
+    )
     return Services(
         settings=settings,
         verifier=verifier,
@@ -808,12 +861,14 @@ def build_services(settings: Settings) -> Services:
             else None,
             rate_limiter=limits.limiter("mcp.writes"),
         ),
-        remote_mcp=_remote_mcp_deps(
+        remote_mcp=remote_mcp,
+        connections=_connections_deps(
             settings,
             dynamodb=dynamodb,
-            group_registry=group_registry,
-            authorizer=authorizer,
+            rls=rls,
+            remote=remote_mcp,
             audit=audit,
+            invocation_key=invocation_key,
             limits=limits,
         ),
         models=ModelsDeps(
@@ -1095,6 +1150,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         agent: AgentResource | None = None,
         task: TaskResource | None = None,
         knowledge: KnowledgeBaseResource | None = None,
+        remote: RemoteMcpResource | None = None,
     ) -> Awaitable[None]:
         # Every decision is audited; ``read_only`` only lets the log hide allowed reads.
         # ``context`` (validated or server-generated ids only) links the decision to its turn.
@@ -1108,6 +1164,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                 decide = partial(services.authorizer.is_allowed, task=task)
             elif knowledge is not None:
                 decide = partial(services.authorizer.is_allowed, knowledge=knowledge)
+            elif remote is not None:
+                # D98 (18): the groups of the registration, read from REMOTE#<reg>.
+                decide = partial(services.authorizer.is_allowed, remote=remote)
             allowed = await asyncio.to_thread(decide, *subject, *([agent] if agent else []))
             await asyncio.to_thread(
                 services.audit.emit,
@@ -1372,6 +1431,21 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 
     if services.models is not None:
         app.include_router(models_router(services.models, current_user, require))
+
+    if services.connections is not None:
+        # «Mis conexiones» (D98 (17)): UseRemoteMcp on the groups of each registration.
+        def may_use(caller: Caller, registration: Registration) -> bool:
+            return services.authorizer.is_allowed(
+                caller.user,
+                "UseRemoteMcp",
+                REMOTE_MCP_TYPE,
+                registration.registration_id,
+                remote=RemoteMcpResource(
+                    registration.registration_id, frozenset(registration.groups)
+                ),
+            )
+
+        app.include_router(connections_router(services.connections, current_user, require, may_use))
 
     if services.directory is not None and services.directory_quota is not None:
         app.include_router(

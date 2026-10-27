@@ -329,6 +329,22 @@ export const zBudgetsSummarySchema = z.object({
 });
 
 /**
+ * CallbackIn
+ */
+export const zCallbackInSchema = z.object({
+    session_id: z.string().max(1024).regex(/^urn:ietf:params:oauth:request_uri:[A-Za-z0-9._~-]{1,990}$/)
+});
+
+/**
+ * CallbackOut
+ */
+export const zCallbackOutSchema = z.object({
+    profile_id: z.string(),
+    registration_id: z.string(),
+    status: z.literal('connected')
+});
+
+/**
  * CatalogAgent
  */
 export const zCatalogAgentSchema = z.object({
@@ -383,6 +399,46 @@ export const zCitationOutSchema = z.object({
     document: z.string(),
     knowledge_base: z.string(),
     page: z.int().nullish()
+});
+
+/**
+ * ConnectOut
+ */
+export const zConnectOutSchema = z.object({
+    authorization_url: z.string().nullish(),
+    expires_at: z.string().nullish(),
+    status: z.enum(['already_connected', 'consent_required'])
+});
+
+/**
+ * ConnectionEmptyIn
+ */
+export const zConnectionEmptyInSchema = z.record(z.string(), z.never());
+
+/**
+ * ConnectionOut
+ */
+export const zConnectionOutSchema = z.object({
+    connected_at: z.string().nullish(),
+    link_hosts: z.array(z.string()),
+    organization: z.string(),
+    profile_id: z.string(),
+    provider: z.string().nullable(),
+    registration_id: z.string(),
+    service: z.string(),
+    status: z.enum([
+        'not_connected',
+        'connected',
+        'disabled',
+        'secret_expired'
+    ])
+});
+
+/**
+ * ConnectionsOut
+ */
+export const zConnectionsOutSchema = z.object({
+    connections: z.array(zConnectionOutSchema)
 });
 
 /**
@@ -4145,7 +4201,41 @@ export const zMeResponse = zMeResponseSchema;
 /**
  * Successful Response
  */
+export const zListMyConnectionsResponse = zConnectionsOutSchema;
+
+export const zConnectMyAccountBody = zConnectionEmptyInSchema;
+
+export const zConnectMyAccountPath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zConnectMyAccountResponse = zConnectOutSchema;
+
+export const zDisconnectMyAccountBody = zConnectionEmptyInSchema;
+
+export const zDisconnectMyAccountPath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDisconnectMyAccountResponse = zConnectionOutSchema;
+
+/**
+ * Successful Response
+ */
 export const zGetModelsResponse = zModelsOutSchema;
+
+export const zCompleteConsentBody = zCallbackInSchema;
+
+/**
+ * Successful Response
+ */
+export const zCompleteConsentResponse = zCallbackOutSchema;
 
 export const zRunPlaygroundTestBody = zPlaygroundRunInSchema;
 

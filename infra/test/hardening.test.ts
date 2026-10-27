@@ -122,6 +122,11 @@ describe("hardening (Checkov)", () => {
           .Properties.DistributionConfig.ViewerCertificate;
         expect(cert === undefined || JSON.stringify(cert).includes('"CloudFrontDefaultCertificate":true')).toBe(true);
       }
+      if (ids.includes(CHECKOV_EXCEPTIONS.cloudfrontLogsV2.id)) {
+        // Only the distribution, and only while its v2 delivery exists (D98 (9)).
+        expect(logicalId).toMatch(/^EdgeDistribution/);
+        expect(Object.keys(template.findResources("AWS::Logs::Delivery"))).toHaveLength(1);
+      }
       if (ids.includes(CHECKOV_EXCEPTIONS.runtimeImageToken.id)) {
         // The agent execution role and the permissions boundary of agent roles, nothing else.
         expect(logicalId).toMatch(/AgentExecutionRoleDefaultPolicy|^AgentPlatformBoundary/);
@@ -154,7 +159,11 @@ describe("web session cookie (D63)", () => {
   });
 
   it("keeps cookies out of the CloudFront access logs (TM-S6)", () => {
-    expect(distribution.Logging.IncludeCookies ?? false).toBe(false);
+    // Standard logging v2 (D98 (9)): no legacy log, and no cookie field in the delivery.
+    expect(distribution.Logging).toBeUndefined();
+    const deliveries = Object.values(template.findResources("AWS::Logs::Delivery"));
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]!.Properties.RecordFields).not.toContain("cs(Cookie)");
   });
 
   it("keeps session records in a protected table that expires them, without a stream", () => {

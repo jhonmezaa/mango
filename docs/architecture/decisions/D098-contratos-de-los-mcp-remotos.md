@@ -102,6 +102,13 @@ Precisado al construir el registro (2026-10-27):
 - **La entrada del provisioner de remotos** es exactamente `{registration_id, approval_id}`, como `enablement_id` en los packs (elegido el 2026-10-27, por menú: «Mirror packs (approval_id)»). Cada aprobación o deshabilitación escribe un `approval_id` aleatorio en `REGISTRATION`, junto con `change_id` y `change_kind` de la solicitud aprobada; el provisioner rechaza una ejecución cuyo `approval_id` ya no es el del registro. Un reintento usa el mismo.
 - **Tags del proveedor:** `mango-api` copia los tags del stack `Core` al proveedor que crea, con las reglas de los provisioners, más `mango:namespace`, `mango:component` y `mango:remote` (D76; elegido el 2026-10-27, por menú: «Copy stack tags too»).
 
+Precisado al construir «Mis conexiones» (2026-10-27):
+- **«Conectar» con la cuenta ya en el vault** responde `already_connected` (la tool de sondeo contestó; no se abre Microsoft, diseño A6) y escribe la conexión. Una conexión nueva solo nace en la vuelta.
+- **«Desconectar» no borra la conexión: la sobrescribe** con `disconnected_at`. La política de sesión de las credenciales RLS no da `DeleteItem`, y no se amplía para esto.
+- **La vuelta sin `session_sha256`** (hasta V-3) cierra el pendiente más reciente de la persona: Identity ya exige que la sesión sea suya.
+- **Con `RemoteMcpEnabled` apagado** se pueden listar las conexiones y desconectar; «Conectar» y la vuelta responden `remote_disabled`.
+- **(9), hecho:** el registro de CloudFront es el estándar v2 (entrega de logs vendidos de CloudWatch al bucket de logs de acceso, prefijo `cloudfront/`) con los campos del registro *legacy* menos `cs-uri-query` y `cs(Cookie)`; el *legacy* se quitó. No hace falta la excepción.
+
 La conexión de cada persona (desde cuándo, y con qué `generation` del proveedor) va en `Conversations`, en `USER#<sub>` / `REMOTE#<reg>`. La escribe `mango-api` con las credenciales RLS de esa persona. Sirve para mostrar «Conectado» sin llamar a Microsoft. Una conexión de otra `generation` cuenta como «Sin conectar».
 
 **(13) El ítem firmado.**

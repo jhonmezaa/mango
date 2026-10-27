@@ -34,7 +34,7 @@ El riesgo principal es **la cadena entre el contenido de Azure DevOps y las acci
   - ¿Qué IAM mínimo piden el proveedor, `CompleteResourceTokenAuth` y el target con OAuth? (TM-009, TM-012)
   - ¿Qué versión del protocolo negocia el harness? Con `2026-07-28`, borrar `_meta` rompe las llamadas (TM-006, TM-013).
   - ¿Bloquea el Acceso condicional del tenant como se espera? (P9)
-  - ¿Se puede usar el registro estándar v2 de CloudFront sin `cs-uri-query`? Si no, TM-016 queda como excepción registrada.
+  - ~~¿Se puede usar el registro estándar v2 de CloudFront sin `cs-uri-query`?~~ Sí: construido el 2026-10-27 (sin `cs-uri-query` ni `cs(Cookie)`); no hace falta la excepción.
 
 ## System model
 

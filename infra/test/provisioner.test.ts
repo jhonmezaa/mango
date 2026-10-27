@@ -530,15 +530,27 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
     }
     // The one control-plane write: the Identity providers of remote MCP registrations, which
     // hold the app's secret an administrator types (D98 (17)), and only those.
+    // CompleteResourceTokenAuth is of the data plane: it closes a person's consent with their
+    // own access token (D98 (1)), and only in its own statement.
+    const dataPlane = ["bedrock-agentcore:CompleteResourceTokenAuth"];
+    expect(allowed.filter((s) => actions(s).some((a) => dataPlane.includes(a))).map((s) => s.Sid)).toEqual([
+      "CompleteRemoteConsent",
+    ]);
     const controlPlane = allowed.filter((s) =>
-      actions(s).some((a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke")),
+      actions(s).some(
+        (a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke") && !dataPlane.includes(a),
+      ),
     );
     expect(controlPlane.map((s) => s.Sid)).toEqual(["RemoteMcpProviders"]);
     expect(actions(controlPlane[0]!).every((a) => /Oauth2CredentialProvider$|:TagResource$/.test(a))).toBe(true);
     const scope = JSON.stringify(controlPlane[0]!.Resource);
     expect(scope).toContain("oauth2credentialprovider/Mango-");
     expect(scope).toContain("-remote-*");
-    expect(granted.filter((a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke"))).toEqual(
+    expect(
+      granted.filter(
+        (a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke") && !dataPlane.includes(a),
+      ),
+    ).toEqual(
       actions(controlPlane[0]!),
     );
   });

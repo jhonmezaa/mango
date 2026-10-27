@@ -1,21 +1,67 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Duration, Fn, Lazy, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { ArnFormat, CfnResource, Duration, Fn, Lazy, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 import { z } from "zod";
 import { Installation } from "../config/schema.js";
+import { CHECKOV_EXCEPTIONS, suppressCheckov } from "../checkov.js";
 import { acknowledge } from "../nag.js";
 import { mangoName } from "../names.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const WEB_DIST = resolve(REPO_ROOT, "apps/web/dist");
+
+/**
+ * Fields of the access logs of the distribution (standard logging v2, D98 (9)): those of the
+ * legacy log except `cs-uri-query` and `cs(Cookie)`. The query of the return from Microsoft
+ * carries the Identity `session_id` (`/conexiones/vuelta?session_id=…`), and the cookie is the web
+ * session of D63: neither is ever written to a log.
+ */
+export const ACCESS_LOG_FIELDS = [
+  "date",
+  "time",
+  "x-edge-location",
+  "sc-bytes",
+  "c-ip",
+  "cs-method",
+  "cs(Host)",
+  "cs-uri-stem",
+  "sc-status",
+  "cs(Referer)",
+  "cs(User-Agent)",
+  "x-edge-result-type",
+  "x-edge-request-id",
+  "x-host-header",
+  "cs-protocol",
+  "cs-bytes",
+  "time-taken",
+  "x-forwarded-for",
+  "ssl-protocol",
+  "ssl-cipher",
+  "x-edge-response-result-type",
+  "cs-protocol-version",
+  "fle-status",
+  "fle-encrypted-fields",
+  "c-port",
+  "time-to-first-byte",
+  "x-edge-detailed-result-type",
+  "sc-content-type",
+  "sc-content-len",
+  "sc-range-start",
+  "sc-range-end",
+] as const;
+
+/** Prefix of the access logs of the distribution in the access-logs bucket (as the legacy log). */
+export const ACCESS_LOG_PREFIX = "cloudfront";
 
 export interface EdgeProps {
   readonly installation: Installation;
@@ -318,9 +364,6 @@ export class Edge extends Construct {
       defaultRootObject: "index.html",
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
-      enableLogging: true,
-      logBucket: props.accessLogs,
-      logFilePrefix: "cloudfront/",
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.spaBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -342,7 +385,61 @@ export class Edge extends Construct {
         },
       },
     });
+    this.logAccess(cfg.namespace, props.accessLogs);
     this.acknowledgeFindings();
+  }
+
+  /**
+   * Standard logging v2 (CloudWatch vended logs) to the access-logs bucket, with a field
+   * selection: the legacy log always writes the query string (D98 (9), TM-016). The delivery
+   * source of a distribution lives in us-east-1, the only region Mango installs in (§4.7).
+   */
+  private logAccess(ns: string, bucket: s3.IBucket): void {
+    const stack = Stack.of(this);
+    const source = new logs.CfnDeliverySource(this, "AccessLogSource", {
+      name: mangoName(ns, "cloudfront-access"),
+      logType: "ACCESS_LOGS",
+      resourceArn: stack.formatArn({
+        service: "cloudfront",
+        region: "",
+        resource: "distribution",
+        resourceName: this.distribution.distributionId,
+      }),
+    });
+    const destination = new logs.CfnDeliveryDestination(this, "AccessLogDestination", {
+      name: mangoName(ns, "cloudfront-access-s3"),
+      destinationResourceArn: `${bucket.bucketArn}/${ACCESS_LOG_PREFIX}`,
+      outputFormat: "w3c",
+    });
+    const delivery = new logs.CfnDelivery(this, "AccessLogDelivery", {
+      deliverySourceName: source.name,
+      deliveryDestinationArn: destination.attrArn,
+      recordFields: [...ACCESS_LOG_FIELDS],
+      s3SuffixPath: "{DistributionId}/{yyyy}/{MM}/{dd}/{HH}",
+    });
+    delivery.addDependency(source);
+    // Written by the log delivery service for this account's delivery sources only.
+    const policy = bucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "CloudFrontAccessLogDelivery",
+        principals: [new iam.ServicePrincipal("delivery.logs.amazonaws.com")],
+        actions: ["s3:PutObject"],
+        resources: [bucket.arnForObjects(`${ACCESS_LOG_PREFIX}/*`)],
+        conditions: {
+          StringEquals: { "s3:x-amz-acl": "bucket-owner-full-control", "aws:SourceAccount": stack.account },
+          ArnLike: { "aws:SourceArn": stack.formatArn({ service: "logs", resource: "delivery-source", resourceName: "*", arnFormat: ArnFormat.COLON_RESOURCE_NAME }) },
+        },
+      }),
+    );
+    if (policy.policyDependable) delivery.node.addDependency(policy.policyDependable);
+    // The checks only read the legacy `Logging` property: logging is on, through the delivery.
+    suppressCheckov(this.distribution.node.defaultChild as CfnResource, CHECKOV_EXCEPTIONS.cloudfrontLogsV2);
+    acknowledge(this.distribution, {
+      id: "AwsSolutions-CFR3",
+      reason:
+        "Access logs go through CloudFront standard logging v2 (AWS::Logs::Delivery to the access-logs bucket), " +
+        "without the query string (D98 (9)); this rule only reads the legacy logging property.",
+    });
   }
 
   private acknowledgeFindings(): void {

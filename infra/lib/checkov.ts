@@ -52,6 +52,14 @@ export const CHECKOV_EXCEPTIONS = {
     comment: "Agreed PoC exception (AGENTS.md, D15): default CloudFront certificate, no custom domain",
   },
   /**
+   * The distribution logs through standard logging v2 (`AWS::Logs::Delivery`, D98 (9)), which this
+   * check does not see: it only reads the legacy `Logging` property, which always logs the query.
+   */
+  cloudfrontLogsV2: {
+    id: "CKV_AWS_86",
+    comment: "Agreed exception (AGENTS.md, D98 (9)): access logs via standard logging v2, without the query",
+  },
+  /**
    * The AgentCore managed harness pulls its image with these token APIs (no resource scope).
    * Applies to the agent execution role and to the permissions boundary of agent roles.
    */

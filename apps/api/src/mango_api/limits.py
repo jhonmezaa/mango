@@ -21,6 +21,7 @@ from mango_api import (
     activity,
     admin,
     approvals,
+    connections,
     directory,
     governance,
     group_admin,
@@ -136,6 +137,24 @@ LIMITS: dict[str, LimitSpec] = {
         MINUTE,
         shared=True,
         why="Writes of remote MCP registrations (D98 (17)): Identity calls and the provisioner.",
+    ),
+    "connections.connects": LimitSpec(
+        connections.CONNECTS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="«Conectar» of a remote MCP (D98 (17)): each probe calls the Gateway and Microsoft.",
+    ),
+    "connections.disconnects": LimitSpec(
+        connections.DISCONNECTS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="«Desconectar» of a remote MCP (D97 (3)): each one calls the Gateway.",
+    ),
+    "connections.callbacks": LimitSpec(
+        connections.CALLBACKS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="The return from Microsoft (D98 (1)): each one calls AgentCore Identity.",
     ),
     "approvals.runs": LimitSpec(
         approvals.RUNS_PER_MINUTE,

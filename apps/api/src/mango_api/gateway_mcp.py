@@ -20,10 +20,16 @@ from __future__ import annotations
 import json
 import logging
 import re
+import secrets
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Protocol
+
+from mango_core import invocation, remote_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -168,3 +174,131 @@ def open_session(
     if ready.status not in _NOTIFIED or isinstance((message or {}).get("error"), dict):
         raise NotStartedError(refusal("notifications/initialized", ready, message))
     return session
+
+
+# --- Calls of «Mis conexiones» (D97 (3), D98 (15)) ----------------------------------------
+
+
+class ConnectionOutcome(StrEnum):
+    ANSWERED = "answered"
+    """The tool answered: the vault has the person's token for that remote."""
+    CONSENT_REQUIRED = "consent_required"
+    """The Gateway has no token of the person (or just deleted it, on a disconnect)."""
+    FAILED = "failed"
+    """Anything else: refused, unreachable or an answer that cannot be read."""
+
+
+CONNECTION_SIGNATURE_SECONDS = 60
+CONSENT_RPC_CODE = -32001
+"""The form the ``RESPONSE`` interceptor gives the ``-32042`` of a remote target (D98 (16))."""
+
+
+def _consent_required(message: dict[str, Any], target: str) -> bool:
+    error = message.get("error")
+    if not isinstance(error, dict):
+        return False
+    data = error.get("data")
+    return (
+        error.get("code") == CONSENT_RPC_CODE
+        and error.get("message") == "consent_required"
+        and isinstance(data, dict)
+        and data.get("mango") == "consent_required"
+        and data.get("target") == target
+    )
+
+
+class GatewayConnections:
+    """The probe and the disconnect of a remote MCP, as the person (D97 (3)).
+
+    Both call the probe tool of the signed approved catalog with an invocation signature of
+    the reserved agent ``mangoconn`` and the claim ``cx``: the ``REQUEST`` interceptor lets
+    nothing else through on such a call, and only a ``disconnect`` keeps the documented
+    ``_meta`` with ``forceAuthentication``. Protocol ``2025-11-25``, the one the consent was
+    tested with. What the tool answers is discarded: never logged, never stored.
+    """
+
+    def __init__(
+        self,
+        *,
+        gateway_url: str,
+        invocation_key: bytes,
+        transport: Transport = post,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        if not gateway_url.startswith("https://") or not invocation_key:
+            raise ValueError("connections need an https Gateway and the invocation key")
+        self._url = gateway_url
+        self._key = invocation_key
+        self._transport = transport
+        self._now = clock
+
+    def call(  # noqa: PLR0911 - each return is one way the call can end
+        self,
+        *,
+        subject: str,
+        access_token: str,
+        token_expires_at: int,
+        registration_id: str,
+        tool: str,
+        arguments: dict[str, Any],
+        connection: invocation.Connection,
+    ) -> ConnectionOutcome:
+        """Call ``tool`` of the remote once. Never raises."""
+        now = int(self._now())
+        expires_at = min(token_expires_at, now + CONNECTION_SIGNATURE_SECONDS)
+        if expires_at <= now:
+            return ConnectionOutcome.FAILED
+        target = remote_mcp.target_name(registration_id)
+        gateway_tool = remote_mcp.gateway_tool_name(registration_id, tool)
+        try:
+            signature = invocation.sign(
+                self._key,
+                subject,
+                expires_at,
+                agent_id=remote_mcp.CONNECTION_AGENT_ID,
+                agent_version=1,
+                tools=[gateway_tool],
+                connection=connection,
+            )
+        except ValueError:
+            logger.exception("connection call could not be signed")
+            return ConnectionOutcome.FAILED
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            invocation.HEADER: signature,
+        }
+        request_id = secrets.token_hex(8)
+        params: dict[str, Any] = {"name": gateway_tool, "arguments": arguments}
+        if connection == "disconnect":
+            # The only _meta the interceptor lets through, and only on this call (D97 (3)).
+            params["_meta"] = remote_mcp.force_authentication_meta()
+        try:
+            session = open_session(
+                self._transport,
+                self._url,
+                headers,
+                request_id=request_id,
+                protocol_version=remote_mcp.MCP_PROTOCOL_VERSION,
+            )
+            if session is not None:
+                headers[SESSION_HEADER] = session
+            answer = self._transport(self._url, headers, rpc("tools/call", request_id, params))
+        except NotStartedError:
+            return ConnectionOutcome.FAILED
+        except (OSError, ValueError):
+            logger.exception("gateway connection call failed")
+            return ConnectionOutcome.FAILED
+        message = rpc_body(answer.body)
+        if message is not None and _consent_required(message, target):
+            return ConnectionOutcome.CONSENT_REQUIRED
+        result = message.get("result") if message is not None else None
+        if (
+            answer.status == HTTP_OK
+            and isinstance(result, dict)
+            and result.get("isError") is not True
+        ):
+            return ConnectionOutcome.ANSWERED
+        refusal("tools/call", answer, message)
+        return ConnectionOutcome.FAILED

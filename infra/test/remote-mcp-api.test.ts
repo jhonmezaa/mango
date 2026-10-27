@@ -74,6 +74,18 @@ describe("mango-api and remote MCP registrations", () => {
     }
   });
 
+  it("closes a person's consent only on the Gateway's workload identity (D98 (1))", () => {
+    const consent = bySid("CompleteRemoteConsent");
+    expect(actions(consent)).toEqual(["bedrock-agentcore:CompleteResourceTokenAuth"]);
+    const targets = text(consent.Resource);
+    expect(targets).toContain("workload-identity-directory/default");
+    expect(targets).toContain(`workload-identity-directory/default/workload-identity/mango-${ns}-tools-*`);
+    expect(targets).not.toContain("token-vault");
+    // Only this statement may close a consent; nothing else of the role names the action.
+    const others = statements.filter((s) => s.Sid !== "CompleteRemoteConsent");
+    expect(others.flatMap(actions)).not.toContain("bedrock-agentcore:CompleteResourceTokenAuth");
+  });
+
   it("reads the public key of the approved catalogs only through its alias, and never signs", () => {
     const key = bySid("RemoteMcpPublicKey");
     expect(actions(key)).toEqual(["kms:GetPublicKey"]);

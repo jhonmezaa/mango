@@ -38,6 +38,8 @@ export interface RemoteMcpApiProps {
  *   administrator asks, updated when the secret is rotated, deleted when a request is rejected
  *   or withdrawn. Identity keeps the secret in a Secrets Manager secret of its own, which the
  *   caller may need permissions on (to be confirmed live, V-1 of the plan).
+ * - Closing a person's consent with their own access token (`CompleteResourceTokenAuth`, D98 (1)) on
+ *   the Gateway's workload identity: «Mis conexiones» and its return view.
  * - The public half of the key that signs the approved catalogs, by alias: never `kms:Sign`.
  * - Starting the remote provisioner, and reading the signed profiles of the release.
  * - The stack's tags, copied to the providers (D76).
@@ -63,6 +65,9 @@ export class RemoteMcpApi extends Construct {
       `arn:${partition}:secretsmanager:${region}:${account}:secret:` +
       `bedrock-agentcore-identity!default/oauth2/${remoteProviderPrefix(ns)}*`;
     const keys = `arn:${partition}:kms:${region}:${account}:key/*`;
+    // The workload identity AgentCore creates for the Gateway (named as in `tools.ts`).
+    const directory = `arn:${partition}:bedrock-agentcore:${region}:${account}:workload-identity-directory/default`;
+    const gatewayIdentity = `${directory}/workload-identity/mango-${ns}-tools-*`;
     const stateMachine = `arn:${partition}:states:${region}:${account}:stateMachine:${remoteProvisionerName(ns)}`;
 
     const statements = [
@@ -86,6 +91,13 @@ export class RemoteMcpApi extends Construct {
           "secretsmanager:TagResource",
         ],
         resources: [secrets],
+      }),
+      // The person's consent, closed with the person's own access token (D98 (1)): Identity
+      // checks that the session is theirs. Not the Gateway's credentials (finding of 2026-10-26).
+      new iam.PolicyStatement({
+        sid: "CompleteRemoteConsent",
+        actions: ["bedrock-agentcore:CompleteResourceTokenAuth"],
+        resources: [directory, gatewayIdentity],
       }),
       new iam.PolicyStatement({
         sid: "RemoteMcpPublicKey",
@@ -136,6 +148,12 @@ export class RemoteMcpApi extends Construct {
       {
         id: `AwsSolutions-IAM5[Resource::${secrets}]`,
         reason: "The secret AgentCore Identity keeps for each of those providers, under the same prefix.",
+      },
+      {
+        id: `AwsSolutions-IAM5[Resource::${gatewayIdentity}]`,
+        reason:
+          "The workload identity AgentCore creates for the Gateway mango-<ns>-tools-<suffix>: its suffix is " +
+          "AgentCore's and CloudFormation does not return its ARN (finding of 2026-10-27).",
       },
       {
         id: `AwsSolutions-IAM5[Resource::${keys}]`,
