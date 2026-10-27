@@ -322,6 +322,46 @@ function view() {
   };
 }
 
+/** A registration as the person's side of the mock sees it (Mis conexiones, Builder, chat). */
+export interface UsableRemote {
+  id: string;
+  organization: string;
+  status: 'active' | 'disabled';
+  secretExpired: boolean;
+  tools: string[];
+}
+
+/** The mock profile's names, for the person's side. */
+export const REMOTE_PROFILE = {
+  id: PROFILE.id,
+  name: PROFILE.name,
+  operator: PROFILE.operator,
+  provider: PROFILE.provider,
+  link_hosts: PROFILE.link_hosts,
+};
+
+/** Registrations the caller may use (`UseRemoteMcp`): active or disabled, of their groups. */
+export function usableRemotes(groups: readonly string[]): UsableRemote[] {
+  settle();
+  return registrations.flatMap((reg) =>
+    (reg.status === 'active' || reg.status === 'disabled') &&
+    reg.groups.some((group) => groups.includes(group))
+      ? [
+          {
+            id: reg.id,
+            organization: reg.organization,
+            status: reg.status,
+            secretExpired: secretLevel(reg.secret_expires_on) === 'expired',
+            tools: PROFILE.toolsets
+              .filter((t) => reg.toolsets.includes(t.id))
+              .flatMap((t) => t.tools)
+              .sort(),
+          },
+        ]
+      : [],
+  );
+}
+
 // --- Validation ---------------------------------------------------------------------------------
 
 function appOf(

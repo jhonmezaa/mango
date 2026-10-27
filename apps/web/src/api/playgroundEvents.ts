@@ -1,11 +1,13 @@
 import { z } from 'zod';
 
 import type { SseMessage } from './sse';
+import { remoteConnectionEvent } from './chatEvents';
 import { toolStatusSchema } from './schemas';
 
 // Events of POST /api/playground/runs (D91): the chat's `delta`, `tool` and `status`, plus
-// `simulated_write` (a write tool the agent asked for, never run) and a `done` with the flags
-// of the result card. Unknown events are ignored; a known one with a bad payload is an error.
+// `simulated_write` (a write tool the agent asked for, never run), the chat's
+// `remote_connection_required` (D98 (20)) and a `done` with the flags of the result card.
+// Unknown events are ignored; a known one with a bad payload is an error.
 
 const toolEvent = z.object({ name: z.string().max(128), status: toolStatusSchema });
 const deltaEvent = z.object({ text: z.string() });
@@ -37,6 +39,7 @@ export type PlaygroundEvent =
   | ({ type: 'status' } & z.infer<typeof statusEvent>)
   | ({ type: 'delta' } & z.infer<typeof deltaEvent>)
   | ({ type: 'simulated_write' } & z.infer<typeof simulatedWriteEvent>)
+  | ({ type: 'remote_connection_required' } & z.infer<typeof remoteConnectionEvent>)
   | ({ type: 'done' } & z.infer<typeof doneEvent>)
   | ({ type: 'error' } & z.infer<typeof errorEvent>);
 
@@ -47,6 +50,7 @@ const schemas = {
   status: statusEvent,
   delta: deltaEvent,
   simulated_write: simulatedWriteEvent,
+  remote_connection_required: remoteConnectionEvent,
   done: doneEvent,
   error: errorEvent,
 } as const;

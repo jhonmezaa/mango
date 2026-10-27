@@ -45,13 +45,28 @@ export function shownKind(
   return item.kind === 'remote_connect' ? 'run' : item.kind;
 }
 
+/**
+ * The service a `remote_connect` notice asks to connect (D98 (20)), from the person's
+ * connections; null for any other notice, or while the registration is not among them (it is then
+ * shown as the failed run it also is).
+ */
+export function remoteServiceOf(
+  item: Pick<InboxItem, 'kind' | 'remote' | 'run'>,
+  serviceOf: (registrationId: string) => string | null,
+): string | null {
+  if (item.kind !== 'remote_connect' || !item.remote || !item.run) return null;
+  return serviceOf(item.remote.registration_id);
+}
+
 /** Key of an item in the list: kinds have different ids, but never trust that. */
 export function keyOf(item: Pick<InboxItem, 'kind' | 'item_id'>): string {
   return `${item.kind}:${item.item_id}`;
 }
 
 /** Design: «Te piden aprobar: …» or «{tarea} · completada / no se completó». Plain text. */
-export function titleOf(t: TFunction, item: InboxItem): string {
+export function titleOf(t: TFunction, item: InboxItem, service: string | null = null): string {
+  // Design `remoteTask`: «Conecta tu cuenta de {servicio}».
+  if (service) return t('connections.inbox.title', { service });
   if (item.approval) {
     return t('inbox.approvalTitle', {
       action: item.approval.description || item.approval.tool,
@@ -74,7 +89,10 @@ export function titleOf(t: TFunction, item: InboxItem): string {
  * Design body: for an approval `tool · k=v, … · política` (as the chat card), for a run the first
  * line of the report or the reason (a fixed text per code, as Schedules). Always plain text.
  */
-export function bodyOf(t: TFunction, item: InboxItem): string {
+export function bodyOf(t: TFunction, item: InboxItem, service: string | null = null): string {
+  if (service && item.run) {
+    return t('connections.inbox.body', { task: item.run.task_name, service });
+  }
   if (item.approval) {
     const args = argumentEntries(item.approval)
       .map(([key, value]) => t('approvals.card.param', { key, value }))

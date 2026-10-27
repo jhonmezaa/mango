@@ -18,6 +18,7 @@ import { orgChart } from './es/orgChart';
 import { people } from './es/people';
 import { playground } from './es/playground';
 import { remoteMcp } from './es/remoteMcp';
+import { connections } from './es/connections';
 import { schedules } from './es/schedules';
 import { settings } from './es/settings';
 import { skills } from './es/skills';
@@ -52,6 +53,7 @@ export const es = {
   people,
   mcpCatalog,
   remoteMcp,
+  connections,
   approvals,
   schedules,
   inbox,

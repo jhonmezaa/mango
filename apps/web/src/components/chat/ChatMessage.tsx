@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { lazy, memo, Suspense, useState } from 'react';
+import { lazy, memo, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
@@ -25,6 +25,10 @@ import {
   X2Icon,
 } from '../icons';
 import { copyText } from '../../lib/clipboard';
+import { useConnections } from '../../pages/connections/ConnectionsContext';
+import { linkSourcesOf } from '../../pages/connections/model';
+import { ReadMark } from '../../pages/connections/ReadMark';
+import type { RemoteLinkSource } from '../../security/remoteLinks';
 import { Soon } from '../Soon';
 import { formatMessageTime } from './threadGroups';
 import { KnowledgeCitations, KnowledgeSteps } from './KnowledgeCitations';
@@ -166,6 +170,22 @@ interface Props {
   retryText: string | null;
 }
 
+const NO_SOURCES: readonly string[] = [];
+const NO_LINK_SOURCES: readonly RemoteLinkSource[] = [];
+
+/** The remote services a stored answer read, from the person's connections (read on demand). */
+function useRemoteSources(registrations: readonly string[]): readonly RemoteLinkSource[] {
+  const { list, ensure } = useConnections();
+  const used = registrations.length > 0;
+  useEffect(() => {
+    if (used) ensure();
+  }, [used, ensure]);
+  return useMemo(
+    () => (used ? linkSourcesOf(registrations, list) : NO_LINK_SOURCES),
+    [used, registrations, list],
+  );
+}
+
 // Memoized: while a turn streams, only the message that changes re-renders.
 export const ChatMessage = memo(function ChatMessage({
   message,
@@ -181,6 +201,7 @@ export const ChatMessage = memo(function ChatMessage({
     0,
   );
   const progressLabel = useProgressLabel(message.progress, running);
+  const remote = useRemoteSources(message.remoteSources ?? NO_SOURCES);
 
   if (message.role === 'user') {
     const time = formatMessageTime(message.createdAt);
@@ -236,10 +257,16 @@ export const ChatMessage = memo(function ChatMessage({
           <ToolGroup tools={message.tools} live={false} />
         )}
         <KnowledgeSteps searches={message.searches ?? NO_SEARCHES} />
+        {/* Design remote-core.jsx: the answer read a remote service (content from outside). */}
+        {remote.map((source) => (
+          <ReadMark key={source.service} service={source.service} />
+        ))}
         {message.content ? (
           // Until the markdown chunk loads, the text is shown as plain text (escaped by React).
           <Suspense fallback={<p className="md whitespace-pre-wrap">{message.content}</p>}>
-            <ChatMarkdown streaming={writing}>{message.content}</ChatMarkdown>
+            <ChatMarkdown streaming={writing} remote={remote}>
+              {message.content}
+            </ChatMarkdown>
           </Suspense>
         ) : null}
         {/* The phase stays under the partial text while the agent calls tools or the next block

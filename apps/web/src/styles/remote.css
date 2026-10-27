@@ -414,6 +414,9 @@
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
   }
+  .pg-connect .rm-card {
+    margin: 10px 0 0;
+  }
   .rm-card.is-expired .rm-tile {
     opacity: 0.6;
   }
@@ -438,7 +441,8 @@
     color: var(--text-muted);
     font-weight: 400;
   }
-  .rm-md a[data-host-kind='other']::after {
+  /* The web renders chat links as buttons (`.md-link`), not anchors. */
+  .rm-md .md-link[data-host-kind='other']::after {
     content: ' ' attr(data-host);
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: 0.78em;

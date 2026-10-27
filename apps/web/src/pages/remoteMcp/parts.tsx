@@ -12,7 +12,13 @@ import {
 } from './model';
 
 /** Design `RmTile`: the initials of the service, never an image from outside. */
-export function RmTile({ profile, lg = false }: { profile: RemoteProfile; lg?: boolean }) {
+export function RmTile({
+  profile,
+  lg = false,
+}: {
+  profile: Pick<RemoteProfile, 'name'>;
+  lg?: boolean;
+}) {
   return (
     <span className={lg ? 'rm-tile lg' : 'rm-tile'} aria-hidden="true">
       {initialsOf(profile.name)}
@@ -25,7 +31,7 @@ export function RmBadges({
   profile,
   compact = false,
 }: {
-  profile: RemoteProfile;
+  profile: Pick<RemoteProfile, 'data_leaves_aws' | 'operator'>;
   compact?: boolean;
 }) {
   const { t } = useTranslation();

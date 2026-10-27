@@ -421,3 +421,41 @@ describe('skills of a version (D92)', () => {
     ).toMatchObject({ key: 'serverSkillServerMissing', section: 'skills' });
   });
 });
+
+describe('remote MCP tools (D98 (17))', () => {
+  const remote = {
+    id: 'remote-abcdefghij23',
+    registration_id: 'abcdefghij23',
+    service: 'Azure DevOps',
+    operator: 'Microsoft',
+    organization: 'empresa',
+    tools: [
+      {
+        ref: 'remote-abcdefghij23.wit_work_item',
+        name: 'wit_work_item',
+        description: '',
+        access: 'read',
+        audience: 'all',
+        central_groups_only: false,
+        enabled: true,
+        requires_service: null,
+        unclassified: false,
+      },
+    ],
+  };
+
+  it('indexes them as read tools of the registration', () => {
+    const index = toolIndex(context.catalog, [remote]);
+    expect(index.get('remote-abcdefghij23.wit_work_item')).toMatchObject({
+      enabled: true,
+      write: false,
+      centralOnly: false,
+    });
+  });
+
+  it('flags a remote tool the caller can no longer give', () => {
+    const tools = ['remote-abcdefghij23.wit_work_item'];
+    expect(keys(precheck(definition({ tools }), { ...context, remotes: [remote] }))).toEqual([]);
+    expect(keys(precheck(definition({ tools }), context))).toEqual(['toolNotEnabledOne']);
+  });
+});

@@ -1,26 +1,40 @@
-import { memo, useState, type ReactNode } from 'react';
+import { createContext, memo, useContext, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { RemoteLinkDialog } from '../security/RemoteLinkDialog';
+import { classifyRemoteLink, type RemoteLinkSource } from '../security/remoteLinks';
 import { markdownUrlTransform, parseExternalHttpUrl } from '../security/safeUrl';
 import { ExternalLinkDialog } from './ExternalLinkDialog';
 import { rehypeNumericColumns } from './markdownTables';
 
+/** The remote services the answer read (D93): its links go through the reinforced dialog. */
+const RemoteSources = createContext<readonly RemoteLinkSource[]>([]);
+
 function ExternalLink({ href, children }: { href: string | undefined; children: ReactNode }) {
   const [pending, setPending] = useState<URL | null>(null);
+  const remote = useContext(RemoteSources);
   const url = href ? parseExternalHttpUrl(href) : null;
   if (!url) {
     // Unsafe or relative target: keep the text, drop the link.
     return <span>{children}</span>;
   }
+  // Design remote-core.jsx: a link of a remote answer shows where it goes when it is not the
+  // company's organization of that service (A1).
+  const link = remote.length > 0 ? classifyRemoteLink(url, remote) : null;
+  const close = () => {
+    setPending(null);
+  };
   return (
     <>
       <button
         type="button"
         className="md-link"
         title={url.href}
+        data-host={link?.label}
+        data-host-kind={link ? (link.kind === 'own' ? 'service' : 'other') : undefined}
         onClick={() => {
           setPending(url);
         }}
@@ -30,12 +44,11 @@ function ExternalLink({ href, children }: { href: string | undefined; children: 
       {pending &&
         // Portaled: the link sits inside markdown paragraphs, where a dialog cannot be nested.
         createPortal(
-          <ExternalLinkDialog
-            url={pending}
-            onClose={() => {
-              setPending(null);
-            }}
-          />,
+          remote.length > 0 ? (
+            <RemoteLinkDialog url={pending} sources={remote} onClose={close} />
+          ) : (
+            <ExternalLinkDialog url={pending} onClose={close} />
+          ),
           document.body,
         )}
     </>
@@ -71,7 +84,11 @@ interface Props {
   children: string;
   /** Shows the blinking cursor after the text while the response is streaming. */
   streaming?: boolean;
+  /** Remote services the answer read: links are classified and confirmed with their dialog. */
+  remote?: readonly RemoteLinkSource[];
 }
+
+const NO_REMOTE: readonly RemoteLinkSource[] = [];
 
 /**
  * Renders untrusted LLM markdown (TM-012):
@@ -82,18 +99,27 @@ interface Props {
  * - the only rehype plugin is ours and only adds a class to table cells (no raw HTML);
  * - no Mermaid, KaTeX or other plugins that execute or inject content.
  */
-export const ChatMarkdown = memo(function ChatMarkdown({ children, streaming = false }: Props) {
+export const ChatMarkdown = memo(function ChatMarkdown({
+  children,
+  streaming = false,
+  remote = NO_REMOTE,
+}: Props) {
+  const classes = ['md'];
+  if (streaming) classes.push('md-streaming');
+  if (remote.length > 0) classes.push('rm-md');
   return (
-    <div className={streaming ? 'md md-streaming' : 'md'}>
-      <Markdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={rehypePlugins}
-        skipHtml
-        urlTransform={markdownUrlTransform}
-        components={components}
-      >
-        {children}
-      </Markdown>
-    </div>
+    <RemoteSources value={remote}>
+      <div className={classes.join(' ')}>
+        <Markdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          skipHtml
+          urlTransform={markdownUrlTransform}
+          components={components}
+        >
+          {children}
+        </Markdown>
+      </div>
+    </RemoteSources>
   );
 });

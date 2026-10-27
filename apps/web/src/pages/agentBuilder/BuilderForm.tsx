@@ -31,6 +31,7 @@ import {
   supervisorOptions,
   toInput,
   toolIndex,
+  type CatalogRemote,
   type Definition,
   type Problem,
   type SectionId,
@@ -88,6 +89,8 @@ interface Failure {
 }
 
 const SCROLL_OFFSET = 140;
+const NO_REMOTES: readonly CatalogRemote[] = [];
+const NO_REMOTE_AUDIENCE: NonNullable<Version['remotes']> = [];
 
 /** The Builder once its data is loaded (design admin.jsx `AgentAdmin`). */
 export function BuilderForm({ data }: { data: BuilderData }) {
@@ -128,7 +131,10 @@ export function BuilderForm({ data }: { data: BuilderData }) {
     () => new Set(pre.flatMap((item) => (item.section ? [item.section] : []))),
     [pre],
   );
-  const tools = useMemo(() => toolIndex(context.catalog), [context.catalog]);
+  const tools = useMemo(
+    () => toolIndex(context.catalog, context.remotes),
+    [context.catalog, context.remotes],
+  );
   const writeCount = snap.tools.filter((ref) => tools.get(ref)?.write).length;
   const areaGroups = useMemo(() => nonCentralGroups(snap, context), [snap, context]);
   const supervisors = useMemo(
@@ -541,6 +547,9 @@ export function BuilderForm({ data }: { data: BuilderData }) {
                 catalog={context.catalog}
                 areaGroups={areaGroups}
                 userCount={snap.users.length}
+                remotes={context.remotes ?? NO_REMOTES}
+                remoteAudience={live?.remotes ?? NO_REMOTE_AUDIENCE}
+                groups={snap.groups}
                 onChange={change}
               />
               <KnowledgeSection

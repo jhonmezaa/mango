@@ -29,6 +29,7 @@ import { fromApiMessage, type DisplayMessage, type ErrorKey } from '../hooks/cha
 import { useChatStream } from '../hooks/useChatStream';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { ConnectCard } from './connections/ConnectCard';
 import { NotFoundPage } from './NotFoundPage';
 
 // Only agents with write tools ever show it: it stays out of the main chunk until then.
@@ -59,6 +60,11 @@ function retryPrompt(messages: DisplayMessage[]): string | null {
 }
 
 type LoadResult = { id: string; ok: boolean } | null;
+
+/** When the pending consent of a card began: when its event arrived, or the stored message. */
+function startOf(message: DisplayMessage): number {
+  return message.connectionAt ?? (message.createdAt ? Date.parse(message.createdAt) : Date.now());
+}
 
 // Shapes of the conversation skeleton (design chat.jsx `ChatSkeleton`): two questions, each
 // followed by the lines of its answer.
@@ -541,6 +547,15 @@ export function ChatPage() {
                     />
                     {/* Design chat.jsx: the write actions of the answer wait here for a person
                         (D27). What a card shows is what the API stored, never the model's text. */}
+                    {/* Design remote-core.jsx: a notice of Mango, outside the answer, when a
+                        remote tool asked the person to connect their account (D98 (20)). */}
+                    {message.connectionRequired?.map((registration) => (
+                      <ConnectCard
+                        key={registration}
+                        registrationId={registration}
+                        startedAt={startOf(message)}
+                      />
+                    ))}
                     {message.approvals && message.approvals.length > 0 ? (
                       <Suspense fallback={null}>
                         {message.approvals.map((approval) => (

@@ -132,6 +132,8 @@ export function usePlaygroundRuns(
         text: '',
         tools: [],
         writes: [],
+        connections: [],
+        connectionAt: null,
         done: null,
       }));
       setRuns((list) => [{ id: runId, input, entries }, ...list]);

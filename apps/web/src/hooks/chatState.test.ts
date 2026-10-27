@@ -422,3 +422,29 @@ describe('chatReducer · knowledge searches (D88 (44))', () => {
     expect(message.citations).toEqual([{ knowledgeBase: 'RH', document: 'a.pdf', page: null }]);
   });
 });
+
+describe('chatReducer · remote connections (D98 (20))', () => {
+  it('keeps one card per registration, timed by the wall clock', () => {
+    const event = { type: 'remote_connection_required', registration_id: 'abcdefghij23' } as const;
+    let state = chatReducer(start(), { type: 'event', assistantId: 'a', event, receivedAt: 5 });
+    state = chatReducer(state, { type: 'event', assistantId: 'a', event, receivedAt: 9 });
+    const message = state.messages.find((item) => item.id === 'a');
+    expect(message?.connectionRequired).toEqual(['abcdefghij23']);
+    // Not the performance clock of `receivedAt`: the card counts down real minutes.
+    expect(message?.connectionAt).toBeGreaterThan(1_000_000_000_000);
+  });
+
+  it('reads the stored cards and sources of a message', () => {
+    const message = fromApiMessage({
+      message_id: 'm',
+      role: 'assistant',
+      content: 'ok',
+      created_at: '2026-10-27T00:00:00Z',
+      tools: [],
+      connection_required: ['abcdefghij23'],
+      remote_sources: ['klmnopqrst45'],
+    });
+    expect(message.connectionRequired).toEqual(['abcdefghij23']);
+    expect(message.remoteSources).toEqual(['klmnopqrst45']);
+  });
+});

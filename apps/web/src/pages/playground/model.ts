@@ -102,6 +102,10 @@ export interface Entry {
   tools: ToolCall[];
   /** Write tools the agent asked for: never run (D91 (2)). */
   writes: string[];
+  /** Remote registrations that asked the person to connect (D98 (20)): a card each. */
+  connections: string[];
+  /** Wall clock (ms) when the first of them arrived. */
+  connectionAt: number | null;
   done: PlaygroundDone | null;
 }
 
@@ -145,6 +149,14 @@ export function applyEvent(entry: Entry, event: PlaygroundEvent, now: number): E
         : [...entry.writes, event.tool];
       return { ...entry, tools, writes };
     }
+    case 'remote_connection_required':
+      return entry.connections.includes(event.registration_id)
+        ? entry
+        : {
+            ...entry,
+            connections: [...entry.connections, event.registration_id],
+            connectionAt: entry.connectionAt ?? Date.now(),
+          };
     case 'done':
       return { ...entry, state: 'done', done: event };
     case 'error':

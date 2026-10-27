@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router';
 
@@ -16,6 +16,8 @@ import { SCREENS } from './layouts/screens';
 import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './pages/LoginPage';
 import { RestoringSession } from './pages/login/RestoringSession';
+import { capturedReturn } from './pages/connections/consentReturn';
+import { NoSessionReturn } from './pages/connections/NoSessionReturn';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 // Admin screens are only for admins: they load on demand and stay out of the main chunk.
@@ -135,6 +137,7 @@ export function AppRoutes() {
 
 function AuthGate({ config }: { config: RuntimeConfig }) {
   const { status, retryRestore } = useAuth();
+  const [signingIn, setSigningIn] = useState(false);
   if (status === 'loading') {
     // Coming back from the IdP is a sign-in in progress, not a session being recovered.
     return (
@@ -143,7 +146,19 @@ function AuthGate({ config }: { config: RuntimeConfig }) {
       />
     );
   }
-  if (status === 'unauthenticated') return <LoginPage config={config} />;
+  if (status === 'unauthenticated') {
+    // Back from a remote service's sign-in without a Mango session (design `nosession`).
+    if (!signingIn && capturedReturn()?.kind === 'session') {
+      return (
+        <NoSessionReturn
+          onSignIn={() => {
+            setSigningIn(true);
+          }}
+        />
+      );
+    }
+    return <LoginPage config={config} />;
+  }
   // The renewal did not answer: that is not «no session», so no sign-in form.
   if (status === 'unavailable') return <FullPageRetry onRetry={retryRestore} />;
   return (

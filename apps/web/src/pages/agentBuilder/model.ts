@@ -12,6 +12,8 @@ export type Version = OperationOutput<'readVersion'>;
 export type Definition = Version['definition'];
 export type DefinitionInput = OperationInput<'postAgent'>['body']['definition'];
 export type Connector = OperationOutput<'getCatalog'>['items'][number];
+/** A remote MCP registration the caller may give tools of (D98 (17)): never in `items`. */
+export type CatalogRemote = NonNullable<OperationOutput<'getCatalog'>['remotes']>[number];
 export type Model = OperationOutput<'getModels'>['items'][number];
 export type Group = OperationOutput<'listGroups'>['items'][number];
 export type OrgNode = OperationOutput<'getOrg'>['nodes'][number];
@@ -102,6 +104,8 @@ export const TEMPLATES: readonly Template[] = [
 export interface BuilderContext {
   models: readonly Model[];
   catalog: readonly Connector[];
+  /** Remote MCP registrations of the caller's groups, with their signed tools (D98 (17)). */
+  remotes?: readonly CatalogRemote[];
   groups: readonly Group[];
   /** The knowledge bases the caller sees (D88); null when they could not be read. */
   knowledge: readonly KnowledgeBase[] | null;
@@ -121,8 +125,24 @@ export interface ToolInfo {
  * Every tool of the catalog by its reference. A tool can be chosen only while its server serves
  * it (`tools[].enabled`): during an update a pack may serve part of the tools it lists.
  */
-export function toolIndex(catalog: readonly Connector[]): Map<string, ToolInfo> {
+export function toolIndex(
+  catalog: readonly Connector[],
+  remotes: readonly CatalogRemote[] = [],
+): Map<string, ToolInfo> {
   const index = new Map<string, ToolInfo>();
+  // Remote tools are all read tools (D93): enabled while their registration is active and its
+  // signed catalog names them, as the API reports it.
+  for (const remote of remotes) {
+    for (const tool of remote.tools) {
+      index.set(tool.ref, {
+        ref: tool.ref,
+        connector: null,
+        enabled: tool.enabled,
+        write: false,
+        centralOnly: false,
+      });
+    }
+  }
   for (const connector of catalog) {
     for (const tool of connector.tools) {
       index.set(tool.ref, {
@@ -197,7 +217,7 @@ export function toInput(
   context: BuilderContext,
   defaultDescription: string,
 ): DefinitionInput {
-  const tools = toolIndex(context.catalog);
+  const tools = toolIndex(context.catalog, context.remotes);
   const selected = new Set(definition.tools);
   const approval = [
     ...definition.approval_tools.filter((ref) => selected.has(ref)),
@@ -420,7 +440,7 @@ export function precheck(
     out.push(problem('model_without_tools:allowed_models', 'modelWithoutTools', 'brain', noTools));
   }
 
-  const tools = toolIndex(context.catalog);
+  const tools = toolIndex(context.catalog, context.remotes);
   const off = definition.tools.filter((ref) => !tools.get(ref)?.enabled);
   if (off.length > 0) {
     out.push(

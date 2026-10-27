@@ -136,6 +136,12 @@ export interface DisplayMessage {
   searches?: KnowledgeSearch[];
   /** Sources of the answer, from the searches of the turn or the stored message. */
   citations?: Citation[];
+  /** Remote registrations that asked the person to connect (D98 (20)): one card each. */
+  connectionRequired?: string[];
+  /** Client clock (ms) when the first of them arrived; stored messages use `createdAt`. */
+  connectionAt?: number;
+  /** Remote registrations whose tools answered («Leyó {servicio}», link dialog A1). */
+  remoteSources?: string[];
   /** ISO timestamp: `created_at` for loaded history, the client clock for messages sent now. */
   createdAt?: string;
   errorKey?: ErrorKey;
@@ -229,6 +235,8 @@ export function fromApiMessage(
       document: c.document,
       page: c.page ?? null,
     })),
+    connectionRequired: message.connection_required ?? [],
+    remoteSources: message.remote_sources ?? [],
     status: 'done',
     createdAt: message.created_at,
   };
@@ -314,6 +322,20 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             ...message,
             approvals: [...(message.approvals ?? []), event.approval],
           }));
+        case 'remote_connection_required':
+          return updateMessage(state, assistantId, (message) =>
+            message.connectionRequired?.includes(event.registration_id)
+              ? message
+              : {
+                  ...message,
+                  connectionRequired: [
+                    ...(message.connectionRequired ?? []),
+                    event.registration_id,
+                  ],
+                  // Wall clock: the card counts down the 10 minutes of the pending consent.
+                  connectionAt: message.connectionAt ?? Date.now(),
+                },
+          );
         case 'status': {
           // A phase this client does not know yet is shown as plain "thinking".
           const progress: TurnProgress = isProgressPhase(event.phase)

@@ -133,6 +133,7 @@ async function load(api: ApiClient, target: Target | null, isAdmin: boolean): Pr
   const context: BuilderContext = {
     models: models.items,
     catalog: catalog.items,
+    remotes: catalog.remotes,
     groups: groups.items,
     knowledge,
     skills,

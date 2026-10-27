@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import type { SseMessage } from './sse';
-import { approvalSchema, conversationIdSchema, toolStatusSchema } from './schemas';
+import {
+  approvalSchema,
+  conversationIdSchema,
+  registrationIdSchema,
+  toolStatusSchema,
+} from './schemas';
 
 const conversationEvent = z.object({ conversation_id: conversationIdSchema });
 const toolEvent = z.object({ name: z.string().max(128), status: toolStatusSchema });
@@ -34,6 +39,12 @@ const knowledgeEvent = z.object({
   sources: z.array(citationSchema).max(20),
 });
 
+/**
+ * A tool of a remote MCP asked the person to connect their account (D98 (20)): only the
+ * registration, never a URL. The card is built from it and the person's connections.
+ */
+export const remoteConnectionEvent = z.object({ registration_id: registrationIdSchema });
+
 export type ChatEvent =
   | ({ type: 'conversation' } & z.infer<typeof conversationEvent>)
   | ({ type: 'tool' } & z.infer<typeof toolEvent>)
@@ -41,6 +52,7 @@ export type ChatEvent =
   | ({ type: 'delta' } & z.infer<typeof deltaEvent>)
   | { type: 'approval'; approval: z.infer<typeof approvalSchema> }
   | ({ type: 'knowledge' } & z.infer<typeof knowledgeEvent>)
+  | ({ type: 'remote_connection_required' } & z.infer<typeof remoteConnectionEvent>)
   | ({ type: 'done' } & z.infer<typeof doneEvent>)
   | ({ type: 'error' } & z.infer<typeof errorEvent>);
 
@@ -54,6 +66,7 @@ const schemas = {
   status: statusEvent,
   delta: deltaEvent,
   knowledge: knowledgeEvent,
+  remote_connection_required: remoteConnectionEvent,
   done: doneEvent,
   error: errorEvent,
 } as const;

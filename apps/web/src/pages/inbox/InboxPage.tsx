@@ -14,6 +14,7 @@ import {
   ArrowRightIcon,
   ChevronLeftIcon,
   ClockIcon,
+  ExternalIcon,
   InboxIcon,
   LockIcon,
   RefreshIcon,
@@ -27,6 +28,7 @@ import { ApprovalDecision } from '../approvals/ApprovalDecision';
 import type { Approval } from '../approvals/model';
 import { SourceDecision, SourceFacts } from '../approvals/SourceCard';
 import { knowledgePath } from '../approvals/sources';
+import { useConnections } from '../connections/ConnectionsContext';
 import { RemoteInboxDetail, RemoteInboxRow } from '../remoteMcp/inbox';
 import { useRemoteInbox } from '../remoteMcp/inboxItems';
 import { ReportDownload } from '../schedules/reports';
@@ -42,6 +44,7 @@ import {
   shownKind,
   RUN_ID,
   TASK_ID,
+  remoteServiceOf,
   titleOf,
   type InboxItem,
   type InboxPage as Page,
@@ -84,6 +87,17 @@ function replaceItem(items: readonly InboxItem[], next: InboxItem): InboxItem[] 
   return items.map((item) => (keyOf(item) === key ? next : item));
 }
 
+/** The service of a `remote_connect` notice, once the person's connections are read. */
+function useRemoteService(item: InboxItem | null): string | null {
+  const { byRegistration, ensure } = useConnections();
+  const remote = item?.kind === 'remote_connect';
+  useEffect(() => {
+    if (remote) ensure();
+  }, [remote, ensure]);
+  if (!item) return null;
+  return remoteServiceOf(item, (id) => byRegistration(id)?.service ?? null);
+}
+
 function InboxRow({
   item,
   active,
@@ -96,9 +110,15 @@ function InboxRow({
   onOpen: (item: InboxItem) => void;
 }) {
   const { t } = useTranslation();
-  // Design `ICON`: a proposal of a knowledge base, an approval or a run.
-  const Icon =
-    item.kind === 'kbsource' ? BookOpenIcon : item.kind === 'approval' ? LockIcon : ClockIcon;
+  const service = useRemoteService(item);
+  // Design `ICON`: a proposal of a knowledge base, an approval, a run or a remote to connect.
+  const Icon = service
+    ? ExternalIcon
+    : item.kind === 'kbsource'
+      ? BookOpenIcon
+      : item.kind === 'approval'
+        ? LockIcon
+        : ClockIcon;
   const mono = shownKind(item) !== 'run';
   const classes = ['inbox-row'];
   if (active) classes.push('on');
@@ -119,14 +139,18 @@ function InboxRow({
         role={item.read ? undefined : 'img'}
         aria-label={item.read ? undefined : t('inbox.unreadDot')}
       />
-      <span className={shownKind(item) === 'run' ? 'inbox-ic' : 'inbox-ic is-amber'}>
+      <span className={shownKind(item) === 'run' && !service ? 'inbox-ic' : 'inbox-ic is-amber'}>
         <Icon size={15} />
       </span>
       <span className="inbox-row-main">
-        <span className="inbox-row-t">{titleOf(t, item)}</span>
+        <span className="inbox-row-t">{titleOf(t, item, service)}</span>
         <span className="inbox-row-s">
-          {item.agent_name ? `${item.agent_name} · ` : ''}
-          {mono ? <span className="mono inbox-row-mono">{bodyOf(t, item)}</span> : bodyOf(t, item)}
+          {item.agent_name && !service ? `${item.agent_name} · ` : ''}
+          {mono ? (
+            <span className="mono inbox-row-mono">{bodyOf(t, item)}</span>
+          ) : (
+            bodyOf(t, item, service)
+          )}
         </span>
       </span>
       <span className="inbox-row-time">{formatRelative(item.at, now)}</span>
@@ -358,6 +382,8 @@ export function InboxPage() {
 
   const list = ready ? ready.items.filter((item) => matchesView(item, view)) : [];
   const current = ready?.items.find((item) => keyOf(item) === selectedKey) ?? null;
+  const currentService = useRemoteService(current);
+  const { openMine } = useConnections();
   // Requests of remote services for administrators, on top (design `RM.inboxItems`). They have
   // no read or archived state on the server, so only «Todo» and «Aprobaciones» list them.
   const remoteShown = view === 'all' || view === 'approvals' ? remoteItems : [];
@@ -536,7 +562,11 @@ export function InboxPage() {
                 <ChevronLeftIcon size={12} /> {t('inbox.backToList')}
               </button>
               <div className="inbox-detail-h">
-                <Badge>{t(`inbox.type.${shownKind(current)}`)}</Badge>
+                <Badge>
+                  {currentService
+                    ? t('connections.inbox.type')
+                    : t(`inbox.type.${shownKind(current)}`)}
+                </Badge>
                 <span className="inbox-detail-tools">
                   <button
                     type="button"
@@ -560,12 +590,14 @@ export function InboxPage() {
                 </span>
               </div>
               <h2 className="inbox-detail-t" ref={detailTitle} tabIndex={-1}>
-                {titleOf(t, current)}
+                {titleOf(t, current, currentService)}
               </h2>
               <div className="inbox-detail-m">
-                {current.source
-                  ? t('inbox.knowledgeBases')
-                  : (current.agent_name ?? t('inbox.system'))}{' '}
+                {currentService
+                  ? t('connections.inbox.source')
+                  : current.source
+                    ? t('inbox.knowledgeBases')
+                    : (current.agent_name ?? t('inbox.system'))}{' '}
                 · {formatRelative(current.at, now)}
               </div>
               <p
@@ -573,7 +605,7 @@ export function InboxPage() {
                   shownKind(current) === 'run' ? 'inbox-detail-b' : 'inbox-detail-b mono is-mono'
                 }
               >
-                {bodyOf(t, current)}
+                {bodyOf(t, current, currentService)}
               </p>
               {current.approval ? (
                 <div className="card inbox-card">
@@ -628,7 +660,12 @@ export function InboxPage() {
                     {t('inbox.openKb')} <ArrowRightIcon size={11} />
                   </button>
                 ) : null}
-                {current.run ? <RunLink item={current} /> : null}
+                {currentService ? (
+                  <button type="button" className="btn btn-sm btn-primary" onClick={openMine}>
+                    {t('connections.inbox.action')} <ArrowRightIcon size={11} />
+                  </button>
+                ) : null}
+                {current.run && !currentService ? <RunLink item={current} /> : null}
                 {current.run?.ok ? <RunPdf key={current.item_id} api={api} item={current} /> : null}
               </div>
             </div>

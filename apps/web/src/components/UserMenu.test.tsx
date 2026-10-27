@@ -188,6 +188,7 @@ describe('UserMenu', () => {
     expect(button).toHaveAttribute('aria-expanded', 'true');
     const items = screen.getAllByRole('menuitem');
     expect(items.map((item) => item.getAttribute('aria-label') ?? item.textContent)).toEqual([
+      'Mis conexiones',
       'Idioma, próximamente',
       expect.stringContaining('Cambiar tema'),
       'Primeros pasos, próximamente',
@@ -199,11 +200,11 @@ describe('UserMenu', () => {
     await user.keyboard('{ArrowDown}');
     expect(items[1]).toHaveFocus();
     await user.keyboard('{ArrowUp}{ArrowUp}');
-    expect(items[4]).toHaveFocus();
+    expect(items[5]).toHaveFocus();
     await user.keyboard('{Home}');
     expect(items[0]).toHaveFocus();
     await user.keyboard('{End}');
-    expect(items[4]).toHaveFocus();
+    expect(items[5]).toHaveFocus();
 
     await user.keyboard('{Escape}');
     expect(menu).not.toBeInTheDocument();

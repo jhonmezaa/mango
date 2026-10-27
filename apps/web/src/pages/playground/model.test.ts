@@ -46,6 +46,8 @@ const entry = (): Entry => ({
   text: '',
   tools: [],
   writes: [],
+  connections: [],
+  connectionAt: null,
   done: null,
 });
 
@@ -110,6 +112,14 @@ describe('applyEvent', () => {
     current = applyEvent(current, { type: 'simulated_write', tool: 'stop' }, 20);
     expect(current.tools).toEqual([]);
     expect(current.writes).toEqual(['stop']);
+  });
+
+  it('keeps the remote registrations that asked to connect, once each (D98 (20))', () => {
+    const event = { type: 'remote_connection_required', registration_id: 'abcdefghij23' } as const;
+    let current = applyEvent(entry(), event, 0);
+    current = applyEvent(current, event, 0);
+    expect(current.connections).toEqual(['abcdefghij23']);
+    expect(current.connectionAt).not.toBeNull();
   });
 
   it('appends text and ends with done or error', () => {

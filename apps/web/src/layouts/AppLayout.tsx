@@ -11,6 +11,7 @@ import { SessionWarning } from '../components/SessionWarning';
 import { Sidebar, type SidebarMode } from '../components/Sidebar';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { ConnectionsProvider } from '../pages/connections/ConnectionsProvider';
 import { readPreference, writePreference } from '../preferences/storage';
 import { ShellContext, type ShellContextValue } from './ShellContext';
 
@@ -118,50 +119,52 @@ export function AppLayout() {
 
   return (
     <ShellContext value={shell}>
-      <a href="#main" className="skip-link">
-        {t('app.skipToContent')}
-      </a>
-      <div className={classes.join(' ')}>
-        {drawerOpen && <div className="sb-scrim" aria-hidden="true" onClick={closeNav} />}
-        <Sidebar
-          ref={sidebarRef}
-          mode={mode}
-          collapsed={mode === 'rail' || collapsed}
-          mobileOpen={mobileOpen}
-          onToggleCollapsed={toggleCollapsed}
-          onNavigate={closeNav}
-        />
-        <main id="main" tabIndex={-1} className="main">
-          <OfflineBanner />
-          <SessionWarning />
-          {/* Every routed page, admin screens included: a crash keeps the shell usable. */}
-          <ErrorBoundary resetKey={pathname}>
-            <Outlet />
-          </ErrorBoundary>
-        </main>
-      </div>
-      {pickerOpen ? (
-        <Suspense fallback={null}>
-          <AgentPicker
-            agents={agents ?? NO_AGENTS}
-            recentAgentIds={recentAgentIds}
-            canCreate={me.can.create_agent}
-            onPick={(agent) => {
-              setPickerOpen(false);
-              void navigate(chatPath(agent.id));
-            }}
-            onCreate={() => {
-              setPickerOpen(false);
-              void navigate('/admin');
-            }}
-            onMarketplace={() => {
-              setPickerOpen(false);
-              void navigate('/marketplace');
-            }}
-            onClose={closePicker}
+      <ConnectionsProvider>
+        <a href="#main" className="skip-link">
+          {t('app.skipToContent')}
+        </a>
+        <div className={classes.join(' ')}>
+          {drawerOpen && <div className="sb-scrim" aria-hidden="true" onClick={closeNav} />}
+          <Sidebar
+            ref={sidebarRef}
+            mode={mode}
+            collapsed={mode === 'rail' || collapsed}
+            mobileOpen={mobileOpen}
+            onToggleCollapsed={toggleCollapsed}
+            onNavigate={closeNav}
           />
-        </Suspense>
-      ) : null}
+          <main id="main" tabIndex={-1} className="main">
+            <OfflineBanner />
+            <SessionWarning />
+            {/* Every routed page, admin screens included: a crash keeps the shell usable. */}
+            <ErrorBoundary resetKey={pathname}>
+              <Outlet />
+            </ErrorBoundary>
+          </main>
+        </div>
+        {pickerOpen ? (
+          <Suspense fallback={null}>
+            <AgentPicker
+              agents={agents ?? NO_AGENTS}
+              recentAgentIds={recentAgentIds}
+              canCreate={me.can.create_agent}
+              onPick={(agent) => {
+                setPickerOpen(false);
+                void navigate(chatPath(agent.id));
+              }}
+              onCreate={() => {
+                setPickerOpen(false);
+                void navigate('/admin');
+              }}
+              onMarketplace={() => {
+                setPickerOpen(false);
+                void navigate('/marketplace');
+              }}
+              onClose={closePicker}
+            />
+          </Suspense>
+        ) : null}
+      </ConnectionsProvider>
     </ShellContext>
   );
 }

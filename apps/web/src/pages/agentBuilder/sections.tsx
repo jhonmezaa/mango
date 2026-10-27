@@ -30,6 +30,7 @@ import {
   USERS_MAX,
   promptTokens,
   toolIndex,
+  type CatalogRemote,
   type Connector,
   type Definition,
   type Group,
@@ -37,7 +38,9 @@ import {
   type OrgNode,
   type SecretKind,
   type Template,
+  type Version,
 } from './model';
+import { RemoteTools } from './RemoteTools';
 
 // The six sections of the form (design admin.jsx). Each one gets only the fields it edits and
 // `onChange`, which the form ignores while the version is locked.
@@ -558,6 +561,12 @@ interface ToolsProps {
   areaGroups: readonly string[];
   /** People the agent is shared with one by one: the same tools block the submission too. */
   userCount: number;
+  /** Remote MCP registrations of the caller's groups (D98 (17)). */
+  remotes: readonly CatalogRemote[];
+  /** The stored version's notices of groups without a remote service (P-2). */
+  remoteAudience: readonly NonNullable<Version['remotes']>[number][];
+  /** The agent's groups, to keep the notice to the ones still chosen. */
+  groups: readonly string[];
   onChange: Change;
 }
 
@@ -566,10 +575,13 @@ export const ToolsSection = memo(function ToolsSection({
   catalog,
   areaGroups,
   userCount,
+  remotes,
+  remoteAudience,
+  groups,
   onChange,
 }: ToolsProps) {
   const { t } = useTranslation();
-  const index = useMemo(() => toolIndex(catalog), [catalog]);
+  const index = useMemo(() => toolIndex(catalog, remotes), [catalog, remotes]);
   const selected = useMemo(() => new Set(tools), [tools]);
   // Only what an agent can use now: the servers with a tool they serve, and those tools.
   const enabled = catalog.flatMap((connector) => {
@@ -720,6 +732,16 @@ export const ToolsSection = memo(function ToolsSection({
           );
         })}
       </div>
+      <RemoteTools
+        tools={tools}
+        remotes={remotes}
+        audience={remoteAudience}
+        groups={groups}
+        userCount={userCount}
+        onChange={(next) => {
+          onChange({ tools: next });
+        }}
+      />
       <div className="ab-foot">
         <span>
           {tools.length === 1

@@ -19,6 +19,7 @@ import { handleApprovals } from './approvals.ts';
 import { handleAudit } from './audit.ts';
 import { handleBrains } from './brains.ts';
 import { handleChatApi } from './chat.ts';
+import { handleConnections, MOCK_GROUPS } from './connections.ts';
 import {
   MOCK_USER,
   MOCK_USER_AREA,
@@ -63,6 +64,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleBrains,
   // Before the packs: `/mcp/remotes` is never a pack (the API registers it first too).
   handleRemoteMcp,
+  handleConnections,
   handleMcpCatalog,
   handleKnowledge,
   handleSkills,
@@ -98,7 +100,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
       role: 'finops-central',
       business_unit: MOCK_USER_AREA,
       is_admin: true,
-      groups: ['finops-central', 'mango-admin'],
+      groups: MOCK_GROUPS,
       can: { create_agent: true },
     });
     return;

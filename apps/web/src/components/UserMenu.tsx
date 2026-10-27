@@ -5,11 +5,13 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../auth/useAuth';
 import { useSession } from '../auth/useSession';
 import { canView } from '../layouts/navigation';
+import { useConnections } from '../pages/connections/ConnectionsContext';
 import { initialsFor } from '../lib/format';
 import { useTheme } from '../preferences/theme';
 import {
   ArrowRightIcon,
   BookOpenIcon,
+  ExternalIcon,
   GlobeIcon,
   LockIcon,
   MoonIcon,
@@ -42,6 +44,7 @@ export function UserMenu({
   const { me } = useSession();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const { openMine } = useConnections();
   const [open, setOpen] = useState(false);
   const menuId = useId();
   const roleId = useId();
@@ -160,6 +163,22 @@ export function UserMenu({
             </p>
             <p className="m-0">{t('nav.accountSecurity.hint')}</p>
           </div>
+          <div className="menu-sep" role="separator" />
+          {/* Design shell.jsx: the person's remote connections (D93), for everyone. */}
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            className="menu-item"
+            onClick={() => {
+              setOpen(false);
+              onNavigate?.();
+              openMine();
+            }}
+          >
+            <ExternalIcon size={14} />
+            <span className="flex-1">{t('connections.menu')}</span>
+          </button>
           <div className="menu-sep" role="separator" />
           <div
             role="menuitem"

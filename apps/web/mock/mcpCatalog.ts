@@ -14,7 +14,9 @@ import type { ServerResponse } from 'node:http';
 import { OTHER_ADMIN, agents, publishedVersion } from './agents.ts';
 import { auditedWrite } from './audit.ts';
 import { MOCK_USER } from './cognito.ts';
+import { MOCK_GROUPS } from './connections.ts';
 import { readBody, sendError, sendJson, type ApiHandler } from './http.ts';
+import { REMOTE_PROFILE, usableRemotes } from './remoteMcp.ts';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -536,11 +538,36 @@ function packOut(item: MockPack) {
   };
 }
 
+/** The Builder's remote tools (D98 (17)): active registrations of the mock user's groups. */
+function remotesView() {
+  return usableRemotes(MOCK_GROUPS)
+    .filter((remote) => remote.status === 'active')
+    .map((remote) => ({
+      id: `remote-${remote.id}`,
+      registration_id: remote.id,
+      service: REMOTE_PROFILE.name,
+      operator: REMOTE_PROFILE.operator,
+      organization: remote.organization,
+      tools: remote.tools.map((name) => ({
+        ref: `remote-${remote.id}.${name}`,
+        name,
+        description: '',
+        access: 'read',
+        audience: 'all',
+        central_groups_only: false,
+        enabled: true,
+        requires_service: null,
+        unclassified: false,
+      })),
+    }));
+}
+
 /** GET /api/mcp/catalog, as an administrator sees it. */
 export function catalogView() {
   settle();
   return {
     max_enabled_packs: MAX_ENABLED_PACKS,
+    remotes: remotesView(),
     items: servers.map((server) => ({
       id: server.id,
       kind: server.kind,

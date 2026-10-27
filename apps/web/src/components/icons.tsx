@@ -365,3 +365,10 @@ export const DocumentIcon = createIcon(
     <path d="M14 3v6h6M8 13h8M8 17h6" />
   </>,
 );
+export const MangoIcon = createIcon(
+  'Mango',
+  <>
+    <path d="M12 3c4 0 7 3 7 7s-3 11-7 11-7-4-7-9 3-9 7-9Z" />
+    <path d="M12 3c-1 1-1.5 2-1.5 3" />
+  </>,
+);

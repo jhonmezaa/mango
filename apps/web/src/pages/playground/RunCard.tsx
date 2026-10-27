@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChatMarkdown } from '../../components/ChatMarkdown';
+import { ConnectCard } from '../connections/ConnectCard';
 import {
   Check2Icon,
   ChevronRightIcon,
@@ -130,6 +131,16 @@ export const RunCard = memo(function RunCard({
       ) : (
         <ChatMarkdown streaming={state === 'running'}>{entry.text || '…'}</ChatMarkdown>
       )}
+      {/* Design playground.jsx: the same notice of Mango as in the chat, under the answer. */}
+      {state === 'done' &&
+        entry.connections.map((registration) => (
+          <div key={registration} className="pg-connect">
+            <ConnectCard
+              registrationId={registration}
+              startedAt={entry.connectionAt ?? Date.now()}
+            />
+          </div>
+        ))}
       {state === 'done' && entry.writes.length > 0 && (
         <div className="mc-alert amber">
           <LockIcon size={13} />
