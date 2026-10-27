@@ -323,3 +323,18 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 - **La métrica propia del `UninstallGuard` (D58, punto 19) no suma:** solo existe el mes en que el guard detiene un borrado (USD 0,30 ese mes, como mucho).
 - **El número de métricas crece con las tablas:** cada tabla nueva suma una alarma con dos métricas.
 - La regla del WAF del borde que añadió D72 (USD 1 al mes) va en el costo del WAF, no aquí: §6 de la [arquitectura](../architecture/reference-architecture.md).
+
+## MCP remotos: cortar el acceso a una cuenta
+
+> **Previsto (D93, D96): los MCP remotos de terceros todavía no están construidos.** Esta sección dice qué hacer cuando lo estén.
+
+«Desconectar», en «Mis conexiones», solo hace que Mango deje de usar la cuenta de la persona: el token sigue en el vault de AgentCore Identity, que no permite borrar el de una sola persona (D96). Cuando hay que cortar de verdad:
+
+| Caso | Qué hacer | Corte |
+|---|---|---|
+| Una persona dejó Mango | Darla de baja en Ajustes › Personas (D60): sin sesión, no hay llamadas | Inmediato |
+| La cuenta de Microsoft de una persona está comprometida, o hay que quitarle el acceso a Azure DevOps | Sacarla de la organización de Azure DevOps, o deshabilitarla en Entra. Lo hace un administrador del cliente en Microsoft, no en Mango | **Sin probar.** Se espera inmediato, porque Azure DevOps comprueba la pertenencia en cada llamada |
+| Hay que cortar a todas las personas de un registro (secreto filtrado, incidente) | Deshabilitar el registro en Mango: borra el proveedor de credenciales y todos sus tokens (D93 (7)) | Inmediato (probado el 2026-10-26) |
+
+- **«Revoke sessions» en Entra no basta:** en la prueba del 2026-10-26 la persona siguió leyendo 1 h 38 min después de revocar (D96 (1)).
+- **Quitar el permiso de la app** en Entra tampoco: los tokens ya emitidos valen hasta que vencen.

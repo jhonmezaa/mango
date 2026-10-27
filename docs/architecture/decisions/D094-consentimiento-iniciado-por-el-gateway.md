@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-26 (elegida por el dueño ese día, por menú: «Lo inicia el Gateway (Recomendada)», después de la prueba en vivo de D93 (11))
 - **Precisa / reemplaza a:** reemplaza el punto (4) de [D93](D093-mcp-remotos-de-terceros.md) (quién inicia el consentimiento); precisa D93 (8) (qué hace el interceptor `RESPONSE` con la URL), D93 (10) (los permisos de `mango-api` y del rol del Gateway) y D93 (11) (lo que dio la prueba)
-- **Precisada por:** —
+- **Precisada por:** [D96](D096-desconectar-un-mcp-remoto.md) (P7 ya se probó; «Desconectar» es una marca en Mango)
 
 ## Decisión
 
