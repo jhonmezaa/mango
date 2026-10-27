@@ -581,7 +581,12 @@ export class CoreStack extends Stack {
       distribution: edge.distribution,
       edgeRateLimits: edge.rateLimitMetrics,
       userPoolRateLimits: identity.rateLimitMetrics,
-      criticalFunctions: { PreTokenGeneration: identity.preToken, GatewayInterceptor: tools.interceptor },
+      criticalFunctions: {
+        PreTokenGeneration: identity.preToken,
+        GatewayInterceptor: tools.interceptor,
+        // D98 (16): every answer of the Gateway goes through it.
+        GatewayResponseInterceptor: tools.responseInterceptor,
+      },
       refusingFunctions: { PreSignUp: identity.preSignUp },
       deadLetterQueues: { UninstallGuard: uninstallGuard.deadLetters },
     });

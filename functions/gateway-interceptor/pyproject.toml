@@ -1,7 +1,7 @@
 [project]
 name = "mango-gateway-interceptor"
 version = "0.1.0"
-description = "AgentCore Gateway REQUEST interceptor: injects the verified caller token into tool calls (D13)"
+description = "AgentCore Gateway interceptors: REQUEST injects the verified caller token into tool calls (D13); RESPONSE handles remote MCP consents (D98)"
 requires-python = ">=3.13,<3.14"
 dependencies = ["mango-core"]
 

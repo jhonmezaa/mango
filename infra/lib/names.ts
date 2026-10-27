@@ -23,6 +23,8 @@ export const roleNames = {
   /** Closes the budget reservation of chat turns whose end is unknown (D73). */
   budgetReconciler: (ns: string) => mangoName(ns, "BudgetReconciler"),
   packProvisioner: (ns: string) => mangoName(ns, "PackProvisioner"),
+  /** The only role that signs the approved catalog of remote MCP servers (D93 (9), D98 (13)). */
+  remoteMcpProvisioner: (ns: string) => mangoName(ns, "RemoteMcpProvisioner"),
   /** Broker to the member accounts, in the Mango account (§4.10). */
   readBroker: (ns: string) => mangoName(ns, "ReadBroker"),
   /** Spoke role of every member account, shared by all read tools (D10). */

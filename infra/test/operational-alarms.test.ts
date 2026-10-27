@@ -113,6 +113,7 @@ describe("operational alarms of Core", () => {
         "Edge-errors",
         "Edge-rate-limited",
         "GatewayInterceptor-failing",
+        "GatewayResponseInterceptor-failing",
         "Knowledge-deletion-unverified",
         "Knowledge-retrieve-throttled",
         "KnowledgeSync-failed",
@@ -258,7 +259,7 @@ describe("functions people depend on", () => {
     return { Ref: found[0]![0] };
   };
 
-  it.each(["PreTokenGeneration", "GatewayInterceptor"])("alarms on errors and throttles of %s", (name) => {
+  it.each(["PreTokenGeneration", "GatewayInterceptor", "GatewayResponseInterceptor"])("alarms on errors and throttles of %s", (name) => {
     const properties = alarm(`${name}-failing`);
     const metrics = metricsOf(properties);
     expect(metrics.map((m) => m.name).sort()).toEqual(["Errors", "Throttles"]);

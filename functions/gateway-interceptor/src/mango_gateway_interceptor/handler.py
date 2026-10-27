@@ -41,6 +41,16 @@ call into a request for confirmation. Anything that cannot be verified fails clo
 A test of the Playground (D91, signature claim ``pg``) runs a version nobody approved: none of
 those write tools goes through under it, whatever approval it carries, and no approval is
 read or spent.
+
+A remote MCP target (``remote-<registration>``, D93, D98) is a server Mango does not run. Its
+tools go through only if the approved catalog ``MCP_REMOTE#<registration>`` verifies with the
+public half of ``alias/Mango-<ns>-remote-mcp``, a key only the remote provisioner signs with,
+and names this target of this Gateway and the tool (TM-012). The call gets no ``_mango_ctx``,
+loses every ``_meta`` (TM-006, TM-013) and carries exactly the two headers of the catalog,
+``X-MCP-Readonly`` and ``X-MCP-Toolsets``: never ``Authorization``, which would replace the
+token of the vault (TM-008). A call of «Mis conexiones» (claim ``cx``) may only call the probe
+tool; with ``cx = disconnect`` it keeps the one ``_meta`` that deletes the person's token
+(D97 (3)).
 """
 
 from __future__ import annotations
@@ -52,15 +62,16 @@ import logging
 import os
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from typing import Any
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
+from cryptography.hazmat.primitives.asymmetric import ec
 
-from mango_core import approval, approval_use, invocation, pack_identity
+from mango_core import approval, approval_use, invocation, pack_identity, remote_mcp
 from mango_core.harness_tools import KNOWLEDGE_TARGET
 
 logger = logging.getLogger()
@@ -78,6 +89,12 @@ _APPROVAL_TOOLS_ENV = "APPROVAL_TOOLS"
 _APPROVAL_KEY_ENV = "APPROVAL_KEY_ARN"
 _APPROVALS_TABLE_ENV = "APPROVALS_TABLE"
 _CENTRAL_CLAIM = "mango_central"
+_SETTINGS_TABLE_ENV = "SETTINGS_TABLE"
+_REMOTE_KEY_ENV = "REMOTE_MCP_KEY_ARN"
+_GATEWAY_ID_PARAMETER_ENV = "GATEWAY_ID_PARAMETER"
+_META = "_meta"
+REMOTE_CACHE_SECONDS = 30.0
+"""How long a verified catalog item is reused (D98 (13))."""
 PLAYGROUND_WRITE_MESSAGE = (
     "This is a test in Mango's Playground: actions that change resources never run here. It "
     "was NOT executed and nothing was requested: do not call this tool again."
@@ -140,6 +157,46 @@ class Approvals:
             # Approved for another agent than the one this invocation was signed for.
             raise approval.ApprovalError
         self.claim(approved, int(self.clock()))
+
+
+class RemoteUnavailableError(Exception):
+    """The catalog item could not be read: the call fails closed, as unavailable."""
+
+
+@dataclass
+class RemoteCatalog:
+    """The approved catalog of remote targets (D98 (13)), verified on every read and reused
+    for ``REMOTE_CACHE_SECONDS``. Only a verified item is cached: a missing or altered one is
+    read again on the next call."""
+
+    load: Callable[[str], Mapping[str, object] | None]
+    """Plain ``payload`` and ``signature`` of ``MCP_REMOTE#<registration>``, or ``None``."""
+    public_key: Callable[[], ec.EllipticCurvePublicKey]
+    gateway_id: Callable[[], str]
+    clock: Callable[[], float] = time.monotonic
+    _cache: dict[str, tuple[float, remote_mcp.ApprovedRemote]] = field(default_factory=dict)
+
+    def approved(self, target: str) -> remote_mcp.ApprovedRemote:
+        """Raises ``RemoteNotApprovedError`` (missing, altered, another target or Gateway) or
+        ``RemoteUnavailableError`` (it could not be read)."""
+        registration = remote_mcp.registration_of_target(target)
+        if registration is None:
+            raise remote_mcp.RemoteNotApprovedError
+        now = self.clock()
+        cached = self._cache.get(target)
+        if cached is not None and now - cached[0] < REMOTE_CACHE_SECONDS:
+            return cached[1]
+        try:
+            item = self.load(registration)
+            if item is None:
+                raise remote_mcp.RemoteNotApprovedError
+            approved = remote_mcp.ApprovedRemote.verify(
+                self.public_key(), item, target=target, gateway_id=self.gateway_id()
+            )
+        except (ClientError, BotoCoreError, KeyError, TypeError, ValueError) as error:
+            raise RemoteUnavailableError from error
+        self._cache[target] = (now, approved)
+        return approved
 
 
 def _bearer_token(headers: dict[str, Any]) -> str | None:
@@ -233,6 +290,39 @@ def _approvals() -> Approvals:
         approval_use.claim(dynamodb, table, approved, mark=approval_use.GATEWAY_MARK, now=now)
 
     return Approvals(tools=tools, verifier=verifier, claim=claim)
+
+
+@cache
+def _remote_catalog() -> RemoteCatalog:
+    """Reads ``Settings`` and the public half of the remote MCP key (stack configuration).
+    Nothing is called until the first call to a remote target."""
+    table = os.environ[_SETTINGS_TABLE_ENV]
+    key_arn = os.environ[_REMOTE_KEY_ENV]
+    parameter = os.environ[_GATEWAY_ID_PARAMETER_ENV]
+    dynamodb = boto3.client("dynamodb", config=_KMS_CONFIG)
+
+    def load(registration: str) -> Mapping[str, object] | None:
+        item = dynamodb.get_item(
+            TableName=table,
+            Key=remote_mcp.approved_key(registration),
+            ProjectionExpression="payload, signature",
+        ).get("Item")
+        if item is None:
+            return None
+        return {name: value.get("S") for name, value in item.items() if isinstance(value, dict)}
+
+    @cache
+    def public_key() -> ec.EllipticCurvePublicKey:
+        der = boto3.client("kms", config=_KMS_CONFIG).get_public_key(KeyId=key_arn)["PublicKey"]
+        return remote_mcp.load_public_key(der)
+
+    @cache
+    def gateway_id() -> str:
+        # By name: the Gateway names this function, so its id cannot be in its environment.
+        ssm = boto3.client("ssm", config=_KMS_CONFIG)
+        return str(ssm.get_parameter(Name=parameter)["Parameter"]["Value"])
+
+    return RemoteCatalog(load=load, public_key=public_key, gateway_id=gateway_id)
 
 
 def _target_of(tool: str) -> tuple[str, str]:
@@ -404,6 +494,74 @@ def _approved(
     return token
 
 
+def _remote(
+    name: str, signed: invocation.Invocation, remotes: RemoteCatalog | None
+) -> remote_mcp.ApprovedRemote | None:
+    """The approved catalog of a remote target's call, ``None`` for any other target. Deny by
+    default: a target without a valid item, or a tool the item does not name, is refused."""
+    target, _ = _target_of(name)
+    if remote_mcp.registration_of_target(target) is None:
+        if signed.connection is not None:
+            raise _RefusedError(403, _FORBIDDEN, "tool not allowed", "connection_call_invalid")
+        return None
+    if remotes is None:
+        raise _RefusedError(403, _FORBIDDEN, "tool not allowed", "remote_not_approved")
+    try:
+        approved = remotes.approved(target)
+    except remote_mcp.RemoteNotApprovedError:
+        raise _RefusedError(403, _FORBIDDEN, "tool not allowed", "remote_not_approved") from None
+    except RemoteUnavailableError:
+        logger.exception("remote catalog could not be read")
+        raise _RefusedError(
+            503, _UNAVAILABLE, "the tool is temporarily unavailable", "remote_unavailable"
+        ) from None
+    if not approved.allows(name):
+        raise _RefusedError(403, _FORBIDDEN, "tool not allowed", "tool_not_read_only")
+    if signed.connection is not None and name != remote_mcp.gateway_tool_name(
+        approved.registration_id, approved.probe_tool
+    ):
+        # «Mis conexiones» only probes the connection (D97 (3)).
+        raise _RefusedError(403, _FORBIDDEN, "tool not allowed", "connection_call_invalid")
+    return approved
+
+
+def _remote_request(
+    body: dict[str, Any],
+    params: dict[str, Any],
+    arguments: dict[str, Any],
+    signed: invocation.Invocation,
+    approved: remote_mcp.ApprovedRemote,
+) -> dict[str, Any]:
+    """The call as it reaches the remote server: no ``_mango_ctx``, no ``_meta`` but the one
+    a disconnect carries, and the two headers of the catalog, never ``Authorization``."""
+    meta = params.get(_META)
+    keep_meta = signed.connection == "disconnect" and remote_mcp.is_force_authentication_meta(meta)
+    clean_params = {k: v for k, v in params.items() if k != _META}
+    clean_params["arguments"] = {k: v for k, v in arguments.items() if k != _META}
+    if keep_meta:
+        clean_params[_META] = remote_mcp.force_authentication_meta()
+    # The shape only (TM-006, TM-013): never the tool, the arguments or the _meta itself.
+    logger.info(
+        json.dumps(
+            {
+                "event": "gateway.remote_call",
+                "had_meta": meta is not None or _META in arguments,
+                "meta_kept": keep_meta,
+                "connection": signed.connection,
+            }
+        )
+    )
+    return {
+        "interceptorOutputVersion": OUTPUT_VERSION,
+        "mcp": {
+            "transformedGatewayRequest": {
+                "headers": dict(approved.headers),
+                "body": {**body, "params": clean_params},
+            }
+        },
+    }
+
+
 def _deny(request_id: Any, reason: str) -> dict[str, Any]:
     return _reject(request_id, 401, _UNAUTHENTICATED, "unauthenticated", reason)
 
@@ -416,10 +574,11 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         _pack_identities(),
         _approvals(),
         pack_tools=_pack_tools(),
+        remotes=_remote_catalog(),
     )
 
 
-def handle(
+def handle(  # noqa: PLR0911 - each early return is one refusal, or a call that needs no more
     event: dict[str, Any],
     key: bytes,
     context_targets: frozenset[str],
@@ -427,9 +586,11 @@ def handle(
     approvals: Approvals | None = None,
     *,
     pack_tools: Mapping[str, frozenset[str]] | None = None,
+    remotes: RemoteCatalog | None = None,
 ) -> dict[str, Any]:
     """``pack_tools``: the read tools of each pack of the release; without it no pack tool
-    goes through."""
+    goes through. ``remotes``: the approved catalog of remote targets; without it no remote
+    tool goes through."""
     request = (event.get("mcp") or {}).get("gatewayRequest") or {}
     body = request.get("body")
     if not isinstance(body, dict):
@@ -454,6 +615,9 @@ def handle(
     arguments = {k: v for k, v in supplied.items() if k != RESERVED_CONTEXT_ARG}
     try:
         name = _signed_tool(params.get("name"), signed)
+        approved = _remote(name, signed, remotes)
+        if approved is not None:
+            return _remote_request(body, params, arguments, signed, approved)
         _classified(name, context_targets, pack_tools or {})
         context = _context(name, token, signed, context_targets, packs)
         # Last: the approval is spent only on a call that would otherwise go through.

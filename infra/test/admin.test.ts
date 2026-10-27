@@ -76,11 +76,26 @@ describe("Admin v0 infrastructure (D17)", () => {
       (g) => mentions(g.statement, settingsId) && actions(g.statement).some((a) => WRITE_ACTIONS.test(a)),
     );
     expect(writers.length).toBeGreaterThan(0);
+    const responseInterceptor = Object.values(
+      template.findResources("AWS::Lambda::Function", {
+        Properties: { FunctionName: "Mango-poc-GatewayResponseInterceptor" },
+      }),
+    )[0]!;
+    const responseInterceptorRoleId = (responseInterceptor.Properties.Role as { "Fn::GetAtt": [string, string] })[
+      "Fn::GetAtt"
+    ][0];
     const packProvisionerRoleId = Object.keys(
       template.findResources("AWS::IAM::Role", { Properties: { RoleName: "Mango-poc-PackProvisioner" } }),
     )[0]!;
     for (const { roles, statement } of writers) {
       if (roles.includes(apiRoleId)) continue;
+      if (roles.includes(responseInterceptorRoleId)) {
+        // RESPONSE interceptor of the Gateway (D98 (3), TM-017): the pending consents of remote
+        // MCP servers only, by PutItem and with their attributes.
+        expect(actions(statement)).toEqual(["dynamodb:PutItem"]);
+        expect(statement.Condition?.["ForAllValues:StringLike"]?.["dynamodb:LeadingKeys"]).toEqual(["MCP_CONSENT#*"]);
+        continue;
+      }
       if (roles.includes(packProvisionerRoleId)) {
         // Pack provisioner (Marketplace v1): installation state of MCP packs only. It can
         // never reach the partitions that decide isolation or budgets (TM-A6).

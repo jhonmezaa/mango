@@ -8,6 +8,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { mangoName, packNames, roleArn, roleNames, SESSION_TAG_KEYS } from "../names.js";
@@ -24,6 +25,24 @@ export const OPS_TARGET_NAME = "ops";
  * `mango_core.harness_tools.KNOWLEDGE_TARGET`.
  */
 export const KNOWLEDGE_TARGET_NAME = "knowledge";
+/**
+ * Partitions of the Settings table of remote MCP servers (D98 (12)); keep in sync with
+ * `mango_core.remote_mcp`. The REQUEST interceptor reads the approved catalog; the RESPONSE
+ * interceptor is the only writer of the pending consents.
+ */
+export const REMOTE_APPROVED_PARTITION = "MCP_REMOTE#*";
+export const REMOTE_CONSENT_PARTITION = "MCP_CONSENT#*";
+/** Attributes of a pending consent (`PendingConsent.to_item`): the RESPONSE interceptor writes no other. */
+export const REMOTE_CONSENT_ATTRIBUTES = [
+  "PK",
+  "SK",
+  "authorization_url",
+  "source",
+  "created_at",
+  "expires_at",
+  "ttl",
+  "session_sha256",
+];
 /** FinOps roles of the pre token claim `mango_role` (D13). */
 const CENTRAL_ROLE = "finops-central";
 const AREA_ROLE = "bu-lead";
@@ -108,6 +127,19 @@ export class Tools extends Construct {
   readonly connectorTargets = [TARGET_NAME, OPS_TARGET_NAME, KNOWLEDGE_TARGET_NAME];
   /** REQUEST interceptor of the Gateway; `WriteTools` adds the approval check to it (D27). */
   readonly interceptor: lambda.Function;
+  /**
+   * RESPONSE interceptor (D98 (16)): turns the consent error of a remote MCP target into
+   * `consent_required` without the URL, keeps the URL as the person's pending consent, and
+   * cuts the results of remote servers.
+   */
+  readonly responseInterceptor: lambda.Function;
+  /**
+   * Signs the approved catalog of remote MCP targets, `alias/Mango-<ns>-remote-mcp` (D93 (9)).
+   * Only the remote provisioner may sign; the interceptor and mango-api read the public key.
+   */
+  readonly remoteMcpKey: kms.Key;
+  /** SSM parameter with the Gateway id: the interceptor, which the Gateway names, reads it by name. */
+  readonly gatewayIdParameterName: string;
   /** Role the Gateway invokes its Lambda targets with. */
   readonly gatewayRole: iam.Role;
   /** Key shared by mango-api (signs) and the interceptor (verifies) — audit finding F1. */
@@ -300,6 +332,35 @@ export class Tools extends Construct {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
+    // Approved catalog of remote MCP targets (D93 (9), D98 (13), TM-012). Asymmetric: whoever
+    // verifies (the interceptor, mango-api, the agent provisioner) cannot sign.
+    this.remoteMcpKey = new kms.Key(this, "RemoteMcpKey", {
+      alias: `alias/${mangoName(ns, "remote-mcp")}`,
+      description: "Signs the approved catalog of remote MCP servers; only the remote MCP provisioner signs",
+      keySpec: kms.KeySpec.ECC_NIST_P256,
+      keyUsage: kms.KeyUsage.SIGN_VERIFY,
+      // No data is encrypted with it: a new key only needs the catalog items signed again.
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    // By name, so that the role (created by the remote provisioner) need not exist yet. Denied
+    // in the key policy to everyone else: no identity policy nor grant can let another principal
+    // vouch for a remote tool.
+    const remoteSigner = roleArn(account, roleNames.remoteMcpProvisioner(ns));
+    this.remoteMcpKey.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "OnlyTheRemoteProvisionerSigns",
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        actions: ["kms:Sign"],
+        resources: ["*"],
+        conditions: { ArnNotEquals: { "aws:PrincipalArn": remoteSigner } },
+      }),
+    );
+    const gatewayIdParameterName = (this.gatewayIdParameterName = `/${mangoName(ns, "tools")}/gateway-id`);
+    const region = Stack.of(this).region;
+    const gatewayIdParameterArn = `arn:aws:ssm:${region}:${account}:parameter${gatewayIdParameterName}`;
+    const viaDynamoDb = { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } };
+
     const interceptor = new PythonFunction(this, "Interceptor", {
       packageName: "mango-gateway-interceptor",
       packagePath: "functions/gateway-interceptor",
@@ -318,10 +379,89 @@ export class Tools extends Construct {
         // The only pack tools that go through (D84): the ones each signed manifest calls read.
         PACK_TOOLS: JSON.stringify(props.packReadTools),
         PACK_IDENTITY_KEY_ARN: this.packIdentityKey.keyArn,
+        // Remote MCP targets (D98 (13)): the approved catalog and the key that verifies it.
+        SETTINGS_TABLE: props.settingsTable.tableName,
+        REMOTE_MCP_KEY_ARN: this.remoteMcpKey.keyArn,
+        GATEWAY_ID_PARAMETER: gatewayIdParameterName,
       },
       environmentEncryption: configKey,
     });
     this.interceptor = interceptor.function;
+    // Reads only the approved catalog of remote targets, and verifies it (TM-012).
+    this.interceptor.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: "ReadRemoteCatalog",
+        actions: ["dynamodb:GetItem"],
+        resources: [props.settingsTable.tableArn],
+        conditions: {
+          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [REMOTE_APPROVED_PARTITION] },
+          Null: { "dynamodb:LeadingKeys": "false" },
+        },
+      }),
+    );
+    this.interceptor.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: "DecryptSettingsViaDynamoDB",
+        actions: ["kms:Decrypt"],
+        resources: [props.dataKey.keyArn],
+        conditions: viaDynamoDb,
+      }),
+    );
+    this.interceptor.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: "VerifyRemoteCatalog",
+        actions: ["kms:GetPublicKey"],
+        resources: [this.remoteMcpKey.keyArn],
+      }),
+    );
+    this.interceptor.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: "GatewayId",
+        actions: ["ssm:GetParameter"],
+        resources: [gatewayIdParameterArn],
+      }),
+    );
+
+    // RESPONSE interceptor (D98 (16)): its own function and role. The only writer of the
+    // pending consents, and only of their attributes (TM-017).
+    const responseInterceptor = new PythonFunction(this, "ResponseInterceptor", {
+      packageName: "mango-gateway-interceptor",
+      packagePath: "functions/gateway-interceptor",
+      retainLogs: cfg.retainData,
+      handler: "mango_gateway_interceptor.response.lambda_handler",
+      functionName: mangoName(ns, "GatewayResponseInterceptor"),
+      description: "Keeps consent URLs of remote MCP servers away from the model and cuts their results",
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      environment: {
+        INVOCATION_KEY_SECRET_ARN: this.invocationKey.secretArn,
+        SETTINGS_TABLE: props.settingsTable.tableName,
+      },
+      environmentEncryption: configKey,
+    });
+    this.responseInterceptor = responseInterceptor.function;
+    this.invocationKey.grantRead(this.responseInterceptor);
+    this.responseInterceptor.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: "WritePendingConsents",
+        actions: ["dynamodb:PutItem"],
+        resources: [props.settingsTable.tableArn],
+        conditions: {
+          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [REMOTE_CONSENT_PARTITION] },
+          "ForAllValues:StringEquals": { "dynamodb:Attributes": REMOTE_CONSENT_ATTRIBUTES },
+          // A set operator is true for a key the request does not carry: require both.
+          Null: { "dynamodb:LeadingKeys": "false", "dynamodb:Attributes": "false" },
+        },
+      }),
+    );
+    this.responseInterceptor.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: "EncryptSettingsViaDynamoDB",
+        actions: ["kms:Decrypt", "kms:GenerateDataKey"],
+        resources: [props.dataKey.keyArn],
+        conditions: viaDynamoDb,
+      }),
+    );
     this.invocationKey.grantRead(interceptor.function);
     // The only principal that can sign with the key: granted to the interceptor, and denied
     // in the key policy to everyone else, so no identity policy of the account (nor a grant)
@@ -351,9 +491,10 @@ export class Tools extends Construct {
     }));
     connector.function.grantInvoke(gatewayRole);
     interceptor.function.grantInvoke(gatewayRole);
+    responseInterceptor.function.grantInvoke(gatewayRole);
     acknowledge(
       gatewayRole,
-      ...[connector, interceptor].map((f) => ({
+      ...[connector, interceptor, responseInterceptor].map((f) => ({
         id: arnWildcardFinding(f.function.node.defaultChild as CfnResource, ":*"),
         reason: REASONS.cdkGrant,
       })),
@@ -368,7 +509,6 @@ export class Tools extends Construct {
 
     // Policy evaluation by the Gateway (AuthorizeAction / PartiallyAuthorizeActions need both the
     // engine and the gateway ARN). The gateway id derives from its name, which avoids a cycle.
-    const region = Stack.of(this).region;
     const gatewayName = mangoName(ns, "Tools");
     const gatewayArnPattern = `arn:aws:bedrock-agentcore:${region}:${account}:gateway/mango-${ns}-tools-*`;
     gatewayRole.addToPolicy(
@@ -429,6 +569,12 @@ export class Tools extends Construct {
           interceptionPoints: ["REQUEST"],
           inputConfiguration: { passRequestHeaders: true },
         },
+        // With the headers: it verifies the invocation signature before it writes a consent.
+        {
+          interceptor: { lambda: { arn: responseInterceptor.function.functionArn } },
+          interceptionPoints: ["RESPONSE"],
+          inputConfiguration: { passRequestHeaders: true },
+        },
       ],
       policyEngineConfiguration: { arn: policyEngine.attrPolicyEngineArn, mode: "ENFORCE" },
       // D47: with a session, the Gateway keeps the session of each MCP server target and
@@ -442,6 +588,55 @@ export class Tools extends Construct {
       }),
     });
     this.gateway.node.addDependency(gatewayRole);
+
+    new ssm.StringParameter(this, "GatewayIdParameter", {
+      parameterName: gatewayIdParameterName,
+      // A path (it starts with `/`): the namespace may be a parameter of the release.
+      simpleName: false,
+      description: "Id of the tools Gateway, read by its interceptor (the signed remote MCP catalog names it)",
+      stringValue: this.gateway.attrGatewayIdentifier,
+    });
+
+    // Remote MCP targets with 3LO (D94 (3)): the Gateway reads each person's token from the
+    // vault, through the Identity providers of remote MCPs only (`Mango-<ns>-remote-*`), with
+    // its own workload identity. AgentCore names that identity after the Gateway id, which
+    // derives from its name (as `gatewayArnPattern`): CloudFormation does not return its ARN
+    // as a string attribute.
+    const identityBase = `arn:aws:bedrock-agentcore:${region}:${account}`;
+    const remoteProviders = `${identityBase}:token-vault/default/oauth2credentialprovider/${mangoName(ns, "remote-")}*`;
+    const gatewayIdentity = `${identityBase}:workload-identity-directory/default/workload-identity/mango-${ns}-tools-*`;
+    const remoteSecrets = `arn:aws:secretsmanager:${region}:${account}:secret:bedrock-agentcore-identity!default/oauth2/${mangoName(ns, "remote-")}*`;
+    gatewayRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "RemoteMcpTokens",
+        actions: ["bedrock-agentcore:GetResourceOauth2Token"],
+        resources: [
+          remoteProviders,
+          `${identityBase}:token-vault/default`,
+          `${identityBase}:workload-identity-directory/default`,
+          gatewayIdentity,
+        ],
+      }),
+    );
+    gatewayRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "RemoteMcpClientSecrets",
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [remoteSecrets],
+      }),
+    );
+    acknowledge(
+      gatewayRole,
+      ...[remoteProviders, remoteSecrets].map((resource) => ({
+        id: `AwsSolutions-IAM5[Resource::${resource}]`,
+        reason:
+          "Identity providers of remote MCP servers are created at runtime by mango-api (D93 (7)): the name prefix is the scope.",
+      })),
+      {
+        id: `AwsSolutions-IAM5[Resource::${gatewayIdentity}]`,
+        reason: "The workload identity of the Gateway is named after its generated id; the pattern pins this installation's gateway.",
+      },
+    );
 
     const tools = JSON.parse(
       readFileSync(resolve(REPO_ROOT, "connectors/cost-explorer/tool-schema.json"), "utf8"),
@@ -572,5 +767,7 @@ export class Tools extends Construct {
       customJwtAuthorizer: { discoveryUrl: this.discoveryUrl, allowedClients: [this.webClientId, clientId] },
     };
     this.costExplorer.function.addEnvironment("TASKS_CLIENT_ID", clientId);
+    // A consent asked by a run is marked as coming from a task (D98 (3)).
+    this.responseInterceptor.addEnvironment("TASKS_CLIENT_ID", clientId);
   }
 }

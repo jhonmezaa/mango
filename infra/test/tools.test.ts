@@ -121,8 +121,10 @@ describe("Gateway MCP sessions (D47)", () => {
   it("does not change who may call the Gateway or what it enforces", () => {
     const gateway = gatewayOf(template);
     expect(gateway.AuthorizerType).toBe("CUSTOM_JWT");
-    expect(gateway.InterceptorConfigurations).toHaveLength(1);
+    // The REQUEST interceptor, and the RESPONSE one of remote MCP servers (D98 (16)).
+    expect(gateway.InterceptorConfigurations).toHaveLength(2);
     expect(gateway.InterceptorConfigurations[0].InterceptionPoints).toEqual(["REQUEST"]);
+    expect(gateway.InterceptorConfigurations[1].InterceptionPoints).toEqual(["RESPONSE"]);
     // A target that propagated `Mcp-Session-Id` itself would be refused with sessions on.
     for (const target of Object.values(template.findResources("AWS::BedrockAgentCore::GatewayTarget"))) {
       expect(target.Properties.MetadataConfiguration).toBeUndefined();
