@@ -17,12 +17,16 @@ from mango_pack_builder.build import build
 from mango_pack_builder.kms import KmsSigner, sign_statement
 from mango_pack_builder.lock import check_lock, write_lock
 from mango_pack_builder.pack import PackError, check_pack, load_pack
+from mango_pack_builder.remote import load_remote, statement_for
+from mango_pack_builder.remote import sign_statement as sign_remote_statement
 from mango_pack_builder.snapshot import (
     list_tools_from_artifact,
     list_tools_from_lock,
     list_tools_in_container,
     snapshot_json,
 )
+from mango_packs.remote import RemoteProfileError, RemoteProfileStatement
+from mango_packs.remote import verify_envelope as verify_remote_envelope
 from mango_packs.signing import (
     PackSignatureError,
     PackStatement,
@@ -144,6 +148,69 @@ def _public_key(args: argparse.Namespace) -> None:
     print(f"wrote {args.out}")
 
 
+def _remote_check(args: argparse.Namespace) -> None:
+    profile = load_remote(args.remote).profile
+    toolsets = ", ".join(toolset.id for toolset in profile.toolsets)
+    print(
+        f"{profile.id} {profile.version}: profile and tool schema are valid; "
+        f"{len(profile.tools)} read tools in toolsets {toolsets}"
+    )
+
+
+def _remote_build(args: argparse.Namespace) -> None:
+    remote = load_remote(args.remote)
+    statement = statement_for(remote, args.revision)
+    args.out.mkdir(parents=True, exist_ok=True)
+    out = args.out / f"{remote.base_name}.statement.json"
+    out.write_bytes(statement.payload())
+    print(f"wrote {out}")
+
+
+def _remote_sign(args: argparse.Namespace) -> None:
+    statement = RemoteProfileStatement.model_validate_json(args.statement.read_bytes())
+    signer = KmsSigner(boto3.client("kms"), args.key_id)
+    envelope = sign_remote_statement(statement, signer, args.public_key.read_bytes())
+    args.out.write_bytes(envelope)
+    print(f"wrote {args.out} for {statement.profile.id} {statement.profile.version}")
+
+
+def _remote_verify(args: argparse.Namespace) -> None:
+    statement = verify_remote_envelope(args.envelope.read_bytes(), args.public_key.read_bytes())
+    profile = statement.profile
+    print(f"verified {profile.id} {profile.version} (tools sha256:{profile.tools_sha256})")
+
+
+def _add_remote_commands(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Remote MCP profiles (D98 (14)): no build and no server to run, only check and sign."""
+    remote = commands.add_parser("remote", help="remote MCP profiles under remotes/")
+    remotes = remote.add_subparsers(required=True)
+
+    def remote_command(
+        name: str, handler: Callable[[argparse.Namespace], None], summary: str
+    ) -> argparse.ArgumentParser:
+        sub = remotes.add_parser(name, help=summary)
+        sub.set_defaults(handler=handler)
+        return sub
+
+    sub = remote_command("check", _remote_check, "validate a profile and its tool schema")
+    sub.add_argument("remote", type=Path, help="profile directory, e.g. remotes/azure-devops")
+
+    sub = remote_command("build", _remote_build, "write the statement to be signed")
+    sub.add_argument("remote", type=Path, help="profile directory, e.g. remotes/azure-devops")
+    sub.add_argument("--revision", required=True, help="git commit of the build")
+    sub.add_argument("--out", type=Path, required=True, help="output directory")
+
+    sub = remote_command("sign", _remote_sign, "sign a statement with the KMS key")
+    sub.add_argument("--statement", type=Path, required=True)
+    sub.add_argument("--key-id", required=True, help="alias, id or ARN of the asymmetric KMS key")
+    sub.add_argument("--public-key", type=Path, required=True, help="trusted public key (PEM)")
+    sub.add_argument("--out", type=Path, required=True)
+
+    sub = remote_command("verify", _remote_verify, "verify a signed profile offline")
+    sub.add_argument("--envelope", type=Path, required=True)
+    sub.add_argument("--public-key", type=Path, required=True, help="trusted public key (PEM)")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mango-pack-builder", description=__doc__)
     commands = parser.add_subparsers(required=True)
@@ -195,6 +262,8 @@ def _parser() -> argparse.ArgumentParser:
     sub = command("public-key", _public_key, "export the public key of the KMS key")
     sub.add_argument("--key-id", required=True)
     sub.add_argument("--out", type=Path, required=True)
+
+    _add_remote_commands(commands)
     return parser
 
 
@@ -202,7 +271,14 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         args.handler(args)
-    except (PackError, PackToolsError, PackSignatureError, ValidationError, OSError) as error:
+    except (
+        PackError,
+        PackToolsError,
+        PackSignatureError,
+        RemoteProfileError,
+        ValidationError,
+        OSError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0

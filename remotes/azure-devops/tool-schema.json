@@ -1,0 +1,897 @@
+{
+  "tools": [
+    {
+      "name": "core_list_projects",
+      "description": "Retrieve a list of projects in your Azure DevOps organization.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "stateFilter": {
+            "description": "Filter projects by their state. Defaults to 'wellFormed'",
+            "default": "WellFormed"
+          },
+          "top": {
+            "description": "The maximum number of projects to return. Defaults to 100.",
+            "default": null
+          },
+          "skip": {
+            "description": "The number of projects to skip for pagination. Defaults to 0.",
+            "default": null
+          },
+          "continuationToken": {
+            "description": "Continuation token for pagination. Used to fetch the next set of results if available.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": []
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "core_list_project_teams",
+      "description": "Retrieve a list of teams for the specified Azure DevOps project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "description": "The name or ID of the Azure DevOps project.",
+            "type": "string"
+          },
+          "mine": {
+            "description": "If true, only return teams that the authenticated user is a member of. Defaults to true",
+            "default": true
+          },
+          "top": {
+            "description": "The maximum number of teams to return. Defaults to 100.",
+            "default": null
+          },
+          "skip": {
+            "description": "The number of teams to skip for pagination. Defaults to 0.",
+            "default": null
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pipelines_definition",
+      "description": "Read operations on pipeline (build) definitions. 'list' returns a trimmed page of definitions ({ items, continuationToken }) with optional filters — pass continuationToken back with the same queryOrder to fetch the next page; 'list_revisions' returns the revision history for one definition. For 'list', repositoryId accepts a repository name or GUID — names are auto-resolved for Azure Repos.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'list', 'list_revisions'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project ID or name. Required for both actions.",
+            "type": "string"
+          },
+          "repositoryId": {
+            "description": "For 'list': Repository ID or name to filter build definitions. For Azure Repos (TfsGit), a repository name is auto-resolved to the GUID using the project parameter. For GitHub use OwnerName/Repository format and always pair with repositoryType.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "repositoryType": {
+            "description": "For 'list': Required whenever repositoryId is set as a GUID or non-TfsGit format.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "enum": [
+              "TfsGit",
+              "GitHub",
+              "BitbucketCloud"
+            ]
+          },
+          "name": {
+            "description": "For 'list': Name of the build definition to filter.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "path": {
+            "description": "For 'list': Path of the build definition to filter.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "queryOrder": {
+            "description": "For 'list': Order in which build definitions are returned. Allowed values: None, LastModifiedAscending, LastModifiedDescending, DefinitionNameAscending, DefinitionNameDescending.",
+            "default": null,
+            "enum": [
+              "None",
+              "LastModifiedAscending",
+              "LastModifiedDescending",
+              "DefinitionNameAscending",
+              "DefinitionNameDescending"
+            ]
+          },
+          "top": {
+            "description": "For 'list': Maximum number of build definitions to return.",
+            "default": null
+          },
+          "continuationToken": {
+            "description": "For 'list': Token for continuing paged results. Must be paired with the same queryOrder used in the prior call.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "minMetricsTimeInUtc": {
+            "description": "For 'list': Minimum metrics time to filter build definitions.",
+            "default": null
+          },
+          "definitionIds": {
+            "description": "For 'list': Array of build definition IDs to filter. Must be a JSON array of integers, e.g. [123, 456].",
+            "default": null
+          },
+          "builtAfter": {
+            "description": "For 'list': Return definitions that have builds after this date.",
+            "default": null
+          },
+          "notBuiltAfter": {
+            "description": "For 'list': Return definitions that do not have builds after this date.",
+            "default": null
+          },
+          "includeLatestBuilds": {
+            "description": "For 'list': Whether to include the latest builds for each definition.",
+            "default": null
+          },
+          "taskIdFilter": {
+            "description": "For 'list': Task ID to filter build definitions.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "processType": {
+            "description": "For 'list': Process type to filter build definitions.",
+            "default": null
+          },
+          "yamlFilename": {
+            "description": "For 'list': YAML filename filter (e.g., 'azure-pipelines.yml'). Returns full property expansion implicitly - slightly heavier response.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "definitionId": {
+            "description": "For 'list_revisions': ID of the build definition to get revisions for (> 0).",
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "project"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pipelines_run",
+      "description": "Read operations on pipeline runs (Pipelines REST surface, distinct from classic builds). 'get' retrieves a single run; 'list' returns up to 10,000 runs for a pipeline (the Pipelines REST API does not support pagination on this endpoint — for pipelines with more runs, use pipelines_build action=list with a 'definitions' filter, which supports continuation tokens). Distinct from pipelines_write action=run_pipeline (which queues a new run); this tool is read-only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get', 'list'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project ID or name. Required for both actions.",
+            "type": "string"
+          },
+          "pipelineId": {
+            "description": "Numeric pipeline ID (> 0). This is the pipeline ID, distinct from a build definition ID - get it from pipelines_definition action=list's id field.",
+            "not": {
+              "type": "null"
+            }
+          },
+          "runId": {
+            "description": "For 'get': numeric run ID (> 0).",
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "project",
+          "pipelineId"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "search_wiki",
+      "description": "Search Azure DevOps Wiki for a given search text. Each result includes both the raw git filesystem 'path' and a 'pagePath' that is directly usable with the 'wiki' tool's 'get_page' action.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "searchText": {
+            "description": "Keywords to search for wiki pages",
+            "type": "string"
+          },
+          "project": {
+            "description": "Filter by projects",
+            "default": null
+          },
+          "wiki": {
+            "description": "Filter by wiki names",
+            "default": null
+          },
+          "includeFacets": {
+            "description": "Include facets in the search results",
+            "default": false
+          },
+          "skip": {
+            "description": "Number of results to skip",
+            "default": 0
+          },
+          "top": {
+            "description": "Maximum number of results to return",
+            "default": 10
+          }
+        },
+        "required": [
+          "searchText"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pipelines_build",
+      "description": "Read operations on Azure Pipelines builds. Use 'action' to choose: 'list' (search builds with filters or fetch by IDs; response is { items, continuationToken } — pass continuationToken back with the same queryOrder to fetch the next page), 'get_status' (status, issues, and report metadata for one build), 'get_changes' (commits/work-items associated with one build; also returns { items, continuationToken }). For 'list', repositoryId accepts a repository name or GUID — names are auto-resolved for Azure Repos. Discovery flow: core_list_projects -> pipelines_definition action=list -> this tool. Never invent project names or build IDs - look them up.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'list', 'get_status', 'get_changes'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project ID or name. Must match a project the caller can access - call core_list_projects first if uncertain.",
+            "type": "string"
+          },
+          "buildId": {
+            "description": "For 'get_status', 'get_changes': numeric build ID (> 0). Get from action=list - never pass 0/1/2 placeholders.",
+            "default": null
+          },
+          "definitions": {
+            "description": "For 'list': Array of build definition IDs to filter builds.",
+            "default": null
+          },
+          "queues": {
+            "description": "For 'list': Array of queue IDs to filter builds.",
+            "default": null
+          },
+          "buildNumber": {
+            "description": "For 'list': Build number to filter builds.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "minFinishTime": {
+            "description": "For 'list': Minimum finish time to filter builds.",
+            "default": null
+          },
+          "maxFinishTime": {
+            "description": "For 'list': Maximum finish time to filter builds.",
+            "default": null
+          },
+          "requestedFor": {
+            "description": "For 'list': User ID or name who requested the build.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "reasonFilter": {
+            "description": "For 'list': Reason filter for the build (see BuildReason enum).",
+            "default": null
+          },
+          "statusFilter": {
+            "description": "For 'list': Status filter. 'All' cannot combine with resultFilter; 'Completed' cannot combine with queryOrder=QueueTimeDescending.",
+            "default": null
+          },
+          "resultFilter": {
+            "description": "For 'list': Result filter for the build (see BuildResult enum).",
+            "default": null
+          },
+          "tagFilters": {
+            "description": "For 'list': Array of tags to filter builds.",
+            "default": null
+          },
+          "properties": {
+            "description": "For 'list': Array of property names to include in the results.",
+            "default": null
+          },
+          "top": {
+            "description": "For 'list': Maximum number of builds to return.",
+            "default": null
+          },
+          "continuationToken": {
+            "description": "For 'list': Token for continuing paged results. Must be paired with the same queryOrder used in the prior call.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "maxBuildsPerDefinition": {
+            "description": "For 'list': Maximum number of builds per definition.",
+            "default": null
+          },
+          "deletedFilter": {
+            "description": "For 'list': Filter for deleted builds (see QueryDeletedOption enum).",
+            "default": null
+          },
+          "queryOrder": {
+            "description": "For 'list': Order in which builds are returned.",
+            "default": null
+          },
+          "branchName": {
+            "description": "For 'list': Branch name to filter builds.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "buildIds": {
+            "description": "For 'list': Array of build IDs to retrieve. MUTUALLY EXCLUSIVE with all other filter parameters (definitions, queues, branchName, statusFilter, resultFilter, tagFilters, ...). Must be a JSON array of integers, e.g. [123, 456].",
+            "default": null
+          },
+          "repositoryId": {
+            "description": "For 'list': Repository ID or name to filter builds. For Azure Repos (TfsGit), a repository name is auto-resolved to the GUID using the project parameter. For GitHub use OwnerName/Repository format and always pair with repositoryType. NOTE: when a repository filter is supplied the underlying SDK overload does not support continuation tokens, so the response will contain a single page (continuationToken=null) regardless of 'top'.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "repositoryType": {
+            "description": "For 'list': Required whenever repositoryId is set as a GUID or non-TfsGit format.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "enum": [
+              "TfsGit",
+              "GitHub",
+              "BitbucketCloud"
+            ]
+          },
+          "changesContinuationToken": {
+            "description": "For 'get_changes': Continuation token for pagination.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "changesTop": {
+            "description": "For 'get_changes': Number of changes to retrieve, defaults to 100.",
+            "default": 100
+          },
+          "includeSourceChange": {
+            "description": "For 'get_changes': Whether to include source changes in the results, defaults to false.",
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "project"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wit_backlog",
+      "description": "Read operations on Azure DevOps backlogs. Use 'action' to choose: 'list' (backlog levels for a team), 'list_work_items' (work items in a specific backlog level).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'list', 'list_work_items'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "The name or ID of the Azure DevOps project. Required for all actions.",
+            "type": "string"
+          },
+          "team": {
+            "description": "The name or ID of the Azure DevOps team. Required for all actions.",
+            "type": "string"
+          },
+          "backlogId": {
+            "description": "For 'list_work_items': The ID of the backlog category to retrieve work items from.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "project",
+          "team"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "search_workitem",
+      "description": "Get Azure DevOps Work Item search results for a given search text",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "searchText": {
+            "description": "Search text to find in work items",
+            "type": "string"
+          },
+          "project": {
+            "description": "Filter by projects",
+            "default": null
+          },
+          "areaPath": {
+            "description": "Filter by area paths",
+            "default": null
+          },
+          "workItemType": {
+            "description": "Filter by work item types",
+            "default": null
+          },
+          "state": {
+            "description": "Filter by work item states",
+            "default": null
+          },
+          "assignedTo": {
+            "description": "Filter by assigned to users",
+            "default": null
+          },
+          "includeFacets": {
+            "description": "Include facets in the search results",
+            "default": false
+          },
+          "skip": {
+            "description": "Number of results to skip for pagination",
+            "default": 0
+          },
+          "top": {
+            "description": "Number of results to return",
+            "default": 10
+          },
+          "continuationToken": {
+            "description": "Continuation token for pagination. Used to fetch the next set of results if available.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "searchText"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pipelines_build_log",
+      "description": "Build log access. 'list' enumerates available logs for a build (returns log IDs, sizes, and types); 'get_content' fetches text for a single log by ID, optionally bounded by line range.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'list', 'get_content'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project ID or name. Required for both actions.",
+            "type": "string"
+          },
+          "buildId": {
+            "description": "Numeric build ID (> 0). Get from pipelines_build action=list.",
+            "not": {
+              "type": "null"
+            }
+          },
+          "logId": {
+            "description": "For 'get_content': numeric log ID. Get from action=list for the same buildId.",
+            "default": null
+          },
+          "startLine": {
+            "description": "For 'get_content': Inclusive starting line number. Must be <= endLine. Leave both null to read from the start of the log; at most 5000 lines are returned per call, so page with startLine for long logs.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          },
+          "endLine": {
+            "description": "For 'get_content': Inclusive ending line number. Must be >= startLine.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "project",
+          "buildId"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wiki",
+      "description": "Read operations on Azure DevOps wikis. Use 'action' to choose the operation: 'get_page' (retrieve a single page with metadata and optional content; supply EITHER 'url' OR 'wikiIdentifier' + 'project' + 'path'), 'list_pages' (list pages in a wiki; requires 'wikiIdentifier' + 'project'), 'list_wikis' (enumerate wikis for an organization or project; only 'orgName' is required, 'project' optional), 'get_wiki' (retrieve a single wiki by identifier; requires 'wikiIdentifier').",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get_page', 'list_pages', 'list_wikis', 'get_wiki'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "The project name or ID. Required for 'list_pages', and for 'get_page' when 'url' is not provided. Optional for 'list_wikis' and 'get_wiki'.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "wikiIdentifier": {
+            "description": "The unique identifier or name of the wiki. Required for 'list_pages' and 'get_wiki', and for 'get_page' when 'url' is not provided.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "path": {
+            "description": "The path of the wiki page (e.g., '/Home' or '/Documentation/Setup'). Used by 'get_page'. Required for 'get_page' when 'url' is not provided.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "url": {
+            "description": "The full URL of the wiki page. Used by 'get_page' as an alternative to supplying 'wikiIdentifier' + 'project' + 'path'.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "includeContent": {
+            "description": "For 'get_page': when true, returns the page content alongside metadata. Defaults to true.",
+            "default": true
+          },
+          "recursionLevel": {
+            "description": "For 'get_page': recursion level for subpages. 'None', 'OneLevel', or 'Full'.",
+            "default": null
+          },
+          "top": {
+            "description": "For 'list_pages': the maximum number of pages to return. Range 1-100.",
+            "default": 20
+          },
+          "continuationToken": {
+            "description": "For 'list_pages': continuation token from a prior call.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "pageViewsForDays": {
+            "description": "For 'list_pages': number of days to retrieve page view statistics for.",
+            "default": null
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wit_query",
+      "description": "Read operations on Azure DevOps work item queries. Use 'action' to choose: 'get' (a query by ID or path), 'get_results' (the results of a query by query ID), 'search' (search all queries accessible to the user by filter text), 'list' (list root query folders and their children for a project), 'wiql' (execute an ad-hoc WIQL query).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get', 'get_results', 'search', 'list', 'wiql'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "The name or ID of the Azure DevOps project. Required for all actions.",
+            "type": "string"
+          },
+          "query": {
+            "description": "For 'get': The ID or path of the query to retrieve.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "id": {
+            "description": "For 'get_results': The ID (GUID) of the query to retrieve results for.",
+            "default": null
+          },
+          "expand": {
+            "description": "For 'get', 'list' and 'search': Optional expand parameter for query details. Allowed values: 'None' (columns, links, changeInfo), 'Wiql' (adds WIQL text), 'Clauses' (adds WIQL clauses), 'All' (all properties), 'Minimal' (minimal properties and WIQL text).",
+            "default": null
+          },
+          "depth": {
+            "description": "For 'get': How deep to expand the query. Defaults to 0. For 'list': Depth of children to fetch within query folders. Defaults to 1.",
+            "default": null
+          },
+          "includeDeleted": {
+            "description": "For 'get', 'list' and 'search': Whether to include deleted items. Defaults to false.",
+            "default": null
+          },
+          "useIsoDateFormat": {
+            "description": "For 'get': Whether to use ISO date format. Defaults to false.",
+            "default": null
+          },
+          "team": {
+            "description": "For 'get_results' and 'wiql': The team name or ID. If not provided, the default team is used.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "timePrecision": {
+            "description": "For 'get_results' and 'wiql': Whether to include time precision. Defaults to false.",
+            "default": null
+          },
+          "top": {
+            "description": "For 'get_results' and 'wiql': Maximum number of results. Defaults to 50; for 'wiql', maximum is 1000. For 'search': Maximum number of queries to return. Defaults to 50, maximum is 200.",
+            "default": null
+          },
+          "filter": {
+            "description": "For 'search': Required. The text to filter queries by name.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "wiql": {
+            "description": "For 'wiql': The WIQL query string to execute, e.g., \"SELECT [System.Id], [System.Title] FROM WorkItems WHERE [System.TeamProject] = @project\".",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "project"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wit_work_item",
+      "description": "Read operations on Azure DevOps work items. Use 'action' to choose: 'get' (single work item by organization-unique ID; project is optional), 'get_batch' (multiple work items by IDs), 'list_comments' (comments on a work item), 'my' (work items relevant to the authenticated user), 'list_revisions' (revisions of a work item), 'list_for_iteration' (work items for a team iteration), 'get_type' (metadata for a work item type).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get', 'get_batch', 'list_comments', 'my', 'list_revisions', 'list_for_iteration', 'get_type'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "The name or ID of the Azure DevOps project. Optional for 'get', which retrieves by organization-unique work item ID when omitted. Required for all other actions.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "id": {
+            "description": "For 'get': The ID of the work item to retrieve.",
+            "default": null
+          },
+          "ids": {
+            "description": "For 'get_batch': The IDs of the work items to retrieve. Must be a nonempty JSON array of integers, e.g. [123, 456].",
+            "default": null
+          },
+          "workItemId": {
+            "description": "For 'list_comments', 'list_revisions': The ID of the work item.",
+            "default": null
+          },
+          "fields": {
+            "description": "For 'get', 'get_batch': Optional list of fields to include. For 'get' and 'get_batch', cannot be used together with the expand parameter.",
+            "default": null
+          },
+          "asOf": {
+            "description": "For 'get': Optional date string to retrieve the work item as of a specific time.",
+            "default": null
+          },
+          "expand": {
+            "description": "For 'get', 'get_batch', 'list_revisions': Expand options ('All', 'Fields', 'Links', 'None', 'Relations'). For 'get' and 'get_batch', cannot be used with fields.",
+            "default": null
+          },
+          "top": {
+            "description": "For 'list_comments', 'list_revisions', 'my': Maximum number of results. For 'list_revisions', the supported range is 1-200.",
+            "default": null
+          },
+          "skip": {
+            "description": "For 'list_revisions': Number of revisions to skip for pagination.",
+            "default": null
+          },
+          "team": {
+            "description": "For 'list_for_iteration': The name or ID of the team. If not provided, the default team is used.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "iterationId": {
+            "description": "For 'list_for_iteration': The ID of the iteration to retrieve work items for.",
+            "default": null
+          },
+          "type": {
+            "description": "For 'my': The type of work items to retrieve.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "enum": [
+              "assignedtome",
+              "myactivity"
+            ]
+          },
+          "includeCompleted": {
+            "description": "For 'my': Whether to include completed work items. Defaults to false.",
+            "default": null
+          },
+          "workItemType": {
+            "description": "For 'get_type': The name of the work item type to retrieve.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "search_code",
+      "description": "Search Azure DevOps Repositories for a given search text",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "searchText": {
+            "description": "Keywords to search for in code repositories",
+            "type": "string"
+          },
+          "project": {
+            "description": "Filter by projects",
+            "default": null
+          },
+          "repository": {
+            "description": "Filter by repositories",
+            "default": null
+          },
+          "path": {
+            "description": "Filter by paths",
+            "default": null
+          },
+          "branch": {
+            "description": "Filter by branches",
+            "default": null
+          },
+          "includeFacets": {
+            "description": "Include facets in the search results",
+            "default": false
+          },
+          "skip": {
+            "description": "Number of results to skip",
+            "default": 0
+          },
+          "top": {
+            "description": "Maximum number of results to return",
+            "default": 5
+          }
+        },
+        "required": [
+          "searchText"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

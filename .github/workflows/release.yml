@@ -61,8 +61,8 @@ jobs:
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
       - run: pnpm install --frozen-lockfile
       - run: uv sync --all-packages --frozen
-      # The packs signed for main by the packs workflow: the release verifies every signature
-      # again with packs/signing-key.pub when it synthesizes.
+      # The packs and remote MCP profiles signed for main by the packs workflow: the release
+      # verifies every signature again with packs/signing-key.pub when it synthesizes.
       - name: Signed packs of main
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,6 +74,10 @@ jobs:
           gh run download "$run_id" --pattern 'pack-*-signed' --dir signed
           mkdir -p dist/packs
           find signed -type f -exec cp {} dist/packs/ \;
+          # Signed remote MCP profiles of the same run (D98 (14)), verified again at synthesis.
+          gh run download "$run_id" --pattern 'remote-*-signed' --dir signed-remotes
+          mkdir -p dist/remotes
+          find signed-remotes -type f -name '*.remote.json' -exec cp {} dist/remotes/ \;
       - name: Require the release configuration
         env:
           RELEASE_PUBLISHER_ROLE_ARN: ${{ secrets.RELEASE_PUBLISHER_ROLE_ARN }}

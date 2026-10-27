@@ -37,7 +37,7 @@ Se pone en `true` en un cliente solo después de probar P9 (D97 (5)).
 
 Volver a ponerlo en `false` no corta las llamadas de los registros que ya están activos: el parámetro solo frena las escrituras de registro, «Conectar» y el provisioner. Esto no lo eligió el dueño: lo dedujo un agente de lo anterior. Para cortar un registro activo se deshabilita el registro, lo que borra su proveedor (D93 (7)).
 
-**(5) El esquema de tools se captura en vivo (respondido: «Capturado en vivo (Recomendada)»).** El `mcpToolSchema` del perfil sale de un `tools/list` real contra la organización de pruebas del dueño. Usa recursos temporales del laboratorio, cada uno aprobado por el dueño, y la captura la corre el agente principal. Hasta entonces, el perfil del repositorio trae un esquema marcado de prueba, que el pipeline no firma. El procedimiento para refrescarlo a mano queda en `remotes/README.md`. El CI no puede comparar el perfil con el servidor (TM-005): el repositorio es público y no tiene credenciales de Microsoft.
+**(5) El esquema de tools se captura en vivo (respondido: «Capturado en vivo (Recomendada)»).** El `mcpToolSchema` del perfil sale de un `tools/list` real contra la organización de pruebas del dueño. Usa recursos temporales del laboratorio, cada uno aprobado por el dueño, y la captura la corre el agente principal. La captura se hizo el 2026-10-27, antes de construir el perfil (servidor `AzureDevOps.Mcp` 1.0.0.0, protocolo `2025-06-18`, con `X-MCP-Readonly: true`), así que el perfil del repositorio nunca llevó un esquema de prueba: `remotes/azure-devops/tool-schema.json` son las 13 tools de (6) tal como las devolvió el servidor. El procedimiento para refrescarlo a mano queda en `remotes/README.md`. El CI no puede comparar el perfil con el servidor (TM-005): el repositorio es público y no tiene credenciales de Microsoft.
 
 **(6) Las tools del perfil v1 (respondido: «Lo anterior + pipelines y código»).**
 - **Toolsets:**
@@ -48,7 +48,11 @@ Volver a ponerlo en `false` no corta las llamadas de los registros que ya están
   - búsqueda de código.
 - **Fuera de todo toolset:** `pipelines_artifact` y `wit_work_item_attachment` (TM-011).
 - **Clase:** todas las tools son `read`.
-- **Pendiente de la captura (5):** el valor exacto de cada toolset en `X-MCP-Toolsets`.
+- **Valores de `X-MCP-Toolsets`** (2026-10-27): la captura no los da; salen de la documentación del servidor remoto de Microsoft.
+  - `wit` (con `search_workitem`), `wiki` (con `search_wiki`) y `pipelines`: los nombra la documentación.
+  - `core` no tiene valor: sus tools llegan siempre, con cualquier toolset.
+  - Búsqueda de código: la documentación no da un valor solo para `search_code`; la pone entre las tools de *Repos*. El perfil manda `repos`, marcado como deducido y a comprobar en vivo antes de habilitarlo en un cliente (elegido el 2026-10-27, por menú: «`repos`, pendiente de comprobar en vivo (Recomendada)»). El esquema del target y el ítem firmado solo traen `search_code`, así que el Gateway no expone ninguna otra tool de *Repos*.
+  - Un registro tiene que elegir al menos un toolset con valor: sin `X-MCP-Toolsets`, el servidor sirve todos sus toolsets.
 
 **(7) El vencimiento del secreto se ve solo en pantalla (respondido: «No, solo en pantalla (Recomendada)»).** `mango-api` calcula el nivel de aviso al leer, con 30 y 7 días antes y vencido, en el catálogo y en Ajustes › Conectividad. No hay función diaria ni aviso en la Bandeja.
 

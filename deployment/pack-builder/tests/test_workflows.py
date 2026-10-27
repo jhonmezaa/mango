@@ -33,6 +33,8 @@ ANY_SECRET = re.compile(r"\bsecrets\s*[.\[]")
 # Everything a pack's zip or its signed statement is made from, and what makes them.
 PACK_PATHS = [
     "packs/**",
+    # Remote MCP profiles (D98 (14)): signed with the same key, in the same workflow.
+    "remotes/**",
     "deployment/build-pack.sh",
     "deployment/pack-builder/**",
     "packages/py/mango-packs/**",
@@ -93,10 +95,11 @@ def test_no_arn_bucket_or_account_id_comes_from_a_variable(workflow: Path) -> No
     assert not found, f"{workflow.name} reads {found} from `vars`: use environment secrets (D59)"
 
 
-def test_packs_are_signed_with_the_alias_of_the_key() -> None:
+@pytest.mark.parametrize("job", ["sign", "remote-sign"])
+def test_packs_are_signed_with_the_alias_of_the_key(job: str) -> None:
     # The envelope records the key id and is uploaded as an artifact, which nothing masks.
     packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
-    steps = _jobs(packs)["sign"]["steps"]
+    steps = _jobs(packs)[job]["steps"]
     sign = next(step for step in steps if step.get("name") == "Sign and verify")
     assert sign["env"]["PACK_SIGNING_KEY"].startswith("alias/")
     assert '--key-id "$PACK_SIGNING_KEY"' in sign["run"]
@@ -147,14 +150,50 @@ def test_a_push_starts_the_packs_workflow_for_every_source_of_the_builder() -> N
         "deployment/pack-builder/src/mango_pack_builder/build.py",
         "packs/aws-pricing/requirements.lock",
         "packs/signing-key.pub",
+        "remotes/azure-devops/tool-schema.json",
     ):
         # `**` also crosses `/` for fnmatch, as it does in a workflow path filter.
         assert any(fnmatchcase(changed, pattern) for pattern in paths), changed
 
 
-def test_packs_are_signed_only_from_a_push_to_main_in_the_protected_environment() -> None:
+@pytest.mark.parametrize(("job", "needs"), [("sign", "build"), ("remote-sign", "remote-build")])
+def test_packs_are_signed_only_from_a_push_to_main_in_the_protected_environment(
+    job: str, needs: str
+) -> None:
     packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
-    sign = _jobs(packs)["sign"]
+    sign = _jobs(packs)[job]
     assert sign["environment"] == "pack-signing"
-    assert sign["needs"] == "build"
+    assert sign["needs"] == needs
     assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in sign["if"]
+
+
+def test_only_the_signing_jobs_can_get_credentials() -> None:
+    packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
+    for name, job in _jobs(packs).items():
+        writes_token = job.get("permissions", {}).get("id-token") == "write"
+        assert writes_token == (name in {"sign", "remote-sign"}), name
+        if name in {"build", "remote-build"}:
+            assert "environment" not in job
+            assert not ANY_SECRET.search(json.dumps(job))
+
+
+def test_a_remote_profile_is_signed_only_as_it_was_checked() -> None:
+    packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
+    jobs = _jobs(packs)
+    assert jobs["remote-build"]["strategy"]["matrix"] == jobs["remote-sign"]["strategy"]["matrix"]
+    remotes = sorted(path.name for path in (REPO / "remotes").iterdir() if path.is_dir())
+    assert jobs["remote-build"]["strategy"]["matrix"]["remote"] == remotes
+    steps = jobs["remote-sign"]["steps"]
+    names = [step.get("name") or step.get("uses", "") for step in steps]
+    compare = names.index("Rewrite and compare with the checked statement")
+    credentials = next(i for i, name in enumerate(names) if "configure-aws-credentials" in name)
+    assert compare < credentials < names.index("Sign and verify")
+    assert "cmp " in steps[compare]["run"]
+
+
+def test_the_release_ships_the_signed_remote_profiles() -> None:
+    release = next(path for path in WORKFLOWS if path.name == "release.yml")
+    steps = _jobs(release)["publish"]["steps"]
+    download = next(step for step in steps if step.get("name") == "Signed packs of main")
+    assert "--pattern 'remote-*-signed'" in download["run"]
+    assert "dist/remotes" in download["run"]

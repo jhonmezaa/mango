@@ -1,0 +1,56 @@
+# Remote MCP profile of Azure DevOps (D93, D98 (14)). Format: mango_packs.remote.RemoteProfile.
+# tool-schema.json is the server's `tools/list` with `X-MCP-Readonly: true`, captured live on
+# 2026-10-27 (server AzureDevOps.Mcp 1.0.0.0, protocol 2025-06-18) and cut to these tools.
+# How to refresh it: remotes/README.md.
+schema_version: 1
+id: azure-devops
+# <date of the captured tool list>-<revision of Mango>
+version: "2026.10.27-1"
+name: Azure DevOps
+operator: Microsoft
+data_leaves_aws: true
+endpoint:
+  host: mcp.dev.azure.com
+  path: "/{organization}"
+link_hosts: [dev.azure.com, visualstudio.com]
+link_org: {path_segment: 1, subdomain_of: visualstudio.com}
+provider:
+  vendor: MicrosoftOauth2
+  display_name: Microsoft
+  needs_tenant: true
+  # Application id of the "Azure DevOps MCP" enterprise application (public, Microsoft docs).
+  scopes: ["2a72489c-aab2-4b65-b93a-a91edccf33b8/.default", "offline_access"]
+  permissions:
+    - {resource: Azure DevOps MCP, permission: ".default (delegado, lectura)"}
+    - {resource: Microsoft Entra, permission: offline_access}
+forced_headers:
+  X-MCP-Readonly: "true"
+  X-MCP-Toolsets: "{toolsets}"
+# Header values from Microsoft's documentation of the remote server (remotes/README.md).
+toolsets:
+  # Core tools are always served; `core` is not a value of X-MCP-Toolsets.
+  - {id: core, label: Proyectos y equipos, always: true}
+  - {id: wit, header: wit, label: Work items}
+  - {id: wiki, header: wiki, label: Wiki}
+  - {id: pipelines, header: pipelines, label: Pipelines}
+  # INFERRED, not stated: the docs list search_code among the Repos tools, but say no toolset
+  # value for it. To be checked live before enabling in a customer (remotes/README.md).
+  - {id: search-code, header: repos, label: Búsqueda de código}
+# Out of every toolset (TM-011): pipelines_artifact and wit_work_item_attachment.
+probe: {tool: core_list_projects, arguments: {top: 1}}
+tools:
+  - {name: core_list_projects, toolset: core, access: read}
+  - {name: core_list_project_teams, toolset: core, access: read}
+  - {name: wit_work_item, toolset: wit, access: read}
+  - {name: wit_query, toolset: wit, access: read}
+  - {name: wit_backlog, toolset: wit, access: read}
+  - {name: search_workitem, toolset: wit, access: read}
+  - {name: wiki, toolset: wiki, access: read}
+  - {name: search_wiki, toolset: wiki, access: read}
+  - {name: pipelines_definition, toolset: pipelines, access: read}
+  - {name: pipelines_run, toolset: pipelines, access: read}
+  - {name: pipelines_build, toolset: pipelines, access: read}
+  - {name: pipelines_build_log, toolset: pipelines, access: read}
+  - {name: search_code, toolset: search-code, access: read}
+tools_sha256: be7e837e4ec553136f853798c69b6f996b0d5bd9dd519cf670148822ce9027e7
+max_result_chars: 65536

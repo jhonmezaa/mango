@@ -74,14 +74,14 @@ class Envelope(StrictModel):
     signature: Signature
 
 
-def signed_message(payload: bytes) -> bytes:
+def signed_message(payload: bytes, payload_type: str = PAYLOAD_TYPE) -> bytes:
     """DSSE pre-authentication encoding: binds the payload to its type."""
-    kind = PAYLOAD_TYPE.encode()
+    kind = payload_type.encode()
     return b"DSSEv1 %d %b %d %b" % (len(kind), kind, len(payload), payload)
 
 
-def message_digest(payload: bytes) -> bytes:
-    return hashlib.sha256(signed_message(payload)).digest()
+def message_digest(payload: bytes, payload_type: str = PAYLOAD_TYPE) -> bytes:
+    return hashlib.sha256(signed_message(payload, payload_type)).digest()
 
 
 def build_envelope(statement: PackStatement, key_id: str, signature: bytes) -> bytes:
