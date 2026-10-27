@@ -21,16 +21,20 @@ El riesgo principal es **la cadena entre el contenido de Azure DevOps y las acci
   - la seguridad interna de Microsoft (servidor MCP, Entra);
   - el tenant del cliente (Acceso condicional, quién tiene acceso a qué proyecto);
   - los packs actuales y los conectores de Mango.
-- **Supuestos que pesan en la prioridad.** El dueño confirmó el 2026-10-25, por menú, los supuestos 1 a 3; los supuestos 4 y 5 siguen abiertos hasta las pruebas P3 y P4.
+- **Supuestos que pesan en la prioridad.** El dueño confirmó el 2026-10-25, por menú, los supuestos 1 a 3. La prueba en vivo confirmó el 4 (P8) y el 5 (P3) el 2026-10-26 (D94). El 6 y el 7 los eligió el dueño el 2026-10-27, por menú (D98).
   1. v1 es **solo lectura**.
   2. Solo se registran **perfiles curados** de la release, no URLs libres.
   3. La app de Entra es **single-tenant**, del tenant del cliente, con permisos delegados de lectura y consentimiento de administrador.
-  4. El vault se guarda por identidad de carga del Gateway y persona (el `sub` del JWT de Cognito, o `iss`+`sub`): **sin verificar** (P4).
-  5. El harness no saca un `-32042` al cliente de forma útil (P3).
-- **Preguntas abiertas que cambian la prioridad:**
-  - ¿Cómo identifica Identity a la persona en el vault?
-  - ¿Se borra el token de una sola persona? (P7)
-  - ¿Acepta el servidor un token de la app del cliente? (P1)
+  4. El vault guarda el token por persona: el de una no le sirve a otra (P8, confirmado).
+  5. El harness entrega el `-32042` al modelo como error de una tool y el modelo repite la URL si la trae (P3, confirmado): por eso la quita el interceptor `RESPONSE`.
+  6. Mientras no se pruebe P9, la instalación tiene los MCP remotos apagados (`RemoteMcpEnabled = false`, D98 (4)). **Las prioridades de la tabla cuentan con los controles de D93 a D98 construidos**; hasta entonces son condicionales, y lo que las sostiene es ese apagado.
+  7. Cambiar toolsets o grupos de un registro activo pide doble aprobación y no borra el proveedor (D98 (8)).
+- **Preguntas abiertas que cambian la prioridad** (se prueban antes de habilitarlo en un cliente, D98):
+  - ¿Trae la URL de consentimiento la sesión? Si no, la vuelta no distingue «no es tuyo» de «venció» (TM-014).
+  - ¿Qué IAM mínimo piden el proveedor, `CompleteResourceTokenAuth` y el target con OAuth? (TM-009, TM-012)
+  - ¿Qué versión del protocolo negocia el harness? Con `2026-07-28`, borrar `_meta` rompe las llamadas (TM-006, TM-013).
+  - ¿Bloquea el Acceso condicional del tenant como se espera? (P9)
+  - ¿Se puede usar el registro estándar v2 de CloudFront sin `cs-uri-query`? Si no, TM-016 queda como excepción registrada.
 
 ## System model
 
@@ -51,15 +55,20 @@ El riesgo principal es **la cadena entre el contenido de Azure DevOps y las acci
 ### Data flows and trust boundaries
 
 - **Navegador → CloudFront → `mango-api`:**
-  - **Qué cruza:** la pregunta del chat; el alta (`tenantId`, `clientId`, **secreto**); el callback (`session_id`, `state`).
+  - **Qué cruza:** la pregunta del chat; el alta (`tenantId`, `clientId`, **secreto**); la vuelta (`session_id`, en la query de `/conexiones/vuelta` y en el cuerpo de `POST /api/oauth/callback`).
   - **Canal:** HTTPS hasta CloudFront y HTTP por la VPC origin (excepción de la PoC).
-  - **Controles:** cookie de sesión, Cedar L1, Pydantic, WAF y límites de tasa.
-- **`mango-api` → AgentCore Identity (control):** el secreto (una vez), `GetResourceOauth2Token` y `CompleteResourceTokenAuth`. Va por SigV4 y el rol de la tarea. El secreto nunca vuelve.
+  - **Controles:** access token de Cognito en `Authorization` (la cookie de D63 solo renueva la sesión), guarda de mismo origen, Cedar L1, Pydantic, WAF y límites de tasa.
+- **`mango-api` → AgentCore Identity (control):** el secreto (al pedir y al rotar) y `CompleteResourceTokenAuth` con el access token de la persona (D94 (3): ya no `GetResourceOauth2Token`). Va por SigV4 y el rol de la tarea. El secreto nunca vuelve.
 - **`mango-api` → harness → Gateway:**
   - **Qué cruza:** el access token de Cognito y la firma de la invocación.
   - **Controles:** JWT validado por el Gateway; el interceptor verifica la firma, las tools del agente y su clase; Cedar.
 - **Gateway → interceptor `REQUEST` / `RESPONSE`** (Lambda síncrona): cabeceras (con `Authorization`) y cuerpos de `tools/call`. Los interceptores no registran contenido.
 - **Gateway → Identity (vault) → Gateway:** token de Microsoft por persona.
+- **Interceptor `RESPONSE` → `Settings` → `mango-api`:**
+  - **Qué cruza:** la URL de consentimiento de una persona, ligada a su `sub` y al registro.
+  - **Canal:** DynamoDB, cifrado con la llave de datos.
+  - **Controles:** el `sub` sale de la firma de la invocación verificada; solo el rol del interceptor puede escribir la partición (`dynamodb:LeadingKeys`), y a `mango-api` IAM le niega `PutItem` y `UpdateItem` en ella; host validado al escribir y otra vez al entregar; 10 minutos de vida (D98 (3), (16), (17)).
+- **Borde (CloudFront) → logs:** la query de `/conexiones/vuelta` trae el `session_id`. Control: registro estándar v2 sin `cs-uri-query` (D98 (9)).
 - **Gateway → `mcp.dev.azure.com`** (internet, desde la red de AWS):
   - **Qué cruza:** argumentos de tools y el token de Microsoft; vuelven datos de Azure DevOps (no confiables).
   - **Canal:** HTTPS con CA pública.
@@ -80,16 +89,22 @@ flowchart LR
     IREQ["Interceptor REQUEST"]
     IRES["Interceptor RESPONSE"]
     ID["Identity vault"]
+    SPA["SPA vista de vuelta"]
+    SET["Settings consentimiento pendiente"]
   end
   subgraph Microsoft
     ENTRA["Entra ID"]
     ADO["Servidor MCP de Azure DevOps"]
   end
-  U -->|chat y callback| API
+  U -->|chat| API
+  U -->|vuelta| SPA
+  SPA -->|cerrar con token| API
   API -->|token y firma| H
   H -->|tools call| GW
   GW --> IREQ
   GW --> IRES
+  IRES -->|URL pendiente| SET
+  API -->|leer y borrar| SET
   GW -->|token por persona| ID
   GW -->|lectura| ADO
   U -->|consentimiento| ENTRA
@@ -130,8 +145,9 @@ flowchart LR
 
 | Surface | How reached | Trust boundary | Notes | Evidence (repo path / symbol) |
 |---|---|---|---|---|
-| `POST /api/mcp/remotes/{profile}/enablements` (con secreto) | SPA, administrador | Navegador → `mango-api` | El secreto entra una vez y va a Identity | nuevo; patrón de D46 en `apps/api/src/mango_api/` (dominio MCP) |
-| `POST /api/me/connections/{remote}/authorize` | SPA, persona | Navegador → `mango-api` | Devuelve la URL de autorización | nuevo |
+| `POST /api/mcp/remotes/{profile}/registrations` (con secreto) | SPA, administrador | Navegador → `mango-api` | El secreto entra una vez y va a Identity | nuevo; patrón de D46 en `apps/api/src/mango_api/` (dominio MCP) |
+| `POST /api/me/connections/{reg}/connect` y `…/disconnect` | SPA, persona | Navegador → `mango-api` → Gateway | `connect` devuelve el pendiente vigente o hace un sondeo de lectura con `cx = connect`; `disconnect` manda el `_meta` 3LO con `cx = disconnect` (D97, D98 (15)). Límites de 20 y 10 por minuto | nuevo; firma en `packages/py/mango-core/src/mango_core/invocation.py` |
+| Interceptor `RESPONSE` → `Settings` (`MCP_CONSENT#<sub>`) | Una respuesta `-32042` del Gateway | Gateway → `Settings` → `mango-api` | La URL de consentimiento queda guardada para la persona; `mango-api` la entrega (TM-017) | nuevo |
 | Ruta `/conexiones/vuelta` de la SPA | Redirección del navegador desde Identity, con `session_id` en la query | Internet → SPA (CloudFront, S3) | La query llega a los logs del borde si no se excluye (TM-016) | `infra/lib/constructs/edge.ts` (registro de CloudFront) |
 | `POST /api/oauth/callback` | La SPA, con el access token de la persona (D98 (1)) | Navegador → `mango-api` | Pieza crítica: consentimiento pendiente de esa persona y session binding | nuevo |
 | `POST /api/mcp/remotes/registrations/{reg}/params` | SPA, administrador | Navegador → `mango-api` | Cambia toolsets o grupos con doble aprobación (TM-015) | nuevo |
@@ -155,10 +171,10 @@ flowchart LR
 
 | Threat ID | Threat source | Prerequisites | Threat action | Impact | Impacted assets | Existing controls (evidence) | Gaps | Recommended mitigations | Detection ideas | Likelihood | Impact severity | Priority |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TM-001 | Usuario de Azure DevOps | Escribir en el proyecto; agente con tools remotas | Inyección indirecta que dispara una escritura | Cambios de código, pipelines o work items como la persona | Datos de Azure DevOps (I) | Salidas como no confiables (regla); approval token para escrituras (D56) | Las escrituras remotas no están cubiertas por D56 | v1 sin escrituras: `X-MCP-Readonly`, esquema solo `read`, interceptor y scopes de lectura | Actividad (D90): llamadas rechazadas `tool_not_read_only` | high | high | **medium** (con v1 de solo lectura; **high** si hay escrituras) |
+| TM-001 | Usuario de Azure DevOps | Escribir en el proyecto; agente con tools remotas | Inyección indirecta que dispara una escritura | Cambios de código, pipelines o work items como la persona | Datos de Azure DevOps (I) | Salidas como no confiables (regla); approval token para escrituras (D56) | Las escrituras remotas no están cubiertas por D56 | v1 sin escrituras: `X-MCP-Readonly`, esquema solo `read`, interceptor y scopes de lectura | Actividad (D90): llamadas rechazadas `tool_not_read_only` | high | medium | medium |
 | TM-002 | Usuario de Azure DevOps | Ídem | Inyección que lleva datos al chat | Datos que la persona ya puede ver, resumidos | Datos de Azure DevOps (C) | La persona solo ve lo suyo (permisos de Azure DevOps) | — | Toolsets mínimos; recorte de resultados; guardrail en la respuesta | — | medium | low | low |
-| TM-003 | Persona o atacante externo | Una URL de consentimiento | Completar el consentimiento con otra identidad | Token de B guardado como A | Asociación persona ↔ token (I) | Session binding de Identity (doc AWS) | El callback de Mango no existe | Callback con cookie de sesión, `state` de un solo uso ligado a persona y registro, 10 minutos | Auditoría `consent_failed` por `state` | medium | high | **high** → medium con el control |
-| TM-004 | Contenido inyectado | Un `-32042` llega al modelo | URL de consentimiento falsa en el chat | Phishing de credenciales de Entra | Tokens de Entra (C) | — | Comportamiento del harness desconocido (P3) | El interceptor `RESPONSE` quita la URL; tarjeta solo de `mango-api`, con host validado (`https`, host de Identity) | Contar `consent_required` por target | medium | high | **high** → low con el control |
+| TM-003 | Persona o atacante externo | Una URL de consentimiento | Completar el consentimiento con otra identidad | Token de B guardado como A | Asociación persona ↔ token (I) | Session binding de Identity (doc AWS) | El callback de Mango no existe | Vuelta por la SPA y `POST /api/oauth/callback` con el access token de la persona; exige el consentimiento pendiente `MCP_CONSENT#<sub>` de quien llama, de 10 minutos, y lo borra al cerrar (D94 (2), D98 (1), (3)) | `mcp_remote.consent_failed` con el motivo (`consent_not_yours`, `consent_expired`) | low | high | medium |
+| TM-004 | Contenido inyectado | Un `-32042` llega al modelo | URL de consentimiento falsa en el chat | Phishing de credenciales de Entra | Tokens de Entra (C) | — | Comportamiento del harness desconocido (P3) | El interceptor `RESPONSE` quita la URL; tarjeta solo de `mango-api`, con host validado (`https`, host de Identity) | Contar `consent_required` por target | medium | high | low |
 | TM-005 | Microsoft o su cadena | Acceso al servidor remoto | Cambiar definiciones o conducta | Tools nuevas, descripciones envenenadas | Catálogo (I) | — | — | `mcpToolSchema` fijo del perfil firmado; reaprobación por release | Comparar en el CI de Mango la lista pública de tools con el perfil | low | medium | low |
 | TM-006 | Modelo o inyección | Control de los argumentos | `_meta` con `returnUrl` o `forceAuthentication` | Redirección o pérdida de la conexión | Asociación persona ↔ token (I, A) | Allowlist de return URLs de Identity (un `returnUrl` ajeno se rechaza: probado el 2026-10-27 con la clave documentada) | El interceptor solo borra `_mango_ctx` | Borrar todo `_meta` en targets remotos | Registrar si venía `_meta` | medium | medium | medium |
 | TM-007 | Administrador malicioso | Rol de administrador | Registrar una app o tenant ajenos | Recolectar tokens | Tokens (C) | Doble aprobación (D46) | — | Mostrar `tenantId` y `clientId` a quien aprueba; un cambio en ellos es una solicitud nueva | Auditoría `mcp_remote.request` | low | high | medium |
@@ -167,10 +183,24 @@ flowchart LR
 | TM-010 | Persona o robo | Token en el vault | Uso después de la baja de la persona en Mango, o después de que ella pulse «Desconectar» | Acceso a Azure DevOps sin estar en Mango o sin quererlo | Tokens (C) | La baja deshabilita a la persona en Cognito: sin JWT no hay llamada. «Desconectar» borra su token del vault con `forceAuthentication` (D97; probado el 2026-10-27) | «Revoke sessions» en Entra no cortó en 1 h 38 min (P7); nada se revoca en Microsoft | `mango-api` solo da la desconexión por hecha si el Gateway confirma que falta el consentimiento; el runbook corta en Microsoft (sacar a la persona de la organización o de Entra) o a todas (borrar el proveedor) (D96 (4)) | Auditoría `mcp_remote.disconnect`; registro de persona eliminada con conexiones | low | medium | low |
 | TM-013 | Modelo, inyección o `mango-api` comprometido | Poder poner `_meta` en un `tools/call` | Usar el `_meta` 3LO para borrar el token de otra persona o para fijar la vuelta | Desconexión no pedida (A); vuelta a un sitio ajeno | Asociación persona ↔ token (I, A) | El `_meta` solo actúa sobre el token del JWT de la llamada (session binding); un `returnUrl` fuera de la allowlist se rechaza (probado el 2026-10-27) | Un `forceAuthentication` del modelo desconectaría a la propia persona | El interceptor borra todo `_meta` salvo con la marca de desconexión de la firma `X-Mango-Invocation`, que solo pone `mango-api`, y entonces deja pasar solo `forceAuthentication: true` (D97 (3)) | Registrar si venía `_meta` y si llevaba la marca | low | low | low |
 | TM-011 | Contenido grande | Artefacto o adjunto de MB | Agotar tokens y presupuesto, o pasar el payload de 6 MB | Turno caro o fallido | Presupuesto (A) | Topes de tokens (D74) | — | Recorte en el interceptor `RESPONSE`; dejar fuera `pipelines_artifact download` y `wit_work_item_attachment` en v1 | Tamaño de resultados en Actividad | medium | low | low |
-| TM-012 | `mango-api` comprometido o un error en él | Escritura en `Settings` | Escribir un catálogo aprobado `MCP_REMOTE#` con tools que nadie aprobó (una `write`) | El interceptor dejaría pasar tools fuera del perfil aprobado | Catálogo aprobado (I) | Solo lectura en las otras tres capas (cabecera, esquema del target, scopes) | Sin firma, el interceptor confiaría en la tabla | Ítem firmado por el provisioner con `alias/Mango-<ns>-remote-mcp` (KMS asimétrica; `mango-api` sin `kms:Sign`); el interceptor verifica con la pública y falla cerrado (D93 (9)) | Interceptor: rechazos por firma inválida | low | high | medium → low con el control |
-| TM-014 | Atacante externo o persona | Un enlace a `/conexiones/vuelta` con un `session_id` de su propio flujo | Hacer que la SPA de A cierre el flujo del atacante, o reutilizar el `session_id` | Token del atacante guardado como A, o un flujo cerrado dos veces | Asociación persona ↔ token (I) | Session binding de Identity: `CompleteResourceTokenAuth` con otro JWT da `AccessDeniedException` (probado el 2026-10-27) | La SPA no puede saber si el enlace es suyo | La SPA nunca cierra sola sin un pendiente: `mango-api` exige el `MCP_CONSENT#<sub>` vigente de quien llama (D98 (1), (3)); `POST` con `Authorization` y guarda de mismo origen; `session_id` solo en memoria y borrado de la barra; nunca en Web Storage | `mcp_remote.consent_failed` con el motivo | low | high | medium → low con el control |
-| TM-015 | Administrador malicioso | Rol de administrador; un registro activo | Ampliar toolsets o grupos de un registro ya aprobado (por ejemplo, abrir la búsqueda de código a todos) | Más datos de Azure DevOps al alcance de más personas, sin otra revisión | Datos de Azure DevOps (C) | Doble aprobación de las altas (D46) | Un cambio sin aprobación lo saltaría | Solicitud `params` con doble aprobación (D98 (8)); quien aprueba ve los toolsets y los grupos de antes y de después; el provisioner vuelve a firmar el ítem; solo tools `read` del perfil firmado | Auditoría `mcp_remote.request` / `.approve` | low | medium | low |
-| TM-016 | Quien lee los logs del borde | Acceso a los logs de CloudFront | Leer el `session_id` de la query de la URL de vuelta | Sin el JWT de la persona no sirve (session binding), pero es un dato de sesión en un log | Asociación persona ↔ token (C) | De un solo uso, 10 minutos, ligado a la persona | El registro *legacy* de CloudFront siempre guarda `cs-uri-query` | Registro estándar v2 de CloudFront sin `cs-uri-query`, antes de que exista la ruta (D98 (9)); la SPA se sirve sin reenviar la query a S3; sin logs de WAF. Si v2 no se puede usar, excepción registrada en `AGENTS.md` | Test de infra que fija los campos del registro | low | low | low |
+| TM-012 | `mango-api` comprometido o un error en él | Escritura en `Settings` | Escribir un catálogo aprobado `MCP_REMOTE#` con tools que nadie aprobó (una `write`) | El interceptor dejaría pasar tools fuera del perfil aprobado | Catálogo aprobado (I) | Solo lectura en las otras tres capas (cabecera, esquema del target, scopes) | Sin firma, el interceptor confiaría en la tabla | Ítem firmado por el provisioner con `alias/Mango-<ns>-remote-mcp` (KMS asimétrica; `mango-api` sin `kms:Sign`); el interceptor verifica con la pública y falla cerrado (D93 (9)) | Interceptor: rechazos por firma inválida | low | high | low |
+| TM-014 | Atacante externo o persona | Un enlace a `/conexiones/vuelta` con un `session_id` de su propio flujo | Hacer que la SPA de A cierre el flujo del atacante, o reutilizar el `session_id` | Token del atacante guardado como A, o un flujo cerrado dos veces | Asociación persona ↔ token (I) | Session binding de Identity: `CompleteResourceTokenAuth` con otro JWT da `AccessDeniedException` (probado el 2026-10-27) | La SPA no puede saber si el enlace es suyo | La SPA nunca cierra sola sin un pendiente: `mango-api` exige el `MCP_CONSENT#<sub>` vigente de quien llama (D98 (1), (3)); `POST` con `Authorization` y guarda de mismo origen; `session_id` solo en memoria y borrado de la barra; nunca en Web Storage | `mcp_remote.consent_failed` con el motivo | low | high | low |
+| TM-015 | Administrador malicioso | Rol de administrador; un registro activo | Ampliar toolsets o grupos de un registro ya aprobado (por ejemplo, abrir la búsqueda de código a todos) | Más datos de Azure DevOps al alcance de más personas, sin otra revisión | Datos de Azure DevOps (C) | Doble aprobación de las altas (D46) | Un cambio sin aprobación lo saltaría | Solicitud `params` con doble aprobación (D98 (8)): quien pide no aprueba, y la solicitud guarda los toolsets y los grupos de antes, que quien aprueba ve junto a los nuevos; se rechaza con `release_changed` si el perfil de la release cambió desde que se pidió; solo admite toolsets del perfil firmado (todas sus tools `read`); el provisioner vuelve a firmar el ítem (sube `revision`) y el interceptor sigue con el anterior hasta entonces | Auditoría `mcp_remote.request` / `.approve` con los toolsets y grupos de antes y de después (nombres, nunca personas) | low | medium | low |
+| TM-016 | Quien lee los logs del borde | Acceso a los logs de CloudFront | Leer el `session_id` de la query de la URL de vuelta | Sin el JWT de la persona no sirve (session binding), pero es un dato de sesión en un log | Asociación persona ↔ token (C) | De un solo uso, 10 minutos, ligado a la persona | El registro *legacy* de CloudFront siempre guarda `cs-uri-query` | Registro estándar v2 de CloudFront sin `cs-uri-query`, antes de que exista la ruta (D98 (9)); la SPA se sirve sin reenviar la query a S3; sin logs de WAF. Si v2 no se puede usar, excepción registrada en `AGENTS.md` | Quién lee el prefijo `cloudfront/` del bucket de logs (CloudTrail de datos de S3, si está activo); un test de infra fija los campos del registro | low | low | low |
+| TM-017 | `mango-api` comprometido, un error en el interceptor `RESPONSE` o quien escriba `Settings` | Poder escribir `MCP_CONSENT#<sub>` de otra persona | Dejar en el consentimiento pendiente de A una URL ajena, o la URL del flujo de otra persona | Phishing dentro de la tarjeta de Mango, que la persona cree de confianza; o A autoriza con su cuenta de Microsoft el flujo de otra persona | Tokens de Entra (C); asociación persona ↔ token (I) | Session binding: cerrar el flujo de otra persona con el JWT de A da `AccessDeniedException` (probado el 2026-10-27) | La partición es nueva; `mango-api` tiene hoy lectura y escritura en toda `Settings` | El `sub` del ítem sale de la firma de la invocación verificada, nunca del cuerpo; solo el rol del interceptor `RESPONSE` escribe la partición (`dynamodb:LeadingKeys`) y un `Deny` de `PutItem` y `UpdateItem` sobre `MCP_CONSENT#*` para `mango-api`, que solo lee y borra; host `bedrock-agentcore.<región>.amazonaws.com` y `https` validados al escribir y al entregar (D98 (3), (16), (17)) | Contar las URL rechazadas por host en el interceptor y en `mango-api` | low | high | low |
+
+### Justificación de la prioridad (v0.3)
+
+Las prioridades cuentan con los controles de D93 a D98 construidos (supuesto 6). Para las amenazas nuevas o que cambiaron en esta versión:
+
+- **TM-001 · medium.** *Probabilidad alta:* cualquiera con acceso al proyecto escribe texto que el agente lee. *Impacto medio en v1:* no hay escrituras en ninguna de las cuatro capas, y lo que queda es leer con los permisos de la persona; sería alto con escrituras. Sería **high** si se abrieran escrituras (D93 (2)).
+- **TM-003 · medium.** *Probabilidad baja:* hace falta que la víctima abra una URL ajena y que su sesión de Mango tenga un consentimiento pendiente. *Impacto alto:* un token cruzado deja a una persona actuar como otra. El session binding se probó el 2026-10-27, y el pendiente de la persona se exige en el servidor.
+- **TM-004 · low.** *Probabilidad media* sin el control: P3 mostró que el modelo repite la URL. *Impacto alto:* phishing de Entra. Con el interceptor `RESPONSE`, la URL nunca llega al modelo y la tarjeta solo la arma `mango-api` con el host validado.
+- **TM-012 · low.** *Probabilidad baja:* exige comprometer `mango-api`. *Impacto alto:* un catálogo inventado. Lo cierran la firma con una llave que `mango-api` no puede usar y el `Deny` de escritura en `MCP_REMOTE#`.
+- **TM-014 · low.** *Probabilidad baja:* además del enlace, la víctima necesita un pendiente propio en esos 10 minutos. *Impacto alto si saliera,* pero el session binding lo impide: el cierre con el JWT de otra persona falla.
+- **TM-015 · low.** *Probabilidad baja:* exige dos administradores de acuerdo, o uno que engañe al otro. *Impacto medio:* más personas leen Azure DevOps, siempre con sus propios permisos de Microsoft y solo lectura.
+- **TM-016 · low.** *Probabilidad baja:* solo quien lee el bucket de logs. *Impacto bajo:* el `session_id` es de un solo uso, vence a los 10 minutos y no sirve sin el JWT de la persona. Se quita del log de todas formas (D98 (9)).
+- **TM-017 · low.** *Probabilidad baja:* exige un error o un compromiso en un componente de Mango. *Impacto alto:* la tarjeta de Mango es de confianza para la persona. Lo bajan el escritor único por IAM, el host validado dos veces y el session binding.
 
 ## Criticality calibration
 
@@ -180,34 +210,38 @@ flowchart LR
   - el secreto de la app expuesto en logs o en el navegador.
 - **high:**
   - una URL de consentimiento manipulada que llega a la persona;
-  - el callback sin session binding.
+  - el callback sin session binding;
+  - un consentimiento pendiente que otro componente puede escribir para cualquier persona.
 - **medium:**
   - pérdida de la conexión forzada por el modelo;
-  - un registro malicioso que frena la doble aprobación.
+  - un registro malicioso que frena la doble aprobación;
+  - ampliar los toolsets o los grupos de un registro activo sin la segunda aprobación.
 - **low:**
   - cambios de descripción con el esquema fijo;
   - resultados grandes con topes;
-  - acceso legítimo resumido por una inyección.
+  - acceso legítimo resumido por una inyección;
+  - el `session_id` de la vuelta en un log, sin el JWT de la persona.
 
 ## Focus paths for security review (al construir)
 
 | Path | Why it matters | Related Threat IDs |
 |---|---|---|
 | `functions/gateway-interceptor/src/mango_gateway_interceptor/handler.py` | Clase de tools remotas, borrado de `_meta`, cabeceras forzadas, sin `Authorization` | TM-001, TM-006, TM-008, TM-013 |
-| interceptor `RESPONSE` (nuevo) | Quitar la URL y recortar | TM-004, TM-011 |
+| interceptor `RESPONSE` (nuevo) | Quitar la URL, recortar y escribir el pendiente con el `sub` de la firma verificada | TM-004, TM-011, TM-017 |
 | ruta del callback en `mango-api` (nueva) y vista `/conexiones/vuelta` de la SPA | Consentimiento pendiente de quien llama, `CompleteResourceTokenAuth`, `session_id` solo en memoria | TM-003, TM-014 |
 | `infra/lib/constructs/edge.ts` (registro de CloudFront) | Que la query no llegue a los logs | TM-016 |
 | solicitud `params` en `mango-api` y el provisioner | Doble aprobación y nueva firma del ítem | TM-015 |
 | registro de remotos en `mango-api` (nuevo) | Secreto de solo escritura, doble aprobación | TM-007, TM-009 |
 | `infra/lib/constructs/tools.ts` | IAM del Gateway y de `mango-api` acotado a ARNs; la llave del catálogo, sin `kms:Sign` para `mango-api` | TM-009, TM-012 |
+| `infra/lib/stacks/core-stack.ts` (rol de `mango-api`) | `Deny` de escritura en `MCP_REMOTE#*` y de `PutItem`/`UpdateItem` en `MCP_CONSENT#*` | TM-012, TM-017 |
 | provisioner (target remoto) | Host del perfil, `mcpToolSchema` solo `read` | TM-005 |
 
 ## Quality check
 
-- Entradas cubiertas: alta con secreto, autorización, callback, `tools/call` remoto, resultados remotos y perfil de la release.
-- Cada frontera tiene amenaza: navegador → `mango-api` (TM-003, TM-007), `mango-api` → Gateway (TM-006, TM-008, TM-012), Gateway → Microsoft (TM-001, TM-002, TM-005, TM-011), consentimiento (TM-003, TM-004, TM-009, TM-010), desconexión (TM-010, TM-013).
+- Entradas cubiertas: alta con secreto, solicitud de cambio (`params`), conectar y desconectar, vista de vuelta de la SPA y `POST /api/oauth/callback`, el pendiente que escribe el interceptor `RESPONSE`, `tools/call` remoto, resultados remotos y perfil de la release.
+- Cada frontera tiene amenaza: navegador → `mango-api` (TM-003, TM-007), `mango-api` → Gateway (TM-006, TM-008, TM-012), Gateway → Microsoft (TM-001, TM-002, TM-005, TM-011), consentimiento (TM-003, TM-004, TM-009, TM-010), desconexión (TM-010, TM-013), vuelta por la SPA (TM-014), interceptor `RESPONSE` → `Settings` (TM-017), borde → logs (TM-016) y administración del registro (TM-007, TM-015).
 - Fuera del runtime: el CI que cura y firma el perfil (D36) se trata en `mcp-pack-pipeline-threat-model.md`.
 - Prueba en vivo (D93 (11)), el 2026-10-26, con una organización y un tenant de pruebas del dueño, no del cliente (D94): P3 confirmó TM-004; P4 cambió quién inicia el consentimiento (el Gateway) y mostró que el vault guarda el token por persona (P8). P7 se probó esa noche con una clave de `_meta` equivocada; el 2026-10-27, con la documentada, `forceAuthentication` borró el token de una sola persona (D97, TM-010 y TM-013), un `returnUrl` ajeno se rechazó (TM-006) y cerrar con el JWT de B el consentimiento de A dio `AccessDeniedException` (TM-003). Sigue abierto el Acceso condicional (P9), antes de habilitarlo en un cliente.
 - **P10 (inyección en una página de wiki):** el agente no ejecutó la acción inyectada, pero copió en su respuesta la URL del atacante. El solo lectura acota el daño, no el phishing: la forma de mostrar en el chat los enlaces que vienen de tools remotas se pide al diseño (D93 (12)).
 - La prueba se planeó en el tenant de Entra del cliente y se hizo en uno de pruebas del dueño (2026-10-26): el Acceso condicional real (P9) queda para un tenant con licencia, y la app de prueba con su secreto es un activo más (TM-009) hasta que el dueño la borre.
-- **v0.3 (2026-10-27, D98):** la vuelta pasa por la SPA (TM-014), cambiar toolsets o grupos es una solicitud con doble aprobación (TM-015) y el `session_id` de la vuelta queda fuera de los logs del borde (TM-016). El pendiente vive en `MCP_CONSENT#<sub>` de `Settings`, escrito solo por el interceptor `RESPONSE`. Hasta probar P9, `RemoteMcpEnabled` deja todo apagado.
+- **v0.3 (2026-10-27, D98):** la vuelta pasa por la SPA (TM-014), cambiar toolsets o grupos es una solicitud con doble aprobación (TM-015) y el `session_id` de la vuelta queda fuera de los logs del borde (TM-016). El pendiente vive en `MCP_CONSENT#<sub>` de `Settings`, escrito solo por el interceptor `RESPONSE`. Hasta probar P9, `RemoteMcpEnabled` deja todo apagado. Revisada con la skill `security-threat-model` el 2026-10-27: prioridad única por amenaza, justificación de las nuevas, TM-017 (integridad del pendiente), supuestos y preguntas abiertas al día, y el diagrama con la vuelta y el pendiente. Los supuestos 6 y 7 los validó el dueño por menú ese día; los que siguen abiertos están en «Preguntas abiertas».

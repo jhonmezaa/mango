@@ -7,7 +7,7 @@
 
 ## Decisión
 
-Origen: el plan de construcción de los MCP remotos (D93, D94 y D97), escrito por un agente el 2026-10-27 a partir de las decisiones, el modelo de amenazas, el diseño y el código. El plan está fuera del repositorio. Diez preguntas del plan las respondió el dueño ese mismo día, por menú; lo demás son los contratos que siguen los PR de construcción. Modelo de amenazas: [`remote-mcp-threat-model.md`](../../security/threat-models/remote-mcp-threat-model.md) (v0.3).
+Origen: el plan de construcción de los MCP remotos (D93, D94 y D97), escrito por un agente el 2026-10-27 a partir de las decisiones, el modelo de amenazas, el diseño y el código. El plan está fuera del repositorio. Diez preguntas del plan las respondió el dueño ese mismo día, por menú; lo demás son los contratos que siguen los PR de construcción. Modelo de amenazas: [`remote-mcp-threat-model.md`](../../security/threat-models/remote-mcp-threat-model.md) (v0.3, TM-014 a TM-017).
 
 ### Lo que eligió el dueño (2026-10-27, por menú)
 
@@ -34,6 +34,8 @@ Origen: el plan de construcción de los MCP remotos (D93, D94 y D97), escrito po
 - el provisioner de remotos no arranca.
 
 Se pone en `true` en un cliente solo después de probar P9 (D97 (5)).
+
+Volver a ponerlo en `false` no corta las llamadas de los registros que ya están activos: el parámetro solo frena las escrituras de registro, «Conectar» y el provisioner. Esto no lo eligió el dueño: lo dedujo un agente de lo anterior. Para cortar un registro activo se deshabilita el registro, lo que borra su proveedor (D93 (7)).
 
 **(5) El esquema de tools se captura en vivo (respondido: «Capturado en vivo (Recomendada)»).** El `mcpToolSchema` del perfil sale de un `tools/list` real contra la organización de pruebas del dueño. Usa recursos temporales del laboratorio, cada uno aprobado por el dueño, y la captura la corre el agente principal. Hasta entonces, el perfil del repositorio trae un esquema marcado de prueba, que el pipeline no firma. El procedimiento para refrescarlo a mano queda en `remotes/README.md`. El CI no puede comparar el perfil con el servidor (TM-005): el repositorio es público y no tiene credenciales de Microsoft.
 
@@ -83,10 +85,10 @@ La API se construye. La pantalla queda en «Próximamente» hasta que Claude Des
 | PK / SK | Escribe | Lee | Contenido |
 |---|---|---|---|
 | `REMOTE#<reg>` / `REGISTRATION` | `mango-api`; el provisioner de remotos, solo los estados del ciclo de vida | `mango-api`, provisioner | Perfil, organización, `tenantId`, `clientId`, toolsets, grupos, estado, `version` (bloqueo optimista), `generation`, proveedor, `callbackUrl`, vencimiento del secreto, quién pidió y quién aprobó. Nunca el secreto ni su ARN |
-| `REMOTE_CHANGE#<reg>` / `CHANGE#<id>` y `PENDING` | `mango-api` | `mango-api` | Una solicitud (`enable`, `replace_app` o `params`) y su decisión, 90 días; el marcador `PENDING` garantiza una sola pendiente por registro, como D46 (7). Vence a los 7 días |
+| `REMOTE_CHANGE#<reg>` / `CHANGE#<id>` y `PENDING` | `mango-api` | `mango-api` | Una solicitud (`enable`, `replace_app` o `params`) y su decisión, 90 días. Una `params` guarda también los toolsets y los grupos de antes, para que quien aprueba vea los dos; el marcador `PENDING` garantiza una sola pendiente por registro, como D46 (7). Vence a los 7 días |
 | `REMOTE_ORG#<profile>#<org>` / `CURRENT` | `mango-api` | `mango-api` | Un solo registro por perfil y organización |
 | `MCP_REMOTE#<reg>` / `APPROVED` | solo el provisioner de remotos | interceptor `REQUEST`, `mango-api`, provisioner de agentes | El catálogo aprobado y firmado (13) |
-| `MCP_CONSENT#<sub>` / `REMOTE#<reg>` | solo el interceptor `RESPONSE` | `mango-api`, que lo borra | La URL de consentimiento, su origen (`chat`, `task`, `playground` o `connect`) y su vencimiento (10 minutos, TTL) |
+| `MCP_CONSENT#<sub>` / `REMOTE#<reg>` | solo el interceptor `RESPONSE`, con el `sub` de la firma de la invocación verificada; a `mango-api` IAM le niega `PutItem` y `UpdateItem` en la partición | `mango-api`, que lo borra | La URL de consentimiento, su origen (`chat`, `task`, `playground` o `connect`) y su vencimiento (10 minutos, TTL) |
 
 La conexión de cada persona (desde cuándo, y con qué `generation` del proveedor) va en `Conversations`, en `USER#<sub>` / `REMOTE#<reg>`. La escribe `mango-api` con las credenciales RLS de esa persona. Sirve para mostrar «Conectado» sin llamar a Microsoft. Una conexión de otra `generation` cuenta como «Sin conectar».
 
@@ -140,7 +142,7 @@ La conexión de cada persona (desde cuándo, y con qué `generation` del proveed
 - **`RESPONSE`:**
   - verifica la firma de la invocación;
   - cambia el `-32042` (o el `-32021`) por un error `consent_required` sin URL. Es la forma probada en P3: código `-32001` y `data` con el target;
-  - acepta la URL solo si es `https` y su host es `bedrock-agentcore.<región>.amazonaws.com`;
+  - acepta la URL solo si es `https` y su host es `bedrock-agentcore.<región>.amazonaws.com`, y la guarda bajo el `sub` de la firma verificada, nunca uno tomado del cuerpo; si la firma no verifica, no escribe nada;
   - recorta los textos largos y cambia el binario por un aviso;
   - quita las URL de los errores de un remoto;
   - registra solo la forma de cada respuesta.
