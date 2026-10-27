@@ -1,14 +1,14 @@
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { installationSchema, loadInstallation } from "../lib/config/schema.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 
 function synth(installation = cfg) {
-  const template = Template.fromStack(
+  const template = fromCore(
     new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
       installation,
       env: { account: installation.mangoAccountId, region: installation.region },

@@ -2,18 +2,18 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { accessGroupRegistry } from "../lib/config/groups.js";
 import { loadInstallation } from "../lib/config/schema.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { payerTemplate } from "./parameters.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 // A release without signed packs, whatever `dist/packs` holds on this machine: a pack over
 // account data adds its role to the broker trust (covered in packs.test.ts).
 const noPacks = { packsDir: mkdtempSync(join(tmpdir(), "mango-no-packs-")) };
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: noPacks }), "Core", {
     installation: cfg,
     env: { account: cfg.mangoAccountId, region: cfg.region },

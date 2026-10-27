@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { CHECKOV_EXCEPTIONS } from "../lib/checkov.js";
 import { installationSchema, loadInstallation } from "../lib/config/schema.js";
@@ -11,6 +10,7 @@ import {
   RECONCILER_READABLE_ATTRIBUTES,
 } from "../lib/constructs/reconciler.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
@@ -18,7 +18,7 @@ const account = cfg.mangoAccountId;
 const region = cfg.region;
 
 type Resource = { Type: string; Properties: any; [k: string]: any };
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account, region },
@@ -394,7 +394,7 @@ describe("alarms and the alerts topic", () => {
       ...JSON.parse(readFileSync(resolve(import.meta.dirname, "../config/example.json"), "utf8")),
       alerts: { emails: ["oncall@example.com", "platform@example.com"] },
     });
-    const subscribed = Template.fromStack(
+    const subscribed = fromCore(
       new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
         installation: withEmails,
         env: { account, region },

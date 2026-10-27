@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import {
@@ -12,11 +11,12 @@ import {
   RATE_LIMITED_RETRY_SECONDS,
 } from "../lib/constructs/edge.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 /* Per-IP rate limits of the edge web ACL, sized for an office behind one address (D72). */
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account: cfg.mangoAccountId, region: cfg.region },

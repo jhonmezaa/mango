@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { REPORT_LINK_MS, REPORT_READS, REPORT_WRITES } from "../lib/constructs/task-reports.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 /* Downloadable reports of task runs (D86, D87; task-reports-threat-model.md). */
 
@@ -22,7 +22,7 @@ interface Statement {
   Condition?: Record<string, Record<string, unknown>>;
 }
 
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account: cfg.mangoAccountId, region: cfg.region },

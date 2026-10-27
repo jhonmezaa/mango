@@ -6,10 +6,11 @@ import { describe, expect, it } from "vitest";
 import { installationSchema, loadInstallation } from "../lib/config/schema.js";
 import { GATEWAY_SESSION_SECONDS, orgWideTools } from "../lib/constructs/tools.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account: cfg.mangoAccountId, region: cfg.region },
@@ -136,7 +137,7 @@ describe("Gateway MCP sessions (D47)", () => {
       readFileSync(resolve(import.meta.dirname, "../config/example.json"), "utf8"),
     ) as Record<string, unknown>;
     const off = installationSchema.parse({ ...raw, gateway: { mcpSessions: false } });
-    const stateless = Template.fromStack(
+    const stateless = fromCore(
       new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
         installation: off,
         env: { account: off.mangoAccountId, region: off.region },

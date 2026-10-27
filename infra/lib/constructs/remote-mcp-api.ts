@@ -19,6 +19,11 @@ export const remoteProviderPrefix = (ns: string) => `Mango-${ns}-remote-`;
 
 export interface RemoteMcpApiProps {
   readonly namespace: string;
+  /**
+   * The namespace as Core names it, for what mango-api reads (its environment), when this
+   * construct lives in a stack nested in Core with a namespace parameter of its own (D99).
+   */
+  readonly coreNamespace?: string;
   readonly role: iam.Role;
   readonly settingsTable: dynamodb.ITable;
   readonly release: RemoteRelease;
@@ -46,7 +51,10 @@ export class RemoteMcpApi extends Construct {
 
   constructor(scope: Construct, id: string, props: RemoteMcpApiProps) {
     super(scope, id);
-    const stack = Stack.of(this);
+    // Core, also from the stack nested in it where this construct lives (D99): mango-api reads
+    // the tags of Core, and every name here is Core's.
+    let stack = Stack.of(this);
+    while (stack.nestedStackParent) stack = stack.nestedStackParent;
     const { partition, region, account } = stack;
     const ns = props.namespace;
     const vault = `arn:${partition}:bedrock-agentcore:${region}:${account}:token-vault/default`;
@@ -136,9 +144,10 @@ export class RemoteMcpApi extends Construct {
           "key is created by another construct and named here.",
       },
     );
+    const coreNs = props.coreNamespace ?? ns;
     this.environment = {
-      REMOTE_PROVISIONER_STATE_MACHINE_ARN: stateMachine,
-      REMOTE_MCP_KEY_ID: remoteMcpKeyAlias(ns),
+      REMOTE_PROVISIONER_STATE_MACHINE_ARN: `arn:${partition}:states:${region}:${account}:stateMachine:${remoteProvisionerName(coreNs)}`,
+      REMOTE_MCP_KEY_ID: remoteMcpKeyAlias(coreNs),
       MANGO_STACK_ID: stack.stackId,
       ...props.release.environment,
     };

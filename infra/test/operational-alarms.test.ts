@@ -10,6 +10,7 @@ import { PACK_DNS_BLOCKED_QUERIES } from "../lib/constructs/pack-network.js";
 import { UNINSTALL_GUARD_METRICS } from "../lib/constructs/uninstall-guard.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { PackNetworkStack } from "../lib/stacks/pack-network-stack.js";
+import { fromCore, nestedStacks, nestedTemplate } from "./nested.js";
 import { instantiate } from "./parameters.js";
 
 /* Operational alarms and the dashboard (D71): what would otherwise fail in silence. */
@@ -31,12 +32,11 @@ interface Dimension {
   Value: unknown;
 }
 
-const resources = Template.fromStack(
-  new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
-    installation: cfg,
-    env: { account: cfg.mangoAccountId, region: cfg.region },
-  }),
-).toJSON().Resources as Resources;
+const coreStack = new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
+  installation: cfg,
+  env: { account: cfg.mangoAccountId, region: cfg.region },
+});
+const resources = fromCore(coreStack).toJSON().Resources as Resources;
 const ofType = (all: Resources, type: string) => Object.entries(all).filter(([, r]) => r.Type === type);
 const alarmsOf = (all: Resources) =>
   Object.fromEntries(ofType(all, "AWS::CloudWatch::Alarm").map(([, r]) => [r.Properties.AlarmName as string, r.Properties]));
@@ -58,8 +58,25 @@ const PUBLICATION = [
 const operational = Object.fromEntries(
   Object.entries(alarms).filter(([name]) => !PUBLICATION.some((suffix) => name === `Mango-${ns}-${suffix}`)),
 );
+/**
+ * Alarms of other constructs of Core, under their own names. The rest live in the Operations
+ * stack nested in Core and are named `Mango-<ns>-ops-…` (D99).
+ */
+const ELSEWHERE = [
+  "BudgetReconciler-failed",
+  "BudgetReconciler-reservation-charged",
+  "CostAnomalies-rejected",
+  "CostAnomalyConsumer-failed",
+  "Knowledge-deletion-unverified",
+  "Knowledge-retrieve-throttled",
+  "KnowledgeSync-failed",
+  "TaskReport-failed",
+  "TaskRuns-failed",
+  "UninstallGuard-deletion-failed",
+];
+const named = (suffix: string) => `Mango-${ns}-${ELSEWHERE.includes(suffix) ? "" : "ops-"}${suffix}`;
 const alarm = (suffix: string) => {
-  const found = alarms[`Mango-${ns}-${suffix}`];
+  const found = alarms[named(suffix)];
   expect(found, suffix).toBeDefined();
   return found;
 };
@@ -93,7 +110,7 @@ const tables = ofType(resources, "AWS::DynamoDB::GlobalTable");
 
 describe("operational alarms of Core", () => {
   it("creates these alarms, besides one per table", () => {
-    const names = Object.keys(operational).filter((name) => !name.startsWith(`Mango-${ns}-Table-`));
+    const names = Object.keys(operational).filter((name) => !name.startsWith(`Mango-${ns}-ops-Table-`));
     expect(names.sort()).toEqual(
       [
         "Api-errors",
@@ -123,7 +140,9 @@ describe("operational alarms of Core", () => {
         "TaskRuns-failed",
         "UninstallGuard-deletion-failed",
         "UninstallGuard-failed",
-      ].map((suffix) => `Mango-${ns}-${suffix}`),
+      ]
+        .map(named)
+        .sort(),
     );
   });
 
@@ -140,7 +159,7 @@ describe("operational alarms of Core", () => {
   it("does not take missing data for a breach, with one exception, and says what to look at first", () => {
     // The load balancer stops reporting HealthyHostCount when no target is registered: for
     // this alarm, no data is the worst case (a service without tasks), not a quiet installation.
-    const breachesWithoutData = [`Mango-${ns}-Api-no-healthy-targets`];
+    const breachesWithoutData = [named("Api-no-healthy-targets")];
     for (const [name, properties] of Object.entries(operational)) {
       expect(properties.TreatMissingData, name).toBe(breachesWithoutData.includes(name) ? "breaching" : "notBreaching");
       expect(properties.AlarmDescription, name).toMatch(/Look first at /);
@@ -195,10 +214,17 @@ describe("mango-api and its load balancer", () => {
   });
 
   it("creates the alarm that breaches without data after the service, so that it never waits for a first task", () => {
-    const [, resource] = ofType(resources, "AWS::CloudWatch::Alarm").find(
-      ([, r]) => r.Properties.AlarmName === `Mango-${ns}-Api-no-healthy-targets`,
+    // It lives in the Operations stack nested in Core (D99): that whole stack waits for the service.
+    const operations = nestedStacks(coreStack).find((stack) => stack.node.id === "Operations")!;
+    const inOperations = nestedTemplate(operations).Resources as Resources;
+    expect(ofType(inOperations, "AWS::CloudWatch::Alarm").map(([, r]) => r.Properties.AlarmName)).toContain(
+      named("Api-no-healthy-targets"),
+    );
+    const core = Template.fromStack(coreStack).toJSON().Resources as Record<string, Resource & { DependsOn?: string[] }>;
+    const [, stackResource] = Object.entries(core).find(
+      ([id, r]) => r.Type === "AWS::CloudFormation::Stack" && id.startsWith("Operations"),
     )!;
-    expect((resource as Resource & { DependsOn?: string[] }).DependsOn).toContain(serviceId);
+    expect(stackResource.DependsOn).toContain(serviceId);
   });
 
   it("judges the 5xx rate of the API only above a minimum of requests", () => {
@@ -274,7 +300,7 @@ describe("functions people depend on", () => {
     const properties = alarm("PreSignUp-throttled");
     expect(properties).toMatchObject({ Namespace: "AWS/Lambda", MetricName: "Throttles", Threshold: 1 });
     expect(dimension(properties.Dimensions, "FunctionName")).toEqual(functionNamed(`Mango-${ns}-PreSignUp`));
-    expect(Object.keys(alarms).filter((name) => name.includes("PreSignUp"))).toEqual([`Mango-${ns}-PreSignUp-throttled`]);
+    expect(Object.keys(alarms).filter((name) => name.includes("PreSignUp"))).toEqual([named("PreSignUp-throttled")]);
   });
 
   it("alarms on the dead-letter queue of the uninstall guard", () => {
@@ -318,7 +344,7 @@ describe("DynamoDB", () => {
   it("has one throttling alarm for every table of the stack, whichever they are", () => {
     expect(tables.length).toBeGreaterThanOrEqual(7);
     const watched = Object.entries(operational)
-      .filter(([name]) => name.startsWith(`Mango-${ns}-Table-`))
+      .filter(([name]) => name.startsWith(`Mango-${ns}-ops-Table-`))
       .map(([, properties]) => {
         const metrics = metricsOf(properties);
         expect(metrics.map((m) => m.name).sort()).toEqual(["ReadThrottleEvents", "WriteThrottleEvents"]);
@@ -365,7 +391,7 @@ describe("the shared rate limits of mango-api", () => {
   const python = (path: string) => readFileSync(resolve(import.meta.dirname, "../..", path), "utf8");
   // The other filter of the stack counts «Probar búsqueda» throttled (D88 (37), knowledge.test.ts).
   const filters = ofType(resources, "AWS::Logs::MetricFilter").filter(
-    ([, r]) => r.Properties.FilterName === `Mango-${ns}-Api-rate-limit-store-refusals`,
+    ([, r]) => r.Properties.FilterName === `Mango-${ns}-ops-Api-rate-limit-store-refusals`,
   );
   const signal = RATE_LIMIT_STORE_SIGNAL;
   const namespace = `${signal.namespacePrefix}/${ns}`;
@@ -377,7 +403,7 @@ describe("the shared rate limits of mango-api", () => {
       ([, r]) => r.Properties.LogGroupName === `/mango/${ns}/api`,
     )!;
     expect(properties.LogGroupName).toEqual({ Ref: logGroupId });
-    expect(properties.FilterName).toBe(`Mango-${ns}-Api-rate-limit-store-refusals`);
+    expect(properties.FilterName).toBe(`Mango-${ns}-ops-Api-rate-limit-store-refusals`);
     // One count per line, and zero when mango-api logs anything else: no dimension, so the
     // namespace is the one of this installation.
     expect(properties.MetricTransformations).toEqual([
@@ -535,7 +561,7 @@ describe("dashboard", () => {
   it("is one, named after the installation, and shows every alarm of the stack", () => {
     const dashboards = ofType(resources, "AWS::CloudWatch::Dashboard");
     expect(dashboards).toHaveLength(1);
-    expect(dashboards[0]![1].Properties.DashboardName).toBe(`Mango-${ns}-Operations`);
+    expect(dashboards[0]![1].Properties.DashboardName).toBe(`Mango-${ns}-ops`);
     const body = JSON.stringify(dashboards[0]![1].Properties.DashboardBody);
     for (const [id] of ofType(resources, "AWS::CloudWatch::Alarm")) expect(body, id).toContain(`"${id}"`);
   });
@@ -544,7 +570,7 @@ describe("dashboard", () => {
 describe("a release (D58): names come from the Namespace parameter", () => {
   // No signed packs, whatever `dist/packs` holds on this machine.
   const context = { packsDir: mkdtempSync(join(tmpdir(), "mango-no-packs-")), skipSpa: true };
-  const core = Template.fromStack(new CoreStack(new App({ context }), "Core", { env: { region: "us-east-1" } })).toJSON()
+  const core = fromCore(new CoreStack(new App({ context }), "Core", { env: { region: "us-east-1" } })).toJSON()
     .Resources as Resources;
   const network = Template.fromStack(
     new PackNetworkStack(new App({ context }), "PackNetwork", { env: { region: "us-east-1" } }),
@@ -556,7 +582,7 @@ describe("a release (D58): names come from the Namespace parameter", () => {
     expect(names.length).toBe(Object.keys(alarms).length);
     for (const name of names) expect(name).toMatch(/^Mango-acme-[A-Za-z0-9-]+$/);
     const [dashboard] = ofType(instantiate(core, values), "AWS::CloudWatch::Dashboard");
-    expect(dashboard![1].Properties.DashboardName).toBe("Mango-acme-Operations");
+    expect(dashboard![1].Properties.DashboardName).toBe("Mango-acme-ops");
   });
 
   it("keeps the refusals of the shared rate limits of two installations of one account apart", () => {
@@ -564,9 +590,9 @@ describe("a release (D58): names come from the Namespace parameter", () => {
     const filter = ofType(installed, "AWS::Logs::MetricFilter").find(([, r]) =>
       String(r.Properties.FilterName).includes("rate-limit"),
     );
-    expect(filter![1].Properties.FilterName).toBe("Mango-acme-Api-rate-limit-store-refusals");
+    expect(filter![1].Properties.FilterName).toBe("Mango-acme-ops-Api-rate-limit-store-refusals");
     expect(filter![1].Properties.MetricTransformations[0].MetricNamespace).toBe("Mango/Api/acme");
-    expect(alarmsOf(installed)["Mango-acme-Api-rate-limit-store-unavailable"]).toMatchObject({
+    expect(alarmsOf(installed)["Mango-acme-ops-Api-rate-limit-store-unavailable"]).toMatchObject({
       Namespace: "Mango/Api/acme",
       MetricName: RATE_LIMIT_STORE_SIGNAL.metric,
     });

@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { CHECKOV_EXCEPTIONS } from "../lib/checkov.js";
 import { loadInstallation } from "../lib/config/schema.js";
 import { COST_ANOMALY_METRICS } from "../lib/constructs/cost-anomaly-events.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { payerTemplate } from "./parameters.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
@@ -78,7 +78,7 @@ describe("forwarding in the payer account (D79)", () => {
 });
 
 describe("cost anomaly bus and consumer in Core (D79)", () => {
-  const template = Template.fromStack(
+  const template = fromCore(
     new CoreStack(new App({ context: { skipSpa: true } }), "Core", { installation: cfg, env: { account, region } }),
   );
   const resources = template.toJSON().Resources as Record<string, Resource>;

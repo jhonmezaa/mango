@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 /* Tasks without chat (D78; tasks-threat-model.md). */
 
@@ -23,7 +23,7 @@ interface Statement {
   Condition?: Record<string, Record<string, unknown>>;
 }
 
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account, region },
@@ -236,7 +236,7 @@ describe("the schedules and the queue of runs", () => {
     ]);
     if (cfg.retainData) expect(table.DeletionPolicy).toBe("Retain");
     // Its throttling alarm is named after it, like every table's (D71).
-    expect(Object.keys(template.findResources("AWS::CloudWatch::Alarm", { Properties: { AlarmName: `Mango-${ns}-Table-Tasks-throttled` } }))).toHaveLength(1);
+    expect(Object.keys(template.findResources("AWS::CloudWatch::Alarm", { Properties: { AlarmName: `Mango-${ns}-ops-Table-Tasks-throttled` } }))).toHaveLength(1);
   });
 
   it("the role of mango-api keeps everything else in its inline policy, with no overflow", () => {

@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { writeTools } from "../lib/constructs/write-tools.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { BILLING_READER_DATA_ACTIONS, BUDGETS_OPERATOR_ACTIONS } from "../lib/stacks/payer-stack.js";
 import { payerTemplate } from "./parameters.js";
+import { fromCore } from "./nested.js";
 
 /* Write tools with approval (D27; write-tools-approval-threat-model.md). */
 
@@ -27,7 +27,7 @@ interface Statement {
   Condition?: Record<string, Record<string, unknown>>;
 }
 
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account, region },

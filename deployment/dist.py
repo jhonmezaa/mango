@@ -4,7 +4,9 @@
 A release is what a customer installs with CloudFormation and nothing else:
 
 * ``global-s3-assets/``: the templates (``Core``, ``Payer``, ``OrgAccess``, ``Member``).
-* ``regional-s3-assets/``: every file the templates read (Lambda code, the SPA, signed packs).
+* ``regional-s3-assets/``: every file the templates read (Lambda code, the SPA, signed packs),
+  the templates of the stacks nested in Core among them (D99): CloudFormation reads each one
+  from the ``TemplateURL`` of its parent, which names it by content like any other asset.
 * the ``mango-api`` image, in the provider's repository, named by digest in the template.
 * ``manifest.json``: the digest of each of those, signed with the provider's key.
 
@@ -51,6 +53,8 @@ SIGNING_ALGORITHM = "ECDSA_SHA_256"
 PAYLOAD_TYPE = "application/vnd.mango.release.v1+json"
 # Assets of every release: keep in sync with `RELEASE_ASSETS_PREFIX` of the provider stack.
 ASSETS_PREFIX = "mango/assets/"
+# How the TemplateURL of a nested stack names its template (CDK: the asset hash, `.json`).
+NESTED_KEY = re.compile(r"mango/assets/[0-9a-f]{64}\.json")
 # Zip entries carry this date, so the same sources always give the same bytes.
 ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 # The image is dated the same (seconds since 1970): with the base images pinned by digest and
@@ -121,28 +125,63 @@ def zip_directory(source: Path, target: Path) -> None:
             archive.writestr(info, path.read_bytes())
 
 
-def package(target: dict[str, str], out: Path) -> list[dict[str, Any]]:
-    """Copy templates and assets out of the CDK output, under the names the templates use."""
+def nested_keys(template: dict[str, Any], bucket: str) -> list[str]:
+    """Keys of the templates the stacks nested in this one are created from (D99), in ``bucket``."""
+    keys = []
+    for resource in template.get("Resources", {}).values():
+        if resource.get("Type") != "AWS::CloudFormation::Stack":
+            continue
+        url = json.dumps(resource.get("Properties", {}).get("TemplateURL"))
+        found = NESTED_KEY.findall(url)
+        if len(found) != 1 or f"/{bucket}/{found[0]}" not in url:
+            sys.exit(f"a nested stack whose TemplateURL is not a release asset: {found}")
+        keys.append(found[0])
+    return keys
+
+
+def check_templates(
+    target: dict[str, str], templates: Path, assets: Path, nested: dict[str, dict[str, Any]]
+) -> None:
+    """Every template, nested ones included (D99), against what a release must hold.
+
+    A stack whose template did not change must not change with the release, and CloudFormation
+    refuses an update of the description alone (D69). Every nested stack names a nested
+    template of this release, and every nested template is named once.
+    """
+    named: list[str] = []
+    files = [templates / f"{stack}.template.json" for stack in STACKS]
+    files += [assets / entry["key"][len(ASSETS_PREFIX) :] for entry in nested.values()]
+    for file in files:
+        template = json.loads(file.read_text())
+        description = template.get("Description")
+        if target["label"] in str(description):
+            sys.exit(f"{file.name}: the description names the release ({description})")
+        named += nested_keys(template, f"{target['bucket']}-{REGIONS[0]}")
+    if sorted(named) != sorted(nested):
+        sys.exit(
+            f"nested stacks and nested templates do not match: {sorted(named)} {sorted(nested)}"
+        )
+
+
+def package(target: dict[str, str], out: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Copy templates and assets out of the CDK output, under the names the templates use.
+
+    Returns the assets and, among them, the templates of the nested stacks (D99).
+    """
     templates = out / "global-s3-assets"
     assets = out / "regional-s3-assets"
     templates.mkdir(parents=True)
     assets.mkdir(parents=True)
     prefix = ASSETS_PREFIX
     listed: dict[str, dict[str, Any]] = {}
+    nested: dict[str, dict[str, Any]] = {}
     for stack in STACKS:
         shutil.copyfile(CDK_OUT / f"{stack}.template.json", templates / f"{stack}.template.json")
-        # A stack whose template did not change must not change with the release: CloudFormation
-        # refuses an update of the description alone (D69).
-        description = json.loads((CDK_OUT / f"{stack}.template.json").read_text()).get(
-            "Description"
-        )
-        if target["label"] in str(description):
-            sys.exit(f"{stack}: the description names the release ({description})")
         manifest = json.loads((CDK_OUT / f"{stack}.assets.json").read_text())
         for asset in manifest.get("files", {}).values():
             source = CDK_OUT / asset["source"]["path"]
             # The stack's own template is a CDK asset too; it is published as a template.
-            if source.name.endswith(".template.json"):
+            if source.name == f"{stack}.template.json":
                 continue
             for destination in asset["destinations"].values():
                 key = destination["objectKey"]
@@ -155,11 +194,17 @@ def package(target: dict[str, str], out: Path) -> list[dict[str, Any]]:
                     else:
                         shutil.copyfile(source, file)
                 listed[key] = {"key": key, "sha256": sha256(file), "size": file.stat().st_size}
+                if source.name.endswith(".nested.template.json"):
+                    nested[key] = {**listed[key], "file": source.name, "parent": stack}
         if manifest.get("dockerImages"):
             sys.exit(
                 f"{stack}: a release ships no CDK image asset (the image is published by digest)"
             )
-    return sorted(listed.values(), key=lambda entry: entry["key"])
+    check_templates(target, templates, assets, nested)
+    return (
+        sorted(listed.values(), key=lambda entry: entry["key"]),
+        sorted(nested.values(), key=lambda entry: entry["key"]),
+    )
 
 
 def member_template_sha256() -> str:
@@ -360,7 +405,7 @@ def main() -> None:
         shutil.rmtree(CDK_OUT)
     run("npx", "cdk", "synth", "--quiet", "-c", f"release={json.dumps(target)}", cwd=INFRA)
     print("· packaging templates and assets")
-    assets = package(target, out)
+    assets, nested = package(target, out)
     templates = [
         {"file": f"{stack}.template.json", "sha256": sha256(file), "size": file.stat().st_size}
         for stack in STACKS
@@ -383,12 +428,14 @@ def main() -> None:
         "image": {"digest": target["imageDigest"]},
         "member_template_sha256": member_template_sha256(),
         "templates": templates,
+        # The templates of the stacks nested in Core (D99): assets the verification requires.
+        "nested_templates": nested,
         "assets": assets,
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     size = sum(entry["size"] for entry in assets) / 1024 / 1024
     print(
-        f"  {len(templates)} templates, {len(assets)} assets ({size:.0f} MB)"
+        f"  {len(templates)} templates, {len(nested)} nested, {len(assets)} assets ({size:.0f} MB)"
         f" in {out.relative_to(ROOT)}"
     )
 

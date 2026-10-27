@@ -1,6 +1,5 @@
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { CHECKOV_EXCEPTIONS } from "../lib/checkov.js";
 import { loadInstallation } from "../lib/config/schema.js";
@@ -11,6 +10,7 @@ import {
 } from "../lib/constructs/account-health.js";
 import { SESSION_TAG_KEYS } from "../lib/names.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
@@ -27,7 +27,7 @@ interface Statement {
   Condition?: Record<string, Record<string, unknown>>;
 }
 
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account, region: cfg.region },

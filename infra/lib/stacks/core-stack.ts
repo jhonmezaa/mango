@@ -29,7 +29,6 @@ import { Presign } from "../constructs/presign.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
-import { OperationalAlarms } from "../constructs/operational-alarms.js";
 import { importPackNetwork, PackNetwork, PackNetworkRef, packNetworkExports } from "../constructs/pack-network.js";
 import { StackTagger } from "../constructs/stack-tagger.js";
 import {
@@ -44,7 +43,7 @@ import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-pr
 import { PLAYGROUND_PARTITION, PlaygroundHarness } from "../constructs/playground.js";
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
-import { APPROVED_REMOTE_PARTITION, RemoteMcpApi } from "../constructs/remote-mcp-api.js";
+import { APPROVED_REMOTE_PARTITION } from "../constructs/remote-mcp-api.js";
 import { RemoteRelease } from "../constructs/remote-release.js";
 import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
 import { TaskReports } from "../constructs/task-reports.js";
@@ -61,6 +60,7 @@ import { tagNamespace } from "../params.js";
 import { ReleaseTarget } from "../release-target.js";
 import { MEMBER_READ_ONLY_DATA_ACTIONS } from "./member-stack.js";
 import { BILLING_READER_DATA_ACTIONS } from "./payer-stack.js";
+import { AuthorizationStack, OperationsStack, RemoteMcpStack } from "./core-nested.js";
 
 export interface CoreStackProps extends StackProps {
   /**
@@ -114,6 +114,8 @@ export class CoreStack extends Stack {
       apiTaskRole,
       ...(release ? { auditLockMode: release.auditLockMode } : {}),
     });
+    // D99: the Cedar policies of the store, in a stack nested in Core.
+    new AuthorizationStack(this, "Authorization", { policyStoreId: governance.policyStore.attrPolicyStoreId });
     // D35: the pre-token trigger derives `mango_central` from the group registry (and reads
     // nothing else of the Settings table).
     identity.readGroupRegistry(governance.settings, governance.dataKey, GROUPS_PARTITION);
@@ -408,9 +410,10 @@ export class CoreStack extends Stack {
       bucket: packPlatform.bucket,
       signingPublicKey: packRelease.signingPublicKey,
     });
-    const remoteMcpApi = new RemoteMcpApi(this, "RemoteMcpApi", {
-      namespace: cfg.namespace,
-      role: apiTaskRole,
+    // What the remote MCP build adds lives in its own stack nested in Core (D99).
+    const remoteMcp = new RemoteMcpStack(this, "RemoteMcp", {
+      installation: cfg,
+      apiTaskRole,
       settingsTable: governance.settings,
       release: remoteRelease,
     });
@@ -566,7 +569,7 @@ export class CoreStack extends Stack {
         ...skills.apiEnvironment,
         ...presign.apiEnvironment,
         // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
-        ...remoteMcpApi.environment,
+        ...remoteMcp.api.environment,
         REMOTE_MCP_ENABLED: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
         // D60: who may be invited, and what Settings > General > Installation shows to
@@ -595,7 +598,8 @@ export class CoreStack extends Stack {
     api.node.addDependency(...releaseAgentSeeds.seeds);
 
     // D71: what would otherwise fail in silence. Last, so that it sees every table of the stack.
-    new OperationalAlarms(this, "OperationalAlarms", {
+    // In a stack nested in Core, with names of their own (D99).
+    new OperationsStack(this, "Operations", {
       installation: cfg,
       alerts,
       alb: network.alb,

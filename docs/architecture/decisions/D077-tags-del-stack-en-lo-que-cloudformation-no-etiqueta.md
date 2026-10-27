@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-14 (los puntos 1 a 4, decididos por el dueño ese día, por menú; los puntos 5 a 9, propuestos por un agente y aceptados por el dueño ese día, por menú; lo que mostró la primera actualización, punto 10, nota propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D76](D076-tags-del-stack-en-lo-creado-en-ejecucion.md) (lo que su punto 6 dejaba sin tags) y [D69](D069-assets-por-contenido-y-prefijo-unico.md) (una entrada más en cada actualización de `Core`: punto 6)
-- **Precisada por:** —
+- **Precisada por:** [D99](D099-stacks-anidados-en-core.md) (precisa: el etiquetador recorre también los stacks anidados de `Core`)
 
 ## Decisión
 

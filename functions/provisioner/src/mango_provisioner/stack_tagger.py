@@ -7,7 +7,8 @@ whose own grew too large), what AWS makes with each VPC (its default security gr
 network ACL and main route table), and the rules of security groups. This function is a custom
 resource of the Core stack. On Create, and on every Update (its ``Release`` property changes
 with each version), it gives them the tags of the stack they belong to, plus Mango's own, with
-the rules of D76: never ``aws:`` or ``mango:`` keys of the stack, in any case.
+the rules of D76: never ``aws:`` or ``mango:`` keys of the stack, in any case. The policies of a
+stack nested in Core (D99) are Core's: CloudFormation names those stacks after it.
 
 It only works on the VPCs the template names, and only if each one carries the installation's
 ``mango:namespace`` and belongs, by CloudFormation's own tag, to this installation's Core or
@@ -132,15 +133,27 @@ class Tagger:
         return vpcs
 
     def managed_policies(self, stack: str) -> list[str]:
+        """The policies the stack declares, and the ones of the stacks nested in it."""
         pages = self._cfn.get_paginator("list_stack_resources").paginate(StackName=stack)
-        arns = [
-            str(r["PhysicalResourceId"])
+        resources = [
+            r
             for page in pages
             for r in page["StackResourceSummaries"]
-            if r["ResourceType"] == "AWS::IAM::ManagedPolicy" and r.get("PhysicalResourceId")
+            if r.get("PhysicalResourceId")
+        ]
+        arns = [
+            str(r["PhysicalResourceId"])
+            for r in resources
+            if r["ResourceType"] == "AWS::IAM::ManagedPolicy"
         ]
         if any(not arn.startswith(self._s.policy_prefix) for arn in arns):
             raise StepError("policy_not_of_this_installation")
+        for nested in (r for r in resources if r["ResourceType"] == "AWS::CloudFormation::Stack"):
+            nested_id = str(nested["PhysicalResourceId"])
+            # CloudFormation names a nested stack `<parent>-<logical id>-<suffix>`.
+            if f":stack/{_stack_name(stack)}-" not in nested_id:
+                raise StepError("stack_not_of_this_installation")
+            arns += self.managed_policies(nested_id)
         return arns
 
     def network_resources(self, vpc_id: str) -> tuple[list[str], list[str]]:
@@ -200,6 +213,11 @@ class Tagger:
             counts["defaults"] += len(defaults)
             counts["rules"] += len(rules)
         return counts
+
+
+def _stack_name(stack: str) -> str:
+    """The name of a stack given by id (``arn:…:stack/<name>/<uuid>``) or by name."""
+    return stack.split(":stack/", 1)[1].split("/", 1)[0] if ":stack/" in stack else stack
 
 
 def _vpc_ids(event: Mapping[str, Any]) -> list[str]:

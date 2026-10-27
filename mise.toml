@@ -56,8 +56,11 @@ description = "Synthesize CDK stacks (runs cdk-nag)"
 run = "pnpm --filter @mango/infra run synth"
 
 [tasks.guard]
-description = "Validate the synthesized templates with cfn-guard (run synth first)"
-run = "cfn-guard validate -d infra/cdk.out/Core.template.json -d infra/cdk.out/PackNetwork.template.json -d infra/cdk.out/Payer.template.json -d infra/cdk.out/Member.template.json -d infra/cdk.out/OrgAccess.template.json -r policies/guard/wa-Security-Pillar.guard --show-summary fail -o single-line-summary"
+description = "Validate the synthesized templates with cfn-guard (run synth first), the stacks nested in Core included (D99)"
+run = """
+nested=""; for f in infra/cdk.out/Core*.nested.template.json; do nested="$nested -d $f"; done
+cfn-guard validate -d infra/cdk.out/Core.template.json $nested -d infra/cdk.out/PackNetwork.template.json -d infra/cdk.out/Payer.template.json -d infra/cdk.out/Member.template.json -d infra/cdk.out/OrgAccess.template.json -r policies/guard/wa-Security-Pillar.guard --show-summary fail -o single-line-summary
+"""
 
 [tasks.checkov]
 description = "Checkov on the synthesized templates, Dockerfiles and workflows (run synth first)"

@@ -43,6 +43,28 @@ export interface GovernanceProps {
 }
 
 /**
+ * The Cedar policies of the platform (`policies/cedar/platform/*.cedar`), one static policy of
+ * the store each. They have no physical name and hold no data: CloudFormation can create them
+ * anywhere the store id reaches, and they live in the `Authorization` stack nested in Core (D99).
+ */
+export function platformPolicies(scope: Construct, policyStoreId: string): avp.CfnPolicy[] {
+  return readdirSync(PLATFORM_POLICIES)
+    .filter((f) => f.endsWith(".cedar"))
+    .map(
+      (file) =>
+        new avp.CfnPolicy(scope, `Policy-${file.replace(/\.cedar$/, "")}`, {
+          policyStoreId,
+          definition: {
+            static: {
+              description: file,
+              statement: readFileSync(resolve(PLATFORM_POLICIES, file), "utf8"),
+            },
+          },
+        }),
+    );
+}
+
+/**
  * Governance data plane: conversations (row-level security), budget counters,
  * L1 authorization (Verified Permissions) and the immutable audit trail.
  */
@@ -183,17 +205,7 @@ export class Governance extends Construct {
       // to it at runtime. With protection, deleting the stack failed here every time.
       deletionProtection: { mode: "DISABLED" },
     });
-    for (const file of readdirSync(PLATFORM_POLICIES).filter((f) => f.endsWith(".cedar"))) {
-      new avp.CfnPolicy(this, `Policy-${file.replace(/\.cedar$/, "")}`, {
-        policyStoreId: this.policyStore.attrPolicyStoreId,
-        definition: {
-          static: {
-            description: file,
-            statement: readFileSync(resolve(PLATFORM_POLICIES, file), "utf8"),
-          },
-        },
-      });
-    }
+    // Its policies live in the `Authorization` stack nested in Core (D99): `platformPolicies`.
 
     // --- Audit trail: Firehose -> S3 Object Lock + KMS ------------------------------------
     const accessLogs = new s3.Bucket(this, "AccessLogs", {

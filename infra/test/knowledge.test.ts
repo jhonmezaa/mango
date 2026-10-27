@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import {
@@ -12,6 +11,7 @@ import {
   KNOWLEDGE_SIGNALS,
 } from "../lib/constructs/knowledge.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 /* The fixed resources of the knowledge bases (D88 (7), (18), (21); knowledge-bases-threat-model.md). */
 
@@ -31,7 +31,7 @@ interface Statement {
   Condition?: Record<string, Record<string, unknown>>;
 }
 
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account, region },
@@ -198,7 +198,7 @@ describe("knowledge bases: fixed resources in Core", () => {
     expect(replica.DeletionProtectionEnabled).toBe(cfg.retainData);
     expect(table.Properties.GlobalSecondaryIndexes.map((i: { IndexName: string }) => i.IndexName)).toEqual([KNOWLEDGE_ALL]);
     // The throttling alarm every table of the stack gets (D71).
-    only("AWS::CloudWatch::Alarm", { AlarmName: `Mango-${ns}-Table-Knowledge-throttled` });
+    only("AWS::CloudWatch::Alarm", { AlarmName: `Mango-${ns}-ops-Table-Knowledge-throttled` });
   });
 
   it("retains documents, vectors, their key and the registry with the installation's data", () => {

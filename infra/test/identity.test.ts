@@ -19,6 +19,7 @@ import {
   SESSION_HOURS,
 } from "../lib/constructs/identity.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 const base = loadInstallation(
   resolve(import.meta.dirname, "../config/example.json"),
@@ -40,7 +41,7 @@ function synth(cfg: Installation, context?: Record<string, unknown>): Template {
     installation: cfg,
     env: { account: cfg.mangoAccountId, region: cfg.region },
   });
-  return Template.fromStack(stack);
+  return fromCore(stack);
 }
 
 type Statement = {

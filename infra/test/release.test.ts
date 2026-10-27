@@ -11,6 +11,7 @@ import { ANCHORED } from "../lib/constructs/uninstall-guard.js";
 import { releaseSynthesizer, UNPUBLISHED_TARGET } from "../lib/release-target.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { PackNetworkStack } from "../lib/stacks/pack-network-stack.js";
+import { fromCore } from "./nested.js";
 import { instantiate, Values } from "./parameters.js";
 
 /* The Core template of a release (D58; customer-distribution-threat-model.md): one template
@@ -36,9 +37,10 @@ interface TemplateJson {
 
 // No signed packs, whatever `dist/packs` holds on this machine.
 const context = { packsDir: mkdtempSync(join(tmpdir(), "mango-no-packs-")) };
-const source = Template.fromStack(
-  new CoreStack(new App({ context }), "Core", { env: { region: "us-east-1" } }),
-).toJSON() as TemplateJson;
+const coreStack = new CoreStack(new App({ context }), "Core", { env: { region: "us-east-1" } });
+const source = Template.fromStack(coreStack).toJSON() as TemplateJson;
+/** Core with the resources of the stacks nested in it (D99). */
+const withNested = fromCore(coreStack).toJSON() as TemplateJson;
 const text = JSON.stringify(source);
 const ofType = (type: string) => Object.values(source.Resources).filter((r) => r.Type === type);
 
@@ -108,7 +110,8 @@ describe("Core template of a release", () => {
     // Why it needs no protection: no role of the stack can write to it, only ask it.
     const onStore = text.match(/verifiedpermissions:\w+/g) ?? [];
     expect([...new Set(onStore)]).toEqual(["verifiedpermissions:IsAuthorized"]);
-    expect(ofType("AWS::VerifiedPermissions::Policy").length).toBeGreaterThan(0);
+    // Its policies live in the Authorization stack nested in Core (D99).
+    expect(Object.values(withNested.Resources).filter((r) => r.Type === "AWS::VerifiedPermissions::Policy").length).toBeGreaterThan(0);
   });
 
   it("refuses the management account and another Region before creating anything", () => {
@@ -222,7 +225,9 @@ describe("Core template of a release", () => {
     )!;
     expect(tagger.Properties.Release).toBe("v0.1.0-g1a2b3c4");
     expect(first!.replaceAll("v0.1.0-g1a2b3c4", "v0.1.1")).toBe(second);
-  });
+    // Two whole releases, each with the templates of the stacks nested in Core (D99): over the
+    // 30 s of the other tests on a busy machine.
+  }, 90_000);
 });
 
 describe("config.json of the SPA in a release", () => {
@@ -367,7 +372,8 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
       "AWS::Cognito::UserPoolUser",
       "AWS::CloudFront::Distribution",
       "AWS::CloudWatch::Alarm",
-      "AWS::VerifiedPermissions::Policy",
+      // The stacks nested in Core (D99): the operational alarms, the Cedar policies, remote MCP.
+      "AWS::CloudFormation::Stack",
     ]) {
       expect(types, type).toContain(type);
     }
@@ -534,7 +540,7 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
       "logs:PutLogEvents",
     ]);
     // The metric filters of the stack read the log of mango-api (D71 (18), D88 (37)), not the guard's.
-    const filters = Object.values(source.Resources).filter((r) => r.Type === "AWS::Logs::MetricFilter");
+    const filters = Object.values(withNested.Resources).filter((r) => r.Type === "AWS::Logs::MetricFilter");
     expect(filters.map((r) => r.Properties.MetricTransformations[0].MetricName).sort()).toEqual([
       "RateLimitStoreRefusals",
       "RetrieveThrottles",

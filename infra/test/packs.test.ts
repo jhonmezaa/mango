@@ -19,6 +19,7 @@ import { CoreStack } from "../lib/stacks/core-stack.js";
 import { MEMBER_READ_ONLY_DATA_ACTIONS } from "../lib/stacks/member-stack.js";
 import { BILLING_READER_DATA_ACTIONS } from "../lib/stacks/payer-stack.js";
 import { instantiate, payerTemplate } from "./parameters.js";
+import { fromCore } from "./nested.js";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../..");
 const examplePath = resolve(import.meta.dirname, "../config/example.json");
@@ -37,7 +38,7 @@ interface Statement {
 }
 
 function synth(installation = cfg, context: Record<string, unknown> = {}) {
-  const template = Template.fromStack(
+  const template = fromCore(
     new CoreStack(new App({ context: { skipSpa: true, ...context } }), "Core", {
       installation,
       env: { account, region },
@@ -729,6 +730,22 @@ describe("release packs (D36): only what the release key signed", () => {
   });
 
   const raw = JSON.parse(readFileSync(examplePath, "utf8")) as Record<string, unknown>;
+
+  it("keeps Core under its budget of 450 resources with packs, of the 500 CloudFormation allows (D99)", () => {
+    const release = signedRelease({ also: [{ id: "aws-billing" }] });
+    const lab = installationSchema.parse({
+      ...raw,
+      installationType: "lab",
+      packs: { signingPublicKey: release.pem },
+    });
+    const core = new CoreStack(new App({ context: { skipSpa: true, packsDir: release.dir } }), "Core", {
+      installation: lab,
+      env: { account, region },
+    });
+    // Core's own template: what grows goes in a stack nested in it (RemoteMcp for remote MCP).
+    const own = Template.fromStack(core).toJSON().Resources as Record<string, unknown>;
+    expect(Object.keys(own).length).toBeLessThanOrEqual(450);
+  });
 
   it("ships the pack to the bucket and the catalog to the provisioner", () => {
     const release = signedRelease();

@@ -8,14 +8,18 @@ Checks, without trusting the place the files came from:
 2. The signed manifest is the one next to it.
 3. Every template named by the manifest has the digest the manifest states (and every asset,
    when the files are at hand).
+4. The templates of the stacks nested in Core (D99) are there with their digest, and every
+   nested stack of every template is created from one of them: CloudFormation reads them from
+   the regional assets bucket, so a template the manifest does not name would go unverified.
 
 Usage, either:
 
     verify-release.py --directory dist/release/<label>
     verify-release.py --bucket <templates bucket> --label <label> [--public-key file.pem]
 
-The second form downloads manifest, signature and templates with the caller's credentials
-(a principal of a customer organization). Standard library, ``openssl`` and ``aws`` only.
+The second form downloads manifest, signature, templates and nested templates with the
+caller's credentials (a principal of a customer organization). Standard library, ``openssl``
+and ``aws`` only.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ import argparse
 import base64
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -32,6 +37,8 @@ from pathlib import Path
 PAYLOAD_TYPE = "application/vnd.mango.release.v1+json"
 ALGORITHM = "ECDSA_SHA_256"
 DEFAULT_KEY = Path(__file__).resolve().parent.parent / "packs" / "signing-key.pub"
+# How a TemplateURL names a nested template: an asset of the release, named by its hash.
+NESTED_KEY = re.compile(r"mango/assets/[0-9a-f]{64}\.json")
 
 
 class ReleaseError(Exception):
@@ -107,14 +114,64 @@ def verify_directory(directory: Path, public_key: Path) -> dict[str, object]:
             if sha256(file) != entry["sha256"]:
                 raise ReleaseError(f"{file.name} is not the file the manifest names")
             checked += 1
+    checked += verify_nested(directory, manifest)
     manifest["_checked_files"] = checked
     return manifest
 
 
-def download(bucket: str, label: str, directory: Path) -> None:
-    """Manifest, signature and templates; assets are read by CloudFormation, not by people."""
+def nested_keys(template: dict[str, object], bucket: str) -> list[str]:
+    """Keys of the templates the nested stacks of a template are created from, in ``bucket``."""
+    keys = []
+    resources = template.get("Resources", {})
+    for resource in resources.values() if isinstance(resources, dict) else []:
+        if not isinstance(resource, dict) or resource.get("Type") != "AWS::CloudFormation::Stack":
+            continue
+        properties = resource.get("Properties") or {}
+        url = json.dumps(properties.get("TemplateURL"))
+        found = NESTED_KEY.findall(url)
+        # The key alone is not enough: CloudFormation reads the bucket the URL names.
+        if len(found) != 1 or f"/{bucket}/{found[0]}" not in url:
+            raise ReleaseError("a nested stack is not created from a template of the release")
+        keys.append(found[0])
+    return keys
 
-    def fetch(name: str, target: Path) -> None:
+
+def verify_nested(directory: Path, manifest: dict[str, object]) -> int:
+    """Nested templates are required, unlike other assets: each is IaC that gets installed."""
+    entries = manifest.get("nested_templates", [])
+    if not isinstance(entries, list):
+        raise ReleaseError("malformed list of nested templates")
+    files = {str(e["key"]): directory / "regional-s3-assets" / Path(e["key"]).name for e in entries}
+    for entry in entries:
+        file = files[str(entry["key"])]
+        if not file.exists():
+            raise ReleaseError(f"missing nested template {entry['file']}")
+        if sha256(file) != entry["sha256"]:
+            raise ReleaseError(f"{entry['file']} is not the file the manifest names")
+    provider = manifest.get("provider")
+    regions = manifest.get("regions")
+    if not isinstance(provider, dict) or not isinstance(regions, list) or len(regions) != 1:
+        raise ReleaseError("malformed provider or regions in the manifest")
+    bucket = f"{provider['templates_bucket']}-{regions[0]}"
+    named: list[str] = []
+    templates = manifest["templates"]
+    if not isinstance(templates, list):
+        raise ReleaseError("malformed list of templates")
+    for path in [
+        *(directory / "global-s3-assets" / Path(t["file"]).name for t in templates),
+        *files.values(),
+    ]:
+        named += nested_keys(json.loads(path.read_text()), bucket)
+    if sorted(named) != sorted(files):
+        raise ReleaseError("the nested stacks and the nested templates of the manifest differ")
+    return len(entries)
+
+
+def download(bucket: str, label: str, directory: Path) -> None:
+    """Manifest, signature, templates and nested templates; other assets are read by
+    CloudFormation, not by people."""
+
+    def fetch(name: str, target: Path, source: str = bucket, key: str | None = None) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(  # noqa: S603
             [  # noqa: S607
@@ -122,9 +179,9 @@ def download(bucket: str, label: str, directory: Path) -> None:
                 "s3api",
                 "get-object",
                 "--bucket",
-                bucket,
+                source,
                 "--key",
-                f"mango/{label}/{name}",
+                key or f"mango/{label}/{name}",
                 str(target),
             ],
             capture_output=True,
@@ -145,6 +202,16 @@ def download(bucket: str, label: str, directory: Path) -> None:
         if not name.endswith(".template.json") or "/" in name or name.startswith("."):
             raise ReleaseError("unexpected template name in the manifest")
         fetch(name, directory / "global-s3-assets" / name)
+    # Nested templates (D99) are assets: in the regional bucket of the release's Region, under
+    # a key made only of their hash.
+    manifest = json.loads((directory / "manifest.json").read_text())
+    regions = manifest.get("regions") or []
+    for entry in manifest.get("nested_templates", []):
+        key = str(entry.get("key", ""))
+        if not NESTED_KEY.fullmatch(key) or len(regions) != 1:
+            raise ReleaseError("unexpected nested template in the manifest")
+        name = Path(key).name
+        fetch(name, directory / "regional-s3-assets" / name, f"{bucket}-{regions[0]}", key)
 
 
 def main() -> None:

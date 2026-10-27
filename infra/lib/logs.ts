@@ -55,11 +55,14 @@ export class ShortKeyDeletionWindow implements IAspect {
   }
 }
 
-/** The stack's {@link LogsKey}; the stack must create it before any log group. */
+/**
+ * The stack's {@link LogsKey}; the stack must create it before any log group. A nested stack
+ * (D99) uses the key of the stack it is nested in.
+ */
 export function logsKeyOf(scope: IConstruct): kms.IKey {
-  const holder = Stack.of(scope).node.tryFindChild(LOGS_KEY_ID);
-  if (!(holder instanceof LogsKey)) {
-    throw new Error("LogsKey must be created in the stack before log groups");
+  for (let stack: Stack | undefined = Stack.of(scope); stack; stack = stack.nestedStackParent) {
+    const holder = stack.node.tryFindChild(LOGS_KEY_ID);
+    if (holder instanceof LogsKey) return holder.key;
   }
-  return holder.key;
+  throw new Error("LogsKey must be created in the stack before log groups");
 }

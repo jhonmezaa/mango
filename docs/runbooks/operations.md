@@ -10,11 +10,11 @@ La instalación avisa por correo cuando algo falla. Decisión: [D71](../architec
 - **Qué dice el correo:** el nombre de la alarma, la métrica, el umbral y una descripción con qué mirar primero. Nunca contenido de conversaciones ni correos de personas.
 - **Cuándo avisa:** al pasar a `ALARM`. No avisa al volver a `OK`.
 - **Una instalación sin uso está callada:** los datos ausentes no cuentan como incumplimiento, y las tasas de error solo se evalúan por encima de un mínimo de peticiones. Es normal ver alarmas en `INSUFFICIENT_DATA` cuando no hay tráfico. La única excepción es `Api-no-healthy-targets`: ahí la falta de datos también avisa (ver su fila).
-- **Dónde verlas juntas:** el tablero `Mango-<ns>-Operations` de CloudWatch muestra el estado de todas y las señales de las que salen.
+- **Dónde verlas juntas:** el tablero `Mango-<ns>-ops` de CloudWatch muestra el estado de todas y las señales de las que salen. Hasta D99 se llamaba `Mango-<ns>-Operations`.
 
 ### Qué significa cada una
 
-Los nombres llevan el prefijo `Mango-<ns>-`.
+Los nombres llevan el prefijo `Mango-<ns>-`. Desde D99 (2026-10-27), las de la aplicación y su balanceador, las funciones de ingreso y de tools, las tablas, Bedrock, CloudFront y los límites por IP llevan además `ops-` (`Mango-<ns>-ops-Api-unreachable`): viven, con el tablero, en el stack `Operations` anidado en `Core` (su nombre empieza por `Mango-<ns>-Core-Operations`). Las de la publicación, la conciliación, las tareas, los reportes, las anomalías, la salud de las cuentas, las knowledge bases, el guard y la red de packs conservan su nombre.
 
 **La aplicación (`mango-api` y su balanceador)**
 
@@ -313,7 +313,7 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 | Qué | Cuánto | USD al mes |
 |---|---|---|
 | Métricas que leen las alarmas, a USD 0,10 cada una | 58 en la plantilla de ejemplo (2026-10-15): 57 en las 36 alarmas de `Core` y una en la de `PackNetwork` | 5,80 |
-| Tablero `Mango-<ns>-Operations` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
+| Tablero `Mango-<ns>-ops` | Uno. Los tres primeros tableros de una cuenta son gratis | 3,00 |
 | Métricas propias de la función conciliadora (D73), a USD 0,30 cada una | Cuatro | 1,20 |
 | Métrica del filtro del log de `mango-api` (D71, punto 18), a USD 0,30 | Una: `RateLimitStoreRefusals`. Existe todos los meses, porque el filtro publica ceros | 0,30 |
 | Métricas propias del consumidor de anomalías (D79), a USD 0,30 cada una | Cuatro, en `Mango/CostAnomalies`. Solo se cobran las horas en que llega un evento: con pocas anomalías al mes, céntimos | ~0 |

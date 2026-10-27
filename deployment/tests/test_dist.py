@@ -307,7 +307,8 @@ def test_assets_are_listed_under_the_shared_prefix_whatever_the_label(
     monkeypatch.setattr(dist, "CDK_OUT", _cdk_out(tmp_path / "cdk.out", "mango/assets/abc.zip"))
 
     listed = [
-        dist.package({"label": label}, tmp_path / label) for label in ("v1.0.0", "v1.0.1-gabc1234")
+        dist.package({"label": label, "bucket": "mango-releases-example"}, tmp_path / label)[0]
+        for label in ("v1.0.0", "v1.0.1-gabc1234")
     ]
 
     assert listed[0] == listed[1]
@@ -325,8 +326,10 @@ def test_a_description_that_names_the_release_ends_the_build(
     )
     monkeypatch.setattr(dist, "CDK_OUT", cdk_out)
 
-    with pytest.raises(SystemExit, match="Payer: the description names the release"):
-        dist.package({"label": "v1.0.0"}, tmp_path / "out")
+    with pytest.raises(
+        SystemExit, match=r"Payer\.template\.json: the description names the release"
+    ):
+        dist.package({"label": "v1.0.0", "bucket": "mango-releases-example"}, tmp_path / "out")
 
 
 @pytest.mark.parametrize("key", ["mango/v1.0.0/abc.zip", "mango/assets/deep/abc.zip", "abc.zip"])
@@ -336,4 +339,104 @@ def test_an_asset_outside_the_shared_prefix_ends_the_build(
     monkeypatch.setattr(dist, "CDK_OUT", _cdk_out(tmp_path / "cdk.out", key))
 
     with pytest.raises(SystemExit, match="outside the assets prefix"):
-        dist.package({"label": "v1.0.0"}, tmp_path / "out")
+        dist.package({"label": "v1.0.0", "bucket": "mango-releases-example"}, tmp_path / "out")
+
+
+NESTED_KEY = "mango/assets/" + "a" * 64 + ".json"
+
+
+def _nested(cdk_out: Path, description: str = "(Mango) mango-hub core: alarms") -> Path:
+    """Core with one nested stack (D99), whose template CDK lists as an asset of Core."""
+    url = {
+        "Fn::Join": [
+            "",
+            [
+                "https://s3.us-east-1.",
+                {"Ref": "AWS::URLSuffix"},
+                f"/mango-releases-example-us-east-1/{NESTED_KEY}",
+            ],
+        ]
+    }
+    stack = {"Type": "AWS::CloudFormation::Stack", "Properties": {"TemplateURL": url}}
+    (cdk_out / "Core.template.json").write_text(json.dumps({"Resources": {"Ops": stack}}))
+    (cdk_out / "CoreOps1234.nested.template.json").write_text(
+        json.dumps({"Description": description, "Resources": {}})
+    )
+    assets = json.loads((cdk_out / "Core.assets.json").read_text())
+    assets["files"]["nested"] = {
+        "source": {"path": "CoreOps1234.nested.template.json", "packaging": "file"},
+        "destinations": {"current": {"objectKey": NESTED_KEY}},
+    }
+    (cdk_out / "Core.assets.json").write_text(json.dumps(assets))
+    return cdk_out
+
+
+def test_a_nested_template_is_published_as_an_asset_and_listed_with_its_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cdk_out = _nested(_cdk_out(tmp_path / "cdk.out", "mango/assets/abc.zip"))
+    monkeypatch.setattr(dist, "CDK_OUT", cdk_out)
+
+    assets, nested = dist.package(
+        {"label": "v1.0.0", "bucket": "mango-releases-example"}, tmp_path / "out"
+    )
+
+    built = tmp_path / "out" / "regional-s3-assets" / f"{'a' * 64}.json"
+    digest = hashlib.sha256(built.read_bytes()).hexdigest()
+    assert nested == [
+        {
+            "key": NESTED_KEY,
+            "sha256": digest,
+            "size": built.stat().st_size,
+            "file": "CoreOps1234.nested.template.json",
+            "parent": "Core",
+        }
+    ]
+    assert {"key": NESTED_KEY, "sha256": digest, "size": built.stat().st_size} in assets
+    assert not (tmp_path / "out" / "global-s3-assets" / "CoreOps1234.nested.template.json").exists()
+
+
+def test_a_nested_description_that_names_the_release_ends_the_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cdk_out = _nested(_cdk_out(tmp_path / "cdk.out", "mango/assets/abc.zip"), "core v1.0.0")
+    monkeypatch.setattr(dist, "CDK_OUT", cdk_out)
+
+    with pytest.raises(SystemExit, match="the description names the release"):
+        dist.package({"label": "v1.0.0", "bucket": "mango-releases-example"}, tmp_path / "out")
+
+
+def test_a_nested_stack_without_its_template_in_the_release_ends_the_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cdk_out = _nested(_cdk_out(tmp_path / "cdk.out", "mango/assets/abc.zip"))
+    assets = json.loads((cdk_out / "Core.assets.json").read_text())
+    del assets["files"]["nested"]
+    (cdk_out / "Core.assets.json").write_text(json.dumps(assets))
+    monkeypatch.setattr(dist, "CDK_OUT", cdk_out)
+
+    with pytest.raises(SystemExit, match="nested stacks and nested templates do not match"):
+        dist.package({"label": "v1.0.0", "bucket": "mango-releases-example"}, tmp_path / "out")
+
+
+def test_a_nested_stack_from_a_template_outside_the_release_ends_the_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cdk_out = _nested(_cdk_out(tmp_path / "cdk.out", "mango/assets/abc.zip"))
+    url = "https://example.invalid/other.json"
+    stack = {"Type": "AWS::CloudFormation::Stack", "Properties": {"TemplateURL": url}}
+    (cdk_out / "Core.template.json").write_text(json.dumps({"Resources": {"Ops": stack}}))
+    monkeypatch.setattr(dist, "CDK_OUT", cdk_out)
+
+    with pytest.raises(SystemExit, match="TemplateURL is not a release asset"):
+        dist.package({"label": "v1.0.0", "bucket": "mango-releases-example"}, tmp_path / "out")
+
+
+def test_a_nested_stack_from_another_bucket_ends_the_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cdk_out = _nested(_cdk_out(tmp_path / "cdk.out", "mango/assets/abc.zip"))
+    monkeypatch.setattr(dist, "CDK_OUT", cdk_out)
+
+    with pytest.raises(SystemExit, match="TemplateURL is not a release asset"):
+        dist.package({"label": "v1.0.0", "bucket": "another-bucket"}, tmp_path / "out")

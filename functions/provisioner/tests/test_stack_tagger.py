@@ -336,3 +336,53 @@ def test_a_request_for_another_stack_is_refused() -> None:
     status, _ = lab.run(event)
     assert status == "FAILED"
     assert lab.iam.tagged == {} and lab.ec2.tagged == {}
+
+
+NESTED_STACK = (
+    f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/Mango-{NS}-Core-RemoteMcpNestedStack-1AB2C3/"
+    "2f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+)
+NESTED_POLICY = f"arn:aws:iam::{ACCOUNT}:policy/Mango-{NS}-Core-RemoteMcp-OverflowPolicy-XyZ"
+
+
+def _with_nested(lab: Lab, nested: str, policy: str) -> None:
+    """Core declares a nested stack (D99), and that stack one managed policy."""
+    original = lab.cfn.get_paginator
+
+    def paginator(name: str) -> Any:
+        pages = original(name)
+
+        class Pages:
+            def paginate(self, **kwargs: Any) -> list[dict[str, Any]]:
+                if kwargs["StackName"] == nested:
+                    summary = {
+                        "ResourceType": "AWS::IAM::ManagedPolicy",
+                        "PhysicalResourceId": policy,
+                    }
+                    return [{"StackResourceSummaries": [summary]}]
+                out = pages.paginate(**kwargs)
+                if kwargs["StackName"] == STACK_ID:
+                    out[0]["StackResourceSummaries"].append(
+                        {"ResourceType": "AWS::CloudFormation::Stack", "PhysicalResourceId": nested}
+                    )
+                return out
+
+        return Pages()
+
+    lab.cfn.get_paginator = paginator  # type: ignore[method-assign]
+
+
+def test_the_policies_of_a_stack_nested_in_core_get_cores_tags() -> None:
+    lab = Lab()
+    _with_nested(lab, NESTED_STACK, NESTED_POLICY)
+    assert lab.run(_event()) == ("SUCCESS", "")
+    assert lab.iam.tagged == dict.fromkeys([*POLICIES, NESTED_POLICY], CORE_EXPECTED)
+
+
+def test_a_nested_stack_not_named_after_core_is_refused() -> None:
+    lab = Lab()
+    foreign = NESTED_STACK.replace(f"Mango-{NS}-Core-", "Other-")
+    _with_nested(lab, foreign, NESTED_POLICY)
+    status, reason = lab.run(_event())
+    assert status == "FAILED" and "(stack_not_of_this_installation)" in reason
+    assert lab.iam.tagged == {} and lab.ec2.tagged == {}

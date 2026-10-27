@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import {
@@ -10,6 +9,7 @@ import {
 } from "../lib/constructs/deprovisioner.js";
 import { releaseAgents } from "../lib/constructs/release-agents.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
@@ -17,7 +17,7 @@ const account = cfg.mangoAccountId;
 const region = cfg.region;
 
 type Resource = { Type: string; Properties: any; [k: string]: any };
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
     installation: cfg,
     env: { account, region },

@@ -7,10 +7,11 @@ import { CHECKOV_EXCEPTIONS } from "../lib/checkov.js";
 import { GUARD_EXCEPTIONS } from "../lib/guard.js";
 import { API_DRAIN_SECONDS, API_TASKS } from "../lib/constructs/api-service.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { fromCore } from "./nested.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const app = new App();
-const template = Template.fromStack(
+const template = fromCore(
   new CoreStack(app, "Core", { installation: cfg, env: { account: cfg.mangoAccountId, region: cfg.region } }),
 );
 

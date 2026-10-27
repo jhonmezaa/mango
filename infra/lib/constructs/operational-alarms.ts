@@ -76,6 +76,14 @@ export const OPERATIONAL_THRESHOLDS = {
   rateLimitStoreRefusals: 2,
 };
 
+/**
+ * Every name of this construct starts with it, after the namespace (D99): `Mango-<ns>-ops-…`.
+ * The alarms live in a stack nested in Core, and CloudFormation creates a nested stack's
+ * resources before it deletes the ones Core no longer has: under the names they had in Core,
+ * the update that moved them would have failed on names already in use.
+ */
+export const OPERATIONS_PREFIX = "ops-";
+
 const MINUTE = Duration.minutes(1);
 const FIVE_MINUTES = Duration.minutes(5);
 const AT_LEAST = cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD;
@@ -119,6 +127,9 @@ export interface OperationalAlarmsProps {
  * last.
  * The alarms of the publication path live in `Reconciler`; the one of the pack network, in
  * `PackNetwork`.
+ *
+ * It lives in the `Operations` stack nested in Core (D99) and watches the stack at the root of
+ * that nesting: its tables, target groups and alarms, the nested stacks' alarms included.
  */
 export class OperationalAlarms extends Construct {
   private readonly ns: string;
@@ -128,7 +139,8 @@ export class OperationalAlarms extends Construct {
     super(scope, id);
     this.ns = props.installation.namespace;
     this.notify = new cloudwatchActions.SnsAction(props.alerts.topic);
-    const stack = Stack.of(this);
+    let stack = Stack.of(this);
+    while (stack.nestedStackParent) stack = stack.nestedStackParent;
     const everything = stack.node.findAll();
     const tables = everything.filter((c): c is dynamodb.TableV2 => c instanceof dynamodb.TableV2);
     const targetGroups = everything.filter(
@@ -149,7 +161,7 @@ export class OperationalAlarms extends Construct {
     // Every alarm of the stack, the ones of the publication path included.
     const alarms = stack.node.findAll().filter((c): c is cloudwatch.Alarm => c instanceof cloudwatch.Alarm);
     new cloudwatch.Dashboard(this, "Dashboard", {
-      dashboardName: mangoName(this.ns, "Operations"),
+      dashboardName: mangoName(this.ns, "ops"),
       defaultInterval: Duration.hours(3),
       widgets: [
         [new cloudwatch.AlarmStatusWidget({ title: "Alarms", alarms, width: 24, height: 4 })],
@@ -169,7 +181,7 @@ export class OperationalAlarms extends Construct {
     treatMissingData = cloudwatch.TreatMissingData.NOT_BREACHING,
   ): cloudwatch.Alarm {
     const created = new cloudwatch.Alarm(this, id, {
-      alarmName: mangoName(this.ns, name),
+      alarmName: mangoName(this.ns, `${OPERATIONS_PREFIX}${name}`),
       alarmDescription: description,
       treatMissingData,
       ...options,
@@ -187,7 +199,7 @@ export class OperationalAlarms extends Construct {
       "Api-unreachable",
       "The load balancer answered 5xx itself: mango-api had no healthy task, closed the connection or took " +
         "too long. Look first at the tasks of the ECS service (stopped tasks and their reason) and at the " +
-        "alarms Api-no-healthy-targets and Api-tasks-below-desired.",
+        "alarms ops-Api-no-healthy-targets and ops-Api-tasks-below-desired.",
       { metric: albErrors, threshold: OPERATIONAL_THRESHOLDS.albErrors, comparisonOperator: AT_LEAST, evaluationPeriods: 1 },
     );
 
@@ -345,7 +357,7 @@ export class OperationalAlarms extends Construct {
     const namespace = `${signal.namespacePrefix}/${this.ns}`;
     new logs.MetricFilter(this, "RateLimitStoreRefusals", {
       logGroup,
-      filterName: mangoName(this.ns, "Api-rate-limit-store-refusals"),
+      filterName: mangoName(this.ns, `${OPERATIONS_PREFIX}Api-rate-limit-store-refusals`),
       filterPattern: pattern,
       metricNamespace: namespace,
       metricName: signal.metric,
@@ -368,7 +380,7 @@ export class OperationalAlarms extends Construct {
         "table of the shared rate limits could not say whether they fit: people get 429 answers on the routes " +
         "those limits protect although nobody is over a limit. Look first at the lines \"rate limit store " +
         "unavailable\" in the log group of mango-api (/mango/<namespace>/api): each names the limit. Then at " +
-        "the RateLimits table: that it exists, its throttling alarm, the DynamoDB-system-errors alarm, and " +
+        "the RateLimits table: that it exists, its throttling alarm, the ops-DynamoDB-system-errors alarm, and " +
         "that the task role of mango-api can still read and write it and use its key.",
       {
         metric: refusals,

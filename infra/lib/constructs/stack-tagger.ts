@@ -62,11 +62,13 @@ export class StackTagger extends Construct {
     ) => role.addToPolicy(new iam.PolicyStatement({ sid, actions, resources, ...(conditions ? { conditions } : {}) }));
     const ownNamespace = { "aws:RequestTag/mango:namespace": ns };
 
-    // Its own stack and the pack network's: their tags, and the policies they declare.
+    // Its own stack and the pack network's: their tags, and the policies they declare. Also
+    // the stacks nested in Core (D99), named after it: the policies they declare are Core's.
+    const nestedStacks = arn("cloudformation", `stack/${stack.stackName}-*/*`);
     allow(
       "ReadInstallationStacks",
       ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"],
-      [stack.stackId, arn("cloudformation", `stack/${mangoName(ns, "PackNetwork")}/*`)],
+      [stack.stackId, arn("cloudformation", `stack/${mangoName(ns, "PackNetwork")}/*`), nestedStacks],
     );
     allow("TagInstallationPolicies", ["iam:TagPolicy"], [arn("iam", `policy/${mangoName(ns, "")}*`, "")], {
       StringEquals: ownNamespace,
@@ -131,12 +133,14 @@ export class StackTagger extends Construct {
           arn("ec2", type),
         ),
         arn("cloudformation", `stack/${mangoName(ns, "PackNetwork")}/*`),
+        nestedStacks,
       ].map((resourceArn) => ({
         id: `AwsSolutions-IAM5[Resource::${resourceArn}]`,
         reason:
           "Tags only. The policies are the installation's (name prefix); the network resources are limited by " +
           "the ec2:Vpc condition, or, for security group rules that admit none, by the namespace every request " +
-          "must carry. The pack network stack id ends in a generated suffix.",
+          "must carry. The pack network stack id ends in a generated suffix; the stacks nested in Core are " +
+          "named after it with generated suffixes, and only read.",
       })),
     );
   }
@@ -147,11 +151,12 @@ export class StackTagger extends Construct {
  * declared: an aspect, so a security group or a policy added later is included without anyone
  * listing it. None of these may carry a condition: `DependsOn` cannot name a conditional
  * resource (D58 (17)), and a tagged resource that may not exist needs its own design first.
+ * One in a stack nested in Core (D99) makes the tagger wait for that whole nested stack.
  */
 function runsAfterWhatItTags(tagger: CfnResource): void {
   Aspects.of(tagger.stack).add({
     visit(node: IConstruct): void {
-      if (!CfnResource.isCfnResource(node) || node === tagger || node.stack !== tagger.stack) return;
+      if (!CfnResource.isCfnResource(node) || node === tagger || !nestedIn(node.stack, tagger.stack)) return;
       if (!BEFORE_THE_TAGGER.has(node.cfnResourceType)) return;
       if (node.cfnOptions.condition !== undefined) {
         throw new Error(`stack tagger: ${node.node.path} has a condition and cannot be waited for`);
@@ -159,4 +164,10 @@ function runsAfterWhatItTags(tagger: CfnResource): void {
       tagger.addResourceDependency(node);
     },
   });
+}
+
+/** Whether `stack` is `root` or nested in it, at any depth. */
+function nestedIn(stack: Stack, root: Stack): boolean {
+  for (let s: Stack | undefined = stack; s; s = s.nestedStackParent) if (s === root) return true;
+  return false;
 }
