@@ -1,9 +1,9 @@
 # D96 · «Desconectar» un MCP remoto es un bloqueo por persona en Mango; el token del vault no se borra (resultado de P7)
 
-- **Estado:** vigente
+- **Estado:** parcial. El punto (3), la marca por persona, lo reemplaza [D97](D097-desconectar-borra-el-token.md): «Desconectar» borra el token con `forceAuthentication`. D97 corrige (1) y (2), porque P7b usó una clave de `_meta` equivocada. Rigen (4) y (5).
 - **Fecha:** 2026-10-27 (elegida por el dueño ese día, en el chat, sobre la recomendación tras P7 y la investigación: «vamonos con tu recomendacion, pero el punto 4 no hagamos nada»)
 - **Precisa / reemplaza a:** precisa [D93](D093-mcp-remotos-de-terceros.md) (8) (el interceptor `REQUEST` también rechaza a una persona desconectada), D93 (10) (la auditoría de `.disconnect`), D93 (11) (lo que dio P7) y D93 (12) («Desconectar» en «Mis conexiones»); precisa [D94](D094-consentimiento-iniciado-por-el-gateway.md) (4) (P7 ya se probó)
-- **Precisada por:** —
+- **Precisada por:** [D97](D097-desconectar-borra-el-token.md) (reemplaza el punto 3 y corrige el 1 y el 2)
 
 ## Decisión
 

@@ -326,9 +326,9 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ## MCP remotos: cortar el acceso a una cuenta
 
-> **Previsto (D93, D96): los MCP remotos de terceros todavía no están construidos.** Esta sección dice qué hacer cuando lo estén.
+> **Previsto (D93, D96, D97): los MCP remotos de terceros todavía no están construidos.** Esta sección dice qué hacer cuando lo estén.
 
-«Desconectar», en «Mis conexiones», solo hace que Mango deje de usar la cuenta de la persona: el token sigue en el vault de AgentCore Identity, que no permite borrar el de una sola persona (D96). Cuando hay que cortar de verdad:
+«Desconectar», en «Mis conexiones», borra del vault de AgentCore Identity el token de esa persona (D97), pero no revoca nada en Microsoft. Cuando además hay que cortar en Microsoft, o a todas las personas:
 
 | Caso | Qué hacer | Corte |
 |---|---|---|
