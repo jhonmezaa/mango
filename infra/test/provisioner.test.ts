@@ -345,6 +345,27 @@ describe("provisioner role: wildcards and the rest", () => {
     expect(dataKey.Condition).toEqual({ StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } });
   });
 
+  it("reads only the signed catalog of remote MCPs, and only the public half of its key (D98 (13))", () => {
+    const read = bySid(provisioner, "ReadApprovedRemotes");
+    expect(actions(read)).toEqual(["dynamodb:GetItem"]);
+    expect(read.Condition).toEqual({
+      "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["MCP_REMOTE#*"] },
+      Null: { "dynamodb:LeadingKeys": "false" },
+    });
+    const key = bySid(provisioner, "RemoteMcpPublicKey");
+    expect(actions(key)).toEqual(["kms:GetPublicKey"]);
+    expect(key.Condition).toEqual({ StringEquals: { "kms:RequestAlias": `alias/Mango-${ns}-remote-mcp` } });
+    // It never signs: only the remote provisioner does (D93 (9)).
+    for (const forbidden of ["kms:Sign", "kms:*"]) expect(provisioner.flatMap(actions)).not.toContain(forbidden);
+    // And it writes nothing of Settings but the Playground's harness.
+    const settingsWrites = provisioner.filter(
+      (s) =>
+        actions(s).some((a) => /dynamodb:(Put|Update|Delete|BatchWrite)/.test(a)) &&
+        JSON.stringify(s.Condition ?? {}).includes("MCP_"),
+    );
+    expect(settingsWrites).toEqual([]);
+  });
+
   it("has no managed policies and is assumed only by Lambda", () => {
     const role = resources[provisionerRoleId]!;
     expect(role.Properties.ManagedPolicyArns).toBeUndefined();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { agentReview } from '../i18n/locales/es/agentReview';
 import { problemOfViolation } from '../pages/agentBuilder/model';
-import { isRuleCode, RULE_CODES } from './rules';
+import { isRuleCode, isWordedRule, RULE_CODES } from './rules';
 
 describe('submit rule codes', () => {
   // `apps/api/tests/test_agent_rules.py` checks this list against the rules of the API.
@@ -19,6 +19,7 @@ describe('submit rule codes', () => {
 
   it('have a text in every screen that shows them', () => {
     for (const code of RULE_CODES) {
+      if (!isWordedRule(code)) continue;
       // Agent review: one text per code.
       expect(agentReview.rules[code], code).toBeTruthy();
       // Agent Builder: a known problem, never the "unknown rule" fallback.
@@ -29,5 +30,16 @@ describe('submit rule codes', () => {
     expect(problemOfViolation({ code: 'new_rule', field: 'tools', items: [] }).key).toBe(
       'unknownRule',
     );
+  });
+
+  it('shows a code the design has not worded yet as an unknown rule, by its code (D98)', () => {
+    expect(isRuleCode('remote_not_usable')).toBe(true);
+    expect(isWordedRule('remote_not_usable')).toBe(false);
+    const shown = problemOfViolation({
+      code: 'remote_not_usable',
+      field: 'tools',
+      items: ['remote-abcdefghij23.wiki'],
+    });
+    expect([shown.key, shown.items]).toEqual(['unknownRule', ['remote_not_usable']]);
   });
 });

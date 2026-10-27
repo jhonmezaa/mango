@@ -180,6 +180,7 @@ describe('reviewModel', () => {
   it('indexes the tools of the catalog with the data tier of their connector', () => {
     const tools = toolIndex({
       max_enabled_packs: 10,
+      remotes: [],
       items: [
         {
           id: 'pack',

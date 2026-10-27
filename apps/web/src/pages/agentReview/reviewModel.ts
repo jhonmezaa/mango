@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import type { ComponentType } from 'react';
 
-import { isRuleCode } from '../../agents/rules';
+import { isWordedRule } from '../../agents/rules';
 import { ApiError } from '../../api/errors';
 import type { OperationOutput } from '../../api/operations';
 import type { BadgeTone } from '../../components/Badge';
@@ -340,7 +340,7 @@ export function isForbidden(error: unknown): boolean {
 
 /** Text of a submit rule: the API sends the code and the items, never the text. */
 export function ruleText(t: TFunction, violation: Violation): string {
-  return isRuleCode(violation.code)
+  return isWordedRule(violation.code)
     ? t(`agentReview.rules.${violation.code}`, { items: violation.items.join(', ') })
     : t('agentReview.rules.unknown', { code: violation.code });
 }

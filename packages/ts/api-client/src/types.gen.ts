@@ -1104,6 +1104,44 @@ export type CatalogOut = {
      * Max Enabled Packs
      */
     max_enabled_packs?: number;
+    /**
+     * Remotes
+     */
+    remotes?: Array<CatalogRemote>;
+};
+
+/**
+ * CatalogRemote
+ *
+ * A remote MCP the caller may give tools of to an agent (D93 (7), D98 (18)): active, with
+ * its signed tools, and only if the caller is in its groups (being an administrator is not
+ * enough).
+ */
+export type CatalogRemote = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Operator
+     */
+    operator: string;
+    /**
+     * Organization
+     */
+    organization: string;
+    /**
+     * Registration Id
+     */
+    registration_id: string;
+    /**
+     * Service
+     */
+    service: string;
+    /**
+     * Tools
+     */
+    tools: Array<CatalogTool>;
 };
 
 /**
@@ -1960,11 +1998,12 @@ export type InboxItem = {
     /**
      * Kind
      */
-    kind: 'approval' | 'kbsource' | 'run';
+    kind: 'approval' | 'kbsource' | 'run' | 'remote_connect';
     /**
      * Read
      */
     read: boolean;
+    remote?: InboxRemote | null;
     run?: InboxRun | null;
     source?: QueuedSourceOut | null;
 };
@@ -1989,6 +2028,16 @@ export type InboxPage = {
      * Unread
      */
     unread: number;
+};
+
+/**
+ * InboxRemote
+ */
+export type InboxRemote = {
+    /**
+     * Registration Id
+     */
+    registration_id: string;
 };
 
 /**
@@ -2470,6 +2519,10 @@ export type MessageOut = {
      */
     citations?: Array<CitationOut>;
     /**
+     * Connection Required
+     */
+    connection_required?: Array<string>;
+    /**
      * Content
      */
     content: string;
@@ -2481,6 +2534,10 @@ export type MessageOut = {
      * Message Id
      */
     message_id: string;
+    /**
+     * Remote Sources
+     */
+    remote_sources?: Array<string>;
     /**
      * Role
      */
@@ -3699,6 +3756,26 @@ export type RemoteReenableIn = {
      * Version
      */
     version: number;
+};
+
+/**
+ * RemoteRefOut
+ *
+ * A remote MCP the version has tools of, for the Builder and the reviewer (D98 (2)).
+ */
+export type RemoteRefOut = {
+    /**
+     * Groups Without Access
+     */
+    groups_without_access: Array<string>;
+    /**
+     * Registration Id
+     */
+    registration_id: string;
+    /**
+     * Service
+     */
+    service: string | null;
 };
 
 /**
@@ -5613,6 +5690,10 @@ export type VersionOut = {
      * Rejection Reason
      */
     rejection_reason: string | null;
+    /**
+     * Remotes
+     */
+    remotes?: Array<RemoteRefOut> | null;
     /**
      * Revision
      */
@@ -8437,7 +8518,7 @@ export type SetInboxStateData = {
         /**
          * Kind
          */
-        kind: 'approval' | 'kbsource' | 'run';
+        kind: 'approval' | 'kbsource' | 'run' | 'remote_connect';
         /**
          * Item Id
          */

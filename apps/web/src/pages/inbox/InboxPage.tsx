@@ -39,6 +39,7 @@ import {
   keyOf,
   matchesView,
   runPath,
+  shownKind,
   RUN_ID,
   TASK_ID,
   titleOf,
@@ -98,7 +99,7 @@ function InboxRow({
   // Design `ICON`: a proposal of a knowledge base, an approval or a run.
   const Icon =
     item.kind === 'kbsource' ? BookOpenIcon : item.kind === 'approval' ? LockIcon : ClockIcon;
-  const mono = item.kind !== 'run';
+  const mono = shownKind(item) !== 'run';
   const classes = ['inbox-row'];
   if (active) classes.push('on');
   if (!item.read) classes.push('is-unread');
@@ -118,7 +119,7 @@ function InboxRow({
         role={item.read ? undefined : 'img'}
         aria-label={item.read ? undefined : t('inbox.unreadDot')}
       />
-      <span className={item.kind === 'run' ? 'inbox-ic' : 'inbox-ic is-amber'}>
+      <span className={shownKind(item) === 'run' ? 'inbox-ic' : 'inbox-ic is-amber'}>
         <Icon size={15} />
       </span>
       <span className="inbox-row-main">
@@ -535,7 +536,7 @@ export function InboxPage() {
                 <ChevronLeftIcon size={12} /> {t('inbox.backToList')}
               </button>
               <div className="inbox-detail-h">
-                <Badge>{t(`inbox.type.${current.kind}`)}</Badge>
+                <Badge>{t(`inbox.type.${shownKind(current)}`)}</Badge>
                 <span className="inbox-detail-tools">
                   <button
                     type="button"
@@ -569,7 +570,7 @@ export function InboxPage() {
               </div>
               <p
                 className={
-                  current.kind === 'run' ? 'inbox-detail-b' : 'inbox-detail-b mono is-mono'
+                  shownKind(current) === 'run' ? 'inbox-detail-b' : 'inbox-detail-b mono is-mono'
                 }
               >
                 {bodyOf(t, current)}

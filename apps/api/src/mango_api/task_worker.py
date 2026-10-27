@@ -100,7 +100,14 @@ class TurnOutcome:
     """The data of the run's PDF (``task_reports.build``, JSON), when the task asked for one
     and the agent handed over valid data (D86)."""
     agent_name: str | None = None
+    remote_connect: str | None = None
+    """With ``REMOTE_CONSENT_REQUIRED``: the remote MCP registration the owner has to connect
+    their account to (D98 (20)). Its notice in the Bandeja is ``remote_connect``."""
 
+
+REMOTE_CONSENT_REQUIRED = "remote_consent_required"
+"""Reason of a run whose remote MCP tool answered ``consent_required``: the owner never
+connected their account, or it was disconnected (D98 (20))."""
 
 MAX_STEPS = 20
 MAX_STEP_CHARS = 2000
@@ -181,6 +188,7 @@ class RunNotices(Protocol):
         ok: bool,
         reason: str | None,
         report: str | None,
+        remote_connect: str | None = None,
     ) -> None: ...
 
 
@@ -425,7 +433,14 @@ class TaskRuns:
                 **report,
             )
             if ended:
-                self._notify(automation, run, outcome.status, outcome.reason, outcome.result)
+                self._notify(
+                    automation,
+                    run,
+                    outcome.status,
+                    outcome.reason,
+                    outcome.result,
+                    remote_connect=outcome.remote_connect,
+                )
                 if self.reports is not None and report.get("report_status") == GENERATING:
                     # Only after this worker closed the run: a second delivery asks for nothing.
                     self.reports.start(run, self.store.report_failed)
@@ -591,10 +606,13 @@ class TaskRuns:
         status: RunStatus,
         reason: str | None,
         report: str | None,
+        *,
+        remote_connect: str | None = None,
     ) -> None:
         """One notice per run that completed or failed, only for the owner (D83, design: skipped
         runs and runs that wait for an approval leave none). Called only after this worker
-        moved the run to its final status, so a second delivery never leaves a second one."""
+        moved the run to its final status, so a second delivery never leaves a second one. A
+        run that needed the owner to connect a remote MCP leaves its ``remote_connect``."""
         if self.inbox is None or status not in (RunStatus.OK, RunStatus.FAILED):
             return
         self.inbox.run_ended(
@@ -606,6 +624,7 @@ class TaskRuns:
             ok=status is RunStatus.OK,
             reason=reason,
             report=report,
+            remote_connect=remote_connect if status is RunStatus.FAILED else None,
         )
 
     def _emit(self, event: str, caller: Caller | None, detail: dict[str, Any]) -> None:

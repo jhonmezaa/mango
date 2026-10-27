@@ -48,7 +48,7 @@ from mango_api import harness, sessions
 from mango_api.agent_rules import find_secrets
 from mango_api.agents_store import AgentsStore, AgentVersion
 from mango_api.audit import AuditLog
-from mango_api.authz import AGENT_TYPE, AgentResource
+from mango_api.authz import AGENT_TYPE, AgentResource, Authorizer
 from mango_api.budget import (
     BudgetExceededError,
     BudgetScope,
@@ -58,7 +58,7 @@ from mango_api.budget import (
 )
 from mango_api.model_catalog import ModelCatalog, ModelCatalogUnavailableError
 from mango_api.pricing import cost, estimate_max_cost, knowledge_cost, turn_price
-from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
+from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents, usable_by
 from mango_api.rate_limits import Leases, Limiter
 from mango_api.settings import ModelPrice
 from mango_api.skills_store import SkillStore
@@ -75,6 +75,7 @@ from mango_core.agents import (
 )
 from mango_core.budget_turns import PendingTurn
 from mango_core.harness_tools import KNOWLEDGE_TOOL
+from mango_core.identity import UserContext
 from mango_core.playground import SETTINGS_PK, SETTINGS_SK, PlaygroundHarness
 from mango_core.skills import parse_ref as parse_skill_ref
 from mango_core.skills import s3_uri
@@ -196,6 +197,9 @@ class PlaygroundDeps:
     skills: SkillStore | None = None
     """The approved skill versions (D92); without it a version with skills is not tested."""
     skills_bucket: str = ""
+    authorizer: Authorizer | None = None
+    """Decides which remote MCP tools the person gets (``UseRemoteMcp``, D98 (2)). Without it a
+    test gets none."""
 
 
 @dataclass(frozen=True)
@@ -308,7 +312,9 @@ def _skill_sources(
     return sources, tuple(skill_id for skill_id, _ in pairs)
 
 
-def _prepare(deps: PlaygroundDeps, agent_id: str, body: PlaygroundRunIn) -> _Test:
+def _prepare(
+    deps: PlaygroundDeps, agent_id: str, body: PlaygroundRunIn, user: UserContext
+) -> _Test:
     base = _tested_version(deps, agent_id, body)
     tested, model = _with_overrides(deps, base, body.overrides)
     deployed = deps.harnesses.get()
@@ -325,7 +331,8 @@ def _prepare(deps: PlaygroundDeps, agent_id: str, body: PlaygroundRunIn) -> _Tes
         raise ApiError(422, "version_not_testable", "this version cannot be tested") from exc
     sources, skill_ids = _skill_sources(deps, tested.definition.skills, deployed)
     return _Test(
-        agent=agent,
+        # As themselves (rule 5): only the remote tools of registrations they may use.
+        agent=usable_by(agent, deps.authorizer, user),
         base=base,
         model=model,
         price=deps.price(model),
@@ -492,7 +499,12 @@ def run_test(
         # Loads of a skill are never shown (D92 (8)) nor counted as runs of it: a test is not
         # a use (D91 (12)).
         for event in harness.run(
-            client, request, result, write_tools, skills=frozenset(test.skill_ids)
+            client,
+            request,
+            result,
+            write_tools,
+            skills=frozenset(test.skill_ids),
+            remotes=agent.remote_gateway_tools,
         ):
             if event.kind == harness.WRITE_CALL:
                 # Never executed and never asked (D91 (2)): only shown as what it would ask.
@@ -629,7 +641,7 @@ def playground_router(
     @router.post("/runs")
     async def run_playground_test(body: PlaygroundRunIn, caller: Editor) -> Response:
         user_id = caller.user.user_id
-        test = await asyncio.to_thread(_prepare, deps, body.agent_id, body)
+        test = await asyncio.to_thread(_prepare, deps, body.agent_id, body, caller.user)
         limits = test.agent.definition.limits
         if (
             caller.expires_at - int(time.time())

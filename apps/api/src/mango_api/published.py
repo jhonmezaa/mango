@@ -18,12 +18,13 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Collection, Mapping
+from dataclasses import dataclass, replace
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_api.agents_store import AgentsStore, AgentVersion
+from mango_api.authz import Authorizer, RemoteMcpResource
 from mango_api.mcp_catalog import InvalidCatalogError, McpCatalog
 from mango_core.agents import (
     AgentDefinition,
@@ -38,6 +39,7 @@ from mango_core.harness_tools import (
     knowledge_allowed_tool,
     knowledge_gateway_tool,
 )
+from mango_core.identity import UserContext
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +75,58 @@ class PublishedAgent:
     write_tools: tuple[tuple[str, str], ...] = ()
     """Write tools of the version as ``(Gateway name, <server>.<tool>)``. The Gateway refuses
     them without an approval token (D27); mango-api turns each call into a request."""
+    remote_tools: tuple[tuple[str, str, str], ...] = ()
+    """Tools of remote MCPs (D93) among ``allowed_tools``, as ``(registration, allowedTools
+    entry, Gateway name)``. Each invocation keeps only those of the registrations its caller
+    may use (``usable_by``, D98 (2))."""
+    remote_groups: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    """Groups of each registration of ``remote_tools`` (``REMOTE#<reg>``), for ``UseRemoteMcp``."""
 
     @property
     def definition(self) -> AgentDefinition:
         return self.record.definition
+
+    @property
+    def remote_gateway_tools(self) -> Mapping[str, str]:
+        """Registration of each remote tool, by its Gateway name (the harness stream)."""
+        return {name: registration for registration, _, name in self.remote_tools}
+
+    def with_remotes(self, usable: Collection[str]) -> PublishedAgent:
+        """The same agent with only the remote tools of the ``usable`` registrations: less
+        than what was approved, as a disabled pack (D46 (1), D98 (2))."""
+        dropped = [entry for entry in self.remote_tools if entry[0] not in usable]
+        if not dropped:
+            return self
+        allowed = {entry[1] for entry in dropped}
+        gateway = {entry[2] for entry in dropped}
+        return replace(
+            self,
+            allowed_tools=tuple(t for t in self.allowed_tools if t not in allowed),
+            gateway_tools=tuple(t for t in self.gateway_tools if t not in gateway),
+            remote_tools=tuple(entry for entry in self.remote_tools if entry[0] in usable),
+            remote_groups=tuple(entry for entry in self.remote_groups if entry[0] in usable),
+        )
+
+
+def usable_by(
+    agent: PublishedAgent, authorizer: Authorizer | None, user: UserContext
+) -> PublishedAgent:
+    """The agent as ``user`` gets it: without the remote tools of registrations whose groups
+    they are not in (``UseRemoteMcp``, D98 (2), (18)). Being an administrator is not enough.
+    Fails closed: without an answer, no remote tool is signed or allowed."""
+    if not agent.remote_groups:
+        return agent
+    if authorizer is None:
+        return agent.with_remotes(())
+    usable = authorizer.allowed_remotes(
+        user,
+        "UseRemoteMcp",
+        [
+            RemoteMcpResource(registration, frozenset(groups))
+            for registration, groups in agent.remote_groups
+        ],
+    )
+    return agent.with_remotes(usable)
 
 
 class PublishedAgents:
@@ -189,7 +239,7 @@ class PublishedAgents:
             raise AgentUnavailableError("agent unavailable")
         if not definition.system_prompt.strip():
             raise AgentUnavailableError("agent unavailable")
-        allowed, gateway, unavailable, write = self._tools(definition)
+        allowed, gateway, unavailable, write, remote, groups = self._tools(definition)
         return PublishedAgent(
             agent_id=version.agent_id,
             version=version.number,
@@ -203,11 +253,20 @@ class PublishedAgents:
             gateway_tools=gateway,
             unavailable_tools=unavailable,
             write_tools=write,
+            remote_tools=remote,
+            remote_groups=groups,
         )
 
     def _tools(
         self, definition: AgentDefinition
-    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[tuple[str, str], ...]]:
+    ) -> tuple[
+        tuple[str, ...],
+        tuple[str, ...],
+        tuple[str, ...],
+        tuple[tuple[str, str], ...],
+        tuple[tuple[str, str, str], ...],
+        tuple[tuple[str, tuple[str, ...]], ...],
+    ]:
         """Harness and Gateway names of the version's tools, and the tools left out.
 
         Connector tools come from the release catalog. Pack tools count only while the pack
@@ -223,6 +282,10 @@ class PublishedAgents:
 
         A version with knowledge bases also has the knowledge search (D88 (14)), which no
         catalog lists: it follows from ``knowledge_bases``, and the invocation signs them.
+
+        Tools of a remote MCP count only while its registration is active and the signed
+        catalog names them (D98 (13)); otherwise the agent serves without them. Who may use
+        each registration is decided per invocation (``usable_by``).
         """
         approval = set(definition.approval_tools)
         if not approval <= set(definition.tools):
@@ -235,12 +298,15 @@ class PublishedAgents:
         gateway: list[str] = []
         unavailable: list[str] = []
         write: list[tuple[str, str]] = []
+        remote: list[tuple[str, str, str]] = []
+        groups: dict[str, tuple[str, ...]] = {}
         for ref in definition.tools:
             tool = catalog.tool(ref)
             if tool is None or not tool.enabled:
-                if catalog.pack_tool_unavailable(ref):
+                if catalog.tool_unavailable(ref):
                     # A pack of the release that is not installed now, or whose installed
-                    # version does not serve this tool.
+                    # version does not serve this tool; or a remote MCP that is not active,
+                    # or whose signed catalog does not name it.
                     unavailable.append(ref)
                     continue
                 # Unknown is not disabled: a tool the release does not ship, or packs that
@@ -258,7 +324,14 @@ class PublishedAgents:
                 raise AgentUnavailableError("agent unavailable")
             if tool.is_write:
                 write.append((name, ref))
-            allowed.append(allowed_tool(target, tool.tool.name))
+            entry = allowed_tool(target, tool.tool.name)
+            if tool.server.kind == "remote":
+                state = catalog.remote_of(ref)
+                if state is None:
+                    raise AgentUnavailableError("agent unavailable")
+                remote.append((state.registration_id, entry, name))
+                groups[state.registration_id] = tuple(sorted(state.groups))
+            allowed.append(entry)
             gateway.append(name)
         if approval - {ref for _, ref in write} - set(unavailable):
             raise AgentUnavailableError("agent unavailable")
@@ -270,4 +343,6 @@ class PublishedAgents:
             tuple(sorted(gateway)),
             tuple(sorted(unavailable)),
             tuple(sorted(write)),
+            tuple(sorted(remote)),
+            tuple(sorted(groups.items())),
         )

@@ -119,6 +119,7 @@ class Env:
     def run(self, owner: str = REQUESTER, *, ok: bool = True, **changes: Any) -> None:
         self.now[0] += 1
         self.runs.run_ended(
+            remote_connect=changes.get("remote_connect"),
             owner_id=owner,
             task_id=changes.get("task_id", "t" * 32),
             task_name=changes.get("task_name", "Budget check diario"),
@@ -303,6 +304,52 @@ def test_a_run_notice_is_for_its_owner_only(env: Env) -> None:
         assert response.status_code == 404, token
     # Every call was bound to the partition of whoever it served.
     assert set(env.clients.users) <= {REQUESTER, APPROVER, "admin-2"}
+
+
+def test_a_run_that_needs_a_connection_asks_its_owner_to_connect(env: Env) -> None:
+    """D98 (20): the notice of a run that failed for a remote MCP's consent is
+    ``remote_connect``, with the registration and never a URL; read and archived as a run."""
+    env.runs.run_ended(
+        owner_id=REQUESTER,
+        task_id="t" * 32,
+        task_name="Work items",
+        agent_id="finops",
+        run_id="r" * 32,
+        ok=False,
+        reason="remote_consent_required",
+        report=None,
+        remote_connect="abcdefghij23",
+    )
+    # A completed run never carries it, nor an id that is not a registration.
+    env.run(remote_connect="abcdefghij23")
+    env.runs.run_ended(
+        owner_id=REQUESTER,
+        task_id="t" * 32,
+        task_name="x",
+        agent_id="finops",
+        run_id="s" * 32,
+        ok=False,
+        reason="upstream_error",
+        report=None,
+        remote_connect="https://evil.example",
+    )
+    bad, completed, notice = env.get("requester").json()["items"]
+    assert (notice["kind"], notice["remote"]) == (
+        "remote_connect",
+        {"registration_id": "abcdefghij23"},
+    )
+    assert (notice["run"]["ok"], notice["run"]["reason"]) == (False, "remote_consent_required")
+    assert (completed["kind"], completed["remote"]) == ("run", None)
+    assert (bad["kind"], bad["remote"]) == ("run", None)
+    read = env.put("requester", "remote_connect", notice["item_id"], {"read": True})
+    assert (read.status_code, read.json()["kind"], read.json()["read"]) == (
+        200,
+        "remote_connect",
+        True,
+    )
+    assert (
+        env.put("approver", "remote_connect", notice["item_id"], {"read": True}).status_code == 404
+    )
 
 
 def test_pages_of_twenty_newest_first_with_a_cursor(env: Env) -> None:

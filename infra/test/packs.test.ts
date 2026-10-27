@@ -822,6 +822,8 @@ describe("release packs (D36): only what the release key signed", () => {
       JSON.stringify(s.Resource).includes(settingsId),
     );
     expect(onSettings.map((s) => s.Sid).sort()).toEqual([
+      // D98 (13): the catalog the remote provisioner signed, read only (see provisioner.test.ts).
+      "ReadApprovedRemotes",
       "ReadInstalledPacks",
       "ReadModelCatalog",
       "WritePlaygroundHarness",

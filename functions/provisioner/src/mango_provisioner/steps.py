@@ -56,7 +56,13 @@ from mango_core.playground import is_provision_input
 from mango_provisioner.audit import EVENT_PUBLISHED, EVENT_RELEASE_UPDATE, AuditWriter
 from mango_provisioner.config import RELEASE_APPROVER_PREFIX, Settings
 from mango_provisioner.errors import BusyError, RetryableError, StepError
-from mango_provisioner.harness import Harnesses, HarnessRef, harness_config
+from mango_provisioner.harness import (
+    Harnesses,
+    HarnessRef,
+    RemoteTools,
+    harness_config,
+    no_remotes,
+)
 from mango_provisioner.playground import Playground, is_playground_state
 from mango_provisioner.release import (
     Decision,
@@ -181,8 +187,10 @@ class Provisioner:
         logs: RuntimeLogs,
         audit: AuditWriter,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        remote_tools: RemoteTools = no_remotes,
     ) -> None:
         self._settings = settings
+        self._remote_tools = remote_tools
         self._store = store
         self._roles = roles
         self._harnesses = harnesses
@@ -315,6 +323,7 @@ class Provisioner:
             content_hash=request.content_hash,
             definition=ctx.definition,
             pack_tools=self._store.installed_pack_tools,
+            remote_tools=self._remote_tools,
         )
         self._audit.emit(EVENT_PUBLISHED, self._audit_detail(ctx, "requested"), self._now())
         return {**request.state(), "action": ACTION_PUBLISH}
@@ -466,6 +475,7 @@ class Provisioner:
             content_hash=request.content_hash,
             definition=ctx.definition,
             pack_tools=self._store.installed_pack_tools,
+            remote_tools=self._remote_tools,
         )
         published = self._store.published(request.agent_id)
         ref = self._harnesses.ensure(

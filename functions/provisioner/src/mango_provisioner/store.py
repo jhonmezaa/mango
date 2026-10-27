@@ -10,7 +10,9 @@ stack seeded; IAM limits that write to their partitions.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -32,6 +34,13 @@ from mango_core.agents_table import (
     version_key,
 )
 from mango_core.playground import PlaygroundHarness
+from mango_core.remote_mcp import (
+    ApprovedRemote,
+    RemoteNotApprovedError,
+    approved_key,
+    load_public_key,
+    target_name,
+)
 from mango_packs.enablement import installed_key
 from mango_provisioner.errors import (
     BusyError,
@@ -42,7 +51,11 @@ from mango_provisioner.errors import (
 )
 
 if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric import ec
     from mypy_boto3_dynamodb import DynamoDBClient
+    from mypy_boto3_kms import KMSClient
+
+logger = logging.getLogger(__name__)
 
 LOCK_TTL = timedelta(minutes=30)
 """Longer than the state machine timeout, so a live execution never loses its lock."""
@@ -380,3 +393,61 @@ class ProvisionerStore:
         except BotoCoreError as exc:
             raise aws_error("UpdateItem", exc) from None
         return True
+
+
+class ApprovedRemoteTools:
+    """Tools of a remote MCP an agent may be given (D93, D98 (13)): the ones the catalog the
+    remote provisioner signed names (``MCP_REMOTE#<reg>``), verified with the public half of
+    ``alias/Mango-<ns>-remote-mcp`` for this target of this Gateway. Nothing mango-api writes
+    can widen them: only the remote provisioner signs with that key. ``None`` when the item is
+    missing or does not verify; a read error is raised (the step is retried)."""
+
+    def __init__(
+        self,
+        dynamodb: DynamoDBClient,
+        settings_table: str,
+        kms: KMSClient,
+        *,
+        key_id: str,
+        gateway_id: str,
+    ) -> None:
+        self._db = dynamodb
+        self._table = settings_table
+        self._kms = kms
+        self._key_id = key_id
+        self._gateway_id = gateway_id
+        self._lock = threading.Lock()
+        self._key: ec.EllipticCurvePublicKey | None = None
+
+    def _public_key(self) -> ec.EllipticCurvePublicKey:
+        with self._lock:
+            if self._key is None:
+                response = self._kms.get_public_key(KeyId=self._key_id)
+                self._key = load_public_key(response["PublicKey"])
+            return self._key
+
+    def __call__(self, registration_id: str) -> frozenset[str] | None:
+        try:
+            item = self._db.get_item(
+                TableName=self._table, Key=approved_key(registration_id), ConsistentRead=True
+            ).get("Item")
+        except (ClientError, BotoCoreError) as exc:
+            raise aws_error("GetItem", exc) from None
+        if item is None:
+            return None
+        fields = {name: value.get("S") for name, value in item.items()}
+        try:
+            approved = ApprovedRemote.verify(
+                self._public_key(),
+                fields,
+                target=target_name(registration_id),
+                gateway_id=self._gateway_id,
+            )
+        except RemoteNotApprovedError:
+            logger.error(json.dumps({"event": "provisioner.remote_not_approved"}))  # noqa: TRY400
+            return None
+        except (ClientError, BotoCoreError) as exc:
+            raise aws_error("GetPublicKey", exc) from None
+        except ValueError:
+            raise StepError("remote_key_invalid") from None
+        return approved.tools

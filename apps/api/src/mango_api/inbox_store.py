@@ -9,7 +9,9 @@ Item layout, all under ``PK = USER#<sub>``:
 * ``SK = INBOX#<notice id>``: the notice of a task run that ended (``kind = run``). The id is
   the time in milliseconds followed by 16 random hex characters, so the newest sorts last and
   ids cannot be guessed. It keeps the task's name, the agent, whether it completed, the reason
-  code and the first line of the report: never the report, its steps or the instruction.
+  code and the first line of the report: never the report, its steps or the instruction. A
+  run that failed because its owner has to connect a remote MCP (D98 (20)) is
+  ``kind = remote_connect`` and keeps the registration id too, never a URL.
 * ``SK = INBOXSTATE#APPROVAL#<approval id>``: whether this person read or archived a pending
   approval. Approvals themselves are never copied: they are read from the approvals table on
   every request, with the rules of the approvals screen (D56).
@@ -29,6 +31,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
+from mango_core.remote_mcp import is_registration_id
+
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
 
@@ -41,6 +45,7 @@ PAGE_SIZE = 20
 UNREAD_SCAN = 200
 """Notices the unread count and «mark all as read» look at: the newest ones."""
 _NOTICE = "INBOX#"
+REMOTE_CONNECT = "remote_connect"
 _STATE_PREFIX: dict[str, str] = {
     "approval": "INBOXSTATE#APPROVAL#",
     "kbsource": "INBOXSTATE#KBSOURCE#",
@@ -79,6 +84,8 @@ class RunNotice:
     created_at: str
     read: bool
     archived: bool
+    remote_connect: str | None = None
+    """The remote MCP registration the owner has to connect (D98 (20)); ``None`` otherwise."""
 
 
 @dataclass(frozen=True)
@@ -125,6 +132,7 @@ def _notice(item: dict[str, Any]) -> RunNotice:
         created_at=item["created_at"]["S"],
         read=bool(item.get("is_read", {}).get("BOOL", False)),
         archived=bool(item.get("is_archived", {}).get("BOOL", False)),
+        remote_connect=text("registration_id") if text("kind") == REMOTE_CONNECT else None,
     )
 
 
@@ -162,6 +170,7 @@ class InboxStore:
         ok: bool,
         summary: str | None,
         reason: str | None,
+        remote_connect: str | None = None,
     ) -> RunNotice:
         now = self._clock()
         notice_id = f"{int(now * 1000):013d}{secrets.token_hex(8)}"
@@ -184,6 +193,9 @@ class InboxStore:
             item["summary"] = _s(summary[:SUMMARY_MAX_CHARS])
         if reason:
             item["reason"] = _s(reason)
+        if remote_connect is not None and not ok and is_registration_id(remote_connect):
+            item["kind"] = _s(REMOTE_CONNECT)
+            item["registration_id"] = _s(remote_connect)
         self._call(
             lambda: self._clients(owner_id).put_item(
                 TableName=self._table, Item=item, ConditionExpression="attribute_not_exists(SK)"

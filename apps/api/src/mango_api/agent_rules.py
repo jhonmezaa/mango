@@ -268,6 +268,47 @@ def added_knowledge_violations(
     return out
 
 
+def added_remote_violations(
+    added: Sequence[str], catalog: McpCatalog, usable: Collection[str]
+) -> list[Violation]:
+    """Tools of remote MCPs a person adds to a version (D93 (7), D98 (17), (18)): each must be
+    one the registration's signed catalog names while it is active (``tool_not_enabled``), of a
+    registration that person may use (``remote_not_usable``: ``UseRemoteMcp``, their groups).
+    Checked when the draft is saved, by who saves it; the tools the version already had stay,
+    as its knowledge bases (D88 (35))."""
+    disabled = tuple(
+        ref for ref in added if (tool := catalog.tool(ref)) is None or not tool.enabled
+    )
+    forbidden = tuple(
+        ref
+        for ref in added
+        if ref not in disabled
+        and ((remote := catalog.remote_of(ref)) is None or remote.registration_id not in usable)
+    )
+    out: list[Violation] = []
+    if disabled:
+        out.append(Violation("tool_not_enabled", "tools", disabled))
+    if forbidden:
+        out.append(Violation("remote_not_usable", "tools", forbidden))
+    return out
+
+
+def remote_alerts(definition: AgentDefinition, catalog: McpCatalog) -> dict[str, tuple[str, ...]]:
+    """The alert ``remote_audience_outside_groups`` (D98 (2)), by registration: the groups of
+    the agent with no group of the registration. Their people use the agent without its remote
+    tools. Not a rule: it never blocks a version. Like ``knowledge_alerts``, people the agent
+    is shared with one by one are not looked at: their groups are in their token."""
+    alerts: dict[str, tuple[str, ...]] = {}
+    for ref in definition.tools:
+        remote = catalog.remote_of(ref)
+        if remote is None or remote.registration_id in alerts:
+            continue
+        alerts[remote.registration_id] = tuple(
+            g for g in definition.groups if g not in remote.groups
+        )
+    return alerts
+
+
 def knowledge_alerts(
     definition: AgentDefinition, knowledge: Mapping[str, KnowledgeBase]
 ) -> dict[str, tuple[str, ...]]:

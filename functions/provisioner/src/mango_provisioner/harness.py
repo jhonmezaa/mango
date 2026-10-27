@@ -28,6 +28,7 @@ from mango_core.harness_tools import (
     skills_allowed_tool,
 )
 from mango_core.playground import PLAYGROUND_ID
+from mango_core.remote_mcp import registration_of_target
 from mango_core.skills import parse_ref as parse_skill_ref
 from mango_core.skills import s3_uri
 from mango_packs.enablement import is_pack_id
@@ -77,8 +78,20 @@ def no_packs(_pack_id: str) -> frozenset[str] | None:
     return None
 
 
+RemoteTools = Callable[[str], frozenset[str] | None]
+"""Tools the signed catalog of a remote MCP registration names (``ApprovedRemoteTools``), by
+registration; ``None`` if there is none that verifies."""
+
+
+def no_remotes(_registration_id: str) -> frozenset[str] | None:
+    return None
+
+
 def allowed_tools(
-    settings: Settings, definition: AgentDefinition, pack_tools: PackTools = no_packs
+    settings: Settings,
+    definition: AgentDefinition,
+    pack_tools: PackTools = no_packs,
+    remote_tools: RemoteTools = no_remotes,
 ) -> list[str]:
     """Allow-list of the definition's tools, checked against what the installation serves.
 
@@ -94,6 +107,9 @@ def allowed_tools(
 
     A version with knowledge bases also has the knowledge search (D88 (14)): no catalog
     lists it, it follows from ``knowledge_bases``. Its target is never a pack's.
+
+    A tool of a remote MCP (``remote-<registration>.<tool>``, D93) counts only if the catalog
+    the remote provisioner signed for that registration names it (D98 (13)): all ``read``.
     """
     approval = set(definition.approval_tools)
     targets = {connector.target for connector in settings.connectors.values()}
@@ -110,6 +126,13 @@ def allowed_tools(
                 raise StepError("write_tools_unsupported")
             approval.discard(ref)
             out.append(allowed_tool(connector.target, tool))
+            continue
+        registration = registration_of_target(server_id)
+        if registration is not None:
+            served = remote_tools(registration)
+            if served is None or tool not in served:
+                raise StepError("unknown_tool")
+            out.append(allowed_tool(server_id, tool))
             continue
         # A pack never takes the target of a connector (the pack provisioner refuses it too).
         if not is_pack_id(server_id) or server_id in targets:
@@ -148,13 +171,14 @@ def harness_config(
     content_hash: str,
     definition: AgentDefinition,
     pack_tools: PackTools = no_packs,
+    remote_tools: RemoteTools = no_remotes,
 ) -> dict[str, Any]:
     """Complete harness configuration of one agent version (create and update)."""
     if definition.model is None or definition.model not in definition.allowed_models:
         raise StepError("invalid_model")
     if not definition.system_prompt.strip():
         raise StepError("empty_prompt")
-    tools = allowed_tools(settings, definition, pack_tools)
+    tools = allowed_tools(settings, definition, pack_tools, remote_tools)
     skills = skill_sources(settings, definition)
     if skills:
         tools = [*tools, skills_allowed_tool()]

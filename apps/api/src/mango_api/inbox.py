@@ -13,6 +13,8 @@ Two kinds of notice, as the design (``other-views.jsx``, «Bandeja»):
 * **Ejecución**: one per task run that ended completed or failed, written by the task worker
   in the partition of the task's owner (never anyone else, D78 (18), D82): the task's name,
   the agent, the reason code and the first line of the report. Never the report itself.
+  A run that failed because its owner has to connect a remote MCP is ``remote_connect``
+  (D98 (20)): the same notice, with the registration to connect and never a URL.
 
 Mentions, tickets, budget and system notices have no signal in the product: «Próximamente».
 
@@ -83,7 +85,12 @@ class InboxRun(_Strict):
     """Why it did not complete: a fixed code (the SPA has a text per code)."""
 
 
-Kind = Literal["approval", "kbsource", "run"]
+class InboxRemote(_Strict):
+    registration_id: str
+    """The remote MCP registration to connect from «Mis conexiones» (D98 (20)). Never a URL."""
+
+
+Kind = Literal["approval", "kbsource", "run", "remote_connect"]
 
 
 class InboxItem(_Strict):
@@ -98,6 +105,8 @@ class InboxItem(_Strict):
     approval: ApprovalOut | None = None
     source: QueuedSourceOut | None = None
     run: InboxRun | None = None
+    remote: InboxRemote | None = None
+    """Set for ``remote_connect``, next to ``run``."""
 
 
 class InboxPage(_Strict):
@@ -222,7 +231,7 @@ def _source_item(source: QueuedSourceOut, state: NoticeState) -> InboxItem:
 
 def _run_item(deps: InboxDeps, notice: RunNotice, names: dict[str, str | None]) -> InboxItem:
     return InboxItem(
-        kind="run",
+        kind="remote_connect" if notice.remote_connect else "run",
         item_id=notice.notice_id,
         agent_id=notice.agent_id,
         agent_name=_agent_name(deps, notice.agent_id, names),
@@ -237,6 +246,9 @@ def _run_item(deps: InboxDeps, notice: RunNotice, names: dict[str, str | None]) 
             summary=notice.summary,
             reason=notice.reason,
         ),
+        remote=InboxRemote(registration_id=notice.remote_connect)
+        if notice.remote_connect
+        else None,
     )
 
 
@@ -315,12 +327,13 @@ def set_state(
     user_id = caller.user.user_id
     not_found = ApiError(404, "not_found", "notice not found")
     try:
-        if kind == "run":
+        if kind in {"run", "remote_connect"}:
             if not NOTICE_ID_RE.fullmatch(item_id):
                 raise not_found
             notice = deps.store.set_run_state(
                 user_id, item_id, read=body.read, archived=body.archived
             )
+            # Both kinds are run notices of the caller's own partition; the item says which.
             if notice is None:
                 raise not_found
             return _run_item(deps, notice, {})
@@ -385,6 +398,7 @@ class RunInbox:
         ok: bool,
         reason: str | None,
         report: str | None,
+        remote_connect: str | None = None,
     ) -> None:
         """Leave the notice in the owner's partition. Never raises: the run is recorded in
         its table either way, and its detail shows it."""
@@ -398,6 +412,7 @@ class RunInbox:
                 ok=ok,
                 summary=first_line(report) if ok else None,
                 reason=None if ok else reason,
+                remote_connect=remote_connect,
             )
         except Exception:
             # Without the notice's content: only that it could not be written.

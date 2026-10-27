@@ -1,4 +1,4 @@
-import { isRuleCode, type RuleCode } from '../../agents/rules';
+import { isWordedRule, type WordedRuleCode } from '../../agents/rules';
 import { ApiError } from '../../api/errors';
 import type { OperationInput, OperationOutput } from '../../api/operations';
 import type { KnowledgeBase } from '../knowledge/model';
@@ -321,7 +321,7 @@ const FIELD_SECTION: Record<string, SectionId> = {
  * Wording of each server rule for the creator (design `AB_SERVER_ERR`): the server's texts name
  * no item, the page's own checks do. `secret_detected` is refined by its field.
  */
-const RULE_KEYS: Record<RuleCode, ProblemKey> = {
+const RULE_KEYS: Record<WordedRuleCode, ProblemKey> = {
   secret_detected: 'secret',
   tool_not_enabled: 'serverToolNotEnabled',
   prompt_required: 'promptRequired',
@@ -349,7 +349,7 @@ const RULE_KEYS: Record<RuleCode, ProblemKey> = {
 };
 
 /** Design `AB_SERVER_ERR`: where each rule points; the rest follow their field. */
-const RULE_SECTION: Partial<Record<RuleCode, SectionId | null>> = {
+const RULE_SECTION: Partial<Record<WordedRuleCode, SectionId | null>> = {
   definition_too_large: null,
   write_tool_without_approval: 'tools',
   approval_tool_not_selected: 'tools',
@@ -362,7 +362,7 @@ const RULE_SECTION: Partial<Record<RuleCode, SectionId | null>> = {
 export function problemOfViolation(violation: Violation): Problem {
   const { code, field, items } = violation;
   const id = `${code}:${field}`;
-  if (!isRuleCode(code)) return problem(id, 'unknownRule', FIELD_SECTION[field] ?? null, [code]);
+  if (!isWordedRule(code)) return problem(id, 'unknownRule', FIELD_SECTION[field] ?? null, [code]);
   const section =
     code in RULE_SECTION ? (RULE_SECTION[code] ?? null) : (FIELD_SECTION[field] ?? null);
   // Only the kind and the field of a secret are ever shown, never what matched.

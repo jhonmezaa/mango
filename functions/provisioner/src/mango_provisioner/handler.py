@@ -27,7 +27,7 @@ from mango_provisioner.role import AgentRoles
 from mango_provisioner.runtime_logs import RuntimeLogs
 from mango_provisioner.stack_tags import StackTags
 from mango_provisioner.steps import Provisioner
-from mango_provisioner.store import ProvisionerStore
+from mango_provisioner.store import ApprovedRemoteTools, ProvisionerStore
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -69,6 +69,14 @@ def _provisioner() -> Provisioner:
             settings.audit_stream,
             dynamodb,
             settings.audit_index_table,
+        ),
+        # D98 (13): tools of remote MCPs only from the catalog the remote provisioner signed.
+        remote_tools=ApprovedRemoteTools(
+            dynamodb,
+            settings.settings_table,
+            boto3.client("kms", config=_CLIENT_CONFIG),
+            key_id=settings.remote_mcp_key_alias,
+            gateway_id=settings.gateway_id,
         ),
     )
 

@@ -10,6 +10,7 @@ only as the Authorization header of the ``remote_mcp`` tool pointing at the Gate
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -55,6 +56,13 @@ INLINE_CALL = "inline_call"
 """Internal event: the agent called an ``inline_function`` of this invocation (D87 (3)). The
 harness hands the call back to mango-api and reaches no other system; its input is model
 output, validated by whoever asked for the tool."""
+REMOTE_CONNECTION_REQUIRED = "remote_connection_required"
+"""Event of a tool of a remote MCP that answered ``consent_required`` (D94, D98 (20)): the
+person has to connect their account. It names the registration, never a URL: the ``RESPONSE``
+interceptor removed it, and mango-api hands it out only from «Mis conexiones»."""
+MAX_CONSENT_ERROR_CHARS = 4096
+"""Answer of a failed remote tool call read for ``consent_required``; the rest is ignored."""
+_CONSENT_REQUIRED = re.compile(r"\bconsent_required\b")
 MAX_INLINE_INPUT_CHARS = 128 * 1024
 """Input of an inline call kept; a longer one is dropped (``task_reports.MAX_INPUT_CHARS``)."""
 MAX_RECORDED_CHARS = 512 * 1024
@@ -220,6 +228,11 @@ class InvocationResult:
     harness_missing: bool = False
     """AgentCore answered that the harness does not exist: the agent never ran, so the turn
     is one that never started (D75 (10))."""
+    connection_required: list[str] = field(default_factory=list)
+    """Registrations of remote MCPs whose tool answered ``consent_required`` in this turn: the
+    person has not connected their account (D98 (20)). Ids only, never a URL."""
+    remote_sources: list[str] = field(default_factory=list)
+    """Registrations of remote MCPs whose tools answered in this turn (design «Leyó {servicio}»)."""
     usage_final: bool = False
     """``usage`` is everything the turn cost: the stream was read to its end and every model
     call reported its usage. False after an error, a cut or a call whose usage never arrived:
@@ -566,6 +579,59 @@ class _Searches:
         return None if entry is None else knowledge_citations.search_of("".join(entry[0]))
 
 
+class _RemoteCalls:
+    """Calls to tools of remote MCPs (D93), by the registration of each one's Gateway name.
+
+    Only names of the invocation's own remote tools count: the name in the stream is written by
+    the model (TM-LP1). An answer that is not an error marks the registration as a source of
+    the turn; an error whose text says ``consent_required`` (the form the ``RESPONSE``
+    interceptor gives, D98 (16)) means the person has to connect their account. The answer is
+    untrusted: at most it shows the card that sends the person to «Mis conexiones»."""
+
+    def __init__(self, remotes: Mapping[str, str], result: InvocationResult) -> None:
+        self._names = frozenset(remotes)
+        self._remotes = remotes
+        self._result = result
+        self._calls: dict[str, str] = {}
+        self._errors: dict[int, tuple[str, list[str], int]] = {}
+
+    def call(self, tool_id: str, raw_name: str) -> None:
+        name = _captured_tool(raw_name, self._names) if self._names and tool_id else None
+        if name is not None:
+            self._calls[tool_id] = self._remotes[name]
+
+    def answer(self, index: int, tool_id: str, *, failed: bool) -> None:
+        registration = self._calls.pop(tool_id, None)
+        if registration is None:
+            return
+        if failed:
+            self._errors[index] = (registration, [], 0)
+        elif registration not in self._result.remote_sources:
+            self._result.remote_sources.append(registration)
+
+    def add(self, index: int, piece: str) -> None:
+        entry = self._errors.get(index)
+        if entry is None or entry[2] >= MAX_CONSENT_ERROR_CHARS:
+            return
+        registration, pieces, size = entry
+        pieces.append(piece[: MAX_CONSENT_ERROR_CHARS - size])
+        self._errors[index] = (registration, pieces, size + len(piece))
+
+    def stop(self, index: int) -> Iterator[StreamEvent]:
+        entry = self._errors.pop(index, None)
+        if entry is None or not _CONSENT_REQUIRED.search("".join(entry[1])):
+            return
+        registration = entry[0]
+        if registration not in self._result.connection_required:
+            self._result.connection_required.append(registration)
+            yield StreamEvent(REMOTE_CONNECTION_REQUIRED, {"registration_id": registration})
+
+    def end(self) -> Iterator[StreamEvent]:
+        """Answers whose block never stopped are read as they are."""
+        for index in list(self._errors):
+            yield from self.stop(index)
+
+
 def _result_pieces(delta: Any) -> Iterator[str]:
     """The text of a tool result delta: a list of blocks with ``text`` or ``json``."""
     for block in delta if isinstance(delta, list) else [delta]:
@@ -620,6 +686,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     on_call: Callable[[ToolCall], None] | None = None,
     skills: frozenset[str] = frozenset(),
     on_skill: Callable[[str], None] | None = None,
+    remotes: Mapping[str, str] | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> Iterator[StreamEvent]:
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
@@ -649,6 +716,11 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
 
     Calls to the built-in ``skills`` tool load one of the version's ``skills`` (D92): they are
     never shown, and ``on_skill`` is told the id of each skill loaded. It must not raise.
+
+    ``remotes`` maps the Gateway names of the invocation's remote MCP tools to their
+    registration (D93): a call to one that answers ``consent_required`` is reported once per
+    registration as a ``remote_connection_required`` event, and ``result`` keeps which
+    registrations needed a connection and which ones answered.
     """
     progress = _Progress()
     # The tool name in the stream is written by the model and the guardrail does not check it:
@@ -677,6 +749,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     recorded = _Recorded(record)
     searches = _Searches(request.get("allowedTools", []))
     skill_calls = _SkillCalls(skills, on_skill)
+    remote_calls = _RemoteCalls(remotes or {}, result)
     # Write tool calls in flight: the Gateway refuses them, whatever the harness does next.
     refused: set[str] = set()
     asked = False
@@ -719,6 +792,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 name = display_tool_name(start["toolUse"].get("name", "tool"))
                 recorded.call(index, tool_id, name)
                 searches.call(tool_id, raw_name)
+                remote_calls.call(tool_id, raw_name)
                 tool_names[tool_id] = name
                 tool_blocks[index] = tool_id
                 called_at[tool_id] = clock()
@@ -743,6 +817,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 name = tool_names.get(tool_id, "tool")
                 status = "completed" if start["toolResult"].get("status") != "error" else "error"
                 searches.answer(
+                    block.get("contentBlockIndex", -1), tool_id, failed=status == "error"
+                )
+                remote_calls.answer(
                     block.get("contentBlockIndex", -1), tool_id, failed=status == "error"
                 )
                 result.tools.append({"name": name, "status": status})
@@ -775,6 +852,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 for part in _result_pieces(delta["toolResult"]):
                     recorded.add(index, part)
                     searches.add(index, part)
+                    remote_calls.add(index, part)
         elif "contentBlockStop" in event:
             index = event["contentBlockStop"].get("contentBlockIndex", -1)
             if index in tool_blocks:
@@ -782,6 +860,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             write_calls.stop(index)
             inline_calls.stop(index)
             recorded.stop(index)
+            yield from remote_calls.stop(index)
             search = searches.stop(index)
             if search is not None:
                 result.searches.append(search)
@@ -796,6 +875,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
             at_cap = owed and result.stop_reason == CAP_STOP
             reported, owed = True, False
+    yield from remote_calls.end()
     result.calls = recorded.done()
     if not result.interrupted:
         result.usage_final = reported and not owed

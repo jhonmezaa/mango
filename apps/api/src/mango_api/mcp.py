@@ -39,7 +39,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from mango_api.agents import AgentsDeps
 from mango_api.agents_store import AgentsStore
 from mango_api.audit import AuditLog
-from mango_api.authz import PLATFORM
+from mango_api.authz import PLATFORM, Authorizer, RemoteMcpResource
 from mango_api.mcp_catalog import (
     CatalogSource,
     InvalidCatalogError,
@@ -258,9 +258,26 @@ class CatalogConnector(_Strict):
     """Set for ``kind: pack``."""
 
 
+class CatalogRemote(_Strict):
+    """A remote MCP the caller may give tools of to an agent (D93 (7), D98 (18)): active, with
+    its signed tools, and only if the caller is in its groups (being an administrator is not
+    enough)."""
+
+    id: str
+    """``remote-<registration>``: tool refs are ``<id>.<tool>``."""
+    registration_id: str
+    service: str
+    operator: str
+    organization: str
+    tools: list[CatalogTool]
+
+
 class CatalogOut(_Strict):
     items: list[CatalogConnector]
     max_enabled_packs: int = MAX_ENABLED_PACKS
+    remotes: list[CatalogRemote] = []
+    """The Agent Builder's remote MCP tools (D98 (17)): never in ``items``, which the MCP
+    catalog lists; the registrations are administered in ``/api/mcp/remotes``."""
 
 
 # --- Dependencies of the use cases ------------------------------------------------------
@@ -279,6 +296,8 @@ class McpDeps:
     rate_limiter: Limiter = field(
         default_factory=lambda: RateLimiter(limit=WRITES_PER_MINUTE, window_seconds=60)
     )
+    authorizer: Authorizer | None = None
+    """Which remote MCPs the caller may use (``UseRemoteMcp``); without it, none is listed."""
 
     @staticmethod
     def catalog_only(agents: AgentsDeps) -> "McpDeps":
@@ -288,6 +307,7 @@ class McpDeps:
             agents=agents.store,
             audit=agents.audit,
             clock=agents.clock,
+            authorizer=agents.authorizer,
         )
 
 
@@ -525,6 +545,45 @@ def _server_out(
     )
 
 
+def _remotes_out(deps: McpDeps, catalog: McpCatalog, caller: Caller) -> list[CatalogRemote]:
+    """The active remote MCPs whose signed catalog has tools, of the caller's groups only."""
+    remotes = [remote for remote in catalog.remotes if remote.usable_tools]
+    if not remotes or deps.authorizer is None:
+        return []
+    usable = deps.authorizer.allowed_remotes(
+        caller.user,
+        "UseRemoteMcp",
+        [RemoteMcpResource(remote.registration_id, remote.groups) for remote in remotes],
+    )
+    out: list[CatalogRemote] = []
+    for remote in remotes:
+        if remote.registration_id not in usable:
+            continue
+        server = remote.server
+        out.append(
+            CatalogRemote(
+                id=server.id,
+                registration_id=remote.registration_id,
+                service=server.name,
+                operator=server.provider,
+                organization=remote.registration.organization,
+                tools=[
+                    CatalogTool(
+                        ref=tool.ref,
+                        name=tool.tool.name,
+                        description=tool.tool.description,
+                        access=tool.tool.access,
+                        audience=tool.tool.audience,
+                        central_groups_only=tool.central_groups_only,
+                        enabled=tool.enabled,
+                    )
+                    for tool in catalog.tools_of(server)
+                ],
+            )
+        )
+    return out
+
+
 def catalog_view(deps: McpDeps, caller: Caller) -> CatalogOut:
     catalog = deps.catalog.fresh()
     agents = _agents_by_server(deps)
@@ -534,7 +593,7 @@ def catalog_view(deps: McpDeps, caller: Caller) -> CatalogOut:
         _server_out(catalog, state.server, agents, _pack_out(deps, caller, state, now))
         for state in catalog.packs
     ]
-    return CatalogOut(items=items)
+    return CatalogOut(items=items, remotes=_remotes_out(deps, catalog, caller))
 
 
 # --- Audit ------------------------------------------------------------------------------

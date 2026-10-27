@@ -139,7 +139,7 @@ from mango_api.knowledge_uploads import S3_CONFIG as KNOWLEDGE_S3_CONFIG
 from mango_api.knowledge_uploads import DocumentStorage
 from mango_api.limits import Limits
 from mango_api.mcp import McpDeps, mcp_router
-from mango_api.mcp_catalog import CatalogSource, McpCatalog
+from mango_api.mcp_catalog import CatalogSource, McpCatalog, RemoteStates
 from mango_api.mcp_store import PackStore
 from mango_api.mfa_reset import CognitoUsers, MfaResetDeps, ResetStore, mfa_reset_router
 from mango_api.model_capabilities import load_capabilities
@@ -170,7 +170,7 @@ from mango_api.provisioner import (
     ProvisionerClient,
     RemoteProvisionerClient,
 )
-from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
+from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents, usable_by
 from mango_api.rate_limits import RateLimitStore
 from mango_api.remote_mcp import RemoteMcpDeps, remote_mcp_router
 from mango_api.remote_mcp_store import (
@@ -189,6 +189,7 @@ from mango_api.skills_store import SkillStore
 from mango_api.task_identity import TaskTokens
 from mango_api.task_reports import LambdaRenderer, S3Links, TaskReports
 from mango_api.task_worker import (
+    REMOTE_CONSENT_REQUIRED,
     AgentAccessDeniedError,
     QueueWorker,
     TaskRuns,
@@ -310,6 +311,11 @@ class MessageOut(_Strict):
     """Ids of the approval requests this message created (D27); see ``ConversationDetail``."""
     citations: list[CitationOut] = []
     """The sources of the knowledge searches of this answer (D88 (44))."""
+    connection_required: list[str] = []
+    """Remote MCP registrations whose tools asked this person to connect their account during
+    this answer (D98 (20)): the chat shows its card, also after a reload. Never a URL."""
+    remote_sources: list[str] = []
+    """Remote MCP registrations whose tools answered (design «Leyó {servicio}»)."""
 
 
 class ConversationDetail(_Strict):
@@ -659,6 +665,14 @@ def build_services(settings: Settings) -> Services:
     # Release data inside the image: read once, and fail closed if it is not there. Packs
     # join it from the signed statements of the release and their installation state (D36).
     pack_store = PackStore(dynamodb, settings.settings_table)
+    remote_mcp = _remote_mcp_deps(
+        settings,
+        dynamodb=dynamodb,
+        group_registry=group_registry,
+        authorizer=authorizer,
+        audit=audit,
+        limits=limits,
+    )
     mcp_catalog = CatalogSource(
         cache(lambda: McpCatalog.load(FilePath(settings.mcp_catalog_dir))),
         ReleasePacks(
@@ -669,6 +683,8 @@ def build_services(settings: Settings) -> Services:
             public_key_pem=settings.pack_signing_public_key,
         ),
         pack_store,
+        # Remote MCP registrations with their signed catalogs (D98): tools agents may use.
+        remotes=RemoteStates(remote_mcp.store, remote_mcp.approved, remote_mcp.release),
     )
     published = PublishedAgents(
         agents_store,
@@ -860,6 +876,7 @@ def build_services(settings: Settings) -> Services:
             if settings.pack_provisioner_state_machine_arn
             else None,
             rate_limiter=limits.limiter("mcp.writes"),
+            authorizer=authorizer,
         ),
         remote_mcp=remote_mcp,
         connections=_connections_deps(
@@ -1260,6 +1277,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     tools=[ToolStatus(**t) for t in m.tools],
                     approvals=m.approvals,
                     citations=[CitationOut(**c) for c in m.citations],
+                    connection_required=m.connection_required,
+                    remote_sources=m.remote_sources,
                 )
                 for m in messages
             ],
@@ -1417,6 +1436,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                         concurrent=services.limits.leases("playground.concurrent"),
                         skills=services.skills.store if services.skills is not None else None,
                         skills_bucket=settings.skills_bucket,
+                        authorizer=services.authorizer,
                     ),
                     current_user,
                     require,
@@ -1639,6 +1659,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             raise HTTPException(status_code=403, detail="not allowed")
         if agent.retired:
             raise ApiError(409, "agent_retired", "this agent was retired")
+        # Remote tools only of the registrations this person may use (D98 (2)).
+        agent = await asyncio.to_thread(usable_by, agent, services.authorizer, user)
         definition = agent.definition
         limits = definition.limits
         model_id = body.model or definition.model or ""
@@ -1794,6 +1816,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     on_call=activity.call if activity is not None else None,
                     skills=frozenset(parse_skill_ref(r)[0] for r in agent.definition.skills),
                     on_skill=_skill_counter(services),
+                    remotes=agent.remote_gateway_tools,
                 ):
                     if event.kind != harness.WRITE_CALL:
                         put(sse(event.kind, event.data))
@@ -1821,6 +1844,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     result.tools,
                     approvals=approval_ids,
                     citations=knowledge_citations.citations(result.searches),
+                    connection_required=result.connection_required,
+                    remote_sources=result.remote_sources,
                 )
                 put(
                     sse(
@@ -2324,6 +2349,8 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         raise AgentAccessDeniedError
     if agent is None or agent.retired:
         return TurnOutcome(status=RunStatus.SKIPPED, reason="agent_unavailable")
+    # Remote tools only of the registrations the owner may use (D98 (2)).
+    agent = usable_by(agent, services.authorizer, user)
     definition = agent.definition
     limits = definition.limits
     model_id = definition.model or ""
@@ -2466,6 +2493,7 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
             on_call=activity.call if activity is not None else None,
             skills=frozenset(parse_skill_ref(r)[0] for r in agent.definition.skills),
             on_skill=_skill_counter(services),
+            remotes=agent.remote_gateway_tools,
         ):
             # The internal tool hands data over: it is not a query, so not a step (D86 (6)).
             if (
@@ -2495,6 +2523,17 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         if activity is not None:
             activity.end()
     spent = str(cost(result.usage, price).quantize(Decimal("0.0001")))
+    if result.connection_required:
+        # The owner has to connect their account from their own session (D98 (20)): the run
+        # did not read what it needed, whatever the agent wrote without it. Never a URL.
+        return TurnOutcome(
+            status=RunStatus.FAILED,
+            reason=REMOTE_CONSENT_REQUIRED,
+            cost_usd=spent,
+            turn_id=turn_id,
+            approvals=approval_ids,
+            remote_connect=result.connection_required[0],
+        )
     if not answered:
         return TurnOutcome(
             status=RunStatus.FAILED,

@@ -198,6 +198,16 @@ class Settings:
         return f"arn:aws:iam::{self.account_id}:policy/Mango-{self.namespace}-agent-boundary"
 
     @property
+    def remote_mcp_key_alias(self) -> str:
+        """The key that signs the approved catalogs of remote MCPs (D93 (9)); read only."""
+        return f"alias/Mango-{self.namespace}-remote-mcp"
+
+    @property
+    def gateway_id(self) -> str:
+        """``<id>.gateway.bedrock-agentcore.<region>.amazonaws.com`` of ``gateway_url``."""
+        return self.gateway_url.removeprefix("https://").split(".", 1)[0]
+
+    @property
     def guardrail_arn(self) -> str:
         return f"arn:aws:bedrock:{self.region}:{self.account_id}:guardrail/{self.guardrail_id}"
 

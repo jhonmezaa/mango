@@ -257,3 +257,44 @@ class Authorizer:
                     allowed.add(str(resource.get("entityId")))
         # Only ids that were asked for count, whatever the response says.
         return frozenset(allowed & {kb.kb_id for kb in unique})
+
+    def allowed_remotes(
+        self, user: UserContext, action: str, remotes: Sequence[RemoteMcpResource]
+    ) -> frozenset[str]:
+        """Ids of the remote MCP registrations ``user`` may ``action`` on (fail closed): which
+        remote tools an invocation signs, and the Builder's list (D98 (18))."""
+        allowed: set[str] = set()
+        principal: Any = {"entityType": USER_TYPE, "entityId": user.user_id}
+        cedar_action: Any = {"actionType": "Mango::Action", "actionId": action}
+        unique = list({r.registration_id: r for r in remotes}.values())
+        for start in range(0, len(unique), _BATCH_SIZE):
+            batch = unique[start : start + _BATCH_SIZE]
+            entities: Any = [self._user_entity(user), *(_remote_entity(r) for r in batch)]
+            try:
+                resp = self._client.batch_is_authorized(
+                    policyStoreId=self._store,
+                    entities={"entityList": entities},
+                    requests=[
+                        {
+                            "principal": principal,
+                            "action": cedar_action,
+                            "resource": {
+                                "entityType": REMOTE_MCP_TYPE,
+                                "entityId": r.registration_id,
+                            },
+                        }
+                        for r in batch
+                    ],
+                )
+            except Exception:
+                logger.exception("batch authorization check failed; denying")
+                continue
+            for result in resp.get("results", []):
+                resource = result.get("request", {}).get("resource", {})
+                if (
+                    result.get("decision") == "ALLOW"
+                    and resource.get("entityType") == REMOTE_MCP_TYPE
+                ):
+                    allowed.add(str(resource.get("entityId")))
+        # Only ids that were asked for count, whatever the response says.
+        return frozenset(allowed & {r.registration_id for r in unique})

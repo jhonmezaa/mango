@@ -356,6 +356,13 @@ Perfiles de la release (`remotes/<id>/`, firmados y verificados) y los registros
 | POST | `/api/mcp/remotes/registrations/{reg}/retry` | `ManageRemoteMcp` | `{version}` → registro `failed` vuelve a `approved` con la misma aprobación |
 | DELETE | `/api/mcp/remotes/registrations/{reg}` | `ManageRemoteMcp` | `{version, reason}` → `disabling` e inicia el provisioner; cancela la solicitud pendiente y borra su proveedor |
 
+**Tools remotas en los agentes (D98 (2), (17), (18)).** Una tool remota es `remote-<reg>.<tool>` en `tools` de la definición. Cuenta solo mientras el registro está `active` y el catálogo aprobado firmado la nombra; si no, va en `unavailable_tools` y el agente responde sin ella.
+- **Añadirla a una versión** (crear o guardar el borrador) exige que esté habilitada (**422 `tool_not_enabled`**) y que quien guarda esté en los grupos del registro (**422 `remote_not_usable`**, `UseRemoteMcp`; ser admin no basta). Las que la versión ya tenía se quedan.
+- **El Builder** las ve en `GET /api/mcp/catalog`, en `remotes: [{id, registration_id, service, operator, organization, tools}]`: solo los registros activos de los grupos de quien llama. Nunca van en `items`.
+- **La versión** (`VersionOut.remotes: [{registration_id, service, groups_without_access}]`) trae el aviso `remote_audience_outside_groups`: los grupos del agente que no están en los del registro. No bloquea.
+- **Cada invocación** (chat, Playground y tareas) firma y permite solo las tools remotas de los registros de quien llama.
+- **Tareas:** si una tool remota responde `consent_required`, la ejecución falla con `remote_consent_required` y la Bandeja de su dueño recibe el aviso `kind: "remote_connect"` (la notificación de la ejecución, con `remote: {registration_id}`, sin URL).
+
 `RegistrationOut` lleva `status` (`pending`, `approved`, `creating`, `active`, `failed`, `disabling`, `disabled`), `tools` (las del catálogo aprobado firmado, si verifica), `secret_level` (`ok`, `d30`, `d7`, `expired`, calculado al leer) y `version`; para admins, además, tenant, app, `callback_url`, quién pidió y aprobó, `failure_code`, la solicitud pendiente y el historial. Auditoría: `mcp_remote.request`, `.approve`, `.reject`, `.withdraw`, `.secret_rotated`, `.retry` y `.disable`, con `requested` antes y `applied` o `rejected` después; llevan registro, perfil, organización, tenant, app, toolsets y grupos, nunca el secreto.
 
 ### MCP remotos de terceros: Mis conexiones y la vuelta (D97, D98)
@@ -612,6 +619,9 @@ data: {"text": "..."}
 event: approval
 data: { …Approval… }
 
+event: remote_connection_required
+data: {"registration_id": "abcdefghij23"}
+
 event: done
 data: {"message_id": "01J...", "stop_reason": "end_turn", "usage": {"input_tokens": 1234, "output_tokens": 321}, "cost_usd": "0.0123"}
 
@@ -622,6 +632,7 @@ data: {"code": "budget_exceeded" | "upstream_error" | ..., "message": "..."}
 - Llegan heartbeats como comentarios SSE (`: ping`) cada 15 s; se ignoran.
 - `done.stop_reason` es el motivo de fin que informa el harness. `max_tokens`: la respuesta se cortó en el tope de tokens de la llamada (D74); el mensaje guardado es el texto hasta el corte y el turno termina con `done`, no con `error`. `guardrail_intervened`: la cortó el guardrail.
 - `approval` (D27): el agente llamó una tool de escritura. El Gateway no la ejecutó; el evento trae la solicitud que la interfaz muestra como tarjeta («¿Ejecutar esta acción?» o «Requiere aprobación»). El mensaje del asistente guarda sus ids (`messages[].approvals`) y `GET /api/conversations/{id}` devuelve las solicitudes en `approvals`.
+- `remote_connection_required` (D98 (20)): una tool de un MCP remoto respondió `consent_required`: la persona no conectó su cuenta de ese servicio, o la desconectó. Trae solo el registro, **nunca una URL** (el interceptor `RESPONSE` la quitó; la persona conecta desde «Mis conexiones»). Uno por registro y turno. El mensaje del asistente guarda los registros en `messages[].connection_required`, para que la tarjeta salga también al recargar, y en `messages[].remote_sources` los registros cuyas tools respondieron («Leyó {servicio}»).
 - **`status`: progreso en vivo del turno.** Lo calcula `mango-api` a partir del stream del harness; **nunca lleva texto del modelo** (ni respuesta ni razonamiento), así que no depende del guardrail (D39). Se envía solo cuando la fase cambia, varias veces por turno:
   - `thinking`: el turno ya corre y el modelo trabaja. Es el primer evento después de `conversation`, antes de llamar al harness: con el guardrail síncrono el harness no entrega nada hasta que hay un bloque revisado o una llamada a una tool.
   - `tool`: hay una llamada a una tool en curso. `tool` es su nombre visible, el mismo del evento `tool` (64 caracteres como máximo), y solo se envía si es una tool de la versión publicada del agente; si no, la fase llega sin nombre. Solo esta fase lo lleva.

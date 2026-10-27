@@ -271,5 +271,5 @@ export const ALL = [
 ];
 
 export function catalog(items: Server[] = ALL): Catalog {
-  return { max_enabled_packs: 10, items };
+  return { max_enabled_packs: 10, items, remotes: [] };
 }

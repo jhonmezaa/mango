@@ -43,7 +43,9 @@ from mango_api.agent_rules import (
     RuleContext,
     Violation,
     added_knowledge_violations,
+    added_remote_violations,
     knowledge_alerts,
+    remote_alerts,
     validate_for_review,
 )
 from mango_api.agents_store import (
@@ -60,7 +62,14 @@ from mango_api.agents_store import (
     SubmissionLimitError,
 )
 from mango_api.audit import AuditLog
-from mango_api.authz import AGENT_TYPE, PLATFORM, AgentResource, Authorizer, KnowledgeBaseResource
+from mango_api.authz import (
+    AGENT_TYPE,
+    PLATFORM,
+    AgentResource,
+    Authorizer,
+    KnowledgeBaseResource,
+    RemoteMcpResource,
+)
 from mango_api.groups import GroupRegistry, GroupsUnavailableError
 from mango_api.knowledge_store import KnowledgeBase, KnowledgeStore, KnowledgeStoreUnavailableError
 from mango_api.mcp_catalog import InvalidCatalogError, McpCatalog
@@ -91,6 +100,7 @@ from mango_core.agents import content_hash as hash_content
 from mango_core.agents_table import EXPIRED_STEP, MAX_VERSION, iso
 from mango_core.identity import UserContext
 from mango_core.knowledge import Status as KnowledgeStatus
+from mango_core.remote_mcp import registration_of_target
 from mango_core.skills import parse_ref as parse_skill_ref
 
 logger = logging.getLogger(__name__)
@@ -217,6 +227,18 @@ class KnowledgeBaseRefOut(_Strict):
     this knowledge base. Only groups of the agent, never those of the knowledge base."""
 
 
+class RemoteRefOut(_Strict):
+    """A remote MCP the version has tools of, for the Builder and the reviewer (D98 (2))."""
+
+    registration_id: str
+    service: str | None
+    """Name of its profile («Azure DevOps»); ``None`` when the registration no longer exists."""
+    groups_without_access: list[str]
+    """The alert ``remote_audience_outside_groups``: groups of the agent whose people use it
+    without these tools, because they are not in the registration's groups. Only groups of the
+    agent, never those of the registration. Never blocks the version."""
+
+
 class ViolationOut(_Strict):
     code: str
     field: str
@@ -295,6 +317,9 @@ class VersionOut(_Strict):
     knowledge_bases: list[KnowledgeBaseRefOut] | None
     """The knowledge bases of the definition as the registry has them now; ``None`` if it could
     not be read."""
+    remotes: list[RemoteRefOut] | None = None
+    """The remote MCPs of the definition's tools with the alert of D98 (2); ``None`` if the
+    catalog could not be read."""
 
 
 class AgentSkillOut(_Strict):
@@ -760,6 +785,31 @@ def _knowledge_refs(
     ]
 
 
+def _remote_refs(deps: AgentsDeps, definition: AgentDefinition) -> list[RemoteRefOut] | None:
+    """The remote MCPs of the version's tools, with the alert of D98 (2). Only for whoever may
+    edit or review the version: the service and the agent's own groups, never the
+    registration's organization or groups."""
+    registrations = sorted(
+        {r for ref in definition.tools if (r := registration_of_target(ref.partition(".")[0]))}
+    )
+    if not registrations:
+        return []
+    try:
+        catalog = deps.catalog()
+    except InvalidCatalogError:
+        logger.warning("catalog of a version unavailable")
+        return None
+    alerts = remote_alerts(definition, catalog)
+    return [
+        RemoteRefOut(
+            registration_id=registration,
+            service=remote.server.name if (remote := catalog.remote(registration)) else None,
+            groups_without_access=list(alerts.get(registration, ())),
+        )
+        for registration in registrations
+    ]
+
+
 def _version_out(deps: AgentsDeps, caller: Caller, version: AgentVersion) -> VersionOut:
     meta = deps.store.meta(version.agent_id)
     if meta is None:
@@ -801,6 +851,7 @@ def _version_out(deps: AgentsDeps, caller: Caller, version: AgentVersion) -> Ver
         diff=diff_definitions(base, version.definition),
         violations=_display_rules(deps, version),
         knowledge_bases=_knowledge_refs(deps, version.definition),
+        remotes=_remote_refs(deps, version.definition),
     )
 
 
@@ -867,7 +918,7 @@ def _agent_out(
         model=d.model or "",
         allowed_models=list(d.allowed_models),
         tools=list(d.tools),
-        unavailable_tools=[t for t in d.tools if catalog.pack_tool_unavailable(t)]
+        unavailable_tools=[t for t in d.tools if catalog.tool_unavailable(t)]
         if served and catalog is not None
         else [],
         published_at=_iso(version.published_at),
@@ -1264,6 +1315,40 @@ def _check_added_knowledge(
         raise ValidationFailedError(violations)
 
 
+def _check_added_remote_tools(
+    deps: AgentsDeps,
+    user: UserContext,
+    before: AgentDefinition | None,
+    after: AgentDefinition,
+) -> None:
+    """A tool of a remote MCP enters a version only by someone who may use its registration
+    (``UseRemoteMcp`` with the registration's groups, D93 (7), D98 (18)), and only while the
+    signed catalog names it. The ones the version already had stay, so an administrator can
+    edit an agent whose registrations they are not in."""
+    had = set(before.tools) if before is not None else set()
+    added = [
+        ref
+        for ref in after.tools
+        if ref not in had and registration_of_target(ref.partition(".")[0]) is not None
+    ]
+    if not added:
+        return
+    catalog = deps.catalog()
+    remotes = {
+        remote.registration_id: RemoteMcpResource(remote.registration_id, remote.groups)
+        for ref in added
+        if (remote := catalog.remote_of(ref)) is not None
+    }
+    usable = (
+        deps.authorizer.allowed_remotes(user, "UseRemoteMcp", list(remotes.values()))
+        if remotes
+        else frozenset()
+    )
+    violations = added_remote_violations(added, catalog, usable)
+    if violations:
+        raise ValidationFailedError(violations)
+
+
 def create_agent(deps: AgentsDeps, caller: Caller, body: CreateAgentIn) -> VersionOut:
     actor = caller.user.user_id
     # Generated here, never taken from the request; release slugs stay reserved (TM-M16).
@@ -1271,6 +1356,7 @@ def create_agent(deps: AgentsDeps, caller: Caller, body: CreateAgentIn) -> Versi
 
     def write() -> AgentVersion:
         _check_added_knowledge(deps, caller.user, None, body.definition)
+        _check_added_remote_tools(deps, caller.user, None, body.definition)
         return deps.store.create_agent(
             body.definition,
             actor=actor,
@@ -1339,6 +1425,7 @@ def save_draft(
 
     def write() -> None:
         _check_added_knowledge(deps, caller.user, draft.definition, body.definition)
+        _check_added_remote_tools(deps, caller.user, draft.definition, body.definition)
         deps.store.save_draft(
             agent_id,
             number,

@@ -35,6 +35,16 @@ export const ITEM_ID = /^(?:[0-9]{13}[0-9a-f]{16}|[0-9a-f]{32}|[0-9A-HJKMNP-TV-Z
 export const TASK_ID = /^[0-9a-f]{32}$/;
 export const RUN_ID = /^[0-9a-f]{32}$/;
 
+/**
+ * Kind as the design shows it. A run that failed because its owner has to connect a remote MCP
+ * (`remote_connect`, D98 (20)) is shown as the run notice it is until the design draws its card.
+ */
+export function shownKind(
+  item: Pick<InboxItem, 'kind'>,
+): Exclude<InboxItem['kind'], 'remote_connect'> {
+  return item.kind === 'remote_connect' ? 'run' : item.kind;
+}
+
 /** Key of an item in the list: kinds have different ids, but never trust that. */
 export function keyOf(item: Pick<InboxItem, 'kind' | 'item_id'>): string {
   return `${item.kind}:${item.item_id}`;

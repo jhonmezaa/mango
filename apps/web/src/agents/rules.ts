@@ -26,12 +26,25 @@ export const RULE_CODES = [
   'skill_unavailable',
   'skill_server_not_enabled',
   'skill_server_without_tools',
+  'remote_not_usable',
 ] as const;
 export type RuleCode = (typeof RULE_CODES)[number];
+
+/**
+ * Codes the design has no text for yet (`remote_not_usable`, D98): every screen shows them as an
+ * unknown rule, by their code, until Claude Design words them.
+ */
+const UNWORDED: ReadonlySet<string> = new Set<RuleCode>(['remote_not_usable']);
+export type WordedRuleCode = Exclude<RuleCode, 'remote_not_usable'>;
 
 const KNOWN: ReadonlySet<string> = new Set(RULE_CODES);
 
 /** The code is API data: anything else is shown as an unknown rule, by its code. */
 export function isRuleCode(code: string): code is RuleCode {
   return KNOWN.has(code);
+}
+
+/** A known code that has a text of its own. */
+export function isWordedRule(code: string): code is WordedRuleCode {
+  return KNOWN.has(code) && !UNWORDED.has(code);
 }

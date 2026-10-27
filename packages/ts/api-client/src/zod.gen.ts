@@ -369,6 +369,22 @@ export const zCatalogToolSchema = z.object({
 });
 
 /**
+ * CatalogRemote
+ *
+ * A remote MCP the caller may give tools of to an agent (D93 (7), D98 (18)): active, with
+ * its signed tools, and only if the caller is in its groups (being an administrator is not
+ * enough).
+ */
+export const zCatalogRemoteSchema = z.object({
+    id: z.string(),
+    operator: z.string(),
+    organization: z.string(),
+    registration_id: z.string(),
+    service: z.string(),
+    tools: z.array(zCatalogToolSchema)
+});
+
+/**
  * ChangeKind
  */
 export const zChangeKindSchema = z.enum([
@@ -757,6 +773,13 @@ export const zHealthOutSchema = z.object({
         'failing'
     ]),
     tone: z.enum(['red', 'amber'])
+});
+
+/**
+ * InboxRemote
+ */
+export const zInboxRemoteSchema = z.object({
+    registration_id: z.string()
 });
 
 /**
@@ -1285,7 +1308,8 @@ export const zCatalogConnectorSchema = z.object({
  */
 export const zCatalogOutSchema = z.object({
     items: z.array(zCatalogConnectorSchema),
-    max_enabled_packs: z.int().optional().default(10)
+    max_enabled_packs: z.int().optional().default(10),
+    remotes: z.array(zCatalogRemoteSchema).optional().default([])
 });
 
 /**
@@ -1532,6 +1556,17 @@ export const zRemoteReenableInSchema = z.object({
     tenant_id: z.uuid(),
     toolsets: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,23}$/)).max(16),
     version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * RemoteRefOut
+ *
+ * A remote MCP the version has tools of, for the Builder and the reviewer (D98 (2)).
+ */
+export const zRemoteRefOutSchema = z.object({
+    groups_without_access: z.array(z.string()),
+    registration_id: z.string(),
+    service: z.string().nullable()
 });
 
 /**
@@ -2316,9 +2351,11 @@ export const zInboxItemSchema = z.object({
     kind: z.enum([
         'approval',
         'kbsource',
-        'run'
+        'run',
+        'remote_connect'
     ]),
     read: z.boolean(),
+    remote: zInboxRemoteSchema.nullish(),
     run: zInboxRunSchema.nullish(),
     source: zQueuedSourceOutSchema.nullish()
 });
@@ -2552,9 +2589,11 @@ export const zToolStatusSchema = z.object({
 export const zMessageOutSchema = z.object({
     approvals: z.array(z.string()).optional().default([]),
     citations: z.array(zCitationOutSchema).optional().default([]),
+    connection_required: z.array(z.string()).optional().default([]),
     content: z.string(),
     created_at: z.string(),
     message_id: z.string(),
+    remote_sources: z.array(z.string()).optional().default([]),
     role: z.string(),
     tools: z.array(zToolStatusSchema)
 });
@@ -2755,6 +2794,7 @@ export const zVersionOutSchema = z.object({
     rejected_by: z.string().nullable(),
     rejected_by_email: z.string().nullable(),
     rejection_reason: z.string().nullable(),
+    remotes: z.array(zRemoteRefOutSchema).nullish(),
     revision: z.int(),
     status: z.string(),
     submitted_at: z.string().nullable(),
@@ -3800,7 +3840,8 @@ export const zSetInboxStatePath = z.object({
     kind: z.enum([
         'approval',
         'kbsource',
-        'run'
+        'run',
+        'remote_connect'
     ]),
     item_id: z.string().regex(/(?:^[0-9]{13}[0-9a-f]{16}$)|(?:^[0-9a-f]{32}$)|(?:^[0-9A-HJKMNP-TV-Z]{26}$)/)
 });

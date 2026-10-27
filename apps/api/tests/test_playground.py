@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from mango_core import invocation
+from mango_core.identity import UserContext
 from mango_core.playground import PlaygroundHarness
 
 from .test_agents_api import (
@@ -30,6 +31,7 @@ PLAYGROUND = (
     "arn:aws:bedrock-agentcore:us-east-1:111111111111:harness/Mango_test_a_playground-AbCdE12345"
 )
 WRITE_TOOL = "aws-budgets.create_budget"
+_CREATOR = UserContext("creator-1", None, None, is_admin=False)
 
 
 @pytest.fixture(autouse=True)
@@ -330,7 +332,7 @@ def test_the_tested_versions_skills_go_in_the_test_invocation(env: Env) -> None:
     )
     draft = _create(env, skills=[SKILL_REF])
     deps, _ = _deps(env, FakeSkills({SKILL_REF}))
-    test = playground._prepare(deps, draft["agent_id"], _body(draft))
+    test = playground._prepare(deps, draft["agent_id"], _body(draft), _CREATOR)
     # Built here from the stored version, in this installation's bucket.
     assert test.skill_sources == (
         {"s3": {"uri": f"s3://{BUCKET}/skills/revisar-costos/v2/revisar-costos/"}},
@@ -349,7 +351,7 @@ def test_a_skill_that_is_not_approved_is_not_tested(env: Env) -> None:  # noqa: 
     draft = _create(env, skills=[SKILL_REF])
     deps, _ = _deps(env, FakeSkills(set()))
     with pytest.raises(ApiError) as caught:
-        playground._prepare(deps, draft["agent_id"], _body(draft))
+        playground._prepare(deps, draft["agent_id"], _body(draft), _CREATOR)
     assert (caught.value.status, caught.value.code) == (422, "skill_unavailable")
     # It names which ones, as `id@version` only (design round 23).
     assert caught.value.extra == {"skills": [SKILL_REF]}
@@ -366,7 +368,7 @@ def test_only_the_skills_that_are_not_approved_are_named(env: Env) -> None:  # n
     draft = _create(env, skills=["alertas@1", SKILL_REF, "costos-ec2@3"])
     deps, _ = _deps(env, FakeSkills({SKILL_REF}))
     with pytest.raises(ApiError) as caught:
-        playground._prepare(deps, draft["agent_id"], _body(draft))
+        playground._prepare(deps, draft["agent_id"], _body(draft), _CREATOR)
     assert caught.value.extra == {"skills": ["alertas@1", "costos-ec2@3"]}
 
 
@@ -391,7 +393,7 @@ def test_without_a_way_to_load_skills_a_version_with_them_is_not_tested(
         bucket="" if case == "no_bucket" else BUCKET,
     )
     with pytest.raises(ApiError) as caught:
-        playground._prepare(deps, draft["agent_id"], _body(draft))
+        playground._prepare(deps, draft["agent_id"], _body(draft), _CREATOR)
     assert (caught.value.status, caught.value.code) == (503, "skills_unavailable")
 
 

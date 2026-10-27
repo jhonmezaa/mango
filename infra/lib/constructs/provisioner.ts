@@ -19,6 +19,7 @@ import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "./agen
 import { AGENTS_PUBLISHED_PARTITION, MODELS_PARTITION } from "./governance.js";
 import { PACK_INSTALLED_PARTITION } from "./pack-provisioner.js";
 import { PLAYGROUND_PARTITION } from "./playground.js";
+import { APPROVED_REMOTE_PARTITION, remoteMcpKeyAlias } from "./remote-mcp-api.js";
 import { PythonFunction } from "./python-function.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -166,6 +167,7 @@ export class Provisioner extends Construct {
     const stack = Stack.of(this);
     const platform = props.platform;
     const agentcore = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}`;
+    const remoteKeys = `arn:${stack.partition}:kms:${stack.region}:${stack.account}:key/*`;
     const workloadIdentities = `${agentcore}:workload-identity-directory/default`;
 
     const role = new iam.Role(this, "Role", {
@@ -450,6 +452,28 @@ export class Provisioner extends Construct {
         },
       }),
     );
+    // D98 (13): an agent may only get tools of a remote MCP that the catalog signed by the
+    // remote provisioner names. Read only that item, and only the public half of its key.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadApprovedRemotes",
+        actions: ["dynamodb:GetItem"],
+        resources: [props.settingsTable.tableArn],
+        conditions: {
+          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [`${APPROVED_REMOTE_PARTITION}*`] },
+          Null: { "dynamodb:LeadingKeys": "false" },
+        },
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "RemoteMcpPublicKey",
+        actions: ["kms:GetPublicKey"],
+        // The key is named, not referenced (its construct is another change's): by alias only.
+        resources: [remoteKeys],
+        conditions: { StringEquals: { "kms:RequestAlias": remoteMcpKeyAlias(ns) } },
+      }),
+    );
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "WritePlaygroundHarness",
@@ -542,6 +566,12 @@ export class Provisioner extends Construct {
         id: `AwsSolutions-IAM5[Resource::${resource}]`,
         reason: "Harnesses are created at runtime, one per agent (D32): the name prefix is the scope.",
       })),
+      {
+        id: `AwsSolutions-IAM5[Resource::${remoteKeys}]`,
+        reason:
+          "Only GetPublicKey, and only through the alias alias/Mango-<ns>-remote-mcp (kms:RequestAlias): the key " +
+          "that signs the approved catalogs of remote MCPs is created by another construct and named here (D98 (13)).",
+      },
       {
         id: `AwsSolutions-IAM5[Resource::${agentcore}:runtime/*]`,
         reason:

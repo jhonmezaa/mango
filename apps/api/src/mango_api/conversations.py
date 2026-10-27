@@ -69,6 +69,10 @@ class StoredMessage:
     citations: list[dict[str, Any]] = field(default_factory=list)
     """Knowledge base, document and page of each source of the answer, never the text of a
     fragment (D88 (44))."""
+    connection_required: list[str] = field(default_factory=list)
+    """Remote MCP registrations that asked the person to connect their account (D98 (20))."""
+    remote_sources: list[str] = field(default_factory=list)
+    """Remote MCP registrations whose tools answered («Leyó {servicio}»)."""
 
 
 class RlsClientFactory:
@@ -306,6 +310,8 @@ class ConversationRepository:
         *,
         approvals: list[str] | None = None,
         citations: list[dict[str, Any]] | None = None,
+        connection_required: list[str] | None = None,
+        remote_sources: list[str] | None = None,
     ) -> str:
         message_id = new_id()
         item: dict[str, Any] = {
@@ -321,6 +327,11 @@ class ConversationRepository:
             item["approvals"] = {"S": json.dumps(approvals)}
         if citations:
             item["citations"] = {"S": json.dumps(citations, ensure_ascii=False)}
+        # Registration ids only (D98 (20)): never a URL.
+        if connection_required:
+            item["connection_required"] = {"S": json.dumps(connection_required)}
+        if remote_sources:
+            item["remote_sources"] = {"S": json.dumps(remote_sources)}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
 
@@ -378,6 +389,10 @@ class ConversationRepository:
                         tools=json.loads(i.get("tools", {}).get("S", "[]")),
                         approvals=json.loads(i.get("approvals", {}).get("S", "[]")),
                         citations=json.loads(i.get("citations", {}).get("S", "[]")),
+                        connection_required=json.loads(
+                            i.get("connection_required", {}).get("S", "[]")
+                        ),
+                        remote_sources=json.loads(i.get("remote_sources", {}).get("S", "[]")),
                     )
                 )
             if "LastEvaluatedKey" not in resp:

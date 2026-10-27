@@ -26,6 +26,12 @@ and per connector the data tier and how identity reaches the data (spec §4.3):
   visible to central groups may have its tools, Cedar L2 only lets central users call them,
   and each call reaches AWS as the user (D37);
 * ``per_user_adapter``: not validated, never installed.
+
+Remote MCP servers of third parties (D93, D98) are listed too, one per registration: the
+server id and Gateway target are ``remote-<registration>``. Their tools count only while the
+registration is ``active`` and the catalog the remote provisioner signed (``MCP_REMOTE#``,
+which mango-api cannot write) names them: all ``read``, each person's own data (``per_user``).
+Who may use one is decided by its groups (``UseRemoteMcp``), not here.
 """
 
 from __future__ import annotations
@@ -50,6 +56,15 @@ from mango_api.pack_release import (
     ReleasePack,
     ReleasePacks,
 )
+from mango_api.remote_mcp_store import (
+    ApprovedRemotes,
+    Registration,
+    RemoteRecordError,
+    RemoteRegistrationStatus,
+    RemoteStore,
+)
+from mango_api.remote_release import ReleaseRemotes, RemoteReleaseUnavailableError
+from mango_core.remote_mcp import ApprovedRemote, registration_of_target, target_name
 from mango_packs.enablement import PackStatus
 
 logger = logging.getLogger(__name__)
@@ -131,7 +146,7 @@ class McpServer(_Frozen):
     """What a connector and a pack have in common: an MCP server behind a Gateway target."""
 
     id: Annotated[str, _ID]
-    kind: Literal["connector", "pack"]
+    kind: Literal["connector", "pack", "remote"]
     name: Annotated[str, Field(min_length=1, max_length=120)]
     description: Annotated[str, Field(max_length=600)]
     provider: Annotated[str, Field(min_length=1, max_length=100)]
@@ -275,6 +290,100 @@ class PackState:
         )
 
 
+@dataclass(frozen=True)
+class RemoteState:
+    """A remote MCP registration next to the catalog the remote provisioner signed for it."""
+
+    registration: Registration
+    approved: ApprovedRemote | None
+    """The signed catalog, verified; read only while the registration is ``active``."""
+    service: str | None = None
+    """Name of its profile in the release («Azure DevOps»); ``None`` when the release no
+    longer has it."""
+    operator: str | None = None
+
+    @property
+    def registration_id(self) -> str:
+        return self.registration.registration_id
+
+    @property
+    def target(self) -> str:
+        return target_name(self.registration_id)
+
+    @property
+    def groups(self) -> frozenset[str]:
+        return frozenset(self.registration.groups)
+
+    @property
+    def usable_tools(self) -> frozenset[str]:
+        """Tools agents may use now: the signed ones, while the registration is active."""
+        approved = self.approved
+        if (
+            approved is None
+            or self.registration.status is not RemoteRegistrationStatus.ACTIVE
+            or approved.registration_id != self.registration_id
+        ):
+            return frozenset()
+        return approved.tools
+
+    @property
+    def server(self) -> McpServer:
+        """The registration in the shape of the catalog: only its signed tools, all ``read``
+        (D84 (5)). The signed catalog carries no descriptions."""
+        return McpServer(
+            id=self.target,
+            kind="remote",
+            name=self.service or self.registration.profile_id,
+            description="",
+            provider=self.operator or self.registration.profile_id,
+            data_tier=DataTier.ACCOUNT_DATA,
+            identity_mode=IdentityMode.PER_USER,
+            gateway_target=self.target,
+            tools=tuple(
+                ManifestTool(name=name, description="", access="read")
+                for name in sorted(self.usable_tools)
+            ),
+        )
+
+
+class RemoteStates:
+    """Every remote MCP registration with its verified signed catalog (D98 (12), (13))."""
+
+    def __init__(
+        self, store: RemoteStore, approved: ApprovedRemotes | None, release: ReleaseRemotes
+    ) -> None:
+        self._store = store
+        self._approved = approved
+        self._release = release
+
+    def __call__(self) -> tuple[RemoteState, ...]:
+        """Raises ``RemoteRecordError`` or a boto error when the registrations cannot be read.
+        A signed catalog that is missing or does not verify reads as ``None``: no tools."""
+        states: list[RemoteState] = []
+        for registration in self._store.registrations():
+            active = registration.status is RemoteRegistrationStatus.ACTIVE
+            approved = (
+                self._approved.get(registration.registration_id)
+                if active and self._approved is not None
+                else None
+            )
+            try:
+                release = self._release.get(registration.profile_id)
+            except RemoteReleaseUnavailableError:
+                # Only the name shown is missing: the signed catalog decides the tools.
+                release = None
+            profile = release.profile if release is not None else None
+            states.append(
+                RemoteState(
+                    registration,
+                    approved,
+                    service=profile.name if profile is not None else None,
+                    operator=profile.operator if profile is not None else None,
+                )
+            )
+        return tuple(states)
+
+
 class McpCatalog:
     def __init__(
         self,
@@ -282,12 +391,17 @@ class McpCatalog:
         packs: Iterable[PackState] = (),
         *,
         packs_available: bool = True,
+        remotes: Iterable[RemoteState] = (),
+        remotes_available: bool = True,
     ) -> None:
         self._connectors: dict[str, ConnectorManifest] = {}
         self._packs: dict[str, PackState] = {}
+        self._remotes: dict[str, RemoteState] = {}
         self._tools: dict[str, CatalogTool] = {}
         self.packs_available = packs_available
         """False when the packs could not be read: their tools are unknown, not disabled."""
+        self.remotes_available = remotes_available
+        """False when the registrations could not be read: their tools count as unavailable."""
         for connector in connectors:
             if connector.id in self._connectors:
                 raise InvalidCatalogError("duplicate connector id")
@@ -300,6 +414,10 @@ class McpCatalog:
                 # provisioner refuses it too (``reserved_target``).
                 logger.error("pack id collides with a connector", extra={"pack": pack.pack_id})
                 continue
+            if registration_of_target(pack.pack_id) is not None:
+                # ``remote-<registration>`` is the target of a remote MCP (D98 (11)).
+                logger.error("pack id is a remote MCP target", extra={"pack": pack.pack_id})
+                continue
             try:
                 server = pack.server
             except ValidationError:
@@ -307,6 +425,17 @@ class McpCatalog:
                 continue
             self._packs[pack.pack_id] = pack
             self._add_tools(server, enabled=pack.usable_tools)
+        for remote in remotes:
+            if remote.target in self._connectors or remote.target in targets:
+                logger.error("remote target collides with a connector")
+                continue
+            try:
+                remote_server = remote.server
+            except ValidationError:
+                logger.exception("remote MCP does not fit the catalog")
+                continue
+            self._remotes[remote.registration_id] = remote
+            self._add_tools(remote_server, enabled=remote.usable_tools)
 
     def _add_tools(self, server: McpServer, *, enabled: frozenset[str] | None) -> None:
         names = [tool.name for tool in server.tools]
@@ -327,6 +456,13 @@ class McpCatalog:
     def packs(self) -> tuple[PackState, ...]:
         return tuple(self._packs[key] for key in sorted(self._packs))
 
+    @property
+    def remotes(self) -> tuple[RemoteState, ...]:
+        return tuple(self._remotes[key] for key in sorted(self._remotes))
+
+    def remote(self, registration_id: str) -> RemoteState | None:
+        return self._remotes.get(registration_id)
+
     def tool(self, ref: str) -> CatalogTool | None:
         return self._tools.get(ref)
 
@@ -334,6 +470,10 @@ class McpCatalog:
         """A connector, or a pack of the release that fits the catalog."""
         if (connector := self._connectors.get(server_id)) is not None:
             return connector
+        registration = registration_of_target(server_id)
+        if registration is not None:
+            remote = self._remotes.get(registration)
+            return remote.server if remote is not None else None
         pack = self._packs.get(server_id)
         return pack.server if pack is not None else None
 
@@ -348,6 +488,25 @@ class McpCatalog:
         tool = self._tools.get(ref)
         return (tool is None or not tool.enabled) and ref.partition(".")[0] in self._packs
 
+    def remote_tool_unavailable(self, ref: str) -> bool:
+        """``ref`` names a tool of a remote MCP (``remote-<registration>.<tool>``) that is not
+        usable now: the registration is not active, does not exist any more, could not be
+        read, or its signed catalog does not name the tool (D98 (17)). Fewer tools than
+        approved, never a tool nobody signed."""
+        if registration_of_target(ref.partition(".")[0]) is None:
+            return False
+        tool = self._tools.get(ref)
+        return tool is None or not tool.enabled
+
+    def tool_unavailable(self, ref: str) -> bool:
+        """A tool of a pack or of a remote MCP that the agent serves without, for now."""
+        return self.pack_tool_unavailable(ref) or self.remote_tool_unavailable(ref)
+
+    def remote_of(self, ref: str) -> RemoteState | None:
+        """The registration a remote tool ref belongs to, if the catalog knows it."""
+        registration = registration_of_target(ref.partition(".")[0])
+        return self._remotes.get(registration) if registration is not None else None
+
     def tools_of(self, server: McpServer) -> tuple[CatalogTool, ...]:
         return tuple(
             tool
@@ -356,7 +515,22 @@ class McpCatalog:
         )
 
     def with_packs(self, packs: Iterable[PackState], *, available: bool = True) -> McpCatalog:
-        return McpCatalog(self.connectors, packs, packs_available=available)
+        return McpCatalog(
+            self.connectors,
+            packs,
+            packs_available=available,
+            remotes=self.remotes,
+            remotes_available=self.remotes_available,
+        )
+
+    def with_remotes(self, remotes: Iterable[RemoteState], *, available: bool = True) -> McpCatalog:
+        return McpCatalog(
+            self.connectors,
+            self.packs,
+            packs_available=self.packs_available,
+            remotes=remotes,
+            remotes_available=available,
+        )
 
     @staticmethod
     def load(directory: Path) -> McpCatalog:
@@ -385,7 +559,7 @@ PACK_STATE_SECONDS = 15
 
 class CatalogSource:
     """The catalog as it is now: connectors of the image plus the packs of the release with
-    their installation state.
+    their installation state, and the remote MCP registrations with their signed catalogs.
 
     Called on the chat path (through ``PublishedAgents``) and by the agent rules, so the pack
     state is cached briefly. A read error is never cached and never looks like "disabled":
@@ -398,11 +572,13 @@ class CatalogSource:
         release: ReleasePacks | None,
         store: PackStore | None,
         *,
+        remotes: Callable[[], tuple[RemoteState, ...]] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._connectors = connectors
         self._release = release
         self._store = store
+        self._remotes = remotes
         self._clock = clock
         self._lock = threading.Lock()
         self._cached: tuple[float, McpCatalog] | None = None
@@ -431,9 +607,25 @@ class CatalogSource:
             catalog = base.with_packs(self.pack_states())
         except (PackReleaseUnavailableError, PackRecordError, ClientError, BotoCoreError) as exc:
             raise InvalidCatalogError("cannot read the MCP packs") from exc
-        with self._lock:
-            self._cached = (self._clock(), catalog)
+        remotes, readable = self._remote_states()
+        if self._remotes is not None:
+            catalog = catalog.with_remotes(remotes, available=readable)
+        if readable:
+            # A read error is never cached: the next call reads again.
+            with self._lock:
+                self._cached = (self._clock(), catalog)
         return catalog
+
+    def _remote_states(self) -> tuple[tuple[RemoteState, ...], bool]:
+        """The registrations and whether they could be read. Unread, every remote tool counts
+        as unavailable: agents serve without them, never with tools nobody signed."""
+        if self._remotes is None:
+            return (), True
+        try:
+            return self._remotes(), True
+        except (RemoteRecordError, ClientError, BotoCoreError):
+            logger.exception("remote MCP registrations unavailable")
+            return (), False
 
     def invalidate(self) -> None:
         with self._lock:
@@ -441,7 +633,10 @@ class CatalogSource:
 
     def __call__(self) -> McpCatalog:
         base = self._connectors()
-        if self._release is None or self._store is None or not self._release.catalog:
+        packs = (
+            self._release is not None and self._store is not None and bool(self._release.catalog)
+        )
+        if not packs and self._remotes is None:
             return base
         with self._lock:
             cached = self._cached
