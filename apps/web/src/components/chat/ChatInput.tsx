@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { MESSAGE_MAX_LENGTH } from '../../api/schemas';
-import { PaperclipIcon, SendIcon, SkillIcon, StopIcon } from '../icons';
+import { PaperclipIcon, SendIcon, StopIcon } from '../icons';
 import { Soon } from '../Soon';
 
 interface Props {
@@ -16,8 +16,9 @@ interface Props {
 }
 
 /**
- * Composer (design: chat.jsx ChatInput) in "current availability" mode: attachments, skills and
- * "/" commands are "Próximamente", so typing "/" opens no command menu.
+ * Composer (design: chat.jsx ChatInput) in "current availability" mode: attachments and "/"
+ * commands are "Próximamente", so typing "/" opens no command menu. There is no «Skill» button
+ * (design round 23): a skill cannot be forced, the agent loads one when it helps.
  */
 export function ChatInput({ agentName, disabled = false, isStreaming, onSend, onStop }: Props) {
   const { t } = useTranslation();
@@ -66,11 +67,6 @@ export function ChatInput({ agentName, disabled = false, isStreaming, onSend, on
             <Soon name={t('soon.item', { label: t('chat.composer.attach') })}>
               <span className="btn btn-ghost btn-icon">
                 <PaperclipIcon size={14} />
-              </span>
-            </Soon>
-            <Soon name={t('soon.item', { label: t('chat.composer.skill') })}>
-              <span className="btn btn-ghost btn-sm">
-                <SkillIcon size={12} /> {t('chat.composer.skill')}
               </span>
             </Soon>
           </div>

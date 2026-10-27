@@ -47,6 +47,7 @@ export const RunCard = memo(function RunCard({
   const { t } = useTranslation();
   const { column, done, state } = entry;
   const calls = entry.tools.length + entry.writes.length;
+  const failed = entry.tools.filter((call) => call.status === 'error').length;
   const flags = done?.flags;
   const label = column.label
     ? column.label.key === 'model'
@@ -90,6 +91,11 @@ export const RunCard = memo(function RunCard({
           {t('playground.trace.tools', { count: calls })}
           {entry.writes.length > 0 && (
             <span className="badge badge-amber">{t('playground.trace.askedWrite')}</span>
+          )}
+          {failed > 0 && (
+            <span className="badge badge-red">
+              {t('playground.trace.failedCount', { count: failed })}
+            </span>
           )}
         </button>
       )}

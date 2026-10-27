@@ -157,8 +157,8 @@ export function applyEvent(entry: Entry, event: PlaygroundEvent, now: number): E
 // --- Blocks --------------------------------------------------------------------------------------
 
 /**
- * What stops every test until it is solved, from an answer of the server. The texts of the
- * design for budget and rate, plus the ones agreed for codes the design does not draw.
+ * What stops every test until it is solved, from an answer of the server, with the texts of the
+ * design (round 23 draws every code).
  */
 export type Block =
   | { kind: 'budgetUser' | 'budgetAgent' | 'notTestable' | 'skill' | 'skills' | 'retired' }

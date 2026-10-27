@@ -112,11 +112,12 @@ describe('ChatPage', () => {
       'Skills y tools disponibles',
       'Más opciones',
       'Adjuntar archivos',
-      'Skill',
       'Comandos con /',
     ]) {
       expect(screen.getByText(`${label}, próximamente`)).toBeInTheDocument();
     }
+    // Round 23: no «Skill» button in the composer, a skill cannot be forced.
+    expect(screen.queryByText('Skill, próximamente')).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Mensaje a FinOps' })).toHaveAttribute(
       'placeholder',
       'Mensaje a FinOps…',

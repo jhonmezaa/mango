@@ -260,7 +260,7 @@ describe('PlaygroundPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows the agreed text for a model without tools', async () => {
+  it('says a model calls no tools, over the answers and under the model', async () => {
     const { api } = apiWith({}, () =>
       Promise.reject(new ApiError(422, 'model_without_tools', 'x')),
     );
@@ -268,7 +268,43 @@ describe('PlaygroundPage', () => {
     await ready();
     await ask('Hola');
     expect(
-      await screen.findByText('Modelo Principal no admite tools y este agente las usa.'),
+      await screen.findByText(
+        'Modelo Principal no admite tools y este agente usa tools o knowledge bases.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Modelo Principal no admite tools. Elige uno que las admita.'),
+    ).toHaveClass('pg-err');
+    // Choosing another model lifts the block and the hint.
+    await userEvent.setup().selectOptions(screen.getByLabelText('Modelo'), 'model.fast');
+    expect(screen.queryByText(/no admite tools\. Elige uno/)).not.toBeInTheDocument();
+  });
+
+  it('counts the tools that failed in the header of the trace', async () => {
+    const { api } = apiWith({}, (request) => {
+      for (const name of ['get_cost_and_usage', 'get_budgets', 'list_accounts']) {
+        request.onEvent({ type: 'tool', name, status: 'started' });
+      }
+      request.onEvent({ type: 'tool', name: 'get_cost_and_usage', status: 'error' });
+      request.onEvent({ type: 'tool', name: 'get_budgets', status: 'completed' });
+      request.onEvent({ type: 'tool', name: 'list_accounts', status: 'error' });
+      request.onEvent(DONE);
+      return Promise.resolve();
+    });
+    renderPage(api);
+    await ready();
+    await ask('Hola');
+    const trace = await screen.findByRole('button', { name: /3 tools/ });
+    expect(within(trace).getByText('2 fallaron')).toHaveClass('badge', 'badge-red');
+  });
+
+  it('says a retired agent cannot be tested and where to choose another', async () => {
+    const { api } = apiWith({}, () => Promise.reject(new ApiError(409, 'agent_retired', 'x')));
+    renderPage(api);
+    await ready();
+    await ask('Hola');
+    expect(
+      await screen.findByText('Ya no se puede probar. Elige otro en «Qué probar».'),
     ).toBeInTheDocument();
   });
 

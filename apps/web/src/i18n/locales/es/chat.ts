@@ -157,7 +157,6 @@ export const chat = {
   },
   composer: {
     attach: 'Adjuntar archivos',
-    skill: 'Skill',
     commands: 'comandos',
     commandsLabel: 'Comandos con /',
     newLine: 'nueva línea',

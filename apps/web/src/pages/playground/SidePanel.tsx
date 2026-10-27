@@ -23,6 +23,8 @@ interface Props {
   models: readonly Model[];
   model: string;
   modelOff: boolean;
+  /** The server said the model on screen calls no tools (`model_without_tools`). */
+  modelNoTools: boolean;
   onModel: (model: string) => void;
   prompt: string;
   secret: boolean;
@@ -154,7 +156,7 @@ export function SidePanel(props: Props) {
 
 function VersionFields(props: Props & { version: Version }) {
   const { t } = useTranslation();
-  const { version, data, models, model, modelOff } = props;
+  const { version, data, models, model, modelOff, modelNoTools } = props;
   const { definition } = version;
   const tools = toolIndex(data.context.catalog);
   const writes = definition.tools.filter((ref) => tools.get(ref)?.write).length;
@@ -192,6 +194,13 @@ function VersionFields(props: Props & { version: Version }) {
               data.context.models.find((item) => item.id === definition.model)?.name ??
               definition.model ??
               '',
+          })}
+        </div>
+      )}
+      {modelNoTools && !modelOff && (
+        <div className="pg-err">
+          {t('playground.model.noTools', {
+            model: data.context.models.find((item) => item.id === model)?.name ?? model,
           })}
         </div>
       )}

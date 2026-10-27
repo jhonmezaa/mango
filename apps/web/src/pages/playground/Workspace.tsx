@@ -359,6 +359,7 @@ export function Workspace({
           models={models}
           model={model}
           modelOff={modelOff}
+          modelNoTools={shown?.kind === 'model' && shown.reason === 'noTools'}
           onModel={(value) => {
             setEdits((current) => ({ ...current, model: value }));
             setBlock((current) => (current?.kind === 'model' ? null : current));

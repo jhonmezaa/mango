@@ -1,4 +1,4 @@
-// Playground (design playground.jsx `Playground`, round 21, D91).
+// Playground (design playground.jsx `Playground`, rounds 21 and 23, D91).
 export const playground = {
   crumbRoot: 'Construir',
   crumb: 'Playground',
@@ -54,6 +54,7 @@ export const playground = {
     choose: 'Elige un modelo',
     off: '{{model}} ya no está habilitado. Elige otro para probar y enviar.',
     toolsOnly: 'Solo modelos que admiten tools.',
+    noTools: '{{model}} no admite tools. Elige uno que las admita.',
     offProblem: '{{model}} ya no está habilitado. Elige otro modelo.',
   },
   prompt: {
@@ -137,6 +138,8 @@ export const playground = {
     tools_one: '{{count}} tool',
     tools_other: '{{count}} tools',
     askedWrite: 'pidió escritura',
+    failedCount_one: '{{count}} falló',
+    failedCount_other: '{{count}} fallaron',
     ok: '{{seconds}} s · bien',
     failed: '{{seconds}} s · falló',
     write: 'pediría aprobación · no se ejecuta',
@@ -167,8 +170,7 @@ export const playground = {
     model: {
       title: 'Elige un modelo para probar',
       body: '{{model}} ya no está habilitado en Brains.',
-      // Not in the design (round 21): proposed and accepted on 2026-10-25.
-      noTools: '{{model}} no admite tools y este agente las usa.',
+      noTools: '{{model}} no admite tools y este agente usa tools o knowledge bases.',
     },
     budgetUser: {
       title: 'Tu presupuesto mensual se agotó',
@@ -182,7 +184,6 @@ export const playground = {
       title: 'Llegaste al límite de pruebas',
       body: 'Puedes hacer hasta 60 pruebas por hora y 2 a la vez. Podrás probar de nuevo en {{seconds}} s.',
     },
-    // Not in the design (round 21): proposed and accepted on 2026-10-25.
     notTestable: {
       title: 'Esta versión no se puede probar',
       body: 'Solo se prueban los borradores y la versión publicada. Elige otra.',
@@ -197,7 +198,7 @@ export const playground = {
     },
     retired: {
       title: 'Este agente se retiró',
-      body: 'Ya no se puede probar. Elige otro.',
+      body: 'Ya no se puede probar. Elige otro en «Qué probar».',
     },
   },
 } as const;
