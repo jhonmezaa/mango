@@ -33,11 +33,15 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 from mango_core.knowledge import ID_PATTERN as KNOWLEDGE_BASE_ID_PATTERN
+from mango_core.remote_mcp import CONNECTION_AGENT_ID
 from mango_core.skills import MAX_PER_AGENT as MAX_SKILLS
 from mango_core.skills import SKILL_REF_PATTERN, parse_ref
 
 ROOT_SUPERVISOR = "platform"
 """``reports_to`` value of an agent at the top of the organization chart (D30)."""
+RESERVED_AGENT_IDS = frozenset({ROOT_SUPERVISOR, CONNECTION_AGENT_ID})
+"""Ids that fit ``AGENT_ID_PATTERN`` but are never an agent: the root of the organization chart
+and the calls of «Mis conexiones» (D97 (3))."""
 
 # Generated ids are 16 base32 characters (80 random bits); release agents keep a slug such as
 # ``finops``. Both fit the harness name ``Mango_<ns>_a_<id>`` (40 characters, no hyphens).
@@ -94,7 +98,7 @@ def new_agent_id() -> str:
 
 
 def is_agent_id(value: object) -> bool:
-    if not isinstance(value, str) or value == ROOT_SUPERVISOR:
+    if not isinstance(value, str) or value in RESERVED_AGENT_IDS:
         return False
     return bool(_GENERATED_ID_RE.fullmatch(value) or _RELEASE_SLUG_RE.fullmatch(value))
 

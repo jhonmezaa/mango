@@ -62,6 +62,14 @@ def test_other_values_are_not_agent_ids(value: object) -> None:
     assert not is_agent_id(value)
 
 
+def test_the_id_of_the_connection_calls_is_reserved() -> None:
+    # «Mis conexiones» signs its calls as ``mangoconn`` (D97 (3)): no agent can be it, nor
+    # report to it.
+    assert not is_agent_id("mangoconn")
+    with pytest.raises(ValidationError):
+        _definition(reports_to="mangoconn")
+
+
 def test_canonical_json_is_sorted_compact_and_keeps_unicode() -> None:
     canonical = dumps_definition(_definition())
     assert canonical == json.dumps(

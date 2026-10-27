@@ -203,3 +203,124 @@ def test_the_playground_claim_is_under_the_mac() -> None:
 def test_a_playground_claim_that_is_not_a_boolean_is_refused(value: object) -> None:
     payload = {"sub": "user-1", "exp": EXPIRES, "agent": "finops", "ver": 3, "tools": TOOLS}
     assert verify(KEY, "user-1", _forge({**payload, "pg": value}), now=NOW) is None
+
+
+# --- Calls of «Mis conexiones»: the claim ``cx`` (D97 (3), D98 (15)) ----------------------
+
+PROBE = "remote-abcdefghij23___core_list_projects"
+# Pinned before the claim existed: a signature without ``cx`` must stay the same, byte by byte.
+PINNED = (
+    "v2.eyJhZ2VudCI6ImZpbm9wcyIsImV4cCI6MjAwMDAwMDAwMCwic3ViIjoidXNlci0xIiwidG9vbHMiOlsiZmlub3"
+    "BzX19fZ2V0X2Nvc3RfYW5kX3VzYWdlIiwiZmlub3BzX19fbGlzdF9hY2NvdW50c19pbl9zY29wZSJdLCJ2ZXIiOjN9"
+    ".9e8a567d4441c83011cf32e89bfe536fb0057f982be6b0feb81722e6ecd22709"
+)
+PINNED_PLAYGROUND = (
+    "v2.eyJhZ2VudCI6ImZpbm9wcyIsImV4cCI6MjAwMDAwMDAwMCwicGciOnRydWUsInN1YiI6InVzZXItMSIsInRvb2"
+    "xzIjpbImZpbm9wc19fX2dldF9jb3N0X2FuZF91c2FnZSJdLCJ2ZXIiOjN9"
+    ".7a264e07cc2e13c8db2a4a0bf837c9753e95da42510ad75a5e19b209aac4d661"
+)
+
+
+def _connection(connection: str = "connect", **overrides: Any) -> str:
+    args: dict[str, Any] = {
+        "agent_id": "mangoconn",
+        "agent_version": 1,
+        "tools": [PROBE],
+        "connection": connection,
+    }
+    return sign(KEY, "user-1", EXPIRES, **{**args, **overrides})
+
+
+def test_a_signature_without_the_claim_is_the_same_byte_by_byte() -> None:
+    assert _sign() == PINNED
+    assert _sign(tools=[TOOLS[0]], playground=True) == PINNED_PLAYGROUND
+    signed = verify(KEY, "user-1", PINNED, now=NOW)
+    assert signed is not None
+    assert signed.connection is None
+
+
+@pytest.mark.parametrize("connection", ["connect", "disconnect"])
+def test_a_connection_call_is_signed_as_such(connection: str) -> None:
+    value = _connection(connection)
+    payload = json.loads(base64.urlsafe_b64decode(value.split(".")[1] + "=="))
+    assert payload["cx"] == connection
+    assert verify(KEY, "user-1", value, now=NOW) == Invocation(
+        subject="user-1",
+        agent_id="mangoconn",
+        agent_version=1,
+        tools=frozenset({PROBE}),
+        expires_at=EXPIRES,
+        connection=connection,  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"tools": [PROBE, "remote-abcdefghij23___search_wiki"]},
+        {"tools": []},
+        {"tools": ["finops___get_cost_and_usage"]},
+        {"tools": ["remote-ABCDEFGHIJ23___core_list_projects"]},
+        {"tools": ["remote-abc___core_list_projects"]},
+        {"agent_id": "finops"},
+        {"agent_version": 2},
+        {"knowledge_bases": [KB_A]},
+        {"playground": True},
+        {"connection": "revoke"},
+    ],
+)
+def test_a_connection_call_is_one_remote_tool_of_the_reserved_agent(
+    overrides: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError, match="invalid invocation"):
+        _connection(**overrides)
+
+
+def test_no_agent_signs_as_the_reserved_one_without_the_claim() -> None:
+    with pytest.raises(ValueError, match="invalid invocation"):
+        _sign(agent_id="mangoconn", agent_version=1, tools=[PROBE])
+
+
+CONNECTION_PAYLOAD: dict[str, Any] = {
+    "sub": "user-1",
+    "exp": EXPIRES,
+    "agent": "mangoconn",
+    "ver": 1,
+    "tools": [PROBE],
+    "cx": "disconnect",
+}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"cx": "revoke"},
+        {"cx": True},
+        {"cx": None},
+        {"agent": "finops"},
+        {"ver": 2},
+        {"tools": [PROBE, "remote-abcdefghij23___search_wiki"]},
+        {"tools": ["finops___get_cost_and_usage"]},
+        {"kbs": [KB_A]},
+        {"pg": True},
+    ],
+)
+def test_a_well_signed_connection_call_of_another_shape_is_refused(
+    overrides: dict[str, Any],
+) -> None:
+    assert verify(KEY, "user-1", _forge(CONNECTION_PAYLOAD), now=NOW) is not None
+    assert verify(KEY, "user-1", _forge({**CONNECTION_PAYLOAD, **overrides}), now=NOW) is None
+
+
+def test_the_reserved_agent_without_the_claim_is_refused() -> None:
+    payload = {key: value for key, value in CONNECTION_PAYLOAD.items() if key != "cx"}
+    assert verify(KEY, "user-1", _forge(payload), now=NOW) is None
+
+
+def test_the_connection_claim_is_under_the_mac() -> None:
+    # Turning a connect into a disconnect breaks the MAC.
+    _, encoded, mac = _connection("connect").split(".")
+    payload = json.loads(base64.urlsafe_b64decode(encoded + "=="))
+    payload["cx"] = "disconnect"
+    swapped = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    assert verify(KEY, "user-1", f"v2.{swapped}.{mac}", now=NOW) is None
