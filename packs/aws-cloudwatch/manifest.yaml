@@ -3,7 +3,7 @@
 # aws-cloudwatch-pack-threat-model.md.
 schema_version: 1
 id: aws-cloudwatch
-version: "0.3.1-4" # <upstream version>-<Mango revision>
+version: "0.3.1-5" # <upstream version>-<Mango revision>
 name: AWS CloudWatch
 description: Metrics, alarms and log group metadata of the organization's member accounts, read in the account each question names. No log events. Central users only.
 
@@ -11,8 +11,7 @@ source:
   package: awslabs.cloudwatch-mcp-server
   version: "0.3.1"
   sha256: 2161532a8f48d454b87d6e4d53f25188e98a7661b9187db9decea907810187be # wheel
-  exclude_newer: "2026-10-20T14:05:00Z" # lock cutoff; quarantine skipped for a security patch
-  quarantine_exception: GHSA-6q48-6c7w-9gw2
+  exclude_newer: "2026-10-20T14:05:00Z" # lock cutoff: 7 days of quarantine
 
 # The server does not filter by area: every call runs as the central user who asked.
 data_tier: account_data
