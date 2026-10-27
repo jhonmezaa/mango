@@ -179,6 +179,11 @@ export class RemoteRelease extends Construct {
     }
   }
 
+  /** The packs bucket the profiles are copied to. */
+  get bucketName(): string {
+    return this.bucket.bucketName;
+  }
+
   /** Environment of whoever reads the catalog (`mango-api`, the remote provisioner). Not secret. */
   get environment(): Record<string, string> {
     return { REMOTE_CATALOG: JSON.stringify(this.catalog) };

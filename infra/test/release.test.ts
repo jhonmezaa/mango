@@ -514,9 +514,13 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     ]);
     // The whole role, by statement: a new one, or an action in another one, fails here.
     // The role gained no statement and exactly those two actions: 18 statements, 32 actions before.
-    expect(statements).toHaveLength(18);
-    expect(actions).toHaveLength(34);
-    expect(new Set(actions).size).toBe(34);
+    // D98: one statement to delete the OAuth2 providers of remote MCPs, and listing them.
+    expect(statements).toHaveLength(19);
+    expect(actions).toHaveLength(36);
+    expect(new Set(actions).size).toBe(36);
+    expect(statements.find((s) => s.Sid === "DeleteRemoteProviders")!.Action).toBe(
+      "bedrock-agentcore:DeleteOauth2CredentialProvider",
+    );
   });
 
   // D58 (19): the failure reaches the alerts topic through an alarm on a metric written in the

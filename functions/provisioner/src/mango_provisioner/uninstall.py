@@ -2,6 +2,8 @@
 
 Agents and MCP packs are created at runtime by the provisioners, outside CloudFormation
 (D25, D32): their harnesses, runtimes, Gateway targets, Cedar policies and execution roles.
+Remote MCPs too (D98): their ``remote-<reg>`` targets, their policies and the OAuth2
+providers mango-api created for them, with their secrets.
 Those roles carry permissions boundaries of the stack, so a stack deletion fails while any of
 them exists. This function is a custom resource of the Core stack that everything else is
 created before, and therefore deleted after: on ``Delete`` it sweeps those resources, by the
@@ -131,6 +133,16 @@ class GuardSettings:
         return f"Mango_{self.namespace}_mcp_"
 
     @property
+    def remote_policy_prefix(self) -> str:
+        """Cedar policies of remote MCP targets (D98 (11)); their targets are `remote-<reg>`."""
+        return f"Mango_{self.namespace}_remote_"
+
+    @property
+    def remote_provider_prefix(self) -> str:
+        """OAuth2 providers of remote MCPs, with the secret of each (D93 (7))."""
+        return f"Mango-{self.namespace}-remote-"
+
+    @property
     def role_prefixes(self) -> tuple[str, ...]:
         """Agents, packs and the sources of the knowledge bases (D88 (10))."""
         return (
@@ -204,7 +216,7 @@ class Sweep:
             for policy in self._pages(
                 "list_policies", "policies", policyEngineId=self._s.policy_engine_id
             )
-            if str(policy["name"]).startswith(self._s.pack_prefix)
+            if str(policy["name"]).startswith((self._s.pack_prefix, self._s.remote_policy_prefix))
         ]
         for policy in policies:
             if policy.get("status") != "DELETING":
@@ -214,6 +226,17 @@ class Sweep:
                     policyId=policy["policyId"],
                 )
         return len(policies)
+
+    def remote_providers(self) -> int:
+        """Providers of remote MCPs. Deleting one is immediate; the next pass sees none."""
+        providers = [
+            provider
+            for provider in self._pages("list_oauth2_credential_providers", "credentialProviders")
+            if str(provider["name"]).startswith(self._s.remote_provider_prefix)
+        ]
+        for provider in providers:
+            _attempt(self._ac.delete_oauth2_credential_provider, name=provider["name"])
+        return len(providers)
 
     def pack_runtimes(self) -> int:
         runtimes = [
@@ -344,6 +367,7 @@ class Sweep:
         remaining = {
             "pack_targets": self.pack_targets(),
             "pack_policies": self.pack_policies(),
+            "remote_providers": self.remote_providers(),
             "pack_runtimes": self.pack_runtimes(),
             "harnesses": self.harnesses(),
         }

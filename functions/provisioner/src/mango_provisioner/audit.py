@@ -34,8 +34,12 @@ EVENT_DEPROVISION = "agent.deprovision"
 """Removal of what a retired agent left in AWS (D48): ``requested``, ``applied``, ``rejected``."""
 EVENT_PACK_ENABLED = "mcp.pack.enabled"
 EVENT_PACK_DISABLED = "mcp.pack.disabled"
+EVENT_REMOTE_ENABLED = "mcp_remote.enabled"
+EVENT_REMOTE_CREATE_FAILED = "mcp_remote.create_failed"
+EVENT_REMOTE_DISABLED = "mcp_remote.disabled"
+"""Lifecycle of a remote MCP registration, from the remote provisioner (D98 (19))."""
 # Detail key -> resource type of the record (what the event is about).
-_RESOURCES = (("agent", "agent"), ("pack", "mcp_pack"))
+_RESOURCES = (("agent", "agent"), ("pack", "mcp_pack"), ("remote", "mcp_remote"))
 INDEX_TTL = timedelta(days=30)
 
 

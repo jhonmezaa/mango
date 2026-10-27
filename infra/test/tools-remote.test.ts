@@ -97,12 +97,16 @@ describe("remote MCP catalog key (D93 (9), TM-012)", () => {
     ]);
   });
 
-  it("no identity policy of the stack lets anyone sign with it", () => {
-    for (const { statement } of allStatements()) {
-      if (statement.Effect !== "Allow") continue;
-      const signs = actions(statement).some((a) => a === "kms:Sign" || a === "kms:*");
-      if (signs) expect(text(statement.Resource)).not.toContain(keyId);
-    }
+  it("no identity policy of the stack lets anyone but the remote provisioner sign with it", () => {
+    const signer = logicalId("AWS::IAM::Role", { RoleName: `Mango-${ns}-RemoteMcpProvisioner` });
+    const signing = allStatements().filter(
+      ({ statement }) =>
+        statement.Effect === "Allow" &&
+        actions(statement).some((a) => a === "kms:Sign" || a === "kms:*") &&
+        text(statement.Resource).includes(keyId),
+    );
+    // The remote MCP provisioner (PR-4), and only it, by an identity policy too.
+    expect(signing.map(({ roles }) => roles)).toEqual([[signer]]);
   });
 });
 

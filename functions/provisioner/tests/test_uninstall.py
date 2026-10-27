@@ -57,6 +57,15 @@ class AgentCore:
             {"name": "Mango_acme_mcp_aws_pricing_0", "policyId": "p1"},
             {"name": "Mango_acme_connector_rule", "policyId": "p0"},
             {"name": "Mango_other_mcp_aws_pricing_0", "policyId": "p2"},
+            {"name": "Mango_acme_remote_abcdefghij23_1", "policyId": "p3"},
+            {"name": "Mango_other_remote_abcdefghij23_1", "policyId": "p4"},
+        ]
+        # OAuth2 providers of remote MCPs (D98), and those of something else.
+        self.providers = [
+            "Mango-acme-remote-abcdefghij23-g1",
+            "Mango-acme-remote-abcdefghij23-g2",
+            "Mango-other-remote-abcdefghij23-g1",
+            "github-of-someone",
         ]
         self.runtimes = {
             "Mango_acme_mcp_aws_pricing-AAAAAAAAAA": ["DEFAULT", "live"],
@@ -78,11 +87,13 @@ class AgentCore:
         guard = self
 
         class Pages:
-            def paginate(self, **arguments: str) -> list[dict[str, Any]]:
+            def paginate(self, **arguments: str) -> list[dict[str, Any]]:  # noqa: PLR0911
                 if operation == "list_gateway_targets":
                     return [{"items": list(guard.targets)}]
                 if operation == "list_policies":
                     return [{"policies": list(guard.policies)}]
+                if operation == "list_oauth2_credential_providers":
+                    return [{"credentialProviders": [{"name": n} for n in guard.providers]}]
                 if operation == "list_agent_runtimes":
                     return [
                         {
@@ -136,6 +147,10 @@ class AgentCore:
         assert gatewayIdentifier == SETTINGS.gateway_id
         self.calls.append(f"target:{targetId}")
         self.targets = [t for t in self.targets if t["targetId"] != targetId]
+
+    def delete_oauth2_credential_provider(self, name: str) -> None:
+        self.calls.append(f"provider:{name}")
+        self.providers = [n for n in self.providers if n != name]
 
     def delete_policy(self, policyEngineId: str, policyId: str) -> None:  # noqa: N803
         self.calls.append(f"policy:{policyId}")
@@ -296,7 +311,7 @@ def test_removes_every_agent_and_pack_of_the_installation_and_nothing_else() -> 
     ac = run.agentcore
     # Connector targets and policies of the stack, and everything of another installation, stay.
     assert [t["name"] for t in ac.targets] == ["cost-explorer"]
-    assert [p["policyId"] for p in ac.policies] == ["p0", "p2"]
+    assert [p["policyId"] for p in ac.policies] == ["p0", "p2", "p4"]
     assert sorted(ac.runtimes) == [
         "Mango_other_mcp_aws_pricing-CCCCCCCCCC",
         "harness_Mango_acme_a_finops-BBBBBBBBBB",
@@ -810,3 +825,11 @@ def test_settings_reject_anything_but_well_formed_names() -> None:
     ]:
         with pytest.raises(ValueError, match=key.split("_")[0]):
             GuardSettings.from_env({**env, key: bad})
+
+
+def test_removes_the_remote_mcp_policies_and_providers_of_this_installation_only() -> None:
+    run = Run()
+    agentcore = run.agentcore
+    assert "policy:p3" in agentcore.calls
+    assert "policy:p4" not in agentcore.calls
+    assert agentcore.providers == ["Mango-other-remote-abcdefghij23-g1", "github-of-someone"]

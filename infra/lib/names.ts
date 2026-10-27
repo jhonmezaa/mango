@@ -105,6 +105,23 @@ export const packNames = {
   artifactPrefix: "packs/",
 };
 
+/**
+ * Names of what is created per remote MCP registration (D98 (11)). Keep in sync with
+ * `packages/py/mango-core/src/mango_core/remote_mcp.py`.
+ */
+export const remoteNames = {
+  /** Gateway targets: `remote-<registration>`. */
+  targetPrefix: "remote-",
+  /** Cedar policies of a target: `Mango_<ns>_remote_<registration>_<n>`. */
+  policyPrefix: (ns: string) => `Mango_${ns}_remote_`,
+  /** OAuth2 providers of AgentCore Identity: `Mango-<ns>-remote-<registration>-g<n>`. */
+  providerPrefix: (ns: string) => mangoName(ns, "remote-"),
+  /** The key that signs the approved catalog (`ECC_NIST_P256`, `SIGN_VERIFY`). */
+  keyAlias: (ns: string) => `alias/${mangoName(ns, "remote-mcp")}`,
+  /** Route of the SPA where Identity sends the browser back (D98 (1)). */
+  returnPath: "/conexiones/vuelta",
+};
+
 export function roleArn(accountId: string, roleName: string): string {
   return `arn:aws:iam::${accountId}:role/${roleName}`;
 }

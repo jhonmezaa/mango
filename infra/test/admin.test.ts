@@ -87,6 +87,9 @@ describe("Admin v0 infrastructure (D17)", () => {
     const packProvisionerRoleId = Object.keys(
       template.findResources("AWS::IAM::Role", { Properties: { RoleName: "Mango-poc-PackProvisioner" } }),
     )[0]!;
+    const remoteProvisionerRoleId = Object.keys(
+      template.findResources("AWS::IAM::Role", { Properties: { RoleName: "Mango-poc-RemoteMcpProvisioner" } }),
+    )[0]!;
     for (const { roles, statement } of writers) {
       if (roles.includes(apiRoleId)) continue;
       if (roles.includes(responseInterceptorRoleId)) {
@@ -94,6 +97,13 @@ describe("Admin v0 infrastructure (D17)", () => {
         // MCP servers only, by PutItem and with their attributes.
         expect(actions(statement)).toEqual(["dynamodb:PutItem"]);
         expect(statement.Condition?.["ForAllValues:StringLike"]?.["dynamodb:LeadingKeys"]).toEqual(["MCP_CONSENT#*"]);
+        continue;
+      }
+      if (roles.includes(remoteProvisionerRoleId)) {
+        // Remote MCP provisioner (D98): the lifecycle of a registration and the signed catalog.
+        const keys = statement.Condition?.["ForAllValues:StringLike"]?.["dynamodb:LeadingKeys"] as string[];
+        expect(keys.length).toBe(1);
+        expect(["REMOTE#*", "MCP_REMOTE#*"]).toContain(keys[0]);
         continue;
       }
       if (roles.includes(packProvisionerRoleId)) {

@@ -41,9 +41,10 @@ import {
 } from "../constructs/pack-platform.js";
 import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-provisioner.js";
 import { PLAYGROUND_PARTITION, PlaygroundHarness } from "../constructs/playground.js";
+import { RemoteMcpProvisioner } from "../constructs/remote-provisioner.js";
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
-import { APPROVED_REMOTE_PARTITION } from "../constructs/remote-mcp-api.js";
+import { APPROVED_REMOTE_PARTITION, remoteProvisionerName } from "../constructs/remote-mcp-api.js";
 import { RemoteRelease } from "../constructs/remote-release.js";
 import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
 import { TaskReports } from "../constructs/task-reports.js";
@@ -417,6 +418,23 @@ export class CoreStack extends Stack {
       settingsTable: governance.settings,
       release: remoteRelease,
     });
+    // Its provisioner makes the `remote-<reg>` targets and is the only one that signs the
+    // approved catalog (TM-012); mango-api starts it by name, from `Mango-<ns>-ApiRemoteMcp`.
+    new RemoteMcpProvisioner(remoteMcp, "RemoteMcpProvisioner", {
+      installation: remoteMcp.installation,
+      settingsTable: governance.settings,
+      auditIndex: governance.auditIndex,
+      auditStream: governance.auditStream,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+      gateway: tools.gateway,
+      policyEngine: tools.policyEngine,
+      connectorTargets: tools.connectorTargets,
+      remotes: remoteRelease,
+      signingPublicKey: packRelease.signingPublicKey,
+      appOrigin: edge.origin,
+      signingKey: tools.remoteMcpKey,
+    });
     apiTaskRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "AuxiliaryModel",
@@ -684,6 +702,10 @@ export class CoreStack extends Stack {
     new CfnOutput(this, "AgentProvisionerArn", { value: provisioner.stateMachine.stateMachineArn });
     new CfnOutput(this, "AgentDeprovisionerArn", { value: deprovisioner.stateMachine.stateMachineArn });
     new CfnOutput(this, "PackProvisionerArn", { value: packProvisioner.stateMachine.stateMachineArn });
+    // Named, not read from the nested stack: Core reads none of its outputs (D99).
+    new CfnOutput(this, "RemoteMcpProvisionerArn", {
+      value: `arn:${this.partition}:states:${this.region}:${this.account}:stateMachine:${remoteProvisionerName(cfg.namespace)}`,
+    });
     new CfnOutput(this, "PacksBucket", { value: packPlatform.bucket.bucketName });
     if (ownPackNetwork) {
       // The construct is `PackNetwork`; the output keeps that name for the operator.

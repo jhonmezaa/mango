@@ -83,8 +83,8 @@ export interface RemoteMcpStackProps {
 
 /**
  * Remote MCP servers of third parties (D93, D98): the place of what the remote MCP build adds
- * to Core. It starts with what mango-api needs for the registrations (`Mango-<ns>-ApiRemoteMcp`);
- * the remote provisioner comes next. A construct goes here by taking this stack as its scope,
+ * to Core: what mango-api needs for the registrations (`Mango-<ns>-ApiRemoteMcp`) and the remote
+ * provisioner (`Mango-<ns>-RemoteMcpProvisioner`, D98 (13)). A construct goes here by taking this stack as its scope,
  * `new RemoteMcpProvisioner(remoteMcp, "Provisioner", { … })`; the Core resources it names
  * (Gateway, policy engine, tables, keys) reach it as parameters.
  *
@@ -95,12 +95,15 @@ export interface RemoteMcpStackProps {
  * made of names, never of this stack's outputs.
  */
 export class RemoteMcpStack extends CoreNestedStack {
+  /** The installation as this stack names it: what a construct of it takes (`namespaceOf`). */
+  readonly installation: Installation;
   readonly api: RemoteMcpApi;
 
   constructor(scope: Construct, id: string, props: RemoteMcpStackProps) {
     super(scope, id, "remote MCP servers");
+    this.installation = this.namespaceOf(props.installation);
     this.api = new RemoteMcpApi(this, "RemoteMcpApi", {
-      namespace: this.namespaceOf(props.installation).namespace,
+      namespace: this.installation.namespace,
       coreNamespace: props.installation.namespace,
       role: props.apiTaskRole,
       settingsTable: props.settingsTable,

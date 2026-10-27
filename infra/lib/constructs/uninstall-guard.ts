@@ -8,7 +8,7 @@ import * as sqs from "aws-cdk-lib/aws-sqs";
 import { Construct, IConstruct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { acknowledge, REASONS } from "../nag.js";
-import { agentNames, mangoName, packNames, roleNames } from "../names.js";
+import { agentNames, mangoName, packNames, remoteNames, roleNames } from "../names.js";
 import { AgentPlatform } from "./agent-platform.js";
 import { Alerts } from "./alerts.js";
 import { PackPlatform } from "./pack-platform.js";
@@ -95,7 +95,15 @@ export class UninstallGuard extends Construct {
 
     // The one fact that decides whether it acts at all.
     allow("ReadOwnStackStatus", ["cloudformation:DescribeStacks"], [stack.stackId]);
-    allow("FindWhatProvisionersCreated", ["bedrock-agentcore:ListHarnesses", "bedrock-agentcore:ListAgentRuntimes"], ["*"]);
+    allow(
+      "FindWhatProvisionersCreated",
+      [
+        "bedrock-agentcore:ListHarnesses",
+        "bedrock-agentcore:ListAgentRuntimes",
+        "bedrock-agentcore:ListOauth2CredentialProviders",
+      ],
+      ["*"],
+    );
     allow(
       "DeleteAgentHarnesses",
       [
@@ -137,8 +145,19 @@ export class UninstallGuard extends Construct {
     allow(
       "DeletePackPolicies",
       ["bedrock-agentcore:ListPolicies", "bedrock-agentcore:DeletePolicy"],
-      [policyEngineArn, `${policyEngineArn}/policy/${packNames.policyPrefix(ns)}*`],
+      [
+        policyEngineArn,
+        `${policyEngineArn}/policy/${packNames.policyPrefix(ns)}*`,
+        // Those of the remote MCP targets (D98 (11)); the targets go with the packs' above.
+        `${policyEngineArn}/policy/${remoteNames.policyPrefix(ns)}*`,
+      ],
     );
+    // The OAuth2 providers of remote MCPs (D93 (7)): created by mango-api, never by the stack.
+    // Identity takes the secret of each with it; whether it asks the caller for more is to be
+    // seen live (D98, V-1), and is not granted before.
+    const tokenVault = `${agentcore}:token-vault/default`;
+    const remoteProviders = `${tokenVault}/oauth2credentialprovider/${remoteNames.providerPrefix(ns)}*`;
+    allow("DeleteRemoteProviders", ["bedrock-agentcore:DeleteOauth2CredentialProvider"], [tokenVault, remoteProviders]);
     // A pack's Cedar policy is scoped to this Gateway, and AgentCore authorizes deleting it
     // against the Gateway too: without this, DeletePolicy is denied and the stack deletion
     // fails with the installation half deleted (seen on 2026-10-07, D58 (13)). It is not an
@@ -244,7 +263,8 @@ export class UninstallGuard extends Construct {
         id: "AwsSolutions-IAM5[Resource::*]",
         reason:
           `${REASONS.xray} bedrock-agentcore:ListHarnesses, bedrock-agentcore:ListAgentRuntimes, iam:ListRoles and ` +
-          "logs:DescribeLogGroups have no resource scope; they only list names.",
+          "logs:DescribeLogGroups have no resource scope; bedrock-agentcore:ListOauth2CredentialProviders is " +
+          "granted on * until its scope is confirmed live (D98, V-1). They only list names.",
       },
       ...[
         platform.harnessArns,
@@ -256,6 +276,8 @@ export class UninstallGuard extends Construct {
         `${workloadIdentities}/workload-identity/${agentNames.runtimePrefix(ns)}*`,
         `${workloadIdentities}/workload-identity/${packNames.runtimePrefix(ns)}*`,
         `${policyEngineArn}/policy/${packNames.policyPrefix(ns)}*`,
+        `${policyEngineArn}/policy/${remoteNames.policyPrefix(ns)}*`,
+        remoteProviders,
         ...roles,
         platform.runtimeLogGroupArns,
         packs.runtimeLogGroupArns,
