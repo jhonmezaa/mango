@@ -351,6 +351,23 @@ def test_a_skill_that_is_not_approved_is_not_tested(env: Env) -> None:  # noqa: 
     with pytest.raises(ApiError) as caught:
         playground._prepare(deps, draft["agent_id"], _body(draft))
     assert (caught.value.status, caught.value.code) == (422, "skill_unavailable")
+    # It names which ones, as `id@version` only (design round 23).
+    assert caught.value.extra == {"skills": [SKILL_REF]}
+
+
+def test_only_the_skills_that_are_not_approved_are_named(env: Env) -> None:  # noqa: F811
+    from mango_api import playground  # noqa: PLC0415
+    from mango_api.web import ApiError  # noqa: PLC0415
+
+    env.db.put_item(
+        TableName="settings",
+        Item=PlaygroundHarness(PLAYGROUND, "2", (SONNET,), "now", skills=True).item(),
+    )
+    draft = _create(env, skills=["alertas@1", SKILL_REF, "costos-ec2@3"])
+    deps, _ = _deps(env, FakeSkills({SKILL_REF}))
+    with pytest.raises(ApiError) as caught:
+        playground._prepare(deps, draft["agent_id"], _body(draft))
+    assert caught.value.extra == {"skills": ["alertas@1", "costos-ec2@3"]}
 
 
 @pytest.mark.parametrize("case", ["role_reads_none", "no_bucket", "no_registry"])

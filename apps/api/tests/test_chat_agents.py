@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from mango_core import invocation
 
 from .release_seed import publish_version, seed_release_agent
@@ -252,3 +254,87 @@ def test_finops_is_served_once_seeded_and_published(env: Env) -> None:  # noqa: 
     assert (detail.status_code, detail.json()["name"]) == (200, "FinOps")
     listed = env.client.get("/api/agents", headers=_h("lead")).json()["items"]
     assert [a["id"] for a in listed] == ["finops"]
+
+
+# --- What the chat says the agent may use (D92 (8)) ---------------------------------------
+
+
+class _Skills:
+    """The skills registry: approved versions by ref, or a table that cannot be read."""
+
+    def __init__(self, approved: dict[str, Any], *, down: bool = False) -> None:
+        self._approved, self._down = approved, down
+
+    def approved(self, refs: dict[str, tuple[str, int]]) -> dict[str, Any]:
+        if self._down:
+            raise ClientError({"Error": {"Code": "ProvisionedThroughputExceededException"}}, "Get")
+        return {ref: self._approved[ref] for ref in refs if ref in self._approved}
+
+
+def _skill(skill_id: str, version: int, name: str, description: str) -> Any:
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from mango_api.skills_store import SkillVersion  # noqa: PLC0415
+    from mango_core.skills import SkillContent  # noqa: PLC0415
+
+    content = SkillContent(
+        name=name,
+        description=description,
+        category="FinOps",
+        instructions="Instrucciones que nunca salen al chat.",
+        servers=("cost-explorer",),
+    )
+    return SkillVersion(
+        skill_id=skill_id,
+        version=version,
+        content=content,
+        markdown_sha256="0" * 64,
+        proposed_by="creator-1",
+        proposed_by_email=None,
+        approved_by="admin-1",
+        approved_by_email=None,
+        approved_at=datetime(2026, 10, 25, tzinfo=UTC),
+        change_id="0" * 32,
+    )
+
+
+SKILLS = {
+    "revisar-costos@2": _skill("revisar-costos", 2, "Revisar costos", "Compara meses."),
+    "alertas@1": _skill("alertas", 1, "Alertas", "Explica alarmas."),
+}
+
+
+def test_the_detail_lists_the_skills_of_the_served_version_to_its_users(env: Env) -> None:  # noqa: F811
+    env.deps.skills = _Skills(SKILLS)  # type: ignore[assignment]
+    agent = _published(env, groups=["hr"], skills=["revisar-costos@2", "alertas@1"])
+    agent_id = agent["agent_id"]
+    response = env.client.get(f"/api/agents/{agent_id}", headers=_h("member"))
+    assert response.status_code == 200
+    # Name, description and version, in the version's order (sorted); never the instructions.
+    assert response.json()["skills"] == [
+        {"id": "alertas", "version": 1, "name": "Alertas", "description": "Explica alarmas."},
+        {
+            "id": "revisar-costos",
+            "version": 2,
+            "name": "Revisar costos",
+            "description": "Compara meses.",
+        },
+    ]
+    assert "Instrucciones" not in response.text
+    # The list of the marketplace reads no skills.
+    listed = env.client.get("/api/agents", headers=_h("member")).json()["items"]
+    assert [a["skills"] for a in listed if a["id"] == agent_id] == [None]
+    # Whoever may not use the agent learns nothing of it.
+    assert env.client.get(f"/api/agents/{agent_id}", headers=_h("creator2")).status_code == 403
+
+
+def test_without_skills_the_detail_says_so_and_a_broken_registry_does_not_fail_it(
+    env: Env,  # noqa: F811
+) -> None:
+    env.deps.skills = _Skills(SKILLS)  # type: ignore[assignment]
+    plain = _published(env, groups=["hr"])["agent_id"]
+    assert env.client.get(f"/api/agents/{plain}", headers=_h("member")).json()["skills"] == []
+    with_skills = _published(env, groups=["hr"], skills=["alertas@1"])["agent_id"]
+    env.deps.skills = _Skills(SKILLS, down=True)  # type: ignore[assignment]
+    response = env.client.get(f"/api/agents/{with_skills}", headers=_h("member"))
+    assert (response.status_code, response.json()["skills"]) == (200, None)

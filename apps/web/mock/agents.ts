@@ -471,6 +471,12 @@ function seedAgents(): void {
 }
 seedAgents();
 
+/** Skills of a version as the detail shows them; `skills.ts` sets it (it imports this module). */
+let detailSkills: (refs: readonly string[]) => unknown[] = () => [];
+export function setDetailSkills(read: (refs: readonly string[]) => unknown[]) {
+  detailSkills = read;
+}
+
 /** GET /agents/{id}: the published (or retired) version of an agent, as the chat reads it. */
 export const handleAgents: ApiHandler = (req, res, path) => {
   const match = /^\/agents\/([a-z0-9-]{1,64})$/.exec(path);
@@ -482,6 +488,10 @@ export const handleAgents: ApiHandler = (req, res, path) => {
     sendError(res, 404, 'not_found', 'Agent not found');
     return Promise.resolve(true);
   }
-  sendJson(res, 200, agentOut(agent, version));
+  // Only the detail carries the skills of the version (D95).
+  sendJson(res, 200, {
+    ...agentOut(agent, version),
+    skills: detailSkills(version.definition.skills),
+  });
   return Promise.resolve(true);
 };

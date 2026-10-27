@@ -35,6 +35,8 @@ interface Props {
   modelB: string | null;
   otherModels: readonly Model[];
   onModelB: (model: string) => void;
+  /** `id@version` of the skills the server said are no longer approved. */
+  offSkills: readonly string[];
   /** «Antes de enviar», already as text; drafts only. */
   problems: readonly string[];
 }
@@ -248,12 +250,19 @@ function VersionFields(props: Props & { version: Version }) {
         <>
           <Label>{t('playground.skills.label', { count: skills.length })}</Label>
           <div className="pg-tools">
-            {skills.map((skill) => (
-              <div key={skill.ref} className="pg-tool">
-                <span>{skill.name}</span>
-                <span className="mono mk-meta">v{skill.number}</span>
-              </div>
-            ))}
+            {skills.map((skill) => {
+              const off = props.offSkills.includes(skill.ref);
+              return (
+                <div key={skill.ref} className={off ? 'pg-tool off' : 'pg-tool'}>
+                  <span>{skill.name}</span>
+                  {off ? (
+                    <span className="badge badge-red">{t('playground.skills.notApproved')}</span>
+                  ) : (
+                    <span className="mono mk-meta">v{skill.number}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="mk-meta pg-note">{t('playground.skills.note')}</div>
         </>

@@ -75,6 +75,7 @@ export const playground = {
   skills: {
     label: 'Skills · {{count}}',
     note: 'Se cargan igual que en el agente publicado. Se cambian en el Agent Builder.',
+    notApproved: 'Ya no aprobada',
   },
   limits: {
     label: 'Límites',
@@ -190,6 +191,11 @@ export const playground = {
     skill: {
       title: 'Una skill de esta versión ya no está aprobada',
       body: 'Cámbiala en el Agent Builder para probar.',
+      // `skills`: «Revisar costos v2», or a list of them.
+      named_one: '{{skills}} ya no está aprobada. Cámbiala en el Agent Builder para probar.',
+      named_other: '{{skills}} ya no están aprobadas. Cámbialas en el Agent Builder para probar.',
+      skillVersion: '{{name}} v{{version}}',
+      open: 'Abrir en el Agent Builder',
     },
     skills: {
       title: 'No se pudieron cargar las skills de esta versión',

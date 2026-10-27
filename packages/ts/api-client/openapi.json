@@ -874,6 +874,20 @@
             "title": "Role",
             "type": "string"
           },
+          "skills": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentSkillOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skills"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -953,6 +967,36 @@
           "groups_without_access"
         ],
         "title": "AgentRefOut",
+        "type": "object"
+      },
+      "AgentSkillOut": {
+        "additionalProperties": false,
+        "description": "A skill of the served version as its users see it (D92 (8)): never its instructions.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "name",
+          "description"
+        ],
+        "title": "AgentSkillOut",
         "type": "object"
       },
       "AgentStateOut": {

@@ -291,8 +291,15 @@ def _skill_sources(
         approved = deps.skills.approved({ref: parse_skill_ref(ref) for ref in refs})
     except (ClientError, BotoCoreError) as exc:
         raise ApiError(503, "skills_unavailable", "please try again") from exc
-    if set(approved) != set(refs):
-        raise ApiError(422, "skill_unavailable", "a skill of this version is not approved")
+    missing = sorted(set(refs) - set(approved))
+    if missing:
+        # The `id@version` refs only: whoever tests already sees them in the Builder.
+        raise ApiError(
+            422,
+            "skill_unavailable",
+            "a skill of this version is not approved",
+            extra={"skills": missing},
+        )
     pairs = sorted(parse_skill_ref(ref) for ref in refs)
     sources = tuple(
         {"s3": {"uri": s3_uri(deps.skills_bucket, skill_id, version)}}

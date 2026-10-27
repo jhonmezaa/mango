@@ -279,6 +279,8 @@ describe('mock agents', () => {
       // Only a flag: who created the agent is never part of the answer.
       is_mine: false,
       cleanup: null,
+      // Only the detail carries the skills of the version (D95); FinOps has none.
+      skills: [],
     });
     expect(zGetAgentResponse.parse(body)).toEqual(body);
   });

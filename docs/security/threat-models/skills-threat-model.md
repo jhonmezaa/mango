@@ -31,7 +31,7 @@ Controles que se construyen:
 ## Scope and assumptions
 
 - **Dentro:** proponer, aprobar, rechazar y retirar versiones; leer el catálogo y el detalle; las reglas al enviar un agente con skills; la configuración del harness y del rol; la tool `skills` en el stream; la tabla, el bucket, la llave y el boundary.
-- **Fuera:** la web (espera a Claude Design, D24); skills con scripts, `references/` y `assets/` (fuera de v1); el botón «Skill» del chat (Próximamente).
+- **Fuera:** la web (espera a Claude Design, D24); skills con scripts, `references/` y `assets/` (fuera de v1); el botón «Skill» del chat (quitado en la ronda de diseño 23). Desde D95 (2026-10-26), quien usa un agente ve en el chat nombre, descripción y versión de las skills de su versión (`GET /api/agents/{id}`, `UseAgent`), nunca sus instrucciones: el harness ya pone esos dos textos en el prompt del agente, así que no expone nada que el agente no pueda decir.
 - **Supuestos (confirmados por el dueño el 2026-10-25):**
   1. Un creador de agentes es un empleado autenticado, no un admin, y puede ser malicioso o estar comprometido.
   2. El texto de una skill no lleva secretos pero puede contener procedimientos internos: lo ven admins y creadores, como un system prompt en el Builder.

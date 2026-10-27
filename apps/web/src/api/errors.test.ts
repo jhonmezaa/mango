@@ -65,6 +65,23 @@ describe('apiErrorFromResponse', () => {
     expect([error.status, error.code, error.violations]).toEqual([422, 'http_422', null]);
   });
 
+  it('keeps the skills a skill_unavailable names, and nothing that is not a skill ref', async () => {
+    const error = await apiErrorFromResponse(
+      json(422, {
+        error: { code: 'skill_unavailable', message: 'x' },
+        skills: ['revisar-costos@2', 'alertas@1'],
+      }),
+    );
+    expect([error.code, error.skills]).toEqual([
+      'skill_unavailable',
+      ['revisar-costos@2', 'alertas@1'],
+    ]);
+    const forged = await apiErrorFromResponse(
+      json(422, { error: { code: 'skill_unavailable', message: 'x' }, skills: ['<b>x</b>'] }),
+    );
+    expect([forged.code, forged.skills]).toEqual(['http_422', null]);
+  });
+
   it('reads Retry-After of a 429 and tolerates a body that is not JSON', async () => {
     const limited = await apiErrorFromResponse(
       json(429, { error: { code: 'submission_limit', message: 'x' } }, { 'Retry-After': '120' }),

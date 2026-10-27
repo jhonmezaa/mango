@@ -131,7 +131,9 @@ describe('blocks', () => {
     expect(of(409, 'model_unavailable')).toEqual({ kind: 'model', reason: 'off' });
     expect(of(422, 'model_without_tools')).toEqual({ kind: 'model', reason: 'noTools' });
     expect(of(409, 'version_not_testable')).toEqual({ kind: 'notTestable' });
-    expect(of(422, 'skill_unavailable')).toEqual({ kind: 'skill' });
+    expect(of(422, 'skill_unavailable')).toEqual({ kind: 'skill', refs: [] });
+    const named = new ApiError(422, 'skill_unavailable', 'x', null, null, ['alertas@1']);
+    expect(blockOfError(named, now)).toEqual({ kind: 'skill', refs: ['alertas@1'] });
     expect(of(503, 'skills_unavailable')).toEqual({ kind: 'skills' });
     expect(of(409, 'agent_retired')).toEqual({ kind: 'retired' });
     expect(of(409, 'version_conflict')).toBeNull();

@@ -1,15 +1,12 @@
 import { useTranslation } from 'react-i18next';
 
-import { serverCount, type Agent } from '../../agents/agents';
-import { ActivityIcon, ChatIcon, CloudIcon, MoreIcon, SkillIcon } from '../icons';
+import type { Agent } from '../../agents/agents';
+import { ActivityIcon, ChatIcon, MoreIcon } from '../icons';
 import { Soon } from '../Soon';
 import { Topbar } from '../Topbar';
 import { ChatAgentAvatar } from './ChatAgentAvatar';
 import { ModelSwitcher } from './ModelSwitcher';
-
-// Skills are not part of an agent yet (D38): the count is only shown inside the "Próximamente"
-// trigger of the design.
-const SKILL_COUNT = 0;
+import { ToolsPopover } from './ToolsPopover';
 
 interface Props {
   /** The agent of the conversation; null while it is not known. */
@@ -29,12 +26,12 @@ interface Props {
 
 /**
  * Chat header (design: chat.jsx ChatHeader): the agent of the conversation and the model
- * switcher among the models its approved version allows. The API exposes no thread cost or
- * skills, so the cost, the skills/MCP popover and "Más opciones" are "Próximamente"; "Observar"
- * works on the live stream. It is rendered inside the shell Topbar, which supplies the rest of
+ * switcher among the models its approved version allows. «Qué puede usar» lists the skills and
+ * tools of the version that answers (D92 (8)). The API exposes no thread cost, so the cost and
+ * "Más opciones" are "Próximamente"; "Observar" works on the live stream. It is rendered inside the shell Topbar, which supplies the rest of
  * the design's chat header exactly once: the menu button (≤900px), the separator, the gear
  * (admins only) and the round "+" (new conversation with this agent). The "Próximamente"
- * controls hide at 1000, 860 and 640px like the design (chat.css). Like the hero, it shows no
+ * controls and the popover hide at 1000, 860 and 640px like the design (chat.css). Like the hero, it shows no
  * «En línea» dot: the API does not say whether an agent is online. The agent's name comes from
  * its creator and is rendered as text.
  */
@@ -77,15 +74,7 @@ export function ChatHeader({
           >
             <ActivityIcon size={12} />
           </button>
-          <Soon
-            name={t('soon.item', { label: t('chat.header.tools') })}
-            className="chat-soon-tools"
-          >
-            <span className="btn btn-sm">
-              <SkillIcon size={11} /> {SKILL_COUNT} · <CloudIcon size={11} />{' '}
-              {agent ? serverCount(agent.tools) : 0}
-            </span>
-          </Soon>
+          {agent && <ToolsPopover key={agent.id} agent={agent} />}
           <Soon name={t('soon.item', { label: t('chat.header.more') })} className="chat-soon-more">
             <span className="btn btn-sm btn-ghost btn-icon">
               <MoreIcon size={13} />

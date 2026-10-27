@@ -161,7 +161,9 @@ export function applyEvent(entry: Entry, event: PlaygroundEvent, now: number): E
  * design for budget and rate, plus the ones agreed for codes the design does not draw.
  */
 export type Block =
-  | { kind: 'budgetUser' | 'budgetAgent' | 'notTestable' | 'skill' | 'skills' | 'retired' }
+  | { kind: 'budgetUser' | 'budgetAgent' | 'notTestable' | 'skills' | 'retired' }
+  /** `refs`: the `id@version` the server named; empty when it named none. */
+  | { kind: 'skill'; refs: readonly string[] }
   | { kind: 'model'; reason: 'off' | 'noTools' }
   | { kind: 'rate'; until: number }
   | { kind: 'unavailable' };
@@ -187,7 +189,7 @@ export function blockOfError(error: unknown, now: number): Block | null {
     case 'version_not_testable':
       return { kind: 'notTestable' };
     case 'skill_unavailable':
-      return { kind: 'skill' };
+      return { kind: 'skill', refs: error.skills ?? [] };
     case 'skills_unavailable':
       return { kind: 'skills' };
     case 'agent_retired':
