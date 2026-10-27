@@ -9,6 +9,7 @@ import { ADMIN_ID, ORGANIZATION, businessUnitsFixture } from '../test/adminFixtu
 import { baseMe, sessionValue, testConfig } from '../test/fixtures';
 import { TestProviders } from '../test/TestProviders';
 import { AdminSettingsPage } from './AdminSettingsPage';
+import { emptyRemoteCatalog } from './remoteMcp/testFixtures';
 
 const FUTURE = '2999-01-01T00:00:00Z';
 
@@ -63,6 +64,8 @@ function renderPage(
   const call = vi.fn((operation: string, ...args: unknown[]) => {
     if (operation === 'searchPeople') return Promise.resolve(directory(page.admins ?? 2));
     if (operation === 'getMemberChanges') return Promise.resolve({ items: [] });
+    // Conectividad › Servicios externos: none in these tests (remoteMcp/ has its own).
+    if (operation === 'getRemoteCatalog') return Promise.resolve(emptyRemoteCatalog());
     if (operation === 'getMemberHealth') {
       // D84: by default a daily check that found no target accounts (the section is hidden).
       const health = page.health ?? { ...NO_HEALTH };

@@ -27,6 +27,8 @@ import { ApprovalDecision } from '../approvals/ApprovalDecision';
 import type { Approval } from '../approvals/model';
 import { SourceDecision, SourceFacts } from '../approvals/SourceCard';
 import { knowledgePath } from '../approvals/sources';
+import { RemoteInboxDetail, RemoteInboxRow } from '../remoteMcp/inbox';
+import { useRemoteInbox } from '../remoteMcp/inboxItems';
 import { ReportDownload } from '../schedules/reports';
 import {
   SOON_TABS,
@@ -153,6 +155,7 @@ export function InboxPage() {
   const [more, setMore] = useState<'loading' | 'error' | null>(null);
   const narrow = useMediaQuery(NARROW_QUERY);
   const detailTitle = useRef<HTMLHeadingElement | null>(null);
+  const remoteItems = useRemoteInbox(api, me.is_admin);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -354,6 +357,10 @@ export function InboxPage() {
 
   const list = ready ? ready.items.filter((item) => matchesView(item, view)) : [];
   const current = ready?.items.find((item) => keyOf(item) === selectedKey) ?? null;
+  // Requests of remote services for administrators, on top (design `RM.inboxItems`). They have
+  // no read or archived state on the server, so only «Todo» and «Aprobaciones» list them.
+  const remoteShown = view === 'all' || view === 'approvals' ? remoteItems : [];
+  const currentRemote = remoteShown.find((item) => item.key === selectedKey) ?? null;
   const unread = inboxUnread ?? 0;
 
   const selectTab = (tab: InboxTab | 'archived') => {
@@ -467,7 +474,16 @@ export function InboxPage() {
             </div>
           ) : (
             <div role="listbox" aria-label={t('inbox.listLabel')}>
-              {list.length === 0 ? (
+              {remoteShown.map((item) => (
+                <RemoteInboxRow
+                  key={item.key}
+                  item={item}
+                  active={item.key === selectedKey}
+                  now={now}
+                  onOpen={setSelectedKey}
+                />
+              ))}
+              {list.length === 0 && remoteShown.length === 0 ? (
                 <div className="inbox-empty">
                   {cursor && isPagedView(view) ? t('inbox.emptyWithMore') : t('inbox.empty')}
                 </div>
@@ -615,6 +631,13 @@ export function InboxPage() {
                 {current.run?.ok ? <RunPdf key={current.item_id} api={api} item={current} /> : null}
               </div>
             </div>
+          ) : currentRemote ? (
+            <RemoteInboxDetail
+              item={currentRemote}
+              now={now}
+              titleRef={detailTitle}
+              onBack={back}
+            />
           ) : (
             <div className="inbox-pick">
               <InboxIcon size={22} />

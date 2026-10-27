@@ -47,9 +47,8 @@ test.describe('MCP catalog: request, approve and disable a pack', () => {
     await expect(row(page, 'AWS Pricing')).toContainText('Próximamente');
     await expect(row(page, 'AWS Cost Explorer')).toContainText('Por usuario');
     await expect(row(page, 'AWS Billing')).toContainText('Solo centrales');
-    await expect(
-      page.getByRole('button', { name: 'Conectar MCP por URL, próximamente' }),
-    ).toBeDisabled();
+    // With remote services (D93), the action of the bar adds one of them.
+    await expect(page.getByRole('button', { name: 'Agregar servicio externo' })).toBeVisible();
   });
 
   test('a request of another admin shows what it adds and its text as text', async () => {

@@ -10,6 +10,7 @@ import { fmtDate } from './govFormat';
 import { Banner, Empty, Spinner } from './govKit';
 import { MemberAccounts, type MemberAccess } from './MemberAccounts';
 import { MemberHealthSection, type MemberHealth } from './MemberHealth';
+import { RemoteConnBlock } from '../../pages/remoteMcp/settings';
 
 /**
  * The API allows 5 checks per minute per admin. After a 429 the button counts down the API's
@@ -246,6 +247,7 @@ export function ConnectivityTab() {
         <MemberAccounts access={membersFailed ? null : members} />
       ) : null}
       <MemberHealthSection health={health} />
+      <RemoteConnBlock />
     </section>
   );
 }

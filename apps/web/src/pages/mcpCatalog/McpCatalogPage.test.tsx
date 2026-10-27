@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../../api/client';
@@ -8,6 +9,7 @@ import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { McpCatalogPage } from './McpCatalogPage';
 import type { Catalog } from './model';
+import { emptyRemoteCatalog } from '../remoteMcp/testFixtures';
 import {
   ALL,
   CHANGE_ID,
@@ -31,8 +33,14 @@ import {
 function renderPage(call: ReturnType<typeof vi.fn>, isAdmin = true) {
   const api = { call } as unknown as ApiClient;
   render(
-    <TestProviders session={sessionValue({ api, me: { ...baseMe, is_admin: isAdmin } })}>
-      <McpCatalogPage />
+    <TestProviders
+      session={sessionValue({ api, me: { ...baseMe, is_admin: isAdmin } })}
+      path="/mcp"
+    >
+      {/* As in the app (`mcp/*`): the remote services open by path. */}
+      <Routes>
+        <Route path="/mcp/*" element={<McpCatalogPage />} />
+      </Routes>
     </TestProviders>,
   );
 }
@@ -40,6 +48,8 @@ function renderPage(call: ReturnType<typeof vi.fn>, isAdmin = true) {
 /** An API whose catalog is `initial` and whose writes answer with `next`. */
 function apiWith(initial: Catalog, next: Partial<Record<string, Catalog | Error>> = {}) {
   return vi.fn((operation: string) => {
+    // The remote services have their own tests (remoteMcp/); here the release has none.
+    if (operation === 'getRemoteCatalog') return Promise.resolve(emptyRemoteCatalog());
     const answer = operation === 'getCatalog' ? initial : next[operation];
     if (answer === undefined) return Promise.reject(new Error(`unexpected ${operation}`));
     return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
@@ -47,7 +57,13 @@ function apiWith(initial: Catalog, next: Partial<Record<string, Catalog | Error>
 }
 
 function writes(call: ReturnType<typeof vi.fn>) {
-  return call.mock.calls.filter(([operation]) => operation !== 'getCatalog');
+  return call.mock.calls.filter(
+    ([operation]) => operation !== 'getCatalog' && operation !== 'getRemoteCatalog',
+  );
+}
+
+function catalogReads(call: ReturnType<typeof vi.fn>) {
+  return call.mock.calls.filter(([operation]) => operation === 'getCatalog').length;
 }
 
 function rows() {
@@ -106,13 +122,15 @@ describe('McpCatalogPage', () => {
     expect(document.querySelector('img')).toBeNull();
   });
 
-  it('shows connecting an MCP by URL as "Próximamente"', async () => {
+  it('offers adding an external service instead of connecting an MCP by URL', async () => {
     renderPage(apiWith(catalog()));
-    const button = await screen.findByRole('button', {
-      name: 'Conectar MCP por URL, próximamente',
-    });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute('title', expect.stringContaining('OAuth'));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Agregar servicio externo' }));
+    expect(screen.queryByRole('button', { name: /Conectar MCP por URL/ })).toBeNull();
+    expect(await screen.findByRole('tab', { name: /Servicios externos/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 
   it('filters by kind, status, level and search, and clears the filters', async () => {
@@ -677,11 +695,11 @@ describe('McpCatalogPage', () => {
     expect(within(panel).getByRole('status')).toHaveTextContent(
       'Instalando · empezó hace 3 min. Puedes cerrar este panel.',
     );
-    expect(call).toHaveBeenCalledTimes(1);
+    expect(catalogReads(call)).toBe(1);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(call).toHaveBeenCalledTimes(2);
+    expect(catalogReads(call)).toBe(2);
   });
 
   it('does not poll when nothing is in progress', async () => {
@@ -692,7 +710,7 @@ describe('McpCatalogPage', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15_000);
     });
-    expect(call).toHaveBeenCalledTimes(1);
+    expect(catalogReads(call)).toBe(1);
   });
 
   it('lets a creator read the catalog, without requests or actions', async () => {

@@ -17,6 +17,7 @@ import { mcpCatalog } from './es/mcpCatalog';
 import { orgChart } from './es/orgChart';
 import { people } from './es/people';
 import { playground } from './es/playground';
+import { remoteMcp } from './es/remoteMcp';
 import { schedules } from './es/schedules';
 import { settings } from './es/settings';
 import { skills } from './es/skills';
@@ -50,6 +51,7 @@ export const es = {
   groups,
   people,
   mcpCatalog,
+  remoteMcp,
   approvals,
   schedules,
   inbox,

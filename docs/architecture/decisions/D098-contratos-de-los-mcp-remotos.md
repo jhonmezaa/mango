@@ -63,6 +63,8 @@ Volver a ponerlo en `false` no corta las llamadas de los registros que ya están
 
 La API se construye. La pantalla queda en «Próximamente» hasta que Claude Design la dibuje (D24).
 
+Mientras tanto, la web no muestra una solicitud `params` pendiente que se haya creado por la API: queda en la API hasta que el diseño la dibuje (elegido por el dueño el 2026-10-27, por menú: «No mostrarla»). «Cambiar tenant o app» muestra los toolsets y los grupos del registro sin dejar editarlos, porque esa solicitud no los cambia (elegido ese día, por menú: «Mostrarlos sin editar (Recomendada)»).
+
 **(9) El `session_id` fuera de los logs (respondido: «Quitarlo de los logs; si no se puede, excepción (Recomendada)»).**
 - **Dónde queda hoy.** Identity añade el `session_id` en la query de la URL de vuelta. La distribución de CloudFront usa hoy el registro estándar *legacy*, que siempre guarda la query (`cs-uri-query`).
 - **Qué se hace.** Antes de que exista la ruta de vuelta, el registro de CloudFront pasa al registro estándar v2, con selección de campos y sin `cs-uri-query`.
@@ -199,6 +201,11 @@ La conexión de cada persona (desde cuándo, y con qué `generation` del proveed
 - **En el chat y en las tareas:** el evento `remote_connection_required` (sin URL) y el aviso de la Bandeja `remote_connect`.
 
 Los textos los pone el diseño (D24). Los que falten van al brief siguiente.
+
+**Cómo los muestra la web de administración** (elegido por el dueño el 2026-10-27, por menú, al construir la web):
+- **La ficha muestra solo lo que trae el perfil firmado** (nombre, operador, host, toolsets con sus tools y permisos): la descripción del servicio, los requisitos y la descripción de cada permiso del diseño no están en el perfil y no se muestran («Ocultar lo que falta (Recomendada)»).
+- **Las solicitudes de alta en la Bandeja de los administradores las compone la web** desde `GET /api/mcp/remotes`: no tienen estado de leído ni de archivado en el servidor y salen de la Bandeja cuando alguien las decide («Componer en la web (Recomendada)»).
+- Los códigos sin texto en el diseño (`identity_unavailable`, `remote_disabled` de la instalación, `too_many_remotes`) se muestran con el error genérico.
 
 ### Lo que queda por ver en vivo antes de habilitarlo en un cliente
 

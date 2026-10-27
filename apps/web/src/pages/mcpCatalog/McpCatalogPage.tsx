@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams } from 'react-router';
 
 import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
@@ -13,6 +14,10 @@ import { Tabs } from '../../components/Tabs';
 import { Topbar } from '../../components/Topbar';
 import { formatRelative } from '../../lib/format';
 import { McpDetail, type PackAction } from './McpDetail';
+import { RemoteCatalogTab, RemoteRequests } from '../remoteMcp/catalog';
+import { parseRemotePath, pendingRows, remotePath, type Row } from '../remoteMcp/model';
+import { RemoteDetail } from '../remoteMcp/RemoteDetail';
+import { useRemoteActions, useRemoteCatalog } from '../remoteMcp/useRemoteCatalog';
 import {
   LEVELS,
   NO_FILTERS,
@@ -54,7 +59,7 @@ import {
 } from './parts';
 
 type LoadState = { kind: 'loading' } | { kind: 'ready'; data: Catalog } | { kind: 'error' };
-type Tab = 'catalog' | 'tools' | 'requests';
+type Tab = 'catalog' | 'tools' | 'remote' | 'requests';
 
 const PANEL_ID = 'mcp-panel';
 const KINDS: readonly KindFilter[] = ['all', 'connector', 'pack'];
@@ -387,6 +392,38 @@ export function McpCatalogPage() {
   const [tab, setTab] = useState<Tab>('catalog');
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [selected, setSelected] = useState<string | null>(null);
+  // Servicios externos (D93, D98): `/mcp/remote/<profile>/<row>` opens a card or a row of it, so
+  // Ajustes › Conectividad and the Bandeja can link here. The path is untrusted input.
+  const navigate = useNavigate();
+  const rest = useParams()['*'] ?? '';
+  const target = parseRemotePath(rest);
+  const remote = useRemoteCatalog(api);
+  const actRemote = useRemoteActions(api, remote.replace, notify);
+  const [groups, setGroups] = useState<string[] | null>(null);
+  const [lastRest, setLastRest] = useState<string | null>(null);
+  if (rest !== lastRest) {
+    // A new path (a link from elsewhere) picks the tab; the drawer follows the path below.
+    setLastRest(rest);
+    if (target) setTab('remote');
+  }
+  const remoteProfile = target?.profile ?? null;
+  const needGroups = me.is_admin && remoteProfile !== null && groups === null;
+  useEffect(() => {
+    if (!needGroups) return;
+    const controller = new AbortController();
+    api.call('listGroups', {}, { signal: controller.signal }).then(
+      (data) => {
+        setGroups(data.items.map((group) => group.id));
+      },
+      () => undefined,
+    );
+    return () => {
+      controller.abort();
+    };
+  }, [api, needGroups]);
+  const openRemote = (profileId?: string, row?: Row) => {
+    void navigate(remotePath(profileId, row));
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -513,6 +550,12 @@ export function McpCatalogPage() {
   };
 
   const crumbs = [t('mcpCatalog.crumbBuild'), t('mcpCatalog.title')];
+  const remoteData = remote.state.kind === 'ready' ? remote.state.data : null;
+  const remotePending = remoteData ? pendingRows(remoteData).length : 0;
+  const remoteDetail =
+    remoteData && remoteProfile
+      ? (remoteData.profiles.find((profile) => profile.id === remoteProfile) ?? null)
+      : null;
   if (forbidden) {
     return (
       <>
@@ -541,23 +584,24 @@ export function McpCatalogPage() {
       <Topbar
         crumbs={crumbs}
         actions={
+          // Design: with remote services, the action adds one of them (D93); connecting an MCP
+          // by URL stays out.
           <button
             type="button"
             className="btn btn-sm"
-            disabled
-            title={t('mcpCatalog.connectUrlTitle')}
-            aria-label={t('soon.item', { label: t('mcpCatalog.connectUrl') })}
+            onClick={() => {
+              openRemote();
+            }}
           >
             <PlusIcon size={12} />
-            <span className="mc-connect-label">{t('mcpCatalog.connectUrl')}</span>
-            <span className="badge mc-soon">{t('mcpCatalog.soonTag')}</span>
+            <span className="mc-connect-label">{t('remoteMcp.add')}</span>
           </button>
         }
       />
       <div className="content">
         <div className="page-head">
           <h1 className="page-title">{t('mcpCatalog.title')}</h1>
-          <p className="page-subtitle">{t('mcpCatalog.subtitle')}</p>
+          <p className="page-subtitle">{t('remoteMcp.subtitle')}</p>
         </div>
         {state.kind === 'error' ? (
           <div className="mc-body">
@@ -580,14 +624,24 @@ export function McpCatalogPage() {
                 idPrefix="mcp"
                 panelId={PANEL_ID}
                 active={tab}
-                onChange={setTab}
+                onChange={(next) => {
+                  setTab(next);
+                  // Leaving the tab closes a card the path had opened.
+                  if (target && next !== 'remote') void navigate('/mcp');
+                }}
                 tabs={[
                   { id: 'catalog', label: t('mcpCatalog.tabs.catalog'), count: servers.length },
                   { id: 'tools', label: t('mcpCatalog.tabs.tools'), count: tools.length },
                   {
+                    id: 'remote',
+                    label: t('remoteMcp.tab'),
+                    count: remoteData ? remoteData.profiles.length : null,
+                  },
+                  {
                     id: 'requests',
                     label: t('mcpCatalog.tabs.requests'),
-                    count: requests.length > 0 ? requests.length : null,
+                    count:
+                      requests.length + remotePending > 0 ? requests.length + remotePending : null,
                   },
                 ]}
               />
@@ -700,8 +754,35 @@ export function McpCatalogPage() {
                 )
               ) : tab === 'tools' ? (
                 <ToolsTable rows={tools} onOpen={setSelected} />
+              ) : tab === 'remote' ? (
+                remote.state.kind === 'error' ? (
+                  <GovErrorState
+                    title={t('remoteMcp.loadError')}
+                    body={t('admin.errors.unavailable')}
+                    onRetry={remote.retry}
+                  />
+                ) : remoteData === null ? (
+                  <div role="status" aria-label={t('remoteMcp.loading')}>
+                    <Skel h={160} className="rounded-xl" />
+                  </div>
+                ) : (
+                  <RemoteCatalogTab
+                    catalog={remoteData}
+                    onOpen={(profileId) => {
+                      openRemote(profileId);
+                    }}
+                  />
+                )
               ) : (
-                <Requests requests={requests} onOpen={setSelected} />
+                <>
+                  {remoteData ? (
+                    <RemoteRequests catalog={remoteData} meId={me.user_id} onOpen={openRemote} />
+                  ) : null}
+                  {/* Design: the packs' empty state only when nothing at all is waiting. */}
+                  {requests.length > 0 || remotePending === 0 ? (
+                    <Requests requests={requests} onOpen={setSelected} />
+                  ) : null}
+                </>
               )}
             </div>
           </>
@@ -717,6 +798,22 @@ export function McpCatalogPage() {
           onAction={act}
           onClose={() => {
             setSelected(null);
+          }}
+        />
+      ) : null}
+      {remoteDetail && remoteData && target ? (
+        <RemoteDetail
+          // A new panel per card and row: its forms never carry over to another one.
+          key={`${remoteDetail.id}:${target.row ?? ''}`}
+          profile={remoteDetail}
+          catalog={remoteData}
+          initialRow={target.row}
+          isAdmin={me.is_admin}
+          meId={me.user_id}
+          groups={groups}
+          onAct={actRemote}
+          onClose={() => {
+            openRemote();
           }}
         />
       ) : null}
