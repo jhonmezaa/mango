@@ -297,6 +297,15 @@ class VersionOut(_Strict):
     not be read."""
 
 
+class AgentSkillOut(_Strict):
+    """A skill of the served version as its users see it (D92 (8)): never its instructions."""
+
+    id: str
+    version: int
+    name: str
+    description: str
+
+
 class AgentOut(_Strict):
     """An agent as its users see it: no prompt and no access lists."""
 
@@ -327,6 +336,9 @@ class AgentOut(_Strict):
     cleanup: CleanupStatus | None = None
     """Administrators only, for a retired agent: how the removal of its AWS resources goes
     (D48). ``None`` when it is not known, and always for everyone else."""
+    skills: list[AgentSkillOut] | None = None
+    """Only in the detail: the approved skills of the served version, in its order (D92 (8),
+    the chat's «Qué puede usar»). ``None`` in the list and when the registry cannot be read."""
 
 
 class AgentList(_Strict):
@@ -836,6 +848,7 @@ def _agent_out(
     *,
     is_mine: bool = False,
     cleanup: CleanupStatus | None = None,
+    skills: list[AgentSkillOut] | None = None,
 ) -> AgentOut:
     d = version.definition
     served = catalog is not None and version.status is VersionStatus.PUBLISHED
@@ -862,7 +875,34 @@ def _agent_out(
         retire_reason=meta.retire_reason if meta else None,
         is_mine=is_mine,
         cleanup=cleanup,
+        skills=skills,
     )
+
+
+def agent_skills(deps: AgentsDeps, version: AgentVersion) -> list[AgentSkillOut] | None:
+    """The skills of ``version`` its users may see: name, description and version of the
+    approved ones (at most ``MAX_PER_AGENT`` reads). ``None`` without a registry or when it
+    cannot be read: the detail still answers, the chat says it could not read them."""
+    refs = version.definition.skills
+    if not refs:
+        return []
+    if deps.skills is None:
+        return None
+    try:
+        found = _skill_versions(deps, refs)
+    except StoredSkillError:
+        logger.exception("skills of an agent unavailable")
+        return None
+    return [
+        AgentSkillOut(
+            id=s.skill_id,
+            version=s.version,
+            name=s.content.name,
+            description=s.content.description,
+        )
+        for ref in refs
+        if (s := found.get(ref)) is not None
+    ]
 
 
 def _use_resource(version: AgentVersion) -> AgentResource:
@@ -1827,6 +1867,7 @@ def agents_router(  # noqa: PLR0915 - router factory registering route closures
             meta,
             await run(_packs_catalog, deps),
             is_mine=_is_mine(caller.user, meta),
+            skills=await run(agent_skills, deps, published),
         )
 
     @router.post("/agents/{agent_id}/versions", response_model=VersionOut, status_code=201)

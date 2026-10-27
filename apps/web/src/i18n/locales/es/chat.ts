@@ -146,6 +146,24 @@ export const chat = {
     tools: 'Skills y tools disponibles',
     more: 'Más opciones',
   },
+  // Design chat.jsx ChatHeader `tools-pop` (round 23, D92 (8)).
+  toolsPop: {
+    title: 'Qué puede usar {{name}}',
+    subtitle:
+      'Lo fija la versión que te responde. Cambiarlo es una versión nueva del agente, con su aprobación.',
+    skills: 'Skills · {{shown}}',
+    skillsNote:
+      'Son instrucciones: no ejecutan nada. El agente carga una cuando le sirve; si quieres que use alguna, pídelo en tu mensaje y puede seguirlo o no.',
+    noSkills: 'Esta versión no tiene skills.',
+    version: 'v{{version}}',
+    mcp: 'Tools (MCP) · {{count}}',
+    mcpTools_one: '{{count}} tool',
+    mcpTools_other: '{{count}} tools',
+    loading: 'Cargando las skills',
+    // Not in the design: the detail could not be read.
+    error: 'No se pudieron cargar las skills de esta versión.',
+    retry: 'Reintentar',
+  },
   actions: {
     copy: 'Copiar',
     copied: 'Copiado',

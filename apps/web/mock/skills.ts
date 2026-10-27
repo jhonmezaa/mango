@@ -12,6 +12,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
+import { setDetailSkills } from './agents.ts';
 import { MOCK_USER } from './cognito.ts';
 import { readBody, sendError, sendJson, type ApiHandler } from './http.ts';
 import { catalogView } from './mcpCatalog.ts';
@@ -446,6 +447,19 @@ function checkServers(res: ServerResponse, ids: string[]): boolean {
  * The rule of the API for the skills of an agent version (`agent_rules._skills`): every one is
  * an approved version, its servers are enabled and the version has a tool of each.
  */
+/** `AgentOut.skills` of the detail (D95): name, description and version of the approved ones. */
+export function versionSkills(refs: readonly string[]) {
+  return refs.flatMap((ref) => {
+    const [id = '', number = ''] = ref.split('@');
+    const content = skills.find((skill) => skill.id === id)?.versions[Number(number) - 1];
+    return content
+      ? [{ id, version: Number(number), name: content.name, description: content.description }]
+      : [];
+  });
+}
+
+setDetailSkills(versionSkills);
+
 export function skillViolations(definition: { skills: string[]; tools: string[] }) {
   const catalog = servers();
   const withTools = new Set(definition.tools.map((ref) => ref.split('.')[0]));

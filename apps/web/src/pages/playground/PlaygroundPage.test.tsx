@@ -8,6 +8,7 @@ import type { PlaygroundEvent } from '../../api/playgroundEvents';
 import { agentFixture, baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { AGENT_ID, context, definition, quotas, version } from '../agentBuilder/testFixtures';
+import { list as skillList, skill } from '../skills/testFixtures';
 import { PlaygroundPage } from './PlaygroundPage';
 
 const creator = { ...baseMe, can: { create_agent: true } };
@@ -306,6 +307,42 @@ describe('PlaygroundPage', () => {
     expect(
       await screen.findByText('Ya no se puede probar. Elige otro en «Qué probar».'),
     ).toBeInTheDocument();
+  });
+
+  it('names the skills that are no longer approved and opens the draft in the Builder', async () => {
+    const { api } = apiWith(
+      {
+        getSkills: skillList([skill()]),
+        readVersion: {
+          ...DRAFT,
+          definition: definition({ skills: ['otra-skill@1', 'revision-de-costos@2'] }),
+        },
+      },
+      () =>
+        Promise.reject(
+          new ApiError(422, 'skill_unavailable', 'x', null, null, ['revision-de-costos@2']),
+        ),
+    );
+    renderPage(api);
+    await ready();
+    await ask('Hola');
+    expect(
+      await screen.findByText(
+        'Revisión de costos v2 ya no está aprobada. Cámbiala en el Agent Builder para probar.',
+        { exact: false },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Abrir en el Agent Builder' })).toHaveAttribute(
+      'href',
+      `/admin/${AGENT_ID}/2`,
+    );
+    // In the panel, only the one the server named is marked.
+    const marked = screen.getByText('Ya no aprobada');
+    expect(marked).toHaveClass('badge', 'badge-red');
+    expect(marked.closest('.pg-tool')).toHaveTextContent('Revisión de costos');
+    expect(marked.closest('.pg-tool')).toHaveClass('off');
+    expect(screen.getByText('otra-skill').closest('.pg-tool')).not.toHaveClass('off');
+    expect(screen.getByRole('button', { name: /Ejecutar todas/ })).toBeDisabled();
   });
 
   it('saves the draft at the revision on screen', async () => {

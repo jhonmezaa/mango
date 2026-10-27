@@ -364,6 +364,135 @@
     font-size: 10px;
     color: var(--text-dim);
   }
+  /* Design styles.css `.tools-pop` (round 23): «Qué puede usar {agente}». */
+  .tools-pop {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 100;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    max-height: 480px;
+    margin-top: 6px;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    white-space: normal;
+    text-align: left;
+  }
+  .tp-head {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tp-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .tp-sub {
+    margin-top: 3px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .tp-sec {
+    padding: 12px 14px 8px;
+  }
+  .tp-sec.is-mcp {
+    padding-bottom: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .tp-sec-t {
+    margin-bottom: 4px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .tp-sec.is-mcp .tp-sec-t {
+    margin-bottom: 8px;
+  }
+  .tp-note {
+    margin-bottom: 8px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .tp-empty {
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .tp-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid var(--border);
+  }
+  .tp-ic {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: var(--row-hover);
+    color: var(--text-muted);
+  }
+  .tp-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .tp-row-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .tp-name {
+    font-size: 12px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .tp-ver {
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
+  .tp-desc {
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-muted);
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  .tp-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11.5px;
+    color: var(--red);
+  }
+  .tp-skel {
+    display: grid;
+    gap: 8px;
+  }
+  .tp-mcp {
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+  }
+  .tp-mcp-id {
+    font-size: 11.5px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .tp-mcp-meta {
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
   .chat-cost {
     margin-right: 6px;
     font-size: 11px;

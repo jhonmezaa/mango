@@ -109,7 +109,6 @@ describe('ChatPage', () => {
     expect(topbar().querySelector('.dot')).toBeNull();
     for (const label of [
       'Costo de la conversación',
-      'Skills y tools disponibles',
       'Más opciones',
       'Adjuntar archivos',
       'Comandos con /',

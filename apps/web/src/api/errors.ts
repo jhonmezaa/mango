@@ -15,6 +15,8 @@ export class ApiError extends Error {
      * schema). Data to render as text; null for any other error.
      */
     readonly violations: readonly ApiViolation[] | null = null,
+    /** `id@version` of the skills a `422 skill_unavailable` names (validated by schema). */
+    readonly skills: readonly string[] | null = null,
   ) {
     super(message);
   }
@@ -66,6 +68,7 @@ export async function apiErrorFromResponse(response: Response): Promise<ApiError
       parsed.data.error.message,
       retryAfter,
       parsed.data.violations ?? null,
+      parsed.data.skills ?? null,
     );
   }
   return new ApiError(response.status, `http_${response.status}`, response.statusText, retryAfter);

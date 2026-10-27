@@ -444,6 +444,10 @@ export type AgentOut = {
      */
     role: string;
     /**
+     * Skills
+     */
+    skills?: Array<AgentSkillOut> | null;
+    /**
      * Status
      */
     status: string;
@@ -479,6 +483,30 @@ export type AgentRefOut = {
      * Name
      */
     name: string;
+};
+
+/**
+ * AgentSkillOut
+ *
+ * A skill of the served version as its users see it (D92 (8)): never its instructions.
+ */
+export type AgentSkillOut = {
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Version
+     */
+    version: number;
 };
 
 /**

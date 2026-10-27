@@ -114,6 +114,29 @@ export const zAgentDefinitionSchema = z.object({
 });
 
 /**
+ * AgentRefOut
+ *
+ * An agent that serves the knowledge base (D88 (15), (43)).
+ */
+export const zAgentRefOutSchema = z.object({
+    agent_id: z.string(),
+    groups_without_access: z.array(z.string()).nullable(),
+    name: z.string()
+});
+
+/**
+ * AgentSkillOut
+ *
+ * A skill of the served version as its users see it (D92 (8)): never its instructions.
+ */
+export const zAgentSkillOutSchema = z.object({
+    description: z.string(),
+    id: z.string(),
+    name: z.string(),
+    version: z.int()
+});
+
+/**
  * AgentOut
  *
  * An agent as its users see it: no prompt and no access lists.
@@ -139,6 +162,7 @@ export const zAgentOutSchema = z.object({
     retire_reason: z.string().nullable(),
     retired_at: z.string().nullable(),
     role: z.string(),
+    skills: z.array(zAgentSkillOutSchema).nullish(),
     status: z.string(),
     tools: z.array(z.string()),
     unavailable_tools: z.array(z.string()).optional().default([]),
@@ -150,17 +174,6 @@ export const zAgentOutSchema = z.object({
  */
 export const zAgentListSchema = z.object({
     items: z.array(zAgentOutSchema)
-});
-
-/**
- * AgentRefOut
- *
- * An agent that serves the knowledge base (D88 (15), (43)).
- */
-export const zAgentRefOutSchema = z.object({
-    agent_id: z.string(),
-    groups_without_access: z.array(z.string()).nullable(),
-    name: z.string()
 });
 
 /**

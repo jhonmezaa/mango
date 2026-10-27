@@ -140,8 +140,16 @@ export const violationSchema = z.object({
 });
 export type ApiViolation = z.infer<typeof violationSchema>;
 
+/** `<skill id>@<version>`, the shape of `mango_core.skills.SKILL_REF_PATTERN`. */
+export const skillRefSchema = z
+  .string()
+  .max(45)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]{0,3}$/);
+
 export const errorBodySchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
   /** Only on `422 validation_failed` of the agents API. */
   violations: z.array(violationSchema).max(100).optional(),
+  /** Only on `422 skill_unavailable` of the Playground: the skills no longer approved. */
+  skills: z.array(skillRefSchema).max(10).optional(),
 });

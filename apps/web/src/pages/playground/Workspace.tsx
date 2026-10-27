@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
@@ -52,6 +53,14 @@ interface Props {
   onUnavailable: () => void;
   notify: (msg: string, tone?: ToastTone) => void;
 }
+
+const NO_SKILLS: readonly string[] = [];
+
+/** The Agent Builder on the draft, or on the published agent (an id the API returned). */
+const builderPath = (source: Source) =>
+  source.kind === 'draft'
+    ? `/admin/${encodeURIComponent(source.agentId)}/${String(source.version)}`
+    : `/admin/${encodeURIComponent(source.agentId)}`;
 
 const draftKey = (agentId: string, version: number) => `draft:${agentId}:${String(version)}`;
 
@@ -380,6 +389,7 @@ export function Workspace({
           otherModels={otherModels}
           onModelB={setModelB}
           problems={problems}
+          offSkills={shown?.kind === 'skill' ? shown.refs : NO_SKILLS}
         />
         <div className="pg-main">
           <div className="pg-head">
@@ -453,6 +463,8 @@ export function Workspace({
                 name={name}
                 model={modelName(context.models, model)}
                 now={now}
+                skillNames={data.skillNames}
+                builderPath={builderPath(source)}
               />
             </div>
           )}
@@ -531,11 +543,15 @@ function BlockBanner({
   name,
   model,
   now,
+  skillNames,
+  builderPath,
 }: {
   block: Exclude<Block, { kind: 'unavailable' }> | { kind: 'secret' };
   name: string;
   model: string;
   now: number;
+  skillNames: ReadonlyMap<string, string> | null;
+  builderPath: string;
 }) {
   const { t } = useTranslation();
   switch (block.kind) {
@@ -579,8 +595,31 @@ function BlockBanner({
           {t('playground.block.skills.body')}
         </Banner>
       );
+    case 'skill': {
+      // Names as text (written by their authors), with the version the server named.
+      const skills = new Intl.ListFormat('es', { type: 'conjunction' }).format(
+        block.refs.map((ref) => {
+          const [id = ref, version = ''] = ref.split('@');
+          return t('playground.block.skill.skillVersion', {
+            name: skillNames?.get(id) ?? id,
+            version,
+          });
+        }),
+      );
+      return (
+        <Banner tone="error" title={t('playground.block.skill.title')}>
+          {block.refs.length > 0
+            ? t('playground.block.skill.named', { count: block.refs.length, skills })
+            : t('playground.block.skill.body')}
+          <div className="mt-2">
+            <Link className="btn btn-sm" to={builderPath}>
+              {t('playground.block.skill.open')}
+            </Link>
+          </div>
+        </Banner>
+      );
+    }
     case 'notTestable':
-    case 'skill':
     case 'retired':
       return (
         <Banner tone="error" title={t(`playground.block.${block.kind}.title`)}>
