@@ -13,15 +13,14 @@ from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
-from mango_api import approval_executor
+from mango_api import gateway_mcp
 from mango_api.approval_executor import (
-    SESSION_HEADER,
-    Answer,
     ApprovedCall,
     Execution,
     GatewayExecutor,
     Outcome,
 )
+from mango_api.gateway_mcp import SESSION_HEADER, Answer
 from mango_core import approval, invocation
 
 NOW = 1_800_000_000
@@ -302,8 +301,6 @@ def test_needs_an_https_gateway_and_a_key(url: str, key_arn: str) -> None:
 
 
 def test_a_redirect_is_never_followed_with_the_credentials() -> None:
-    handler = approval_executor._NoRedirects()
+    handler = gateway_mcp.NoRedirects()
     assert handler.redirect_request(None, None, 302, "Found", {}, "https://evil.example") is None
-    assert any(
-        isinstance(h, approval_executor._NoRedirects) for h in approval_executor._OPENER.handlers
-    )
+    assert any(isinstance(h, gateway_mcp.NoRedirects) for h in gateway_mcp.OPENER.handlers)

@@ -27,15 +27,24 @@ import json
 import logging
 import re
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from mango_api.gateway_mcp import (
+    HTTP_OK,
+    SESSION_HEADER,
+    NotStartedError,
+    Transport,
+    open_session,
+    post,
+    refusal,
+    rpc,
+    rpc_body,
+)
 from mango_core import approval, invocation
 
 if TYPE_CHECKING:
@@ -43,16 +52,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_SECONDS = 60
-MAX_RESPONSE_BYTES = 256 * 1024
 _ERROR_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
-_HTTP_OK = 200
-SESSION_HEADER = "Mcp-Session-Id"
 MCP_PROTOCOL_VERSION = "2025-03-26"
-# The session id goes back in a request header: visible ASCII only (MCP transport spec).
-_SESSION_RE = re.compile(r"^[\x21-\x7e]{1,256}$")
-# A notification has no answer of its own: accepted (202), or an empty result.
-_NOTIFIED = frozenset({200, 202, 204})
 
 
 class Outcome(StrEnum):
@@ -92,93 +93,8 @@ class Executor(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class Answer:
-    status: int
-    body: bytes
-    session_id: str | None = None
-    """``Mcp-Session-Id`` of the answer, when the Gateway keeps MCP sessions (D47)."""
-
-
-class Transport(Protocol):
-    def __call__(self, url: str, headers: dict[str, str], body: bytes) -> Answer: ...
-
-
-class _NotStartedError(Exception):
-    """The MCP session could not be opened: the approved call was never sent."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
-
-
-class _NoRedirects(urllib.request.HTTPRedirectHandler):
-    """The request carries the caller's token and the approval: it is never replayed to
-    wherever a redirect points (FASTAPI-SSRF-001)."""
-
-    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
-        return None
-
-
-_OPENER = urllib.request.build_opener(_NoRedirects)
-
-
-def _post(url: str, headers: dict[str, str], body: bytes) -> Answer:
-    # https only (checked at construction), the installation's own Gateway, no redirects.
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")  # noqa: S310
-    try:
-        with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
-            return Answer(
-                response.status,
-                response.read(MAX_RESPONSE_BYTES + 1),
-                response.headers.get(SESSION_HEADER),
-            )
-    except urllib.error.HTTPError as exc:
-        return Answer(exc.code, exc.read(MAX_RESPONSE_BYTES + 1), exc.headers.get(SESSION_HEADER))
-
-
 def _error_code(value: object, default: str) -> str:
     return value if isinstance(value, str) and _ERROR_CODE_RE.fullmatch(value) else default
-
-
-def _rpc_body(raw: bytes) -> dict[str, Any] | None:
-    """The JSON-RPC message of a Gateway answer (plain JSON or one SSE ``data:`` line)."""
-    if len(raw) > MAX_RESPONSE_BYTES:
-        return None
-    text = raw.decode("utf-8", errors="replace")
-    if text.lstrip().startswith(("event:", "data:")):
-        data = [line[5:].strip() for line in text.splitlines() if line.startswith("data:")]
-        text = data[-1] if data else ""
-    try:
-        body = json.loads(text)
-    except ValueError:
-        return None
-    return body if isinstance(body, dict) else None
-
-
-def _rpc(method: str, request_id: str | None = None, params: object = None) -> bytes:
-    """A JSON-RPC message; without ``request_id`` it is a notification."""
-    message: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
-    if request_id is not None:
-        message["id"] = request_id
-    if params is not None:
-        message["params"] = params
-    return json.dumps(message, separators=(",", ":")).encode()
-
-
-def _refusal(step: str, answer: Answer, message: dict[str, Any] | None) -> str:
-    """Code of an answer that is not a result. Logs where the Gateway stopped the call: the
-    status and the JSON-RPC code only, never its text, headers or the arguments."""
-    error = message.get("error") if message is not None else None
-    refused = isinstance(error, dict)
-    rpc_code = error.get("code") if isinstance(error, dict) else None
-    logger.warning(
-        "gateway did not accept %s: status=%d rpc_code=%s",
-        step,
-        answer.status,
-        rpc_code if isinstance(rpc_code, int) else None,
-    )
-    return "gateway_refused" if refused else f"gateway_http_{answer.status}"[:40]
 
 
 def _tool_outcome(result: object) -> Execution:
@@ -210,7 +126,7 @@ class GatewayExecutor:
         key_arn: str,
         gateway_url: str,
         invocation_key: bytes,
-        transport: Transport = _post,
+        transport: Transport = post,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if not gateway_url.startswith("https://") or not key_arn:
@@ -238,47 +154,6 @@ class GatewayExecutor:
             SigningAlgorithm=approval.SIGNING_ALGORITHM,
         )["Signature"]
         return approval.assemble(claims, signature)
-
-    def _open_session(self, call: ApprovedCall, headers: dict[str, str]) -> str | None:
-        """MCP handshake; the session id to send with the call, or ``None`` from a Gateway
-        without sessions. Raises ``_NotStartedError``: these requests carry no approval, so
-        whatever fails here the tool did not run and the approval was not spent."""
-        try:
-            opened = self._transport(
-                self._url,
-                headers,
-                _rpc(
-                    "initialize",
-                    call.approval_id,
-                    {
-                        "protocolVersion": MCP_PROTOCOL_VERSION,
-                        "capabilities": {},
-                        "clientInfo": {"name": "mango-api", "version": "1"},
-                    },
-                ),
-            )
-            message = _rpc_body(opened.body)
-            if (
-                opened.status != _HTTP_OK
-                or message is None
-                or not isinstance(message.get("result"), dict)
-            ):
-                raise _NotStartedError(_refusal("initialize", opened, message))
-            session = opened.session_id
-            if session is None:
-                return None
-            if not _SESSION_RE.fullmatch(session):
-                raise _NotStartedError("gateway_session_invalid")
-            ready = self._transport(
-                self._url, {**headers, SESSION_HEADER: session}, _rpc("notifications/initialized")
-            )
-        except (OSError, ValueError):
-            logger.exception("gateway session could not be opened")
-            raise _NotStartedError("gateway_unreachable") from None
-        message = _rpc_body(ready.body)
-        if ready.status not in _NOTIFIED or isinstance((message or {}).get("error"), dict):
-            raise _NotStartedError(_refusal("notifications/initialized", ready, message))
-        return session
 
     def run(  # noqa: PLR0911 - each return is one way the call can end
         self, call: ApprovedCall, *, access_token: str, token_expires_at: int
@@ -309,14 +184,21 @@ class GatewayExecutor:
             invocation.HEADER: signature,
         }
         try:
-            session = self._open_session(call, headers)
-        except _NotStartedError as not_started:
+            # These requests carry no approval: whatever fails there, it was not spent.
+            session = open_session(
+                self._transport,
+                self._url,
+                headers,
+                request_id=call.approval_id,
+                protocol_version=MCP_PROTOCOL_VERSION,
+            )
+        except NotStartedError as not_started:
             return Execution(Outcome.NOT_RUN, not_started.code)
         # Only the call itself carries the approval.
         call_headers = {**headers, approval.HEADER: token}
         if session is not None:
             call_headers[SESSION_HEADER] = session
-        body = _rpc(
+        body = rpc(
             "tools/call", call.approval_id, {"name": call.gateway_tool, "arguments": arguments}
         )
         try:
@@ -325,12 +207,12 @@ class GatewayExecutor:
             # Sent, but no answer: the tool may have run.
             logger.exception("gateway call failed")
             return Execution(Outcome.UNKNOWN, "gateway_unreachable")
-        message = _rpc_body(answer.body)
+        message = rpc_body(answer.body)
         if message is None:
-            return Execution(Outcome.UNKNOWN, _refusal("tools/call", answer, None))
+            return Execution(Outcome.UNKNOWN, refusal("tools/call", answer, None))
         if isinstance(message.get("error"), dict):
             # Refused by the Gateway, its policy or the interceptor: the tool did not run.
-            return Execution(Outcome.NOT_RUN, _refusal("tools/call", answer, message))
-        if answer.status != _HTTP_OK or "result" not in message:
-            return Execution(Outcome.UNKNOWN, _refusal("tools/call", answer, message))
+            return Execution(Outcome.NOT_RUN, refusal("tools/call", answer, message))
+        if answer.status != HTTP_OK or "result" not in message:
+            return Execution(Outcome.UNKNOWN, refusal("tools/call", answer, message))
         return _tool_outcome(message["result"])
