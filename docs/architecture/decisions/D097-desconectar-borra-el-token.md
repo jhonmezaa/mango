@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-27 (elegida por el dueño ese día, por menú: «Borrar el token con forceAuthentication (Recomendada)» y «Construir ya; P9 antes de habilitarlo (Recomendada)», después de las pruebas de ese día)
 - **Precisa / reemplaza a:** reemplaza [D96](D096-desconectar-un-mcp-remoto.md) (3) (la marca por persona) y corrige D96 (1) y (2) (P7b usó una clave de `_meta` equivocada); precisa [D94](D094-consentimiento-iniciado-por-el-gateway.md) (1) (P6 usó la misma clave equivocada) y D94 (4) (lo que queda antes de construir); precisa [D93](D093-mcp-remotos-de-terceros.md) (8) (qué `_meta` deja pasar el interceptor `REQUEST`)
-- **Precisada por:** —
+- **Precisada por:** [D98](D098-contratos-de-los-mcp-remotos.md) (el claim `cx` de la firma que lleva la marca de desconexión)
 
 ## Decisión
 

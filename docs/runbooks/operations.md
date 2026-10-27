@@ -326,7 +326,7 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 ## MCP remotos: cortar el acceso a una cuenta
 
-> **Previsto (D93, D96, D97): los MCP remotos de terceros todavía no están construidos.** Esta sección dice qué hacer cuando lo estén.
+> **Previsto (D93, D96, D97, D98): los MCP remotos de terceros todavía no están construidos.** Esta sección dice qué hacer cuando lo estén. Vendrán apagados: el parámetro de stack `RemoteMcpEnabled` vale `false` por defecto y se enciende en un cliente solo después de probar el Acceso condicional de su tenant (P9, D98 (4)). Volver a ponerlo en `false` corta las escrituras de registro y «Conectar», pero no las llamadas de los registros ya activos: para cortarlas, deshabilitar el registro.
 
 «Desconectar», en «Mis conexiones», borra del vault de AgentCore Identity el token de esa persona (D97), pero no revoca nada en Microsoft. Cuando además hay que cortar en Microsoft, o a todas las personas:
 
