@@ -94,6 +94,12 @@ La API se construye. La pantalla queda en «Próximamente» hasta que Claude Des
 | `MCP_REMOTE#<reg>` / `APPROVED` | solo el provisioner de remotos | interceptor `REQUEST`, `mango-api`, provisioner de agentes | El catálogo aprobado y firmado (13) |
 | `MCP_CONSENT#<sub>` / `REMOTE#<reg>` | solo el interceptor `RESPONSE`, con el `sub` de la firma de la invocación verificada; a `mango-api` IAM le niega `PutItem` y `UpdateItem` en la partición | `mango-api`, que lo borra | La URL de consentimiento, su origen (`chat`, `task`, `playground` o `connect`) y su vencimiento (10 minutos, TTL) |
 
+Precisado al construir el registro (2026-10-27):
+- **Índice de registros:** `REMOTE_INDEX` / `REGISTRATIONS`, un conjunto con los ids de todos los registros, para listarlos sin recorrer la tabla. Lo escribe y lo lee solo `mango-api`, en la misma transacción que crea o borra un registro; admite como mucho 50 (los vivos siguen limitados a 10).
+- **Generaciones del proveedor:** `REGISTRATION` guarda la mayor generación creada (`provider_generations`), y cada solicitud que crea un proveedor usa la siguiente: un nombre no se repite nunca, porque el secreto de un proveedor borrado puede seguir en borrado programado en Secrets Manager.
+- **La entrada del provisioner de remotos** es exactamente `{registration_id, approval_id}`, como `enablement_id` en los packs (elegido el 2026-10-27, por menú: «Mirror packs (approval_id)»). Cada aprobación o deshabilitación escribe un `approval_id` aleatorio en `REGISTRATION`, junto con `change_id` y `change_kind` de la solicitud aprobada; el provisioner rechaza una ejecución cuyo `approval_id` ya no es el del registro. Un reintento usa el mismo.
+- **Tags del proveedor:** `mango-api` copia los tags del stack `Core` al proveedor que crea, con las reglas de los provisioners, más `mango:namespace`, `mango:component` y `mango:remote` (D76; elegido el 2026-10-27, por menú: «Copy stack tags too»).
+
 La conexión de cada persona (desde cuándo, y con qué `generation` del proveedor) va en `Conversations`, en `USER#<sub>` / `REMOTE#<reg>`. La escribe `mango-api` con las credenciales RLS de esa persona. Sirve para mostrar «Conectado» sin llamar a Microsoft. Una conexión de otra `generation` cuenta como «Sin conectar».
 
 **(13) El ítem firmado.**

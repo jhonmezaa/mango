@@ -6453,6 +6453,1043 @@
         "title": "RejectedOut",
         "type": "object"
       },
+      "RemoteCatalogOut": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_registrations": {
+            "default": 10,
+            "title": "Max Registrations",
+            "type": "integer"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteProfileOut"
+            },
+            "title": "Profiles",
+            "type": "array"
+          },
+          "registrations": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteRegistrationOut"
+            },
+            "title": "Registrations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "profiles",
+          "registrations"
+        ],
+        "title": "RemoteCatalogOut",
+        "type": "object"
+      },
+      "RemoteChangeKind": {
+        "enum": [
+          "enable",
+          "replace_app",
+          "params"
+        ],
+        "title": "RemoteChangeKind",
+        "type": "string"
+      },
+      "RemoteChangeStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "withdrawn",
+          "cancelled"
+        ],
+        "title": "RemoteChangeStatus",
+        "type": "string"
+      },
+      "RemoteDisableIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "reason"
+        ],
+        "title": "RemoteDisableIn",
+        "type": "object"
+      },
+      "RemoteEmptyIn": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "RemoteEmptyIn",
+        "type": "object"
+      },
+      "RemoteParamsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "groups": {
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Groups",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "toolsets": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9-]{0,23}$",
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Toolsets",
+            "type": "array"
+          },
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "toolsets",
+          "groups"
+        ],
+        "title": "RemoteParamsIn",
+        "type": "object"
+      },
+      "RemotePermissionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "permission": {
+            "title": "Permission",
+            "type": "string"
+          },
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource",
+          "permission"
+        ],
+        "title": "RemotePermissionOut",
+        "type": "object"
+      },
+      "RemoteProfileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "data_leaves_aws": {
+            "title": "Data Leaves Aws",
+            "type": "boolean"
+          },
+          "enabled_in_installation": {
+            "title": "Enabled In Installation",
+            "type": "boolean"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "link_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Link Hosts",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "needs_tenant": {
+            "title": "Needs Tenant",
+            "type": "boolean"
+          },
+          "operator": {
+            "title": "Operator",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/RemotePermissionOut"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "toolsets": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteToolsetOut"
+            },
+            "title": "Toolsets",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "name",
+          "operator",
+          "provider",
+          "host",
+          "link_hosts",
+          "data_leaves_aws",
+          "needs_tenant",
+          "permissions",
+          "toolsets",
+          "enabled_in_installation"
+        ],
+        "title": "RemoteProfileOut",
+        "type": "object"
+      },
+      "RemoteReenableIn": {
+        "additionalProperties": false,
+        "description": "«Pedir de nuevo» on a registration that failed or was disabled.",
+        "properties": {
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Client Secret",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Groups",
+            "type": "array"
+          },
+          "kind": {
+            "const": "enable",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "secret_expires_on": {
+            "format": "date",
+            "title": "Secret Expires On",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "toolsets": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9-]{0,23}$",
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Toolsets",
+            "type": "array"
+          },
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "client_id",
+          "client_secret",
+          "secret_expires_on",
+          "kind",
+          "version",
+          "toolsets",
+          "groups"
+        ],
+        "title": "RemoteReenableIn",
+        "type": "object"
+      },
+      "RemoteRegistrationIn": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Client Secret",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Groups",
+            "type": "array"
+          },
+          "organization": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,48}$",
+            "title": "Organization",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "secret_expires_on": {
+            "format": "date",
+            "title": "Secret Expires On",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "toolsets": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9-]{0,23}$",
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Toolsets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "client_id",
+          "client_secret",
+          "secret_expires_on",
+          "organization",
+          "toolsets",
+          "groups"
+        ],
+        "title": "RemoteRegistrationIn",
+        "type": "object"
+      },
+      "RemoteRegistrationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "approved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "approved_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By Email"
+          },
+          "callback_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callback Url"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled By"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RemoteRequestOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "organization": {
+            "title": "Organization",
+            "type": "string"
+          },
+          "pending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemoteRequestOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "profile_in_release": {
+            "title": "Profile In Release",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
+          },
+          "requested_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By Email"
+          },
+          "secret_expires_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Expires On"
+          },
+          "secret_level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "d30",
+                  "d7",
+                  "expired"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Level"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RemoteRegistrationStatus"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "toolsets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Toolsets",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "profile_id",
+          "profile_in_release",
+          "organization",
+          "toolsets",
+          "groups",
+          "status",
+          "tools",
+          "secret_expires_on",
+          "secret_level",
+          "disabled_by",
+          "disabled_at",
+          "reason",
+          "version"
+        ],
+        "title": "RemoteRegistrationOut",
+        "type": "object"
+      },
+      "RemoteRegistrationStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "creating",
+          "active",
+          "failed",
+          "disabling",
+          "disabled"
+        ],
+        "title": "RemoteRegistrationStatus",
+        "type": "string"
+      },
+      "RemoteRejectIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RemoteRejectIn",
+        "type": "object"
+      },
+      "RemoteReplaceAppIn": {
+        "additionalProperties": false,
+        "description": "A new tenant or app for an active registration: everyone connects again.",
+        "properties": {
+          "client_id": {
+            "format": "uuid",
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Client Secret",
+            "type": "string"
+          },
+          "kind": {
+            "const": "replace_app",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "secret_expires_on": {
+            "format": "date",
+            "title": "Secret Expires On",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "client_id",
+          "client_secret",
+          "secret_expires_on",
+          "kind",
+          "version"
+        ],
+        "title": "RemoteReplaceAppIn",
+        "type": "object"
+      },
+      "RemoteRequestOut": {
+        "additionalProperties": false,
+        "properties": {
+          "callback_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callback Url"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
+          "decision_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Reason"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RemoteChangeKind"
+          },
+          "organization": {
+            "title": "Organization",
+            "type": "string"
+          },
+          "own": {
+            "title": "Own",
+            "type": "boolean"
+          },
+          "previous_groups": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Groups"
+          },
+          "previous_toolsets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Toolsets"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "profile_version": {
+            "title": "Profile Version",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "registration_id": {
+            "title": "Registration Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "requested_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By Email"
+          },
+          "secret_expires_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Expires On"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RemoteChangeStatus"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "toolsets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Toolsets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "registration_id",
+          "kind",
+          "status",
+          "profile_id",
+          "profile_version",
+          "organization",
+          "toolsets",
+          "groups",
+          "previous_toolsets",
+          "previous_groups",
+          "tenant_id",
+          "client_id",
+          "callback_url",
+          "secret_expires_on",
+          "reason",
+          "requested_by",
+          "requested_by_email",
+          "created_at",
+          "expires_at",
+          "decided_by",
+          "decided_by_email",
+          "decided_at",
+          "decision_reason",
+          "own"
+        ],
+        "title": "RemoteRequestOut",
+        "type": "object"
+      },
+      "RemoteRetryIn": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "RemoteRetryIn",
+        "type": "object"
+      },
+      "RemoteRotateSecretIn": {
+        "additionalProperties": false,
+        "properties": {
+          "client_secret": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Client Secret",
+            "type": "string"
+          },
+          "secret_expires_on": {
+            "format": "date",
+            "title": "Secret Expires On",
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "client_secret",
+          "secret_expires_on"
+        ],
+        "title": "RemoteRotateSecretIn",
+        "type": "object"
+      },
+      "RemoteToolsetOut": {
+        "additionalProperties": false,
+        "properties": {
+          "always": {
+            "title": "Always",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "always",
+          "tools"
+        ],
+        "title": "RemoteToolsetOut",
+        "type": "object"
+      },
       "RenewedOut": {
         "properties": {
           "access_token": {
@@ -15082,6 +16119,529 @@
           }
         },
         "summary": "Get Catalog"
+      }
+    },
+    "/mcp/remotes": {
+      "get": {
+        "operationId": "get_remote_catalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Remote Catalog"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}": {
+      "delete": {
+        "operationId": "disable_remote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteDisableIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Disable Remote"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}/params": {
+      "post": {
+        "operationId": "request_remote_params",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteParamsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Request Remote Params"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}/requests": {
+      "post": {
+        "operationId": "request_remote_change",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "enable": "#/components/schemas/RemoteReenableIn",
+                    "replace_app": "#/components/schemas/RemoteReplaceAppIn"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/RemoteReplaceAppIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RemoteReenableIn"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Request Remote Change"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}/requests/{change_id}/approve": {
+      "post": {
+        "operationId": "approve_remote_request",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteEmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve Remote Request"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}/requests/{change_id}/reject": {
+      "post": {
+        "operationId": "reject_remote_request",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteRejectIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reject Remote Request"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}/requests/{change_id}/withdraw": {
+      "post": {
+        "operationId": "withdraw_remote_request",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteEmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Withdraw Remote Request"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}/retry": {
+      "post": {
+        "operationId": "retry_remote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteRetryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Retry Remote"
+      }
+    },
+    "/mcp/remotes/registrations/{reg}/secret": {
+      "post": {
+        "operationId": "rotate_remote_secret",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reg",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z2-7]{12}$",
+              "title": "Reg",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteRotateSecretIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Rotate Remote Secret"
+      }
+    },
+    "/mcp/remotes/{profile}/registrations": {
+      "post": {
+        "operationId": "request_remote_registration",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z][a-z0-9-]{1,23}$",
+              "title": "Profile",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteRegistrationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Request Remote Registration"
       }
     },
     "/mcp/{pack}": {

@@ -63,6 +63,16 @@ class Settings:
     release installs."""
     pack_signing_public_key: str = ""
     """PEM that verifies pack statements; empty while signing is not set up (no packs)."""
+    remote_catalog: str = ""
+    """JSON ``{profile id: sha256}``: the one signed remote MCP profile per id of the release
+    (D98 (14)), verified with the pack signing key."""
+    remote_mcp_enabled: bool = False
+    """Stack parameter ``RemoteMcpEnabled`` (D98 (4)): off, registrations cannot be written."""
+    remote_provisioner_state_machine_arn: str = ""
+    remote_mcp_key_id: str = ""
+    """``alias/Mango-<ns>-remote-mcp``: its public half verifies the approved catalogs."""
+    stack_id: str = ""
+    """The installation's stack: its tags go on the Identity providers mango-api creates (D76)."""
     admin_probe_function: str = ""
     cognito_user_pool_id: str = ""
     guardrail_id: str = ""
@@ -182,6 +192,13 @@ class Settings:
             packs_bucket_owner=env.get("PACKS_BUCKET_OWNER", ""),
             pack_catalog=env.get("PACK_CATALOG", ""),
             pack_signing_public_key=env.get("PACK_SIGNING_PUBLIC_KEY", ""),
+            remote_catalog=env.get("REMOTE_CATALOG", ""),
+            remote_mcp_enabled=env.get("REMOTE_MCP_ENABLED", "false") == "true",
+            remote_provisioner_state_machine_arn=env.get(
+                "REMOTE_PROVISIONER_STATE_MACHINE_ARN", ""
+            ),
+            remote_mcp_key_id=env.get("REMOTE_MCP_KEY_ID", ""),
+            stack_id=env.get("MANGO_STACK_ID", ""),
             admin_probe_function=env["ADMIN_PROBE_FUNCTION"],
             cognito_user_pool_id=env["COGNITO_USER_POOL_ID"],
             guardrail_id=env["GUARDRAIL_ID"],

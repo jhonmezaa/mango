@@ -119,6 +119,7 @@ Parámetros opcionales de `Core`:
 | `AuditRetentionDays`, `AuditLockMode` | 365, `GOVERNANCE` | Bloqueo del rastro de auditoría. `COMPLIANCE` no lo puede acortar ni quitar nadie hasta que venza |
 | `HighRiskSignInAction` | `NO_ACTION` | `BLOCK` solo al cumplir los criterios de D31 |
 | `TransactionSearch` | `stack` | `external` si la cuenta ya gestiona CloudWatch Transaction Search |
+| `RemoteMcpEnabled` | `false` | `true` solo después de las pruebas en vivo de los MCP remotos (P9, D97 (5), D98 (4)). Con `false`, `mango-api` rechaza toda escritura de registros de MCP remotos y «Conectar». Cambiarlo redespliega la API (la variable `REMOTE_MCP_ENABLED`) |
 
 ## 3. Después de instalar
 

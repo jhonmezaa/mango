@@ -332,6 +332,32 @@ Conectores de Mango y MCP packs de la release (spec §4.4, D19, D26, D36). `mang
 
 **Agentes y packs.** Una tool de pack se referencia como `<pack>.<tool>` y solo pasa las reglas de envío mientras el pack la sirve (`tool_not_enabled`). El provisioner de agentes la acepta con el target del Gateway igual al id del pack.
 
+### MCP remotos de terceros: registro (D93, D98)
+
+Perfiles de la release (`remotes/<id>/`, firmados y verificados) y los registros de una organización cada uno. `mango-api` crea el proveedor de AgentCore Identity de cada solicitud con el secreto de la app, registra las decisiones e inicia el provisioner de remotos con `{registration_id, approval_id}`: nunca crea el target, sus políticas ni el catálogo aprobado firmado. El router va antes que el de packs y `remotes` no puede ser id de pack.
+
+- **Quién.** Leer: `ViewMcpCatalog` (admins y creadores); quien no es admin solo ve los registros de sus grupos (`UseRemoteMcp`) y sin tenant, app, URL de redirección, solicitudes ni quién pidió. Pedir, rotar, reintentar y deshabilitar: `ManageRemoteMcp`. Aprobar y rechazar: `ApproveRemoteMcp`. Las dos, solo `mango-admin`.
+- **Doble aprobación.** Quien pide no aprueba ni rechaza (**403 `same_approver`** / **403 `use_withdraw`**); solo quien pidió retira (**403 `not_requester`**). Una solicitud pendiente por registro (**409 `pending_exists`**); vence a los 7 días (**410 `expired`**). Rechazar exige motivo.
+- **El secreto.** `client_secret` es de solo escritura (1 a 512 caracteres): va a Identity y a ningún otro sitio. Nunca vuelve en una respuesta, un log, la auditoría ni la tabla. `secret_expires_on`, futura y como mucho a 2 años (**422 `invalid_secret_expiry`**).
+- **Qué se puede pedir.** Un perfil que nombra la release (**409 `remote_profile_not_in_release`**), una organización (`^[A-Za-z0-9][A-Za-z0-9-]{0,48}$`; una por perfil, sin distinguir mayúsculas: **409 `remote_exists`**), `tenant_id` y `client_id` GUID, toolsets del perfil (los `always` se añaden; al menos uno con valor de `X-MCP-Toolsets`: **422 `toolsets_required`**; **422 `invalid_toolsets`**) y de 1 a 10 grupos del registro (**422 `group_unknown`**).
+- **Apagado** (`RemoteMcpEnabled=false`, por defecto): toda escritura responde **409 `remote_disabled`** y los perfiles salen con `enabled_in_installation: false`.
+- **Bloqueo optimista** con `version` del registro (**409 `version_conflict`**). Máximo 10 registros no deshabilitados (**409 `too_many_remotes`**). 10 escrituras por minuto por admin (429). Identity no responde: **502 `identity_unavailable`**; sin provisioner: **503 `provisioner_unavailable`**.
+
+| Método | Ruta | Acción | Cuerpo → respuesta |
+|---|---|---|---|
+| GET | `/api/mcp/remotes` | `ViewMcpCatalog` | → `RemoteCatalogOut {enabled, profiles, registrations, max_registrations}` |
+| POST | `/api/mcp/remotes/{profile}/registrations` | `ManageRemoteMcp` | `{organization, tenant_id, client_id, client_secret, secret_expires_on, toolsets, groups, reason?}` → 201. Registro `pending` con su solicitud `enable`; la solicitud trae el `callback_url` que se registra en Entra |
+| POST | `/api/mcp/remotes/registrations/{reg}/requests` | `ManageRemoteMcp` | `{"kind": "replace_app", version, tenant_id, client_id, client_secret, secret_expires_on, reason?}` (registro `active`) o `{"kind": "enable", version, …, toolsets, groups, reason?}` (registro `failed` o `disabled`, «Pedir de nuevo») → 201. Crea un proveedor de la generación siguiente |
+| POST | `/api/mcp/remotes/registrations/{reg}/params` | `ManageRemoteMcp` | `{version, toolsets, groups, reason?}` → 201. Registro `active`; guarda los de antes. **422 `no_change`** |
+| POST | `/api/mcp/remotes/registrations/{reg}/requests/{id}/approve` | `ApproveRemoteMcp` | `{}` → registro `approved` e inicia el provisioner. **409 `release_changed`** si la release ya no firma el perfil pedido |
+| POST | `…/requests/{id}/reject` | `ApproveRemoteMcp` | `{"reason": str}` → borra el proveedor pendiente; si el registro nunca se aprobó, lo borra (queda su historial) |
+| POST | `…/requests/{id}/withdraw` | `ManageRemoteMcp` | `{}` → igual que rechazar, solo quien pidió |
+| POST | `/api/mcp/remotes/registrations/{reg}/secret` | `ManageRemoteMcp` | `{version, client_secret, secret_expires_on}` → sin aprobación (`UpdateOauth2CredentialProvider`). Registro `active` o `failed` |
+| POST | `/api/mcp/remotes/registrations/{reg}/retry` | `ManageRemoteMcp` | `{version}` → registro `failed` vuelve a `approved` con la misma aprobación |
+| DELETE | `/api/mcp/remotes/registrations/{reg}` | `ManageRemoteMcp` | `{version, reason}` → `disabling` e inicia el provisioner; cancela la solicitud pendiente y borra su proveedor |
+
+`RegistrationOut` lleva `status` (`pending`, `approved`, `creating`, `active`, `failed`, `disabling`, `disabled`), `tools` (las del catálogo aprobado firmado, si verifica), `secret_level` (`ok`, `d30`, `d7`, `expired`, calculado al leer) y `version`; para admins, además, tenant, app, `callback_url`, quién pidió y aprobó, `failure_code`, la solicitud pendiente y el historial. Auditoría: `mcp_remote.request`, `.approve`, `.reject`, `.withdraw`, `.secret_rotated`, `.retry` y `.disable`, con `requested` antes y `applied` o `rejected` después; llevan registro, perfil, organización, tenant, app, toolsets y grupos, nunca el secreto.
+
 ### Modelos: Brains (Marketplace v1, B5)
 
 Catálogo de modelos administrable (spec §4.5, D38). Un solo admin habilita o deshabilita un modelo y confirma sus precios; no hay doble aprobación. Las tres rutas usan la acción Cedar `ManageModels` sobre `Mango::Platform` (solo admins) y además comprueban `is_admin` en proceso. La decisión se audita; el GET cuenta como lectura.

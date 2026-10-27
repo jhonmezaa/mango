@@ -31,6 +31,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from mango_core.agents import is_agent_id
 from mango_core.agents_table import MAX_VERSION
 from mango_core.playground import provision_input
+from mango_core.remote_mcp import is_registration_id
 from mango_packs.enablement import ENABLEMENT_ID_PATTERN, is_pack_id
 
 if TYPE_CHECKING:
@@ -255,4 +256,40 @@ class PackProvisionerClient:
             )
         except (ClientError, BotoCoreError) as exc:
             raise ProvisionerError("the pack provisioner could not be started") from exc
+        return name
+
+
+_APPROVAL_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+class RemoteProvisionerClient:
+    """Starts the remote MCP provisioner (``Mango-<ns>-RemoteMcpProvisioner``, D98)."""
+
+    def __init__(self, stepfunctions: SFNClient, state_machine_arn: str) -> None:
+        if not _STATE_MACHINE_RE.fullmatch(state_machine_arn):
+            raise ValueError("invalid remote provisioner state machine ARN")
+        self._sfn = stepfunctions
+        self._arn = state_machine_arn
+
+    def start(self, registration_id: str, approval_id: str) -> str:
+        """Start one execution for the stored registration; returns its name.
+
+        The input is exactly ``{registration_id, approval_id}``: the provisioner reads what was
+        approved from the registration and refuses an ``approval_id`` that is no longer its own.
+        """
+        if not is_registration_id(registration_id) or not _APPROVAL_ID_RE.fullmatch(approval_id):
+            raise ValueError("invalid remote provisioner input")
+        name = f"remote-{registration_id}-{secrets.token_hex(8)}"
+        try:
+            self._sfn.start_execution(
+                stateMachineArn=self._arn,
+                name=name,
+                input=json.dumps(
+                    {"approval_id": approval_id, "registration_id": registration_id},
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            )
+        except (ClientError, BotoCoreError) as exc:
+            raise ProvisionerError("the remote provisioner could not be started") from exc
         return name

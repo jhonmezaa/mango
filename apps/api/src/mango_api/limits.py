@@ -29,6 +29,7 @@ from mango_api import (
     mfa_reset,
     people,
     playground,
+    remote_mcp,
     skills,
     task_reports,
     tasks,
@@ -129,6 +130,12 @@ LIMITS: dict[str, LimitSpec] = {
         MINUTE,
         shared=True,
         why="Requests and executions of MCP packs (TM-B20): each may start a state machine.",
+    ),
+    "remote_mcp.writes": LimitSpec(
+        remote_mcp.WRITES_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="Writes of remote MCP registrations (D98 (17)): Identity calls and the provisioner.",
     ),
     "approvals.runs": LimitSpec(
         approvals.RUNS_PER_MINUTE,

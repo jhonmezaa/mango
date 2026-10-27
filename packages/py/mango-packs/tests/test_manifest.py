@@ -19,6 +19,11 @@ def test_valid_manifest(manifest_data: dict[str, Any]) -> None:
     assert manifest.runtime.port == 8000
 
 
+def test_remotes_is_not_a_pack_id(manifest_data: dict[str, Any]) -> None:
+    # `/api/mcp/remotes` is the remote MCP catalog (D98 (17)).
+    _invalid({**manifest_data, "id": "remotes"}, "reserved")
+
+
 def test_rejects_unknown_fields(manifest_data: dict[str, Any]) -> None:
     _invalid({**manifest_data, "image": {"digest": "sha256:x"}}, "Extra inputs")
     manifest_data["iam"][0]["effect"] = "Allow"

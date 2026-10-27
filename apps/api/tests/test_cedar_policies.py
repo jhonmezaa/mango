@@ -11,9 +11,11 @@ from mango_api.authz import (
     AGENT_TYPE,
     KNOWLEDGE_BASE_TYPE,
     PLATFORM,
+    REMOTE_MCP_TYPE,
     AgentResource,
     Authorizer,
     KnowledgeBaseResource,
+    RemoteMcpResource,
 )
 from mango_core.identity import UserContext
 from mango_core.knowledge import usable
@@ -174,6 +176,42 @@ def test_mcp_packs_are_decided_by_admins_only(authz: Authorizer, action: str) ->
     allowed = {u.user_id for u in EVERYONE if authz.is_allowed(u, action, *PLATFORM)}
     assert allowed == {"admin-1"}
     assert not authz.is_allowed(ADMIN, action, AGENT_TYPE, AGENT, AgentResource(AGENT))
+
+
+@pytest.mark.parametrize("action", ["ManageRemoteMcp", "ApproveRemoteMcp"])
+def test_remote_mcp_registrations_are_decided_by_admins_only(
+    authz: Authorizer, action: str
+) -> None:
+    allowed = {u.user_id for u in EVERYONE if authz.is_allowed(u, action, *PLATFORM)}
+    assert allowed == {"admin-1"}
+
+
+REMOTE = "abcdefghij23"
+
+
+def _remote_allowed(authz: Authorizer, groups: frozenset[str]) -> set[str]:
+    resource = RemoteMcpResource(REMOTE, groups)
+    return {
+        u.user_id
+        for u in EVERYONE
+        if authz.is_allowed(u, "UseRemoteMcp", REMOTE_MCP_TYPE, REMOTE, remote=resource)
+    }
+
+
+def test_using_a_remote_mcp_is_being_in_its_groups_and_nothing_else(authz: Authorizer) -> None:
+    # Not the admin for being one (D98 (18)): the service is read with the person's account.
+    assert _remote_allowed(authz, frozenset({"hr"})) == {"creator-1", "creator-2", "member-1"}
+    assert _remote_allowed(authz, frozenset({"mango-admin"})) == {"admin-1"}
+    assert _remote_allowed(authz, frozenset()) == set()
+    # Attributes of another registration are never used.
+    assert not authz.is_allowed(
+        MEMBER,
+        "UseRemoteMcp",
+        REMOTE_MCP_TYPE,
+        REMOTE,
+        remote=RemoteMcpResource("zzzzzzzzzzzz", frozenset({"hr"})),
+    )
+    assert not authz.is_allowed(MEMBER, "UseRemoteMcp", *PLATFORM)
 
 
 # --- Write tools with approval (D27) --------------------------------------------------------

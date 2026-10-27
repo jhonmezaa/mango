@@ -464,9 +464,10 @@ describe("mango-api and the pack provisioner", () => {
       "dynamodb:UpdateItem",
     ]);
     expect(deny.Resource).toEqual({ "Fn::GetAtt": [settingsId, "Arn"] });
-    // Also the harness the Playground invokes (D91): the agent provisioner's to say.
+    // Also the harness the Playground invokes (D91): the agent provisioner's to say; and the
+    // signed approved catalogs of remote MCP servers (D98 (13)): the remote provisioner's.
     expect(deny.Condition).toEqual({
-      "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*", "PLAYGROUND"] },
+      "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*", "PLAYGROUND", "MCP_REMOTE#*"] },
     });
   });
 

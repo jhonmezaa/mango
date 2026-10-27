@@ -184,6 +184,11 @@ export class RemoteRelease extends Construct {
     return { REMOTE_CATALOG: JSON.stringify(this.catalog) };
   }
 
+  /** The objects of the profiles this release names (for a policy that is not a grantee's). */
+  objectArns(): string[] {
+    return this.remotes.map((remote) => this.bucket.arnForObjects(remote.objectKey));
+  }
+
   /** Read-only access to exactly the profiles this release names: no listing, no other object. */
   grantRead(grantee: iam.IGrantable): void {
     if (this.remotes.length === 0) return;

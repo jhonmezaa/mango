@@ -27,6 +27,8 @@ SCHEMA_VERSION = 1
 QUARANTINE = timedelta(days=7)
 
 PackId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$", max_length=24)]
+# `/api/mcp/remotes` is the remote MCP catalog (D98 (17)): no pack may take that id.
+RESERVED_PACK_IDS = frozenset({"remotes"})
 Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Sha256Ref = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 UpstreamVersion = Annotated[str, StringConstraints(pattern=r"^[0-9]+(\.[0-9]+){1,3}$")]
@@ -243,6 +245,8 @@ class PackManifest(StrictModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
+        if self.id in RESERVED_PACK_IDS:
+            raise ValueError(f"{self.id} is reserved and cannot be a pack id")
         if not self.version.startswith(f"{self.source.version}-"):
             raise ValueError("version must be '<source.version>-<revision>'")
         names = [tool.name for tool in self.tools]

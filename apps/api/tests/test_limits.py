@@ -167,6 +167,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
     assert services.agents is not None
     assert services.tasks is not None
     assert services.skills is not None
+    assert services.remote_mcp is not None
     held = {
         "people.reads": services.people.reads,
         "people.changes": services.people.changes,
@@ -184,6 +185,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
         "tasks.changes": services.tasks.changes,
         "skills.proposals": services.skills.rate_limiter,
         "skills.reads": services.skills.reads,
+        "remote_mcp.writes": services.remote_mcp.rate_limiter,
     }
     for name, limiter in held.items():
         assert limiter is issued[name], f"{name} is not the limiter of the registry"
@@ -224,6 +226,7 @@ def test_routes_do_not_build_limiters_outside_the_registry() -> None:
         "admin.py",
         "activity.py",
         "skills.py",
+        "remote_mcp.py",
     }
     builders = {
         path.name

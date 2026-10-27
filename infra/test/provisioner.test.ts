@@ -528,9 +528,19 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
         StringEquals: { "iam:PassedToService": "scheduler.amazonaws.com" },
       });
     }
-    expect(
-      granted.filter((a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke")),
-    ).toEqual([]);
+    // The one control-plane write: the Identity providers of remote MCP registrations, which
+    // hold the app's secret an administrator types (D98 (17)), and only those.
+    const controlPlane = allowed.filter((s) =>
+      actions(s).some((a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke")),
+    );
+    expect(controlPlane.map((s) => s.Sid)).toEqual(["RemoteMcpProviders"]);
+    expect(actions(controlPlane[0]!).every((a) => /Oauth2CredentialProvider$|:TagResource$/.test(a))).toBe(true);
+    const scope = JSON.stringify(controlPlane[0]!.Resource);
+    expect(scope).toContain("oauth2credentialprovider/Mango-");
+    expect(scope).toContain("-remote-*");
+    expect(granted.filter((a) => a.startsWith("bedrock-agentcore:") && !a.startsWith("bedrock-agentcore:Invoke"))).toEqual(
+      actions(controlPlane[0]!),
+    );
   });
 
   it("gets the state machine ARN in its environment", () => {

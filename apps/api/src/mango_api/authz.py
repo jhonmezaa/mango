@@ -18,6 +18,7 @@ USER_TYPE = "Mango::User"
 AGENT_TYPE = "Mango::Agent"
 TASK_TYPE = "Mango::Task"
 KNOWLEDGE_BASE_TYPE = "Mango::KnowledgeBase"
+REMOTE_MCP_TYPE = "Mango::RemoteMcp"
 PLATFORM = ("Mango::Platform", "mango")
 # Limit of requests per BatchIsAuthorized call.
 _BATCH_SIZE = 30
@@ -56,6 +57,15 @@ class KnowledgeBaseResource:
     groups: frozenset[str] = frozenset()
 
 
+@dataclass(frozen=True)
+class RemoteMcpResource:
+    """What Cedar knows about a remote MCP registration (D98 (18)): its groups, read from
+    ``REMOTE#<reg>`` when asked, never from the request."""
+
+    registration_id: str
+    groups: frozenset[str] = frozenset()
+
+
 def _user_ref(user_id: str) -> dict[str, Any]:
     return {"entityIdentifier": {"entityType": USER_TYPE, "entityId": user_id}}
 
@@ -90,6 +100,13 @@ def _knowledge_entity(kb: KnowledgeBaseResource) -> dict[str, Any]:
     }
 
 
+def _remote_entity(remote: RemoteMcpResource) -> dict[str, Any]:
+    return {
+        "identifier": {"entityType": REMOTE_MCP_TYPE, "entityId": remote.registration_id},
+        "attributes": {"groups": {"set": [{"string": g} for g in sorted(remote.groups)]}},
+    }
+
+
 class Authorizer:
     def __init__(self, client: VerifiedPermissionsClient, policy_store_id: str) -> None:
         self._client = client
@@ -120,10 +137,11 @@ class Authorizer:
         *,
         task: TaskResource | None = None,
         knowledge: KnowledgeBaseResource | None = None,
+        remote: RemoteMcpResource | None = None,
     ) -> bool:
         """One decision. ``agent`` carries the attributes of an ``Mango::Agent`` resource,
-        ``task`` those of a ``Mango::Task`` and ``knowledge`` those of a
-        ``Mango::KnowledgeBase``."""
+        ``task`` those of a ``Mango::Task``, ``knowledge`` those of a ``Mango::KnowledgeBase``
+        and ``remote`` those of a ``Mango::RemoteMcp``."""
         resource: Any = {"identifier": {"entityType": resource_type, "entityId": resource_id}}
         if agent is not None:
             if resource_type != AGENT_TYPE or agent.agent_id != resource_id:
@@ -145,6 +163,17 @@ class Authorizer:
                 logger.error("knowledge base attributes do not match the resource; denying")
                 return False
             resource = _knowledge_entity(knowledge)
+        if remote is not None:
+            if (
+                resource_type != REMOTE_MCP_TYPE
+                or remote.registration_id != resource_id
+                or agent is not None
+                or task is not None
+                or knowledge is not None
+            ):
+                logger.error("remote MCP attributes do not match the resource; denying")
+                return False
+            resource = _remote_entity(remote)
         try:
             resp = self._client.is_authorized(
                 policyStoreId=self._store,

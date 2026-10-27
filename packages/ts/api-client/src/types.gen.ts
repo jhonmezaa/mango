@@ -3414,6 +3414,532 @@ export type RejectedOut = {
 };
 
 /**
+ * RemoteCatalogOut
+ */
+export type RemoteCatalogOut = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Max Registrations
+     */
+    max_registrations?: number;
+    /**
+     * Profiles
+     */
+    profiles: Array<RemoteProfileOut>;
+    /**
+     * Registrations
+     */
+    registrations: Array<RemoteRegistrationOut>;
+};
+
+/**
+ * RemoteChangeKind
+ */
+export type RemoteChangeKind = 'enable' | 'replace_app' | 'params';
+
+/**
+ * RemoteChangeStatus
+ */
+export type RemoteChangeStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'cancelled';
+
+/**
+ * RemoteDisableIn
+ */
+export type RemoteDisableIn = {
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * RemoteEmptyIn
+ */
+export type RemoteEmptyIn = {
+    [key: string]: never;
+};
+
+/**
+ * RemoteParamsIn
+ */
+export type RemoteParamsIn = {
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Toolsets
+     */
+    toolsets: Array<string>;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * RemotePermissionOut
+ */
+export type RemotePermissionOut = {
+    /**
+     * Permission
+     */
+    permission: string;
+    /**
+     * Resource
+     */
+    resource: string;
+};
+
+/**
+ * RemoteProfileOut
+ */
+export type RemoteProfileOut = {
+    /**
+     * Data Leaves Aws
+     */
+    data_leaves_aws: boolean;
+    /**
+     * Enabled In Installation
+     */
+    enabled_in_installation: boolean;
+    /**
+     * Host
+     */
+    host: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Link Hosts
+     */
+    link_hosts: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Needs Tenant
+     */
+    needs_tenant: boolean;
+    /**
+     * Operator
+     */
+    operator: string;
+    /**
+     * Permissions
+     */
+    permissions: Array<RemotePermissionOut>;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Toolsets
+     */
+    toolsets: Array<RemoteToolsetOut>;
+    /**
+     * Version
+     */
+    version: string;
+};
+
+/**
+ * RemoteReenableIn
+ *
+ * «Pedir de nuevo» on a registration that failed or was disabled.
+ */
+export type RemoteReenableIn = {
+    /**
+     * Client Id
+     */
+    client_id: string;
+    /**
+     * Client Secret
+     */
+    client_secret: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Kind
+     */
+    kind: 'enable';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Secret Expires On
+     */
+    secret_expires_on: string;
+    /**
+     * Tenant Id
+     */
+    tenant_id: string;
+    /**
+     * Toolsets
+     */
+    toolsets: Array<string>;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * RemoteRegistrationIn
+ */
+export type RemoteRegistrationIn = {
+    /**
+     * Client Id
+     */
+    client_id: string;
+    /**
+     * Client Secret
+     */
+    client_secret: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Organization
+     */
+    organization: string;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Secret Expires On
+     */
+    secret_expires_on: string;
+    /**
+     * Tenant Id
+     */
+    tenant_id: string;
+    /**
+     * Toolsets
+     */
+    toolsets: Array<string>;
+};
+
+/**
+ * RemoteRegistrationOut
+ */
+export type RemoteRegistrationOut = {
+    /**
+     * Approved At
+     */
+    approved_at?: string | null;
+    /**
+     * Approved By
+     */
+    approved_by?: string | null;
+    /**
+     * Approved By Email
+     */
+    approved_by_email?: string | null;
+    /**
+     * Callback Url
+     */
+    callback_url?: string | null;
+    /**
+     * Client Id
+     */
+    client_id?: string | null;
+    /**
+     * Disabled At
+     */
+    disabled_at: string | null;
+    /**
+     * Disabled By
+     */
+    disabled_by: string | null;
+    /**
+     * Failure Code
+     */
+    failure_code?: string | null;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * History
+     */
+    history?: Array<RemoteRequestOut> | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Organization
+     */
+    organization: string;
+    pending?: RemoteRequestOut | null;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Profile In Release
+     */
+    profile_in_release: boolean;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Requested By
+     */
+    requested_by?: string | null;
+    /**
+     * Requested By Email
+     */
+    requested_by_email?: string | null;
+    /**
+     * Secret Expires On
+     */
+    secret_expires_on: string | null;
+    /**
+     * Secret Level
+     */
+    secret_level: 'ok' | 'd30' | 'd7' | 'expired' | null;
+    status: RemoteRegistrationStatus;
+    /**
+     * Tenant Id
+     */
+    tenant_id?: string | null;
+    /**
+     * Tools
+     */
+    tools: Array<string>;
+    /**
+     * Toolsets
+     */
+    toolsets: Array<string>;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * RemoteRegistrationStatus
+ */
+export type RemoteRegistrationStatus = 'pending' | 'approved' | 'creating' | 'active' | 'failed' | 'disabling' | 'disabled';
+
+/**
+ * RemoteRejectIn
+ */
+export type RemoteRejectIn = {
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
+ * RemoteReplaceAppIn
+ *
+ * A new tenant or app for an active registration: everyone connects again.
+ */
+export type RemoteReplaceAppIn = {
+    /**
+     * Client Id
+     */
+    client_id: string;
+    /**
+     * Client Secret
+     */
+    client_secret: string;
+    /**
+     * Kind
+     */
+    kind: 'replace_app';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Secret Expires On
+     */
+    secret_expires_on: string;
+    /**
+     * Tenant Id
+     */
+    tenant_id: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * RemoteRequestOut
+ */
+export type RemoteRequestOut = {
+    /**
+     * Callback Url
+     */
+    callback_url: string | null;
+    /**
+     * Client Id
+     */
+    client_id: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Decided At
+     */
+    decided_at: string | null;
+    /**
+     * Decided By
+     */
+    decided_by: string | null;
+    /**
+     * Decided By Email
+     */
+    decided_by_email: string | null;
+    /**
+     * Decision Reason
+     */
+    decision_reason: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Groups
+     */
+    groups: Array<string>;
+    /**
+     * Id
+     */
+    id: string;
+    kind: RemoteChangeKind;
+    /**
+     * Organization
+     */
+    organization: string;
+    /**
+     * Own
+     */
+    own: boolean;
+    /**
+     * Previous Groups
+     */
+    previous_groups: Array<string> | null;
+    /**
+     * Previous Toolsets
+     */
+    previous_toolsets: Array<string> | null;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Profile Version
+     */
+    profile_version: string;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Registration Id
+     */
+    registration_id: string;
+    /**
+     * Requested By
+     */
+    requested_by: string;
+    /**
+     * Requested By Email
+     */
+    requested_by_email: string | null;
+    /**
+     * Secret Expires On
+     */
+    secret_expires_on: string | null;
+    status: RemoteChangeStatus;
+    /**
+     * Tenant Id
+     */
+    tenant_id: string | null;
+    /**
+     * Toolsets
+     */
+    toolsets: Array<string>;
+};
+
+/**
+ * RemoteRetryIn
+ */
+export type RemoteRetryIn = {
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * RemoteRotateSecretIn
+ */
+export type RemoteRotateSecretIn = {
+    /**
+     * Client Secret
+     */
+    client_secret: string;
+    /**
+     * Secret Expires On
+     */
+    secret_expires_on: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * RemoteToolsetOut
+ */
+export type RemoteToolsetOut = {
+    /**
+     * Always
+     */
+    always: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Tools
+     */
+    tools: Array<string>;
+};
+
+/**
  * RenewedOut
  */
 export type RenewedOut = {
@@ -8398,6 +8924,320 @@ export type GetCatalogResponses = {
 };
 
 export type GetCatalogResponse = GetCatalogResponses[keyof GetCatalogResponses];
+
+export type GetRemoteCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/mcp/remotes';
+};
+
+export type GetRemoteCatalogErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetRemoteCatalogError = GetRemoteCatalogErrors[keyof GetRemoteCatalogErrors];
+
+export type GetRemoteCatalogResponses = {
+    /**
+     * Successful Response
+     */
+    200: RemoteCatalogOut;
+};
+
+export type GetRemoteCatalogResponse = GetRemoteCatalogResponses[keyof GetRemoteCatalogResponses];
+
+export type DisableRemoteData = {
+    body: RemoteDisableIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}';
+};
+
+export type DisableRemoteErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DisableRemoteError = DisableRemoteErrors[keyof DisableRemoteErrors];
+
+export type DisableRemoteResponses = {
+    /**
+     * Successful Response
+     */
+    200: RemoteCatalogOut;
+};
+
+export type DisableRemoteResponse = DisableRemoteResponses[keyof DisableRemoteResponses];
+
+export type RequestRemoteParamsData = {
+    body: RemoteParamsIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}/params';
+};
+
+export type RequestRemoteParamsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RequestRemoteParamsError = RequestRemoteParamsErrors[keyof RequestRemoteParamsErrors];
+
+export type RequestRemoteParamsResponses = {
+    /**
+     * Successful Response
+     */
+    201: RemoteCatalogOut;
+};
+
+export type RequestRemoteParamsResponse = RequestRemoteParamsResponses[keyof RequestRemoteParamsResponses];
+
+export type RequestRemoteChangeData = {
+    /**
+     * Body
+     */
+    body: ({
+        kind: 'replace_app';
+    } & RemoteReplaceAppIn) | ({
+        kind: 'enable';
+    } & RemoteReenableIn);
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}/requests';
+};
+
+export type RequestRemoteChangeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RequestRemoteChangeError = RequestRemoteChangeErrors[keyof RequestRemoteChangeErrors];
+
+export type RequestRemoteChangeResponses = {
+    /**
+     * Successful Response
+     */
+    201: RemoteCatalogOut;
+};
+
+export type RequestRemoteChangeResponse = RequestRemoteChangeResponses[keyof RequestRemoteChangeResponses];
+
+export type ApproveRemoteRequestData = {
+    body: RemoteEmptyIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}/requests/{change_id}/approve';
+};
+
+export type ApproveRemoteRequestErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ApproveRemoteRequestError = ApproveRemoteRequestErrors[keyof ApproveRemoteRequestErrors];
+
+export type ApproveRemoteRequestResponses = {
+    /**
+     * Successful Response
+     */
+    200: RemoteCatalogOut;
+};
+
+export type ApproveRemoteRequestResponse = ApproveRemoteRequestResponses[keyof ApproveRemoteRequestResponses];
+
+export type RejectRemoteRequestData = {
+    body: RemoteRejectIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}/requests/{change_id}/reject';
+};
+
+export type RejectRemoteRequestErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RejectRemoteRequestError = RejectRemoteRequestErrors[keyof RejectRemoteRequestErrors];
+
+export type RejectRemoteRequestResponses = {
+    /**
+     * Successful Response
+     */
+    200: RemoteCatalogOut;
+};
+
+export type RejectRemoteRequestResponse = RejectRemoteRequestResponses[keyof RejectRemoteRequestResponses];
+
+export type WithdrawRemoteRequestData = {
+    body: RemoteEmptyIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}/requests/{change_id}/withdraw';
+};
+
+export type WithdrawRemoteRequestErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type WithdrawRemoteRequestError = WithdrawRemoteRequestErrors[keyof WithdrawRemoteRequestErrors];
+
+export type WithdrawRemoteRequestResponses = {
+    /**
+     * Successful Response
+     */
+    200: RemoteCatalogOut;
+};
+
+export type WithdrawRemoteRequestResponse = WithdrawRemoteRequestResponses[keyof WithdrawRemoteRequestResponses];
+
+export type RetryRemoteData = {
+    body: RemoteRetryIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}/retry';
+};
+
+export type RetryRemoteErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RetryRemoteError = RetryRemoteErrors[keyof RetryRemoteErrors];
+
+export type RetryRemoteResponses = {
+    /**
+     * Successful Response
+     */
+    200: RemoteCatalogOut;
+};
+
+export type RetryRemoteResponse = RetryRemoteResponses[keyof RetryRemoteResponses];
+
+export type RotateRemoteSecretData = {
+    body: RemoteRotateSecretIn;
+    path: {
+        /**
+         * Reg
+         */
+        reg: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/registrations/{reg}/secret';
+};
+
+export type RotateRemoteSecretErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RotateRemoteSecretError = RotateRemoteSecretErrors[keyof RotateRemoteSecretErrors];
+
+export type RotateRemoteSecretResponses = {
+    /**
+     * Successful Response
+     */
+    200: RemoteCatalogOut;
+};
+
+export type RotateRemoteSecretResponse = RotateRemoteSecretResponses[keyof RotateRemoteSecretResponses];
+
+export type RequestRemoteRegistrationData = {
+    body: RemoteRegistrationIn;
+    path: {
+        /**
+         * Profile
+         */
+        profile: string;
+    };
+    query?: never;
+    url: '/mcp/remotes/{profile}/registrations';
+};
+
+export type RequestRemoteRegistrationErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RequestRemoteRegistrationError = RequestRemoteRegistrationErrors[keyof RequestRemoteRegistrationErrors];
+
+export type RequestRemoteRegistrationResponses = {
+    /**
+     * Successful Response
+     */
+    201: RemoteCatalogOut;
+};
+
+export type RequestRemoteRegistrationResponse = RequestRemoteRegistrationResponses[keyof RequestRemoteRegistrationResponses];
 
 export type DisablePackData = {
     body: DisableIn;

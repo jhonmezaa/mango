@@ -1411,6 +1411,244 @@ export const zRejectedOutSchema = z.object({
 });
 
 /**
+ * RemoteChangeKind
+ */
+export const zRemoteChangeKindSchema = z.enum([
+    'enable',
+    'replace_app',
+    'params'
+]);
+
+/**
+ * RemoteChangeStatus
+ */
+export const zRemoteChangeStatusSchema = z.enum([
+    'pending',
+    'approved',
+    'rejected',
+    'withdrawn',
+    'cancelled'
+]);
+
+/**
+ * RemoteDisableIn
+ */
+export const zRemoteDisableInSchema = z.object({
+    reason: z.string().min(1).max(500),
+    version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * RemoteEmptyIn
+ */
+export const zRemoteEmptyInSchema = z.record(z.string(), z.never());
+
+/**
+ * RemoteParamsIn
+ */
+export const zRemoteParamsInSchema = z.object({
+    groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).min(1).max(10),
+    reason: z.string().min(1).max(500).nullish(),
+    toolsets: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,23}$/)).max(16),
+    version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * RemotePermissionOut
+ */
+export const zRemotePermissionOutSchema = z.object({
+    permission: z.string(),
+    resource: z.string()
+});
+
+/**
+ * RemoteReenableIn
+ *
+ * «Pedir de nuevo» on a registration that failed or was disabled.
+ */
+export const zRemoteReenableInSchema = z.object({
+    client_id: z.uuid(),
+    client_secret: z.string().min(1).max(512),
+    groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).min(1).max(10),
+    kind: z.literal('enable'),
+    reason: z.string().min(1).max(500).nullish(),
+    secret_expires_on: z.iso.date(),
+    tenant_id: z.uuid(),
+    toolsets: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,23}$/)).max(16),
+    version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * RemoteRegistrationIn
+ */
+export const zRemoteRegistrationInSchema = z.object({
+    client_id: z.uuid(),
+    client_secret: z.string().min(1).max(512),
+    groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).min(1).max(10),
+    organization: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,48}$/),
+    reason: z.string().min(1).max(500).nullish(),
+    secret_expires_on: z.iso.date(),
+    tenant_id: z.uuid(),
+    toolsets: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,23}$/)).max(16)
+});
+
+/**
+ * RemoteRegistrationStatus
+ */
+export const zRemoteRegistrationStatusSchema = z.enum([
+    'pending',
+    'approved',
+    'creating',
+    'active',
+    'failed',
+    'disabling',
+    'disabled'
+]);
+
+/**
+ * RemoteRejectIn
+ */
+export const zRemoteRejectInSchema = z.object({
+    reason: z.string().min(1).max(500)
+});
+
+/**
+ * RemoteReplaceAppIn
+ *
+ * A new tenant or app for an active registration: everyone connects again.
+ */
+export const zRemoteReplaceAppInSchema = z.object({
+    client_id: z.uuid(),
+    client_secret: z.string().min(1).max(512),
+    kind: z.literal('replace_app'),
+    reason: z.string().min(1).max(500).nullish(),
+    secret_expires_on: z.iso.date(),
+    tenant_id: z.uuid(),
+    version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * RemoteRequestOut
+ */
+export const zRemoteRequestOutSchema = z.object({
+    callback_url: z.string().nullable(),
+    client_id: z.string().nullable(),
+    created_at: z.string(),
+    decided_at: z.string().nullable(),
+    decided_by: z.string().nullable(),
+    decided_by_email: z.string().nullable(),
+    decision_reason: z.string().nullable(),
+    expires_at: z.string(),
+    groups: z.array(z.string()),
+    id: z.string(),
+    kind: zRemoteChangeKindSchema,
+    organization: z.string(),
+    own: z.boolean(),
+    previous_groups: z.array(z.string()).nullable(),
+    previous_toolsets: z.array(z.string()).nullable(),
+    profile_id: z.string(),
+    profile_version: z.string(),
+    reason: z.string().nullable(),
+    registration_id: z.string(),
+    requested_by: z.string(),
+    requested_by_email: z.string().nullable(),
+    secret_expires_on: z.string().nullable(),
+    status: zRemoteChangeStatusSchema,
+    tenant_id: z.string().nullable(),
+    toolsets: z.array(z.string())
+});
+
+/**
+ * RemoteRegistrationOut
+ */
+export const zRemoteRegistrationOutSchema = z.object({
+    approved_at: z.string().nullish(),
+    approved_by: z.string().nullish(),
+    approved_by_email: z.string().nullish(),
+    callback_url: z.string().nullish(),
+    client_id: z.string().nullish(),
+    disabled_at: z.string().nullable(),
+    disabled_by: z.string().nullable(),
+    failure_code: z.string().nullish(),
+    groups: z.array(z.string()),
+    history: z.array(zRemoteRequestOutSchema).nullish(),
+    id: z.string(),
+    organization: z.string(),
+    pending: zRemoteRequestOutSchema.nullish(),
+    profile_id: z.string(),
+    profile_in_release: z.boolean(),
+    reason: z.string().nullable(),
+    requested_by: z.string().nullish(),
+    requested_by_email: z.string().nullish(),
+    secret_expires_on: z.string().nullable(),
+    secret_level: z.enum([
+        'ok',
+        'd30',
+        'd7',
+        'expired'
+    ]).nullable(),
+    status: zRemoteRegistrationStatusSchema,
+    tenant_id: z.string().nullish(),
+    tools: z.array(z.string()),
+    toolsets: z.array(z.string()),
+    version: z.int()
+});
+
+/**
+ * RemoteRetryIn
+ */
+export const zRemoteRetryInSchema = z.object({
+    version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * RemoteRotateSecretIn
+ */
+export const zRemoteRotateSecretInSchema = z.object({
+    client_secret: z.string().min(1).max(512),
+    secret_expires_on: z.iso.date(),
+    version: z.int().gte(0).lte(1000000)
+});
+
+/**
+ * RemoteToolsetOut
+ */
+export const zRemoteToolsetOutSchema = z.object({
+    always: z.boolean(),
+    id: z.string(),
+    label: z.string(),
+    tools: z.array(z.string())
+});
+
+/**
+ * RemoteProfileOut
+ */
+export const zRemoteProfileOutSchema = z.object({
+    data_leaves_aws: z.boolean(),
+    enabled_in_installation: z.boolean(),
+    host: z.string(),
+    id: z.string(),
+    link_hosts: z.array(z.string()),
+    name: z.string(),
+    needs_tenant: z.boolean(),
+    operator: z.string(),
+    permissions: z.array(zRemotePermissionOutSchema),
+    provider: z.string(),
+    toolsets: z.array(zRemoteToolsetOutSchema),
+    version: z.string()
+});
+
+/**
+ * RemoteCatalogOut
+ */
+export const zRemoteCatalogOutSchema = z.object({
+    enabled: z.boolean(),
+    max_registrations: z.int().optional().default(10),
+    profiles: z.array(zRemoteProfileOutSchema),
+    registrations: z.array(zRemoteRegistrationOutSchema)
+});
+
+/**
  * RenewedOut
  */
 export const zRenewedOutSchema = z.object({
@@ -3694,6 +3932,119 @@ export const zPendingSourcesResponse = zPendingSourceListOutSchema;
  * Successful Response
  */
 export const zGetCatalogResponse = zCatalogOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zGetRemoteCatalogResponse = zRemoteCatalogOutSchema;
+
+export const zDisableRemoteBody = zRemoteDisableInSchema;
+
+export const zDisableRemotePath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDisableRemoteResponse = zRemoteCatalogOutSchema;
+
+export const zRequestRemoteParamsBody = zRemoteParamsInSchema;
+
+export const zRequestRemoteParamsPath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRequestRemoteParamsResponse = zRemoteCatalogOutSchema;
+
+/**
+ * Body
+ */
+export const zRequestRemoteChangeBody = z.discriminatedUnion('kind', [
+    zRemoteReplaceAppInSchema,
+    zRemoteReenableInSchema
+]);
+
+export const zRequestRemoteChangePath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRequestRemoteChangeResponse = zRemoteCatalogOutSchema;
+
+export const zApproveRemoteRequestBody = zRemoteEmptyInSchema;
+
+export const zApproveRemoteRequestPath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/),
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zApproveRemoteRequestResponse = zRemoteCatalogOutSchema;
+
+export const zRejectRemoteRequestBody = zRemoteRejectInSchema;
+
+export const zRejectRemoteRequestPath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/),
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRejectRemoteRequestResponse = zRemoteCatalogOutSchema;
+
+export const zWithdrawRemoteRequestBody = zRemoteEmptyInSchema;
+
+export const zWithdrawRemoteRequestPath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/),
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zWithdrawRemoteRequestResponse = zRemoteCatalogOutSchema;
+
+export const zRetryRemoteBody = zRemoteRetryInSchema;
+
+export const zRetryRemotePath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRetryRemoteResponse = zRemoteCatalogOutSchema;
+
+export const zRotateRemoteSecretBody = zRemoteRotateSecretInSchema;
+
+export const zRotateRemoteSecretPath = z.object({
+    reg: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRotateRemoteSecretResponse = zRemoteCatalogOutSchema;
+
+export const zRequestRemoteRegistrationBody = zRemoteRegistrationInSchema;
+
+export const zRequestRemoteRegistrationPath = z.object({
+    profile: z.string().regex(/^[a-z][a-z0-9-]{1,23}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRequestRemoteRegistrationResponse = zRemoteCatalogOutSchema;
 
 export const zDisablePackBody = zDisableInSchema;
 

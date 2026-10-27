@@ -51,6 +51,7 @@ const WITH_DEFAULT = [
   "HighRiskSignInAction",
   "MemberAccessExcludedAccountIds",
   "MemberAccessTargets",
+  "RemoteMcpEnabled",
   "SecondAdminEmail",
   "TransactionSearch",
 ];

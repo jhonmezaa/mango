@@ -3,7 +3,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Aws, CfnCondition, CfnParameter, CfnRule, Fn, Stack, Token } from "aws-cdk-lib";
 import { z } from "zod";
-import { managementAccountIdParameter, namespaceParameter, organizationIdParameter } from "../params.js";
+import {
+  managementAccountIdParameter,
+  namespaceParameter,
+  organizationIdParameter,
+  remoteMcpEnabledParameter,
+} from "../params.js";
 import { AGENTCORE_VPC_ZONE_IDS, Installation } from "./schema.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -59,6 +64,8 @@ export interface CoreParameters {
   readonly secondAdminEmail: string;
   /** Object Lock mode of the audit bucket (`GOVERNANCE` or `COMPLIANCE`). */
   readonly auditLockMode: string;
+  /** `RemoteMcpEnabled` (D98 (4)): "true" or "false", as deploy-time text. */
+  readonly remoteMcpEnabled: string;
   /** What config.json of the SPA takes from parameters, as deploy-time text. */
   readonly spa: { readonly signUpDomains: string; readonly aiPolicyUrlMember: string };
 }
@@ -220,6 +227,8 @@ export function coreParameters(stack: Stack): CoreParameters {
     audit: { retentionDays: Token.asNumber(auditDays.valueAsNumber), mode: "GOVERNANCE" },
     packs: { network: { cidr: "10.210.0.0/22", availabilityZoneIds: ["use1-az1", "use1-az2"] } },
     gateway: { mcpSessions: true },
+    // The parameter decides (`remoteMcpEnabled` above); this value is not used by a release.
+    remoteMcp: { enabled: false },
     orgAccess: {
       targets: [memberTargets.valueAsString],
       excludedAccountIds: [memberExcluded.valueAsString],
@@ -237,6 +246,7 @@ export function coreParameters(stack: Stack): CoreParameters {
       expression: Fn.conditionNot(Fn.conditionEquals(secondAdmin.valueAsString, "")),
     }),
     secondAdminEmail: secondAdmin.valueAsString,
+    remoteMcpEnabled: remoteMcpEnabledParameter(stack),
     auditLockMode: auditMode.valueAsString,
     spa: {
       signUpDomains: signUpDomains.valueAsString,

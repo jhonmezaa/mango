@@ -154,9 +154,23 @@ from mango_api.playground import PlaygroundDeps, PlaygroundHarnesses, playground
 from mango_api.presign import PresignSessions
 from mango_api.pricing import Usage, cost, estimate_max_cost, knowledge_cost, turn_price
 from mango_api.probe import AdminProbe, OrganizationCache
-from mango_api.provisioner import DeprovisionerClient, PackProvisionerClient, ProvisionerClient
+from mango_api.provisioner import (
+    DeprovisionerClient,
+    PackProvisionerClient,
+    ProvisionerClient,
+    RemoteProvisionerClient,
+)
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
 from mango_api.rate_limits import RateLimitStore
+from mango_api.remote_mcp import RemoteMcpDeps, remote_mcp_router
+from mango_api.remote_mcp_store import (
+    ApprovedRemotes,
+    IdentityProviders,
+    RemoteStore,
+    StackTags,
+    gateway_id_of,
+)
+from mango_api.remote_release import ReleaseRemotes, parse_remote_catalog
 from mango_api.settings import ModelPrice, Settings
 from mango_api.settings_store import BudgetLimits, SettingsStore, SettingsUnavailableError
 from mango_api.skills import SkillsDeps, skills_router
@@ -366,6 +380,8 @@ class Services:
     models: ModelsDeps | None = None
     # MCP catalog and pack enablements (D19); set in production (build_services).
     mcp: McpDeps | None = None
+    # Remote MCP registrations (D93, D98); set in production (build_services).
+    remote_mcp: RemoteMcpDeps | None = None
     # Emails of the people an agent is shared with (D33); set in production (build_services).
     directory: CognitoDirectory | None = None
     directory_quota: LookupQuota | None = None
@@ -499,6 +515,56 @@ def _task_services(
         ),
     )
     return tasks, tokens, sqs
+
+
+def _remote_mcp_deps(
+    settings: Settings,
+    *,
+    dynamodb: Any,
+    group_registry: GroupRegistry,
+    authorizer: Authorizer,
+    audit: AuditLog,
+    limits: Limits,
+) -> RemoteMcpDeps:
+    """Remote MCP registrations (D98 (17)): the profiles of the release, the Identity providers
+    mango-api creates and the remote provisioner it starts."""
+    region = settings.region
+    identity = IdentityProviders(
+        boto3.client("bedrock-agentcore-control", region_name=region),
+        StackTags(boto3.client("cloudformation", region_name=region), settings.stack_id),
+        settings.namespace,
+    )
+    return RemoteMcpDeps(
+        release=ReleaseRemotes(
+            boto3.client("s3", region_name=region),
+            bucket=settings.packs_bucket,
+            bucket_owner=settings.packs_bucket_owner,
+            catalog=parse_remote_catalog(settings.remote_catalog),
+            public_key_pem=settings.pack_signing_public_key,
+        ),
+        store=RemoteStore(dynamodb, settings.settings_table),
+        groups=group_registry,
+        authorizer=authorizer,
+        audit=audit,
+        clock=now_utc,
+        namespace=settings.namespace,
+        enabled=settings.remote_mcp_enabled,
+        identity=identity,
+        approved=ApprovedRemotes(
+            dynamodb,
+            settings.settings_table,
+            boto3.client("kms", region_name=region),
+            key_id=settings.remote_mcp_key_id,
+            gateway_id=gateway_id_of(settings.gateway_url),
+        ),
+        provisioner=RemoteProvisionerClient(
+            boto3.client("stepfunctions", region_name=region),
+            settings.remote_provisioner_state_machine_arn,
+        )
+        if settings.remote_provisioner_state_machine_arn
+        else None,
+        rate_limiter=limits.limiter("remote_mcp.writes"),
+    )
 
 
 def build_services(settings: Settings) -> Services:
@@ -741,6 +807,14 @@ def build_services(settings: Settings) -> Services:
             if settings.pack_provisioner_state_machine_arn
             else None,
             rate_limiter=limits.limiter("mcp.writes"),
+        ),
+        remote_mcp=_remote_mcp_deps(
+            settings,
+            dynamodb=dynamodb,
+            group_registry=group_registry,
+            authorizer=authorizer,
+            audit=audit,
+            limits=limits,
         ),
         models=ModelsDeps(
             store=model_catalog,
@@ -1289,6 +1363,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     require,
                 )
             )
+        if services.remote_mcp is not None:
+            # Before the packs router: `/api/mcp/remotes` is never a pack (D98 (17)).
+            app.include_router(remote_mcp_router(services.remote_mcp, current_user, require))
         app.include_router(
             mcp_router(services.mcp or McpDeps.catalog_only(services.agents), current_user, require)
         )

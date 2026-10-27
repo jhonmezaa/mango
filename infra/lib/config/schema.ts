@@ -327,6 +327,15 @@ export const installationSchema = z
       .strict()
       .prefault({}),
     /**
+     * Remote MCP servers of third parties (D93, D98 (4)). Off by default: while off, mango-api
+     * refuses every write of a registration and «Conectar». A release takes it from the stack
+     * parameter `RemoteMcpEnabled`.
+     */
+    remoteMcp: z
+      .object({ enabled: z.boolean().default(false) })
+      .strict()
+      .prefault({}),
+    /**
      * Access to the member accounts (§4.10, D5): the stack `Mango-<ns>-OrgAccess` and its
      * StackSet. Without it only Core and Payer are synthesized; the broker of Core exists
      * either way, since no stack reads another at deploy time.

@@ -43,6 +43,14 @@
           }
         }
       },
+      "RemoteMcp": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "groups": { "type": "Set", "element": { "type": "String" }, "required": true }
+          }
+        }
+      },
       "Platform": { "shape": { "type": "Record", "attributes": {} } }
     },
     "actions": {
@@ -58,6 +66,15 @@
       },
       "EnableMcp": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
       "ApproveMcp": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ManageRemoteMcp": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ApproveRemoteMcp": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "UseRemoteMcp": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["RemoteMcp"] }
+      },
       "ViewAudit": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
       "ViewGroups": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
       "ViewAdmin": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },

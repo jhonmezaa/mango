@@ -49,7 +49,9 @@ def test_keys() -> None:
     }
 
 
-@pytest.mark.parametrize("value", ["", "Aws", "a_b", "a/b", "MCP#x", "a" * 25, "-a", "a-", 7, None])
+@pytest.mark.parametrize(
+    "value", ["", "Aws", "a_b", "a/b", "MCP#x", "a" * 25, "-a", "a-", "remotes", 7, None]
+)
 def test_pack_ids_are_strict(value: object) -> None:
     assert not is_pack_id(value)
     if isinstance(value, str):

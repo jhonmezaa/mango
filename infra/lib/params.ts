@@ -51,6 +51,19 @@ export function managementAccountIdParameter(stack: Stack): string {
 }
 
 /**
+ * Remote MCP servers of third parties (D98 (4)): `false` until the customer's live checks pass
+ * (P9, D97 (5)). The text is what mango-api receives (`REMOTE_MCP_ENABLED`).
+ */
+export function remoteMcpEnabledParameter(stack: Stack): string {
+  return new CfnParameter(stack, "RemoteMcpEnabled", {
+    type: "String",
+    default: "false",
+    allowedValues: ["false", "true"],
+    description: "Remote MCP servers of third parties (Azure DevOps). Leave false until the live checks pass.",
+  }).valueAsString;
+}
+
+/**
  * `mango:namespace` on every resource of a parameterized stack. The value is only known at
  * deployment, so it cannot be a tag of the stack itself: whoever deploys passes that one.
  */

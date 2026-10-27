@@ -44,6 +44,8 @@ import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-pr
 import { PLAYGROUND_PARTITION, PlaygroundHarness } from "../constructs/playground.js";
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
+import { APPROVED_REMOTE_PARTITION, RemoteMcpApi } from "../constructs/remote-mcp-api.js";
+import { RemoteRelease } from "../constructs/remote-release.js";
 import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
 import { TaskReports } from "../constructs/task-reports.js";
 import { TaskPlatform } from "../constructs/tasks.js";
@@ -399,6 +401,19 @@ export class CoreStack extends Stack {
     packProvisioner.grantStart(apiTaskRole);
     // The catalog of MCP lists the packs of the release from their signed statements.
     packPlatform.grantReadStatements(apiTaskRole);
+    // D93, D98: remote MCP servers of third parties. mango-api lists the signed profiles of the
+    // release, creates the Identity provider of each request and starts the remote provisioner,
+    // with a managed policy of its own (`Mango-<ns>-ApiRemoteMcp`).
+    const remoteRelease = new RemoteRelease(this, "RemoteRelease", {
+      bucket: packPlatform.bucket,
+      signingPublicKey: packRelease.signingPublicKey,
+    });
+    const remoteMcpApi = new RemoteMcpApi(this, "RemoteMcpApi", {
+      namespace: cfg.namespace,
+      role: apiTaskRole,
+      settingsTable: governance.settings,
+      release: remoteRelease,
+    });
     apiTaskRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "AuxiliaryModel",
@@ -441,7 +456,12 @@ export class CoreStack extends Stack {
         resources: [governance.settings.tableArn],
         conditions: {
           "ForAnyValue:StringLike": {
-            "dynamodb:LeadingKeys": [`${PACK_INSTALLED_PARTITION}*`, PLAYGROUND_PARTITION],
+            "dynamodb:LeadingKeys": [
+              `${PACK_INSTALLED_PARTITION}*`,
+              PLAYGROUND_PARTITION,
+              // D98 (13): the signed approved catalogs of remote MCP servers.
+              `${APPROVED_REMOTE_PARTITION}*`,
+            ],
           },
         },
       }),
@@ -545,6 +565,9 @@ export class CoreStack extends Stack {
         ...knowledge.apiEnvironment,
         ...skills.apiEnvironment,
         ...presign.apiEnvironment,
+        // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
+        ...remoteMcpApi.environment,
+        REMOTE_MCP_ENABLED: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
         ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
         // D60: who may be invited, and what Settings > General > Installation shows to
         // administrators (served by mango-api, not by the public config.json of the SPA).

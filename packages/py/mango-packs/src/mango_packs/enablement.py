@@ -33,6 +33,8 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
+from mango_packs.manifest import RESERVED_PACK_IDS
+
 ENABLEMENT_PREFIX = "MCP#"
 INSTALLED_PREFIX = "MCP_INSTALLED#"
 CHANGE_PREFIX = "MCP_CHANGE#"
@@ -65,6 +67,7 @@ def is_pack_id(value: object) -> bool:
         isinstance(value, str)
         and len(value) <= MAX_PACK_ID_CHARS
         and _PACK_ID_RE.fullmatch(value) is not None
+        and value not in RESERVED_PACK_IDS
     )
 
 
