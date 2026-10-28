@@ -146,12 +146,13 @@ class FakeIdentity:
 
     gateway: FakeGateway
     fail: str | None = None
+    message: str = "x"
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     def complete_resource_token_auth(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
         if self.fail:
-            raise ClientError({"Error": {"Code": self.fail, "Message": "x"}}, "Complete")
+            raise ClientError({"Error": {"Code": self.fail, "Message": self.message}}, "Complete")
         self.gateway.vault.add(kwargs["userIdentifier"]["userToken"].removeprefix("tok-"))
         return {}
 
@@ -528,6 +529,29 @@ def test_identity_refusing_the_session_is_consent_not_yours(env: Env) -> None:
     assert _connections(env)[0]["status"] == "not_connected"
     ((_, detail),) = env.audit.named("mcp_remote.consent_failed", outcome=None)
     assert detail == {"registration": REG, "reason": "consent_not_yours"}
+
+
+def test_iam_refusing_mango_api_is_not_the_persons_fault(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    _connect(env)
+    env.identity.fail = "AccessDeniedException"
+    env.identity.message = (
+        "User: arn:aws:sts::111122223333:assumed-role/Mango-ns-ApiTask/s is not authorized to "
+        "perform: bedrock-agentcore:CompleteResourceTokenAuth on resource: "
+        "arn:aws:bedrock-agentcore:us-east-1:111122223333:token-vault/default because no "
+        "identity-based policy allows it"
+    )
+    response = env.callback()
+    assert (response.status_code, _code(response)) == (502, "identity_unavailable")
+    assert _pending(env) is not None
+    # Only the action and the resource reach the log, never the session or a token.
+    (line,) = [r.getMessage() for r in caplog.records if "identity denied" in r.getMessage()]
+    assert line == (
+        "identity denied mango-api bedrock-agentcore:CompleteResourceTokenAuth on "
+        "arn:aws:bedrock-agentcore:us-east-1:111122223333:token-vault/default"
+    )
+    assert "tok-" not in caplog.text
 
 
 @pytest.mark.parametrize(

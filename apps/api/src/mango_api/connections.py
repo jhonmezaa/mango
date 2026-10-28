@@ -39,6 +39,7 @@ security-best-practices, FastAPI):
 import asyncio
 import hashlib
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -282,6 +283,10 @@ class ConsentError(Exception):
 
 
 _NOT_YOURS = frozenset({"AccessDeniedException"})
+# An IAM denial names the action and the resource, never the session or a token.
+_IAM_DENIAL = re.compile(
+    r"is not authorized to perform: (bedrock-agentcore:[A-Za-z0-9]+) on resource: (arn:[\w:/.*-]+)"
+)
 _EXPIRED = frozenset({"ValidationException", "ResourceNotFoundException"})
 
 
@@ -300,6 +305,13 @@ class ConsentCompleter:
         except ClientError as exc:
             # The code only: the message could echo the request.
             code = str(exc.response.get("Error", {}).get("Code", "error"))
+            denied = _IAM_DENIAL.search(str(exc.response.get("Error", {}).get("Message", "")))
+            if code in _NOT_YOURS and denied:
+                # IAM refused mango-api, not the person: only the action and the resource.
+                logger.warning(
+                    "identity denied mango-api %s on %s", denied.group(1), denied.group(2)
+                )
+                raise ConsentError(502, "identity_unavailable") from None
             if code in _NOT_YOURS:
                 raise ConsentError(403, "consent_not_yours") from None
             if code in _EXPIRED:

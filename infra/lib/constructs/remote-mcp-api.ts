@@ -97,10 +97,12 @@ export class RemoteMcpApi extends Construct {
       }),
       // The person's consent, closed with the person's own access token (D98 (1)): Identity
       // checks that the session is theirs. Not the Gateway's credentials (finding of 2026-10-26).
+      // Also on the vault and the provider, as `GetResourceOauth2Token`: with the directory and
+      // the identity only, closing a consent got AccessDenied (installation, 2026-10-28).
       new iam.PolicyStatement({
         sid: "CompleteRemoteConsent",
         actions: ["bedrock-agentcore:CompleteResourceTokenAuth"],
-        resources: [directory, gatewayIdentity],
+        resources: [directory, gatewayIdentity, vault, providers],
       }),
       new iam.PolicyStatement({
         sid: "RemoteMcpPublicKey",

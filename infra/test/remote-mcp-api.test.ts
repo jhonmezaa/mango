@@ -81,7 +81,9 @@ describe("mango-api and remote MCP registrations", () => {
     const targets = text(consent.Resource);
     expect(targets).toContain("workload-identity-directory/default");
     expect(targets).toContain(`workload-identity-directory/default/workload-identity/mango-${ns}-tools-*`);
-    expect(targets).not.toContain("token-vault");
+    expect(consent.Resource).toHaveLength(4);
+    expect(targets).toContain("token-vault/default");
+    expect(targets).toContain(`token-vault/default/oauth2credentialprovider/Mango-${ns}-remote-*`);
     // Only this statement may close a consent; nothing else of the role names the action.
     const others = statements.filter((s) => s.Sid !== "CompleteRemoteConsent");
     expect(others.flatMap(actions)).not.toContain("bedrock-agentcore:CompleteResourceTokenAuth");
