@@ -23,11 +23,12 @@ const SESSION_URI = /^urn:ietf:params:oauth:request_uri:[A-Za-z0-9._~-]{1,990}$/
 const connected = new Map<string, string>();
 /**
  * The pending consent of the mock user: one, the latest (as the interceptor keeps it), with the
- * access token it was asked with (null: started by a chat turn, before any «Conectar»).
+ * access token it was asked with: the chat turn's, or the one of the «Conectar» that replaced it
+ * (every «Conectar» starts a new consent with the tab's current token, D100).
  */
 let pending: { registration: string; expires: number; token: string | null } | null = null;
 
-function bearerOf(req: Parameters<ApiHandler>[0]): string | null {
+export function bearerOf(req: Parameters<ApiHandler>[0]): string | null {
   const auth = req.headers.authorization ?? '';
   return auth.startsWith('Bearer ') ? auth.slice(7) : null;
 }

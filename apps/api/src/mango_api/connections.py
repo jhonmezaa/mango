@@ -4,10 +4,10 @@ remote MCP, closes the consent when Microsoft sends them back, and disconnects.
 * ``GET /api/me/connections``: the active or disabled registrations of the person's groups
   and whether they are connected. It never calls Microsoft: «Conectado» comes from the
   connection record mango-api keeps in the person's partition of ``Conversations``.
-* ``POST /api/me/connections/{reg}/connect``: hands out the person's pending consent if there
-  is one; otherwise probes the remote through the Gateway (claim ``cx = connect``). The probe
-  either answers (already connected) or the ``RESPONSE`` interceptor stores a consent URL
-  under the verified ``sub`` and mango-api hands that one out.
+* ``POST /api/me/connections/{reg}/connect``: drops the person's pending consent and probes
+  the remote through the Gateway (claim ``cx = connect``) with the caller's token, the one
+  that will close it (D100). The probe either answers (already connected) or the ``RESPONSE``
+  interceptor stores a consent URL under the verified ``sub`` and mango-api hands that one out.
 * ``POST /api/me/connections/{reg}/disconnect``: the probe with ``cx = disconnect`` and the
   documented ``forceAuthentication`` ``_meta``, which deletes the person's token from the
   vault. Done only when the Gateway confirms with ``consent_required`` (D97 (3)). It works
@@ -480,9 +480,10 @@ def _handed_out(deps: ConnectionsDeps, caller: Caller, consent: PendingConsent) 
 
 def connect(deps: ConnectionsDeps, caller: Caller, registration: Registration) -> ConnectOut:
     user_id = caller.user.user_id
-    pending = deps.consents.get(user_id, registration.registration_id, deps.clock())
-    if pending is not None:
-        return _handed_out(deps, caller, pending)
+    # Always a new consent, started with the token the tab holds now: Identity only closes a
+    # consent with the token that started it (D100), and a pending one (from the chat, or an
+    # earlier «Conectar») was started with a token the tab may no longer have.
+    deps.consents.delete(user_id, registration.registration_id)
     outcome = _probe(deps, caller, registration, "connect")
     if outcome is ConnectionOutcome.ANSWERED:
         # The vault already had the person's token: Microsoft is not opened (design A6).

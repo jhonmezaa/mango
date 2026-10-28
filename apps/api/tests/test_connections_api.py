@@ -390,9 +390,10 @@ def test_connecting_hands_out_the_consent_url_the_interceptor_stored(env: Env) -
     ((user, detail),) = env.audit.named("mcp_remote.consent_started", outcome=None)
     assert user == "member-1"
     assert detail == {"registration": REG, "source": "connect"}
-    # A second click hands out the same pending consent, without calling the Gateway again.
+    # A second click starts a new consent with the caller's current token: Identity only
+    # closes a consent with the token that started it (D100).
     assert _connect(env).json()["authorization_url"] == CONSENT_URL
-    assert len(env.gateway.calls) == 1
+    assert len(env.gateway.calls) == 2
 
 
 def test_an_account_already_in_the_vault_is_confirmed_without_microsoft(env: Env) -> None:

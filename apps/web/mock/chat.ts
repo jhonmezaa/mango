@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { agents, versionOf } from './agents.ts';
 import { approvalsOfConversation, requestFromChat } from './approvals.ts';
 import { recordAudit } from './audit.ts';
-import { firstUsableRemote, isConnected, markConsentPending } from './connections.ts';
+import { bearerOf, firstUsableRemote, isConnected, markConsentPending } from './connections.ts';
 import { newId, readBody, sendError, sendJson, type ApiHandler } from './http.ts';
 
 interface StoredMessage {
@@ -298,7 +298,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     const ready = isConnected(remote.id);
     send('tool', { name: tool, status: ready ? 'completed' : 'error' });
     if (!ready) {
-      markConsentPending(remote.id);
+      markConsentPending(remote.id, bearerOf(req));
       send('remote_connection_required', { registration_id: remote.id });
     }
     send('status', { phase: 'writing' });
