@@ -104,6 +104,15 @@ export interface ToolsProps {
  */
 export const GATEWAY_SESSION_SECONDS = 900;
 
+/**
+ * MCP versions the Gateway accepts. Left out, the Gateway does not take `2025-11-25`, the first
+ * one with URL elicitation, so a remote MCP target without the person's token answers a generic
+ * error instead of the consent URL (seen in an installation on 2026-10-28). The earlier ones
+ * stay for the clients that ask for them (the harness, the packs). `2026-07-28` is left out: it
+ * requires `_meta`, which the REQUEST interceptor removes on remote targets (D98 (15)).
+ */
+export const GATEWAY_MCP_VERSIONS = ["2025-03-26", "2025-06-18", "2025-11-25"];
+
 /** Partition of the Settings table that holds only the current area -> OU mapping. */
 export const MAPPING_PARTITION = "BU_MAPPING";
 
@@ -581,11 +590,14 @@ export class Tools extends Construct {
       // reuses it for the next call, so a pack runtime answers from the same microVM. The
       // Gateway binds the session to the `sub` of the caller's token, and every request
       // still passes inbound auth, the interceptor and Cedar.
-      ...(cfg.gateway.mcpSessions && {
-        protocolConfiguration: {
-          mcp: { sessionConfiguration: { sessionTimeoutInSeconds: GATEWAY_SESSION_SECONDS } },
+      protocolConfiguration: {
+        mcp: {
+          supportedVersions: GATEWAY_MCP_VERSIONS,
+          ...(cfg.gateway.mcpSessions && {
+            sessionConfiguration: { sessionTimeoutInSeconds: GATEWAY_SESSION_SECONDS },
+          }),
         },
-      }),
+      },
     });
     this.gateway.node.addDependency(gatewayRole);
 

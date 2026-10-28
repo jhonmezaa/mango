@@ -292,7 +292,7 @@ Límites a tener presentes:
 
 ### 4.2 Tools, MCP y skills
 
-- **Un AgentCore Gateway por instalación**, con sesiones MCP (D47). Targets que existen hoy:
+- **Un AgentCore Gateway por instalación**, con sesiones MCP (D47) y las versiones de MCP `2025-03-26`, `2025-06-18` y `2025-11-25`. La última es la de la elicitación por URL, que necesita el consentimiento de los MCP remotos (D98). Targets que existen hoy:
   - `finops`: el conector de Cost Explorer (Lambda).
   - `ops`: el approval executor (Lambda), que ejecuta las escrituras aprobadas (D56).
   - Uno por MCP pack habilitado, de tipo `mcpServer`, hacia su Runtime (D36).

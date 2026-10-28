@@ -4,7 +4,7 @@ import { App } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { installationSchema, loadInstallation } from "../lib/config/schema.js";
-import { GATEWAY_SESSION_SECONDS, orgWideTools } from "../lib/constructs/tools.js";
+import { GATEWAY_MCP_VERSIONS, GATEWAY_SESSION_SECONDS, orgWideTools } from "../lib/constructs/tools.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
 
@@ -113,10 +113,21 @@ describe("Gateway MCP sessions (D47)", () => {
   it("keeps a session per target, for the shortest time AgentCore allows", () => {
     expect(cfg.gateway.mcpSessions).toBe(true);
     expect(gatewayOf(template).ProtocolConfiguration).toEqual({
-      Mcp: { SessionConfiguration: { SessionTimeoutInSeconds: 900 } },
+      Mcp: {
+        SupportedVersions: ["2025-03-26", "2025-06-18", "2025-11-25"],
+        SessionConfiguration: { SessionTimeoutInSeconds: 900 },
+      },
     });
     // Longer than any invocation: 600 s at most, plus the 60 s of its signature.
     expect(GATEWAY_SESSION_SECONDS).toBeGreaterThanOrEqual(660);
+  });
+
+  it("accepts the MCP version of URL elicitation, which remote MCP consent needs (D94)", () => {
+    const versions = gatewayOf(template).ProtocolConfiguration.Mcp.SupportedVersions as string[];
+    // The version mango-api speaks to the Gateway (`remote_mcp.MCP_PROTOCOL_VERSION`).
+    expect(versions).toContain("2025-11-25");
+    // Its `_meta` is required, and the REQUEST interceptor removes it on remote targets.
+    expect(versions).not.toContain("2026-07-28");
   });
 
   it("does not change who may call the Gateway or what it enforces", () => {
@@ -143,7 +154,9 @@ describe("Gateway MCP sessions (D47)", () => {
         env: { account: off.mangoAccountId, region: off.region },
       }),
     );
-    expect(gatewayOf(stateless).ProtocolConfiguration).toBeUndefined();
+    expect(gatewayOf(stateless).ProtocolConfiguration).toEqual({
+      Mcp: { SupportedVersions: GATEWAY_MCP_VERSIONS },
+    });
     expect(installationSchema.safeParse({ ...raw, gateway: { sessions: true } }).success).toBe(false);
   });
 });
