@@ -95,6 +95,10 @@ export class RemoteMcpProvisioner extends Construct {
     const cfg = props.installation;
     const ns = cfg.namespace;
     const stack = Stack.of(this);
+    // Core, also from the stack nested in it where this construct lives (D99): the function
+    // takes Core's id, whose tags go on what it creates, not the id of the nested stack.
+    let core = stack;
+    while (core.nestedStackParent) core = core.nestedStackParent;
     const agentcore = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}`;
     const policyEngineArn = props.policyEngine.attrPolicyEngineArn;
     const remotePoliciesSuffix = `/policy/${remoteNames.policyPrefix(ns)}*`;
@@ -284,7 +288,7 @@ export class RemoteMcpProvisioner extends Construct {
       environment: {
         MANGO_NAMESPACE: ns,
         MANGO_ACCOUNT_ID: stack.account,
-        MANGO_STACK_ID: stack.stackId,
+        MANGO_STACK_ID: core.stackId,
         SETTINGS_TABLE: props.settingsTable.tableName,
         AUDIT_STREAM: props.auditStream.deliveryStreamName,
         AUDIT_INDEX_TABLE: props.auditIndex.tableName,

@@ -95,6 +95,20 @@ describe("stacks nested in Core (D99)", () => {
     }
   });
 
+  it("give their functions the id of Core, not their own (D76)", () => {
+    for (const nestedTemplate of nested.values()) {
+      for (const resource of Object.values(nestedTemplate.Resources)) {
+        const variables = (resource.Properties?.Environment as { Variables?: Record<string, unknown> })?.Variables;
+        if (variables?.MANGO_STACK_ID === undefined) continue;
+        expect(JSON.stringify(variables.MANGO_STACK_ID)).not.toContain("AWS::StackId");
+      }
+    }
+    const remote = stackResources.find(([id]) => id.startsWith("RemoteMcp"))![1];
+    expect(Object.values(remote.Properties!.Parameters as Record<string, unknown>)).toContainEqual({
+      Ref: "AWS::StackId",
+    });
+  });
+
   it("are deleted after the uninstall guard, which depends on them", () => {
     const guard = Object.values(template.Resources).find((r) => r.Type === "Custom::MangoUninstallGuard")!;
     for (const [id] of stackResources) expect(guard.DependsOn).toContain(id);
