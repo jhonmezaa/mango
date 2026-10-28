@@ -447,4 +447,24 @@ describe('chatReducer · remote connections (D98 (20))', () => {
     expect(message.connectionRequired).toEqual(['abcdefghij23']);
     expect(message.remoteSources).toEqual(['klmnopqrst45']);
   });
+
+  it('takes the sources of the live turn from its done event, as a reload would', () => {
+    const done = {
+      type: 'done',
+      message_id: 'm',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1, output_tokens: 1 },
+      cost_usd: '0',
+    } as const;
+    const at = (event: Extract<Parameters<typeof chatReducer>[1], { type: 'event' }>['event']) =>
+      chatReducer(start(), { type: 'event', assistantId: 'a', event, receivedAt: 1 }).messages.find(
+        (item) => item.id === 'a',
+      );
+    expect(at({ ...done, remote_sources: ['klmnopqrst45'] })?.remoteSources).toEqual([
+      'klmnopqrst45',
+    ]);
+    // An answer that read no remote service (or an older API) keeps no sources.
+    expect(at({ ...done, remote_sources: [] })?.remoteSources).toBeUndefined();
+    expect(at(done)?.remoteSources).toBeUndefined();
+  });
 });

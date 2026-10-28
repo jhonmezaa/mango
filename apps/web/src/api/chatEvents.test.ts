@@ -75,6 +75,24 @@ describe('parseChatEvent', () => {
     });
   });
 
+  it('reads the remote services of a done event and refuses anything but registrations', () => {
+    const done = {
+      message_id: '01J',
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1, output_tokens: 2 },
+      cost_usd: '0.01',
+    };
+    const parse = (remote_sources: unknown) =>
+      parseChatEvent({ event: 'done', data: JSON.stringify({ ...done, remote_sources }) });
+    expect(parse(['klmnopqrst45'])).toMatchObject({
+      type: 'done',
+      remote_sources: ['klmnopqrst45'],
+    });
+    for (const bad of [['https://dev.azure.com/x'], Array(51).fill('klmnopqrst45')]) {
+      expect(parse(bad)).toMatchObject({ type: 'error', code: 'invalid_event' });
+    }
+  });
+
   it('ignores unknown event types (forward compatible)', () => {
     expect(parseChatEvent({ event: 'citation', data: '{}' })).toBeNull();
     expect(parseChatEvent({ event: 'toString', data: '{}' })).toBeNull();

@@ -375,6 +375,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             tools: settleTools(message.tools),
             steps: [],
             ...(event.stop_reason === GUARDRAIL_STOP ? { guardrail: true } : {}),
+            // The same registrations a reload reads from the stored message.
+            ...(event.remote_sources?.length ? { remoteSources: event.remote_sources } : {}),
             usage: {
               inputTokens: event.usage.input_tokens,
               outputTokens: event.usage.output_tokens,

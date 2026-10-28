@@ -54,6 +54,12 @@ export type ToolCall = z.infer<typeof toolCallSchema>;
 /** Id of a remote MCP registration (D98): 12 base32 characters. */
 export const registrationIdSchema = z.string().regex(/^[a-z2-7]{12}$/);
 
+/**
+ * Remote MCP registrations whose tools answered a turn, in the stored message and in the live
+ * `done` event. Bounded by the registrations an installation may have (`MAX_REGISTRATIONS`).
+ */
+export const remoteSourcesSchema = z.array(registrationIdSchema).max(50);
+
 export const messageSchema = z.object({
   message_id: z.string(),
   role: z.enum(['user', 'assistant']),
@@ -79,7 +85,7 @@ export const messageSchema = z.object({
   /** Remote MCP registrations that asked the person to connect their account (D98 (20)). */
   connection_required: z.array(registrationIdSchema).max(10).optional(),
   /** Remote MCP registrations whose tools answered in this turn («Leyó {servicio}»). */
-  remote_sources: z.array(registrationIdSchema).max(10).optional(),
+  remote_sources: remoteSourcesSchema.optional(),
 });
 export type Message = z.infer<typeof messageSchema>;
 

@@ -623,7 +623,7 @@ event: remote_connection_required
 data: {"registration_id": "abcdefghij23"}
 
 event: done
-data: {"message_id": "01J...", "stop_reason": "end_turn", "usage": {"input_tokens": 1234, "output_tokens": 321}, "cost_usd": "0.0123"}
+data: {"message_id": "01J...", "stop_reason": "end_turn", "usage": {"input_tokens": 1234, "output_tokens": 321}, "cost_usd": "0.0123", "remote_sources": ["abcdefghij23"]}
 
 event: error
 data: {"code": "budget_exceeded" | "upstream_error" | ..., "message": "..."}
@@ -633,6 +633,7 @@ data: {"code": "budget_exceeded" | "upstream_error" | ..., "message": "..."}
 - `done.stop_reason` es el motivo de fin que informa el harness. `max_tokens`: la respuesta se cortó en el tope de tokens de la llamada (D74); el mensaje guardado es el texto hasta el corte y el turno termina con `done`, no con `error`. `guardrail_intervened`: la cortó el guardrail.
 - `approval` (D27): el agente llamó una tool de escritura. El Gateway no la ejecutó; el evento trae la solicitud que la interfaz muestra como tarjeta («¿Ejecutar esta acción?» o «Requiere aprobación»). El mensaje del asistente guarda sus ids (`messages[].approvals`) y `GET /api/conversations/{id}` devuelve las solicitudes en `approvals`.
 - `remote_connection_required` (D98 (20)): una tool de un MCP remoto respondió `consent_required`: la persona no conectó su cuenta de ese servicio, o la desconectó. Trae solo el registro, **nunca una URL** (el interceptor `RESPONSE` la quitó; la persona conecta desde «Mis conexiones»). Uno por registro y turno. El mensaje del asistente guarda los registros en `messages[].connection_required`, para que la tarjeta salga también al recargar, y en `messages[].remote_sources` los registros cuyas tools respondieron («Leyó {servicio}»).
+- `done.remote_sources` (D98 (20)): los mismos registros que `messages[].remote_sources`, para que el turno en vivo muestre «Leyó {servicio}» y clasifique sus enlaces (A1) sin recargar. Solo ids de registro, nunca contenido ni URL; lista vacía si el turno no leyó ningún servicio remoto. El Playground no lo trae: su tarjeta de resultado no muestra «Leyó».
 - **`status`: progreso en vivo del turno.** Lo calcula `mango-api` a partir del stream del harness; **nunca lleva texto del modelo** (ni respuesta ni razonamiento), así que no depende del guardrail (D39). Se envía solo cuando la fase cambia, varias veces por turno:
   - `thinking`: el turno ya corre y el modelo trabaja. Es el primer evento después de `conversation`, antes de llamar al harness: con el guardrail síncrono el harness no entrega nada hasta que hay un bloque revisado o una llamada a una tool.
   - `tool`: hay una llamada a una tool en curso. `tool` es su nombre visible, el mismo del evento `tool` (64 caracteres como máximo), y solo se envía si es una tool de la versión publicada del agente; si no, la fase llega sin nombre. Solo esta fase lo lleva.

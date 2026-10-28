@@ -323,6 +323,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       stop_reason: 'end_turn',
       usage: { input_tokens: 610, output_tokens: 140 },
       cost_usd: '0.0042',
+      remote_sources: ready ? [remote.id] : [],
     });
     res.end();
     return;

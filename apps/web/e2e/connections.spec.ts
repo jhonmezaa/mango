@@ -66,11 +66,14 @@ test('the chat asks to connect a remote service, and the return closes the conse
   await page.getByRole('button', { name: 'Volver al chat' }).click();
   await ask(page, 'Y ahora, ¿qué tiene abierto el sprint 42?');
   await expect(page.getByText('Encontré 3 work items abiertos')).toBeVisible();
-
-  // Stored answers carry what they read («Leyó») and the links say where they go (A1).
-  await page.reload();
+  // The live turn already says what it read («Leyó») and where its links go (A1)…
   await expect(page.getByText('Leyó Azure DevOps')).toBeVisible();
   const wiki = page.getByRole('button', { name: 'wiki de Plataforma' });
+  await expect(wiki).toHaveAttribute('data-host-kind', 'service');
+
+  // …and so does the stored answer.
+  await page.reload();
+  await expect(page.getByText('Leyó Azure DevOps')).toBeVisible();
   await expect(wiki).toHaveAttribute('data-host-kind', 'service');
   await page.getByRole('button', { name: 'el tablero' }).click();
   const dialog = page.getByRole('dialog', { name: 'Abrir enlace externo' });

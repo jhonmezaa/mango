@@ -1858,6 +1858,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                                 "output_tokens": result.usage.output_tokens,
                             },
                             "cost_usd": str(actual.quantize(Decimal("0.0001"))),
+                            # Registrations only, never content or URLs: the live turn shows
+                            # «Leyó {servicio}» and classifies its links as after a reload.
+                            "remote_sources": result.remote_sources,
                         },
                     )
                 )

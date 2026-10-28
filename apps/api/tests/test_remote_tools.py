@@ -394,9 +394,14 @@ def test_consent_required_shows_the_card_and_is_kept_with_the_message(
     assert ("remote_connection_required", {"registration_id": REG}) in events
     assert "bedrock-agentcore" not in response.text
     assert stored[-1] == ([REG], [])
+    assert dict(events)["done"]["remote_sources"] == []
     env.agentcore.stream = _stream('{"projects":[]}', "success")
-    _chat(env, "member", agent["agent_id"])
+    response = _chat(env, "member", agent["agent_id"])
     assert stored[-1] == ([], [REG])
+    # The live turn carries the same registrations as the stored message, never content or URLs.
+    done = dict(_events(response.text))["done"]
+    assert done["remote_sources"] == [REG]
+    assert "projects" not in json.dumps(done)
 
 
 # --- The catalog when the registrations cannot be read ----------------------------------------
