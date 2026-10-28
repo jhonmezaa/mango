@@ -7,6 +7,7 @@ import type { ApiClient } from '../../api/client';
 import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { NOW, XSS, approval, source } from '../approvals/testFixtures';
+import { ConnectionsContext, type ConnectionsValue } from '../connections/ConnectionsContext';
 import { InboxPage } from './InboxPage';
 import type { InboxItem, InboxPage as Page } from './model';
 
@@ -180,6 +181,45 @@ describe('InboxPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Nada por aquí.')).toBeVisible();
     });
+  });
+
+  it('a task whose remote service is gone says so without naming it (design remoteGone)', async () => {
+    const user = userEvent.setup();
+    const item = runItem(
+      { kind: 'remote_connect', remote: { registration_id: 'abcdefghij23' }, read: true },
+      { ok: false, summary: null, reason: 'remote_consent_required', task_name: 'Resumen' },
+    );
+    const call = apiWith({
+      listInbox: () => page([item]),
+      unreadInbox: () => ({ unread: 0, to_sign: 0 }),
+    });
+    // The person's connections were read and the registration is not among them.
+    const connections = {
+      status: 'ready',
+      list: [],
+      ensure: () => undefined,
+      byRegistration: () => null,
+    } as unknown as ConnectionsValue;
+    const api = { call } as unknown as ApiClient;
+    render(
+      <TestProviders session={sessionValue({ api, me: baseMe })} path="/inbox">
+        <ConnectionsContext.Provider value={connections}>
+          <Routes>
+            <Route path="inbox/*" element={<InboxPage />} />
+            <Route path="schedules" element={<p>schedules</p>} />
+          </Routes>
+        </ConnectionsContext.Provider>
+      </TestProviders>,
+    );
+    await user.click((await list()).getByRole('option'));
+    expect(
+      screen.getByRole('heading', { name: 'Tu tarea no pudo leer un servicio externo' }),
+    ).toBeVisible();
+    expect(
+      screen.getAllByText(/La tarea "Resumen" usa un servicio externo que ya no está/).length,
+    ).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /Ver tareas/ }));
+    expect(await screen.findByText('schedules')).toBeVisible();
   });
 
   it('an approval opens with its decision card and a link to Aprobaciones', async () => {

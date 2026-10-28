@@ -14,6 +14,7 @@ import {
   CALLBACK,
   CHANGE,
   ME,
+  PROFILE,
   REG_ID,
   XSS,
   emptyRemoteCatalog,
@@ -184,6 +185,107 @@ describe('Servicios externos', () => {
       'Azure DevOps ya está habilitado para esa organización.',
     );
     expect(alert).not.toHaveTextContent('raw');
+  });
+
+  it('says the installation has them off and offers nothing to change (round 24)', async () => {
+    const off = (registrations: RemoteCatalog['registrations']) => ({
+      ...remoteCatalog(registrations),
+      enabled: false,
+      profiles: [{ ...PROFILE, enabled_in_installation: false }],
+    });
+    const call = apiWith(off([pendingRegistration()]));
+    const user = renderAt('/mcp/remote', call);
+    const card = await screen.findByRole('button', { name: /^Azure DevOps/ });
+    expect(card).toHaveTextContent('Apagado en la instalación');
+    expect(card).not.toHaveTextContent('Pendiente de aprobación');
+    expect(
+      screen.getAllByText('Los servicios externos están apagados en esta instalación').length,
+    ).toBeGreaterThan(0);
+    await user.click(card);
+    const drawer = await panel();
+    expect(drawer).toHaveTextContent('RemoteMcpEnabled');
+    expect(
+      within(drawer).getByRole('button', { name: /Habilitar para una organización/ }),
+    ).toBeDisabled();
+    await user.click(within(drawer).getByRole('button', { name: /contoso/ }));
+    expect(
+      await within(drawer).findByText(/no se puede aprobar ni cambiar nada/),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
+  });
+
+  it('shows remote_disabled with its own text when the profile did not say so', async () => {
+    const call = apiWith(remoteCatalog([pendingRegistration()]), {
+      approveRemoteRequest: new ApiError(409, 'remote_disabled', 'raw'),
+    });
+    const user = renderAt(`/mcp/remote/azure-devops/${REG_ID}`, call);
+    const drawer = await panel();
+    await user.click(within(drawer).getByRole('button', { name: 'Aprobar' }));
+    expect(
+      await within(drawer).findByText(
+        'Los servicios externos están apagados en esta instalación. Los enciende quien administra AWS con un parámetro de la instalación.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says why it failed by its code and retries with the same approval (round 24)', async () => {
+    const failed = registration({ status: 'failed', failure_code: 'target_timeout' });
+    const after = remoteCatalog([registration({ status: 'creating' })]);
+    const call = apiWith(remoteCatalog([failed]), { retryRemote: after });
+    const user = renderAt(`/mcp/remote/azure-devops/${REG_ID}`, call);
+    const drawer = await panel();
+    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+      'No se pudo habilitar Azure DevOps: el servicio no quedó listo a tiempo',
+    );
+    expect(drawer).toHaveTextContent('Fue un fallo de la plataforma');
+    expect(drawer).toHaveTextContent('Código: target_timeout');
+    const retry = within(drawer).getByRole('button', { name: 'Reintentar' });
+    expect(retry).toHaveClass('btn-primary');
+    expect(within(drawer).getByRole('button', { name: 'Pedir de nuevo' })).not.toHaveClass(
+      'btn-primary',
+    );
+    await user.click(retry);
+    await waitFor(() => {
+      expect(writesOf(call)).toEqual([
+        ['retryRemote', { path: { reg: REG_ID }, body: { version: 4 } }],
+      ]);
+    });
+    expect(
+      await screen.findByText('Reintentando · Mango vuelve a crear la conexión'),
+    ).toBeInTheDocument();
+    expect(await within(drawer).findByText(/Mango está creando la conexión/)).toBeInTheDocument();
+  });
+
+  it('puts «Pedir de nuevo» first for the app of Entra and says retry errors', async () => {
+    const failed = registration({ status: 'failed', failure_code: 'provider_rejected' });
+    const call = apiWith(remoteCatalog([failed]), {
+      retryRemote: new ApiError(409, 'release_changed', 'raw'),
+    });
+    const user = renderAt(`/mcp/remote/azure-devops/${REG_ID}`, call);
+    const drawer = await panel();
+    expect(drawer).toHaveTextContent(
+      'No se pudo habilitar Azure DevOps: Microsoft rechazó los datos de la app de Entra',
+    );
+    expect(within(drawer).getByRole('button', { name: 'Pedir de nuevo' })).toHaveClass(
+      'btn-primary',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Reintentar' }));
+    expect(
+      await within(drawer).findByText(
+        'Esta versión de Mango cambió el perfil de Azure DevOps desde que se aprobó. Hay que pedirlo de nuevo.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('uses the generic text for an unknown code and shows the code as text', async () => {
+    const call = apiWith(remoteCatalog([registration({ status: 'failed', failure_code: XSS })]));
+    renderAt(`/mcp/remote/azure-devops/${REG_ID}`, call);
+    const drawer = await panel();
+    const alert = within(drawer).getByRole('alert');
+    expect(alert).toHaveTextContent('No se pudo habilitar Azure DevOps');
+    expect(alert).toHaveTextContent('Reinténtalo. Si vuelve a fallar');
+    expect(alert).toHaveTextContent(`Código: ${XSS}`);
+    expect(drawer.querySelector('img')).toBeNull();
   });
 
   it('approves the request of another administrator', async () => {

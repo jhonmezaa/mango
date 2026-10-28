@@ -37,7 +37,7 @@ export const RUN_ID = /^[0-9a-f]{32}$/;
 
 /**
  * Kind as the design shows it. A run that failed because its owner has to connect a remote MCP
- * (`remote_connect`, D98 (20)) is shown as the run notice it is until the design draws its card.
+ * (`remote_connect`, D98 (20)) is a run notice; `remoteNoticeOf` says when it has its own card.
  */
 export function shownKind(
   item: Pick<InboxItem, 'kind'>,
@@ -46,16 +46,22 @@ export function shownKind(
 }
 
 /**
- * The service a `remote_connect` notice asks to connect (D98 (20)), from the person's
- * connections; null for any other notice, or while the registration is not among them (it is then
- * shown as the failed run it also is).
+ * What a `remote_connect` notice is about (D98 (20)), from the person's connections: «Conecta tu
+ * cuenta de {servicio}» while the registration is among them, or design `remoteGone` once they are
+ * read and it is not (disabled, or no longer of the person's groups). Null for any other notice,
+ * or while the connections are not read yet (it is then shown as the failed run it also is).
  */
-export function remoteServiceOf(
+export type RemoteNotice = { kind: 'connect'; service: string } | { kind: 'gone' } | null;
+
+export function remoteNoticeOf(
   item: Pick<InboxItem, 'kind' | 'remote' | 'run'>,
   serviceOf: (registrationId: string) => string | null,
-): string | null {
+  connectionsRead: boolean,
+): RemoteNotice {
   if (item.kind !== 'remote_connect' || !item.remote || !item.run) return null;
-  return serviceOf(item.remote.registration_id);
+  const service = serviceOf(item.remote.registration_id);
+  if (service) return { kind: 'connect', service };
+  return connectionsRead ? { kind: 'gone' } : null;
 }
 
 /** Key of an item in the list: kinds have different ids, but never trust that. */
@@ -64,9 +70,10 @@ export function keyOf(item: Pick<InboxItem, 'kind' | 'item_id'>): string {
 }
 
 /** Design: «Te piden aprobar: …» or «{tarea} · completada / no se completó». Plain text. */
-export function titleOf(t: TFunction, item: InboxItem, service: string | null = null): string {
-  // Design `remoteTask`: «Conecta tu cuenta de {servicio}».
-  if (service) return t('connections.inbox.title', { service });
+export function titleOf(t: TFunction, item: InboxItem, remote: RemoteNotice = null): string {
+  // Design `remoteTask`: «Conecta tu cuenta de {servicio}»; `remoteGone` names no service.
+  if (remote?.kind === 'connect') return t('connections.inbox.title', { service: remote.service });
+  if (remote?.kind === 'gone') return t('inbox.remoteGone.title');
   if (item.approval) {
     return t('inbox.approvalTitle', {
       action: item.approval.description || item.approval.tool,
@@ -89,9 +96,12 @@ export function titleOf(t: TFunction, item: InboxItem, service: string | null = 
  * Design body: for an approval `tool · k=v, … · política` (as the chat card), for a run the first
  * line of the report or the reason (a fixed text per code, as Schedules). Always plain text.
  */
-export function bodyOf(t: TFunction, item: InboxItem, service: string | null = null): string {
-  if (service && item.run) {
-    return t('connections.inbox.body', { task: item.run.task_name, service });
+export function bodyOf(t: TFunction, item: InboxItem, remote: RemoteNotice = null): string {
+  if (remote?.kind === 'connect' && item.run) {
+    return t('connections.inbox.body', { task: item.run.task_name, service: remote.service });
+  }
+  if (remote?.kind === 'gone' && item.run) {
+    return t('inbox.remoteGone.body', { task: item.run.task_name });
   }
   if (item.approval) {
     const args = argumentEntries(item.approval)

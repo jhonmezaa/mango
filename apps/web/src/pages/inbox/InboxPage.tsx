@@ -44,9 +44,10 @@ import {
   shownKind,
   RUN_ID,
   TASK_ID,
-  remoteServiceOf,
+  remoteNoticeOf,
   titleOf,
   type InboxItem,
+  type RemoteNotice,
   type InboxPage as Page,
   type InboxTab,
   type InboxView,
@@ -87,15 +88,15 @@ function replaceItem(items: readonly InboxItem[], next: InboxItem): InboxItem[] 
   return items.map((item) => (keyOf(item) === key ? next : item));
 }
 
-/** The service of a `remote_connect` notice, once the person's connections are read. */
-function useRemoteService(item: InboxItem | null): string | null {
-  const { byRegistration, ensure } = useConnections();
+/** What a `remote_connect` notice is about, once the person's connections are read. */
+function useRemoteNotice(item: InboxItem | null): RemoteNotice {
+  const { byRegistration, ensure, status } = useConnections();
   const remote = item?.kind === 'remote_connect';
   useEffect(() => {
     if (remote) ensure();
   }, [remote, ensure]);
   if (!item) return null;
-  return remoteServiceOf(item, (id) => byRegistration(id)?.service ?? null);
+  return remoteNoticeOf(item, (id) => byRegistration(id)?.service ?? null, status === 'ready');
 }
 
 function InboxRow({
@@ -110,7 +111,7 @@ function InboxRow({
   onOpen: (item: InboxItem) => void;
 }) {
   const { t } = useTranslation();
-  const service = useRemoteService(item);
+  const service = useRemoteNotice(item);
   // Design `ICON`: a proposal of a knowledge base, an approval, a run or a remote to connect.
   const Icon = service
     ? ExternalIcon
@@ -382,7 +383,7 @@ export function InboxPage() {
 
   const list = ready ? ready.items.filter((item) => matchesView(item, view)) : [];
   const current = ready?.items.find((item) => keyOf(item) === selectedKey) ?? null;
-  const currentService = useRemoteService(current);
+  const currentService = useRemoteNotice(current);
   const { openMine } = useConnections();
   // Requests of remote services for administrators, on top (design `RM.inboxItems`). They have
   // no read or archived state on the server, so only «Todo» and «Aprobaciones» list them.
@@ -660,9 +661,20 @@ export function InboxPage() {
                     {t('inbox.openKb')} <ArrowRightIcon size={11} />
                   </button>
                 ) : null}
-                {currentService ? (
+                {currentService?.kind === 'connect' ? (
                   <button type="button" className="btn btn-sm btn-primary" onClick={openMine}>
                     {t('connections.inbox.action')} <ArrowRightIcon size={11} />
+                  </button>
+                ) : null}
+                {currentService?.kind === 'gone' ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => {
+                      void navigate('/schedules');
+                    }}
+                  >
+                    {t('inbox.remoteGone.action')} <ArrowRightIcon size={11} />
                   </button>
                 ) : null}
                 {current.run && !currentService ? <RunLink item={current} /> : null}

@@ -130,6 +130,23 @@ describe('Ajustes › Conectividad › Servicios externos', () => {
     expect(screen.getByTestId('where')).toHaveTextContent(`/mcp/remote/azure-devops/${REG_ID}`);
   });
 
+  it('says a failure by its code and that the installation has them off', async () => {
+    const call = apiWith({
+      ...remoteCatalog([registration({ status: 'failed', failure_code: 'target_failed' })]),
+      enabled: false,
+    });
+    renderWith(<RemoteConnBlock />, call, '/settings');
+    expect(
+      await screen.findByText(
+        'No se pudo habilitar Azure DevOps: la plataforma no pudo crear el servicio.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Reinténtalo desde el catálogo.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Los servicios externos están apagados en esta instalación'),
+    ).toBeInTheDocument();
+  });
+
   it('says where to enable one when there is none', async () => {
     const call = apiWith(remoteCatalog([]));
     const user = renderWith(<RemoteConnBlock />, call, '/settings');

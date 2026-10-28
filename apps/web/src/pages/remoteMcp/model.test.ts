@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { remoteInboxItems } from './inboxItems';
 import {
+  failInfoOf,
   dayInput,
   daysUntil,
   formErrors,
@@ -212,5 +213,25 @@ describe('remoteInboxItems', () => {
       }),
     ]);
     expect(remoteInboxItems(catalog).map((item) => item.key)).toEqual([`remote:${CHANGE}`]);
+  });
+});
+
+describe('failInfoOf', () => {
+  it('tells a platform failure from one of the app of Entra (design FAIL)', () => {
+    expect(failInfoOf({ failure_code: 'target_timeout' }).kind).toBe('platform');
+    expect(failInfoOf({ failure_code: 'target_failed' }).kind).toBe('platform');
+    expect(failInfoOf({ failure_code: 'provider_rejected' }).kind).toBe('app');
+    expect(failInfoOf({ failure_code: 'policy_failed' })).toEqual({
+      kind: 'unknown',
+      title: 'unknown',
+      code: 'policy_failed',
+    });
+    // Not a key of an object: inherited names are unknown codes too.
+    expect(failInfoOf({ failure_code: 'constructor' }).kind).toBe('unknown');
+    expect(failInfoOf({ failure_code: null })).toEqual({
+      kind: 'unknown',
+      title: 'unknown',
+      code: null,
+    });
   });
 });

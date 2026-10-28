@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ArrowRightIcon } from '../../components/icons';
 import { formatRelative } from '../../lib/format';
 import { headlineOf, pendingRows, personOf, rowsOf, type RemoteCatalog, type Row } from './model';
-import { RmBadges, RmStatus, RmTile } from './parts';
+import { RemoteOffNote, RmBadges, RmStatus, RmTile } from './parts';
 
 /** Design `RemoteCatalogTab`: one card per profile of the release. */
 export function RemoteCatalogTab({
@@ -16,6 +16,7 @@ export function RemoteCatalogTab({
   const { t } = useTranslation();
   return (
     <div className="grid gap-3.5">
+      {catalog.enabled ? null : <RemoteOffNote />}
       <p className="rm-p m-0 max-w-[720px]">{t('remoteMcp.intro')}</p>
       <div className="rm-grid">
         {catalog.profiles.map((profile) => {
@@ -72,7 +73,11 @@ export function RemoteCatalogTab({
                     <span className="mono">{profile.host}</span>
                   </div>
                 </div>
-                <RmStatus status={head?.status ?? null} />
+                {profile.enabled_in_installation ? (
+                  <RmStatus status={head?.status ?? null} />
+                ) : (
+                  <span className="badge">{t('remoteMcp.off.badge')}</span>
+                )}
               </div>
               <RmBadges profile={profile} compact />
               <div className="rm-sets">

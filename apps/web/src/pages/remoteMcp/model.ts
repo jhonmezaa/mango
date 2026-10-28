@@ -121,6 +121,32 @@ export function statusOf(registration: Registration): RowStatus {
   }
 }
 
+/** How a failed registration is fixed (design `FAIL`): retried, or asked again with new data. */
+export type FailKind = 'platform' | 'app' | 'unknown';
+
+/** Failure codes with a text of their own; the provisioner writes the platform ones today. */
+const FAIL_KINDS = new Map<string, Exclude<FailKind, 'unknown'>>([
+  ['target_timeout', 'platform'],
+  ['target_failed', 'platform'],
+  ['provider_rejected', 'app'],
+]);
+
+export interface FailInfo {
+  kind: FailKind;
+  /** Key under `remoteMcp.row.fail`: the code when it has a text, otherwise `unknown`. */
+  title: string;
+  /** The code as the API returned it (administrators only), shown as-is. */
+  code: string | null;
+}
+
+export function failInfoOf(registration: Pick<Registration, 'failure_code'>): FailInfo {
+  const code = registration.failure_code ?? null;
+  const kind = code !== null ? FAIL_KINDS.get(code) : undefined;
+  return kind && code !== null
+    ? { kind, title: code, code }
+    : { kind: 'unknown', title: 'unknown', code };
+}
+
 /** The request of a registration waiting for a decision (P-8 «Cambiar grupos» included). */
 export function shownPending(registration: Registration): RemoteRequest | null {
   const pending = registration.pending ?? null;

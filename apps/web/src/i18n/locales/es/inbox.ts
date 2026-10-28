@@ -28,6 +28,13 @@ export const inbox = {
   knowledgeBases: 'Knowledge Bases',
   sourceTitle: 'Te piden aprobar: {{title}}',
   openKb: 'Abrir knowledge base',
+  // Design `remoteGone` (round 24): a task's remote service is no longer in the person's
+  // connections. The notice does not bring the service's name, so it says «un servicio externo».
+  remoteGone: {
+    title: 'Tu tarea no pudo leer un servicio externo',
+    body: 'La tarea "{{task}}" usa un servicio externo que ya no está en tus conexiones: lo deshabilitaron o ya no es de tus grupos. Va a fallar mientras el agente use sus tools.',
+    action: 'Ver tareas',
+  },
   selectOne: 'Selecciona una notificación para verla',
   unreadDot: 'No leído',
   loading: 'Cargando la bandeja…',

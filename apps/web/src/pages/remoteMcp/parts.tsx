@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CheckIcon, ClockIcon, CopyIcon, X2Icon } from '../../components/icons';
+import { CheckIcon, ClockIcon, CopyIcon, LockIcon, X2Icon } from '../../components/icons';
 import {
   daysUntil,
+  failInfoOf,
   formatDay,
   initialsOf,
   type Registration,
@@ -23,6 +24,62 @@ export function RmTile({
     <span className={lg ? 'rm-tile lg' : 'rm-tile'} aria-hidden="true">
       {initialsOf(profile.name)}
     </span>
+  );
+}
+
+/**
+ * Design `RemoteOffNote`: `RemoteMcpEnabled` is off in the installation (D98 (4)). The cards can
+ * be read; every write answers `remote_disabled`.
+ */
+export function RemoteOffNote() {
+  const { t } = useTranslation();
+  return (
+    <div className="mc-alert amber" role="status">
+      <LockIcon size={14} />
+      <div>
+        <b>{t('remoteMcp.off.title')}</b>
+        <div>
+          {t('remoteMcp.off.bodyA')}
+          <span className="mono">{t('remoteMcp.off.param')}</span>
+          {t('remoteMcp.off.bodyB')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Design `FailAlert`: why a registration failed, by its failure code (round 24). The code only
+ * reaches administrators; it is shown as text.
+ */
+export function FailAlert({
+  registration,
+  profile,
+}: {
+  registration: Pick<Registration, 'failure_code'>;
+  profile: Pick<RemoteProfile, 'name' | 'provider'>;
+}) {
+  const { t } = useTranslation();
+  const info = failInfoOf(registration);
+  return (
+    <div className="mc-alert red" role="alert">
+      <X2Icon size={14} />
+      <div>
+        <b>
+          {t(`remoteMcp.row.fail.${info.title}` as 'remoteMcp.row.fail.unknown', {
+            name: profile.name,
+            idp: profile.provider,
+          })}
+        </b>
+        <div>{t(`remoteMcp.row.failBody.${info.kind}`)}</div>
+        {info.code ? (
+          <div className="mk-meta mt-1">
+            {t('remoteMcp.row.failCode')}
+            <span className="mono">{info.code}</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

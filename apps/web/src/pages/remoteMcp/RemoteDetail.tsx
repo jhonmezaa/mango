@@ -14,11 +14,11 @@ import {
   PlusIcon,
   UserIcon,
   WarnIcon,
-  X2Icon,
 } from '../../components/icons';
 import { formatRelative } from '../../lib/format';
 import {
   DEFAULT_SECRET_DAYS,
+  failInfoOf,
   REASON_MAX_LENGTH,
   SECRET_MAX_LENGTH,
   changeOf,
@@ -39,7 +39,17 @@ import {
   type Row,
 } from './model';
 import { DisableModal, RotateModal, type Act } from './modals';
-import { RmBadges, RmCopy, RmField, RmStatus, RmTile, SecretAlert, SecretLine } from './parts';
+import {
+  FailAlert,
+  RemoteOffNote,
+  RmBadges,
+  RmCopy,
+  RmField,
+  RmStatus,
+  RmTile,
+  SecretAlert,
+  SecretLine,
+} from './parts';
 
 type Mode =
   | null
@@ -107,6 +117,8 @@ export function RemoteDetail({
 
   const rows = rowsOf(catalog, profile.id);
   const history = historyOf(catalog, profile.id);
+  // `RemoteMcpEnabled` (D98 (4)): the profile says whether the installation has them on.
+  const on = profile.enabled_in_installation;
   const who = (id: string | null | undefined, email: string | null | undefined, you: string) => {
     const person = personOf(id, email, meId);
     return person === 'me' ? you : person;
@@ -484,6 +496,7 @@ export function RemoteDetail({
       ));
     body = scopeReq ? (
       <>
+        {on ? null : <RemoteOffNote />}
         {mode.sent ? (
           <div className="mc-alert">
             <Check2Icon size={14} className="text-ok" />
@@ -532,6 +545,7 @@ export function RemoteDetail({
       </>
     ) : (
       <>
+        {on ? null : <RemoteOffNote />}
         {mode.sent ? (
           <div className="mc-alert">
             <Check2Icon size={14} className="text-ok" />
@@ -588,15 +602,7 @@ export function RemoteDetail({
             </div>
           </div>
         ) : null}
-        {current.status === 'failed' ? (
-          <div className="mc-alert red" role="alert">
-            <X2Icon size={14} />
-            <div>
-              <b>{t('remoteMcp.row.failedTitle', { name: profile.name })}</b>
-              <div>{t('remoteMcp.row.failedBody')}</div>
-            </div>
-          </div>
-        ) : null}
+        {current.status === 'failed' ? <FailAlert registration={reg} profile={profile} /> : null}
         {current.status === 'disabled' ? (
           <div className="mc-alert">
             <InfoIcon size={14} />
@@ -694,6 +700,12 @@ export function RemoteDetail({
       foot = (
         <div className="ap-reason">
           <LockIcon size={12} /> {t('remoteMcp.detail.adminsOnlyRow')}
+        </div>
+      );
+    } else if (!on) {
+      foot = (
+        <div className="ap-reason">
+          <LockIcon size={12} /> {t('remoteMcp.off.rowFoot')}
         </div>
       );
     } else if (pending && mode.reject) {
@@ -876,6 +888,51 @@ export function RemoteDetail({
           </button>
         </div>
       );
+    } else if (current.status === 'failed' && !changeOpen) {
+      // Design round 24: a platform failure is retried with the same approval; a rejected app of
+      // Entra is asked again with new data. Both are offered, the likely one first.
+      const app = failInfoOf(reg).kind === 'app';
+      const retry = (
+        <button
+          key="retry"
+          type="button"
+          className={app ? 'btn btn-sm' : 'btn btn-sm btn-primary'}
+          disabled={busy}
+          onClick={() => {
+            void run({ kind: 'retry', registration: reg }, reg.organization, () => undefined);
+          }}
+        >
+          {busy ? (
+            <>
+              <span className="g-spin" aria-hidden="true" /> {t('remoteMcp.row.retrying')}
+            </>
+          ) : (
+            t('remoteMcp.row.retry')
+          )}
+        </button>
+      );
+      const again = (
+        <button
+          key="again"
+          type="button"
+          className={app ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+          disabled={busy}
+          onClick={() => {
+            openForm(current, 'reenable');
+          }}
+        >
+          {t('remoteMcp.row.askAgain')}
+        </button>
+      );
+      foot = (
+        <>
+          {errorLine}
+          <div className="flex flex-wrap items-center gap-2">
+            {app ? [again, retry] : [retry, again]}
+          </div>
+          <div className="rm-hint mt-2">{t('remoteMcp.row.retryHint')}</div>
+        </>
+      );
     } else if (current.status === 'failed' || current.status === 'disabled') {
       foot = changeOpen ? null : (
         <div className="flex flex-wrap items-center gap-2">
@@ -897,6 +954,7 @@ export function RemoteDetail({
   } else {
     body = (
       <>
+        {on ? null : <RemoteOffNote />}
         <div className="mc-alert amber">
           <GlobeIcon size={14} />
           <div>
@@ -1014,13 +1072,18 @@ export function RemoteDetail({
         <Sec title={t('remoteMcp.detail.permissions', { idp: profile.provider })}>
           {/* What the signed profile asks for, grouped by resource (design round 24). */}
           {permissionsByResource(profile).map(([resource, permissions]) => (
-            <div key={resource} className="mk-line flex flex-wrap items-center gap-2">
+            <div
+              key={resource}
+              className="mk-line flex flex-wrap items-center justify-between gap-2"
+            >
               <span className="text-[12.5px] font-semibold">{resource}</span>
-              {permissions.map((permission) => (
-                <span key={permission} className="badge mono">
-                  {permission}
-                </span>
-              ))}
+              <span className="rm-sets">
+                {permissions.map((permission) => (
+                  <span key={permission} className="badge mono">
+                    {permission}
+                  </span>
+                ))}
+              </span>
             </div>
           ))}
           <div className="mk-meta mt-1.5">{t('remoteMcp.detail.permissionsNote')}</div>
@@ -1034,15 +1097,26 @@ export function RemoteDetail({
       </>
     );
     foot = isAdmin ? (
-      <button
-        type="button"
-        className="btn btn-sm btn-primary"
-        onClick={() => {
-          openForm(null, 'enable');
-        }}
-      >
-        <PlusIcon size={12} /> {t('remoteMcp.detail.enableFor')}
-      </button>
+      on ? (
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          onClick={() => {
+            openForm(null, 'enable');
+          }}
+        >
+          <PlusIcon size={12} /> {t('remoteMcp.detail.enableFor')}
+        </button>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn btn-sm btn-primary" disabled>
+            <PlusIcon size={12} /> {t('remoteMcp.detail.enableFor')}
+          </button>
+          <span className="ap-reason">
+            <LockIcon size={12} /> {t('remoteMcp.off.badge')}
+          </span>
+        </div>
+      )
     ) : (
       <div className="ap-reason">
         <LockIcon size={12} /> {t('remoteMcp.detail.adminsOnly')}

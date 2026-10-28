@@ -11,6 +11,16 @@ export const remoteMcp = {
   operatedBy: 'Operado por {{operator}}',
   profileVersion: 'perfil v{{version}}',
   seeCard: 'Ver ficha',
+  // `RemoteMcpEnabled` off in the installation (design round 24, `RemoteOffNote`).
+  off: {
+    title: 'Los servicios externos están apagados en esta instalación',
+    bodyA: 'Los enciende quien administra AWS con el parámetro ',
+    param: 'RemoteMcpEnabled',
+    bodyB:
+      ' de la instalación. Mientras tanto puedes ver las fichas, pero no habilitar ni cambiar nada.',
+    badge: 'Apagado en la instalación',
+    rowFoot: 'Apagado en la instalación: no se puede aprobar ni cambiar nada.',
+  },
   badges: {
     readOnly: 'Solo lectura',
     readOnlyTitle: 'Ningún perfil trae tools de escritura',
@@ -112,8 +122,26 @@ export const remoteMcp = {
       'Aprobado por {{by}}. Mango está creando la conexión con {{name}}; tarda unos segundos. Puedes cerrar este panel.',
     creatingBodyNoApprover:
       'Mango está creando la conexión con {{name}}; tarda unos segundos. Puedes cerrar este panel.',
-    failedTitle: 'No se pudo habilitar {{name}}',
-    failedBody: 'Revisa los datos de la app de Entra y vuelve a pedirlo.',
+    // «Falló» by the registration's failure code (design `failInfo`, round 24).
+    fail: {
+      target_timeout: 'No se pudo habilitar {{name}}: el servicio no quedó listo a tiempo',
+      target_failed: 'No se pudo habilitar {{name}}: la plataforma no pudo crear el servicio',
+      provider_rejected:
+        'No se pudo habilitar {{name}}: {{idp}} rechazó los datos de la app de Entra',
+      unknown: 'No se pudo habilitar {{name}}',
+    },
+    failBody: {
+      platform:
+        'Fue un fallo de la plataforma, no de los datos de la app de Entra. Reinténtalo: no pide el secreto ni otra aprobación.',
+      app: 'Revisa el tenant, el id de la app y el secreto en Entra, y pídelo de nuevo.',
+      unknown:
+        'Reinténtalo. Si vuelve a fallar, revisa los datos de la app de Entra y pídelo de nuevo.',
+    },
+    failCode: 'Código: ',
+    retry: 'Reintentar',
+    retrying: 'Reintentando…',
+    retryHint:
+      '«Reintentar» usa la misma aprobación y no cambia nada de lo aprobado. «Pedir de nuevo» pide el secreto otra vez y otra aprobación.',
     disabledBy: 'Deshabilitado por {{by}} · {{when}}',
     disabledDeleted:
       'Se borraron la conexión y el secreto. Para volver a habilitarlo, pídelo de nuevo con el secreto.',
@@ -240,6 +268,7 @@ export const remoteMcp = {
     withdrawn: 'Solicitud retirada · se borró lo que se había creado',
     rotated: 'Secreto rotado',
     disabled: '{{name}} deshabilitado para {{organization}}',
+    retried: 'Reintentando · Mango vuelve a crear la conexión',
   },
   settings: {
     title: 'Servicios externos',
@@ -253,8 +282,11 @@ export const remoteMcp = {
     secret: 'Secreto de la app de Entra ·',
     disabledBy: 'Deshabilitado por {{by}} · {{when}}',
     creating: 'Creando la conexión · unos segundos',
-    failed:
-      'No se pudo habilitar {{name}}. Revisa los datos de la app de Entra y vuelve a pedirlo.',
+    failHint: {
+      platform: 'Reinténtalo desde el catálogo.',
+      app: 'Revisa la app de Entra y pídelo de nuevo.',
+      unknown: 'Reinténtalo desde el catálogo.',
+    },
     rotate: 'Rotar secreto',
     disable: 'Deshabilitar',
     open: 'Ver en el catálogo',
@@ -285,5 +317,10 @@ export const remoteMcp = {
     use_withdraw: 'Quien pide un cambio no puede rechazarlo: lo debe decidir otro administrador.',
     not_requester: 'Solo quien hizo la solicitud puede retirarla.',
     no_change: 'No cambiaste ningún grupo.',
+    remote_disabled:
+      'Los servicios externos están apagados en esta instalación. Los enciende quien administra AWS con un parámetro de la instalación.',
+    retry_release_changed:
+      'Esta versión de Mango cambió el perfil de {{name}} desde que se aprobó. Hay que pedirlo de nuevo.',
+    busy: 'Ya se está reintentando. Espera unos segundos.',
   },
 } as const;

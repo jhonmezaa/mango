@@ -83,6 +83,7 @@ export type RemoteAction =
   | { kind: 'approve' | 'withdraw'; registration: Registration; request: RemoteRequest }
   | { kind: 'reject'; registration: Registration; request: RemoteRequest; reason: string }
   | { kind: 'rotate'; registration: Registration; secret: string; expiresOn: string }
+  | { kind: 'retry'; registration: Registration }
   | { kind: 'disable'; registration: Registration; reason: string };
 
 /** Codes with a text of their own (`remoteMcp.errors`); the rest use the admin texts. */
@@ -97,10 +98,12 @@ const OWN_ERRORS = new Set([
   'use_withdraw',
   'not_requester',
   'no_change',
+  // `RemoteMcpEnabled=false` in the installation (P-4), when the profile did not say so first.
+  'remote_disabled',
+  'busy',
 ]);
 
-/** `remote_disabled`: `RemoteMcpEnabled=false` in the installation (P-4). */
-const UNWRITTEN = new Set(['remote_disabled', 'identity_unavailable', 'too_many_remotes']);
+const UNWRITTEN = new Set(['identity_unavailable', 'too_many_remotes']);
 
 async function send(api: ApiClient, action: RemoteAction): Promise<RemoteCatalog> {
   switch (action.kind) {
@@ -173,6 +176,11 @@ async function send(api: ApiClient, action: RemoteAction): Promise<RemoteCatalog
           secret_expires_on: action.expiresOn,
         },
       });
+    case 'retry':
+      return api.call('retryRemote', {
+        path: { reg: action.registration.id },
+        body: { version: action.registration.version },
+      });
     case 'disable':
       return api.call('disableRemote', {
         path: { reg: action.registration.id },
@@ -213,6 +221,7 @@ export function useRemoteActions(
           withdraw: 'remoteMcp.toast.withdrawn',
           rotate: 'remoteMcp.toast.rotated',
           disable: 'remoteMcp.toast.disabled',
+          retry: 'remoteMcp.toast.retried',
         } as const;
         notify(t(toast[action.kind], names), 'success');
         return null;
@@ -227,6 +236,10 @@ export function useRemoteActions(
           } catch (reloadError) {
             return t(adminErrorKey(reloadError));
           }
+        }
+        // Design: a retry whose profile changed says so in its own words.
+        if (code === 'release_changed' && action.kind === 'retry') {
+          return t('remoteMcp.errors.retry_release_changed', names);
         }
         return code !== null && OWN_ERRORS.has(code)
           ? t(`remoteMcp.errors.${code}` as 'remoteMcp.errors.remote_exists', names)

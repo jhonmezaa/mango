@@ -6,9 +6,19 @@ import { useSession } from '../../auth/useSession';
 import { ArrowRightIcon, LockIcon } from '../../components/icons';
 import { useToasts } from '../../components/admin/useToasts';
 import { formatRelative } from '../../lib/format';
-import { pendingRows, personOf, remotePath, settingsRows, toolsOf, type Row } from './model';
+import {
+  failInfoOf,
+  pendingRows,
+  personOf,
+  remotePath,
+  settingsRows,
+  toolsOf,
+  type Registration,
+  type RemoteProfile,
+  type Row,
+} from './model';
 import { DisableModal, RotateModal } from './modals';
-import { RmStatus, RmTile, SecretAlert, SecretLine } from './parts';
+import { RemoteOffNote, RmStatus, RmTile, SecretAlert, SecretLine } from './parts';
 import { useRemoteActions, useRemoteCatalog } from './useRemoteCatalog';
 
 /**
@@ -66,6 +76,11 @@ export function RemoteConnBlock() {
           </button>
         ) : null}
       </div>
+      {catalog.enabled ? null : (
+        <div className="mb-2.5">
+          <RemoteOffNote />
+        </div>
+      )}
       {list.length === 0 ? (
         <div className="g-card p-4">
           <div className="mk-meta">
@@ -139,9 +154,7 @@ export function RemoteConnBlock() {
                       </div>
                     ) : null}
                     {row.status === 'failed' ? (
-                      <div className="text-[12.5px] text-[var(--red)]">
-                        {t('remoteMcp.settings.failed', { name: profile.name })}
-                      </div>
+                      <FailLine registration={reg} profile={profile} />
                     ) : null}
                   </div>
                 </div>
@@ -206,6 +219,30 @@ export function RemoteConnBlock() {
         )
       ) : null}
       {stack}
+    </div>
+  );
+}
+
+/** Design `RemoteConnBlock`, a failed registration: the title by its code and where to fix it. */
+function FailLine({
+  registration,
+  profile,
+}: {
+  registration: Pick<Registration, 'failure_code'>;
+  profile: Pick<RemoteProfile, 'name' | 'provider'>;
+}) {
+  const { t } = useTranslation();
+  const info = failInfoOf(registration);
+  return (
+    <div className="text-[12.5px]">
+      <span className="text-[var(--red)]">
+        {t(`remoteMcp.row.fail.${info.title}` as 'remoteMcp.row.fail.unknown', {
+          name: profile.name,
+          idp: profile.provider,
+        })}
+        .
+      </span>{' '}
+      <span className="mk-meta">{t(`remoteMcp.settings.failHint.${info.kind}`)}</span>
     </div>
   );
 }
