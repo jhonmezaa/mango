@@ -6,8 +6,8 @@ import { useSession } from '../../auth/useSession';
 import { Topbar } from '../../components/Topbar';
 import { useConnections } from './ConnectionsContext';
 import { capturedReturn, completeConsentOnce } from './consentReturn';
-import { idpOf, returnResultOf, type ReturnResult } from './model';
-import { ReturnCard } from './ReturnCard';
+import { UNNAMED_RESULTS, idpOf, returnResultOf, type ReturnResult } from './model';
+import { FinishingCard, ReturnCard } from './ReturnCard';
 
 type Outcome = { result: ReturnResult; registrationId: string | null } | null;
 
@@ -15,8 +15,8 @@ type Outcome = { result: ReturnResult; registrationId: string | null } | null;
 function initialOutcome(): Outcome {
   const captured = capturedReturn();
   // Nothing in memory: the page was reloaded, or the sign-in went through a full redirect. The
-  // pending consent cannot be closed any more: the person asks for the connection again.
-  if (!captured) return { result: 'expired', registrationId: null };
+  // pending consent cannot be closed any more: the person presses «Conectar» again (design `lost`).
+  if (!captured) return { result: 'lost', registrationId: null };
   if (captured.kind === 'failed') return { result: captured.result, registrationId: null };
   return null;
 }
@@ -61,7 +61,8 @@ export function ConnectReturnPage() {
   // one service, that one (the pilot has one).
   const named = outcome?.registrationId ? byRegistration(outcome.registrationId) : null;
   const services = [...new Set(list.map((item) => item.service))];
-  const shown = named ?? (services.length === 1 ? (list[0] ?? null) : null);
+  const unnamed = outcome !== null && UNNAMED_RESULTS.has(outcome.result);
+  const shown = unnamed ? null : (named ?? (services.length === 1 ? (list[0] ?? null) : null));
   const service = shown?.service ?? null;
   const idp = shown ? idpOf(shown) : null;
 
@@ -79,10 +80,7 @@ export function ConnectReturnPage() {
       <Topbar crumbs={crumbs} />
       <div className="content">
         {outcome === null ? (
-          <p role="status" className="flex items-center justify-center gap-2.5 p-8 text-muted">
-            <span className="spinner" aria-hidden="true" />
-            {t('connections.ret.working')}
-          </p>
+          <FinishingCard service={service} idp={idp} />
         ) : (
           <ReturnCard result={outcome.result} service={service} idp={idp}>
             {outcome.result === 'ok' ? (

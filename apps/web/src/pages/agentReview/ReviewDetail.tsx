@@ -9,6 +9,7 @@ import { Empty } from '../../components/admin/govKit';
 import { Alert } from '../../components/Alert';
 import { Badge } from '../../components/Badge';
 import { CheckIcon, InfoIcon, LockIcon, RefreshIcon, WarnIcon } from '../../components/icons';
+import { remoteServiceIndex } from '../agentBuilder/model';
 import {
   REASON_MAX_LENGTH,
   isGone,
@@ -264,7 +265,7 @@ export function ReviewDetail({ api, me, review, refs, notify, onChanged }: Props
             {violations.length > 0 && (
               <div className="rv-chips">
                 {violations.map((violation) => {
-                  const text = ruleText(t, violation);
+                  const text = ruleText(t, violation, remoteServiceIndex(version.remotes ?? []));
                   return (
                     <button
                       key={`${violation.code}/${violation.field}`}

@@ -74,6 +74,8 @@ export const playground = {
     note: 'Las de lectura se ejecutan de verdad, con tu identidad: lo que no puedes consultar en el chat tampoco lo consulta aquí. Las de escritura nunca se ejecutan: la prueba se detiene cuando el agente pide una. Se cambian en el Agent Builder.',
   },
   skills: {
+    title: 'Skills',
+    loadError: 'No se pudieron cargar. Sin ellas la prueba no corre.',
     label: 'Skills · {{count}}',
     note: 'Se cargan igual que en el agente publicado. Se cambian en el Agent Builder.',
     notApproved: 'Ya no aprobada',
@@ -191,6 +193,7 @@ export const playground = {
     },
     skill: {
       title: 'Una skill de esta versión ya no está aprobada',
+      titleMany: '{{count}} skills de esta versión ya no están aprobadas',
       body: 'Cámbiala en el Agent Builder para probar.',
       // `skills`: «Revisar costos v2», or a list of them.
       named_one: '{{skills}} ya no está aprobada. Cámbiala en el Agent Builder para probar.',
@@ -200,7 +203,8 @@ export const playground = {
     },
     skills: {
       title: 'No se pudieron cargar las skills de esta versión',
-      body: 'Inténtalo de nuevo en unos segundos.',
+      body: 'La prueba no puede correr sin ellas. Inténtalo de nuevo en unos segundos.',
+      retry: 'Reintentar',
     },
     retired: {
       title: 'Este agente se retiró',

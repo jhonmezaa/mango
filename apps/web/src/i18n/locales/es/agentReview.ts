@@ -233,6 +233,11 @@ export const agentReview = {
       'Hay skills cuyos MCP no están habilitados: {{items}}. Hay que quitarlas o pedir que se habilite su MCP.',
     skill_server_without_tools:
       'Hay skills que requieren un MCP del que el agente no tiene ninguna tool: {{items}}.',
+    // Design round 24 (`remote-editor`): named by its service.
+    remote_not_usable:
+      'Quien editó esta versión no está en los grupos de {{items}}: sus tools no se pueden usar. Hay que quitarlas.',
+    remote_not_usable_unnamed:
+      'Quien editó esta versión no está en los grupos de un servicio externo: sus tools no se pueden usar. Hay que quitarlas.',
     unknown: 'Incumple una regla de publicación ({{code}}).',
   },
 } as const;

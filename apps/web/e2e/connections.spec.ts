@@ -81,12 +81,19 @@ test('the chat asks to connect a remote service, and the return closes the conse
   await expect(dialog).toContainText('dev.azure.com/plataforma-tableros');
   await dialog.getByRole('button', { name: 'Cancelar' }).click();
 
-  // Mis conexiones says it is connected; «Desconectar» waits for the design (D97).
+  // Mis conexiones says it is connected, and «Desconectar» (D97, design round 24) works.
   await page.getByRole('button', { name: /^Cuenta de / }).click();
   await page.getByRole('menuitem', { name: 'Mis conexiones' }).click();
   const mine = page.getByRole('dialog', { name: 'Mis conexiones' });
   await expect(mine).toContainText('Conectado');
-  await expect(mine).toContainText('Desconectar, próximamente');
+  await mine.getByRole('button', { name: 'Desconectar' }).click();
+  const leave = page.getByRole('dialog', { name: 'Desconectar Azure DevOps' });
+  await expect(leave).toContainText('Mango no cambia nada en tu cuenta de Microsoft.');
+  await leave.getByRole('button', { name: 'Desconectar' }).click();
+  await expect(page.getByText('Desconectaste tu cuenta de Azure DevOps')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Mis conexiones' })).toContainText(
+    'No has conectado tu cuenta.',
+  );
   expect(consoleErrors).toEqual([]);
 });
 

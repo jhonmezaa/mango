@@ -126,9 +126,11 @@ export function RemoteRequests({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="mk-name">{profile.name}</span>
                 <span className="badge">
-                  {request.kind === 'replace_app'
-                    ? t('remoteMcp.requests.replace')
-                    : t('remoteMcp.requests.enable')}
+                  {request.kind === 'params'
+                    ? t('remoteMcp.requests.params')
+                    : request.kind === 'replace_app'
+                      ? t('remoteMcp.requests.replace')
+                      : t('remoteMcp.requests.enable')}
                 </span>
                 <span className="badge mono">{request.organization}</span>
               </div>

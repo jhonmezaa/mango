@@ -61,9 +61,7 @@ Volver a ponerlo en `false` no corta las llamadas de los registros que ya están
 - vuelve a firmar el ítem;
 - un cambio solo de grupos no toca el target, pero también pide aprobación.
 
-La API se construye. La pantalla queda en «Próximamente» hasta que Claude Design la dibuje (D24).
-
-Mientras tanto, la web no muestra una solicitud `params` pendiente que se haya creado por la API: queda en la API hasta que el diseño la dibuje (elegido por el dueño el 2026-10-27, por menú: «No mostrarla»). «Cambiar tenant o app» muestra los toolsets y los grupos del registro sin dejar editarlos, porque esa solicitud no los cambia (elegido ese día, por menú: «Mostrarlos sin editar (Recomendada)»).
+La API se construye. La ronda 24 del diseño la dibujó y la web ya la tiene (precisado el 2026-10-27): «Cambiar grupos» en la ficha del registro activo, la revisión con lo que se agrega y lo que se quita, y la insignia «Cambio de grupos» en la ficha, en Solicitudes pendientes y en la Bandeja. Antes de esa ronda la web no mostraba una solicitud `params` creada por la API (elegido por el dueño el 2026-10-27, por menú: «No mostrarla»). «Cambiar tenant o app» avisa que todas las personas tendrán que conectar su cuenta otra vez y muestra los toolsets y los grupos del registro sin dejar editarlos, porque esa solicitud no los cambia (elegido ese día, por menú: «Mostrarlos sin editar (Recomendada)»).
 
 **(9) El `session_id` fuera de los logs (respondido: «Quitarlo de los logs; si no se puede, excepción (Recomendada)»).**
 - **Dónde queda hoy.** Identity añade el `session_id` en la query de la URL de vuelta. La distribución de CloudFront usa hoy el registro estándar *legacy*, que siempre guarda la query (`cs-uri-query`).
@@ -223,7 +221,8 @@ Los textos los pone el diseño (D24). Los que falten van al brief siguiente.
 - **«Leyó {servicio}» y la clasificación de enlaces (A1)** salen de `remote_sources`, con las organizaciones y los hosts de los registros que la persona puede usar (no los de toda la instalación). En el turno en vivo los trae el evento `done` (solo los registros, nunca contenido ni URL; precisado el 2026-10-27), y al recargar, el mensaje guardado: los dos dan la misma lista.
 - **El Builder** solo lista los registros que la API devuelve a quien edita: la fila del diseño «no está habilitado para tus grupos» no sale, porque la API no dice los grupos de un registro a quien no está en ellos. El aviso de grupos sin el servicio es el `remote_audience_outside_groups` de la versión guardada, más las personas sueltas del borrador.
 - **El aviso `remote_connect` de la Bandeja** se muestra como la tarjeta del diseño («Conecta tu cuenta de {servicio}», «Ir a Mis conexiones») cuando el registro está en «Mis conexiones»; si no, como la ejecución fallida que también es.
-- «Desconectar» sigue en «Próximamente» (D97).
+- «Desconectar» ya está en «Mis conexiones», con el texto de la ronda 24 del diseño (D97; precisado el 2026-10-27). También se ofrece con el secreto de la app vencido, porque el producto deja desconectar en ese estado (elegido por el dueño el 2026-10-27, por menú: «Mostrar «Desconectar»»).
+- `remote_not_usable` tiene texto propio en el Builder y en la revisión, con el nombre del servicio (ronda 24).
 
 ### Lo que queda por ver en vivo antes de habilitarlo en un cliente
 

@@ -105,10 +105,13 @@ export function Banner({
   tone = 'info',
   title,
   children,
+  action,
 }: {
   tone?: BannerTone;
   title?: string | undefined;
   children?: ReactNode;
+  /** Design `Banner` `action`: a button to the right of the text, outside its body. */
+  action?: ReactNode;
 }) {
   const Icon = BANNER_ICON[tone];
   return (
@@ -121,6 +124,7 @@ export function Banner({
         {title && <div className="g-banner-t">{title}</div>}
         {children && <div className="g-banner-b">{children}</div>}
       </div>
+      {action}
     </div>
   );
 }

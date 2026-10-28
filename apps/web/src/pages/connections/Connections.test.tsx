@@ -92,9 +92,10 @@ describe('Mis conexiones', () => {
       within(dialog).getByText('Un administrador deshabilitó Azure DevOps.'),
     ).toBeInTheDocument();
     expect(within(dialog).getByText(/tiene que renovar la configuración/)).toBeInTheDocument();
-    // Only the row that is not connected can connect; «Desconectar» waits for the design (D97).
+    // Only the row that is not connected can connect. «Desconectar» (D97) on the connected row
+    // and, by the owner's choice, on the one with the app's secret expired.
     expect(within(dialog).getAllByRole('button', { name: 'Conectar' })).toHaveLength(1);
-    expect(within(dialog).getByText('Desconectar, próximamente')).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('button', { name: 'Desconectar' })).toHaveLength(2);
     expect(within(dialog).getByText(/vas a iniciar sesión en Microsoft/)).toBeInTheDocument();
   });
 
@@ -153,8 +154,43 @@ describe('Mis conexiones', () => {
     await userEvent.click(screen.getByRole('button', { name: 'open mine' }));
     const dialog = await screen.findByRole('dialog', { name: 'Mis conexiones' });
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Conectar' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/error inesperado/);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'No se pudo iniciar la conexión. Inténtalo de nuevo en unos segundos.',
+    );
+    expect(within(dialog).getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
     expect(go).not.toHaveBeenCalled();
+  });
+
+  it('disconnects with the design dialog (D97) and says when it cannot confirm it', async () => {
+    let fail = true;
+    const disconnect = vi.fn(() =>
+      fail
+        ? Promise.reject(new ApiError(502, 'disconnect_not_confirmed', 'x'))
+        : Promise.resolve({ ...connection(), status: 'not_connected' }),
+    );
+    const call = apiWith(
+      [connection({ status: 'connected', connected_at: new Date().toISOString() })],
+      { disconnectMyAccount: disconnect },
+    );
+    renderWith(<OpenMine />, call);
+    await userEvent.click(screen.getByRole('button', { name: 'open mine' }));
+    const list = await screen.findByRole('dialog', { name: 'Mis conexiones' });
+    await userEvent.click(await within(list).findByRole('button', { name: 'Desconectar' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Desconectar Azure DevOps' });
+    expect(
+      within(dialog).getByText('Mango no cambia nada en tu cuenta de Microsoft.'),
+    ).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Desconectar' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'No se pudo confirmar que se desconectó',
+    );
+    fail = false;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('Desconectaste tu cuenta de Azure DevOps')).toBeInTheDocument();
+    expect(disconnect).toHaveBeenCalledWith({
+      path: { reg: connection().registration_id },
+      body: {},
+    });
   });
 
   it('shows the empty state of the design', async () => {
@@ -265,10 +301,13 @@ describe('the return from the provider', () => {
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
   });
 
-  it('says the link expired when nothing came back in memory', async () => {
+  it('asks to press «Conectar» again when nothing came back in memory, unnamed', async () => {
     const call = apiWith([connection()]);
     renderWith(<ConnectReturnPage />, call, '/conexiones/vuelta');
-    expect(await screen.findByRole('heading', { name: 'El enlace venció' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Vuelve a pulsar «Conectar»' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('· vuelta desde Microsoft')).not.toBeInTheDocument();
     expect(call).not.toHaveBeenCalledWith('completeConsent', expect.anything());
   });
 

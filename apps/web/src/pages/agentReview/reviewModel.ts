@@ -338,8 +338,21 @@ export function isForbidden(error: unknown): boolean {
   return error instanceof ApiError && error.status === 403 && error.code !== 'same_approver';
 }
 
-/** Text of a submit rule: the API sends the code and the items, never the text. */
-export function ruleText(t: TFunction, violation: Violation): string {
+/**
+ * Text of a submit rule: the API sends the code and the items, never the text. A remote tool's
+ * rule names the service (`serviceOf`, from the version's `remotes`), not its references.
+ */
+export function ruleText(
+  t: TFunction,
+  violation: Violation,
+  serviceOf: (ref: string) => string | null = () => null,
+): string {
+  if (violation.code === 'remote_not_usable') {
+    const services = [...new Set(violation.items.flatMap((ref) => serviceOf(ref) ?? []))];
+    return services.length > 0
+      ? t('agentReview.rules.remote_not_usable', { items: services.join(', ') })
+      : t('agentReview.rules.remote_not_usable_unnamed');
+  }
   return isWordedRule(violation.code)
     ? t(`agentReview.rules.${violation.code}`, { items: violation.items.join(', ') })
     : t('agentReview.rules.unknown', { code: violation.code });

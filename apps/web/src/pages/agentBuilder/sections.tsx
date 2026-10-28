@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 
 import { Alert } from '../../components/Alert';
 import { Badge, type BadgeTone } from '../../components/Badge';
-import { CheckIcon, LockIcon, PlusIcon, WarnIcon } from '../../components/icons';
+import { CheckIcon, LockIcon, PlusIcon, WarnIcon, X2Icon } from '../../components/icons';
 import { PersonChip } from '../../components/PersonChip';
 import { isEmail, type LookupResult, type People } from '../../directory/usePeople';
 import { formatUsd } from '../../lib/format';
@@ -38,6 +38,7 @@ import {
   type OrgNode,
   type SecretKind,
   type Template,
+  remoteRefOf,
   type Version,
 } from './model';
 import { RemoteTools } from './RemoteTools';
@@ -593,7 +594,12 @@ export const ToolsSection = memo(function ToolsSection({
     );
     return served.length > 0 ? [{ ...connector, tools: shown }] : [];
   });
-  const off = tools.filter((ref) => !index.get(ref)?.enabled);
+  // Tools of a remote service the caller is not in the groups of: the catalog does not bring that
+  // registration (D93 (7)), so they are named from their references (design round 24).
+  const usable = new Set(remotes.map((remote) => remote.registration_id));
+  const stray = strayRemotes(tools, usable, remoteAudience);
+  const strayRefs = new Set(stray.flatMap((item) => item.refs));
+  const off = tools.filter((ref) => !index.get(ref)?.enabled && !strayRefs.has(ref));
   const writeCount = tools.filter((ref) => index.get(ref)?.write).length;
   const centralOnly = tools.some((ref) => index.get(ref)?.centralOnly);
 
@@ -614,6 +620,37 @@ export const ToolsSection = memo(function ToolsSection({
       title={t('agentBuilder.sections.tools')}
       desc={t('agentBuilder.tools.desc')}
     >
+      {stray.map((item) => (
+        <div key={item.registrationId} className="mc-alert red" role="alert">
+          <X2Icon size={14} />
+          <div className="flex-1">
+            <b>
+              {t(
+                item.service
+                  ? 'agentBuilder.tools.strayTitle'
+                  : 'agentBuilder.tools.strayTitleUnnamed',
+                {
+                  count: item.refs.length,
+                  service: item.service ?? '',
+                },
+              )}
+            </b>
+            <div>
+              {t('agentBuilder.tools.strayBody')}{' '}
+              <span className="mono">{item.names.join(', ')}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              onChange({ tools: tools.filter((ref) => !item.refs.includes(ref)) });
+            }}
+          >
+            {t('agentBuilder.tools.strayRemove')}
+          </button>
+        </div>
+      ))}
       {off.length > 0 && (
         <Alert tone="red">
           <div className="ab-notice-title">
@@ -1208,3 +1245,31 @@ export const AccessSection = memo(function AccessSection({
     </BuilderSection>
   );
 });
+
+/** Tools of remote registrations the caller cannot use, by registration (design round 24). */
+function strayRemotes(
+  tools: readonly string[],
+  usable: ReadonlySet<string>,
+  audience: readonly NonNullable<Version['remotes']>[number][],
+): { registrationId: string; service: string | null; refs: string[]; names: string[] }[] {
+  const out = new Map<
+    string,
+    { registrationId: string; service: string | null; refs: string[]; names: string[] }
+  >();
+  for (const ref of tools) {
+    const parsed = remoteRefOf(ref);
+    if (!parsed || usable.has(parsed.registrationId)) continue;
+    const item = out.get(parsed.registrationId) ?? {
+      registrationId: parsed.registrationId,
+      service:
+        audience.find((remote) => remote.registration_id === parsed.registrationId)?.service ??
+        null,
+      refs: [],
+      names: [],
+    };
+    item.refs.push(ref);
+    item.names.push(parsed.tool);
+    out.set(parsed.registrationId, item);
+  }
+  return [...out.values()];
+}

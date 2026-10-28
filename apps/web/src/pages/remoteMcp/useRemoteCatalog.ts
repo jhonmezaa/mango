@@ -79,7 +79,7 @@ export function useRemoteCatalog(api: ApiClient, enabled = true) {
 
 export type RemoteAction =
   | { kind: 'request'; profileId: string; form: RemoteForm }
-  | { kind: 'reenable' | 'replace'; registration: Registration; form: RemoteForm }
+  | { kind: 'reenable' | 'replace' | 'params'; registration: Registration; form: RemoteForm }
   | { kind: 'approve' | 'withdraw'; registration: Registration; request: RemoteRequest }
   | { kind: 'reject'; registration: Registration; request: RemoteRequest; reason: string }
   | { kind: 'rotate'; registration: Registration; secret: string; expiresOn: string }
@@ -96,6 +96,7 @@ const OWN_ERRORS = new Set([
   'catalog_unavailable',
   'use_withdraw',
   'not_requester',
+  'no_change',
 ]);
 
 /** `remote_disabled`: `RemoteMcpEnabled=false` in the installation (P-4). */
@@ -119,6 +120,16 @@ async function send(api: ApiClient, action: RemoteAction): Promise<RemoteCatalog
         },
       });
     }
+    case 'params':
+      return api.call('requestRemoteParams', {
+        path: { reg: action.registration.id },
+        body: {
+          version: action.registration.version,
+          toolsets: action.form.toolsets,
+          groups: action.form.groups,
+          reason: null,
+        },
+      });
     case 'reenable':
     case 'replace': {
       const { form, registration } = action;
@@ -193,7 +204,11 @@ export function useRemoteActions(
           request: 'remoteMcp.toast.requested',
           reenable: 'remoteMcp.toast.requested',
           replace: 'remoteMcp.toast.requested',
-          approve: 'remoteMcp.toast.approved',
+          params: 'remoteMcp.toast.requested',
+          approve:
+            action.kind === 'approve' && action.request.kind === 'params'
+              ? 'remoteMcp.toast.approvedParams'
+              : 'remoteMcp.toast.approved',
           reject: 'remoteMcp.toast.rejected',
           withdraw: 'remoteMcp.toast.withdrawn',
           rotate: 'remoteMcp.toast.rotated',

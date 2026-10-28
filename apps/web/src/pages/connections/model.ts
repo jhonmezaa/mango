@@ -60,21 +60,51 @@ export function idpsOf(list: readonly Connection[]): string[] {
   return [...new Set(list.map(idpOf))];
 }
 
-/** Text of a failed «Conectar» (design texts; the rest, the app's generic error). */
-export function connectErrorText(t: TFunction, error: unknown, service: string): string {
-  if (error instanceof ApiError) {
-    switch (error.code) {
-      case 'remote_disabled':
-        return t('connections.errors.remote_disabled', { service });
-      case 'secret_expired':
-        return t('connections.row.blocked', { service });
-      case 'remote_not_usable':
-        return t('connections.errors.remote_not_usable', { service });
-      case 'gateway_unavailable':
-        return t('connections.errors.gateway_unavailable');
-    }
+/** Design `CONNECT_ERR`: the title and the body of a failed «Conectar», as the card says them. */
+export interface ConnectError {
+  title: string;
+  body: string;
+}
+
+/**
+ * Text of a failed «Conectar» (design `CONNECT_ERR`, round 24). The Gateway or AgentCore Identity
+ * not giving a consent URL is the design's `identity_unavailable`; a 429 is `rate_limited`. Codes
+ * that say why this service cannot be connected keep their own text under the generic title.
+ */
+export function connectErrorOf(
+  t: TFunction,
+  error: unknown,
+  connection: Pick<Connection, 'service' | 'provider'>,
+): ConnectError {
+  const generic = {
+    title: t('connections.connectErrors.error.title'),
+    body: t('connections.connectErrors.error.body'),
+  };
+  if (!(error instanceof ApiError)) return generic;
+  if (error.status === 429) {
+    return {
+      title: t('connections.connectErrors.rate_limited.title'),
+      body: t('connections.connectErrors.rate_limited.body'),
+    };
   }
-  return t('errors.generic');
+  const service = connection.service;
+  switch (error.code) {
+    case 'gateway_unavailable':
+    case 'identity_unavailable':
+      return {
+        title: t('connections.connectErrors.identity_unavailable.title'),
+        body: t('connections.connectErrors.identity_unavailable.body', {
+          idp: idpOf(connection),
+        }),
+      };
+    case 'remote_disabled':
+      return { ...generic, body: t('connections.errors.remote_disabled', { service }) };
+    case 'secret_expired':
+      return { ...generic, body: t('connections.row.blocked', { service }) };
+    case 'remote_not_usable':
+      return { ...generic, body: t('connections.errors.remote_not_usable', { service }) };
+  }
+  return generic;
 }
 
 /** The registrations a turn read, as link sources (A1): their hosts and their organizations. */
@@ -104,7 +134,13 @@ export function linkSourcesOf(
 // --- The return (design `RemoteReturn`) -------------------------------------------------------
 
 export type ReturnResult =
-  'ok' | 'expired' | 'nosession' | 'notyours' | 'denied' | 'conditional' | 'error';
+  'ok' | 'expired' | 'lost' | 'nosession' | 'notyours' | 'denied' | 'conditional' | 'error';
+
+/**
+ * Results that do not name the service (design `NONAME`): without the return's data, or without a
+ * session, Mango does not know which one it was.
+ */
+export const UNNAMED_RESULTS: ReadonlySet<ReturnResult> = new Set(['lost', 'nosession']);
 
 /** Result of `POST /api/oauth/callback` when it fails (docs/specs/poc-api-contract.md). */
 export function returnResultOf(error: unknown): ReturnResult {

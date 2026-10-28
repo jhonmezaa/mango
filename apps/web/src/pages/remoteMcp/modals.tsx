@@ -189,7 +189,8 @@ export function DisableModal({
         </>
       }
     >
-      <p className="rm-p">{t('remoteMcp.disable.body')}</p>
+      <p className="rm-p">{t('remoteMcp.disable.body', { name: profile.name })}</p>
+      <p className="rm-p">{t('remoteMcp.disable.again')}</p>
       <RmField
         id="rm-dw"
         label={t('remoteMcp.disable.reason')}

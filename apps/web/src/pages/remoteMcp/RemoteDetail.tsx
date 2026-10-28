@@ -13,6 +13,7 @@ import {
   LockIcon,
   PlusIcon,
   UserIcon,
+  WarnIcon,
   X2Icon,
 } from '../../components/icons';
 import { formatRelative } from '../../lib/format';
@@ -20,6 +21,7 @@ import {
   DEFAULT_SECRET_DAYS,
   REASON_MAX_LENGTH,
   SECRET_MAX_LENGTH,
+  changeOf,
   dayInput,
   formErrors,
   formatDay,
@@ -27,6 +29,7 @@ import {
   historyOf,
   personOf,
   rowsOf,
+  sameGroups,
   toolCount,
   toolsOf,
   type FormErrors,
@@ -110,7 +113,10 @@ export function RemoteDetail({
   };
 
   const openForm = (base: Row | null, kind: RemoteForm['kind']) => {
-    const source = base?.request ?? base?.registration ?? null;
+    const source =
+      kind === 'params'
+        ? (base?.registration ?? null)
+        : (base?.request ?? base?.registration ?? null);
     setMode({
       k: 'form',
       row: base,
@@ -167,18 +173,28 @@ export function RemoteDetail({
     };
     const fixed = form.kind !== 'enable';
     const replace = form.kind === 'replace_app';
-    title = replace
-      ? t('remoteMcp.detail.titleReplace')
-      : t('remoteMcp.detail.titleEnable', { name: profile.name });
+    const scope = form.kind === 'params';
+    const toolsetLabel = (id: string) =>
+      profile.toolsets.find((toolset) => toolset.id === id)?.label ?? id;
+    title = scope
+      ? t('remoteMcp.detail.titleParams', { organization: form.organization })
+      : replace
+        ? t('remoteMcp.detail.titleReplace')
+        : t('remoteMcp.detail.titleEnable', { name: profile.name });
     const submit = () => {
       setTried(true);
+      setFailure(null);
       if (hasErrors(formErrors(form))) return;
       const base = mode.row;
+      if (scope && base && sameGroups(form, base.registration)) {
+        setFailure(t('remoteMcp.errors.no_change'));
+        return;
+      }
       const action: Parameters<Act>[0] =
         form.kind === 'enable' || !base
           ? { kind: 'request', profileId: profile.id, form }
           : {
-              kind: form.kind === 'replace_app' ? 'replace' : 'reenable',
+              kind: scope ? 'params' : form.kind === 'replace_app' ? 'replace' : 'reenable',
               registration: base.registration,
               form,
             };
@@ -198,158 +214,209 @@ export function RemoteDetail({
           <span className="is-on">{t('remoteMcp.form.step1')}</span>
           <span>{t('remoteMcp.form.step2')}</span>
         </div>
-        {replace ? (
+        {scope ? (
           <div className="mc-alert">
             <InfoIcon size={14} />
-            <div>{t('remoteMcp.form.replaceNote')}</div>
+            <div>{t('remoteMcp.form.paramsNote')}</div>
           </div>
         ) : null}
+        {replace ? (
+          <>
+            <div className="mc-alert amber">
+              <WarnIcon size={14} />
+              <div>
+                <b>{t('remoteMcp.form.replaceReconnect')}</b>{' '}
+                {t('remoteMcp.form.replaceReconnectWhy')}
+              </div>
+            </div>
+            <div className="mc-alert">
+              <InfoIcon size={14} />
+              <div>{t('remoteMcp.form.replaceNote')}</div>
+            </div>
+          </>
+        ) : null}
         <div className="rm-form">
-          <RmField
-            id="rf-org"
-            label={t('remoteMcp.form.organization', { name: profile.name })}
-            hint={t('remoteMcp.form.organizationHint')}
-            error={err('organization')}
-          >
-            <div className="rm-prefix">
-              <span className="mono">{profile.host}/</span>
-              <input
+          {scope ? (
+            <Kv k={t('remoteMcp.row.organization')}>
+              <span className="mono">
+                {profile.host}/{form.organization}
+              </span>
+            </Kv>
+          ) : (
+            <>
+              <RmField
                 id="rf-org"
-                className="input mono"
-                value={form.organization}
-                maxLength={49}
-                disabled={fixed}
-                spellCheck={false}
-                autoComplete="off"
-                onChange={(event) => {
-                  set({ organization: event.target.value });
-                }}
-                autoFocus={!fixed}
-              />
-            </div>
-          </RmField>
-          <div className="rm-2col">
-            <RmField id="rf-ten" label={t('remoteMcp.form.tenant')} error={err('tenantId')}>
-              <input
-                id="rf-ten"
-                className="input mono"
-                value={form.tenantId}
-                maxLength={36}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder={t('remoteMcp.form.guidPlaceholder')}
-                onChange={(event) => {
-                  set({ tenantId: event.target.value });
-                }}
-                autoFocus={fixed}
-              />
-            </RmField>
-            <RmField id="rf-cli" label={t('remoteMcp.form.client')} error={err('clientId')}>
-              <input
-                id="rf-cli"
-                className="input mono"
-                value={form.clientId}
-                maxLength={36}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder={t('remoteMcp.form.guidPlaceholder')}
-                onChange={(event) => {
-                  set({ clientId: event.target.value });
-                }}
-              />
-            </RmField>
-          </div>
-          <div className="rm-2col">
-            <RmField
-              id="rf-sec"
-              label={t('remoteMcp.form.secret')}
-              hint={t('remoteMcp.form.secretHint')}
-              error={err('secret')}
-            >
-              {/* Write only: a password field, never persisted, sent once to the API. */}
-              <input
-                id="rf-sec"
-                className="input mono"
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={SECRET_MAX_LENGTH}
-                value={form.secret}
-                onChange={(event) => {
-                  set({ secret: event.target.value });
-                }}
-              />
-            </RmField>
-            <RmField
-              id="rf-exp"
-              label={t('remoteMcp.form.expiry')}
-              hint={t('remoteMcp.form.expiryHint')}
-              error={err('secretExpiresOn')}
-            >
-              <input
-                id="rf-exp"
-                className="input"
-                type="date"
-                value={form.secretExpiresOn}
-                onChange={(event) => {
-                  set({ secretExpiresOn: event.target.value });
-                }}
-              />
-            </RmField>
-          </div>
-          <div className={errors.toolsets ? 'rm-field has-error' : 'rm-field'}>
-            <span className="rm-label" id="rf-ts">
-              {t('remoteMcp.form.toolsets')}
-            </span>
-            <div className="rm-checks" role="group" aria-labelledby="rf-ts">
-              {profile.toolsets.map((toolset) => {
-                const on = form.toolsets.includes(toolset.id);
-                return (
-                  <label key={toolset.id} className={on ? 'rm-check is-on' : 'rm-check'}>
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      disabled={replace}
-                      onChange={() => {
-                        toggle(toolset.id);
-                      }}
-                    />
-                    <span>{toolset.label}</span>
-                    <span className="mk-meta">{toolset.tools.length}</span>
-                  </label>
-                );
-              })}
-            </div>
-            {errors.toolsets ? (
-              <div className="rm-err" role="alert">
-                {err('toolsets')}
+                label={t('remoteMcp.form.organization', { name: profile.name })}
+                hint={t('remoteMcp.form.organizationHint')}
+                error={err('organization')}
+              >
+                <div className="rm-prefix">
+                  <span className="mono">{profile.host}/</span>
+                  <input
+                    id="rf-org"
+                    className="input mono"
+                    value={form.organization}
+                    maxLength={49}
+                    disabled={fixed}
+                    spellCheck={false}
+                    autoComplete="off"
+                    onChange={(event) => {
+                      set({ organization: event.target.value });
+                    }}
+                    autoFocus={!fixed}
+                  />
+                </div>
+              </RmField>
+              <div className="rm-2col">
+                <RmField id="rf-ten" label={t('remoteMcp.form.tenant')} error={err('tenantId')}>
+                  <input
+                    id="rf-ten"
+                    className="input mono"
+                    value={form.tenantId}
+                    maxLength={36}
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder={t('remoteMcp.form.guidPlaceholder')}
+                    onChange={(event) => {
+                      set({ tenantId: event.target.value });
+                    }}
+                    autoFocus={fixed}
+                  />
+                </RmField>
+                <RmField id="rf-cli" label={t('remoteMcp.form.client')} error={err('clientId')}>
+                  <input
+                    id="rf-cli"
+                    className="input mono"
+                    value={form.clientId}
+                    maxLength={36}
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder={t('remoteMcp.form.guidPlaceholder')}
+                    onChange={(event) => {
+                      set({ clientId: event.target.value });
+                    }}
+                  />
+                </RmField>
               </div>
-            ) : (
-              <div className="rm-hint">{t('remoteMcp.form.toolsetsHint')}</div>
-            )}
-          </div>
-          <div className={errors.groups ? 'rm-field has-error' : 'rm-field'}>
-            <span className="rm-label" id="rf-gr">
-              {t('remoteMcp.form.groups')}
-            </span>
-            <div className="rm-chips" aria-labelledby="rf-gr">
-              <GroupChips
-                options={groups ?? []}
-                value={form.groups}
-                disabled={replace}
-                onChange={(next) => {
-                  set({ groups: [...next] });
-                }}
-              />
-            </div>
-            {errors.groups ? (
-              <div className="rm-err" role="alert">
-                {err('groups')}
+              <div className="rm-2col">
+                <RmField
+                  id="rf-sec"
+                  label={t('remoteMcp.form.secret')}
+                  hint={t('remoteMcp.form.secretHint')}
+                  error={err('secret')}
+                >
+                  {/* Write only: a password field, never persisted, sent once to the API. */}
+                  <input
+                    id="rf-sec"
+                    className="input mono"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={SECRET_MAX_LENGTH}
+                    value={form.secret}
+                    onChange={(event) => {
+                      set({ secret: event.target.value });
+                    }}
+                  />
+                </RmField>
+                <RmField
+                  id="rf-exp"
+                  label={t('remoteMcp.form.expiry')}
+                  hint={t('remoteMcp.form.expiryHint')}
+                  error={err('secretExpiresOn')}
+                >
+                  <input
+                    id="rf-exp"
+                    className="input"
+                    type="date"
+                    value={form.secretExpiresOn}
+                    onChange={(event) => {
+                      set({ secretExpiresOn: event.target.value });
+                    }}
+                  />
+                </RmField>
               </div>
-            ) : (
-              <div className="rm-hint">{t('remoteMcp.form.groupsHint')}</div>
-            )}
-          </div>
+            </>
+          )}
+          {replace ? (
+            <>
+              <div className="rm-field">
+                <span className="rm-label">{t('remoteMcp.form.toolsets')}</span>
+                <div className="rm-sets">
+                  {form.toolsets.map((id) => (
+                    <span key={id} className="rm-set">
+                      {toolsetLabel(id)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="rm-field">
+                <span className="rm-label">{t('remoteMcp.form.groupsShort')}</span>
+                <div className="rm-sets">
+                  {form.groups.map((group) => (
+                    <span key={group} className="badge mono">
+                      {group}
+                    </span>
+                  ))}
+                </div>
+                <div className="rm-hint">{t('remoteMcp.form.replaceGroupsHint')}</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={errors.toolsets ? 'rm-field has-error' : 'rm-field'}>
+                <span className="rm-label" id="rf-ts">
+                  {t('remoteMcp.form.toolsets')}
+                </span>
+                <div className="rm-checks" role="group" aria-labelledby="rf-ts">
+                  {profile.toolsets.map((toolset) => {
+                    const on = form.toolsets.includes(toolset.id);
+                    return (
+                      <label key={toolset.id} className={on ? 'rm-check is-on' : 'rm-check'}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => {
+                            toggle(toolset.id);
+                          }}
+                        />
+                        <span>{toolset.label}</span>
+                        <span className="mk-meta">{toolset.tools.length}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {errors.toolsets ? (
+                  <div className="rm-err" role="alert">
+                    {err('toolsets')}
+                  </div>
+                ) : (
+                  <div className="rm-hint">{t('remoteMcp.form.toolsetsHint')}</div>
+                )}
+              </div>
+              <div className={errors.groups ? 'rm-field has-error' : 'rm-field'}>
+                <span className="rm-label" id="rf-gr">
+                  {t('remoteMcp.form.groups')}
+                </span>
+                <div className="rm-chips" aria-labelledby="rf-gr">
+                  <GroupChips
+                    options={groups ?? []}
+                    value={form.groups}
+                    onChange={(next) => {
+                      set({ groups: [...next] });
+                    }}
+                  />
+                </div>
+                {errors.groups ? (
+                  <div className="rm-err" role="alert">
+                    {err('groups')}
+                  </div>
+                ) : (
+                  <div className="rm-hint">{t('remoteMcp.form.groupsHint')}</div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </>
     );
@@ -379,10 +446,91 @@ export function RemoteDetail({
     const asked = who(facts.requested_by, facts.requested_by_email, t('remoteMcp.requests.you'));
     title = t('remoteMcp.detail.titleRow', { name: profile.name, organization: reg.organization });
     const approver = who(reg.approved_by, reg.approved_by_email, t('remoteMcp.requests.you'));
-    const changeOpen = rows.some(
+    const openChange = rows.find(
       (other) => other.registration.id === reg.id && other.request !== null,
-    );
-    body = (
+    )?.request;
+    const changeOpen = Boolean(openChange);
+    const scopeReq = pending && request.kind === 'params';
+    const replaceReq = pending && request.kind === 'replace_app';
+    const toolsetLabel = (id: string) =>
+      profile.toolsets.find((toolset) => toolset.id === id)?.label ?? id;
+    const diffBadges = (
+      before: readonly string[],
+      after: readonly string[],
+      label: (id: string) => string,
+      mono: boolean,
+    ) =>
+      changeOf(before, after).map(({ id, change }) => (
+        <span
+          key={id}
+          className={[
+            'badge',
+            mono ? 'mono' : '',
+            change === 'add' ? 'badge-green' : change === 'remove' ? 'badge-red rm-del' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          title={
+            change === 'add'
+              ? t('remoteMcp.row.added')
+              : change === 'remove'
+                ? t('remoteMcp.row.removed')
+                : undefined
+          }
+        >
+          {change === 'add' ? '+ ' : change === 'remove' ? '− ' : ''}
+          {label(id)}
+        </span>
+      ));
+    body = scopeReq ? (
+      <>
+        {mode.sent ? (
+          <div className="mc-alert">
+            <Check2Icon size={14} className="text-ok" />
+            <div>
+              <b>{t('remoteMcp.row.sentTitle')}</b> {t('remoteMcp.row.approverOther')}
+            </div>
+          </div>
+        ) : null}
+        <div className="rm-steps" aria-label={t('remoteMcp.form.stepsLabel2')}>
+          <span className="is-done">{t('remoteMcp.row.stepAsked', { by: asked ?? '' })}</span>
+          <span className="is-on">{t('remoteMcp.row.stepApprove')}</span>
+        </div>
+        <div className="mc-alert">
+          <InfoIcon size={14} />
+          <div>
+            {t('remoteMcp.row.paramsBefore', { name: profile.name })}
+            <span className="mono">{reg.organization}</span>
+            {t('remoteMcp.row.paramsAfter')}
+          </div>
+        </div>
+        <Sec title={t('remoteMcp.row.changes')}>
+          <Kv k={t('remoteMcp.row.toolsets')}>
+            <span className="rm-sets justify-end">
+              {diffBadges(
+                request.previous_toolsets ?? reg.toolsets,
+                request.toolsets,
+                toolsetLabel,
+                false,
+              )}
+            </span>
+          </Kv>
+          <Kv k={t('remoteMcp.row.groups')}>
+            <span className="rm-sets justify-end">
+              {diffBadges(request.previous_groups ?? reg.groups, request.groups, (id) => id, true)}
+            </span>
+          </Kv>
+          {asked ? (
+            <Kv k={t('remoteMcp.row.asked')}>
+              {personOf(request.requested_by, request.requested_by_email, meId) === 'me'
+                ? t('remoteMcp.row.you')
+                : asked}
+              {` · ${formatRelative(request.created_at)}`}
+            </Kv>
+          ) : null}
+        </Sec>
+      </>
+    ) : (
       <>
         {mode.sent ? (
           <div className="mc-alert">
@@ -396,6 +544,14 @@ export function RemoteDetail({
           <div className="rm-steps" aria-label={t('remoteMcp.form.stepsLabel2')}>
             <span className="is-done">{t('remoteMcp.row.stepAsked', { by: asked ?? '' })}</span>
             <span className="is-on">{t('remoteMcp.row.stepApprove')}</span>
+          </div>
+        ) : null}
+        {replaceReq ? (
+          <div className="mc-alert amber">
+            <WarnIcon size={14} />
+            <div>
+              <b>{t('remoteMcp.row.replaceReconnect', { name: profile.name })}</b>
+            </div>
           </div>
         ) : null}
         {pending && request.callback_url ? (
@@ -450,6 +606,7 @@ export function RemoteDetail({
                 when: reg.disabled_at ? formatRelative(reg.disabled_at) : '',
               })}
               {reg.reason ? `: «${reg.reason}»` : null}
+              <div className="mk-meta mt-[3px]">{t('remoteMcp.row.disabledDeleted')}</div>
             </div>
           </div>
         ) : null}
@@ -470,9 +627,13 @@ export function RemoteDetail({
             </Kv>
           ) : null}
           <Kv k={t('remoteMcp.row.secret')}>
-            <span className="flex items-center gap-2">
-              <LockIcon size={11} /> {t('remoteMcp.row.secretStored')}
-            </span>
+            {current.status === 'disabled' && !reg.secret_expires_on ? (
+              <span className="mk-meta">{t('remoteMcp.row.secretDeleted')}</span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <LockIcon size={11} /> {t('remoteMcp.row.secretStored')}
+              </span>
+            )}
           </Kv>
           {pending ? (
             request.secret_expires_on ? (
@@ -669,11 +830,35 @@ export function RemoteDetail({
           >
             {t('remoteMcp.row.rotate')}
           </button>
+          {/* The API keeps one pending request per registration (pending_exists). */}
           <button
             type="button"
             className="btn btn-sm"
             disabled={changeOpen}
-            title={changeOpen ? t('remoteMcp.row.replaceBusy') : undefined}
+            title={
+              changeOpen
+                ? openChange?.kind === 'params'
+                  ? t('remoteMcp.row.paramsBusy')
+                  : t('remoteMcp.row.replaceBusy')
+                : undefined
+            }
+            onClick={() => {
+              openForm(current, 'params');
+            }}
+          >
+            {t('remoteMcp.row.changeGroups')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={changeOpen}
+            title={
+              changeOpen
+                ? openChange?.kind === 'params'
+                  ? t('remoteMcp.row.paramsBusy')
+                  : t('remoteMcp.row.replaceBusy')
+                : undefined
+            }
             onClick={() => {
               openForm(current, 'replace_app');
             }}
@@ -693,15 +878,20 @@ export function RemoteDetail({
       );
     } else if (current.status === 'failed' || current.status === 'disabled') {
       foot = changeOpen ? null : (
-        <button
-          type="button"
-          className="btn btn-sm btn-primary"
-          onClick={() => {
-            openForm(current, 'reenable');
-          }}
-        >
-          {t('remoteMcp.row.askAgain')}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              openForm(current, 'reenable');
+            }}
+          >
+            {t('remoteMcp.row.askAgain')}
+          </button>
+          {current.status === 'disabled' ? (
+            <span className="mk-meta">{t('remoteMcp.row.askAgainHint')}</span>
+          ) : null}
+        </div>
       );
     }
   } else {
@@ -733,7 +923,11 @@ export function RemoteDetail({
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="mono text-[12.5px]">{item.registration.organization}</span>
                   {item.request && item.registration.status !== 'pending' ? (
-                    <span className="badge">{t('remoteMcp.detail.changeBadge')}</span>
+                    <span className="badge">
+                      {item.request.kind === 'params'
+                        ? t('remoteMcp.detail.paramsBadge')
+                        : t('remoteMcp.detail.changeBadge')}
+                    </span>
                   ) : null}
                   <span className="mk-meta">
                     {t('remoteMcp.detail.rowMeta', {
@@ -787,7 +981,8 @@ export function RemoteDetail({
                     </span>
                   </div>
                   <div className="mk-meta">
-                    {t('remoteMcp.detail.historyAsked', { by: by ?? '' })} · {outcome} ·{' '}
+                    {t('remoteMcp.detail.historyAsked', { by: by ?? '' })} · {outcome}
+                    {request.kind === 'params' ? t('remoteMcp.detail.historyParams') : ''} ·{' '}
                     {t('remoteMcp.detail.historyMeta', {
                       toolsets: request.toolsets.length,
                       groups: request.groups.join(', '),
@@ -817,14 +1012,18 @@ export function RemoteDetail({
           <div className="mk-meta mt-1.5">{t('remoteMcp.detail.noWrite')}</div>
         </Sec>
         <Sec title={t('remoteMcp.detail.permissions', { idp: profile.provider })}>
-          {profile.permissions.map((permission) => (
-            <div key={`${permission.resource}:${permission.permission}`} className="mk-line">
-              <div className="flex items-center gap-2">
-                <span className="mono text-[12.5px] font-semibold">{permission.permission}</span>
-                <span className="mk-meta">{permission.resource}</span>
-              </div>
+          {/* What the signed profile asks for, grouped by resource (design round 24). */}
+          {permissionsByResource(profile).map(([resource, permissions]) => (
+            <div key={resource} className="mk-line flex flex-wrap items-center gap-2">
+              <span className="text-[12.5px] font-semibold">{resource}</span>
+              {permissions.map((permission) => (
+                <span key={permission} className="badge mono">
+                  {permission}
+                </span>
+              ))}
             </div>
           ))}
+          <div className="mk-meta mt-1.5">{t('remoteMcp.detail.permissionsNote')}</div>
         </Sec>
         <Sec title={t('remoteMcp.detail.host')}>
           <div className="flex items-center gap-2">
@@ -935,4 +1134,13 @@ function resolveSent(rows: readonly Row[], key: string): Row | null {
     );
   }
   return findRow(rows, key);
+}
+
+/** The profile's permissions by resource, in its order («Azure DevOps MCP», «Microsoft Entra»). */
+function permissionsByResource(profile: RemoteProfile): [string, string[]][] {
+  const out = new Map<string, string[]>();
+  for (const { resource, permission } of profile.permissions) {
+    out.set(resource, [...(out.get(resource) ?? []), permission]);
+  }
+  return [...out];
 }

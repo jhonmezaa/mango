@@ -30,12 +30,9 @@ export const RULE_CODES = [
 ] as const;
 export type RuleCode = (typeof RULE_CODES)[number];
 
-/**
- * Codes the design has no text for yet (`remote_not_usable`, D98): every screen shows them as an
- * unknown rule, by their code, until Claude Design words them.
- */
-const UNWORDED: ReadonlySet<string> = new Set<RuleCode>(['remote_not_usable']);
-export type WordedRuleCode = Exclude<RuleCode, 'remote_not_usable'>;
+/** Codes the design has no text for yet: shown as an unknown rule, by their code. */
+const UNWORDED: ReadonlySet<string> = new Set<RuleCode>([]);
+export type WordedRuleCode = RuleCode;
 
 const KNOWN: ReadonlySet<string> = new Set(RULE_CODES);
 

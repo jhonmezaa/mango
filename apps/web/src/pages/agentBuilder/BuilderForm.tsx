@@ -28,6 +28,7 @@ import {
   precheck,
   problemOfError,
   problemOfViolation,
+  remoteServiceIndex,
   supervisorOptions,
   toInput,
   toolIndex,
@@ -37,6 +38,7 @@ import {
   type SectionId,
   type Template,
   type Version,
+  type Violation,
 } from './model';
 import {
   AccessSection,
@@ -135,6 +137,13 @@ export function BuilderForm({ data }: { data: BuilderData }) {
     () => toolIndex(context.catalog, context.remotes),
     [context.catalog, context.remotes],
   );
+  // The service of a remote tool, for the server's `remote_not_usable` (design round 24).
+  const serviceOf = useMemo(
+    () => remoteServiceIndex(context.remotes ?? NO_REMOTES, live?.remotes ?? NO_REMOTE_AUDIENCE),
+    [context.remotes, live?.remotes],
+  );
+  const violationProblems = (violations: readonly Violation[]) =>
+    mergeProblems(violations.map((violation) => problemOfViolation(violation, serviceOf)));
   const writeCount = snap.tools.filter((ref) => tools.get(ref)?.write).length;
   const areaGroups = useMemo(() => nonCentralGroups(snap, context), [snap, context]);
   const supervisors = useMemo(
@@ -247,7 +256,13 @@ export function BuilderForm({ data }: { data: BuilderData }) {
       await persist();
       leave('draft_saved');
     } catch (error) {
-      fail('save', [problemOfError(error, quotas)]);
+      // Saving checks the remote tools a person adds (D98 (18)): the 422 carries those rules.
+      fail(
+        'save',
+        error instanceof ApiError && error.code === 'validation_failed' && error.violations?.length
+          ? violationProblems(error.violations)
+          : [problemOfError(error, quotas)],
+      );
     } finally {
       setBusy(null);
     }
@@ -272,6 +287,12 @@ export function BuilderForm({ data }: { data: BuilderData }) {
     } catch (error) {
       if (saved && error instanceof ApiError && error.code === 'validation_failed') {
         fail('submit', await serverProblems(saved, error));
+      } else if (
+        error instanceof ApiError &&
+        error.code === 'validation_failed' &&
+        error.violations?.length
+      ) {
+        fail('submit', violationProblems(error.violations));
       } else {
         fail('submit', [problemOfError(error, quotas)]);
       }
@@ -305,14 +326,14 @@ export function BuilderForm({ data }: { data: BuilderData }) {
    */
   const serverProblems = async (version: Version, error: ApiError): Promise<Problem[]> => {
     if (error.violations && error.violations.length > 0) {
-      return mergeProblems(error.violations.map(problemOfViolation));
+      return violationProblems(error.violations);
     }
     try {
       const fresh = await api.call('readVersion', {
         path: { agent_id: version.agent_id, version: version.version },
       });
       setLive(fresh);
-      const found = mergeProblems((fresh.violations ?? []).map(problemOfViolation));
+      const found = violationProblems(fresh.violations ?? []);
       if (found.length > 0) return found;
     } catch {
       // Fall through: the submission was rejected either way.

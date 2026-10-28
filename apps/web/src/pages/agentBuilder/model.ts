@@ -366,6 +366,8 @@ const RULE_KEYS: Record<WordedRuleCode, ProblemKey> = {
   skill_unavailable: 'serverSkillUnapproved',
   skill_server_not_enabled: 'serverSkillServerOff',
   skill_server_without_tools: 'serverSkillServerMissing',
+  // Remote MCPs (D98 (18), design round 24): named by service, from the refs.
+  remote_not_usable: 'serverRemoteNotUsable',
 };
 
 /** Design `AB_SERVER_ERR`: where each rule points; the rest follow their field. */
@@ -378,8 +380,41 @@ const RULE_SECTION: Partial<Record<WordedRuleCode, SectionId | null>> = {
   account_data_for_users: 'access',
 };
 
+/** A remote tool's reference, `remote-<registration>.<tool>` (D98 (17)). */
+const REMOTE_REF = /^remote-([a-z2-7]{12})\.(.+)$/;
+
+/** The registration and the tool name of a remote tool's reference, or `null`. */
+export function remoteRefOf(ref: string): { registrationId: string; tool: string } | null {
+  const match = REMOTE_REF.exec(ref);
+  return match ? { registrationId: match[1] ?? '', tool: match[2] ?? '' } : null;
+}
+
+/**
+ * The service of a remote tool's reference, from what the page has: the caller's registrations
+ * (the catalog) and the version's (`VersionOut.remotes`). `null` when neither names it.
+ */
+export function remoteServiceIndex(
+  ...lists: readonly (readonly { registration_id: string; service: string | null }[])[]
+): (ref: string) => string | null {
+  const byId = new Map<string, string>();
+  for (const list of lists) {
+    for (const item of list) {
+      if (item.service && !byId.has(item.registration_id)) {
+        byId.set(item.registration_id, item.service);
+      }
+    }
+  }
+  return (ref) => {
+    const parsed = remoteRefOf(ref);
+    return parsed ? (byId.get(parsed.registrationId) ?? null) : null;
+  };
+}
+
 /** A rule the server reported (`violations[]`), as something the creator can act on. */
-export function problemOfViolation(violation: Violation): Problem {
+export function problemOfViolation(
+  violation: Violation,
+  serviceOf: (ref: string) => string | null = () => null,
+): Problem {
   const { code, field, items } = violation;
   const id = `${code}:${field}`;
   if (!isWordedRule(code)) return problem(id, 'unknownRule', FIELD_SECTION[field] ?? null, [code]);
@@ -387,6 +422,12 @@ export function problemOfViolation(violation: Violation): Problem {
     code in RULE_SECTION ? (RULE_SECTION[code] ?? null) : (FIELD_SECTION[field] ?? null);
   // Only the kind and the field of a secret are ever shown, never what matched.
   if (code === 'secret_detected') return { ...problem(id, 'secret', section, items), field };
+  if (code === 'remote_not_usable') {
+    const services = [...new Set(items.flatMap((ref) => serviceOf(ref) ?? []))];
+    return services.length > 0
+      ? problem(id, 'serverRemoteNotUsable', section, services)
+      : problem(id, 'serverRemoteNotUsableUnnamed', section, []);
+  }
   return problem(id, RULE_KEYS[code], section, items);
 }
 

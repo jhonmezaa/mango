@@ -7,7 +7,7 @@ import { Badge, type BadgeTone } from '../../components/Badge';
 import { RefreshIcon } from '../../components/icons';
 import { usePeople } from '../../directory/usePeople';
 import { formatRelative } from '../../lib/format';
-import { parseSkillRef, skillIssues } from '../agentBuilder/model';
+import { parseSkillRef, remoteServiceIndex, skillIssues } from '../agentBuilder/model';
 import type { Skill } from '../skills/model';
 import {
   ROOT_SUPERVISOR,
@@ -402,7 +402,7 @@ export function VersionDiff({
           <ul>
             {violations.map((violation) => (
               <li key={`${violation.code}/${violation.field}`} className="ap-alert-i">
-                · {ruleText(t, violation)}
+                · {ruleText(t, violation, remoteServiceIndex(version.remotes ?? []))}
               </li>
             ))}
           </ul>

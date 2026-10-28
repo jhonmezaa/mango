@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import '../../i18n';
 import { ApiError } from '../../api/errors';
 import {
-  connectErrorText,
+  connectErrorOf,
   consentUrl,
   idpsOf,
   linkSourcesOf,
@@ -77,14 +77,24 @@ describe('linkSourcesOf', () => {
 
 describe('errors', () => {
   const t = i18n.t.bind(i18n);
-  it('says the design text for the codes it has and the generic one otherwise', () => {
-    expect(connectErrorText(t, new ApiError(409, 'remote_disabled', 'x'), 'Azure DevOps')).toBe(
-      'Un administrador deshabilitó Azure DevOps.',
-    );
-    expect(connectErrorText(t, new ApiError(502, 'identity_unavailable', 'x'), 'A')).toBe(
-      i18n.t('errors.generic'),
-    );
-    expect(connectErrorText(t, new Error('boom'), 'A')).toBe(i18n.t('errors.generic'));
+  it('says the design texts of a failed «Conectar» (round 24)', () => {
+    const azure = { service: 'Azure DevOps', provider: 'Microsoft' };
+    expect(connectErrorOf(t, new ApiError(409, 'remote_disabled', 'x'), azure)).toEqual({
+      title: 'No se pudo iniciar la conexión',
+      body: 'Un administrador deshabilitó Azure DevOps.',
+    });
+    expect(connectErrorOf(t, new ApiError(503, 'gateway_unavailable', 'x'), azure)).toEqual({
+      title: 'El servicio de identidad no responde',
+      body: 'Mango no pudo pedir el inicio de sesión en Microsoft. Inténtalo de nuevo en unos minutos.',
+    });
+    expect(connectErrorOf(t, new ApiError(429, 'rate_limited', 'x'), azure)).toEqual({
+      title: 'Demasiados intentos seguidos',
+      body: 'Espera un minuto y vuelve a pulsar «Conectar».',
+    });
+    expect(connectErrorOf(t, new Error('boom'), azure)).toEqual({
+      title: 'No se pudo iniciar la conexión',
+      body: 'Inténtalo de nuevo en unos segundos.',
+    });
   });
 
   it('maps the return answers to the design results', () => {

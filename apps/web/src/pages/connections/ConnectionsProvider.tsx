@@ -76,14 +76,32 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     [api, config.region, reload],
   );
 
+  const disconnect = useCallback(
+    async (registrationId: string): Promise<void> => {
+      const result = await api.call('disconnectMyAccount', {
+        path: { reg: registrationId },
+        body: {},
+      });
+      setList((current) =>
+        current.map((item) =>
+          item.registration_id === registrationId
+            ? { ...item, status: result.status, connected_at: null }
+            : item,
+        ),
+      );
+      reload();
+    },
+    [api, reload],
+  );
+
   const openMine = useCallback(() => {
     setOpen(true);
     reload();
   }, [reload]);
 
   const value = useMemo<ConnectionsValue>(
-    () => ({ status, list, ensure, reload, byRegistration, connect, openMine }),
-    [status, list, ensure, reload, byRegistration, connect, openMine],
+    () => ({ status, list, ensure, reload, byRegistration, connect, disconnect, openMine }),
+    [status, list, ensure, reload, byRegistration, connect, disconnect, openMine],
   );
 
   return (

@@ -282,7 +282,13 @@ describe('Servicios externos', () => {
     const drawer = await panel();
     await user.click(within(drawer).getByRole('button', { name: 'Cambiar tenant o app' }));
     expect(within(drawer).getByLabelText('Organización de Azure DevOps')).toBeDisabled();
-    expect(within(drawer).getByRole('checkbox', { name: /Work items/ })).toBeDisabled();
+    // Design round 24: reconnecting is announced and the groups are shown, not editable.
+    expect(
+      within(drawer).getByText(
+        'Al aprobarse, todas las personas tendrán que conectar su cuenta otra vez.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByRole('checkbox', { name: /Work items/ })).toBeNull();
     await user.type(
       within(drawer).getByLabelText('Tenant de Entra (tenantId)'),
       '00000000-0000-4000-8000-000000000009',
@@ -300,6 +306,37 @@ describe('Servicios externos', () => {
     expect(input.body).toMatchObject({ kind: 'replace_app', version: 4 });
     expect(input.body).not.toHaveProperty('toolsets');
     expect(await within(drawer).findByText('Solicitud enviada.')).toBeInTheDocument();
+  });
+
+  it('asks to change the groups with two approvals and shows the change (round 24)', async () => {
+    const reg = registration();
+    const pending = request({
+      kind: 'params',
+      own: false,
+      toolsets: [...reg.toolsets.slice(1)],
+      previous_toolsets: [...reg.toolsets],
+      groups: [...reg.groups, 'bu-plataforma'],
+      previous_groups: [...reg.groups],
+    });
+    const after = remoteCatalog([registration({ pending })]);
+    const call = apiWith(remoteCatalog([reg]), { requestRemoteParams: after });
+    const user = renderAt(`/mcp/remote/azure-devops/${REG_ID}`, call);
+    const drawer = await panel();
+    await user.click(within(drawer).getByRole('button', { name: 'Cambiar grupos' }));
+    // Nothing changed yet: the design's own text, and nothing is sent.
+    await user.click(within(drawer).getByRole('button', { name: 'Enviar solicitud' }));
+    expect(await within(drawer).findByText('No cambiaste ningún grupo.')).toBeInTheDocument();
+    expect(writesOf(call)).toHaveLength(0);
+    await user.click(within(drawer).getAllByRole('checkbox')[0] as HTMLElement);
+    await user.click(within(drawer).getByRole('button', { name: 'Enviar solicitud' }));
+    await waitFor(() => {
+      expect(writesOf(call)).toHaveLength(1);
+    });
+    const [operation, input] = writesOf(call)[0] as [string, { body: Record<string, unknown> }];
+    expect(operation).toBe('requestRemoteParams');
+    expect(input.body).toMatchObject({ version: reg.version, groups: reg.groups });
+    expect(await within(drawer).findByText('cambios')).toBeInTheDocument();
+    expect(within(drawer).getByText('+ bu-plataforma')).toBeInTheDocument();
   });
 
   it('asks for a reason to disable', async () => {

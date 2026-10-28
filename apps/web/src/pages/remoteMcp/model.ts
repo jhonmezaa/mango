@@ -121,13 +121,10 @@ export function statusOf(registration: Registration): RowStatus {
   }
 }
 
-/**
- * The pending requests the web shows. `params` (P-8) has no design yet: its requests stay in the
- * API until Claude Design draws them (owner's choice, 2026-10-27).
- */
+/** The request of a registration waiting for a decision (P-8 «Cambiar grupos» included). */
 export function shownPending(registration: Registration): RemoteRequest | null {
   const pending = registration.pending ?? null;
-  return pending && pending.kind !== 'params' && pending.status === 'pending' ? pending : null;
+  return pending && pending.status === 'pending' ? pending : null;
 }
 
 /** Rows of one profile (design `regsOf`), in the order the API lists them. */
@@ -234,7 +231,8 @@ export function personOf(
 
 // --- The form ---------------------------------------------------------------------------------
 
-export type FormKind = 'enable' | 'reenable' | 'replace_app';
+/** `params`: «Cambiar grupos» of an active registration (P-8, design round 24). */
+export type FormKind = 'enable' | 'reenable' | 'replace_app' | 'params';
 
 export interface RemoteForm {
   kind: FormKind;
@@ -254,6 +252,7 @@ export type FormErrors = Partial<Record<FormField, string>>;
 /** Keys of `remoteMcp.form.errors`: what the design says under each field. */
 export function formErrors(form: RemoteForm, now: number = Date.now()): FormErrors {
   const errors: FormErrors = {};
+  if (form.kind === 'params') return groupErrors(form, errors);
   const organization = form.organization.trim();
   if (form.kind === 'enable') {
     if (!organization) errors.organization = 'organizationRequired';
@@ -268,12 +267,32 @@ export function formErrors(form: RemoteForm, now: number = Date.now()): FormErro
   if (days === null) errors.secretExpiresOn = 'expiryRequired';
   else if (days <= 0) errors.secretExpiresOn = 'expiryFuture';
   else if (days > MAX_SECRET_DAYS) errors.secretExpiresOn = 'expiryTooFar';
-  if (form.kind !== 'replace_app') {
-    if (form.toolsets.length === 0) errors.toolsets = 'toolsetsRequired';
-    if (form.groups.length === 0) errors.groups = 'groupsRequired';
-    else if (form.groups.length > MAX_GROUPS) errors.groups = 'groupsTooMany';
-  }
+  return form.kind === 'replace_app' ? errors : groupErrors(form, errors);
+}
+
+function groupErrors(form: RemoteForm, errors: FormErrors): FormErrors {
+  if (form.toolsets.length === 0) errors.toolsets = 'toolsetsRequired';
+  if (form.groups.length === 0) errors.groups = 'groupsRequired';
+  else if (form.groups.length > MAX_GROUPS) errors.groups = 'groupsTooMany';
   return errors;
+}
+
+/** «Cambiar grupos» with the same groups as now (design «No cambiaste ningún grupo.»). */
+export function sameGroups(form: RemoteForm, registration: Registration): boolean {
+  const same = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && a.every((item) => b.includes(item));
+  return same(form.toolsets, registration.toolsets) && same(form.groups, registration.groups);
+}
+
+/** Design `diff` of «Cambiar grupos»: what is added, what is removed, what stays, in order. */
+export function changeOf(
+  before: readonly string[],
+  after: readonly string[],
+): { id: string; change: 'add' | 'remove' | null }[] {
+  return [...new Set([...before, ...after])].map((id) => ({
+    id,
+    change: !before.includes(id) ? 'add' : !after.includes(id) ? 'remove' : null,
+  }));
 }
 
 export function hasErrors(errors: FormErrors): boolean {

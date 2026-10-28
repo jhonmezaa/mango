@@ -16,7 +16,11 @@ function useTexts(item: RemoteInboxItem) {
     organization: request?.organization ?? item.row.registration.organization,
   });
   const body =
-    (request?.kind === 'replace_app' ? t('remoteMcp.inbox.replace') : '') +
+    (request?.kind === 'params'
+      ? t('remoteMcp.inbox.params')
+      : request?.kind === 'replace_app'
+        ? t('remoteMcp.inbox.replace')
+        : '') +
     t('remoteMcp.inbox.body', {
       toolsets: request?.toolsets.length ?? 0,
       groups: (request?.groups ?? []).join(', '),

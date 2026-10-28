@@ -39,7 +39,8 @@ describe('ToolsPopover', () => {
   it('asks for the detail only when it opens and lists the skills as text', async () => {
     const { call, user } = setup([{ ...AGENT, skills: SKILLS }]);
     expect(call).not.toHaveBeenCalled();
-    expect(trigger()).toHaveTextContent('– · 2');
+    // Design round 24: both counters say «–» until it is read.
+    expect(trigger()).toHaveTextContent('– · –');
     await user.click(trigger());
     expect(call).toHaveBeenCalledWith('getAgent', { path: { agent_id: 'finops' } });
     const pop = screen.getByRole('dialog', { name: 'Qué puede usar FinOps <b>' });
@@ -74,8 +75,10 @@ describe('ToolsPopover', () => {
     ]);
     await user.click(trigger());
     expect(
-      await screen.findByText('No se pudieron cargar las skills de esta versión.'),
+      await screen.findByText('No se pudo cargar qué puede usar FinOps <b>'),
     ).toBeInTheDocument();
+    expect(screen.getByText('Inténtalo de nuevo en unos segundos.')).toBeInTheDocument();
+    expect(trigger()).toHaveTextContent('– · –');
     // A detail without skills (the registry was down) is the same failure.
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByRole('button', { name: 'Reintentar' })).toBeInTheDocument();

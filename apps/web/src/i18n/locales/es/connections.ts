@@ -25,6 +25,35 @@ export const connections = {
   hint: 'Al conectar vas a iniciar sesión en {{idps}}. Si tu cuenta ya estaba conectada, Mango lo confirma sin abrir {{idp}}.',
   hintOr: ' o ',
   hintProvider: 'el proveedor',
+  // Design `CONNECT_ERR` (round 24): the card of the chat and the Playground, and a row here.
+  connectErrors: {
+    error: {
+      title: 'No se pudo iniciar la conexión',
+      body: 'Inténtalo de nuevo en unos segundos.',
+    },
+    identity_unavailable: {
+      title: 'El servicio de identidad no responde',
+      body: 'Mango no pudo pedir el inicio de sesión en {{idp}}. Inténtalo de nuevo en unos minutos.',
+    },
+    rate_limited: {
+      title: 'Demasiados intentos seguidos',
+      body: 'Espera un minuto y vuelve a pulsar «Conectar».',
+    },
+  },
+  // Design `DisconnectModal` (D97): Mango deletes the connection; it never says the provider did.
+  disconnectDialog: {
+    title: 'Desconectar {{service}}',
+    body: 'Mango borra tu conexión ahora y deja de leer {{service}} con tu cuenta en el chat, en tus tareas y en el Playground.',
+    chat: 'Si un agente lo necesita, el chat te ofrece «Conectar» otra vez.',
+    tasks: 'Tus tareas que lo usan van a fallar, y la Bandeja te avisa.',
+    again: 'Para volver a conectar, inicias sesión en {{idp}} otra vez.',
+    provider: 'Mango no cambia nada en tu cuenta de {{idp}}.',
+    failedTitle: 'No se pudo confirmar que se desconectó',
+    failedBody: 'Tu conexión puede seguir activa. Inténtalo de nuevo.',
+    busy: 'Desconectando…',
+    cancel: 'Cancelar',
+    done: 'Desconectaste tu cuenta de {{service}}',
+  },
   errors: {
     remote_disabled: 'Un administrador deshabilitó {{service}}.',
     remote_not_usable: '{{service}} no está habilitado para tus grupos.',
@@ -58,8 +87,8 @@ export const connections = {
     goesTo: 'Te lleva a',
     own: 'Tu organización de {{service}} ({{org}}). Mango solo comprueba la dirección, no lo que hay en la página.',
     otherOrg: 'Otra organización',
-    otherOrgNamed: ' está en {{service}}, pero no es una organización registrada por tu empresa.',
-    otherOrgUnnamed: 'Está en {{service}}, pero no es una organización registrada por tu empresa.',
+    otherOrgNamed: ' está en {{service}}, pero no es una organización que puedas usar en Mango.',
+    otherOrgUnnamed: 'Está en {{service}}, pero no es una organización que puedas usar en Mango.',
     otherDomain: 'Otro dominio',
     otherDomainNote: 'No es un dominio de {{service}}.',
     noCredentials: 'Si te pide iniciar sesión o datos de tu cuenta, no los escribas.',
@@ -69,15 +98,24 @@ export const connections = {
   ret: {
     crumb: 'Mis conexiones',
     from: '· vuelta desde {{idp}}',
-    working: 'Terminando la conexión',
+    brand: 'Mango',
+    finishing: {
+      title: 'Terminando la conexión…',
+      body: 'Mango está guardando tu conexión con {{service}}. No cierres esta página.',
+      bodyUnnamed: 'Mango está guardando tu conexión. No cierres esta página.',
+    },
     ok: {
       title: 'Listo, tu cuenta de {{service}} está conectada.',
       body: 'Vuelve al chat y repite tu pregunta.',
     },
     expired: { title: 'El enlace venció', body: 'Vuelve a pedir la conexión.' },
+    lost: {
+      title: 'Vuelve a pulsar «Conectar»',
+      body: 'No se pudo terminar la conexión: la página se recargó o tuviste que volver a iniciar sesión en Mango. Tu cuenta no quedó conectada.',
+    },
     nosession: {
-      title: 'Inicia sesión en Mango para terminar',
-      body: 'Este navegador no tiene tu sesión de Mango abierta. Después de ingresar vuelves aquí y la conexión se completa.',
+      title: 'Inicia sesión en Mango para continuar',
+      body: 'Este navegador no tiene tu sesión de Mango abierta. Después de ingresar, vuelve a pulsar «Conectar» donde empezaste.',
     },
     notyours: {
       title: 'Este enlace no es tuyo',

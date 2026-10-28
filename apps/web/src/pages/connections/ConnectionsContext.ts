@@ -20,6 +20,11 @@ export interface ConnectionsValue {
    * provider in this same tab. Rejects with the API's error.
    */
   connect: (registrationId: string) => Promise<ConnectOutcome>;
+  /**
+   * «Desconectar» (D97): Mango deletes the person's connection; nothing changes at the provider.
+   * Rejects with the API's error (`disconnect_not_confirmed` when it cannot confirm it).
+   */
+  disconnect: (registrationId: string) => Promise<void>;
   /** Opens «Mis conexiones» (design: the person's menu and the chat card). */
   openMine: () => void;
 }
@@ -31,6 +36,7 @@ export const ConnectionsContext = createContext<ConnectionsValue>({
   reload: () => undefined,
   byRegistration: () => null,
   connect: () => Promise.reject(new Error('no connections provider')),
+  disconnect: () => Promise.reject(new Error('no connections provider')),
   openMine: () => undefined,
 });
 

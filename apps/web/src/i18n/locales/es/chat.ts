@@ -159,9 +159,10 @@ export const chat = {
     mcp: 'Tools (MCP) · {{count}}',
     mcpTools_one: '{{count}} tool',
     mcpTools_other: '{{count}} tools',
-    loading: 'Cargando las skills',
-    // Not in the design: the detail could not be read.
-    error: 'No se pudieron cargar las skills de esta versión.',
+    loading: 'Cargando…',
+    // Design round 24: the detail could not be read.
+    error: 'No se pudo cargar qué puede usar {{name}}',
+    errorBody: 'Inténtalo de nuevo en unos segundos.',
     retry: 'Reintentar',
   },
   actions: {

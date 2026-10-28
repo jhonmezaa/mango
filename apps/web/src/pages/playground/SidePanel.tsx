@@ -39,6 +39,8 @@ interface Props {
   onModelB: (model: string) => void;
   /** `id@version` of the skills the server said are no longer approved. */
   offSkills: readonly string[];
+  /** The server could not read the version's skills (`skills_unavailable`): no test runs. */
+  skillsError: boolean;
   /** «Antes de enviar», already as text; drafts only. */
   problems: readonly string[];
 }
@@ -255,26 +257,35 @@ function VersionFields(props: Props & { version: Version }) {
       </div>
       <div className="mk-meta pg-note">{t('playground.tools.note')}</div>
 
-      {skills.length > 0 && (
+      {props.skillsError ? (
         <>
-          <Label>{t('playground.skills.label', { count: skills.length })}</Label>
-          <div className="pg-tools">
-            {skills.map((skill) => {
-              const off = props.offSkills.includes(skill.ref);
-              return (
-                <div key={skill.ref} className={off ? 'pg-tool off' : 'pg-tool'}>
-                  <span>{skill.name}</span>
-                  {off ? (
-                    <span className="badge badge-red">{t('playground.skills.notApproved')}</span>
-                  ) : (
-                    <span className="mono mk-meta">v{skill.number}</span>
-                  )}
-                </div>
-              );
-            })}
+          <Label>{t('playground.skills.title')}</Label>
+          <div className="mk-meta leading-[1.45]" role="status">
+            {t('playground.skills.loadError')}
           </div>
-          <div className="mk-meta pg-note">{t('playground.skills.note')}</div>
         </>
+      ) : (
+        skills.length > 0 && (
+          <>
+            <Label>{t('playground.skills.label', { count: skills.length })}</Label>
+            <div className="pg-tools">
+              {skills.map((skill) => {
+                const off = props.offSkills.includes(skill.ref);
+                return (
+                  <div key={skill.ref} className={off ? 'pg-tool off' : 'pg-tool'}>
+                    <span>{skill.name}</span>
+                    {off ? (
+                      <span className="badge badge-red">{t('playground.skills.notApproved')}</span>
+                    ) : (
+                      <span className="mono mk-meta">v{skill.number}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mk-meta pg-note">{t('playground.skills.note')}</div>
+          </>
+        )
       )}
 
       <Label>{t('playground.limits.label')}</Label>

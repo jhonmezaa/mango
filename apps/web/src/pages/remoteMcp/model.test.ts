@@ -74,10 +74,10 @@ describe('rowsOf', () => {
     expect(rows[0]?.request).toBeNull();
   });
 
-  it('leaves out a request to change toolsets or groups (no design yet)', () => {
+  it('shows a request to change the groups as its own row (round 24)', () => {
     const catalog = remoteCatalog([registration({ pending: request({ kind: 'params' }) })]);
-    expect(rowsOf(catalog, PROFILE.id)).toHaveLength(1);
-    expect(pendingRows(catalog)).toEqual([]);
+    expect(rowsOf(catalog, PROFILE.id)).toHaveLength(2);
+    expect(pendingRows(catalog)).toHaveLength(1);
   });
 });
 

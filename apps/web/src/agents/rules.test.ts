@@ -32,14 +32,17 @@ describe('submit rule codes', () => {
     );
   });
 
-  it('shows a code the design has not worded yet as an unknown rule, by its code (D98)', () => {
-    expect(isRuleCode('remote_not_usable')).toBe(true);
-    expect(isWordedRule('remote_not_usable')).toBe(false);
-    const shown = problemOfViolation({
+  it('names the service of remote_not_usable, or says «un servicio externo» (round 24)', () => {
+    expect(isWordedRule('remote_not_usable')).toBe(true);
+    const violation = {
       code: 'remote_not_usable',
       field: 'tools',
-      items: ['remote-abcdefghij23.wiki'],
-    });
-    expect([shown.key, shown.items]).toEqual(['unknownRule', ['remote_not_usable']]);
+      items: ['remote-abcdefghij23.wiki', 'remote-abcdefghij23.wit_work_item'],
+    };
+    const named = problemOfViolation(violation, (ref) =>
+      ref.startsWith('remote-abcdefghij23.') ? 'Azure DevOps' : null,
+    );
+    expect([named.key, named.items]).toEqual(['serverRemoteNotUsable', ['Azure DevOps']]);
+    expect(problemOfViolation(violation).key).toBe('serverRemoteNotUsableUnnamed');
   });
 });

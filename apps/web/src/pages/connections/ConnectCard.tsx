@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { CheckIcon, ExternalIcon, MangoIcon } from '../../components/icons';
 import { RmTile } from '../remoteMcp/parts';
 import { useConnections } from './ConnectionsContext';
-import { CONSENT_TTL_MS, connectErrorText, idpOf } from './model';
+import { CONSENT_TTL_MS, connectErrorOf, idpOf, type ConnectError } from './model';
 
-type CardState = 'ask' | 'opening' | 'done' | 'expired';
+type CardState = 'ask' | 'opening' | 'done' | 'expired' | 'error';
 
 function mmss(ms: number): string {
   const left = Math.max(0, Math.ceil(ms / 1000));
@@ -31,7 +31,7 @@ export function ConnectCard({
   const { t } = useTranslation();
   const { ensure, byRegistration, connect } = useConnections();
   const [opening, setOpening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ConnectError | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const connection = byRegistration(registrationId);
   const left = startedAt + CONSENT_TTL_MS - now;
@@ -42,22 +42,25 @@ export function ConnectCard({
         ? 'opening'
         : left <= 0
           ? 'expired'
-          : 'ask';
+          : error
+            ? 'error'
+            : 'ask';
 
   useEffect(() => {
     ensure();
   }, [ensure]);
 
-  // The countdown only runs while the card asks.
+  // The countdown runs while the card asks, also after a failed «Conectar» (design).
+  const counting = state === 'ask' || state === 'error';
   useEffect(() => {
-    if (state !== 'ask') return;
+    if (!counting) return;
     const timer = window.setInterval(() => {
       setNow(Date.now());
     }, 1000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [state]);
+  }, [counting]);
 
   // Until the person's connections say which service it is, there is nothing true to show.
   if (!connection) return null;
@@ -74,7 +77,7 @@ export function ConnectCard({
       },
       (failure: unknown) => {
         setOpening(false);
-        setError(connectErrorText(t, failure, service));
+        setError(connectErrorOf(t, failure, connection));
       },
     );
   };
@@ -94,11 +97,19 @@ export function ConnectCard({
       </div>
       <div className="rm-card-b">
         <RmTile profile={{ name: service }} />
-        <div className="min-w-0 flex-1" role={state === 'expired' ? 'status' : undefined}>
+        <div
+          className="min-w-0 flex-1"
+          role={state === 'expired' ? 'status' : state === 'error' ? 'alert' : undefined}
+        >
           {state === 'done' ? (
             <>
               <div className="rm-card-t">{t('connections.card.doneTitle')}</div>
               <div className="rm-card-s">{t('connections.card.doneBody', { service })}</div>
+            </>
+          ) : state === 'error' && error ? (
+            <>
+              <div className="rm-card-t">{error.title}</div>
+              <div className="rm-card-s">{error.body}</div>
             </>
           ) : state === 'expired' ? (
             <>
@@ -115,16 +126,21 @@ export function ConnectCard({
               <div className="rm-card-s">{t('connections.card.askBody', { service, idp })}</div>
             </>
           )}
-          {error && (
-            <div className="rm-err" role="alert">
-              {error}
-            </div>
-          )}
         </div>
-        {state === 'ask' && (
+        {counting && (
           <div className="rm-card-a">
-            <button type="button" className="btn btn-sm btn-primary" onClick={onConnect}>
-              {t('connections.connect')} <ExternalIcon size={11} />
+            <button
+              type="button"
+              className={state === 'ask' ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+              onClick={onConnect}
+            >
+              {state === 'error' ? (
+                t('connections.retry')
+              ) : (
+                <>
+                  {t('connections.connect')} <ExternalIcon size={11} />
+                </>
+              )}
             </button>
             <span className="rm-card-timer">
               {t('connections.card.expiresIn', { time: mmss(left) })}

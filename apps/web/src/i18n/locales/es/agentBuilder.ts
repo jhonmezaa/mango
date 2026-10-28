@@ -182,6 +182,11 @@ export const agentBuilder = {
       'Una de las skills requiere un MCP que no está habilitado. Quítala o pide que lo habiliten.',
     serverSkillServerMissing:
       'Una de las skills requiere un MCP del que el agente no tiene ninguna tool. Agrega una de sus tools o quita la skill.',
+    // Remote MCPs (D98 (18), design round 24 `remote-not-usable`).
+    serverRemoteNotUsable:
+      'Usas tools de {{items}}, pero no estás en los grupos de ese servicio. Quítalas o pide a un administrador que agregue uno de tus grupos.',
+    serverRemoteNotUsableUnnamed:
+      'Usas tools de un servicio externo, pero no estás en los grupos de ese servicio. Quítalas o pide a un administrador que agregue uno de tus grupos.',
     serverAccountDataArea:
       'Tiene tools solo para grupos centrales y es visible para grupos que no son centrales ({{items}}). Quita esos grupos o esas tools.',
     serverAccountDataUsers:
@@ -275,6 +280,18 @@ export const agentBuilder = {
   },
   tools: {
     desc: 'Solo aparecen tools de conectores y packs habilitados. Las de escritura piden confirmación o aprobación en cada uso, según su política.',
+    // Design round 24: tools of a remote service that is not enabled for the editor's groups.
+    strayTitle_one:
+      'Este agente tiene 1 tool de {{service}}, que no está habilitado para tus grupos',
+    strayTitle_other:
+      'Este agente tiene {{count}} tools de {{service}}, que no está habilitado para tus grupos',
+    strayTitleUnnamed_one:
+      'Este agente tiene 1 tool de un servicio externo, que no está habilitado para tus grupos',
+    strayTitleUnnamed_other:
+      'Este agente tiene {{count}} tools de un servicio externo, que no está habilitado para tus grupos',
+    strayBody:
+      'Para guardar una versión, quítalas o pide a un administrador que agregue uno de tus grupos al servicio.',
+    strayRemove: 'Quitarlas',
     offOne: 'Esta tool no está habilitada',
     offMany: 'Estas tools no están habilitadas',
     offDisabled: 'No habilitado',

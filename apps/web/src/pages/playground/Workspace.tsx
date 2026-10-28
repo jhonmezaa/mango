@@ -6,7 +6,7 @@ import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { Banner } from '../../components/admin/govKit';
 import type { ToastTone } from '../../components/admin/useToasts';
-import { PlayIcon, ShieldIcon } from '../../components/icons';
+import { PlayIcon, RefreshIcon, ShieldIcon } from '../../components/icons';
 import { Topbar } from '../../components/Topbar';
 import {
   TEMPERATURE_DEFAULT,
@@ -156,8 +156,9 @@ export function Workspace({
     : modelOff
       ? { kind: 'model', reason: 'off' }
       : block;
-  // The skills of the version could not be read (a 503): it says so, and the next test may work.
-  const canRun = version !== null && (shown === null || shown.kind === 'skills');
+  // The skills of the version could not be read (a 503): no test runs without them (D91 (12),
+  // design round 24) until «Reintentar».
+  const canRun = version !== null && shown === null;
 
   const overrides: Column['overrides'] = {
     ...(prompt !== storedPrompt ? { systemPrompt: prompt } : {}),
@@ -209,7 +210,6 @@ export function Workspace({
   const runOne = (text: string) => {
     const question = text.trim();
     if (!question || !canRun) return;
-    if (block?.kind === 'skills') setBlock(null);
     start(question, columns());
   };
   const samples = SAMPLE_KEYS.map((key) => t(`playground.samples.${key}`));
@@ -390,6 +390,7 @@ export function Workspace({
           onModelB={setModelB}
           problems={problems}
           offSkills={shown?.kind === 'skill' ? shown.refs : NO_SKILLS}
+          skillsError={shown?.kind === 'skills'}
         />
         <div className="pg-main">
           <div className="pg-head">
@@ -465,6 +466,9 @@ export function Workspace({
                 now={now}
                 skillNames={data.skillNames}
                 builderPath={builderPath(source)}
+                onRetry={() => {
+                  setBlock(null);
+                }}
               />
             </div>
           )}
@@ -545,6 +549,7 @@ function BlockBanner({
   now,
   skillNames,
   builderPath,
+  onRetry,
 }: {
   block: Exclude<Block, { kind: 'unavailable' }> | { kind: 'secret' };
   name: string;
@@ -552,6 +557,8 @@ function BlockBanner({
   now: number;
   skillNames: ReadonlyMap<string, string> | null;
   builderPath: string;
+  /** `skills_unavailable`: the next test asks the server again. */
+  onRetry: () => void;
 }) {
   const { t } = useTranslation();
   switch (block.kind) {
@@ -591,7 +598,15 @@ function BlockBanner({
       );
     case 'skills':
       return (
-        <Banner tone="warn" title={t('playground.block.skills.title')}>
+        <Banner
+          tone="error"
+          title={t('playground.block.skills.title')}
+          action={
+            <button type="button" className="btn btn-sm" onClick={onRetry}>
+              <RefreshIcon size={11} /> {t('playground.block.skills.retry')}
+            </button>
+          }
+        >
           {t('playground.block.skills.body')}
         </Banner>
       );
@@ -607,15 +622,22 @@ function BlockBanner({
         }),
       );
       return (
-        <Banner tone="error" title={t('playground.block.skill.title')}>
-          {block.refs.length > 0
-            ? t('playground.block.skill.named', { count: block.refs.length, skills })
-            : t('playground.block.skill.body')}
-          <div className="mt-2">
+        <Banner
+          tone="error"
+          title={
+            block.refs.length > 1
+              ? t('playground.block.skill.titleMany', { count: block.refs.length })
+              : t('playground.block.skill.title')
+          }
+          action={
             <Link className="btn btn-sm" to={builderPath}>
               {t('playground.block.skill.open')}
             </Link>
-          </div>
+          }
+        >
+          {block.refs.length > 0
+            ? t('playground.block.skill.named', { count: block.refs.length, skills })
+            : t('playground.block.skill.body')}
         </Banner>
       );
     }
