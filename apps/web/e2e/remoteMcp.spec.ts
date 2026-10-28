@@ -84,8 +84,9 @@ test.describe('remote MCP services: approve, ask and see them in Conectividad', 
     await page.getByRole('tab', { name: 'Conectividad' }).click();
     await expect(page.getByRole('heading', { name: 'Servicios externos' })).toBeVisible();
     await expect(page.getByText('mcp.dev.azure.com/empresa', { exact: true })).toBeVisible();
-    // The mock dates the secret when it starts; a run that crosses midnight sees 20 days.
-    await expect(page.getByText(/Vence el .* · en 2[01] días/)).toBeVisible();
+    // The mock dates the secret in UTC when it starts: a run that crosses midnight sees 20
+    // days, and one in the local evening, when UTC is already the next day, sees 22.
+    await expect(page.getByText(/Vence el .* · en 2[0-2] días/)).toBeVisible();
     await expect(page.getByRole('button', { name: /1 solicitud pendiente/ })).toBeVisible();
     expect(consoleErrors).toEqual([]);
   });
