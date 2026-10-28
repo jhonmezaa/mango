@@ -274,6 +274,46 @@ def test_a_target_waiting_for_authorization_fails_loudly(lab: RemoteLab) -> None
     assert lab.approved() is None
 
 
+def _as_agentcore_returns_it(target: dict[str, Any]) -> dict[str, Any]:
+    """Read back with fields Mango never sends and header names in lower case."""
+    target = json.loads(json.dumps(target, default=str))
+    oauth = target["credentialProviderConfigurations"][0]["credentialProvider"][
+        "oauthCredentialProvider"
+    ]
+    oauth["customParameters"] = {}
+    oauth["scopes"] = list(reversed(oauth["scopes"]))
+    target["targetConfiguration"]["mcp"]["mcpServer"]["listingMode"] = "DEFAULT"
+    metadata = target["metadataConfiguration"]
+    metadata["allowedRequestHeaders"] = [h.lower() for h in metadata["allowedRequestHeaders"]]
+    return target
+
+
+def test_a_ready_target_read_back_with_agentcore_defaults_is_ready(lab: RemoteLab) -> None:
+    lab.agentcore.target_read_back = _as_agentcore_returns_it
+    result = _enable(lab)
+    assert result["enabled"] is True
+    assert "UpdateGatewayTarget" not in lab.agentcore.calls
+
+
+def test_a_ready_target_that_differs_names_the_fields_only(
+    lab: RemoteLab, caplog: pytest.LogCaptureFixture
+) -> None:
+    def other_scopes(target: dict[str, Any]) -> dict[str, Any]:
+        target = _as_agentcore_returns_it(target)
+        target["credentialProviderConfigurations"][0]["credentialProvider"][
+            "oauthCredentialProvider"
+        ]["scopes"] = ["openid"]
+        return target
+
+    lab.agentcore.target_read_back = other_scopes
+    # The state machine waits until target_timeout; the lab gives up sooner.
+    with pytest.raises(AssertionError, match="check_target never ready"):
+        _enable(lab)
+    logged = [r.getMessage() for r in caplog.records if "target_differs" in r.getMessage()]
+    assert logged and json.loads(logged[-1])["differences"] == ["scopes"]
+    assert "openid" not in logged[-1]
+
+
 # --- Compensation -------------------------------------------------------------------------
 
 

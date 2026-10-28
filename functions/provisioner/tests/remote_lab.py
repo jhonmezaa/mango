@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -160,6 +160,8 @@ class FakeAgentCore:
         self.providers: set[str] = set()
         self.polls_until_ready = 1
         self.target_status_when_ready = "READY"
+        # What GetGatewayTarget returns may differ from what was sent (AgentCore's defaults).
+        self.target_read_back: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._clock = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
         self._ids = 0
 
@@ -248,7 +250,8 @@ class FakeAgentCore:
         target = self.targets.get(kwargs["targetId"])
         if target is None:
             raise _error("ResourceNotFoundException", "GetGatewayTarget")
-        return self._view(target)
+        view = self._view(target)
+        return self.target_read_back(view) if self.target_read_back else view
 
     def update_gateway_target(self, **kwargs: Any) -> dict[str, Any]:
         self._enter("UpdateGatewayTarget", kwargs)

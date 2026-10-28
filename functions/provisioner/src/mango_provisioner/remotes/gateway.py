@@ -164,10 +164,9 @@ class RemoteGateway:
         return None
 
     @staticmethod
-    def _matches(target: dict[str, Any], desired: dict[str, Any]) -> bool:
-        def canonical(value: Any) -> str:
-            return json.dumps(value, sort_keys=True, default=str)
-
+    def _differences(target: dict[str, Any], desired: dict[str, Any]) -> list[str]:
+        """The fields Mango sets that the target does not hold. AgentCore may return more than
+        it was sent (defaults such as ``customParameters``), so only these are compared."""
         mcp = ((target.get("targetConfiguration") or {}).get("mcp") or {}).get("mcpServer") or {}
         wanted = desired["targetConfiguration"]["mcp"]["mcpServer"]
         schema = (mcp.get("mcpToolSchema") or {}).get("inlinePayload")
@@ -177,14 +176,32 @@ class RemoteGateway:
             )
         except ValueError:
             same_schema = False
+        credentials = target.get("credentialProviderConfigurations") or []
+        oauth: dict[str, Any] = {}
+        if len(credentials) == 1 and credentials[0].get("credentialProviderType") == _OAUTH:
+            oauth = (credentials[0].get("credentialProvider") or {}).get(
+                "oauthCredentialProvider"
+            ) or {}
+        want = desired["credentialProviderConfigurations"][0]["credentialProvider"][
+            "oauthCredentialProvider"
+        ]
+        # Header names are case-insensitive.
         headers = (target.get("metadataConfiguration") or {}).get("allowedRequestHeaders") or []
-        return (
-            mcp.get("endpoint") == wanted["endpoint"]
-            and same_schema
-            and canonical(target.get("credentialProviderConfigurations"))
-            == canonical(desired["credentialProviderConfigurations"])
-            and sorted(headers) == sorted(ALLOWED_HEADERS)
-        )
+        checks = {
+            "endpoint": mcp.get("endpoint") == wanted["endpoint"],
+            "schema": same_schema,
+            "provider": oauth.get("providerArn") == want["providerArn"],
+            "scopes": sorted(oauth.get("scopes") or []) == sorted(want["scopes"]),
+            "grant": oauth.get("grantType") == want["grantType"],
+            "return_url": oauth.get("defaultReturnUrl") == want["defaultReturnUrl"],
+            "headers": sorted(str(h).lower() for h in headers)
+            == sorted(h.lower() for h in ALLOWED_HEADERS),
+        }
+        return [name for name, same in checks.items() if not same]
+
+    @classmethod
+    def _matches(cls, target: dict[str, Any], desired: dict[str, Any]) -> bool:
+        return not cls._differences(target, desired)
 
     def ensure_target(
         self, registration_id: str, generation: int, plan: TargetPlan, *, execution: str
@@ -245,9 +262,22 @@ class RemoteGateway:
             raise StepError(
                 "target_pending_auth" if status in _TARGET_PENDING_AUTH else "target_failed"
             )
-        return status == "READY" and self._matches(
-            target, self.desired(registration_id, generation, plan)
+        if status != "READY":
+            return False
+        differences = self._differences(target, self.desired(registration_id, generation, plan))
+        if not differences:
+            return True
+        # Ready, but not what was approved: only the field names, never what the target holds.
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "remote_provisioner.target_differs",
+                    "target": target["targetId"],
+                    "differences": differences,
+                }
+            )
         )
+        return False
 
     def delete_target(self, registration_id: str) -> bool:
         """Request the deletion of the target. True once it no longer exists."""
