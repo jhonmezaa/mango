@@ -96,6 +96,10 @@ describe("stack tagger role (D77)", () => {
     expect(actions(read).sort()).toEqual(["cloudformation:DescribeStacks", "cloudformation:ListStackResources"]);
     expect(json(read.Resource)).toContain('{"Ref":"AWS::StackId"}');
     expect(json(read.Resource)).toContain("-PackNetwork/*");
+    // The nested stacks are named after the installed stack (`Mango-<ns>-Core-…`), never
+    // after the construct id the template is synthesized with (D99 (7)).
+    expect(json(read.Resource)).toContain('{"Ref":"AWS::StackName"},"-*/*"');
+    expect(json(read.Resource)).not.toContain(":stack/Core-");
     expect(actions(bySid("ReadNetwork")).sort()).toEqual([
       "ec2:DescribeNetworkAcls",
       "ec2:DescribeRouteTables",

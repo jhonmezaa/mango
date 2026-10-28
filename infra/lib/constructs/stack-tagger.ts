@@ -1,4 +1,4 @@
-import { Aspects, CfnResource, CustomResource, Duration, Stack } from "aws-cdk-lib";
+import { Aspects, Aws, CfnResource, CustomResource, Duration, Stack } from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import { Construct, IConstruct } from "constructs";
@@ -64,7 +64,8 @@ export class StackTagger extends Construct {
 
     // Its own stack and the pack network's: their tags, and the policies they declare. Also
     // the stacks nested in Core (D99), named after it: the policies they declare are Core's.
-    const nestedStacks = arn("cloudformation", `stack/${stack.stackName}-*/*`);
+    // The name Core is installed with, not the construct id `stackName` holds at synthesis.
+    const nestedStacks = arn("cloudformation", `stack/${Aws.STACK_NAME}-*/*`);
     allow(
       "ReadInstallationStacks",
       ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"],
