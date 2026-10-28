@@ -563,7 +563,10 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
       ),
     );
     expect(controlPlane.map((s) => s.Sid)).toEqual(["RemoteMcpProviders"]);
-    expect(actions(controlPlane[0]!).every((a) => /Oauth2CredentialProvider$|:TagResource$/.test(a))).toBe(true);
+    // CreateTokenVault: authorized on the default vault by every provider creation.
+    expect(
+      actions(controlPlane[0]!).every((a) => /Oauth2CredentialProvider$|:TagResource$|:CreateTokenVault$/.test(a)),
+    ).toBe(true);
     const scope = JSON.stringify(controlPlane[0]!.Resource);
     expect(scope).toContain("oauth2credentialprovider/Mango-");
     expect(scope).toContain("-remote-*");

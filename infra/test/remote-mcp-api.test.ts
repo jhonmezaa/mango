@@ -56,6 +56,7 @@ describe("mango-api and remote MCP registrations", () => {
     const providers = bySid("RemoteMcpProviders");
     expect(actions(providers).sort()).toEqual([
       "bedrock-agentcore:CreateOauth2CredentialProvider",
+      "bedrock-agentcore:CreateTokenVault",
       "bedrock-agentcore:DeleteOauth2CredentialProvider",
       "bedrock-agentcore:GetOauth2CredentialProvider",
       "bedrock-agentcore:TagResource",

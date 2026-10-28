@@ -71,10 +71,13 @@ export class RemoteMcpApi extends Construct {
     const stateMachine = `arn:${partition}:states:${region}:${account}:stateMachine:${remoteProvisionerName(ns)}`;
 
     const statements = [
+      // Creating a provider also authorizes `CreateTokenVault` on the default vault, even when
+      // it exists (AccessDenied seen in an installation on 2026-10-28).
       new iam.PolicyStatement({
         sid: "RemoteMcpProviders",
         actions: [
           "bedrock-agentcore:CreateOauth2CredentialProvider",
+          "bedrock-agentcore:CreateTokenVault",
           "bedrock-agentcore:DeleteOauth2CredentialProvider",
           "bedrock-agentcore:GetOauth2CredentialProvider",
           "bedrock-agentcore:TagResource",
