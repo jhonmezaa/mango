@@ -218,6 +218,20 @@ describe("Gateway role and the token vault (D94 (3))", () => {
     ]);
   });
 
+  it("gets tokens of its own workload identity only, which reading a person's token needs", () => {
+    const identity = bySid(statements, "RemoteMcpWorkloadIdentity");
+    expect(actions(identity)).toEqual([
+      "bedrock-agentcore:GetWorkloadAccessToken",
+      "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+    ]);
+    expect(resourcesOf(identity)).toEqual([
+      `${base}:workload-identity-directory/default`,
+      `${base}:workload-identity-directory/default/workload-identity/mango-${ns}-tools-*`,
+    ]);
+    // Not the variant that names any user: the person comes from the JWT the Gateway verified.
+    expect(statements.flatMap(actions)).not.toContain("bedrock-agentcore:GetWorkloadAccessTokenForUserId");
+  });
+
   it("reads the client secrets of remote MCP providers only", () => {
     expect(bySid(statements, "RemoteMcpClientSecrets")).toMatchObject({
       Action: "secretsmanager:GetSecretValue",

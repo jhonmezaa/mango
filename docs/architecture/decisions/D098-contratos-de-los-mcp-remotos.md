@@ -228,6 +228,7 @@ Los textos los pone el diseño (D24). Los que falten van al brief siguiente.
 
 Junto con P9, con recursos temporales aprobados por el dueño:
 - el IAM mínimo de crear, cambiar y borrar el proveedor, de `CompleteResourceTokenAuth` y de crear un target con OAuth, porque el laboratorio usó credenciales de administrador;
+  - **visto el 2026-10-28 en la primera instalación:** el rol del Gateway necesita además `GetWorkloadAccessToken` y `GetWorkloadAccessTokenForJWT` sobre su propia identidad de carga (y el directorio). El rol del laboratorio los tenía en su política base. Sin ellos, el Gateway responde el error genérico de 47 caracteres y nunca la URL de consentimiento, sin ningún AccessDenied en CloudTrail. Al crear un proveedor, `mango-api` necesita también `CreateTokenVault` (PR #223);
 - si `UpdateGatewayTarget` acepta otro proveedor;
 - si la URL de consentimiento trae la sesión, para distinguir «no es tuyo» de «venció»;
 - la versión del protocolo que negocia el harness: con `2026-07-28`, un `tools/call` sin `_meta` falla;

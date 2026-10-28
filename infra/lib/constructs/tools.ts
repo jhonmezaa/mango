@@ -630,6 +630,17 @@ export class Tools extends Construct {
         ],
       }),
     );
+    // Before it reads a person's token, the Gateway exchanges the caller's JWT for a token of
+    // its own workload identity. Without these two actions AgentCore answers a generic tool
+    // error, not AccessDenied, and never the consent URL (seen in an installation on 2026-10-28;
+    // the lab role had them).
+    gatewayRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "RemoteMcpWorkloadIdentity",
+        actions: ["bedrock-agentcore:GetWorkloadAccessToken", "bedrock-agentcore:GetWorkloadAccessTokenForJWT"],
+        resources: [`${identityBase}:workload-identity-directory/default`, gatewayIdentity],
+      }),
+    );
     gatewayRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "RemoteMcpClientSecrets",
