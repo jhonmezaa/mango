@@ -116,6 +116,7 @@ class ConnectionOut(_Strict):
     """Hosts of the service's links, for the web to classify them (design A1)."""
     status: ConnectionStatus
     connected_at: str | None = None
+    """When the person connected: with ``connected``, and with ``secret_expired`` if they had."""
 
 
 class ConnectionsOut(_Strict):
@@ -381,12 +382,21 @@ def _connection_out(
     now: datetime,
 ) -> ConnectionOut:
     status = _status(registration, record, now)
+    # With the app's secret expired the person may still disconnect an account they connected
+    # (D97): the date says there is one (design round 24, «Desconectar» with the secret expired).
+    connected = bool(
+        record and record.connected_at and record.generation == registration.generation
+    )
     return ConnectionOut(
         registration_id=registration.registration_id,
         profile_id=registration.profile_id,
         organization=registration.organization,
         status=status,
-        connected_at=record.connected_at if status == "connected" and record else None,
+        connected_at=(
+            record.connected_at
+            if record and connected and status in ("connected", "secret_expired")
+            else None
+        ),
         **_service(deps.release.get(registration.profile_id), registration),
     )
 

@@ -8,7 +8,7 @@ import {
   consentUrl,
   idpsOf,
   linkSourcesOf,
-  returnResultOf,
+  finishOutcomeOf,
   returnResultOfQuery,
   rowStateOf,
 } from './model';
@@ -38,11 +38,19 @@ describe('consentUrl', () => {
 
 describe('rowStateOf', () => {
   it('follows the design states', () => {
-    expect(rowStateOf(connection(), false)).toBe('none');
-    expect(rowStateOf(connection(), true)).toBe('opening');
-    expect(rowStateOf(connection({ status: 'connected' }), false)).toBe('on');
-    expect(rowStateOf(connection({ status: 'secret_expired' }), false)).toBe('blocked');
-    expect(rowStateOf(connection({ status: 'disabled' }), true)).toBe('off');
+    expect(rowStateOf(connection(), null)).toBe('none');
+    expect(rowStateOf(connection(), 'opening')).toBe('opening');
+    expect(rowStateOf(connection(), 'waiting')).toBe('waiting');
+    expect(rowStateOf(connection(), 'finishing')).toBe('finishing');
+    expect(rowStateOf(connection({ status: 'connected' }), null)).toBe('on');
+    expect(rowStateOf(connection({ status: 'secret_expired' }), null)).toBe('blocked');
+    expect(
+      rowStateOf(
+        connection({ status: 'secret_expired', connected_at: '2026-10-01T00:00:00Z' }),
+        null,
+      ),
+    ).toBe('onBlocked');
+    expect(rowStateOf(connection({ status: 'disabled' }), 'waiting')).toBe('off');
   });
 });
 
@@ -97,14 +105,16 @@ describe('errors', () => {
     });
   });
 
-  it('maps the return answers to the design results', () => {
-    expect(returnResultOf(new ApiError(410, 'consent_expired', 'x'))).toBe('expired');
-    expect(returnResultOf(new ApiError(403, 'consent_not_yours', 'x'))).toBe('notyours');
-    expect(returnResultOf(new ApiError(400, 'consent_denied', 'x'))).toBe('denied');
-    expect(returnResultOf(new ApiError(400, 'conditional_access', 'x'))).toBe('conditional');
-    expect(returnResultOf(new ApiError(502, 'identity_unavailable', 'x'))).toBe('error');
-    expect(returnResultOf(new ApiError(409, 'consent_ambiguous', 'x'))).toBe('error');
-    expect(returnResultOf(new Error('network'))).toBe('error');
+  it('maps the callback answers for the waiting tab and the return page (D100)', () => {
+    const of = (code: string) => finishOutcomeOf(new ApiError(400, code, 'x'));
+    expect(of('consent_expired')).toEqual({ tab: 'expired', ret: 'expired' });
+    // Not this tab's consent: it stays silent.
+    expect(of('consent_not_yours')).toEqual({ tab: null, ret: 'notyours' });
+    expect(of('consent_denied')).toEqual({ tab: 'denied', ret: 'denied' });
+    expect(of('conditional_access')).toEqual({ tab: 'conditional', ret: 'conditional' });
+    expect(of('consent_ambiguous')).toEqual({ tab: 'error', ret: 'ambiguous' });
+    expect(of('identity_unavailable')).toEqual({ tab: 'error', ret: 'error' });
+    expect(finishOutcomeOf(new Error('network'))).toEqual({ tab: 'error', ret: 'error' });
     expect(returnResultOfQuery('access_denied')).toBe('denied');
     expect(returnResultOfQuery('server_error')).toBe('error');
     expect(returnResultOfQuery(null)).toBe('error');

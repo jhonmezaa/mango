@@ -13,8 +13,11 @@ import { handleConnections } from './connections.ts';
 let server: Server;
 let origin = '';
 
-async function call(method: string, path: string, body?: unknown) {
-  const init: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
+async function call(method: string, path: string, body?: unknown, token = 'token-a') {
+  const init: RequestInit = {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  };
   if (body !== undefined) init.body = JSON.stringify(body);
   const response = await fetch(`${origin}${path}`, init);
   return { status: response.status, body: JSON.parse(await response.text()) as unknown };
@@ -59,6 +62,14 @@ describe('mock of Mis conexiones and the return', () => {
       session_id: 'urn:ietf:params:oauth:request_uri:notyours',
     });
     expect(notMine.status).toBe(403);
+    // Like AgentCore Identity: only the token that asked for the URL closes it (D100).
+    const otherToken = await call(
+      'POST',
+      '/oauth/callback',
+      { session_id: 'urn:ietf:params:oauth:request_uri:abc' },
+      'token-b',
+    );
+    expect(otherToken.status).toBe(403);
     const done = zCompleteConsentResponse.parse(
       (
         await call('POST', '/oauth/callback', {

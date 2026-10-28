@@ -40,13 +40,19 @@ export function consentUrl(value: string | null | undefined, region: string): st
 }
 
 /** Design `MyConnections` row: what the line under the service says. */
-export type RowState = 'off' | 'opening' | 'on' | 'blocked' | 'none';
+export type RowState =
+  'off' | 'opening' | 'waiting' | 'finishing' | 'on' | 'onBlocked' | 'blocked' | 'none';
 
-export function rowStateOf(connection: Connection, opening: boolean): RowState {
+export function rowStateOf(
+  connection: Connection,
+  phase: 'opening' | 'waiting' | 'finishing' | null,
+): RowState {
   if (connection.status === 'disabled') return 'off';
-  if (opening) return 'opening';
+  if (phase) return phase;
   if (connection.status === 'connected') return 'on';
-  if (connection.status === 'secret_expired') return 'blocked';
+  // With the app's secret expired, `connected_at` says the person had connected (round 24).
+  if (connection.status === 'secret_expired')
+    return connection.connected_at ? 'onBlocked' : 'blocked';
   return 'none';
 }
 
@@ -131,36 +137,67 @@ export function linkSourcesOf(
   return sources;
 }
 
-// --- The return (design `RemoteReturn`) -------------------------------------------------------
-
-export type ReturnResult =
-  'ok' | 'expired' | 'lost' | 'nosession' | 'notyours' | 'denied' | 'conditional' | 'error';
+// --- The return (design `RemoteReturn`, D100) ------------------------------------------------
 
 /**
- * Results that do not name the service (design `NONAME`): without the return's data, or without a
- * session, Mango does not know which one it was.
+ * What the return page says (design `RET`, round 24). It never closes the consent: the tab that
+ * pressed «Conectar» does, and tells it how it went. `orphan`: no tab took it (it was closed, or
+ * its session changed, or the page was reloaded).
  */
-export const UNNAMED_RESULTS: ReadonlySet<ReturnResult> = new Set(['lost', 'nosession']);
+export const RETURN_RESULTS = [
+  'ok',
+  'orphan',
+  'expired',
+  'denied',
+  'conditional',
+  'ambiguous',
+  'notyours',
+  'error',
+] as const;
 
-/** Result of `POST /api/oauth/callback` when it fails (docs/specs/poc-api-contract.md). */
-export function returnResultOf(error: unknown): ReturnResult {
-  if (!(error instanceof ApiError)) return 'error';
+export type ReturnResult = (typeof RETURN_RESULTS)[number];
+
+/**
+ * Why the tab that pressed «Conectar» could not finish (design `FINISH_ERR`, shown in the chat and
+ * Playground card and in the row of «Mis conexiones»). `expired` is the card's «El enlace venció».
+ */
+export type FinishError = 'session_changed' | 'denied' | 'conditional' | 'error' | 'expired';
+
+/**
+ * Result of `POST /api/oauth/callback` when it fails, for the waiting tab and for the return page.
+ * `consent_not_yours` leaves the tab silent (`tab: null`): with several tabs waiting, it is the
+ * answer to the one that did not ask (D100 (2)).
+ */
+export function finishOutcomeOf(error: unknown): { tab: FinishError | null; ret: ReturnResult } {
+  if (!(error instanceof ApiError)) return { tab: 'error', ret: 'error' };
   switch (error.code) {
     case 'consent_expired':
-      return 'expired';
+      return { tab: 'expired', ret: 'expired' };
     case 'consent_not_yours':
-      return 'notyours';
+      return { tab: null, ret: 'notyours' };
     case 'consent_denied':
-      return 'denied';
+      return { tab: 'denied', ret: 'denied' };
     case 'conditional_access':
-      return 'conditional';
-    // Several pending consents and a session that names none (security review F-1): the
-    // design has no text for it yet, so it is the generic error.
+      return { tab: 'conditional', ret: 'conditional' };
+    // Several pending consents and a session that names none (security review F-1).
     case 'consent_ambiguous':
-      return 'error';
+      return { tab: 'error', ret: 'ambiguous' };
     default:
-      return 'error';
+      return { tab: 'error', ret: 'error' };
   }
+}
+
+/** Text of a finish error (design `FINISH_ERR`); `expired` has the card's own text. */
+export function finishErrorOf(
+  t: TFunction,
+  error: Exclude<FinishError, 'expired'>,
+  connection: Pick<Connection, 'service' | 'provider'>,
+): ConnectError {
+  const idp = idpOf(connection);
+  return {
+    title: t(`connections.finishErrors.${error}.title`, { idp }),
+    body: t(`connections.finishErrors.${error}.body`, { idp }),
+  };
 }
 
 /**
@@ -168,6 +205,6 @@ export function returnResultOf(error: unknown): ReturnResult {
  * Identity sends after a cancel is not known). An OAuth `access_denied` is the person or the
  * provider saying no; anything else is an error. The free text of the provider is never read.
  */
-export function returnResultOfQuery(error: string | null): ReturnResult {
+export function returnResultOfQuery(error: string | null): 'denied' | 'error' {
   return error === 'access_denied' ? 'denied' : 'error';
 }

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router';
 
@@ -16,8 +16,7 @@ import { SCREENS } from './layouts/screens';
 import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './pages/LoginPage';
 import { RestoringSession } from './pages/login/RestoringSession';
-import { capturedReturn } from './pages/connections/consentReturn';
-import { NoSessionReturn } from './pages/connections/NoSessionReturn';
+import { isConsentReturnPage } from './pages/connections/consentReturn';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 // Admin screens are only for admins: they load on demand and stay out of the main chunk.
@@ -26,6 +25,12 @@ const AdminAuditPage = lazy(() =>
 );
 const AdminBudgetsPage = lazy(() =>
   import('./pages/AdminBudgetsPage').then((module) => ({ default: module.AdminBudgetsPage })),
+);
+// The return from a remote service's sign-in: a page of its own, without a session (D100).
+const ConnectReturnPage = lazy(() =>
+  import('./pages/connections/ConnectReturnPage').then((module) => ({
+    default: module.ConnectReturnPage,
+  })),
 );
 const AdminSettingsPage = lazy(() =>
   import('./pages/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })),
@@ -137,7 +142,6 @@ export function AppRoutes() {
 
 function AuthGate({ config }: { config: RuntimeConfig }) {
   const { status, retryRestore } = useAuth();
-  const [signingIn, setSigningIn] = useState(false);
   if (status === 'loading') {
     // Coming back from the IdP is a sign-in in progress, not a session being recovered.
     return (
@@ -147,16 +151,6 @@ function AuthGate({ config }: { config: RuntimeConfig }) {
     );
   }
   if (status === 'unauthenticated') {
-    // Back from a remote service's sign-in without a Mango session (design `nosession`).
-    if (!signingIn && capturedReturn()?.kind === 'session') {
-      return (
-        <NoSessionReturn
-          onSignIn={() => {
-            setSigningIn(true);
-          }}
-        />
-      );
-    }
     return <LoginPage config={config} />;
   }
   // The renewal did not answer: that is not «no session», so no sign-in form.
@@ -171,6 +165,14 @@ function AuthGate({ config }: { config: RuntimeConfig }) {
 }
 
 export function App({ config, cognito }: { config: RuntimeConfig; cognito: CognitoAuth }) {
+  // It only hands the `session_id` to the tab that pressed «Conectar»: no sign-in, no API.
+  if (isConsentReturnPage()) {
+    return (
+      <Suspense fallback={null}>
+        <ConnectReturnPage />
+      </Suspense>
+    );
+  }
   return (
     <AuthProvider config={config} cognito={cognito}>
       <AuthGate config={config} />

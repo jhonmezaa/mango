@@ -5,6 +5,7 @@ import type { RuntimeConfig } from '../config/runtimeConfig';
 import { safeReturnPath } from '../security/safeUrl';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 import { CognitoError } from './cognito/api';
+import { noteNewToken, tokenHeld } from './consentHold';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
 import { authTimeOf, displayEmailFromIdToken, displayGroupsFromIdToken, subjectOf } from './jwt';
 import {
@@ -124,6 +125,8 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
   const sessionSeconds = config.auth.sessionHours * 3600;
   const setSession = useCallback(
     (next: Session | null) => {
+      // A waiting consent return can only be closed with the token that asked for it (D100).
+      if (next?.accessToken !== tokens.current?.accessToken) noteNewToken();
       tokens.current = next;
       setDisplayEmail(next ? displayEmailFromIdToken(next.idToken) : null);
       setDisplayGroups(next ? displayGroupsFromIdToken(next.idToken) : NO_GROUPS);
@@ -307,7 +310,14 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     return renewal.kind === 'ok' ? renewal.session.accessToken : null;
   }, [refresh]);
 
-  const refreshSession = useCallback(async () => (await refresh()).kind === 'ok', [refresh]);
+  const refreshSession = useCallback(async () => {
+    // While a tab waits for a consent return, a valid token is kept (D100 (3)).
+    const current = tokens.current;
+    if (current && tokenHeld() && current.expiresAt - Date.now() >= MIN_TOKEN_TTL_SECONDS * 1000) {
+      return true;
+    }
+    return (await refresh()).kind === 'ok';
+  }, [refresh]);
 
   const logout = useCallback(async () => {
     const current = tokens.current;

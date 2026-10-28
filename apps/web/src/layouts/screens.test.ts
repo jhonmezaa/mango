@@ -20,7 +20,6 @@ describe('SCREENS', () => {
       ['activity', 'activity/*'],
       ['playground', 'playground/*'],
       ['skills', 'skills/*'],
-      [null, 'conexiones/vuelta'],
     ]);
   });
 

@@ -5,7 +5,6 @@ import { agentBuilderScreen } from '../pages/agentBuilder/screen';
 import { agentReviewScreen } from '../pages/agentReview/screen';
 import { approvalsScreen } from '../pages/approvals/screen';
 import { brainsScreen } from '../pages/brains/screen';
-import { connectReturnScreen } from '../pages/connections/screen';
 import { governanceScreen } from '../pages/governance/screen';
 import { inboxScreen } from '../pages/inbox/screen';
 import { knowledgeScreen } from '../pages/knowledge/screen';
@@ -48,5 +47,4 @@ export const SCREENS: readonly Screen[] = [
   activityScreen,
   playgroundScreen,
   skillsScreen,
-  connectReturnScreen,
 ];

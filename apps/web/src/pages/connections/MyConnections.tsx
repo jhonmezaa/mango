@@ -2,43 +2,57 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useToasts } from '../../components/admin/useToasts';
-import { GlobeIcon, X2Icon } from '../../components/icons';
+import { ExternalIcon, GlobeIcon, X2Icon } from '../../components/icons';
 import { Modal } from '../../components/Modal';
 import { formatRelative } from '../../lib/format';
 import { RmTile } from '../remoteMcp/parts';
-import { useConnections } from './ConnectionsContext';
+import { useConnections, type ConsentPhase } from './ConnectionsContext';
 import {
   connectErrorOf,
+  finishErrorOf,
   idpOf,
   idpsOf,
   rowStateOf,
   type Connection,
   type ConnectError,
+  type FinishError,
 } from './model';
 
 function Row({
   connection,
   already,
-  opening,
+  phase,
   error,
+  finish,
   onConnect,
   onDisconnect,
 }: {
   connection: Connection;
   already: boolean;
-  opening: boolean;
+  phase: ConsentPhase | null;
   error: ConnectError | null;
+  finish: FinishError | null;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
   const { t } = useTranslation();
-  const state = rowStateOf(connection, opening);
+  const state = rowStateOf(connection, phase);
   const service = connection.service;
+  const idp = idpOf(connection);
+  // A failed «Conectar», or a consent this tab could not finish (D100, design `FINISH_ERR`).
+  const shown: ConnectError | null =
+    error ??
+    (finish === 'expired'
+      ? { title: t('connections.row.expiredTitle'), body: t('connections.row.expiredBody') }
+      : finish
+        ? finishErrorOf(t, finish, connection)
+        : null);
+  const failed = shown !== null && state === 'none';
   let line;
-  if (error && state === 'none') {
+  if (failed) {
     line = (
       <span role="alert" className="text-danger">
-        <b>{error.title}.</b> {error.body}
+        <b>{shown.title}.</b> {shown.body}
       </span>
     );
   } else if (already && state === 'on') {
@@ -52,10 +66,19 @@ function Row({
   } else if (state === 'opening') {
     line = (
       <span className="flex items-center gap-2">
-        <span className="g-spin" aria-hidden="true" />{' '}
-        {t('connections.row.opening', { idp: idpOf(connection) })}
+        <span className="g-spin" aria-hidden="true" /> {t('connections.row.opening', { idp })}
       </span>
     );
+  } else if (state === 'waiting') {
+    line = t('connections.row.waiting', { idp });
+  } else if (state === 'finishing') {
+    line = (
+      <span className="flex items-center gap-2">
+        <span className="g-spin" aria-hidden="true" /> {t('connections.row.finishing')}
+      </span>
+    );
+  } else if (state === 'onBlocked') {
+    line = t('connections.row.onBlocked', { service });
   } else if (state === 'on') {
     line = (
       <span className="flex items-center gap-2">
@@ -78,22 +101,32 @@ function Row({
           <span className="mk-name">{service}</span>
           <span className="mk-meta mono">{connection.organization}</span>
         </div>
-        <div className="rm-conn-s" role={error && state === 'none' ? undefined : 'status'}>
+        <div className="rm-conn-s" role={failed ? undefined : 'status'}>
           {line}
         </div>
       </div>
       {state === 'none' && (
         <button
           type="button"
-          className={error ? 'btn btn-sm' : 'btn btn-sm btn-primary'}
+          className={failed ? 'btn btn-sm' : 'btn btn-sm btn-primary'}
           onClick={onConnect}
         >
-          {error ? t('connections.retry') : t('connections.connect')}
+          {failed ? t('connections.retry') : t('connections.connect')}
         </button>
       )}
-      {/* D97. With the app's secret expired the API still disconnects (it only takes access away):
-          the button stays (owner's choice, 2026-10-27), although the design shows none there. */}
-      {(state === 'on' || state === 'blocked') && (
+      {state === 'waiting' && (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={onConnect}
+          title={t('connections.reopenTitle', { idp })}
+        >
+          {t('connections.reopen')} <ExternalIcon size={11} />
+        </button>
+      )}
+      {/* D97. With the app's secret expired the API still disconnects a connected account (design
+          round 24: «Tu cuenta sigue conectada…»); with nothing connected there is nothing to remove. */}
+      {(state === 'on' || state === 'onBlocked') && (
         <button type="button" className="btn btn-sm" onClick={onDisconnect}>
           {t('connections.disconnect')}
         </button>
@@ -105,10 +138,9 @@ function Row({
 /** «Mis conexiones» (design remote-views.jsx `MyConnections`), opened from the person's menu. */
 export function MyConnections({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
-  const { status, list, reload, connect } = useConnections();
+  const { status, list, reload, connect, phaseOf, finishErrorOf: finishOf } = useConnections();
   const { notify, stack } = useToasts();
   const [already, setAlready] = useState<ReadonlySet<string>>(new Set());
-  const [opening, setOpening] = useState<string | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, ConnectError>>>({});
   const [leaving, setLeaving] = useState<Connection | null>(null);
 
@@ -117,17 +149,13 @@ export function MyConnections({ onClose }: { onClose: () => void }) {
     setErrors((current) =>
       Object.fromEntries(Object.entries(current).filter(([key]) => key !== id)),
     );
-    setOpening(id);
     connect(id).then(
       (outcome) => {
-        if (outcome === 'already') {
-          setOpening(null);
-          setAlready((current) => new Set(current).add(id));
-        }
-        // 'opening': the page is leaving for the provider; the row keeps «Abriendo…».
+        if (outcome === 'already') setAlready((current) => new Set(current).add(id));
+        // 'opening': the provider is in another tab; the row says «Inicia sesión … en la otra
+        // pestaña» until the return comes back here.
       },
       (error: unknown) => {
-        setOpening(null);
         setErrors((current) => ({
           ...current,
           [id]: connectErrorOf(t, error, connection),
@@ -185,8 +213,9 @@ export function MyConnections({ onClose }: { onClose: () => void }) {
                 key={connection.registration_id}
                 connection={connection}
                 already={already.has(connection.registration_id)}
-                opening={opening === connection.registration_id}
+                phase={phaseOf(connection.registration_id)}
                 error={errors[connection.registration_id] ?? null}
+                finish={finishOf(connection.registration_id)}
                 onConnect={() => {
                   onConnect(connection);
                 }}

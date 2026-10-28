@@ -1,6 +1,6 @@
 # D100 · El consentimiento de un MCP remoto lo cierra la pestaña que lo pidió, con el mismo access token
 
-- **Estado:** pendiente
+- **Estado:** vigente (desde el 2026-10-28, cuando se construyó con la ronda 25 del diseño)
 - **Fecha:** 2026-10-28 (elegida por el dueño ese día, por menú: «Opción 1: decisión y brief (Recomendada)», después de investigar el fallo de la vuelta en la primera instalación)
 - **Precisa / reemplaza a:** precisa [D98](D098-contratos-de-los-mcp-remotos.md) (1) (quién llama a `POST /api/oauth/callback` y con qué token); respeta [D94](D094-consentimiento-iniciado-por-el-gateway.md) (2) y [D63](D063-sesion-web-con-cookie.md)
 - **Precisada por:** —
@@ -10,7 +10,7 @@
 **(1) Por qué no vale como estaba.** Con D98 (1), la vista `/conexiones/vuelta` renueva la sesión de la SPA y llama a `POST /api/oauth/callback` con el access token que obtiene en ese momento. Pero AgentCore Identity compara el **mismo token** que inició el flujo, no la persona.
 - **Lo que dice AWS:** la guía de *session binding* pide presentar «the original inbound identity provider OAuth token or `user_id` … that was used to generate the workload access token». Ese token se toma de la sesión activa del navegador, no de una caché del servidor.
 - **Lo que confirmó soporte de AWS:** en un caso público igual al nuestro (Gateway 3LO contra Entra), un token nuevo de la misma persona falla siempre.
-- **Lo que vimos en Nutresa** (2026-10-28, dos de dos intentos): el Gateway inicia el flujo con el token de la petición del chat. La vuelta es una carga nueva de la SPA, y como los tokens solo viven en memoria, siempre trae otro token. Identity responde `AccessDeniedException` y la persona ve «Este enlace no es tuyo».
+- **Lo que vimos en la primera instalación** (2026-10-28, dos de dos intentos): el Gateway inicia el flujo con el token de la petición del chat. La vuelta es una carga nueva de la SPA, y como los tokens solo viven en memoria, siempre trae otro token. Identity responde `AccessDeniedException` y la persona ve «Este enlace no es tuyo».
 
 **(2) Cómo queda.**
 - **La vista de vuelta no cierra el consentimiento.** Toma el `session_id` de la URL, borra la query con `history.replaceState` y lo pasa a las pestañas de Mango del mismo navegador por un `BroadcastChannel` del mismo origen. El mensaje lleva solo el `session_id`. Después le dice a la persona que vuelva a su pestaña de Mango, o se cierra si la abrió la SPA.
@@ -34,11 +34,18 @@
 - **Guardar en el servidor el token que inició el flujo:** AWS lo desaconseja y rompe las reglas de secretos.
 - **Queda por evaluar en laboratorio el portal de consentimiento gestionado de AgentCore Identity** (2026-09): quitaría el *binding* propio. A cambio, la persona sale de Mango a una página de AWS, vuelve a iniciar sesión, y el chat solo puede mandarla al portal, no a un enlace directo.
 
-**(6) Diseño primero (D24).** La tarjeta y «Mis conexiones» abren la URL de consentimiento como hoy. La vista de vuelta y los textos nuevos van al brief de la próxima ronda:
+**(6) Diseño primero (D24).** La vista de vuelta y los textos nuevos van al brief de la próxima ronda:
 - «Vuelve a tu pestaña de Mango»;
 - «La conexión se completó en otra pestaña»;
 - «Pídelo de nuevo: tu sesión cambió o cerraste la pestaña».
 
-Hasta que estén diseñados, la vuelta no funciona en una instalación.
+El diseño los dibujó en su ronda 24 (respuesta del 2026-10-28) y se construyeron con la ronda 25.
+
+**(7) Cómo lo construye la web** (precisado al construirlo, 2026-10-28):
+- **«Conectar» abre el proveedor en otra pestaña,** no en la misma (precisa la nota de D98 sobre la web): la pestaña que pidió tiene que seguir viva con su token. Abre una pestaña vacía dentro del clic, le pone `opener = null` y la lleva a la URL ya validada. El diseño pedía que la vuelta supiera por `window.opener` que la abrió Mango; el dueño eligió no dejarlo, por *reverse tabnabbing* (2026-10-28, por menú: «Nueva pestaña con noopener (Recomendada)»). La vuelta intenta cerrarse sola unos 2 s después de «Listo» y, si el navegador no la deja, queda «Cerrar esta pestaña».
+- **La vista de vuelta se pinta fuera de la sesión:** no inicia sesión ni llama a `mango-api`. Manda `{session_id, ref}` por el canal `mango-consent`, espera unos 3 s a que una pestaña diga que lo tomó (si no, «Pídelo de nuevo desde Mango») y muestra lo que esa pestaña responde. Si el proveedor volvió sin `session_id`, lo dice y se lo avisa a la pestaña que espera.
+- **La pestaña que espera** guarda en memoria el registro, la hora y la *generación* de su access token. Al recibir el `session_id` responde que lo tomó; si su token cambió, no llama y dice «Pídelo de nuevo»; si no, cierra con `POST /api/oauth/callback`. Un `consent_not_yours` la deja esperando sin mostrar nada.
+- **El token:** «Conectar» (en «Mis conexiones», y también en la tarjeta del chat y del Playground, que usan la misma llamada) renueva la sesión justo antes de pedir la URL, y mientras la pestaña espera (10 minutos como mucho) la SPA no renueva un token vigente. Un token a punto de vencer sí se renueva, y entonces la pestaña sabe que cambió.
+- **«Conectado» en la tarjeta** no dice «El agente sigue con tu pregunta», como el diseño: el turno no continúa solo. Dice «Vuelve a enviar tu pregunta» (elegido por el dueño el 2026-10-28, por menú: «Conectado sin seguir y al brief (Recomendada)»).
 
 Fuentes: [OAuth 2.0 authorization URL session binding](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/oauth2-authorization-url-session-binding.html), [aws/bedrock-agentcore-sdk-typescript#37](https://github.com/aws/bedrock-agentcore-sdk-typescript/issues/37), [Configure a consent portal target](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity-configure-consent-portal-target.html).

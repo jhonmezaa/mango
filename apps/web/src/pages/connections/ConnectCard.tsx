@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { CheckIcon, ExternalIcon, MangoIcon } from '../../components/icons';
 import { RmTile } from '../remoteMcp/parts';
 import { useConnections } from './ConnectionsContext';
-import { CONSENT_TTL_MS, connectErrorOf, idpOf, type ConnectError } from './model';
+import { CONSENT_TTL_MS, connectErrorOf, finishErrorOf, idpOf, type ConnectError } from './model';
 
-type CardState = 'ask' | 'opening' | 'done' | 'expired' | 'error';
+type CardState = 'ask' | 'opening' | 'waiting' | 'finishing' | 'done' | 'expired' | 'error';
 
 function mmss(ms: number): string {
   const left = Math.max(0, Math.ceil(ms / 1000));
@@ -18,7 +18,8 @@ function mmss(ms: number): string {
  * of the agent. It is built from what mango-api said (`remote_connection_required` or the stored
  * `connection_required`) and the person's connections, never from the model's text, and it is
  * drawn outside the Markdown so the answer cannot imitate it. It carries no URL: «Conectar» asks
- * mango-api for one (D98 (20)).
+ * mango-api for one (D98 (20)). The provider opens in another tab and this tab closes the consent
+ * when it comes back (D100): «Inicia sesión … en la otra pestaña», «Terminando…», «Conectado».
  */
 export function ConnectCard({
   registrationId,
@@ -29,20 +30,21 @@ export function ConnectCard({
   startedAt: number;
 }) {
   const { t } = useTranslation();
-  const { ensure, byRegistration, connect } = useConnections();
-  const [opening, setOpening] = useState(false);
+  const { ensure, byRegistration, connect, phaseOf, finishErrorOf: finishOf } = useConnections();
   const [error, setError] = useState<ConnectError | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const connection = byRegistration(registrationId);
+  const phase = phaseOf(registrationId);
+  const finish = finishOf(registrationId);
   const left = startedAt + CONSENT_TTL_MS - now;
   const state: CardState =
     connection?.status === 'connected'
       ? 'done'
-      : opening
-        ? 'opening'
-        : left <= 0
+      : phase !== null
+        ? phase
+        : left <= 0 || finish === 'expired'
           ? 'expired'
-          : error
+          : error || finish
             ? 'error'
             : 'ask';
 
@@ -50,8 +52,8 @@ export function ConnectCard({
     ensure();
   }, [ensure]);
 
-  // The countdown runs while the card asks, also after a failed «Conectar» (design).
-  const counting = state === 'ask' || state === 'error';
+  // The countdown runs while the card asks or waits, also after a failed «Conectar» (design).
+  const counting = state === 'ask' || state === 'error' || state === 'waiting';
   useEffect(() => {
     if (!counting) return;
     const timer = window.setInterval(() => {
@@ -67,20 +69,15 @@ export function ConnectCard({
   const service = connection.service;
   const idp = idpOf(connection);
 
+  // 'already': the list now says «connected» and the card turns to «Conectado».
   const onConnect = () => {
     setError(null);
-    setOpening(true);
-    connect(registrationId).then(
-      (outcome) => {
-        // 'already': the list now says «connected» and the card turns to «Conectado».
-        if (outcome === 'already') setOpening(false);
-      },
-      (failure: unknown) => {
-        setOpening(false);
-        setError(connectErrorOf(t, failure, connection));
-      },
-    );
+    connect(registrationId).catch((failure: unknown) => {
+      setError(connectErrorOf(t, failure, connection));
+    });
   };
+  const shown =
+    error ?? (finish && finish !== 'expired' ? finishErrorOf(t, finish, connection) : null);
 
   return (
     <section
@@ -99,17 +96,27 @@ export function ConnectCard({
         <RmTile profile={{ name: service }} />
         <div
           className="min-w-0 flex-1"
-          role={state === 'expired' ? 'status' : state === 'error' ? 'alert' : undefined}
+          role={state === 'error' ? 'alert' : state === 'ask' ? undefined : 'status'}
         >
           {state === 'done' ? (
             <>
               <div className="rm-card-t">{t('connections.card.doneTitle')}</div>
               <div className="rm-card-s">{t('connections.card.doneBody', { service })}</div>
             </>
-          ) : state === 'error' && error ? (
+          ) : state === 'waiting' ? (
             <>
-              <div className="rm-card-t">{error.title}</div>
-              <div className="rm-card-s">{error.body}</div>
+              <div className="rm-card-t">{t('connections.card.waitingTitle', { idp })}</div>
+              <div className="rm-card-s">{t('connections.card.waitingBody')}</div>
+            </>
+          ) : state === 'finishing' ? (
+            <>
+              <div className="rm-card-t">{t('connections.card.finishingTitle')}</div>
+              <div className="rm-card-s">{t('connections.card.finishingBody', { service })}</div>
+            </>
+          ) : state === 'error' && shown ? (
+            <>
+              <div className="rm-card-t">{shown.title}</div>
+              <div className="rm-card-s">{shown.body}</div>
             </>
           ) : state === 'expired' ? (
             <>
@@ -127,7 +134,7 @@ export function ConnectCard({
             </>
           )}
         </div>
-        {counting && (
+        {(state === 'ask' || state === 'error') && (
           <div className="rm-card-a">
             <button
               type="button"
@@ -145,6 +152,26 @@ export function ConnectCard({
             <span className="rm-card-timer">
               {t('connections.card.expiresIn', { time: mmss(left) })}
             </span>
+          </div>
+        )}
+        {state === 'waiting' && (
+          <div className="rm-card-a">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={onConnect}
+              title={t('connections.reopenTitle', { idp })}
+            >
+              {t('connections.reopen')} <ExternalIcon size={11} />
+            </button>
+            <span className="rm-card-timer">
+              {t('connections.card.expiresIn', { time: mmss(left) })}
+            </span>
+          </div>
+        )}
+        {state === 'finishing' && (
+          <div className="rm-card-a">
+            <span className="g-spin" aria-hidden="true" />
           </div>
         )}
         {state === 'opening' && (

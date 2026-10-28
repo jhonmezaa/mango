@@ -634,6 +634,19 @@ def test_a_disconnect_the_gateway_does_not_confirm_is_an_error(env: Env) -> None
     assert _connections(env)[0]["status"] == "connected"
 
 
+def test_an_expired_secret_still_says_the_account_was_connected(env: Env) -> None:
+    # Design round 24: «Desconectar» is offered with the secret expired only to who connected.
+    env.gateway.vault.add("member-1")
+    _connect(env)
+    _register(env.db, REG, secret_expires_on="2026-10-01")
+    (item,) = [c for c in _connections(env) if c["registration_id"] == REG]
+    assert item["status"] == "secret_expired"
+    assert item["connected_at"]
+    _register(env.db, OTHER_REG, secret_expires_on="2026-10-01")
+    (other,) = [c for c in _connections(env) if c["registration_id"] == OTHER_REG]
+    assert (other["status"], other["connected_at"]) == ("secret_expired", None)
+
+
 def test_disconnecting_works_with_the_secret_expired(env: Env) -> None:
     # NV-2: an expired secret blocks connecting, not taking access away.
     env.gateway.vault.add("member-1")
@@ -642,6 +655,7 @@ def test_disconnecting_works_with_the_secret_expired(env: Env) -> None:
     response = env.call("POST", f"/api/me/connections/{REG}/disconnect")
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "secret_expired"
+    assert response.json()["connected_at"] is None
     assert "member-1" not in env.gateway.vault
     assert len(env.audit.named("mcp_remote.disconnect", outcome=None)) == 1
 

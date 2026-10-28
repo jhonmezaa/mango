@@ -10,16 +10,26 @@ export const connections = {
   retry: 'Reintentar',
   empty: 'Ningún servicio externo está habilitado para tus grupos.',
   connect: 'Conectar',
+  // D100: the provider opens in another tab; this one waits (design round 24).
+  reopen: 'Abrir de nuevo',
+  reopenTitle: 'Si cerraste la pestaña de {{idp}}',
   disconnect: 'Desconectar',
   row: {
     already: 'Tu cuenta ya estaba conectada.',
     off: 'Un administrador deshabilitó {{service}}.',
     opening: 'Abriendo {{idp}}…',
+    waiting:
+      'Inicia sesión en {{idp}} en la otra pestaña. Al terminar, la conexión se completa aquí.',
+    finishing: 'Terminando la conexión…',
     on: 'Conectado',
     onAt: 'Conectado · {{when}}.',
     onNow: 'Conectado.',
     blocked:
       'Por ahora no se puede conectar: un administrador tiene que renovar la configuración de {{service}}.',
+    onBlocked:
+      'Tu cuenta sigue conectada, pero los agentes no pueden leer {{service}} hasta que un administrador renueve su configuración.',
+    expiredTitle: 'El enlace venció',
+    expiredBody: 'Vuelve a pulsar «Conectar».',
     none: 'No has conectado tu cuenta.',
   },
   hint: 'Al conectar vas a iniciar sesión en {{idps}}. Si tu cuenta ya estaba conectada, Mango lo confirma sin abrir {{idp}}.',
@@ -54,6 +64,25 @@ export const connections = {
     cancel: 'Cancelar',
     done: 'Desconectaste tu cuenta de {{service}}',
   },
+  // Design `FINISH_ERR` (round 24, D100): the tab that pressed «Conectar» could not finish.
+  finishErrors: {
+    session_changed: {
+      title: 'No se pudo terminar la conexión',
+      body: 'Tu sesión de Mango cambió mientras iniciabas sesión en {{idp}}. Vuelve a pulsar «Conectar».',
+    },
+    denied: {
+      title: '{{idp}} no autorizó la conexión',
+      body: 'Tu cuenta no quedó conectada. Si no fuiste tú quien canceló, consulta con el administrador de {{idp}} de tu empresa.',
+    },
+    conditional: {
+      title: 'Una regla de acceso de tu empresa bloqueó la conexión',
+      body: 'Consulta con el administrador de {{idp}} de tu empresa.',
+    },
+    error: {
+      title: 'No se pudo conectar tu cuenta',
+      body: 'Inténtalo de nuevo en unos minutos.',
+    },
+  },
   errors: {
     remote_disabled: 'Un administrador deshabilitó {{service}}.',
     remote_not_usable: '{{service}} no está habilitado para tus grupos.',
@@ -65,9 +94,14 @@ export const connections = {
     notAgent: 'No lo escribió el agente',
     askTitle: 'Conecta tu cuenta de {{service}}',
     askBody: 'El agente necesita leer {{service}} con tu cuenta. Vas a iniciar sesión en {{idp}}.',
-    doneTitle: 'Conectado. Vuelve a enviar tu pregunta.',
-    doneBody:
-      'Tu cuenta de {{service}} quedó conectada. El agente lee con tus permisos, solo lectura.',
+    // The design says «El agente sigue con tu pregunta.», but nothing continues the turn yet: the
+    // owner chose this text until it does (round 25 brief).
+    doneTitle: 'Conectado',
+    doneBody: 'Tu cuenta de {{service}} quedó conectada. Vuelve a enviar tu pregunta.',
+    waitingTitle: 'Inicia sesión en {{idp}} en la otra pestaña',
+    waitingBody: 'Al terminar, la conexión se completa aquí. No cierres esta pestaña.',
+    finishingTitle: 'Terminando la conexión…',
+    finishingBody: 'Mango está guardando tu conexión con {{service}}.',
     expiredTitle: 'El enlace venció',
     expiredBefore: 'Vuelve a preguntar para conectar, o hazlo desde ',
     expiredAfter: '.',
@@ -95,49 +129,51 @@ export const connections = {
     open: 'Abrir enlace',
     openAnyway: 'Abrir de todas formas',
   },
+  // The return page (design `RemoteReturn`, round 24, D100): a tab of its own, full screen.
   ret: {
-    crumb: 'Mis conexiones',
     from: '· vuelta desde {{idp}}',
     brand: 'Mango',
-    finishing: {
+    relaying: {
       title: 'Terminando la conexión…',
-      body: 'Mango está guardando tu conexión con {{service}}. No cierres esta página.',
-      bodyUnnamed: 'Mango está guardando tu conexión. No cierres esta página.',
+      body: 'Mango la termina en la pestaña donde pulsaste «Conectar». No cierres esta página.',
     },
     ok: {
-      title: 'Listo, tu cuenta de {{service}} está conectada.',
-      body: 'Vuelve al chat y repite tu pregunta.',
+      title: 'Listo, vuelve a tu pestaña de Mango',
+      body: 'Tu cuenta de {{service}} quedó conectada. El agente sigue ahí con tu pregunta. Puedes cerrar esta pestaña.',
+      bodyUnnamed:
+        'Tu cuenta quedó conectada. El agente sigue ahí con tu pregunta. Puedes cerrar esta pestaña.',
     },
-    expired: { title: 'El enlace venció', body: 'Vuelve a pedir la conexión.' },
-    lost: {
-      title: 'Vuelve a pulsar «Conectar»',
-      body: 'No se pudo terminar la conexión: la página se recargó o tuviste que volver a iniciar sesión en Mango. Tu cuenta no quedó conectada.',
+    orphan: {
+      title: 'Pídelo de nuevo desde Mango',
+      body: 'La conexión solo se termina en la pestaña de Mango donde pulsaste «Conectar», y esa pestaña se cerró o cambió de sesión. Tu cuenta no quedó conectada.',
     },
-    nosession: {
-      title: 'Inicia sesión en Mango para continuar',
-      body: 'Este navegador no tiene tu sesión de Mango abierta. Después de ingresar, vuelve a pulsar «Conectar» donde empezaste.',
-    },
-    notyours: {
-      title: 'Este enlace no es tuyo',
-      body: 'Pide la conexión desde tu propia sesión.',
+    expired: {
+      title: 'El enlace venció',
+      body: 'Pasaron más de 10 minutos desde que pulsaste «Conectar». Vuelve a pulsarlo en Mango.',
     },
     denied: {
       title: '{{idp}} no autorizó la conexión',
-      body: 'Si no fuiste tú quien canceló, consulta con el administrador de {{idp}} de tu empresa.',
+      body: 'Tu cuenta no quedó conectada. Si no fuiste tú quien canceló, consulta con el administrador de {{idp}} de tu empresa.',
     },
     conditional: {
       title: 'Una regla de acceso de tu empresa bloqueó la conexión',
       body: 'El Acceso condicional de {{idp}} no dejó iniciar sesión desde este dispositivo o esta red, o pidió un paso que no se completó. Consulta con el administrador de {{idp}} de tu empresa.',
+    },
+    ambiguous: {
+      title: 'No se pudo saber qué conexión terminar',
+      body: 'Tienes más de una conexión a medias en Mango. Vuelve a pulsar «Conectar» en la que quieras terminar.',
+    },
+    notyours: {
+      title: 'Este enlace no es tuyo',
+      body: 'Pide la conexión desde tu propia sesión de Mango.',
     },
     error: {
       title: 'No se pudo conectar tu cuenta',
       body: 'Inténtalo de nuevo en unos minutos.',
     },
     providerFallback: 'el proveedor',
-    signIn: 'Iniciar sesión',
-    toChat: 'Volver al chat',
-    goChat: 'Ir al chat',
-    toConnections: 'Mis conexiones',
+    closeTab: 'Cerrar esta pestaña',
+    openMango: 'Abrir Mango',
   },
   inbox: {
     type: 'Tarea',

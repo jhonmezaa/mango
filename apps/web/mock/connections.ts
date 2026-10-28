@@ -6,6 +6,8 @@
  * Differences with the API, on purpose: there is no Gateway or Identity. «Conectar» hands a
  * placeholder AgentCore URL (in the e2e test, the browser is sent from it to the return route) and
  * the return accepts any well-formed `session_id`, except one that says `notyours` or `expired`.
+ * Like AgentCore Identity, the return only closes with the same access token that asked for the
+ * consent URL (D100): another token of the same person is `consent_not_yours`.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -19,8 +21,16 @@ const ROUTE = /^\/me\/connections\/([a-z2-7]{12})\/(connect|disconnect)$/;
 const SESSION_URI = /^urn:ietf:params:oauth:request_uri:[A-Za-z0-9._~-]{1,990}$/;
 
 const connected = new Map<string, string>();
-/** The pending consent of the mock user: one, the latest (as the interceptor keeps it). */
-let pending: { registration: string; expires: number } | null = null;
+/**
+ * The pending consent of the mock user: one, the latest (as the interceptor keeps it), with the
+ * access token it was asked with (null: started by a chat turn, before any «Conectar»).
+ */
+let pending: { registration: string; expires: number; token: string | null } | null = null;
+
+function bearerOf(req: Parameters<ApiHandler>[0]): string | null {
+  const auth = req.headers.authorization ?? '';
+  return auth.startsWith('Bearer ') ? auth.slice(7) : null;
+}
 
 function connectionOf(remote: ReturnType<typeof usableRemotes>[number]) {
   const at = connected.get(remote.id) ?? null;
@@ -54,8 +64,8 @@ export function firstUsableRemote() {
 }
 
 /** A remote tool answered `consent_required`: the interceptor kept a pending consent. */
-export function markConsentPending(registration: string): void {
-  pending = { registration, expires: Date.now() + CONSENT_TTL_MS };
+export function markConsentPending(registration: string, token: string | null = null): void {
+  pending = { registration, expires: Date.now() + CONSENT_TTL_MS, token };
 }
 
 export const handleConnections: ApiHandler = async (req, res, path) => {
@@ -78,7 +88,10 @@ export const handleConnections: ApiHandler = async (req, res, path) => {
       sendError(res, 410, 'consent_expired', 'consent expired');
       return true;
     }
-    if (sessionId.includes('notyours')) {
+    if (
+      sessionId.includes('notyours') ||
+      (pending.token !== null && pending.token !== bearerOf(req))
+    ) {
       sendError(res, 403, 'consent_not_yours', 'not yours');
       return true;
     }
@@ -117,7 +130,7 @@ export const handleConnections: ApiHandler = async (req, res, path) => {
     sendJson(res, 200, { status: 'already_connected' });
     return true;
   }
-  markConsentPending(registration);
+  markConsentPending(registration, bearerOf(req));
   const requestUri = encodeURIComponent(
     `urn:ietf:params:oauth:request_uri:mock-${randomBytes(8).toString('hex')}`,
   );

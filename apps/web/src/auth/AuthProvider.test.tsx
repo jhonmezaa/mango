@@ -6,6 +6,7 @@ import { ApiError } from '../api/errors';
 import type { RuntimeConfig } from '../config/runtimeConfig';
 import type { AuthContextValue } from './AuthContext';
 import { AuthProvider } from './AuthProvider';
+import { holdToken, releaseToken, tokenGeneration } from './consentHold';
 import { CognitoError } from './cognito/api';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
 import { RESTORE_RETRY_DELAYS_MS, type RenewResult, type ServerSession } from './serverSession';
@@ -208,6 +209,31 @@ describe('AuthProvider (session in memory: the server did not take it)', () => {
       await expect(auth().refreshSession()).resolves.toBe(true);
     });
     expect(fake.refresh).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a valid token while a consent waits for its return, and says when it changed (D100)', async () => {
+    const { fake, auth } = await setup();
+    act(() => {
+      auth().acceptTokens(tokens(3600));
+    });
+    const before = tokenGeneration();
+    holdToken(10 * 60_000);
+    await act(async () => {
+      await expect(auth().refreshSession()).resolves.toBe(true);
+    });
+    expect(fake.refresh).not.toHaveBeenCalled();
+    expect(tokenGeneration()).toBe(before);
+    // A token about to expire is still renewed, and the waiting tab learns it changed.
+    act(() => {
+      auth().acceptTokens(tokens(60));
+    });
+    const held = tokenGeneration();
+    await act(async () => {
+      await auth().refreshSession();
+    });
+    expect(fake.refresh).toHaveBeenCalledOnce();
+    expect(tokenGeneration()).toBe(held + 1);
+    releaseToken();
   });
 });
 

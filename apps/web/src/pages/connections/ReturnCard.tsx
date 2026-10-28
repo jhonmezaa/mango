@@ -12,23 +12,28 @@ import {
   type IconProps,
 } from '../../components/icons';
 import { RmTile } from '../remoteMcp/parts';
-import { UNNAMED_RESULTS, type ReturnResult } from './model';
+import type { ReturnResult } from './model';
 
 /** Design `RET`: icon and tone of each result. */
 const LOOK: Record<ReturnResult, [ComponentType<IconProps>, string]> = {
   ok: [CheckIcon, 'green'],
+  orphan: [RefreshIcon, 'amber'],
   expired: [ClockIcon, 'amber'],
-  lost: [RefreshIcon, 'amber'],
-  nosession: [LockIcon, 'muted'],
-  notyours: [LockIcon, 'red'],
   denied: [X2Icon, 'red'],
   conditional: [ShieldIcon, 'amber'],
+  ambiguous: [WarnIcon, 'amber'],
+  notyours: [LockIcon, 'red'],
   error: [WarnIcon, 'amber'],
 };
 
+/** «el proveedor no autorizó…» starts a sentence when the provider is not known. */
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 /**
- * The card of the return from the provider (design remote-views.jsx `RemoteReturn`). `service` is
- * null when Mango cannot know which one the person came back from: the line is then left out.
+ * The card of the return from the provider (design remote-views.jsx `RemoteReturn`). The service
+ * line only for «Listo», once the tab that closed it named the service (D100).
  */
 export function ReturnCard({
   result,
@@ -44,9 +49,10 @@ export function ReturnCard({
   const { t } = useTranslation();
   const [Icon, tone] = LOOK[result];
   const provider = idp ?? t('connections.ret.providerFallback');
+  const named = result === 'ok' && service !== null;
   return (
     <div className="rm-ret" role={result === 'ok' ? 'status' : 'alert'}>
-      {service && !UNNAMED_RESULTS.has(result) && (
+      {named && (
         <div className="rm-ret-svc flex items-center gap-2">
           <RmTile profile={{ name: service }} />
           <span>{service}</span>
@@ -57,38 +63,31 @@ export function ReturnCard({
         <Icon size={18} />
       </span>
       <h1 className="rm-ret-t">
-        {t(`connections.ret.${result}.title`, { service: service ?? '', idp: provider })}
+        {sentence(t(`connections.ret.${result}.title`, { idp: provider }))}
       </h1>
-      <p className="rm-ret-b">{t(`connections.ret.${result}.body`, { idp: provider })}</p>
+      <p className="rm-ret-b">
+        {result === 'ok' && !named
+          ? t('connections.ret.ok.bodyUnnamed')
+          : t(`connections.ret.${result}.body`, { idp: provider, service: service ?? '' })}
+      </p>
       <div className="flex flex-wrap justify-center gap-2">{children}</div>
     </div>
   );
 }
 
 /**
- * «Terminando la conexión…» (design `RemoteReturn`, phase `finishing`), while mango-api closes the
- * consent. The service line only when the person's connections already say which one it is.
+ * «Terminando la conexión…» (design `RemoteReturn`, phase `relaying`), while the tab that pressed
+ * «Conectar» closes the consent. It does not name the service: it does not know it yet.
  */
-export function FinishingCard({ service, idp }: { service: string | null; idp: string | null }) {
+export function RelayingCard() {
   const { t } = useTranslation();
   return (
     <div className="rm-ret" role="status" aria-busy="true">
-      {service && (
-        <div className="rm-ret-svc flex items-center gap-2">
-          <RmTile profile={{ name: service }} />
-          <span>{service}</span>
-          {idp && <span className="mk-meta">{t('connections.ret.from', { idp })}</span>}
-        </div>
-      )}
       <span className="rm-ret-ic muted">
         <span className="g-spin" aria-hidden="true" />
       </span>
-      <h1 className="rm-ret-t">{t('connections.ret.finishing.title')}</h1>
-      <p className="rm-ret-b">
-        {service
-          ? t('connections.ret.finishing.body', { service })
-          : t('connections.ret.finishing.bodyUnnamed')}
-      </p>
+      <h1 className="rm-ret-t">{t('connections.ret.relaying.title')}</h1>
+      <p className="rm-ret-b">{t('connections.ret.relaying.body')}</p>
     </div>
   );
 }

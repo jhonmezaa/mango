@@ -2,18 +2,22 @@ import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router';
+import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../../api/client';
 import { ApiError } from '../../api/errors';
+import { noteNewToken, resetConsentHold, tokenHeld } from '../../auth/consentHold';
 import { ChatMarkdown } from '../../components/ChatMarkdown';
-import { sessionValue } from '../../test/fixtures';
+import { authValue, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { ConnectCard } from './ConnectCard';
 import { useConnections } from './ConnectionsContext';
 import { ConnectionsProvider } from './ConnectionsProvider';
+import { CONSENT_CHANNEL, type ConsentMessage } from './consentChannel';
 import { ConnectReturnPage } from './ConnectReturnPage';
 import { captureConsentReturn, resetConsentReturn } from './consentReturn';
+import { resetReturnRelay } from './returnRelay';
 import type { Connection } from './model';
 import { consentNavigation } from './navigation';
 import { connection } from './testFixtures';
@@ -46,10 +50,15 @@ function OpenMine() {
   );
 }
 
-function renderWith(children: ReactNode, call: ReturnType<typeof vi.fn>, path = '/') {
+function renderWith(
+  children: ReactNode,
+  call: ReturnType<typeof vi.fn>,
+  path = '/',
+  refreshSession = vi.fn(() => Promise.resolve(true)),
+) {
   const api = { call } as unknown as ApiClient;
   render(
-    <TestProviders session={sessionValue({ api })} path={path}>
+    <TestProviders session={sessionValue({ api })} auth={authValue({ refreshSession })} path={path}>
       <ConnectionsProvider>
         <Routes>
           <Route path="conexiones/vuelta" element={children} />
@@ -61,9 +70,40 @@ function renderWith(children: ReactNode, call: ReturnType<typeof vi.fn>, path = 
   );
 }
 
+/** The tab «Conectar» opens for the provider (D100), as a double. */
+function fakeTab() {
+  const tab = { go: vi.fn(), close: vi.fn() };
+  const open = vi.spyOn(consentNavigation, 'open').mockReturnValue(tab);
+  return { tab, open };
+}
+
+/** The other end of the channel: what a return page (or another tab) sends and hears. */
+function otherPage() {
+  const channel = new BroadcastChannel(CONSENT_CHANNEL);
+  const heard: ConsentMessage[] = [];
+  channel.onmessage = (event: MessageEvent<ConsentMessage>) => {
+    heard.push(event.data);
+  };
+  return {
+    heard,
+    send(message: ConsentMessage) {
+      channel.postMessage(message);
+    },
+    close() {
+      channel.close();
+    },
+  };
+}
+
+const REF = '0b8f3c1e-5d2a-4c9e-8f1a-2b3c4d5e6f70';
+const consentRequired = () =>
+  Promise.resolve({ status: 'consent_required', authorization_url: CONSENT, expires_at: null });
+
 afterEach(() => {
   vi.restoreAllMocks();
   resetConsentReturn();
+  resetReturnRelay();
+  resetConsentHold();
 });
 
 describe('Mis conexiones', () => {
@@ -82,6 +122,12 @@ describe('Mis conexiones', () => {
         organization: 'exp',
         status: 'secret_expired',
       }),
+      connection({
+        registration_id: 'opqrstuvwx45',
+        organization: 'exp-on',
+        status: 'secret_expired',
+        connected_at: new Date().toISOString(),
+      }),
     ]);
     renderWith(<OpenMine />, call);
     await userEvent.click(screen.getByRole('button', { name: 'open mine' }));
@@ -91,16 +137,17 @@ describe('Mis conexiones', () => {
     expect(
       within(dialog).getByText('Un administrador deshabilitó Azure DevOps.'),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText(/tiene que renovar la configuración/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/^Por ahora no se puede conectar/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/^Tu cuenta sigue conectada, pero/)).toBeInTheDocument();
     // Only the row that is not connected can connect. «Desconectar» (D97) on the connected row
-    // and, by the owner's choice, on the one with the app's secret expired.
+    // and on the connected one with the app's secret expired (design round 24).
     expect(within(dialog).getAllByRole('button', { name: 'Conectar' })).toHaveLength(1);
     expect(within(dialog).getAllByRole('button', { name: 'Desconectar' })).toHaveLength(2);
     expect(within(dialog).getByText(/vas a iniciar sesión en Microsoft/)).toBeInTheDocument();
   });
 
   it('says an account was already connected without leaving (A6)', async () => {
-    const go = vi.spyOn(consentNavigation, 'go').mockImplementation(() => undefined);
+    const { tab } = fakeTab();
     const list = [connection()];
     const call = apiWith(list, {
       connectMyAccount: () => {
@@ -114,34 +161,58 @@ describe('Mis conexiones', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Mis conexiones' });
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Conectar' }));
     expect(await within(dialog).findByText('Tu cuenta ya estaba conectada.')).toBeInTheDocument();
-    expect(go).not.toHaveBeenCalled();
+    expect(tab.go).not.toHaveBeenCalled();
+    expect(tab.close).toHaveBeenCalled();
+    expect(tokenHeld()).toBe(false);
     expect(call).toHaveBeenCalledWith('connectMyAccount', { path: { reg: REG }, body: {} });
   });
 
-  it('leaves for the consent URL in the same tab only when it is the AgentCore host', async () => {
-    const go = vi.spyOn(consentNavigation, 'go').mockImplementation(() => undefined);
-    const open = vi.spyOn(window, 'open');
-    const call = apiWith([connection()], {
-      connectMyAccount: () =>
-        Promise.resolve({
-          status: 'consent_required',
-          authorization_url: CONSENT,
-          expires_at: null,
-        }),
+  it('renews the session, opens the provider in another tab and waits (D100)', async () => {
+    const { tab } = fakeTab();
+    const order: string[] = [];
+    const refreshSession = vi.fn(() => {
+      order.push('refresh');
+      return Promise.resolve(true);
     });
-    renderWith(<OpenMine />, call);
+    const call = apiWith([connection()], {
+      connectMyAccount: () => {
+        order.push('connect');
+        return consentRequired();
+      },
+    });
+    renderWith(<OpenMine />, call, '/', refreshSession);
     await userEvent.click(screen.getByRole('button', { name: 'open mine' }));
     const dialog = await screen.findByRole('dialog', { name: 'Mis conexiones' });
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Conectar' }));
     await waitFor(() => {
-      expect(go).toHaveBeenCalledWith(CONSENT);
+      expect(tab.go).toHaveBeenCalledWith(CONSENT);
     });
-    expect(within(dialog).getByText('Abriendo Microsoft…')).toBeInTheDocument();
-    expect(open).not.toHaveBeenCalled();
+    // The token the consent is bound to is the renewed one, kept until the return (D100 (3)).
+    expect(order).toEqual(['refresh', 'connect']);
+    expect(tokenHeld()).toBe(true);
+    expect(
+      await within(dialog).findByText(
+        'Inicia sesión en Microsoft en la otra pestaña. Al terminar, la conexión se completa aquí.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /Abrir de nuevo/ })).toBeInTheDocument();
+  });
+
+  it('says a blocked tab like a failed «Conectar»', async () => {
+    vi.spyOn(consentNavigation, 'open').mockReturnValue(null);
+    const call = apiWith([connection()], { connectMyAccount: consentRequired });
+    renderWith(<OpenMine />, call);
+    await userEvent.click(screen.getByRole('button', { name: 'open mine' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Mis conexiones' });
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Conectar' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'No se pudo iniciar la conexión',
+    );
+    expect(call).not.toHaveBeenCalledWith('connectMyAccount', expect.anything());
   });
 
   it('never opens a consent URL of another host', async () => {
-    const go = vi.spyOn(consentNavigation, 'go').mockImplementation(() => undefined);
+    const { tab } = fakeTab();
     const call = apiWith([connection()], {
       connectMyAccount: () =>
         Promise.resolve({
@@ -158,7 +229,9 @@ describe('Mis conexiones', () => {
       'No se pudo iniciar la conexión. Inténtalo de nuevo en unos segundos.',
     );
     expect(within(dialog).getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
-    expect(go).not.toHaveBeenCalled();
+    expect(tab.go).not.toHaveBeenCalled();
+    expect(tab.close).toHaveBeenCalled();
+    expect(tokenHeld()).toBe(false);
   });
 
   it('disconnects with the design dialog (D97) and says when it cannot confirm it', async () => {
@@ -235,15 +308,20 @@ describe('ConnectCard', () => {
         return Promise.resolve({ status: 'already_connected' });
       },
     });
+    fakeTab();
     renderWith(<ConnectCard registrationId={REG} startedAt={Date.now()} />, call);
     await userEvent.click(await screen.findByRole('button', { name: /Conectar/ }));
-    expect(await screen.findByText('Conectado. Vuelve a enviar tu pregunta.')).toBeInTheDocument();
+    expect(await screen.findByText('Conectado')).toBeInTheDocument();
+    expect(
+      screen.getByText('Tu cuenta de Azure DevOps quedó conectada. Vuelve a enviar tu pregunta.'),
+    ).toBeInTheDocument();
   });
 
   it('says the design text of a refused connect', async () => {
     const call = apiWith([connection()], {
       connectMyAccount: () => Promise.reject(new ApiError(409, 'remote_disabled', 'x')),
     });
+    fakeTab();
     renderWith(<ConnectCard registrationId={REG} startedAt={Date.now()} />, call);
     await userEvent.click(await screen.findByRole('button', { name: /Conectar/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -261,7 +339,101 @@ describe('ConnectCard', () => {
   });
 });
 
-describe('the return from the provider', () => {
+describe('the tab that pressed «Conectar» closes the consent (D100)', () => {
+  /** A card waiting for its return, with the API's callback answering `complete`. */
+  async function waitingCard(complete: (input: unknown) => Promise<unknown>) {
+    fakeTab();
+    const list = [connection()];
+    const call = apiWith(list, {
+      connectMyAccount: consentRequired,
+      completeConsent: (input) =>
+        complete(input).then((done) => {
+          list[0] = connection({ status: 'connected', connected_at: new Date().toISOString() });
+          return done;
+        }),
+    });
+    renderWith(<ConnectCard registrationId={REG} startedAt={Date.now()} />, call);
+    await userEvent.click(await screen.findByRole('button', { name: /Conectar/ }));
+    expect(
+      await screen.findByText('Inicia sesión en Microsoft en la otra pestaña'),
+    ).toBeInTheDocument();
+    return call;
+  }
+
+  const connected = () =>
+    Promise.resolve({ status: 'connected', registration_id: REG, profile_id: 'azure-devops' });
+
+  it('closes it with its own token and tells the return page the service', async () => {
+    const call = await waitingCard(connected);
+    const page = otherPage();
+    page.send({ kind: 'return', ref: REF, session_id: SESSION });
+    expect(await screen.findByText('Conectado')).toBeInTheDocument();
+    expect(call).toHaveBeenCalledWith('completeConsent', { body: { session_id: SESSION } });
+    await waitFor(() => {
+      expect(page.heard).toEqual([
+        { kind: 'claimed', ref: REF },
+        { kind: 'result', ref: REF, result: 'ok', service: 'Azure DevOps', idp: 'Microsoft' },
+      ]);
+    });
+    expect(tokenHeld()).toBe(false);
+    page.close();
+  });
+
+  it('does not try with another token: «Pídelo de nuevo» (D100 (3))', async () => {
+    const call = await waitingCard(connected);
+    act(() => {
+      noteNewToken();
+    });
+    const page = otherPage();
+    page.send({ kind: 'return', ref: REF, session_id: SESSION });
+    expect(await screen.findByText('No se pudo terminar la conexión')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Tu sesión de Mango cambió mientras iniciabas sesión/),
+    ).toBeInTheDocument();
+    expect(call).not.toHaveBeenCalledWith('completeConsent', expect.anything());
+    await waitFor(() => {
+      expect(page.heard).toContainEqual({ kind: 'result', ref: REF, result: 'orphan' });
+    });
+    page.close();
+  });
+
+  it('stays silent and waiting when Identity says it is not its consent', async () => {
+    await waitingCard(() => Promise.reject(new ApiError(403, 'consent_not_yours', 'x')));
+    const page = otherPage();
+    page.send({ kind: 'return', ref: REF, session_id: SESSION });
+    await waitFor(() => {
+      expect(page.heard).toContainEqual({ kind: 'result', ref: REF, result: 'notyours' });
+    });
+    expect(screen.getByText('Inicia sesión en Microsoft en la otra pestaña')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    page.close();
+  });
+
+  it('shows the provider refusing it in the card', async () => {
+    const call = await waitingCard(connected);
+    const page = otherPage();
+    page.send({ kind: 'provider', result: 'denied' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Microsoft no autorizó la conexión');
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+    expect(call).not.toHaveBeenCalledWith('completeConsent', expect.anything());
+    page.close();
+  });
+
+  it('ignores the return in a tab that is not waiting, and anything malformed', async () => {
+    const call = apiWith([connection()], { completeConsent: connected });
+    renderWith(<ConnectCard registrationId={REG} startedAt={Date.now()} />, call);
+    await screen.findByText('Conecta tu cuenta de Azure DevOps');
+    const page = otherPage();
+    page.send({ kind: 'return', ref: REF, session_id: SESSION });
+    page.send({ kind: 'return', ref: REF, session_id: 'https://evil.example/x' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(page.heard).toEqual([]);
+    expect(call).not.toHaveBeenCalledWith('completeConsent', expect.anything());
+    page.close();
+  });
+});
+
+describe('the return page (D100)', () => {
   function capture(search: string) {
     captureConsentReturn(
       { pathname: '/conexiones/vuelta', search, hash: '' },
@@ -269,54 +441,109 @@ describe('the return from the provider', () => {
     );
   }
 
-  it("closes the consent with the person's session and says it is connected", async () => {
+  /** A waiting tab that answers with `answer` (or never, with `null`). */
+  function waitingTab(answer: string | null) {
+    const channel = new BroadcastChannel(CONSENT_CHANNEL);
+    const heard: ConsentMessage[] = [];
+    channel.onmessage = (event: MessageEvent<ConsentMessage>) => {
+      heard.push(event.data);
+      const message = event.data;
+      if (message.kind !== 'return' || answer === null) return;
+      channel.postMessage({ kind: 'claimed', ref: message.ref });
+      channel.postMessage(
+        answer === 'ok'
+          ? {
+              kind: 'result',
+              ref: message.ref,
+              result: 'ok',
+              service: 'Azure DevOps',
+              idp: 'Microsoft',
+            }
+          : { kind: 'result', ref: message.ref, result: answer },
+      );
+    };
+    return {
+      heard,
+      close: () => {
+        channel.close();
+      },
+    };
+  }
+
+  it('hands only the session id to the tab, says «Listo» and closes itself', async () => {
+    const close = vi.spyOn(window, 'close').mockImplementation(() => undefined);
     capture(`?session_id=${SESSION}`);
-    const call = apiWith([connection({ status: 'connected' })], {
-      completeConsent: () =>
-        Promise.resolve({ status: 'connected', registration_id: REG, profile_id: 'azure-devops' }),
-    });
+    const tab = waitingTab('ok');
+    const call = apiWith([]);
     renderWith(<ConnectReturnPage />, call, '/conexiones/vuelta');
+    expect(screen.getByRole('heading', { name: 'Terminando la conexión…' })).toBeInTheDocument();
     expect(
-      await screen.findByRole('heading', {
-        name: 'Listo, tu cuenta de Azure DevOps está conectada.',
-      }),
+      await screen.findByRole('heading', { name: 'Listo, vuelve a tu pestaña de Mango' }),
     ).toBeInTheDocument();
-    expect(call).toHaveBeenCalledWith('completeConsent', { body: { session_id: SESSION } });
-    expect(call.mock.calls.filter(([operation]) => operation === 'completeConsent')).toHaveLength(
-      1,
+    expect(screen.getByText('· vuelta desde Microsoft')).toBeInTheDocument();
+    const [sent] = tab.heard;
+    // Only the session id and the page's reference.
+    expect(sent).toMatchObject({ kind: 'return', session_id: SESSION });
+    expect(Object.keys(sent ?? {}).sort()).toEqual(['kind', 'ref', 'session_id']);
+    // The page never calls mango-api, and keeps nothing.
+    expect(call).not.toHaveBeenCalled();
+    expect(window.sessionStorage.length + window.localStorage.length).toBe(0);
+    await waitFor(
+      () => {
+        expect(close).toHaveBeenCalled();
+      },
+      { timeout: 3000 },
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Mis conexiones' }));
-    expect(await screen.findByRole('dialog', { name: 'Mis conexiones' })).toBeInTheDocument();
-    expect(screen.getByTestId('where')).toHaveTextContent(/^\/$/);
+    tab.close();
+  });
+
+  it('asks to do it again when no tab took it', async () => {
+    capture(`?session_id=${SESSION}`);
+    const tab = waitingTab(null);
+    renderWith(<ConnectReturnPage />, apiWith([]), '/conexiones/vuelta');
+    expect(
+      await screen.findByRole(
+        'heading',
+        { name: 'Pídelo de nuevo desde Mango' },
+        { timeout: 5000 },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Abrir Mango' })).toBeInTheDocument();
+    tab.close();
   });
 
   it.each([
-    [new ApiError(410, 'consent_expired', 'x'), 'El enlace venció'],
-    [new ApiError(403, 'consent_not_yours', 'x'), 'Este enlace no es tuyo'],
-    [new ApiError(502, 'identity_unavailable', 'x'), 'No se pudo conectar tu cuenta'],
-  ])('says %s with the design text', async (error, title) => {
+    ['expired', 'El enlace venció'],
+    ['ambiguous', 'No se pudo saber qué conexión terminar'],
+    ['notyours', 'Este enlace no es tuyo'],
+    ['error', 'No se pudo conectar tu cuenta'],
+  ])('says what the tab answered: %s', async (answer, title) => {
     capture(`?session_id=${SESSION}`);
-    const call = apiWith([connection()], { completeConsent: () => Promise.reject(error) });
-    renderWith(<ConnectReturnPage />, call, '/conexiones/vuelta');
+    const tab = waitingTab(answer);
+    renderWith(<ConnectReturnPage />, apiWith([]), '/conexiones/vuelta');
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
-  });
-
-  it('asks to press «Conectar» again when nothing came back in memory, unnamed', async () => {
-    const call = apiWith([connection()]);
-    renderWith(<ConnectReturnPage />, call, '/conexiones/vuelta');
-    expect(
-      await screen.findByRole('heading', { name: 'Vuelve a pulsar «Conectar»' }),
-    ).toBeInTheDocument();
     expect(screen.queryByText('· vuelta desde Microsoft')).not.toBeInTheDocument();
-    expect(call).not.toHaveBeenCalledWith('completeConsent', expect.anything());
+    tab.close();
   });
 
-  it('says the provider did not authorize it', async () => {
-    capture('?error=access_denied');
-    renderWith(<ConnectReturnPage />, apiWith([connection()]), '/conexiones/vuelta');
+  it('asks to do it again after a reload, when nothing came back in memory', async () => {
+    renderWith(<ConnectReturnPage />, apiWith([]), '/conexiones/vuelta');
     expect(
-      await screen.findByRole('heading', { name: 'Microsoft no autorizó la conexión' }),
+      await screen.findByRole('heading', { name: 'Pídelo de nuevo desde Mango' }),
     ).toBeInTheDocument();
+  });
+
+  it('says the provider did not authorize it, and tells the waiting tab', async () => {
+    capture('?error=access_denied');
+    const tab = waitingTab(null);
+    renderWith(<ConnectReturnPage />, apiWith([]), '/conexiones/vuelta');
+    expect(
+      await screen.findByRole('heading', { name: 'El proveedor no autorizó la conexión' }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(tab.heard).toEqual([{ kind: 'provider', result: 'denied' }]);
+    });
+    tab.close();
   });
 });
 
