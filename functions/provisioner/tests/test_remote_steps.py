@@ -284,7 +284,11 @@ def _as_agentcore_returns_it(target: dict[str, Any]) -> dict[str, Any]:
     oauth["scopes"] = list(reversed(oauth["scopes"]))
     target["targetConfiguration"]["mcp"]["mcpServer"]["listingMode"] = "DEFAULT"
     metadata = target["metadataConfiguration"]
-    metadata["allowedRequestHeaders"] = [h.lower() for h in metadata["allowedRequestHeaders"]]
+    metadata["allowedRequestHeaders"] = [
+        *(h.lower() for h in metadata["allowedRequestHeaders"]),
+        # AgentCore's own, on a Gateway with a policy engine (seen on 2026-10-28).
+        "x-amzn-bedrock-agentcore-policy-session-id",
+    ]
     return target
 
 
@@ -312,6 +316,21 @@ def test_a_ready_target_that_differs_names_the_fields_only(
     logged = [r.getMessage() for r in caplog.records if "target_differs" in r.getMessage()]
     assert logged and json.loads(logged[-1])["differences"] == ["scopes"]
     assert "openid" not in logged[-1]
+
+
+def test_a_ready_target_with_a_header_mango_did_not_allow_differs(
+    lab: RemoteLab, caplog: pytest.LogCaptureFixture
+) -> None:
+    def extra_header(target: dict[str, Any]) -> dict[str, Any]:
+        target = _as_agentcore_returns_it(target)
+        target["metadataConfiguration"]["allowedRequestHeaders"].append("Authorization")
+        return target
+
+    lab.agentcore.target_read_back = extra_header
+    with pytest.raises(AssertionError, match="check_target never ready"):
+        _enable(lab)
+    logged = [r.getMessage() for r in caplog.records if "target_differs" in r.getMessage()]
+    assert logged and json.loads(logged[-1])["differences"] == ["headers"]
 
 
 # --- Compensation -------------------------------------------------------------------------

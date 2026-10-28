@@ -40,6 +40,7 @@ ALLOWED_HEADERS = (remote_mcp.READONLY_HEADER, remote_mcp.TOOLSETS_HEADER)
 _NOT_FOUND = "ResourceNotFoundException"
 _OAUTH = "OAUTH"
 _GRANT = "AUTHORIZATION_CODE"
+_AGENTCORE_HEADER_PREFIX = "x-amzn-bedrock-agentcore-"
 _TARGET_BUSY = frozenset({"CREATING", "UPDATING", "SYNCHRONIZING"})
 _TARGET_FAILED = frozenset({"FAILED", "UPDATE_UNSUCCESSFUL", "SYNCHRONIZE_UNSUCCESSFUL"})
 # A target waiting for an administrator's authorization cannot even be deleted (finding of
@@ -185,8 +186,14 @@ class RemoteGateway:
         want = desired["credentialProviderConfigurations"][0]["credentialProvider"][
             "oauthCredentialProvider"
         ]
-        # Header names are case-insensitive.
-        headers = (target.get("metadataConfiguration") or {}).get("allowedRequestHeaders") or []
+        # Header names are case-insensitive. AgentCore adds its own to a Gateway with a policy
+        # engine (``x-amzn-bedrock-agentcore-policy-session-id``, seen on 2026-10-28): only
+        # those may come on top of Mango's.
+        headers = {
+            str(h).lower()
+            for h in (target.get("metadataConfiguration") or {}).get("allowedRequestHeaders") or []
+        }
+        ours = {h.lower() for h in ALLOWED_HEADERS}
         checks = {
             "endpoint": mcp.get("endpoint") == wanted["endpoint"],
             "schema": same_schema,
@@ -194,8 +201,8 @@ class RemoteGateway:
             "scopes": sorted(oauth.get("scopes") or []) == sorted(want["scopes"]),
             "grant": oauth.get("grantType") == want["grantType"],
             "return_url": oauth.get("defaultReturnUrl") == want["defaultReturnUrl"],
-            "headers": sorted(str(h).lower() for h in headers)
-            == sorted(h.lower() for h in ALLOWED_HEADERS),
+            "headers": ours <= headers
+            and all(h.startswith(_AGENTCORE_HEADER_PREFIX) for h in headers - ours),
         }
         return [name for name, same in checks.items() if not same]
 
