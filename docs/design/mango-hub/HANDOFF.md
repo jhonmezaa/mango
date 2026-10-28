@@ -957,4 +957,50 @@ El producto ya los construyó (rondas 22 y 23); siguen apagados por defecto hast
 
 **Panel de demo** (nuevos): registro › «Cambio de grupos · pidió Usuario 6 / pediste tú»; «al pulsar «Conectar»» (error, identidad, demasiados intentos); «al desconectar» (no se confirma); «Vuelta desde Microsoft» › terminando, se perdió el dato, canceló; «Bandeja · tarea con servicio externo»; «Builder · tools de un servicio fuera de tus grupos»; «Revisión · quien editó no está en los grupos del servicio»; «Compartir · el agente usa Azure DevOps»; «Chat · «Qué puede usar» al abrirlo»; Playground › «Dos skills ya no aprobadas»; Builder › error «Servicio externo fuera de tus grupos».
 
-**Pendiente del producto**: qué devuelve cancelar en Microsoft; confirmar «Vuelve a pulsar «Conectar»» para el dato perdido; si el perfil agregará descripción, requisitos y descripción de permisos.
+**Pendiente del producto**: *sustituido, ver «Ronda 24 · MCP remotos (2026-10-28)»*.
+
+
+## Ronda 24 · MCP remotos (2026-10-28)
+Respuesta al contexto de la ronda 24. Archivos: `remote-core.jsx`, `remote-views.jsx`, `app.jsx` (panel de demo y vuelta a pantalla completa). Solo en «Diseño completo».
+
+### 1. Se aceptan las diferencias de la web
+- **Nombre del servicio**: sale del perfil; si no se sabe, «un servicio externo». Vale para `remote_not_usable` y para todo texto con {servicio}.
+- **Permisos en {proveedor}**: una línea por recurso con sus permisos como chips, como trae el perfil (`Azure DevOps MCP` · `.default (delegado, lectura)`; `Microsoft Entra` · `offline_access`). Se quitó «delegados · de lectura». Se quitaron los `vso.*` de ejemplo.
+- **«Compartir»**: sigue en Próximamente; el aviso ámbar de Builder › Tools cubre `remote_audience_outside_groups`. El aviso dibujado en «Compartir» queda para cuando exista.
+
+### 2. La vuelta de Microsoft avisa a la pestaña que pidió «Conectar» (D100)
+- **La pestaña que pidió «Conectar»** (tarjeta del chat y del Playground, fila de Mis conexiones): «Abriendo {proveedor}…» → **esperando**: «Inicia sesión en {proveedor} en la otra pestaña» · «Al terminar, la conexión se completa aquí. No cierres esta pestaña.», con «Abrir de nuevo» (por si cerró la de Microsoft) y la cuenta atrás → **«Terminando la conexión…»** · «Mango está guardando tu conexión con {servicio}.» → **«Conectado»** · «Tu cuenta de {servicio} quedó conectada. El agente sigue con tu pregunta.». El agente sigue solo: no se vuelve a enviar la pregunta (en la demo la respuesta aparece debajo de la tarjeta). Mis conexiones se actualiza sola.
+- **No se pudo terminar** (en la tarjeta y en la fila, rojo, botón «Reintentar», la cuenta atrás sigue): `session_changed` «No se pudo terminar la conexión» · «Tu sesión de Mango cambió mientras iniciabas sesión en {proveedor}. Vuelve a pulsar «Conectar».»; no autorizó / canceló: «{proveedor} no autorizó la conexión» · «Tu cuenta no quedó conectada. Si no fuiste tú quien canceló, consulta con el administrador de {proveedor} de tu empresa.»; Acceso condicional: «Una regla de acceso de tu empresa bloqueó la conexión» · «Consulta con el administrador de {proveedor} de tu empresa.»; resto: «No se pudo conectar tu cuenta» · «Inténtalo de nuevo en unos minutos.». Enlace de 10 min vencido: la tarjeta pasa a «El enlace venció».
+- **La vista de vuelta** (`connect-return`): siempre a pantalla completa con la marca arriba, fuera del marco de la app (es una pestaña auxiliar). Primero, spinner: «Terminando la conexión…» · «Mango la termina en la pestaña donde pulsaste «Conectar». No cierres esta página.». No nombra el servicio hasta que la otra pestaña confirma.
+  - Hecho: servicio arriba + «Listo, vuelve a tu pestaña de Mango» · «Tu cuenta de {servicio} quedó conectada. El agente sigue ahí con tu pregunta. Puedes cerrar esta pestaña.» · «Cerrar esta pestaña». **Si la abrió Mango** (`window.opener`), muestra «Listo…» unos 2 s y se cierra sola.
+  - Sin pestaña que la termine (se cerró, o su sesión cambió; reemplaza a «Vuelve a pulsar «Conectar»»): «Pídelo de nuevo desde Mango» · «La conexión solo se termina en la pestaña de Mango donde pulsaste «Conectar», y esa pestaña se cerró o cambió de sesión. Tu cuenta no quedó conectada.» · «Abrir Mango». La vuelta espera la respuesta unos 3 s antes de mostrarlo.
+  - `consent_ambiguous` (texto propio): «No se pudo saber qué conexión terminar» · «Tienes más de una conexión a medias en Mango. Vuelve a pulsar «Conectar» en la que quieras terminar.». Con D100 casi no debería pasar: la pestaña sabe qué pidió.
+  - Los resultados de Microsoft (canceló, no autorizó, Acceso condicional, venció) se muestran en la vuelta y también se avisan a la pestaña, que los muestra en la tarjeta. «Cancelaste el inicio de sesión» ya no nombra el servicio y dice «… desde Mango».
+  - Botón de todos los errores: «Abrir Mango».
+- **Varias pestañas de Mango**: solo la que pidió «Conectar» responde y termina; las demás no muestran nada (Mis conexiones se refresca al abrirlo).
+- **Sin sesión**: con D100 la vuelta no necesita sesión para avisar, así que esta pantalla no debería salir. Si sale, texto que sirve para los dos casos (formulario de Mango o SSO): «Inicia sesión en Mango para continuar» · «Este navegador no tiene tu sesión de Mango abierta. Ingresa: si Mango puede, termina la conexión solo; si no, te pide que vuelvas a pulsar «Conectar».».
+
+### 3. «Desconectar» con el secreto de la app vencido
+- Conectada: «Tu cuenta sigue conectada, pero los agentes no pueden leer {servicio} hasta que un administrador renueve su configuración.» + «Desconectar» (secundario). Sin conectar: el texto de siempre, sin botón (no hay nada que quitar).
+
+### 4. Bandeja · `remoteGone` sin el nombre del servicio
+- «Tu tarea no pudo leer un servicio externo» · «La tarea "{tarea}" usa un servicio externo que ya no está en tus conexiones: lo deshabilitaron o ya no es de tus grupos. Va a fallar mientras el agente use sus tools.» · «Ver tareas». Ya no depende de que el aviso traiga el nombre (si lo trae, se pone en lugar de «un servicio externo»).
+
+### 5. Servicios externos apagados en la instalación (`RemoteMcpEnabled`)
+- Lo dice el perfil. Aviso ámbar arriba de la pestaña «Servicios externos», de cada ficha y de Ajustes › Conectividad: «Los servicios externos están apagados en esta instalación» · «Los enciende quien administra AWS con el parámetro `RemoteMcpEnabled` de la instalación. Mientras tanto puedes ver las fichas, pero no habilitar ni cambiar nada.».
+- Tarjeta del catálogo: insignia gris «Apagado en la instalación» en lugar del estado. Ficha: «Habilitar para una organización» desactivado + «Apagado en la instalación». En un registro, el pie solo dice «Apagado en la instalación: no se puede aprobar ni cambiar nada.».
+- **`remote_disabled`** si aun así llega (el perfil no lo dijo): bajo el botón del formulario, «Los servicios externos están apagados en esta instalación. Los enciende quien administra AWS con un parámetro de la instalación.». También al aprobar y al reintentar.
+- No cubierto: qué ven chat, Playground y Mis conexiones con la función apagada y registros viejos. Propuesta: Mis conexiones vacía con el mismo aviso, sin nombrar el parámetro.
+
+### 6. «Falló»: el texto depende del código, y «Reintentar»
+- Código de plataforma (`target_timeout`, `target_failed`): «No se pudo habilitar {servicio}: el servicio no quedó listo a tiempo» / «…: la plataforma no pudo crear el servicio» · «Fue un fallo de la plataforma, no de los datos de la app de Entra. Reinténtalo: no pide el secreto ni otra aprobación.». «Reintentar» es el principal.
+- Código de la app de Entra (`provider_rejected`, *nombre por confirmar*): «No se pudo habilitar {servicio}: {proveedor} rechazó los datos de la app de Entra» · «Revisa el tenant, el id de la app y el secreto en Entra, y pídelo de nuevo.». «Pedir de nuevo» es el principal.
+- Código desconocido: «No se pudo habilitar {servicio}» · «Reinténtalo. Si vuelve a fallar, revisa los datos de la app de Entra y pídelo de nuevo.».
+- Debajo, en gris: «Código: `{código}`». En Conectividad, el título + «Reinténtalo desde el catálogo.» o «Revisa la app de Entra y pídelo de nuevo.».
+- **«Reintentar»** (`POST …/registrations/{id}/retry`, solo desde «Falló»; cualquier admin, también quien pidió): sin confirmación (no cambia nada de lo aprobado ni borra nada). «Reintentando…» → «Creándose» con «Reintentado por {persona}» → «Habilitado» o «Falló». Aviso: «Reintentando · Mango vuelve a crear la conexión». Pie: «Reintentar usa la misma aprobación y no cambia nada de lo aprobado. Pedir de nuevo pide el secreto otra vez y otra aprobación.». Errores bajo los botones: `release_changed` «Esta versión de Mango cambió el perfil de {servicio} desde que se aprobó. Hay que pedirlo de nuevo.»; `busy` «Ya se está reintentando. Espera unos segundos.».
+
+**Panel de demo** (nuevos o cambiados): «Servicios externos · en la instalación» (encendidos, apagados, apagados sin que el perfil lo diga); «código del fallo»; «al reintentar»; «Vuelta desde Microsoft · y lo que ve tu pestaña al pulsar «Conectar»» (la opción elegida abre la vuelta y también decide cómo termina «Conectar» en el chat y en Mis conexiones).
+
+### 7. Sigue abierto (sin cambios en esta ronda)
+- MCP remotos: qué devuelve cancelar en Microsoft (prueba en vivo); nombre real del código de fallo de la app de Entra; chat y Mis conexiones con la función apagada; si el perfil agregará descripción, requisitos y descripción de permisos.
+- De rondas anteriores (lista del contexto de la ronda 24, §5): respuesta cortada por tope y por tiempo, cuota de Bedrock, autoscroll mientras responde, «+» con el primer mensaje sin guardar, dos «Reintentar» en el historial, sesión que no se renueva y error a pantalla completa; 429 dentro de la app, página «Demasiadas solicitudes» y esperas que no son de un minuto; correos rechazados en ingreso y registro; `area_required`; destello de «Otro cambio se está aplicando…» y «Aprobar» a 420 px y en oscuro; «0 resultados»; «Tokens por llamada»; «Sin bucket» no enviado y fuente aprobada que no se pudo leer; 13 de 23 vistas en Próximamente.

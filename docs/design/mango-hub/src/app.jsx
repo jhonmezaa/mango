@@ -129,7 +129,10 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
           <Chips label="Servicios externos · al aprobar" opts={[[null, 'Se crea'], ['fail', 'Falla al crearse']]} value={S.get().simRemoteCreate || null} onPick={(v) => S.set({ simRemoteCreate: v })} />
           <Chips label="Servicios externos · al pedir o aprobar" opts={[[false, 'Funciona'], [true, 'El perfil ya no está en la versión']]} value={!!S.get().simRemoteGone} onPick={(v) => S.set({ simRemoteGone: v })} />
           <Chips label="Chat · servicio externo" opts={[[null, 'Nada'], ['consent', 'Falta conectar la cuenta'], ['expired', 'El enlace venció'], ['read', 'Respuesta que leyó Azure DevOps']]} value={S.get().simRemoteChat || null} onPick={(v) => { S.set({ simRemoteChat: v }); if (v) setView('chat'); }} />
-          <Chips label="Vuelta desde Microsoft" opts={[['ok', 'Conectada'], ['finishing', 'Terminando'], ['expired', 'Venció'], ['lost', 'Se perdió el dato (recarga)'], ['nosession', 'Sin sesión de Mango'], ['cancelled', 'Canceló en Microsoft'], ['notyours', 'Enlace de otra persona'], ['denied', 'Microsoft no autorizó'], ['conditional', 'Acceso condicional'], ['error', 'Error inesperado']]} value={S.get().simRemoteReturn || 'ok'} onPick={(v) => { S.set({ simRemoteReturn: v, remoteReturn: S.get().remoteReturn || { pid: 'azure-devops', from: 'connections' } }); setView('connect-return'); }} />
+          <Chips label="Servicios externos · en la instalación" opts={[[null, 'Encendidos'], ['off', 'Apagados'], ['off-late', 'Apagados · el perfil no lo dijo']]} value={S.get().simRemoteInstall || null} onPick={(v) => S.set({ simRemoteInstall: v })} />
+          <Chips label="Servicios externos · código del fallo" opts={[['target_timeout', 'target_timeout'], ['target_failed', 'target_failed'], ['provider_rejected', 'App de Entra'], ['other', 'Otro']]} value={S.get().simRemoteFail || 'target_timeout'} onPick={(v) => S.set({ simRemoteFail: v, remoteRegs: (S.get().remoteRegs || []).map(r => r.status === 'failed' ? { ...r, failCode: v } : r) })} />
+          <Chips label="Servicios externos · al reintentar" opts={[[null, 'Se crea'], ['fail', 'Falla otra vez'], ['release_changed', 'La versión cambió'], ['busy', 'Ya en curso']]} value={S.get().simRemoteRetry || null} onPick={(v) => S.set({ simRemoteRetry: v })} />
+          <Chips label="Vuelta desde Microsoft · y lo que ve tu pestaña al pulsar «Conectar»" opts={[['ok', 'Conectada'], ['relaying', 'Terminando'], ['orphan', 'Tu pestaña se cerró o cambió de sesión'], ['expired', 'Venció'], ['cancelled', 'Canceló en Microsoft'], ['denied', 'Microsoft no autorizó'], ['conditional', 'Acceso condicional'], ['ambiguous', 'Dos conexiones a medias'], ['notyours', 'Enlace de otra persona'], ['nosession', 'Sin sesión de Mango'], ['error', 'Error inesperado']]} value={S.get().simRemoteReturn || 'ok'} onPick={(v) => { S.set({ simRemoteReturn: v, remoteReturn: S.get().remoteReturn || { pid: 'azure-devops', from: 'connections' } }); setView('connect-return'); }} />
         </>}
         <div className="tweak-row">
           <div className="tweak-label">Simular error</div>
@@ -319,8 +322,8 @@ function App() {
   };
 
   const rmRet = window.useMango(s => s.simRemoteReturn);
-  if (view === 'connect-return' && rmRet === 'nosession' && !S.get().avail && window.RemoteReturn) {
-    return <window.ToastProvider><window.RemoteReturn bare setView={setView} /><TweaksPanel visible={tweaksVisible} onClose={() => setTweaksVisible(false)} settings={settings} setSettings={setSettings} view={view} setView={setView} /></window.ToastProvider>;
+  if (view === 'connect-return' && !S.get().avail && window.RemoteReturn) {
+    return <window.ToastProvider><window.RemoteReturn setView={setView} /><TweaksPanel visible={tweaksVisible} onClose={() => setTweaksVisible(false)} settings={settings} setSettings={setSettings} view={view} setView={setView} /></window.ToastProvider>;
   }
   if (view === 'login') {
     return <>

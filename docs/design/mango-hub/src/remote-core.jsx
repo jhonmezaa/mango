@@ -14,7 +14,8 @@ const PROFILES = [{
     { id: 'pipelines', label: 'Pipelines', tools: ['pipelines_build'] },
     { id: 'code-search', label: 'Búsqueda de código', tools: ['search_code'] },
   ],
-  scopes: { app: 'Azure DevOps MCP', perms: ['vso.project', 'vso.work', 'vso.wiki', 'vso.build', 'vso.code'], extra: ['offline_access'] },
+  // Pares de recurso y permiso, como los trae el perfil. El tipo (delegado, lectura) viene dentro del permiso.
+  scopes: [{ res: 'Azure DevOps MCP', perms: ['.default (delegado, lectura)'] }, { res: 'Microsoft Entra', perms: ['offline_access'] }],
 }];
 // La URL de callback la da AWS al crear la conexión de cada registro. No es una dirección de Mango.
 const REDIRECT = (uuid) => 'https://bedrock-agentcore.us-east-1.amazonaws.com/identities/oauth2/callback/' + (uuid || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '6b1f0c2e-4d7a-4e19-9c3b-' + Math.random().toString(16).slice(2, 14)));
@@ -28,7 +29,7 @@ function seedRegs(kind = 'active', secret = 'd30') {
   if (kind === 'pending-other') return [...hist, { ...base, status: 'pending', by: 'Usuario 6', at: iso(-3 * 36e5) }];
   if (kind === 'pending-mine') return [...hist, { ...base, status: 'pending', by: 'Usuario 1', at: iso(-3 * 36e5) }];
   if (kind === 'creating') return [...hist, { ...base, status: 'creating', by: 'Usuario 6', at: iso(-1 * 36e5), approvedBy: 'Usuario 1', approvedAt: iso(-6e4) }];
-  if (kind === 'failed') return [...hist, { ...base, status: 'failed', by: 'Usuario 6', at: iso(-1 * 36e5), approvedBy: 'Usuario 1', approvedAt: iso(-5 * 6e4) }];
+  if (kind === 'failed') return [...hist, { ...base, status: 'failed', failCode: S.get().simRemoteFail || 'target_timeout', by: 'Usuario 6', at: iso(-1 * 36e5), approvedBy: 'Usuario 1', approvedAt: iso(-5 * 6e4) }];
   if (kind === 'disabled') return [...hist, { ...base, status: 'disabled', secretExp: null, redirect: null, by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', disabledBy: 'Usuario 6', disabledAt: iso(-1 * DAY), reason: 'Pausa mientras se revisan los permisos de la app en Entra' }];
   const act = { ...base, status: 'active', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', approvedAt: iso(-19 * DAY) };
   if (kind === 'scope-other' || kind === 'scope-mine') return [...hist, act, { id: 'RMT-a4e19c0b', kind: 'scope', changes: act.id, profile: act.profile, org: act.org, toolsets: [...act.toolsets, 'pipelines'], groups: ['finops-central', 'mango-agent-creator', 'bu-plataforma'], status: 'pending', by: kind === 'scope-mine' ? 'Usuario 1' : 'Usuario 6', at: iso(-2 * 36e5) }];
@@ -71,9 +72,31 @@ const CONNECT_ERR = {
   identity_unavailable: (p) => ['El servicio de identidad no responde', 'Mango no pudo pedir el inicio de sesión en ' + p.idp + '. Inténtalo de nuevo en unos minutos.'],
   rate_limited: () => ['Demasiados intentos seguidos', 'Espera un minuto y vuelve a pulsar «Conectar».'],
 };
+// Cuando la pestaña que pidió «Conectar» no pudo terminar la conexión (D100). Se ven en la tarjeta y en Mis conexiones.
+const FINISH_ERR = {
+  session_changed: (p) => ['No se pudo terminar la conexión', 'Tu sesión de Mango cambió mientras iniciabas sesión en ' + p.idp + '. Vuelve a pulsar «Conectar».'],
+  denied: (p) => [p.idp + ' no autorizó la conexión', 'Tu cuenta no quedó conectada. Si no fuiste tú quien canceló, consulta con el administrador de ' + p.idp + ' de tu empresa.'],
+  conditional: (p) => ['Una regla de acceso de tu empresa bloqueó la conexión', 'Consulta con el administrador de ' + p.idp + ' de tu empresa.'],
+  error: () => ['No se pudo conectar tu cuenta', 'Inténtalo de nuevo en unos minutos.'],
+};
+// Resultado de la vuelta (panel de demo) → lo que ve la pestaña que pidió «Conectar».
+const RET_TO_TAB = { ok: 'ok', expired: 'expired', cancelled: 'denied', denied: 'denied', conditional: 'conditional', orphan: 'session_changed', lost: 'session_changed', nosession: 'session_changed', notyours: 'error', ambiguous: 'error', error: 'error' };
+// Código de fallo del registro → qué hacer. Plataforma: reintentar. App de Entra: pedir de nuevo.
+const FAIL = {
+  target_timeout: { kind: 'platform', t: (p) => 'No se pudo habilitar ' + p.name + ': el servicio no quedó listo a tiempo' },
+  target_failed: { kind: 'platform', t: (p) => 'No se pudo habilitar ' + p.name + ': la plataforma no pudo crear el servicio' },
+  provider_rejected: { kind: 'app', t: (p) => 'No se pudo habilitar ' + p.name + ': ' + p.idp + ' rechazó los datos de la app de Entra' },
+};
+const FAIL_BODY = { platform: 'Fue un fallo de la plataforma, no de los datos de la app de Entra. Reinténtalo: no pide el secreto ni otra aprobación.', app: 'Revisa el tenant, el id de la app y el secreto en Entra, y pídelo de nuevo.', unknown: 'Reinténtalo. Si vuelve a fallar, revisa los datos de la app de Entra y pídelo de nuevo.' };
+const failInfo = (r) => { const p = profile(r.profile); const f = FAIL[r.failCode]; return f ? { kind: f.kind, title: f.t(p), body: FAIL_BODY[f.kind], code: r.failCode } : { kind: 'unknown', title: 'No se pudo habilitar ' + p.name, body: FAIL_BODY.unknown, code: r.failCode || null }; };
+// RemoteMcpEnabled: parámetro de la instalación, apagado por defecto. Cada perfil dice si está encendido.
+const OFF_MSG = 'Los servicios externos están apagados en esta instalación. Los enciende quien administra AWS con un parámetro de la instalación.';
+const installOn = () => !['off', 'off-late'].includes(get().simRemoteInstall) || false;
+const profileSaysOn = () => get().simRemoteInstall !== 'off';
 const resetConn = (pid) => S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'none' } } });
+const setConn = (pid, v) => S.set({ remoteConn: { ...get().remoteConn, [pid]: v } });
 const RM = {
-  PROFILES, CONNECT_ERR, profile, regs, myGroups, inMyGroups, conn, secretInfo, fmtDay, toolsOf, seedRegs, SECRET_DAYS,
+  PROFILES, CONNECT_ERR, FINISH_ERR, failInfo, OFF_MSG, enabled: profileSaysOn, profile, regs, myGroups, inMyGroups, conn, secretInfo, fmtDay, toolsOf, seedRegs, SECRET_DAYS,
   classifyLink, HIST,
   target: (r) => r.kind === 'scope' ? regs().find(x => x.id === r.changes) : null,
   regsOf: (pid) => regs().filter(r => r.profile === pid && !HIST.includes(r.status)),
@@ -85,6 +108,7 @@ const RM = {
   // Paso 1 · pedir. Devuelve { error } o { reg }.
   request: (f, replaces) => {
     const p = profile(f.profile);
+    if (!installOn()) return { error: OFF_MSG };
     if (get().simRemoteGone || !p) return { error: GONE };
     if (regs().some(r => r.profile === f.profile && r.org.toLowerCase() === f.org.toLowerCase() && LIVE.includes(r.status) && r.kind !== 'scope' && r.id !== replaces && r.replaces !== replaces)) return { error: p.name + ' ya está habilitado para esa organización.' };
     const reg = { id: newId(), profile: f.profile, org: f.org, tenantId: f.tenantId.toLowerCase(), clientId: f.clientId.toLowerCase(), toolsets: f.toolsets, groups: f.groups, secretExp: new Date(f.secretExp + 'T12:00:00').toISOString(), status: 'pending', by: S.actor(), at: new Date().toISOString(), redirect: REDIRECT(), replaces: replaces || null };
@@ -95,6 +119,7 @@ const RM = {
   // Cambiar grupos de tools o de personas de un servicio activo: doble aprobación, nadie reconecta.
   requestScope: (regId, toolsets, groups) => {
     const t = regs().find(x => x.id === regId); const p = profile(t.profile);
+    if (!installOn()) return { error: OFF_MSG };
     if (get().simRemoteGone || !p) return { error: GONE };
     const reg = { id: newId(), kind: 'scope', changes: regId, profile: t.profile, org: t.org, toolsets, groups, status: 'pending', by: S.actor(), at: new Date().toISOString() };
     setRegs([...regs(), reg]);
@@ -104,6 +129,7 @@ const RM = {
   // Paso 2 · aprobar (otra persona administradora).
   approve: (id) => {
     const r = regs().find(x => x.id === id); if (!r) return {};
+    if (!installOn()) return { error: OFF_MSG };
     if (get().simRemoteGone) return { error: GONE };
     if (r.by === S.actor()) return { error: 'Otra persona administradora tiene que aprobarlo.' };
     if (r.kind === 'scope') {
@@ -114,15 +140,31 @@ const RM = {
     // «Creándose» unos segundos, hasta que la conexión existe; después «Habilitado» o «Falló».
     upd(id, { status: 'creating', approvedBy: S.actor(), approvedAt: new Date().toISOString() });
     S.log('remote_mcp.approve', id, 'Aprobó ' + profile(r.profile).name + ' para ' + r.org);
+    RM._create(id, get().simRemoteCreate === 'fail');
+    return {};
+  },
+  // Reintentar un registro en «Falló»: una sola persona administradora, la misma aprobación, nada cambia de lo aprobado.
+  retry: (id) => {
+    const r = regs().find(x => x.id === id); if (!r || r.status !== 'failed') return {};
+    if (!installOn()) return { error: OFF_MSG };
+    const sim = get().simRemoteRetry;
+    if (sim === 'release_changed') return { error: 'release_changed' };
+    if (sim === 'busy') return { error: 'busy' };
+    upd(id, { status: 'creating', retriedBy: S.actor(), retriedAt: new Date().toISOString() });
+    S.log('remote_mcp.retry', id, 'Reintentó habilitar ' + profile(r.profile).name + ' para ' + r.org);
+    RM._create(id, sim === 'fail');
+    return {};
+  },
+  _create: (id, fail) => {
+    const r = regs().find(x => x.id === id);
     setTimeout(() => {
       const cur = regs().find(x => x.id === id); if (!cur || cur.status !== 'creating') return;
-      if (get().simRemoteCreate === 'fail') { upd(id, { status: 'failed' }); S.log('remote_mcp.create_failed', id, 'No se pudo habilitar ' + profile(r.profile).name + ' para ' + r.org, { outcome: 'failed' }); return; }
+      if (fail) { upd(id, { status: 'failed', failCode: get().simRemoteFail || cur.failCode || 'target_timeout' }); S.log('remote_mcp.create_failed', id, 'No se pudo habilitar ' + profile(r.profile).name + ' para ' + r.org, { outcome: 'failed' }); return; }
       let list = regs().map(x => x.id === id ? { ...x, status: 'active', replaces: null } : x);
       if (r.replaces) list = list.filter(x => x.id !== r.replaces);
       setRegs(list);
       if (r.replaces) resetConn(r.profile); // otro tenant o app: todas las personas conectan otra vez
     }, 2600);
-    return {};
   },
   // Rechazar y retirar borran lo que se creó (secreto incluido); queda la solicitud en el historial.
   reject: (id, reason) => { const r = regs().find(x => x.id === id); upd(id, { status: 'rejected', decidedBy: S.actor(), decidedAt: new Date().toISOString(), reason, secretExp: null, redirect: null }); S.log('remote_mcp.reject', id, 'Rechazó ' + profile(r.profile).name + ' para ' + r.org + (reason ? ': «' + reason + '»' : '')); },
@@ -131,14 +173,25 @@ const RM = {
   // Deshabilitar borra la conexión y el secreto. «Pedir de nuevo» pide el secreto otra vez.
   disable: (id, reason) => { const r = regs().find(x => x.id === id); upd(id, { status: 'disabled', disabledBy: S.actor(), disabledAt: new Date().toISOString(), reason, secretExp: null, redirect: null }); resetConn(r.profile); S.log('remote_mcp.disable', id, 'Deshabilitó ' + profile(r.profile).name + ' para ' + r.org + ': «' + reason + '»'); },
   // Conectar la cuenta propia. Si ya estaba conectada, responde sin abrir Microsoft.
+  // D100: Microsoft se abre en otra pestaña; esta pestaña (la que pidió «Conectar») espera y es la que termina la conexión.
+  // En la demo, la vuelta llega sola a los pocos segundos con el resultado de «Vuelta desde Microsoft».
   connect: (pid, from = 'connections') => {
     if (conn(pid).status === 'connected') return 'already';
     if (get().simRemoteConnectErr) return 'error:' + get().simRemoteConnectErr;
-    if (conn(pid).server) { S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'connected', at: conn(pid).at || new Date().toISOString() } } }); return 'already'; }
-    S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'connecting' } }, remoteReturn: { pid, from } });
-    setTimeout(() => { window.dispatchEvent(new CustomEvent('mango:close-connections')); window.MangoNav?.('connect-return'); }, 1300);
+    if (conn(pid).server) { setConn(pid, { status: 'connected', at: conn(pid).at || new Date().toISOString() }); return 'already'; }
+    setConn(pid, { status: 'connecting' }); S.set({ remoteReturn: { pid, from } });
+    const still = (st) => conn(pid).status === st;
+    setTimeout(() => { if (still('connecting')) setConn(pid, { status: 'waiting' }); }, 1300);
+    setTimeout(() => {
+      if (!still('waiting')) return;
+      const out = RET_TO_TAB[get().simRemoteReturn || 'ok'] || 'error';
+      if (out === 'expired') { setConn(pid, { status: 'none', err: 'expired' }); return; }
+      setConn(pid, { status: 'finishing' });
+      setTimeout(() => { if (still('finishing')) RM.finish(pid, out); }, 1100);
+    }, 4200);
     return 'opening';
   },
+  cancelWait: (pid) => resetConn(pid),
   // Desconectar: Mango borra la conexión de esa persona. No revoca nada en Microsoft.
   disconnect: (pid) => {
     if (get().simRemoteDisconnect === 'fail') return { error: 'disconnect_not_confirmed' };
@@ -146,8 +199,7 @@ const RM = {
     return {};
   },
   finish: (pid, result) => {
-    const prev = conn(pid).status;
-    S.set({ remoteConn: { ...get().remoteConn, [pid]: result === 'ok' ? { status: 'connected', at: new Date().toISOString() } : { status: prev === 'connected' ? 'connected' : 'none' } } });
+    setConn(pid, result === 'ok' ? { status: 'connected', at: new Date().toISOString(), justNow: true } : { status: 'none', err: result });
     if (result === 'ok') S.log('remote_mcp.connect', pid, 'Conectó su cuenta de ' + profile(pid).name);
   },
 };
@@ -228,28 +280,34 @@ function RmField({ id, label, hint, error, children, opt }) {
 function ConnectCard({ pid, expired: forceExp, startedAt }) {
   const I = window.Icons; const p = profile(pid);
   const st = window.useMango(s => (s.remoteConn || {})[pid]?.status) || 'none';
+  const connErr = window.useMango(s => (s.remoteConn || {})[pid]?.err) || null;
   const [t0] = useState(() => startedAt || Date.now());
   const [now, setNow] = useState(Date.now());
   const [err, setErr] = useState(null);
-  useEffect(() => { if (st !== 'none' || forceExp) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [st, forceExp]);
+  useEffect(() => { if (!['none', 'waiting'].includes(st) || forceExp) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [st, forceExp]);
   const left = Math.max(0, 600 - Math.floor((now - t0) / 1000));
-  const expired = forceExp || left === 0;
+  const expired = forceExp || left === 0 || connErr === 'expired';
   const mmss = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
-  const state = st === 'connected' ? 'done' : st === 'connecting' ? 'opening' : expired ? 'expired' : err ? 'error' : 'ask';
+  const fe = connErr && connErr !== 'expired' ? (FINISH_ERR[connErr] || FINISH_ERR.error)(p) : null;
+  const state = st === 'connected' ? 'done' : st === 'connecting' ? 'opening' : st === 'waiting' ? 'waiting' : st === 'finishing' ? 'finishing' : expired ? 'expired' : (err || fe) ? 'error' : 'ask';
   const go = () => { const r = RM.connect(pid, 'chat'); setErr(typeof r === 'string' && r.startsWith('error:') ? r.slice(6) : null); };
-  const ce = err && (CONNECT_ERR[err] || CONNECT_ERR.error)(p);
+  const ce = err ? (CONNECT_ERR[err] || CONNECT_ERR.error)(p) : fe;
   return <section className={'rm-card is-' + state} aria-label={'Aviso de Mango: conectar ' + p.name}>
     <div className="rm-card-h"><I.Mango size={12} /><span>Mango</span><span className="rm-card-dot" aria-hidden="true">·</span><span>No lo escribió el agente</span></div>
     <div className="rm-card-b">
       <RmTile p={p} />
-      <div style={{ flex: 1, minWidth: 0 }} role={state === 'expired' ? 'status' : state === 'error' ? 'alert' : undefined}>
-        {state === 'done' ? <><div className="rm-card-t">Conectado. Vuelve a enviar tu pregunta.</div><div className="rm-card-s">Tu cuenta de {p.name} quedó conectada. El agente lee con tus permisos, solo lectura.</div></>
+      <div style={{ flex: 1, minWidth: 0 }} role={state === 'error' ? 'alert' : state === 'ask' ? undefined : 'status'}>
+        {state === 'done' ? <><div className="rm-card-t">Conectado</div><div className="rm-card-s">Tu cuenta de {p.name} quedó conectada. El agente sigue con tu pregunta.</div></>
+          : state === 'waiting' ? <><div className="rm-card-t">Inicia sesión en {p.idp} en la otra pestaña</div><div className="rm-card-s">Al terminar, la conexión se completa aquí. No cierres esta pestaña.</div></>
+          : state === 'finishing' ? <><div className="rm-card-t">Terminando la conexión…</div><div className="rm-card-s">Mango está guardando tu conexión con {p.name}.</div></>
           : state === 'error' ? <><div className="rm-card-t">{ce[0]}</div><div className="rm-card-s">{ce[1]}</div></>
           : state === 'expired' ? <><div className="rm-card-t">El enlace venció</div><div className="rm-card-s">Vuelve a preguntar para conectar, o hazlo desde <button className="sr-link" onClick={() => window.dispatchEvent(new CustomEvent('mango:my-connections'))}>Mis conexiones</button>.</div></>
           : <><div className="rm-card-t">Conecta tu cuenta de {p.name}</div><div className="rm-card-s">El agente necesita leer {p.name} con tu cuenta. Vas a iniciar sesión en {p.idp}.</div></>}
       </div>
       {(state === 'ask' || state === 'error') && <div className="rm-card-a"><button className={'btn btn-sm' + (state === 'ask' ? ' btn-primary' : '')} onClick={go}>{state === 'error' ? 'Reintentar' : <>Conectar <I.External size={11} /></>}</button><span className="rm-card-timer" aria-label={'Vence en ' + mmss}>Vence en {mmss}</span></div>}
       {state === 'opening' && <div className="rm-card-a"><span className="row gap-2 rm-card-s"><span className="g-spin" /> Abriendo {p.idp}…</span></div>}
+      {state === 'waiting' && <div className="rm-card-a"><button className="btn btn-sm" onClick={() => { RM.cancelWait(pid); go(); }} title={'Si cerraste la pestaña de ' + p.idp}>Abrir de nuevo <I.External size={11} /></button><span className="rm-card-timer" aria-label={'Vence en ' + mmss}>Vence en {mmss}</span></div>}
+      {state === 'finishing' && <div className="rm-card-a"><span className="g-spin" /></div>}
       {state === 'done' && <span className="g-dot-lg green" aria-hidden="true"><I.Check size={12} /></span>}
     </div>
   </section>;
@@ -290,7 +348,13 @@ function RemoteChatDemo() {
   if (!sim || get().avail) return null;
   const user = <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 22 }}><div style={{ maxWidth: '78%', padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, fontSize: 14.5, lineHeight: 1.55 }}>{RM_Q}</div></div>;
   if (sim === 'read') return <>{user}<div data-remote={pid} ref={ref} style={{ marginBottom: 24 }}><ReadMark pid={pid} /><div className="md rm-md" style={{ fontSize: 15.5, lineHeight: 1.7, color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(RM_READ) }} /></div></>;
-  return <>{user}<div style={{ marginBottom: 12 }}><div className="md" style={{ fontSize: 15.5, lineHeight: 1.7 }}><p>Necesito que conectes tu cuenta de Azure DevOps para leer el sprint.</p></div></div><ConnectCard key={sim} pid={pid} expired={sim === 'expired'} /></>;
+  return <>{user}<div style={{ marginBottom: 12 }}><div className="md" style={{ fontSize: 15.5, lineHeight: 1.7 }}><p>Necesito que conectes tu cuenta de Azure DevOps para leer el sprint.</p></div></div><ConnectCard key={sim} pid={pid} expired={sim === 'expired'} /><RemoteChatContinue pid={pid} /></>;
+}
+// D100: al terminar la conexión en esta pestaña, el agente sigue con la pregunta (sin volver a enviarla).
+function RemoteChatContinue({ pid }) {
+  const c = window.useMango(s => (s.remoteConn || {})[pid]);
+  if (!c?.justNow) return null;
+  return <div data-remote={pid} style={{ margin: '18px 0 24px' }}><ReadMark pid={pid} /><div className="md rm-md" style={{ fontSize: 15.5, lineHeight: 1.7, color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(RM_READ.split('\n\nLa página')[0]) }} /></div>;
 }
 
 Object.assign(window, { RmTile, RmBadges, RmStatus, RmCopy, RmField, SecretLine, SecretAlert, RotateModal, DisableModal, ConnectCard, ReadMark, RemoteLinkBody, RemoteChatDemo });

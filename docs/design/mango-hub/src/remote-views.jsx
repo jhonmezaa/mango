@@ -10,19 +10,29 @@ const toolCount = (p, sets) => RM.toolsOf(p, sets).reduce((n, t) => n + t.tools.
 
 // —— Catálogo › Servicios externos ——
 function RemoteCatalogTab({ onOpen }) {
-  const I = window.Icons; useRm();
+  const I = window.Icons; useRm(); window.useMango(s => s.simRemoteInstall); const on = RM.enabled();
   return <div style={{ display: 'grid', gap: 14 }}>
+    {!on && <RemoteOffNote />}
     <p className="rm-p" style={{ margin: 0, maxWidth: 720 }}>Servicios MCP de terceros revisados y firmados que trae esta versión de Mango. No se conectan por URL: se habilita un perfil para una organización, y cada persona conecta su propia cuenta.</p>
     <div className="rm-grid">
       {RM.PROFILES.map(p => { const list = RM.regsOf(p.id); const act = list.find(r => r.status === 'active'); const pend = list.filter(r => r.status === 'pending'); const dis = list.find(r => r.status === 'disabled'); const mid = list.find(r => r.status === 'creating' || r.status === 'failed');
         return <button key={p.id} className="card rm-pcard" onClick={() => onOpen(p.id)}>
-          <div className="row gap-3" style={{ alignItems: 'flex-start' }}><RmTile p={p} /><div style={{ flex: 1, minWidth: 0 }}><div className="mk-name">{p.name}</div><div className="mk-meta">Operado por {p.operator} · <span className="mono">{p.host}</span></div></div><RmStatus r={act || mid || pend[0] || dis} /></div>
+          <div className="row gap-3" style={{ alignItems: 'flex-start' }}><RmTile p={p} /><div style={{ flex: 1, minWidth: 0 }}><div className="mk-name">{p.name}</div><div className="mk-meta">Operado por {p.operator} · <span className="mono">{p.host}</span></div></div>{on ? <RmStatus r={act || mid || pend[0] || dis} /> : <span className="badge">Apagado en la instalación</span>}</div>
           <RmBadges p={p} compact />
           <div className="rm-sets">{p.toolsets.map(t => <span key={t.id} className="rm-set">{t.label}</span>)}</div>
           <div className="mk-meta rm-pcard-f">{act ? <>Habilitado para <span className="mono">{act.org}</span> · {act.groups.length} {act.groups.length === 1 ? 'grupo' : 'grupos'}</> : mid ? <>{mid.status === 'creating' ? 'Creándose' : 'Falló al habilitarse'} · <span className="mono">{mid.org}</span></> : pend.length ? <>Solicitud pendiente · <span className="mono">{pend[0].org}</span></> : dis ? <>Deshabilitado para <span className="mono">{dis.org}</span></> : 'Ninguna organización habilitada'}<span style={{ marginLeft: 'auto' }} className="row gap-1">Ver ficha <I.ArrowRight size={11} /></span></div>
         </button>; })}
     </div>
   </div>;
+}
+function RemoteOffNote() {
+  const I = window.Icons;
+  return <div className="mc-alert amber" role="status"><I.Lock size={14} /><div><b>Los servicios externos están apagados en esta instalación</b><div>Los enciende quien administra AWS con el parámetro <span className="mono">RemoteMcpEnabled</span> de la instalación. Mientras tanto puedes ver las fichas, pero no habilitar ni cambiar nada.</div></div></div>;
+}
+const RETRY_ERR = { release_changed: (p) => 'Esta versión de Mango cambió el perfil de ' + p.name + ' desde que se aprobó. Hay que pedirlo de nuevo.', busy: () => 'Ya se está reintentando. Espera unos segundos.' };
+function FailAlert({ r }) {
+  const I = window.Icons; const fi = RM.failInfo(r);
+  return <div className="mc-alert red" role="alert"><I.X2 size={14} /><div><b>{fi.title}</b><div>{fi.body}</div>{fi.code && <div className="mk-meta" style={{ marginTop: 4 }}>Código: <span className="mono">{fi.code}</span></div>}</div></div>;
 }
 function RemoteRequests({ onOpen }) {
   const I = window.Icons; useRm(); const me = S.actor(); const list = RM.pending();
@@ -50,7 +60,8 @@ function RemoteDetail({ pid, regId, onClose }) {
   const groupIds = (window.useMango(s => s.groupDefs) || []).map(g => g.id);
   const [mode, setMode] = useState(regId ? { k: 'reg', id: regId } : null);
   const [f, setF] = useState(null); const [tried, setTried] = useState(false); const [err, setErr] = useState(null);
-  const [why, setWhy] = useState(''); const [modal, setModal] = useState(null);
+  const [why, setWhy] = useState(''); const [modal, setModal] = useState(null); const [busy, setBusy] = useState(false);
+  window.useMango(s => s.simRemoteInstall); const on = RM.enabled();
   useEffect(() => { const h = e => e.key === 'Escape' && !modal && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, [modal]);
   const list = RM.regsOf(pid);
   const reg = mode?.id && list.find(r => r.id === mode.id);
@@ -123,13 +134,14 @@ function RemoteDetail({ pid, regId, onClose }) {
         <KV k="Pidió">{own ? 'Tú' : reg.by} · {window.fmtAgo(reg.at)}</KV>
       </Sec>
     </> : <>
+      {!on && <RemoteOffNote />}
       {mode.sent && <div className="mc-alert"><I.Check2 size={14} style={{ color: 'var(--green)' }} /><div><b>Solicitud enviada.</b> Mientras otra persona administradora la aprueba, pega la URL de redirección en la app de Entra.</div></div>}
       {reg.status === 'pending' && <div className="rm-steps" aria-label="Paso 2 de 2"><span className="is-done">1 · Pedido por {own ? 'ti' : reg.by}</span><span className="is-on">2 · Otra persona administradora aprueba</span></div>}
       {reg.status === 'pending' && reg.replaces && <div className="mc-alert amber"><I.Warn size={14} /><div><b>Al aprobarse, todas las personas tendrán que conectar su cuenta de {p.name} otra vez.</b></div></div>}
       {reg.status === 'pending' && <div className="rm-redirect"><RmCopy value={reg.redirect} /><div className="rm-hint">Pégala en la app de Entra como URI de redirección de plataforma <b>Web</b>. La da AWS al crear la conexión de este registro: es distinta para cada uno y no es una dirección de Mango.</div></div>}
       {reg.status === 'active' && <SecretAlert r={reg} onRotate={isAdmin ? () => setModal('rotate') : null} />}
-      {reg.status === 'creating' && <div className="mc-alert" role="status"><span className="g-spin" /><div><b>Creándose.</b> Aprobado por {reg.approvedBy === me ? 'ti' : reg.approvedBy}. Mango está creando la conexión con {p.name}; tarda unos segundos. Puedes cerrar este panel.</div></div>}
-      {reg.status === 'failed' && <div className="mc-alert red" role="alert"><I.X2 size={14} /><div><b>No se pudo habilitar {p.name}</b><div>Revisa los datos de la app de Entra y vuelve a pedirlo.</div></div></div>}
+      {reg.status === 'creating' && <div className="mc-alert" role="status"><span className="g-spin" /><div><b>Creándose.</b> {reg.retriedBy ? 'Reintentado por ' + (reg.retriedBy === me ? 'ti' : reg.retriedBy) : 'Aprobado por ' + (reg.approvedBy === me ? 'ti' : reg.approvedBy)}. Mango está creando la conexión con {p.name}; tarda unos segundos. Puedes cerrar este panel.</div></div>}
+      {reg.status === 'failed' && <FailAlert r={reg} />}
       {reg.status === 'disabled' && <div className="mc-alert"><I.Info size={14} /><div>Deshabilitado por {reg.disabledBy} · {window.fmtAgo(reg.disabledAt)}{reg.reason ? <>: «{reg.reason}»</> : null}<div className="mk-meta" style={{ marginTop: 3 }}>Se borraron la conexión y el secreto. Para volver a habilitarlo, pídelo de nuevo con el secreto.</div></div></div>}
       <Sec title="Registro">
         <KV k="Organización"><span className="mono">{p.host}/{reg.org}</span></KV>
@@ -146,16 +158,22 @@ function RemoteDetail({ pid, regId, onClose }) {
       {reg.status === 'active' && reg.redirect && <Sec title="URL de redirección"><RmCopy value={reg.redirect} label="Configurada en la app de Entra" /></Sec>}
     </>;
     if (!isAdmin) foot = <div className="ap-reason"><I.Lock size={12} /> Solo los administradores pueden habilitar, aprobar o deshabilitar servicios externos.</div>;
+    else if (!on) foot = <div className="ap-reason"><I.Lock size={12} /> Apagado en la instalación: no se puede aprobar ni cambiar nada.</div>;
     else if (reg.status === 'pending' && mode.reject) foot = <div style={{ display: 'grid', gap: 8 }}><label htmlFor="rm-why" style={{ fontSize: 12.5, fontWeight: 500 }}>Motivo del rechazo</label><textarea id="rm-why" className="input" rows={2} value={why} onChange={e => setWhy(e.target.value)} autoFocus style={tried && !why.trim() ? { borderColor: 'var(--red)' } : null} />{tried && !why.trim() && <div style={{ fontSize: 12, color: 'var(--red)' }}>El motivo es obligatorio</div>}<div className="rm-hint">Rechazar borra lo que se creó con la solicitud, incluido el secreto.</div><div className="row gap-2"><button className="btn btn-sm mk-danger" onClick={() => { setTried(true); if (!why.trim()) return; RM.reject(reg.id, why.trim()); toast?.({ tone: 'success', msg: 'Solicitud rechazada' }); setMode(null); setWhy(''); setTried(false); }}>Rechazar</button><button className="btn btn-sm btn-ghost" onClick={() => { setMode({ ...mode, reject: false }); setTried(false); }}>Cancelar</button></div></div>;
     else if (reg.status === 'pending') foot = <>{err && <div className="g-err" role="alert" style={{ marginBottom: 10 }}>{err}</div>}{own
       ? <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}><span className="ap-reason"><I.Lock size={12} /> Otra persona administradora tiene que aprobarlo.</span><button className="btn btn-sm" onClick={() => { RM.withdraw(reg.id); toast?.({ tone: 'success', msg: 'Solicitud retirada · se borró lo que se había creado' }); setMode(null); }}>Retirar solicitud</button></div>
       : <div className="row gap-2"><button className="btn btn-sm btn-primary" onClick={() => { const r = RM.approve(reg.id); if (r.error) { setErr(r.error); return; } toast?.({ tone: 'success', msg: r.scope ? 'Grupos de ' + p.name + ' cambiados para ' + reg.org : p.name + ' habilitado para ' + reg.org }); setMode({ k: 'reg', id: r.scope ? reg.changes : reg.id }); }}><I.Check size={12} /> Aprobar</button><button className="btn btn-sm" onClick={() => setMode({ ...mode, reject: true })}>Rechazar</button></div>}</>;
     else if (reg.status === 'creating') foot = <div className="ap-reason"><span className="g-spin" /> Creando la conexión · no hace falta hacer nada.</div>;
-    else if (reg.status === 'failed') foot = <button className="btn btn-sm btn-primary" onClick={() => openForm(reg)}>Pedir de nuevo</button>;
+    else if (reg.status === 'failed') { const app = RM.failInfo(reg).kind === 'app';
+      const doRetry = () => { setErr(null); setBusy(true); setTimeout(() => { setBusy(false); const r = RM.retry(reg.id); if (r.error) { setErr((RETRY_ERR[r.error] || (() => r.error))(p)); return; } toast?.({ tone: 'success', msg: 'Reintentando · Mango vuelve a crear la conexión' }); }, 600); };
+      const bRetry = <button key="r" className={'btn btn-sm' + (app ? '' : ' btn-primary')} disabled={busy} onClick={doRetry}>{busy ? <><span className="g-spin" /> Reintentando…</> : 'Reintentar'}</button>;
+      const bAgain = <button key="a" className={'btn btn-sm' + (app ? ' btn-primary' : '')} disabled={busy} onClick={() => openForm(reg)}>Pedir de nuevo</button>;
+      foot = <>{err && <div className="g-err" role="alert" style={{ marginBottom: 10 }}>{err}</div>}<div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>{app ? [bAgain, bRetry] : [bRetry, bAgain]}</div><div className="rm-hint" style={{ marginTop: 8 }}>«Reintentar» usa la misma aprobación y no cambia nada de lo aprobado. «Pedir de nuevo» pide el secreto otra vez y otra aprobación.</div></>; }
     else if (reg.status === 'active') foot = <div className="row gap-2" style={{ flexWrap: 'wrap' }}><button className="btn btn-sm" onClick={() => setModal('rotate')}>Rotar secreto</button><button className="btn btn-sm" disabled={list.some(r => r.kind === 'scope' && r.changes === reg.id)} title={list.some(r => r.kind === 'scope' && r.changes === reg.id) ? 'Ya hay un cambio de grupos pendiente' : undefined} onClick={() => openScope(reg)}>Cambiar grupos</button><button className="btn btn-sm" disabled={list.some(r => r.replaces === reg.id)} title={list.some(r => r.replaces === reg.id) ? 'Ya hay un cambio pendiente' : undefined} onClick={() => openForm(reg, reg.id)}>Cambiar tenant o app</button><button className="btn btn-sm" onClick={() => setModal('disable')}>Deshabilitar</button></div>;
     else foot = <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}><button className="btn btn-sm btn-primary" onClick={() => openForm(reg)}>Pedir de nuevo</button><span className="mk-meta">Pide el secreto otra vez y otra aprobación.</span></div>;
   } else {
     body = <>
+      {!on && <RemoteOffNote />}
       <div className="mc-alert amber"><I.Globe size={14} /><div><b>Los datos salen de AWS.</b> El servidor corre en {p.operator}: las consultas del agente y sus resultados pasan por fuera de AWS.</div></div>
       <div className="mc-alert"><I.User size={14} /><div>Cada persona conecta su propia cuenta de {p.idp} la primera vez que un agente lo usa, y el agente lee con sus permisos. Mango nunca ve su contraseña.</div></div>
       <Sec title={'Organizaciones · ' + list.length}>
@@ -174,13 +192,13 @@ function RemoteDetail({ pid, regId, onClose }) {
         <div className="mk-meta" style={{ marginTop: 6 }}>Los grupos y los nombres salen del perfil del servicio. Ninguno trae tools de escritura.</div>
       </Sec>
       <Sec title={'Permisos en ' + p.idp}>
-        <div className="mk-line"><div className="row gap-2" style={{ flexWrap: 'wrap' }}><span style={{ fontSize: 12.5, fontWeight: 600 }}>{p.scopes.app}</span><span className="mk-meta">delegados · de lectura</span></div><div className="rm-sets" style={{ marginTop: 6 }}>{p.scopes.perms.map(s => <span key={s} className="badge mono">{s}</span>)}</div></div>
-        <div className="mk-line row gap-2" style={{ flexWrap: 'wrap' }}>{p.scopes.extra.map(s => <span key={s} className="badge mono">{s}</span>)}<span className="mk-meta">Microsoft Entra</span></div>
+        {p.scopes.map(s => <div key={s.res} className="mk-line row between" style={{ gap: 8, flexWrap: 'wrap' }}><span style={{ fontSize: 12.5, fontWeight: 600 }}>{s.res}</span><span className="rm-sets">{s.perms.map(x => <span key={x} className="badge mono">{x}</span>)}</span></div>)}
         <div className="mk-meta" style={{ marginTop: 6 }}>Los que pide el perfil del servicio.</div>
       </Sec>
       <Sec title="Host del servicio"><div className="row gap-2"><code className="mono rm-host">{p.host}</code><span className="mk-meta">Fijo en el perfil firmado. No se puede cambiar.</span></div></Sec>
     </>;
-    foot = isAdmin ? <button className="btn btn-sm btn-primary" onClick={() => openForm()}><I.Plus size={12} /> Habilitar para una organización</button> : <div className="ap-reason"><I.Lock size={12} /> Solo los administradores pueden habilitar servicios externos.</div>;
+    foot = isAdmin && !on ? <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}><button className="btn btn-sm btn-primary" disabled><I.Plus size={12} /> Habilitar para una organización</button><span className="ap-reason"><I.Lock size={12} /> Apagado en la instalación</span></div>
+      : isAdmin ? <button className="btn btn-sm btn-primary" onClick={() => openForm()}><I.Plus size={12} /> Habilitar para una organización</button> : <div className="ap-reason"><I.Lock size={12} /> Solo los administradores pueden habilitar servicios externos.</div>;
   }
   return <div className="mk-scrim" onMouseDown={e => e.target === e.currentTarget && onClose()}>
     <aside className="mk-drawer" style={{ width: 540 }} role="dialog" aria-modal="true" aria-label={p.name}>
@@ -213,16 +231,18 @@ function MyConnections() {
     <p className="rm-p">Servicios externos que tus grupos pueden usar. Tu cuenta se conecta una vez y los agentes leen con tus permisos, solo lectura. Mango no muestra tu token ni datos de tu cuenta.</p>
     {!list.length ? <div className="rm-empty"><I.Globe size={18} /><div>Ningún servicio externo está habilitado para tus grupos.</div></div> : <div className="rm-conns">{list.map(r => {
       const p = RM.profile(r.profile); const c = RM.conn(p.id); const off = r.status === 'disabled'; const exp = RM.secretInfo(r).level === 'expired';
-      const state = off ? 'off' : c.status === 'connecting' ? 'opening' : c.status === 'connected' ? 'on' : exp ? 'blocked' : 'none';
-      const ce = state === 'none' && errs[p.id] && (RM.CONNECT_ERR[errs[p.id]] || RM.CONNECT_ERR.error)(p);
+      const state = off ? 'off' : c.status === 'connecting' ? 'opening' : c.status === 'waiting' ? 'waiting' : c.status === 'finishing' ? 'finishing' : c.status === 'connected' ? (exp ? 'on-blocked' : 'on') : exp ? 'blocked' : 'none';
+      const ce = state !== 'none' ? null : errs[p.id] ? (RM.CONNECT_ERR[errs[p.id]] || RM.CONNECT_ERR.error)(p) : c.err === 'expired' ? ['El enlace venció', 'Vuelve a pulsar «Conectar».'] : c.err ? (RM.FINISH_ERR[c.err] || RM.FINISH_ERR.error)(p) : null;
+      const doConnect = () => { const r = RM.connect(p.id, 'connections'); if (r === 'already') setAlready({ ...already, [p.id]: true }); setErrs({ ...errs, [p.id]: typeof r === 'string' && r.startsWith('error:') ? r.slice(6) : null }); };
       return <div key={r.id} className="rm-conn">
         <RmTile p={p} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="row gap-2" style={{ flexWrap: 'wrap' }}><span className="mk-name">{p.name}</span><span className="mk-meta mono">{r.org}</span></div>
-          <div className="rm-conn-s" role="status">{already[p.id] && state === 'on' ? <span className="row gap-2"><span className="dot dot-green" /> Tu cuenta ya estaba conectada.</span> : state === 'off' ? <>Un administrador deshabilitó {p.name}.</> : state === 'opening' ? <span className="row gap-2"><span className="g-spin" /> Abriendo {p.idp}…</span> : state === 'on' ? <span className="row gap-2"><span className="dot dot-green" /> Conectado{c.at ? ' · ' + window.fmtAgo(c.at) : ''}.</span> : state === 'blocked' ? <>Por ahora no se puede conectar: un administrador tiene que renovar la configuración de {p.name}.</> : ce ? <span role="alert" style={{ color: 'var(--red)' }}><b>{ce[0]}.</b> {ce[1]}</span> : <>No has conectado tu cuenta.</>}</div>
+          <div className="rm-conn-s" role="status">{already[p.id] && state === 'on' ? <span className="row gap-2"><span className="dot dot-green" /> Tu cuenta ya estaba conectada.</span> : state === 'off' ? <>Un administrador deshabilitó {p.name}.</> : state === 'opening' ? <span className="row gap-2"><span className="g-spin" /> Abriendo {p.idp}…</span> : state === 'waiting' ? <>Inicia sesión en {p.idp} en la otra pestaña. Al terminar, la conexión se completa aquí.</> : state === 'finishing' ? <span className="row gap-2"><span className="g-spin" /> Terminando la conexión…</span> : state === 'on-blocked' ? <>Tu cuenta sigue conectada, pero los agentes no pueden leer {p.name} hasta que un administrador renueve su configuración.</> : state === 'on' ? <span className="row gap-2"><span className="dot dot-green" /> Conectado{c.at ? ' · ' + window.fmtAgo(c.at) : ''}.</span> : state === 'blocked' ? <>Por ahora no se puede conectar: un administrador tiene que renovar la configuración de {p.name}.</> : ce ? <span role="alert" style={{ color: 'var(--red)' }}><b>{ce[0]}.</b> {ce[1]}</span> : <>No has conectado tu cuenta.</>}</div>
         </div>
-        {state === 'none' && <button className={'btn btn-sm' + (ce ? '' : ' btn-primary')} onClick={() => { const r = RM.connect(p.id, 'connections'); if (r === 'already') setAlready({ ...already, [p.id]: true }); setErrs({ ...errs, [p.id]: typeof r === 'string' && r.startsWith('error:') ? r.slice(6) : null }); }}>{ce ? 'Reintentar' : 'Conectar'}</button>}
-        {state === 'on' && <button className="btn btn-sm" onClick={() => setDisc(p.id)}>Desconectar</button>}
+        {state === 'none' && <button className={'btn btn-sm' + (ce ? '' : ' btn-primary')} onClick={doConnect}>{ce ? 'Reintentar' : 'Conectar'}</button>}
+        {state === 'waiting' && <button className="btn btn-sm" onClick={() => { RM.cancelWait(p.id); doConnect(); }}>Abrir de nuevo</button>}
+        {(state === 'on' || state === 'on-blocked') && <button className="btn btn-sm" onClick={() => setDisc(p.id)}>Desconectar</button>}
       </div>; })}</div>}
     {list.length > 0 && (idps => <div className="rm-hint" style={{ marginTop: 14 }}>Al conectar vas a iniciar sesión en {idps.join(' o ')}. Si tu cuenta ya estaba conectada, Mango lo confirma sin abrir {idps.length === 1 ? idps[0] : 'el proveedor'}.</div>)([...new Set(list.map(r => RM.profile(r.profile).idp))])}
   </window.Modal>;
@@ -241,40 +261,42 @@ function DisconnectModal({ p, onClose }) {
   </window.Modal>;
 }
 
-// —— La vuelta desde Microsoft ——
-// lost y nosession no nombran el servicio: sin el dato de la vuelta (o sin sesión) no se sabe cuál era.
-const NONAME = ['lost', 'nosession'];
+// —— La vuelta desde Microsoft (D100) ——
+// Llega en otra pestaña. No termina la conexión: avisa a la pestaña de Mango que pidió «Conectar», que es la que la termina
+// (AgentCore Identity solo acepta el token de esa pestaña). Siempre a pantalla completa, con la marca arriba.
+// Solo nombra el servicio cuando la otra pestaña confirma que terminó: antes no lo sabe.
 const RET = {
-  ok: ['Check', 'green', (p) => 'Listo, tu cuenta de ' + p.name + ' está conectada.', () => 'Vuelve al chat y repite tu pregunta.'],
-  expired: ['Clock', 'amber', () => 'El enlace venció', () => 'Vuelve a pedir la conexión.'],
-  lost: ['Refresh', 'amber', () => 'Vuelve a pulsar «Conectar»', () => 'No se pudo terminar la conexión: la página se recargó o tuviste que volver a iniciar sesión en Mango. Tu cuenta no quedó conectada.'],
-  nosession: ['Lock', 'muted', () => 'Inicia sesión en Mango para continuar', () => 'Este navegador no tiene tu sesión de Mango abierta. Después de ingresar, vuelve a pulsar «Conectar» donde empezaste.'],
-  notyours: ['Lock', 'red', () => 'Este enlace no es tuyo', () => 'Pide la conexión desde tu propia sesión.'],
-  cancelled: ['X2', 'muted', () => 'Cancelaste el inicio de sesión', (p) => 'Tu cuenta de ' + p.name + ' no quedó conectada. Puedes intentarlo otra vez desde Mis conexiones.'],
-  denied: ['X2', 'red', (p) => p.idp + ' no autorizó la conexión', (p) => 'Si no fuiste tú quien canceló, consulta con el administrador de ' + p.idp + ' de tu empresa.'],
+  ok: ['Check', 'green', () => 'Listo, vuelve a tu pestaña de Mango', (p) => 'Tu cuenta de ' + p.name + ' quedó conectada. El agente sigue ahí con tu pregunta. Puedes cerrar esta pestaña.'],
+  orphan: ['Refresh', 'amber', () => 'Pídelo de nuevo desde Mango', () => 'La conexión solo se termina en la pestaña de Mango donde pulsaste «Conectar», y esa pestaña se cerró o cambió de sesión. Tu cuenta no quedó conectada.'],
+  expired: ['Clock', 'amber', () => 'El enlace venció', () => 'Pasaron más de 10 minutos desde que pulsaste «Conectar». Vuelve a pulsarlo en Mango.'],
+  cancelled: ['X2', 'muted', () => 'Cancelaste el inicio de sesión', () => 'Tu cuenta no quedó conectada. Puedes intentarlo otra vez desde Mango.'],
+  denied: ['X2', 'red', (p) => p.idp + ' no autorizó la conexión', (p) => 'Tu cuenta no quedó conectada. Si no fuiste tú quien canceló, consulta con el administrador de ' + p.idp + ' de tu empresa.'],
   conditional: ['Shield', 'amber', () => 'Una regla de acceso de tu empresa bloqueó la conexión', (p) => 'El Acceso condicional de ' + p.idp + ' no dejó iniciar sesión desde este dispositivo o esta red, o pidió un paso que no se completó. Consulta con el administrador de ' + p.idp + ' de tu empresa.'],
+  ambiguous: ['Warn', 'amber', () => 'No se pudo saber qué conexión terminar', () => 'Tienes más de una conexión a medias en Mango. Vuelve a pulsar «Conectar» en la que quieras terminar.'],
+  notyours: ['Lock', 'red', () => 'Este enlace no es tuyo', () => 'Pide la conexión desde tu propia sesión de Mango.'],
+  nosession: ['Lock', 'muted', () => 'Inicia sesión en Mango para continuar', () => 'Este navegador no tiene tu sesión de Mango abierta. Ingresa: si Mango puede, termina la conexión solo; si no, te pide que vuelvas a pulsar «Conectar».'],
   error: ['Warn', 'amber', () => 'No se pudo conectar tu cuenta', () => 'Inténtalo de nuevo en unos minutos.'],
 };
-function RemoteReturn({ setView, bare }) {
+// Sin pestaña que avisar no hay espera.
+const NOWAIT = ['nosession', 'notyours'];
+function RemoteReturn({ setView }) {
   const I = window.Icons; window.useMango(s => s.simRemoteReturn);
   const ret = S.get().remoteReturn || { pid: 'azure-devops', from: 'connections' };
   const result = S.get().simRemoteReturn || 'ok';
-  const p = RM.profile(ret.pid); const named = !NONAME.includes(result);
-  // «Terminando la conexión» mientras el producto cierra el consentimiento; sin dato de vuelta o sin sesión no hay nada que terminar.
-  // phase guarda para qué resultado ya terminó: así el primer render tras cambiar de resultado ya muestra «Terminando».
-  const [doneFor, setDoneFor] = useState(named ? null : result);
+  const p = RM.profile(ret.pid);
+  const [doneFor, setDoneFor] = useState(NOWAIT.includes(result) ? result : null);
   useEffect(() => {
-    if (result === 'finishing') return;
-    if (!named) { RM.finish(ret.pid, 'x'); setDoneFor(result); return; }
-    const t = setTimeout(() => { RM.finish(ret.pid, result); setDoneFor(result); }, 1200); return () => clearTimeout(t);
+    if (result === 'relaying') return;
+    if (NOWAIT.includes(result)) { setDoneFor(result); return; }
+    const t = setTimeout(() => setDoneFor(result), 1400); return () => clearTimeout(t);
   }, [result]);
-  const phase = result === 'finishing' || !RET[result] || (named && doneFor !== result) ? 'finishing' : 'done';
-  const toChat = () => setView('chat'); const toConn = () => { setView('chat'); setTimeout(() => window.dispatchEvent(new CustomEvent('mango:my-connections')), 60); };
+  const phase = result === 'relaying' || !RET[result] || doneFor !== result ? 'relaying' : 'done';
+  const toMango = () => setView('chat');
   let inner;
-  if (phase === 'finishing') inner = <>
+  if (phase === 'relaying') inner = <>
     <span className="rm-ret-ic muted"><span className="g-spin" /></span>
     <h1 className="rm-ret-t">Terminando la conexión…</h1>
-    <p className="rm-ret-b">Mango está guardando tu conexión con {p.name}. No cierres esta página.</p>
+    <p className="rm-ret-b">Mango la termina en la pestaña donde pulsaste «Conectar». No cierres esta página.</p>
   </>;
   else { const [ic, tone, t, b] = RET[result]; const Ic = I[ic]; inner = <>
     <span className={'rm-ret-ic ' + tone}><Ic size={18} /></span>
@@ -282,29 +304,26 @@ function RemoteReturn({ setView, bare }) {
     <p className="rm-ret-b">{b(p)}</p>
     <div className="row gap-2" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
       {result === 'nosession' ? <button className="btn btn-sm btn-primary" onClick={() => setView('login')}>Iniciar sesión</button>
-        : result === 'ok' ? <><button className="btn btn-sm btn-primary" onClick={toChat}>Volver al chat</button><button className="btn btn-sm" onClick={toConn}>Mis conexiones</button></>
-        : result === 'notyours' ? <button className="btn btn-sm btn-primary" onClick={toChat}>Ir al chat</button>
-        : <><button className="btn btn-sm btn-primary" onClick={toConn}>Mis conexiones</button><button className="btn btn-sm" onClick={toChat}>Volver al chat</button></>}
+        : result === 'ok' ? <button className="btn btn-sm" onClick={() => { window.close(); toMango(); }}>Cerrar esta pestaña</button>
+        : <button className="btn btn-sm btn-primary" onClick={toMango}>Abrir Mango</button>}
     </div>
   </>; }
-  const card = <div className="rm-ret" role={phase === 'finishing' || result === 'ok' ? 'status' : 'alert'} aria-busy={phase === 'finishing' || undefined}>
-    {named && <div className="row gap-2 rm-ret-svc"><RmTile p={p} /><span>{p.name}</span><span className="mk-meta">· vuelta desde {p.idp}</span></div>}
-    {inner}
+  return <div className="rm-ret-full"><div className="rm-ret-brand"><I.Mango size={18} /><span>Mango</span></div>
+    <div className="rm-ret" role={phase === 'relaying' || result === 'ok' ? 'status' : 'alert'} aria-busy={phase === 'relaying' || undefined}>
+      {phase === 'done' && result === 'ok' && <div className="row gap-2 rm-ret-svc"><RmTile p={p} /><span>{p.name}</span><span className="mk-meta">· vuelta desde {p.idp}</span></div>}
+      {inner}
+    </div>
   </div>;
-  if (bare) return <div className="rm-ret-full"><div className="rm-ret-brand"><I.Mango size={18} /><span>Mango</span></div>{card}</div>;
-  return <>
-    <Topbar crumbs={named ? ['Mis conexiones', p.name] : ['Mis conexiones']} />
-    <div className="content">{card}</div>
-  </>;
 }
 // —— Ajustes › Conectividad ——
 function RemoteConnBlock() {
-  const I = window.Icons; useRm(); const [modal, setModal] = useState(null);
+  const I = window.Icons; useRm(); window.useMango(s => s.simRemoteInstall); const [modal, setModal] = useState(null);
   const list = RM.regs().filter(r => ['active', 'disabled', 'creating', 'failed'].includes(r.status));
   const pend = RM.pending().length;
   const open = (pid, id) => { S.set({ rmOpen: { pid, id } }); window.MangoNav?.('mcp'); };
   return <div style={{ marginTop: 28 }}>
     <div className="g-sec-h" style={{ marginBottom: 8 }}><div><div className="g-sec-t" style={{ fontSize: 13.5 }}>Servicios externos</div><div className="g-sec-meta">MCP de terceros habilitados con perfil. Corren fuera de AWS; el secreto de cada app de Entra lo guarda Mango y no se vuelve a mostrar.</div></div>{pend > 0 && <button className="btn btn-sm" onClick={() => open(RM.pending()[0].profile, RM.pending()[0].id)}>{pend} {pend === 1 ? 'solicitud pendiente' : 'solicitudes pendientes'} <I.ArrowRight size={11} /></button>}</div>
+    {!RM.enabled() && <div style={{ marginBottom: 10 }}><RemoteOffNote /></div>}
     {!list.length ? <div className="g-card" style={{ padding: 16 }}><div className="mk-meta">Ningún servicio externo habilitado. Se habilitan desde <button className="sr-link" onClick={() => { S.set({ rmOpen: { tab: true } }); window.MangoNav?.('mcp'); }}>Catálogo de MCP › Servicios externos</button>.</div></div>
       : <div style={{ display: 'grid', gap: 10 }}>{list.map(r => { const p = RM.profile(r.profile); return <div key={r.id} className="g-card rm-setrow">
         <div className="row gap-3" style={{ alignItems: 'flex-start' }}>
@@ -316,7 +335,7 @@ function RemoteConnBlock() {
             {r.status === 'active' && <div className="row gap-2" style={{ fontSize: 12.5 }}><I.Lock size={11} /><span className="mk-meta">Secreto de la app de Entra ·</span><SecretLine r={r} /></div>}
             {r.status === 'disabled' && <div className="mk-meta">Deshabilitado por {r.disabledBy} · {window.fmtAgo(r.disabledAt)}</div>}
             {r.status === 'creating' && <div className="mk-meta row gap-2"><span className="g-spin" /> Creando la conexión · unos segundos</div>}
-            {r.status === 'failed' && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>No se pudo habilitar {p.name}. Revisa los datos de la app de Entra y vuelve a pedirlo.</div>}
+            {r.status === 'failed' && (fi => <div style={{ fontSize: 12.5 }}><span style={{ color: 'var(--red)' }}>{fi.title}.</span> <span className="mk-meta">{fi.kind === 'platform' ? 'Reinténtalo desde el catálogo.' : fi.kind === 'app' ? 'Revisa la app de Entra y pídelo de nuevo.' : 'Reinténtalo desde el catálogo.'}</span></div>)(RM.failInfo(r))}
           </div>
         </div>
         {r.status === 'active' && <SecretAlert r={r} />}
@@ -370,7 +389,7 @@ RM.inboxItems = (me, isAdmin) => {
   const pinned = isAdmin ? RM.pending().filter(r => r.by !== me).map(r => { const p = RM.profile(r.profile); return { id: 'rmreq-' + r.id, type: 'remoteReq', pid: p.id, regId: r.id, title: 'Te piden aprobar: ' + p.name + ' para ' + r.org, body: (r.kind === 'scope' ? 'Cambio de grupos · ' : r.replaces ? 'Cambio de tenant o app · ' : '') + r.toolsets.length + ' grupos de tools · ' + r.groups.join(', '), at: r.at }; }) : [];
   const rest = [];
   // Tarea que necesita conexión (remote_connect). Si el servicio ya no está en Mis conexiones, es un aviso propio, no una ejecución fallida.
-  if (S.get().simRemoteTask === 'gone') { const p = RM.PROFILES[0]; rest.push({ id: 'rmgone-' + p.id, type: 'remoteGone', pid: p.id, title: 'Tu tarea no pudo leer ' + p.name, body: 'La tarea "Resumen semanal del sprint" usa ' + p.name + ', que ya no está en tus conexiones: lo deshabilitaron o ya no es de tus grupos. Va a fallar mientras el agente use sus tools.', at: ago(95) }); }
+  if (S.get().simRemoteTask === 'gone') { const p = RM.PROFILES[0]; rest.push({ id: 'rmgone-' + p.id, type: 'remoteGone', pid: p.id, title: 'Tu tarea no pudo leer un servicio externo', body: 'La tarea "Resumen semanal del sprint" usa un servicio externo que ya no está en tus conexiones: lo deshabilitaron o ya no es de tus grupos. Va a fallar mientras el agente use sus tools.', at: ago(95) }); }
   else RM.mine().filter(r => r.status === 'active').forEach(r => { const p = RM.profile(r.profile); if (RM.conn(p.id).status !== 'connected') rest.push({ id: 'rmtask-' + r.id, type: 'remoteTask', pid: p.id, title: 'Conecta tu cuenta de ' + p.name, body: 'La tarea "Resumen semanal del sprint" no pudo leer ' + p.name + ' porque no has conectado tu cuenta.', at: ago(95) }); });
   if (isAdmin) RM.regs().filter(r => r.status === 'active' && RM.secretInfo(r).level !== 'ok').forEach(r => { const p = RM.profile(r.profile); const si = RM.secretInfo(r); rest.push({ id: 'rmsec-' + r.id + '-' + si.level, type: 'remoteSecret', pid: p.id, regId: r.id, expired: si.level === 'expired', title: si.level === 'expired' ? 'El secreto de la app de Entra de ' + p.name + ' venció' : 'El secreto de la app de Entra de ' + p.name + ' vence en ' + si.days + (si.days === 1 ? ' día' : ' días'), body: si.level === 'expired' ? 'Las personas no pueden conectar su cuenta hasta que lo rotes.' : 'Rótalo antes del ' + RM.fmtDay(r.secretExp) + '. Al vencer, nadie puede conectar su cuenta.', at: ago(30) }); });
   return { pinned, rest };
