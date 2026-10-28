@@ -94,8 +94,8 @@ export const connections = {
     notAgent: 'No lo escribió el agente',
     askTitle: 'Conecta tu cuenta de {{service}}',
     askBody: 'El agente necesita leer {{service}} con tu cuenta. Vas a iniciar sesión en {{idp}}.',
-    // The design says «El agente sigue con tu pregunta.», but nothing continues the turn yet: the
-    // owner chose this text until it does (round 25 brief).
+    // The design says «El agente sigue con tu pregunta.», but nothing continues the turn yet: this
+    // text was chosen when building it, 2026-10-28, until it does (round 25 brief).
     doneTitle: 'Conectado',
     doneBody: 'Tu cuenta de {{service}} quedó conectada. Vuelve a enviar tu pregunta.',
     waitingTitle: 'Inicia sesión en {{idp}} en la otra pestaña',
