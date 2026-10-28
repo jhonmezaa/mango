@@ -773,9 +773,9 @@ function Inbox({ tickets, agents, setView, openChat }) {
   const markAll = () => { const n = { ...state }; all.forEach(i => { n[i.id] = { ...n[i.id], read: true }; }); save(n); };
   const loadMore = () => { setMore('loading'); setTimeout(() => { if (S.get().simInbox === 'more') { setMore('error'); return; } setPages(p => p + 1); setMore(null); }, 700); };
   const current = all.find(i => i.id === sel);
-  const ICON = { remoteReq: ['External', 'var(--amber)'], remoteTask: ['External', 'var(--amber)'], remoteSecret: ['Lock', 'var(--amber)'], kbsource: ['BookOpen', 'var(--amber)'], approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
+  const ICON = { remoteReq: ['External', 'var(--amber)'], remoteTask: ['External', 'var(--amber)'], remoteGone: ['External', 'var(--amber)'], remoteSecret: ['Lock', 'var(--amber)'], kbsource: ['BookOpen', 'var(--amber)'], approval: ['Lock', 'var(--amber)'], mention: ['Chat', 'var(--accent-ink)'], budget: ['Money', 'var(--amber)'], ticket: ['Tickets', 'var(--text-muted)'], system: ['Activity', 'var(--text-muted)'], run: ['Clock', 'var(--text-muted)'] };
   const iconOf = (it) => it.type === 'remoteSecret' && it.expired ? ['Lock', 'var(--red)'] : it.type === 'request' ? (it.ok ? ['Check2', 'var(--green)'] : ['X2', 'var(--red)']) : it.type === 'task' ? (it.kind === 'retired' ? ['Archive', 'var(--text-muted)'] : ['Pause', 'var(--amber)']) : ICON[it.type];
-  const TYPE = { remoteReq: 'Aprobación', remoteTask: 'Tarea', remoteSecret: 'Servicio externo', kbsource: 'Aprobación', approval: 'Aprobación', request: 'Tu solicitud', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución', task: 'Tarea' };
+  const TYPE = { remoteReq: 'Aprobación', remoteTask: 'Tarea', remoteGone: 'Tarea', remoteSecret: 'Servicio externo', kbsource: 'Aprobación', approval: 'Aprobación', request: 'Tu solicitud', mention: 'Mención', budget: 'Presupuesto', ticket: 'Ticket', system: 'Sistema', run: 'Ejecución', task: 'Tarea' };
   const loadErr = sim === 'error'; const loading = sim === 'loading';
 
   return (
@@ -863,6 +863,7 @@ function Inbox({ tickets, agents, setView, openChat }) {
                   {current.type === 'run' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId, run: current.ok ? current.runId : null, ref: current.runId } }); setView('schedules'); }}>{current.ok ? 'Ver resultado' : 'Ver ejecución'} <I.ArrowRight size={11} /></button>}
                   {pdf && <window.ScRepDl s={sc} r={run} btn />}
                   {current.type === 'task' && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ scOpen: { id: current.scheduleId } }); setView('schedules'); }}>Ver tarea <I.ArrowRight size={11} /></button>}
+                  {current.type === 'remoteGone' && <button className="btn btn-sm btn-primary" onClick={() => setView('schedules')}>Ver tareas <I.ArrowRight size={11} /></button>}
                   {current.type === 'remoteTask' && <button className="btn btn-sm btn-primary" onClick={() => window.dispatchEvent(new CustomEvent('mango:my-connections'))}>Ir a Mis conexiones <I.ArrowRight size={11} /></button>}
                   {(current.type === 'remoteReq' || current.type === 'remoteSecret') && <button className="btn btn-sm btn-primary" onClick={() => { S.set({ rmOpen: { pid: current.pid, id: current.regId } }); setView('mcp'); }}>{current.type === 'remoteReq' ? 'Revisar la solicitud' : 'Rotar secreto'} <I.ArrowRight size={11} /></button>}
                   {current.type === 'mention' && !replying && <button className="btn btn-sm btn-primary" onClick={() => setReplying(true)}><I.Chat size={12} /> Responder</button>}

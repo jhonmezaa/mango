@@ -618,6 +618,12 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
   const agentSkills = (window.MangoStore.get().skills || allSkills).filter(s => s.usedBy?.includes(agent.id)).slice(0, 10);
   const agentMcp = agent.mcp.map(id => mcpServers.find(m => m.id === id)).filter(Boolean);
   const soon = window.useSoon();
+  // Lo que puede usar la versión se pide al abrir el popover: hasta entonces el contador muestra «–».
+  const [popState, setPopState] = useState(null);
+  const loadPop = () => { setPopState('loading'); setTimeout(() => setPopState(window.MangoStore.get().simChatPop === 'error' ? 'error' : 'ok'), 500); };
+  const togglePop = () => { setToolsOpen(x => !x); if (!toolsOpen && popState !== 'ok' && popState !== 'loading') loadPop(); };
+  const popOk = popState === 'ok';
+  useEffect(() => { setPopState(null); }, [agent.id]);
   return (
     <div className="topbar">
       <div className="row gap-3" style={{minWidth: 0, flex: '1 1 auto'}}>
@@ -641,8 +647,8 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
           <I.Activity size={12} />
         </button>
         <div style={{position:'relative'}} ref={toolsRef} className={soon ? 'ch-soon-wrap ch-soon-2' : ''}>
-          <window.Soon on={soon}><button className={`btn btn-sm ${toolsOpen ? 'btn-primary' : ''}`} onClick={() => setToolsOpen(x => !x)} title="Skills y tools disponibles">
-            <I.Skill size={11} /> {agentSkills.length} · <I.Cloud size={11} /> {agentMcp.length}
+          <window.Soon on={soon}><button className={`btn btn-sm ${toolsOpen ? 'btn-primary' : ''}`} onClick={togglePop} title="Skills y tools disponibles" aria-expanded={toolsOpen}>
+            <I.Skill size={11} /> {popOk ? agentSkills.length : '–'} · <I.Cloud size={11} /> {popOk ? agentMcp.length : '–'}
           </button></window.Soon>
           {toolsOpen && (
             <div className="tools-pop">
@@ -650,7 +656,9 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
                 <div style={{fontSize: 12.5, fontWeight: 600}}>Qué puede usar {agent.name}</div>
                 <div style={{fontSize: 11.5, color:'var(--text-muted)', marginTop: 3, lineHeight: 1.45}}>Lo fija la versión que te responde. Cambiarlo es una versión nueva del agente, con su aprobación.</div>
               </div>
-
+              {popState === 'loading' && <div className="row gap-2" role="status" style={{padding:'14px', fontSize: 12, color:'var(--text-muted)'}}><span className="g-spin" /> Cargando…</div>}
+              {popState === 'error' && <div role="alert" style={{padding:'12px 14px'}}><div style={{fontSize: 12, fontWeight: 600}}>No se pudo cargar qué puede usar {agent.name}</div><div style={{fontSize: 11.5, color:'var(--text-muted)', marginTop: 3}}>Inténtalo de nuevo en unos segundos.</div><button className="btn btn-sm" style={{marginTop: 8}} onClick={() => { window.MangoStore.set({ simChatPop: null }); loadPop(); }}><I.Refresh size={11} /> Reintentar</button></div>}
+              {popOk && <>
               <div style={{padding:'12px 14px 8px'}}>
                 <div style={{fontSize: 10.5, color:'var(--text-muted)', fontWeight: 500, marginBottom: 4}}>Skills · {agentSkills.length}</div>
                 <div style={{fontSize: 11.5, color:'var(--text-muted)', lineHeight: 1.45, marginBottom: 8}}>Son instrucciones: no ejecutan nada. El agente carga una cuando le sirve; si quieres que use alguna, pídelo en tu mensaje y puede seguirlo o no.</div>
@@ -677,12 +685,12 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
                   <div key={m.id} className="row between" style={{padding:'6px 0', borderTop:'1px solid var(--border)'}}>
                     <div style={{minWidth: 0}}>
                       <div className="mono" style={{fontSize: 11.5, fontWeight: 600}}>⌘ {m.id}</div>
-                      <div style={{fontSize: 10.5, color:'var(--text-muted)'}}>{m.toolsCount} tools · {m.latency}ms</div>
+                      <div style={{fontSize: 10.5, color:'var(--text-muted)'}}>{m.toolsCount} tools</div>
                     </div>
-                    <span className={`dot dot-${m.health === 'ok' ? 'green' : m.health === 'warn' ? 'amber' : 'red'}`} />
                   </div>
                 ))}
               </div>
+              </>}
             </div>
           )}
         </div>

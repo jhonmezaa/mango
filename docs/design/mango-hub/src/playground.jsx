@@ -162,12 +162,14 @@ function Playground({ agents, models }) {
   const secret = L.findSecret(snap.prompt);
   const verState = av && (sim === 'ver-loading' || sim === 'ver-error') ? sim : null;
   const skillRows0 = (snap.skills || []).map(x => { const [id, v] = x.split('@'); const s = (S.get().skills || []).find(k => k.id === id); return { x, name: s?.name || id, v }; });
-  const offSkill = sim === 'skill-off' ? (skillRows0[0] || { x: 'rightsizing-ecs@2', name: 'Rightsizing ECS', v: '2' }) : null;
+  const offSkill = sim === 'skill-off' || sim === 'skills-off' ? (skillRows0[0] || { x: 'rightsizing-ecs@2', name: 'Rightsizing ECS', v: '2' }) : null;
+  const offSkills = !offSkill ? [] : sim === 'skills-off' ? [offSkill, skillRows0[1] || { x: 'etiquetado-costos@1', name: 'Etiquetado de costos', v: '1' }] : [offSkill];
   const noToolsModel = sim === 'no-tools-model';
   const block = sim === 'retired' ? { tone: 'error', title: 'Este agente se retiró', body: 'Ya no se puede probar. Elige otro en «Qué probar».' }
     : sim === 'not-testable' ? { tone: 'warn', title: 'Esta versión no se puede probar', body: 'Solo se prueban los borradores y la versión publicada. Elige otra.' }
     : noToolsModel ? { tone: 'warn', title: 'Elige un modelo para probar', body: snap.model + ' no admite tools y este agente usa tools o knowledge bases.' }
-    : offSkill ? { tone: 'error', title: 'Una skill de esta versión ya no está aprobada', body: offSkill.name + ' v' + offSkill.v + ' ya no está aprobada. Cámbiala en el Agent Builder para probar.', action: <button className="btn btn-sm" onClick={() => window.MangoNav?.('admin', srcRev?.agentId || srcAgent?.id)}>Abrir en el Agent Builder</button> }
+    : sim === 'skills-err' ? { tone: 'error', title: 'No se pudieron cargar las skills de esta versión', body: 'La prueba no puede correr sin ellas. Inténtalo de nuevo en unos segundos.', action: <button className="btn btn-sm" onClick={() => S.set({ simPg: null })}><I.Refresh size={11} /> Reintentar</button> }
+    : offSkill ? { tone: 'error', title: offSkills.length > 1 ? offSkills.length + ' skills de esta versión ya no están aprobadas' : 'Una skill de esta versión ya no está aprobada', body: offSkills.length > 1 ? offSkills.map(s => s.name + ' v' + s.v).join(' y ') + ' ya no están aprobadas. Cámbialas en el Agent Builder para probar.' : offSkill.name + ' v' + offSkill.v + ' ya no está aprobada. Cámbiala en el Agent Builder para probar.', action: <button className="btn btn-sm" onClick={() => window.MangoNav?.('admin', srcRev?.agentId || srcAgent?.id)}>Abrir en el Agent Builder</button> }
     : !av ? null
     : verState ? { tone: 'info', silent: true }
     : secret ? { tone: 'error', title: 'Hay un posible secreto en el prompt', body: 'Quítalo para probar: el prompt se manda al modelo y un secreto no puede llegar a su contexto. Tampoco se podrá enviar a aprobación.' }
@@ -276,10 +278,10 @@ function Playground({ agents, models }) {
 
           {sim === 'skills-err' ? <>
             <Lb>Skills</Lb>
-            <K.Banner tone="warn" title="No se pudieron cargar las skills de esta versión"><div>La prueba corre igual, sin ellas. Inténtalo de nuevo en unos segundos.</div><button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => S.set({ simPg: null })}><I.Refresh size={11} /> Reintentar</button></K.Banner>
+            <div className="mk-meta" role="status" style={{ lineHeight: 1.45 }}>No se pudieron cargar. Sin ellas la prueba no corre.</div>
           </> : (skillRows.length > 0 || offSkill) && <>
-            <Lb>Skills · {Math.max(skillRows.length, offSkill ? 1 : 0)}</Lb>
-            <div className="pg-tools">{(skillRows.length ? skillRows : [offSkill]).map(s => { const off = offSkill && s.x === offSkill.x; return <div key={s.x} className={'pg-tool' + (off ? ' off' : '')}><span>{s.name}</span>{off ? <span className="badge badge-red">Ya no aprobada</span> : <span className="mono mk-meta">v{s.v}</span>}</div>; })}</div>
+            <Lb>Skills · {Math.max(skillRows.length, offSkills.length)}</Lb>
+            <div className="pg-tools">{(skillRows.length >= offSkills.length ? skillRows : offSkills).map(s => { const off = offSkills.some(o => o.x === s.x); return <div key={s.x} className={'pg-tool' + (off ? ' off' : '')}><span>{s.name}</span>{off ? <span className="badge badge-red">Ya no aprobada</span> : <span className="mono mk-meta">v{s.v}</span>}</div>; })}</div>
             <div className="mk-meta" style={{ marginTop: 6 }}>Se cargan igual que en el agente publicado. Se cambian en el Agent Builder.</div>
           </>}
 
@@ -316,7 +318,7 @@ function Playground({ agents, models }) {
               {runs.length > 0 && <button className="btn btn-sm btn-ghost" onClick={() => { reset(); setRuns([]); setVote({}); }}>Limpiar</button>}
             </div>
           </div>
-          {block && !block.silent && <div style={{ padding: '14px 24px 0' }}><K.Banner tone={block.tone} title={block.title}>{block.body}{block.action && <div style={{ marginTop: 8 }}>{block.action}</div>}</K.Banner></div>}
+          {block && !block.silent && <div style={{ padding: '14px 24px 0' }}><K.Banner tone={block.tone} title={block.title} action={block.action}>{block.body}</K.Banner></div>}
           <div className="pg-runs" style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
             {runs.length === 0 && (
               <div style={{ maxWidth: 460, margin: '10vh auto', textAlign: 'center', color: 'var(--text-muted)' }}>

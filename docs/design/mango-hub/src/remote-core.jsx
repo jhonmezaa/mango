@@ -6,34 +6,35 @@ const S = window.MangoStore;
 const DAY = 864e5;
 const PROFILES = [{
   id: 'azure-devops', name: 'Azure DevOps', short: 'AD', operator: 'Microsoft', idp: 'Microsoft', host: 'dev.azure.com', hosts: ['dev.azure.com', 'visualstudio.com'], version: '1.0',
-  desc: 'Lee work items, repositorios, wiki y pipelines de Azure DevOps con la cuenta de Microsoft de cada persona.',
+  // Grupos de tools, nombres y permisos salen del perfil del servicio: aquí son un ejemplo. El perfil no trae descripción ni requisitos.
   toolsets: [
-    { id: 'core', label: 'Proyectos y equipos', tools: ['core_list_projects', 'core_list_project_teams'] },
-    { id: 'work-items', label: 'Work items', tools: ['wit_get_work_item', 'wit_my_work_items', 'wit_get_work_items_for_iteration'] },
-    { id: 'repos', label: 'Repositorios', tools: ['repo_list_repos_by_project', 'repo_list_pull_requests_by_repo', 'repo_get_pull_request_by_id'] },
-    { id: 'wiki', label: 'Wiki', tools: ['wiki_list_pages', 'wiki_get_page_content'] },
-    { id: 'pipelines', label: 'Pipelines', tools: ['pipelines_get_builds', 'pipelines_get_build_log'] },
-    { id: 'search', label: 'Búsqueda', tools: ['search_code', 'search_wiki', 'search_workitem'] },
+    { id: 'core', label: 'Proyectos', tools: ['core_project'] },
+    { id: 'work-items', label: 'Work items', tools: ['wit_work_item', 'wit_query'] },
+    { id: 'wiki', label: 'Wiki', tools: ['wiki', 'search_wiki'] },
+    { id: 'pipelines', label: 'Pipelines', tools: ['pipelines_build'] },
+    { id: 'code-search', label: 'Búsqueda de código', tools: ['search_code'] },
   ],
-  scopes: [['Azure DevOps', 'user_impersonation', 'Delegado: lee con los permisos de la persona'], ['Microsoft Entra', 'offline_access', 'Mantiene la conexión sin pedir el login cada vez']],
-  reqs: ['Una organización de Azure DevOps conectada a Microsoft Entra.', 'Una app registrada en Entra, tipo Web, con permisos delegados de lectura.', 'Consentimiento de administrador en Entra para esos permisos.'],
+  scopes: { app: 'Azure DevOps MCP', perms: ['vso.project', 'vso.work', 'vso.wiki', 'vso.build', 'vso.code'], extra: ['offline_access'] },
 }];
-const REDIRECT = (pid) => 'https://api.mango.empresa.com/oauth/remote/' + pid + '/callback';
+// La URL de callback la da AWS al crear la conexión de cada registro. No es una dirección de Mango.
+const REDIRECT = (uuid) => 'https://bedrock-agentcore.us-east-1.amazonaws.com/identities/oauth2/callback/' + (uuid || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '6b1f0c2e-4d7a-4e19-9c3b-' + Math.random().toString(16).slice(2, 14)));
 const SECRET_DAYS = { ok: 120, d30: 21, d7: 5, expired: -2 };
 const iso = (ms) => new Date(Date.now() + ms).toISOString();
 
 function seedRegs(kind = 'active', secret = 'd30') {
-  const hist = [{ id: 'RMT-1c9e0b44', profile: 'azure-devops', org: 'empresa-labs', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d', toolsets: ['work-items', 'repos'], groups: ['mango-agent-creator'], status: 'rejected', by: 'Usuario 1', at: iso(-26 * DAY), decidedBy: 'Usuario 6', decidedAt: iso(-25 * DAY), reason: 'La app de Entra pedía permisos de escritura en Azure DevOps' }, { id: 'RMT-5d2f8a71', profile: 'azure-devops', org: 'empresa', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '3b9d0c12-8e4f-4a6b-b7c8-0d1e2f3a4b5c', toolsets: ['work-items'], groups: ['finops-central'], status: 'withdrawn', by: 'Usuario 6', at: iso(-22 * DAY), decidedBy: 'Usuario 6', decidedAt: iso(-22 * DAY) }];
+  const hist = [{ id: 'RMT-1c9e0b44', profile: 'azure-devops', org: 'empresa-labs', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d', toolsets: ['work-items', 'wiki'], groups: ['mango-agent-creator'], status: 'rejected', by: 'Usuario 1', at: iso(-26 * DAY), decidedBy: 'Usuario 6', decidedAt: iso(-25 * DAY), reason: 'La app de Entra pedía permisos de escritura en Azure DevOps' }, { id: 'RMT-5d2f8a71', profile: 'azure-devops', org: 'empresa', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '3b9d0c12-8e4f-4a6b-b7c8-0d1e2f3a4b5c', toolsets: ['work-items'], groups: ['finops-central'], status: 'withdrawn', by: 'Usuario 6', at: iso(-22 * DAY), decidedBy: 'Usuario 6', decidedAt: iso(-22 * DAY) }];
   if (kind === 'none') return [];
-  const base = { id: 'RMT-7f3a2c10', profile: 'azure-devops', org: 'empresa', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '3b9d0c12-8e4f-4a6b-b7c8-0d1e2f3a4b5c', toolsets: ['core', 'work-items', 'repos', 'wiki', 'search'], groups: ['finops-central', 'mango-agent-creator'], secretExp: iso(SECRET_DAYS[secret] * DAY), redirect: REDIRECT('azure-devops') };
+  const base = { id: 'RMT-7f3a2c10', profile: 'azure-devops', org: 'empresa', tenantId: '7c1e2a40-5b6d-4e8f-9a01-23456789abcd', clientId: '3b9d0c12-8e4f-4a6b-b7c8-0d1e2f3a4b5c', toolsets: ['core', 'work-items', 'wiki', 'code-search'], groups: ['finops-central', 'mango-agent-creator'], secretExp: iso(SECRET_DAYS[secret] * DAY), redirect: REDIRECT('5f2c8e1a-9b3d-4c7e-a1f0-2d6e8b4c0a97') };
   if (kind === 'pending-other') return [...hist, { ...base, status: 'pending', by: 'Usuario 6', at: iso(-3 * 36e5) }];
   if (kind === 'pending-mine') return [...hist, { ...base, status: 'pending', by: 'Usuario 1', at: iso(-3 * 36e5) }];
   if (kind === 'creating') return [...hist, { ...base, status: 'creating', by: 'Usuario 6', at: iso(-1 * 36e5), approvedBy: 'Usuario 1', approvedAt: iso(-6e4) }];
   if (kind === 'failed') return [...hist, { ...base, status: 'failed', by: 'Usuario 6', at: iso(-1 * 36e5), approvedBy: 'Usuario 1', approvedAt: iso(-5 * 6e4) }];
-  if (kind === 'disabled') return [...hist, { ...base, status: 'disabled', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', disabledBy: 'Usuario 6', disabledAt: iso(-1 * DAY), reason: 'Pausa mientras se revisan los permisos de la app en Entra' }];
+  if (kind === 'disabled') return [...hist, { ...base, status: 'disabled', secretExp: null, redirect: null, by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', disabledBy: 'Usuario 6', disabledAt: iso(-1 * DAY), reason: 'Pausa mientras se revisan los permisos de la app en Entra' }];
+  const act = { ...base, status: 'active', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', approvedAt: iso(-19 * DAY) };
+  if (kind === 'scope-other' || kind === 'scope-mine') return [...hist, act, { id: 'RMT-a4e19c0b', kind: 'scope', changes: act.id, profile: act.profile, org: act.org, toolsets: [...act.toolsets, 'pipelines'], groups: ['finops-central', 'mango-agent-creator', 'bu-plataforma'], status: 'pending', by: kind === 'scope-mine' ? 'Usuario 1' : 'Usuario 6', at: iso(-2 * 36e5) }];
   return [...hist, { ...base, status: 'active', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', approvedAt: iso(-19 * DAY) }];
 }
-if (!S.get().remoteRegs) S.set({ remoteRegs: seedRegs(), remoteConn: { 'azure-devops': { status: 'none' } } });
+if (!S.get().remoteRegs || S.get().remoteRegs.some(r => (r.toolsets || []).includes('repos') || /api\.mango/.test(r.redirect || ''))) S.set({ remoteRegs: seedRegs(), remoteConn: { 'azure-devops': { status: 'none' } } });
 
 const get = () => S.get();
 const profile = (id) => PROFILES.find(p => p.id === id);
@@ -41,7 +42,7 @@ const regs = () => get().remoteRegs || [];
 const myGroups = () => (S.ROLES[get().role] || { groups: [] }).groups;
 const inMyGroups = (r) => r.groups.some(g => myGroups().includes(g));
 const conn = (pid) => (get().remoteConn || {})[pid] || { status: 'none' };
-const secretInfo = (r) => { const d = Math.ceil((new Date(r.secretExp) - Date.now()) / DAY); return { days: d, level: d <= 0 ? 'expired' : d <= 7 ? 'd7' : d <= 30 ? 'd30' : 'ok' }; };
+const secretInfo = (r) => { if (!r.secretExp) return { days: 0, level: 'none' }; const d = Math.ceil((new Date(r.secretExp) - Date.now()) / DAY); return { days: d, level: d <= 0 ? 'expired' : d <= 7 ? 'd7' : d <= 30 ? 'd30' : 'ok' }; };
 const fmtDay = (at) => new Date(at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 const toolsOf = (p, sets) => p.toolsets.filter(t => !sets || sets.includes(t.id));
 const setRegs = (list) => S.set({ remoteRegs: list });
@@ -51,6 +52,7 @@ const GONE = 'Este servicio ya no está en esta versión de Mango.';
 const LIVE = ['active', 'pending', 'creating'];
 const HIST = ['rejected', 'withdrawn'];
 // Enlaces: solo una organización registrada en la instalación se presenta como del servicio.
+// Solo cuentan las organizaciones de los servicios que esa persona puede usar, no todas las de la empresa.
 function classifyLink(pid, url) {
   const p = profile(pid); let u; try { u = new URL(url); } catch (e) { return { kind: 'other', host: '', label: '' }; }
   const host = u.hostname.toLowerCase().replace(/^www\./, '');
@@ -59,13 +61,21 @@ function classifyLink(pid, url) {
   else if (host.endsWith('.visualstudio.com')) org = host.split('.')[0];
   const svc = !!p && p.hosts.some(h => host === h || host.endsWith('.' + h));
   if (!svc) return { kind: 'other', host, label };
-  const own = org && regs().some(r => r.profile === pid && ['active', 'disabled', 'creating'].includes(r.status) && r.org.toLowerCase() === org);
+  const own = org && regs().some(r => r.profile === pid && r.status === 'active' && r.kind !== 'scope' && inMyGroups(r) && r.org.toLowerCase() === org);
   return { kind: own ? 'own' : 'other-org', host, org, label };
 }
 
+// Errores al pulsar «Conectar» (tarjeta del chat y del Playground, Mis conexiones).
+const CONNECT_ERR = {
+  error: () => ['No se pudo iniciar la conexión', 'Inténtalo de nuevo en unos segundos.'],
+  identity_unavailable: (p) => ['El servicio de identidad no responde', 'Mango no pudo pedir el inicio de sesión en ' + p.idp + '. Inténtalo de nuevo en unos minutos.'],
+  rate_limited: () => ['Demasiados intentos seguidos', 'Espera un minuto y vuelve a pulsar «Conectar».'],
+};
+const resetConn = (pid) => S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'none' } } });
 const RM = {
-  PROFILES, profile, regs, myGroups, inMyGroups, conn, secretInfo, fmtDay, toolsOf, seedRegs, SECRET_DAYS,
+  PROFILES, CONNECT_ERR, profile, regs, myGroups, inMyGroups, conn, secretInfo, fmtDay, toolsOf, seedRegs, SECRET_DAYS,
   classifyLink, HIST,
+  target: (r) => r.kind === 'scope' ? regs().find(x => x.id === r.changes) : null,
   regsOf: (pid) => regs().filter(r => r.profile === pid && !HIST.includes(r.status)),
   histOf: (pid) => regs().filter(r => r.profile === pid && HIST.includes(r.status)).sort((a, b) => new Date(b.decidedAt || b.at) - new Date(a.decidedAt || a.at)),
   active: (pid) => regs().find(r => r.profile === pid && r.status === 'active'),
@@ -76,10 +86,19 @@ const RM = {
   request: (f, replaces) => {
     const p = profile(f.profile);
     if (get().simRemoteGone || !p) return { error: GONE };
-    if (regs().some(r => r.profile === f.profile && r.org.toLowerCase() === f.org.toLowerCase() && LIVE.includes(r.status) && r.id !== replaces && r.replaces !== replaces)) return { error: p.name + ' ya está habilitado para esa organización.' };
-    const reg = { id: newId(), profile: f.profile, org: f.org, tenantId: f.tenantId.toLowerCase(), clientId: f.clientId.toLowerCase(), toolsets: f.toolsets, groups: f.groups, secretExp: new Date(f.secretExp + 'T12:00:00').toISOString(), status: 'pending', by: S.actor(), at: new Date().toISOString(), redirect: REDIRECT(f.profile), replaces: replaces || null };
+    if (regs().some(r => r.profile === f.profile && r.org.toLowerCase() === f.org.toLowerCase() && LIVE.includes(r.status) && r.kind !== 'scope' && r.id !== replaces && r.replaces !== replaces)) return { error: p.name + ' ya está habilitado para esa organización.' };
+    const reg = { id: newId(), profile: f.profile, org: f.org, tenantId: f.tenantId.toLowerCase(), clientId: f.clientId.toLowerCase(), toolsets: f.toolsets, groups: f.groups, secretExp: new Date(f.secretExp + 'T12:00:00').toISOString(), status: 'pending', by: S.actor(), at: new Date().toISOString(), redirect: REDIRECT(), replaces: replaces || null };
     setRegs([...regs(), reg]);
     S.log('remote_mcp.request', reg.id, (replaces ? 'Pidió cambiar tenant o app de ' : 'Pidió habilitar ') + p.name + ' para ' + f.org, { outcome: 'requested' });
+    return { reg };
+  },
+  // Cambiar grupos de tools o de personas de un servicio activo: doble aprobación, nadie reconecta.
+  requestScope: (regId, toolsets, groups) => {
+    const t = regs().find(x => x.id === regId); const p = profile(t.profile);
+    if (get().simRemoteGone || !p) return { error: GONE };
+    const reg = { id: newId(), kind: 'scope', changes: regId, profile: t.profile, org: t.org, toolsets, groups, status: 'pending', by: S.actor(), at: new Date().toISOString() };
+    setRegs([...regs(), reg]);
+    S.log('remote_mcp.request', reg.id, 'Pidió cambiar los grupos de ' + p.name + ' para ' + t.org, { outcome: 'requested' });
     return { reg };
   },
   // Paso 2 · aprobar (otra persona administradora).
@@ -87,6 +106,11 @@ const RM = {
     const r = regs().find(x => x.id === id); if (!r) return {};
     if (get().simRemoteGone) return { error: GONE };
     if (r.by === S.actor()) return { error: 'Otra persona administradora tiene que aprobarlo.' };
+    if (r.kind === 'scope') {
+      setRegs(regs().filter(x => x.id !== id).map(x => x.id === r.changes ? { ...x, toolsets: r.toolsets, groups: r.groups } : x));
+      S.log('remote_mcp.approve', id, 'Aprobó cambiar los grupos de ' + profile(r.profile).name + ' para ' + r.org);
+      return { scope: true };
+    }
     // «Creándose» unos segundos, hasta que la conexión existe; después «Habilitado» o «Falló».
     upd(id, { status: 'creating', approvedBy: S.actor(), approvedAt: new Date().toISOString() });
     S.log('remote_mcp.approve', id, 'Aprobó ' + profile(r.profile).name + ' para ' + r.org);
@@ -96,6 +120,7 @@ const RM = {
       let list = regs().map(x => x.id === id ? { ...x, status: 'active', replaces: null } : x);
       if (r.replaces) list = list.filter(x => x.id !== r.replaces);
       setRegs(list);
+      if (r.replaces) resetConn(r.profile); // otro tenant o app: todas las personas conectan otra vez
     }, 2600);
     return {};
   },
@@ -103,14 +128,22 @@ const RM = {
   reject: (id, reason) => { const r = regs().find(x => x.id === id); upd(id, { status: 'rejected', decidedBy: S.actor(), decidedAt: new Date().toISOString(), reason, secretExp: null, redirect: null }); S.log('remote_mcp.reject', id, 'Rechazó ' + profile(r.profile).name + ' para ' + r.org + (reason ? ': «' + reason + '»' : '')); },
   withdraw: (id) => { const r = regs().find(x => x.id === id); upd(id, { status: 'withdrawn', decidedBy: S.actor(), decidedAt: new Date().toISOString(), secretExp: null, redirect: null }); S.log('remote_mcp.withdraw', id, 'Retiró la solicitud de ' + profile(r.profile).name + ' para ' + r.org); },
   rotate: (id, exp) => { const r = regs().find(x => x.id === id); upd(id, { secretExp: new Date(exp + 'T12:00:00').toISOString() }); S.log('remote_mcp.rotate_secret', id, 'Rotó el secreto de la app de Entra de ' + profile(r.profile).name); },
-  disable: (id, reason) => { const r = regs().find(x => x.id === id); upd(id, { status: 'disabled', disabledBy: S.actor(), disabledAt: new Date().toISOString(), reason }); S.log('remote_mcp.disable', id, 'Deshabilitó ' + profile(r.profile).name + ' para ' + r.org + ': «' + reason + '»'); },
+  // Deshabilitar borra la conexión y el secreto. «Pedir de nuevo» pide el secreto otra vez.
+  disable: (id, reason) => { const r = regs().find(x => x.id === id); upd(id, { status: 'disabled', disabledBy: S.actor(), disabledAt: new Date().toISOString(), reason, secretExp: null, redirect: null }); resetConn(r.profile); S.log('remote_mcp.disable', id, 'Deshabilitó ' + profile(r.profile).name + ' para ' + r.org + ': «' + reason + '»'); },
   // Conectar la cuenta propia. Si ya estaba conectada, responde sin abrir Microsoft.
   connect: (pid, from = 'connections') => {
     if (conn(pid).status === 'connected') return 'already';
+    if (get().simRemoteConnectErr) return 'error:' + get().simRemoteConnectErr;
     if (conn(pid).server) { S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'connected', at: conn(pid).at || new Date().toISOString() } } }); return 'already'; }
     S.set({ remoteConn: { ...get().remoteConn, [pid]: { status: 'connecting' } }, remoteReturn: { pid, from } });
     setTimeout(() => { window.dispatchEvent(new CustomEvent('mango:close-connections')); window.MangoNav?.('connect-return'); }, 1300);
     return 'opening';
+  },
+  // Desconectar: Mango borra la conexión de esa persona. No revoca nada en Microsoft.
+  disconnect: (pid) => {
+    if (get().simRemoteDisconnect === 'fail') return { error: 'disconnect_not_confirmed' };
+    resetConn(pid); S.log('remote_mcp.disconnect', pid, 'Desconectó su cuenta de ' + profile(pid).name);
+    return {};
   },
   finish: (pid, result) => {
     const prev = conn(pid).status;
@@ -147,6 +180,7 @@ function RmCopy({ value, label = 'URL de redirección' }) {
   </div>;
 }
 function SecretLine({ r }) {
+  if (!r.secretExp) return <span className="mk-meta">Borrado al deshabilitar</span>;
   const si = secretInfo(r);
   const txt = si.level === 'expired' ? 'Venció el ' + fmtDay(r.secretExp) : 'Vence el ' + fmtDay(r.secretExp) + ' · en ' + si.days + (si.days === 1 ? ' día' : ' días');
   return <span className="row gap-2" style={{ flexWrap: 'wrap' }}><span style={{ color: si.level === 'expired' ? 'var(--red)' : si.level === 'ok' ? 'var(--text)' : 'var(--amber)' }}>{txt}</span></span>;
@@ -175,7 +209,8 @@ function DisableModal({ r, onClose }) {
   const toast = window.useToast?.(); const [why, setWhy] = useState(''); const [tried, setTried] = useState(false); const p = profile(r.profile);
   const go = () => { setTried(true); if (!why.trim()) return; RM.disable(r.id, why.trim()); toast?.({ tone: 'success', msg: p.name + ' deshabilitado para ' + r.org }); onClose(); };
   return <window.Modal open onClose={onClose} title={'Deshabilitar ' + p.name} width={460}>
-    <p className="rm-p">Nadie podrá usar sus tools ni conectar su cuenta. Los agentes que las tienen siguen publicados y responden sin ellas.</p>
+    <p className="rm-p">Mango borra la conexión con {p.name} y el secreto de la app de Entra. Nadie podrá usar sus tools ni conectar su cuenta, y quienes ya la conectaron pierden la conexión. Los agentes que las tienen siguen publicados y responden sin ellas.</p>
+    <p className="rm-p">Para volver a habilitarlo hay que pedirlo de nuevo, con el secreto, y otra persona administradora tiene que aprobarlo.</p>
     <RmField id="rm-dw" label="Motivo" error={tried && !why.trim() && 'El motivo es obligatorio'}><textarea id="rm-dw" className="input" rows={2} value={why} onChange={e => setWhy(e.target.value)} autoFocus /></RmField>
     <div className="row gap-2" style={{ justifyContent: 'flex-end', marginTop: 18 }}><button className="btn btn-sm" onClick={onClose}>Cancelar</button><button className="btn btn-sm mk-danger" onClick={go}>Deshabilitar</button></div>
   </window.Modal>;
@@ -195,21 +230,25 @@ function ConnectCard({ pid, expired: forceExp, startedAt }) {
   const st = window.useMango(s => (s.remoteConn || {})[pid]?.status) || 'none';
   const [t0] = useState(() => startedAt || Date.now());
   const [now, setNow] = useState(Date.now());
+  const [err, setErr] = useState(null);
   useEffect(() => { if (st !== 'none' || forceExp) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [st, forceExp]);
   const left = Math.max(0, 600 - Math.floor((now - t0) / 1000));
   const expired = forceExp || left === 0;
   const mmss = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
-  const state = st === 'connected' ? 'done' : st === 'connecting' ? 'opening' : expired ? 'expired' : 'ask';
+  const state = st === 'connected' ? 'done' : st === 'connecting' ? 'opening' : expired ? 'expired' : err ? 'error' : 'ask';
+  const go = () => { const r = RM.connect(pid, 'chat'); setErr(typeof r === 'string' && r.startsWith('error:') ? r.slice(6) : null); };
+  const ce = err && (CONNECT_ERR[err] || CONNECT_ERR.error)(p);
   return <section className={'rm-card is-' + state} aria-label={'Aviso de Mango: conectar ' + p.name}>
     <div className="rm-card-h"><I.Mango size={12} /><span>Mango</span><span className="rm-card-dot" aria-hidden="true">·</span><span>No lo escribió el agente</span></div>
     <div className="rm-card-b">
       <RmTile p={p} />
-      <div style={{ flex: 1, minWidth: 0 }} role={state === 'expired' ? 'status' : undefined}>
+      <div style={{ flex: 1, minWidth: 0 }} role={state === 'expired' ? 'status' : state === 'error' ? 'alert' : undefined}>
         {state === 'done' ? <><div className="rm-card-t">Conectado. Vuelve a enviar tu pregunta.</div><div className="rm-card-s">Tu cuenta de {p.name} quedó conectada. El agente lee con tus permisos, solo lectura.</div></>
+          : state === 'error' ? <><div className="rm-card-t">{ce[0]}</div><div className="rm-card-s">{ce[1]}</div></>
           : state === 'expired' ? <><div className="rm-card-t">El enlace venció</div><div className="rm-card-s">Vuelve a preguntar para conectar, o hazlo desde <button className="sr-link" onClick={() => window.dispatchEvent(new CustomEvent('mango:my-connections'))}>Mis conexiones</button>.</div></>
           : <><div className="rm-card-t">Conecta tu cuenta de {p.name}</div><div className="rm-card-s">El agente necesita leer {p.name} con tu cuenta. Vas a iniciar sesión en {p.idp}.</div></>}
       </div>
-      {state === 'ask' && <div className="rm-card-a"><button className="btn btn-sm btn-primary" onClick={() => RM.connect(pid, 'chat')}>Conectar <I.External size={11} /></button><span className="rm-card-timer" aria-label={'Vence en ' + mmss}>Vence en {mmss}</span></div>}
+      {(state === 'ask' || state === 'error') && <div className="rm-card-a"><button className={'btn btn-sm' + (state === 'ask' ? ' btn-primary' : '')} onClick={go}>{state === 'error' ? 'Reintentar' : <>Conectar <I.External size={11} /></>}</button><span className="rm-card-timer" aria-label={'Vence en ' + mmss}>Vence en {mmss}</span></div>}
       {state === 'opening' && <div className="rm-card-a"><span className="row gap-2 rm-card-s"><span className="g-spin" /> Abriendo {p.idp}…</span></div>}
       {state === 'done' && <span className="g-dot-lg green" aria-hidden="true"><I.Check size={12} /></span>}
     </div>
@@ -229,7 +268,7 @@ function RemoteLinkBody({ pid, url, onClose }) {
       <div className="rm-copy-l">Te lleva a</div>
       <div className="rm-dest-h mono">{k.label || k.host}</div>
       {own ? <span className="rm-dest-n">Tu organización de {p.name} ({k.org}). Mango solo comprueba la dirección, no lo que hay en la página.</span>
-        : k.kind === 'other-org' ? <><span className="badge badge-red">Otra organización</span><span className="rm-dest-n">{k.org ? <><span className="mono">{k.org}</span> está</> : 'Está'} en {p.name}, pero no es una organización registrada por tu empresa.</span></>
+        : k.kind === 'other-org' ? <><span className="badge badge-red">Otra organización</span><span className="rm-dest-n">{k.org ? <><span className="mono">{k.org}</span> está</> : 'Está'} en {p.name}, pero no es una organización que puedas usar en Mango.</span></>
         : <><span className="badge badge-red">Otro dominio</span><span className="rm-dest-n">No es un dominio de {p.name}.</span></>}
     </div>
     <div className="mono rm-dest-url">{url}</div>

@@ -145,6 +145,8 @@
       const out = !mine && simKb !== 'groups' ? [] : sel.filter(id => { const k = now.find(x => x.id === id); return k && k.status !== 'deleting' && !gone.includes(id) && (simKb === 'groups' || !k.groups.some(g => mine.includes(g))); });
       if (out.length) errs.push({ sec: 'kbs', code: 'kbs-editor', msg: 'Quien editó esta versión no está en los grupos de estas knowledge bases: ' + out.join(', ') + '. Hay que quitarlas.' });
     }
+    // remote_not_usable en la Revisión: quien editó no está en los grupos del servicio externo.
+    if (opts.review && S.get().simReviewRemote) errs.push({ sec: 'tools', code: 'remote-editor', msg: 'Quien editó esta versión no está en los grupos de Azure DevOps: sus tools no se pueden usar. Hay que quitarlas.' });
     if (window.skAgentErrors) errs.push(...window.skAgentErrors(snap));
     if (!(snap.groups || []).length) errs.push({ sec: 'access', code: 'groups', msg: 'Elige al menos un grupo que pueda usarlo.' });
     const sec = secretIn(snap);

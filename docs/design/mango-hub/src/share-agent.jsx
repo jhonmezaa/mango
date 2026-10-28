@@ -147,6 +147,16 @@ function ShareAgent({ agent, canShare, onClose }) {
           {sh.users.map(u => { const p = personOf(u.email); return <Row key={'u' + u.email} kind="user" id={u.email} title={p.name} sub={u.email} icon={<span className="sh-av">{shareInitials(p.name)}</span>} />; })}
         </div>
 
+        {(() => {
+          // remote_audience_outside_groups: quien no está en los grupos del servicio usa el agente sin esas tools.
+          const RM = window.RM; if (!RM || S.get().avail) return null;
+          const pids = [...new Set([...(agent.remoteTools || []), ...(S.get().simShareRemote ? ['azure-devops.wit_work_item'] : [])].map(x => x.split('.')[0]))];
+          return pids.map(pid => { const r = RM.active(pid); const p = RM.profile(pid); if (!r || !p) return null;
+            const gOut = sh.groups.map(g => g.id).filter(g => !r.groups.includes(g)); const uOut = sh.users.length; const all = !!sh.everyone;
+            if (!gOut.length && !uOut && !all) return null;
+            const who = [all ? 'toda la organización' : null, gOut.length ? (gOut.length === 1 ? 'el grupo ' : 'los grupos ') + gOut.join(', ') : null, uOut ? (uOut === 1 ? '1 persona suelta' : uOut + ' personas sueltas') : null].filter(Boolean);
+            return <div key={pid} className="mc-alert amber" role="status" style={{ margin: '4px 20px 8px' }}><I.Warn size={14} /><div>Este agente usa tools de {p.name}, que solo está habilitado para <span className="mono">{r.groups.join(', ')}</span>. Lo compartes con {who.join(' y ')}: quien no esté en esos grupos usa el agente sin esas tools.</div></div>; });
+        })()}
         {editable && diff.length > 0 && (
           <div style={{ padding: '4px 20px 0' }}>
             <div className="sh-h" style={{ marginBottom: 6 }}>cambios que se propondrán</div>

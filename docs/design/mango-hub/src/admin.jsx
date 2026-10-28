@@ -40,6 +40,8 @@ const AB_SERVER_ERR = {
   // Knowledge bases
   'kb-missing': ['kbs', 'Una de las knowledge bases ya no existe o se está borrando. Quítala para enviar.'],
   'kb-forbidden': ['kbs', 'Ya no estás en los grupos de una de las knowledge bases que agregaste. Quítala o pide que te sumen a sus grupos.'],
+  // Servicios externos (remote_not_usable)
+  'remote-not-usable': ['tools', 'Usas tools de Azure DevOps, pero no estás en los grupos de ese servicio. Quítalas o pide a un administrador que agregue uno de tus grupos.'],
   // Skills (textos provisionales del producto)
   'skill-unapproved': ['skills', 'Una de las skills ya no está aprobada en la versión elegida. Pásala a la última versión o quítala.'],
   'skill-mcp-off': ['skills', 'Una de las skills requiere un MCP que no está habilitado. Quítala o pide que lo habiliten.'],
