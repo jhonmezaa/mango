@@ -354,6 +354,14 @@ def test_a_failed_first_enable_removes_what_it_exposed(lab: RemoteLab) -> None:
     assert "provision_lock" not in registration
 
 
+def test_enabling_after_failed_attempts_deletes_the_providers_they_left(lab: RemoteLab) -> None:
+    # Two attempts failed (generations 1 and 2); the third asks again with generation 3.
+    lab.agentcore.providers |= {remote_mcp.provider_name(NS, REG, g) for g in (1, 2, 3)}
+    result = _enable(lab, pending_provider_name={"S": remote_mcp.provider_name(NS, REG, 3)})
+    assert result["enabled"] is True
+    assert lab.agentcore.providers == {remote_mcp.provider_name(NS, REG, 3)}
+
+
 # --- Params and replace_app ---------------------------------------------------------------
 
 

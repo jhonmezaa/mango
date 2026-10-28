@@ -344,9 +344,9 @@ class RemoteProvisioner:
         else:
             ctx = self._context(request)
             self._converged(ctx)
-            if ctx.kind is ChangeKind.REPLACE_APP:
-                # The new tenant or app is live: the previous providers and their secrets go.
-                self._identity.delete_providers(request.registration_id, range(1, ctx.generation))
+            # The generation is live: the previous providers and their secrets go, those of a
+            # replaced tenant or app and those that failed attempts left behind.
+            self._identity.delete_providers(request.registration_id, range(1, ctx.generation))
             self._store.active(
                 request.registration_id, request.approval_id, request.execution, self._now()
             )
