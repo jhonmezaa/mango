@@ -118,6 +118,10 @@ export function returnResultOf(error: unknown): ReturnResult {
       return 'denied';
     case 'conditional_access':
       return 'conditional';
+    // Several pending consents and a session that names none (security review F-1): the
+    // design has no text for it yet, so it is the generic error.
+    case 'consent_ambiguous':
+      return 'error';
     default:
       return 'error';
   }

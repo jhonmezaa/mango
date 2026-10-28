@@ -93,6 +93,7 @@ describe('errors', () => {
     expect(returnResultOf(new ApiError(400, 'consent_denied', 'x'))).toBe('denied');
     expect(returnResultOf(new ApiError(400, 'conditional_access', 'x'))).toBe('conditional');
     expect(returnResultOf(new ApiError(502, 'identity_unavailable', 'x'))).toBe('error');
+    expect(returnResultOf(new ApiError(409, 'consent_ambiguous', 'x'))).toBe('error');
     expect(returnResultOf(new Error('network'))).toBe('error');
     expect(returnResultOfQuery('access_denied')).toBe('denied');
     expect(returnResultOfQuery('server_error')).toBe('error');

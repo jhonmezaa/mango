@@ -76,7 +76,14 @@ describe("remote MCP provisioner (D98, PR-4)", () => {
 
   it("signs only with the remote MCP key, and nobody else may (TM-012)", () => {
     const sign = sid(provisioner, "SignApprovedRemoteCatalog");
-    expect(actions(sign).sort()).toEqual(["kms:GetPublicKey", "kms:Sign"]);
+    expect(actions(sign)).toEqual(["kms:Sign"]);
+    // Only a SHA-256 digest with ECDSA, the way the provisioner signs (remotes/signing.py).
+    expect(sign.Condition).toEqual({
+      StringEquals: { "kms:SigningAlgorithm": "ECDSA_SHA_256", "kms:MessageType": "DIGEST" },
+    });
+    const publicKey = sid(provisioner, "ReadRemoteCatalogPublicKey");
+    expect(actions(publicKey)).toEqual(["kms:GetPublicKey"]);
+    expect(publicKey.Condition).toBeUndefined();
     const keyId = Object.keys(
       template.findResources("AWS::KMS::Key", {
         Properties: { Description: Match.stringLikeRegexp("approved catalog of remote MCP") },
@@ -84,6 +91,7 @@ describe("remote MCP provisioner (D98, PR-4)", () => {
     );
     expect(keyId).toHaveLength(1);
     expect(sign.Resource).toEqual({ "Fn::GetAtt": [keyId[0], "Arn"] });
+    expect(publicKey.Resource).toEqual(sign.Resource);
     // The key policy denies kms:Sign to every principal but this role.
     const key = resources[keyId[0]!]!;
     const deny = key.Properties.KeyPolicy.Statement.find((s: Statement) => s.Sid === "OnlyTheRemoteProvisionerSigns");

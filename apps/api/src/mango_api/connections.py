@@ -10,10 +10,13 @@ remote MCP, closes the consent when Microsoft sends them back, and disconnects.
   under the verified ``sub`` and mango-api hands that one out.
 * ``POST /api/me/connections/{reg}/disconnect``: the probe with ``cx = disconnect`` and the
   documented ``forceAuthentication`` ``_meta``, which deletes the person's token from the
-  vault. Done only when the Gateway confirms with ``consent_required`` (D97 (3)).
+  vault. Done only when the Gateway confirms with ``consent_required`` (D97 (3)). It works
+  with the app's secret expired: it only takes access away (security review NV-2).
 * ``POST /api/oauth/callback``: the return view of the SPA (``/conexiones/vuelta``) posts the
   ``session_id`` Identity added to the URL; mango-api requires a pending consent of this person
   and closes it with ``CompleteResourceTokenAuth`` and the person's own access token (D98 (1)).
+  Until the interceptor stores the session's hash (V-3), the session names no consent: with
+  more than one pending, none is closed (``consent_ambiguous``, security review F-1).
 
 Security notes (threat model ``remote-mcp``: TM-003, TM-010, TM-014, TM-017;
 security-best-practices, FastAPI):
@@ -395,9 +398,13 @@ def list_connections(
     )
 
 
-def _active(deps: ConnectionsDeps, registration: Registration) -> None:
+def _enabled(registration: Registration) -> None:
     if registration.status is not RemoteRegistrationStatus.ACTIVE:
         raise ApiError(409, "remote_disabled", "an administrator disabled this service")
+
+
+def _active(deps: ConnectionsDeps, registration: Registration) -> None:
+    _enabled(registration)
     if secret_level(registration.secret_expires_on, deps.clock().date()) == "expired":
         raise ApiError(409, "secret_expired", "the service cannot be connected for now")
 
@@ -489,14 +496,21 @@ def disconnect(deps: ConnectionsDeps, caller: Caller, registration: Registration
     return _connection_out(deps, registration, None, now)
 
 
+class _AmbiguousConsentError(Exception):
+    """More than one pending consent without a hash: the session names none of them."""
+
+
 def _pick(consents: list[PendingConsent], session_uri: str) -> PendingConsent | None:
     """The pending consent this session closes. With the session's hash (live check V-3) it
-    must match; without it, the newest of this person's pending consents."""
+    must match; without it, the person's only pending consent. With several and no hash the
+    session could close any of them, so none is taken (security review F-1)."""
     digest = hashlib.sha256(session_uri.encode()).hexdigest()
     for consent in consents:
         if consent.session_sha256 == digest:
             return consent
     unhashed = [c for c in consents if c.session_sha256 is None]
+    if len(unhashed) > 1:
+        raise _AmbiguousConsentError
     return unhashed[0] if unhashed else None
 
 
@@ -528,7 +542,12 @@ def _registered(registration: Registration | None) -> Registration:
 
 def pending_for(deps: ConnectionsDeps, caller: Caller, session_uri: str) -> PendingConsent:
     """The person's pending consent this session closes, read under the verified ``sub``."""
-    consent = _pick(deps.consents.all(caller.user.user_id, deps.clock()), session_uri)
+    try:
+        consent = _pick(deps.consents.all(caller.user.user_id, deps.clock()), session_uri)
+    except _AmbiguousConsentError:
+        # Nothing is marked, deleted or closed: the person asks for the connection again.
+        _consent_failed(deps, caller, None, "consent_ambiguous")
+        raise ApiError(409, "consent_ambiguous", "ask for the connection again") from None
     if consent is None:
         _consent_failed(deps, caller, None, "consent_expired")
         raise ApiError(410, "consent_expired", "the link expired; ask for the connection again")
@@ -646,7 +665,9 @@ def connections_router(
     ) -> ConnectionOut:
         _limit(deps.disconnects, caller)
         registration = await registration_for(caller, reg)
-        _active(deps, registration)
+        # Only an active registration still has its target; an expired secret does not stop
+        # a disconnect, which only takes access away (security review NV-2).
+        _enabled(registration)
         return await run(disconnect, deps, caller, registration)
 
     @router.post(

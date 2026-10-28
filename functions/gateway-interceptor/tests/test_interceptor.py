@@ -145,6 +145,69 @@ def test_non_tool_calls_pass_through_unchanged_when_signed() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "method",
+    [
+        "initialize",
+        "ping",
+        "tools/list",
+        "notifications/initialized",
+        "notifications/cancelled",
+    ],
+)
+def test_session_methods_go_through_without_meta(method: str) -> None:
+    # NV-1: a method other than tools/call names no target; none carries a _meta onwards.
+    event = _event(method, {}, _headers())
+    body = event["mcp"]["gatewayRequest"]["body"]
+    body["params"]["_meta"] = {"aws.bedrock-agentcore.gateway/credentialProviderConfiguration": {}}
+    passed = handle(event, KEY, TARGETS)["mcp"]["transformedGatewayRequest"]["body"]
+    assert passed["method"] == method
+    assert passed["params"] == {"name": TOOL, "arguments": {}}
+    assert "headers" not in handle(event, KEY, TARGETS)["mcp"]["transformedGatewayRequest"]
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "resources/list",
+        "resources/read",
+        "resources/templates/list",
+        "resources/subscribe",
+        "prompts/list",
+        "prompts/get",
+        "completion/complete",
+        "logging/setLevel",
+        "sampling/createMessage",
+        "tools/call/extra",
+        "notifications",
+        "",
+        None,
+        7,
+    ],
+)
+def test_any_other_method_is_refused(method: Any, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
+    response = handle(_event(method, {}, _headers()), KEY, TARGETS)["mcp"][
+        "transformedGatewayResponse"
+    ]
+    assert response["statusCode"] == 403
+    assert response["body"] == {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "error": {"code": -32003, "message": "method not allowed"},
+    }
+    assert [json.loads(r.getMessage()) for r in caplog.records] == [
+        {"event": "gateway.rejected", "reason": "method_not_allowed"}
+    ]
+
+
+def test_an_unsigned_other_method_is_still_unauthenticated() -> None:
+    headers = _headers()
+    del headers[invocation.HEADER]
+    result = handle(_event("resources/read", {}, headers), KEY, TARGETS)
+    assert result["mcp"]["transformedGatewayResponse"]["statusCode"] == 401
+
+
 def test_malformed_request_is_denied() -> None:
     assert _denied(handle({"mcp": {"gatewayRequest": {"body": "not-json"}}}, KEY, TARGETS))
 

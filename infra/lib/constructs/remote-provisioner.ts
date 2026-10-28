@@ -17,6 +17,9 @@ import { PythonFunction } from "./python-function.js";
 import { remoteProvisionerName } from "./remote-mcp-api.js";
 import { RemoteRelease } from "./remote-release.js";
 
+/** `mango_core.remote_mcp.SIGNING_ALGORITHM`: the only algorithm the provisioner signs with. */
+const REMOTE_SIGNING_ALGORITHM = "ECDSA_SHA_256";
+
 /** `REMOTE#<reg>` / `REGISTRATION`: written by mango-api, its lifecycle by this provisioner. */
 export const REMOTE_REGISTRATION_PARTITION = "REMOTE#";
 /** `REMOTE_CHANGE#<reg>`: the requests mango-api records; read only here. */
@@ -185,8 +188,19 @@ export class RemoteMcpProvisioner extends Construct {
       new iam.PolicyStatement({
         sid: "SignApprovedRemoteCatalog",
         // `alias/Mango-<ns>-remote-mcp` (D93 (9)) and no other key. Its key policy denies
-        // kms:Sign to every other principal (TM-012).
-        actions: ["kms:Sign", "kms:GetPublicKey"],
+        // kms:Sign to every other principal (TM-012). Only the way `remotes/signing.py`
+        // signs: a SHA-256 digest with ECDSA, as the provider's release key.
+        actions: ["kms:Sign"],
+        resources: [props.signingKey.keyArn],
+        conditions: {
+          StringEquals: { "kms:SigningAlgorithm": REMOTE_SIGNING_ALGORITHM, "kms:MessageType": "DIGEST" },
+        },
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadRemoteCatalogPublicKey",
+        actions: ["kms:GetPublicKey"],
         resources: [props.signingKey.keyArn],
       }),
     );

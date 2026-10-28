@@ -51,6 +51,12 @@ loses every ``_meta`` (TM-006, TM-013) and carries exactly the two headers of th
 token of the vault (TM-008). A call of «Mis conexiones» (claim ``cx``) may only call the probe
 tool; with ``cx = disconnect`` it keeps the one ``_meta`` that deletes the person's token
 (D97 (3)).
+
+The Gateway exposes tools only, and a method other than ``tools/call`` names no target, so it
+cannot be told whether it would reach a remote server. Only the methods of a tools session go
+through (``initialize``, ``ping``, ``tools/list`` and ``notifications/*``), without any
+``_meta``; any other method (``resources/read``, ``prompts/get``…) is refused, whatever the
+target (security review of 2026-10-27, NV-1).
 """
 
 from __future__ import annotations
@@ -93,6 +99,8 @@ _SETTINGS_TABLE_ENV = "SETTINGS_TABLE"
 _REMOTE_KEY_ENV = "REMOTE_MCP_KEY_ARN"
 _GATEWAY_ID_PARAMETER_ENV = "GATEWAY_ID_PARAMETER"
 _META = "_meta"
+_SESSION_METHODS = frozenset({"initialize", "ping", "tools/list"})
+_NOTIFICATIONS = "notifications/"
 REMOTE_CACHE_SECONDS = 30.0
 """How long a verified catalog item is reused (D98 (13))."""
 PLAYGROUND_WRITE_MESSAGE = (
@@ -562,6 +570,23 @@ def _remote_request(
     }
 
 
+def _session_request(body: dict[str, Any]) -> dict[str, Any]:
+    """A method of the tools session other than ``tools/call``: it goes on without ``_meta``
+    (NV-1); any other method is refused."""
+    method = body.get("method")
+    if not isinstance(method, str) or not (
+        method in _SESSION_METHODS or method.startswith(_NOTIFICATIONS)
+    ):
+        return _reject(body.get("id"), 403, _FORBIDDEN, "method not allowed", "method_not_allowed")
+    params = body.get("params")
+    if isinstance(params, dict) and _META in params:
+        body = {**body, "params": {k: v for k, v in params.items() if k != _META}}
+    return {
+        "interceptorOutputVersion": OUTPUT_VERSION,
+        "mcp": {"transformedGatewayRequest": {"body": body}},
+    }
+
+
 def _deny(request_id: Any, reason: str) -> dict[str, Any]:
     return _reject(request_id, 401, _UNAUTHENTICATED, "unauthenticated", reason)
 
@@ -603,10 +628,7 @@ def handle(  # noqa: PLR0911 - each early return is one refusal, or a call that 
     if signed is None:
         return _deny(body.get("id"), "invalid_invocation")
     if body.get("method") != "tools/call":
-        return {
-            "interceptorOutputVersion": OUTPUT_VERSION,
-            "mcp": {"transformedGatewayRequest": {"body": body}},
-        }
+        return _session_request(body)
 
     raw_params = body.get("params")
     params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}

@@ -484,6 +484,32 @@ def test_the_callback_without_a_pending_consent_answers_410(env: Env) -> None:
     assert detail == {"registration": None, "reason": "consent_expired"}
 
 
+def test_one_pending_consent_without_a_hash_is_closed_as_before(env: Env) -> None:
+    _register(env.db, OTHER_REG)
+    _approve(env.db, env.kms, OTHER_REG)
+    _connect(env, reg=OTHER_REG)
+    response = env.callback()
+    assert response.json()["registration_id"] == OTHER_REG
+    assert _pending(env, reg=OTHER_REG) is None
+
+
+def test_several_pending_consents_without_a_hash_close_none(env: Env) -> None:
+    # F-1: the session could be either one; neither is marked, deleted or closed.
+    _register(env.db, OTHER_REG)
+    _approve(env.db, env.kms, OTHER_REG)
+    _connect(env)
+    _connect(env, reg=OTHER_REG)
+    response = env.callback()
+    assert (response.status_code, _code(response)) == (409, "consent_ambiguous")
+    assert env.identity.calls == []
+    assert _pending(env) is not None
+    assert _pending(env, reg=OTHER_REG) is not None
+    assert {c["status"] for c in _connections(env)} == {"not_connected"}
+    assert env.audit.named("mcp_remote.consent_completed", outcome=None) == []
+    ((user, detail),) = env.audit.named("mcp_remote.consent_failed", outcome=None)
+    assert (user, detail) == ("member-1", {"registration": None, "reason": "consent_ambiguous"})
+
+
 def test_the_pending_consent_of_another_person_is_never_read(env: Env) -> None:
     _connect(env, "member-1")
     # The outsider closes nothing: their partition is empty, whatever session they post.
@@ -582,6 +608,25 @@ def test_a_disconnect_the_gateway_does_not_confirm_is_an_error(env: Env) -> None
     assert (response.status_code, _code(response)) == (502, "disconnect_not_confirmed")
     assert env.audit.named("mcp_remote.disconnect", outcome=None) == []
     assert _connections(env)[0]["status"] == "connected"
+
+
+def test_disconnecting_works_with_the_secret_expired(env: Env) -> None:
+    # NV-2: an expired secret blocks connecting, not taking access away.
+    env.gateway.vault.add("member-1")
+    _connect(env)
+    _register(env.db, REG, secret_expires_on="2026-10-01")
+    response = env.call("POST", f"/api/me/connections/{REG}/disconnect")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "secret_expired"
+    assert "member-1" not in env.gateway.vault
+    assert len(env.audit.named("mcp_remote.disconnect", outcome=None)) == 1
+
+
+def test_disconnecting_a_registration_that_is_not_active_is_refused(env: Env) -> None:
+    _register(env.db, REG, status="disabled")
+    response = env.call("POST", f"/api/me/connections/{REG}/disconnect")
+    assert (response.status_code, _code(response)) == (409, "remote_disabled")
+    assert env.gateway.calls == []
 
 
 def test_without_use_remote_mcp_disconnecting_is_forbidden(env: Env) -> None:

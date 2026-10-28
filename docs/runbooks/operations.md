@@ -338,3 +338,4 @@ Ninguna debería estar en `ALARM` sin un motivo que se pueda explicar.
 
 - **«Revoke sessions» en Entra no basta:** en la prueba del 2026-10-26 la persona siguió leyendo 1 h 38 min después de revocar (D96 (1)).
 - **Quitar el permiso de la app** en Entra tampoco: los tokens ya emitidos valen hasta que vencen.
+- **Deshabilitar tarda hasta 30 s en el Gateway:** cada contenedor del interceptor `REQUEST` guarda el catálogo aprobado verificado 30 s (D98 (13)), así que sigue aceptando las tools del registro hasta ese tiempo después de que el provisioner borre el catálogo. En un incidente, contar con esos 30 s antes de dar el corte por hecho.

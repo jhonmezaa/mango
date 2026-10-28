@@ -105,8 +105,9 @@ Precisado al construir el registro (2026-10-27):
 Precisado al construir «Mis conexiones» (2026-10-27):
 - **«Conectar» con la cuenta ya en el vault** responde `already_connected` (la tool de sondeo contestó; no se abre Microsoft, diseño A6) y escribe la conexión. Una conexión nueva solo nace en la vuelta.
 - **«Desconectar» no borra la conexión: la sobrescribe** con `disconnected_at`. La política de sesión de las credenciales RLS no da `DeleteItem`, y no se amplía para esto.
-- **La vuelta sin `session_sha256`** (hasta V-3) cierra el pendiente más reciente de la persona: Identity ya exige que la sesión sea suya.
+- **La vuelta sin `session_sha256`** (hasta V-3) cierra el pendiente de la persona si es el único: Identity ya exige que la sesión sea suya. Con más de uno, la sesión podría ser de cualquiera de ellos, así que no cierra ninguno: responde `409 consent_ambiguous`, lo audita como `mcp_remote.consent_failed` y no marca, borra ni cierra nada (precisado el 2026-10-27 por la revisión de seguridad previa a la release, F-1; antes cerraba el más reciente). Hasta que venza el otro pendiente (10 minutos), la vuelta sigue respondiendo así.
 - **Con `RemoteMcpEnabled` apagado** se pueden listar las conexiones y desconectar; «Conectar» y la vuelta responden `remote_disabled`.
+- **«Desconectar» con el secreto de la app vencido** funciona: solo quita acceso, y el token de la persona sigue en el vault mientras no se borre. Se rechaza con `remote_disabled` solo si el registro no está `active`, porque su target ya no existe (precisado el 2026-10-27 por la revisión de seguridad previa a la release, NV-2).
 - **(9), hecho:** el registro de CloudFront es el estándar v2 (entrega de logs vendidos de CloudWatch al bucket de logs de acceso, prefijo `cloudfront/`) con los campos del registro *legacy* menos `cs-uri-query` y `cs(Cookie)`; el *legacy* se quitó. No hace falta la excepción.
 
 La conexión de cada persona (desde cuándo, y con qué `generation` del proveedor) va en `Conversations`, en `USER#<sub>` / `REMOTE#<reg>`. La escribe `mango-api` con las credenciales RLS de esa persona. Sirve para mostrar «Conectado» sin llamar a Microsoft. Una conexión de otra `generation` cuenta como «Sin conectar».
@@ -151,6 +152,7 @@ La conexión de cada persona (desde cuándo, y con qué `generation` del proveed
 - **Qué hace el interceptor `REQUEST`:**
   - con `cx = disconnect`, deja pasar solo el `_meta` documentado con `forceAuthentication: true`, y nunca `returnUrl`;
   - en todo lo demás, borra `_meta` en los targets remotos.
+- **Métodos que no son `tools/call`** (precisado el 2026-10-27 por la revisión de seguridad previa a la release, NV-1): no nombran target, así que el interceptor no sabe si llegarían a un remoto. Solo pasan `initialize`, `ping`, `tools/list` y `notifications/*`, sin `params._meta`; cualquier otro se rechaza (`403`, `method_not_allowed`) en todo el Gateway, que solo expone tools.
 - **Qué hace el interceptor `RESPONSE`:** con `cx = disconnect` no escribe el consentimiento pendiente.
 - **Protocolo MCP:** esas llamadas usan `2025-11-25`, la versión que se probó.
 
@@ -202,7 +204,7 @@ La conexión de cada persona (desde cuándo, y con qué `generation` del proveed
 
 **(20) Errores que muestra la web.**
 - **Del alta y del registro:** `remote_exists`, `same_approver`, `remote_profile_not_in_release`, `remote_disabled`, `pending_exists`, `version_conflict`, `expired` y `release_changed`.
-- **De quien usa el servicio:** `remote_not_usable`, `secret_expired`, `consent_expired`, `consent_not_yours`, `consent_denied`, `conditional_access` y `disconnect_not_confirmed`.
+- **De quien usa el servicio:** `remote_not_usable`, `secret_expired`, `consent_expired`, `consent_ambiguous` (sin texto en el diseño: error genérico, al brief siguiente), `consent_not_yours`, `consent_denied`, `conditional_access` y `disconnect_not_confirmed`.
 - **De disponibilidad:** `identity_unavailable`, `gateway_unavailable`, `provisioner_unavailable` y `rate_limited`.
 - **Aviso del Builder:** `remote_audience_outside_groups`.
 - **En el chat y en las tareas:** el evento `remote_connection_required` (sin URL) y el aviso de la Bandeja `remote_connect`.
