@@ -1,6 +1,6 @@
 # D100 · El consentimiento de un MCP remoto lo cierra la pestaña que lo pidió, con el mismo access token
 
-- **Estado:** vigente (desde el 2026-10-28, cuando se construyó con la ronda 25 del diseño)
+- **Estado:** vigente
 - **Fecha:** 2026-10-28 (elegida por el dueño ese día, por menú: «Opción 1: decisión y brief (Recomendada)», después de investigar el fallo de la vuelta en la primera instalación)
 - **Precisa / reemplaza a:** precisa [D98](D098-contratos-de-los-mcp-remotos.md) (1) (quién llama a `POST /api/oauth/callback` y con qué token); respeta [D94](D094-consentimiento-iniciado-por-el-gateway.md) (2) y [D63](D063-sesion-web-con-cookie.md)
 - **Precisada por:** —
@@ -41,7 +41,7 @@
 
 El diseño los dibujó en su ronda 24 (respuesta del 2026-10-28) y se construyeron con la ronda 25.
 
-**(7) Cómo lo construye la web** (precisado al construirlo, 2026-10-28):
+**(7) Cómo lo construye la web** (precisado al construirlo, 2026-10-28; desde entonces, vigente):
 - **«Conectar» abre el proveedor en otra pestaña,** no en la misma (precisa la nota de D98 sobre la web): la pestaña que pidió tiene que seguir viva con su token. Abre una pestaña vacía dentro del clic, le pone `opener = null` y la lleva a la URL ya validada. El diseño pedía que la vuelta supiera por `window.opener` que la abrió Mango; se decidió al construirlo (2026-10-28) no dejarlo, por seguridad: con `window.opener`, una página de AWS o de Microsoft podría navegar la pestaña de Mango a una copia de su ingreso (*reverse tabnabbing*). La vuelta intenta cerrarse sola unos 2 s después de «Listo» y, si el navegador no la deja, queda «Cerrar esta pestaña».
 - **La vista de vuelta se pinta fuera de la sesión:** no inicia sesión ni llama a `mango-api`. Manda `{session_id, ref}` por el canal `mango-consent`, espera unos 3 s a que una pestaña diga que lo tomó (si no, «Pídelo de nuevo desde Mango») y muestra lo que esa pestaña responde. Si el proveedor volvió sin `session_id`, lo dice y se lo avisa a la pestaña que espera.
 - **La pestaña que espera** guarda en memoria el registro, la hora y la *generación* de su access token. Al recibir el `session_id` responde que lo tomó; si su token cambió, no llama y dice «Pídelo de nuevo»; si no, cierra con `POST /api/oauth/callback`. Un `consent_not_yours` la deja esperando sin mostrar nada.
