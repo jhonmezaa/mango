@@ -135,9 +135,14 @@ def open_session(
     *,
     request_id: str,
     protocol_version: str,
+    url_elicitation: bool = False,
 ) -> str | None:
     """MCP handshake; the session id to send with the call, or ``None`` from a Gateway
-    without sessions. Raises ``NotStartedError``: whatever fails here, the call was not sent."""
+    without sessions. Raises ``NotStartedError``: whatever fails here, the call was not sent.
+
+    ``url_elicitation`` declares the client capability without which the Gateway never returns
+    the consent URL (``-32042``) of a 3LO target: it answers a generic tool error instead
+    (seen in an installation on 2026-10-28; the lab client declared it)."""
     try:
         opened = transport(
             url,
@@ -147,7 +152,7 @@ def open_session(
                 request_id,
                 {
                     "protocolVersion": protocol_version,
-                    "capabilities": {},
+                    "capabilities": {"elicitation": {"url": {}}} if url_elicitation else {},
                     "clientInfo": {"name": "mango-api", "version": "1"},
                 },
             ),
@@ -281,6 +286,7 @@ class GatewayConnections:
                 headers,
                 request_id=request_id,
                 protocol_version=remote_mcp.MCP_PROTOCOL_VERSION,
+                url_elicitation=True,
             )
             if session is not None:
                 headers[SESSION_HEADER] = session

@@ -86,6 +86,8 @@ class FakeGateway:
     ignore_force: bool = False
     """The Gateway answered normally to a disconnect (it did not delete the token)."""
     down: bool = False
+    url_elicitation: bool = False
+    """The session declared the client capability ``elicitation.url`` in ``initialize``."""
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     def __call__(self, url: str, headers: dict[str, str], body: bytes) -> Answer:
@@ -94,6 +96,8 @@ class FakeGateway:
         message = json.loads(body)
         if message["method"] == "initialize":
             assert message["params"]["protocolVersion"] == "2025-11-25"
+            capabilities = message["params"]["capabilities"]
+            self.url_elicitation = "url" in capabilities.get("elicitation", {})
             result = {"jsonrpc": "2.0", "id": message["id"], "result": {}}
             return Answer(200, json.dumps(result).encode(), "session-1")
         if message["method"] == "notifications/initialized":
@@ -111,12 +115,22 @@ class FakeGateway:
             assert is_force_authentication_meta(meta)
             if not self.ignore_force:
                 self.vault.discard(subject)
-                return self._consent(message, reg)
+                if self.url_elicitation:
+                    return self._consent(message, reg)
         else:
             assert meta is None
         if subject in self.vault:
             content = [{"type": "text", "text": "[secret project list]"}]
             result = {"jsonrpc": "2.0", "id": message["id"], "result": {"content": content}}
+            return Answer(200, json.dumps(result).encode())
+        if not self.url_elicitation:
+            # Like AgentCore: without the capability, a generic tool error instead of -32042.
+            content = [{"type": "text", "text": "An internal error occurred. Please retry later."}]
+            result = {
+                "jsonrpc": "2.0",
+                "id": message["id"],
+                "result": {"content": content, "isError": True},
+            }
             return Answer(200, json.dumps(result).encode())
         now = int(time.time())
         # Raw, as the interceptor writes it: mango-api must not trust it blindly.
