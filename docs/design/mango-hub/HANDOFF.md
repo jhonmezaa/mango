@@ -1029,3 +1029,25 @@ Respuesta al contexto de la ronda 25. Archivos: `remote-core.jsx`, `remote-views
 ### Sigue abierto
 - Qué devuelve cancelar en Microsoft (prueba en vivo); si el perfil agregará descripción, requisitos y descripción de permisos.
 - Lo de rondas anteriores (§5 del contexto), sin cambios: respuesta cortada por tope y por tiempo, cuota de Bedrock, autoscroll, «+» sin guardar, dos «Reintentar», sesión que no se renueva y error a pantalla completa; 429; correos rechazados; `area_required`; «Otro cambio se está aplicando…» y «Aprobar»; «0 resultados»; «Tokens por llamada»; Knowledge Bases; vistas en Próximamente.
+
+
+## Ronda 26 · MCP remotos (2026-10-29)
+Respuesta al contexto de la ronda 26. Archivos: `remote-core.jsx`, `remote-views.jsx`, `remote.css`, `app.jsx`. Se aceptan las diferencias del §2 (enlaces quitados también en el Playground; «Enviar de nuevo» sin turno en curso ni agente usable; la tarjeta apagada «si llega»).
+
+### Decisiones
+- **«Enviar de nuevo» tras recargar:** se quita si la conversación ya tiene una pregunta de la persona después de la tarjeta. Queda «Enviaste tu pregunta otra vez.» y el check. Se deduce de la conversación, sin guardar que se pulsó. Si no hay pregunta posterior, se ofrece otra vez.
+- **«Enviar de nuevo» con un turno en curso:** sale desactivado, y debajo del texto: «Podrás enviarla cuando termine la respuesta en curso.». Al terminar ese turno se activa solo. Si el agente o la versión ya no se pueden usar, sigue como está (sin botón).
+- **Enlaces mientras se lee «Mis conexiones»:** no se marca nada hasta saberlo. Los enlaces del agente salen como texto normal, sin tachar, sin aviso y sin poder abrirse. Al llegar la lista: los de tu organización vuelven a ser enlaces y el resto se tacha, con el aviso. Así no hay un destello en rojo.
+- **Playground:** confirmado. La regla vale en cualquier turno con la tarjeta «Conectar».
+- **Toolset «Repositorios»:** sale en el catálogo como cualquier otro, con tres marcas propias que pone Mango (el perfil no trae descripción), según el id del toolset:
+  - En la ficha, debajo del nombre del grupo: la insignia ámbar «Código fuente» y «Da al agente el código fuente de la organización: archivos, commits y pull requests, con la cuenta de cada persona.».
+  - En el alta y en la petición de cambio, al marcarlo: el aviso ámbar «Repositorios da al agente el código fuente» · «El agente va a poder leer archivos, commits y pull requests de los repositorios a los que llega la cuenta de cada persona.». No bloquea.
+  - En el detalle de la petición, para quien aprueba: el chip «Repositorios · código fuente» en ámbar.
+  *Cambio para el producto:* una lista de toolsets sensibles en Mango (`repositories`) hasta que el perfil lo diga.
+- **Búsqueda de código:** en la ficha, debajo del grupo: «**Requisito:** Necesita la extensión Code Search de Microsoft instalada en la organización. Sin ella, la búsqueda no encuentra nada y el agente responde que no hubo resultados.». No se repite en el alta ni en el chat: Mango no puede saberlo.
+
+**Panel de demo:** nuevo «Chat · servicio externo · conversación» (Normal, Otro turno responde, Recargada · ya hay una pregunta después, Mis conexiones sin leer). El perfil de ejemplo trae «Repositorios» con seis tools.
+
+### Sigue abierto
+- Qué devuelve cancelar en Microsoft (prueba en vivo); si el perfil agregará descripción, requisitos y descripción de permisos (si los trae, reemplazan los textos de Mango de «Repositorios» y «Búsqueda de código»).
+- Lo de rondas anteriores (§5 del contexto), sin cambios.

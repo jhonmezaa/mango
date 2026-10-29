@@ -12,7 +12,8 @@ const PROFILES = [{
     { id: 'work-items', label: 'Work items', tools: ['wit_work_item', 'wit_query'] },
     { id: 'wiki', label: 'Wiki', tools: ['wiki', 'search_wiki'] },
     { id: 'pipelines', label: 'Pipelines', tools: ['pipelines_build'] },
-    { id: 'code-search', label: 'Búsqueda de código', tools: ['search_code'] },
+    { id: 'code-search', label: 'Búsqueda de código', tools: ['search_code'], req: 'Necesita la extensión Code Search de Microsoft instalada en la organización. Sin ella, la búsqueda no encuentra nada y el agente responde que no hubo resultados.' },
+    { id: 'repositories', label: 'Repositorios', tools: ['repo_list_repos', 'repo_list_branches', 'repo_get_file', 'repo_list_commits', 'repo_list_pull_requests', 'repo_list_pr_threads'], source: true },
   ],
   // Pares de recurso y permiso, como los trae el perfil. El tipo (delegado, lectura) viene dentro del permiso.
   scopes: [{ res: 'Azure DevOps MCP', perms: ['.default (delegado, lectura)'] }, { res: 'Microsoft Entra', perms: ['offline_access'] }],
@@ -277,7 +278,8 @@ function RmField({ id, label, hint, error, children, opt }) {
 
 // —— Chat ——
 // La tarjeta de conexión la arma la interfaz con datos de mango-api, nunca con texto del modelo.
-function ConnectCard({ pid, expired: forceExp, startedAt, onResend, resent }) {
+// resent: ya se envió de nuevo en esta pantalla, o la conversación tiene una pregunta posterior (sobrevive a recargar). busy: otro turno responde.
+function ConnectCard({ pid, expired: forceExp, startedAt, onResend, resent, busy }) {
   window.useMango(s => s.simRemoteInstall);
   const I = window.Icons; const p = profile(pid);
   const st = window.useMango(s => (s.remoteConn || {})[pid]?.status) || 'none';
@@ -298,7 +300,7 @@ function ConnectCard({ pid, expired: forceExp, startedAt, onResend, resent }) {
     <div className="rm-card-b">
       <RmTile p={p} />
       <div style={{ flex: 1, minWidth: 0 }} role={state === 'error' ? 'alert' : state === 'ask' ? undefined : 'status'}>
-        {state === 'done' ? <><div className="rm-card-t">Conectado</div><div className="rm-card-s">Tu cuenta de {p.name} quedó conectada. {resent ? 'Enviaste tu pregunta otra vez.' : 'Envía tu pregunta otra vez para que el agente lea ' + p.name + '.'}</div></>
+        {state === 'done' ? <><div className="rm-card-t">Conectado</div><div className="rm-card-s">Tu cuenta de {p.name} quedó conectada. {resent ? 'Enviaste tu pregunta otra vez.' : 'Envía tu pregunta otra vez para que el agente lea ' + p.name + '.'}</div>{busy && !resent && onResend && <div className="rm-card-s" style={{ marginTop: 4 }}>Podrás enviarla cuando termine la respuesta en curso.</div>}</>
           : state === 'off' ? <><div className="rm-card-t">Los servicios externos están apagados</div><div className="rm-card-s">Esta instalación de Mango tiene apagados los servicios externos, así que el agente no puede leer {p.name}. Si lo necesitas, avisa a un administrador de Mango.</div></>
           : state === 'waiting' ? <><div className="rm-card-t">Inicia sesión en {p.idp} en la otra pestaña</div><div className="rm-card-s">Al terminar, la conexión se completa aquí. No cierres esta pestaña.</div></>
           : state === 'finishing' ? <><div className="rm-card-t">Terminando la conexión…</div><div className="rm-card-s">Mango está guardando tu conexión con {p.name}.</div></>
@@ -310,7 +312,7 @@ function ConnectCard({ pid, expired: forceExp, startedAt, onResend, resent }) {
       {state === 'opening' && <div className="rm-card-a"><span className="row gap-2 rm-card-s"><span className="g-spin" /> Abriendo {p.idp}…</span></div>}
       {state === 'waiting' && <div className="rm-card-a"><button className="btn btn-sm" onClick={() => { RM.cancelWait(pid); go(); }} title={'Si cerraste la pestaña de ' + p.idp}>Abrir de nuevo <I.External size={11} /></button><span className="rm-card-timer" aria-label={'Vence en ' + mmss}>Vence en {mmss}</span></div>}
       {state === 'finishing' && <div className="rm-card-a"><span className="g-spin" /></div>}
-      {state === 'done' && (onResend && !resent ? <div className="rm-card-a"><button className="btn btn-sm btn-primary" onClick={onResend}>Enviar de nuevo</button></div> : <span className="g-dot-lg green" aria-hidden="true"><I.Check size={12} /></span>)}
+      {state === 'done' && (onResend && !resent ? <div className="rm-card-a"><button className="btn btn-sm btn-primary" disabled={busy} onClick={onResend}>Enviar de nuevo</button></div> : <span className="g-dot-lg green" aria-hidden="true"><I.Check size={12} /></span>)}
     </div>
   </section>;
 }
@@ -346,21 +348,23 @@ const RM_ASK = 'Necesito que conectes tu cuenta de Azure DevOps para leer el spr
 const RM_ASK_LINK = RM_ASK + ' Autoriza el acceso aquí: [Autorizar Azure DevOps](https://azdevops-authorize.example.com/oauth/consent).';
 // En un turno con la tarjeta «Conectar», los enlaces del agente que no son de una organización registrada no se pueden abrir:
 // el agente nunca recibe la URL real para conectar, así que un enlace para «autorizar» siempre es inventado o viene del contenido.
-function StripLinks({ pid, md }) {
+// Mientras no se leyó Mis conexiones no se sabe qué organizaciones son de la persona: ningún enlace se abre, pero no se marca nada.
+function StripLinks({ pid, md, loading }) {
   const ref = useRef(null); const [n, setN] = useState(0);
-  useEffect(() => { if (!ref.current) return; let c = 0; ref.current.querySelectorAll('a').forEach(a => { const u = a.getAttribute('data-ext-url') || a.getAttribute('href'); if (classifyLink(pid, u).kind === 'own') return; const s = document.createElement('span'); s.className = 'rm-nolink'; s.textContent = a.textContent; s.title = 'Enlace quitado por Mango · ' + (classifyLink(pid, u).label || u); a.replaceWith(s); c++; }); setN(c); }, [md]);
-  return <div style={{ marginBottom: 12 }}><div ref={ref} className="md" style={{ fontSize: 15.5, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(md) }} />{n > 0 && <div className="rm-nolink-note"><window.Icons.Shield size={12} /><span>Mango desactivó {n === 1 ? 'un enlace' : n + ' enlaces'} del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.</span></div>}</div>;
+  useEffect(() => { if (!ref.current) return; let c = 0; ref.current.querySelectorAll('a').forEach(a => { const u = a.getAttribute('data-ext-url') || a.getAttribute('href'); if (loading) { const s = document.createElement('span'); s.className = 'rm-linkwait'; s.textContent = a.textContent; a.replaceWith(s); return; } if (classifyLink(pid, u).kind === 'own') return; const s = document.createElement('span'); s.className = 'rm-nolink'; s.textContent = a.textContent; s.title = 'Enlace quitado por Mango · ' + (classifyLink(pid, u).label || u); a.replaceWith(s); c++; }); setN(c); }, [md, loading]);
+  return <div style={{ marginBottom: 12 }}><div ref={ref} className="md" style={{ fontSize: 15.5, lineHeight: 1.7 }} key={loading ? 'w' : 'k'} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(md) }} />{n > 0 && !loading && <div className="rm-nolink-note"><window.Icons.Shield size={12} /><span>Mango desactivó {n === 1 ? 'un enlace' : n + ' enlaces'} del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.</span></div>}</div>;
 }
 function RemoteChatDemo() {
   const sim = window.useMango(s => s.simRemoteChat) || null;
   const I = window.Icons; const pid = 'azure-devops';
   const ref = useRef(null); const [resent, setResent] = useState(false);
-  useEffect(() => setResent(false), [sim]);
+  const turn = window.useMango(s => s.simRemoteTurn) || null;
+  useEffect(() => setResent(turn === 'later'), [sim, turn]);
   useEffect(() => { if (!ref.current) return; ref.current.querySelectorAll('a[data-ext-url]').forEach(a => { const k = classifyLink(pid, a.getAttribute('data-ext-url')); a.setAttribute('data-host', k.label); a.setAttribute('data-host-kind', k.kind === 'own' ? 'service' : 'other'); }); }, [sim]);
   if (!sim || get().avail) return null;
   const user = <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 22 }}><div style={{ maxWidth: '78%', padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, fontSize: 14.5, lineHeight: 1.55 }}>{RM_Q}</div></div>;
   if (sim === 'read') return <>{user}<div data-remote={pid} ref={ref} style={{ marginBottom: 24 }}><ReadMark pid={pid} /><div className="md rm-md" style={{ fontSize: 15.5, lineHeight: 1.7, color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(RM_READ) }} /></div></>;
-  return <>{user}<StripLinks pid={pid} md={sim === 'consent-link' ? RM_ASK_LINK : RM_ASK} /><ConnectCard key={sim} pid={pid} expired={sim === 'expired'} resent={resent} onResend={() => setResent(true)} />{resent && <RemoteChatContinue pid={pid} user={user} />}</>;
+  return <>{user}<StripLinks pid={pid} loading={turn === 'loading'} md={sim === 'consent-link' ? RM_ASK_LINK : RM_ASK} /><ConnectCard key={sim} pid={pid} expired={sim === 'expired'} resent={resent} busy={turn === 'busy'} onResend={() => setResent(true)} />{resent && turn !== 'later' && <RemoteChatContinue pid={pid} user={user} />}</>;
 }
 // El turno terminó al faltar la conexión: «Enviar de nuevo» manda la misma pregunta como un turno nuevo.
 function RemoteChatContinue({ pid, user }) {
