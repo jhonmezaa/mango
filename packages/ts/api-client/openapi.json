@@ -2386,9 +2386,14 @@
             },
             "title": "Connections",
             "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
           }
         },
         "required": [
+          "enabled",
           "connections"
         ],
         "title": "ConnectionsOut",

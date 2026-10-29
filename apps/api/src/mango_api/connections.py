@@ -2,8 +2,9 @@
 remote MCP, closes the consent when Microsoft sends them back, and disconnects.
 
 * ``GET /api/me/connections``: the active or disabled registrations of the person's groups
-  and whether they are connected. It never calls Microsoft: «Conectado» comes from the
-  connection record mango-api keeps in the person's partition of ``Conversations``.
+  and whether they are connected, and whether remote MCP servers are on in the installation.
+  It never calls Microsoft: «Conectado» comes from the connection record mango-api keeps in
+  the person's partition of ``Conversations``.
 * ``POST /api/me/connections/{reg}/connect``: drops the person's pending consent and probes
   the remote through the Gateway (claim ``cx = connect``) with the caller's token, the one
   that will close it (D100). The probe either answers (already connected) or the ``RESPONSE``
@@ -120,6 +121,9 @@ class ConnectionOut(_Strict):
 
 
 class ConnectionsOut(_Strict):
+    enabled: bool
+    """``RemoteMcpEnabled`` of the installation: with it off the web says so instead of the
+    list, and «Conectar» answers ``remote_disabled`` (design round 25)."""
     connections: list[ConnectionOut]
 
 
@@ -429,7 +433,8 @@ def list_connections(
     ]
     records = deps.records.all(user_id) if usable else {}
     return ConnectionsOut(
-        connections=[_connection_out(deps, r, records.get(r.registration_id), now) for r in usable]
+        enabled=deps.enabled,
+        connections=[_connection_out(deps, r, records.get(r.registration_id), now) for r in usable],
     )
 
 

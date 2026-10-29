@@ -1317,6 +1317,10 @@ export type ConnectionsOut = {
      * Connections
      */
     connections: Array<ConnectionOut>;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
 };
 
 /**

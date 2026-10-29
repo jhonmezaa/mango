@@ -454,7 +454,8 @@ export const zConnectionOutSchema = z.object({
  * ConnectionsOut
  */
 export const zConnectionsOutSchema = z.object({
-    connections: z.array(zConnectionOutSchema)
+    connections: z.array(zConnectionOutSchema),
+    enabled: z.boolean()
 });
 
 /**

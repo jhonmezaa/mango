@@ -335,10 +335,15 @@ def _code(response: Any) -> str:
     return str(response.json()["error"]["code"])
 
 
-def _connections(env: Env, sub: str = "member-1") -> list[dict[str, Any]]:
+def _list(env: Env, sub: str = "member-1") -> dict[str, Any]:
     response = env.call("GET", "/api/me/connections", sub)
     assert response.status_code == 200, response.text
-    result: list[dict[str, Any]] = response.json()["connections"]
+    result: dict[str, Any] = response.json()
+    return result
+
+
+def _connections(env: Env, sub: str = "member-1") -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = _list(env, sub)["connections"]
     return result
 
 
@@ -385,6 +390,15 @@ def test_disabled_and_expired_registrations_say_so(env: Env) -> None:
         OTHER_REG: "disabled",
         "abcdefghij67": "secret_expired",
     }
+
+
+def test_the_list_says_whether_remote_servers_are_on_in_the_installation(env: Env) -> None:
+    assert _list(env)["enabled"] is True
+    env.deps.enabled = False
+    body = _list(env)
+    # The registrations are still listed: a chat card can name its service (design round 25).
+    assert body["enabled"] is False
+    assert [c["registration_id"] for c in body["connections"]] == [REG]
 
 
 # --- Connect ------------------------------------------------------------------------------
