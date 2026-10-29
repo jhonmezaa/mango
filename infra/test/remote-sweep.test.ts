@@ -2,7 +2,9 @@ import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { App } from "aws-cdk-lib";
+import { App, Validations } from "aws-cdk-lib";
+import { AwsSolutionsChecks } from "cdk-nag";
+import { applyNagSuppressions } from "../lib/nag-suppressions.js";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { REMOTE_PAYLOAD_TYPE, remoteReleaseDigest } from "../lib/constructs/remote-release.js";
@@ -48,7 +50,7 @@ function signedRelease(): { dir: string; pem: string; digest: string } {
   };
 }
 
-function remoteMcpTemplate(release?: ReturnType<typeof signedRelease>) {
+function remoteMcpTemplate(release?: ReturnType<typeof signedRelease>, nag = false) {
   const base = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
   const cfg = release ? { ...base, packs: { ...base.packs, signingPublicKey: release.pem } } : base;
   const context: Record<string, unknown> = {
@@ -56,12 +58,16 @@ function remoteMcpTemplate(release?: ReturnType<typeof signedRelease>) {
     packsDir: mkdtempSync(join(tmpdir(), "mango-no-packs-")),
     remotesDir: release?.dir ?? mkdtempSync(join(tmpdir(), "mango-no-remotes-")),
   };
-  const core = new CoreStack(new App({ context }), "Core", {
+  const app = new App({ context });
+  if (nag) Validations.of(app).addPlugins(new AwsSolutionsChecks(app));
+  const core = new CoreStack(app, "Core", {
     installation: cfg,
     env: { account: cfg.mangoAccountId, region: cfg.region },
   });
+  if (nag) applyNagSuppressions(core); // as bin/mango.ts does
   const nested = nestedStacks(core).find((n) => n.node.id === "RemoteMcp")!;
-  return { core, template: nestedTemplate(nested) };
+  // With cdk-nag on, the caller synthesizes (and reads the report) itself.
+  return { app, core, nested, template: nag ? {} : nestedTemplate(nested) };
 }
 
 const sweeps = (resources: Record<string, Resource>) =>
@@ -77,6 +83,19 @@ describe("the remote provisioner after an install (D101)", () => {
     expect(remoteReleaseDigest({ "azure-devops": "a".repeat(64), another: "b".repeat(64) })).toBe(
       remoteReleaseDigest(catalog),
     );
+  });
+
+  it("passes cdk-nag with a release that ships remote profiles, provider of the sweep included", () => {
+    // CI synthesizes without signed profiles, where the sweep and its provider do not exist.
+    const { app } = remoteMcpTemplate(signedRelease(), true);
+    // Only the nested stack of remote MCP: findings elsewhere depend on this test's example config.
+    let report = "";
+    try {
+      app.synth({ force: true });
+    } catch (error) {
+      report = String(error);
+    }
+    expect(report.split("\n").filter((line) => line.includes("Core/RemoteMcp/"))).toEqual([]);
   });
 
   it("starts one sweep with the release, only while RemoteMcpEnabled is on", () => {

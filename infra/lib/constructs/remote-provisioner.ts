@@ -368,6 +368,21 @@ export class RemoteMcpProvisioner extends Construct {
     const enabled = new CfnCondition(this, "SweepEnabled", { expression: Fn.conditionEquals(props.enabled, "true") });
     // AwsCustomResource -> CustomResource -> the CloudFormation resource.
     (sweep.node.defaultChild!.node.defaultChild as CfnResource).cfnOptions.condition = enabled;
+    // Its CDK-managed singleton provider lives in this nested stack, where Core's acknowledgment
+    // of providers (core-stack.ts) does not reach. It exists only when the release ships remote
+    // profiles, so a synthesis without signed profiles never sees it.
+    for (const child of Stack.of(this).node.children) {
+      if (/^AWS[0-9a-f]{32}$/.test(child.node.id)) {
+        acknowledge(
+          child,
+          { id: "AwsSolutions-L1", reason: "CDK-managed provider; runtime is chosen by aws-cdk-lib." },
+          {
+            id: "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]",
+            reason: "CDK-managed provider uses AWSLambdaBasicExecutionRole for its own logs.",
+          },
+        );
+      }
+    }
   }
 
   /**
