@@ -36,6 +36,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_api.gateway_mcp import (
     HTTP_OK,
+    PROTOCOL_HEADER,
     SESSION_HEADER,
     NotStartedError,
     Transport,
@@ -181,6 +182,7 @@ class GatewayExecutor:
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
+            PROTOCOL_HEADER: MCP_PROTOCOL_VERSION,
             invocation.HEADER: signature,
         }
         try:

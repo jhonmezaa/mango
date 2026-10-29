@@ -31,7 +31,7 @@ from mango_api.connections import (
     ConsentCompleter,
     PendingConsents,
 )
-from mango_api.gateway_mcp import SESSION_HEADER, Answer, GatewayConnections
+from mango_api.gateway_mcp import PROTOCOL_HEADER, SESSION_HEADER, Answer, GatewayConnections
 from mango_api.model_catalog import ModelCatalogCache, ModelCatalogStore
 from mango_api.probe import RateLimiter
 from mango_api.remote_mcp_store import INDEX_KEY, ApprovedRemotes, RemoteStore
@@ -104,6 +104,8 @@ class FakeGateway:
             return Answer(202, b"")
         assert headers[SESSION_HEADER] == "session-1"
         self.calls.append({"headers": headers, "message": message})
+        # Without the header the Gateway reads the call as 2025-03-26: no URL elicitation.
+        elicits = self.url_elicitation and headers.get(PROTOCOL_HEADER) == "2025-11-25"
         subject = headers["Authorization"].removeprefix("Bearer tok-")
         signed = invocation.verify(KEY, subject, headers[invocation.HEADER])
         assert signed is not None and signed.connection is not None
@@ -115,7 +117,7 @@ class FakeGateway:
             assert is_force_authentication_meta(meta)
             if not self.ignore_force:
                 self.vault.discard(subject)
-                if self.url_elicitation:
+                if elicits:
                     return self._consent(message, reg)
         else:
             assert meta is None
@@ -123,7 +125,7 @@ class FakeGateway:
             content = [{"type": "text", "text": "[secret project list]"}]
             result = {"jsonrpc": "2.0", "id": message["id"], "result": {"content": content}}
             return Answer(200, json.dumps(result).encode())
-        if not self.url_elicitation:
+        if not elicits:
             # Like AgentCore: without the capability, a generic tool error instead of -32042.
             content = [{"type": "text", "text": "An internal error occurred. Please retry later."}]
             result = {

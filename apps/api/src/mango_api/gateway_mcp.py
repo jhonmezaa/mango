@@ -8,7 +8,8 @@ rule 5) and with an invocation signature that names only the tool of the call (D
 
 A Gateway with MCP sessions (D47) answers 400 to a ``tools/call`` outside a session, so a call
 is ``initialize``, ``notifications/initialized`` and the request with the ``Mcp-Session-Id``
-the Gateway issued.
+the Gateway issued. Every request carries ``MCP-Protocol-Version``: without it the Gateway
+takes the request as ``2025-03-26`` (MCP transport spec), whatever ``initialize`` said.
 
 The Gateway URL is the installation's own (configuration, never request data): there is no
 user-controlled destination here, and redirects are never followed. Tokens, arguments and
@@ -37,6 +38,7 @@ TIMEOUT_SECONDS = 60
 MAX_RESPONSE_BYTES = 256 * 1024
 HTTP_OK = 200
 SESSION_HEADER = "Mcp-Session-Id"
+PROTOCOL_HEADER = "MCP-Protocol-Version"
 # The session id goes back in a request header: visible ASCII only (MCP transport spec).
 _SESSION_RE = re.compile(r"^[\x21-\x7e]{1,256}$")
 # A notification has no answer of its own: accepted (202), or an empty result.
@@ -272,6 +274,9 @@ class GatewayConnections:
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
+            # Without it the Gateway reads the call as 2025-03-26 and, having no URL
+            # elicitation there, answers a generic tool error instead of the -32042.
+            PROTOCOL_HEADER: remote_mcp.MCP_PROTOCOL_VERSION,
             invocation.HEADER: signature,
         }
         request_id = secrets.token_hex(8)
