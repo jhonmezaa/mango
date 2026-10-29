@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import json
 import socket
 import threading
@@ -1352,3 +1353,16 @@ def test_only_the_playground_sends_skills_in_the_invocation() -> None:
     request = harness.build_request(agent, **common, test_skills=(source,))
     assert request["skills"] == [source]
     assert "skills" in request["allowedTools"]
+
+
+def test_an_agent_with_remote_tools_is_told_never_to_write_a_connect_link() -> None:
+    """The model never sees the consent URL (D94); told to connect, it invented one."""
+    agent = dataclasses.replace(
+        _invocation(), allowed_tools=("@mango/remote-abcdefghij23___core_list_projects",)
+    )
+    remote = _request(agent)
+    text = remote["systemPrompt"][0]["text"]
+    assert text.startswith("Eres un analista.\n\n" + harness.REMOTE_CONNECT_LINE)
+    assert text.endswith("Current date (UTC): 2026-10-25.")
+    plain = _request(_invocation())["systemPrompt"][0]["text"]
+    assert harness.REMOTE_CONNECT_LINE not in plain

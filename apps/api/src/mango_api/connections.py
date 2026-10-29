@@ -285,6 +285,16 @@ class ConsentError(Exception):
 
 _NOT_YOURS = frozenset({"AccessDeniedException"})
 # An IAM denial names the action and the resource, never the session or a token.
+_SECRET_LIKE = re.compile(
+    r"urn:ietf:params:oauth:[\w:.~-]+|eyJ[\w-]+\.[\w-]+\.[\w-]*|https?://\S+|[A-Za-z0-9+/_=-]{24,}"
+)
+
+
+def _redacted(message: str) -> str:
+    """At most 200 characters, with session URIs, JWTs, URLs and long opaque values removed."""
+    return _SECRET_LIKE.sub("<redacted>", message)[:200]
+
+
 _IAM_DENIAL = re.compile(
     r"is not authorized to perform: (bedrock-agentcore:[A-Za-z0-9]+) on resource: (arn:[\w:/.*-]+)"
 )
@@ -306,7 +316,8 @@ class ConsentCompleter:
         except ClientError as exc:
             # The code only: the message could echo the request.
             code = str(exc.response.get("Error", {}).get("Code", "error"))
-            denied = _IAM_DENIAL.search(str(exc.response.get("Error", {}).get("Message", "")))
+            message = str(exc.response.get("Error", {}).get("Message", ""))
+            denied = _IAM_DENIAL.search(message)
             if code in _NOT_YOURS and denied:
                 # IAM refused mango-api, not the person: only the action and the resource.
                 logger.warning(
@@ -314,6 +325,8 @@ class ConsentCompleter:
                 )
                 raise ConsentError(502, "identity_unavailable") from None
             if code in _NOT_YOURS:
+                # Identity's own reason, without anything that could name the session or a token.
+                logger.warning("identity refused a consent: %s", _redacted(message))
                 raise ConsentError(403, "consent_not_yours") from None
             if code in _EXPIRED:
                 raise ConsentError(410, "consent_expired") from None

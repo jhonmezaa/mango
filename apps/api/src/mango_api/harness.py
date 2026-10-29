@@ -26,7 +26,7 @@ from botocore.exceptions import ClientError, EventStreamError
 
 from mango_api import knowledge_citations
 from mango_api.pricing import Usage
-from mango_core import invocation
+from mango_core import invocation, remote_mcp
 from mango_core.agents import AgentLimits
 from mango_core.harness_tools import (
     GATEWAY_MCP_SERVER,
@@ -267,6 +267,20 @@ class AgentInvocation:
     skills are added to the harness's, never instead of them."""
 
 
+REMOTE_CONNECT_LINE = (
+    "Some tools read external services with the user's own account. If one says the account "
+    "is not connected, never write a link or URL to connect or authorize it: Mango shows the "
+    "user its own «Conectar» button. Say that they need to connect their account and ask again."
+)
+"""Platform line for agents with remote MCP tools: a model told to connect invents a link."""
+
+
+def _has_remote_tools(allowed_tools: Iterable[str]) -> bool:
+    return any(
+        remote_mcp.split_gateway_tool(name.rpartition("/")[2]) is not None for name in allowed_tools
+    )
+
+
 def build_request(
     agent: AgentInvocation,
     *,
@@ -288,6 +302,9 @@ def build_request(
     from the stored version. Invoke-time skills are added to the harness's, so an agent's own
     harness never gets them (D92 (4))."""
     date_line = f"Current date (UTC): {today or datetime.now(UTC).date().isoformat()}."
+    if _has_remote_tools(agent.allowed_tools):
+        # The model never gets the consent URL (D94); left alone it invents one.
+        date_line = f"{REMOTE_CONNECT_LINE}\n\n{date_line}"
     messages = [
         {"role": turn.role, "content": [{"text": turn.text}]}
         for turn in history[-MAX_HISTORY_MESSAGES:]

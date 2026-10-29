@@ -537,15 +537,27 @@ def test_the_pending_consent_of_another_person_is_never_read(env: Env) -> None:
     assert _pending(env, "member-1") is not None
 
 
-def test_identity_refusing_the_session_is_consent_not_yours(env: Env) -> None:
+def test_identity_refusing_the_session_is_consent_not_yours(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
     _connect(env)
     env.identity.fail = "AccessDeniedException"
+    env.identity.message = (
+        "Invalid or expired session urn:ietf:params:oauth:request_uri:abc-123 for "
+        "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln at https://example.invalid/x?y=1"
+    )
     response = env.callback()
     assert (response.status_code, _code(response)) == (403, "consent_not_yours")
     assert _pending(env) is not None
     assert _connections(env)[0]["status"] == "not_connected"
     ((_, detail),) = env.audit.named("mcp_remote.consent_failed", outcome=None)
     assert detail == {"registration": REG, "reason": "consent_not_yours"}
+    # Identity's reason reaches the log, never the session, a token or a URL.
+    (line,) = [r.getMessage() for r in caplog.records if "identity refused" in r.getMessage()]
+    assert line == (
+        "identity refused a consent: Invalid or expired session <redacted> for <redacted> "
+        "at <redacted>"
+    )
 
 
 def test_iam_refusing_mango_api_is_not_the_persons_fault(
