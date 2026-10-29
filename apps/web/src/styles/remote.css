@@ -404,6 +404,10 @@
     line-height: 1.5;
     margin-top: 2px;
   }
+  /* Ronda 26: «Podrás enviarla cuando termine…» bajo el texto. */
+  .rm-card-s.rm-card-wait {
+    margin-top: 4px;
+  }
   .rm-card-a {
     display: grid;
     justify-items: end;
@@ -549,6 +553,10 @@
     color: var(--red);
     flex: none;
     margin-top: 3px;
+  }
+  /* Ronda 26: mientras no se leyó «Mis conexiones», los enlaces son texto sin marcar. */
+  .rm-linkwait {
+    color: inherit;
   }
   .rm-ret-n {
     font-size: 13px;

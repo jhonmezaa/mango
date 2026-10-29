@@ -21,19 +21,26 @@ function mmss(ms: number): string {
  * mango-api for one (D98 (20)). The provider opens in another tab and this tab closes the consent
  * when it comes back (D100): «Inicia sesión … en la otra pestaña», «Terminando…», «Conectado».
  * The turn ended when the connection was missing: «Enviar de nuevo» sends the person's question
- * again as a new turn (design round 25). With remote servers off in the installation it only
- * says so.
+ * again as a new turn (design round 25). It is not offered again once the conversation has a later
+ * question of the person, so it survives a reload, and it waits, disabled, while another turn
+ * answers (design round 26). With remote servers off in the installation it only says so.
  */
 export function ConnectCard({
   registrationId,
   startedAt,
   onResend,
+  asked = false,
+  busy = false,
 }: {
   registrationId: string;
   /** When the pending consent began (the event's arrival, or the stored message's time). */
   startedAt: number;
   /** Sends the question of the turn again; absent when it cannot be sent now. */
   onResend?: (() => void) | undefined;
+  /** The conversation already has a question of the person after this card. */
+  asked?: boolean;
+  /** Another turn is answering: «Enviar de nuevo» waits for it. */
+  busy?: boolean;
 }) {
   const { t } = useTranslation();
   const {
@@ -45,7 +52,8 @@ export function ConnectCard({
     finishErrorOf: finishOf,
   } = useConnections();
   const [error, setError] = useState<ConnectError | null>(null);
-  const [resent, setResent] = useState(false);
+  const [clicked, setClicked] = useState(false);
+  const resent = clicked || asked;
   const [now, setNow] = useState(() => Date.now());
   const connection = byRegistration(registrationId);
   const phase = phaseOf(registrationId);
@@ -121,6 +129,9 @@ export function ConnectCard({
                   service,
                 })}
               </div>
+              {busy && !resent && onResend && (
+                <div className="rm-card-s rm-card-wait">{t('connections.card.resendBusy')}</div>
+              )}
             </>
           ) : state === 'off' ? (
             <>
@@ -212,8 +223,9 @@ export function ConnectCard({
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
+                disabled={busy}
                 onClick={() => {
-                  setResent(true);
+                  setClicked(true);
                   onResend();
                 }}
               >

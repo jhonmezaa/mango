@@ -96,6 +96,9 @@ test('the chat asks to connect a remote service, and its tab closes the consent'
   // …and so does the stored answer.
   await page.reload();
   await expect(page.getByText('Leyó Azure DevOps')).toBeVisible();
+  // The conversation already has the question again: no second «Enviar de nuevo» (round 26).
+  await expect(card).toContainText('Enviaste tu pregunta otra vez.');
+  await expect(card.getByRole('button', { name: 'Enviar de nuevo' })).toHaveCount(0);
   await expect(wiki).toHaveAttribute('data-host-kind', 'service');
   await page.getByRole('button', { name: 'el tablero' }).click();
   const dialog = page.getByRole('dialog', { name: 'Abrir enlace externo' });
