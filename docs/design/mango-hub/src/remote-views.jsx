@@ -140,7 +140,7 @@ function RemoteDetail({ pid, regId, onClose }) {
       {reg.status === 'pending' && reg.replaces && <div className="mc-alert amber"><I.Warn size={14} /><div><b>Al aprobarse, todas las personas tendrán que conectar su cuenta de {p.name} otra vez.</b></div></div>}
       {reg.status === 'pending' && <div className="rm-redirect"><RmCopy value={reg.redirect} /><div className="rm-hint">Pégala en la app de Entra como URI de redirección de plataforma <b>Web</b>. La da AWS al crear la conexión de este registro: es distinta para cada uno y no es una dirección de Mango.</div></div>}
       {reg.status === 'active' && <SecretAlert r={reg} onRotate={isAdmin ? () => setModal('rotate') : null} />}
-      {reg.status === 'creating' && <div className="mc-alert" role="status"><span className="g-spin" /><div><b>Creándose.</b> {reg.retriedBy ? 'Reintentado por ' + (reg.retriedBy === me ? 'ti' : reg.retriedBy) : 'Aprobado por ' + (reg.approvedBy === me ? 'ti' : reg.approvedBy)}. Mango está creando la conexión con {p.name}; tarda unos segundos. Puedes cerrar este panel.</div></div>}
+      {reg.status === 'creating' && <div className="mc-alert" role="status"><span className="g-spin" /><div><b>Creándose.</b> Aprobado por {reg.approvedBy === me ? 'ti' : reg.approvedBy}. Mango está creando la conexión con {p.name}; tarda unos segundos. Puedes cerrar este panel.</div></div>}
       {reg.status === 'failed' && <FailAlert r={reg} />}
       {reg.status === 'disabled' && <div className="mc-alert"><I.Info size={14} /><div>Deshabilitado por {reg.disabledBy} · {window.fmtAgo(reg.disabledAt)}{reg.reason ? <>: «{reg.reason}»</> : null}<div className="mk-meta" style={{ marginTop: 3 }}>Se borraron la conexión y el secreto. Para volver a habilitarlo, pídelo de nuevo con el secreto.</div></div></div>}
       <Sec title="Registro">
@@ -164,11 +164,11 @@ function RemoteDetail({ pid, regId, onClose }) {
       ? <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}><span className="ap-reason"><I.Lock size={12} /> Otra persona administradora tiene que aprobarlo.</span><button className="btn btn-sm" onClick={() => { RM.withdraw(reg.id); toast?.({ tone: 'success', msg: 'Solicitud retirada · se borró lo que se había creado' }); setMode(null); }}>Retirar solicitud</button></div>
       : <div className="row gap-2"><button className="btn btn-sm btn-primary" onClick={() => { const r = RM.approve(reg.id); if (r.error) { setErr(r.error); return; } toast?.({ tone: 'success', msg: r.scope ? 'Grupos de ' + p.name + ' cambiados para ' + reg.org : p.name + ' habilitado para ' + reg.org }); setMode({ k: 'reg', id: r.scope ? reg.changes : reg.id }); }}><I.Check size={12} /> Aprobar</button><button className="btn btn-sm" onClick={() => setMode({ ...mode, reject: true })}>Rechazar</button></div>}</>;
     else if (reg.status === 'creating') foot = <div className="ap-reason"><span className="g-spin" /> Creando la conexión · no hace falta hacer nada.</div>;
-    else if (reg.status === 'failed') { const app = RM.failInfo(reg).kind === 'app';
+    else if (reg.status === 'failed') {
       const doRetry = () => { setErr(null); setBusy(true); setTimeout(() => { setBusy(false); const r = RM.retry(reg.id); if (r.error) { setErr((RETRY_ERR[r.error] || (() => r.error))(p)); return; } toast?.({ tone: 'success', msg: 'Reintentando · Mango vuelve a crear la conexión' }); }, 600); };
-      const bRetry = <button key="r" className={'btn btn-sm' + (app ? '' : ' btn-primary')} disabled={busy} onClick={doRetry}>{busy ? <><span className="g-spin" /> Reintentando…</> : 'Reintentar'}</button>;
-      const bAgain = <button key="a" className={'btn btn-sm' + (app ? ' btn-primary' : '')} disabled={busy} onClick={() => openForm(reg)}>Pedir de nuevo</button>;
-      foot = <>{err && <div className="g-err" role="alert" style={{ marginBottom: 10 }}>{err}</div>}<div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>{app ? [bAgain, bRetry] : [bRetry, bAgain]}</div><div className="rm-hint" style={{ marginTop: 8 }}>«Reintentar» usa la misma aprobación y no cambia nada de lo aprobado. «Pedir de nuevo» pide el secreto otra vez y otra aprobación.</div></>; }
+      const bRetry = <button key="r" className="btn btn-sm btn-primary" disabled={busy} onClick={doRetry}>{busy ? <><span className="g-spin" /> Reintentando…</> : 'Reintentar'}</button>;
+      const bAgain = <button key="a" className="btn btn-sm" disabled={busy} onClick={() => openForm(reg)}>Pedir de nuevo</button>;
+      foot = <>{err && <div className="g-err" role="alert" style={{ marginBottom: 10 }}>{err}</div>}<div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>{bRetry}{bAgain}</div><div className="rm-hint" style={{ marginTop: 8 }}>«Reintentar» usa la misma aprobación y no cambia nada de lo aprobado. «Pedir de nuevo» pide el secreto otra vez y otra aprobación.</div></>; }
     else if (reg.status === 'active') foot = <div className="row gap-2" style={{ flexWrap: 'wrap' }}><button className="btn btn-sm" onClick={() => setModal('rotate')}>Rotar secreto</button><button className="btn btn-sm" disabled={list.some(r => r.kind === 'scope' && r.changes === reg.id)} title={list.some(r => r.kind === 'scope' && r.changes === reg.id) ? 'Ya hay un cambio de grupos pendiente' : undefined} onClick={() => openScope(reg)}>Cambiar grupos</button><button className="btn btn-sm" disabled={list.some(r => r.replaces === reg.id)} title={list.some(r => r.replaces === reg.id) ? 'Ya hay un cambio pendiente' : undefined} onClick={() => openForm(reg, reg.id)}>Cambiar tenant o app</button><button className="btn btn-sm" onClick={() => setModal('disable')}>Deshabilitar</button></div>;
     else foot = <div className="row gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}><button className="btn btn-sm btn-primary" onClick={() => openForm(reg)}>Pedir de nuevo</button><span className="mk-meta">Pide el secreto otra vez y otra aprobación.</span></div>;
   } else {
@@ -225,11 +225,12 @@ function MyConnections() {
   const [open, setOpen] = useState(false); const [already, setAlready] = useState({}); const [errs, setErrs] = useState({}); const [disc, setDisc] = useState(null);
   useEffect(() => { const o = () => { setOpen(true); setAlready({}); setErrs({}); }, c = () => setOpen(false); window.addEventListener('mango:my-connections', o); window.addEventListener('mango:close-connections', c); return () => { window.removeEventListener('mango:my-connections', o); window.removeEventListener('mango:close-connections', c); }; }, []);
   if (!open || S.get().avail) return null;
-  const list = RM.mine();
+  const list = RM.enabled() ? RM.mine() : [];
   if (disc) return <DisconnectModal p={RM.profile(disc)} onClose={() => setDisc(null)} />;
   return <window.Modal open onClose={() => setOpen(false)} title="Mis conexiones" width={520}>
     <p className="rm-p">Servicios externos que tus grupos pueden usar. Tu cuenta se conecta una vez y los agentes leen con tus permisos, solo lectura. Mango no muestra tu token ni datos de tu cuenta.</p>
-    {!list.length ? <div className="rm-empty"><I.Globe size={18} /><div>Ningún servicio externo está habilitado para tus grupos.</div></div> : <div className="rm-conns">{list.map(r => {
+    {!RM.enabled() ? <div className="mc-alert amber" role="status"><I.Lock size={14} /><div><b>Los servicios externos están apagados en esta instalación</b><div>Cuando un administrador los encienda, aquí vas a poder conectar tu cuenta.</div></div></div>
+      : !list.length ? <div className="rm-empty"><I.Globe size={18} /><div>Ningún servicio externo está habilitado para tus grupos.</div></div> : <div className="rm-conns">{list.map(r => {
       const p = RM.profile(r.profile); const c = RM.conn(p.id); const off = r.status === 'disabled'; const exp = RM.secretInfo(r).level === 'expired';
       const state = off ? 'off' : c.status === 'connecting' ? 'opening' : c.status === 'waiting' ? 'waiting' : c.status === 'finishing' ? 'finishing' : c.status === 'connected' ? (exp ? 'on-blocked' : 'on') : exp ? 'blocked' : 'none';
       const ce = state !== 'none' ? null : errs[p.id] ? (RM.CONNECT_ERR[errs[p.id]] || RM.CONNECT_ERR.error)(p) : c.err === 'expired' ? ['El enlace venció', 'Vuelve a pulsar «Conectar».'] : c.err ? (RM.FINISH_ERR[c.err] || RM.FINISH_ERR.error)(p) : null;
@@ -266,7 +267,7 @@ function DisconnectModal({ p, onClose }) {
 // (AgentCore Identity solo acepta el token de esa pestaña). Siempre a pantalla completa, con la marca arriba.
 // Solo nombra el servicio cuando la otra pestaña confirma que terminó: antes no lo sabe.
 const RET = {
-  ok: ['Check', 'green', () => 'Listo, vuelve a tu pestaña de Mango', (p) => 'Tu cuenta de ' + p.name + ' quedó conectada. El agente sigue ahí con tu pregunta. Puedes cerrar esta pestaña.'],
+  ok: ['Check', 'green', () => 'Listo, vuelve a tu pestaña de Mango', (p) => 'Tu cuenta de ' + p.name + ' quedó conectada. En la pestaña donde pulsaste «Conectar», envía tu pregunta otra vez. Esta ya no hace falta.'],
   orphan: ['Refresh', 'amber', () => 'Pídelo de nuevo desde Mango', () => 'La conexión solo se termina en la pestaña de Mango donde pulsaste «Conectar», y esa pestaña se cerró o cambió de sesión. Tu cuenta no quedó conectada.'],
   expired: ['Clock', 'amber', () => 'El enlace venció', () => 'Pasaron más de 10 minutos desde que pulsaste «Conectar». Vuelve a pulsarlo en Mango.'],
   cancelled: ['X2', 'muted', () => 'Cancelaste el inicio de sesión', () => 'Tu cuenta no quedó conectada. Puedes intentarlo otra vez desde Mango.'],
@@ -274,17 +275,20 @@ const RET = {
   conditional: ['Shield', 'amber', () => 'Una regla de acceso de tu empresa bloqueó la conexión', (p) => 'El Acceso condicional de ' + p.idp + ' no dejó iniciar sesión desde este dispositivo o esta red, o pidió un paso que no se completó. Consulta con el administrador de ' + p.idp + ' de tu empresa.'],
   ambiguous: ['Warn', 'amber', () => 'No se pudo saber qué conexión terminar', () => 'Tienes más de una conexión a medias en Mango. Vuelve a pulsar «Conectar» en la que quieras terminar.'],
   notyours: ['Lock', 'red', () => 'Este enlace no es tuyo', () => 'Pide la conexión desde tu propia sesión de Mango.'],
-  nosession: ['Lock', 'muted', () => 'Inicia sesión en Mango para continuar', () => 'Este navegador no tiene tu sesión de Mango abierta. Ingresa: si Mango puede, termina la conexión solo; si no, te pide que vuelvas a pulsar «Conectar».'],
   error: ['Warn', 'amber', () => 'No se pudo conectar tu cuenta', () => 'Inténtalo de nuevo en unos minutos.'],
 };
 // Sin pestaña que avisar no hay espera.
-const NOWAIT = ['nosession', 'notyours'];
+const NOWAIT = ['notyours'];
 function RemoteReturn({ setView }) {
   const I = window.Icons; window.useMango(s => s.simRemoteReturn);
   const ret = S.get().remoteReturn || { pid: 'azure-devops', from: 'connections' };
   const result = S.get().simRemoteReturn || 'ok';
   const p = RM.profile(ret.pid);
   const [doneFor, setDoneFor] = useState(NOWAIT.includes(result) ? result : null);
+  const [noClose, setNoClose] = useState(false);
+  // Sin window.opener (reverse tabnabbing) el navegador decide si deja cerrarla: se intenta a los 2 s de «Listo».
+  const tryClose = () => { try { window.close(); } catch (e) {} setTimeout(() => setNoClose(true), 300); };
+  useEffect(() => { setNoClose(false); if (result !== 'ok' || doneFor !== 'ok') return; const t = setTimeout(tryClose, 2000); return () => clearTimeout(t); }, [result, doneFor]);
   useEffect(() => {
     if (result === 'relaying') return;
     if (NOWAIT.includes(result)) { setDoneFor(result); return; }
@@ -303,8 +307,7 @@ function RemoteReturn({ setView }) {
     <h1 className="rm-ret-t">{t(p)}</h1>
     <p className="rm-ret-b">{b(p)}</p>
     <div className="row gap-2" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
-      {result === 'nosession' ? <button className="btn btn-sm btn-primary" onClick={() => setView('login')}>Iniciar sesión</button>
-        : result === 'ok' ? <button className="btn btn-sm" onClick={() => { window.close(); toMango(); }}>Cerrar esta pestaña</button>
+      {result === 'ok' ? (noClose ? <span className="rm-ret-n">El navegador no deja que Mango cierre esta pestaña. Ciérrala tú: tu pestaña de Mango ya está al día.</span> : <button className="btn btn-sm" onClick={tryClose}>Cerrar esta pestaña</button>)
         : <button className="btn btn-sm btn-primary" onClick={toMango}>Abrir Mango</button>}
     </div>
   </>; }

@@ -1001,6 +1001,31 @@ Respuesta al contexto de la ronda 24. Archivos: `remote-core.jsx`, `remote-views
 
 **Panel de demo** (nuevos o cambiados): «Servicios externos · en la instalación» (encendidos, apagados, apagados sin que el perfil lo diga); «código del fallo»; «al reintentar»; «Vuelta desde Microsoft · y lo que ve tu pestaña al pulsar «Conectar»» (la opción elegida abre la vuelta y también decide cómo termina «Conectar» en el chat y en Mis conexiones).
 
-### 7. Sigue abierto (sin cambios en esta ronda)
+### 7. Sigue abierto
+*Sustituido, ver «Ronda 25 · MCP remotos (2026-10-28)».*
+
+### 7 (anterior). Sigue abierto (sin cambios en esta ronda)
 - MCP remotos: qué devuelve cancelar en Microsoft (prueba en vivo); nombre real del código de fallo de la app de Entra; chat y Mis conexiones con la función apagada; si el perfil agregará descripción, requisitos y descripción de permisos.
 - De rondas anteriores (lista del contexto de la ronda 24, §5): respuesta cortada por tope y por tiempo, cuota de Bedrock, autoscroll mientras responde, «+» con el primer mensaje sin guardar, dos «Reintentar» en el historial, sesión que no se renueva y error a pantalla completa; 429 dentro de la app, página «Demasiadas solicitudes» y esperas que no son de un minuto; correos rechazados en ingreso y registro; `area_required`; destello de «Otro cambio se está aplicando…» y «Aprobar» a 420 px y en oscuro; «0 resultados»; «Tokens por llamada»; «Sin bucket» no enviado y fuente aprobada que no se pudo leer; 13 de 23 vistas en Próximamente.
+
+
+## Ronda 25 · MCP remotos (2026-10-28)
+Respuesta al contexto de la ronda 25. Archivos: `remote-core.jsx`, `remote-views.jsx`, `remote.css`, `app.jsx`. Se aceptan las diferencias del §2 del contexto (sin `window.opener`, sin «Cancelaste…», sin `nosession`, Conectividad apagada con «Rotar secreto» y «Deshabilitar», `remoteGone` como ejecución fallida hasta leer Mis conexiones).
+
+### Decisiones
+- **«Conectado» en la tarjeta (chat y Playground):** «Conectado» · «Tu cuenta de {servicio} quedó conectada. Envía tu pregunta otra vez para que el agente lea {servicio}.» + **«Enviar de nuevo»** (principal). Lo hace la interfaz: manda la última pregunta de la persona como un turno nuevo, igual que si la escribiera. Tras pulsarlo: «Enviaste tu pregunta otra vez.» y el check. *Cambio para el producto:* el botón. Si el producto llega a continuar el turno solo, se vuelve al texto de la ronda 24 y se quita el botón.
+- **Vuelta · «Listo»:** «Tu cuenta de {servicio} quedó conectada. En la pestaña donde pulsaste «Conectar», envía tu pregunta otra vez. Esta ya no hace falta.». Ya no dice que el agente sigue. Intenta cerrarse a los 2 s; si el navegador no la deja, el botón se reemplaza por «El navegador no deja que Mango cierre esta pestaña. Ciérrala tú: tu pestaña de Mango ya está al día.». No lleva a Mango (abriría otra pestaña de Mango más).
+- **Navegador bloqueó la pestaña (`popup_blocked`):** «El navegador bloqueó la pestaña de {proveedor}» · «Permite las ventanas emergentes de Mango en este navegador y vuelve a pulsar «Conectar».», en rojo con «Reintentar» (un clic nuevo suele bastar). *Cambio para el producto:* distinguirlo del error genérico (`window.open` devuelve `null`).
+- **«Abrir de nuevo»:** se acepta como está. La cuenta atrás mide la conexión pedida en el chat, no la URL.
+- **Rama de la app de Entra en «Falló»:** se quita. «Reintentar» es siempre el principal; el código desconocido sigue con «Reinténtalo. Si vuelve a fallar, revisa los datos de la app de Entra y pídelo de nuevo.». Si algún día existe el código, se vuelve a dibujar.
+- **«Reintentado por {persona}»:** no hace falta. Mientras se crea de nuevo: «Aprobado por {persona}». El reintento ya queda en Auditoría (`remote_mcp.retry`).
+- **Función apagada fuera de administración:** Mis conexiones sin lista, con «Los servicios externos están apagados en esta instalación» · «Cuando un administrador los encienda, aquí vas a poder conectar tu cuenta.». Tarjeta del chat y del Playground (si llega): «Los servicios externos están apagados» · «Esta instalación de Mango tiene apagados los servicios externos, así que el agente no puede leer {servicio}. Si lo necesitas, avisa a un administrador de Mango.», sin botón. Ninguno nombra el parámetro.
+- **Enlace inventado para «autorizar»:** en un turno con la tarjeta «Conectar», los enlaces del texto del agente que no son de una organización registrada no se pueden abrir: texto tachado en rojo, sin enlace, con el destino en el texto emergente («Enlace quitado por Mango · {dominio}»). Debajo del texto: «Mango desactivó un enlace del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.» (plural: «{n} enlaces»). Los de tu organización siguen igual. *Cambio para el producto.*
+- **Vuelta sin sesión:** se quita del diseño.
+- **«Cancelaste el inicio de sesión»:** se conserva en el diseño para cuando la prueba en vivo diga que Microsoft lo distingue.
+
+**Panel de demo:** «Chat · servicio externo» › «Falta conectar · el agente escribió un enlace»; «al pulsar «Conectar»» › «El navegador bloqueó la pestaña»; se quitaron «App de Entra» y «Sin sesión de Mango». Con «en la instalación: Apagados», el chat y Mis conexiones muestran el estado apagado.
+
+### Sigue abierto
+- Qué devuelve cancelar en Microsoft (prueba en vivo); si el perfil agregará descripción, requisitos y descripción de permisos.
+- Lo de rondas anteriores (§5 del contexto), sin cambios: respuesta cortada por tope y por tiempo, cuota de Bedrock, autoscroll, «+» sin guardar, dos «Reintentar», sesión que no se renueva y error a pantalla completa; 429; correos rechazados; `area_required`; «Otro cambio se está aplicando…» y «Aprobar»; «0 resultados»; «Tokens por llamada»; Knowledge Bases; vistas en Próximamente.
