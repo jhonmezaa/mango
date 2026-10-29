@@ -364,6 +364,32 @@ def publish(target: dict[str, str], out: Path, region: str, env: dict[str, str])
         put_new(target["bucket"], prefix + name, out / name, "application/json", env)
 
 
+REMOTES = ROOT / "remotes"
+RELEASE_REMOTES = ROOT / "dist" / "remotes"
+_PROFILE_VERSION = re.compile(r'^version:\s*"?([^"\s]+)"?\s*$', re.MULTILINE)
+
+
+def check_remote_profiles(repo: Path = REMOTES, signed: Path = RELEASE_REMOTES) -> None:
+    """The signed remote profiles in ``dist/remotes`` must be exactly this revision's.
+
+    The release workflow copies them from the `packs` run of the same commit; a build run by
+    hand keeps whatever was downloaded before. A release once shipped a profile one version
+    behind its code (2026-10-29): the code could not read it and remote MCPs stopped.
+    """
+    for profile in sorted(repo.glob("*/profile.yaml")):
+        found = _PROFILE_VERSION.search(profile.read_text())
+        if found is None:
+            sys.exit(f"{profile}: no version")
+        profile_id, version = profile.parent.name, found.group(1)
+        envelopes = sorted(p.name for p in signed.glob(f"{profile_id}-*.remote.json"))
+        expected = f"{profile_id}-{version}.remote.json"
+        if envelopes != [expected]:
+            sys.exit(
+                f"dist/remotes must hold exactly {expected} (signed by the packs run of this "
+                f"commit), found {envelopes or 'none'}"
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument(
@@ -400,6 +426,7 @@ def main() -> None:
         print("· building and pushing the mango-api image")
         target["imageDigest"] = publish_image(target, region, env)
         print(f"  {target['imageDigest']}")
+    check_remote_profiles()
     print("· synthesizing the templates")
     if CDK_OUT.exists():
         shutil.rmtree(CDK_OUT)

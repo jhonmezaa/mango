@@ -440,3 +440,21 @@ def test_a_nested_stack_from_another_bucket_ends_the_build(
 
     with pytest.raises(SystemExit, match="TemplateURL is not a release asset"):
         dist.package({"label": "v1.0.0", "bucket": "another-bucket"}, tmp_path / "out")
+
+
+def test_a_release_takes_exactly_the_signed_profile_of_its_revision(tmp_path: Path) -> None:
+    repo, signed = tmp_path / "remotes", tmp_path / "signed"
+    (repo / "azure-devops").mkdir(parents=True)
+    profile = 'id: azure-devops\nversion: "2026.10.27-2"\n'
+    (repo / "azure-devops" / "profile.yaml").write_text(profile)
+    signed.mkdir()
+    # Only the previous version, as a hand-run build kept it: the release stops.
+    (signed / "azure-devops-2026.10.27-1.remote.json").write_text("{}")
+    with pytest.raises(SystemExit, match=re.escape("azure-devops-2026.10.27-2.remote.json")):
+        dist.check_remote_profiles(repo, signed)
+    # Both versions: still not exactly this revision's.
+    (signed / "azure-devops-2026.10.27-2.remote.json").write_text("{}")
+    with pytest.raises(SystemExit):
+        dist.check_remote_profiles(repo, signed)
+    (signed / "azure-devops-2026.10.27-1.remote.json").unlink()
+    dist.check_remote_profiles(repo, signed)
