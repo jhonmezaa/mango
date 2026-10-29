@@ -194,7 +194,9 @@ export class Identity extends Construct {
       // The table of the group registry is set by `readGroupRegistry`.
       environmentEncryption: configKey,
       timeout: Duration.seconds(5),
-      memorySize: 256,
+      // Every page reload waits for it (the session is renewed with Cognito). CPU grows with
+      // memory: at 256 MB a cold start took ~1.9 s (importing boto3, creating the client).
+      memorySize: 1024,
     });
     this.userPool.addTrigger(
       cognito.UserPoolOperation.PRE_TOKEN_GENERATION_CONFIG,
