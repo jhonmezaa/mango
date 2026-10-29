@@ -58,7 +58,7 @@ El riesgo principal es **la cadena entre el contenido de Azure DevOps y las acci
   - **Qué cruza:** la pregunta del chat; el alta (`tenantId`, `clientId`, **secreto**); la vuelta (`session_id`, en la query de `/conexiones/vuelta` y en el cuerpo de `POST /api/oauth/callback`).
   - **Canal:** HTTPS hasta CloudFront y HTTP por la VPC origin (excepción de la PoC).
   - **Controles:** access token de Cognito en `Authorization` (la cookie de D63 solo renueva la sesión), guarda de mismo origen, Cedar L1, Pydantic, WAF y límites de tasa.
-- **`mango-api` → AgentCore Identity (control):** el secreto (al pedir y al rotar) y `CompleteResourceTokenAuth` con el access token de la persona (D94 (3): ya no `GetResourceOauth2Token`). Va por SigV4 y el rol de la tarea. El secreto nunca vuelve.
+- **`mango-api` → AgentCore Identity (control):** el secreto (al pedir y al rotar) y `CompleteResourceTokenAuth` con el access token de la persona (D94 (3): ya no `GetResourceOauth2Token`). Va por SigV4 y el rol de la tarea. El secreto nunca vuelve a `mango-api`. Al cerrar un consentimiento, Identity lee el secreto de la app con las credenciales de quien llama, así que el rol de `mango-api` tiene `secretsmanager:GetSecretValue` sobre los secretos `bedrock-agentcore-identity!default/oauth2/Mango-<ns>-remote-*`. Su código nunca los lee: el permiso existe para que Identity lo use en su nombre (visto en la primera instalación, 2026-10-28).
 - **`mango-api` → harness → Gateway:**
   - **Qué cruza:** el access token de Cognito y la firma de la invocación.
   - **Controles:** JWT validado por el Gateway; el interceptor verifica la firma, las tools del agente y su clase; Cedar.

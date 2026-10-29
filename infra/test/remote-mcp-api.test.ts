@@ -66,8 +66,13 @@ describe("mango-api and remote MCP registrations", () => {
     const secrets = bySid("RemoteMcpProviderSecrets");
     expect(text(secrets.Resource)).toContain(`secret:bedrock-agentcore-identity!default/oauth2/Mango-${ns}-remote-*`);
     expect(actions(secrets)).not.toContain("secretsmanager:GetSecretValue");
-    // Nothing of the policy reads a secret, signs, or reaches anything else of AgentCore.
-    for (const statement of statements) {
+    // Identity reads the app's secret with mango-api's credentials when it completes a consent:
+    // only those secrets, in a statement of its own.
+    const consentSecret = bySid("RemoteMcpConsentSecret");
+    expect(actions(consentSecret)).toEqual(["secretsmanager:GetSecretValue"]);
+    expect(consentSecret.Resource).toEqual(secrets.Resource);
+    // Nothing else of the policy reads a secret, signs, or reaches anything else of AgentCore.
+    for (const statement of statements.filter((s) => s.Sid !== "RemoteMcpConsentSecret")) {
       for (const action of actions(statement)) {
         expect(action).not.toMatch(/\*|GetSecretValue|kms:Sign|GetResourceOauth2Token|InvokeHarness/);
       }

@@ -104,6 +104,14 @@ export class RemoteMcpApi extends Construct {
         actions: ["bedrock-agentcore:CompleteResourceTokenAuth"],
         resources: [directory, gatewayIdentity, vault, providers],
       }),
+      // Identity reads the app's secret with the credentials of whoever completes the consent,
+      // to exchange Microsoft's code for the person's token: mango-api never reads it in its
+      // own code (AccessDenied on GetSecretValue seen in an installation on 2026-10-28).
+      new iam.PolicyStatement({
+        sid: "RemoteMcpConsentSecret",
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [secrets],
+      }),
       new iam.PolicyStatement({
         sid: "RemoteMcpPublicKey",
         actions: ["kms:GetPublicKey"],
