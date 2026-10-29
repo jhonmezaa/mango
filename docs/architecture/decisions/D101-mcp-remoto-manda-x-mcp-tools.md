@@ -1,7 +1,7 @@
 # D101 · Un MCP remoto recibe la lista exacta de tools aprobadas (`X-MCP-Tools`), no sus toolsets
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-29 (elegida por el dueño ese día, por menú: «Pasar a X-MCP-Tools»; cómo convergen los registros existentes, el mismo día, por menú: «Automática tras instalar (Recomendada)» y «Rechazarlos (Recomendada)»)
+- **Fecha:** 2026-10-29 (elegida por el dueño ese día, por menú: «Pasar a X-MCP-Tools»; cómo convergen los registros existentes, el mismo día, por menú: «Automática tras instalar (Recomendada)» y «Rechazarlos (Recomendada)») · (7) precisado el 2026-10-29, al añadir el toolset «Repositorios» (D98 (6)), elegido ese día por menú: «Fijar re-firma»
 - **Precisa / reemplaza a:** precisa [D98](D098-contratos-de-los-mcp-remotos.md) (6) (valores de `X-MCP-Toolsets`), (13) (las dos cabeceras forzadas del ítem firmado) y (16) (qué cabeceras devuelve el interceptor `REQUEST`); precisa [D93](D093-mcp-remotos-de-terceros.md) (8) (qué cabeceras inyecta el interceptor); respeta [D98](D098-contratos-de-los-mcp-remotos.md) (8) (cambiar toolsets o grupos sigue siendo una solicitud con doble aprobación)
 - **Precisada por:** —
 
@@ -44,3 +44,8 @@
 - **Mandar `all` o no mandar cabecera:** el servidor serviría todas sus tools de lectura. El esquema fijado, Cedar y el interceptor seguirían limitando a las aprobadas, pero se pierde el filtro del servidor.
 - **Una solicitud de cambio con doble aprobación para converger:** es una acción manual en la cuenta del cliente para algo que no cambia lo aprobado.
 - **Aceptar el ítem viejo y mandar `X-MCP-Tools`:** el target viejo no la deja pasar, así que el servidor serviría todo hasta converger.
+
+**(7) Un toolset nuevo que el registro no eligió no cambia lo aprobado (precisado el 2026-10-29, al añadir «Repositorios», D98 (6)).**
+- El target se planea solo con las tools de los toolsets aprobados (su esquema es el del perfil recortado a ellas). Si la release solo añade un toolset que el registro no eligió, salen las mismas tools, toolsets, sondeo, organización, esquema y cabeceras: el target no difiere en nada.
+- El barrido lo trata como en (4): no escribe en el Gateway, firma otra vez el catálogo con el perfil de la release (`revision` + 1, `outcome: applied`) y las personas conservan su conexión. Sin esa firma, el ítem seguiría nombrando el perfil anterior y `retry` o una solicitud nueva responderían `release_changed`.
+- `release_needs_request` sigue saliendo cuando la release cambia las tools o el esquema de un toolset aprobado. Añadir el toolset nuevo a un registro es una solicitud con doble aprobación (D98 (8)).

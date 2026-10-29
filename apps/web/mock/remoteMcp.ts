@@ -59,6 +59,19 @@ const PROFILE = {
       always: false,
       tools: ['pipelines_build', 'pipelines_build_log', 'pipelines_definition', 'pipelines_run'],
     },
+    {
+      id: 'repos',
+      label: 'Repositorios',
+      always: false,
+      tools: [
+        'repo_branch',
+        'repo_file',
+        'repo_pull_request',
+        'repo_pull_request_thread',
+        'repo_repository',
+        'repo_search_commits',
+      ],
+    },
     { id: 'search-code', label: 'Búsqueda de código', always: false, tools: ['search_code'] },
     { id: 'wiki', label: 'Wiki', always: false, tools: ['search_wiki', 'wiki'] },
     {

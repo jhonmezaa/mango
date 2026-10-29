@@ -1,6 +1,296 @@
 {
   "tools": [
     {
+      "name": "repo_repository",
+      "description": "Read operations on Azure DevOps Git repositories. Use 'action' to choose: 'get' (get a repository by project and name/ID), 'list' (list repositories in a project).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get', 'list'.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project ID or project name where the repository lives.",
+            "type": "string"
+          },
+          "repositoryNameOrId": {
+            "description": "For 'get': The ID or name of the repository.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "top": {
+            "description": "For 'list': The maximum number of repositories to return.",
+            "default": 100
+          },
+          "skip": {
+            "description": "For 'list': The number of repositories to skip.",
+            "default": 0
+          },
+          "repoNameFilter": {
+            "description": "For 'list': Optional filter to search for repositories by name.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "project"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "repo_pull_request_thread",
+      "description": "Read operations on pull request comment threads. Use 'action' to choose: 'list' [requires repositoryId, pullRequestId] — list threads on a pull request; 'list_comments' [requires repositoryId, pullRequestId, threadId] — list comments within a specific thread.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'list', 'list_comments'.",
+            "type": "string"
+          },
+          "repositoryId": {
+            "description": "Required for all actions. The ID or name of the repository. When a name is used, the project parameter must also be provided.",
+            "type": "string"
+          },
+          "pullRequestId": {
+            "description": "Required for all actions. The ID of the pull request.",
+            "not": {
+              "type": "null"
+            }
+          },
+          "project": {
+            "description": "Required when repositoryId is a repository name (not a GUID). Project ID or project name.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "iteration": {
+            "description": "For 'list': The iteration ID. Defaults to the latest iteration.",
+            "default": null
+          },
+          "baseIteration": {
+            "description": "For 'list': The base iteration ID. Defaults to the latest base iteration.",
+            "default": null
+          },
+          "top": {
+            "description": "Maximum number of results to return.",
+            "default": 100
+          },
+          "skip": {
+            "description": "Number of results to skip.",
+            "default": 0
+          },
+          "status": {
+            "description": "For 'list': Filter threads by status. If not specified returns all statuses.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "enum": [
+              "Active",
+              "ByDesign",
+              "Closed",
+              "Fixed",
+              "Pending",
+              "Unknown",
+              "WontFix"
+            ]
+          },
+          "authorEmail": {
+            "description": "For 'list': Filter threads by the email of the thread author (first comment).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "authorDisplayName": {
+            "description": "For 'list': Filter threads by the display name of the thread author (case-insensitive partial).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "threadId": {
+            "description": "Required for 'list_comments'. The ID of the thread to retrieve comments for.",
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "repositoryId",
+          "pullRequestId"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "repo_pull_request",
+      "description": "Read operations on Azure DevOps pull requests. Use 'action' to choose: 'get' [requires repositoryId, pullRequestId, project] — get a PR by ID; 'list' [requires repositoryId OR project] — list PRs with optional filters; 'list_by_commits' [requires project, repository, commits] — find PRs containing the given commits; 'get_changes' [requires repositoryId, pullRequestId] — get file changes and line-by-line diffs for a PR iteration.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get', 'list', 'list_by_commits', 'get_changes'.",
+            "type": "string"
+          },
+          "repositoryId": {
+            "description": "Required for 'get' and 'get_changes'; optional for 'list' (used as a filter scope). For 'list_by_commits' use the 'repository' parameter instead. The ID or name of the repository. When a name is used, the project parameter must also be provided.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "repository": {
+            "description": "Required for 'list_by_commits'. The ID or name of the repository.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "project": {
+            "description": "Required for 'get' and 'list_by_commits'. Optional for 'list' (scopes the search). Required for 'get_changes' and other actions when repositoryId is a repository name (not a GUID). Project ID or project name.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "pullRequestId": {
+            "description": "Required for 'get' and 'get_changes'. The ID of the pull request to retrieve.",
+            "default": null
+          },
+          "includeWorkItemRefs": {
+            "description": "For 'get': Whether to reference work items associated with the pull request.",
+            "default": false
+          },
+          "includeLabels": {
+            "description": "For 'get': Whether to include a summary of labels in the response.",
+            "default": false
+          },
+          "top": {
+            "description": "For 'list': The maximum number of pull requests to return. For 'get_changes': The maximum number of file changes to return (default 100, capped at 100 — use 'skip' to page).",
+            "default": 100
+          },
+          "skip": {
+            "description": "For 'list': The number of pull requests to skip. For 'get_changes': The number of file changes to skip for pagination.",
+            "default": 0
+          },
+          "status": {
+            "description": "For 'list': Filter pull requests by status. Allowed values: 'Abandoned', 'Active', 'All', 'Completed', 'NotSet'.",
+            "type": "string",
+            "default": "Active",
+            "enum": [
+              "Abandoned",
+              "Active",
+              "All",
+              "Completed",
+              "NotSet"
+            ]
+          },
+          "sourceRefName": {
+            "description": "For 'list': Filter pull requests from this source branch (e.g., 'refs/heads/feature-branch').",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "targetRefName": {
+            "description": "For 'list': Filter pull requests into this target branch (e.g., 'refs/heads/main').",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "createdByMe": {
+            "description": "For 'list': Filter pull requests created by the current user. Ignored if createdByUser is provided.",
+            "default": false
+          },
+          "createdByUser": {
+            "description": "For 'list': Filter pull requests created by a specific user (provide email address). Takes precedence over createdByMe.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "iAmReviewer": {
+            "description": "For 'list': Filter pull requests where the current user is a reviewer. Ignored if userIsReviewer is provided.",
+            "default": false
+          },
+          "userIsReviewer": {
+            "description": "For 'list': Filter pull requests where a specific user is a reviewer (provide email address). Takes precedence over iAmReviewer.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "commits": {
+            "description": "For 'list_by_commits': Array of commit IDs to query for.",
+            "default": null
+          },
+          "queryType": {
+            "description": "For 'list_by_commits': Type of query. 'LastMergeCommit' or 'Commit'.",
+            "type": "string",
+            "default": "LastMergeCommit",
+            "enum": [
+              "LastMergeCommit",
+              "Commit"
+            ]
+          },
+          "iterationId": {
+            "description": "For 'get_changes': The iteration ID to get changes for. If not specified, gets changes for the latest iteration.",
+            "default": null
+          },
+          "compareTo": {
+            "description": "For 'get_changes': Iteration ID to compare against. Omit or use 0 to compare against the common commit; a positive ID compares against that iteration.",
+            "default": null
+          },
+          "includeDiffs": {
+            "description": "For 'get_changes': Whether to include actual line-by-line diff content. Default is true. Set to false to get only file metadata.",
+            "default": true
+          },
+          "includeLineContent": {
+            "description": "For 'get_changes': Whether to include actual line content from the changed files. Default is true. When true, fetches file content and includes the code lines that were added/removed/modified.",
+            "default": true
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
       "name": "core_list_projects",
       "description": "Retrieve a list of projects in your Azure DevOps organization.",
       "inputSchema": {
@@ -28,6 +318,74 @@
           }
         },
         "required": []
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "repo_file",
+      "description": "Read operations against repository tree contents. Use 'action' to choose: 'get_content' (read the text content of a file at a specific branch/tag/commit — NOTE: may be unavailable in agency mode; files larger than 5 MB are rejected), 'list_directory' (list files and folders at a path, optionally recursive). Both actions require 'repositoryId' — call repo_repository action=list first if you don't have it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get_content', 'list_directory'.",
+            "type": "string"
+          },
+          "repositoryId": {
+            "description": "Required. The ID (GUID) or name of the repository. If you do not have this, call repo_repository action=list (or repo_repository action=get with a known name) first.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project ID or project name. Required when repositoryId is a name.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "path": {
+            "description": "For 'get_content' (required): Full file path. For 'list_directory' (optional, defaults to '/'): Directory path.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "version": {
+            "description": "Version identifier — branch (e.g., 'main'), tag, or commit SHA. Defaults to the repository's default branch.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "versionType": {
+            "description": "How to interpret 'version'. 'Branch', 'Commit', or 'Tag'. Defaults to 'Branch'.",
+            "type": "string",
+            "default": "Branch",
+            "enum": [
+              "Branch",
+              "Commit",
+              "Tag"
+            ]
+          },
+          "recursive": {
+            "description": "For 'list_directory': Whether to list items recursively. Defaults to false.",
+            "default": false
+          },
+          "recursionDepth": {
+            "description": "For 'list_directory': Maximum recursion depth (1-10). Only applies when recursive is true.",
+            "default": 1
+          }
+        },
+        "required": [
+          "action",
+          "repositoryId"
+        ]
       },
       "annotations": {
         "destructiveHint": false,
@@ -585,6 +943,60 @@
       }
     },
     {
+      "name": "repo_branch",
+      "description": "Read operations on Git branches. Use 'action' to choose: 'get' (get a single branch by name), 'list' (list branches in a repository), 'list_mine' (list branches the current user has pushed to / is tracking).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "The operation to perform. One of: 'get', 'list', 'list_mine'.",
+            "type": "string"
+          },
+          "repositoryId": {
+            "description": "The ID or name of the repository. When a name is used, the project parameter must also be provided.",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project ID or project name. Required when repositoryId is a repository name.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "branchName": {
+            "description": "For 'get': The name of the branch (e.g., 'main' or 'feature/x').",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "top": {
+            "description": "For 'list', 'list_mine': The maximum number of branches to return.",
+            "default": 100
+          },
+          "filterContains": {
+            "description": "For 'list', 'list_mine': Filter to branches whose name contains this string.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "action",
+          "repositoryId"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
       "name": "wiki",
       "description": "Read operations on Azure DevOps wikis. Use 'action' to choose the operation: 'get_page' (retrieve a single page with metadata and optional content; supply EITHER 'url' OR 'wikiIdentifier' + 'project' + 'path'), 'list_pages' (list pages in a wiki; requires 'wikiIdentifier' + 'project'), 'list_wikis' (enumerate wikis for an organization or project; only 'orgName' is required, 'project' optional), 'get_wiki' (retrieve a single wiki by identifier; requires 'wikiIdentifier').",
       "inputSchema": {
@@ -836,6 +1248,142 @@
         },
         "required": [
           "action"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "repo_search_commits",
+      "description": "Search for commits in a repository with comprehensive filtering capabilities. Supports searching by description/comment text, time range, author, committer, specific commit IDs, and more.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "description": "Project ID or project name.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "The ID or name of the repository. When using a repository name instead of a GUID, the project parameter must also be provided.",
+            "type": "string"
+          },
+          "fromCommit": {
+            "description": "Starting commit ID",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "toCommit": {
+            "description": "Ending commit ID",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "version": {
+            "description": "The name of the branch, tag or commit to filter commits by",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "versionType": {
+            "description": "The meaning of the version parameter, e.g., branch, tag or commit",
+            "type": "string",
+            "default": "Branch",
+            "enum": [
+              "Branch",
+              "Tag",
+              "Commit"
+            ]
+          },
+          "skip": {
+            "description": "Number of commits to skip",
+            "default": 0
+          },
+          "top": {
+            "description": "Maximum number of commits to return",
+            "default": 10
+          },
+          "includeLinks": {
+            "description": "Include commit links",
+            "default": false
+          },
+          "includeWorkItems": {
+            "description": "Include associated work items",
+            "default": false
+          },
+          "searchText": {
+            "description": "Search text to filter commits by description/comment. Supports partial matching.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "author": {
+            "description": "Filter commits by author email or display name",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "authorEmail": {
+            "description": "Filter commits by exact author email address",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "committer": {
+            "description": "Filter commits by committer email or display name",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "committerEmail": {
+            "description": "Filter commits by exact committer email address",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "fromDate": {
+            "description": "Filter commits from this date (ISO 8601 format, e.g., '2024-01-01T00:00:00Z')",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "toDate": {
+            "description": "Filter commits to this date (ISO 8601 format, e.g., '2024-12-31T23:59:59Z')",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "commitIds": {
+            "description": "Array of specific commit IDs to retrieve. When provided, other filters are ignored except top/skip.",
+            "default": null
+          }
+        },
+        "required": [
+          "project",
+          "repository"
         ]
       },
       "annotations": {

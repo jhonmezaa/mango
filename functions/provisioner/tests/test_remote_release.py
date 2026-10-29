@@ -17,7 +17,7 @@ from mango_provisioner.remotes.handler import handle
 from mango_provisioner.remotes.release import release_digest
 from mango_provisioner.remotes.store import INDEX_KEY
 
-from .remote_lab import GATEWAY_ID, REG, RemoteLab, decode_payload
+from .remote_lab import GATEWAY_ID, REG, RemoteLab, decode_payload, profile_data
 
 OLD_DIGEST = "b" * 64
 OLD_HEADERS = ["X-MCP-Readonly", "X-MCP-Toolsets"]
@@ -118,7 +118,7 @@ def test_a_registration_signed_before_d101_converges_with_no_approval(lab: Remot
     assert approved.generation == old["generation"]
     assert approved.revision == old["revision"] + 1
     assert approved.profile_sha256 == lab.digest
-    assert approved.profile_version == "2026.10.27-2"
+    assert approved.profile_version == "2026.10.27-3"
     registration = lab.registration()
     assert registration["status"] == {"S": "active"}
     assert "provision_lock" not in registration
@@ -130,6 +130,41 @@ def test_a_registration_signed_before_d101_converges_with_no_approval(lab: Remot
     assert record["detail"]["kind"] == "release"
     assert record["detail"]["outcome"] == "applied"
     assert record["detail"]["approved_by"] == "user-b"
+
+
+def _as_previous_profile(lab: RemoteLab) -> dict[str, Any]:
+    """A registration enabled on the profile before the ``repos`` toolset (D98 (6)): payload
+    v2 and the target already on ``X-MCP-Tools``, signed on another profile digest."""
+    item = lab.approved()
+    assert item is not None
+    old = {**decode_payload(item), "profile_version": "2026.10.27-2", "profile_sha256": OLD_DIGEST}
+    payload = json.dumps(old, sort_keys=True, separators=(",", ":")).encode()
+    lab.put({**item, "payload": {"S": base64.urlsafe_b64encode(payload).decode().rstrip("=")}})
+    return old
+
+
+def test_a_new_toolset_signs_again_with_the_approved_toolsets_only(lab: RemoteLab) -> None:
+    # The release adds "Repositorios" (D98 (6)); the registration did not pick it (D101 (7)).
+    assert "repos" in {t["id"] for t in profile_data()["toolsets"]}
+    old = _as_previous_profile(lab)
+    target_before = {k: v for k, v in _target(lab).items() if k != "polls"}
+    lab.firehose.records.clear()
+    lab.agentcore.calls.clear()
+    (result,) = _sweep(lab)
+    assert result["upgraded"] is True
+    approved = _verify(lab)
+    # The same approval, under the new profile: no repo_* tool and the same header.
+    assert list(approved.toolsets) == old["toolsets"]
+    assert approved.tools == frozenset(old["tools"])
+    assert not any(t.startswith("repo_") for t in approved.tools)
+    assert approved.headers == old["headers"]
+    assert approved.revision == old["revision"] + 1
+    assert approved.profile_sha256 == lab.digest
+    assert approved.profile_version == "2026.10.27-3"
+    # Nothing to converge: the target is the same and nothing was written to the Gateway.
+    assert lab.agentcore.writes() == []
+    assert {k: v for k, v in _target(lab).items() if k != "polls"} == target_before
+    assert lab.events() == [("mcp_remote.enabled", "applied")]
 
 
 def test_a_registration_already_on_this_release_is_left_alone(lab: RemoteLab) -> None:

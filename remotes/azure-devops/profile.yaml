@@ -5,7 +5,7 @@
 schema_version: 1
 id: azure-devops
 # <date of the captured tool list>-<revision of Mango>
-version: "2026.10.27-2"
+version: "2026.10.27-3"
 name: Azure DevOps
 operator: Microsoft
 data_leaves_aws: true
@@ -35,6 +35,7 @@ toolsets:
   - {id: wiki, label: Wiki}
   - {id: pipelines, label: Pipelines}
   - {id: search-code, label: Búsqueda de código}
+  - {id: repos, label: Repositorios}
 # Out of every toolset (TM-011): pipelines_artifact and wit_work_item_attachment.
 probe: {tool: core_list_projects, arguments: {top: 1}}
 tools:
@@ -51,5 +52,11 @@ tools:
   - {name: pipelines_build, toolset: pipelines, access: read}
   - {name: pipelines_build_log, toolset: pipelines, access: read}
   - {name: search_code, toolset: search-code, access: read}
-tools_sha256: be7e837e4ec553136f853798c69b6f996b0d5bd9dd519cf670148822ce9027e7
+  - {name: repo_repository, toolset: repos, access: read}
+  - {name: repo_branch, toolset: repos, access: read}
+  - {name: repo_file, toolset: repos, access: read}
+  - {name: repo_search_commits, toolset: repos, access: read}
+  - {name: repo_pull_request, toolset: repos, access: read}
+  - {name: repo_pull_request_thread, toolset: repos, access: read}
+tools_sha256: 550c0b4188e999639dbd73c5d674eef976b58ddcf1be683c6ba767b8076b45fb
 max_result_chars: 65536

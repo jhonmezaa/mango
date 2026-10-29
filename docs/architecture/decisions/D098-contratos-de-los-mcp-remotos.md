@@ -1,7 +1,7 @@
 # D98 · Cómo se construyen los MCP remotos: vuelta por la SPA, consentimiento pendiente en `Settings`, apagado por defecto y contratos de construcción
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-27 (las respuestas de (1) a (10), elegidas por el dueño ese día, por menú, sobre el plan de construcción; los contratos de (11) a (20), propuestos por un agente y aceptados cuando el dueño apruebe integrar el cambio que registra esta decisión)
+- **Fecha:** 2026-10-27 (las respuestas de (1) a (10), elegidas por el dueño ese día, por menú, sobre el plan de construcción; los contratos de (11) a (20), propuestos por un agente y aceptados cuando el dueño apruebe integrar el cambio que registra esta decisión) · 2026-10-29 (el toolset «Repositorios» de (6), pedido por el dueño ese día)
 - **Precisa / reemplaza a:** precisa [D94](D094-consentimiento-iniciado-por-el-gateway.md) (2) (a dónde vuelve el navegador y cómo se cierra el consentimiento; dónde vive el pendiente); precisa [D93](D093-mcp-remotos-de-terceros.md) (7) (cambiar toolsets o grupos; dónde se aplica `UseRemoteMcp`), (8) (formato del ítem firmado y de las cabeceras), (10) (el parámetro de stack y la auditoría) y (12) (el aviso del Builder); precisa [D97](D097-desconectar-borra-el-token.md) (3) (la marca de desconexión es el claim `cx` de la firma); respeta [D46](D046-api-del-catalogo-de-mcp.md) (4) a (7), [D63](D063-sesion-web-con-cookie.md) y [D84](D084-gobernanza-de-tools.md) (5)
 - **Precisada por:** [D100](D100-consentimiento-lo-cierra-la-pestana-que-lo-pidio.md) (1); [D101](D101-mcp-remoto-manda-x-mcp-tools.md) (6), (13) y (16): la cabecera es `X-MCP-Tools` con las tools aprobadas, no `X-MCP-Toolsets`
 
@@ -53,6 +53,11 @@ Volver a ponerlo en `false` no corta las llamadas de los registros que ya están
   - `core` no tiene valor: sus tools llegan siempre, con cualquier toolset.
   - Búsqueda de código: la documentación no da un valor solo para `search_code`; la pone entre las tools de *Repos*. El perfil manda `repos`, marcado como deducido y a comprobar en vivo antes de habilitarlo en un cliente (elegido el 2026-10-27, por menú: «`repos`, pendiente de comprobar en vivo (Recomendada)»). El esquema del target y el ítem firmado solo traen `search_code`, así que el Gateway no expone ninguna otra tool de *Repos*.
   - Un registro tiene que elegir al menos un toolset con valor: sin `X-MCP-Toolsets`, el servidor sirve todos sus toolsets.
+- **Repositorios** (2026-10-29: el dueño pidió ese día añadir las tools de lectura de repositorios). El perfil suma el toolset `repos` («Repositorios») con seis tools de lectura: `repo_repository`, `repo_branch`, `repo_file`, `repo_search_commits`, `repo_pull_request` y `repo_pull_request_thread`.
+  - Sus esquemas salen, sin tocarlos, de la misma captura en vivo del 2026-10-27 (`X-MCP-Readonly: true`); todas traen `readOnlyHint: true` y `destructiveHint: false`. El esquema del perfil pasa de 13 a 19 tools y el perfil a `2026.10.27-3`.
+  - Como cualquier toolset, no tiene valor de cabecera (D101): un registro que lo elige manda sus seis tools en `X-MCP-Tools`. `search_code` sigue en su propio toolset.
+  - El código, los diffs y los hilos de PR son contenido no confiable, como los work items, y pueden traer secretos del repositorio del cliente (TM-022 del [modelo de amenazas](../../security/threat-models/remote-mcp-threat-model.md)).
+  - En una instalación con un registro activo, la release no le añade «Repositorios»: el barrido de D101 (4) lo firma otra vez con sus toolsets de antes (D101 (7)). Para tenerlo, un administrador pide «Cambiar toolsets» y otro lo aprueba ((8)).
 
 **(7) El vencimiento del secreto se ve solo en pantalla (respondido: «No, solo en pantalla (Recomendada)»).** `mango-api` calcula el nivel de aviso al leer, con 30 y 7 días antes y vencido, en el catálogo y en Ajustes › Conectividad. No hay función diaria ni aviso en la Bandeja.
 

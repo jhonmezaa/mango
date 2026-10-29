@@ -61,8 +61,9 @@ Para añadir un perfil: su carpeta y su entrada en la matriz `remote` de `remote
 ## Azure DevOps
 
 - Servidor: `https://mcp.dev.azure.com/{organización}`, de Microsoft.
-- Esquema: 13 tools, capturadas el 2026-10-27 con `X-MCP-Readonly: true` (servidor `AzureDevOps.Mcp` 1.0.0.0, protocolo `2025-06-18`). Todas traen `readOnlyHint: true` y `destructiveHint: false`.
+- Esquema: 19 tools, capturadas el 2026-10-27 con `X-MCP-Readonly: true` (servidor `AzureDevOps.Mcp` 1.0.0.0, protocolo `2025-06-18`). Todas traen `readOnlyHint: true` y `destructiveHint: false`.
 - Fuera de todo toolset (TM-011): `pipelines_artifact` y `wit_work_item_attachment`.
+- «Repositorios» (`repos`, 2026-10-29, D98 (6)): `repo_repository`, `repo_branch`, `repo_file`, `repo_search_commits`, `repo_pull_request` y `repo_pull_request_thread`. Una instalación con un registro activo no lo recibe sola: el barrido lo firma otra vez con sus toolsets de antes (D101 (7)) y un administrador pide «Cambiar toolsets».
 
 ### Por qué `X-MCP-Tools` y no `X-MCP-Toolsets` (D101)
 
