@@ -112,6 +112,7 @@ function RemoteDetail({ pid, regId, onClose }) {
         </> : <>
         <div className={'rm-field' + (e.toolsets ? ' has-error' : '')}><span className="rm-label" id="rf-ts">Grupos de tools</span>
           <div className="rm-checks" role="group" aria-labelledby="rf-ts">{p.toolsets.map(t => <label key={t.id} className={'rm-check' + (f.toolsets.includes(t.id) ? ' is-on' : '')}><input type="checkbox" checked={f.toolsets.includes(t.id)} onChange={() => tog('toolsets', t.id)} /><span>{t.label}</span><span className="mk-meta">{t.tools.length}</span></label>)}</div>
+          {p.toolsets.filter(t => t.source && f.toolsets.includes(t.id)).map(t => <div key={t.id} className="mc-alert amber" role="status" style={{ marginTop: 8 }}><I.GitBranch size={14} /><div><b>{t.label} da al agente el código fuente</b><div>El agente va a poder leer archivos, commits y pull requests de los repositorios a los que llega la cuenta de cada persona.</div></div></div>)}
           {e.toolsets ? <div className="rm-err" role="alert">{e.toolsets}</div> : <div className="rm-hint">Todas sus tools son de lectura.</div>}</div>
         <div className={'rm-field' + (e.groups ? ' has-error' : '')}><span className="rm-label" id="rf-gr">Grupos de personas que pueden usarlo</span>
           <div className="rm-chips" role="group" aria-labelledby="rf-gr">{groupIds.map(g => <button key={g} type="button" className={'tweak-chip ab-chip mono' + (f.groups.includes(g) ? ' is-on' : '')} aria-pressed={f.groups.includes(g)} onClick={() => tog('groups', g)}>{f.groups.includes(g) && <I.Check size={10} />}{g}</button>)}</div>
@@ -150,7 +151,7 @@ function RemoteDetail({ pid, regId, onClose }) {
         <KV k="Secreto de la app">{reg.status === 'disabled' && !reg.secretExp ? <span className="mk-meta">Borrado al deshabilitar</span> : <span className="row gap-2"><I.Lock size={11} /> Guardado · no se muestra</span>}</KV>
         {reg.status !== 'pending' && <KV k="Vencimiento del secreto"><SecretLine r={reg} /></KV>}
         {reg.status === 'pending' && <KV k="Vencimiento del secreto">{RM.fmtDay(reg.secretExp)}</KV>}
-        <KV k="Grupos de tools"><span className="rm-sets" style={{ justifyContent: 'flex-end' }}>{RM.toolsOf(p, reg.toolsets).map(t => <span key={t.id} className="rm-set">{t.label}</span>)}</span></KV>
+        <KV k="Grupos de tools"><span className="rm-sets" style={{ justifyContent: 'flex-end' }}>{RM.toolsOf(p, reg.toolsets).map(t => <span key={t.id} className={'rm-set' + (t.source ? ' is-source' : '')} title={t.source ? 'Da al agente el código fuente' : undefined}>{t.label}{t.source ? ' · código fuente' : ''}</span>)}</span></KV>
         <KV k="Grupos de personas"><span className="rm-sets" style={{ justifyContent: 'flex-end' }}>{reg.groups.map(g => <span key={g} className="badge mono">{g}</span>)}</span></KV>
         <KV k="Pidió">{reg.by === me ? 'Tú' : reg.by} · {window.fmtAgo(reg.at)}</KV>
         {reg.approvedBy && <KV k="Aprobó">{reg.approvedBy === me ? 'Tú' : reg.approvedBy}</KV>}
@@ -188,7 +189,7 @@ function RemoteDetail({ pid, regId, onClose }) {
         <div className="mk-meta" style={{ marginTop: 6 }}>Al rechazar o retirar se borra lo que se había creado, incluido el secreto. Queda el registro de quién pidió qué.</div>
       </Sec>}
       <Sec title={'Tools · ' + toolCount(p) + ' · todas de lectura'}>
-        {p.toolsets.map(t => <div key={t.id} className="rm-tset"><div className="rm-tset-h">{t.label}</div>{t.tools.map(n => <div key={n} className="mk-line row between"><span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{n}</span><span className="badge">Lectura</span></div>)}</div>)}
+        {p.toolsets.map(t => <div key={t.id} className="rm-tset"><div className="rm-tset-h">{t.label}{t.source && <span className="badge badge-amber" style={{ marginLeft: 8 }}>Código fuente</span>}</div>{t.source && <div className="rm-tset-n">Da al agente el código fuente de la organización: archivos, commits y pull requests, con la cuenta de cada persona.</div>}{t.req && <div className="rm-tset-n"><b>Requisito:</b> {t.req}</div>}{t.tools.map(n => <div key={n} className="mk-line row between"><span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{n}</span><span className="badge">Lectura</span></div>)}</div>)}
         <div className="mk-meta" style={{ marginTop: 6 }}>Los grupos y los nombres salen del perfil del servicio. Ninguno trae tools de escritura.</div>
       </Sec>
       <Sec title={'Permisos en ' + p.idp}>
