@@ -47,10 +47,11 @@ tools go through only if the approved catalog ``MCP_REMOTE#<registration>`` veri
 public half of ``alias/Mango-<ns>-remote-mcp``, a key only the remote provisioner signs with,
 and names this target of this Gateway and the tool (TM-012). The call gets no ``_mango_ctx``,
 loses every ``_meta`` (TM-006, TM-013) and carries exactly the two headers of the catalog,
-``X-MCP-Readonly`` and ``X-MCP-Toolsets``: never ``Authorization``, which would replace the
-token of the vault (TM-008). A call of «Mis conexiones» (claim ``cx``) may only call the probe
-tool; with ``cx = disconnect`` it keeps the one ``_meta`` that deletes the person's token
-(D97 (3)).
+``X-MCP-Readonly`` and ``X-MCP-Tools`` with the approved tools (D101): never
+``X-MCP-Toolsets``, and never ``Authorization``, which would replace the token of the vault
+(TM-008). A catalog signed before D101 does not verify until the provisioner signs it again.
+A call of «Mis conexiones» (claim ``cx``) may only call the probe tool; with
+``cx = disconnect`` it keeps the one ``_meta`` that deletes the person's token (D97 (3)).
 
 The Gateway exposes tools only, and a method other than ``tools/call`` names no target, so it
 cannot be told whether it would reach a remote server. Only the methods of a tools session go

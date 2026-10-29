@@ -24,14 +24,14 @@ El esquema de `profile.yaml` es `RemoteProfile` en `packages/py/mango-packs/src/
 | `endpoint` | `host` fijo, sin comodín ni IP; `path` solo puede ser `/{organization}`. El patrón de la organización es una constante del código (D93 (5)), nunca del perfil |
 | `link_hosts`, `link_org` | Para clasificar los enlaces del servicio (diseño A1) |
 | `provider` | `vendor: MicrosoftOauth2` (así lo escribe botocore), scopes de lectura y lo que la ficha muestra en «Permisos» |
-| `forced_headers` | Exactamente `X-MCP-Readonly: "true"` y `X-MCP-Toolsets: "{toolsets}"`. Nunca `Authorization`: pisaría el token del vault |
-| `toolsets` | Lo que un administrador puede elegir. Cada uno con su valor de `X-MCP-Toolsets` (`header`), salvo los `always`, que pueden no tenerlo. Dos toolsets no comparten valor |
+| `forced_headers` | Exactamente `X-MCP-Readonly: "true"` y `X-MCP-Tools: "{tools}"` (D101). Nunca `X-MCP-Toolsets` ni `Authorization`, que pisaría el token del vault |
+| `toolsets` | Lo que un administrador puede elegir y cómo se agrupan las tools. No llevan valor de cabecera: al servidor solo se le dicen las tools. Al menos uno no es `always` |
 | `probe` | La tool del sondeo de «Conectar»; debe estar en un toolset `always` |
 | `tools` | Una por tool del esquema, con su toolset y `access: read`. Otra clase, o ninguna, hace fallar el check (D84 (5)) |
 | `tools_sha256` | sha256 del JSON canónico de `tool-schema.json` (`mango_packs.canonical`) |
 | `max_result_chars` | Recorte de cada resultado en el interceptor `RESPONSE` |
 
-`X-MCP-Toolsets` se arma con los valores de los toolsets elegidos más los `always`, en el orden del perfil (`mango_packs.remote.forced_headers`). Un registro tiene que elegir al menos un toolset con valor: sin la cabecera, el servidor sirve todos sus toolsets.
+`X-MCP-Tools` se arma con las tools de los toolsets elegidos más los `always`, ordenadas y separadas por `, `, como la documentación del servidor (`mango_packs.remote.forced_headers`; D101). Un registro tiene que elegir al menos un toolset que no sea `always`. La cabecera no puede pasar de 4096 caracteres: el check lo comprueba con todas las tools del perfil.
 
 ## Check y firma
 
@@ -43,6 +43,7 @@ El esquema de `profile.yaml` es `RemoteProfile` en `packages/py/mango-packs/src/
 - una tool está fuera de un toolset declarado, un toolset no tiene tools o la del sondeo no está en uno `always`;
 - el host lleva comodín o es una IP;
 - `forced_headers` trae algo distinto de las dos cabeceras;
+- las tools no caben en `X-MCP-Tools` (4096 caracteres);
 - el esquema trae una anotación MCP que lo contradice (`readOnlyHint: false` o `destructiveHint: true`; D84 (4));
 - el esquema pasa de 1 MB (la cuota de esquema inline de un target).
 
@@ -63,27 +64,19 @@ Para añadir un perfil: su carpeta y su entrada en la matriz `remote` de `remote
 - Esquema: 13 tools, capturadas el 2026-10-27 con `X-MCP-Readonly: true` (servidor `AzureDevOps.Mcp` 1.0.0.0, protocolo `2025-06-18`). Todas traen `readOnlyHint: true` y `destructiveHint: false`.
 - Fuera de todo toolset (TM-011): `pipelines_artifact` y `wit_work_item_attachment`.
 
-### Valores de `X-MCP-Toolsets`
+### Por qué `X-MCP-Tools` y no `X-MCP-Toolsets` (D101)
 
-Salen de la documentación del servidor remoto de Microsoft: <https://learn.microsoft.com/en-us/azure/devops/mcp-server/remote-mcp-server?view=azure-devops> (leída el 2026-10-27).
+La documentación del servidor remoto de Microsoft (<https://learn.microsoft.com/en-us/azure/devops/mcp-server/remote-mcp-server?view=azure-devops>, leída el 2026-10-29) ofrece dos filtros que no se combinan: `X-MCP-Toolsets` (valores con nombre) y `X-MCP-Tools` (nombres de tools, separados por `, `). Un `tools/list` en vivo del 2026-10-29 mostró que `search_code` no está en ningún valor con nombre de `X-MCP-Toolsets` (la documentación lo pone en *Repos* y se equivoca): solo `all` o `X-MCP-Tools: search_code` la exponen. Por eso el perfil manda la lista exacta de tools y sus toolsets son solo lo que elige un administrador.
 
-| Toolset del perfil | Tools | Valor | Fuente |
-|---|---|---|---|
-| `core` (siempre) | `core_list_projects`, `core_list_project_teams` | ninguno | La documentación dice que las tools de *core* están siempre disponibles; `core` no es un valor de la cabecera |
-| `wit` | `wit_work_item`, `wit_query`, `wit_backlog`, `search_workitem` | `wit` | Documentado: «Work item tools and `search_workitem`» |
-| `wiki` | `wiki`, `search_wiki` | `wiki` | Documentado: «Wiki tools and `search_wiki`» |
-| `pipelines` | `pipelines_definition`, `pipelines_run`, `pipelines_build`, `pipelines_build_log` | `pipelines` | Documentado: «Pipeline and build tools» |
-| `search-code` | `search_code` | `repos` | **Deducido, no documentado.** La documentación no da un valor solo para `search_code`: la pone en la tabla de tools de *Repos*, y el valor `repos` se describe como «Repository and pull request tools». Hay que comprobarlo en vivo antes de habilitarlo en un cliente (D98 (6)) |
-
-Con `repos`, el servidor ofrece también las demás tools de lectura de *Repos*, pero el esquema del target y el ítem firmado solo traen `search_code`: el Gateway no expone ninguna otra.
+Comprobado en vivo: `X-MCP-Tools` con una tool. Con varias tools separadas por `, `, como la documentación, queda por ver en la instalación (D101).
 
 ### Refrescar el esquema a mano (D98 (5))
 
 El CI no puede comparar el perfil con el servidor: el repositorio es público y no tiene credenciales de Microsoft (TM-005). Cuando Microsoft cambie sus tools, o antes de una release que toque el perfil, alguien con acceso a una organización de pruebas lo refresca a mano:
 
 1. **Preparar el acceso.** Una organización de Azure DevOps de pruebas respaldada por un tenant de Entra, y un token de una persona de pruebas con el scope del perfil (`2a72489c-aab2-4b65-b93a-a91edccf33b8/.default`). Si hacen falta recursos temporales (una app registrada, un target del laboratorio), cada uno se aprueba antes y se borra al terminar. Nada de esto entra al repositorio.
-2. **Capturar.** Contra `https://mcp.dev.azure.com/<organización>`: `initialize` y `tools/list` (con su paginación), con `X-MCP-Readonly: true` y **sin** `X-MCP-Toolsets`, para ver todas las tools de lectura. Guardar la respuesta en una carpeta local fuera del repositorio. Conviene repetir sin `X-MCP-Readonly` para ver qué tools de escritura hay y comprobar que ninguna se cuela.
-3. **Comprobar los toolsets.** Repetir `tools/list` con `X-MCP-Toolsets` igual a cada valor del perfil (y a `repos` para `search_code`) y anotar qué tools trae cada uno. Si un valor deducido queda confirmado, o cambia, se actualiza la tabla de arriba.
+2. **Capturar.** Contra `https://mcp.dev.azure.com/<organización>`: `initialize` y `tools/list` (con su paginación), con `X-MCP-Readonly: true` y **sin** `X-MCP-Toolsets` ni `X-MCP-Tools`, para ver todas las tools de lectura. Guardar la respuesta en una carpeta local fuera del repositorio. Conviene repetir sin `X-MCP-Readonly` para ver qué tools de escritura hay y comprobar que ninguna se cuela.
+3. **Comprobar la cabecera.** Repetir `tools/list` con `X-MCP-Tools` igual a la lista de todas las tools del perfil y comprobar que el servidor devuelve exactamente esas.
 4. **Recortar.** Quedarse solo con las tools del perfil, tal como las devolvió el servidor (sin tocar descripciones ni esquemas), en `{"tools": [...]}`. Una tool nueva entra solo si es de lectura y alguien la revisó: se añade a `tools` con su toolset; una que ya no existe se quita.
 5. **Revisar que no haya datos reales:** nombres de organización, proyecto o equipo, correos, ids de tenant o de cuenta. Un esquema de tools no debería traer ninguno.
 6. **Fijar el hash y la versión.** `mango-pack-builder remote check remotes/azure-devops` dice el hash nuevo cuando no coincide: ponerlo en `tools_sha256`, y subir `version` (fecha de la captura; la revisión de Mango vuelve a `1`).

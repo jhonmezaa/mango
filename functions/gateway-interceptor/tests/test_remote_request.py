@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from botocore.exceptions import ClientError
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from mango_core import invocation, remote_mcp
@@ -94,7 +94,11 @@ def _refused(result: dict[str, Any]) -> tuple[int, int]:
 
 def test_an_approved_tool_goes_through_with_the_two_headers_and_no_context() -> None:
     request = _passed(_run(_event(arguments={"path": "/Home", "_mango_ctx": {"token": "x"}})))
-    assert request["headers"] == {"X-MCP-Readonly": "true", "X-MCP-Toolsets": "wiki"}
+    # D101: exactly the approved tools of the signed catalog, never the toolsets.
+    assert request["headers"] == {
+        "X-MCP-Readonly": "true",
+        "X-MCP-Tools": "core_list_projects, wiki",
+    }
     assert request["body"]["params"] == {"name": WIKI, "arguments": {"path": "/Home"}}
 
 
@@ -103,8 +107,28 @@ def test_never_returns_an_authorization_header(claims: dict[str, str]) -> None:
     # Any Authorization the interceptor returns replaces the vault's token (TM-008).
     request = _passed(_run(_event(hdrs=headers(**claims))))
     assert not any(name.lower() == "authorization" for name in request["headers"])
-    assert set(request["headers"]) == {"X-MCP-Readonly", "X-MCP-Toolsets"}
+    assert set(request["headers"]) == {"X-MCP-Readonly", "X-MCP-Tools"}
     assert "token" not in json.dumps(request["body"])
+
+
+@pytest.mark.parametrize("sent", [{}, {"X-MCP-Toolsets": "all"}, {"x-mcp-toolsets": "repos"}])
+def test_never_sends_x_mcp_toolsets(sent: dict[str, str]) -> None:
+    # Its named values do not hold every tool (D101): only X-MCP-Tools filters the server, and
+    # what a client sends never comes out of the interceptor.
+    request = _passed(_run(_event(hdrs={**headers(), **sent})))
+    assert not any(name.lower() == "x-mcp-toolsets" for name in request["headers"])
+    assert "toolsets" not in json.dumps(request).lower()
+
+
+def test_a_catalog_signed_before_d101_is_refused() -> None:
+    # Well signed, with the shape of payload v1 (X-MCP-Toolsets): refused until the remote
+    # provisioner signs it again after the release.
+    claims = json.loads(approved().encode())
+    old = {**claims, "v": 1, "headers": {"X-MCP-Readonly": "true", "X-MCP-Toolsets": "wiki"}}
+    payload = json.dumps(old, sort_keys=True, separators=(",", ":")).encode()
+    signature = CATALOG_KEY.sign(remote_mcp.SIGNING_CONTEXT + payload, ec.ECDSA(hashes.SHA256()))
+    store = _Store({REGISTRATION: remote_mcp.item_fields(payload, signature)})
+    assert _refused(_run(_event(), store)) == (403, -32003)
 
 
 def test_a_target_without_an_item_is_refused() -> None:

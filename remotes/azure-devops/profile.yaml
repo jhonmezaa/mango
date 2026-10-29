@@ -5,7 +5,7 @@
 schema_version: 1
 id: azure-devops
 # <date of the captured tool list>-<revision of Mango>
-version: "2026.10.27-1"
+version: "2026.10.27-2"
 name: Azure DevOps
 operator: Microsoft
 data_leaves_aws: true
@@ -23,19 +23,18 @@ provider:
   permissions:
     - {resource: Azure DevOps MCP, permission: ".default (delegado, lectura)"}
     - {resource: Microsoft Entra, permission: offline_access}
+# X-MCP-Tools carries the exact tools of the picked toolsets (D101), never X-MCP-Toolsets:
+# search_code is in no named toolset value (live tools/list, 2026-10-29).
 forced_headers:
   X-MCP-Readonly: "true"
-  X-MCP-Toolsets: "{toolsets}"
-# Header values from Microsoft's documentation of the remote server (remotes/README.md).
+  X-MCP-Tools: "{tools}"
+# What an administrator picks; the server is only told the tools.
 toolsets:
-  # Core tools are always served; `core` is not a value of X-MCP-Toolsets.
   - {id: core, label: Proyectos y equipos, always: true}
-  - {id: wit, header: wit, label: Work items}
-  - {id: wiki, header: wiki, label: Wiki}
-  - {id: pipelines, header: pipelines, label: Pipelines}
-  # INFERRED, not stated: the docs list search_code among the Repos tools, but say no toolset
-  # value for it. To be checked live before enabling in a customer (remotes/README.md).
-  - {id: search-code, header: repos, label: Búsqueda de código}
+  - {id: wit, label: Work items}
+  - {id: wiki, label: Wiki}
+  - {id: pipelines, label: Pipelines}
+  - {id: search-code, label: Búsqueda de código}
 # Out of every toolset (TM-011): pipelines_artifact and wit_work_item_attachment.
 probe: {tool: core_list_projects, arguments: {top: 1}}
 tools:

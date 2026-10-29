@@ -17,6 +17,7 @@ from mango_packs.remote import (
     build_envelope,
     check_tool_schema,
     forced_headers,
+    picked_tools,
     tool_schema_sha256,
     verify_envelope,
 )
@@ -52,11 +53,11 @@ def profile_data(schema: dict[str, Any] = SCHEMA) -> dict[str, Any]:
             "scopes": ["00000000-0000-0000-0000-000000000000/.default", "offline_access"],
             "permissions": [{"resource": "Fake API", "permission": ".default"}],
         },
-        "forced_headers": {"X-MCP-Readonly": "true", "X-MCP-Toolsets": "{toolsets}"},
+        "forced_headers": {"X-MCP-Readonly": "true", "X-MCP-Tools": "{tools}"},
         "toolsets": [
             {"id": "core", "label": "Core", "always": True},
-            {"id": "items", "header": "wit", "label": "Items"},
-            {"id": "search-code", "header": "repos", "label": "Code"},
+            {"id": "items", "label": "Items"},
+            {"id": "search-code", "label": "Code"},
         ],
         "probe": {"tool": "list_projects", "arguments": {"top": 1}},
         "tools": [
@@ -133,9 +134,14 @@ def test_the_probe_is_a_tool_of_a_toolset_that_is_always_on() -> None:
 def test_unknown_fields_and_other_headers_are_refused() -> None:
     with pytest.raises(ValidationError, match="extra"):
         _profile(organization_pattern=".*")
-    headers = {"X-MCP-Readonly": "false", "X-MCP-Toolsets": "{toolsets}"}
-    with pytest.raises(ValidationError, match="forced_headers must be exactly"):
-        _profile(forced_headers=headers)
+    for headers in (
+        {"X-MCP-Readonly": "false", "X-MCP-Tools": "{tools}"},
+        # The header of the toolsets is gone (D101): a profile cannot bring it back.
+        {"X-MCP-Readonly": "true", "X-MCP-Toolsets": "{toolsets}"},
+        {"X-MCP-Readonly": "true", "X-MCP-Tools": "{tools}", "X-MCP-Toolsets": "{toolsets}"},
+    ):
+        with pytest.raises(ValidationError, match="forced_headers must be exactly"):
+            _profile(forced_headers=headers)
     authorization = {**profile_data()["forced_headers"], "Authorization": "Bearer x"}
     with pytest.raises(ValidationError, match="forced_headers must be exactly"):
         _profile(forced_headers=authorization)
@@ -143,12 +149,12 @@ def test_unknown_fields_and_other_headers_are_refused() -> None:
 
 def test_toolsets_are_consistent_with_the_tools() -> None:
     toolsets = profile_data()["toolsets"]
-    with pytest.raises(ValidationError, match="needs its header value"):
-        _profile(toolsets=[*toolsets[:1], {"id": "items", "label": "Items"}, toolsets[2]])
-    with pytest.raises(ValidationError, match="same header value"):
-        _profile(toolsets=[*toolsets[:2], {**toolsets[2], "header": "wit"}])
+    with pytest.raises(ValidationError, match="extra"):
+        _profile(toolsets=[*toolsets[:2], {**toolsets[2], "header": "repos"}])
+    with pytest.raises(ValidationError, match="can pick"):
+        _profile(toolsets=[{**t, "always": True} for t in toolsets])
     with pytest.raises(ValidationError, match="toolsets without tools"):
-        _profile(toolsets=[*toolsets, {"id": "wiki", "header": "wiki", "label": "Wiki"}])
+        _profile(toolsets=[*toolsets, {"id": "wiki", "label": "Wiki"}])
     tools = _tools()
     tools[1]["toolset"] = "pipelines"
     with pytest.raises(ValidationError, match="in no declared toolset"):
@@ -192,19 +198,30 @@ def test_the_schema_fits_the_inline_quota_of_a_target() -> None:
         check_tool_schema(_profile(), big)
 
 
-def test_forced_headers_send_the_picked_toolsets_and_always_read_only() -> None:
+def test_forced_headers_send_the_picked_tools_and_always_read_only() -> None:
     profile = _profile()
+    # D101: the exact tools, sorted, as the server's docs separate them; never the toolsets.
     assert forced_headers(profile, ["search-code", "items"]) == {
         "X-MCP-Readonly": "true",
-        "X-MCP-Toolsets": "wit,repos",
+        "X-MCP-Tools": "get_item, list_projects, search_code",
     }
-    assert forced_headers(profile, ["core", "items"])["X-MCP-Toolsets"] == "wit"
+    assert forced_headers(profile, ["core", "items"]) == {
+        "X-MCP-Readonly": "true",
+        "X-MCP-Tools": "get_item, list_projects",
+    }
+    assert picked_tools(profile, ["search-code"]) == {"list_projects", "search_code"}
     with pytest.raises(RemoteProfileError, match=r"not in profile fake-remote: \['repos'\]"):
         forced_headers(profile, ["repos"])
-    # With no X-MCP-Toolsets the server serves every toolset it has.
     for toolsets in ([], ["core"]):
         with pytest.raises(RemoteProfileError, match="at least one toolset"):
             forced_headers(profile, toolsets)
+
+
+def test_the_tools_must_fit_in_their_header() -> None:
+    names = [f"t{n:02d}_{'x' * 60}" for n in range(70)]
+    tools = [*_tools(), *({"name": n, "toolset": "items", "access": "read"} for n in names)]
+    with pytest.raises(ValidationError, match="do not fit in X-MCP-Tools"):
+        _profile(tools=tools)
 
 
 # --- Signed statement ---------------------------------------------------------------------

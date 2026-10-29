@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-27 (las respuestas de (1) a (10), elegidas por el dueño ese día, por menú, sobre el plan de construcción; los contratos de (11) a (20), propuestos por un agente y aceptados cuando el dueño apruebe integrar el cambio que registra esta decisión)
 - **Precisa / reemplaza a:** precisa [D94](D094-consentimiento-iniciado-por-el-gateway.md) (2) (a dónde vuelve el navegador y cómo se cierra el consentimiento; dónde vive el pendiente); precisa [D93](D093-mcp-remotos-de-terceros.md) (7) (cambiar toolsets o grupos; dónde se aplica `UseRemoteMcp`), (8) (formato del ítem firmado y de las cabeceras), (10) (el parámetro de stack y la auditoría) y (12) (el aviso del Builder); precisa [D97](D097-desconectar-borra-el-token.md) (3) (la marca de desconexión es el claim `cx` de la firma); respeta [D46](D046-api-del-catalogo-de-mcp.md) (4) a (7), [D63](D063-sesion-web-con-cookie.md) y [D84](D084-gobernanza-de-tools.md) (5)
-- **Precisada por:** [D100](D100-consentimiento-lo-cierra-la-pestana-que-lo-pidio.md) (1)
+- **Precisada por:** [D100](D100-consentimiento-lo-cierra-la-pestana-que-lo-pidio.md) (1); [D101](D101-mcp-remoto-manda-x-mcp-tools.md) (6), (13) y (16): la cabecera es `X-MCP-Tools` con las tools aprobadas, no `X-MCP-Toolsets`
 
 ## Decisión
 
@@ -48,7 +48,7 @@ Volver a ponerlo en `false` no corta las llamadas de los registros que ya están
   - búsqueda de código.
 - **Fuera de todo toolset:** `pipelines_artifact` y `wit_work_item_attachment` (TM-011).
 - **Clase:** todas las tools son `read`.
-- **Valores de `X-MCP-Toolsets`** (2026-10-27): la captura no los da; salen de la documentación del servidor remoto de Microsoft.
+- **Valores de `X-MCP-Toolsets`** (2026-10-27): la captura no los da; salen de la documentación del servidor remoto de Microsoft. **Reemplazado por [D101](D101-mcp-remoto-manda-x-mcp-tools.md) (2026-10-29):** `search_code` no está en ningún valor (visto en vivo), así que el Gateway manda `X-MCP-Tools` con las tools aprobadas y los toolsets ya no tienen valor de cabecera. Lo que sigue es la historia.
   - `wit` (con `search_workitem`), `wiki` (con `search_wiki`) y `pipelines`: los nombra la documentación.
   - `core` no tiene valor: sus tools llegan siempre, con cualquier toolset.
   - Búsqueda de código: la documentación no da un valor solo para `search_code`; la pone entre las tools de *Repos*. El perfil manda `repos`, marcado como deducido y a comprobar en vivo antes de habilitarlo en un cliente (elegido el 2026-10-27, por menú: «`repos`, pendiente de comprobar en vivo (Recomendada)»). El esquema del target y el ítem firmado solo traen `search_code`, así que el Gateway no expone ninguna otra tool de *Repos*.
@@ -116,7 +116,7 @@ La conexión de cada persona (desde cuándo, y con qué `generation` del proveed
   - el perfil (id, versión y hash de su declaración firmada);
   - el Gateway y el target;
   - la organización y los toolsets;
-  - las dos cabeceras forzadas;
+  - las dos cabeceras forzadas (desde D101, `X-MCP-Readonly` y `X-MCP-Tools` con las tools aprobadas; versión 2 del payload);
   - las tools `read` aprobadas;
   - la tool de sondeo;
   - la fecha de emisión.
@@ -130,7 +130,7 @@ La conexión de cada persona (desde cuándo, y con qué `generation` del proveed
   - el host fijo y la forma de la URL;
   - los hosts de los enlaces del servicio;
   - el proveedor (`MicrosoftOauth2`) con sus scopes;
-  - los toolsets con su valor de cabecera;
+  - los toolsets con su valor de cabecera (desde D101, sin valor: el perfil fuerza `X-MCP-Tools: "{tools}"`);
   - cada tool con su toolset y su clase;
   - el hash del esquema;
   - la tool de sondeo y sus argumentos;
@@ -156,7 +156,7 @@ La conexión de cada persona (desde cuándo, y con qué `generation` del proveed
 
 **(16) Interceptores.**
 - **`REQUEST`:**
-  - devuelve en `headers` exactamente `X-MCP-Readonly` y `X-MCP-Toolsets` del ítem firmado, y nunca una clave `Authorization`, que pisaría el token del vault;
+  - devuelve en `headers` exactamente `X-MCP-Readonly` y `X-MCP-Tools` del ítem firmado (precisado por [D101](D101-mcp-remoto-manda-x-mcp-tools.md): antes, `X-MCP-Toolsets`), y nunca `X-MCP-Toolsets` ni una clave `Authorization`, que pisaría el token del vault;
   - no pone `_mango_ctx` a un target remoto.
 - **`RESPONSE`:**
   - verifica la firma de la invocación;

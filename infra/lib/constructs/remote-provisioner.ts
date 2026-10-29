@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { CfnCondition, CfnResource, Duration, Fn, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as agentcoreL1 from "aws-cdk-lib/aws-bedrockagentcore";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -8,6 +8,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
+import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { logsKeyOf } from "../logs.js";
@@ -29,6 +30,8 @@ export const REMOTE_CHANGE_PARTITION = "REMOTE_CHANGE#";
  * it; keep in sync with `mango_core.remote_mcp.APPROVED_PREFIX`.
  */
 export const REMOTE_APPROVED_PARTITION = "MCP_REMOTE#";
+/** `REMOTE_INDEX` / `REGISTRATIONS`: the ids mango-api indexes; read by the sweep after an install (D101). */
+export const REMOTE_INDEX_PARTITION = "REMOTE_INDEX";
 
 /**
  * Attributes of a registration the remote provisioner may name in a write (IAM
@@ -73,6 +76,8 @@ export interface RemoteMcpProvisionerProps {
   readonly appOrigin: string;
   /** `alias/Mango-<ns>-remote-mcp` (`Tools`): its key policy lets only this role sign. */
   readonly signingKey: kms.IKey;
+  /** `RemoteMcpEnabled` (D98 (4)): "true" or "false", as deploy-time text. Off, no sweep runs. */
+  readonly enabled: string;
 }
 
 /**
@@ -225,6 +230,7 @@ export class RemoteMcpProvisioner extends Construct {
               `${REMOTE_REGISTRATION_PARTITION}*`,
               `${REMOTE_CHANGE_PARTITION}*`,
               `${REMOTE_APPROVED_PARTITION}*`,
+              REMOTE_INDEX_PARTITION,
             ],
           },
         },
@@ -327,9 +333,47 @@ export class RemoteMcpProvisioner extends Construct {
     );
 
     this.stateMachine = this.buildStateMachine(cfg);
+    this.sweepAfterInstall(props);
   }
 
-  /** Only mango-api starts executions, with `{registration_id, approval_id}`. */
+  /**
+   * After an install whose release ships other signed profiles, one execution with
+   * `{release}` signs again the catalog of every active registration the release only
+   * re-headers (D101): no approval, nothing else changes. It runs again only when the catalog
+   * changes, and never while `RemoteMcpEnabled` is off (D98 (4)).
+   */
+  private sweepAfterInstall(props: RemoteMcpProvisionerProps): void {
+    if (Object.keys(props.remotes.catalog).length === 0) return;
+    const startCall: cr.AwsSdkCall = {
+      service: "SFN",
+      action: "startExecution",
+      parameters: {
+        stateMachineArn: this.stateMachine.stateMachineArn,
+        input: JSON.stringify({ release: props.remotes.digest }),
+      },
+      physicalResourceId: cr.PhysicalResourceId.of("remote-release-sweep"),
+    };
+    const sweep = new cr.AwsCustomResource(this, "SweepAfterInstall", {
+      onCreate: startCall,
+      onUpdate: startCall,
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ["states:StartExecution"],
+          resources: [this.stateMachine.stateMachineArn],
+        }),
+      ]),
+      installLatestAwsSdk: false,
+    });
+    sweep.node.addDependency(this.stateMachine, this.function);
+    const enabled = new CfnCondition(this, "SweepEnabled", { expression: Fn.conditionEquals(props.enabled, "true") });
+    // AwsCustomResource -> CustomResource -> the CloudFormation resource.
+    (sweep.node.defaultChild!.node.defaultChild as CfnResource).cfnOptions.condition = enabled;
+  }
+
+  /**
+   * mango-api starts executions with `{registration_id, approval_id}`; after an install, the
+   * stack starts one with `{release}` (`sweepAfterInstall`).
+   */
   grantStart(grantee: iam.IGrantable): void {
     grantee.grantPrincipal.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -406,12 +450,43 @@ export class RemoteMcpProvisioner extends Construct {
     remove.addCatch(markFailed, { errors: ["States.ALL"], resultPath: "$.error" });
     remove.next(new sfn.Succeed(this, "Disabled"));
 
-    const definition = forward("Load", "load").next(
+    const load = forward("Load", "load").next(
       new sfn.Choice(this, "Action?")
         .when(sfn.Condition.stringEquals("$.action", "noop"), new sfn.Succeed(this, "NothingToDo"))
         .when(sfn.Condition.stringEquals("$.action", "disable"), remove)
         .otherwise(enable),
     );
+
+    // After an install (D101): one registration at a time. One that cannot converge keeps
+    // its catalog (`release_abort`) and the next goes on; nothing is compensated or failed.
+    const abort = step("ReleaseAbort", "release_abort");
+    retryTransient(abort, 5, 4, 2);
+    const aborted = new sfn.Pass(this, "ReleaseKept");
+    abort.addCatch(aborted, { errors: ["States.ALL"], resultPath: "$.abort_error" });
+    abort.next(aborted);
+    const upgradeStep = (id: string, stepName: string): tasks.LambdaInvoke => {
+      const task = step(id, stepName);
+      retryTransient(task, 5, 6, 1.5);
+      task.addCatch(abort, { errors: ["States.ALL"], resultPath: "$.error" });
+      return task;
+    };
+    const signed = upgradeStep("ReleaseSign", "release_sign").next(new sfn.Pass(this, "ReleaseSigned"));
+    const upgrade = upgradeStep("ReleaseBegin", "release_begin").next(
+      waitFor("Release", upgradeStep("ReleaseCheck", "release_check"), 4, signed),
+    );
+    const each = new sfn.Map(this, "EachRegistration", {
+      itemsPath: "$.upgrades",
+      maxConcurrency: 1,
+      resultPath: sfn.JsonPath.DISCARD,
+    });
+    each.itemProcessor(upgrade);
+    const releasePlan = step("ReleasePlan", "release_plan");
+    retryTransient(releasePlan, 5, 6, 1.5);
+    const sweep = releasePlan.next(each).next(new sfn.Succeed(this, "ReleaseApplied"));
+
+    const definition = new sfn.Choice(this, "Input?")
+      .when(sfn.Condition.isPresent("$.release"), sweep)
+      .otherwise(load);
 
     const logGroup = new logs.LogGroup(this, "StateMachineLogs", {
       logGroupName: `/aws/vendedlogs/states/${name}`,
@@ -421,7 +496,7 @@ export class RemoteMcpProvisioner extends Construct {
     });
     const stateMachine = new sfn.StateMachine(this, "StateMachine", {
       stateMachineName: name,
-      comment: "Enables, changes or disables a remote MCP registration (D93, D98)",
+      comment: "Enables, changes or disables a remote MCP registration (D93, D98), or re-signs them after an install (D101)",
       definitionBody: sfn.DefinitionBody.fromChainable(definition),
       stateMachineType: sfn.StateMachineType.STANDARD,
       // Shorter than the provisioner lock (45 minutes): a running execution never loses it.

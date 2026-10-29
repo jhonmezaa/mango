@@ -99,7 +99,7 @@ def test_enable_builds_the_target_from_the_signed_profile_only(lab: RemoteLab) -
         "defaultReturnUrl": RETURN_URL,
     }
     assert target["metadataConfiguration"] == {
-        "allowedRequestHeaders": ["X-MCP-Readonly", "X-MCP-Toolsets"]
+        "allowedRequestHeaders": ["X-MCP-Readonly", "X-MCP-Tools"]
     }
 
 
@@ -130,7 +130,12 @@ def test_enable_signs_the_catalog_last_and_it_verifies(lab: RemoteLab) -> None:
     assert approved.revision == 1
     assert approved.organization == ORG
     assert approved.toolsets == ("core", "wiki", "wit")
-    assert approved.headers == {"X-MCP-Readonly": "true", "X-MCP-Toolsets": "wit,wiki"}
+    # D101: exactly the approved tools; the toolsets stay what the administrators picked.
+    assert approved.headers == {
+        "X-MCP-Readonly": "true",
+        "X-MCP-Tools": ", ".join(sorted(approved.tools)),
+    }
+    assert "search_code" not in approved.tools
     assert approved.probe_tool == "core_list_projects"
     assert approved.profile_sha256 == lab.digest
     assert lab.kms.signed_with == [KEY_ARN]
@@ -394,7 +399,10 @@ def test_params_changes_schema_and_policies_and_signs_again(lab: RemoteLab) -> N
     approved = _verify(lab)
     assert approved.generation == 1
     assert approved.revision == 2  # same generation: the revision goes up
-    assert approved.headers["X-MCP-Toolsets"] == "pipelines"
+    assert approved.headers["X-MCP-Tools"] == (
+        "core_list_project_teams, core_list_projects, pipelines_build, pipelines_build_log, "
+        "pipelines_definition, pipelines_run"
+    )
     assert "wit_work_item" not in approved.tools
     schema = json.loads(
         _target(lab)["targetConfiguration"]["mcp"]["mcpServer"]["mcpToolSchema"]["inlinePayload"]

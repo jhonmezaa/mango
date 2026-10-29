@@ -330,7 +330,7 @@ def _check_expiry(expires_on: date, today: date) -> str:
 
 def resolve_toolsets(profile: RemoteProfile, requested: Sequence[str]) -> tuple[str, ...]:
     """Toolsets of a request: only the profile's, with those always on added. At least one
-    must be filtered by header: without ``X-MCP-Toolsets`` the server serves all of them."""
+    must be a toolset that is not always on; the server is told their tools (D101)."""
     if len(set(requested)) != len(requested):
         raise ApiError(422, "invalid_toolsets", "a toolset is listed twice")
     picked = set(requested) | {t.id for t in profile.toolsets if t.always}
@@ -339,7 +339,7 @@ def resolve_toolsets(profile: RemoteProfile, requested: Sequence[str]) -> tuple[
     except RemoteProfileError as exc:
         unknown = picked - {t.id for t in profile.toolsets}
         code = "invalid_toolsets" if unknown else "toolsets_required"
-        raise ApiError(422, code, "pick toolsets of the profile, one with a header") from exc
+        raise ApiError(422, code, "pick toolsets of the profile, one not always on") from exc
     return tuple(sorted(picked))
 
 

@@ -8,6 +8,10 @@ It reads the registration and the approved request mango-api wrote, and writes o
   optimistic lock, so a decision taken on what it read before cannot overwrite a transition;
 * the approved catalog ``MCP_REMOTE#<reg>`` / ``APPROVED``, which only this role can write.
 
+After an install whose release ships another profile, it also reads the index of
+registrations (``REMOTE_INDEX`` / ``REGISTRATIONS``) and takes the lock of an ``active`` one
+without changing its status, to sign its catalog again (D101).
+
 Every write is conditioned on the ``approval_id`` the execution was started for: once
 mango-api records a new approval or a disable, a stale execution changes nothing. Its IAM
 policy limits it to those partitions and attributes (``REMOTE_PROVISIONER_WRITABLE_ATTRIBUTES``
@@ -44,6 +48,8 @@ _TOOLSET_RE = re.compile(r"^[a-z][a-z0-9-]{0,23}$")
 _CONDITION_FAILED = "ConditionalCheckFailedException"
 _MAX_ACTOR_CHARS = 256
 _MAX_GENERATION = 999_999
+INDEX_KEY: dict[str, Any] = {"PK": {"S": "REMOTE_INDEX"}, "SK": {"S": "REGISTRATIONS"}}
+"""Ids of every registration, written by mango-api (``mango_api.remote_mcp_store``)."""
 
 
 class Status(StrEnum):
@@ -121,6 +127,20 @@ def _toolsets(item: dict[str, Any]) -> tuple[str, ...]:
     return values
 
 
+@dataclass(frozen=True)
+class LiveCatalog:
+    """What the catalog this role signed last vouches for (its own partition, D98 (13))."""
+
+    generation: int
+    revision: int
+    profile_id: str
+    profile_sha256: str
+    organization: str
+    toolsets: tuple[str, ...]
+    tools: frozenset[str]
+    probe_tool: str
+
+
 def _generation(raw: object) -> int:
     value = int(str(raw))
     if not 1 <= value <= _MAX_GENERATION:
@@ -195,6 +215,12 @@ class RemoteStore:
             )
         except (KeyError, ValueError, TypeError):
             raise StepError("registration_record_invalid") from None
+
+    def registration_ids(self) -> list[str]:
+        """Every registration mango-api indexed; an id of another shape is left out."""
+        item = self._get(INDEX_KEY)
+        raw = (item or {}).get("ids", {}).get("SS", [])
+        return sorted(r for r in raw if remote_mcp.is_registration_id(r))
 
     def change(self, registration_id: str, change_id: str) -> ApprovedChange:
         """The approved request ``change_id``, or a ``StepError``."""
@@ -344,6 +370,35 @@ class RemoteStore:
             },
         )
 
+    def lock_active(
+        self, registration_id: str, approval_id: str, owner: str, now: datetime
+    ) -> None:
+        """Take an ``active`` registration for ``owner`` without changing its status: what a
+        release converges is what was approved (D101)."""
+        ok = self._update(
+            Key=remote_mcp.registration_key(registration_id),
+            UpdateExpression=(
+                "SET provision_lock = :owner, provision_lock_until = :until, updated_at = :at "
+                "ADD #version :one"
+            ),
+            ConditionExpression=(
+                "approval_id = :approval AND #status = :active AND (attribute_not_exists("
+                "provision_lock) OR provision_lock = :owner OR provision_lock_until < :now)"
+            ),
+            ExpressionAttributeNames={"#status": "status", "#version": "version"},
+            ExpressionAttributeValues={
+                ":owner": {"S": owner},
+                ":until": {"N": str(int((now + LOCK_TTL).timestamp()))},
+                ":now": {"N": str(int(now.timestamp()))},
+                ":at": {"S": _now_text(now)},
+                ":one": {"N": "1"},
+                ":approval": {"S": approval_id},
+                ":active": {"S": Status.ACTIVE.value},
+            },
+        )
+        if not ok:
+            raise BusyError
+
     def release_lock(self, registration_id: str, owner: str) -> None:
         self._update(
             Key=remote_mcp.registration_key(registration_id),
@@ -370,6 +425,30 @@ class RemoteStore:
             )
         except (ClientError, BotoCoreError) as exc:
             raise aws_error("DeleteItem", exc) from None
+
+    def live_catalog(self, registration_id: str) -> LiveCatalog | None:
+        """The claims of the catalog this role signed last, of any payload version."""
+        item = self._get(remote_mcp.approved_key(registration_id))
+        try:
+            text = item["payload"]["S"] if item else None
+            if not isinstance(text, str):
+                return None
+            claims = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
+            tools, toolsets = claims["tools"], claims["toolsets"]
+            if not all(isinstance(t, str) for t in [*tools, *toolsets]):
+                return None
+            return LiveCatalog(
+                generation=_generation(claims["generation"]),
+                revision=_generation(claims["revision"]),
+                profile_id=_checked(_PROFILE_RE, claims["profile_id"]),
+                profile_sha256=_checked(_SHA256_RE, claims["profile_sha256"]),
+                organization=_organization(claims["organization"]),
+                toolsets=tuple(toolsets),
+                tools=frozenset(tools),
+                probe_tool=str(claims["probe_tool"]),
+            )
+        except (KeyError, ValueError, TypeError, binascii.Error):
+            return None
 
     def live(self, registration_id: str) -> tuple[int, int] | None:
         """``(generation, revision)`` of the catalog this role signed last, if any.

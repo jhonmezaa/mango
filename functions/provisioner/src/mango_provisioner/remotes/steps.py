@@ -5,7 +5,18 @@ Enabling an approved request (``enable``, ``replace_app`` or ``params``)::
     load -> ensure_return_url -> ensure_target -> check_target* -> ensure_policies
          -> check_policies* -> sign_item -> mark_active
 
-Disabling is ``load -> remove -> done``; on any error, ``compensate -> mark_failed``. A
+Disabling is ``load -> remove -> done``; on any error, ``compensate -> mark_failed``.
+
+After an install whose release ships another signed profile (D101), the stack starts an
+execution with ``{release}`` instead::
+
+    release_plan -> for each registration: release_begin -> release_check* -> release_sign
+                                            (on any error: release_abort)
+
+It signs again, with no new approval, only what was approved: the same organization,
+toolsets, tools and provider. Only the headers and the profile version may change; the
+target must hold the same endpoint, scopes and schema. Anything else keeps the catalog it has
+and needs a request. A
 ``params`` request goes through the same steps: each one converges to the approved
 configuration, so a change of groups only finds everything in place and signs again with a
 higher ``revision`` (D98 (8)); the provider is never touched.
@@ -50,11 +61,17 @@ from mango_provisioner.errors import BusyError, RetryableError, StepError
 from mango_provisioner.remotes.config import RemoteSettings
 from mango_provisioner.remotes.gateway import RemoteGateway, policy_statements
 from mango_provisioner.remotes.identity import RemoteIdentity
-from mango_provisioner.remotes.release import RemoteRelease, TargetPlan, plan_target
+from mango_provisioner.remotes.release import (
+    RemoteRelease,
+    TargetPlan,
+    plan_target,
+    release_digest,
+)
 from mango_provisioner.remotes.signing import CatalogSigner
 from mango_provisioner.remotes.store import (
     APPROVAL_ID_PATTERN,
     ChangeKind,
+    LiveCatalog,
     Registration,
     RemoteStore,
     Status,
@@ -71,7 +88,16 @@ SPARE_GENERATIONS = 1
 """Providers above the live generation a disable also deletes: the one a failed change of
 tenant or app may have left behind (mango-api deletes those of rejected requests)."""
 
+MAX_RELEASE_UPGRADES = 50
+"""Registrations one release execution signs again; more than this is not a PoC."""
+RELEASE_KIND = "release"
+"""``kind`` of the audit event of a catalog signed again after an install (D101)."""
+RELEASE_HEADERS_ONLY = frozenset({"headers"})
+"""What a release may change on a target without a request."""
+
 _INPUT_KEYS = frozenset({"registration_id", "approval_id"})
+_RELEASE_KEYS = frozenset({"release"})
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _APPROVAL_RE = re.compile(APPROVAL_ID_PATTERN)
 _EXECUTION_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
@@ -104,6 +130,18 @@ class Context:
     profile_sha256: str
     live: tuple[int, int] | None
     """``(generation, revision)`` of the signed catalog, if any."""
+
+
+@dataclass(frozen=True)
+class ReleaseContext:
+    """An active registration a release converges, read under this execution's lock."""
+
+    request: Request
+    registration: Registration
+    live: LiveCatalog
+    plan: TargetPlan
+    profile_version: str
+    profile_sha256: str
 
 
 def parse_input(raw: object, execution: object) -> Request:
@@ -325,7 +363,6 @@ class RemoteProvisioner:
             gateway_id=self._settings.gateway_id,
             organization=ctx.registration.organization,
             toolsets=ctx.plan.toolsets,
-            toolsets_header=ctx.plan.headers[remote_mcp.TOOLSETS_HEADER],
             tools=ctx.plan.tools,
             probe_tool=ctx.plan.probe_tool,
             issued_at=int(now.timestamp()),
@@ -399,6 +436,188 @@ class RemoteProvisioner:
         )
         self._store.release_lock(registration_id, request.execution)
         return {**state, "disabled": True}
+
+    # --- After an install: sign again what a new release only re-headers (D101) -----------
+
+    def _release_of(self, state: object) -> str:
+        """The release an execution was started for; only the one this stack names."""
+        release = state.get("release") if isinstance(state, dict) else None
+        if not isinstance(release, str) or not _SHA256_RE.fullmatch(release):
+            raise StepError("invalid_input")
+        if release != release_digest(self._settings.catalog):
+            raise StepError("release_changed")
+        return release
+
+    def release_plan(self, raw_input: object) -> dict[str, Any]:
+        """The active registrations whose catalog was signed on another profile than this
+        release ships. Nothing is written here."""
+        if not isinstance(raw_input, dict) or set(raw_input) != _RELEASE_KEYS:
+            raise StepError("invalid_input")
+        release = self._release_of(raw_input)
+        upgrades: list[dict[str, str]] = []
+        for registration_id in self._store.registration_ids():
+            try:
+                registration = self._store.registration(registration_id)
+            except StepError:
+                continue
+            if (
+                registration is None
+                or registration.status is not Status.ACTIVE
+                or registration.lock_owner is not None
+            ):
+                continue
+            live = self._store.live_catalog(registration_id)
+            digest = self._settings.catalog.get(registration.profile_id)
+            if live is None or digest is None or live.profile_sha256 == digest:
+                continue
+            upgrades.append(
+                {
+                    "registration_id": registration_id,
+                    "approval_id": registration.approval_id,
+                    "release": release,
+                }
+            )
+        return {"release": release, "upgrades": upgrades[:MAX_RELEASE_UPGRADES]}
+
+    def _release_context(self, state: dict[str, Any]) -> ReleaseContext:
+        self._release_of(state)
+        request = _request(state)
+        registration = self._owned(request)
+        if registration.status is not Status.ACTIVE:
+            raise StepError("not_active")
+        live = self._store.live_catalog(request.registration_id)
+        if live is None or live.profile_id != registration.profile_id:
+            raise StepError("not_active")
+        verified = self._release.verified(registration.profile_id)
+        plan = plan_target(verified, live.organization, list(live.toolsets))
+        if (
+            plan.tools != live.tools
+            or plan.toolsets != live.toolsets
+            or plan.probe_tool != live.probe_tool
+            or live.organization != registration.organization
+        ):
+            # The release changes what was approved: that needs a request (D98 (8)).
+            raise StepError("release_needs_request")
+        return ReleaseContext(
+            request=request,
+            registration=registration,
+            live=live,
+            plan=plan,
+            profile_version=verified.profile.version,
+            profile_sha256=verified.statement_sha256,
+        )
+
+    def release_begin(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Take the registration and converge its target, if only its headers differ."""
+        self._release_of(state)
+        request = _request(state)
+        self._store.lock_active(
+            request.registration_id, request.approval_id, request.execution, self._now()
+        )
+        ctx = self._release_context(state)
+        registration_id = request.registration_id
+        differences = self._gateway.differences(registration_id, ctx.live.generation, ctx.plan)
+        if differences is None:
+            raise StepError("target_not_found")
+        if not set(differences) <= RELEASE_HEADERS_ONLY:
+            raise StepError("release_needs_request")
+        self._gateway.ensure_target(
+            registration_id, ctx.live.generation, ctx.plan, execution=request.execution
+        )
+        return {**state, "ready": False, "attempts": 0}
+
+    def release_check(self, state: dict[str, Any]) -> dict[str, Any]:
+        ctx = self._release_context(state)
+        registration_id = ctx.request.registration_id
+        if self._gateway.target_ready(registration_id, ctx.live.generation, ctx.plan):
+            return {**state, "ready": True, "attempts": 0}
+        return self._waiting(state, "target_timeout")
+
+    def _release_detail(
+        self, ctx: ReleaseContext | None, request: Request, outcome: str, **extra: Any
+    ) -> dict[str, Any]:
+        registration = ctx.registration if ctx else None
+        return {
+            "remote": remote_mcp.target_name(request.registration_id),
+            "registration_id": request.registration_id,
+            "profile": registration.profile_id if registration else None,
+            "kind": RELEASE_KIND,
+            "outcome": outcome,
+            "requested_by": registration.requested_by if registration else None,
+            "approved_by": registration.approved_by if registration else None,
+            "execution": request.execution,
+            **extra,
+        }
+
+    def release_sign(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Sign the catalog again under this release: same generation, next revision."""
+        ctx = self._release_context(state)
+        registration_id = ctx.request.registration_id
+        if not self._gateway.target_ready(
+            registration_id, ctx.live.generation, ctx.plan
+        ) or not self._gateway.policies_ready(registration_id, ctx.plan.tools):
+            raise StepError("not_converged")
+        now = self._now()
+        approved = ApprovedRemote(
+            registration_id=registration_id,
+            generation=ctx.live.generation,
+            revision=min(ctx.live.revision + 1, MAX_GENERATION),
+            profile_id=ctx.registration.profile_id,
+            profile_version=ctx.profile_version,
+            profile_sha256=ctx.profile_sha256,
+            gateway_id=self._settings.gateway_id,
+            organization=ctx.live.organization,
+            toolsets=ctx.plan.toolsets,
+            tools=ctx.plan.tools,
+            probe_tool=ctx.plan.probe_tool,
+            issued_at=int(now.timestamp()),
+        )
+        self._store.put_approved(registration_id, self._signer.item(approved, now))
+        self._audit.emit(
+            EVENT_REMOTE_ENABLED,
+            self._release_detail(
+                ctx,
+                ctx.request,
+                "applied",
+                generation=approved.generation,
+                revision=approved.revision,
+                profile_version=ctx.profile_version,
+                profile_sha256=ctx.profile_sha256,
+                toolsets=list(ctx.plan.toolsets),
+            ),
+            self._now(),
+        )
+        self._store.release_lock(registration_id, ctx.request.execution)
+        return {**state, "upgraded": True, "revision": approved.revision}
+
+    def release_abort(self, state: object) -> dict[str, Any]:
+        """A registration the release could not converge keeps the catalog it has. Never
+        raises: the next registration goes on."""
+        out: dict[str, Any] = dict(state) if isinstance(state, dict) else {}
+        step, code = failure_of(out.get("error"), out.get("last_step"))
+        result = {**out, "upgraded": False, "failed_step": step, "failure": code}
+        try:
+            request = _request(out)
+            registration = self._store.registration(request.registration_id)
+        except StepError:
+            return result
+        if registration is None or registration.lock_owner != request.execution:
+            # Another execution holds it (``busy``): that one decides.
+            return result
+        self._audit.emit(
+            EVENT_REMOTE_ENABLED,
+            self._release_detail(
+                None,
+                request,
+                "rejected",
+                profile=registration.profile_id,
+                failed_step=step,
+                failure_code=code,
+            ),
+            self._now(),
+        )
+        self._store.release_lock(request.registration_id, request.execution)
+        return result
 
     # --- Failure path ---------------------------------------------------------------------
 

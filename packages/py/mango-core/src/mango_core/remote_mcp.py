@@ -30,7 +30,7 @@ import hashlib
 import json
 import re
 import secrets
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final, Literal, cast
 from urllib.parse import urlsplit
@@ -278,15 +278,19 @@ def is_consent_url(url: object, region: str) -> bool:
 SIGNING_CONTEXT = b"mango.remote-mcp.v1\n"
 """Domain separation: a signature of this key is never valid as anything else."""
 SIGNING_ALGORITHM: Final = "ECDSA_SHA_256"
-PAYLOAD_VERSION = 1
+PAYLOAD_VERSION = 2
+"""2 since D101: the item carries ``X-MCP-Tools`` instead of ``X-MCP-Toolsets``."""
 MAX_PAYLOAD_BYTES = 32 * 1024
 MAX_TOOLS = 200
 MAX_TOOLSETS = 16
 READONLY_HEADER = "X-MCP-Readonly"
-TOOLSETS_HEADER = "X-MCP-Toolsets"
+TOOLS_HEADER = "X-MCP-Tools"
+TOOLS_SEPARATOR = ", "
+"""As Microsoft documents the header (``core_list_projects, wit_work_item``)."""
+MAX_TOOLS_HEADER_CHARS = 4096
+"""Well below the 8 KB a server usually takes for all of a request's headers."""
 
 _TOOLSET_RE = re.compile(r"^[a-z][a-z0-9-]{0,23}$")
-_TOOLSETS_HEADER_RE = re.compile(r"^[a-z][a-z0-9_-]{0,23}(?:,[a-z][a-z0-9_-]{0,23}){0,15}$")
 _GATEWAY_ID_RE = re.compile(r"^[0-9a-z][0-9a-z-]{0,110}$")
 _PROFILE_VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.-]{0,31}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -363,8 +367,7 @@ class ApprovedRemote:
     gateway_id: str
     organization: str
     toolsets: tuple[str, ...]
-    toolsets_header: str
-    """Value of ``X-MCP-Toolsets``: the header values of ``toolsets``, comma-separated."""
+    """What the administrators picked; the header carries the tools, not these (D101)."""
     tools: frozenset[str]
     """Tool names as the server knows them (``wit_work_item``), all ``read`` (D84 (5))."""
     probe_tool: str
@@ -376,9 +379,11 @@ class ApprovedRemote:
 
     @property
     def headers(self) -> dict[str, str]:
-        """The two headers the interceptor forces on every call. Never ``Authorization``: it
+        """The two headers the interceptor forces on every call (D101): read only, and exactly
+        the approved tools. Never ``X-MCP-Toolsets``, whose named values do not hold every tool
+        (``search_code`` is in none, finding of 2026-10-29), and never ``Authorization``: it
         would replace the vault's token (finding of 2026-10-26, TM-008)."""
-        return {READONLY_HEADER: "true", TOOLSETS_HEADER: self.toolsets_header}
+        return {READONLY_HEADER: "true", TOOLS_HEADER: tools_header(self.tools)}
 
     def allows(self, gateway_tool: str) -> bool:
         """True for ``remote-<this registration>___<an approved tool>`` only."""
@@ -400,9 +405,9 @@ class ApprovedRemote:
             or not 1 <= len(self.toolsets) <= MAX_TOOLSETS
             or list(self.toolsets) != sorted(set(self.toolsets))
             or not all(_TOOLSET_RE.fullmatch(toolset) for toolset in self.toolsets)
-            or not _TOOLSETS_HEADER_RE.fullmatch(self.toolsets_header)
             or not 1 <= len(self.tools) <= MAX_TOOLS
             or not all(_TOOL_NAME_RE.fullmatch(tool) for tool in self.tools)
+            or len(tools_header(self.tools)) > MAX_TOOLS_HEADER_CHARS
             or self.probe_tool not in self.tools
             or not _is_int(self.issued_at)
             or self.issued_at < 0
@@ -484,9 +489,9 @@ def _from_claims(claims: object) -> ApprovedRemote | None:
     headers, toolsets, tools = data["headers"], data["toolsets"], data["tools"]
     if (
         not isinstance(headers, dict)
-        or set(headers) != {READONLY_HEADER, TOOLSETS_HEADER}
+        or set(headers) != {READONLY_HEADER, TOOLS_HEADER}
         or headers[READONLY_HEADER] != "true"
-        or not isinstance(headers[TOOLSETS_HEADER], str)
+        or not isinstance(headers[TOOLS_HEADER], str)
         or not isinstance(toolsets, list)
         or not all(isinstance(toolset, str) for toolset in toolsets)
         or not isinstance(tools, list)
@@ -507,7 +512,6 @@ def _from_claims(claims: object) -> ApprovedRemote | None:
             gateway_id=data["gateway_id"],
             organization=data["organization"],
             toolsets=tuple(toolsets),
-            toolsets_header=headers[TOOLSETS_HEADER],
             tools=frozenset(tools),
             probe_tool=data["probe_tool"],
             issued_at=data["issued_at"],
@@ -517,6 +521,11 @@ def _from_claims(claims: object) -> ApprovedRemote | None:
         return None
     # The registration in the payload is the target's suffix.
     return approved if data["target"] == approved.target else None
+
+
+def tools_header(tools: Iterable[str]) -> str:
+    """Value of ``X-MCP-Tools``: the tool names, sorted, as the server's docs separate them."""
+    return TOOLS_SEPARATOR.join(sorted(tools))
 
 
 def signing_digest(payload: bytes) -> bytes:

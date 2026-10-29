@@ -253,7 +253,6 @@ def _approve(db: Any, kms: FakeKms, reg: str) -> None:
         gateway_id=GATEWAY_ID,
         organization="Contoso",
         toolsets=("core", "wit"),
-        toolsets_header="wit",
         tools=frozenset({"core_list_projects", "wit_work_item"}),
         probe_tool="core_list_projects",
         issued_at=1,

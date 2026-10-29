@@ -896,7 +896,6 @@ def test_the_tools_served_come_from_the_signed_approved_catalog(env: Env) -> Non
         gateway_id=GATEWAY_ID,
         organization="Contoso",
         toolsets=("core", "wiki", "wit"),
-        toolsets_header="wit,wiki",
         tools=frozenset({"core_list_projects", "wiki"}),
         probe_tool="core_list_projects",
         issued_at=1,

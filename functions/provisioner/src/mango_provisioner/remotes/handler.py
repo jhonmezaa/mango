@@ -84,6 +84,12 @@ def _steps(p: RemoteProvisioner, event: dict[str, Any]) -> dict[str, Callable[[]
         "remove": forward(p.remove),
         "compensate": lambda: p.compensate(state),
         "mark_failed": lambda: p.mark_failed(state),
+        # After an install (D101): the input is `{release}`, then one registration at a time.
+        "release_plan": lambda: p.release_plan(raw),
+        "release_begin": forward(p.release_begin),
+        "release_check": forward(p.release_check),
+        "release_sign": forward(p.release_sign),
+        "release_abort": lambda: p.release_abort(state),
     }
 
 

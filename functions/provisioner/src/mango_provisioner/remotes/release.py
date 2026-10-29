@@ -4,27 +4,29 @@ The packs bucket is treated as untrusted storage, as with packs (TM-M15): the en
 verified with the public key of the template before its content is parsed, and the release
 catalog (``REMOTE_CATALOG``) pins one signed statement per profile by digest, so an older
 profile, still validly signed, is refused. Everything that becomes the Gateway target comes
-from that statement: the host, the scopes, the tool schema and the header values. A
-registration only picks the organization (checked against a constant pattern, D93 (5)) and
+from that statement: the host, the scopes, the tool schema and the tools the headers name
+(D101). A registration only picks the organization (checked against a constant pattern, D93 (5)) and
 a subset of the profile's toolsets.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_core import remote_mcp
-from mango_packs.canonical import sha256_hex
+from mango_packs.canonical import canonical_json, sha256_hex
 from mango_packs.remote import (
     MAX_ENVELOPE_BYTES,
     RemoteProfile,
     RemoteProfileError,
     RemoteProfileStatement,
     forced_headers,
+    picked_tools,
     verify_envelope,
 )
 from mango_packs.signing import PackSignatureError
@@ -55,6 +57,7 @@ class TargetPlan:
     toolsets: tuple[str, ...]
     """The picked toolsets plus those that are always on, sorted."""
     headers: dict[str, str]
+    """``X-MCP-Readonly`` and ``X-MCP-Tools`` with exactly ``tools`` (D101)."""
     tools: frozenset[str]
     tool_schema: dict[str, Any]
     """``{"tools": [...]}``: the signed schema cut to ``tools``, in the profile's order."""
@@ -66,6 +69,12 @@ class TargetPlan:
         return json.dumps(self.tool_schema, separators=(",", ":"), ensure_ascii=False)
 
 
+def release_digest(catalog: Mapping[str, str]) -> str:
+    """SHA-256 of ``REMOTE_CATALOG`` as canonical JSON: what names a release to the sweep that
+    runs after an install (D101). The stack computes the same (``remoteReleaseDigest``)."""
+    return sha256_hex(canonical_json(dict(catalog)))
+
+
 def plan_target(verified: VerifiedProfile, organization: str, toolsets: list[str]) -> TargetPlan:
     """The target of ``organization`` with ``toolsets``, from the signed profile only."""
     profile = verified.profile
@@ -74,10 +83,10 @@ def plan_target(verified: VerifiedProfile, organization: str, toolsets: list[str
         raise StepError("invalid_organization")
     try:
         headers = forced_headers(profile, toolsets)
+        tools = picked_tools(profile, toolsets)
     except RemoteProfileError:
         raise StepError("invalid_toolsets") from None
     picked = {t.id for t in profile.toolsets if t.always or t.id in set(toolsets)}
-    tools = frozenset(tool.name for tool in profile.tools if tool.toolset in picked)
     schema = {
         "tools": [t for t in verified.statement.tool_schema["tools"] if t.get("name") in tools]
     }

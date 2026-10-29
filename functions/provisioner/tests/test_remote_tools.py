@@ -112,7 +112,6 @@ def _sign(db: Any, key: ec.EllipticCurvePrivateKey, gateway_id: str) -> None:
         gateway_id=gateway_id,
         organization="contoso",
         toolsets=("core",),
-        toolsets_header="wit",
         tools=frozenset({"core_list_projects"}),
         probe_tool="core_list_projects",
         issued_at=1,

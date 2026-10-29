@@ -115,7 +115,6 @@ class Remotes:
             gateway_id="gw",
             organization="contoso",
             toolsets=("core", "wiki"),
-            toolsets_header="wiki",
             tools=frozenset(tools),
             probe_tool=tools[0],
             issued_at=1,

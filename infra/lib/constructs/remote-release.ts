@@ -73,6 +73,16 @@ export interface ReleaseRemote {
 /** What `mango-api` and the remote provisioner receive as `REMOTE_CATALOG`: id -> sha256. */
 export type RemoteCatalog = Record<string, string>;
 
+/**
+ * SHA-256 of the catalog as canonical JSON (sorted keys, no spaces): what names this release
+ * to the remote provisioner's sweep after an install (D101). Keep in sync with
+ * `mango_provisioner.remotes.release.release_digest`; a test on each side pins the same value.
+ */
+export function remoteReleaseDigest(catalog: RemoteCatalog): string {
+  const sorted = Object.fromEntries(Object.entries(catalog).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return createHash("sha256").update(JSON.stringify(sorted)).digest("hex");
+}
+
 function signedMessage(payload: Buffer): Buffer {
   const kind = Buffer.from(REMOTE_PAYLOAD_TYPE);
   return Buffer.concat([Buffer.from(`DSSEv1 ${kind.length} `), kind, Buffer.from(` ${payload.length} `), payload]);
@@ -182,6 +192,11 @@ export class RemoteRelease extends Construct {
   /** The packs bucket the profiles are copied to. */
   get bucketName(): string {
     return this.bucket.bucketName;
+  }
+
+  /** {@link remoteReleaseDigest} of this release's catalog. */
+  get digest(): string {
+    return remoteReleaseDigest(this.catalog);
   }
 
   /** Environment of whoever reads the catalog (`mango-api`, the remote provisioner). Not secret. */

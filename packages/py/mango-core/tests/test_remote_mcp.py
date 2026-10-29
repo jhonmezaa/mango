@@ -33,6 +33,7 @@ from mango_core.remote_mcp import (
     signing_digest,
     split_gateway_tool,
     target_name,
+    tools_header,
 )
 
 REG = "abcdefghij23"
@@ -53,7 +54,6 @@ APPROVED = ApprovedRemote(
     gateway_id=GATEWAY,
     organization="contoso",
     toolsets=("core", "wiki", "wit"),
-    toolsets_header="core,wiki,wit",
     tools=frozenset({"core_list_projects", "search_wiki", "wiki", "wit_work_item"}),
     probe_tool="core_list_projects",
     issued_at=NOW,
@@ -225,7 +225,11 @@ def test_a_malformed_region_is_refused() -> None:
 def test_the_signed_catalog_verifies_and_names_the_headers() -> None:
     approved = _verify(_item(APPROVED.encode()))
     assert approved == APPROVED
-    assert approved.headers == {"X-MCP-Readonly": "true", "X-MCP-Toolsets": "core,wiki,wit"}
+    # D101: the exact approved tools, sorted, never X-MCP-Toolsets.
+    assert approved.headers == {
+        "X-MCP-Readonly": "true",
+        "X-MCP-Tools": "core_list_projects, search_wiki, wiki, wit_work_item",
+    }
     assert not any(key.lower() == "authorization" for key in approved.headers)
     assert approved.allows("remote-abcdefghij23___wit_work_item")
     assert not approved.allows("remote-abcdefghij23___wit_work_item_attachment")
@@ -237,7 +241,7 @@ def test_the_payload_is_canonical_json_with_the_target() -> None:
     payload = APPROVED.encode()
     claims = json.loads(payload)
     assert claims["target"] == TARGET
-    assert claims["v"] == 1
+    assert claims["v"] == 2
     assert (
         payload
         == json.dumps(claims, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -280,6 +284,15 @@ def test_a_signature_without_the_context_does_not_verify() -> None:
     assert SIGNING_CONTEXT == b"mango.remote-mcp.v1\n"
 
 
+TOOLS = "core_list_projects, search_wiki, wiki, wit_work_item"
+
+
+def test_the_tools_header_is_sorted_and_separated_as_documented() -> None:
+    assert tools_header({"wit_work_item", "core_list_projects"}) == (
+        "core_list_projects, wit_work_item"
+    )
+
+
 def _signed_claims(**overrides: Any) -> dict[str, str]:
     claims = {**json.loads(APPROVED.encode()), **overrides}
     payload = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode()
@@ -289,17 +302,19 @@ def _signed_claims(**overrides: Any) -> dict[str, str]:
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"v": 2},
+        {"v": 1},
+        {"v": 3},
         {"registration_id": "zzzzzzzzzz23"},
         {"target": "remote-zzzzzzzzzz23"},
-        {"headers": {"X-MCP-Readonly": "false", "X-MCP-Toolsets": "core,wiki,wit"}},
-        {
-            "headers": {
-                "X-MCP-Readonly": "true",
-                "X-MCP-Toolsets": "core,wiki,wit",
-                "Authorization": "Bearer x",
-            }
-        },
+        {"headers": {"X-MCP-Readonly": "false", "X-MCP-Tools": TOOLS}},
+        {"headers": {"X-MCP-Readonly": "true", "X-MCP-Tools": TOOLS, "Authorization": "x"}},
+        # The catalogs signed before D101: the interceptor refuses them until re-signed.
+        {"headers": {"X-MCP-Readonly": "true", "X-MCP-Toolsets": "wiki,wit"}},
+        {"headers": {"X-MCP-Readonly": "true", "X-MCP-Tools": TOOLS, "X-MCP-Toolsets": "wit"}},
+        # The header must be the signed tools, not more and not fewer.
+        {"headers": {"X-MCP-Readonly": "true", "X-MCP-Tools": TOOLS + ", repo_create_branch"}},
+        {"headers": {"X-MCP-Readonly": "true", "X-MCP-Tools": "wiki"}},
+        {"headers": {"X-MCP-Readonly": "true", "X-MCP-Tools": TOOLS.replace(", ", ",")}},
         {"tools": ["wiki", "wiki", "core_list_projects"]},
         {"tools": ["wiki"]},
         {"tools": ["../wiki", "core_list_projects"]},
@@ -346,7 +361,7 @@ def test_a_missing_or_garbled_item_is_refused(item: dict[str, Any]) -> None:
         {"probe_tool": "search_code"},
         {"tools": frozenset()},
         {"toolsets": ("wit", "core")},
-        {"toolsets_header": "core, wit"},
+        {"tools": frozenset({"core_list_projects", *(f"t{n:03d}_{'x' * 50}" for n in range(80))})},
         {"gateway_id": "Gateway/1"},
         {"organization": "con toso"},
         {"generation": 0},

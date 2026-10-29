@@ -5,7 +5,8 @@ The target reaches the third-party server with the person's own token from the v
 and generation give, its ARN is built here, never read from a record. The tool schema is
 fixed (``mcpToolSchema``, never ``DYNAMIC``: listing does not work with 3LO and a pinned
 schema keeps out whatever else the server serves). Only ``X-MCP-Readonly`` and
-``X-MCP-Toolsets`` may pass; the ``REQUEST`` interceptor sets them from the signed catalog.
+``X-MCP-Tools`` may pass (D101); the ``REQUEST`` interceptor sets them from the signed catalog.
+A target made before D101 allows ``X-MCP-Toolsets`` instead: it differs, so it is updated.
 
 The policies permit the approved tools to any signed-in user, like a public pack (D33): the
 groups of a registration are enforced by mango-api in L1 and in the invocation signature
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 MAX_STATEMENT_CHARS = 9_000
 """Below AgentCore's limit for a Cedar statement (10 000 characters)."""
-ALLOWED_HEADERS = (remote_mcp.READONLY_HEADER, remote_mcp.TOOLSETS_HEADER)
+ALLOWED_HEADERS = (remote_mcp.READONLY_HEADER, remote_mcp.TOOLS_HEADER)
 _NOT_FOUND = "ResourceNotFoundException"
 _OAUTH = "OAUTH"
 _GRANT = "AUTHORIZATION_CODE"
@@ -205,6 +206,15 @@ class RemoteGateway:
             and all(h.startswith(_AGENTCORE_HEADER_PREFIX) for h in headers - ours),
         }
         return [name for name, same in checks.items() if not same]
+
+    def differences(
+        self, registration_id: str, generation: int, plan: TargetPlan
+    ) -> list[str] | None:
+        """The fields of ``plan`` the target does not hold, or ``None`` without a target."""
+        target = self.find_target(registration_id)
+        if target is None:
+            return None
+        return self._differences(target, self.desired(registration_id, generation, plan))
 
     @classmethod
     def _matches(cls, target: dict[str, Any], desired: dict[str, Any]) -> bool:

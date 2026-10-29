@@ -434,7 +434,11 @@ export class CoreStack extends Stack {
       signingPublicKey: packRelease.signingPublicKey,
       appOrigin: edge.origin,
       signingKey: tools.remoteMcpKey,
+      enabled: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
     });
+    // The REQUEST interceptor that reads the catalog's new format goes first (D101): the sweep
+    // after the install signs only what it can verify.
+    remoteMcp.node.addDependency(tools.interceptor);
     apiTaskRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "AuxiliaryModel",

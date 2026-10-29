@@ -35,7 +35,6 @@ def approved(**changes: Any) -> remote_mcp.ApprovedRemote:
         "gateway_id": GATEWAY_ID,
         "organization": "contoso",
         "toolsets": ("core", "wiki"),
-        "toolsets_header": "wiki",
         "tools": frozenset({"core_list_projects", "wiki"}),
         "probe_tool": "core_list_projects",
         "issued_at": 1_793_000_000,

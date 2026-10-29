@@ -49,14 +49,17 @@ MAX_TOOL_SCHEMA_BYTES: Final = 1024 * 1024
 MAX_ENVELOPE_BYTES: Final = 2 * MAX_TOOL_SCHEMA_BYTES
 MAX_TOOLS: Final = 100
 READONLY_HEADER: Final = "X-MCP-Readonly"
-TOOLSETS_HEADER: Final = "X-MCP-Toolsets"
-# The only forced headers, with the only values a profile may give them. `{toolsets}` stands
-# for the header values of the toolsets a registration picked ({func}`forced_headers`).
-FORCED_HEADERS: Final = {READONLY_HEADER: "true", TOOLSETS_HEADER: "{toolsets}"}
+TOOLS_HEADER: Final = "X-MCP-Tools"
+# The only forced headers, with the only values a profile may give them. `{tools}` stands for
+# the tools of the toolsets a registration picked ({func}`forced_headers`). Never
+# `X-MCP-Toolsets`: its named values do not hold every tool (D101).
+FORCED_HEADERS: Final = {READONLY_HEADER: "true", TOOLS_HEADER: "{tools}"}
+# Separator and limit of `X-MCP-Tools`: keep in sync with `mango_core.remote_mcp`.
+TOOLS_SEPARATOR: Final = ", "
+MAX_TOOLS_HEADER_CHARS: Final = 4096
 
 RemoteProfileId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{1,23}$")]
 ToolsetId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,23}$")]
-HeaderValue = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,31}$")]
 # An OAuth scope: a name or `<resource>/<permission>`. No spaces: they separate scopes.
 OAuthScope = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")]
 ProbeValue = Annotated[str, StringConstraints(max_length=100)] | int | bool
@@ -99,18 +102,13 @@ class Provider(StrictModel):
 
 
 class Toolset(StrictModel):
-    id: ToolsetId
-    # Value in `X-MCP-Toolsets`. A toolset that is always on may have none: its tools come
-    # with any other toolset.
-    header: HeaderValue | None = None
-    label: ShortText
-    always: bool = False
+    """What an administrator picks, and how the profile groups its tools. The server is not
+    told the toolset: the header carries the tools (D101)."""
 
-    @model_validator(mode="after")
-    def _header_unless_always(self) -> Self:
-        if self.header is None and not self.always:
-            raise ValueError(f"toolset {self.id} can be picked, so it needs its header value")
-        return self
+    id: ToolsetId
+    label: ShortText
+    # Its tools come with every registration.
+    always: bool = False
 
 
 class Probe(StrictModel):
@@ -157,9 +155,8 @@ class RemoteProfile(StrictModel):
         toolsets = {toolset.id: toolset for toolset in self.toolsets}
         if len(toolsets) != len(self.toolsets):
             raise ValueError("duplicate toolset id")
-        headers = [toolset.header for toolset in self.toolsets if toolset.header is not None]
-        if len(set(headers)) != len(headers):
-            raise ValueError("two toolsets send the same header value")
+        if all(toolset.always for toolset in self.toolsets):
+            raise ValueError("a profile needs a toolset an administrator can pick")
         names = [tool.name for tool in self.tools]
         if len(set(names)) != len(names):
             raise ValueError("duplicate tool name")
@@ -177,6 +174,8 @@ class RemoteProfile(StrictModel):
         probe = next((tool for tool in self.tools if tool.name == self.probe.tool), None)
         if probe is None or not toolsets[probe.toolset].always:
             raise ValueError("the probe tool must be a tool of a toolset that is always on")
+        if len(TOOLS_SEPARATOR.join(names)) > MAX_TOOLS_HEADER_CHARS:
+            raise ValueError(f"the tools do not fit in {TOOLS_HEADER}")
         return self
 
     @property
@@ -234,25 +233,27 @@ def check_tool_schema(profile: RemoteProfile, schema: object) -> None:
         )
 
 
-def forced_headers(profile: RemoteProfile, toolsets: list[str]) -> dict[str, str]:
-    """The headers the Gateway sends for a registration that picked `toolsets`.
+def picked_tools(profile: RemoteProfile, toolsets: list[str]) -> frozenset[str]:
+    """The tools of a registration that picked `toolsets`, with those always on.
 
-    Toolsets that are always on are added. A registration whose toolsets give no header value
-    is refused: without `X-MCP-Toolsets` the server serves all of its toolsets.
+    A registration must pick at least one toolset that is not always on.
     """
     declared = {toolset.id: toolset for toolset in profile.toolsets}
     unknown = sorted(set(toolsets) - set(declared))
     if unknown:
         raise RemoteProfileError(f"toolsets not in profile {profile.id}: {unknown}")
     picked = set(toolsets)
-    values = [
-        toolset.header
-        for toolset in profile.toolsets
-        if toolset.header is not None and (toolset.always or toolset.id in picked)
-    ]
-    if not values:
-        raise RemoteProfileError("pick at least one toolset that the server filters by header")
-    return {READONLY_HEADER: "true", TOOLSETS_HEADER: ",".join(values)}
+    if not any(not declared[toolset].always for toolset in picked):
+        raise RemoteProfileError("pick at least one toolset that is not always on")
+    on = {toolset.id for toolset in profile.toolsets if toolset.always or toolset.id in picked}
+    return frozenset(tool.name for tool in profile.tools if tool.toolset in on)
+
+
+def forced_headers(profile: RemoteProfile, toolsets: list[str]) -> dict[str, str]:
+    """The headers the Gateway sends for a registration that picked `toolsets` (D101):
+    read only, and exactly its tools, sorted. The server serves no other tool."""
+    tools = picked_tools(profile, toolsets)
+    return {READONLY_HEADER: "true", TOOLS_HEADER: TOOLS_SEPARATOR.join(sorted(tools))}
 
 
 class RemoteProfileStatement(StrictModel):
