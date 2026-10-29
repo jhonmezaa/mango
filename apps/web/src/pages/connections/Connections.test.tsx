@@ -353,6 +353,30 @@ describe('ConnectCard', () => {
     expect(screen.queryByRole('button', { name: 'Enviar de nuevo' })).not.toBeInTheDocument();
   });
 
+  it('does not offer it again when the conversation already asked later (design round 26)', async () => {
+    renderWith(
+      <ConnectCard registrationId={REG} startedAt={Date.now()} onResend={vi.fn()} asked />,
+      apiWith([connection({ status: 'connected' })]),
+    );
+    expect(
+      await screen.findByText(
+        'Tu cuenta de Azure DevOps quedó conectada. Enviaste tu pregunta otra vez.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enviar de nuevo' })).not.toBeInTheDocument();
+  });
+
+  it('waits, disabled, while another turn answers (design round 26)', async () => {
+    renderWith(
+      <ConnectCard registrationId={REG} startedAt={Date.now()} onResend={vi.fn()} busy />,
+      apiWith([connection({ status: 'connected' })]),
+    );
+    expect(await screen.findByRole('button', { name: 'Enviar de nuevo' })).toBeDisabled();
+    expect(
+      screen.getByText('Podrás enviarla cuando termine la respuesta en curso.'),
+    ).toBeInTheDocument();
+  });
+
   it('only says so when remote servers are off in the installation', async () => {
     renderWith(
       <ConnectCard registrationId={REG} startedAt={Date.now()} />,
@@ -694,7 +718,21 @@ describe('links of a remote answer (A1)', () => {
     ).toBeInTheDocument();
   });
 
-  it('says one link in the singular, and takes every link out while nothing is known', async () => {
+  it('marks nothing and opens nothing while the connections are read (design round 26)', () => {
+    render(
+      <ChatMarkdown strip="pending">
+        {'Autoriza [aquí](https://azdevops-authorize.example.com/oauth/consent).'}
+      </ChatMarkdown>,
+    );
+    const link = screen.getByText('aquí');
+    expect(link.tagName).toBe('SPAN');
+    expect(link).toHaveClass('rm-linkwait');
+    expect(link).not.toHaveAttribute('title');
+    expect(screen.queryByRole('button', { name: 'aquí' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mango desactivó/)).not.toBeInTheDocument();
+  });
+
+  it('says one link in the singular', async () => {
     render(<ChatMarkdown strip={[]}>{'[wiki](https://dev.azure.com/empresa/w)'}</ChatMarkdown>);
     expect(screen.queryByRole('button', { name: 'wiki' })).not.toBeInTheDocument();
     expect(

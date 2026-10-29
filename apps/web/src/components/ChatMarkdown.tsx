@@ -23,9 +23,11 @@ import { rehypeNumericColumns } from './markdownTables';
 const RemoteSources = createContext<readonly RemoteLinkSource[]>([]);
 /**
  * Set in a turn with the «Conectar» card (design round 25): the services whose organizations keep
- * their links. Null when the turn asked for no connection.
+ * their links, or 'pending' while the person's connections are read (design round 26). Null when
+ * the turn asked for no connection.
  */
-const StripSources = createContext<readonly RemoteLinkSource[] | null>(null);
+export type StripLinks = readonly RemoteLinkSource[] | 'pending' | null;
+const StripSources = createContext<StripLinks>(null);
 
 function ExternalLink({ href, children }: { href: string | undefined; children: ReactNode }) {
   const { t } = useTranslation();
@@ -36,6 +38,10 @@ function ExternalLink({ href, children }: { href: string | undefined; children: 
   if (!url) {
     // Unsafe or relative target: keep the text, drop the link.
     return <span>{children}</span>;
+  }
+  if (strip === 'pending') {
+    // Not known yet which organizations are the person's: nothing opens, nothing is marked.
+    return <span className="rm-linkwait">{children}</span>;
   }
   if (strip !== null) {
     // The agent never gets the real URL to connect an account: a link to «authorize» is invented
@@ -118,7 +124,7 @@ interface Props {
    * Set when the turn asked to connect an account: links outside these services' organizations
    * are shown struck through, without a link, with a note under the text (design round 25).
    */
-  strip?: readonly RemoteLinkSource[] | null;
+  strip?: StripLinks;
 }
 
 const NO_REMOTE: readonly RemoteLinkSource[] = [];
@@ -143,7 +149,11 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   const [stripped, setStripped] = useState(0);
   // The links Mango took out, counted once they are on screen.
   useEffect(() => {
-    setStripped(strip !== null ? (ref.current?.querySelectorAll('.rm-nolink').length ?? 0) : 0);
+    setStripped(
+      strip !== null && strip !== 'pending'
+        ? (ref.current?.querySelectorAll('.rm-nolink').length ?? 0)
+        : 0,
+    );
   }, [children, strip]);
   const classes = ['md'];
   if (streaming) classes.push('md-streaming');

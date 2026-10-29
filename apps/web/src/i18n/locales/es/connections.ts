@@ -110,6 +110,8 @@ export const connections = {
       'Tu cuenta de {{service}} quedó conectada. Envía tu pregunta otra vez para que el agente lea {{service}}.',
     doneResent: 'Tu cuenta de {{service}} quedó conectada. Enviaste tu pregunta otra vez.',
     resend: 'Enviar de nuevo',
+    // Design round 26: another turn is answering; the button waits, disabled.
+    resendBusy: 'Podrás enviarla cuando termine la respuesta en curso.',
     offTitle: 'Los servicios externos están apagados',
     offBody:
       'Esta instalación de Mango tiene apagados los servicios externos, así que el agente no puede leer {{service}}. Si lo necesitas, avisa a un administrador de Mango.',
