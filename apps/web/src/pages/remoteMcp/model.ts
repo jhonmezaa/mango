@@ -121,14 +121,16 @@ export function statusOf(registration: Registration): RowStatus {
   }
 }
 
-/** How a failed registration is fixed (design `FAIL`): retried, or asked again with new data. */
-export type FailKind = 'platform' | 'app' | 'unknown';
+/**
+ * What a failed registration says (design `FAIL`, round 25). The product only has platform codes:
+ * a wrong datum of the app of Entra shows when people connect, not when the service is created.
+ */
+export type FailKind = 'platform' | 'unknown';
 
-/** Failure codes with a text of their own; the provisioner writes the platform ones today. */
+/** Failure codes with a text of their own: the ones the provisioner writes. */
 const FAIL_KINDS = new Map<string, Exclude<FailKind, 'unknown'>>([
   ['target_timeout', 'platform'],
   ['target_failed', 'platform'],
-  ['provider_rejected', 'app'],
 ]);
 
 export interface FailInfo {

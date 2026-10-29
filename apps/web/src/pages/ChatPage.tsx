@@ -554,6 +554,13 @@ export function ChatPage() {
                         key={registration}
                         registrationId={registration}
                         startedAt={startOf(message)}
+                        onResend={
+                          question !== null && canChat
+                            ? () => {
+                                sendText(question);
+                              }
+                            : undefined
+                        }
                       />
                     ))}
                     {message.approvals && message.approvals.length > 0 ? (

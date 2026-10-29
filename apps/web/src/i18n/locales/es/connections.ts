@@ -9,6 +9,11 @@ export const connections = {
   loadError: 'No se pudieron cargar tus conexiones',
   retry: 'Reintentar',
   empty: 'Ningún servicio externo está habilitado para tus grupos.',
+  // Design round 25: `RemoteMcpEnabled` off, the list is not shown and the parameter is not named.
+  off: {
+    title: 'Los servicios externos están apagados en esta instalación',
+    body: 'Cuando un administrador los encienda, aquí vas a poder conectar tu cuenta.',
+  },
   connect: 'Conectar',
   // D100: the provider opens in another tab; this one waits (design round 24).
   reopen: 'Abrir de nuevo',
@@ -48,6 +53,10 @@ export const connections = {
     rate_limited: {
       title: 'Demasiados intentos seguidos',
       body: 'Espera un minuto y vuelve a pulsar «Conectar».',
+    },
+    popup_blocked: {
+      title: 'El navegador bloqueó la pestaña de {{idp}}',
+      body: 'Permite las ventanas emergentes de Mango en este navegador y vuelve a pulsar «Conectar».',
     },
   },
   // Design `DisconnectModal` (D97): Mango deletes the connection; it never says the provider did.
@@ -94,10 +103,16 @@ export const connections = {
     notAgent: 'No lo escribió el agente',
     askTitle: 'Conecta tu cuenta de {{service}}',
     askBody: 'El agente necesita leer {{service}} con tu cuenta. Vas a iniciar sesión en {{idp}}.',
-    // The design says «El agente sigue con tu pregunta.», but nothing continues the turn yet: this
-    // text was chosen when building it, 2026-10-28, until it does (round 25 brief).
+    // Design round 25: the turn ended when the connection was missing; «Enviar de nuevo» sends the
+    // same question as a new turn.
     doneTitle: 'Conectado',
-    doneBody: 'Tu cuenta de {{service}} quedó conectada. Vuelve a enviar tu pregunta.',
+    doneBody:
+      'Tu cuenta de {{service}} quedó conectada. Envía tu pregunta otra vez para que el agente lea {{service}}.',
+    doneResent: 'Tu cuenta de {{service}} quedó conectada. Enviaste tu pregunta otra vez.',
+    resend: 'Enviar de nuevo',
+    offTitle: 'Los servicios externos están apagados',
+    offBody:
+      'Esta instalación de Mango tiene apagados los servicios externos, así que el agente no puede leer {{service}}. Si lo necesitas, avisa a un administrador de Mango.',
     waitingTitle: 'Inicia sesión en {{idp}} en la otra pestaña',
     waitingBody: 'Al terminar, la conexión se completa aquí. No cierres esta pestaña.',
     finishingTitle: 'Terminando la conexión…',
@@ -113,6 +128,15 @@ export const connections = {
     sub: '· contenido de fuera de Mango',
     title:
       'Esta respuesta usó contenido de {{service}}. Lo escribió gente de fuera de Mango: revisa los enlaces antes de abrirlos.',
+  },
+  // Design round 25: in a turn with the «Conectar» card, the agent's links that are not of an
+  // organization the person may use cannot be opened (the agent never gets the real URL).
+  stripped: {
+    title: 'Enlace quitado por Mango · {{host}}',
+    note_one:
+      'Mango desactivó un enlace del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.',
+    note_other:
+      'Mango desactivó {{count}} enlaces del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.',
   },
   link: {
     warnBefore: 'Esta respuesta leyó contenido de ',
@@ -139,9 +163,9 @@ export const connections = {
     },
     ok: {
       title: 'Listo, vuelve a tu pestaña de Mango',
-      body: 'Tu cuenta de {{service}} quedó conectada. El agente sigue ahí con tu pregunta. Puedes cerrar esta pestaña.',
+      body: 'Tu cuenta de {{service}} quedó conectada. En la pestaña donde pulsaste «Conectar», envía tu pregunta otra vez. Esta ya no hace falta.',
       bodyUnnamed:
-        'Tu cuenta quedó conectada. El agente sigue ahí con tu pregunta. Puedes cerrar esta pestaña.',
+        'Tu cuenta quedó conectada. En la pestaña donde pulsaste «Conectar», envía tu pregunta otra vez. Esta ya no hace falta.',
     },
     orphan: {
       title: 'Pídelo de nuevo desde Mango',
@@ -173,6 +197,9 @@ export const connections = {
     },
     providerFallback: 'el proveedor',
     closeTab: 'Cerrar esta pestaña',
+    // Design round 25: without `window.opener` the browser decides; the page never opens Mango again.
+    cannotClose:
+      'El navegador no deja que Mango cierre esta pestaña. Ciérrala tú: tu pestaña de Mango ya está al día.',
     openMango: 'Abrir Mango',
   },
   inbox: {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useToasts } from '../../components/admin/useToasts';
-import { ExternalIcon, GlobeIcon, X2Icon } from '../../components/icons';
+import { ExternalIcon, GlobeIcon, LockIcon, X2Icon } from '../../components/icons';
 import { Modal } from '../../components/Modal';
 import { formatRelative } from '../../lib/format';
 import { RmTile } from '../remoteMcp/parts';
@@ -138,7 +138,15 @@ function Row({
 /** «Mis conexiones» (design remote-views.jsx `MyConnections`), opened from the person's menu. */
 export function MyConnections({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
-  const { status, list, reload, connect, phaseOf, finishErrorOf: finishOf } = useConnections();
+  const {
+    status,
+    enabled,
+    list,
+    reload,
+    connect,
+    phaseOf,
+    finishErrorOf: finishOf,
+  } = useConnections();
   const { notify, stack } = useToasts();
   const [already, setAlready] = useState<ReadonlySet<string>>(new Set());
   const [errors, setErrors] = useState<Readonly<Record<string, ConnectError>>>({});
@@ -189,7 +197,16 @@ export function MyConnections({ onClose }: { onClose: () => void }) {
     <>
       <Modal title={t('connections.title')} onClose={onClose}>
         <p className="rm-p">{t('connections.intro')}</p>
-        {list.length === 0 && status === 'loading' ? (
+        {status === 'ready' && !enabled ? (
+          // Design round 25: off in the installation, no list (and the parameter is not named).
+          <div className="mc-alert amber" role="status">
+            <LockIcon size={14} />
+            <div>
+              <b>{t('connections.off.title')}</b>
+              <div>{t('connections.off.body')}</div>
+            </div>
+          </div>
+        ) : list.length === 0 && status === 'loading' ? (
           <p role="status" className="flex items-center gap-2.5 text-muted">
             <span className="spinner" aria-hidden="true" />
             {t('connections.loading')}
@@ -226,7 +243,7 @@ export function MyConnections({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         )}
-        {list.length > 0 && (
+        {list.length > 0 && enabled && (
           <div className="rm-hint mt-3.5">
             {t('connections.hint', {
               idps: idps.join(t('connections.hintOr')),

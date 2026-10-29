@@ -48,11 +48,18 @@ test('the chat asks to connect a remote service, and its tab closes the consent'
   );
   await signIn(page);
 
-  await ask(page, '¿Qué tiene abierto el sprint 42 de Plataforma?');
+  const question = '¿Qué tiene abierto el sprint 42 de Plataforma? Pásame el enlace.';
+  await ask(page, question);
   const card = page.getByRole('region', { name: 'Aviso de Mango: conectar Azure DevOps' });
   await expect(card).toContainText('Conecta tu cuenta de Azure DevOps');
   await expect(card).toContainText('No lo escribió el agente');
   await expect(card).toContainText(/Vence en \d+:\d{2}/);
+  // The agent's link to «authorize» cannot be opened (design round 25).
+  await expect(page.getByText('Autorizar Azure DevOps')).toHaveClass('rm-nolink');
+  await expect(page.getByRole('button', { name: 'Autorizar Azure DevOps' })).toHaveCount(0);
+  await expect(
+    page.getByText('Mango desactivó un enlace del agente.', { exact: false }),
+  ).toBeVisible();
 
   const opened = context.waitForEvent('page');
   await card.getByRole('button', { name: /Conectar/ }).click();
@@ -76,7 +83,10 @@ test('the chat asks to connect a remote service, and its tab closes the consent'
   await expect(card).toContainText('Conectado');
   await expect(card).toContainText('Tu cuenta de Azure DevOps quedó conectada.');
 
-  await ask(page, 'Y ahora, ¿qué tiene abierto el sprint 42?');
+  // «Enviar de nuevo» sends the same question as a new turn (design round 25).
+  await card.getByRole('button', { name: 'Enviar de nuevo' }).click();
+  await expect(card).toContainText('Enviaste tu pregunta otra vez.');
+  await expect(page.getByText(question)).toHaveCount(2);
   await expect(page.getByText('Encontré 3 work items abiertos')).toBeVisible();
   // The live turn already says what it read («Leyó») and where its links go (A1)…
   await expect(page.getByText('Leyó Azure DevOps')).toBeVisible();

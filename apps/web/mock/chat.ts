@@ -302,9 +302,14 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       send('remote_connection_required', { registration_id: remote.id });
     }
     send('status', { phase: 'writing' });
+    // "enlace": the agent also writes a link to «authorize» (design round 25 `RM_ASK_LINK`): it
+    // never gets the real URL, so the web takes the link out.
+    const ask = 'Necesito que conectes tu cuenta de Azure DevOps para leer el sprint.';
     const reply = ready
       ? REMOTE_ANSWER
-      : 'Necesito que conectes tu cuenta de Azure DevOps para leer el sprint.';
+      : /enlace/i.test(message)
+        ? `${ask} Autoriza el acceso aquí: [Autorizar Azure DevOps](https://azdevops-authorize.example.com/oauth/consent).`
+        : ask;
     send('delta', { text: reply });
     const replyId = newId();
     conversation.messages.push({

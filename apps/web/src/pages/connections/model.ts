@@ -4,6 +4,7 @@ import { ApiError } from '../../api/errors';
 import type { OperationOutput } from '../../api/operations';
 import type { RemoteLinkSource } from '../../security/remoteLinks';
 import { REGISTRATION_ID } from '../remoteMcp/model';
+import { PopupBlockedError } from './navigation';
 
 export type Connection = OperationOutput<'listMyConnections'>['connections'][number];
 
@@ -74,7 +75,8 @@ export interface ConnectError {
 
 /**
  * Text of a failed «Conectar» (design `CONNECT_ERR`, round 24). The Gateway or AgentCore Identity
- * not giving a consent URL is the design's `identity_unavailable`; a 429 is `rate_limited`. Codes
+ * not giving a consent URL is the design's `identity_unavailable`; a 429 is `rate_limited`; a tab
+ * the browser would not open is `popup_blocked` (round 25). Codes
  * that say why this service cannot be connected keep their own text under the generic title.
  */
 export function connectErrorOf(
@@ -86,6 +88,12 @@ export function connectErrorOf(
     title: t('connections.connectErrors.error.title'),
     body: t('connections.connectErrors.error.body'),
   };
+  if (error instanceof PopupBlockedError) {
+    return {
+      title: t('connections.connectErrors.popup_blocked.title', { idp: idpOf(connection) }),
+      body: t('connections.connectErrors.popup_blocked.body'),
+    };
+  }
   if (!(error instanceof ApiError)) return generic;
   if (error.status === 429) {
     return {

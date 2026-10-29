@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { MangoIcon } from '../../components/icons';
@@ -28,19 +28,25 @@ function useRelay(): Outcome | null {
 export function ConnectReturnPage() {
   const { t } = useTranslation();
   const outcome = useRelay();
+  const [cannotClose, setCannotClose] = useState(false);
 
-  // Opened by Mango or not, a script may close it only if the browser lets it; when it does not,
-  // the button stays (design: «se cierra sola»; no `window.opener`, see navigation.ts).
+  // Without `window.opener` (see navigation.ts) the browser decides whether a script may close the
+  // page. Still here shortly after trying: it says so instead of the button, and never opens
+  // another Mango tab (design round 25).
+  const tryClose = useCallback(() => {
+    window.close();
+    window.setTimeout(() => {
+      setCannotClose(true);
+    }, 300);
+  }, []);
   const ok = outcome?.result === 'ok';
   useEffect(() => {
     if (!ok) return;
-    const timer = window.setTimeout(() => {
-      window.close();
-    }, CLOSE_AFTER_MS);
+    const timer = window.setTimeout(tryClose, CLOSE_AFTER_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [ok]);
+  }, [ok, tryClose]);
 
   const openMango = () => {
     window.location.assign('/');
@@ -57,17 +63,13 @@ export function ConnectReturnPage() {
       ) : (
         <ReturnCard result={outcome.result} service={outcome.service} idp={outcome.idp}>
           {outcome.result === 'ok' ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                window.close();
-                // Still here: the browser did not let the page close itself.
-                window.setTimeout(openMango, 300);
-              }}
-            >
-              {t('connections.ret.closeTab')}
-            </button>
+            cannotClose ? (
+              <span className="rm-ret-n">{t('connections.ret.cannotClose')}</span>
+            ) : (
+              <button type="button" className="btn btn-sm" onClick={tryClose}>
+                {t('connections.ret.closeTab')}
+              </button>
+            )
           ) : (
             <button type="button" className="btn btn-sm btn-primary" onClick={openMango}>
               {t('connections.ret.openMango')}

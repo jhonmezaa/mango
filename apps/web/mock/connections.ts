@@ -71,7 +71,10 @@ export function markConsentPending(registration: string, token: string | null = 
 
 export const handleConnections: ApiHandler = async (req, res, path) => {
   if (path === '/me/connections' && req.method === 'GET') {
-    sendJson(res, 200, { connections: usableRemotes(MOCK_GROUPS).map(connectionOf) });
+    sendJson(res, 200, {
+      enabled: true,
+      connections: usableRemotes(MOCK_GROUPS).map(connectionOf),
+    });
     return true;
   }
   if (path === '/oauth/callback' && req.method === 'POST') {

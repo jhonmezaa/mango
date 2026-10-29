@@ -29,9 +29,10 @@ const SESSION = 'urn:ietf:params:oauth:request_uri:abc123';
 
 type Answers = Record<string, (input: unknown) => Promise<unknown>>;
 
-function apiWith(list: Connection[], answers: Answers = {}) {
+function apiWith(list: Connection[], answers: Answers = {}, enabled = true) {
   return vi.fn((operation: string, input: unknown) => {
-    if (operation === 'listMyConnections') return Promise.resolve({ connections: [...list] });
+    if (operation === 'listMyConnections')
+      return Promise.resolve({ enabled, connections: [...list] });
     const answer = answers[operation];
     return answer ? answer(input) : Promise.reject(new Error(`unexpected ${operation}`));
   });
@@ -198,16 +199,19 @@ describe('Mis conexiones', () => {
     expect(within(dialog).getByRole('button', { name: /Abrir de nuevo/ })).toBeInTheDocument();
   });
 
-  it('says a blocked tab like a failed «Conectar»', async () => {
+  it('says the browser blocked the tab (design round 25)', async () => {
     vi.spyOn(consentNavigation, 'open').mockReturnValue(null);
     const call = apiWith([connection()], { connectMyAccount: consentRequired });
     renderWith(<OpenMine />, call);
     await userEvent.click(screen.getByRole('button', { name: 'open mine' }));
     const dialog = await screen.findByRole('dialog', { name: 'Mis conexiones' });
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Conectar' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'No se pudo iniciar la conexión',
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent('El navegador bloqueó la pestaña de Microsoft');
+    expect(alert).toHaveTextContent(
+      'Permite las ventanas emergentes de Mango en este navegador y vuelve a pulsar «Conectar».',
     );
+    expect(within(dialog).getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
     expect(call).not.toHaveBeenCalledWith('connectMyAccount', expect.anything());
   });
 
@@ -273,6 +277,20 @@ describe('Mis conexiones', () => {
       await screen.findByText('Ningún servicio externo está habilitado para tus grupos.'),
     ).toBeInTheDocument();
   });
+
+  it('shows no list when remote servers are off in the installation (design round 25)', async () => {
+    renderWith(<OpenMine />, apiWith([connection()], {}, false));
+    await userEvent.click(screen.getByRole('button', { name: 'open mine' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Mis conexiones' });
+    expect(
+      await within(dialog).findByText('Los servicios externos están apagados en esta instalación'),
+    ).toBeInTheDocument();
+    expect(dialog).toHaveTextContent(
+      'Cuando un administrador los encienda, aquí vas a poder conectar tu cuenta.',
+    );
+    expect(within(dialog).queryByText('Azure DevOps')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Conectar' })).not.toBeInTheDocument();
+  });
 });
 
 describe('ConnectCard', () => {
@@ -313,8 +331,43 @@ describe('ConnectCard', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Conectar/ }));
     expect(await screen.findByText('Conectado')).toBeInTheDocument();
     expect(
-      screen.getByText('Tu cuenta de Azure DevOps quedó conectada. Vuelve a enviar tu pregunta.'),
+      screen.getByText(
+        'Tu cuenta de Azure DevOps quedó conectada. Envía tu pregunta otra vez para que el agente lea Azure DevOps.',
+      ),
     ).toBeInTheDocument();
+    // Nothing to send again here: only the check.
+    expect(screen.queryByRole('button', { name: 'Enviar de nuevo' })).not.toBeInTheDocument();
+  });
+
+  it('sends the question again once, from «Conectado» (design round 25)', async () => {
+    const resend = vi.fn();
+    renderWith(
+      <ConnectCard registrationId={REG} startedAt={Date.now()} onResend={resend} />,
+      apiWith([connection({ status: 'connected' })]),
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Enviar de nuevo' }));
+    expect(resend).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText('Tu cuenta de Azure DevOps quedó conectada. Enviaste tu pregunta otra vez.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enviar de nuevo' })).not.toBeInTheDocument();
+  });
+
+  it('only says so when remote servers are off in the installation', async () => {
+    renderWith(
+      <ConnectCard registrationId={REG} startedAt={Date.now()} />,
+      apiWith([connection()], {}, false),
+    );
+    const card = await screen.findByRole('region', {
+      name: 'Aviso de Mango: conectar Azure DevOps',
+    });
+    expect(
+      await within(card).findByText('Los servicios externos están apagados'),
+    ).toBeInTheDocument();
+    expect(card).toHaveTextContent(
+      'Esta instalación de Mango tiene apagados los servicios externos, así que el agente no puede leer Azure DevOps. Si lo necesitas, avisa a un administrador de Mango.',
+    );
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('says the design text of a refused connect', async () => {
@@ -488,12 +541,24 @@ describe('the return page (D100)', () => {
     // The page never calls mango-api, and keeps nothing.
     expect(call).not.toHaveBeenCalled();
     expect(window.sessionStorage.length + window.localStorage.length).toBe(0);
+    expect(
+      screen.getByText(
+        'Tu cuenta de Azure DevOps quedó conectada. En la pestaña donde pulsaste «Conectar», envía tu pregunta otra vez. Esta ya no hace falta.',
+      ),
+    ).toBeInTheDocument();
     await waitFor(
       () => {
         expect(close).toHaveBeenCalled();
       },
       { timeout: 3000 },
     );
+    // The browser kept it open: it says so instead of the button, and never opens Mango.
+    expect(
+      await screen.findByText(
+        'El navegador no deja que Mango cierre esta pestaña. Ciérrala tú: tu pestaña de Mango ya está al día.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cerrar esta pestaña' })).not.toBeInTheDocument();
     tab.close();
   });
 
@@ -599,5 +664,43 @@ describe('links of a remote answer (A1)', () => {
     expect(link).not.toHaveAttribute('data-host-kind');
     await userEvent.click(link);
     expect(screen.queryByText('Te lleva a')).not.toBeInTheDocument();
+  });
+
+  it('takes out the links of a turn that asked to connect, but those of the company (round 25)', async () => {
+    render(
+      <ChatMarkdown strip={sources}>
+        {
+          'Autoriza [aquí](https://azdevops-authorize.example.com/oauth/consent), mira [el tablero](https://dev.azure.com/otra/x) o [la wiki](https://dev.azure.com/empresa/w).'
+        }
+      </ChatMarkdown>,
+    );
+    const invented = screen.getByText('aquí');
+    expect(invented.tagName).toBe('SPAN');
+    expect(invented).toHaveClass('rm-nolink');
+    expect(invented).toHaveAttribute(
+      'title',
+      'Enlace quitado por Mango · azdevops-authorize.example.com',
+    );
+    expect(screen.getByText('el tablero')).toHaveAttribute(
+      'title',
+      'Enlace quitado por Mango · dev.azure.com/otra',
+    );
+    expect(screen.queryByRole('button', { name: 'aquí' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'la wiki' })).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Mango desactivó 2 enlaces del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says one link in the singular, and takes every link out while nothing is known', async () => {
+    render(<ChatMarkdown strip={[]}>{'[wiki](https://dev.azure.com/empresa/w)'}</ChatMarkdown>);
+    expect(screen.queryByRole('button', { name: 'wiki' })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Mango desactivó un enlace del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.',
+      ),
+    ).toBeInTheDocument();
   });
 });

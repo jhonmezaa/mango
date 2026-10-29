@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { ChatMarkdown } from '../../components/ChatMarkdown';
 import { ConnectCard } from '../connections/ConnectCard';
+import { useStripSources } from '../connections/useStripSources';
 import {
   Check2Icon,
   ChevronRightIcon,
@@ -47,6 +48,7 @@ export const RunCard = memo(function RunCard({
 }: Props) {
   const { t } = useTranslation();
   const { column, done, state } = entry;
+  const strip = useStripSources(entry.connections);
   const calls = entry.tools.length + entry.writes.length;
   const failed = entry.tools.filter((call) => call.status === 'error').length;
   const flags = done?.flags;
@@ -129,7 +131,9 @@ export const RunCard = memo(function RunCard({
       {state === 'queued' ? (
         <div className="mk-meta pg-wait">{t('playground.queued')}</div>
       ) : (
-        <ChatMarkdown streaming={state === 'running'}>{entry.text || '…'}</ChatMarkdown>
+        <ChatMarkdown streaming={state === 'running'} strip={strip}>
+          {entry.text || '…'}
+        </ChatMarkdown>
       )}
       {/* Design playground.jsx: the same notice of Mango as in the chat, under the answer. */}
       {state === 'done' &&
@@ -138,6 +142,13 @@ export const RunCard = memo(function RunCard({
             <ConnectCard
               registrationId={registration}
               startedAt={entry.connectionAt ?? Date.now()}
+              onResend={
+                canRun
+                  ? () => {
+                      onRetry(input);
+                    }
+                  : undefined
+              }
             />
           </div>
         ))}

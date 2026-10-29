@@ -27,7 +27,7 @@ import {
   type Connection,
   type FinishError,
 } from './model';
-import { consentNavigation } from './navigation';
+import { consentNavigation, PopupBlockedError } from './navigation';
 
 // Only opened on demand: it stays out of the main chunk.
 const MyConnections = lazy(() =>
@@ -64,6 +64,8 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const { refreshSession } = useAuth();
   const [status, setStatus] = useState<ConnectionsValue['status']>('idle');
   const [list, setList] = useState<readonly Connection[]>([]);
+  // `RemoteMcpEnabled` of the installation; assumed on until the list says otherwise.
+  const [enabled, setEnabled] = useState(true);
   const [open, setOpen] = useState(false);
   const [phases, setPhases] = useState<Phases>({});
   const [finishErrors, setFinishErrors] = useState<FinishErrors>({});
@@ -82,6 +84,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     const run = api.call('listMyConnections').then(
       (result) => {
         setList(result.connections);
+        setEnabled(result.enabled);
         setStatus('ready');
       },
       () => {
@@ -238,7 +241,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
       setFinishErrors((current) => without(current, registrationId));
       setPhases((current) => ({ ...current, [registrationId]: 'opening' }));
       try {
-        if (!tab) throw new Error('the consent tab did not open');
+        if (!tab) throw new PopupBlockedError();
         // A token with most of its hour left, kept until the return (D100 (3)).
         if (!(await refreshSession())) throw new Error('the session could not be renewed');
         holdToken(CONSENT_TTL_MS);
@@ -301,6 +304,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ConnectionsValue>(
     () => ({
       status,
+      enabled,
       list,
       ensure,
       reload,
@@ -313,6 +317,7 @@ export function ConnectionsProvider({ children }: { children: ReactNode }) {
     }),
     [
       status,
+      enabled,
       list,
       ensure,
       reload,

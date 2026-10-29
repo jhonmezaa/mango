@@ -18,7 +18,6 @@ import {
 import { formatRelative } from '../../lib/format';
 import {
   DEFAULT_SECRET_DAYS,
-  failInfoOf,
   REASON_MAX_LENGTH,
   SECRET_MAX_LENGTH,
   changeOf,
@@ -889,14 +888,12 @@ export function RemoteDetail({
         </div>
       );
     } else if (current.status === 'failed' && !changeOpen) {
-      // Design round 24: a platform failure is retried with the same approval; a rejected app of
-      // Entra is asked again with new data. Both are offered, the likely one first.
-      const app = failInfoOf(reg).kind === 'app';
+      // Design round 25: «Reintentar» (same approval) always first, «Pedir de nuevo» (new data and
+      // another approval) next.
       const retry = (
         <button
-          key="retry"
           type="button"
-          className={app ? 'btn btn-sm' : 'btn btn-sm btn-primary'}
+          className="btn btn-sm btn-primary"
           disabled={busy}
           onClick={() => {
             void run({ kind: 'retry', registration: reg }, reg.organization, () => undefined);
@@ -913,9 +910,8 @@ export function RemoteDetail({
       );
       const again = (
         <button
-          key="again"
           type="button"
-          className={app ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+          className="btn btn-sm"
           disabled={busy}
           onClick={() => {
             openForm(current, 'reenable');
@@ -928,7 +924,8 @@ export function RemoteDetail({
         <>
           {errorLine}
           <div className="flex flex-wrap items-center gap-2">
-            {app ? [again, retry] : [retry, again]}
+            {retry}
+            {again}
           </div>
           <div className="rm-hint mt-2">{t('remoteMcp.row.retryHint')}</div>
         </>

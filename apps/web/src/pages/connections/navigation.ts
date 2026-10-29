@@ -1,3 +1,11 @@
+/** The browser did not let «Conectar» open the provider's tab (a popup blocker, design round 25). */
+export class PopupBlockedError extends Error {
+  constructor() {
+    super('the consent tab did not open');
+    this.name = 'PopupBlockedError';
+  }
+}
+
 /** A tab opened for the provider's sign-in (D100: the tab that asked stays). */
 export interface ConsentTab {
   go: (url: string) => void;

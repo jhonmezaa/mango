@@ -256,17 +256,17 @@ describe('Servicios externos', () => {
     expect(await within(drawer).findByText(/Mango está creando la conexión/)).toBeInTheDocument();
   });
 
-  it('puts «Pedir de nuevo» first for the app of Entra and says retry errors', async () => {
+  it('always puts «Reintentar» first and says retry errors', async () => {
     const failed = registration({ status: 'failed', failure_code: 'provider_rejected' });
     const call = apiWith(remoteCatalog([failed]), {
       retryRemote: new ApiError(409, 'release_changed', 'raw'),
     });
     const user = renderAt(`/mcp/remote/azure-devops/${REG_ID}`, call);
     const drawer = await panel();
-    expect(drawer).toHaveTextContent(
-      'No se pudo habilitar Azure DevOps: Microsoft rechazó los datos de la app de Entra',
-    );
-    expect(within(drawer).getByRole('button', { name: 'Pedir de nuevo' })).toHaveClass(
+    // Design round 25: no text of the app of Entra; the code falls back to the generic one.
+    expect(drawer).toHaveTextContent('Reinténtalo. Si vuelve a fallar');
+    expect(within(drawer).getByRole('button', { name: 'Reintentar' })).toHaveClass('btn-primary');
+    expect(within(drawer).getByRole('button', { name: 'Pedir de nuevo' })).not.toHaveClass(
       'btn-primary',
     );
     await user.click(within(drawer).getByRole('button', { name: 'Reintentar' }));

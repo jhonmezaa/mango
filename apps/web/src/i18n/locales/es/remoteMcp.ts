@@ -126,14 +126,11 @@ export const remoteMcp = {
     fail: {
       target_timeout: 'No se pudo habilitar {{name}}: el servicio no quedó listo a tiempo',
       target_failed: 'No se pudo habilitar {{name}}: la plataforma no pudo crear el servicio',
-      provider_rejected:
-        'No se pudo habilitar {{name}}: {{idp}} rechazó los datos de la app de Entra',
       unknown: 'No se pudo habilitar {{name}}',
     },
     failBody: {
       platform:
         'Fue un fallo de la plataforma, no de los datos de la app de Entra. Reinténtalo: no pide el secreto ni otra aprobación.',
-      app: 'Revisa el tenant, el id de la app y el secreto en Entra, y pídelo de nuevo.',
       unknown:
         'Reinténtalo. Si vuelve a fallar, revisa los datos de la app de Entra y pídelo de nuevo.',
     },
@@ -284,7 +281,6 @@ export const remoteMcp = {
     creating: 'Creando la conexión · unos segundos',
     failHint: {
       platform: 'Reinténtalo desde el catálogo.',
-      app: 'Revisa la app de Entra y pídelo de nuevo.',
       unknown: 'Reinténtalo desde el catálogo.',
     },
     rotate: 'Rotar secreto',

@@ -217,10 +217,10 @@ describe('remoteInboxItems', () => {
 });
 
 describe('failInfoOf', () => {
-  it('tells a platform failure from one of the app of Entra (design FAIL)', () => {
+  it('knows the platform codes; any other is unknown (design FAIL, round 25)', () => {
     expect(failInfoOf({ failure_code: 'target_timeout' }).kind).toBe('platform');
     expect(failInfoOf({ failure_code: 'target_failed' }).kind).toBe('platform');
-    expect(failInfoOf({ failure_code: 'provider_rejected' }).kind).toBe('app');
+    expect(failInfoOf({ failure_code: 'provider_rejected' }).kind).toBe('unknown');
     expect(failInfoOf({ failure_code: 'policy_failed' })).toEqual({
       kind: 'unknown',
       title: 'unknown',

@@ -529,4 +529,32 @@
   .badge.rm-del {
     text-decoration: line-through;
   }
+  /* Ronda 25: enlaces del agente que Mango quitó en un turno con la tarjeta «Conectar». */
+  .rm-nolink {
+    color: var(--text);
+    text-decoration: line-through;
+    text-decoration-color: var(--red);
+    cursor: not-allowed;
+  }
+  .rm-nolink-note {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .rm-nolink-note svg {
+    color: var(--red);
+    flex: none;
+    margin-top: 3px;
+  }
+  .rm-ret-n {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 360px;
+    text-align: center;
+    text-wrap: pretty;
+  }
 }

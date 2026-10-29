@@ -15,6 +15,11 @@ export type ConsentPhase = 'opening' | 'waiting' | 'finishing';
 
 export interface ConnectionsValue {
   status: ConnectionsStatus;
+  /**
+   * Whether remote MCP servers are on in the installation (`RemoteMcpEnabled`); true until the
+   * list is read. Off, the card and «Mis conexiones» say so (design round 25).
+   */
+  enabled: boolean;
   /** The registrations of the person's groups (`GET /api/me/connections`), empty until read. */
   list: readonly Connection[];
   /** Reads the list once (on demand: the chat only needs it when a turn used a remote). */
@@ -42,6 +47,7 @@ export interface ConnectionsValue {
 
 export const ConnectionsContext = createContext<ConnectionsValue>({
   status: 'idle',
+  enabled: true,
   list: [],
   ensure: () => undefined,
   reload: () => undefined,

@@ -27,6 +27,7 @@ import {
 import { copyText } from '../../lib/clipboard';
 import { useConnections } from '../../pages/connections/ConnectionsContext';
 import { linkSourcesOf } from '../../pages/connections/model';
+import { useStripSources } from '../../pages/connections/useStripSources';
 import { ReadMark } from '../../pages/connections/ReadMark';
 import type { RemoteLinkSource } from '../../security/remoteLinks';
 import { Soon } from '../Soon';
@@ -202,6 +203,10 @@ export const ChatMessage = memo(function ChatMessage({
   );
   const progressLabel = useProgressLabel(message.progress, running);
   const remote = useRemoteSources(message.remoteSources ?? NO_SOURCES);
+  const strip = useStripSources(
+    message.connectionRequired ?? NO_SOURCES,
+    message.remoteSources ?? NO_SOURCES,
+  );
 
   if (message.role === 'user') {
     const time = formatMessageTime(message.createdAt);
@@ -264,7 +269,7 @@ export const ChatMessage = memo(function ChatMessage({
         {message.content ? (
           // Until the markdown chunk loads, the text is shown as plain text (escaped by React).
           <Suspense fallback={<p className="md whitespace-pre-wrap">{message.content}</p>}>
-            <ChatMarkdown streaming={writing} remote={remote}>
+            <ChatMarkdown streaming={writing} remote={remote} strip={strip}>
               {message.content}
             </ChatMarkdown>
           </Suspense>
