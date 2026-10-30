@@ -242,6 +242,8 @@ class FakeBudgets:
     held: list[tuple[Decimal, Decimal]] = field(default_factory=list)
     """(charged, retained) of the turns left to the reconciler."""
     charged: list[Decimal] = field(default_factory=list)
+    charged_counters: list[tuple[str, ...]] = field(default_factory=list)
+    invoked: list[bool] = field(default_factory=list)
     turns: list[PendingTurn] = field(default_factory=list)
     sessions: dict[str, str] = field(default_factory=dict)
     scopes: list[Any] = field(default_factory=list)
@@ -259,12 +261,13 @@ class FakeBudgets:
     def bind_session(self, turn: PendingTurn, session_id: str) -> None:
         self.sessions[turn.turn_id] = session_id
 
-    def settle_turn(self, turn: PendingTurn, actual: Decimal) -> bool:
+    def settle_turn(self, turn: PendingTurn, actual: Decimal, *, invoked: bool = True) -> bool:
         if self.fail_settle:
             raise RuntimeError("dynamodb down")
         if self.closed_elsewhere:
             return False
         self.settled.append((turn.reserved, actual))
+        self.invoked.append(invoked)
         return True
 
     def hold_turn(self, turn: PendingTurn, usage: TokenUsage) -> PendingTurn | None:
@@ -277,8 +280,16 @@ class FakeBudgets:
         self.held.append((known, retained))
         return replace(turn, state="held", charged=known, retained=retained, usage=usage)
 
-    def charge(self, _scopes: Any, amount: Decimal, _period: str) -> None:
+    def charge(
+        self,
+        _scopes: Any,
+        amount: Decimal,
+        _period: str,
+        counters: tuple[str, ...] = (),
+        _day: str | None = None,
+    ) -> None:
         self.charged.append(amount)
+        self.charged_counters.append(counters)
 
 
 @dataclass

@@ -119,6 +119,7 @@ from mango_api.group_admin import (
     group_admin_router,
 )
 from mango_api.groups import GroupRegistry, groups_router
+from mango_api.home import HomeData, HomeDeps, home_router
 from mango_api.inbox import InboxDeps, RunInbox, inbox_router
 from mango_api.inbox_store import InboxStore
 from mango_api.knowledge import (
@@ -418,6 +419,8 @@ class Services:
     """Built by ``create_app``: its turn needs these services."""
     task_queue: Any = None
     """SQS client the worker reads the runs with; ``None`` keeps the worker off (tests)."""
+    home: HomeData | None = None
+    """The day counters of Inicio and the person's own budget (D102); set in production."""
     # La Bandeja (D83): notices of each person, in their conversations partition.
     inbox: InboxDeps | None = None
     # La Actividad (D90): what the agents did, metadata only.
@@ -618,6 +621,11 @@ def _connections_deps(
     )
 
 
+def _sibling_table_arn(table_arn: str, name: str) -> str:
+    """The ARN of another table of the same account and region."""
+    return f"{table_arn.rsplit('/', 1)[0]}/{name}"
+
+
 def build_services(settings: Settings) -> Services:
     region = settings.region
     dynamodb = boto3.client("dynamodb", region_name=region)
@@ -629,6 +637,9 @@ def build_services(settings: Settings) -> Services:
         table_arn=settings.conversations_table_arn,
         key_arn=settings.data_key_arn,
         region=region,
+        budgets_table_arn=_sibling_table_arn(
+            settings.conversations_table_arn, settings.budgets_table
+        ),
     )
     settings_store = SettingsStore(
         dynamodb,
@@ -771,6 +782,7 @@ def build_services(settings: Settings) -> Services:
         verifier=verifier,
         authorizer=authorizer,
         budgets=BudgetService(dynamodb, settings.budgets_table),
+        home=HomeData(table=settings.budgets_table, dynamodb=dynamodb, own=rls.for_user),
         conversations=ConversationRepository(rls.for_user, settings.conversations_table),
         audit=audit,
         agentcore=harness.TurnClients(region),
@@ -1359,6 +1371,24 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
     )
 
+    if services.home is not None:
+        app.include_router(
+            home_router(
+                HomeDeps(
+                    data=services.home,
+                    user_limit=lambda user_id: services.budget_limits.for_user(user_id)[0],
+                    admin=admin_deps,
+                    approvals=services.approvals,
+                    clock=now_utc,
+                    limiter=services.limits.limiter("home.reads"),
+                    sources=governance_sources,
+                ),
+                current_user,
+                require,
+                platform_allows,
+            )
+        )
+
     if services.web_sessions is not None:
         app.include_router(web_session_router(services.web_sessions))
         if services.people is not None:
@@ -1716,6 +1746,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             price=turn_price(price),
             started_at=int(time.time()),
             timeout_seconds=limits.timeout_seconds,
+            area=user.business_unit,
         )
         try:
             await asyncio.to_thread(services.budgets.reserve, scopes, estimate, period, pending)
@@ -1895,6 +1926,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     first_message=body.message,
                     scopes=scopes,
                     period=period,
+                    counters=pending.day_counters,
+                    day=pending.day,
                 )
 
         return StreamingResponse(
@@ -2135,7 +2168,7 @@ def _complete_session(
 def _release_turn(services: Services, turn: PendingTurn) -> None:
     """Release the reservation of a turn that never reached the agent; never raises."""
     try:
-        services.budgets.settle_turn(turn, Decimal(0))
+        services.budgets.settle_turn(turn, Decimal(0), invoked=False)
     except Exception:
         logger.exception("the reservation of a turn that did not start was not released")
 
@@ -2283,6 +2316,8 @@ def _generate_title(
     first_message: str,
     scopes: list[BudgetScope],
     period: str,
+    counters: tuple[str, ...] = (),
+    day: str | None = None,
 ) -> None:
     """Short title with the auxiliary model; failures keep the truncated first message."""
     settings = services.settings
@@ -2302,7 +2337,7 @@ def _generate_title(
         title = resp["output"]["message"]["content"][0]["text"].strip().strip('"')[:80]
         usage = Usage.from_bedrock(resp.get("usage", {}))
         spend = cost(usage, _auxiliary_price(services))
-        services.budgets.charge(scopes, spend, period)
+        services.budgets.charge(scopes, spend, period, counters, day)
         if title:
             services.conversations.set_title(user_id, conversation_id, title)
     except Exception:
@@ -2394,6 +2429,7 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         price=turn_price(price),
         started_at=int(time.time()),
         timeout_seconds=limits.timeout_seconds,
+        area=user.business_unit,
     )
     try:
         services.budgets.reserve(scopes, estimate, period, pending)

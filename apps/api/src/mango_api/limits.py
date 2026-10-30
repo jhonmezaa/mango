@@ -25,6 +25,7 @@ from mango_api import (
     directory,
     governance,
     group_admin,
+    home,
     knowledge,
     mcp,
     mfa_reset,
@@ -265,6 +266,17 @@ LIMITS: dict[str, LimitSpec] = {
             "administrators and central FinOps read and which bounds its own reads; a cache of "
             "30 seconds per person already absorbs reloads. It holds no exception: N times "
             "thirty a minute per person is still far below what a task serves."
+        ),
+    ),
+    "home.reads": LimitSpec(
+        home.READS_PER_MINUTE,
+        MINUTE,
+        shared=False,
+        why=(
+            "Stops one person's loop over Inicio (D102), which anyone signed in may read; each "
+            "read is a few bounded queries of the day counters and a cache of 30 seconds per "
+            "person, scope and period absorbs reloads. It holds no exception: N times thirty a "
+            "minute per person is still far below what a task serves."
         ),
     ),
     "session.starts": LimitSpec(

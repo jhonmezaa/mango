@@ -440,6 +440,7 @@ def run_test(
         price=turn_price(test.price),
         started_at=int(time.time()),
         timeout_seconds=limits.timeout_seconds,
+        area=user.business_unit,
     )
     try:
         deps.budgets.reserve(scopes, estimate, period, pending)

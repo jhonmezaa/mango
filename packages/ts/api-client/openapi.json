@@ -3622,6 +3622,143 @@
         "title": "HealthOut",
         "type": "object"
       },
+      "HomeBudgetOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "limit_usd": {
+            "title": "Limit Usd",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "scope": {
+            "enum": [
+              "agent",
+              "user"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "id",
+          "name",
+          "spent_usd",
+          "limit_usd"
+        ],
+        "title": "HomeBudgetOut",
+        "type": "object"
+      },
+      "HomeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "title": "Approvals",
+            "type": "integer"
+          },
+          "area": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area"
+          },
+          "budgets": {
+            "items": {
+              "$ref": "#/components/schemas/HomeBudgetOut"
+            },
+            "title": "Budgets",
+            "type": "array"
+          },
+          "budgets_scope": {
+            "enum": [
+              "agents",
+              "mine"
+            ],
+            "title": "Budgets Scope",
+            "type": "string"
+          },
+          "counted_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted Since"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/UsageDayOut"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "period": {
+            "enum": [
+              "7d",
+              "30d",
+              "90d",
+              "180d"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "previous": {
+            "items": {
+              "$ref": "#/components/schemas/UsageDayOut"
+            },
+            "title": "Previous",
+            "type": "array"
+          },
+          "scope": {
+            "enum": [
+              "org",
+              "area",
+              "mine"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "area",
+          "period",
+          "counted_since",
+          "days",
+          "previous",
+          "approvals",
+          "budgets_scope",
+          "budgets"
+        ],
+        "title": "HomeOut",
+        "type": "object"
+      },
       "InboxItem": {
         "additionalProperties": false,
         "properties": {
@@ -10693,6 +10830,30 @@
         "title": "UploadsOut",
         "type": "object"
       },
+      "UsageDayOut": {
+        "additionalProperties": false,
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "spent_usd",
+          "turns"
+        ],
+        "title": "UsageDayOut",
+        "type": "object"
+      },
       "UserBudgetIn": {
         "additionalProperties": false,
         "properties": {
@@ -15391,6 +15552,52 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/home": {
+      "get": {
+        "operationId": "get_home",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "30d",
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "180d"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Home"
       }
     },
     "/inbox": {

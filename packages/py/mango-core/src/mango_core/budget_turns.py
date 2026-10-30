@@ -31,6 +31,8 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Final
 
+from mango_core import usage_days
+
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
 
@@ -178,6 +180,9 @@ class PendingTurn:
     usage: TokenUsage = TokenUsage()
     """Tokens behind ``charged``."""
     outcome: Outcome | None = None
+    area: str | None = None
+    """The person's area when the turn started (the verified ``mango_business_unit``): its
+    day counter for Inicio (D102). ``None`` without exactly one area."""
 
     @staticmethod
     def new(
@@ -194,6 +199,7 @@ class PendingTurn:
         price: TurnPrice,
         started_at: int,
         timeout_seconds: int,
+        area: str | None = None,
     ) -> PendingTurn:
         limit = started_at + timeout_seconds
         return PendingTurn(
@@ -211,6 +217,7 @@ class PendingTurn:
             charge_at=limit + NO_TRACE_SECONDS,
             price=price,
             retained=reserved,
+            area=area if usage_days.is_area(area) else None,
         )
 
     @property
@@ -242,7 +249,18 @@ class PendingTurn:
         }
         if self.session_id:
             item["session_id"] = {"S": self.session_id}
+        if self.area:
+            item["area"] = {"S": self.area}
         return item
+
+    @property
+    def day_counters(self) -> tuple[str, ...]:
+        """The day counters of Inicio this turn adds to (D102)."""
+        return usage_days.keys(self.user_id, self.area)
+
+    @property
+    def day(self) -> str:
+        return usage_days.day_of(self.started_at)
 
     @staticmethod
     def from_item(item: Mapping[str, Any]) -> PendingTurn:
@@ -273,6 +291,8 @@ class PendingTurn:
                 retained=Decimal(item["retained"]["N"]),
                 usage=_usage_of(item, prefix=""),
                 outcome=_outcome_of(item),
+                # Absent in a record written before the day counters (D102).
+                area=item.get("area", {}).get("S"),
             )
         except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
             raise InvalidTurnError("malformed pending turn") from exc
@@ -285,6 +305,7 @@ class PendingTurn:
             or not turn.scopes
             or not all(_SCOPE.fullmatch(scope) for scope in turn.scopes)
             or (turn.session_id and not _SESSION_ID.fullmatch(turn.session_id))
+            or (turn.area is not None and not usage_days.is_area(turn.area))
             or not all(amount.is_finite() and amount >= 0 for amount in amounts)
         ):
             raise InvalidTurnError("malformed pending turn")
@@ -366,6 +387,13 @@ def _budget_updates(
     ]
 
 
+def _day_updates(
+    table: str, turn: PendingTurn, *, spent: Decimal, turns: int
+) -> list[dict[str, Any]]:
+    """The day counters of Inicio, in the same transaction as the budget (D102)."""
+    return usage_days.updates(table, turn.day_counters, turn.day, spent=spent, turns=turns)
+
+
 def _transact(
     dynamodb: DynamoDBClient, items: list[dict[str, Any]], sleep: Callable[[float], None]
 ) -> bool:
@@ -418,9 +446,12 @@ def settle(
     turn: PendingTurn,
     actual: Decimal,
     sleep: Callable[[float], None] = time.sleep,
+    *,
+    invoked: bool = True,
 ) -> bool:
     """The end of the turn is known: charge ``actual`` (it may exceed the reservation),
-    release the reservation and delete the record. False if the turn was already closed."""
+    release the reservation and delete the record. False if the turn was already closed.
+    ``invoked`` is False for a turn that never reached the agent: it is not counted as one."""
     items = [
         {
             "Delete": {
@@ -439,6 +470,7 @@ def settle(
             spent=actual,
             held=_ZERO,
         ),
+        *_day_updates(table, turn, spent=actual, turns=1 if invoked else 0),
     ]
     return _transact(dynamodb, items, sleep)
 
@@ -488,6 +520,8 @@ def hold(
             spent=known,
             held=retained,
         ),
+        # The turn reached the agent: it is counted now, and its cost as it becomes known.
+        *_day_updates(table, turn, spent=known, turns=1),
     ]
     if not _transact(dynamodb, items, sleep):
         return None
@@ -617,6 +651,13 @@ def close(
             spent=delta,
             # Only a held turn was counted in ``held``; an open one is a plain reservation.
             held=-turn.retained if turn.state == STATE_HELD else _ZERO,
+        ),
+        # A held turn was counted when mango-api held it; an open one, now, if it ran.
+        *_day_updates(
+            table,
+            turn,
+            spent=delta,
+            turns=(1 if turn.state == STATE_OPEN and outcome.basis != BASIS_NOT_INVOKED else 0),
         ),
     ]
     if turn.state == STATE_SETTLED or not _transact(dynamodb, items, sleep):

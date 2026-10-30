@@ -40,6 +40,7 @@ READ_ACTIONS = frozenset(
         "ViewInbox",
         "ViewGovernance",
         "ViewActivity",
+        "ViewHome",
     }
 )
 # Events that record a read and nothing else: reading the directory of the people screen, a

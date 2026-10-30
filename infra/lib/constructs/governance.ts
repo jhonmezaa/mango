@@ -18,6 +18,12 @@ import { Installation } from "../config/schema.js";
 import { acknowledge, arnWildcardFinding, KMS_GRANT_ACTIONS, REASONS } from "../nag.js";
 import { mangoName } from "../names.js";
 
+/**
+ * Partition keys of the Budgets table the row-level security role may read (D102): a person's
+ * budget and day counters. Keep in sync with `mango_api.conversations.RlsClientFactory`.
+ */
+export const DATA_ACCESS_BUDGET_KEYS = ["USER#*", "DAY#USER#*"] as const;
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const PLATFORM_POLICIES = resolve(REPO_ROOT, "policies/cedar/platform");
 /** Partition of the Settings table that holds the registry of access groups (D26). */
@@ -192,6 +198,18 @@ export class Governance extends Construct {
       maxSessionDuration: Duration.hours(1),
     });
     this.conversations.grantReadWriteData(this.dataAccessRole);
+    // Inicio (D102): a person's own budget and day counters, read only. mango-api's session
+    // policy narrows each session to that one person's two keys.
+    this.dataAccessRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "OwnBudgetRead",
+        actions: ["dynamodb:GetItem", "dynamodb:Query"],
+        resources: [this.budgets.tableArn],
+        conditions: {
+          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [...DATA_ACCESS_BUDGET_KEYS] },
+        },
+      }),
+    );
     acknowledge(this.dataAccessRole, ...KMS_GRANT_ACTIONS);
 
     // --- L1 authorization: Verified Permissions --------------------------------------
