@@ -12,8 +12,8 @@ const PROFILES = [{
     { id: 'work-items', label: 'Work items', tools: ['wit_work_item', 'wit_query'] },
     { id: 'wiki', label: 'Wiki', tools: ['wiki', 'search_wiki'] },
     { id: 'pipelines', label: 'Pipelines', tools: ['pipelines_build'] },
-    { id: 'code-search', label: 'Búsqueda de código', tools: ['search_code'], req: 'Necesita la extensión Code Search de Microsoft instalada en la organización. Sin ella, la búsqueda no encuentra nada y el agente responde que no hubo resultados.' },
-    { id: 'repositories', label: 'Repositorios', tools: ['repo_list_repos', 'repo_list_branches', 'repo_get_file', 'repo_list_commits', 'repo_list_pull_requests', 'repo_list_pr_threads'], source: true },
+    { id: 'code-search', label: 'Búsqueda de código', tools: ['search_code'], requirement: 'Necesita la extensión Code Search de Microsoft instalada en la organización. Sin ella, la búsqueda no encuentra nada y el agente responde que no hubo resultados.' },
+    { id: 'repos', label: 'Repositorios', tools: ['repo_list_repos', 'repo_list_branches', 'repo_get_file', 'repo_list_commits', 'repo_list_pull_requests', 'repo_list_pr_threads'], sensitivity: 'source_code', note: 'El agente lee archivos, commits y pull requests de los repositorios a los que llega la cuenta de cada persona.' },
   ],
   // Pares de recurso y permiso, como los trae el perfil. El tipo (delegado, lectura) viene dentro del permiso.
   scopes: [{ res: 'Azure DevOps MCP', perms: ['.default (delegado, lectura)'] }, { res: 'Microsoft Entra', perms: ['offline_access'] }],
@@ -36,7 +36,7 @@ function seedRegs(kind = 'active', secret = 'd30') {
   if (kind === 'scope-other' || kind === 'scope-mine') return [...hist, act, { id: 'RMT-a4e19c0b', kind: 'scope', changes: act.id, profile: act.profile, org: act.org, toolsets: [...act.toolsets, 'pipelines'], groups: ['finops-central', 'mango-agent-creator', 'bu-plataforma'], status: 'pending', by: kind === 'scope-mine' ? 'Usuario 1' : 'Usuario 6', at: iso(-2 * 36e5) }];
   return [...hist, { ...base, status: 'active', by: 'Usuario 6', at: iso(-20 * DAY), approvedBy: 'Usuario 1', approvedAt: iso(-19 * DAY) }];
 }
-if (!S.get().remoteRegs || S.get().remoteRegs.some(r => (r.toolsets || []).includes('repos') || /api\.mango/.test(r.redirect || ''))) S.set({ remoteRegs: seedRegs(), remoteConn: { 'azure-devops': { status: 'none' } } });
+if (!S.get().remoteRegs || S.get().remoteRegs.some(r => (r.toolsets || []).includes('repositories') || /api\.mango/.test(r.redirect || ''))) S.set({ remoteRegs: seedRegs(), remoteConn: { 'azure-devops': { status: 'none' } } });
 
 const get = () => S.get();
 const profile = (id) => PROFILES.find(p => p.id === id);
@@ -99,6 +99,8 @@ const setConn = (pid, v) => S.set({ remoteConn: { ...get().remoteConn, [pid]: v 
 const RM = {
   PROFILES, CONNECT_ERR, FINISH_ERR, failInfo, OFF_MSG, enabled: profileSaysOn, profile, regs, myGroups, inMyGroups, conn, secretInfo, fmtDay, toolsOf, seedRegs, SECRET_DAYS,
   classifyLink, HIST,
+  // Campos del perfil por toolset (sensitivity, note, requirement). Mango pone la insignia, el tono y el título según sensitivity; note y requirement se muestran tal cual.
+  tsMeta: (t) => get().simRemoteNoTsFields ? {} : { sens: t.sensitivity === 'source_code' ? 'Código fuente' : null, note: t.note || null, req: t.requirement || null },
   target: (r) => r.kind === 'scope' ? regs().find(x => x.id === r.changes) : null,
   regsOf: (pid) => regs().filter(r => r.profile === pid && !HIST.includes(r.status)),
   histOf: (pid) => regs().filter(r => r.profile === pid && HIST.includes(r.status)).sort((a, b) => new Date(b.decidedAt || b.at) - new Date(a.decidedAt || a.at)),
@@ -349,10 +351,10 @@ const RM_ASK_LINK = RM_ASK + ' Autoriza el acceso aquí: [Autorizar Azure DevOps
 // En un turno con la tarjeta «Conectar», los enlaces del agente que no son de una organización registrada no se pueden abrir:
 // el agente nunca recibe la URL real para conectar, así que un enlace para «autorizar» siempre es inventado o viene del contenido.
 // Mientras no se leyó Mis conexiones no se sabe qué organizaciones son de la persona: ningún enlace se abre, pero no se marca nada.
-function StripLinks({ pid, md, loading }) {
+function StripLinks({ pid, md, loading, failed }) {
   const ref = useRef(null); const [n, setN] = useState(0);
-  useEffect(() => { if (!ref.current) return; let c = 0; ref.current.querySelectorAll('a').forEach(a => { const u = a.getAttribute('data-ext-url') || a.getAttribute('href'); if (loading) { const s = document.createElement('span'); s.className = 'rm-linkwait'; s.textContent = a.textContent; a.replaceWith(s); return; } if (classifyLink(pid, u).kind === 'own') return; const s = document.createElement('span'); s.className = 'rm-nolink'; s.textContent = a.textContent; s.title = 'Enlace quitado por Mango · ' + (classifyLink(pid, u).label || u); a.replaceWith(s); c++; }); setN(c); }, [md, loading]);
-  return <div style={{ marginBottom: 12 }}><div ref={ref} className="md" style={{ fontSize: 15.5, lineHeight: 1.7 }} key={loading ? 'w' : 'k'} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(md) }} />{n > 0 && !loading && <div className="rm-nolink-note"><window.Icons.Shield size={12} /><span>Mango desactivó {n === 1 ? 'un enlace' : n + ' enlaces'} del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.</span></div>}</div>;
+  useEffect(() => { if (!ref.current) return; let c = 0; ref.current.querySelectorAll('a').forEach(a => { const u = a.getAttribute('data-ext-url') || a.getAttribute('href'); if (loading || failed) { const s = document.createElement('span'); s.className = 'rm-linkwait'; s.textContent = a.textContent; a.replaceWith(s); return; } if (classifyLink(pid, u).kind === 'own') return; const s = document.createElement('span'); s.className = 'rm-nolink'; s.textContent = a.textContent; s.title = 'Enlace quitado por Mango · ' + (classifyLink(pid, u).label || u); a.replaceWith(s); c++; }); setN(c); }, [md, loading, failed]);
+  return <div style={{ marginBottom: 12 }}><div ref={ref} className="md" style={{ fontSize: 15.5, lineHeight: 1.7 }} key={loading || failed ? 'w' : 'k'} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(md) }} />{failed && <div className="rm-nolink-note"><window.Icons.Shield size={12} /><span>Mango no pudo comprobar los enlaces del agente, así que no se pueden abrir. <button className="sr-link" onClick={() => S.set({ simRemoteTurn: null })}>Volver a comprobar</button></span></div>}{n > 0 && !loading && !failed && <div className="rm-nolink-note"><window.Icons.Shield size={12} /><span>Mango desactivó {n === 1 ? 'un enlace' : n + ' enlaces'} del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.</span></div>}</div>;
 }
 function RemoteChatDemo() {
   const sim = window.useMango(s => s.simRemoteChat) || null;
@@ -364,7 +366,7 @@ function RemoteChatDemo() {
   if (!sim || get().avail) return null;
   const user = <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 22 }}><div style={{ maxWidth: '78%', padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, fontSize: 14.5, lineHeight: 1.55 }}>{RM_Q}</div></div>;
   if (sim === 'read') return <>{user}<div data-remote={pid} ref={ref} style={{ marginBottom: 24 }}><ReadMark pid={pid} /><div className="md rm-md" style={{ fontSize: 15.5, lineHeight: 1.7, color: 'var(--text)' }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(RM_READ) }} /></div></>;
-  return <>{user}<StripLinks pid={pid} loading={turn === 'loading'} md={sim === 'consent-link' ? RM_ASK_LINK : RM_ASK} /><ConnectCard key={sim} pid={pid} expired={sim === 'expired'} resent={resent} busy={turn === 'busy'} onResend={() => setResent(true)} />{resent && turn !== 'later' && <RemoteChatContinue pid={pid} user={user} />}</>;
+  return <>{user}<StripLinks pid={pid} loading={turn === 'loading'} failed={turn === 'connfail'} md={sim === 'consent-link' ? RM_ASK_LINK : RM_ASK} /><ConnectCard key={sim} pid={pid} expired={sim === 'expired'} resent={resent} busy={turn === 'busy'} onResend={() => setResent(true)} />{resent && turn !== 'later' && <RemoteChatContinue pid={pid} user={user} />}</>;
 }
 // El turno terminó al faltar la conexión: «Enviar de nuevo» manda la misma pregunta como un turno nuevo.
 function RemoteChatContinue({ pid, user }) {

@@ -1051,3 +1051,33 @@ Respuesta al contexto de la ronda 26. Archivos: `remote-core.jsx`, `remote-views
 ### Sigue abierto
 - Qué devuelve cancelar en Microsoft (prueba en vivo); si el perfil agregará descripción, requisitos y descripción de permisos (si los trae, reemplazan los textos de Mango de «Repositorios» y «Búsqueda de código»).
 - Lo de rondas anteriores (§5 del contexto), sin cambios.
+
+
+## Ronda 27 · MCP remotos y recarga (2026-10-29)
+Respuesta al contexto de la ronda 27. Archivos: `remote-core.jsx`, `remote-views.jsx`, `login.jsx`, `app.jsx`, `styles.css`, `remote.css`. Se aceptan las diferencias del §2 («Enviar de nuevo» desactivado casi no se ve en el chat; en el Playground no se desactiva). El id del toolset pasa a `repos`.
+
+### Campos del perfil por toolset
+Cuando el perfil firmado los traiga (`sensitivity`, `note`, `requirement`):
+- **Lo pone Mango, según `sensitivity`** (hoy solo `source_code`): la insignia «Código fuente», el tono ámbar, el chip «{toolset} · código fuente» en el detalle y el título del aviso al marcarlo: «{toolset} da al agente el código fuente». Un valor que Mango no conoce no muestra nada.
+- **Viene del perfil, tal cual:** `note` (debajo del grupo en la ficha y como cuerpo del aviso ámbar) y `requirement` (en la ficha, tras «**Requisito:**»). Mango no los reescribe ni los traduce.
+- Si el perfil no trae ninguno de los tres, no se muestra nada (como hoy en la web). Si trae `sensitivity` sin `note`, el aviso lleva solo el título.
+- Textos de ejemplo del perfil: Repositorios · «El agente lee archivos, commits y pull requests de los repositorios a los que llega la cuenta de cada persona.»; Búsqueda de código · «Necesita la extensión Code Search de Microsoft instalada en la organización. Sin ella, la búsqueda no encuentra nada y el agente responde que no hubo resultados.».
+
+### Enlaces cuando «Mis conexiones» falla
+Siguen como texto sin marcar y sin poder abrirse, y debajo del texto del agente: «Mango no pudo comprobar los enlaces del agente, así que no se pueden abrir. **Volver a comprobar**» (vuelve a leer Mis conexiones). No se tachan, porque Mango no sabe si son de tu organización.
+
+### Recargar la página
+Sin «Recuperando tu sesión…» en ningún caso (se quita del inicio de sesión; «Completando el ingreso…» sigue solo para la vuelta del SSO).
+- **La pestaña tenía sesión** (aviso local): al instante, el armazón de la app con esqueletos. Barra lateral (logo real de Mango, nombre, cinco filas, tres filas más, la persona abajo) y área principal (barra superior, título y dos líneas, campo de escribir). Mismo ancho de barra lateral, mismos colores y tema que la app; en móvil, solo el área principal. Al renovar los tokens se reemplaza por la app en la misma vista.
+- **No tenía sesión:** portada neutra, el fondo de la app y el logo de Mango centrado (44 px), sin formulario ni texto. Luego, el inicio de sesión.
+- **Tenía sesión y ya no se pudo renovar:** del armazón pasa al inicio de sesión, con el aviso «Tu sesión terminó. Vuelve a entrar para seguir.».
+- **Espera larga (en frío):** a los 1,2 s aparece, arriba del todo, una barra de 2 px en el color de acento que corre de izquierda a derecha (indeterminada). Nada más: ni texto ni spinner. Con movimiento reducido, la barra queda fija y los esqueletos sin brillo.
+- **Lector de pantalla:** `role="progressbar"`, `aria-busy` y el nombre accesible «Cargando Mango» (no se ve).
+- Si la carga falla, va al error a pantalla completa (sigue abierto en §5, sin dibujar).
+
+**Panel de demo:** «Recargar la página» (Con sesión · 0,4 s, Con sesión · en frío, Tenía sesión · ya no, Sin sesión, Sin sesión · en frío); «Servicios externos · el perfil trae datos de toolsets» (Sí / Todavía no); en «Chat · servicio externo · conversación», «Mis conexiones falló». Se quitó «Recuperando la sesión» de «Login · al abrir la app».
+
+### Sigue abierto
+- Qué devuelve cancelar en Microsoft (prueba en vivo); si el perfil agregará descripción del servicio y de permisos.
+- El error a pantalla completa al cargar (y si ofrece «Ingresar» o «Cerrar sesión»).
+- Lo de rondas anteriores (§5 del contexto), sin cambios.

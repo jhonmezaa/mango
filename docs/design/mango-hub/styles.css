@@ -1931,3 +1931,22 @@ input[type="range"],input[type="checkbox"],input[type="radio"]{accent-color:var(
 .sb-fly-i.active .sb-fly-n{color:var(--accent-ink);background:var(--accent-soft)}
 .sb-tip{position:fixed;left:64px;transform:translateY(-50%);z-index:80;padding:5px 9px;border-radius:6px;background:var(--text-strong,var(--text));color:var(--bg);font-size:12.5px;font-weight:500;white-space:nowrap;pointer-events:none;box-shadow:var(--shadow)}
 .sb-tip::before{content:"";position:absolute;left:-4px;top:50%;width:8px;height:8px;background:inherit;transform:translateY(-50%) rotate(45deg);border-radius:1px}
+
+/* Recargar la página */
+.boot-app{position:fixed;inset:0;display:grid;grid-template-columns:248px minmax(0,1fr);background:var(--bg)}
+.boot-sb{background:var(--sidebar-bg);border-right:1px solid var(--border);padding:17px 12px;display:flex;flex-direction:column;gap:14px}
+.boot-ws{display:flex;align-items:center;gap:10px;height:30px;margin-bottom:12px}
+.boot-row{display:flex;align-items:center;gap:10px;padding:0 6px;height:18px}
+.boot-gap{height:10px}
+.boot-me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:0 6px}
+.boot-main{display:flex;flex-direction:column;min-width:0}
+.boot-top{height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px}
+.boot-body{flex:1;display:flex;flex-direction:column;gap:14px;padding:48px max(24px,calc((100% - 760px)/2))}
+.boot-compose{height:96px;margin:0 max(24px,calc((100% - 760px)/2)) 28px;border-radius:14px}
+.boot-cover{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg)}
+.boot-logo{width:44px;height:44px;font-size:22px;border-radius:12px}
+.boot-bar{position:fixed;top:0;left:0;right:0;height:2px;overflow:hidden;z-index:5;animation:fadeIn .3s ease}
+.boot-bar i{position:absolute;top:0;bottom:0;width:30%;background:var(--accent);animation:boot-slide 1.3s ease-in-out infinite}
+@keyframes boot-slide{from{left:-30%}to{left:100%}}
+@media (max-width:900px){.boot-app{grid-template-columns:1fr}.boot-sb{display:none}}
+@media (prefers-reduced-motion:reduce){.boot-bar i{animation:none;left:0;width:100%;opacity:.6}.boot-app .skeleton{animation:none}}

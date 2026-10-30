@@ -23,9 +23,9 @@ function Login({ onLogin }) {
   const [fresh, setFresh] = useState(false);
   // step: login | newpwd | enroll | mfa | signup | verify | forgot | reset | pending
   const boot = window.MangoStore.get().simSessionBoot;
-  const [step, setStep] = useState(boot === 'restoring' || boot === 'ssoReturn' ? 'restoring' : 'login');
+  const [step, setStep] = useState(boot === 'ssoReturn' ? 'restoring' : 'login');
   const [email, setEmail] = useState('');
-  const [notice, setNotice] = useState(boot === 'otherTab' ? 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.' : null);
+  const [notice, setNotice] = useState(boot === 'otherTab' ? 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.' : boot === 'ended' ? 'Tu sesión terminó. Vuelve a entrar para seguir.' : null);
   useEffect(() => { if (step !== 'restoring') return; const t = setTimeout(() => setStep('login'), 1600); return () => clearTimeout(t); }, [step]);
   const go = (s, n = null) => { setStep(s); setNotice(n); };
   const afterAuth = () => { if (accountState === 'nogroup' || fresh) go('pending'); else if (accountState === 'noarea' || accountState === 'twoareas') go('area'); else onLogin(); };
@@ -41,7 +41,7 @@ function Login({ onLogin }) {
     <div className="login">
       <div className="login-form-col">
         <div className="login-brand"><span className="sb-ws-logo" aria-hidden="true">m</span><span>Mango</span></div>
-        {step === 'restoring' && <div className="login-form login-restoring" role="status"><span className="mango-spinner" aria-hidden="true" /><span>{boot === 'ssoReturn' ? 'Completando el ingreso…' : 'Recuperando tu sesión…'}</span></div>}
+        {step === 'restoring' && <div className="login-form login-restoring" role="status"><span className="mango-spinner" aria-hidden="true" /><span>Completando el ingreso…</span></div>}
         {step === 'login' && <SignIn email={email} setEmail={setEmail} notice={notice} idp={cfg.idp} onForgot={() => go('forgot')} onOk={() => { window.MangoStore.set({ loggedVia: 'password' }); accountState === 'temp' ? go('newpwd') : afterPwd(); }} onSso={() => { window.MangoStore.set({ loggedVia: 'sso' }); afterAuth(); }} />}
         {step === 'newpwd' && <NewPassword email={email || 'usuario1@empresa.com'} onBack={() => go('login')} onOk={() => { window.MangoStore?.log('account.password_set', email || 'usuario1@empresa.com', 'Creó su contraseña en el primer ingreso · la temporal dejó de valer'); afterPwd(); }} />}
         {step === 'enroll' && <MfaEnroll email={email || 'usuario1@empresa.com'} onBack={() => go('login')} onOk={() => { setEnrolled(true); if (wasReset) { const r = { ...(window.MangoStore.get().mfaResets || {}) }; delete r[(email || 'usuario1@empresa.com').trim().toLowerCase()]; window.MangoStore.set({ mfaResets: r }); } window.MangoStore?.log('account.mfa_enroll', email || 'usuario1@empresa.com', 'Configuró MFA con app autenticadora en el primer ingreso'); afterAuth(); }} />}
@@ -400,4 +400,25 @@ function SlideAudit() {
   );
 }
 
+// Recargar la página: armazón con esqueletos si la pestaña tenía sesión; si no, portada neutra. Sin texto.
+// Espera larga (en frío): a los 1,2 s aparece una barra fina indeterminada arriba, nada más.
+function BootScreen({ had }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), 1200); return () => clearTimeout(t); }, []);
+  const bar = slow && <div className="boot-bar" aria-hidden="true"><i></i></div>;
+  if (!had) return <div className="boot-cover" role="progressbar" aria-label="Cargando Mango" aria-busy="true">{bar}<span className="sb-ws-logo boot-logo" aria-hidden="true">m</span></div>;
+  return <div className="boot-app" role="progressbar" aria-label="Cargando Mango" aria-busy="true">{bar}
+    <aside className="boot-sb"><div className="boot-ws"><span className="sb-ws-logo" aria-hidden="true">m</span><span className="skeleton" style={{ width: 96, height: 12 }}></span></div>
+      {[72, 88, 64, 80, 70].map((w, i) => <div key={i} className="boot-row"><span className="skeleton" style={{ width: 16, height: 16, borderRadius: 4 }}></span><span className="skeleton" style={{ width: w + '%', height: 10 }}></span></div>)}
+      <div className="boot-gap"></div>
+      {[60, 76, 54].map((w, i) => <div key={i} className="boot-row"><span className="skeleton" style={{ width: w + '%', height: 10 }}></span></div>)}
+      <div className="boot-me"><span className="skeleton" style={{ width: 28, height: 28, borderRadius: 999 }}></span><span className="skeleton" style={{ width: '50%', height: 10 }}></span></div>
+    </aside>
+    <main className="boot-main"><div className="boot-top"><span className="skeleton" style={{ width: 160, height: 14 }}></span></div>
+      <div className="boot-body"><span className="skeleton" style={{ width: '42%', height: 22 }}></span><span className="skeleton" style={{ width: '64%', height: 12 }}></span><span className="skeleton" style={{ width: '58%', height: 12 }}></span></div>
+      <div className="boot-compose skeleton"></div>
+    </main>
+  </div>;
+}
 window.Login = Login;
+window.BootScreen = BootScreen;

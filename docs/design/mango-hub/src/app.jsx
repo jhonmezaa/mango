@@ -75,7 +75,8 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
         <Chips label="Estado de la cuenta al entrar" opts={[['active', 'Con grupo'], ['nogroup', 'Sin grupo asignado'], ['temp', 'Contraseña temporal (creada por admin)'], ['noarea', 'Líder de área sin área'], ['twoareas', 'Líder de área con dos áreas']]} value={accountState} onPick={(v) => S.set({ accountState: v })} />
         <Chips label="Login · MFA" opts={authCfg.install === 'client' ? [['required', 'Obligatorio']] : [['required', 'Obligatorio'], ['optional', 'Opcional'], ['off', 'Desactivado']]} value={authCfg.mfa} onPick={(v) => S.set({ authCfg: { ...authCfg, mfa: v } })} />
         <Chips label="Login · MFA ya configurado" opts={[[true, 'Sí'], [false, 'Primer ingreso']]} value={!!authCfg.mfaEnrolled} onPick={(v) => S.set({ authCfg: { ...authCfg, mfaEnrolled: v } })} />
-        <Chips label="Login · al abrir la app" opts={[[null, 'Formulario'], ['restoring', 'Recuperando la sesión'], ['otherTab', 'Cerró sesión en otra pestaña'], ['ssoReturn', 'Vuelve del SSO']]} value={S.get().simSessionBoot || null} onPick={(v) => { S.set({ simSessionBoot: v }); setView('login'); }} />
+        <Chips label="Recargar la página" opts={[['app-hot', 'Con sesión · 0,4 s'], ['app-cold', 'Con sesión · en frío'], ['app-out', 'Tenía sesión · ya no'], ['out', 'Sin sesión'], ['out-cold', 'Sin sesión · en frío']]} value={null} onPick={(v) => window.dispatchEvent(new CustomEvent('mango:reload', { detail: v }))} />
+        <Chips label="Login · al abrir la app" opts={[[null, 'Formulario'], ['otherTab', 'Cerró sesión en otra pestaña'], ['ssoReturn', 'Vuelve del SSO']]} value={S.get().simSessionBoot || null} onPick={(v) => { S.set({ simSessionBoot: v }); setView('login'); }} />
         <Chips label="Sesión · cómo ingresó" opts={[['password', 'Contraseña y MFA'], ['sso', 'SSO']]} value={S.get().loggedVia === 'sso' ? 'sso' : 'password'} onPick={(v) => S.set({ loggedVia: v })} />
         <Chips label="Sesión · aviso de vencimiento" opts={[[false, 'No'], [10, 'Vence en 10 min'], [4, 'Abrió con 4 min']]} value={S.get().simSessionWarn === true ? 10 : (S.get().simSessionWarn || false)} onPick={(v) => S.set({ simSessionWarn: v })} />
         <Chips label="Login · IdP de la empresa" opts={[['none', 'Sin IdP'], ['sso', 'Con IdP']]} value={authCfg.idp} onPick={(v) => S.set({ authCfg: { ...authCfg, idp: v } })} />
@@ -129,7 +130,8 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
           <Chips label="Servicios externos · al aprobar" opts={[[null, 'Se crea'], ['fail', 'Falla al crearse']]} value={S.get().simRemoteCreate || null} onPick={(v) => S.set({ simRemoteCreate: v })} />
           <Chips label="Servicios externos · al pedir o aprobar" opts={[[false, 'Funciona'], [true, 'El perfil ya no está en la versión']]} value={!!S.get().simRemoteGone} onPick={(v) => S.set({ simRemoteGone: v })} />
           <Chips label="Chat · servicio externo" opts={[[null, 'Nada'], ['consent', 'Falta conectar la cuenta'], ['consent-link', 'Falta conectar · el agente escribió un enlace'], ['expired', 'El enlace venció'], ['read', 'Respuesta que leyó Azure DevOps']]} value={S.get().simRemoteChat || null} onPick={(v) => { S.set({ simRemoteChat: v }); if (v) setView('chat'); }} />
-          <Chips label="Chat · servicio externo · conversación" opts={[[null, 'Normal'], ['busy', 'Otro turno responde'], ['later', 'Recargada · ya hay una pregunta después'], ['loading', 'Mis conexiones sin leer']]} value={S.get().simRemoteTurn || null} onPick={(v) => S.set({ simRemoteTurn: v })} />
+          <Chips label="Servicios externos · el perfil trae datos de toolsets" opts={[[false, 'Sí'], [true, 'Todavía no']]} value={!!S.get().simRemoteNoTsFields} onPick={(v) => S.set({ simRemoteNoTsFields: v })} />
+          <Chips label="Chat · servicio externo · conversación" opts={[[null, 'Normal'], ['busy', 'Otro turno responde'], ['later', 'Recargada · ya hay una pregunta después'], ['loading', 'Mis conexiones sin leer'], ['connfail', 'Mis conexiones falló']]} value={S.get().simRemoteTurn || null} onPick={(v) => S.set({ simRemoteTurn: v })} />
           <Chips label="Servicios externos · en la instalación" opts={[[null, 'Encendidos'], ['off', 'Apagados'], ['off-late', 'Apagados · el perfil no lo dijo']]} value={S.get().simRemoteInstall || null} onPick={(v) => S.set({ simRemoteInstall: v })} />
           <Chips label="Servicios externos · código del fallo" opts={[['target_timeout', 'target_timeout'], ['target_failed', 'target_failed'], ['other', 'Otro']]} value={S.get().simRemoteFail || 'target_timeout'} onPick={(v) => S.set({ simRemoteFail: v, remoteRegs: (S.get().remoteRegs || []).map(r => r.status === 'failed' ? { ...r, failCode: v } : r) })} />
           <Chips label="Servicios externos · al reintentar" opts={[[null, 'Se crea'], ['fail', 'Falla otra vez'], ['release_changed', 'La versión cambió'], ['busy', 'Ya en curso']]} value={S.get().simRemoteRetry || null} onPick={(v) => S.set({ simRemoteRetry: v })} />
@@ -198,6 +200,13 @@ function App() {
   const setView = (v, param = null) => { setViewRaw(v); setRouteParam(param); };
   window.MangoNav = setView;
   const [loggedIn, setLoggedIn] = useState(false);
+  // Recargar: un aviso local (sí o no) elige qué se pinta al instante; no decide autorización. Sin texto en ningún caso.
+  const [boot, setBoot] = useState(null);
+  useEffect(() => {
+    const h = (e) => { const k = e.detail; const back = view; setBoot(k);
+      setTimeout(() => { setBoot(null); if (k === 'app-hot' || k === 'app-cold') { setLoggedIn(true); setView(back === 'login' ? (S.get().avail ? 'chat' : 'dashboard') : back); } else { S.set({ simSessionBoot: k === 'app-out' ? 'ended' : null }); setLoggedIn(false); setView('login'); } }, k.endsWith('cold') ? 2800 : k === 'app-out' ? 900 : 400); };
+    window.addEventListener('mango:reload', h); return () => window.removeEventListener('mango:reload', h);
+  }, [view]);
   const [activeAgentId, setActiveAgentId] = useState("fin-01");
   const [activeThreadId, setActiveThreadIdRaw] = useState(initialRoute.view === 'chat' && initialRoute.param ? initialRoute.param : "t1");
   const setActiveThreadId = (id) => { setActiveThreadIdRaw(id); };
@@ -326,6 +335,7 @@ function App() {
   if (view === 'connect-return' && !S.get().avail && window.RemoteReturn) {
     return <window.ToastProvider><window.RemoteReturn setView={setView} /><TweaksPanel visible={tweaksVisible} onClose={() => setTweaksVisible(false)} settings={settings} setSettings={setSettings} view={view} setView={setView} /></window.ToastProvider>;
   }
+  if (boot) return <BootScreen had={boot.startsWith('app')} />;
   if (view === 'login') {
     return <>
       <Login onLogin={() => { setLoggedIn(true); S.log('account.login', user.email, 'Inició sesión'); setView(S.get().avail ? 'chat' : 'dashboard'); }} />
