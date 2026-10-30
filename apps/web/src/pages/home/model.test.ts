@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  axisOf,
   budgetPercent,
   deltaOf,
   effectiveGranularity,
@@ -77,6 +78,63 @@ describe('home model', () => {
     expect(fmtCompact(1500, false)).toBe('1.5K');
     expect(deltaOf(150, 100)).toBe(50);
     expect(deltaOf(5, 0)).toBe(0);
+  });
+
+  const labels = (peak: number, money: boolean) => {
+    const axis = axisOf(peak, money);
+    return axis.ticks.map((tick) => fmtCompact(tick, money, axis.decimals));
+  };
+
+  it('keeps the four parts of the design where the labels show them', () => {
+    expect(axisOf(370, true)).toEqual({ max: 500, ticks: [0, 125, 250, 375, 500], decimals: 0 });
+    expect(labels(80, false)).toEqual(['0', '25', '50', '75', '100']);
+    expect(labels(0, true)).toEqual(['USD 0', 'USD 0,25', 'USD 0,50', 'USD 0,75', 'USD 1,00']);
+  });
+
+  it('labels small amounts with distinct marks that say their value', () => {
+    expect(labels(0.0315, true)).toEqual([
+      'USD 0',
+      'USD 0,01',
+      'USD 0,02',
+      'USD 0,03',
+      'USD 0,04',
+      'USD 0,05',
+    ]);
+    expect(labels(0.0042, true)).toEqual([
+      'USD 0',
+      'USD 0,001',
+      'USD 0,002',
+      'USD 0,003',
+      'USD 0,004',
+      'USD 0,005',
+    ]);
+    expect(labels(2.1, true)).toEqual([
+      'USD 0',
+      'USD 0,50',
+      'USD 1,00',
+      'USD 1,50',
+      'USD 2,00',
+      'USD 2,50',
+    ]);
+  });
+
+  it('counts in whole numbers and keeps the top above the peak', () => {
+    expect(labels(0, false)).toEqual(['0', '1']);
+    expect(labels(1.05, false)).toEqual(['0', '1', '2']);
+    expect(labels(2.1, false)).toEqual(['0', '1', '2', '3']);
+    expect(labels(4.2, false)).toEqual(['0', '1', '2', '3', '4', '5']);
+    expect(labels(9, false)).toEqual(['0', '2', '4', '6', '8', '10']);
+    expect(axisOf(2.1, false).max).toBe(3);
+  });
+
+  it('never repeats a mark', () => {
+    for (const money of [true, false]) {
+      for (const peak of [0, 0.0004, 0.03, 0.07, 0.4, 1, 3, 7, 12, 24, 60, 240, 900, 2400, 9000]) {
+        const shown = labels(peak, money);
+        expect(new Set(shown).size).toBe(shown.length);
+        expect(axisOf(peak, money).max).toBeGreaterThanOrEqual(peak);
+      }
+    }
   });
 
   it('computes the budget percent without dividing by zero', () => {

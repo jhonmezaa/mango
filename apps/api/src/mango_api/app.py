@@ -17,7 +17,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -1331,6 +1331,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         organization_cache=OrganizationCache(ttl_seconds=60),
         clock=now_utc,
         agent_names=lambda: _agent_names(services),
+        latest_names=lambda agent_ids: _latest_names(services, agent_ids),
         member_rate_limiter=services.limits.limiter("admin.member_access"),
     )
     app.include_router(admin_router(admin_deps, current_user, require))
@@ -1951,6 +1952,20 @@ def _agent_names(services: Services) -> dict[str, str]:
         for status in (VersionStatus.RETIRED, VersionStatus.PUBLISHED)
         for version in services.agents.store.by_status(status)
     }
+
+
+def _latest_names(services: Services, agent_ids: Collection[str]) -> dict[str, str] | None:
+    """Names of the agents that exist, from their latest version; ``None`` without a catalog."""
+    if services.agents is None:
+        return None
+    store = services.agents.store
+    names: dict[str, str] = {}
+    for agent_id, meta in store.metas(list(agent_ids)).items():
+        latest = meta.open_version or meta.published_version or meta.latest_version
+        version = store.version(agent_id, latest)
+        if version is not None:
+            names[agent_id] = version.definition.name
+    return names
 
 
 def _audit_agents(services: Services) -> AgentLookup | None:

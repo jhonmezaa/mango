@@ -359,6 +359,58 @@ def test_administrators_get_the_agents_closest_to_their_limit(env: Env) -> None:
     assert {b["scope"] for b in body["budgets"]} == {"agent"}
 
 
+def _spend(env: Env, *agents: tuple[str, str]) -> None:
+    budgets = BudgetService(env.db, "budgets")
+    period = current_period()
+    for agent_id, spent in agents:
+        scope = BudgetScope(f"AGENT#{agent_id}", Decimal(200))
+        budgets.reserve([scope], Decimal(1), period)
+        budgets.charge([scope], Decimal(spent), period)
+
+
+def test_an_agent_that_no_longer_exists_leaves_its_place_to_the_next(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _spend(
+        env,
+        ("mnopqrstuvwxyz23", "190"),
+        ("abcdefghijklmnop", "100"),
+        ("qrstuvwxyz234567", "80"),
+        ("bcdefghijklmnopq", "60"),
+        ("cdefghijklmnopqr", "40"),
+    )
+    names = {
+        "abcdefghijklmnop": "Publicado",
+        "qrstuvwxyz234567": "Borrador",
+        "bcdefghijklmnopq": "Retirado",
+        "cdefghijklmnopqr": "Otro",
+    }
+    monkeypatch.setattr(app_module, "_latest_names", lambda _services, _ids: names)
+    budgets = env.get("admin").json()["budgets"]
+    assert [b["name"] for b in budgets] == ["Publicado", "Borrador", "Retirado", "Otro"]
+
+
+def test_the_agent_of_the_release_stays_without_a_name_in_the_catalog(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _spend(env, ("finops", "68"), ("mnopqrstuvwxyz23", "190"))
+    monkeypatch.setattr(app_module, "_latest_names", lambda _services, _ids: {})
+    (budget,) = env.get("admin").json()["budgets"]
+    assert (budget["id"], budget["name"], budget["spent_usd"]) == ("finops", None, "68.00")
+
+
+def test_nothing_is_hidden_when_the_catalog_does_not_answer(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(_services: Any, _ids: Any) -> dict[str, str]:
+        raise RuntimeError("agents table unavailable")
+
+    _spend(env, ("mnopqrstuvwxyz23", "190"))
+    monkeypatch.setattr(app_module, "_latest_names", broken)
+    budgets = env.get("admin").json()["budgets"]
+    assert "mnopqrstuvwxyz23" in [b["id"] for b in budgets]
+
+
 def test_anyone_else_gets_only_their_own_budget(env: Env) -> None:
     env.turn("user-22", "3.25", area="security")
     env.turn("user-21", "9", area="sales")

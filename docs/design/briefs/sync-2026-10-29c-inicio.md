@@ -30,6 +30,8 @@ Inicio (`dashboard.jsx`, `function Dashboard`, y `charts.jsx`) deja de ser «Pr�
 - **Carga y error:** el producto muestra tarjetas esqueleto mientras carga y, si falla, «No se pudo cargar Inicio» · «Inténtalo de nuevo en unos segundos.» con «Reintentar» (la tarjeta de error de Gobernanza). Hace falta dibujarlos.
 - **«Actualizado …»:** el diseño pone textos fijos («Actualizado hace 4 s», «Actualizado 12:00»). El producto dice cuándo se leyó la respuesta («Actualizado hace 0 segundos», «hace 2 minutos»). Si el diseño quiere otro formato, hace falta decirlo.
 - **Quitar «Comparar»:** en el diseño, la X para quitar la comparación es un `span role="button"` dentro del botón de la píldora (un control dentro de otro). En el producto es un botón propio, «Quitar Comparar», sobre la píldora. Se ve igual.
+- **Marcas del eje con valores pequeños (`fmtCompact`, `LineChart`):** el diseño redondea cada marca a entero y, con máximo 1, repite («USD 1, 1, 1, 0, 0»). El producto conserva las cuatro partes de `niceMax` donde las etiquetas las pueden decir. Si no, usa un paso de 1, 2 o 5, sin decimales en las invocaciones y con céntimos (o más decimales) en los USD por debajo de 10 («USD 0,25», «USD 0,01»). El tope sube a su marca siguiente. Hace falta llevarlo al diseño.
+- **Presupuestos de un agente descartado:** un borrador probado en el Playground y descartado deja gasto del mes sin agente ni nombre. Inicio no lo muestra; Presupuestos lo lista por su id. El diseño no tiene texto para ese caso. Si quiere otro (por ejemplo, un nombre genérico), hace falta dibujarlo.
 
 ## 4. Lo que el diseño puede dejar fuera
 

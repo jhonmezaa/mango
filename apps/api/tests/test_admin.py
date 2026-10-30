@@ -370,6 +370,27 @@ def test_get_budgets_lists_every_agent_with_spend(
     ]
 
 
+def test_budgets_name_an_agent_never_published_and_keep_a_discarded_one(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    budgets = BudgetService(env.db, "budgets")
+    period = current_period()
+    for key in ("AGENT#abcdefghijklmnop", "AGENT#qrstuvwxyz234567"):
+        scope = BudgetScope(key, Decimal(200))
+        budgets.reserve([scope], Decimal(1), period)
+        budgets.charge([scope], Decimal(2), period)
+    monkeypatch.setattr(app_module, "_agent_names", lambda _services: {})
+    monkeypatch.setattr(
+        app_module, "_latest_names", lambda _services, _ids: {"abcdefghijklmnop": "Borrador"}
+    )
+    agents = env.client.get("/api/admin/budgets", headers=_h("admin")).json()["agents"]
+    assert {a["agent_id"]: a["name"] for a in agents} == {
+        "finops": None,
+        "abcdefghijklmnop": "Borrador",
+        "qrstuvwxyz234567": None,
+    }
+
+
 def test_budgets_are_listed_without_agent_names_when_they_cannot_be_read(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

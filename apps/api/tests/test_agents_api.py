@@ -1430,6 +1430,17 @@ def test_an_unknown_removal_is_not_reported(env: Env) -> None:
     assert _listed(env, "admin", agent_id)["cleanup"] is None
 
 
+def test_the_budget_list_names_an_agent_never_published(env: Env) -> None:
+    draft = _create(env, name="Borrador")
+    live = _published(env, name="Vivo")
+    services = SimpleNamespace(agents=env.deps)
+    names = app_module._latest_names(  # type: ignore[arg-type]
+        services, [draft["agent_id"], live["agent_id"], "mnopqrstuvwxyz23"]
+    )
+    assert names == {draft["agent_id"]: "Borrador", live["agent_id"]: "Vivo"}
+    assert app_module._latest_names(SimpleNamespace(agents=None), ["a"]) is None  # type: ignore[arg-type]
+
+
 def test_the_budget_list_names_published_and_retired_agents(env: Env) -> None:
     live = _published(env, name="Vivo")
     gone = _published(env, name="Retirado")

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { usd } from '../../components/admin/govFormat';
 import { CheckIcon, ChevronDownIcon, InfoIcon, ShareIcon, X2Icon } from '../../components/icons';
-import { deltaOf, fmtCompact, fmtDay, niceMax, sum, type Series } from './model';
+import { axisOf, deltaOf, fmtCompact, fmtDay, sum, type Series } from './model';
 
 // Analytics primitives of the design (charts.jsx: LineChart, MetricCard, ListCard, FilterPills),
 // fed with the series of GET /api/home instead of the design's seeded ones.
@@ -51,13 +51,15 @@ export function LineChart({ series, money, compare, label }: LineChartProps) {
   const { cur, prev, dates, prevDates } = series;
   const plotW = width - AXIS_W;
   const plotH = HEIGHT - PAD_T - PAD_B;
-  const max = niceMax(Math.max(0, ...cur, ...(compare ? prev : [])) * 1.05);
+  const { max, ticks, decimals } = axisOf(
+    Math.max(0, ...cur, ...(compare ? prev : [])) * 1.05,
+    money,
+  );
   const last = Math.max(1, cur.length - 1);
   const x = (i: number) => (i / last) * (plotW - 4) + 2;
   const y = (v: number) => PAD_T + plotH - (v / max) * plotH;
   const path = (values: readonly number[]) =>
     values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => t * max);
   const fmt = (v: number) => (money ? usd(v) : num(v));
   const point = hover === null ? null : { i: hover, c: cur[hover] ?? 0, p: prev[hover] ?? 0 };
   const delta = point ? deltaOf(point.c, point.p) : 0;
@@ -69,7 +71,7 @@ export function LineChart({ series, money, compare, label }: LineChartProps) {
           <g key={t}>
             <line x1={0} x2={plotW} y1={y(t)} y2={y(t)} stroke="var(--border)" />
             <text x={width} y={y(t) + 4} textAnchor="end" className="hm-tick">
-              {fmtCompact(t, money)}
+              {fmtCompact(t, money, decimals)}
             </text>
           </g>
         ))}
