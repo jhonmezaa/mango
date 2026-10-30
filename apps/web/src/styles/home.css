@@ -298,6 +298,8 @@
   .hm-soon-card > .soon-body {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    width: 100%;
   }
   .hm-soon-card .metric-card {
     flex: 1;
