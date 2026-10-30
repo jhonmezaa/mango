@@ -574,3 +574,190 @@
     }
   }
 }
+
+/* Design round 27 · «Recargar la página» (styles.css `.boot-*`): what a page load shows while the
+   session is renewed. No text; the bar only after 1,2 s. */
+@layer components {
+  .boot-app {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    background: var(--bg);
+  }
+  .boot-sb {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 17px 12px;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+  }
+  .boot-ws {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 30px;
+    margin-bottom: 12px;
+  }
+  .boot-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 18px;
+    padding: 0 6px;
+  }
+  .boot-gap {
+    height: 10px;
+  }
+  .boot-me {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    padding: 0 6px;
+  }
+  .boot-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .boot-top {
+    display: flex;
+    align-items: center;
+    height: 64px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .boot-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 14px;
+    padding: 48px max(24px, calc((100% - 760px) / 2));
+  }
+  .boot-compose {
+    height: 96px;
+    margin: 0 max(24px, calc((100% - 760px) / 2)) 28px;
+    border-radius: 14px;
+  }
+  .boot-cover {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+  }
+  .boot-logo {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+    border-radius: 12px;
+  }
+  .boot-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    height: 2px;
+    overflow: hidden;
+    animation: mango-fade-in 0.3s ease;
+  }
+  .boot-bar i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    background: var(--accent);
+    animation: boot-slide 1.3s ease-in-out infinite;
+  }
+  .boot-ws-name {
+    width: 96px;
+    height: 12px;
+  }
+  .boot-icon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+  }
+  .boot-avatar {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+  }
+  .boot-crumb {
+    width: 160px;
+    height: 14px;
+  }
+  .boot-line {
+    height: 10px;
+  }
+  .boot-title {
+    width: 42%;
+    height: 22px;
+  }
+  .boot-text {
+    height: 12px;
+  }
+  .boot-w50 {
+    width: 50%;
+  }
+  .boot-w54 {
+    width: 54%;
+  }
+  .boot-w58 {
+    width: 58%;
+  }
+  .boot-w60 {
+    width: 60%;
+  }
+  .boot-w64 {
+    width: 64%;
+  }
+  .boot-w70 {
+    width: 70%;
+  }
+  .boot-w72 {
+    width: 72%;
+  }
+  .boot-w76 {
+    width: 76%;
+  }
+  .boot-w80 {
+    width: 80%;
+  }
+  .boot-w88 {
+    width: 88%;
+  }
+  @media (max-width: 900px) {
+    .boot-app {
+      grid-template-columns: 1fr;
+    }
+    .boot-sb {
+      display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-bar i {
+      left: 0;
+      width: 100%;
+      opacity: 0.6;
+      animation: none;
+    }
+    .boot-app .skeleton {
+      animation: none;
+    }
+  }
+}
+
+@keyframes boot-slide {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}

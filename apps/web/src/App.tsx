@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router'
 import { AuthProvider } from './auth/AuthProvider';
 import type { CognitoAuth } from './auth/cognito/flows';
 import { SessionProvider } from './auth/SessionProvider';
+import { hadSession } from './auth/sessionHint';
 import { hasAuthCallbackParams } from './auth/ssoUrls';
 import { useAuth } from './auth/useAuth';
 import { FullPageRetry } from './components/FullPageRetry';
@@ -15,6 +16,7 @@ import { AVAILABLE_VIEWS, VIEW_ICONS, type ViewKey } from './layouts/navigation'
 import { SCREENS } from './layouts/screens';
 import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './pages/LoginPage';
+import { BootScreen } from './pages/login/BootScreen';
 import { RestoringSession } from './pages/login/RestoringSession';
 import { isConsentReturnPage } from './pages/connections/consentReturn';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -144,11 +146,9 @@ function AuthGate({ config }: { config: RuntimeConfig }) {
   const { status, retryRestore } = useAuth();
   if (status === 'loading') {
     // Coming back from the IdP is a sign-in in progress, not a session being recovered.
-    return (
-      <RestoringSession
-        step={hasAuthCallbackParams(window.location.search) ? 'ssoReturn' : 'restoring'}
-      />
-    );
+    if (hasAuthCallbackParams(window.location.search)) return <RestoringSession step="ssoReturn" />;
+    // Design round 27: skeletons if this browser had a session, the neutral cover if not.
+    return <BootScreen had={hadSession()} />;
   }
   if (status === 'unauthenticated') {
     return <LoginPage config={config} />;

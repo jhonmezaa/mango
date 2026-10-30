@@ -10,7 +10,13 @@ export type PreferenceKey =
   | 'mango-sb-collapsed'
   | 'mango-sb-groups'
   | 'mango-pinned-agents'
-  | 'mango-mk-layout';
+  | 'mango-mk-layout'
+  /**
+   * '1' while this browser had a session (design round 27, «Recargar la página»): it only picks
+   * what a page load paints first (skeletons or the neutral cover) and whether the sign-in says
+   * the session ended. It never decides authorization; the session cookie does (AGENTS.md).
+   */
+  | 'mango-had-session';
 
 function preferenceStore(): Storage | null {
   try {
@@ -26,6 +32,14 @@ export function readPreference(key: PreferenceKey): string | null {
     return preferenceStore()?.getItem(key) ?? null;
   } catch {
     return null;
+  }
+}
+
+export function removePreference(key: PreferenceKey): void {
+  try {
+    preferenceStore()?.removeItem(key);
+  } catch {
+    // Nothing to do: a stale hint only changes what a page load paints first.
   }
 }
 

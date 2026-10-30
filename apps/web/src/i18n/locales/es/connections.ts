@@ -139,6 +139,9 @@ export const connections = {
       'Mango desactivó un enlace del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.',
     note_other:
       'Mango desactivó {{count}} enlaces del agente. Para conectar tu cuenta usa solo «Conectar», en el aviso de Mango.',
+    // Design round 27: «Mis conexiones» could not be read.
+    failed: 'Mango no pudo comprobar los enlaces del agente, así que no se pueden abrir.',
+    recheck: 'Volver a comprobar',
   },
   link: {
     warnBefore: 'Esta respuesta leyó contenido de ',

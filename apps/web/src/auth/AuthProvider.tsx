@@ -6,6 +6,7 @@ import { safeReturnPath } from '../security/safeUrl';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 import { CognitoError } from './cognito/api';
 import { noteNewToken, tokenHeld } from './consentHold';
+import { hadSession, rememberSession } from './sessionHint';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
 import { authTimeOf, displayEmailFromIdToken, displayGroupsFromIdToken, subjectOf } from './jwt';
 import {
@@ -49,6 +50,7 @@ const REFRESH_REJECTED: ReadonlySet<string> = new Set([
 /** Tells the other tabs that this one signed out. No data travels in the message. */
 const SIGNED_OUT = 'signed-out';
 const SIGNED_OUT_ELSEWHERE = 'auth.signedOutElsewhere';
+const SESSION_ENDED = 'auth.sessionEnded';
 const CHANNEL = 'mango-auth';
 
 /**
@@ -180,6 +182,8 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       // A sign-in that finished meanwhile wins.
       if (cancelled || tokens.current) return;
       if (result.kind === 'none') {
+        // Design round 27: from the skeletons to the sign-in, saying why.
+        if (hadSession()) setNoticeKey(SESSION_ENDED);
         setStatus('unauthenticated');
         return;
       }
@@ -197,6 +201,12 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       cancelled = true;
     };
   }, [serverSession, setSession, setFederated, restoreAttempt]);
+
+  // The hint follows what the server said; an outage (`unavailable`) leaves it as it was.
+  useEffect(() => {
+    if (status === 'authenticated') rememberSession(true);
+    else if (status === 'unauthenticated') rememberSession(false);
+  }, [status]);
 
   const retryRestore = useCallback(() => {
     restorePromises.delete(serverSession);

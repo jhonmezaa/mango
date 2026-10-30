@@ -112,8 +112,27 @@ describe('SessionProvider: the profile does not answer', () => {
 
 describe('SessionProvider: what is shown until the application is ready', () => {
   it.each([
-    [{ restored: true, federated: true }, 'Recuperando tu sesión…'],
-    [{ restored: true, federated: false }, 'Recuperando tu sesión…'],
+    { restored: true, federated: true },
+    { restored: true, federated: false },
+  ])('a recovered session (%o) keeps the skeletons, with no text (design round 27)', (auth) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    const { container } = render(
+      <AuthContext value={authValue(auth)}>
+        <SessionProvider config={config}>
+          <p>app</p>
+        </SessionProvider>
+      </AuthContext>,
+    );
+    expect(screen.getByRole('progressbar', { name: 'Cargando Mango' })).toHaveClass('boot-app');
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(container).not.toHaveTextContent('Recuperando');
+    expect(screen.queryByText('app')).toBeNull();
+  });
+
+  it.each([
     // Back from the IdP: the same frame, not the generic loading screen.
     [{ restored: false, federated: true }, 'Completando el ingreso…'],
     // After the own sign-in form: the same frame too, never the generic «Cargando…».

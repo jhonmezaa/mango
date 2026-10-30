@@ -20,10 +20,12 @@ export const auth = {
   haveAccount: '¿Ya tienes cuenta?',
   signInLink: 'Inicia sesión',
   passwordUpdated: 'Contraseña actualizada. Ya puedes entrar.',
-  restoring: 'Recuperando tu sesión…',
+  // Design round 27 · «Recargar la página»: the accessible name of what a page load paints (not shown).
+  loading: 'Cargando Mango',
   completingSignIn: 'Completando el ingreso…',
   keep: 'Sigues dentro hasta {{count}} h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.',
   signedOutElsewhere: 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.',
+  sessionEnded: 'Tu sesión terminó. Vuelve a entrar para seguir.',
   signup: {
     title: 'Crea tu cuenta',
     subtitle:

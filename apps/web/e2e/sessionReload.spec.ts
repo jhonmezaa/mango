@@ -70,6 +70,55 @@ test('a reload keeps the session, and signing out ends it', async ({ page, conte
   expect(consoleErrors).toEqual([]);
 });
 
+// Design round 27 · «Recargar la página»: no «Recuperando tu sesión…»; the skeletons when this
+// browser had a session, the neutral cover when not, and the sign-in says when it ended.
+test('a reload paints the skeletons or the cover, never the sign-in frame', async ({ page }) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/session/refresh', async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto('/');
+  const cover = page.getByRole('progressbar', { name: 'Cargando Mango' });
+  await expect(cover).toHaveClass(/boot-cover/);
+  await expect(page.getByText('Recuperando tu sesión…')).toHaveCount(0);
+  // A long wait adds only the thin bar.
+  await expect(page.locator('.boot-bar')).toBeVisible();
+  release();
+  await expect(page.getByLabel('Correo')).toBeVisible();
+  await page.unroute('**/api/session/refresh');
+
+  await signIn(page);
+  let releaseAgain: () => void = () => undefined;
+  const heldAgain = new Promise<void>((resolve) => (releaseAgain = resolve));
+  await page.route('**/api/session/refresh', async (route) => {
+    await heldAgain;
+    await route.continue();
+  });
+  await page.reload();
+  await expect(page.getByRole('progressbar', { name: 'Cargando Mango' })).toHaveClass(/boot-app/);
+  await expect(page.getByLabel('Correo')).toHaveCount(0);
+  releaseAgain();
+  await expect(page.getByRole('navigation').first()).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Cargando Mango' })).toHaveCount(0);
+});
+
+test('a reload after the session ended says so on the sign-in', async ({ page, context }) => {
+  await signIn(page);
+  // The server forgot the session (it expired or was revoked): only the local hint is left.
+  await context.clearCookies();
+  await page.reload();
+  await expect(page.getByLabel('Correo')).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText(
+    'Tu sesión terminó. Vuelve a entrar para seguir.',
+  );
+  // Said once: the next load is the plain sign-in.
+  await page.reload();
+  await expect(page.getByLabel('Correo')).toBeVisible();
+  await expect(page.getByText('Tu sesión terminó.')).toHaveCount(0);
+});
+
 test('a deep link survives the reload', async ({ page }) => {
   await signIn(page);
   await page.getByRole('link', { name: 'Aprobaciones', exact: true }).first().click();
@@ -107,8 +156,8 @@ test('a reload while the renewal answers 503 keeps the session', async ({ page, 
 
   const down = await renewalDown(page);
   await page.reload();
-  // It asks again a few times behind «Recuperando tu sesión…», then says so and stops.
-  await expect(page.getByRole('status')).toHaveText('Recuperando tu sesión…');
+  // It asks again a few times behind the skeletons (design round 27), then says so and stops.
+  await expect(page.getByRole('progressbar', { name: 'Cargando Mango' })).toHaveClass(/boot-app/);
   await expect(page.getByRole('alert')).toHaveText(GENERIC, { timeout: 15_000 });
   expect(down.calls()).toBe(4);
   // Not the sign-in form, and the session is still there: the cookie and the other tab.

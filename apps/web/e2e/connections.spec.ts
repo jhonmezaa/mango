@@ -160,3 +160,38 @@ test('the tab that asked waits while it keeps its token, and a reload loses it',
     provider.getByRole('heading', { name: 'Pídelo de nuevo desde Mango' }),
   ).toBeVisible();
 });
+
+// Design round 27: when «Mis conexiones» cannot be read, the agent's links stay as plain text that
+// does not open, with a note to check again; when it can, they are classified as usual.
+test('the links stay closed when the connections cannot be read, until checked again', async ({
+  page,
+}) => {
+  await signIn(page);
+  let failing = true;
+  await page.route(
+    (url) => url.pathname.endsWith('/api/me/connections'),
+    async (route) => {
+      if (!failing) return route.continue();
+      return route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'unavailable', message: 'unavailable' } }),
+      });
+    },
+  );
+  await ask(page, '¿Qué tiene abierto el sprint 42 de Plataforma? Pásame el enlace.');
+  const link = page.getByText('Autorizar Azure DevOps');
+  await expect(link).toHaveClass('rm-linkwait');
+  await expect(page.getByRole('button', { name: 'Autorizar Azure DevOps' })).toHaveCount(0);
+  const note = page.getByText('Mango no pudo comprobar los enlaces del agente', { exact: false });
+  await expect(note).toBeVisible();
+  await expect(page.getByText('Mango desactivó', { exact: false })).toHaveCount(0);
+
+  failing = false;
+  await page.getByRole('button', { name: 'Volver a comprobar' }).click();
+  await expect(link).toHaveClass('rm-nolink');
+  await expect(note).toHaveCount(0);
+  await expect(
+    page.getByText('Mango desactivó un enlace del agente.', { exact: false }),
+  ).toBeVisible();
+});

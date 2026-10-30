@@ -78,6 +78,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  window.localStorage.clear();
 });
 
 /** What `getAccessToken` rejects with while the renewal does not answer. */
@@ -102,7 +103,8 @@ describe('AuthProvider (session in memory: the server did not take it)', () => {
     expect(screen.getByText('authenticated')).toBeInTheDocument();
     expect(auth().displayEmail).toBe('ana@empresa.com');
     expect(auth().ssoAvailable).toBe(false);
-    expect(setItem).not.toHaveBeenCalled();
+    // Only the yes/no hint of design round 27: no token reaches Web Storage.
+    expect(setItem.mock.calls).toEqual([['mango-had-session', '1']]);
   });
 
   it('returns the token while it lives long enough, then refreshes once for parallel calls', async () => {
@@ -255,7 +257,8 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
     await expect(auth().getAccessToken()).resolves.toBe(jwt({ sub: 'ana', n: 2 }));
     expect(renew).toHaveBeenCalledOnce();
     expect(fake.refresh).not.toHaveBeenCalled();
-    expect(setItem).not.toHaveBeenCalled();
+    // Web Storage only gets the yes/no hint of design round 27, never anything of the session.
+    expect(setItem.mock.calls).toEqual([['mango-had-session', '1']]);
   });
 
   it('goes to the sign-in without an error when the server says there is no session', async () => {
@@ -263,7 +266,37 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
     const { auth } = await setup({}, { renew });
     expect(screen.getByText('unauthenticated')).toBeInTheDocument();
     expect(auth().errorKey).toBeNull();
+    expect(auth().noticeKey).toBeNull();
     expect(renew).toHaveBeenCalledOnce();
+  });
+
+  it('says the session ended when this browser had one and the server has none (design round 27)', async () => {
+    window.localStorage.setItem('mango-had-session', '1');
+    const { auth } = await setup({}, { renew: () => Promise.resolve({ kind: 'none' }) });
+    expect(screen.getByText('unauthenticated')).toBeInTheDocument();
+    expect(auth().errorKey).toBeNull();
+    expect(auth().noticeKey).toBe('auth.sessionEnded');
+    expect(window.localStorage.getItem('mango-had-session')).toBeNull();
+  });
+
+  it('keeps the hint through an outage and forgets it on sign-out', async () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem('mango-had-session', '1');
+    const { auth, session } = await setup(
+      {},
+      { renew: () => Promise.resolve({ kind: 'unavailable' }) },
+    );
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(screen.getByText('unavailable')).toBeInTheDocument();
+    expect(window.localStorage.getItem('mango-had-session')).toBe('1');
+    session.renew.mockResolvedValue(renewed());
+    await act(async () => {
+      auth().retryRestore();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText('authenticated')).toBeInTheDocument();
+    await act(() => auth().logout());
+    expect(window.localStorage.getItem('mango-had-session')).toBeNull();
   });
 
   describe('at load, when the renewal does not answer', () => {
@@ -276,7 +309,7 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
         {},
         { renew: () => Promise.resolve({ kind: 'unavailable' }) },
       );
-      // Still «Recuperando tu sesión…» while it retries.
+      // Still loading (the skeletons or the cover of design round 27) while it retries.
       expect(screen.getByText('loading')).toBeInTheDocument();
       expect(session.renew).toHaveBeenCalledOnce();
       await advance(RESTORE_RETRY_DELAYS_MS[0] ?? 0);

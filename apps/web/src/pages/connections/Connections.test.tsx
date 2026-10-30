@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router';
 import { act } from 'react';
@@ -12,7 +12,7 @@ import { ChatMarkdown } from '../../components/ChatMarkdown';
 import { authValue, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { ConnectCard } from './ConnectCard';
-import { useConnections } from './ConnectionsContext';
+import { ConnectionsContext, useConnections, type ConnectionsValue } from './ConnectionsContext';
 import { ConnectionsProvider } from './ConnectionsProvider';
 import { CONSENT_CHANNEL, type ConsentMessage } from './consentChannel';
 import { ConnectReturnPage } from './ConnectReturnPage';
@@ -21,6 +21,7 @@ import { resetReturnRelay } from './returnRelay';
 import type { Connection } from './model';
 import { consentNavigation } from './navigation';
 import { connection } from './testFixtures';
+import { useStripSources } from './useStripSources';
 
 const REG = 'abcdefghij23';
 const CONSENT =
@@ -730,6 +731,40 @@ describe('links of a remote answer (A1)', () => {
     expect(link).not.toHaveAttribute('title');
     expect(screen.queryByRole('button', { name: 'aquí' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Mango desactivó/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the links closed and offers to check again when the connections failed (design round 27)', async () => {
+    const reload = vi.fn();
+    const value = {
+      status: 'error',
+      list: [],
+      ensure: vi.fn(),
+      reload,
+    } as unknown as ConnectionsValue;
+    const { result } = renderHook(() => useStripSources(['RMT-1']), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <ConnectionsContext value={value}>{children}</ConnectionsContext>
+      ),
+    });
+    expect(result.current).toBe('failed');
+    render(
+      <ConnectionsContext value={value}>
+        <ChatMarkdown strip="failed">
+          {'Autoriza [aquí](https://azdevops-authorize.example.com/oauth/consent).'}
+        </ChatMarkdown>
+      </ConnectionsContext>,
+    );
+    const link = screen.getByText('aquí');
+    expect(link.tagName).toBe('SPAN');
+    expect(link).toHaveClass('rm-linkwait');
+    expect(screen.queryByText(/Mango desactivó/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Mango no pudo comprobar los enlaces del agente, así que no se pueden abrir\./,
+      ),
+    ).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Volver a comprobar' }));
+    expect(reload).toHaveBeenCalledOnce();
   });
 
   it('says one link in the singular', async () => {

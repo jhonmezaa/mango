@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { useConnections } from '../pages/connections/ConnectionsContext';
 import { RemoteLinkDialog } from '../security/RemoteLinkDialog';
 import { classifyRemoteLink, type RemoteLinkSource } from '../security/remoteLinks';
 import { markdownUrlTransform, parseExternalHttpUrl } from '../security/safeUrl';
@@ -23,10 +24,10 @@ import { rehypeNumericColumns } from './markdownTables';
 const RemoteSources = createContext<readonly RemoteLinkSource[]>([]);
 /**
  * Set in a turn with the «Conectar» card (design round 25): the services whose organizations keep
- * their links, or 'pending' while the person's connections are read (design round 26). Null when
- * the turn asked for no connection.
+ * their links, 'pending' while the person's connections are read (design round 26), or 'failed'
+ * when they could not be read (design round 27). Null when the turn asked for no connection.
  */
-export type StripLinks = readonly RemoteLinkSource[] | 'pending' | null;
+export type StripLinks = readonly RemoteLinkSource[] | 'pending' | 'failed' | null;
 const StripSources = createContext<StripLinks>(null);
 
 function ExternalLink({ href, children }: { href: string | undefined; children: ReactNode }) {
@@ -39,8 +40,9 @@ function ExternalLink({ href, children }: { href: string | undefined; children: 
     // Unsafe or relative target: keep the text, drop the link.
     return <span>{children}</span>;
   }
-  if (strip === 'pending') {
-    // Not known yet which organizations are the person's: nothing opens, nothing is marked.
+  if (strip === 'pending' || strip === 'failed') {
+    // Not known which organizations are the person's: nothing opens, nothing is marked (it may
+    // be theirs).
     return <span className="rm-linkwait">{children}</span>;
   }
   if (strip !== null) {
@@ -86,6 +88,23 @@ function ExternalLink({ href, children }: { href: string | undefined; children: 
           document.body,
         )}
     </>
+  );
+}
+
+/** Design round 27: the person's connections could not be read, so the links stay closed. */
+function RecheckNote() {
+  const { t } = useTranslation();
+  const { reload } = useConnections();
+  return (
+    <div className="rm-nolink-note">
+      <ShieldIcon size={12} />
+      <span>
+        {t('connections.stripped.failed')}{' '}
+        <button type="button" className="sr-link" onClick={reload}>
+          {t('connections.stripped.recheck')}
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -150,7 +169,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   // The links Mango took out, counted once they are on screen.
   useEffect(() => {
     setStripped(
-      strip !== null && strip !== 'pending'
+      strip !== null && strip !== 'pending' && strip !== 'failed'
         ? (ref.current?.querySelectorAll('.rm-nolink').length ?? 0)
         : 0,
     );
@@ -172,6 +191,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
             {children}
           </Markdown>
         </div>
+        {strip === 'failed' && <RecheckNote />}
         {stripped > 0 && (
           <div className="rm-nolink-note">
             <ShieldIcon size={12} />

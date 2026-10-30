@@ -9,6 +9,7 @@ import { FullPageRetry } from '../components/FullPageRetry';
 import { AreaRequired } from '../pages/login/AreaRequired';
 import { LoginLayout } from '../pages/login/LoginLayout';
 import { NoAccess } from '../pages/login/NoAccess';
+import { BootScreen } from '../pages/login/BootScreen';
 import { RestoringSession } from '../pages/login/RestoringSession';
 import { SessionContext, type SessionContextValue } from './SessionContext';
 import { useAuth } from './useAuth';
@@ -200,9 +201,9 @@ export function SessionProvider({
   }
   if (meError) return <FullPageRetry onRetry={retryMe} />;
   if (!value) {
-    // Every way in keeps the sign-in frame until the application is ready (no flash, no generic
-    // loading): a recovered session, the return from the IdP and the own sign-in form.
-    if (restored) return <RestoringSession />;
+    // A recovered session keeps the skeletons until the application is ready (design round 27);
+    // the return from the IdP and the own sign-in form keep the sign-in frame (no flash).
+    if (restored) return <BootScreen had />;
     return <RestoringSession step={federated ? 'ssoReturn' : 'signingIn'} />;
   }
   return <SessionContext value={value}>{children}</SessionContext>;
