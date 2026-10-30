@@ -16,7 +16,7 @@ async function signIn(page: Page): Promise<void> {
 async function openHome(page: Page): Promise<void> {
   const nav = page.getByRole('navigation', { name: 'Navegación principal' });
   await nav.getByRole('link', { name: 'Inicio', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Gasto en Bedrock' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Gasto en Bedrock/ })).toBeVisible();
 }
 
 test('Inicio shows the period, changes it and keeps «Próximamente» without a source', async ({
@@ -25,7 +25,7 @@ test('Inicio shows the period, changes it and keeps «Próximamente» without a 
   await signIn(page);
   await openHome(page);
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/Buen(os|as) /);
-  await expect(page.getByRole('heading', { name: 'Invocaciones' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Invocaciones/ })).toBeVisible();
   await expect(page.getByRole('img', { name: 'Gasto en Bedrock' })).toBeVisible();
   await expect(page.getByText(/periodo anterior$/).first()).toBeVisible();
   for (const title of ['Estado de agentes', 'Tickets resueltos', 'Latencia p95']) {
@@ -52,7 +52,7 @@ test('Inicio fits a phone width', async ({ page }) => {
   await signIn(page);
   await openHome(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('heading', { name: 'Invocaciones' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Invocaciones/ })).toBeVisible();
   const overflow = await page.evaluate<number>(
     'document.documentElement.scrollWidth - document.documentElement.clientWidth',
   );
