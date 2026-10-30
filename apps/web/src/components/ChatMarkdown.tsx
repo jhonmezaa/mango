@@ -91,6 +91,9 @@ function ExternalLink({ href, children }: { href: string | undefined; children: 
   );
 }
 
+/** Design `StripLinks`: the note explains closed links, so it needs a link in the text. */
+const LINK_IN_TEXT = /\]\(|https?:\/\//;
+
 /** Design round 27: the person's connections could not be read, so the links stay closed. */
 function RecheckNote() {
   const { t } = useTranslation();
@@ -191,7 +194,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
             {children}
           </Markdown>
         </div>
-        {strip === 'failed' && <RecheckNote />}
+        {strip === 'failed' && LINK_IN_TEXT.test(children) && <RecheckNote />}
         {stripped > 0 && (
           <div className="rm-nolink-note">
             <ShieldIcon size={12} />

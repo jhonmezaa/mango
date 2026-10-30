@@ -248,11 +248,12 @@ describe('LoginPage: sign-in', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('shows the session error it was opened with', () => {
-    renderLogin(fakeCognito(), { errorKey: 'auth.errors.sessionExpired' });
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Tu sesión expiró. Vuelve a iniciar sesión.',
+  it('says the session ended, as a notice and not as an error', () => {
+    renderLogin(fakeCognito(), { noticeKey: 'auth.sessionEnded' });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Tu sesión terminó. Vuelve a entrar para seguir.',
     );
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

@@ -1,26 +1,24 @@
 import type { TFunction } from 'i18next';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
 import { usd } from '../../components/admin/govFormat';
-import { GovErrorState, Skel } from '../../components/admin/govKit';
+import { Skel } from '../../components/admin/govKit';
 import { useToasts } from '../../components/admin/useToasts';
 import { WarnIcon } from '../../components/icons';
-import { Soon } from '../../components/Soon';
-import { SoonView } from '../../components/SoonView';
 import { Topbar } from '../../components/Topbar';
 import { useSession } from '../../auth/useSession';
-import { canView, isAvailable, viewPath, type ViewKey } from '../../layouts/navigation';
-import { formatRelative } from '../../lib/format';
-import { InfoDot, ListCard, MetricCard, Pill, type ListRow } from './charts';
+import { canView, viewPath } from '../../layouts/navigation';
+import { ListCard, MetricCard, Pill, type ListRow } from './charts';
 import {
   PERIODS,
+  agoOf,
   budgetPercent,
   effectiveGranularity,
+  expectedScope,
   savePeriod,
   savedPeriod,
-  seesOrganization,
   seriesOf,
   spentOf,
   toCsv,
@@ -36,6 +34,8 @@ type LoadState =
   { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; data: Home; loadedAt: number };
 
 const WARN = 80;
+/** How often «Actualizado …» is read again (design). */
+const UPDATED_EVERY_MS = 15_000;
 
 function greetingOf(t: TFunction, hour: number): string {
   if (hour < 12) return t('home.morning');
@@ -54,46 +54,17 @@ function download(csv: string, name: string): void {
   }, 0);
 }
 
-/** «Ver detalles» of a card: a link to the view, or «Próximamente» while it does not exist. */
-function More({ view, label, available }: { view: ViewKey; label: string; available: boolean }) {
-  const navigate = useNavigate();
-  return available ? (
-    <button
-      type="button"
-      className="link-muted"
-      onClick={() => {
-        void navigate(viewPath(view));
-      }}
-    >
-      {label}
-    </button>
-  ) : (
-    <Soon name={label}>
-      <span className="link-muted">{label}</span>
-    </Soon>
-  );
-}
-
-/** A card of the design without a backend yet (D24): its frame, no data, «Próximamente». */
-function SoonCard({ title, info, children }: { title: string; info: string; children: ReactNode }) {
-  const { t } = useTranslation();
-  return (
-    <Soon block name={t('home.soonCard', { title })} className="hm-soon-card">
-      <section className="card metric-card">
-        <h2 className="hm-title">
-          {title}
-          <InfoDot text={info} />
-        </h2>
-        {children}
-      </section>
-    </Soon>
-  );
+function updatedOf(t: TFunction, ms: number): string {
+  const { unit, count } = agoOf(ms);
+  if (unit === 'seconds') return t('home.updatedNow');
+  return t(unit === 'minutes' ? 'home.updatedMinutes' : 'home.updatedHours', { count });
 }
 
 function budgetRow(t: TFunction, budget: HomeBudget, agentName: string): ListRow {
   const percent = budgetPercent(budget);
-  const name =
+  const agent =
     budget.name ?? (budget.scope === 'agent' && budget.id === 'finops' ? agentName : budget.id);
+  const name = budget.scope === 'user' ? t('home.personalLimit') : agent;
   return {
     key: `${budget.scope}:${budget.id}`,
     label: name,
@@ -104,14 +75,7 @@ function budgetRow(t: TFunction, budget: HomeBudget, agentName: string): ListRow
   };
 }
 
-const AGENT_STATES = [
-  ['online', 'var(--green)'],
-  ['warmup', 'var(--amber)'],
-  ['degraded', 'var(--red)'],
-  ['offline', 'var(--text-dim)'],
-] as const;
-
-const SKELETON_CARDS = [0, 1, 2, 3, 4, 5] as const;
+const SKELETON_CARDS = [0, 1, 2] as const;
 
 interface CardsProps {
   data: Home;
@@ -123,85 +87,91 @@ interface CardsProps {
   onExport: (series: Series, header: string, file: string) => void;
 }
 
-function Cards({ data, period, gran, compare, updated, canSeeBudgets, onExport }: CardsProps) {
+/** Memoized: «Actualizado» is read every few seconds and its text rarely changes. */
+const Cards = memo(function Cards({
+  data,
+  period,
+  gran,
+  compare,
+  updated,
+  canSeeBudgets,
+  onExport,
+}: CardsProps) {
   const { t } = useTranslation();
-  const { me } = useSession();
+  const navigate = useNavigate();
   const g = effectiveGranularity(period, gran);
   const spend = useMemo(() => seriesOf(data, spentOf, g), [data, g]);
   const calls = useMemo(() => seriesOf(data, turnsOf, g), [data, g]);
   const rows = data.budgets.map((budget) => budgetRow(t, budget, t('agent.name')));
+  const since = data.counted_since;
   return (
     <div className="metric-grid">
       <MetricCard
         title={t('home.spend')}
-        info={t('home.spendInfo')}
+        info={t(`home.spendInfo.${data.scope}`)}
         series={spend}
         money
         compare={compare}
         goodWhen="down"
         updated={updated}
-        more={<More view="costs" label={t('home.details')} available={isAvailable('costs', me)} />}
+        since={since}
         onExport={() => {
           onExport(spend, 'gasto_usd', 'gasto');
         }}
       />
-      <SoonCard title={t('home.agents')} info={t('home.agentsInfo')}>
-        <div>
-          {AGENT_STATES.map(([state, color]) => (
-            <div key={state} className="hm-list-row">
-              <span className="hm-list-label">
-                <span aria-hidden="true" className="hm-dot" style={{ background: color }} />
-                <span>{t(`home.agentState.${state}`)}</span>
-              </span>
-              <span className="hm-num">—</span>
-            </div>
-          ))}
-        </div>
-      </SoonCard>
       <MetricCard
         title={t('home.calls')}
-        info={t('home.callsInfo')}
+        info={t(`home.callsInfo.${data.scope}`)}
         series={calls}
         compare={compare}
         updated={updated}
-        more={
-          <More
-            view="observability"
-            label={t('home.details')}
-            available={isAvailable('observability', me)}
-          />
-        }
+        since={since}
         onExport={() => {
           onExport(calls, 'invocaciones', 'invocaciones');
         }}
       />
-      <SoonCard title={t('home.tickets')} info={t('home.ticketsInfo')}>
-        <div className="hm-total">—</div>
-        <div className="hm-chart-empty" />
-      </SoonCard>
-      <SoonCard title={t('home.latency')} info={t('home.latencyInfo')}>
-        <div className="hm-total">—</div>
-        <div className="hm-chart-empty" />
-      </SoonCard>
-      <ListCard
-        title={t('home.budgets')}
-        rows={rows}
-        updated={updated}
-        more={<More view="budgets" label={t('home.budgetsMore')} available={canSeeBudgets} />}
-      />
+      {data.budgets_scope === 'agents' ? (
+        <ListCard
+          title={t('home.budgets')}
+          info={t('home.budgetsInfo')}
+          rows={rows}
+          updated={updated}
+          more={
+            canSeeBudgets ? (
+              <button
+                type="button"
+                className="link-muted"
+                onClick={() => {
+                  void navigate(viewPath('budgets'));
+                }}
+              >
+                {t('home.budgetsMore')}
+              </button>
+            ) : null
+          }
+        />
+      ) : (
+        <ListCard
+          title={t('home.myBudget')}
+          info={t(data.scope === 'area' ? 'home.myBudgetInfoArea' : 'home.myBudgetInfo')}
+          rows={rows}
+          updated={updated}
+        />
+      )}
     </div>
   );
-}
+});
 
 function Loading() {
   const { t } = useTranslation();
   return (
-    <div className="metric-grid" role="status" aria-label={t('home.loading')}>
+    <div className="metric-grid" role="status" aria-busy="true" aria-label={t('home.loading')}>
       {SKELETON_CARDS.map((key) => (
-        <section key={key} className="card metric-card">
-          <Skel w="40%" h={14} />
-          <Skel w="30%" h={24} className="hm-skel-gap" />
-          <Skel h={200} className="hm-skel-gap" />
+        <section key={key} className="card metric-card hm-skel-card" aria-hidden="true">
+          <Skel w={140} h={14} />
+          <Skel w={120} h={26} />
+          <Skel w={160} h={12} />
+          <Skel h={200} className="hm-skel-chart" />
         </section>
       ))}
     </div>
@@ -209,19 +179,12 @@ function Loading() {
 }
 
 /**
- * Inicio (design dashboard.jsx, D102): spend and invocations per day from GET /api/home, the
- * approvals that wait for the person and the budgets closest to their limit. Agent health,
- * tickets and latency have no backend: «Próximamente». Administrators and central FinOps get the
- * view; anyone else keeps «Próximamente» until the design draws their variant (the API already
- * answers them with their own scope).
+ * Inicio (design dashboard.jsx, round 28, D102): spend and invocations per day from GET
+ * /api/home, the approvals that wait for the person and the budgets. Whose numbers they are comes
+ * from the answer: the organization, the person's area or their own. Agent health, tickets and
+ * latency have no source and are not shown (D102 (10)).
  */
 export function HomePage() {
-  const { t } = useTranslation();
-  const { me } = useSession();
-  return seesOrganization(me) ? <Dashboard /> : <SoonView label={t('nav.dashboard')} />;
-}
-
-function Dashboard() {
   const { t } = useTranslation();
   const { api, me } = useSession();
   const navigate = useNavigate();
@@ -231,6 +194,16 @@ function Dashboard() {
   const [compare, setCompare] = useState(true);
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [reloadToken, setReloadToken] = useState(0);
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, UPDATED_EVERY_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -264,16 +237,26 @@ function Dashboard() {
     [notify, period, t],
   );
 
-  const name = me.name ?? me.email ?? '';
+  const name = me.name ?? '';
+  const ready = state.kind === 'ready' ? state.data : null;
+  const scope = ready ? ready.scope : expectedScope(me);
+  const area = (ready ? ready.area : me.business_unit) ?? '';
   const greeting = greetingOf(t, new Date().getHours());
-  const approvals = state.kind === 'ready' ? state.data.approvals : 0;
+  const approvals = ready?.approvals ?? 0;
   const periodOptions = PERIODS.map((key) => [key, t(`home.period.${key}`)] as const);
 
   let body;
   if (state.kind === 'error') {
     body = (
-      <div role="alert">
-        <GovErrorState title={t('home.errorTitle')} body={t('home.errorBody')} onRetry={retry} />
+      <div className="card dash-error" role="alert">
+        <WarnIcon size={16} className="dash-error-icon" />
+        <div>
+          <h2>{t('home.errorTitle')}</h2>
+          <p>{t('home.errorBody')}</p>
+        </div>
+        <button type="button" className="btn" onClick={retry}>
+          {t('errors.retry')}
+        </button>
       </div>
     );
   } else if (state.kind === 'loading') {
@@ -285,9 +268,7 @@ function Dashboard() {
         period={period}
         gran={gran}
         compare={compare}
-        updated={t('home.updated', {
-          when: formatRelative(new Date(state.loadedAt).toISOString()),
-        })}
+        updated={updatedOf(t, now - state.loadedAt)}
         canSeeBudgets={canView(me, 'budgets') && state.data.budgets_scope === 'agents'}
         onExport={exportCsv}
       />
@@ -304,7 +285,7 @@ function Dashboard() {
               <h1 className="page-title">
                 {name ? t('home.greeting', { greeting, name }) : greeting}
               </h1>
-              <p className="page-subtitle">{t('home.subtitle')}</p>
+              <p className="page-subtitle">{t(`home.subtitle.${scope}`, { area })}</p>
             </div>
             {approvals > 0 ? (
               <button

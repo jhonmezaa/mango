@@ -94,6 +94,7 @@ describe('Sidebar navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Operación' }));
     await user.click(screen.getByRole('button', { name: 'Construir' }));
     expect(navLinks()).toEqual([
+      'Inicio',
       'Chat',
       'Bandeja',
       'Marketplace',
@@ -103,11 +104,7 @@ describe('Sidebar navigation', () => {
       'Schedules',
       'Org Chart',
     ]);
-    expect(soonItems()).toEqual([
-      'Inicio, próximamente',
-      'Tickets, próximamente',
-      'Buscar conversaciones, próximamente',
-    ]);
+    expect(soonItems()).toEqual(['Tickets, próximamente', 'Buscar conversaciones, próximamente']);
     // Construir only has Schedules (design 2026-10-16, D82 (1)); admin screens and the
     // Catálogo de MCP are hidden.
     expect(screen.getByRole('button', { name: 'Gobernanza' })).toBeInTheDocument();

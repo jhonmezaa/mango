@@ -26,6 +26,10 @@ export const auth = {
   keep: 'Sigues dentro hasta {{count}} h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.',
   signedOutElsewhere: 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.',
   sessionEnded: 'Tu sesión terminó. Vuelve a entrar para seguir.',
+  bootFail: {
+    title: 'No se pudo abrir Mango',
+    body: 'Mango no responde. Inténtalo de nuevo en unos minutos.',
+  },
   signup: {
     title: 'Crea tu cuenta',
     subtitle:
@@ -218,7 +222,6 @@ export const auth = {
     signInFailed: 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.',
     // Sign-up and code sending: the generic sentence of the other modules, word for word.
     actionFailed: 'No se pudo completar la acción. Inténtalo de nuevo.',
-    sessionExpired: 'Tu sesión expiró. Vuelve a iniciar sesión.',
     credentials: 'Correo o contraseña incorrectos.',
     code: 'El código no es válido o venció. Pide uno nuevo.',
   },

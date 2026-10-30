@@ -17,12 +17,13 @@ export const PERIODS: readonly Period[] = ['7d', '30d', '90d', '180d'];
 export const DEFAULT_PERIOD: Period = '30d';
 
 /**
- * D102 and the owner's choice of 2026-10-29: Inicio shows data to whoever sees the organization
- * (administrators and central FinOps) until the design draws the area and personal variants.
- * UX only: the API decides the scope with Cedar on every request (REACT-AUTHZ-001).
+ * The scope to expect before the answer arrives, for the subtitle while it loads (design round
+ * 28). UX only: the API decides the scope with Cedar on every request (REACT-AUTHZ-001), and its
+ * answer replaces this one.
  */
-export function seesOrganization(me: Pick<Me, 'is_admin' | 'role'>): boolean {
-  return me.is_admin || me.role === 'finops-central';
+export function expectedScope(me: Pick<Me, 'is_admin' | 'role' | 'business_unit'>): Home['scope'] {
+  if (me.is_admin || me.role === 'finops-central') return 'org';
+  return me.role === 'bu-lead' && me.business_unit ? 'area' : 'mine';
 }
 
 function isPeriod(value: string | null): value is Period {
@@ -40,22 +41,34 @@ export function savePeriod(period: Period): void {
 }
 
 export interface Series {
-  cur: number[];
-  prev: number[];
+  /** One value per point; `null` where nothing was counted yet: neither added up nor drawn. */
+  cur: (number | null)[];
+  prev: (number | null)[];
   /** `yyyy-mm-dd` of each point: the day, or the first day of the week. */
   dates: string[];
   prevDates: string[];
+  /** Whether every day behind the points was counted. */
+  curWhole: boolean;
+  prevWhole: boolean;
 }
 
-function bucket(values: number[], step: number): number[] {
-  if (step === 1) return values;
-  const out: number[] = [];
-  // Weeks end today: the oldest bucket may be shorter, as the design's (`floor(days / 7)`).
-  const n = Math.max(1, Math.floor(values.length / step));
-  const start = values.length - n * step;
+/** Weeks end today: the oldest days that do not fill a week are left out, as the design's. */
+function pointsOf(length: number, step: number): { n: number; start: number } {
+  const n = Math.max(1, Math.floor(length / step));
+  return { n, start: length - n * step };
+}
+
+function bucket(values: readonly (number | null)[], step: number): (number | null)[] {
+  if (step === 1) return [...values];
+  const { n, start } = pointsOf(values.length, step);
+  const out: (number | null)[] = [];
   for (let i = 0; i < n; i += 1) {
-    let total = 0;
-    for (let j = start + i * step; j < start + (i + 1) * step; j += 1) total += values[j] ?? 0;
+    // A week counted only in part adds up those days; one with none of them has no value.
+    let total: number | null = null;
+    for (let j = start + i * step; j < start + (i + 1) * step; j += 1) {
+      const value = values[j] ?? null;
+      if (value !== null) total = (total ?? 0) + value;
+    }
     out.push(total);
   }
   return out;
@@ -63,9 +76,14 @@ function bucket(values: number[], step: number): number[] {
 
 function bucketDates(days: readonly HomeDay[], step: number): string[] {
   if (step === 1) return days.map((d) => d.day);
-  const n = Math.max(1, Math.floor(days.length / step));
-  const start = days.length - n * step;
+  const { n, start } = pointsOf(days.length, step);
   return Array.from({ length: n }, (_, i) => days[start + i * step]?.day ?? '');
+}
+
+function isWhole(values: readonly (number | null)[], step: number): boolean {
+  return values
+    .slice(Math.max(0, pointsOf(values.length, step).start))
+    .every((value) => value !== null);
 }
 
 /** Design: weekly over 7 days is daily (`gran === 'week' && period === '7d' ? 'day'`). */
@@ -73,17 +91,29 @@ export function effectiveGranularity(period: Period, gran: Granularity): Granula
   return gran === 'week' && period === '7d' ? 'day' : gran;
 }
 
+/**
+ * The series of a card. The API answers 0 for a day without a counter; before `counted_since`
+ * that is not a zero but a day Mango did not count (design round 28, `dashSince`), and with no
+ * `counted_since` no day was counted yet.
+ */
 export function seriesOf(
-  data: Pick<Home, 'days' | 'previous'>,
+  data: Pick<Home, 'days' | 'previous' | 'counted_since'>,
   pick: (day: HomeDay) => number,
   gran: Granularity,
 ): Series {
   const step = gran === 'week' ? 7 : 1;
+  const since = data.counted_since;
+  const read = (days: readonly HomeDay[]) =>
+    days.map((day) => (since !== null && day.day >= since ? pick(day) : null));
+  const cur = read(data.days);
+  const prev = read(data.previous);
   return {
-    cur: bucket(data.days.map(pick), step),
-    prev: bucket(data.previous.map(pick), step),
+    cur: bucket(cur, step),
+    prev: bucket(prev, step),
     dates: bucketDates(data.days, step),
     prevDates: bucketDates(data.previous, step),
+    curWhole: isWhole(cur, step),
+    prevWhole: isWhole(prev, step),
   };
 }
 
@@ -92,6 +122,11 @@ export const spentOf = (day: HomeDay): number => {
   return Number.isFinite(value) ? value : 0;
 };
 export const turnsOf = (day: HomeDay): number => day.turns;
+
+/** The values that were counted. */
+export function countedOf(values: readonly (number | null)[]): number[] {
+  return values.filter((value) => value !== null);
+}
 
 export function sum(values: readonly number[]): number {
   let total = 0;
@@ -111,6 +146,20 @@ export function fmtDay(day: string): string {
   const [, month, date] = day.split('-').map(Number);
   if (!month || !date) return day;
   return `${String(date)} ${MONTHS[month - 1] ?? ''}`;
+}
+
+/** "29 sep 2026" (design `fmtDate`), read as the UTC day the API sends. */
+export function fmtDate(day: string): string {
+  return `${fmtDay(day)} ${day.slice(0, 4)}`;
+}
+
+/** The whole minutes and hours behind «Actualizado» (design `dashAgo`). */
+export function agoOf(ms: number): { unit: 'seconds' | 'minutes' | 'hours'; count: number } {
+  const seconds = ms / 1000;
+  if (seconds < 60) return { unit: 'seconds', count: 0 };
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return { unit: 'minutes', count: minutes };
+  return { unit: 'hours', count: Math.floor(minutes / 60) };
 }
 
 /** Design `niceMax`: the top of the axis. */
@@ -195,13 +244,14 @@ export function budgetPercent(budget: HomeBudget): number {
 }
 
 /**
- * The CSV of a card (design «Exportar»): day, value and the same day of the period before.
+ * The CSV of a card (design «Exportar»): day, value and the same day of the period before; a
+ * day that was not counted has no value, not a zero.
  * Only dates and numbers the API sent: nothing a spreadsheet would run as a formula.
  */
 export function toCsv(series: Series, header: string): string {
   const rows = series.dates.map(
     (day, i) =>
-      `${day},${String(series.cur[i] ?? 0)},${series.prevDates[i] ?? ''},${String(series.prev[i] ?? 0)}`,
+      `${day},${String(series.cur[i] ?? '')},${series.prevDates[i] ?? ''},${String(series.prev[i] ?? '')}`,
   );
   return [`fecha,${header},fecha_anterior,${header}_anterior`, ...rows].join('\n');
 }

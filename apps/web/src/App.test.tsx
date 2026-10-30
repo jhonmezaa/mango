@@ -6,14 +6,12 @@ import { App } from './App';
 import type { CognitoAuth } from './auth/cognito/flows';
 import { testConfig } from './test/fixtures';
 
-const GENERIC = 'Ocurrió un error inesperado. Inténtalo de nuevo.';
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('App: opening the application while the session renewal does not answer', () => {
-  it('shows the generic error with «Reintentar», not the sign-in form', async () => {
+  it('says Mango could not open with «Reintentar», not the sign-in form', async () => {
     // A 429 is not retried on its own, so the error is there at once.
     const answers = [
       new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'x' } }), {
@@ -31,14 +29,14 @@ describe('App: opening the application while the session renewal does not answer
     const user = userEvent.setup();
     render(<App config={testConfig} cognito={{} as CognitoAuth} />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(GENERIC);
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo abrir Mango');
     expect(screen.queryByLabelText('Correo')).toBeNull();
     expect(fetchMock).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
     // Only now, with the answer that says so, the sign-in form.
     expect(await screen.findByLabelText('Correo')).toBeInTheDocument();
-    expect(screen.queryByText(GENERIC)).toBeNull();
+    expect(screen.queryByText('No se pudo abrir Mango')).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

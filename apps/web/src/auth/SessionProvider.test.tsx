@@ -99,9 +99,8 @@ describe('SessionProvider: the profile does not answer', () => {
         </SessionProvider>
       </AuthContext>,
     );
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Ocurrió un error inesperado. Inténtalo de nuevo.',
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo abrir Mango');
+    expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).toBeNull();
     down = false;
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByText('app')).toBeInTheDocument();
