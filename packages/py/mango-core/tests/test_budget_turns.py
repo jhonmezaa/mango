@@ -394,6 +394,7 @@ def test_a_record_with_another_shape_is_counted_and_never_used(db: Any) -> None:
         {"price_input": {"N": "NaN"}},
         {"SK": {"S": "../x"}},
         {"PK": {"S": "TURN#b"}},
+        {"area": {"S": "Ventas!"}},
     ],
 )
 def test_records_are_validated_before_they_are_used(change: dict[str, Any]) -> None:
@@ -405,3 +406,106 @@ def test_records_are_validated_before_they_are_used(change: dict[str, Any]) -> N
 def test_token_cost_uses_the_price_stored_with_the_turn() -> None:
     usage = TokenUsage(1_000_000, 100_000, 2_000_000, 10_000)
     assert budget_turns.token_cost(usage, PRICE) == Decimal("5.137500")
+
+
+# --- Day counters of Inicio (D102) ------------------------------------------------------------
+
+DAY = "2026-10-06"
+"""The UTC day of ``START``."""
+
+
+def _day(db: Any, key: str) -> tuple[Decimal, int] | None:
+    item = db.get_item(TableName=TABLE, Key={"PK": {"S": key}, "SK": {"S": DAY}}).get("Item")
+    if item is None:
+        return None
+    return Decimal(item["spent"]["N"]), int(item["turns"]["N"])
+
+
+def _days(db: Any, area: str | None = "ventas") -> dict[str, tuple[Decimal, int] | None]:
+    keys = ["DAY#ORG", "DAY#USER#user-1", *([f"DAY#AREA#{area}"] if area else [])]
+    return {key: _day(db, key) for key in keys}
+
+
+def test_settling_counts_the_turn_and_its_cost_for_the_day(db: Any) -> None:
+    turn = _turn(area="ventas")
+    _reserve(db, turn)
+    assert budget_turns.settle(db, TABLE, turn, Decimal("0.0045")) is True
+    assert set(_days(db).values()) == {(Decimal("0.0045"), 1)}
+    # Settling twice counts once, as the budget.
+    assert budget_turns.settle(db, TABLE, turn, Decimal("0.0045")) is False
+    assert set(_days(db).values()) == {(Decimal("0.0045"), 1)}
+
+
+def test_a_turn_without_an_area_counts_for_the_organization_and_the_person(db: Any) -> None:
+    turn = _turn()
+    _reserve(db, turn)
+    budget_turns.settle(db, TABLE, turn, Decimal("0.01"))
+    assert _days(db, area=None) == {
+        "DAY#ORG": (Decimal("0.01"), 1),
+        "DAY#USER#user-1": (Decimal("0.01"), 1),
+    }
+    assert (
+        db.scan(
+            TableName=TABLE,
+            FilterExpression="begins_with(PK, :a)",
+            ExpressionAttributeValues={":a": {"S": "DAY#AREA#"}},
+        )["Count"]
+        == 0
+    )
+
+
+def test_a_released_turn_leaves_no_day_counter(db: Any) -> None:
+    turn = _turn(area="ventas")
+    _reserve(db, turn)
+    assert budget_turns.settle(db, TABLE, turn, Decimal(0), invoked=False) is True
+    assert set(_days(db).values()) == {None}
+
+
+def test_a_held_turn_is_counted_once_and_its_cost_as_it_becomes_known(db: Any) -> None:
+    turn = _turn(area="ventas")
+    _reserve(db, turn)
+    held = budget_turns.hold(db, TABLE, turn, TokenUsage(input_tokens=1000, output_tokens=100))
+    assert held is not None
+    assert set(_days(db).values()) == {(Decimal("0.004500"), 1)}
+    outcome = Outcome(BASIS_TRACE, usage=TokenUsage(2681, 245), invocations=1)
+    assert budget_turns.close(db, TABLE, held, outcome) is not None
+    # The same as the budget's ``spent``, and still one turn.
+    assert set(_days(db).values()) == {(Decimal("0.011718"), 1)}
+    assert _budget(db)["spent"] == Decimal("0.011718")
+
+
+def test_closing_an_open_turn_counts_it_and_one_never_invoked_does_not(db: Any) -> None:
+    ran = _turn(area="ventas", session_id=SESSION)
+    _reserve(db, ran)
+    outcome = Outcome(BASIS_TRACE, usage=TokenUsage(3030, 250), invocations=1)
+    assert budget_turns.close(db, TABLE, ran, outcome) is not None
+    assert set(_days(db).values()) == {(Decimal("0.01284"), 1)}
+    never = _turn("b" * 32, area="ventas")
+    _reserve(db, never)
+    assert budget_turns.close(db, TABLE, never, Outcome(BASIS_NOT_INVOKED)) is not None
+    assert set(_days(db).values()) == {(Decimal("0.01284"), 1)}
+
+
+def test_the_area_travels_with_the_record_and_an_invalid_one_is_dropped() -> None:
+    assert PendingTurn.from_item(_turn(area="ventas").to_item()).area == "ventas"
+    # A record written before the day counters has no area.
+    item = _turn().to_item()
+    assert "area" not in item
+    assert PendingTurn.from_item(item).area is None
+    assert _turn(area=None).day_counters == ("DAY#ORG", "DAY#USER#user-1")
+    created = PendingTurn.new(
+        turn_id="c" * 32,
+        user_id="u",
+        agent_id="a",
+        agent_version=1,
+        model="m",
+        conversation_id="c" * 32,
+        period=PERIOD,
+        scopes=(USER,),
+        reserved=RESERVED,
+        price=PRICE,
+        started_at=START,
+        timeout_seconds=60,
+        area="../x",
+    )
+    assert created.area is None

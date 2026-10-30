@@ -23,11 +23,12 @@ export const BUDGET_RECONCILER_METRICS = { namespace: "Mango/BudgetReconciler", 
 export const SPANS_LOG_GROUP = "aws/spans";
 
 /**
- * Partition keys of the Budgets table the function may touch: the pending turns and the
- * budget items they name. Keep in sync with `mango_core.budget_turns` (`TURN_PREFIX`) and
+ * Partition keys of the Budgets table the function may touch: the pending turns, the budget
+ * items they name and the day counters of Inicio (D102). Keep in sync with
+ * `mango_core.budget_turns` (`TURN_PREFIX`), `mango_core.usage_days` (`DAY_PREFIX`) and
  * `mango_api.app._budget_scopes`.
  */
-export const BUDGET_RECONCILER_KEYS = { turns: "TURN#*", budgets: ["USER#*", "AGENT#*"] };
+export const BUDGET_RECONCILER_KEYS = { turns: "TURN#*", budgets: ["USER#*", "AGENT#*", "DAY#*"] };
 
 export interface BudgetReconcilerProps {
   readonly installation: Installation;
@@ -102,8 +103,8 @@ export class BudgetReconciler extends Construct {
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "SettleBudgets",
-        // The counters of the scopes a pending turn names, by key, in the same transaction
-        // that closes the turn.
+        // The counters of the scopes a pending turn names and its day counters (D102), by
+        // key, in the same transaction that closes the turn.
         actions: ["dynamodb:UpdateItem"],
         resources: [table],
         conditions: leadingKeys(...BUDGET_RECONCILER_KEYS.budgets),

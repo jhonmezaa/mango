@@ -1975,6 +1975,74 @@ export type HealthOut = {
 };
 
 /**
+ * HomeBudgetOut
+ */
+export type HomeBudgetOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Limit Usd
+     */
+    limit_usd: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Scope
+     */
+    scope: 'agent' | 'user';
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+};
+
+/**
+ * HomeOut
+ */
+export type HomeOut = {
+    /**
+     * Approvals
+     */
+    approvals: number;
+    /**
+     * Area
+     */
+    area: string | null;
+    /**
+     * Budgets
+     */
+    budgets: Array<HomeBudgetOut>;
+    /**
+     * Budgets Scope
+     */
+    budgets_scope: 'agents' | 'mine';
+    /**
+     * Counted Since
+     */
+    counted_since: string | null;
+    /**
+     * Days
+     */
+    days: Array<UsageDayOut>;
+    /**
+     * Period
+     */
+    period: '7d' | '30d' | '90d' | '180d';
+    /**
+     * Previous
+     */
+    previous: Array<UsageDayOut>;
+    /**
+     * Scope
+     */
+    scope: 'org' | 'area' | 'mine';
+};
+
+/**
  * InboxItem
  */
 export type InboxItem = {
@@ -5587,6 +5655,24 @@ export type UploadsOut = {
 };
 
 /**
+ * UsageDayOut
+ */
+export type UsageDayOut = {
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+    /**
+     * Turns
+     */
+    turns: number;
+};
+
+/**
  * UserBudgetIn
  */
 export type UserBudgetIn = {
@@ -8443,6 +8529,36 @@ export type HealthResponses = {
 };
 
 export type HealthResponse = HealthResponses[keyof HealthResponses];
+
+export type GetHomeData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Period
+         */
+        period?: '7d' | '30d' | '90d' | '180d';
+    };
+    url: '/home';
+};
+
+export type GetHomeErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetHomeError = GetHomeErrors[keyof GetHomeErrors];
+
+export type GetHomeResponses = {
+    /**
+     * Successful Response
+     */
+    200: HomeOut;
+};
+
+export type GetHomeResponse = GetHomeResponses[keyof GetHomeResponses];
 
 export type ListInboxData = {
     body?: never;

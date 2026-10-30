@@ -45,6 +45,7 @@ PER_TASK = {
     "session.renewals",
     "agents.lists",
     "governance.reads",  # D89 (6)
+    "home.reads",  # D102 (7)
     # D90: the reads of the Actividad, whose live mode asks every 15 s.
     "activity.reads",
     # D92 (9): the reads of the skills catalog (30 days of activations each).

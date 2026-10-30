@@ -132,7 +132,7 @@ describe("budget reconciler role (D73, TM-BR6, TM-BR7)", () => {
     expect(keys(close)).toEqual([BUDGET_RECONCILER_KEYS.turns]);
     const settle = bySid("SettleBudgets");
     expect(actions(settle)).toEqual(["dynamodb:UpdateItem"]);
-    expect(keys(settle)).toEqual(["USER#*", "AGENT#*"]);
+    expect(keys(settle)).toEqual(["USER#*", "AGENT#*", "DAY#*"]);
     for (const statement of [close, settle]) expect(statement.Resource).toEqual(budgetsArn);
     // Every statement on the Budgets table is limited to those keys.
     for (const statement of statements.filter((s) => JSON.stringify(s.Resource).includes(budgetsId))) {
@@ -144,6 +144,9 @@ describe("budget reconciler role (D73, TM-BR6, TM-BR7)", () => {
     const core = python("packages/py/mango-core/src/mango_core/budget_turns.py");
     expect(core).toContain('TURN_PREFIX: Final = "TURN#"');
     expect(BUDGET_RECONCILER_KEYS.turns).toBe("TURN#*");
+    const days = python("packages/py/mango-core/src/mango_core/usage_days.py");
+    expect(days).toContain('DAY_PREFIX: Final = "DAY#"');
+    expect(BUDGET_RECONCILER_KEYS.budgets).toContain("DAY#*");
     const api = python("apps/api/src/mango_api/app.py");
     expect(api).toContain('BudgetScope(f"USER#{user.user_id}"');
     expect(api).toContain('BudgetScope(f"AGENT#{agent_id}"');

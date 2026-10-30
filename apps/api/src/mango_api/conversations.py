@@ -92,10 +92,12 @@ class RlsClientFactory:
         key_arn: str,
         region: str,
         clock: Callable[[], float] = time.monotonic,
+        budgets_table_arn: str | None = None,
     ) -> None:
         self._sts = sts
         self._role_arn = role_arn
         self._table_arn = table_arn
+        self._budgets_table_arn = budgets_table_arn
         self._key_arn = key_arn
         self._region = region
         self._clock = clock
@@ -123,6 +125,7 @@ class RlsClientFactory:
                             }
                         },
                     },
+                    *self._budget_statements(user_id),
                     {
                         "Effect": "Allow",
                         "Action": ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey*"],
@@ -132,6 +135,24 @@ class RlsClientFactory:
             },
             separators=(",", ":"),
         )
+
+    def _budget_statements(self, user_id: str) -> list[dict[str, Any]]:
+        """Inicio reads the person's own budget and day counters (D102): read only, and only
+        their two keys of the Budgets table."""
+        if self._budgets_table_arn is None:
+            return []
+        return [
+            {
+                "Effect": "Allow",
+                "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+                "Resource": self._budgets_table_arn,
+                "Condition": {
+                    "ForAllValues:StringEquals": {
+                        "dynamodb:LeadingKeys": [f"USER#{user_id}", f"DAY#USER#{user_id}"]
+                    }
+                },
+            }
+        ]
 
     def for_user(self, user_id: str) -> DynamoDBClient:
         now = self._clock()

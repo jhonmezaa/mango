@@ -240,6 +240,29 @@ def test_governance_is_for_administrators_and_central_finops(authz: Authorizer) 
         assert not authz.is_allowed(user, "ViewGovernance", *PLATFORM), user.user_id
 
 
+def test_any_mango_user_opens_home(authz: Authorizer) -> None:
+    # D102: whose numbers each one gets is decided again with the two actions below.
+    for user in (*EVERYONE, CENTRAL, NO_GROUP):
+        assert authz.is_allowed(user, "ViewHome", *PLATFORM), user.user_id
+
+
+def test_the_organizations_usage_is_for_administrators_and_central_finops(
+    authz: Authorizer,
+) -> None:
+    assert authz.is_allowed(ADMIN, "ViewOrgUsage", *PLATFORM)
+    assert authz.is_allowed(CENTRAL, "ViewOrgUsage", *PLATFORM)
+    for user in (CREATOR, OTHER_CREATOR, MEMBER, LEAD, NO_GROUP):
+        assert not authz.is_allowed(user, "ViewOrgUsage", *PLATFORM), user.user_id
+
+
+def test_an_areas_usage_is_for_a_lead_with_their_area(authz: Authorizer) -> None:
+    assert authz.is_allowed(LEAD, "ViewAreaUsage", *PLATFORM)
+    in_area = UserContext("member-2", None, "security", False, groups=frozenset({"bu-security"}))
+    lead_without_area = UserContext("lead-2", "bu-lead", None, False, groups=frozenset({"bu-lead"}))
+    for user in (ADMIN, CENTRAL, CREATOR, MEMBER, NO_GROUP, in_area, lead_without_area):
+        assert not authz.is_allowed(user, "ViewAreaUsage", *PLATFORM), user.user_id
+
+
 def test_any_mango_user_reads_their_activity(authz: Authorizer) -> None:
     # D90: their own partition decides what each one sees; everyone's needs ViewAudit.
     for user in (*EVERYONE, CENTRAL, NO_GROUP):

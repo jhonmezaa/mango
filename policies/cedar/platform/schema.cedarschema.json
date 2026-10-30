@@ -108,6 +108,15 @@
       "ViewGovernance": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "ViewHome": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ViewOrgUsage": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
+      "ViewAreaUsage": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ViewActivity": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },

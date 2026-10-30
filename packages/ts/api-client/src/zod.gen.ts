@@ -777,6 +777,17 @@ export const zHealthOutSchema = z.object({
 });
 
 /**
+ * HomeBudgetOut
+ */
+export const zHomeBudgetOutSchema = z.object({
+    id: z.string(),
+    limit_usd: z.string(),
+    name: z.string().nullable(),
+    scope: z.enum(['agent', 'user']),
+    spent_usd: z.string()
+});
+
+/**
  * InboxRemote
  */
 export const zInboxRemoteSchema = z.object({
@@ -2701,6 +2712,39 @@ export const zUploadsOutSchema = z.object({
 });
 
 /**
+ * UsageDayOut
+ */
+export const zUsageDayOutSchema = z.object({
+    day: z.string(),
+    spent_usd: z.string(),
+    turns: z.int()
+});
+
+/**
+ * HomeOut
+ */
+export const zHomeOutSchema = z.object({
+    approvals: z.int(),
+    area: z.string().nullable(),
+    budgets: z.array(zHomeBudgetOutSchema),
+    budgets_scope: z.enum(['agents', 'mine']),
+    counted_since: z.string().nullable(),
+    days: z.array(zUsageDayOutSchema),
+    period: z.enum([
+        '7d',
+        '30d',
+        '90d',
+        '180d'
+    ]),
+    previous: z.array(zUsageDayOutSchema),
+    scope: z.enum([
+        'org',
+        'area',
+        'mine'
+    ])
+});
+
+/**
  * UserBudgetIn
  */
 export const zUserBudgetInSchema = z.object({
@@ -3810,6 +3854,20 @@ export const zListGroupsResponse = zGroupListSchema;
  * Successful Response
  */
 export const zHealthResponse = z.record(z.string(), z.string());
+
+export const zGetHomeQuery = z.object({
+    period: z.enum([
+        '7d',
+        '30d',
+        '90d',
+        '180d'
+    ]).optional().default('30d')
+});
+
+/**
+ * Successful Response
+ */
+export const zGetHomeResponse = zHomeOutSchema;
 
 export const zListInboxQuery = z.object({
     view: z.enum([

@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from mango_core import budget_turns
+from mango_core import budget_turns, usage_days
 from mango_core.budget_turns import PendingTurn, TokenUsage
 
 if TYPE_CHECKING:
@@ -158,18 +158,29 @@ class BudgetService:
         """Record the runtime session a reserved turn is about to be invoked in."""
         budget_turns.bind_session(self._db, self._table, turn, session_id)
 
-    def settle_turn(self, turn: PendingTurn, actual: Decimal) -> bool:
+    def settle_turn(self, turn: PendingTurn, actual: Decimal, *, invoked: bool = True) -> bool:
         """The end of the turn is known: replace its reservation with the real cost (which may
-        exceed the estimate). False if the turn was already closed; nothing changes then."""
-        return budget_turns.settle(self._db, self._table, turn, actual, self._sleep)
+        exceed the estimate). False if the turn was already closed; nothing changes then.
+        ``invoked`` is False for a turn that never reached the agent."""
+        return budget_turns.settle(
+            self._db, self._table, turn, actual, self._sleep, invoked=invoked
+        )
 
     def hold_turn(self, turn: PendingTurn, usage: TokenUsage) -> PendingTurn | None:
         """The end of the turn is not known: charge the usage counted so far and keep the rest
         of the reservation until the reconciler closes it. None if it was already closed."""
         return budget_turns.hold(self._db, self._table, turn, usage, self._sleep)
 
-    def charge(self, scopes: list[BudgetScope], amount: Decimal, period: str) -> None:
-        """Add a cost that had no reservation (the title of a new conversation)."""
+    def charge(
+        self,
+        scopes: list[BudgetScope],
+        amount: Decimal,
+        period: str,
+        counters: tuple[str, ...] = (),
+        day: str | None = None,
+    ) -> None:
+        """Add a cost that had no reservation (the title of a new conversation), and to the
+        day counters of Inicio (``usage_days.keys``) when given: spend, not a turn (D102)."""
         for scope in scopes:
             self._db.update_item(
                 TableName=self._table,
@@ -177,6 +188,11 @@ class BudgetService:
                 UpdateExpression="ADD committed :amount, spent :amount",
                 ExpressionAttributeValues={":amount": _n(amount)},
             )
+        if not counters or amount <= 0:
+            return
+        today = day or usage_days.day_of(int(time.time()))
+        for item in usage_days.updates(self._table, counters, today, spent=amount, turns=0):
+            self._db.update_item(**item["Update"])
 
     def status(self, scope: BudgetScope, period: str) -> dict[str, str]:
         item = self._db.get_item(
