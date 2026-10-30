@@ -1081,3 +1081,52 @@ Sin «Recuperando tu sesión…» en ningún caso (se quita del inicio de sesió
 - Qué devuelve cancelar en Microsoft (prueba en vivo); si el perfil agregará descripción del servicio y de permisos.
 - El error a pantalla completa al cargar (y si ofrece «Ingresar» o «Cerrar sesión»).
 - Lo de rondas anteriores (§5 del contexto), sin cambios.
+
+
+## Ronda 28 e Inicio (2026-10-30)
+Respuesta al contexto de la ronda 28 y de Inicio (D102). Archivos: `dashboard.jsx`, `charts.jsx`, `store.js`, `login.jsx`, `app.jsx`, `remote-core.jsx`, `styles.css`. Se aceptan las diferencias del §A2 (el aviso local es del navegador, no de la pestaña; «Tu sesión terminó» se dice una vez; si la renovación no responde, se conserva el aviso).
+
+### A3 · Decisiones
+- **Fin de la sesión: un solo texto.** «Tu sesión terminó. Vuelve a entrar para seguir.» al recargar y cuando termina con la app abierta. Se retira «Tu sesión expiró. Vuelve a iniciar sesión.» del inicio de sesión: la persona no necesita saber si venció o la cerraron. (La pantalla de error 401 dentro de la app, al pulsar «Ingresar», ya lleva al inicio de sesión con este aviso.)
+- **Nota de enlaces sin comprobar:** solo si el texto del agente tiene al menos un enlace. Sin enlaces, la nota no explica nada. *Cambio para el producto.*
+- Ronda 26 (cancelar en Microsoft, descripción del servicio): sin cambios, sigue abierto.
+
+### Error a pantalla completa al cargar (A4, ahora dibujado)
+Sale cuando la renovación no responde tras los reintentos. Portada neutra (fondo y logo de 44 px) con «No se pudo abrir Mango» · «Mango no responde. Inténtalo de nuevo en unos minutos.», «Reintentar» (primario) y «Cerrar sesión» (secundario, porque el navegador sigue recordando la sesión). Sin «Ingresar»: si hay sesión no sirve, y si no la hay ya se habría ido al inicio de sesión. `role="alert"`. Sigue abierto qué decir cuando la sesión no se renueva dentro del chat.
+
+### Inicio
+**Disponibilidad:** en «Disponible hoy», Inicio está para administradores y finops-central (`isSoon('dashboard')` mira el rol). Líder de área y el resto siguen en «Próximamente» hasta que el producto tome las variantes de abajo; en «Diseño completo» se ven las tres.
+
+**Alcance según la cuenta**
+- Organización (admin o finops-central): «Así va Mango en toda la organización en el periodo seleccionado.» · Invocaciones: «Turnos de toda la organización que llegaron a un agente, en el chat y en el Playground.»
+- Área (bu-lead): «Así va tu área, {Área}, en el periodo seleccionado.» · «Turnos de las personas de tu área que llegaron a un agente, en el chat y en el Playground.»
+- Personal: «Así va tu uso de Mango en el periodo seleccionado.» · «Tus mensajes que llegaron a un agente, en el chat y en el Playground.»
+- Gasto en Bedrock: «Costo de Bedrock en USD {de toda la organización | de las personas de tu área | de tus mensajes}: las respuestas de los agentes y el título de las conversaciones nuevas.»
+- «Responder N aprobaciones» solo para quien puede firmar (`approval.decide`).
+
+**Presupuestos**
+- Admin: «Presupuestos cerca del límite», los cuatro agentes, con «Ver presupuestos».
+- Todos los demás (finops-central sin admin, bu-lead, resto): «Tu presupuesto», una fila «Límite personal · USD x de USD y · %», **sin enlace** (no tienen esa pantalla). Info: bu-lead «Mango no tiene presupuestos por área. Este es tu límite personal del mes.»; resto «Tu límite personal del mes, para todos los agentes.». Es lo que ya hace el producto con finops-central.
+
+**Saludo sin nombre:** solo «Buenas noches» (sin coma ni correo). Lo de antes de la @ tampoco es un nombre (`nombre+algo`).
+
+**Tarjetas sin fuente:** en «Disponible hoy» se **ocultan** Estado de agentes, Tickets resueltos y Latencia p95 (lo que recomienda la revisión: no mostrar lo que no tiene fecha). Quedan Gasto, Invocaciones y Presupuestos en la misma rejilla de dos columnas. También se quita «Ver detalles» (lleva a vistas en «Próximamente»); «Exportar» se queda. *Cambio para el producto.*
+
+**Desde cuándo hay datos** (la respuesta trae el primer día)
+- Los días antes de ese día no son cero: no se suman ni se dibujan. En el gráfico, esa zona va rayada con «Sin datos» y una línea discontinua en el primer día. Con un solo día de datos, un punto.
+- Bajo el total: «Cuenta desde el {d mmm aaaa}».
+- Si el periodo anterior no está completo, no se muestra el porcentaje ni «… periodo anterior» (el título de «Cuenta desde…» lo explica: «No hay datos de todo el periodo anterior, así que no se compara.»).
+- Tooltip en un día sin datos: el día con «Sin datos» y, debajo, «Mango cuenta desde el {fecha}. Antes no hay datos, no es que no hubiera gasto.».
+- Sin ningún día con datos en el periodo, el total es «—».
+
+**Carga y error**
+- Cargando: saludo y filtros quedan; en la rejilla, una tarjeta esqueleto por tarjeta que se va a mostrar (título, cifra, línea, gráfico). `role="status"`, `aria-busy`, «Cargando Inicio».
+- Error: en lugar de la rejilla, una tarjeta `role="alert"` «No se pudo cargar Inicio» · «Inténtalo de nuevo en unos segundos.» con «Reintentar» a la derecha (debajo a ≤560 px).
+
+**Se acepta lo del producto:** «Actualizado hace unos segundos / hace N minutos / hace N horas», contado desde que se leyó la respuesta (igual en todas las tarjetas). «Quitar Comparar» como botón propio junto a la píldora (ya no es un control dentro de otro). Toast de Exportar: «Exportado a CSV».
+
+**Panel de demo:** «Recargar la página» › «Con sesión · no responde»; «Inicio · al cargar» (carga, cargando, error); «Inicio · desde cuándo hay datos» (todo el periodo, hace 12 días, desde hoy); «Inicio · nombre de la persona». Las variantes por rol, con «Cuenta de ejemplo».
+
+### Sigue abierto
+- Lo de A4 que no se tocó aquí (respuesta cortada por su tope, cuota de Bedrock, 429, correos rechazados, `area_required`, administración, Agent Builder, Knowledge Bases, menú).
+- Cancelar en Microsoft; descripción del servicio en el perfil.
