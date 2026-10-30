@@ -1,8 +1,8 @@
 # D102 · Inicio: gasto e invocaciones por día, con el alcance que decide el servidor según el rol
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-29 (construir Inicio con lo que hay más un agregado de gasto e invocaciones por día, y según el rol, elegido por el dueño ese día, por menú; el contador, el área de un turno, los presupuestos por rol, la lectura de lo propio con RLS, las variantes que el diseño no dibuja y los días sin contador, elegidos por menú ese día durante el trabajo)
-- **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (la transacción que cierra un turno suma también sus contadores del día) y [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo contado por tarea: `home.reads`)
+- **Fecha:** 2026-10-29 (construir Inicio con lo que hay más un agregado de gasto e invocaciones por día, y según el rol, elegido por el dueño ese día, por menú; el contador, el área de un turno, los presupuestos por rol, la lectura de lo propio con RLS, las variantes que el diseño no dibuja y los días sin contador, elegidos por menú ese día durante el trabajo) · punto (10) del 2026-10-30 (lo que dibujó la ronda 28 del diseño; ocultar lo que no tiene fuente, elegido por el dueño ese día, por menú)
+- **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (la transacción que cierra un turno suma también sus contadores del día), [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo contado por tarea: `home.reads`) y [D24](D024-diseno-de-la-ui.md) (en Inicio, lo que no tiene fuente no se muestra, punto 10)
 - **Precisada por:** —
 
 ## Decisión
@@ -27,8 +27,15 @@ Origen: el diseño (D24, `dashboard.jsx`) tiene una pantalla Inicio que el produ
 
 **(7) Límite y caché.** `home.reads`: 30 por minuto y persona, contado en la memoria de cada tarea (precisa D70): no sostiene ninguna excepción, cada lectura son dos consultas acotadas de los contadores y la caché absorbe las recargas. La caché guarda la respuesta 30 s por persona, permisos y periodo, como mucho 256 entradas.
 
-**(8) Lo que ve cada rol en la web, hasta que el diseño lo dibuje.** El diseño solo dibuja la vista de la organización. Inicio muestra datos a administradores y `finops-central`; para un `bu-lead` y una persona sin esos roles sigue «Próximamente» (navegación y página) hasta la ronda de diseño que dibuje sus variantes. El servidor ya les responde con su alcance. Brief: `docs/design/briefs/sync-2026-10-29c-inicio.md`.
+**(8) Lo que ve cada rol en la web, hasta que el diseño lo dibuje (sustituido por el punto 10).** El diseño solo dibuja la vista de la organización. Inicio muestra datos a administradores y `finops-central`; para un `bu-lead` y una persona sin esos roles sigue «Próximamente» (navegación y página) hasta la ronda de diseño que dibuje sus variantes. El servidor ya les responde con su alcance. Brief: `docs/design/briefs/sync-2026-10-29c-inicio.md`.
 
-**(9) Lo que no tiene fuente queda «Próximamente» (D24).** Estado de agentes (heartbeat; D89 (7) ya lo dejó pendiente de su propia decisión), tickets resueltos (no hay tickets) y latencia p95 (no se mide el primer token). Los días sin contador se muestran en cero, sin textos nuevos; `counted_since` queda en la respuesta para el estado «Cuenta desde el {fecha}» que se pide al diseño.
+**(9) Lo que no tiene fuente queda «Próximamente» (D24; sustituido por el punto 10).** Estado de agentes (heartbeat; D89 (7) ya lo dejó pendiente de su propia decisión), tickets resueltos (no hay tickets) y latencia p95 (no se mide el primer token). Los días sin contador se muestran en cero, sin textos nuevos; `counted_since` queda en la respuesta para el estado «Cuenta desde el {fecha}» que se pide al diseño.
+
+**(10) Lo que dibujó la ronda 28 del diseño (2026-10-30):** sustituye los puntos 8 y 9.
+- **Inicio es para todas las cuentas.** La web muestra lo que responde el servidor, que ya decidía el alcance: la organización, el área o lo propio, con su subtítulo y sus textos de información. Ningún permiso cambia y la API no cambia: el rol en la web solo elige el subtítulo mientras carga la respuesta.
+- **Lo que no tiene fuente no se muestra (elegido por el dueño, por menú).** Estado de agentes, tickets resueltos y latencia p95 se ocultan, y «Ver detalles» se quita. Es una excepción a D24 solo para Inicio, que el diseño dibuja así: lo que no tiene fecha no ocupa la portada.
+- **Los días antes de `counted_since` no son cero.** La API sigue respondiendo 0, y la web los trata como días sin datos: no se suman ni se dibujan (zona rayada, «Sin datos» y «Cuenta desde el {fecha}»). Sin periodo anterior completo no hay comparación, y sin ningún día contado el total es «—». Esa fecha es la de la organización: en un área o en lo propio, un día posterior sin actividad sí es un cero.
+- **Presupuestos:** administradores, «Presupuestos cerca del límite»; cualquier otra persona, «Tu presupuesto» con una fila «Límite personal», sin enlace.
+- **Saludo:** solo con el nombre; sin nombre, el saludo solo, nunca el correo.
 
 Modelo de amenazas: `docs/security/threat-models/home-threat-model.md`

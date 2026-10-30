@@ -28,7 +28,8 @@ Controles que se construyen:
 ## Scope and assumptions
 
 - **Dentro:** `GET /api/home`; los contadores `DAY#…` y su escritura; la session policy y el IAM nuevos; las tres políticas Cedar; la página.
-- **Fuera:** estado de agentes, tickets y latencia (sin fuente: «Próximamente», D24); la variante web de `bu-lead` y de una persona (siguen «Próximamente» hasta el diseño; el servidor sí les responde y queda dentro).
+- **Fuera:** estado de agentes, tickets y latencia (sin fuente: no se muestran, D102 (10)).
+- **Desde el 2026-10-30 (D102 (10)):** la web muestra Inicio a todas las cuentas, con el alcance que responde el servidor. No cambia ninguna amenaza: la API ya les respondía, y lo que el servidor no da no llega a la página. El rol en la web solo elige el subtítulo mientras carga. La persona ya no ve su correo en la tarjeta de presupuesto ni en el saludo.
 - **Supuestos:** la instalación es de un solo cliente (D1); las personas autenticadas son empleados del cliente; el área (`mango_business_unit`) y el rol los escribe el trigger pre-token desde los grupos de Cognito (D14, D60) y `mango-api` valida el access token (JWKS, `iss`, `client_id`, `token_use`). Una persona en un grupo `bu-<área>` sin ser `bu-lead` tiene área en el token pero **no** `ViewAreaUsage`.
 
 ## System model

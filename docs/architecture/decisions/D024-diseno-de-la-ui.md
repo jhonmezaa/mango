@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-30
 - **Precisa / reemplaza a:** —
-- **Precisada por:** —
+- **Precisada por:** [D102](D102-inicio-gasto-por-dia-segun-el-rol.md) (10): en Inicio, lo que no tiene fuente no se muestra
 
 ## Decisión
 
