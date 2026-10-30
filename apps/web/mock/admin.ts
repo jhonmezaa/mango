@@ -173,6 +173,7 @@ export function budgetsView() {
       {
         agent_id: 'finops',
         name: 'FinOps',
+        discarded: false,
         limit_usd: budgets.defaults.agent_monthly_usd,
         spent_usd: budgets.agentSpent,
       },

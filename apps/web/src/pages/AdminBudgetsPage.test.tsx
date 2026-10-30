@@ -282,6 +282,24 @@ describe('AdminBudgetsPage', () => {
     ]);
   });
 
+  it('names a discarded agent by its id, and only one the API says is gone', async () => {
+    renderPage({
+      getBudgets: vi.fn(() =>
+        Promise.resolve(
+          budgetsFixture({
+            agents: [
+              { agent_id: 'descartado', discarded: true, limit_usd: '30.00', spent_usd: '1.00' },
+              { agent_id: 'sinnombre', discarded: false, limit_usd: '30.00', spent_usd: '1.00' },
+            ],
+          }),
+        ),
+      ),
+    });
+    expect(await screen.findByText('Agente descartado · descartado')).toBeInTheDocument();
+    expect(screen.getByText('sinnombre')).toBeInTheDocument();
+    expect(screen.queryByText('Agente descartado · sinnombre')).not.toBeInTheDocument();
+  });
+
   it('hides defaults and users while filtering agents, with an empty state', async () => {
     const user = userEvent.setup();
     renderPage({});

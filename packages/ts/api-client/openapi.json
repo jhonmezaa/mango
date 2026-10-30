@@ -505,6 +505,10 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "discarded": {
+            "title": "Discarded",
+            "type": "boolean"
+          },
           "limit_usd": {
             "title": "Limit Usd",
             "type": "string"
@@ -528,6 +532,7 @@
         "required": [
           "agent_id",
           "name",
+          "discarded",
           "limit_usd",
           "spent_usd"
         ],

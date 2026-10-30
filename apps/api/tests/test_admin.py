@@ -322,7 +322,13 @@ def test_get_budgets_lists_defaults_agents_and_users(env: Env) -> None:
     assert body["version"] == 1
     assert body["defaults"] == {"user_monthly_usd": "20.00", "agent_monthly_usd": "200.00"}
     assert body["agents"] == [
-        {"agent_id": "finops", "name": None, "limit_usd": "200.00", "spent_usd": "0.00"}
+        {
+            "agent_id": "finops",
+            "name": None,
+            "discarded": False,
+            "limit_usd": "200.00",
+            "spent_usd": "0.00",
+        }
     ]
     assert body["users"] == [
         {
@@ -354,16 +360,24 @@ def test_get_budgets_lists_every_agent_with_spend(
     agents = env.client.get("/api/admin/budgets", headers=_h("admin")).json()["agents"]
     # The release agent first, then by name; an agent without a known name shows its id.
     assert agents == [
-        {"agent_id": "finops", "name": "FinOps", "limit_usd": "200.00", "spent_usd": "0.00"},
+        {
+            "agent_id": "finops",
+            "name": "FinOps",
+            "discarded": False,
+            "limit_usd": "200.00",
+            "spent_usd": "0.00",
+        },
         {
             "agent_id": "abcdefghijklmnop",
             "name": None,
+            "discarded": False,
             "limit_usd": "200.00",
             "spent_usd": "3.25",
         },
         {
             "agent_id": "qrstuvwxyz234567",
             "name": "Ahorros",
+            "discarded": False,
             "limit_usd": "200.00",
             "spent_usd": "0.50",
         },
@@ -389,6 +403,32 @@ def test_budgets_name_an_agent_never_published_and_keep_a_discarded_one(
         "abcdefghijklmnop": "Borrador",
         "qrstuvwxyz234567": None,
     }
+    assert {a["agent_id"]: a["discarded"] for a in agents} == {
+        "finops": False,
+        "abcdefghijklmnop": False,
+        "qrstuvwxyz234567": True,
+    }
+
+
+def test_budgets_call_nothing_discarded_when_the_latest_names_cannot_be_read(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    budgets = BudgetService(env.db, "budgets")
+    period = current_period()
+    scope = BudgetScope("AGENT#qrstuvwxyz234567", Decimal(200))
+    budgets.reserve([scope], Decimal(1), period)
+    budgets.charge([scope], Decimal(2), period)
+
+    def broken(_services: Any, _ids: Any) -> dict[str, str]:
+        raise RuntimeError("agents table unavailable")
+
+    monkeypatch.setattr(app_module, "_agent_names", lambda _services: {})
+    monkeypatch.setattr(app_module, "_latest_names", broken)
+    agents = env.client.get("/api/admin/budgets", headers=_h("admin")).json()["agents"]
+    assert {a["agent_id"]: a["discarded"] for a in agents} == {
+        "finops": False,
+        "qrstuvwxyz234567": False,
+    }
 
 
 def test_budgets_are_listed_without_agent_names_when_they_cannot_be_read(
@@ -400,7 +440,13 @@ def test_budgets_are_listed_without_agent_names_when_they_cannot_be_read(
     monkeypatch.setattr(app_module, "_agent_names", broken)
     agents = env.client.get("/api/admin/budgets", headers=_h("admin")).json()["agents"]
     assert agents == [
-        {"agent_id": "finops", "name": None, "limit_usd": "200.00", "spent_usd": "0.00"}
+        {
+            "agent_id": "finops",
+            "name": None,
+            "discarded": False,
+            "limit_usd": "200.00",
+            "spent_usd": "0.00",
+        }
     ]
 
 

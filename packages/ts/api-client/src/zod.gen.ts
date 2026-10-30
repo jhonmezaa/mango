@@ -66,6 +66,7 @@ export const zActivityPageSchema = z.object({
  */
 export const zAgentBudgetOutSchema = z.object({
     agent_id: z.string(),
+    discarded: z.boolean(),
     limit_usd: z.string(),
     name: z.string().nullable(),
     spent_usd: z.string()

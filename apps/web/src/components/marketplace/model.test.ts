@@ -96,8 +96,20 @@ describe('marketplace model', () => {
 
   it('sorts by name, and by spend when there are budgets', () => {
     const budgets = new Map<string, AgentBudget>([
-      ['b', { agent_id: 'b', name: null, limit_usd: '100.00', spent_usd: '90.00' }],
-      ['finops', { agent_id: 'finops', name: 'FinOps', limit_usd: '100.00', spent_usd: '5.00' }],
+      [
+        'b',
+        { agent_id: 'b', name: null, discarded: false, limit_usd: '100.00', spent_usd: '90.00' },
+      ],
+      [
+        'finops',
+        {
+          agent_id: 'finops',
+          name: 'FinOps',
+          discarded: false,
+          limit_usd: '100.00',
+          spent_usd: '5.00',
+        },
+      ],
     ]);
     expect(sortAgents(AGENTS, 'name', budgets).map((item) => item.id)).toEqual([
       'b',
@@ -170,6 +182,7 @@ describe('what the design shows per agent', () => {
     const budget = (agent_id: string, spent_usd: string): AgentBudget => ({
       agent_id,
       name: null,
+      discarded: false,
       limit_usd: '100.00',
       spent_usd,
     });

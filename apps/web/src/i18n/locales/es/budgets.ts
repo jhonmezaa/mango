@@ -31,6 +31,7 @@ export const budgets = {
   sectionEmpty: 'Aún no hay presupuestos aquí.',
   exceeded: 'Excedido',
   agent: {
+    discarded: 'Agente descartado · {{id}}',
     onDefault: 'Límite por defecto · ',
     action: 'Al 100%: bloquear',
     actionHint: 'Se rechazan las nuevas consultas hasta el próximo mes o hasta ampliar el límite.',

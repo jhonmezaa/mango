@@ -47,6 +47,25 @@ test('Inicio shows the period, changes it and hides what has no source', async (
   await expect(page).toHaveURL(/\/budgets$/);
 });
 
+test('Inicio says it has no data yet before the first turn', async ({ page }) => {
+  await page.route('**/api/home?*', async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as object;
+    await route.fulfill({ response, json: { ...body, counted_since: null } });
+  });
+  await signIn(page);
+  await openHome(page);
+  const chart = page.getByRole('img', { name: 'Gasto en Bedrock · todavía sin datos' });
+  await expect(chart).toBeVisible();
+  await expect(page.getByText(/^Cuenta desde el /)).toHaveCount(0);
+  const box = await chart.boundingBox();
+  if (!box) throw new Error('no chart');
+  await page.mouse.move(box.x + 20, box.y + 60);
+  await expect(page.getByRole('tooltip')).toContainText(
+    'Mango todavía no tiene datos. Empieza a contar con el primer turno.',
+  );
+});
+
 test('Inicio follows the scope of the answer and the day the counter started', async ({ page }) => {
   await page.route('**/api/home?*', async (route) => {
     const response = await route.fetch();

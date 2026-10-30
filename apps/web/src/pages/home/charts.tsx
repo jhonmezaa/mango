@@ -28,7 +28,8 @@ interface LineChartProps {
   money: boolean;
   compare: boolean;
   label: string;
-  /** `counted_since`: the days before it have no value, drawn as a hatched zone. */
+  /** `counted_since`: the days before it have no value, drawn as a hatched zone; `null` before
+   * the first turn of the installation, when no day has one. */
   since: string | null;
 }
 
@@ -88,7 +89,13 @@ export function LineChart({ series, money, compare, label, since }: LineChartPro
         width={width}
         height={HEIGHT}
         role="img"
-        aria-label={since && first !== 0 ? t('home.chartSince', { label, date: sinceDate }) : label}
+        aria-label={
+          since === null
+            ? t('home.chartNoStart', { label })
+            : first !== 0
+              ? t('home.chartSince', { label, date: sinceDate })
+              : label
+        }
         className="hm-chart-svg"
       >
         <defs>
@@ -248,7 +255,9 @@ export function LineChart({ series, money, compare, label, since }: LineChartPro
               <TipValue value={point.p} fmt={fmt} />
             </div>
           ) : null}
-          {since && (point.c === null || (compare && point.p === null)) ? (
+          {since === null ? (
+            <div className="hm-tip-note">{t('home.noStartTip')}</div>
+          ) : point.c === null || (compare && point.p === null) ? (
             <div className="hm-tip-note">{t('home.sinceTip', { date: sinceDate })}</div>
           ) : null}
         </div>

@@ -34,6 +34,8 @@ export const budgetsSchema = z.object({
       agent_id: z.string().max(64),
       /** Name of the published or retired agent; null when the API does not know it. */
       name: z.string().max(80).nullable().optional(),
+      /** The agent no longer exists; a failed read of the names never sets it. */
+      discarded: z.boolean().optional(),
       limit_usd: usdAmountSchema,
       spent_usd: usdAmountSchema,
     }),

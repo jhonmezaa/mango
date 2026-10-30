@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -227,6 +227,29 @@ describe('HomePage', () => {
       const spend = await card(/Gasto en Bedrock/);
       expect(spend.getByText('—')).toBeInTheDocument();
       expect(spend.queryByText(/^Cuenta desde/)).not.toBeInTheDocument();
+      expect(
+        spend.getByRole('img', { name: 'Gasto en Bedrock · todavía sin datos' }),
+      ).toBeInTheDocument();
+    });
+
+    it('says when counting starts under a day of the chart before the first turn', async () => {
+      renderPage(vi.fn(() => Promise.resolve(home({ counted_since: null }))));
+      const chart = (await card(/Gasto en Bedrock/)).getByRole('img', {
+        name: /todavía sin datos/,
+      });
+      fireEvent.mouseMove(chart.querySelector(':scope > rect') as Element, { clientX: 100 });
+      expect(screen.getByRole('tooltip')).toHaveTextContent(
+        'Mango todavía no tiene datos. Empieza a contar con el primer turno.',
+      );
+    });
+
+    it('names the scheduled tasks in the invocations of each scope', async () => {
+      renderPage(vi.fn(() => Promise.resolve(home({ scope: 'mine' }))));
+      expect(
+        await screen.findByRole('img', {
+          name: 'Tus mensajes que llegaron a un agente, en el chat, en el Playground y en tus tareas programadas.',
+        }),
+      ).toBeInTheDocument();
     });
 
     it('compares as always when both periods are whole', async () => {

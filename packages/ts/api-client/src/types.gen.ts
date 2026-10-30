@@ -249,6 +249,10 @@ export type AgentBudgetOut = {
      */
     agent_id: string;
     /**
+     * Discarded
+     */
+    discarded: boolean;
+    /**
      * Limit Usd
      */
     limit_usd: string;

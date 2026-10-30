@@ -167,6 +167,8 @@ class AgentBudgetOut(_Strict):
     agent_id: str
     name: str | None
     """Name of the published (or retired) agent; ``None`` when it is not known."""
+    discarded: bool
+    """The agent no longer exists: only when its name could be looked up, never on a failed read."""
     limit_usd: str
     spent_usd: str
 
@@ -300,18 +302,20 @@ class AdminDeps:
     """Own window of the member account check, which the screen runs after connectivity."""
 
 
-def _agent_names(deps: AdminDeps, agent_ids: Collection[str]) -> Mapping[str, str]:
-    """The list still works without names: the id is shown instead."""
+def _agent_names(deps: AdminDeps, agent_ids: Collection[str]) -> tuple[Mapping[str, str], bool]:
+    """The names, and whether an agent left without one is known to be gone. The list still works
+    without names: the id is shown instead, and nothing is called discarded on a failed read."""
     names: dict[str, str] = {}
     try:
         if deps.agent_names is not None:
             names.update(deps.agent_names())
         unnamed = [a for a in agent_ids if a not in names and a != deps.agent_id]
-        if unnamed and deps.latest_names is not None:
-            names.update(deps.latest_names(unnamed) or {})
+        latest = deps.latest_names(unnamed) if unnamed and deps.latest_names is not None else None
     except Exception:
         logger.exception("agent names unavailable for the budget list")
-    return names
+        return names, False
+    names.update(latest or {})
+    return names, not unnamed or latest is not None
 
 
 def budgets_view(deps: AdminDeps) -> BudgetsOut:
@@ -325,7 +329,7 @@ def budgets_view(deps: AdminDeps) -> BudgetsOut:
         for key in usage
         if key.startswith(AGENT_PREFIX) and is_agent_id(agent_id := key.removeprefix(AGENT_PREFIX))
     }
-    names = _agent_names(deps, agent_ids)
+    names, complete = _agent_names(deps, agent_ids)
     users: list[UserBudgetOut] = []
     user_ids = {k.removeprefix(USER_PREFIX) for k in usage if k.startswith(USER_PREFIX)}
     for user_id in user_ids | overrides.keys():
@@ -352,6 +356,7 @@ def budgets_view(deps: AdminDeps) -> BudgetsOut:
             AgentBudgetOut(
                 agent_id=agent_id,
                 name=names.get(agent_id),
+                discarded=complete and agent_id != deps.agent_id and agent_id not in names,
                 limit_usd=_money(defaults.agent_monthly_usd),
                 spent_usd=_money(
                     row.spent if (row := usage.get(AGENT_PREFIX + agent_id)) else Decimal(0)

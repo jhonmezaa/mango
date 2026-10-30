@@ -112,8 +112,11 @@ export function AdminBudgetsPage() {
   const data = state.kind === 'ready' ? state.data : null;
   const month = periodInfo(data?.period, new Date());
   // Every agent with spend this month; the API names the ones it knows (rendered as text).
-  const agentName = (agent: Budgets['agents'][number]) =>
-    agent.name ?? (agent.agent_id === 'finops' ? t('agent.name') : agent.agent_id);
+  const agentName = (agent: Budgets['agents'][number]) => {
+    if (agent.name) return agent.name;
+    if (agent.agent_id === 'finops') return t('agent.name');
+    return agent.discarded ? t('budgets.agent.discarded', { id: agent.agent_id }) : agent.agent_id;
+  };
   const agentLines: BudgetLine[] = (data?.agents ?? []).map((agent) => ({
     id: agent.agent_id,
     name: agentName(agent),
