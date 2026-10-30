@@ -10,6 +10,7 @@ import { agent, agentPicker, chat, markdown } from './es/chat';
 import { admin, gov } from './es/governance';
 import { governance } from './es/governanceView';
 import { groups } from './es/groups';
+import { home } from './es/home';
 import { inbox } from './es/inbox';
 import { knowledge } from './es/knowledge';
 import { marketplace } from './es/marketplace';
@@ -59,6 +60,7 @@ export const es = {
   inbox,
   knowledge,
   governance,
+  home,
   activity,
   playground,
   skills,

@@ -6,6 +6,7 @@ import { SCREENS } from './screens';
 describe('SCREENS', () => {
   it('registers the marketplace screens with their design routes', () => {
     expect(SCREENS.map((screen) => [screen.view, ...screen.paths])).toEqual([
+      ['dashboard', 'dashboard/*'],
       ['marketplace', 'marketplace/*'],
       [null, 'admin/*'],
       ['review', 'review/*'],

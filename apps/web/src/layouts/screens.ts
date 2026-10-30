@@ -6,6 +6,7 @@ import { agentReviewScreen } from '../pages/agentReview/screen';
 import { approvalsScreen } from '../pages/approvals/screen';
 import { brainsScreen } from '../pages/brains/screen';
 import { governanceScreen } from '../pages/governance/screen';
+import { homeScreen } from '../pages/home/screen';
 import { inboxScreen } from '../pages/inbox/screen';
 import { knowledgeScreen } from '../pages/knowledge/screen';
 import { marketplaceScreen } from '../pages/marketplace/screen';
@@ -33,6 +34,7 @@ export interface Screen {
 }
 
 export const SCREENS: readonly Screen[] = [
+  homeScreen,
   marketplaceScreen,
   agentBuilderScreen,
   agentReviewScreen,

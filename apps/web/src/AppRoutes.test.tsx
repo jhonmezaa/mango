@@ -38,7 +38,7 @@ afterEach(() => {
 
 describe('AppRoutes', () => {
   it.each([
-    ['/dashboard', 'Inicio'],
+    ['/observability', 'Observability'],
     ['/tickets/MNG-1', 'Tickets'],
   ])('renders %s as "Próximamente"', async (path, label) => {
     await renderAt(path);

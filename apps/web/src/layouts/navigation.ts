@@ -26,6 +26,7 @@ import {
   ZapIcon,
   type IconProps,
 } from '../components/icons';
+import { seesOrganization } from '../pages/home/model';
 import { SCREENS } from './screens';
 
 // Views of the design (shell.jsx / app.jsx) and where they live in the router. Only the views in
@@ -184,7 +185,12 @@ export function visibleGroups(
     .filter((group) => group.items.length > 0);
 }
 
-export function isAvailable(view: ViewKey): boolean {
+/**
+ * Inicio (D102) has data only for whoever sees the organization until the design draws the area
+ * and personal variants; for anyone else it stays «Próximamente». UX only: the API decides.
+ */
+export function isAvailable(view: ViewKey, me?: Pick<Me, 'is_admin' | 'role'>): boolean {
+  if (view === 'dashboard' && me && !seesOrganization(me)) return false;
   return AVAILABLE_VIEWS.has(view);
 }
 

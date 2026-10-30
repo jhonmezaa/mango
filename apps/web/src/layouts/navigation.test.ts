@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ShieldIcon } from '../components/icons';
-import { VIEW_ICONS, canView, visibleGroups, type ViewKey } from './navigation';
+import { VIEW_ICONS, canView, isAvailable, visibleGroups, type ViewKey } from './navigation';
 
 const ALL = Object.keys(VIEW_ICONS) as ViewKey[];
 const USER: ViewKey[] = [
@@ -89,5 +89,16 @@ describe('visibleGroups', () => {
       'build',
       'ops',
     ]);
+  });
+});
+
+describe('Inicio availability (D102)', () => {
+  it('is available to whoever sees the organization and «Próximamente» for anyone else', () => {
+    expect(isAvailable('dashboard', { is_admin: true, role: null })).toBe(true);
+    expect(isAvailable('dashboard', { is_admin: false, role: 'finops-central' })).toBe(true);
+    expect(isAvailable('dashboard', { is_admin: false, role: 'bu-lead' })).toBe(false);
+    expect(isAvailable('dashboard', { is_admin: false, role: null })).toBe(false);
+    // Any other view does not depend on the account.
+    expect(isAvailable('governance', { is_admin: false, role: null })).toBe(true);
   });
 });

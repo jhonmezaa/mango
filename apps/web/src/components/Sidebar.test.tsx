@@ -124,7 +124,9 @@ describe('Sidebar navigation', () => {
     // Of the owner views, the Org Chart is available (read only; the API filters it, D38), the
     // Marketplace, Schedules (D78: the API lists only the caller's tasks) and Gobernanza (D89:
     // the API sends only the sections each one may read).
+    // Inicio too (D102): its data is the organization's, which central FinOps sees.
     expect(navLinks()).toEqual([
+      'Inicio',
       'Chat',
       'Bandeja',
       'Marketplace',
@@ -136,7 +138,6 @@ describe('Sidebar navigation', () => {
       'Org Chart',
     ]);
     expect(soonItems()).toEqual([
-      'Inicio, próximamente',
       'Tickets, próximamente',
       'Buscar conversaciones, próximamente',
       'Observability, próximamente',
@@ -194,7 +195,7 @@ describe('Sidebar navigation', () => {
 
   it('renders unavailable destinations as disabled, non-navigable "Próximamente" rows', () => {
     renderSidebar(true);
-    const item = screen.getByRole('link', { name: 'Inicio, próximamente' });
+    const item = screen.getByRole('link', { name: 'Tickets, próximamente' });
     expect(item).toHaveAttribute('aria-disabled', 'true');
     expect(item).not.toHaveAttribute('href');
     expect(item).not.toHaveAttribute('tabindex');
@@ -357,7 +358,7 @@ function advance(ms: number) {
 describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
   it('shows the main views and pinned agents, and one icon per group instead of its views', () => {
     renderRail();
-    expect(navLinks()).toEqual(['Chat', 'Bandeja', 'Marketplace', 'Chat con FinOps']);
+    expect(navLinks()).toEqual(['Inicio', 'Chat', 'Bandeja', 'Marketplace', 'Chat con FinOps']);
     for (const name of ['Gobernanza', 'Construir', 'Operación']) {
       const button = screen.getByRole('button', { name });
       expect(button).toHaveAttribute('aria-haspopup', 'menu');

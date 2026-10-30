@@ -382,3 +382,13 @@ export const MangoIcon = createIcon(
     <path d="M12 3c-1 1-1.5 2-1.5 3" />
   </>,
 );
+
+export const ShareIcon = createIcon(
+  'Share',
+  <>
+    <circle cx="6" cy="12" r="2.5" />
+    <circle cx="18" cy="5" r="2.5" />
+    <circle cx="18" cy="19" r="2.5" />
+    <path d="m8 11 8-5M8 13l8 5" />
+  </>,
+);
