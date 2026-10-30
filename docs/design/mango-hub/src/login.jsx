@@ -402,10 +402,12 @@ function SlideAudit() {
 
 // Recargar la página: armazón con esqueletos si la pestaña tenía sesión; si no, portada neutra. Sin texto.
 // Espera larga (en frío): a los 1,2 s aparece una barra fina indeterminada arriba, nada más.
-function BootScreen({ had }) {
+function BootScreen({ had, fail, onRetry, onSignOut }) {
   const [slow, setSlow] = useState(false);
   useEffect(() => { const t = setTimeout(() => setSlow(true), 1200); return () => clearTimeout(t); }, []);
   const bar = slow && <div className="boot-bar" aria-hidden="true"><i></i></div>;
+  // Error a pantalla completa: la renovación no respondió tras los reintentos. «Cerrar sesión» porque el navegador sigue recordando la sesión.
+  if (fail) return <div className="boot-cover"><div className="boot-fail" role="alert"><span className="sb-ws-logo boot-logo" aria-hidden="true">m</span><h1>No se pudo abrir Mango</h1><p>Mango no responde. Inténtalo de nuevo en unos minutos.</p><div className="row"><button className="btn btn-primary" onClick={onRetry}>Reintentar</button><button className="btn btn-ghost" onClick={onSignOut}>Cerrar sesión</button></div></div></div>;
   if (!had) return <div className="boot-cover" role="progressbar" aria-label="Cargando Mango" aria-busy="true">{bar}<span className="sb-ws-logo boot-logo" aria-hidden="true">m</span></div>;
   return <div className="boot-app" role="progressbar" aria-label="Cargando Mango" aria-busy="true">{bar}
     <aside className="boot-sb"><div className="boot-ws"><span className="sb-ws-logo" aria-hidden="true">m</span><span className="skeleton" style={{ width: 96, height: 12 }}></span></div>

@@ -75,7 +75,7 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
         <Chips label="Estado de la cuenta al entrar" opts={[['active', 'Con grupo'], ['nogroup', 'Sin grupo asignado'], ['temp', 'Contraseña temporal (creada por admin)'], ['noarea', 'Líder de área sin área'], ['twoareas', 'Líder de área con dos áreas']]} value={accountState} onPick={(v) => S.set({ accountState: v })} />
         <Chips label="Login · MFA" opts={authCfg.install === 'client' ? [['required', 'Obligatorio']] : [['required', 'Obligatorio'], ['optional', 'Opcional'], ['off', 'Desactivado']]} value={authCfg.mfa} onPick={(v) => S.set({ authCfg: { ...authCfg, mfa: v } })} />
         <Chips label="Login · MFA ya configurado" opts={[[true, 'Sí'], [false, 'Primer ingreso']]} value={!!authCfg.mfaEnrolled} onPick={(v) => S.set({ authCfg: { ...authCfg, mfaEnrolled: v } })} />
-        <Chips label="Recargar la página" opts={[['app-hot', 'Con sesión · 0,4 s'], ['app-cold', 'Con sesión · en frío'], ['app-out', 'Tenía sesión · ya no'], ['out', 'Sin sesión'], ['out-cold', 'Sin sesión · en frío']]} value={null} onPick={(v) => window.dispatchEvent(new CustomEvent('mango:reload', { detail: v }))} />
+        <Chips label="Recargar la página" opts={[['app-hot', 'Con sesión · 0,4 s'], ['app-cold', 'Con sesión · en frío'], ['app-out', 'Tenía sesión · ya no'], ['app-fail', 'Con sesión · no responde'], ['out', 'Sin sesión'], ['out-cold', 'Sin sesión · en frío']]} value={null} onPick={(v) => window.dispatchEvent(new CustomEvent('mango:reload', { detail: v }))} />
         <Chips label="Login · al abrir la app" opts={[[null, 'Formulario'], ['otherTab', 'Cerró sesión en otra pestaña'], ['ssoReturn', 'Vuelve del SSO']]} value={S.get().simSessionBoot || null} onPick={(v) => { S.set({ simSessionBoot: v }); setView('login'); }} />
         <Chips label="Sesión · cómo ingresó" opts={[['password', 'Contraseña y MFA'], ['sso', 'SSO']]} value={S.get().loggedVia === 'sso' ? 'sso' : 'password'} onPick={(v) => S.set({ loggedVia: v })} />
         <Chips label="Sesión · aviso de vencimiento" opts={[[false, 'No'], [10, 'Vence en 10 min'], [4, 'Abrió con 4 min']]} value={S.get().simSessionWarn === true ? 10 : (S.get().simSessionWarn || false)} onPick={(v) => S.set({ simSessionWarn: v })} />
@@ -86,6 +86,9 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
         <Chips label="Personas · directorio" opts={[[null, 'Carga'], ['loading', 'Cargando'], ['error', 'Error al cargar'], ['truncated', 'Más grande de lo que se lee']]} value={S.get().simPeopleList || null} onPick={(v) => S.set({ simPeopleList: v })} />
         <Chips label="Personas · al actuar o invitar" opts={[[null, 'Funciona'], ['error', 'Falla'], ['busy', 'Otro cambio en curso'], ['forbidden', 'Ya no es admin']]} value={S.get().simPeopleAct || null} onPick={(v) => S.set({ simPeopleAct: v })} />
         <Chips label="Ajustes · datos de la instalación" opts={[[null, 'Cargan'], ['loading', 'Cargando'], ['error', 'Error']]} value={S.get().simInstallLoad || null} onPick={(v) => S.set({ simInstallLoad: v })} />
+        <Chips label="Inicio · al cargar" opts={[[null, 'Carga'], ['loading', 'Cargando'], ['error', 'Error']]} value={S.get().simDash || null} onPick={(v) => S.set({ simDash: v })} />
+        <Chips label="Inicio · desde cuándo hay datos" opts={[[null, 'Todo el periodo'], ['12d', 'Desde hace 12 días'], ['today', 'Desde hoy (instalación nueva)']]} value={S.get().simDashSince || null} onPick={(v) => S.set({ simDashSince: v })} />
+        <Chips label="Inicio · nombre de la persona" opts={[[false, 'Con nombre'], [true, 'Sin nombre (solo correo)']]} value={!!S.get().simDashNoName} onPick={(v) => S.set({ simDashNoName: v })} />
 
         <Chips label="Builder · error del servidor al enviar" opts={[[null, 'Ninguno'], ['cycle', 'Supervisor en ciclo'], ['manager-missing', 'Supervisor no publicado'], ['model-required', 'Modelo obligatorio'], ['default-not-allowed', 'Por defecto fuera de permitidos'], ['model-disabled', 'Modelo no habilitado'], ['model-no-tools', 'Modelo sin tools'], ['tool-disabled', 'Tool no habilitada'], ['write-no-approval', 'Escritura sin aprobación'], ['group-missing', 'Grupo inexistente'], ['too-large', 'Definición muy grande'], ['accounts-users', 'Datos de cuentas con personas'], ['kb-missing', 'Knowledge base que ya no existe'], ['kb-forbidden', 'Knowledge base sin acceso'], ['skill-unapproved', 'Skill no aprobada'], ['skill-mcp-off', 'Skill con MCP no habilitado'], ['skill-mcp-missing', 'Skill sin tools de su MCP'], ['remote-not-usable', 'Servicio externo fuera de tus grupos'], ['conflict', 'Conflicto de versión'], ['forbidden', 'Sin permiso'], ['unavailable', 'Servicio no disponible'], ['network', 'Sin red'], ['daily', 'Límite diario']]} value={S.get().simBuilder || null} onPick={(v) => S.set({ simBuilder: v })} />
         <Chips label="Chat · «Qué puede usar» al abrirlo" opts={[[null, 'Carga'], ['error', 'Error al cargar']]} value={S.get().simChatPop || null} onPick={(v) => S.set({ simChatPop: v })} />
@@ -204,7 +207,7 @@ function App() {
   const [boot, setBoot] = useState(null);
   useEffect(() => {
     const h = (e) => { const k = e.detail; const back = view; setBoot(k);
-      setTimeout(() => { setBoot(null); if (k === 'app-hot' || k === 'app-cold') { setLoggedIn(true); setView(back === 'login' ? (S.get().avail ? 'chat' : 'dashboard') : back); } else { S.set({ simSessionBoot: k === 'app-out' ? 'ended' : null }); setLoggedIn(false); setView('login'); } }, k.endsWith('cold') ? 2800 : k === 'app-out' ? 900 : 400); };
+      setTimeout(() => { if (k === 'app-fail') { setBoot('fail'); return; } setBoot(null); if (k === 'app-hot' || k === 'app-cold') { setLoggedIn(true); setView(back === 'login' ? (S.get().avail ? 'chat' : 'dashboard') : back); } else { S.set({ simSessionBoot: k === 'app-out' ? 'ended' : null }); setLoggedIn(false); setView('login'); } }, k.endsWith('cold') || k === 'app-fail' ? 2800 : k === 'app-out' ? 900 : 400); };
     window.addEventListener('mango:reload', h); return () => window.removeEventListener('mango:reload', h);
   }, [view]);
   const [activeAgentId, setActiveAgentId] = useState("fin-01");
@@ -335,7 +338,7 @@ function App() {
   if (view === 'connect-return' && !S.get().avail && window.RemoteReturn) {
     return <window.ToastProvider><window.RemoteReturn setView={setView} /><TweaksPanel visible={tweaksVisible} onClose={() => setTweaksVisible(false)} settings={settings} setSettings={setSettings} view={view} setView={setView} /></window.ToastProvider>;
   }
-  if (boot) return <BootScreen had={boot.startsWith('app')} />;
+  if (boot) return <BootScreen had={boot.startsWith('app')} fail={boot === 'fail'} onRetry={() => window.dispatchEvent(new CustomEvent('mango:reload', { detail: 'app-hot' }))} onSignOut={() => { setBoot(null); S.set({ simSessionBoot: null }); setLoggedIn(false); setView('login'); }} />;
   if (view === 'login') {
     return <>
       <Login onLogin={() => { setLoggedIn(true); S.log('account.login', user.email, 'Inició sesión'); setView(S.get().avail ? 'chat' : 'dashboard'); }} />
@@ -381,7 +384,7 @@ function App() {
   else if (!S.canView(view) && ['audit', 'budgets', 'settings', 'governance', 'skills', 'playground'].includes(view)) content = <><Topbar crumbs={[viewLabel(view)]} /><div className="content"><window.GovKit.Denied view={view} /></div></>;
   else if (!S.canView(view)) content = <><Topbar crumbs={[viewLabel(view)]} /><window.ErrorState kind="403" view={view} onHome={home} /></>;
   else if (simError === 'crash') { const Boom = () => { throw new Error("Cannot read properties of undefined (reading 'budgetMax')"); }; content = <Boom />; }
-  else if (simError) content = <><Topbar crumbs={[viewLabel(view)]} /><window.ErrorState kind={simError} view={view} onHome={home} onRetry={() => S.set({ simError: null })} onLogin={() => { S.set({ simError: null }); setView('login'); }} /></>;
+  else if (simError) content = <><Topbar crumbs={[viewLabel(view)]} /><window.ErrorState kind={simError} view={view} onHome={home} onRetry={() => S.set({ simError: null })} onLogin={() => { S.set({ simError: null, simSessionBoot: 'ended' }); setView('login'); }} /></>;
   const sessWarn = S.get().simSessionWarn;
   const closeTour = () => { setTour(false); localStorage.setItem('mango-onboarded', '1'); };
 
