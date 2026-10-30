@@ -5,7 +5,7 @@
 schema_version: 1
 id: azure-devops
 # <date of the captured tool list>-<revision of Mango>
-version: "2026.10.27-3"
+version: "2026.10.27-4"
 name: Azure DevOps
 operator: Microsoft
 data_leaves_aws: true
@@ -28,14 +28,25 @@ provider:
 forced_headers:
   X-MCP-Readonly: "true"
   X-MCP-Tools: "{tools}"
-# What an administrator picks; the server is only told the tools.
+# What an administrator picks; the server is only told the tools. `sensitivity`, `note` and
+# `requirement` are optional: Mango draws the badge of a sensitivity, and shows the texts as
+# they are written here (D98 (6)).
 toolsets:
   - {id: core, label: Proyectos y equipos, always: true}
   - {id: wit, label: Work items}
   - {id: wiki, label: Wiki}
   - {id: pipelines, label: Pipelines}
-  - {id: search-code, label: Búsqueda de código}
-  - {id: repos, label: Repositorios}
+  - id: search-code
+    label: Búsqueda de código
+    requirement: >-
+      Necesita la extensión Code Search de Microsoft instalada en la organización. Sin ella,
+      la búsqueda no encuentra nada y el agente responde que no hubo resultados.
+  - id: repos
+    label: Repositorios
+    sensitivity: source_code
+    note: >-
+      El agente lee archivos, commits y pull requests de los repositorios a los que llega la
+      cuenta de cada persona.
 # Out of every toolset (TM-011): pipelines_artifact and wit_work_item_attachment.
 probe: {tool: core_list_projects, arguments: {top: 1}}
 tools:

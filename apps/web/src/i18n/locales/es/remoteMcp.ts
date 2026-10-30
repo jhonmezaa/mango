@@ -88,6 +88,8 @@ export const remoteMcp = {
     you: 'tú',
     tools: 'Tools · {{count}} · todas de lectura',
     read: 'Lectura',
+    requirement: 'Requisito:',
+    source: 'Código fuente',
     noWrite:
       'Los grupos y los nombres salen del perfil del servicio. Ninguno trae tools de escritura.',
     permissions: 'Permisos en {{idp}}',
@@ -151,6 +153,8 @@ export const remoteMcp = {
     secretDeleted: 'Borrado al deshabilitar',
     secretExpiry: 'Vencimiento del secreto',
     toolsets: 'Grupos de tools',
+    sourceChip: ' · código fuente',
+    sourceChipTitle: 'Da al agente el código fuente',
     groups: 'Grupos de personas',
     asked: 'Pidió',
     approved: 'Aprobó',
@@ -214,6 +218,7 @@ export const remoteMcp = {
     expiryHint: 'El que muestra Entra. Mango avisa 30 y 7 días antes.',
     toolsets: 'Grupos de tools',
     toolsetsHint: 'Todas sus tools son de lectura.',
+    sourceAlert: '{{toolset}} da al agente el código fuente',
     groups: 'Grupos de personas que pueden usarlo',
     groupsShort: 'Grupos de personas',
     groupsHint:

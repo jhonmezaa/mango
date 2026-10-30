@@ -9,10 +9,11 @@ import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { McpCatalogPage } from '../mcpCatalog/McpCatalogPage';
 import { catalog } from '../mcpCatalog/testFixtures';
-import type { RemoteCatalog } from './model';
+import type { RemoteCatalog, RemoteToolset } from './model';
 import {
   CALLBACK,
   CHANGE,
+  MARKED_TOOLSETS,
   ME,
   PROFILE,
   REG_ID,
@@ -26,6 +27,8 @@ import {
 } from './testFixtures';
 
 const SECRET = 'super-secret-value-9';
+const MARKED_PROFILE = { ...PROFILE, toolsets: [...PROFILE.toolsets, ...MARKED_TOOLSETS] };
+const SOURCE_NOTE = 'El agente lee archivos, commits y pull requests de los repositorios.';
 const GROUPS = { items: [{ id: 'finops-central' }, { id: 'hr' }] };
 
 /**
@@ -477,6 +480,61 @@ describe('Servicios externos', () => {
     renderAt('/mcp/remote/azure-devops', call);
     const drawer = await panel();
     expect(within(drawer).getByText(`«${XSS}»`)).toBeInTheDocument();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('shows the marks of each toolset from the signed profile (round 27)', async () => {
+    const call = apiWith(remoteCatalog([], MARKED_PROFILE));
+    renderAt('/mcp/remote/azure-devops', call);
+    const drawer = await panel();
+    const repos = within(drawer).getByText('Repositorios').closest('.rm-tset') as HTMLElement;
+    expect(within(repos).getByText('Código fuente')).toHaveClass('badge-amber');
+    expect(repos).toHaveTextContent(SOURCE_NOTE);
+    const code = within(drawer).getByText('Búsqueda de código').closest('.rm-tset') as HTMLElement;
+    expect(code).toHaveTextContent(
+      'Requisito: Necesita la extensión Code Search de Microsoft instalada en la organización.',
+    );
+    expect(within(code).queryByText('Código fuente')).toBeNull();
+    // A toolset without fields shows nothing more than its tools.
+    const wiki = within(drawer).getByText('Wiki').closest('.rm-tset') as HTMLElement;
+    expect(wiki.querySelector('.badge-amber, .rm-tset-n')).toBeNull();
+  });
+
+  it('warns in amber while a source code toolset is ticked (round 27)', async () => {
+    const call = apiWith(remoteCatalog([], MARKED_PROFILE));
+    const user = renderAt('/mcp/remote/azure-devops', call);
+    const drawer = await panel();
+    await user.click(
+      within(drawer).getByRole('button', { name: /Habilitar para una organización/ }),
+    );
+    const alert = within(drawer).getByRole('status');
+    expect(alert).toHaveClass('amber');
+    expect(alert).toHaveTextContent(`Repositorios da al agente el código fuente${SOURCE_NOTE}`);
+    await user.click(within(drawer).getByRole('checkbox', { name: /Repositorios/ }));
+    expect(within(drawer).queryByText(/da al agente el código fuente/)).toBeNull();
+    // Only the title when the profile brings no note.
+    await user.click(within(drawer).getByRole('checkbox', { name: /Búsqueda de código/ }));
+    expect(within(drawer).queryByText(/da al agente el código fuente/)).toBeNull();
+  });
+
+  it('marks a source code toolset of a registration with its chip (round 27)', async () => {
+    const reg = registration({ toolsets: ['core', 'repos'] });
+    const call = apiWith(remoteCatalog([reg], MARKED_PROFILE));
+    renderAt(`/mcp/remote/azure-devops/${REG_ID}`, call);
+    const drawer = await panel();
+    const chip = within(drawer).getByText('Repositorios · código fuente');
+    expect(chip).toHaveClass('rm-set', 'is-source');
+    expect(chip).toHaveAttribute('title', 'Da al agente el código fuente');
+    expect(within(drawer).getByText('Proyectos y equipos')).not.toHaveClass('is-source');
+  });
+
+  it('shows the texts of the profile as text', async () => {
+    const [repos] = MARKED_TOOLSETS as [RemoteToolset];
+    const profile = { ...PROFILE, toolsets: [{ ...repos, note: XSS, requirement: XSS }] };
+    renderAt('/mcp/remote/azure-devops', apiWith(remoteCatalog([], profile)));
+    const drawer = await panel();
+    const card = within(drawer).getByText('Repositorios').closest('.rm-tset') as HTMLElement;
+    expect(card).toHaveTextContent(`${XSS}Requisito: ${XSS}`);
     expect(document.querySelector('img')).toBeNull();
   });
 

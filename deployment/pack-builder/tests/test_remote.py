@@ -94,7 +94,7 @@ def test_build_writes_the_canonical_statement(remote_dir: Path, tmp_path: Path) 
     assert (
         main(["remote", "build", str(remote_dir), "--revision", REVISION, "--out", str(out)]) == 0
     )
-    written = out / "azure-devops-2026.10.27-3.statement.json"
+    written = out / "azure-devops-2026.10.27-4.statement.json"
     statement = statement_for(load_remote(remote_dir), REVISION)
     assert written.read_bytes() == statement.payload()
     # The schema travels inside the statement: the provisioner needs no other file.
@@ -125,7 +125,7 @@ def test_verify_command(
     key = tmp_path / "key.pub"
     key.write_bytes(signer.public_key_pem())
     assert main(["remote", "verify", "--envelope", str(envelope), "--public-key", str(key)]) == 0
-    assert "verified azure-devops 2026.10.27-3" in capsys.readouterr().out
+    assert "verified azure-devops 2026.10.27-4" in capsys.readouterr().out
     key.write_bytes(
         KmsSigner(
             FakeKms(ec.generate_private_key(ec.SECP256R1()), "ECC_NIST_P256"), "x"

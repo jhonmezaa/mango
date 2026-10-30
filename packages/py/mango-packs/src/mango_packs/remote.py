@@ -20,7 +20,15 @@ from typing import Annotated, Any, Final, Literal, Self
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
-from pydantic import Field, StringConstraints, ValidationError, model_validator
+from pydantic import (
+    AfterValidator,
+    Field,
+    SerializerFunctionWrapHandler,
+    StringConstraints,
+    ValidationError,
+    model_serializer,
+    model_validator,
+)
 
 from mango_packs.canonical import canonical_json, sha256_hex
 from mango_packs.manifest import (
@@ -63,6 +71,30 @@ ToolsetId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,23}$")]
 # An OAuth scope: a name or `<resource>/<permission>`. No spaces: they separate scopes.
 OAuthScope = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")]
 ProbeValue = Annotated[str, StringConstraints(max_length=100)] | int | bool
+# Punctuation a toolset text may use besides letters, digits and spaces. No `<`, `>`, `&`,
+# Markdown marks or line breaks: the web shows the text as it is, as plain text (TM-023).
+_TEXT_PUNCTUATION: Final = frozenset(".,;:!¡?¿()«»\"'/+-")
+MAX_TOOLSET_TEXT_CHARS: Final = 300
+
+
+def _plain_text(value: str) -> str:
+    odd = sorted({c for c in value if not (c.isalnum() or c == " " or c in _TEXT_PUNCTUATION)})
+    if odd:
+        raise ValueError(f"only letters, digits, spaces and plain punctuation, not {odd}")
+    if "  " in value:
+        raise ValueError("no runs of spaces")
+    return value
+
+
+# What a toolset gives the agent that an administrator must weigh (D98 (6)). Mango draws the
+# badge and the amber tone of each value; the profile only names it.
+ToolsetSensitivity = Literal["source_code"]
+# What the profile says of a toolset and the web shows as it is (D98 (6)).
+ToolsetText = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=MAX_TOOLSET_TEXT_CHARS, strip_whitespace=True),
+    AfterValidator(_plain_text),
+]
 
 
 class RemoteProfileError(Exception):
@@ -109,6 +141,25 @@ class Toolset(StrictModel):
     label: ShortText
     # Its tools come with every registration.
     always: bool = False
+    sensitivity: ToolsetSensitivity | None = None
+    # Shown under the toolset and as the body of the amber notice, as written.
+    note: ToolsetText | None = None
+    # What the organization needs for the toolset to work, as written.
+    requirement: ToolsetText | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_fields(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A profile signed before these fields existed has no such keys: leaving them out when
+        # unset keeps its statement canonical, so it still verifies.
+        data: dict[str, Any] = handler(self)
+        return {
+            key: value
+            for key, value in data.items()
+            if value is not None or key not in _OPTIONAL_TOOLSET_FIELDS
+        }
+
+
+_OPTIONAL_TOOLSET_FIELDS: Final = frozenset({"sensitivity", "note", "requirement"})
 
 
 class Probe(StrictModel):

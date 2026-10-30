@@ -7,6 +7,7 @@ import type { OperationOutput } from '../../api/operations';
 
 export type RemoteCatalog = OperationOutput<'getRemoteCatalog'>;
 export type RemoteProfile = RemoteCatalog['profiles'][number];
+export type RemoteToolset = RemoteProfile['toolsets'][number];
 export type Registration = RemoteCatalog['registrations'][number];
 export type RemoteRequest = NonNullable<Registration['pending']>;
 
@@ -240,6 +241,21 @@ export function isWorking(catalog: RemoteCatalog): boolean {
 
 export function toolsOf(profile: RemoteProfile, toolsets: readonly string[] | null = null) {
   return profile.toolsets.filter((toolset) => !toolsets || toolsets.includes(toolset.id));
+}
+
+/** Marks of a toolset from the signed profile (D98 (6), design round 27). Mango draws the badge,
+ * the amber tone and the titles of a sensitivity it knows, and nothing for one it does not; the
+ * note and the requirement are the profile's own words, shown as plain text. */
+export function toolsetMarks(toolset: RemoteToolset): {
+  source: boolean;
+  note: string | null;
+  requirement: string | null;
+} {
+  return {
+    source: toolset.sensitivity === 'source_code',
+    note: toolset.note ?? null,
+    requirement: toolset.requirement ?? null,
+  };
 }
 
 export function toolCount(profile: RemoteProfile): number {

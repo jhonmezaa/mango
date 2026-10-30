@@ -63,7 +63,15 @@ test.describe('remote MCP services: approve, ask and see them in Conectividad', 
     await page.getByRole('button', { name: /^Azure DevOps/ }).click();
     const drawer = page.getByRole('dialog', { name: 'Azure DevOps' });
     await expect(drawer).toContainText('.default (delegado, lectura)');
+    // The marks of each toolset come from the signed profile (D98 (6), design round 27).
+    await expect(drawer.locator('.rm-tset', { hasText: 'Repositorios' })).toContainText(
+      'Código fuente',
+    );
+    await expect(drawer).toContainText('Requisito: Necesita la extensión Code Search');
     await drawer.getByRole('button', { name: /Habilitar para una organización/ }).click();
+    await expect(
+      drawer.getByRole('status').filter({ hasText: 'Repositorios da al agente el código fuente' }),
+    ).toBeVisible();
     await drawer.getByLabel('Organización de Azure DevOps').fill('fabrikam');
     await drawer
       .getByLabel('Tenant de Entra (tenantId)')

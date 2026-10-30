@@ -118,7 +118,7 @@ def test_a_registration_signed_before_d101_converges_with_no_approval(lab: Remot
     assert approved.generation == old["generation"]
     assert approved.revision == old["revision"] + 1
     assert approved.profile_sha256 == lab.digest
-    assert approved.profile_version == "2026.10.27-3"
+    assert approved.profile_version == "2026.10.27-4"
     registration = lab.registration()
     assert registration["status"] == {"S": "active"}
     assert "provision_lock" not in registration
@@ -160,8 +160,58 @@ def test_a_new_toolset_signs_again_with_the_approved_toolsets_only(lab: RemoteLa
     assert approved.headers == old["headers"]
     assert approved.revision == old["revision"] + 1
     assert approved.profile_sha256 == lab.digest
-    assert approved.profile_version == "2026.10.27-3"
+    assert approved.profile_version == "2026.10.27-4"
     # Nothing to converge: the target is the same and nothing was written to the Gateway.
+    assert lab.agentcore.writes() == []
+    assert {k: v for k, v in _target(lab).items() if k != "polls"} == target_before
+    assert lab.events() == [("mcp_remote.enabled", "applied")]
+
+
+TOOLSET_FIELDS = ("sensitivity", "note", "requirement")
+
+
+def test_toolset_fields_alone_sign_again_with_no_approval(aws: None) -> None:
+    """A release whose profile only adds `sensitivity`, `note` or `requirement` (D98 (6)) to
+    toolsets a registration picked: the tools, the schema and the headers are the same, so the
+    sweep signs again under the new profile and no request is needed."""
+    lab = RemoteLab()
+    marked = {t["id"] for t in profile_data()["toolsets"] if any(f in t for f in TOOLSET_FIELDS)}
+    assert marked == {"search-code", "repos"}
+    # The release before: the same profile without the fields, signed and installed.
+    previous = profile_data() | {"version": "2026.10.27-3"}
+    previous["toolsets"] = [
+        {k: v for k, v in t.items() if k not in TOOLSET_FIELDS} for t in previous["toolsets"]
+    ]
+    old_statement = lab.signer.statement(previous)
+    assert b"source_code" not in old_statement.payload()
+    new_digest = lab.digest
+    lab.digest = lab.publish(old_statement)
+    lab.build({"azure-devops": lab.digest})
+    picked = {"L": [{"S": "wit"}, {"S": "search-code"}, {"S": "repos"}]}
+    lab.stage_change(toolsets=picked)
+    assert lab.run(lab.approve(toolsets=picked))["enabled"] is True
+    lab.put({**INDEX_KEY, "ids": {"SS": [REG]}})
+    before = _verify(lab)
+    assert before.profile_sha256 == lab.digest
+    assert {"search_code", "repo_file"} <= before.tools
+    target_before = {k: v for k, v in _target(lab).items() if k != "polls"}
+    # The new release: the profile of the repository, with the fields.
+    lab.digest = new_digest
+    lab.build({"azure-devops": new_digest})
+    lab.firehose.records.clear()
+    lab.agentcore.calls.clear()
+    (result,) = _sweep(lab)
+    assert result["upgraded"] is True
+    approved = _verify(lab)
+    assert approved.tools == before.tools
+    assert approved.toolsets == before.toolsets
+    assert approved.headers == before.headers
+    assert approved.organization == before.organization
+    assert approved.generation == before.generation
+    assert approved.revision == before.revision + 1
+    assert approved.profile_sha256 == new_digest
+    assert approved.profile_version == "2026.10.27-4"
+    # Nothing written to the Gateway: the target is the same.
     assert lab.agentcore.writes() == []
     assert {k: v for k, v in _target(lab).items() if k != "polls"} == target_before
     assert lab.events() == [("mcp_remote.enabled", "applied")]

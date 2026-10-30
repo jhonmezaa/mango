@@ -400,6 +400,13 @@ def test_the_catalog_lists_the_signed_profile_of_the_release(env: Env) -> None:
     toolsets = {t["id"]: t for t in profile["toolsets"]}
     assert toolsets["core"]["always"] is True
     assert "search_code" in toolsets["search-code"]["tools"]
+    # The marks of a toolset come from the signed profile, as written (D98 (6)).
+    assert toolsets["repos"]["sensitivity"] == "source_code"
+    assert toolsets["repos"]["note"].startswith("El agente lee archivos, commits")
+    assert toolsets["repos"]["requirement"] is None
+    assert toolsets["search-code"]["sensitivity"] is None
+    assert toolsets["search-code"]["requirement"].startswith("Necesita la extensión Code Search")
+    assert (toolsets["wit"]["sensitivity"], toolsets["wit"]["note"]) == (None, None)
     assert body["registrations"] == []
 
 

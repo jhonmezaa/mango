@@ -8,6 +8,7 @@ import {
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  GitBranchIcon,
   GlobeIcon,
   InfoIcon,
   LockIcon,
@@ -31,6 +32,7 @@ import {
   sameGroups,
   toolCount,
   toolsOf,
+  toolsetMarks,
   type FormErrors,
   type RemoteCatalog,
   type RemoteForm,
@@ -397,6 +399,22 @@ export function RemoteDetail({
                     );
                   })}
                 </div>
+                {profile.toolsets
+                  .filter(
+                    (toolset) => toolsetMarks(toolset).source && form.toolsets.includes(toolset.id),
+                  )
+                  .map((toolset) => {
+                    const { note } = toolsetMarks(toolset);
+                    return (
+                      <div key={toolset.id} className="mc-alert amber mt-2" role="status">
+                        <GitBranchIcon size={14} />
+                        <div>
+                          <b>{t('remoteMcp.form.sourceAlert', { toolset: toolset.label })}</b>
+                          {note ? <div>{note}</div> : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 {errors.toolsets ? (
                   <div className="rm-err" role="alert">
                     {err('toolsets')}
@@ -651,11 +669,19 @@ export function RemoteDetail({
           ) : null}
           <Kv k={t('remoteMcp.row.toolsets')}>
             <span className="rm-sets justify-end">
-              {toolsOf(profile, facts.toolsets).map((toolset) => (
-                <span key={toolset.id} className="rm-set">
-                  {toolset.label}
-                </span>
-              ))}
+              {toolsOf(profile, facts.toolsets).map((toolset) => {
+                const { source } = toolsetMarks(toolset);
+                return (
+                  <span
+                    key={toolset.id}
+                    className={source ? 'rm-set is-source' : 'rm-set'}
+                    title={source ? t('remoteMcp.row.sourceChipTitle') : undefined}
+                  >
+                    {toolset.label}
+                    {source ? t('remoteMcp.row.sourceChip') : null}
+                  </span>
+                );
+              })}
             </span>
           </Kv>
           <Kv k={t('remoteMcp.row.groups')}>
@@ -1053,17 +1079,31 @@ export function RemoteDetail({
           </Sec>
         ) : null}
         <Sec title={t('remoteMcp.detail.tools', { count: toolCount(profile) })}>
-          {profile.toolsets.map((toolset) => (
-            <div key={toolset.id} className="rm-tset">
-              <div className="rm-tset-h">{toolset.label}</div>
-              {toolset.tools.map((name) => (
-                <div key={name} className="mk-line flex items-center justify-between">
-                  <span className="mono text-[12.5px] font-semibold">{name}</span>
-                  <span className="badge">{t('remoteMcp.detail.read')}</span>
+          {profile.toolsets.map((toolset) => {
+            const marks = toolsetMarks(toolset);
+            return (
+              <div key={toolset.id} className="rm-tset">
+                <div className="rm-tset-h">
+                  {toolset.label}
+                  {marks.source ? (
+                    <span className="badge badge-amber ml-2">{t('remoteMcp.detail.source')}</span>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          ))}
+                {marks.note ? <div className="rm-tset-n">{marks.note}</div> : null}
+                {marks.requirement ? (
+                  <div className="rm-tset-n">
+                    <b>{t('remoteMcp.detail.requirement')}</b> {marks.requirement}
+                  </div>
+                ) : null}
+                {toolset.tools.map((name) => (
+                  <div key={name} className="mk-line flex items-center justify-between">
+                    <span className="mono text-[12.5px] font-semibold">{name}</span>
+                    <span className="badge">{t('remoteMcp.detail.read')}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
           <div className="mk-meta mt-1.5">{t('remoteMcp.detail.noWrite')}</div>
         </Sec>
         <Sec title={t('remoteMcp.detail.permissions', { idp: profile.provider })}>

@@ -25,7 +25,7 @@ El esquema de `profile.yaml` es `RemoteProfile` en `packages/py/mango-packs/src/
 | `link_hosts`, `link_org` | Para clasificar los enlaces del servicio (diseño A1) |
 | `provider` | `vendor: MicrosoftOauth2` (así lo escribe botocore), scopes de lectura y lo que la ficha muestra en «Permisos» |
 | `forced_headers` | Exactamente `X-MCP-Readonly: "true"` y `X-MCP-Tools: "{tools}"` (D101). Nunca `X-MCP-Toolsets` ni `Authorization`, que pisaría el token del vault |
-| `toolsets` | Lo que un administrador puede elegir y cómo se agrupan las tools. No llevan valor de cabecera: al servidor solo se le dicen las tools. Al menos uno no es `always` |
+| `toolsets` | Lo que un administrador puede elegir y cómo se agrupan las tools. No llevan valor de cabecera: al servidor solo se le dicen las tools. Al menos uno no es `always`. Opcionales (D98 (6)): `sensitivity` (hoy solo `source_code`: Mango pone la insignia «Código fuente» y el aviso), `note` y `requirement`, texto plano de hasta 300 caracteres (letras, dígitos, espacios y puntuación de frase; sin `<`, `>`, `&`, Markdown ni saltos de línea) que la web muestra tal cual. Añadir o cambiar solo estos campos no cambia tools ni cabeceras: tras instalar, el barrido firma otra vez sin aprobación (D101 (4)) |
 | `probe` | La tool del sondeo de «Conectar»; debe estar en un toolset `always` |
 | `tools` | Una por tool del esquema, con su toolset y `access: read`. Otra clase, o ninguna, hace fallar el check (D84 (5)) |
 | `tools_sha256` | sha256 del JSON canónico de `tool-schema.json` (`mango_packs.canonical`) |

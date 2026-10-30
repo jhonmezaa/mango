@@ -1709,6 +1709,9 @@ export const zRemoteToolsetOutSchema = z.object({
     always: z.boolean(),
     id: z.string(),
     label: z.string(),
+    note: z.string().nullable(),
+    requirement: z.string().nullable(),
+    sensitivity: z.literal('source_code').nullable(),
     tools: z.array(z.string())
 });
 

@@ -100,6 +100,64 @@ def test_the_azure_devops_profile_of_the_repository_is_valid() -> None:
     assert not profile.tool_names & {"pipelines_artifact", "wit_work_item_attachment"}
 
 
+SOURCE_NOTE = "El agente lee archivos, commits y pull requests de los repositorios."
+REQUIREMENT = "Necesita la extensión Code Search de Microsoft instalada en la organización."
+
+
+def _marked_toolsets() -> list[dict[str, Any]]:
+    toolsets: list[dict[str, Any]] = profile_data()["toolsets"]
+    toolsets[1] |= {"sensitivity": "source_code", "note": SOURCE_NOTE}
+    toolsets[2] |= {"requirement": REQUIREMENT}
+    return toolsets
+
+
+def test_a_toolset_may_carry_a_sensitivity_a_note_and_a_requirement() -> None:
+    profile = _profile(toolsets=_marked_toolsets())
+    core, items, code = profile.toolsets
+    assert (items.sensitivity, items.note, items.requirement) == ("source_code", SOURCE_NOTE, None)
+    assert (code.sensitivity, code.note, code.requirement) == (None, None, REQUIREMENT)
+    # Unset, they are not in the statement at all.
+    assert core.model_dump(mode="json") == {"id": "core", "label": "Core", "always": True}
+    assert set(code.model_dump(mode="json")) == {"id", "label", "always", "requirement"}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("sensitivity", "secrets"),
+        ("sensitivity", "Source_Code"),
+        ("sensitivity", ""),
+        ("note", ""),
+        ("note", "   "),
+        ("note", "x" * 301),
+        ("note", "<b>Código</b> fuente"),
+        ("note", "Lee el código & los PR"),
+        ("note", "Lee **todo** el código"),
+        ("note", "[Abrir](https://example.com)"),
+        ("note", "Dos\nlíneas"),
+        ("note", "Con\ttabulador"),
+        ("note", "Dos  espacios"),
+        ("requirement", "Usa `search_code`"),
+        ("requirement", "Ver #12"),
+        ("requirement", 3),
+    ],
+)
+def test_toolset_texts_are_short_plain_text_and_the_sensitivity_a_known_value(
+    field: str, value: object
+) -> None:
+    toolsets = profile_data()["toolsets"]
+    toolsets[1][field] = value
+    with pytest.raises(ValidationError, match=field):
+        _profile(toolsets=toolsets)
+
+
+def test_toolset_texts_keep_spanish_punctuation() -> None:
+    text = "¿Sin ella? La búsqueda no encuentra nada: «sin resultados» (Code Search, v2/3)."
+    toolsets = profile_data()["toolsets"]
+    toolsets[1]["note"] = f"  {text} "
+    assert _profile(toolsets=toolsets).toolsets[1].note == text
+
+
 @pytest.mark.parametrize(
     ("access", "message"),
     [
@@ -297,6 +355,43 @@ def test_a_pack_signature_is_not_a_profile_signature(
         verify_envelope(_envelope(statement.payload(), signature, pack_type), _pem(key))
     with pytest.raises(PackSignatureError, match="does not match"):
         verify_envelope(_envelope(statement.payload(), signature), _pem(key))
+
+
+def test_a_statement_signed_before_the_toolset_fields_still_verifies(
+    key: ec.EllipticCurvePrivateKey, statement: RemoteProfileStatement
+) -> None:
+    # What a release signed before `sensitivity`, `note` and `requirement` existed: a toolset
+    # has only `id`, `label` and `always`. It must read back to the same canonical payload.
+    payload = statement.payload()
+    assert b"sensitivity" not in payload and b"requirement" not in payload
+    verified = verify_envelope(_envelope(payload, _sign(key, payload)), _pem(key))
+    assert verified.payload() == payload
+
+
+def test_a_statement_with_toolset_fields_verifies_and_signs_them(
+    key: ec.EllipticCurvePrivateKey,
+) -> None:
+    marked = RemoteProfileStatement(
+        schema_version=1,
+        profile=_profile(toolsets=_marked_toolsets()),
+        tool_schema=SCHEMA,
+        source_revision="f" * 40,
+    )
+    payload = marked.payload()
+    verified = verify_envelope(_envelope(payload, _sign(key, payload)), _pem(key))
+    assert verified.profile.toolsets[1].sensitivity == "source_code"
+    assert verified.profile.toolsets[2].requirement == REQUIREMENT
+    # The texts are signed: changing one breaks the signature.
+    tampered = payload.replace(b"repositorios", b"repositorio ")
+    with pytest.raises(PackSignatureError, match="does not match"):
+        verify_envelope(_envelope(tampered, _sign(key, payload)), _pem(key))
+    # A null where the field is unset is not the canonical form.
+    data = marked.model_dump(mode="json")
+    data["profile"]["toolsets"][0]["note"] = None
+    with_null = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    with pytest.raises(PackSignatureError, match="canonical"):
+        raw = with_null.encode()
+        verify_envelope(_envelope(raw, _sign(key, raw)), _pem(key))
 
 
 def test_a_signed_statement_that_breaks_a_rule_is_refused(

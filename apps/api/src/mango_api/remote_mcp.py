@@ -70,7 +70,7 @@ from mango_core.remote_mcp import (
     provider_name,
 )
 from mango_packs.enablement import iso
-from mango_packs.remote import RemoteProfile, RemoteProfileError, forced_headers
+from mango_packs.remote import RemoteProfile, RemoteProfileError, ToolsetSensitivity, forced_headers
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +189,11 @@ class RemoteToolsetOut(_Strict):
     label: str
     always: bool
     tools: list[str]
+    # From the signed profile (D98 (6)). The web draws the badge of a sensitivity it knows and
+    # shows the texts as plain text, as written.
+    sensitivity: ToolsetSensitivity | None
+    note: str | None
+    requirement: str | None
 
 
 class RemotePermissionOut(_Strict):
@@ -380,6 +385,9 @@ def _profile_out(remote: ReleaseRemote, enabled: bool) -> RemoteProfileOut:
                 label=t.label,
                 always=t.always,
                 tools=[tool.name for tool in profile.tools if tool.toolset == t.id],
+                sensitivity=t.sensitivity,
+                note=t.note,
+                requirement=t.requirement,
             )
             for t in profile.toolsets
         ],

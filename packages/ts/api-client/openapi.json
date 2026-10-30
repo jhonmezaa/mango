@@ -7780,6 +7780,40 @@
             "title": "Label",
             "type": "string"
           },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement"
+          },
+          "sensitivity": {
+            "anyOf": [
+              {
+                "const": "source_code",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensitivity"
+          },
           "tools": {
             "items": {
               "type": "string"
@@ -7792,7 +7826,10 @@
           "id",
           "label",
           "always",
-          "tools"
+          "tools",
+          "sensitivity",
+          "note",
+          "requirement"
         ],
         "title": "RemoteToolsetOut",
         "type": "object"

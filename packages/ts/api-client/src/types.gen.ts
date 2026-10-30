@@ -4116,6 +4116,18 @@ export type RemoteToolsetOut = {
      */
     label: string;
     /**
+     * Note
+     */
+    note: string | null;
+    /**
+     * Requirement
+     */
+    requirement: string | null;
+    /**
+     * Sensitivity
+     */
+    sensitivity: 'source_code' | null;
+    /**
      * Tools
      */
     tools: Array<string>;

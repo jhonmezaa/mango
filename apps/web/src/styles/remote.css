@@ -69,8 +69,19 @@
     color: var(--text);
     white-space: nowrap;
   }
+  .rm-set.is-source {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
   .rm-tset + .rm-tset {
     margin-top: 10px;
+  }
+  .rm-tset-n {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 2px 0 4px;
+    text-wrap: pretty;
   }
   .rm-tset-h {
     font-size: 12px;

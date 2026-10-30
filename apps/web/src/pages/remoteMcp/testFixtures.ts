@@ -26,9 +26,33 @@ export const PROFILE: RemoteProfile = {
     { resource: 'Microsoft Entra', permission: 'offline_access' },
   ],
   toolsets: [
-    { id: 'core', label: 'Proyectos y equipos', always: true, tools: ['core_list_projects'] },
-    { id: 'wit', label: 'Work items', always: false, tools: ['wit_work_item', 'wit_query'] },
-    { id: 'wiki', label: 'Wiki', always: false, tools: ['wiki'] },
+    {
+      id: 'core',
+      label: 'Proyectos y equipos',
+      always: true,
+      tools: ['core_list_projects'],
+      sensitivity: null,
+      note: null,
+      requirement: null,
+    },
+    {
+      id: 'wit',
+      label: 'Work items',
+      always: false,
+      tools: ['wit_work_item', 'wit_query'],
+      sensitivity: null,
+      note: null,
+      requirement: null,
+    },
+    {
+      id: 'wiki',
+      label: 'Wiki',
+      always: false,
+      tools: ['wiki'],
+      sensitivity: null,
+      note: null,
+      requirement: null,
+    },
   ],
   enabled_in_installation: true,
 };
@@ -116,8 +140,33 @@ export function pendingRegistration(patch: Partial<RemoteRequest> = {}): Registr
   });
 }
 
-export function remoteCatalog(registrations: Registration[] = []): RemoteCatalog {
-  return { enabled: true, profiles: [PROFILE], registrations, max_registrations: 10 };
+/** Toolsets with the marks a signed profile may carry (D98 (6), design round 27). */
+export const MARKED_TOOLSETS: RemoteProfile['toolsets'] = [
+  {
+    id: 'repos',
+    label: 'Repositorios',
+    always: false,
+    tools: ['repo_file'],
+    sensitivity: 'source_code',
+    note: 'El agente lee archivos, commits y pull requests de los repositorios.',
+    requirement: null,
+  },
+  {
+    id: 'search-code',
+    label: 'Búsqueda de código',
+    always: false,
+    tools: ['search_code'],
+    sensitivity: null,
+    note: null,
+    requirement: 'Necesita la extensión Code Search de Microsoft instalada en la organización.',
+  },
+];
+
+export function remoteCatalog(
+  registrations: Registration[] = [],
+  profile: RemoteProfile = PROFILE,
+): RemoteCatalog {
+  return { enabled: true, profiles: [profile], registrations, max_registrations: 10 };
 }
 
 export function emptyRemoteCatalog(): RemoteCatalog {
