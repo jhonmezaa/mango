@@ -16,7 +16,8 @@ export type PreferenceKey =
    * what a page load paints first (skeletons or the neutral cover) and whether the sign-in says
    * the session ended. It never decides authorization; the session cookie does (AGENTS.md).
    */
-  | 'mango-had-session';
+  | 'mango-had-session'
+  | 'mango-dash-period';
 
 function preferenceStore(): Storage | null {
   try {

@@ -1,0 +1,330 @@
+/*
+ * Inicio (design dashboard.jsx + charts.jsx: `metric-grid`, `metric-card`, `filter-pill`,
+ * `filter-pill-sep`, `notice-pill`, `link-muted`). Ported from the design (Claude Design
+ * styles.css); values are the design's. The `hm-*` helpers hold the inline styles of the design's
+ * components (`Dashboard`, `LineChart`, `MetricCard`, `ListCard`, `Pill`).
+ */
+@layer components {
+  .hm-wrap {
+    padding: 12px 32px 48px;
+  }
+  .hm-top {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .hm-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .metric-card {
+    padding: 22px 24px 18px;
+    display: flex;
+    flex-direction: column;
+    min-height: 360px;
+  }
+  .filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--card);
+    font-size: 13px;
+    color: var(--text);
+  }
+  .filter-pill:hover {
+    background: var(--row-hover);
+  }
+  .filter-pill-sep {
+    width: 1px;
+    height: 14px;
+    background: var(--border-strong);
+  }
+  .notice-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .notice-pill:hover {
+    border-color: var(--border-strong);
+  }
+  .link-muted {
+    color: var(--text-muted);
+    font-size: 12.5px;
+  }
+  .link-muted:hover {
+    color: var(--text);
+  }
+  .hm-warn {
+    color: var(--red);
+  }
+  .hm-muted {
+    color: var(--text-muted);
+  }
+
+  /* Pill (design `Pill`): the remove control sits inside the pill, as in the design. */
+  .hm-pill-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .hm-pill-removable {
+    padding-left: 32px;
+  }
+  .hm-pill-remove {
+    position: absolute;
+    left: 10px;
+    z-index: 1;
+    display: inline-flex;
+    color: var(--text-muted);
+  }
+  .hm-pill-value {
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+  .hm-pill-chevron {
+    color: var(--accent-ink);
+  }
+  .hm-pill-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+  }
+  .hm-pill-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 180px;
+    padding: 4px;
+    z-index: 41;
+    box-shadow: var(--shadow);
+  }
+  .hm-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: left;
+  }
+  .hm-option.is-on {
+    background: var(--row-hover);
+  }
+
+  /* MetricCard and ListCard */
+  .hm-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .hm-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    margin: 0;
+  }
+  .hm-title-list {
+    margin-bottom: 8px;
+  }
+  .hm-info {
+    display: inline-flex;
+    color: var(--text-muted);
+    cursor: help;
+  }
+  .hm-total-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .hm-total {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .hm-delta {
+    font-size: 13px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .hm-up {
+    color: var(--green);
+  }
+  .hm-down {
+    color: var(--red);
+  }
+  .hm-prev {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .hm-chart-gap {
+    margin-top: 18px;
+  }
+  .hm-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 16px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .hm-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+  }
+  .hm-list-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .hm-list-sub {
+    color: var(--text-muted);
+    font-size: 12.5px;
+  }
+  .hm-list-value {
+    font-weight: 500;
+  }
+  .hm-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .hm-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hm-num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* LineChart */
+  .hm-chart {
+    position: relative;
+    width: 100%;
+  }
+  .hm-chart-svg {
+    display: block;
+    overflow: visible;
+  }
+  .hm-tick {
+    font-size: 11px;
+    fill: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .hm-tip {
+    position: absolute;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 10px 12px;
+    font-size: 12.5px;
+    pointer-events: none;
+    min-width: 190px;
+    z-index: 5;
+  }
+  .hm-tip-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .hm-tip-head {
+    margin-bottom: 6px;
+  }
+  .hm-tip-label {
+    font-weight: 500;
+  }
+  .hm-tip-prev {
+    margin-top: 4px;
+  }
+  .hm-tip-key {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hm-swatch {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+  }
+  .hm-swatch-cur {
+    background: var(--accent);
+  }
+  .hm-swatch-prev {
+    background: var(--chart-muted);
+  }
+
+  /* «Próximamente» cards and loading */
+  .hm-soon-card,
+  .hm-soon-card > .soon-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .hm-soon-card .metric-card {
+    flex: 1;
+  }
+  .hm-chart-empty {
+    height: 200px;
+    margin-top: 18px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .hm-skel-gap {
+    margin-top: 14px;
+    display: block;
+  }
+
+  @media (max-width: 1200px) {
+    .metric-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 900px) {
+    .hm-wrap {
+      padding: 8px 16px 40px;
+    }
+    .metric-card {
+      padding: 18px;
+      min-height: 0;
+    }
+  }
+}
