@@ -121,9 +121,65 @@ export function niceMax(value: number): number {
   return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
 }
 
-/** Design `fmtCompact`: axis labels. */
-export function fmtCompact(value: number, money: boolean): string {
+export interface Axis {
+  max: number;
+  ticks: number[];
+  /** Decimals of its labels: 0 is the design's format. */
+  decimals: number;
+}
+
+const EPSILON = 1e-9;
+const isMultiple = (value: number, unit: number) => {
+  const units = value / unit;
+  return Math.abs(units - Math.round(units)) < EPSILON;
+};
+
+/** The marks a label can show: USD with cents below 10, whole numbers otherwise. */
+function exact(value: number, money: boolean, top: number): boolean {
+  return isMultiple(value, money && top < 10 ? 0.01 : 1);
+}
+
+/** The smallest step of 1, 2 or 5 that draws `top` in five parts at most. */
+function niceStep(top: number, money: boolean): number {
+  const least = money ? top / 5 : Math.max(1, top / 5);
+  const p = 10 ** Math.floor(Math.log10(least) + EPSILON);
+  const multiple = [1, 2, 5].find((m) => m * p >= least - EPSILON) ?? 10;
+  return multiple * p;
+}
+
+function decimalsOf(step: number): number {
+  if (step >= 1) return 0;
+  let decimals = 2;
+  while (decimals < 6 && !isMultiple(step, 10 ** -decimals)) decimals += 1;
+  return decimals;
+}
+
+/**
+ * The axis up to `peak`. Design: `niceMax` in four parts. Where a label would have to round those
+ * marks (the design's repeat with a maximum of 1: «USD 1, 1, 1, 0, 0»), a step every label can
+ * show, and the top moves to its next mark.
+ */
+export function axisOf(peak: number, money: boolean): Axis {
+  const top = niceMax(peak);
+  const quarter = top / 4;
+  const step = exact(quarter, money, top) ? quarter : niceStep(top, money);
+  const parts = Math.ceil(top / step - EPSILON);
+  return {
+    max: parts * step,
+    ticks: Array.from({ length: parts + 1 }, (_, i) => i * step),
+    decimals: decimalsOf(step),
+  };
+}
+
+/** Design `fmtCompact`: axis labels; `decimals` for the marks below one unit. */
+export function fmtCompact(value: number, money: boolean, decimals = 0): string {
   const prefix = money ? 'USD ' : '';
+  if (decimals > 0 && value > 0) {
+    return `${prefix}${value.toLocaleString('es-ES', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })}`;
+  }
   if (value >= 1e6) return `${prefix}${(value / 1e6).toFixed(1).replace('.0', '')}M`;
   if (value >= 1e3)
     return `${prefix}${(value / 1e3).toFixed(value >= 1e4 ? 0 : 1).replace('.0', '')}K`;

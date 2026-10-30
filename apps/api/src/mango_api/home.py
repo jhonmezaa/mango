@@ -211,9 +211,24 @@ def _own_budget(deps: HomeDeps, caller: Caller, period: str) -> HomeBudgetOut:
     )
 
 
+def _discarded(deps: HomeDeps, budgets: list[HomeBudgetOut]) -> frozenset[str]:
+    """Agents with spend that no longer exist: discarded as drafts, they have no name left and
+    their limit no longer stops anything. Presupuestos keeps them, to account for the spend.
+    Without an answer from the catalog nothing is hidden."""
+    unnamed = [b.id for b in budgets if b.name is None and b.id != deps.admin.agent_id]
+    if not unnamed or deps.admin.latest_names is None:
+        return frozenset()
+    try:
+        found = deps.admin.latest_names(unnamed)
+    except Exception:
+        logger.exception("agents unavailable for the budgets of Inicio")
+        return frozenset()
+    return frozenset() if found is None else frozenset(unnamed) - found.keys()
+
+
 def _agent_budgets(deps: HomeDeps) -> list[HomeBudgetOut]:
     """The agents of the budgets screen closest to their limit (D17: every agent uses the
-    default limit)."""
+    default limit), leaving out the ones that no longer exist."""
     rows = [
         (
             _ratio(Decimal(a.spent_usd), Decimal(a.limit_usd)),
@@ -227,6 +242,8 @@ def _agent_budgets(deps: HomeDeps) -> list[HomeBudgetOut]:
         )
         for a in budgets_view(deps.admin).agents
     ]
+    discarded = _discarded(deps, [row for _, row in rows])
+    rows = [pair for pair in rows if pair[1].id not in discarded]
     rows.sort(key=lambda pair: (-pair[0], pair[1].id))
     return [row for _, row in rows[:MAX_BUDGETS]]
 

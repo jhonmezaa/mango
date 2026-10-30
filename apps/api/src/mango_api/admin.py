@@ -23,7 +23,7 @@ import asyncio
 import json
 import logging
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -290,21 +290,28 @@ class AdminDeps:
     clock: Callable[[], datetime]
     agent_names: Callable[[], Mapping[str, str]] | None = None
     """Names of the published and retired agents by id, for the budget list."""
+    latest_names: Callable[[Collection[str]], Mapping[str, str] | None] | None = None
+    """Names of those agents that exist, from their latest version: the Playground also charges
+    an agent never published. An agent discarded as a draft is left out. ``None`` without a
+    catalog."""
     member_rate_limiter: Limiter = field(
         default_factory=lambda: RateLimiter(limit=PROBE_CALLS_PER_MINUTE, window_seconds=60)
     )
     """Own window of the member account check, which the screen runs after connectivity."""
 
 
-def _agent_names(deps: AdminDeps) -> Mapping[str, str]:
+def _agent_names(deps: AdminDeps, agent_ids: Collection[str]) -> Mapping[str, str]:
     """The list still works without names: the id is shown instead."""
-    if deps.agent_names is None:
-        return {}
+    names: dict[str, str] = {}
     try:
-        return deps.agent_names()
+        if deps.agent_names is not None:
+            names.update(deps.agent_names())
+        unnamed = [a for a in agent_ids if a not in names and a != deps.agent_id]
+        if unnamed and deps.latest_names is not None:
+            names.update(deps.latest_names(unnamed) or {})
     except Exception:
         logger.exception("agent names unavailable for the budget list")
-        return {}
+    return names
 
 
 def budgets_view(deps: AdminDeps) -> BudgetsOut:
@@ -318,7 +325,7 @@ def budgets_view(deps: AdminDeps) -> BudgetsOut:
         for key in usage
         if key.startswith(AGENT_PREFIX) and is_agent_id(agent_id := key.removeprefix(AGENT_PREFIX))
     }
-    names = _agent_names(deps)
+    names = _agent_names(deps, agent_ids)
     users: list[UserBudgetOut] = []
     user_ids = {k.removeprefix(USER_PREFIX) for k in usage if k.startswith(USER_PREFIX)}
     for user_id in user_ids | overrides.keys():
