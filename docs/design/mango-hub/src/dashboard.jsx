@@ -1,12 +1,12 @@
 // Inicio. Alcance según la cuenta: organización (admin o finops-central), área (bu-lead) o personal (resto).
-const DASH_AREAS = { finanzas: 'Finanzas' };
 function dashAgo(at) {
   const s = (Date.now() - at) / 1000;
   if (s < 60) return 'Actualizado hace unos segundos';
   const m = Math.floor(s / 60); if (m < 60) return 'Actualizado hace ' + (m === 1 ? '1 minuto' : m + ' minutos');
   const h = Math.floor(m / 60); return 'Actualizado hace ' + (h === 1 ? '1 hora' : h + ' horas');
 }
-function dashSince(series, since) {
+function dashSince(series, since, noStart) {
+  if (noStart) return { ...series, cur: series.cur.map(() => null), prev: series.prev.map(() => null) };
   if (!since) return series;
   return { ...series, cur: series.cur.map((v, i) => series.dates[i] < since ? null : v), prev: series.prev.map((v, i) => series.prevDates[i] < since ? null : v) };
 }
@@ -35,7 +35,6 @@ function Dashboard({ agents, setView }) {
   const avail = window.useMango(s => s.avail);
   const sim = window.useMango(s => s.simDash);
   const sinceMode = window.useMango(s => s.simDashSince);
-  const noName = window.useMango(s => s.simDashNoName);
   const pending = window.useMango(s => s.approvals.filter(a => a.status === 'pending').length);
   const budgets = window.useMango(s => s.budgets);
   const toast = window.useToast?.();
@@ -48,9 +47,10 @@ function Dashboard({ agents, setView }) {
   const scope = R.admin || R.central ? 'org' : R.area ? 'area' : 'self';
   const k = scope === 'org' ? 1 : scope === 'area' ? 0.18 : 0.02;
   const g = gran === 'week' && period === '7d' ? 'day' : gran;
-  const since = React.useMemo(() => { if (!sinceMode) return null; const d = new Date(window.CHART_TODAY); d.setDate(d.getDate() - (sinceMode === '12d' ? 11 : 0)); return d; }, [sinceMode]);
-  const spend = React.useMemo(() => dashSince(window.makeSeries({ seed: 3, period, gran: g, base: 410 * k, growth: 0.9, noise: 0.35, shape: 'spiky' }), since), [period, g, k, since]);
-  const calls = React.useMemo(() => dashSince(window.makeSeries({ seed: 7, period, gran: g, base: 1840 * k, growth: 0.7, noise: 0.18 }), since), [period, g, k, since]);
+  const noStart = sinceMode === 'none';
+  const since = React.useMemo(() => { if (!sinceMode || sinceMode === 'none') return null; const d = new Date(window.CHART_TODAY); d.setDate(d.getDate() - (sinceMode === '12d' ? 11 : 0)); return d; }, [sinceMode]);
+  const spend = React.useMemo(() => dashSince(window.makeSeries({ seed: 3, period, gran: g, base: 410 * k, growth: 0.9, noise: 0.35, shape: 'spiky' }), since, noStart), [period, g, k, since, noStart]);
+  const calls = React.useMemo(() => dashSince(window.makeSeries({ seed: 7, period, gran: g, base: 1840 * k, growth: 0.7, noise: 0.18 }), since, noStart), [period, g, k, since, noStart]);
   const resolved = React.useMemo(() => window.makeSeries({ seed: 11, period, gran: g, base: 38, growth: 0.5, noise: 0.3 }), [period, g]);
   const latency = React.useMemo(() => window.makeSeries({ seed: 5, period, gran: 'day', base: 1450, growth: 0.25, noise: 0.12, shape: 'down' }), [period]);
   const byStatus = (st) => agents.filter(a => a.status === st).length;
@@ -60,12 +60,11 @@ function Dashboard({ agents, setView }) {
   const more = avail ? null : 'Ver detalles';
   const hour = new Date().getHours();
   const hello = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
-  const name = noName ? null : S.actor();
-  const area = DASH_AREAS[R.area] || R.area;
+  const area = R.area; // el identificador del área: el producto no tiene otro nombre visible
   const sub = scope === 'org' ? 'Así va Mango en toda la organización en el periodo seleccionado.' : scope === 'area' ? 'Así va tu área, ' + area + ', en el periodo seleccionado.' : 'Así va tu uso de Mango en el periodo seleccionado.';
   const whose = scope === 'org' ? ' de toda la organización' : scope === 'area' ? ' de las personas de tu área' : '';
   const spendInfo = 'Costo de Bedrock en USD' + whose + (scope === 'self' ? ' de tus mensajes' : '') + ': las respuestas de los agentes y el título de las conversaciones nuevas.';
-  const callsInfo = scope === 'self' ? 'Tus mensajes que llegaron a un agente, en el chat y en el Playground.' : 'Turnos' + whose + ' que llegaron a un agente, en el chat y en el Playground.';
+  const callsInfo = scope === 'self' ? 'Tus mensajes que llegaron a un agente, en el chat, en el Playground y en tus tareas programadas.' : 'Turnos' + whose + ' que llegaron a un agente, en el chat, en el Playground y en las tareas programadas.';
   const showPending = pending > 0 && S.can('approval.decide');
 
   const hot = budgets.filter(b => b.scope === 'agent').map(b => ({ b, p: Math.round(b.spent / b.limit * 100), a: agents.find(x => x.id === b.target) })).sort((x, y) => y.p - x.p).slice(0, 4);
@@ -75,14 +74,14 @@ function Dashboard({ agents, setView }) {
     ? <window.ListCard key="bud" title="Presupuestos cerca del límite" info="Los cuatro agentes más cerca de su límite del mes." updated={updated} more="Ver presupuestos" onMore={() => setView('budgets')} rows={hot.map(({ b, p, a }) => ({ label: a ? a.name : b.target, sub: usd(b.spent) + ' de ' + usd(b.limit), value: p + '%', ...tone(p, b.warn) }))} />
     : <window.ListCard key="bud" title="Tu presupuesto" info={scope === 'area' ? 'Mango no tiene presupuestos por área. Este es tu límite personal del mes.' : 'Tu límite personal del mes, para todos los agentes.'} updated={updated} rows={[{ label: 'Límite personal', sub: usd(mine.spent) + ' de ' + usd(mine.limit), value: mp + '%', ...tone(mp, mine.warn) }]} />;
   const cards = [
-    <window.MetricCard key="spend" title="Gasto en Bedrock" info={spendInfo} series={spend} money compare={compare} goodWhen="down" since={since} updated={updated} more={more} onMore={() => setView('costs')} onExport={exp} />,
+    <window.MetricCard key="spend" title="Gasto en Bedrock" info={spendInfo} series={spend} money compare={compare} goodWhen="down" since={since} noStart={noStart} updated={updated} more={more} onMore={() => setView('costs')} onExport={exp} />,
     !avail && <window.ListCard key="health" title="Estado de agentes" info="Heartbeat cada 5 minutos" updated={updated} more="Ver todos" onMore={() => setView('marketplace')} rows={[
       { color: 'var(--green)', label: 'En línea', value: byStatus('online') },
       { color: 'var(--amber)', label: 'Iniciando', value: byStatus('warmup') },
       { color: 'var(--red)', label: 'Degradados', value: byStatus('degraded') },
       { color: 'var(--text-dim)', label: 'Fuera de línea', value: byStatus('offline') },
     ]} />,
-    <window.MetricCard key="calls" title="Invocaciones" info={callsInfo} series={calls} compare={compare} since={since} updated={updated} more={more} onMore={() => setView('observability')} onExport={exp} />,
+    <window.MetricCard key="calls" title="Invocaciones" info={callsInfo} series={calls} compare={compare} since={since} noStart={noStart} updated={updated} more={more} onMore={() => setView('observability')} onExport={exp} />,
     !avail && <window.MetricCard key="tickets" title="Tickets resueltos" info="Tickets cerrados por agentes sin intervención manual" series={resolved} compare={compare} updated={updated} onMore={() => setView('tickets')} onExport={exp} />,
     !avail && <window.MetricCard key="lat" title="Latencia p95" info="Tiempo hasta el primer token, percentil 95" series={latency} compare={compare} format="avg" goodWhen="down" updated={updated} onMore={() => setView('observability')} onExport={exp} />,
     budgetCard,
@@ -97,7 +96,7 @@ function Dashboard({ agents, setView }) {
         <div className="page-wrap">
           <div className="row between" style={{ alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
             <div style={{ minWidth: 0 }}>
-              <h1 className="page-title">{name ? hello + ', ' + name : hello}</h1>
+              <h1 className="page-title">{hello}</h1>
               <p className="page-subtitle">{sub}</p>
             </div>
             {showPending && (

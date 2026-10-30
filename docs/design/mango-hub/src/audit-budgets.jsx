@@ -334,7 +334,7 @@ function BudgetsView({ agents }) {
   const [q, setQ] = useStateAB('');
   const [filter, setFilter] = useStateAB('all');
   const M = monthInfo();
-  const name = (b) => b.scope === 'agent' ? (agents.find(a => a.id === b.target)?.name || b.target) : 'Equipo ' + b.target;
+  const name = (b) => b.scope === 'agent' ? (agents.find(a => a.id === b.target)?.name || 'Agente descartado · ' + b.target) : 'Equipo ' + b.target;
   const fc = (b) => bForecast(b, M);
   const proj = (b) => { const f = fc(b); return f.enough ? f.pMid : 0; };
   const alerts = budgets.filter(b => bState(b) !== 'ok' && (!avail || b.scope === 'agent')).sort((x, y) => bPct(y) - bPct(x));

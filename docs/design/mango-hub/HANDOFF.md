@@ -1130,3 +1130,26 @@ Sale cuando la renovación no responde tras los reintentos. Portada neutra (fond
 ### Sigue abierto
 - Lo de A4 que no se tocó aquí (respuesta cortada por su tope, cuota de Bedrock, 429, correos rechazados, `area_required`, administración, Agent Builder, Knowledge Bases, menú).
 - Cancelar en Microsoft; descripción del servicio en el perfil.
+
+
+## Ronda 29 (2026-10-30)
+Respuesta al contexto de la ronda 29. Archivos: `dashboard.jsx`, `charts.jsx`, `store.js`, `login.jsx`, `app.jsx`, `audit-budgets.jsx`. Se aceptan todas las diferencias del §2. Reemplaza lo que contradiga «Ronda 28 e Inicio».
+
+### Alineado con el producto
+- **Inicio para todas las cuentas** también en «Disponible hoy» (`isSoon` ya no mira el rol). Organización, área o lo propio según responde el servidor; mientras carga, el subtítulo sale del rol.
+- **Sin «Cerrar sesión» en «No se pudo abrir Mango».** Solo «Reintentar». Seguridad gana: sin servidor no se revoca la cookie.
+- **Saludo sin nombre siempre.** Se quitó el control de demo «Inicio · nombre de la persona».
+- **Área = su identificador**, tal cual: «Así va tu área, finanzas, …».
+- **Semanas contadas en parte, fecha de la organización, CSV con vacíos:** como el producto.
+
+### Decisiones (§4)
+- **«Cerrar sesión» cuando Mango no responde: no se ofrece.** Un cierre sin confirmar obliga a explicar que la sesión sigue abierta, y eso no ayuda a nadie en la pantalla de error. En un equipo compartido, la persona puede cerrar el navegador; la sesión vence sola.
+- **Invocaciones nombra las tareas:** «Turnos {de toda la organización | de las personas de tu área} que llegaron a un agente, en el chat, en el Playground y en las tareas programadas.» · personal: «Tus mensajes que llegaron a un agente, en el chat, en el Playground y en tus tareas programadas.» *Cambio de texto para el producto.*
+- **Nombre visible del área:** se queda el identificador. Sin una fuente para el nombre, no se inventa uno.
+- **Antes del primer turno:** todo el gráfico va rayado con «Sin datos», total «—», sin «Cuenta desde…». El tooltip, bajo el día con «Sin datos»: «Mango todavía no tiene datos. Empieza a contar con el primer turno.» Etiqueta del gráfico: «{título} · todavía sin datos». Demo: «Inicio · desde cuándo hay datos» › «Antes del primer turno».
+- Ronda 26 (cancelar en Microsoft, descripciones del perfil): sigue abierto.
+
+### De rondas anteriores (§5)
+- **Marcas del eje:** el diseño toma la regla del producto (`axisTicks` y `fmtTick` en `charts.jsx`). Cuatro partes de niceMax si las etiquetas pueden decirlas (invocaciones sin decimales; USD < 10 hasta 3 decimales); si no, paso de 1, 2 o 5 y el tope sube a la marca siguiente. USD < 10 con céntimos: «USD 0», «USD 0,25», «USD 0,01». Con máximo 1 invocación: 0 y 1.
+- **Presupuesto de un agente descartado:** en Presupuestos, «Agente descartado · {id}» (el id en lugar del nombre que ya no existe). Inicio sigue sin mostrarlo. *Cambio de texto para el producto.*
+- Sin tocar: sesión que no se renueva en el chat, respuesta cortada por su tope, cuota de Bedrock, subir a leer mientras responde, «+» con el primer mensaje sin guardar, dos «Reintentar» en el historial, 429, correos rechazados, `area_required`, administración, Agent Builder, Knowledge Bases, menú.

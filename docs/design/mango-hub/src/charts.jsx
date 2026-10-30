@@ -29,9 +29,21 @@ function makeSeries({ seed = 1, period = '30d', gran = 'day', base = 100, growth
 }
 
 const niceMax = (v) => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; };
+// Marcas del eje: las cuatro partes de niceMax si las etiquetas las pueden decir; si no, paso de 1, 2 o 5 y el tope sube a su marca siguiente.
+// Invocaciones sin decimales; USD por debajo de 10 con céntimos (hasta 3 decimales).
+const axisTicks = (vmax, money) => {
+  const max = niceMax(vmax * 1.05), q = max / 4, dec = money && max < 10 ? 3 : 0;
+  const fits = (v) => Math.abs(v * Math.pow(10, dec) - Math.round(v * Math.pow(10, dec))) < 1e-9;
+  if (fits(q)) return [0, 1, 2, 3, 4].map(k => k * q);
+  let step = 0; for (let e = -dec; !step; e++) for (const m of [1, 2, 5]) { const s = m * Math.pow(10, e); if (s >= q) { step = s; break; } }
+  const top = Math.max(step, Math.ceil(vmax / step - 1e-9) * step), out = [];
+  for (let v = 0; v <= top + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+};
+const fmtTick = (v, money, top) => money && top < 10 ? (v === 0 ? 'USD 0' : 'USD ' + v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 3 })) : fmtCompact(v, money);
 const fmtCompact = (v, money) => (money ? 'USD ' : '') + (v >= 1e6 ? (v / 1e6).toFixed(1).replace('.0', '') + 'M' : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e4 ? 0 : 1).replace('.0', '') + 'K' : Math.round(v));
 
-function LineChart({ series, money, compare = true, height = 200, label, format, since }) {
+function LineChart({ series, money, compare = true, height = 200, label, format, since, noStart }) {
   const wrap = useRefCh(null);
   const [w, setW] = useStateCh(480);
   const [hover, setHover] = useStateCh(null);
@@ -39,11 +51,10 @@ function LineChart({ series, money, compare = true, height = 200, label, format,
   const { cur, prev, dates, prevDates } = series;
   const axisW = 48, padT = 8, padB = 24, H = height, plotW = w - axisW, plotH = H - padT - padB;
   const vals = [...cur, ...(compare ? prev : [])].filter(v => v != null);
-  const max = niceMax(Math.max(0, ...vals) * 1.05);
+  const ticks = axisTicks(Math.max(0, ...vals), money), max = ticks[ticks.length - 1];
   const x = (i) => (i / (cur.length - 1)) * (plotW - 4) + 2;
   const y = (v) => padT + plotH - (v / max) * plotH;
   const path = (arr) => { let d = '', pen = false; arr.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; }); return d; };
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => t * max);
   const fmt = format || ((v) => money && window.GovKit ? window.GovKit.usd(v) : Math.round(v).toLocaleString('es-ES'));
   const first = cur.findIndex(v => v != null);
   const curPts = cur.filter(v => v != null).length;
@@ -59,12 +70,12 @@ function LineChart({ series, money, compare = true, height = 200, label, format,
   const pid = 'hatch-' + (label || 'c').replace(/\W/g, '');
   return (
     <div ref={wrap} style={{ position: 'relative', width: '100%' }}>
-      <svg width={w} height={H} role="img" aria-label={(label || 'Gráfico de línea') + (since && first !== 0 ? ' · cuenta desde el ' + fmtDate(since) : '')} style={{ display: 'block', overflow: 'visible' }}>
+      <svg width={w} height={H} role="img" aria-label={(label || 'Gráfico de línea') + (noStart ? ' · todavía sin datos' : since && first !== 0 ? ' · cuenta desde el ' + fmtDate(since) : '')} style={{ display: 'block', overflow: 'visible' }}>
         <defs><pattern id={pid} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" strokeWidth="2" /></pattern></defs>
         {ticks.map((t, k) => (
           <g key={k}>
             <line x1={0} x2={plotW} y1={y(t)} y2={y(t)} stroke="var(--border)" />
-            <text x={w} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--text-muted)" style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtCompact(t, money)}</text>
+            <text x={w} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--text-muted)" style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtTick(t, money, max)}</text>
           </g>
         ))}
         {gapW > 0 && <g aria-hidden="true">
@@ -92,7 +103,8 @@ function LineChart({ series, money, compare = true, height = 200, label, format,
           </div>
           <div className="row between" style={{ gap: 16 }}><span className="row gap-2"><span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--accent)' }} /><span style={{ color: 'var(--text-muted)' }}>{fmtDay(dates[hv.i])}</span></span><span style={{ fontVariantNumeric: 'tabular-nums', color: hv.c == null ? 'var(--text-muted)' : undefined }}>{hv.c == null ? none : fmt(hv.c)}</span></div>
           {compare && <div className="row between" style={{ gap: 16, marginTop: 4 }}><span className="row gap-2"><span style={{ width: 9, height: 9, borderRadius: 2, background: 'var(--chart-muted)' }} /><span style={{ color: 'var(--text-muted)' }}>{fmtDay(prevDates[hv.i])}</span></span><span style={{ fontVariantNumeric: 'tabular-nums', color: hv.p == null ? 'var(--text-muted)' : undefined }}>{hv.p == null ? none : fmt(hv.p)}</span></div>}
-          {since && (hv.c == null || (compare && hv.p == null)) && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12 }}>Mango cuenta desde el {fmtDate(since)}. Antes no hay datos, no es que no hubiera gasto.</div>}
+          {noStart && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12 }}>Mango todavía no tiene datos. Empieza a contar con el primer turno.</div>}
+          {since && !noStart && (hv.c == null || (compare && hv.p == null)) && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 12 }}>Mango cuenta desde el {fmtDate(since)}. Antes no hay datos, no es que no hubiera gasto.</div>}
         </div>
       )}
     </div>
@@ -114,7 +126,7 @@ function CardFooter({ updated, more, onMore }) {
 }
 
 // Valores null = días antes de que Mango empezara a contar (since). No se suman ni se dibujan.
-function MetricCard({ title, info, series, money, compare = true, goodWhen = 'up', format, updated = 'Actualizado hace unos segundos', more = 'Ver detalles', onMore, onExport, since }) {
+function MetricCard({ title, info, series, money, compare = true, goodWhen = 'up', format, updated = 'Actualizado hace unos segundos', more = 'Ver detalles', onMore, onExport, since, noStart }) {
   const I = window.Icons;
   const nn = (a) => a.filter(v => v != null);
   const sum = (a) => a.reduce((s, v) => s + v, 0);
@@ -138,11 +150,11 @@ function MetricCard({ title, info, series, money, compare = true, goodWhen = 'up
             {canPct && <span style={{ fontSize: 13, fontWeight: 500, color: good ? 'var(--green)' : 'var(--red)', fontVariantNumeric: 'tabular-nums' }}>{d >= 0 ? '+' : ''}{d.toLocaleString('es-ES', { maximumFractionDigits: 1 })}%</span>}
           </div>
           {compare && prevFull && <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{big(prevT)} periodo anterior</div>}
-          {partial && since && <div className="dash-since" title={compare && !prevFull ? 'No hay datos de todo el periodo anterior, así que no se compara.' : undefined}>Cuenta desde el {fmtDate(since)}</div>}
+          {partial && since && !noStart && <div className="dash-since" title={compare && !prevFull ? 'No hay datos de todo el periodo anterior, así que no se compara.' : undefined}>Cuenta desde el {fmtDate(since)}</div>}
         </div>
         <button className="btn btn-icon" aria-label={'Exportar ' + title} title="Exportar" onClick={onExport}><I.Share size={13} /></button>
       </div>
-      <div style={{ marginTop: 18 }}><LineChart series={series} money={money} compare={compare} label={title} since={since} format={format === 'avg' ? (v) => Math.round(v) + ' ms' : undefined} /></div>
+      <div style={{ marginTop: 18 }}><LineChart series={series} money={money} compare={compare} label={title} since={since} noStart={noStart} format={format === 'avg' ? (v) => Math.round(v) + ' ms' : undefined} /></div>
       <CardFooter updated={updated} more={more} onMore={onMore} />
     </section>
   );

@@ -164,7 +164,7 @@
     set,
     subscribe: (f) => { subs.add(f); return () => subs.delete(f); },
     AVAILABLE, onDecide: {},
-    isSoon: (view) => state.avail && (view === 'dashboard' ? !(ROLES[state.role] && (ROLES[state.role].admin || ROLES[state.role].central)) : !AVAILABLE.includes(view)),
+    isSoon: (view) => state.avail && view !== 'dashboard' && !AVAILABLE.includes(view),
     propose: (c) => {
       const n = Math.max(0, ...state.changes.map(x => /^CHG-/.test(x.id) ? parseInt(x.id.slice(4), 10) || 0 : 0)) + 1;
       if (c.kind === 'mfa_reset' && c.target === store.actorEmail()) return null;
