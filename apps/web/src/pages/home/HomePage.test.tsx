@@ -103,7 +103,7 @@ describe('HomePage', () => {
 
   it('lists the budgets closest to their limit as text, never as markup', async () => {
     renderPage(vi.fn(() => Promise.resolve(home())));
-    const scoped = await card('Presupuestos cerca del límite');
+    const scoped = await card(/^Presupuestos cerca del límite/);
     expect(scoped.getByText('FinOps')).toBeInTheDocument();
     expect(scoped.getByText('85%')).toBeInTheDocument();
     expect(scoped.getByText(XSS)).toBeInTheDocument();
@@ -112,12 +112,13 @@ describe('HomePage', () => {
     expect(scoped.getByRole('button', { name: 'Ver presupuestos' })).toBeInTheDocument();
   });
 
-  it('keeps agent health, tickets and latency as «Próximamente», without data', async () => {
+  it('does not show what has no source, nor links to views that do not exist', async () => {
     renderPage(vi.fn(() => Promise.resolve(home())));
     await screen.findByRole('heading', { name: /Gasto en Bedrock/ });
     for (const title of ['Estado de agentes', 'Tickets resueltos', 'Latencia p95']) {
-      expect(screen.getByText(`${title}, próximamente`)).toBeInTheDocument();
+      expect(screen.queryByText(title, { exact: false })).not.toBeInTheDocument();
     }
+    expect(screen.queryByText('Ver detalles')).not.toBeInTheDocument();
   });
 
   it('asks again for another period and remembers it', async () => {
@@ -174,27 +175,173 @@ describe('HomePage', () => {
     expect(await screen.findByRole('heading', { name: /Gasto en Bedrock/ })).toBeInTheDocument();
   });
 
-  it('central FinOps sees the organization; a lead or a person, «Próximamente»', async () => {
-    const call = vi.fn(() => Promise.resolve(home()));
-    renderPage(call, baseMe);
-    expect(await screen.findByRole('heading', { name: /Gasto en Bedrock/ })).toBeInTheDocument();
-    vi.clearAllMocks();
+  it('says when the data was read', async () => {
+    renderPage(vi.fn(() => Promise.resolve(home())));
+    expect(
+      (await card(/Gasto en Bedrock/)).getByText('Actualizado hace unos segundos'),
+    ).toBeInTheDocument();
   });
 
-  it.each([
-    {
-      ...baseMe,
-      role: 'bu-lead' as const,
-      business_unit: 'security',
-      groups: ['bu-lead', 'bu-security'],
-    },
-    { ...baseMe, role: null, groups: ['hr'] },
-  ])('does not ask the API for an account that is not drawn yet', async (me) => {
-    const call = vi.fn(() => Promise.resolve(home()));
-    renderPage(call, me);
-    expect(
-      await screen.findByText('Esta sección todavía no está disponible en Mango.'),
-    ).toBeVisible();
-    expect(call).not.toHaveBeenCalled();
+  it('greets a person without a name with the greeting alone', async () => {
+    renderPage(
+      vi.fn(() => Promise.resolve(home())),
+      { ...adminMe, name: null, email: 'nombre@empresa.com' },
+    );
+    expect(await screen.findByRole('heading', { level: 1, name: /^Buen/ })).not.toHaveTextContent(
+      ',',
+    );
+    expect(screen.queryByText(/nombre@empresa\.com/)).not.toBeInTheDocument();
+  });
+
+  it('shows one skeleton per card while it loads', () => {
+    const call = vi.fn(() => new Promise<Home>(() => undefined));
+    renderPage(call);
+    const loading = screen.getByRole('status', { name: 'Cargando Inicio' });
+    expect(loading).toHaveAttribute('aria-busy', 'true');
+    expect(loading.querySelectorAll('section')).toHaveLength(3);
+  });
+
+  describe('since when there is data', () => {
+    const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+    const dayAgo = (n: number) => new Date(today - n * 86_400_000).toISOString().slice(0, 10);
+
+    it('adds up only the days counted and does not compare with an incomplete period', async () => {
+      renderPage(vi.fn(() => Promise.resolve(home({ counted_since: dayAgo(1) }))));
+      const spend = await card(/Gasto en Bedrock/);
+      // Yesterday and today: 1 USD each.
+      expect(spend.getByText('USD 2,00')).toBeInTheDocument();
+      expect(spend.queryByText(/periodo anterior/)).not.toBeInTheDocument();
+      expect(spend.queryByText(/%$/)).not.toBeInTheDocument();
+      const since = spend.getByText(/^Cuenta desde el /);
+      expect(since).toHaveAttribute(
+        'title',
+        'No hay datos de todo el periodo anterior, así que no se compara.',
+      );
+      expect(
+        screen.getByRole('img', { name: /^Gasto en Bedrock · cuenta desde el / }),
+      ).toBeVisible();
+    });
+
+    it('shows a dash before the first turn', async () => {
+      renderPage(vi.fn(() => Promise.resolve(home({ counted_since: null }))));
+      const spend = await card(/Gasto en Bedrock/);
+      expect(spend.getByText('—')).toBeInTheDocument();
+      expect(spend.queryByText(/^Cuenta desde/)).not.toBeInTheDocument();
+    });
+
+    it('compares as always when both periods are whole', async () => {
+      renderPage(vi.fn(() => Promise.resolve(home())));
+      const spend = await card(/Gasto en Bedrock/);
+      expect(spend.queryByText(/^Cuenta desde/)).not.toBeInTheDocument();
+      expect(spend.getByText('+100%')).toBeInTheDocument();
+    });
+
+    it('has no percentage when the period before spent nothing', async () => {
+      const previous = days(30, 30, 0);
+      renderPage(vi.fn(() => Promise.resolve(home({ previous }))));
+      const spend = await card(/Gasto en Bedrock/);
+      expect(spend.queryByText(/%$/)).not.toBeInTheDocument();
+      expect(spend.getByText('USD 0,00 periodo anterior')).toBeInTheDocument();
+    });
+
+    it('leaves the days that were not counted empty in the CSV', async () => {
+      const user = userEvent.setup();
+      const blobs: Blob[] = [];
+      vi.stubGlobal('URL', {
+        ...URL,
+        createObjectURL: (blob: Blob) => {
+          blobs.push(blob);
+          return 'blob:x';
+        },
+        revokeObjectURL: vi.fn(),
+      });
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      renderPage(vi.fn(() => Promise.resolve(home({ counted_since: dayAgo(0) }))));
+      await user.click(await screen.findByRole('button', { name: 'Exportar Invocaciones' }));
+      const lines = (await blobs[0]?.text())?.trim().split('\n') ?? [];
+      expect(lines[1]).toMatch(/^\d{4}-\d{2}-\d{2},,\d{4}-\d{2}-\d{2},$/);
+      expect(lines.at(-1)).toMatch(/,2,\d{4}-\d{2}-\d{2},$/);
+      vi.unstubAllGlobals();
+    });
+  });
+
+  describe('according to the account (the server decides the scope)', () => {
+    const personal = {
+      budgets_scope: 'mine' as const,
+      budgets: [
+        {
+          scope: 'user' as const,
+          id: 'u-1',
+          name: 'nombre@empresa.com',
+          spent_usd: '3.20',
+          limit_usd: '20.00',
+        },
+      ],
+    };
+
+    it('shows an area lead their area and their own limit, without a link', async () => {
+      const me = {
+        ...baseMe,
+        role: 'bu-lead' as const,
+        business_unit: 'seguridad',
+        groups: ['bu-lead', 'bu-seguridad'],
+      };
+      const call = vi.fn(() =>
+        Promise.resolve(home({ scope: 'area', area: 'seguridad', ...personal })),
+      );
+      renderPage(call, me);
+      const scoped = await card(/^Tu presupuesto/);
+      expect(
+        screen.getByText('Así va tu área, seguridad, en el periodo seleccionado.'),
+      ).toBeVisible();
+      expect(
+        screen.getByLabelText(/^Turnos de las personas de tu área que llegaron a un agente/),
+      ).toBeInTheDocument();
+      expect(
+        scoped.getByLabelText(
+          'Mango no tiene presupuestos por área. Este es tu límite personal del mes.',
+        ),
+      ).toBeInTheDocument();
+      expect(scoped.getByText('Límite personal')).toBeInTheDocument();
+      expect(scoped.getByText('USD 3,20 de USD 20,00')).toBeInTheDocument();
+      expect(scoped.getByText('16%')).toBeInTheDocument();
+      expect(screen.queryByText('nombre@empresa.com')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Ver presupuestos' })).not.toBeInTheDocument();
+    });
+
+    it('shows a person their own use', async () => {
+      const me = { ...baseMe, role: null, groups: ['hr'] };
+      renderPage(
+        vi.fn(() => Promise.resolve(home({ scope: 'mine', ...personal }))),
+        me,
+      );
+      const scoped = await card(/^Tu presupuesto/);
+      expect(screen.getByText('Así va tu uso de Mango en el periodo seleccionado.')).toBeVisible();
+      expect(screen.getByLabelText(/^Tus mensajes que llegaron a un agente/)).toBeInTheDocument();
+      expect(
+        scoped.getByLabelText('Tu límite personal del mes, para todos los agentes.'),
+      ).toBeInTheDocument();
+    });
+
+    it('shows central FinOps the organization and their own limit', async () => {
+      renderPage(
+        vi.fn(() => Promise.resolve(home(personal))),
+        baseMe,
+      );
+      await card(/^Tu presupuesto/);
+      expect(
+        screen.getByText('Así va Mango en toda la organización en el periodo seleccionado.'),
+      ).toBeVisible();
+    });
+
+    it('follows the answer of the server, not what the client expected', async () => {
+      const me = { ...baseMe, role: 'bu-lead' as const, business_unit: 'seguridad' };
+      renderPage(
+        vi.fn(() => Promise.resolve(home({ scope: 'mine', ...personal }))),
+        me,
+      );
+      await card(/^Tu presupuesto/);
+      expect(screen.getByText('Así va tu uso de Mango en el periodo seleccionado.')).toBeVisible();
+    });
   });
 });

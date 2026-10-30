@@ -138,7 +138,7 @@ describe('AuthProvider (session in memory: the server did not take it)', () => {
       await expect(auth().getAccessToken()).resolves.toBeNull();
     });
     expect(screen.getByText('unauthenticated')).toBeInTheDocument();
-    expect(auth().errorKey).toBe('auth.errors.sessionExpired');
+    expect(auth().noticeKey).toBe('auth.sessionEnded');
   });
 
   it.each(['NetworkError', 'TooManyRequestsException', 'InternalErrorException', 'Http503'])(
@@ -177,7 +177,7 @@ describe('AuthProvider (session in memory: the server did not take it)', () => {
       await expect(auth().getAccessToken()).resolves.toBeNull();
     });
     expect(screen.getByText('unauthenticated')).toBeInTheDocument();
-    expect(auth().errorKey).toBe('auth.errors.sessionExpired');
+    expect(auth().noticeKey).toBe('auth.sessionEnded');
   });
 
   it('revokes the refresh token on sign-out and forgets the tokens', async () => {
@@ -425,7 +425,7 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
       await expect(auth().getAccessToken()).resolves.toBeNull();
     });
     expect(screen.getByText('unauthenticated')).toBeInTheDocument();
-    expect(auth().errorKey).toBe('auth.errors.sessionExpired');
+    expect(auth().noticeKey).toBe('auth.sessionEnded');
   });
 
   it('keeps the session through an outage of the renewal', async () => {

@@ -78,14 +78,13 @@ interface NavItemProps {
 function NavItem({ view, active, collapsed, sub = false, onNavigate }: NavItemProps) {
   const { t } = useTranslation();
   const { inboxUnread } = useShell();
-  const { me } = useSession();
   const label = t(`nav.${view}`);
   // Design: the Bandeja shows its unread count (a dot when the sidebar is collapsed).
   const badge = view === 'inbox' && inboxUnread ? inboxUnread : null;
   const badgeText = badge === null ? null : badge >= 99 ? '99+' : String(badge);
   const Icon = sub ? null : VIEW_ICONS[view];
   const className = sub ? 'sb-item sb-item-sub' : 'sb-item';
-  if (!isAvailable(view, me)) {
+  if (!isAvailable(view)) {
     return (
       <span
         role="link"
@@ -372,7 +371,7 @@ export function Sidebar({
                       key: view,
                       label: t(`nav.${view}`),
                       Icon: VIEW_ICONS[view],
-                      ...(isAvailable(view, me)
+                      ...(isAvailable(view)
                         ? { to: viewPath(view), badge: badgeOf(view), active: activeView === view }
                         : {}),
                     }))}

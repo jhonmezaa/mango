@@ -158,7 +158,14 @@ test('a reload while the renewal answers 503 keeps the session', async ({ page, 
   await page.reload();
   // It asks again a few times behind the skeletons (design round 27), then says so and stops.
   await expect(page.getByRole('progressbar', { name: 'Cargando Mango' })).toHaveClass(/boot-app/);
-  await expect(page.getByRole('alert')).toHaveText(GENERIC, { timeout: 15_000 });
+  await expect(page.getByRole('alert')).toContainText('No se pudo abrir Mango', {
+    timeout: 15_000,
+  });
+  await expect(page.getByRole('alert')).toContainText(
+    'Mango no responde. Inténtalo de nuevo en unos minutos.',
+  );
+  // With the server down the cookie cannot be revoked: no «Cerrar sesión» here.
+  await expect(page.getByRole('button', { name: 'Cerrar sesión' })).toHaveCount(0);
   expect(down.calls()).toBe(4);
   // Not the sign-in form, and the session is still there: the cookie and the other tab.
   await expect(page.getByLabel('Correo')).toHaveCount(0);
@@ -193,7 +200,7 @@ test('a message sent while the renewal answers 503 fails without signing out', a
   await expect(page.getByText(GENERIC)).toBeVisible();
   // The turn asked for the renewal; so does whatever the page loads after it.
   expect(down.calls()).toBeGreaterThanOrEqual(1);
-  await expect(page.getByText('Tu sesión expiró. Vuelve a iniciar sesión.')).toHaveCount(0);
+  await expect(page.getByText('Tu sesión terminó. Vuelve a entrar para seguir.')).toHaveCount(0);
   await expect(page.getByLabel('Correo')).toHaveCount(0);
   await expect(page.getByRole('navigation').first()).toBeVisible();
 

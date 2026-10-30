@@ -83,21 +83,39 @@
     color: var(--text-muted);
   }
 
-  /* Pill (design `Pill`): the remove control sits inside the pill, as in the design. */
+  /* Pill (design `Pill`): «Quitar» is its own button next to the pill's. */
   .hm-pill-wrap {
     position: relative;
     display: inline-flex;
     align-items: center;
   }
-  .hm-pill-removable {
-    padding-left: 32px;
+  .filter-pill-split {
+    padding: 0;
+    gap: 0;
   }
-  .hm-pill-remove {
-    position: absolute;
-    left: 10px;
-    z-index: 1;
+  .filter-pill-split:hover {
+    background: var(--card);
+  }
+  .filter-pill-split > button {
     display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 100%;
+    border-radius: 999px;
+    color: inherit;
+  }
+  .filter-pill-split .fp-x {
+    padding: 0 4px 0 10px;
     color: var(--text-muted);
+  }
+  .filter-pill-split .fp-x:hover {
+    color: var(--text);
+  }
+  .filter-pill-split .fp-main {
+    padding: 0 12px 0 4px;
+  }
+  .filter-pill-split > button:hover {
+    background: var(--row-hover);
   }
   .hm-pill-value {
     color: var(--accent-ink);
@@ -139,6 +157,10 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
+    gap: 12px;
+  }
+  .hm-head-text {
+    min-width: 0;
   }
   .hm-title {
     display: flex;
@@ -186,6 +208,11 @@
     color: var(--text-muted);
     margin-top: 2px;
   }
+  .dash-since {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
   .hm-chart-gap {
     margin-top: 18px;
   }
@@ -193,6 +220,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     margin-top: auto;
     padding-top: 16px;
     font-size: 12.5px;
@@ -202,6 +230,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     width: 100%;
     padding: 13px 0;
     border-bottom: 1px solid var(--border);
@@ -249,6 +278,10 @@
     fill: var(--text-muted);
     font-variant-numeric: tabular-nums;
   }
+  .hm-gap {
+    font-size: 11.5px;
+    fill: var(--text-muted);
+  }
   .hm-tip {
     position: absolute;
     background: var(--card);
@@ -259,6 +292,7 @@
     font-size: 12.5px;
     pointer-events: none;
     min-width: 190px;
+    max-width: 260px;
     z-index: 5;
   }
   .hm-tip-row {
@@ -275,6 +309,13 @@
   }
   .hm-tip-prev {
     margin-top: 4px;
+  }
+  .hm-tip-note {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
   }
   .hm-tip-key {
     display: flex;
@@ -293,31 +334,51 @@
     background: var(--chart-muted);
   }
 
-  /* «Próximamente» cards and loading */
-  .hm-soon-card,
-  .hm-soon-card > .soon-body {
+  /* Loading and error */
+  .hm-skel-card {
+    gap: 10px;
+  }
+  .hm-skel-chart {
+    margin-top: 8px;
+    border-radius: 8px;
+  }
+  .dash-error {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 22px 24px;
   }
-  .hm-soon-card .metric-card {
-    flex: 1;
+  .dash-error-icon {
+    color: var(--red);
+    margin-top: 2px;
+    flex-shrink: 0;
   }
-  .hm-chart-empty {
-    height: 200px;
-    margin-top: 18px;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
+  .dash-error h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px;
   }
-  .hm-skel-gap {
-    margin-top: 14px;
-    display: block;
+  .dash-error p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--text-muted);
+  }
+  .dash-error .btn {
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   @media (max-width: 1200px) {
     .metric-grid {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 560px) {
+    .dash-error {
+      flex-wrap: wrap;
+    }
+    .dash-error .btn {
+      margin-left: 30px;
     }
   }
   @media (max-width: 900px) {

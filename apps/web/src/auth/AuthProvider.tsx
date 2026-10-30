@@ -274,13 +274,13 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
           if (!(error instanceof CognitoError && REFRESH_REJECTED.has(error.code))) {
             return { kind: 'unavailable' };
           }
-          endSession('auth.errors.sessionExpired');
+          endSession(null, SESSION_ENDED);
           return ENDED;
         }
       }
       const result = await serverSession.renew();
       if (result.kind === 'none') {
-        endSession('auth.errors.sessionExpired');
+        endSession(null, SESSION_ENDED);
         return ENDED;
       }
       // An outage says nothing about the session: keep it and let the caller retry.
@@ -347,7 +347,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
   }, [cognito, config, endSession, serverSession]);
 
   const expireSession = useCallback(() => {
-    endSession('auth.errors.sessionExpired');
+    endSession(null, SESSION_ENDED);
   }, [endSession]);
 
   const startSso = useCallback(async () => {

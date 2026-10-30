@@ -767,6 +767,21 @@ describe('links of a remote answer (A1)', () => {
     expect(reload).toHaveBeenCalledOnce();
   });
 
+  it('has no note about closed links when the text has no link', () => {
+    const value = {
+      status: 'error',
+      list: [],
+      ensure: vi.fn(),
+      reload: vi.fn(),
+    } as unknown as ConnectionsValue;
+    render(
+      <ConnectionsContext value={value}>
+        <ChatMarkdown strip="failed">{'El sprint 42 tiene tres tareas abiertas.'}</ChatMarkdown>
+      </ConnectionsContext>,
+    );
+    expect(screen.queryByText(/Mango no pudo comprobar/)).not.toBeInTheDocument();
+  });
+
   it('says one link in the singular', async () => {
     render(<ChatMarkdown strip={[]}>{'[wiki](https://dev.azure.com/empresa/w)'}</ChatMarkdown>);
     expect(screen.queryByRole('button', { name: 'wiki' })).not.toBeInTheDocument();
