@@ -1,7 +1,7 @@
 # D102 · Inicio: gasto e invocaciones por día, con el alcance que decide el servidor según el rol
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-29 (construir Inicio con lo que hay más un agregado de gasto e invocaciones por día, y según el rol, elegido por el dueño ese día, por menú; el contador, el área de un turno, los presupuestos por rol, la lectura de lo propio con RLS, las variantes que el diseño no dibuja y los días sin contador, elegidos por menú ese día durante el trabajo) · punto (10) del 2026-10-30 (lo que dibujó la ronda 28 del diseño; ocultar lo que no tiene fuente, elegido por el dueño ese día, por menú) · punto (11) del 2026-10-30 (lo que dibujó la ronda 29 del diseño; el saludo con nombre y el campo `discarded`, elegidos por el dueño ese día, por menú) · punto (12) del 2026-10-30 (lo que dibujó la ronda 30 del diseño; las marcas del eje hasta USD 5 se corrigen porque eran un defecto del producto)
+- **Fecha:** 2026-10-29 (construir Inicio con lo que hay más un agregado de gasto e invocaciones por día, y según el rol, elegido por el dueño ese día, por menú; el contador, el área de un turno, los presupuestos por rol, la lectura de lo propio con RLS, las variantes que el diseño no dibuja y los días sin contador, elegidos por menú ese día durante el trabajo) · punto (10) del 2026-10-30 (lo que dibujó la ronda 28 del diseño; ocultar lo que no tiene fuente, elegido por el dueño ese día, por menú) · punto (11) del 2026-10-30 (lo que dibujó la ronda 29 del diseño; el saludo con nombre y el campo `discarded`, elegidos por el dueño ese día, por menú) · punto (12) del 2026-10-30 (lo que dibujó la ronda 30 del diseño; las marcas del eje hasta USD 5 se corrigen porque eran un defecto del producto) · punto (13) del 2026-10-31 (lo que dibujó la ronda 31 del diseño; las etiquetas del eje del diseño, elegidas por el dueño ese día, por menú)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (la transacción que cierra un turno suma también sus contadores del día), [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo contado por tarea: `home.reads`) y [D24](D024-diseno-de-la-ui.md) (en Inicio, lo que no tiene fuente no se muestra, punto 10)
 - **Precisada por:** —
 
@@ -50,5 +50,10 @@ Origen: el diseño (D24, `dashboard.jsx`) tiene una pantalla Inicio que el produ
 - **«Agente descartado» solo cuando la API lo dice:** el diseño lo acepta y no lo dibuja aparte.
 - **Marcas del eje:** el diseño adopta los céntimos («USD por debajo de 10 en céntimos, siempre dos decimales»). Al comparar las dos reglas salió un defecto del producto: con el eje hasta USD 5, las marcas 1,25, 2,50 y 3,75 se redondeaban a «USD 1, 3, 4». Se corrige porque era un defecto: ahora dicen sus céntimos, como el diseño.
 - **El resto de `axisOf` se conserva.** Quedan dos diferencias con `axisTicks`, que van al brief de la ronda: el producto baja de un céntimo cuando el pico es menor («USD 0,001»), donde el diseño pinta «USD 0, USD 0,01»; y su paso de 1, 2 o 5 divide el eje en cinco partes como mucho, y el del diseño en cuatro («0,50 … 2,50» frente a «1,00 … 3,00»).
+
+**(13) Lo que dibujó la ronda 31 del diseño (2026-10-31):**
+- **Una sola regla para las marcas del eje.** El diseño copió `axisOf` en `axisTicks`, y las dos dan las mismas marcas (comparadas en 25.400 picos de USD e invocaciones). Las diferencias del punto 12 se cierran.
+- **Etiquetas por debajo de un céntimo, las del diseño (elegido por el dueño, por menú):** dos decimales como mínimo y los del paso como máximo, hasta 8. La marca dice «USD 0,001», ya no «USD 0,0010». Sustituye en esto al producto, que conservaba el cero final y llegaba a 6 decimales.
+- **La columna del eje sale de su etiqueta más larga,** con un mínimo de 48 px: unos 6,6 px por carácter más 8 px de aire, como el diseño. En Gasto en Bedrock, las marcas ya no se montan sobre la gráfica.
 
 Modelo de amenazas: `docs/security/threat-models/home-threat-model.md`
