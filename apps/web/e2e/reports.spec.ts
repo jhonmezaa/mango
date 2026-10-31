@@ -17,7 +17,8 @@ async function openClosing(page: Page): Promise<void> {
   // Schedules lives in the «Construir» group of the sidebar, closed by default.
   await nav.getByRole('button', { name: 'Construir' }).click();
   await nav.getByRole('link', { name: 'Schedules' }).click();
-  await page.getByText('Cierre mensual de costos', { exact: true }).first().click();
+  // By its row: the summary also names it on the eve of its run, as the next one.
+  await page.getByRole('button', { name: /^Cierre mensual de costos/ }).click();
   await expect(page.getByText('PDF · Resumen de costos · solo tú lo descargas')).toBeVisible();
 }
 
