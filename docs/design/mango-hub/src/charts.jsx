@@ -30,9 +30,9 @@ function makeSeries({ seed = 1, period = '30d', gran = 'day', base = 100, growth
 
 const niceMax = (v) => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; };
 // Marcas del eje: las cuatro partes de niceMax si las etiquetas las pueden decir; si no, paso de 1, 2 o 5 y el tope sube a su marca siguiente.
-// Invocaciones sin decimales; USD por debajo de 10 con céntimos (hasta 3 decimales).
+// Invocaciones sin decimales; USD por debajo de 10 con céntimos (dos decimales), como el producto.
 const axisTicks = (vmax, money) => {
-  const max = niceMax(vmax * 1.05), q = max / 4, dec = money && max < 10 ? 3 : 0;
+  const max = niceMax(vmax * 1.05), q = max / 4, dec = money && max < 10 ? 2 : 0;
   const fits = (v) => Math.abs(v * Math.pow(10, dec) - Math.round(v * Math.pow(10, dec))) < 1e-9;
   if (fits(q)) return [0, 1, 2, 3, 4].map(k => k * q);
   let step = 0; for (let e = -dec; !step; e++) for (const m of [1, 2, 5]) { const s = m * Math.pow(10, e); if (s >= q) { step = s; break; } }
@@ -40,7 +40,7 @@ const axisTicks = (vmax, money) => {
   for (let v = 0; v <= top + 1e-9; v += step) out.push(+v.toFixed(6));
   return out;
 };
-const fmtTick = (v, money, top) => money && top < 10 ? (v === 0 ? 'USD 0' : 'USD ' + v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 3 })) : fmtCompact(v, money);
+const fmtTick = (v, money, top) => money && top < 10 ? (v === 0 ? 'USD 0' : 'USD ' + v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : fmtCompact(v, money);
 const fmtCompact = (v, money) => (money ? 'USD ' : '') + (v >= 1e6 ? (v / 1e6).toFixed(1).replace('.0', '') + 'M' : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e4 ? 0 : 1).replace('.0', '') + 'K' : Math.round(v));
 
 function LineChart({ series, money, compare = true, height = 200, label, format, since, noStart }) {

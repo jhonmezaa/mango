@@ -35,6 +35,7 @@ function Dashboard({ agents, setView }) {
   const avail = window.useMango(s => s.avail);
   const sim = window.useMango(s => s.simDash);
   const sinceMode = window.useMango(s => s.simDashSince);
+  const noName = window.useMango(s => s.simDashNoName);
   const pending = window.useMango(s => s.approvals.filter(a => a.status === 'pending').length);
   const budgets = window.useMango(s => s.budgets);
   const toast = window.useToast?.();
@@ -60,6 +61,7 @@ function Dashboard({ agents, setView }) {
   const more = avail ? null : 'Ver detalles';
   const hour = new Date().getHours();
   const hello = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
+  const name = noName ? null : S.actor(); // D102: con nombre «{saludo}, {nombre}»; sin nombre, el saludo solo
   const area = R.area; // el identificador del área: el producto no tiene otro nombre visible
   const sub = scope === 'org' ? 'Así va Mango en toda la organización en el periodo seleccionado.' : scope === 'area' ? 'Así va tu área, ' + area + ', en el periodo seleccionado.' : 'Así va tu uso de Mango en el periodo seleccionado.';
   const whose = scope === 'org' ? ' de toda la organización' : scope === 'area' ? ' de las personas de tu área' : '';
@@ -96,7 +98,7 @@ function Dashboard({ agents, setView }) {
         <div className="page-wrap">
           <div className="row between" style={{ alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
             <div style={{ minWidth: 0 }}>
-              <h1 className="page-title">{hello}</h1>
+              <h1 className="page-title">{name ? hello + ', ' + name : hello}</h1>
               <p className="page-subtitle">{sub}</p>
             </div>
             {showPending && (

@@ -1138,7 +1138,7 @@ Respuesta al contexto de la ronda 29. Archivos: `dashboard.jsx`, `charts.jsx`, `
 ### Alineado con el producto
 - **Inicio para todas las cuentas** también en «Disponible hoy» (`isSoon` ya no mira el rol). Organización, área o lo propio según responde el servidor; mientras carga, el subtítulo sale del rol.
 - **Sin «Cerrar sesión» en «No se pudo abrir Mango».** Solo «Reintentar». Seguridad gana: sin servidor no se revoca la cookie.
-- **Saludo sin nombre siempre.** Se quitó el control de demo «Inicio · nombre de la persona».
+- ~~Saludo sin nombre siempre~~ — corregido en la ronda 30: ver abajo.
 - **Área = su identificador**, tal cual: «Así va tu área, finanzas, …».
 - **Semanas contadas en parte, fecha de la organización, CSV con vacíos:** como el producto.
 
@@ -1150,6 +1150,16 @@ Respuesta al contexto de la ronda 29. Archivos: `dashboard.jsx`, `charts.jsx`, `
 - Ronda 26 (cancelar en Microsoft, descripciones del perfil): sigue abierto.
 
 ### De rondas anteriores (§5)
-- **Marcas del eje:** el diseño toma la regla del producto (`axisTicks` y `fmtTick` en `charts.jsx`). Cuatro partes de niceMax si las etiquetas pueden decirlas (invocaciones sin decimales; USD < 10 hasta 3 decimales); si no, paso de 1, 2 o 5 y el tope sube a la marca siguiente. USD < 10 con céntimos: «USD 0», «USD 0,25», «USD 0,01». Con máximo 1 invocación: 0 y 1.
+- **Marcas del eje:** el diseño toma la regla del producto (`axisTicks` y `fmtTick` en `charts.jsx`). Cuatro partes de niceMax si las etiquetas pueden decirlas (invocaciones sin decimales; USD < 10 en céntimos, ver ronda 30); si no, paso de 1, 2 o 5 y el tope sube a la marca siguiente. USD < 10 con céntimos: «USD 0», «USD 0,25», «USD 0,01». Con máximo 1 invocación: 0 y 1.
 - **Presupuesto de un agente descartado:** en Presupuestos, «Agente descartado · {id}» (el id en lugar del nombre que ya no existe). Inicio sigue sin mostrarlo. *Cambio de texto para el producto.*
 - Sin tocar: sesión que no se renueva en el chat, respuesta cortada por su tope, cuota de Bedrock, subir a leer mientras responde, «+» con el primer mensaje sin guardar, dos «Reintentar» en el historial, 429, correos rechazados, `area_required`, administración, Agent Builder, Knowledge Bases, menú.
+
+
+## Ronda 30 (2026-10-30)
+Respuesta al contexto de la ronda 30. Archivos: `dashboard.jsx`, `charts.jsx`, `app.jsx`. Se aceptan las diferencias del §2.
+
+- **Saludo (D102, corrige la ronda 29):** con nombre, «{Buenos días | Buenas tardes | Buenas noches}, {nombre}»; sin nombre, el saludo solo, sin coma. Vuelve el control de demo «Inicio · nombre de la persona» (Con nombre · Sin nombre).
+- **Decimales del eje: una sola regla, la del producto.** USD por debajo de 10 en céntimos, siempre dos decimales. Si las cuatro partes no caben en céntimos, paso de 1, 2 o 5. Con máximo 0,5: «USD 0», «USD 0,10» … «USD 0,50».
+- **«Agente descartado» solo cuando la API lo dice:** se acepta. Si la lectura de nombres falla, el id a secas. No hace falta dibujarlo aparte. (En el prototipo los nombres siempre se leen.)
+- Sigue de la ronda 26: cancelar en Microsoft; descripciones del perfil.
+- Sin tocar, igual que en la ronda 29: todo el §5 (chat y sesión, 429, ingreso y registro, administración, Agent Builder, Knowledge Bases, menú).
