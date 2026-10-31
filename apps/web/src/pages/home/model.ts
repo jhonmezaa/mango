@@ -173,7 +173,7 @@ export function niceMax(value: number): number {
 export interface Axis {
   max: number;
   ticks: number[];
-  /** Decimals of its labels: 0 is the design's format. */
+  /** Most decimals of its labels: 0 is the design's format. */
   decimals: number;
 }
 
@@ -199,7 +199,7 @@ function niceStep(top: number, money: boolean): number {
 function decimalsOf(step: number): number {
   if (isMultiple(step, 1)) return 0;
   let decimals = 2;
-  while (decimals < 6 && !isMultiple(step, 10 ** -decimals)) decimals += 1;
+  while (decimals < 8 && !isMultiple(step, 10 ** -decimals)) decimals += 1;
   return decimals;
 }
 
@@ -220,12 +220,17 @@ export function axisOf(peak: number, money: boolean): Axis {
   };
 }
 
+/** Design `axisW`: the longest label (11 px tabular, about 6,6 px a character, and 8 of air). */
+export function axisWidth(labels: readonly string[]): number {
+  return Math.max(48, Math.ceil(Math.max(...labels.map((label) => label.length)) * 6.6 + 8));
+}
+
 /** Design `fmtCompact`: axis labels; `decimals` for the marks below one unit. */
 export function fmtCompact(value: number, money: boolean, decimals = 0): string {
   const prefix = money ? 'USD ' : '';
   if (decimals > 0 && value > 0) {
     return `${prefix}${value.toLocaleString('es-ES', {
-      minimumFractionDigits: decimals,
+      minimumFractionDigits: 2,
       maximumFractionDigits: decimals,
     })}`;
   }

@@ -19,6 +19,20 @@ async function openHome(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: /^Gasto en Bedrock/ })).toBeVisible();
 }
 
+test('Inicio keeps the axis labels off the plot', async ({ page }) => {
+  await signIn(page);
+  await openHome(page);
+  const chart = page.getByRole('img', { name: /^Gasto en Bedrock/ });
+  await expect(chart.locator('text.hm-tick').first()).toBeVisible();
+  const marks = await chart.locator('g:has(> text.hm-tick)').all();
+  expect(marks.length).toBeGreaterThan(1);
+  for (const mark of marks) {
+    const line = await mark.locator('line').boundingBox();
+    const label = await mark.locator('text').boundingBox();
+    expect(label?.x).toBeGreaterThanOrEqual((line?.x ?? Infinity) + (line?.width ?? 0));
+  }
+});
+
 test('Inicio shows the period, changes it and hides what has no source', async ({ page }) => {
   await signIn(page);
   await openHome(page);

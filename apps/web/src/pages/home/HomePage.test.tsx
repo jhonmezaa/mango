@@ -87,6 +87,16 @@ describe('HomePage', () => {
     expect(screen.getByRole('img', { name: 'Gasto en Bedrock' })).toBeInTheDocument();
   });
 
+  it('keeps the plot clear of the labels of its axis', async () => {
+    renderPage(vi.fn().mockResolvedValue(home()));
+    const grid = (name: string) =>
+      screen.getByRole('img', { name }).querySelector('line:not(pattern line)');
+    await screen.findByRole('img', { name: 'Gasto en Bedrock' });
+    // 200 px wide without layout: USD labels take 61 px, the numbers of Invocaciones the minimum 48.
+    expect(grid('Gasto en Bedrock')).toHaveAttribute('x2', '139');
+    expect(grid('Invocaciones')).toHaveAttribute('x2', '152');
+  });
+
   it('greets the person and leads to the approvals that wait for them', async () => {
     const user = userEvent.setup();
     renderPage(vi.fn(() => Promise.resolve(home())));

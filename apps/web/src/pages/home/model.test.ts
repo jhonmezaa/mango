@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   agoOf,
   axisOf,
+  axisWidth,
   budgetPercent,
   countedOf,
   deltaOf,
@@ -184,6 +185,31 @@ describe('home model', () => {
       'USD 2,00',
       'USD 2,50',
     ]);
+  });
+
+  it('drops the zeros a step below one cent does not need, as the design', () => {
+    expect(labels(0.00051, true)).toEqual([
+      'USD 0',
+      'USD 0,0002',
+      'USD 0,0004',
+      'USD 0,0006',
+      'USD 0,0008',
+      'USD 0,001',
+    ]);
+    expect(labels(0.0000003, true)).toEqual([
+      'USD 0',
+      'USD 0,0000001',
+      'USD 0,0000002',
+      'USD 0,0000003',
+      'USD 0,0000004',
+      'USD 0,0000005',
+    ]);
+  });
+
+  it('sizes the axis column by its longest label, 48 px at least', () => {
+    expect(axisWidth(['0', '25', '100'])).toBe(48);
+    expect(axisWidth(['USD 0', 'USD 2,50'])).toBe(61);
+    expect(axisWidth(['USD 0', 'USD 0,0002'])).toBe(74);
   });
 
   it('says the cents of a step above one dollar instead of rounding the mark', () => {
