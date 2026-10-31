@@ -1163,3 +1163,15 @@ Respuesta al contexto de la ronda 30. Archivos: `dashboard.jsx`, `charts.jsx`, `
 - **«Agente descartado» solo cuando la API lo dice:** se acepta. Si la lectura de nombres falla, el id a secas. No hace falta dibujarlo aparte. (En el prototipo los nombres siempre se leen.)
 - Sigue de la ronda 26: cancelar en Microsoft; descripciones del perfil.
 - Sin tocar, igual que en la ronda 29: todo el §5 (chat y sesión, 429, ingreso y registro, administración, Agent Builder, Knowledge Bases, menú).
+
+
+## Ronda 31 (2026-10-31)
+Respuesta al contexto de la ronda 31. Archivo: `charts.jsx`. «Una sola regla» pasa a ser literal: `axisTicks` da las mismas marcas que el producto. Reemplaza lo dicho del eje en las rondas 29 y 30.
+
+- **Marcas del eje:**
+  - Si las cuatro partes de niceMax caben en la precisión, van esas: invocaciones enteras, USD por debajo de 10 en céntimos. Con tope 5: «USD 1,25, 2,50, 3,75, 5,00».
+  - Si no caben, se usa el paso más chico de 1, 2 o 5 que divida niceMax en **cinco partes como mucho**. Pico USD 2: «USD 0, 0,50 … 2,50». Pico USD 5: «USD 0, 2 … 10». Pico de 5 invocaciones: «0, 2 … 10».
+  - **Por debajo de un céntimo** el paso baja a 0,001, 0,0001…, y la etiqueta lleva los decimales del paso. Pico USD 0,0042: «USD 0, 0,001 … 0,005». Ya no es «siempre dos decimales»: son dos como mínimo.
+- **Columna del eje:** su ancho sale de la etiqueta más larga (11 px tabular, unos 6,6 px por carácter más 8 px de aire), **con un mínimo de 48 px**. Antes era `axisW = 48` fijo. En Gasto en Bedrock, «USD 2,50» ya no se monta sobre la gráfica. *Cambio para el producto:* medir la etiqueta real (`measureText` o el ancho del `<text>`) vale igual.
+- Sigue de la ronda 26: cancelar en Microsoft; descripciones del perfil.
+- Sin tocar: todo el §5.

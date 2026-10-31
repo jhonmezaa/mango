@@ -29,18 +29,20 @@ function makeSeries({ seed = 1, period = '30d', gran = 'day', base = 100, growth
 }
 
 const niceMax = (v) => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; };
-// Marcas del eje: las cuatro partes de niceMax si las etiquetas las pueden decir; si no, paso de 1, 2 o 5 y el tope sube a su marca siguiente.
-// Invocaciones sin decimales; USD por debajo de 10 con céntimos (dos decimales), como el producto.
+// Marcas del eje (regla del producto): las cuatro partes de niceMax si caben en la precisión (invocaciones enteras; USD < 10 en céntimos).
+// Si no, el paso más chico de 1, 2 o 5 que divida niceMax en cinco partes como mucho; el tope sube a su marca siguiente.
+// Por debajo de un céntimo el paso puede ser 0,001, 0,0001…: la etiqueta lleva los decimales del paso.
+const stepDec = (v) => { let d = 0; while (d < 8 && Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) > 1e-9) d++; return d; };
 const axisTicks = (vmax, money) => {
   const max = niceMax(vmax * 1.05), q = max / 4, dec = money && max < 10 ? 2 : 0;
-  const fits = (v) => Math.abs(v * Math.pow(10, dec) - Math.round(v * Math.pow(10, dec))) < 1e-9;
-  if (fits(q)) return [0, 1, 2, 3, 4].map(k => k * q);
-  let step = 0; for (let e = -dec; !step; e++) for (const m of [1, 2, 5]) { const s = m * Math.pow(10, e); if (s >= q) { step = s; break; } }
-  const top = Math.max(step, Math.ceil(vmax / step - 1e-9) * step), out = [];
-  for (let v = 0; v <= top + 1e-9; v += step) out.push(+v.toFixed(6));
+  if (stepDec(q) <= dec) return [0, 1, 2, 3, 4].map(k => +(k * q).toFixed(8));
+  let step = 0;
+  for (let e = Math.floor(Math.log10(max)) - 2; !step; e++) for (const m of [1, 2, 5]) { const st = +(m * 10 ** e).toFixed(10); if ((money || st >= 1) && Math.ceil(max / st - 1e-9) <= 5) { step = st; break; } }
+  const top = Math.ceil(vmax / step - 1e-9) * step >= max ? Math.ceil(vmax / step - 1e-9) * step : Math.ceil(max / step - 1e-9) * step, out = [];
+  for (let k = 0; k * step <= top + 1e-9; k++) out.push(+(k * step).toFixed(8));
   return out;
 };
-const fmtTick = (v, money, top) => money && top < 10 ? (v === 0 ? 'USD 0' : 'USD ' + v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : fmtCompact(v, money);
+const fmtTick = (v, money, top, step) => money && top < 10 ? (v === 0 ? 'USD 0' : 'USD ' + v.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: Math.max(2, stepDec(step)) })) : fmtCompact(v, money);
 const fmtCompact = (v, money) => (money ? 'USD ' : '') + (v >= 1e6 ? (v / 1e6).toFixed(1).replace('.0', '') + 'M' : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e4 ? 0 : 1).replace('.0', '') + 'K' : Math.round(v));
 
 function LineChart({ series, money, compare = true, height = 200, label, format, since, noStart }) {
@@ -49,9 +51,11 @@ function LineChart({ series, money, compare = true, height = 200, label, format,
   const [hover, setHover] = useStateCh(null);
   React.useLayoutEffect(() => { if (!wrap.current) return; setW(Math.max(200, wrap.current.getBoundingClientRect().width)); const ro = new ResizeObserver(([e]) => setW(Math.max(200, e.contentRect.width))); ro.observe(wrap.current); return () => ro.disconnect(); }, []);
   const { cur, prev, dates, prevDates } = series;
-  const axisW = 48, padT = 8, padB = 24, H = height, plotW = w - axisW, plotH = H - padT - padB;
   const vals = [...cur, ...(compare ? prev : [])].filter(v => v != null);
-  const ticks = axisTicks(Math.max(0, ...vals), money), max = ticks[ticks.length - 1];
+  const ticks = axisTicks(Math.max(0, ...vals), money), max = ticks[ticks.length - 1], tstep = ticks[1] || 1;
+  // Columna del eje: de su etiqueta más larga (11 px tabular ≈ 6,6 px por carácter + 8 px de aire), mínimo 48 px.
+  const axisW = Math.max(48, Math.ceil(Math.max(...ticks.map(t => fmtTick(t, money, max, tstep).length)) * 6.6 + 8));
+  const padT = 8, padB = 24, H = height, plotW = w - axisW, plotH = H - padT - padB;
   const x = (i) => (i / (cur.length - 1)) * (plotW - 4) + 2;
   const y = (v) => padT + plotH - (v / max) * plotH;
   const path = (arr) => { let d = '', pen = false; arr.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; }); return d; };
@@ -75,7 +79,7 @@ function LineChart({ series, money, compare = true, height = 200, label, format,
         {ticks.map((t, k) => (
           <g key={k}>
             <line x1={0} x2={plotW} y1={y(t)} y2={y(t)} stroke="var(--border)" />
-            <text x={w} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--text-muted)" style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtTick(t, money, max)}</text>
+            <text x={w} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--text-muted)" style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtTick(t, money, max, tstep)}</text>
           </g>
         ))}
         {gapW > 0 && <g aria-hidden="true">
