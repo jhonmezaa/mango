@@ -197,7 +197,7 @@ function niceStep(top: number, money: boolean): number {
 }
 
 function decimalsOf(step: number): number {
-  if (step >= 1) return 0;
+  if (isMultiple(step, 1)) return 0;
   let decimals = 2;
   while (decimals < 6 && !isMultiple(step, 10 ** -decimals)) decimals += 1;
   return decimals;

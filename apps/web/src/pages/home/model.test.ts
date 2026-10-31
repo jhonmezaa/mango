@@ -186,6 +186,10 @@ describe('home model', () => {
     ]);
   });
 
+  it('says the cents of a step above one dollar instead of rounding the mark', () => {
+    expect(labels(3, true)).toEqual(['USD 0', 'USD 1,25', 'USD 2,50', 'USD 3,75', 'USD 5,00']);
+  });
+
   it('counts in whole numbers and keeps the top above the peak', () => {
     expect(labels(0, false)).toEqual(['0', '1']);
     expect(labels(1.05, false)).toEqual(['0', '1', '2']);
