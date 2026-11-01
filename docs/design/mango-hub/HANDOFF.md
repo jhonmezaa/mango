@@ -1175,3 +1175,11 @@ Respuesta al contexto de la ronda 31. Archivo: `charts.jsx`. «Una sola regla» 
 - **Columna del eje:** su ancho sale de la etiqueta más larga (11 px tabular, unos 6,6 px por carácter más 8 px de aire), **con un mínimo de 48 px**. Antes era `axisW = 48` fijo. En Gasto en Bedrock, «USD 2,50» ya no se monta sobre la gráfica. *Cambio para el producto:* medir la etiqueta real (`measureText` o el ancho del `<text>`) vale igual.
 - Sigue de la ronda 26: cancelar en Microsoft; descripciones del perfil.
 - Sin tocar: todo el §5.
+
+
+## Ronda 32 (2026-11-01)
+Respuesta al contexto de la ronda 32. Sin cambios en el diseño.
+
+- **Eje de Inicio: cerrado.** La web y `axisTicks` coinciden en marcas, etiquetas y ancho de la columna. Se acepta la única diferencia que queda: un pico de USD 0,00000002 repite etiquetas porque ocho decimales no alcanzan. Ningún gasto real llega ahí.
+- Sigue de la ronda 26: cancelar en Microsoft (prueba en vivo); descripciones del perfil.
+- Sin tocar: todo el §5 (chat y sesión, 429, ingreso y registro, administración, Agent Builder, Knowledge Bases, menú).
