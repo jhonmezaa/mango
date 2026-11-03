@@ -1,6 +1,6 @@
 # Buscar conversaciones: modelo de amenazas (v0.1)
 
-> Fecha: 2026-11-03 · Skill: `security-threat-model`. Decisiones: D23, D24, D70 y **D103** (esta, `propuesta`).
+> Fecha: 2026-11-03 · Skill: `security-threat-model`. Decisiones: D23, D24, D70 y **D103** (esta, vigente desde 2026-11-03).
 > Amplía el patrón de seguridad por fila de `Conversations` (§4.6) y `home-threat-model.md` (la misma forma de ruta: acción L1 para toda persona, lectura con la sesión de STS de la persona, límite y caché).
 > Alcance: `apps/api/src/mango_api/conversation_search.py` (nuevo), `ConversationRepository.search_corpus` (`conversations.py`), la política `policies/cedar/platform/conversation-search.cedar`, el límite `conversations.searches` (`limits.py`), los eventos de auditoría (`audit.py`) y la pantalla `apps/web/src/pages/search/` con su mock.
 > Se escribe con lo elegido por menú el 2026-11-03: motor en `mango-api` sin copia del contenido y búsquedas recientes solo en memoria (el dueño); la línea del tope, «Prueba con» oculto, errores comunes y abrir como el diseño (el agente que lanzó el trabajo). Nada está desplegado.

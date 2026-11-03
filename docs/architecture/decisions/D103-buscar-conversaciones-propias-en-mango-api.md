@@ -1,7 +1,7 @@
 # D103 · Buscar conversaciones: las propias, recorridas en `mango-api` con la sesión de seguridad por fila y un tope
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-03 (el motor y las búsquedas recientes en memoria, elegidos por el dueño por menú, 2026-11-03; la línea del tope, las sugerencias ocultas, los errores con los patrones comunes y abrir la conversación como el diseño, elegidos ese día por menú por el agente que lanzó el trabajo; los topes, los límites, la acción Cedar, la auditoría y el `POST`, decididos durante el trabajo)
+- **Estado:** vigente
+- **Fecha:** 2026-11-03 (el motor y las búsquedas recientes en memoria, elegidos por el dueño por menú, 2026-11-03; la línea del tope, las sugerencias ocultas, los errores con los patrones comunes y abrir la conversación como el diseño, elegidos ese día por menú por el agente que lanzó el trabajo; los topes, los límites, la acción Cedar, la auditoría y el `POST`, decididos durante el trabajo; el dueño la aceptó el 2026-11-03, por menú)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite compartido nuevo: `conversations.searches`) y [D24](D024-diseno-de-la-ui.md) (cuatro diferencias con `search.jsx`, punto 7, para el próximo brief)
 - **Precisada por:** —
 
