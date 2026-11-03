@@ -481,6 +481,28 @@ export const zConnectivityOutSchema = z.object({
 });
 
 /**
+ * ConversationSearchParams
+ */
+export const zConversationSearchParamsSchema = z.object({
+    agent: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/).nullish(),
+    kind: z.enum([
+        'all',
+        'title',
+        'user',
+        'agent',
+        'tool'
+    ]).optional().default('all'),
+    q: z.string().min(1).max(200),
+    sort: z.enum(['relevance', 'recent']).optional().default('relevance'),
+    utc_offset_minutes: z.int().gte(-840).lte(840).optional().default(0),
+    when: z.enum([
+        'all',
+        'today',
+        'yesterday'
+    ]).optional().default('all')
+});
+
+/**
  * ConversationSummary
  */
 export const zConversationSummarySchema = z.object({
@@ -2041,6 +2063,51 @@ export const zPreviewInSchema = z.object({
  */
 export const zSearchOutSchema = z.object({
     fragments: z.array(zFragmentOutSchema)
+});
+
+/**
+ * SearchSnippetPart
+ */
+export const zSearchSnippetPartSchema = z.object({
+    hit: z.boolean(),
+    text: z.string()
+});
+
+/**
+ * ConversationSearchHit
+ */
+export const zConversationSearchHitSchema = z.object({
+    kind: z.enum([
+        'title',
+        'user',
+        'agent',
+        'tool'
+    ]),
+    message_id: z.string().nullable(),
+    parts: z.array(zSearchSnippetPartSchema),
+    post: z.boolean(),
+    pre: z.boolean()
+});
+
+/**
+ * ConversationSearchResult
+ */
+export const zConversationSearchResultSchema = z.object({
+    agent_id: z.string(),
+    conversation_id: z.string(),
+    hits: z.array(zConversationSearchHitSchema),
+    title: z.string(),
+    updated_at: z.string()
+});
+
+/**
+ * ConversationSearchOut
+ */
+export const zConversationSearchOutSchema = z.object({
+    capped: z.boolean(),
+    conversations_read: z.int(),
+    results: z.array(zConversationSearchResultSchema),
+    truncated: z.boolean()
 });
 
 /**
@@ -4342,6 +4409,13 @@ export const zCompleteConsentBody = zCallbackInSchema;
 export const zCompleteConsentResponse = zCallbackOutSchema;
 
 export const zRunPlaygroundTestBody = zPlaygroundRunInSchema;
+
+export const zSearchConversationsBody = zConversationSearchParamsSchema;
+
+/**
+ * Successful Response
+ */
+export const zSearchConversationsResponse = zConversationSearchOutSchema;
 
 /**
  * Successful Response

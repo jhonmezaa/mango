@@ -2517,6 +2517,191 @@
         "title": "ConversationList",
         "type": "object"
       },
+      "ConversationSearchHit": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "title",
+              "user",
+              "agent",
+              "tool"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/SearchSnippetPart"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "post": {
+            "title": "Post",
+            "type": "boolean"
+          },
+          "pre": {
+            "title": "Pre",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "message_id",
+          "pre",
+          "post",
+          "parts"
+        ],
+        "title": "ConversationSearchHit",
+        "type": "object"
+      },
+      "ConversationSearchOut": {
+        "additionalProperties": false,
+        "properties": {
+          "capped": {
+            "title": "Capped",
+            "type": "boolean"
+          },
+          "conversations_read": {
+            "title": "Conversations Read",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationSearchResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "results",
+          "conversations_read",
+          "capped",
+          "truncated"
+        ],
+        "title": "ConversationSearchOut",
+        "type": "object"
+      },
+      "ConversationSearchParams": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "pattern": "^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "kind": {
+            "default": "all",
+            "enum": [
+              "all",
+              "title",
+              "user",
+              "agent",
+              "tool"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "q": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Q",
+            "type": "string"
+          },
+          "sort": {
+            "default": "relevance",
+            "enum": [
+              "relevance",
+              "recent"
+            ],
+            "title": "Sort",
+            "type": "string"
+          },
+          "utc_offset_minutes": {
+            "default": 0,
+            "maximum": 840.0,
+            "minimum": -840.0,
+            "title": "Utc Offset Minutes",
+            "type": "integer"
+          },
+          "when": {
+            "default": "all",
+            "enum": [
+              "all",
+              "today",
+              "yesterday"
+            ],
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "ConversationSearchParams",
+        "type": "object"
+      },
+      "ConversationSearchResult": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationSearchHit"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "title",
+          "agent_id",
+          "updated_at",
+          "hits"
+        ],
+        "title": "ConversationSearchResult",
+        "type": "object"
+      },
       "ConversationSummary": {
         "additionalProperties": false,
         "properties": {
@@ -9250,6 +9435,25 @@
           "fragments"
         ],
         "title": "SearchOut",
+        "type": "object"
+      },
+      "SearchSnippetPart": {
+        "additionalProperties": false,
+        "properties": {
+          "hit": {
+            "title": "Hit",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "hit"
+        ],
+        "title": "SearchSnippetPart",
         "type": "object"
       },
       "SessionIn": {
@@ -17909,6 +18113,44 @@
           }
         },
         "summary": "Run Playground Test"
+      }
+    },
+    "/search/conversations": {
+      "post": {
+        "operationId": "search_conversations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationSearchParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Search Conversations"
       }
     },
     "/session": {

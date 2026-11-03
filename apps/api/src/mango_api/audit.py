@@ -41,13 +41,16 @@ READ_ACTIONS = frozenset(
         "ViewGovernance",
         "ViewActivity",
         "ViewHome",
+        "SearchConversations",
     }
 )
 # Events that record a read and nothing else: reading the directory of the people screen, a
 # session recovered from its cookie (every page load leaves one; nothing changes), and an
 # agent's search of its knowledge bases (one per turn that searches; the design shows it with
-# «Mostrar lecturas»). «Probar búsqueda» (`kb.search`) is not: a person ran it on purpose.
-READ_EVENTS = frozenset({"directory.list", "session.renewed", "kb.retrieve"})
+# «Mostrar lecturas»). «Probar búsqueda» (`kb.search`) is not: a person ran it on purpose. A
+# search of one's own conversations (`conversation.search`, D103) is: it only reads what the
+# person may already read in their history, and it is audited with counts only.
+READ_EVENTS = frozenset({"directory.list", "session.renewed", "kb.retrieve", "conversation.search"})
 # Read-only decisions that only shape the answer of a route the caller may already read, so a
 # denial is not a refused access: whose activity the Actividad reads (``ViewAudit``, D90).
 # Without this, every read of the Actividad by someone who is not an administrator left a

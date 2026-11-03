@@ -22,6 +22,7 @@ from mango_api import (
     admin,
     approvals,
     connections,
+    conversation_search,
     directory,
     governance,
     group_admin,
@@ -204,6 +205,15 @@ LIMITS: dict[str, LimitSpec] = {
         MINUTE,
         shared=True,
         why="Each «Probar búsqueda» calls Bedrock Retrieve, a quota of the account (D88 (12)).",
+    ),
+    "conversations.searches": LimitSpec(
+        conversation_search.SEARCHES_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why=(
+            "Each «Buscar conversaciones» may read up to 4,000 messages of the person's own "
+            "conversations with their row-level security session (D103)."
+        ),
     ),
     "admin.probe": LimitSpec(
         admin.PROBE_CALLS_PER_MINUTE,

@@ -97,6 +97,14 @@ from mango_api.connections import (
     PendingConsents,
     connections_router,
 )
+from mango_api.conversation_search import (
+    MAX_BYTES,
+    MAX_CONVERSATIONS,
+    MAX_LIST_PAGES,
+    MAX_MESSAGES,
+    SearchDeps,
+    conversation_search_router,
+)
 from mango_api.conversations import (
     CONVERSATION_ID_RE,
     ConversationRecord,
@@ -1369,6 +1377,26 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             current_user,
             require,
             platform_allows,
+        )
+    )
+
+    # Buscar conversaciones (D103): the caller's own, read with their row-level security client.
+    app.include_router(
+        conversation_search_router(
+            SearchDeps(
+                read=lambda user_id: services.conversations.search_corpus(
+                    user_id,
+                    max_conversations=MAX_CONVERSATIONS,
+                    max_messages=MAX_MESSAGES,
+                    max_bytes=MAX_BYTES,
+                    max_list_pages=MAX_LIST_PAGES,
+                ),
+                audit=services.audit,
+                limiter=services.limits.limiter("conversations.searches"),
+                default_agent=settings.agent_id,
+            ),
+            current_user,
+            require,
         )
     )
 

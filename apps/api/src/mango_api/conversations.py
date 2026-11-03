@@ -75,6 +75,49 @@ class StoredMessage:
     """Remote MCP registrations whose tools answered («Leyó {servicio}»)."""
 
 
+@dataclass(frozen=True)
+class SearchableMessage:
+    """What the conversation search reads of a message (D103): its text and tool names."""
+
+    message_id: str
+    role: str
+    content: str
+    tools: tuple[str, ...]
+    """Names of the tools the message called, as stored (their arguments are not stored)."""
+
+
+@dataclass(frozen=True)
+class SearchableConversation:
+    conversation_id: str
+    title: str
+    updated_at: str
+    agent_id: str | None
+    messages: tuple[SearchableMessage, ...]
+
+
+@dataclass(frozen=True)
+class SearchCorpus:
+    """The newest conversations of one person, read within the caps of the search (D103)."""
+
+    conversations: tuple[SearchableConversation, ...]
+    capped: bool
+    """A cap stopped the read: older conversations, or part of one, were not read."""
+    items_read: int
+    bytes_read: int
+
+
+def _tool_names(raw: str) -> tuple[str, ...]:
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return ()
+    if not isinstance(parsed, list):
+        return ()
+    return tuple(
+        t["name"] for t in parsed if isinstance(t, dict) and isinstance(t.get("name"), str)
+    )
+
+
 class RlsClientFactory:
     """DynamoDB clients bound to one user through an STS session policy (cached briefly).
 
@@ -419,3 +462,106 @@ class ConversationRepository:
             if "LastEvaluatedKey" not in resp:
                 return out
             kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+    def search_corpus(
+        self,
+        user_id: str,
+        *,
+        max_conversations: int,
+        max_messages: int,
+        max_bytes: int,
+        max_list_pages: int,
+    ) -> SearchCorpus:
+        """The person's conversations, newest first, and their messages, until a cap (D103).
+
+        Only ``CONV#`` and ``MSG#`` items of the caller's partition, read with their row-level
+        security client. ``bytes_read`` counts the text kept (titles, contents, tool names).
+        """
+        client = self._clients(user_id)
+        pk = self._pk(user_id)
+        listed: list[dict[str, Any]] = []
+        pages = 0
+        listing_capped = False
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+            "ExpressionAttributeValues": {":pk": pk, ":prefix": {"S": "CONV#"}},
+            "ProjectionExpression": "SK, #t, updated_at, agent_id",
+            "ExpressionAttributeNames": {"#t": "title"},
+        }
+        while True:
+            resp = client.query(**kwargs)
+            listed.extend(resp.get("Items", []))
+            pages += 1
+            if "LastEvaluatedKey" not in resp:
+                break
+            if pages >= max_list_pages:
+                # Their order is that of the ids, not of time: «newest first» no longer holds
+                # for all of them, so the answer says it did not cover everything.
+                listing_capped = True
+                break
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        heads = [
+            (
+                i["SK"]["S"].removeprefix("CONV#"),
+                i.get("title", {}).get("S", ""),
+                i.get("updated_at", {}).get("S", ""),
+                i.get("agent_id", {}).get("S"),
+            )
+            for i in listed
+        ]
+        heads = [h for h in heads if CONVERSATION_ID_RE.fullmatch(h[0])]
+        heads.sort(key=lambda h: h[2], reverse=True)
+        items = len(listed)
+        size = 0
+        capped = listing_capped or len(heads) > max_conversations
+        out: list[SearchableConversation] = []
+        messages_left = max_messages
+        for conversation_id, title, updated_at, agent_id in heads[:max_conversations]:
+            if messages_left <= 0 or size >= max_bytes:
+                capped = True
+                break
+            size += len(title)
+            messages: list[SearchableMessage] = []
+            query: dict[str, Any] = {
+                "TableName": self._table,
+                "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+                "ExpressionAttributeValues": {
+                    ":pk": pk,
+                    ":prefix": {"S": f"MSG#{conversation_id}#"},
+                },
+                "ProjectionExpression": "message_id, #r, content, tools",
+                "ExpressionAttributeNames": {"#r": "role"},
+            }
+            while True:
+                query["Limit"] = messages_left
+                resp = client.query(**query)
+                for i in resp.get("Items", []):
+                    message = SearchableMessage(
+                        message_id=i.get("message_id", {}).get("S", ""),
+                        role=i.get("role", {}).get("S", ""),
+                        content=i.get("content", {}).get("S", ""),
+                        tools=_tool_names(i.get("tools", {}).get("S", "[]")),
+                    )
+                    messages.append(message)
+                    size += len(message.content) + sum(len(t) for t in message.tools)
+                items += len(resp.get("Items", []))
+                messages_left -= len(resp.get("Items", []))
+                if "LastEvaluatedKey" not in resp:
+                    break
+                if messages_left <= 0 or size >= max_bytes:
+                    capped = True
+                    break
+                query["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+            out.append(
+                SearchableConversation(
+                    conversation_id=conversation_id,
+                    title=title,
+                    updated_at=updated_at,
+                    agent_id=agent_id,
+                    messages=tuple(messages),
+                )
+            )
+        return SearchCorpus(
+            conversations=tuple(out), capped=capped, items_read=items, bytes_read=size
+        )

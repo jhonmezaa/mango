@@ -1396,6 +1396,110 @@ export type ConversationList = {
 };
 
 /**
+ * ConversationSearchHit
+ */
+export type ConversationSearchHit = {
+    /**
+     * Kind
+     */
+    kind: 'title' | 'user' | 'agent' | 'tool';
+    /**
+     * Message Id
+     */
+    message_id: string | null;
+    /**
+     * Parts
+     */
+    parts: Array<SearchSnippetPart>;
+    /**
+     * Post
+     */
+    post: boolean;
+    /**
+     * Pre
+     */
+    pre: boolean;
+};
+
+/**
+ * ConversationSearchOut
+ */
+export type ConversationSearchOut = {
+    /**
+     * Capped
+     */
+    capped: boolean;
+    /**
+     * Conversations Read
+     */
+    conversations_read: number;
+    /**
+     * Results
+     */
+    results: Array<ConversationSearchResult>;
+    /**
+     * Truncated
+     */
+    truncated: boolean;
+};
+
+/**
+ * ConversationSearchParams
+ */
+export type ConversationSearchParams = {
+    /**
+     * Agent
+     */
+    agent?: string | null;
+    /**
+     * Kind
+     */
+    kind?: 'all' | 'title' | 'user' | 'agent' | 'tool';
+    /**
+     * Q
+     */
+    q: string;
+    /**
+     * Sort
+     */
+    sort?: 'relevance' | 'recent';
+    /**
+     * Utc Offset Minutes
+     */
+    utc_offset_minutes?: number;
+    /**
+     * When
+     */
+    when?: 'all' | 'today' | 'yesterday';
+};
+
+/**
+ * ConversationSearchResult
+ */
+export type ConversationSearchResult = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Conversation Id
+     */
+    conversation_id: string;
+    /**
+     * Hits
+     */
+    hits: Array<ConversationSearchHit>;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
  * ConversationSummary
  */
 export type ConversationSummary = {
@@ -4794,6 +4898,20 @@ export type SearchOut = {
      * Fragments
      */
     fragments: Array<FragmentOut>;
+};
+
+/**
+ * SearchSnippetPart
+ */
+export type SearchSnippetPart = {
+    /**
+     * Hit
+     */
+    hit: boolean;
+    /**
+     * Text
+     */
+    text: string;
 };
 
 /**
@@ -9991,6 +10109,31 @@ export type RunPlaygroundTestResponses = {
      */
     200: unknown;
 };
+
+export type SearchConversationsData = {
+    body: ConversationSearchParams;
+    path?: never;
+    query?: never;
+    url: '/search/conversations';
+};
+
+export type SearchConversationsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SearchConversationsError = SearchConversationsErrors[keyof SearchConversationsErrors];
+
+export type SearchConversationsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConversationSearchOut;
+};
+
+export type SearchConversationsResponse = SearchConversationsResponses[keyof SearchConversationsResponses];
 
 export type EndSessionData = {
     body?: never;

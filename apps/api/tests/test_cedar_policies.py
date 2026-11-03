@@ -246,6 +246,12 @@ def test_any_mango_user_opens_home(authz: Authorizer) -> None:
         assert authz.is_allowed(user, "ViewHome", *PLATFORM), user.user_id
 
 
+def test_any_mango_user_searches_their_own_conversations(authz: Authorizer) -> None:
+    # D103: the action opens the route; whose conversations is the caller's own partition.
+    for user in (*EVERYONE, CENTRAL, NO_GROUP):
+        assert authz.is_allowed(user, "SearchConversations", *PLATFORM), user.user_id
+
+
 def test_the_organizations_usage_is_for_administrators_and_central_finops(
     authz: Authorizer,
 ) -> None:

@@ -111,6 +111,9 @@
       "ViewHome": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "SearchConversations": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ViewOrgUsage": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
