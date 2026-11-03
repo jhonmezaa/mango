@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
@@ -9,6 +10,8 @@ import {
   EDGE_RATE_LIMIT,
   RATE_LIMITED_PAGE,
   RATE_LIMITED_RETRY_SECONDS,
+  RATE_LIMITED_STYLE,
+  RATE_LIMITED_STYLE_HASH,
 } from "../lib/constructs/edge.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
@@ -103,7 +106,7 @@ describe("edge web ACL (D72)", () => {
     // here with each deploy-time value as `<value>`.
     const text = renderJoin(csp.ContentSecurityPolicy);
     const directives = text.split("; ");
-    for (const directive of ["default-src 'self'", "script-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "object-src 'none'"]) {
+    for (const directive of ["default-src 'self'", "script-src 'self'", `style-src 'self' ${RATE_LIMITED_STYLE_HASH}`, "frame-ancestors 'none'", "base-uri 'none'", "object-src 'none'"]) {
       expect(directives).toContain(directive);
     }
     expect(text).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
@@ -128,16 +131,32 @@ describe("edge web ACL (D72)", () => {
     expect(web).toContain('content={**(extra or {}), "error": {"code": code, "message": message}}');
   });
 
-  it("answers a page load with a minimal page: no script, no style, nothing but ASCII", () => {
+  it("answers a page load with the design's page: no script, nothing external, nothing but ASCII", () => {
     expect(acl.Properties.CustomResponseBodies.RateLimited).toEqual({ ContentType: "TEXT_HTML", Content: RATE_LIMITED_PAGE });
     expect(RATE_LIMITED_PAGE).toMatch(/^<!doctype html><html lang="es">/);
     // The wait it names agrees with `Retry-After`: minutes, not «un minuto».
     expect(RATE_LIMITED_PAGE).toContain("Espera unos minutos");
-    expect(RATE_LIMITED_PAGE).not.toMatch(/<script|<style|<link|<img|<a |<form|style=|href=|src=|\son[a-z]+=/i);
+    expect(RATE_LIMITED_PAGE).toContain("Volver a cargar");
+    expect(RATE_LIMITED_PAGE).not.toMatch(/<script|<link|<img|<form|<iframe|style=|src=|url\(|@import|\son[a-z]+=/i);
+    // One link, to the same address (a reload); one style block, the hashed one.
+    expect(RATE_LIMITED_PAGE.match(/href=/g)).toEqual(["href="]);
+    expect(RATE_LIMITED_PAGE).toContain('href=""');
+    expect(RATE_LIMITED_PAGE.match(/<style>([^<]*)<\/style>/g)).toEqual([`<style>${RATE_LIMITED_STYLE}</style>`]);
     // CloudFormation does not keep other characters of a template intact.
     expect(RATE_LIMITED_PAGE).toMatch(/^[\x20-\x7e]+$/);
     // A body of a web ACL holds at most 4 KB.
     expect(Buffer.byteLength(RATE_LIMITED_PAGE)).toBeLessThan(4096);
+  });
+
+  it("allows the style of that page by its hash, never with 'unsafe-inline'", () => {
+    // Written out in edge.ts: changing the style without its hash fails here.
+    const [, style] = /<style>([^<]*)<\/style>/.exec(RATE_LIMITED_PAGE) ?? [];
+    const hash = createHash("sha256").update(style ?? "", "utf8").digest("base64");
+    expect(RATE_LIMITED_STYLE_HASH).toBe(`'sha256-${hash}'`);
+    const [policy] = Object.values(template.findResources("AWS::CloudFront::ResponseHeadersPolicy")) as any[];
+    const text = renderJoin(policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy.ContentSecurityPolicy);
+    const styleSrc = text.split("; ").filter((d) => d.startsWith("style-src"));
+    expect(styleSrc).toEqual([`style-src 'self' 'sha256-${hash}'`]);
   });
 });
 

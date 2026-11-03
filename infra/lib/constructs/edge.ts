@@ -148,15 +148,48 @@ export const API_RATE_LIMITED_BODY = JSON.stringify({
   error: { code: "rate_limited", message: "too many requests; try again later" },
 });
 /**
- * What a browser shows when the ceiling blocks a page load. Provisional text (D24: the design
- * has no screen for this state yet). No script, no style, ASCII only.
+ * Style of the page a browser gets when the ceiling blocks a page load (design «Demasiadas
+ * solicitudes.html», round 34): the design's own `<style>`, on one line. A stylesheet of the
+ * site would not load while the address is blocked, so it travels inline and the CSP allows
+ * exactly this block by its hash (`RATE_LIMITED_STYLE_HASH`), never `'unsafe-inline'`.
+ */
+export const RATE_LIMITED_STYLE =
+  ":root{--bg:#f7f6f3;--card:#fff;--text:#1f1d1a;--muted:#5f5a52;--border:#e4e0d8;--accent:oklch(68% 0.18 55);--ink:#1f1d1a;color-scheme:light dark}" +
+  "@media (prefers-color-scheme:dark){:root{--bg:#141311;--card:#1c1b18;--text:#ece9e3;--muted:#a8a298;--border:#2e2c28;--ink:#141311}}" +
+  "*{box-sizing:border-box}" +
+  "html,body{margin:0;height:100%}" +
+  "body{background:var(--bg);color:var(--text);font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}" +
+  "main{max-width:440px;width:100%;display:flex;flex-direction:column;gap:20px}" +
+  ".brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}" +
+  ".logo{width:26px;height:26px;border-radius:7px;background:var(--accent);color:var(--ink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}" +
+  "h1{margin:0;font-size:24px;line-height:1.25;font-weight:600;text-wrap:pretty}" +
+  "p{margin:0;font-size:15px;line-height:1.6;color:var(--muted);text-wrap:pretty}" +
+  "a.btn{align-self:flex-start;display:inline-flex;align-items:center;padding:10px 16px;border-radius:8px;background:var(--text);color:var(--bg);font-size:14px;font-weight:500;text-decoration:none}" +
+  "a.btn:hover{opacity:.88}" +
+  "a{color:var(--text)}" +
+  ".code{font-size:12.5px;color:var(--muted);border-top:1px solid var(--border);padding-top:14px}";
+/**
+ * CSP source of `RATE_LIMITED_STYLE` (`sha256` of its UTF-8 bytes, base64). Written out, not
+ * computed: a test recomputes it and fails when the style changes and this does not.
+ */
+export const RATE_LIMITED_STYLE_HASH = "'sha256-Gjss+7p1uhaP+tEut0dsomFhNXqIt4LaLzETwmFaDKo='";
+/**
+ * What a browser shows when the ceiling blocks a page load: the design's page (round 34). No
+ * script and nothing external: it has to work while Mango does not answer this address.
+ * «Volver a cargar» is a link to the same address. ASCII only (entities for the rest).
  */
 export const RATE_LIMITED_PAGE =
   '<!doctype html><html lang="es"><head><meta charset="utf-8">' +
-  '<meta name="viewport" content="width=device-width, initial-scale=1"><title>Mango</title></head>' +
-  "<body><h1>Demasiadas solicitudes</h1>" +
-  "<p>Se recibieron demasiadas solicitudes desde tu red. Espera unos minutos y vuelve a cargar la p&aacute;gina.</p>" +
-  "</body></html>";
+  '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">' +
+  "<title>Demasiadas solicitudes &middot; Mango</title>" +
+  `<style>${RATE_LIMITED_STYLE}</style></head>` +
+  '<body><main><div class="brand"><span class="logo" aria-hidden="true">m</span><span>Mango</span></div>' +
+  "<h1>Demasiadas solicitudes</h1>" +
+  "<p>Mango recibi&oacute; muchas solicitudes desde tu red en poco tiempo. Espera unos minutos y vuelve a cargar la p&aacute;gina.</p>" +
+  "<p>Si pasa seguido, puede que otras personas de tu oficina compartan la misma red. Av&iacute;sale al equipo que administra Mango.</p>" +
+  '<a class="btn" href="">Volver a cargar</a>' +
+  '<div class="code">C&oacute;digo 429</div>' +
+  "</main></body></html>";
 
 /** Deterministic Cognito managed-login domain (used by CSP before Cognito exists). */
 export function cognitoDomainUrl(namespace: string, account: string, region: string): string {
@@ -293,7 +326,8 @@ export class Edge extends Construct {
           contentSecurityPolicy: [
             "default-src 'self'",
             "script-src 'self'",
-            "style-src 'self'",
+            // The page of a block carries its own style (see `RATE_LIMITED_STYLE`).
+            `style-src 'self' ${RATE_LIMITED_STYLE_HASH}`,
             "img-src 'self' data:",
             "font-src 'self'",
             Lazy.string({
