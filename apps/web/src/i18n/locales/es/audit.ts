@@ -80,6 +80,9 @@ export const audit = {
     chat: {
       query: 'Consulta del agente',
     },
+    conversation: {
+      search: 'Búsqueda en conversaciones',
+    },
     agent: {
       invoke: 'Inicio de turno del agente',
       create: 'Agente creado',
@@ -202,6 +205,10 @@ export const audit = {
     chat_other: 'Preguntó a {{agent}} · {{count}} llamadas a tools',
     chatCost: 'costo {{amount}}',
     catalogSyncNone: 'Consultó el catálogo de Bedrock · sin modelos nuevos',
+    // Design round 35: conversations with hits, never what was searched (D103).
+    conversationSearch_one: 'Buscó en sus conversaciones · {{count}} resultado',
+    conversationSearch_other: 'Buscó en sus conversaciones · {{count}} resultados',
+    conversationSearchNone: 'Buscó en sus conversaciones',
     reportDownload: 'Descargó el reporte · ejecución {{run}}',
     // Design round 20 (`auditDetail`): «Agente aprobado» and «Agente retirado».
     agent: {
@@ -339,6 +346,12 @@ export const audit = {
     readSearchedYes: 'Sí',
     readSearchedNo: 'No',
     readMissing: 'De personas que ya no están',
+    // Design round 35: «Buscar conversaciones» (D103).
+    search: 'Búsqueda',
+    searchResults_one: '{{count}} conversación',
+    searchResults_other: '{{count}} conversaciones',
+    searchNote:
+      'Se registra quién buscó y en cuántas conversaciones hubo coincidencias. Nunca lo que se buscó.',
     turnStart: 'Inicio del turno',
     turn: 'Turno',
     time: 'Hora',

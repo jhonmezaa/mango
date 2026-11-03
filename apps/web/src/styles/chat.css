@@ -52,6 +52,27 @@
     margin: 0 auto;
     padding: 28px 32px;
   }
+  /* Design round 35 `.ch-mi`/`.ch-hl`: a message opened from Buscar conversaciones is
+     highlighted for 2 s, then fades in 0.9 s; without transition for reduced motion. */
+  .ch-mi {
+    border-radius: 10px;
+    transition:
+      background-color 0.9s ease-out,
+      box-shadow 0.9s ease-out;
+  }
+  .ch-mi.ch-hl {
+    background-color: var(--accent-soft);
+    box-shadow: 0 0 0 10px var(--accent-soft);
+    transition: none;
+  }
+  .ch-mi:focus {
+    outline: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ch-mi {
+      transition: none;
+    }
+  }
 
   /* Conversation loading and error states (design chat.jsx `ChatSkeleton` and the
      "No se pudo cargar la conversación" block). */

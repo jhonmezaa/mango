@@ -9,14 +9,17 @@ import {
   ArrowRightIcon,
   ClockIcon,
   CloseIcon,
+  InfoIcon,
   RefreshIcon,
   SearchIcon,
+  WarnIcon,
 } from '../../components/icons';
 import { agentIconStyle } from '../../components/marketplace/agentIcons';
 import { RateWaitButton, RateWaitLine } from '../../components/RateWait';
 import { retryAtOf } from '../../components/rateLimitWait';
 import { Topbar } from '../../components/Topbar';
 import { formatDateTime } from '../../lib/format';
+import { chatFocusState } from '../chatFocus';
 import {
   DEBOUNCE_MS,
   KIND_FILTERS,
@@ -25,6 +28,7 @@ import {
   WHEN_FILTERS,
   anyFilter,
   clearRecentSearches,
+  focusMessageOf,
   isSearching,
   listedHits,
   queryOf,
@@ -47,6 +51,8 @@ type Load =
 
 /** Recent conversations of the idle state (design: six). */
 const RECENT_CONVERSATIONS = 6;
+/** Design round 35: «Buscando…» shows only when an answer takes longer than this to arrive. */
+const SLOW_MS = 400;
 
 function AgentIcon({ agent }: { agent: Agent | null }) {
   const { Icon, colorClass } = agentIconStyle(agent?.icon ?? 'Bot', agent?.color ?? 0);
@@ -93,6 +99,10 @@ export function SearchPage() {
   const [recent, setRecent] = useState(() => recentSearches(me.user_id));
   const [load, setLoad] = useState<Load>({ kind: 'idle' });
   const [attempt, setAttempt] = useState(0);
+  // Design round 35: after a 429, changing the query sends nothing until «Reintentar» at zero.
+  const [rateUntil, setRateUntil] = useState<number | null>(null);
+  // The query whose answer is taking longer than SLOW_MS (set by a timer).
+  const [slowKey, setSlowKey] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -106,26 +116,36 @@ export function SearchPage() {
 
   useEffect(() => {
     // Without a query the idle state shows; a previous answer is simply not shown.
-    if (!query) return;
+    if (!query || rateUntil !== null) return;
     const controller = new AbortController();
+    let slow = 0;
     const timer = window.setTimeout(() => {
+      // Counted from the request, not from the key: the pause before it is not waiting.
+      slow = window.setTimeout(() => {
+        setSlowKey(key);
+      }, SLOW_MS);
       api.call('searchConversations', { body: query }, { signal: controller.signal }).then(
         (data) => {
+          window.clearTimeout(slow);
           setLoad({ kind: 'ready', key, data });
         },
         (error: unknown) => {
+          window.clearTimeout(slow);
           if (controller.signal.aborted) return;
-          setLoad({ kind: 'error', key, retryAt: retryAtOf(error) });
+          const retryAt = retryAtOf(error);
+          if (retryAt !== null) setRateUntil(retryAt);
+          setLoad({ kind: 'error', key, retryAt });
         },
       );
     }, DEBOUNCE_MS);
     return () => {
+      window.clearTimeout(slow);
       window.clearTimeout(timer);
       controller.abort();
     };
     // `key` stands for `query`; `attempt` asks again after «Reintentar».
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, key, attempt]);
+  }, [api, key, attempt, rateUntil]);
 
   // While the next answer is on its way the previous one stays: no flicker per key.
   const data = load.kind === 'ready' ? load.data : null;
@@ -133,6 +153,14 @@ export function SearchPage() {
   const total = totalHits(results);
   const fresh = load.kind !== 'idle' && load.key === key;
   const failed = searching && load.kind === 'error' && fresh ? load : null;
+  // Design round 35: the previous list stays while the next answer comes; past SLOW_MS a small
+  // spinner and «Buscando…» show next to the count (alone on the first search).
+  const pending = searching && !fresh && rateUntil === null;
+  const slow = pending && slowKey === key;
+  const retry = () => {
+    setRateUntil(null);
+    setAttempt((n) => n + 1);
+  };
 
   // A new query or filter starts at the first result (design), set while rendering.
   const [activeKey, setActiveKey] = useState(key);
@@ -171,12 +199,16 @@ export function SearchPage() {
     clearRecentSearches(me.user_id);
     setRecent([]);
   };
-  const openConversation = (conversationId: string) => {
-    void navigate(`/c/${encodeURIComponent(conversationId)}`);
+  const openConversation = (conversationId: string, messageId: string | null = null) => {
+    void navigate(`/c/${encodeURIComponent(conversationId)}`, {
+      state: chatFocusState(messageId),
+    });
   };
-  const go = (result: SearchResult) => {
+  // Design round 35: a hit opens the conversation at its message; the card and Enter at the first
+  // hit that is not the title. Title hits open it from its start.
+  const go = (result: SearchResult, hit?: SearchHit) => {
     remember(q);
-    openConversation(result.conversation_id);
+    openConversation(result.conversation_id, focusMessageOf(result, hit));
   };
   const setFilter = <K extends keyof Filters>(name: K, value: Filters[K]) => {
     setFilters((current) => ({ ...current, [name]: value }));
@@ -189,7 +221,7 @@ export function SearchPage() {
       setQ('');
       return;
     }
-    if (!results.length) {
+    if (!results.length || failed || rateUntil !== null) {
       if (event.key === 'Enter') remember(q);
       return;
     }
@@ -211,13 +243,52 @@ export function SearchPage() {
   const yesterday = t('chat.groups.yesterday');
   const agentName = (agentId: string) => agentsById.get(agentId)?.name ?? t('chat.agentUnknown');
 
-  const coverage = data && fresh && (data.capped || data.truncated) && (
-    <p className="sr-note">
-      {data.capped
-        ? t('search.capped', { count: data.conversations_read })
-        : t('search.truncated', { count: data.results.length })}
-    </p>
+  // Design round 35 `.sr-cap`: the read stopped at its cap, and/or more conversations matched
+  // than the answer carries (not with «Sin resultados»). Both lines, in that order.
+  const showTruncated = data !== null && data.truncated && data.results.length > 0;
+  const coverage = data && fresh && (data.capped || showTruncated) && (
+    <div className="sr-cap">
+      {data.capped && (
+        <span>
+          <InfoIcon size={12} />
+          <span>{t('search.capped', { count: data.conversations_read })}</span>
+        </span>
+      )}
+      {showTruncated && (
+        <span>
+          <InfoIcon size={12} />
+          <span>{t('search.truncated', { count: data.results.length })}</span>
+        </span>
+      )}
+    </div>
   );
+  const busy = slow && (
+    <span className="sr-busy" aria-hidden="true">
+      <span className="spinner" />
+      {t('search.searching')}
+    </span>
+  );
+  // One hidden status for assistive technology (design round 35).
+  const live = !searching
+    ? ''
+    : rateUntil !== null
+      ? t('search.rateTitle')
+      : failed
+        ? t('search.error')
+        : pending
+          ? slow
+            ? t('search.searching')
+            : ''
+          : data
+            ? results.length
+              ? t('search.liveCount', {
+                  hits: total,
+                  conversations: results.length,
+                  hitsWord: t('search.hitsWord', { count: total }),
+                  conversationsWord: t('search.conversationsWord', { count: results.length }),
+                })
+              : t('search.liveNone')
+            : '';
 
   let body;
   if (!searching) {
@@ -282,65 +353,63 @@ export function SearchPage() {
         )}
       </div>
     );
+  } else if (rateUntil !== null) {
+    body = (
+      <div className="mk-empty sr-err" role="alert">
+        <span className="sr-err-ic">
+          <ClockIcon size={16} />
+        </span>
+        <div className="sr-empty-t">{t('search.rateTitle')}</div>
+        <div className="sr-empty-s">
+          {t('search.rateBody')} <RateWaitLine until={rateUntil} />
+        </div>
+        <RateWaitButton until={rateUntil} onRetry={retry} />
+      </div>
+    );
   } else if (failed) {
     body = (
-      <div className="mk-empty" role="alert">
+      <div className="mk-empty sr-err" role="alert">
+        <span className="sr-err-ic">
+          <WarnIcon size={16} />
+        </span>
         <div className="sr-empty-t">{t('search.error')}</div>
-        {failed.retryAt !== null ? (
-          <>
-            <div className="sr-empty-s">
-              <RateWaitLine until={failed.retryAt} />
-            </div>
-            <RateWaitButton
-              until={failed.retryAt}
-              onRetry={() => {
-                setAttempt((n) => n + 1);
-              }}
-            />
-          </>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => {
-              setAttempt((n) => n + 1);
-            }}
-          >
-            <RefreshIcon size={11} />
-            {t('common.retry')}
-          </button>
-        )}
+        <button type="button" className="btn btn-sm" onClick={retry}>
+          <RefreshIcon size={11} />
+          {t('common.retry')}
+        </button>
       </div>
     );
   } else if (!data) {
-    body = (
-      // The design draws no loading state: only assistive technology hears it.
-      <p className="sr-only" role="status" aria-busy="true">
-        {t('search.searching')}
-      </p>
-    );
+    // First search, nothing to keep on screen: the «Buscando…» line alone, past SLOW_MS.
+    body = <div className="sr-count">{busy}</div>;
   } else if (results.length === 0) {
     body = (
-      <div className="mk-empty" role="status" aria-busy={!fresh}>
-        <div className="sr-empty-t">{t('search.noResults', { query: q.trim() })}</div>
-        <div className="sr-empty-s">
-          {filtered ? t('search.noResultsFiltered') : t('search.noResultsHint')}
+      <>
+        <div className="mk-empty" aria-busy={!fresh}>
+          <div className="sr-empty-t">{t('search.noResults', { query: q.trim() })}</div>
+          <div className="sr-empty-s">
+            {filtered ? t('search.noResultsFiltered') : t('search.noResultsHint')}
+          </div>
+          {filtered && (
+            <button type="button" className="btn btn-sm" onClick={clearFilters}>
+              {t('search.removeFilters')}
+            </button>
+          )}
+          {busy}
         </div>
         {coverage}
-        {filtered && (
-          <button type="button" className="btn btn-sm" onClick={clearFilters}>
-            {t('search.removeFilters')}
-          </button>
-        )}
-      </div>
+      </>
     );
   } else {
     body = (
       <>
         <div className="sr-count">
-          <span>
-            <b>{total}</b> {t('search.hitsWord', { count: total })} {t('search.in')}{' '}
-            <b>{results.length}</b> {t('search.conversationsWord', { count: results.length })}
+          <span className="sr-count-main">
+            <span className="sr-count-n">
+              <b>{total}</b> {t('search.hitsWord', { count: total })} {t('search.in')}{' '}
+              <b>{results.length}</b> {t('search.conversationsWord', { count: results.length })}
+            </span>
+            {busy}
           </span>
           <select
             className="input mk-sel"
@@ -403,7 +472,7 @@ export function SearchPage() {
                     type="button"
                     className="sr-hit"
                     onClick={() => {
-                      go(result);
+                      go(result, hit);
                     }}
                   >
                     <span className={`sr-kind k-${hit.kind}`}>{t(`search.kind.${hit.kind}`)}</span>
@@ -461,7 +530,7 @@ export function SearchPage() {
                 if (searching && results.length) remember(q);
               }}
               role="combobox"
-              aria-expanded={searching}
+              aria-expanded={searching && results.length > 0}
               aria-controls="sr-results"
               aria-activedescendant={
                 searching && results.length ? `sr-${String(active)}` : undefined
@@ -536,6 +605,9 @@ export function SearchPage() {
             )}
           </div>
 
+          <div className="sr-only" role="status" aria-live="polite">
+            {live}
+          </div>
           {body}
         </div>
       </div>

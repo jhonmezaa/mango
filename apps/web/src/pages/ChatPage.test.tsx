@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
@@ -47,7 +47,11 @@ function renderChat(
     path = '/',
     session = {},
     auth,
-  }: { path?: string; session?: Partial<SessionContextValue>; auth?: AuthContextValue } = {},
+  }: {
+    path?: string | { pathname: string; state: unknown };
+    session?: Partial<SessionContextValue>;
+    auth?: AuthContextValue;
+  } = {},
 ) {
   render(
     <TestProviders
@@ -404,6 +408,78 @@ describe('ChatPage', () => {
     expect(within(error).getByRole('button', { name: 'Nueva conversación' })).toBeInTheDocument();
     await user.click(within(error).getByRole('button', { name: 'Reintentar' }));
     expect(getConversation).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** Design round 35 (D103): opened from Buscar conversaciones at the message of a hit. */
+describe('ChatPage opened at a message', () => {
+  const twoMessages = () =>
+    ({
+      conversation_id: CONVERSATION_ID,
+      title: 'Gasto',
+      agent_id: 'finops',
+      messages: [
+        {
+          message_id: 'm1',
+          role: 'user',
+          content: '¿Gasto de EC2?',
+          created_at: '2026-11-03T10:00:00Z',
+          tools: [],
+        },
+        {
+          message_id: 'm2',
+          role: 'assistant',
+          content: 'Fueron 120 USD.',
+          created_at: '2026-11-03T10:00:05Z',
+          tools: [],
+        },
+      ],
+    }) as unknown as Awaited<ReturnType<ApiClient['getConversation']>>;
+
+  it('focuses and highlights the message, from the navigation state only', async () => {
+    const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue(twoMessages());
+    renderChat({ getConversation } as unknown as ApiClient, false, {
+      path: { pathname: `/c/${CONVERSATION_ID}`, state: { focusMessage: 'm2' } },
+    });
+    await screen.findByText('Fueron 120 USD.');
+    const target = document.querySelector<HTMLElement>('[data-mi="m2"]');
+    await waitFor(() => {
+      expect(target).toHaveClass('ch-hl');
+    });
+    expect(target).toHaveFocus();
+    expect(target).toHaveAttribute('tabindex', '-1');
+    expect(document.querySelector('[data-mi="m1"]')).not.toHaveClass('ch-hl');
+    expect(screen.getByTestId('path')).toHaveTextContent(`/c/${CONVERSATION_ID}`);
+    expect(screen.queryByText('Ese mensaje ya no está en la conversación.')).toBeNull();
+    // The highlight goes after 2 s.
+    await waitFor(
+      () => {
+        expect(target).not.toHaveClass('ch-hl');
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('opens as always with a notice when the message is no longer there', async () => {
+    const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue(twoMessages());
+    renderChat({ getConversation } as unknown as ApiClient, false, {
+      path: { pathname: `/c/${CONVERSATION_ID}`, state: { focusMessage: 'gone' } },
+    });
+    expect(
+      await screen.findByText('Ese mensaje ya no está en la conversación.'),
+    ).toBeInTheDocument();
+    expect(document.querySelector('.ch-hl')).toBeNull();
+  });
+
+  it('ignores a malformed id in the navigation state', async () => {
+    const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue(twoMessages());
+    renderChat({ getConversation } as unknown as ApiClient, false, {
+      path: { pathname: `/c/${CONVERSATION_ID}`, state: { focusMessage: '"] *' } },
+    });
+    await screen.findByText('Fueron 120 USD.');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.queryByText('Ese mensaje ya no está en la conversación.')).toBeNull();
+    expect(document.querySelector('.ch-hl')).toBeNull();
   });
 });
 

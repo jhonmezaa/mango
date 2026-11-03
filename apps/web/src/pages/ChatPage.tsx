@@ -10,7 +10,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { chatPath, defaultAgentId, isChatable, parseAgentId, type Agent } from '../agents/agents';
 import type { ApiClient } from '../api/client';
@@ -28,6 +28,7 @@ import { ChevronDownIcon, CloseIcon, RefreshIcon, WarnIcon } from '../components
 import { RateWaitButton, RateWaitLine } from '../components/RateWait';
 import { retryAtOf } from '../components/rateLimitWait';
 import { fromApiMessage, type DisplayMessage, type ErrorKey } from '../hooks/chatState';
+import { FOCUS_HIGHLIGHT_MS, FOCUS_TOP_PX, focusMessageFrom } from './chatFocus';
 import { useChatStream } from '../hooks/useChatStream';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -154,6 +155,7 @@ export function ChatPage() {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     api,
     me,
@@ -392,6 +394,59 @@ export function ChatPage() {
     awayRef.current = false;
   }, [routeId]);
 
+  // Design round 35 (D103): opened from Buscar conversaciones at a hit, the conversation scrolls
+  // that message to 96 px below its top, focuses it and highlights it for 2 s. The message id
+  // comes in the navigation state, never in the URL (owner's choice); it is used once and then
+  // dropped, so a reload opens the conversation as always. A message that is no longer there
+  // opens it as always, with a notice.
+  const focusTarget = focusMessageFrom(location.state);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const focusReady =
+    focusTarget !== null &&
+    routeId !== null &&
+    state.conversationId === routeId &&
+    !loading &&
+    state.messages.length > 0;
+  const focusMessage = useEffectEvent((target: string) => {
+    void navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    const scroller = scrollRef.current;
+    // Compared as data, never put into a selector: the id comes from history state.
+    const el = scroller
+      ? Array.from(scroller.querySelectorAll<HTMLElement>('[data-mi]')).find(
+          (node) => node.dataset.mi === target,
+        )
+      : undefined;
+    if (!scroller || !el) {
+      notify(t('chat.focusGone'), 'info');
+      return;
+    }
+    scroller.scrollTop +=
+      el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - FOCUS_TOP_PX;
+    // Design: focusable only as the target, without a ring (`.ch-mi:focus`).
+    el.setAttribute('tabindex', '-1');
+    el.focus({ preventScroll: true });
+    setHighlight(target);
+  });
+  useEffect(() => {
+    if (!focusReady) return;
+    // After the messages are laid out (the design waits 80 ms too).
+    const timer = window.setTimeout(() => {
+      focusMessage(focusTarget);
+    }, 80);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [focusReady, focusTarget]);
+  useEffect(() => {
+    if (highlight === null) return;
+    const timer = window.setTimeout(() => {
+      setHighlight(null);
+    }, FOCUS_HIGHLIGHT_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [highlight]);
+
   // Below 1100px the conversation list is not a column (design v0.11); it opens as a drawer so the
   // history stays reachable.
   const narrow = useMediaQuery('(max-width: 1100px)');
@@ -620,16 +675,24 @@ export function ChatPage() {
                 const question = isStreaming ? null : asked;
                 return (
                   <Fragment key={message.id}>
-                    <ChatMessage
-                      message={message}
-                      observe={observe}
-                      isAdmin={me.is_admin}
-                      onSend={sendText}
-                      resendText={question}
-                      retryText={
-                        retryText !== null && index === state.messages.length - 1 ? retryText : null
-                      }
-                    />
+                    {/* Design round 35 `.ch-mi`: the target of «abrir en la coincidencia». */}
+                    <div
+                      data-mi={message.id}
+                      className={highlight === message.id ? 'ch-mi ch-hl' : 'ch-mi'}
+                    >
+                      <ChatMessage
+                        message={message}
+                        observe={observe}
+                        isAdmin={me.is_admin}
+                        onSend={sendText}
+                        resendText={question}
+                        retryText={
+                          retryText !== null && index === state.messages.length - 1
+                            ? retryText
+                            : null
+                        }
+                      />
+                    </div>
                     {/* Design chat.jsx: the write actions of the answer wait here for a person
                         (D27). What a card shows is what the API stored, never the model's text. */}
                     {/* Design remote-core.jsx: a notice of Mango, outside the answer, when a

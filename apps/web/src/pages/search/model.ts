@@ -104,3 +104,14 @@ export function rememberSearch(userId: string, term: string): string[] {
 export function clearRecentSearches(userId: string): void {
   recentByUser.delete(userId);
 }
+
+// --- Open at the hit (design round 35) ---------------------------------------------------------
+
+/**
+ * The message a result opens at: the hit's own, or for the card and Enter the first hit that is
+ * not the title. Title hits open the conversation from its start (null).
+ */
+export function focusMessageOf(result: SearchResult, hit?: SearchHit): string | null {
+  const target = hit ?? result.hits.find((item) => item.kind !== 'title');
+  return target?.message_id ?? null;
+}

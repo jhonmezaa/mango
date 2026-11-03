@@ -282,6 +282,9 @@ const EVENT_ACTIONS = {
   'kb.sync': 'kb.sync',
   'kb.search': 'kb.search_test',
   'kb.retrieve': 'kb.query',
+  // Design round 35 (D103): a search of one's own conversations, with counts only. A read for
+  // the API (only listed with «Mostrar lecturas»).
+  'conversation.search': 'conversation.search',
 } as const;
 type EventAction = (typeof EVENT_ACTIONS)[keyof typeof EVENT_ACTIONS];
 const hasEventAction = (event: string): event is keyof typeof EVENT_ACTIONS =>
@@ -370,6 +373,8 @@ export type DetailText =
   | { kind: 'catalogSync'; added: number }
   | { kind: 'session'; action: SessionAction; sso: boolean }
   | { kind: 'directoryRead'; read: DirectoryRead }
+  /** Design round 35: conversations with hits; never what was searched (D103). */
+  | { kind: 'conversationSearch'; results: number | null }
   | { kind: 'reportDownload'; task: string | null; run: string | null; file: string | null }
   | {
       /** «Agente aprobado» and «Agente retirado» (design round 20 `auditDetail`). */
@@ -617,6 +622,8 @@ function detailOf(
       const read = directoryReadOf(detail);
       return read ? { kind: 'directoryRead', read } : { kind: 'raw', text: summarize(detail) };
     }
+    case 'conversation.search':
+      return { kind: 'conversationSearch', results: count(detail.conversations_found) };
     case 'session.started':
       // A sign-in with the IdP of the company has its own sentence in the design.
       return { kind: 'session', action: known, sso: detail.federated === true };

@@ -734,6 +734,37 @@ describe('AdminAuditPage', () => {
     click.mockRestore();
   });
 
+  it('words a search of conversations with counts only and details it in «Búsqueda»', async () => {
+    const user = userEvent.setup();
+    const base = { user_id: 'sub-ana', actor_email: 'ana@example.com', hash: 'a'.repeat(64) };
+    const events: AuditEvent[] = [
+      { query_length: 3, terms: 1, hits: 4, conversations_found: 3, conversations_read: 12 },
+      { query_length: 5, terms: 1, hits: 1, conversations_found: 1, conversations_read: 12 },
+    ].map((detail, index) => ({
+      ...base,
+      event_id: `s${String(index)}`.padEnd(32, '0'),
+      ts: iso(index + 1),
+      event: 'conversation.search',
+      detail,
+    }));
+    renderPage({ listAuditEvents: vi.fn(() => page(events)) });
+    const three = await screen.findByText('Buscó en sus conversaciones · 3 resultados');
+    expect(screen.getByText('Buscó en sus conversaciones · 1 resultado')).toBeInTheDocument();
+    expect(screen.getAllByText('Búsqueda en conversaciones')).toHaveLength(2);
+    expect(screen.queryByText(/query_length:|conversations_found:/)).toBeNull();
+    await user.click(three.closest('button') as HTMLElement);
+    const panel = screen.getByRole('dialog');
+    expect(within(panel).getByRole('heading', { name: 'Búsqueda' })).toBeInTheDocument();
+    expect(within(panel).getByText('Resultados').nextElementSibling).toHaveTextContent(
+      '3 conversaciones',
+    );
+    expect(
+      within(panel).getByText(
+        'Se registra quién buscó y en cuántas conversaciones hubo coincidencias. Nunca lo que se buscó.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('words the two reads of Ajustes › Personas and details them in «Lectura»', async () => {
     const user = userEvent.setup();
     const base = { user_id: 'sub-ana', actor_email: 'ana@example.com', hash: 'a'.repeat(64) };

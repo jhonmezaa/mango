@@ -152,6 +152,8 @@ export const chat = {
     incompleteBody: '{{name}} no terminó de responder.',
     newChat: 'Nueva conversación iniciada.',
   },
+  // Design round 35: opened from Buscar conversaciones at a message that is no longer there.
+  focusGone: 'Ese mensaje ya no está en la conversación.',
   systemNotice: 'Aviso del sistema',
   viewBudget: 'Ver presupuesto',
   header: {

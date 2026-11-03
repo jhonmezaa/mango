@@ -3,7 +3,7 @@
  * the design's. `tk-quick`, `tk-chip`, `tk-meta`, `tk-agent-ic`, `mk-sel` and `mk-empty` are
  * already in admin.css, agentReview.css and activity.css. The helpers at the end hold the inline
  * styles of the design's component (`sr-thread-main`, `sr-agent-ic`, `sr-empty-*`) and the line
- * of a search that did not cover everything (`sr-note`), which the design does not draw.
+ * of a search that did not cover everything (`sr-cap`, design round 35).
  */
 @layer components {
   .sr-wrap {
@@ -249,11 +249,58 @@
     font-size: 13px;
     color: var(--text-muted);
   }
-  /* Not drawn by the design (D103): the search stopped at its cap. */
-  .sr-note {
-    margin: 0 0 10px;
+  /* Design round 35: the lines of the cap, under the count (or under «Sin resultados»). */
+  .sr-cap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: -2px 0 12px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+  .sr-cap > span {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  .sr-cap svg {
+    flex: none;
+    margin-top: 3px;
+  }
+  .mk-empty + .sr-cap {
+    margin-top: 12px;
+    align-items: center;
+    text-align: center;
+  }
+  /* Design round 35: «Buscando…» when an answer takes longer than 400 ms. */
+  .sr-count-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .sr-count-n {
+    white-space: nowrap;
+  }
+  .sr-busy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12.5px;
     color: var(--text-muted);
+  }
+  .sr-err-ic {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--row-hover);
+    color: var(--amber);
+    display: grid;
+    place-items: center;
+    margin-bottom: 2px;
   }
 
   @media (max-width: 760px) {

@@ -42,7 +42,7 @@ test('Buscar conversaciones finds the terms and opens the conversation with Ente
   const first = results.getByRole('option').first();
   await expect(first).toContainText('Gasto de EC2 del mes');
   await expect(first.locator('mark.sr-mark').first()).toHaveText(/ec2|mes/i);
-  await expect(page.getByText(/coincidencias? en/)).toBeVisible();
+  await expect(page.locator('.sr-count-n')).toHaveText(/coincidencias? en/);
   // Stored HTML of a title is text, never markup.
   await expect(page.locator('.sr-wrap b:has-text("de la semana")')).toHaveCount(0);
 
@@ -78,4 +78,24 @@ test('Buscar conversaciones says when a search did not cover everything', async 
     'JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)])',
   );
   expect(stored).not.toContain('mock-capped');
+});
+
+test('Buscar conversaciones opens a hit at its message and highlights it', async ({ page }) => {
+  await signIn(page);
+  await openSearch(page);
+  await searchBox(page).fill('ec2 mes');
+  const results = page.getByRole('listbox', { name: 'Buscar conversaciones' });
+  const hit = results.locator('.sr-hit').first();
+  await expect(hit).toBeVisible();
+  await hit.click();
+  // Design round 35: the message is in view, focused and highlighted; the address carries only
+  // the conversation (the message id travels in the navigation state, D103).
+  await expect(page).toHaveURL(/\/c\/[A-Za-z0-9_-]+$/);
+  const target = page.locator('.ch-mi.ch-hl');
+  await expect(target).toHaveCount(1);
+  await expect(target).toBeFocused();
+  await expect(target).toBeInViewport();
+  await expect(page.getByText('Ese mensaje ya no está en la conversación.')).toHaveCount(0);
+  // The highlight goes after 2 s.
+  await expect(page.locator('.ch-mi.ch-hl')).toHaveCount(0, { timeout: 5000 });
 });

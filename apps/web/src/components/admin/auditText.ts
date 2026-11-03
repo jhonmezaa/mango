@@ -96,23 +96,27 @@ export function auditDetail(t: TFunction, row: AuditRow, idpName: string | null)
                         ? d.added > 0
                           ? t('audit.detail.catalogSync', { count: d.added })
                           : t('audit.detail.catalogSyncNone')
-                        : d.kind === 'directoryRead'
-                          ? directoryReadText(t, d.read)
-                          : d.kind === 'agent'
-                            ? agentText(t, d)
-                            : d.kind === 'reportDownload'
-                              ? t('audit.detail.reportDownload', {
-                                  run: (d.run ?? '').slice(0, 8) || '—',
-                                })
-                              : d.kind === 'session'
-                                ? d.sso
-                                  ? // The name comes from `config.json`, shown as text.
-                                    [
-                                      t('audit.detail.session.startedSso'),
-                                      ...(idpName ? [idpName] : []),
-                                    ].join(' · ')
-                                  : t(`audit.detail.${d.action}`)
-                                : d.text;
+                        : d.kind === 'conversationSearch'
+                          ? d.results === null
+                            ? t('audit.detail.conversationSearchNone')
+                            : t('audit.detail.conversationSearch', { count: d.results })
+                          : d.kind === 'directoryRead'
+                            ? directoryReadText(t, d.read)
+                            : d.kind === 'agent'
+                              ? agentText(t, d)
+                              : d.kind === 'reportDownload'
+                                ? t('audit.detail.reportDownload', {
+                                    run: (d.run ?? '').slice(0, 8) || '—',
+                                  })
+                                : d.kind === 'session'
+                                  ? d.sso
+                                    ? // The name comes from `config.json`, shown as text.
+                                      [
+                                        t('audit.detail.session.startedSso'),
+                                        ...(idpName ? [idpName] : []),
+                                      ].join(' · ')
+                                    : t(`audit.detail.${d.action}`)
+                                  : d.text;
   return text;
 }
 

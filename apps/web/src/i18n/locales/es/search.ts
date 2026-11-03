@@ -38,15 +38,21 @@ export const search = {
   more: 'Ver {{count}} más',
   less: 'Ver menos',
   hintMove: 'para moverte',
-  hintOpen: 'abre la conversación',
+  hintOpen: 'abre en la coincidencia',
   hintClear: 'borra',
-  // Not drawn by the design (D103): the read stopped at its cap, or more conversations matched
-  // than the answer carries. Carried to the next design brief.
+  // Design round 35 `.sr-cap`: the read stopped at its cap, or more conversations matched than
+  // the answer carries.
   capped_one: 'Buscamos en tu conversación más reciente; las más antiguas no se revisaron.',
   capped_other:
     'Buscamos en tus {{count}} conversaciones más recientes; las más antiguas no se revisaron.',
   truncated:
     'Se muestran las {{count}} conversaciones con más coincidencias; afina la búsqueda para ver otras.',
   error: 'No se pudo buscar en tus conversaciones.',
+  // Design round 35: a 429 here; the wait line is the common one (`rateWait`).
+  rateTitle: 'Demasiadas solicitudes',
+  rateBody: 'Hiciste muchas búsquedas seguidas.',
   searching: 'Buscando…',
+  // The hidden status (design round 35).
+  liveCount: '{{hits}} {{hitsWord}} en {{conversations}} {{conversationsWord}}',
+  liveNone: 'Sin resultados',
 };

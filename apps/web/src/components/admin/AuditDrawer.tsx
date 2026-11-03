@@ -88,6 +88,8 @@ export function AuditDrawer({
   // Design «Lectura»: what a read of the directory read, in words (never the raw keys).
   const read = row.detail.kind === 'directoryRead' ? row.detail.read : null;
   const download = row.detail.kind === 'reportDownload' ? row.detail : null;
+  // Design round 35 «Búsqueda»: in how many conversations a search found something.
+  const search = row.detail.kind === 'conversationSearch' ? row.detail : null;
   // Design round 20: «Agente aprobado» and «Agente retirado» name the agent and its creator.
   const agent = row.detail.kind === 'agent' ? row.detail : null;
   const createdAt = agent?.createdBy ? agent.createdBy.indexOf('@') : -1;
@@ -304,6 +306,21 @@ export function AuditDrawer({
               ) : null}
               <div className="mk-meta" style={{ marginTop: 4 }}>
                 {t('audit.drawer.downloadNote')}
+              </div>
+            </Sec>
+          )}
+          {search && (
+            <Sec title={t('audit.drawer.search')}>
+              <div className="mk-kv">
+                <span>{t('audit.drawer.readReturned')}</span>
+                <span>
+                  {search.results === null
+                    ? '—'
+                    : t('audit.drawer.searchResults', { count: search.results })}
+                </span>
+              </div>
+              <div className="mk-meta" style={{ marginTop: 4 }}>
+                {t('audit.drawer.searchNote')}
               </div>
             </Sec>
           )}

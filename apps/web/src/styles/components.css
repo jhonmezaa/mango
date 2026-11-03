@@ -45,7 +45,8 @@
   }
   .btn:disabled,
   .btn[aria-disabled='true'] {
-    opacity: 0.5;
+    /* Design round 35: .45 for every disabled button. */
+    opacity: 0.45;
     cursor: not-allowed;
   }
   .btn-ghost {
