@@ -57,7 +57,7 @@ const kbBlockHint = ' Vuelve a sincronizar cuando haya presupuesto: «Sincroniza
 const kbCapText = 'Se copió hasta el tope: el bucket tiene más de ' + kbN(KB_LIMITS.docs) + ' documentos o 5 GB.';
 const kbCapHint = ' Acota el prefijo o reparte los documentos en varias knowledge bases.';
 // Fuente aprobada que no se pudo leer. La llave propia (KMS) nunca llega aquí: se rechaza al proponer el bucket.
-const kbErrText = () => 'No se pudo sincronizar: Mango no pudo leer el bucket.';
+const kbErrText = (k) => 'Mango no pudo leer ' + (k && k.ref ? k.ref : 'el bucket') + '. El bucket está aprobado, pero el rol de Mango ya no puede leerlo o el prefijo cambió. Revisa la política del bucket con su dueño y vuelve a sincronizar.';
 const kbStatusSub = (k) => k.status === 'warn' && k.capped ? 'supera el tope' : ['ok', 'warn'].includes(k.status) ? kbAgo(k.lastSync) : k.status === 'blocked' ? 'por presupuesto' : k.status === 'error' ? 'no se pudo leer' : k.status === 'approval' ? 'espera a un administrador' : k.status === 'syncing' && k.prepUntil > Date.now() ? 'preparando el acceso' : '';
 const kbRefErr = (ref) => { const v = (ref || '').trim(); if (!v) return 'Escribe el bucket y el prefijo'; if (!/^s3:\/\/[a-z0-9][a-z0-9.-]{1,61}[a-z0-9](\/\S*)?$/.test(v)) return 'Usa el formato s3://bucket/prefijo/'; return null; };
 // Lo comprueba el servidor al enviar (alta y «Acceso y sync»). Prototipo: «mango-…» es de Mango; «otra-cuenta» o «externo», de otra cuenta;

@@ -1183,3 +1183,81 @@ Respuesta al contexto de la ronda 32. Sin cambios en el diseño.
 - **Eje de Inicio: cerrado.** La web y `axisTicks` coinciden en marcas, etiquetas y ancho de la columna. Se acepta la única diferencia que queda: un pico de USD 0,00000002 repite etiquetas porque ocho decimales no alcanzan. Ningún gasto real llega ahí.
 - Sigue de la ronda 26: cancelar en Microsoft (prueba en vivo); descripciones del perfil.
 - Sin tocar: todo el §5 (chat y sesión, 429, ingreso y registro, administración, Agent Builder, Knowledge Bases, menú).
+
+
+## Ronda 34 (2026-11-02) · lo abierto del §5
+Responde todo lo abierto del §5 que quedaba de las rondas anteriores. Archivos: `chat.jsx`, `login.jsx`, `admin.jsx`, `kb-core.jsx`, `app.jsx`, `styles.css` y uno nuevo, `Demasiadas solicitudes.html`. Lo marcado *Producto* es un cambio para la web. Ronda 26 sigue abierta (cancelar en Microsoft; descripciones del perfil).
+
+### Chat y sesión
+- **Respuesta cortada por su tope: solo se avisa, sin «Continuar».** Bajo el texto, un aviso neutro (`mc-alert`, ícono Info, `role="status"`):
+  - por tope de tokens: «**Respuesta incompleta.** El agente llegó a su largo máximo de respuesta. Lo de arriba es lo que alcanzó a escribir. Si necesitas el resto, pídelo en un mensaje nuevo; por ejemplo, «sigue desde donde quedaste».»
+  - por una tool cortada: «… El agente llegó a su largo máximo mientras preparaba una consulta a `{tool}`, y la consulta no se hizo. …». La tool cortada **no se ejecuta**.
+  - por límite de tiempo: «… El turno llegó a su límite de tiempo antes de terminar. …»
+  - El lector de pantalla anuncia «Respuesta incompleta. {agente} no terminó de responder.» Si la persona no está mirando, sale el toast «Respuesta incompleta», no «Respuesta completa».
+  - En una respuesta incompleta **se oculta «Reintentar»**, porque repetir la pregunta se cortaría igual y cobraría otra vez.
+  - Demo: «Chat · progreso del turno» › Cortada por su tope · Tope corta una tool · Límite de tiempo.
+- **Bedrock sin cuota:** el error del turno lleva título y texto propios: «**El modelo está ocupado.** Bedrock no aceptó más pedidos por ahora. Espera un momento y vuelve a intentarlo. Este intento no se cobró.» Lleva «Reintentar», que reenvía la misma pregunta. *Producto:* distinguir `ThrottlingException` y `ServiceQuotaExceeded` del fallo genérico. Demo: «Bedrock sin cuota».
+- **Sesión que no se renueva dentro del chat:** el mensaje no se envía y se queda en el cuadro de texto. En la conversación sale un aviso ámbar (`role="alert"`): «**Tu sesión terminó. Vuelve a entrar para seguir.** Tu mensaje no se envió y sigue en el cuadro de texto.», con el botón «Entrar», que lleva al inicio de sesión con el mismo aviso. Es el mismo texto de fin de sesión de la ronda 28. *Producto:* guardar el borrador por agente en `sessionStorage` y devolverlo al volver a entrar. Demo: «Sesión no se renueva».
+- **Subir a leer mientras responde:** la conversación baja sola solo si la persona ya estaba al final (a menos de 80 px). Si subió, se queda donde está y aparece una píldora centrada sobre el compositor:
+  - «Respuesta nueva» mientras llega texto;
+  - «Ir al final» cuando no llega nada.
+  - Al terminar, como la persona no está al final, sale el toast «Respuesta completa». Así se resuelve la diferencia 2 de `sync-2026-10-05b.md`.
+- **«+» con el primer mensaje sin guardar:** el «+» de la barra se desactiva mientras corre el primer turno de una conversación nueva, con el tooltip «Podrás empezar otra cuando termine la primera respuesta». No hay estado intermedio que dibujar. El toast «Nueva conversación iniciada.» solo sale cuando la pantalla de verdad quedó vacía.
+- **Corte con dos «Reintentar»: queda uno.**
+  - El turno fallido lleva el único botón: «No se pudo enviar tu mensaje: Mango no responde. Inténtalo de nuevo en unos minutos.» · Reintentar.
+  - El historial muestra solo el texto, sin botón: «No se pudo cargar el historial. Se vuelve a cargar cuando reintentes tu mensaje.»
+  - El botón del turno reintenta las dos cosas.
+  - Demo: «Chat · historial y conversación» › Corte · turno e historial fallan.
+
+### Límites por red (429)
+- **Estado propio dentro de la aplicación** (componente `RateWait` en `chat.jsx`, exportado como `window.RateWait`):
+  - Título «Demasiadas solicitudes» y el texto de lo que pasó, más «Puedes volver a intentarlo en {N minutos | unos segundos}.», con la espera que trae la respuesta (`Retry-After`).
+  - «Reintentar» queda desactivado con la cuenta atrás, «Reintentar en 2:58», y se activa solo al llegar a cero. Así no vuelve a contar.
+  - El mismo patrón va en el chat, el historial, la conversación, el Marketplace y el arranque: en cada uno, su texto de error más la línea de espera y el botón con cuenta atrás.
+  - *Producto:* se retira «Espera un minuto».
+  - Demo: «429 · demasiadas solicitudes».
+- **Página «Demasiadas solicitudes» del borde:** `Demasiadas solicitudes.html`.
+  - Es HTML fijo, sin JS ni archivos externos, con claro y oscuro por `prefers-color-scheme`.
+  - Lleva la marca de Mango, el título «Demasiadas solicitudes», el texto «Mango recibió muchas solicitudes desde tu red en poco tiempo. Espera unos minutos y vuelve a cargar la página.», una segunda línea sobre la red compartida, el botón «Volver a cargar» y «Código 429».
+  - No da una cifra de espera: la página no la conoce.
+- **Esperas en administración:** el texto sale del tiempo que falta según la respuesta, con la regla «Llegaste al límite de {acción} {por hora | por día}. Puedes volver a intentarlo {…}.»:
+  - menos de 1 min: «en unos segundos»;
+  - menos de 60 min: «en N minutos»;
+  - hoy: «a las HH:MM»;
+  - otro día: «mañana a las HH:MM».
+  - El botón se desactiva igual que en `RateWait`. *Producto.*
+
+### Ingreso y registro
+- **Envío de correos rechazado:** el error va siempre en un aviso del formulario (`login-err-box`, `role="alert"`), justo sobre el botón y nunca bajo el campo del correo. El correo no queda marcado como inválido. Textos (`MAIL_ERR` en `login.jsx`):
+  - «Recupera tu contraseña»: «No pudimos enviar el correo. Inténtalo de nuevo en unos minutos.»
+  - «Reenviar código» en «Crea una contraseña nueva» y «Verifica tu correo»: «No se pudo reenviar el código. Inténtalo de nuevo en unos minutos.» Reemplaza el «Si corresponde, te enviamos un código nuevo.».
+  - «Crea tu cuenta»: «No pudimos enviar el código de verificación. Inténtalo de nuevo en unos minutos.»
+  - Demasiados intentos: «Demasiados intentos. Espera unos minutos antes de pedir otro código.»; en «Crea tu cuenta», «Demasiados intentos con este correo. Espera unos minutos y vuelve a intentarlo.»
+  - Demo: «Login · envío de correos».
+- **Líder de área sin área o con dos (`area_required`):** el diseño ya lo tenía completo. Todo es *Producto*:
+  - pantalla al entrar (`AreaRequired` en `login.jsx`, con «Volver a comprobar»);
+  - textos del rechazo en Ajustes › Personas (`areaMsg` e `inviteAreaErr` en `people.jsx`);
+  - «Cambiar de área…» en un solo paso;
+  - aviso al eliminar el grupo que es la única área de un líder (`groups-admin.jsx`).
+  - Demo: «Estado de la cuenta al entrar» › Líder de área…
+
+### Administración
+- **«Otro cambio se está aplicando…»** *Producto*:
+  - no se muestra si la espera dura menos de 600 ms; si se muestra, se queda al menos 1 s;
+  - va en línea, bajo la fila de acciones, y no flota sobre los mensajes;
+  - a 420 px, «Aprobar» no cambia su texto: el spinner va dentro del botón, el ancho es fijo y la fila no se parte (`flex-wrap: nowrap`, `flex-shrink: 0`);
+  - en oscuro, «Aprobar» desactivado va con `opacity: .45` y `cursor: not-allowed`, igual que el resto de botones desactivados.
+- **Búsqueda sin resultados:** en lugar de «… · 0 resultados», «Sin resultados para «{texto}»», que es el patrón del historial y de la paleta. Con filtro y sin texto: «Ninguna persona en «{filtro}»». *Producto.*
+
+### Agent Builder
+- **Tokens por llamada:** nueva opción «Sin fijar», que es la que sale cuando la versión no lo fija; ya no se muestra 4.096.
+  - Sin fijar: «Sin fijar: cada llamada puede usar hasta el tope por respuesta.»
+  - Mayor que el tope: «Es mayor que el tope por respuesta: cada llamada usa como mucho {tope}.» Se puede guardar; manda el menor.
+  - Si no: «Por cada llamada al modelo · nunca pasa del tope por respuesta».
+
+### Knowledge Bases
+- **«Sin bucket» tras una propuesta que no se envió:** el diseño ya dice «La propuesta del bucket no llegó a enviarse: no se lee nada.» (`noSource: 'notsent'`). *Producto:* el resumen debe usar ese texto, no «se retiró la propuesta».
+- **Fuente aprobada que no se pudo leer:** tiene texto propio (`kbErrText(k)`): «Mango no pudo leer {s3://…}. El bucket está aprobado, pero el rol de Mango ya no puede leerlo o el prefijo cambió. Revisa la política del bucket con su dueño y vuelve a sincronizar.»
+
+### Menú
+- **«Próximamente» se queda.** Lo eligió el dueño. No se ocultan las vistas sin fecha.

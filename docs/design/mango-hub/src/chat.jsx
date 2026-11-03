@@ -174,13 +174,21 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     setStreaming(false); setStreamText(""); setArtifact(null);
   }, [activeThreadId, activeAgentId]);
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, streamText, streaming]);
+  // Subir a leer: la conversación solo baja sola si la persona ya estaba al final (a menos de 80 px). Si subió, aparece «Ir al final».
+  const [away, setAway] = useState(false); const [newBelow, setNewBelow] = useState(false);
+  const atEnd = () => { const el = scrollRef.current; return !el || el.scrollHeight - el.scrollTop - el.clientHeight <= 80; };
+  const toEnd = () => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; setAway(false); setNewBelow(false); };
+  const onConvScroll = () => { const e = atEnd(); setAway(!e); if (e) setNewBelow(false); };
+  useEffect(() => { if (!away) { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; } else setNewBelow(true); }, [messages, streamText, streaming]);
+  useEffect(() => { setAway(false); setNewBelow(false); }, [activeThreadId, activeAgentId]);
 
   const sendMessage = (textOverride) => {
     const text = (textOverride ?? input).trim();
     if ((!text && !attachments.length) || streaming) return;
+    const simT = window.MangoStore.get().simProgress;
+    // Sesión que no se pudo renovar: el mensaje no sale y se queda en el cuadro de texto.
+    if (simT === 'renew') { setMessages(m => [...m.filter(x => x.type !== 'session_end'), { type: 'session_end' }]); return; }
+    setAway(false);
     setInput("");
     const att = attachments;
     setAttachments([]);
@@ -226,6 +234,15 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     const named = sim !== 'unnamed';
     const label = (t) => named ? t.id.split('.').pop() : null;
     let steps = []; let txt = ''; const tools = []; let t = 0; const timers = [];
+    // Rechazos antes de escribir nada: cuota de Bedrock (no se cobra) y 429 de la red (trae cuánto esperar).
+    if (sim === 'quota' || sim === '429') {
+      setStreamPhase({ k: 'think' });
+      streamTimers.current = [setTimeout(() => { setStreaming(false); setStreamPhase(null); setMessages(m => [...m, sim === 'quota'
+        ? { type: 'error', title: 'El modelo está ocupado', text: 'Bedrock no aceptó más pedidos por ahora. Espera un momento y vuelve a intentarlo. Este intento no se cobró.', retry: true, again: text }
+        : { type: 'error', title: 'Demasiadas solicitudes', text: 'Llegaron muchas solicitudes desde tu red. Tu mensaje no se envió.', retry: true, again: text, retryAt: Date.now() + 178000 }]); }, 900)];
+      return;
+    }
+    const cutKind = sim === 'maxtokens' ? 'tokens' : sim === 'tooltrunc' ? 'tool' : sim === 'timeout' ? 'timeout' : null;
     const at = (ms, fn) => { t += ms; timers.push(setTimeout(fn, t)); };
     const push = (s) => { steps = [...steps, s]; setStreamSteps(steps); };
     const done = (id, st, extra) => { steps = steps.map(s => s.id === id ? { ...s, status: st, ...extra } : s); setStreamSteps(steps); };
@@ -247,12 +264,14 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     at(parallel ? 400 : 1000, () => { done('tA0', 'ok'); tools.unshift({ type: 'tool_call', tool: toolA.id, params: toolA.params, ms: parallel ? 1100 : 1000, measured: true, status: 'ok' }); push({ id: 'p1', k: 'process', status: 'run' }); setStreamPhase({ k: 'process' }); });
     at(600, () => { done('p1', 'ok'); push({ id: 'w1', k: 'write', status: 'run' }); setStreamPhase({ k: 'write' });
       write(part1, () => { done('w1', 'ok');
-        const finish = (cut) => { setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamSteps([]);
-          setMessages(m => [...m, ...tools, { type: 'agent_response', text: txt, ...(cut ? { guardrail: true } : {}) }]);
+        const finish = (cut, trunc) => { setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamSteps([]);
+          setMessages(m => [...m, ...tools, { type: 'agent_response', text: txt, ...(cut ? { guardrail: true } : {}), ...(trunc ? { truncated: trunc, truncTool: trunc === 'tool' ? toolC.id : null } : {}) }]);
           if (cut) S.log('chat.guardrail', agent.id, 'Respuesta cortada por guardrail');
-          else { const el = scrollRef.current; const seen = !document.hidden && !(el && el.scrollHeight - el.scrollTop - el.clientHeight > 80); const msg = agent.name + ' terminó de responder.';
-            if (!seen) toast?.({ tone: 'success', title: 'Respuesta completa', msg });
-            else { let r = document.getElementById('mg-live'); if (!r) { r = document.createElement('div'); r.id = 'mg-live'; r.setAttribute('aria-live', 'polite'); r.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(r); } r.textContent = ''; setTimeout(() => { r.textContent = 'Respuesta completa. ' + msg; }, 60); } } };
+          else { const el = scrollRef.current; const seen = !document.hidden && !(el && el.scrollHeight - el.scrollTop - el.clientHeight > 80); const msg = trunc ? agent.name + ' no terminó de responder.' : agent.name + ' terminó de responder.';
+            if (!seen) toast?.({ tone: trunc ? 'info' : 'success', title: trunc ? 'Respuesta incompleta' : 'Respuesta completa', msg });
+            else { let r = document.getElementById('mg-live'); if (!r) { r = document.createElement('div'); r.id = 'mg-live'; r.setAttribute('aria-live', 'polite'); r.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(r); } r.textContent = ''; setTimeout(() => { r.textContent = (trunc ? 'Respuesta incompleta. ' : 'Respuesta completa. ') + msg; }, 60); } } };
+        if (cutKind === 'tokens' || cutKind === 'timeout') { timers.push(setTimeout(() => finish(false, cutKind), 200)); return; }
+        if (cutKind === 'tool') { push({ id: 'tC', k: 'tool', name: label(toolC), tool: toolC.id, status: 'run' }); setStreamPhase({ k: 'tool', name: label(toolC) }); timers.push(setTimeout(() => finish(false, 'tool'), 700)); return; }
         push({ id: 'tC', k: 'tool', name: label(toolC), tool: toolC.id, status: 'run' }); setStreamPhase({ k: 'tool', name: label(toolC) });
         timers.push(setTimeout(() => { done('tC', 'ok'); tools.push({ type: 'tool_call', tool: toolC.id, params: toolC.params, ms: 900, measured: true, status: 'ok' }); push({ id: 'p2', k: 'process', status: 'run' }); setStreamPhase({ k: 'process' });
           timers.push(setTimeout(() => { done('p2', 'ok'); push({ id: 'w2', k: 'write', status: 'run' }); setStreamPhase({ k: 'write' });
@@ -279,6 +298,9 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   };
 
   const retryError = (idx) => {
+    const e = messages[idx];
+    if (e && e.again) { const S = window.MangoStore; if (['quota', '429'].includes(S.get().simProgress)) S.set({ simProgress: null }); setMessages(m => m.filter((_, i) => i !== idx)); setStreaming(true); setTimeout(() => runTurn(e.again), 0); return; }
+    if (simChat === 'outage') { window.MangoStore.set({ simChat: null }); setMessages(m => m.filter((_, i) => i !== idx)); return; }
     setMessages(m => m.map((msg, i) => i === idx ? { ...msg, retrying: true } : msg));
     setTimeout(() => {
       setMessages(m => m.filter((_, i) => i !== idx).concat([{ type: "agent_response", text: "Reintenté enviar a Slack usando el canal alternativo **#deploys-v2**. Enviado correctamente." }]));
@@ -286,7 +308,10 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     }, 800);
   };
 
+  // «+» durante el primer turno de una conversación que todavía no se guardó: se desactiva (ver ChatHeader).
+  const unsavedFirst = streaming && !activeThreadId && messages.filter(m => m.type === 'user_message').length <= 1;
   const newChat = () => {
+    if (unsavedFirst) return;
     setActiveThreadId?.(null);
     setMessages([]); setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreamKb(null); setStreaming(false); setArtifact(null);
     toast?.({ tone: 'info', msg: 'Nueva conversación iniciada.' });
@@ -298,7 +323,8 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const convLoading = simChat === 'loading' && activeThreadId;
   const rmDemo = window.useMango(s => s.simRemoteChat) && !soon;
   const isEmpty = messages.length === 0 && !convError && !convLoading && !rmDemo;
-  const listState = simChat === 'loading' ? 'loading' : simChat === 'history-error' ? 'error' : null;
+  const listState = simChat === 'loading' ? 'loading' : simChat === 'history-error' ? 'error' : simChat === 'outage' ? 'outage' : null;
+  const outageMsg = simChat === 'outage' && !convError ? [{ type: 'error', text: 'No se pudo enviar tu mensaje: Mango no responde. Inténtalo de nuevo en unos minutos.', retry: true, idx: 'outage' }] : [];
   const listThreads = simChat === 'empty' ? [] : threads;
   const items = [];
   shown.forEach((m, i) => {
@@ -317,8 +343,9 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
         onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false); }}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (!soon) addFiles(e.dataTransfer.files); }}>
         {dragOver && <div aria-hidden="true" style={{position:'absolute', inset: 12, zIndex: 30, border:'2px dashed var(--accent)', borderRadius: 12, background:'color-mix(in oklab, var(--bg) 85%, transparent)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap: 8, pointerEvents:'none'}}><I.Upload size={22} style={{color:'var(--accent-ink)'}} /><div style={{fontSize: 14}}>Suelta los archivos para adjuntarlos</div><div style={{fontSize: 12, color:'var(--text-muted)'}}>Hasta 5 archivos · 25 MB c/u · PDF, CSV, XLSX, imágenes</div></div>}
-        <ChatHeader agent={agent} onNewChat={newChat} observe={observe} setObserve={setObserve} messages={messages} onOpenThreads={() => setThreadsOpen(true)} />
-        <div ref={scrollRef} style={{flex: 1, overflowY:'auto', padding: isEmpty ? 0 : '28px 0'}}>
+        {away && !isEmpty && <button className="chat-toend" onClick={toEnd} aria-label="Ir al final de la conversación"><window.Icons.ChevronDown size={12} /> {newBelow && streaming ? 'Respuesta nueva' : 'Ir al final'}</button>}
+        <ChatHeader agent={agent} onNewChat={newChat} newDisabled={unsavedFirst} observe={observe} setObserve={setObserve} messages={messages} onOpenThreads={() => setThreadsOpen(true)} />
+        <div ref={scrollRef} onScroll={onConvScroll} style={{flex: 1, overflowY:'auto', padding: isEmpty ? 0 : '28px 0'}}>
           {convLoading ? <ChatSkeleton /> : convError ? (
             <div role="alert" style={{maxWidth: 760, margin:'0 auto', padding:'64px 32px', display:'flex', flexDirection:'column', alignItems:'center', gap: 10, textAlign:'center'}}>
               <span style={{width: 40, height: 40, borderRadius: 10, background:'var(--row-hover)', color:'var(--amber)', display:'flex', alignItems:'center', justifyContent:'center'}}><I.Warn size={18} /></span>
@@ -338,6 +365,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
               {soon && simAgent === 'tools-missing' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Warn size={14} /><div>Algunas tools de {agent.name} no están disponibles ahora porque se deshabilitó su MCP. Responderá sin ellas hasta que se vuelva a habilitar.</div></div>}
               {soon && simAgent === 'central-denied' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Lock size={14} /><div>Las tools de AWS Billing son solo para usuarios centrales. {agent.name} respondió sin esos datos.</div></div>}
               {items.map(m => m.type === 'self_confirm' ? <window.SelfConfirmCard key={m.idx} msg={m} onConfirm={() => confirmSelf(m.idx, true)} onCancel={() => confirmSelf(m.idx, false)} /> : m.type === 'approval_request' ? <window.ApprovalCard key={m.idx} id={m.approvalId} /> : m.type === 'tool_group' ? <ToolGroup key={m.idx} calls={m.calls} /> : <Message key={m.idx} msg={m} idx={m.idx} onRetry={() => retryError(m.idx)} onEdit={() => setInput(m.text)} agent={agent} onOpenArtifact={setArtifact} />)}
+              {outageMsg.map(m => <Message key="outage" msg={m} onRetry={() => retryError(-1)} agent={agent} />)}
               {window.RemoteChatDemo && <window.RemoteChatDemo />}
               {streaming && <StreamingMessage phase={streamPhase} steps={streamSteps} kb={streamKb} text={streamText} agent={agent} observe={observe} />}
             </div>
@@ -559,6 +587,7 @@ function ThreadList({ threads, agents, activeAgentId, activeThreadId, onSelect, 
       </div>
       <div style={{flex:1, overflowY:'auto'}}>
         {state === 'loading' && <div role="status" aria-busy="true" aria-label="Cargando historial" style={{padding: '12px', display:'grid', gap: 14}}>{[0, 1, 2, 3, 4].map(i => <div key={i} className="row gap-2"><div className="skeleton" style={{width: 26, height: 26, borderRadius: 6, flexShrink: 0}} /><div style={{flex: 1, display:'grid', gap: 6}}><div className="skeleton" style={{height: 10, width: (80 - i * 8) + '%', borderRadius: 3}} /><div className="skeleton" style={{height: 8, width: '40%', borderRadius: 3}} /></div></div>)}</div>}
+        {state === 'outage' && <div role="status" style={{padding: '24px 12px', fontSize: 12.5, color:'var(--text-muted)', textAlign:'center', lineHeight: 1.5}}>No se pudo cargar el historial. Se vuelve a cargar cuando reintentes tu mensaje.</div>}
         {state === 'error' && <div role="alert" style={{padding: '24px 12px', fontSize: 12.5, color:'var(--text-muted)', textAlign:'center', display:'grid', gap: 10, justifyItems:'center'}}>No se pudo cargar el historial.<button className="btn btn-sm" onClick={() => window.MangoStore.set({ simChat: null })}><I.Refresh size={11} /> Reintentar</button></div>}
         {!state && threads.length === 0 && <div style={{padding: '24px 12px', fontSize: 12.5, color:'var(--text-muted)', textAlign:'center'}}>Aún no tienes conversaciones.</div>}
         {!state && threads.length > 0 && grouped.length === 0 && <div style={{padding: '24px 12px', fontSize: 12, color:'var(--text-muted)', textAlign:'center'}}>Sin resultados para “{q}”</div>}
@@ -597,7 +626,7 @@ function ThreadList({ threads, agents, activeAgentId, activeThreadId, onSelect, 
   );
 }
 
-function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThreads }) {
+function ChatHeader({ agent, onNewChat, newDisabled, observe, setObserve, messages, onOpenThreads }) {
   const I = window.Icons;
   const Ag = I[agent.icon];
   const pct = Math.round(agent.budget / agent.budgetMax * 100);
@@ -697,7 +726,7 @@ function ChatHeader({ agent, onNewChat, observe, setObserve, messages, onOpenThr
         {soon ? <window.Soon on className="ch-soon ch-soon-1"><button className="btn btn-sm btn-ghost btn-icon" aria-label="Más opciones"><I.More size={13} /></button></window.Soon> : <button className="btn btn-sm btn-ghost btn-icon" aria-label="Más opciones"><I.More size={13} /></button>}
         <span className="topbar-sep" aria-hidden="true" />
         {window.MangoStore.get().role === 'admin' && <button className="topbar-icon" aria-label="Ajustes" title="Ajustes" onClick={() => window.MangoNav?.('settings')}><I.Settings size={17} /></button>}
-        <button className="topbar-create" aria-label="Nueva conversación" title="Nueva conversación" onClick={onNewChat}><I.Plus size={16} /></button>
+        <button className="topbar-create" aria-label="Nueva conversación" title={newDisabled ? 'Podrás empezar otra cuando termine la primera respuesta' : 'Nueva conversación'} disabled={newDisabled} aria-disabled={newDisabled} onClick={onNewChat}><I.Plus size={16} /></button>
       </div>
     </div>
   );
@@ -728,6 +757,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
         <div className="md" style={{fontSize: 15.5, lineHeight: 1.7, color:'var(--text)'}}
              dangerouslySetInnerHTML={{__html: window.renderMarkdown(msg.text)}} />
         {msg.cites?.length > 0 && window.KbCitations && <window.KbCitations cites={msg.cites} />}
+        {msg.truncated && <div className="mc-alert" role="status" style={{ marginTop: 10 }}><I.Info size={14} /><div><b>Respuesta incompleta.</b> {msg.truncated === 'tool' ? <>El agente llegó a su largo máximo mientras preparaba una consulta a <span className="mono">{msg.truncTool}</span>, y la consulta no se hizo.</> : msg.truncated === 'timeout' ? 'El turno llegó a su límite de tiempo antes de terminar.' : 'El agente llegó a su largo máximo de respuesta.'} Lo de arriba es lo que alcanzó a escribir. Si necesitas el resto, pídelo en un mensaje nuevo; por ejemplo, «sigue desde donde quedaste».</div></div>}
         {msg.guardrail && <div className="mc-alert amber" role="status" style={{ marginTop: 10 }}><I.Lock size={14} /><div>La respuesta se cortó porque infringía una regla de seguridad de Mango. Lo que ves arriba es lo que alcanzó a escribir. Reformula la pregunta si necesitas más.</div></div>}
         {msg.artifact && (
           <window.Soon on={soon} block style={{marginTop: 14}}><button onClick={() => onOpenArtifact(msg.artifact)} className="card" style={{marginTop: 14, padding: 12, display:'flex', gap: 10, alignItems:'center', width:'100%', textAlign:'left', cursor:'pointer'}}>
@@ -745,7 +775,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
           <button className="btn btn-ghost btn-icon" title="Copiar" onClick={() => navigator.clipboard?.writeText(msg.text)}><I.Copy size={11} /></button>
           <window.Soon on={soon}><span className="row gap-1"><button className="btn btn-ghost btn-icon" title="Útil" aria-label="Útil"><I.ThumbsUp size={11} /></button>
           <button className="btn btn-ghost btn-icon" title="Mejorable" aria-label="Mejorable"><I.ThumbsDown size={11} /></button></span></window.Soon>
-          <button className="btn btn-ghost btn-icon" title="Reintentar"><I.Refresh size={11} /></button>
+          {!msg.truncated && <button className="btn btn-ghost btn-icon" title="Reintentar"><I.Refresh size={11} /></button>}
         </div>
       </div>
     );
@@ -791,6 +821,9 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
       </div>
     );
   }
+  if (msg.type === "session_end") {
+    return <div className="mc-alert amber" role="alert" style={{ marginBottom: 14, maxWidth: 760 }}><I.Lock size={14} /><div style={{ flex: 1 }}><b>Tu sesión terminó. Vuelve a entrar para seguir.</b> Tu mensaje no se envió y sigue en el cuadro de texto.</div><button className="btn btn-sm btn-primary" onClick={() => { window.MangoStore.set({ simProgress: null }); window.dispatchEvent(new CustomEvent('mango:reload', { detail: 'app-out' })); }}>Entrar</button></div>;
+  }
   if (msg.type === "stopped_note") {
     return <div className="row gap-2" style={{ margin: '-14px 0 22px', fontSize: 12.5, color: 'var(--text-muted)' }}><I.Stop size={11} /> Respuesta detenida.</div>;
   }
@@ -811,8 +844,8 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
       <div style={{marginBottom: 14, maxWidth: 760}}>
         <div style={{padding:'10px 14px', background:'var(--red-soft)', border:'1px solid color-mix(in oklab, var(--red) 30%, transparent)', borderRadius: 8, fontSize: 12.5, color:'var(--text)', display:'flex', alignItems:'center', gap: 10}}>
           <I.X2 size={14} style={{color:'var(--red)', flexShrink: 0}} />
-          <span style={{flex: 1}}>{msg.text}</span>
-          {msg.retry && !msg.retrying && <button className="btn btn-sm" onClick={onRetry}><I.Refresh size={11} /> Reintentar</button>}
+          <span style={{flex: 1}}>{msg.title && <b style={{ display: 'block', marginBottom: 2 }}>{msg.title}</b>}{msg.text}{msg.retryAt && <RateWait at={msg.retryAt} inline />}</span>
+          {msg.retry && !msg.retrying && (msg.retryAt ? <RateWait at={msg.retryAt} onRetry={onRetry} /> : <button className="btn btn-sm" onClick={onRetry}><I.Refresh size={11} /> Reintentar</button>)}
           {msg.retrying && <span className="muted">Reintentando...</span>}
         </div>
       </div>
@@ -821,6 +854,16 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
   return null;
 }
 
+// 429: la respuesta trae cuánto esperar. «Reintentar» queda desactivado con la cuenta atrás y se activa solo al llegar a cero.
+const fmtWait = (s) => s >= 3600 ? 'en ' + Math.ceil(s / 3600) + (Math.ceil(s / 3600) === 1 ? ' hora' : ' horas') : s > 60 ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : s + ' s';
+function RateWait({ at, onRetry, inline }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const left = Math.max(0, Math.ceil((at - now) / 1000));
+  if (inline) return left ? <> Puedes volver a intentarlo en {left > 60 ? Math.ceil(left / 60) + ' minutos' : 'unos segundos'}.</> : <> Ya puedes volver a intentarlo.</>;
+  return left ? <button className="btn btn-sm" disabled aria-disabled="true" title="La espera la fija Mango; reintentar antes vuelve a contar">Reintentar en {fmtWait(left)}</button> : <button className="btn btn-sm" onClick={onRetry}><window.Icons.Refresh size={11} /> Reintentar</button>;
+}
+window.RateWait = RateWait;
 const PHASE_TXT = (p) => !p ? '' : p.k === 'think' ? 'Pensando' : p.k === 'process' ? 'Procesando resultados' : p.k === 'write' ? 'Escribiendo' : p.count ? 'Consultando ' + p.count + ' tools' : p.name ? 'Consultando ' + p.name : 'Consultando una tool';
 const STEP_TXT = (s) => s.k === 'think' ? 'Pensó' : s.k === 'process' ? 'Procesó resultados' : s.k === 'write' ? 'Escribió' : (s.status === 'fail' ? 'Falló ' : s.status === 'run' ? 'Consultando ' : 'Consultó ') + (s.name || 'una tool');
 function StreamingMessage({ phase, steps = [], kb, text, agent, observe }) {

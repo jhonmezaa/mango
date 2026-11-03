@@ -1969,3 +1969,6 @@ input[type="range"],input[type="checkbox"],input[type="radio"]{accent-color:var(
 .boot-fail h1{font-size:18px;font-weight:600;margin:6px 0 0}
 .boot-fail p{margin:0;font-size:14px;color:var(--text-muted);text-wrap:pretty}
 .boot-fail .row{gap:8px;margin-top:6px}
+
+.chat-toend{position:absolute;left:50%;transform:translateX(-50%);bottom:132px;z-index:20;display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--text);font:inherit;font-size:12.5px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.12)}.chat-toend:hover{background:var(--row-hover)}
+.topbar-create:disabled{opacity:.45;cursor:not-allowed}

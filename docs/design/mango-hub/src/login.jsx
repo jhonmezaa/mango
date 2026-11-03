@@ -142,6 +142,13 @@ function useCode() {
   return { value: code.join(''), cells, reset };
 }
 
+// Envío de correos rechazado (Cognito/SES). Siempre en un aviso del formulario con role="alert", nunca bajo el campo del correo.
+const MAIL_ERR = {
+  send: { fail: 'No pudimos enviar el correo. Inténtalo de nuevo en unos minutos.', throttle: 'Demasiados intentos. Espera unos minutos antes de pedir otro código.' },
+  resend: { fail: 'No se pudo reenviar el código. Inténtalo de nuevo en unos minutos.', throttle: 'Demasiados intentos. Espera unos minutos antes de pedir otro código.' },
+  signup: { fail: 'No pudimos enviar el código de verificación. Inténtalo de nuevo en unos minutos.', throttle: 'Demasiados intentos con este correo. Espera unos minutos y vuelve a intentarlo.' },
+};
+const mailSim = () => window.MangoStore?.get().simMail || null;
 function CodeStep({ title, sub, cta, onOk, onBack, backLabel, resend = true, label = 'Código de verificación', children, before }) {
   const c = useCode();
   const [loading, setLoading] = useState(false);
@@ -157,7 +164,8 @@ function CodeStep({ title, sub, cta, onOk, onBack, backLabel, resend = true, lab
         {c.cells(label)}
         {children}
         {err && <div className="login-err-box" role="alert">{err}</div>}
-        {sent && !err && <div className="login-ok-box" role="status">Si corresponde, te enviamos un código nuevo.</div>}
+        {sent && !err && mailSim() && <div className="login-err-box" role="alert">{MAIL_ERR.resend[mailSim()]}</div>}
+        {sent && !err && !mailSim() && <div className="login-ok-box" role="status">Si corresponde, te enviamos un código nuevo.</div>}
         <button type="submit" className="login-primary" disabled={loading || c.value.length < 6} style={{ marginTop: 12 }}>{loading ? 'Verificando…' : cta}</button>
       </form>
       <div className="row gap-2" style={{ justifyContent: 'center', marginTop: 18, fontSize: 13, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
@@ -195,7 +203,8 @@ function MfaStep({ onOk, onBack }) {
 function ForgotStep({ email, setEmail, onBack, onSent }) {
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(false);
-  const submit = (e) => { e.preventDefault(); if (!isEmail(email)) { setErr('Escribe un correo válido.'); return; } setLoading(true); setTimeout(() => { setLoading(false); onSent(); }, 700); };
+  const [mailErr, setMailErr] = useState(null);
+  const submit = (e) => { e.preventDefault(); setMailErr(null); if (!isEmail(email)) { setErr('Escribe un correo válido.'); return; } setLoading(true); setTimeout(() => { setLoading(false); const m = mailSim(); if (m) { setMailErr(MAIL_ERR.send[m]); return; } onSent(); }, 700); };
   return (
     <div className="login-form">
       <h1 className="login-title">Recupera tu contraseña</h1>
@@ -204,6 +213,7 @@ function ForgotStep({ email, setEmail, onBack, onSent }) {
         <label className="sr-only" htmlFor="fg-email">Correo</label>
         <input id="fg-email" className="login-input" type="email" autoComplete="username" value={email} onChange={e => { setEmail(e.target.value); setErr(null); }} placeholder="Correo" aria-invalid={!!err} />
         {err && <span className="login-err">{err}</span>}
+        {mailErr && <div className="login-err-box" role="alert">{mailErr}</div>}
         <button type="submit" className="login-primary" disabled={loading}>{loading ? 'Enviando…' : 'Enviar código'}</button>
       </form>
       <div style={{ textAlign: 'center', marginTop: 18 }}><button className="login-link" onClick={onBack}>Volver a iniciar sesión</button></div>
@@ -270,7 +280,8 @@ function SignupForm({ onDone, policyUrl }) {
     terms: !!policyUrl && !f.terms && 'Acepta la política de uso de IA',
   };
   const valid = !Object.values(errs).some(Boolean);
-  const submit = (e) => { e.preventDefault(); setTouched(true); if (!valid) return; setLoading(true); setTimeout(() => { setLoading(false); onDone(f.email); }, 900); };
+  const [mailErr, setMailErr] = useState(null);
+  const submit = (e) => { e.preventDefault(); setTouched(true); setMailErr(null); if (!valid) return; setLoading(true); setTimeout(() => { setLoading(false); const m = mailSim(); if (m) { setMailErr(MAIL_ERR.signup[m]); return; } onDone(f.email); }, 900); };
   const Err = ({ k }) => touched && errs[k] ? <span className="login-err" id={'err-' + k}>{errs[k]}</span> : null;
   return (
     <div className="login-form">
@@ -291,6 +302,7 @@ function SignupForm({ onDone, policyUrl }) {
           <span>Acepto la <a href={policyUrl} target="_blank" rel="noopener noreferrer">política de uso de IA</a> de la empresa</span>
         </label>
         <Err k="terms" /></>}
+        {mailErr && <div className="login-err-box" role="alert">{mailErr}</div>}
         <button type="submit" className="login-primary" disabled={loading} style={{ marginTop: 6 }}>{loading ? 'Creando cuenta…' : 'Crear cuenta'}</button>
       </form>
     </div>

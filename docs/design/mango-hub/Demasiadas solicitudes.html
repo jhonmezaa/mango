@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Demasiadas solicitudes · Mango</title>
+<!-- Página fija que devuelve el borde (WAF) con el 429. Sin JS, sin archivos externos: tiene que funcionar aunque Mango no responda. -->
+<style>
+:root{--bg:#f7f6f3;--card:#fff;--text:#1f1d1a;--muted:#5f5a52;--border:#e4e0d8;--accent:oklch(68% 0.18 55);--ink:#1f1d1a;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#141311;--card:#1c1b18;--text:#ece9e3;--muted:#a8a298;--border:#2e2c28;--ink:#141311}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}
+main{max-width:440px;width:100%;display:flex;flex-direction:column;gap:20px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+.logo{width:26px;height:26px;border-radius:7px;background:var(--accent);color:var(--ink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+h1{margin:0;font-size:24px;line-height:1.25;font-weight:600;text-wrap:pretty}
+p{margin:0;font-size:15px;line-height:1.6;color:var(--muted);text-wrap:pretty}
+a.btn{align-self:flex-start;display:inline-flex;align-items:center;padding:10px 16px;border-radius:8px;background:var(--text);color:var(--bg);font-size:14px;font-weight:500;text-decoration:none}
+a.btn:hover{opacity:.88}
+a{color:var(--text)}
+.code{font-size:12.5px;color:var(--muted);border-top:1px solid var(--border);padding-top:14px}
+</style>
+</head>
+<body>
+<main>
+<div class="brand"><span class="logo" aria-hidden="true">m</span><span>Mango</span></div>
+<h1>Demasiadas solicitudes</h1>
+<p>Mango recibió muchas solicitudes desde tu red en poco tiempo. Espera unos minutos y vuelve a cargar la página.</p>
+<p>Si pasa seguido, puede que otras personas de tu oficina compartan la misma red. Avísale al equipo que administra Mango.</p>
+<a class="btn" href="">Volver a cargar</a>
+<div class="code">Código 429</div>
+</main>
+</body>
+</html>
