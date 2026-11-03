@@ -34,7 +34,7 @@ Controles que se construyen:
 
 ### Primary components
 
-- **SPA** (`apps/web/src/pages/search/`): pide `POST /api/search/conversations` una vez por pausa al escribir, con el token en memoria; guarda las búsquedas recientes en un `Map` de módulo por persona (se pierde al cerrar o recargar la pestaña).
+- **SPA** (`apps/web/src/pages/search/`): pide `POST /api/search/conversations` una vez por pausa al escribir, con el token en memoria; guarda las búsquedas recientes en un `Map` de módulo por persona (se pierde al cerrar o recargar la pestaña). Desde la ronda de diseño 35 abre una coincidencia en su mensaje: el id va en el estado de navegación hacia el chat, no en la URL (D103 (8)).
 - **`mango-api`** (`conversation_search.py`): autoriza, limita, lee con la sesión de la persona, filtra en memoria, audita con conteos.
 - **Tabla `Conversations`** (DynamoDB, KMS de datos, PITR): `CONV#<id>` y `MSG#<id>#…` en la partición `USER#<sub>`.
 - **Rol de datos** (`Mango-<ns>-ConversationData`) asumido con una session policy por persona (sin cambios).
@@ -109,6 +109,7 @@ flowchart LR
 | TM-CS4 | Abuso de costo o de CPU | Disponibilidad | Media | Baja | **Baja** | `conversations.searches` 60/min compartido; caché 30 s y 16 entradas; 200 conversaciones, 4.000 mensajes, 4 MiB; 8 términos; respuesta de 100 conversaciones y 20 coincidencias cada una |
 | TM-CS5 | Resultados viejos tras un mensaje nuevo o un cambio de permisos | Integridad de la respuesta | Media | Baja | **Baja** | Aceptado: la caché dura 30 s y solo guarda lo propio; Cedar decide cada búsqueda antes de usarla |
 | TM-CS6 | Inferir que existe algo de otra persona | Contenido | Baja | Baja | **Baja** | Nada de otra partición entra en la lectura: no hay conteos ni tiempos que dependan de datos ajenos |
+| TM-CS7 | El id del mensaje de una coincidencia queda en la URL o se usa para inyectar en el DOM (ronda de diseño 35, D103 (8)) | Lo que se buscó (qué mensaje coincidió), navegador | Baja | Baja | **Baja** | El id viaja en el estado de navegación del router, nunca en la URL ni en Web Storage, y se descarta tras usarlo; el estado del historial se trata como no confiable: solo un id bien formado, comparado como dato y nunca dentro de un selector (tests con un id malformado y que la URL no lo lleva) |
 
 ## Criticality calibration
 

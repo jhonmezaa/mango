@@ -1,7 +1,7 @@
 # D103 · Buscar conversaciones: las propias, recorridas en `mango-api` con la sesión de seguridad por fila y un tope
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-03 (el motor y las búsquedas recientes en memoria, elegidos por el dueño por menú, 2026-11-03; la línea del tope, las sugerencias ocultas, los errores con los patrones comunes y abrir la conversación como el diseño, elegidos ese día por menú por el agente que lanzó el trabajo; los topes, los límites, la acción Cedar, la auditoría y el `POST`, decididos durante el trabajo; el dueño la aceptó el 2026-11-03, por menú)
+- **Fecha:** 2026-11-03 (el motor y las búsquedas recientes en memoria, elegidos por el dueño por menú, 2026-11-03; la línea del tope, las sugerencias ocultas, los errores con los patrones comunes y abrir la conversación como el diseño, elegidos ese día por menú por el agente que lanzó el trabajo; los topes, los límites, la acción Cedar, la auditoría y el `POST`, decididos durante el trabajo; el dueño la aceptó el 2026-11-03, por menú; punto (8), ronda de diseño 35, 2026-11-03: abrir en el mensaje de la coincidencia con el id en el estado de navegación, elegido por el dueño por menú ese día; lo demás sigue al diseño, fuente de verdad (D24))
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite compartido nuevo: `conversations.searches`) y [D24](D024-diseno-de-la-ui.md) (cuatro diferencias con `search.jsx`, punto 7, para el próximo brief)
 - **Precisada por:** —
 
@@ -40,5 +40,13 @@ Origen: la entrada «Buscar conversaciones» de la barra lateral era «Próximam
 - **Errores con los patrones comunes:** un fallo dice «No se pudo buscar en tus conversaciones.» con «Reintentar»; un 429, con la cuenta atrás de la ronda 34. El diseño no dibuja errores en esta pantalla.
 - **Abrir un resultado abre su conversación** (`/c/<id>`), como `openChat` del diseño. Desplazarse hasta el mensaje de la coincidencia queda como propuesta para el próximo brief, sin construir.
 - Las conversaciones recientes muestran el agente y la hora, sin el último mensaje: la API no lo da (igual que el historial del chat).
+
+**(8) Ronda de diseño 35 (2026-11-03): el diseño respondió el brief y la web lo sigue.**
+- **Abrir en el mensaje de la coincidencia (elegido por el dueño por menú, 2026-11-03).** Cada coincidencia abre su conversación en su mensaje; «Abrir» de la tarjeta y Enter, en la primera coincidencia que no sea de título; las de título abren desde el principio. El chat desplaza el mensaje a 96 px del borde superior, lo enfoca y lo resalta 2 s (se apaga en 0,9 s; sin transición con movimiento reducido). Si el mensaje ya no está, abre como siempre con «Ese mensaje ya no está en la conversación.».
+  - **El id del mensaje viaja en el estado de navegación del router, nunca en la URL:** no queda en la barra de direcciones ni en los logs de acceso. Se usa una vez y se descarta, así que recargar abre la conversación desde el principio. El estado del historial se trata como entrada no confiable: solo se usa un id bien formado y se compara como dato, nunca dentro de un selector.
+  - Sin cambios en el API: la respuesta ya traía el `message_id` de cada coincidencia (punto (4)) y el chat carga todos los mensajes de la conversación.
+- **Las diferencias del punto (7) quedan en el diseño** (sigue al diseño, fuente de verdad, D24): búsquedas recientes solo en memoria, sin texto que lo explique; las dos líneas del tope (`.sr-cap`), con su lugar y sus textos; «Prueba con» fuera; conversaciones recientes sin el último mensaje.
+- **Error, 429 y espera, como el diseño:** el error y el 429 tienen su bloque (`role="alert"`) con icono; el 429 dice «Demasiadas solicitudes» · «Hiciste muchas búsquedas seguidas.» con la línea y la cuenta atrás comunes, y mientras cuenta, cambiar la consulta no envía nada. Mientras llega una respuesta se conserva la lista anterior, y solo si tarda más de 400 ms aparece «Buscando…» junto al contador. Un único `role="status"` oculto anuncia el resultado.
+- **Auditoría con el texto del diseño:** `conversation.search` es «Búsqueda en conversaciones», con «Buscó en sus conversaciones · {N} resultados» ({N}: las conversaciones con coincidencias, el `conversations_found` del evento) y la sección «Búsqueda» del panel. Sigue sin guardar lo que se buscó.
 
 Modelo de amenazas: `docs/security/threat-models/conversation-search-threat-model.md`.
