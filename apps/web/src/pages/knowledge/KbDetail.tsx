@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import { useSession } from '../../auth/useSession';
 import {
   BookOpenIcon,
@@ -174,7 +174,7 @@ export function KbDetail({ kb, groups, notify, onChanged, onReload, onClose, sta
 
   const messageOf = (error: unknown) => {
     const code = apiErrorCode(error);
-    return isErrorKey(code, OWN_ERRORS) ? t(`knowledge.errors.${code}`) : t(adminErrorKey(error));
+    return isErrorKey(code, OWN_ERRORS) ? t(`knowledge.errors.${code}`) : adminErrorText(t, error);
   };
 
   const refresh = async () => {
@@ -436,8 +436,11 @@ function Summary({
       ) : null}
       {status === 'error' ? (
         <Notice tone="red">
-          {t('knowledge.summary.error')} {stillUsing}
-          {kb.can_edit ? ` ${t('knowledge.summary.errorAction')}` : ''}
+          {/* Design kb-core.jsx round 34 `kbErrText`: what could not be read and what to do. */}
+          {t('knowledge.summary.error', {
+            location: location ?? t('knowledge.summary.errorBucket'),
+          })}{' '}
+          {stillUsing}
         </Notice>
       ) : null}
       {status === 'blocked' ? (

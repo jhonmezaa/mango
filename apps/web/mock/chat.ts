@@ -354,6 +354,8 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   // "guardrail" cuts the answer halfway, like the API's `guardrail_intervened`.
   const parallel = /paralelo/i.test(message);
   const cut = /guardrail/i.test(message);
+  // "tope" ends the answer at its token cap, like the API's `max_tokens` (design round 34).
+  const capped = /\btope\b/i.test(message);
   send('tool', { name: 'get_cost_and_usage', status: 'started' });
   send('status', { phase: 'tool', tool: 'get_cost_and_usage' });
   if (parallel) send('tool', { name: 'get_rightsizing_recommendations', status: 'started' });
@@ -371,9 +373,8 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   send('status', { phase: 'writing' });
 
   let answer = '';
-  const text = cut
-    ? CANNED_ANSWER.slice(0, Math.round(CANNED_ANSWER.length * 0.45))
-    : CANNED_ANSWER;
+  const text =
+    cut || capped ? CANNED_ANSWER.slice(0, Math.round(CANNED_ANSWER.length * 0.45)) : CANNED_ANSWER;
   for (const piece of chunkText(text, 24)) {
     if (stream.closed) break;
     answer += piece;
@@ -398,7 +399,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   });
   send('done', {
     message_id: messageId,
-    stop_reason: cut ? 'guardrail_intervened' : 'end_turn',
+    stop_reason: cut ? 'guardrail_intervened' : capped ? 'max_tokens' : 'end_turn',
     usage: { input_tokens: 1234, output_tokens: 321 },
     cost_usd: '0.0123',
   });

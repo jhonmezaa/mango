@@ -108,9 +108,10 @@ export const knowledge = {
     preparing:
       'Preparando el acceso al bucket aprobado: puede tardar hasta 2 minutos. Después empieza la sincronización.',
     warnHidden: 'Algunos documentos no se pudieron indexar: los agentes no los ven.',
-    error: 'No se pudo sincronizar: Mango no pudo leer el bucket.',
-    errorAction:
-      'Vuelve a intentarlo con «Sincronizar ahora». Si sigue fallando, pide a quien administra AWS que revise el bucket.',
+    // Design kb-core.jsx round 34 `kbErrText`; the location is plain text from the API.
+    error:
+      'Mango no pudo leer {{location}}. El bucket está aprobado, pero el rol de Mango ya no puede leerlo o el prefijo cambió. Revisa la política del bucket con su dueño y vuelve a sincronizar.',
+    errorBucket: 'el bucket',
     budgetLead: 'No empezó',
     budgetLeadScheduled: 'La sincronización programada no empezó',
     budget:

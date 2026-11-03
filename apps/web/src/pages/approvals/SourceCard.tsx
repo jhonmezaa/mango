@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
-import { adminErrorKey, apiErrorCode } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode } from '../../api/adminErrors';
 import type { ApiClient } from '../../api/client';
 import type { Me } from '../../api/schemas';
 import { Badge } from '../../components/Badge';
@@ -190,7 +190,7 @@ export function SourceDecision({
     } catch (failure) {
       const code = apiErrorCode(failure);
       setError(
-        isOwnError(code) ? t(`approvals.sources.errors.${code}`) : t(adminErrorKey(failure)),
+        isOwnError(code) ? t(`approvals.sources.errors.${code}`) : adminErrorText(t, failure),
       );
       if (code === 'source_decided' || code === 'version_conflict') onChanged();
     } finally {

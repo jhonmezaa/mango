@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
 import type { ApiClient } from '../../api/client';
 import type { ToastTone } from '../../components/admin/useToasts';
@@ -234,7 +234,7 @@ export function useRemoteActions(
           try {
             replace(await api.call('getRemoteCatalog'));
           } catch (reloadError) {
-            return t(adminErrorKey(reloadError));
+            return adminErrorText(t, reloadError);
           }
         }
         // Design: a retry whose profile changed says so in its own words.
@@ -243,7 +243,7 @@ export function useRemoteActions(
         }
         return code !== null && OWN_ERRORS.has(code)
           ? t(`remoteMcp.errors.${code}` as 'remoteMcp.errors.remote_exists', names)
-          : t(adminErrorKey(error));
+          : adminErrorText(t, error);
       }
     },
     [api, replace, notify, t],

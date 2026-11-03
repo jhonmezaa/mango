@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { adminErrorKey, apiErrorCode } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode } from '../../api/adminErrors';
 import type { ApiClient } from '../../api/client';
 import type { Me } from '../../api/schemas';
 import { GovErrorState, GovModal, MoneyInput, Reason, Skel } from '../../components/admin/govKit';
@@ -44,7 +44,7 @@ function useErrorText() {
   const { t } = useTranslation();
   return (error: unknown): string => {
     const code = OWN_ERRORS.find((known) => known === apiErrorCode(error));
-    return code ? t(`approvals.policies.errors.${code}`) : t(adminErrorKey(error));
+    return code ? t(`approvals.policies.errors.${code}`) : adminErrorText(t, error);
   };
 }
 

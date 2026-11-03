@@ -6,6 +6,7 @@ import { safeReturnPath } from '../security/safeUrl';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 import { CognitoError } from './cognito/api';
 import { noteNewToken, tokenHeld } from './consentHold';
+import { RATE_FALLBACK_S } from '../components/rateLimitWait';
 import { hadSession, rememberSession } from './sessionHint';
 import type { CognitoAuth, TokenSet } from './cognito/flows';
 import { authTimeOf, displayEmailFromIdToken, displayGroupsFromIdToken, subjectOf } from './jwt';
@@ -107,6 +108,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
   );
   // Either the SSO callback or the session cookie decides: nothing is shown before that.
   const [status, setStatus] = useState<AuthStatus>('loading');
+  const [restoreRetryAt, setRestoreRetryAt] = useState<number | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [noticeKey, setNoticeKey] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
@@ -189,6 +191,9 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       }
       if (result.kind === 'unavailable') {
         // Not the sign-in form: the server did not say there is no session.
+        setRestoreRetryAt(
+          result.rateLimited ? Date.now() + (result.retryAfter ?? RATE_FALLBACK_S) * 1000 : null,
+        );
         setStatus('unavailable');
         return;
       }
@@ -376,6 +381,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       displayGroups,
       logout,
       retryRestore,
+      restoreRetryAt,
       getAccessToken,
       refreshSession,
       expireSession,
@@ -395,6 +401,7 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
       displayGroups,
       logout,
       retryRestore,
+      restoreRetryAt,
       getAccessToken,
       refreshSession,
       expireSession,

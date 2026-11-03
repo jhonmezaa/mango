@@ -12,6 +12,8 @@ export interface SessionContextValue {
   me: Me;
   conversations: ConversationSummary[] | null;
   conversationsError: boolean;
+  /** The history failed with a 429: when it may be asked again (client clock, ms). */
+  conversationsRetryAt: number | null;
   reloadConversations: () => void;
   /** Agents the user may use (GET /api/agents: published and retired); null while loading. */
   agents: Agent[] | null;

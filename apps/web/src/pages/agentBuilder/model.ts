@@ -49,8 +49,6 @@ export const ITERATIONS_MAX = 25;
 
 /** Design: «Tokens por llamada» offers the same steps as the tokens of a response. */
 export const PER_CALL_OPTIONS = TOKEN_OPTIONS;
-/** Design: what the per-call controls show while the version does not set them. */
-export const PER_CALL_DEFAULT = 4096;
 export const TEMPERATURE_DEFAULT = 0.2;
 /** Same limit as the API (`MAX_USERS`). */
 export const USERS_MAX = 50;

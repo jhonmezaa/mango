@@ -123,12 +123,33 @@ export const chat = {
   },
   guardrail:
     'La respuesta se cortó porque infringía una regla de seguridad de Mango. Lo que ves arriba es lo que alcanzó a escribir. Reformula la pregunta si necesitas más.',
+  // Design chat.jsx round 34: the answer reached its token cap (D74). No «Continuar».
+  truncated: {
+    title: 'Respuesta incompleta.',
+    tokens: 'El agente llegó a su largo máximo de respuesta.',
+    toolBefore: 'El agente llegó a su largo máximo mientras preparaba una consulta a ',
+    toolAfter: ', y la consulta no se hizo.',
+    toolUnnamed:
+      'El agente llegó a su largo máximo mientras preparaba una consulta, y la consulta no se hizo.',
+    rest: 'Lo de arriba es lo que alcanzó a escribir. Si necesitas el resto, pídelo en un mensaje nuevo; por ejemplo, «sigue desde donde quedaste».',
+  },
   live: 'LIVE',
   stopped: 'Respuesta detenida.',
   loadError: 'No se pudo cargar la conversación',
+  // Design round 34: «+» while the first answer of a new conversation runs.
+  newChatWait: 'Podrás empezar otra cuando termine la primera respuesta',
+  // Design round 34: the person scrolled up while the agent answers.
+  toEnd: {
+    label: 'Ir al final de la conversación',
+    newAnswer: 'Respuesta nueva',
+    end: 'Ir al final',
+  },
   toast: {
     doneTitle: 'Respuesta completa',
     doneBody: '{{name}} terminó de responder.',
+    // Design round 34: an answer cut at its cap is not announced as complete.
+    incompleteTitle: 'Respuesta incompleta',
+    incompleteBody: '{{name}} no terminó de responder.',
     newChat: 'Nueva conversación iniciada.',
   },
   systemNotice: 'Aviso del sistema',

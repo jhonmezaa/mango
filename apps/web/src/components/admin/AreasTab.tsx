@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
-import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import type { BusinessUnits, Organization, PendingChange, Units } from '../../api/adminSchemas';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
@@ -151,7 +151,7 @@ export function AreasTab({ notify, onForbidden }: Props) {
         lock: true,
       };
     }
-    return { title: t(adminErrorKey(error)) };
+    return { title: adminErrorText(t, error) };
   };
 
   const run = async (action: Action, write: () => Promise<BusinessUnits | null>, done: string) => {

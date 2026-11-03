@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
 
 import { chatPath } from '../../agents/agents';
-import { adminErrorKey } from '../../api/adminErrors';
+import { adminErrorText } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { useToasts } from '../../components/admin/useToasts';
@@ -43,6 +43,8 @@ import {
   type Sort,
 } from '../../components/marketplace/model';
 import { RetireAgentModal } from '../../components/marketplace/RetireAgentModal';
+import { RateWaitButton, RateWaitLine } from '../../components/RateWait';
+import { retryAtOf } from '../../components/rateLimitWait';
 import { Soon } from '../../components/Soon';
 import { tabId } from '../../components/tabId';
 import { Tabs } from '../../components/Tabs';
@@ -56,7 +58,9 @@ interface Loaded {
   budgets: AgentBudget[];
   modelNames: ModelNames;
 }
-type LoadState = { kind: 'loading' } | { kind: 'ready'; data: Loaded } | { kind: 'error' };
+// A 429 carries when it may be asked again (design round 34 `RateWait`).
+type LoadState =
+  { kind: 'loading' } | { kind: 'ready'; data: Loaded } | { kind: 'error'; retryAt: number | null };
 
 const ALL = 'all';
 const TABS_ID = 'mk-tab';
@@ -161,8 +165,8 @@ export function MarketplacePage() {
           data: { agents: agents.items, mine, othersReview, budgets, modelNames },
         });
       },
-      () => {
-        if (!cancelled) setState({ kind: 'error' });
+      (error: unknown) => {
+        if (!cancelled) setState({ kind: 'error', retryAt: retryAtOf(error) });
       },
     );
     return () => {
@@ -248,7 +252,7 @@ export function MarketplacePage() {
         });
       } catch (error) {
         const tooMany = error instanceof ApiError && error.code === 'too_many_drafts';
-        notify(tooMany ? t('marketplace.clone.tooManyDrafts') : t(adminErrorKey(error)), 'error');
+        notify(tooMany ? t('marketplace.clone.tooManyDrafts') : adminErrorText(t, error), 'error');
       } finally {
         setCloningId(null);
       }
@@ -311,7 +315,7 @@ export function MarketplacePage() {
       }
       // The lock could not be read, or the request failed: the next attempt reads it again.
       retireLock.current = null;
-      return t(adminErrorKey(error));
+      return adminErrorText(t, error);
     }
   };
 
@@ -532,16 +536,31 @@ export function MarketplacePage() {
                 {t('marketplace.loadError')}
               </div>
               <div className="mk-meta">{t('marketplace.loadErrorHint')}</div>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => {
-                  setState({ kind: 'loading' });
-                  setReloadToken((value) => value + 1);
-                }}
-              >
-                <RefreshIcon size={12} /> {t('common.retry')}
-              </button>
+              {state.retryAt !== null ? (
+                <>
+                  <div className="mk-meta">
+                    <RateWaitLine until={state.retryAt} />
+                  </div>
+                  <RateWaitButton
+                    until={state.retryAt}
+                    onRetry={() => {
+                      setState({ kind: 'loading' });
+                      setReloadToken((value) => value + 1);
+                    }}
+                  />
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    setState({ kind: 'loading' });
+                    setReloadToken((value) => value + 1);
+                  }}
+                >
+                  <RefreshIcon size={12} /> {t('common.retry')}
+                </button>
+              )}
             </div>
           ) : list.length === 0 ? (
             <div className="mk-empty">

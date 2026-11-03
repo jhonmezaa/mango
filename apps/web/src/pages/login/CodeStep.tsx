@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { isCodeError, isSendRejection } from './errors';
+import { isCodeError, isSendRejection, mailErrorKey } from './errors';
 import { CODE_LENGTH } from './validation';
 
 const EMPTY = Array.from({ length: CODE_LENGTH }, () => '');
@@ -127,7 +127,7 @@ export function CodeStep({
         setSent(true);
       },
       (e: unknown) => {
-        if (isSendRejection(e)) setErr(t('auth.errors.actionFailed'));
+        if (isSendRejection(e)) setErr(t(mailErrorKey('resend', e)));
         else setSent(true);
       },
     );

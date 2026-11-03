@@ -291,6 +291,24 @@ const SEND_REJECTIONS = [
   'Http503',
 ];
 const ACTION_FAILED = 'No se pudo completar la acción. Inténtalo de nuevo.';
+/** Design login.jsx round 34 `MAIL_ERR`: the request rate is «Demasiados intentos». */
+const THROTTLED = new Set(['TooManyRequestsException', 'Http429']);
+const MAIL_ERR = {
+  send: [
+    'No pudimos enviar el correo. Inténtalo de nuevo en unos minutos.',
+    'Demasiados intentos. Espera unos minutos antes de pedir otro código.',
+  ],
+  resend: [
+    'No se pudo reenviar el código. Inténtalo de nuevo en unos minutos.',
+    'Demasiados intentos. Espera unos minutos antes de pedir otro código.',
+  ],
+  signup: [
+    'No pudimos enviar el código de verificación. Inténtalo de nuevo en unos minutos.',
+    'Demasiados intentos con este correo. Espera unos minutos y vuelve a intentarlo.',
+  ],
+} as const;
+const mailError = (where: keyof typeof MAIL_ERR, code: string) =>
+  MAIL_ERR[where][THROTTLED.has(code) ? 1 : 0];
 const EXISTING = 'nombre@empresa.com';
 const MISSING = 'nadie@empresa.com';
 
@@ -422,24 +440,26 @@ describe('LoginPage: sign-up', () => {
   });
 
   it.each([
-    'ForbiddenException',
-    'TooManyRequestsException',
-    'LimitExceededException',
-    'NetworkError',
-    'InternalErrorException',
-  ])('shows the generic error, not a sign-in one, when sign-up is rejected (%s)', async (code) => {
-    const cognito = fakeCognito({
-      signUp: vi.fn(() => Promise.reject(new CognitoError(code))),
-    });
-    const { user } = renderLogin(cognito);
-    await fillSignUp(user, 'nombre@empresa.com');
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'No se pudo completar la acción. Inténtalo de nuevo.',
-    );
-    expect(screen.queryByText(/inicio de sesión/)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Crea tu cuenta' })).toBeInTheDocument();
-    expect(screen.queryByText(/te enviamos un código/)).toBeNull();
-  });
+    ['ForbiddenException', MAIL_ERR.signup[0]],
+    ['TooManyRequestsException', MAIL_ERR.signup[1]],
+    // Per user: it would tell an existing account apart (TM-L10), so it stays generic.
+    ['LimitExceededException', ACTION_FAILED],
+    ['NetworkError', MAIL_ERR.signup[0]],
+    ['InternalErrorException', MAIL_ERR.signup[0]],
+  ])(
+    'shows its own error, not a sign-in one, when sign-up is rejected (%s)',
+    async (code, text) => {
+      const cognito = fakeCognito({
+        signUp: vi.fn(() => Promise.reject(new CognitoError(code))),
+      });
+      const { user } = renderLogin(cognito);
+      await fillSignUp(user, 'nombre@empresa.com');
+      expect(await screen.findByRole('alert')).toHaveTextContent(text);
+      expect(screen.queryByText(/inicio de sesión/)).toBeNull();
+      expect(screen.getByRole('heading', { name: 'Crea tu cuenta' })).toBeInTheDocument();
+      expect(screen.queryByText(/te enviamos un código/)).toBeNull();
+    },
+  );
 
   it.each(SEND_REJECTIONS)(
     'does not say it resent a verification code that was rejected (%s)',
@@ -448,7 +468,7 @@ describe('LoginPage: sign-up', () => {
       const { user } = renderLogin(cognito);
       await fillSignUp(user, 'nombre@empresa.com');
       await user.click(await screen.findByRole('button', { name: 'Reenviar código' }));
-      expect(await screen.findByRole('alert')).toHaveTextContent(ACTION_FAILED);
+      expect(await screen.findByRole('alert')).toHaveTextContent(mailError('resend', code));
       expect(screen.queryByRole('status')).toBeNull();
     },
   );
@@ -575,12 +595,16 @@ describe('LoginPage: password recovery', () => {
   );
 
   it.each(SEND_REJECTIONS)(
-    'stays on the form with the generic error, the same for an existing and a missing account (%s)',
+    'stays on the form with its notice, the same for an existing and a missing account (%s)',
     async (code) => {
       const [existing, missing] = await screensFor(async (email) => {
         const { user } = renderLogin(fakeCognito({ forgotPassword: answering(code) }));
         await requestCode(user, email);
-        expect(await screen.findByText(ACTION_FAILED)).toHaveClass('login-err');
+        // Design round 34: in the form's notice, announced, and the email is not marked wrong.
+        const notice = await screen.findByRole('alert');
+        expect(notice).toHaveTextContent(mailError('send', code));
+        expect(notice).toHaveClass('login-err-box');
+        expect(screen.getByLabelText('Correo')).toHaveAttribute('aria-invalid', 'false');
         expect(screen.getByRole('heading', { name: 'Recupera tu contraseña' })).toBeInTheDocument();
         expect(screen.queryByText(/te enviamos un código/)).toBeNull();
         expect(screen.getByRole('button', { name: 'Enviar código' })).toBeEnabled();
@@ -596,9 +620,9 @@ describe('LoginPage: password recovery', () => {
       .mockResolvedValue();
     const { user } = renderLogin(fakeCognito({ forgotPassword }));
     await requestCode(user, EXISTING);
-    expect(await screen.findByText(ACTION_FAILED)).toBeInTheDocument();
+    expect(await screen.findByText(MAIL_ERR.send[0])).toBeInTheDocument();
     await user.type(screen.getByLabelText('Correo'), '{backspace}m');
-    expect(screen.queryByText(ACTION_FAILED)).toBeNull();
+    expect(screen.queryByText(MAIL_ERR.send[0])).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Enviar código' }));
     expect(
       await screen.findByRole('heading', { name: 'Crea una contraseña nueva' }),
@@ -637,7 +661,7 @@ describe('LoginPage: password recovery', () => {
         const { user } = renderLogin(fakeCognito({ forgotPassword }));
         await requestCode(user, email);
         await user.click(await screen.findByRole('button', { name: 'Reenviar código' }));
-        expect(await screen.findByRole('alert')).toHaveTextContent(ACTION_FAILED);
+        expect(await screen.findByRole('alert')).toHaveTextContent(mailError('resend', code));
         expect(screen.queryByText('Si corresponde, te enviamos un código nuevo.')).toBeNull();
         expect(
           screen.getByRole('heading', { name: 'Crea una contraseña nueva' }),

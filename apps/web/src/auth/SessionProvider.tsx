@@ -6,6 +6,7 @@ import { ApiError } from '../api/errors';
 import type { ConversationSummary, Me } from '../api/schemas';
 import type { RuntimeConfig } from '../config/runtimeConfig';
 import { FullPageRetry } from '../components/FullPageRetry';
+import { retryAtOf } from '../components/rateLimitWait';
 import { AreaRequired } from '../pages/login/AreaRequired';
 import { LoginLayout } from '../pages/login/LoginLayout';
 import { NoAccess } from '../pages/login/NoAccess';
@@ -43,6 +44,8 @@ export function SessionProvider({
 
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState(false);
+  // The profile failed with a 429: when «Reintentar» may be used (design round 34).
+  const [meRetryAt, setMeRetryAt] = useState<number | null>(null);
   const [meToken, setMeToken] = useState(0);
   // Verified session without a group (403 `no_group`, D20): deny by default.
   const [noGroup, setNoGroup] = useState(false);
@@ -50,6 +53,7 @@ export function SessionProvider({
   const [noArea, setNoArea] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
   const [conversationsError, setConversationsError] = useState(false);
+  const [conversationsRetryAt, setConversationsRetryAt] = useState<number | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentsError, setAgentsError] = useState(false);
@@ -65,7 +69,10 @@ export function SessionProvider({
         if (cancelled) return;
         if (error instanceof ApiError && error.code === 'no_group') setNoGroup(true);
         else if (error instanceof ApiError && error.code === 'area_required') setNoArea(true);
-        else setMeError(true);
+        else {
+          setMeRetryAt(retryAtOf(error));
+          setMeError(true);
+        }
       },
     );
     return () => {
@@ -80,9 +87,12 @@ export function SessionProvider({
         if (cancelled) return;
         setConversations(items);
         setConversationsError(false);
+        setConversationsRetryAt(null);
       },
-      () => {
-        if (!cancelled) setConversationsError(true);
+      (error: unknown) => {
+        if (cancelled) return;
+        setConversationsError(true);
+        setConversationsRetryAt(retryAtOf(error));
       },
     );
     return () => {
@@ -124,6 +134,7 @@ export function SessionProvider({
             me,
             conversations,
             conversationsError,
+            conversationsRetryAt,
             reloadConversations,
             agents,
             agentsError,
@@ -136,6 +147,7 @@ export function SessionProvider({
       me,
       conversations,
       conversationsError,
+      conversationsRetryAt,
       reloadConversations,
       agents,
       agentsError,
@@ -199,7 +211,7 @@ export function SessionProvider({
       </LoginLayout>
     );
   }
-  if (meError) return <FullPageRetry onRetry={retryMe} />;
+  if (meError) return <FullPageRetry onRetry={retryMe} retryAt={meRetryAt} />;
   if (!value) {
     // A recovered session keeps the skeletons until the application is ready (design round 27);
     // the return from the IdP and the own sign-in form keep the sign-in frame (no flash).

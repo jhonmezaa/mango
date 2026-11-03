@@ -341,6 +341,10 @@ export const agentBuilder = {
     minutes: '{{n}} min',
     perCall: 'Tokens por llamada',
     perCallHint: 'Por cada llamada al modelo',
+    // Design round 34. The design's texts for a value above the cap per answer are left out:
+    // the call cap is the one sent, whatever the cap per answer (D74 (2)).
+    perCallUnset: 'Sin fijar',
+    perCallUnsetHint: 'Sin fijar: cada llamada puede usar hasta el tope por respuesta.',
     temperature: 'Temperatura',
     temperatureHint: '0 = más preciso · 1 = más variado',
     budget: 'Presupuesto mensual',

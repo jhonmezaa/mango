@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
-import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { Denied, GovErrorState, Skel } from '../../components/admin/govKit';
@@ -542,10 +542,10 @@ export function McpCatalogPage() {
         try {
           setState({ kind: 'ready', data: await api.call('getCatalog') });
         } catch (reloadError) {
-          return t(adminErrorKey(reloadError));
+          return adminErrorText(t, reloadError);
         }
       }
-      return isOwnError(code) ? t(`mcpCatalog.errors.${code}`) : t(adminErrorKey(error));
+      return isOwnError(code) ? t(`mcpCatalog.errors.${code}`) : adminErrorText(t, error);
     }
   };
 

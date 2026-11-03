@@ -18,7 +18,6 @@ import {
   ITERATIONS_MAX,
   ITERATIONS_MIN,
   NAME_MAX,
-  PER_CALL_DEFAULT,
   PER_CALL_OPTIONS,
   PROMPT_MAX,
   ROLE_MAX,
@@ -815,19 +814,34 @@ interface LimitsProps {
 }
 
 /** Steps of a token limit; a current value outside them is said and kept (design: FinOps). */
-function TokenSteps({
+function TokenSteps<Value extends number | null = number>({
   labelId,
   options,
   value,
   onPick,
+  unset,
 }: {
   labelId: string;
   options: readonly number[];
-  value: number;
-  onPick: (value: number) => void;
+  value: Value;
+  onPick: (value: number | Value) => void;
+  /** Label of a first option that sets no value (design round 34 «Sin fijar»). */
+  unset?: string;
 }) {
   return (
     <div className="ab-seg" role="group" aria-labelledby={labelId}>
+      {unset !== undefined && (
+        <button
+          type="button"
+          className={value === null ? 'is-on' : undefined}
+          aria-pressed={value === null}
+          onClick={() => {
+            onPick(null as Value);
+          }}
+        >
+          {unset}
+        </button>
+      )}
       {options.map((option) => (
         <button
           key={option}
@@ -860,7 +874,9 @@ export const LimitsSection = memo(function LimitsSection({
       ? undefined
       : t('agentBuilder.limits.kept', { value: tokenFormat.format(value) });
   // Until the version sets them, the controls show the design's defaults and nothing is stored.
-  const perCall = limits.max_tokens_per_call ?? PER_CALL_DEFAULT;
+  // Design round 34: «Sin fijar» is the version without its own cap (each call then uses
+  // «Tokens máximos por respuesta», D74 (2)); no more 4.096 shown for it.
+  const perCall = limits.max_tokens_per_call;
   const temperature = limits.temperature ?? TEMPERATURE_DEFAULT;
   return (
     <BuilderSection
@@ -931,9 +947,9 @@ export const LimitsSection = memo(function LimitsSection({
         <BuilderField
           label={t('agentBuilder.limits.perCall')}
           hint={
-            (limits.max_tokens_per_call !== null &&
-              kept(limits.max_tokens_per_call, PER_CALL_OPTIONS)) ||
-            t('agentBuilder.limits.perCallHint')
+            perCall === null
+              ? t('agentBuilder.limits.perCallUnsetHint')
+              : kept(perCall, PER_CALL_OPTIONS) || t('agentBuilder.limits.perCallHint')
           }
         >
           {({ labelId }) => (
@@ -941,6 +957,7 @@ export const LimitsSection = memo(function LimitsSection({
               labelId={labelId}
               options={PER_CALL_OPTIONS}
               value={perCall}
+              unset={t('agentBuilder.limits.perCallUnset')}
               onPick={(value) => {
                 setLimit({ max_tokens_per_call: value });
               }}

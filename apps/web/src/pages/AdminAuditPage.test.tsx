@@ -747,6 +747,8 @@ describe('AdminAuditPage', () => {
       { scope: 'people', filter: 'pending', searched: false, returned: 3, outcome: 'applied' },
       { scope: 'people', filter: 'invited', searched: true, returned: 1, outcome: 'applied' },
       { scope: 'changes', returned: 2, missing: 1, outcome: 'applied' },
+      // Design round 34: no «0 resultados»; the text searched is not recorded, so not shown.
+      { scope: 'people', filter: 'all', searched: true, returned: 0, outcome: 'applied' },
     ].map((detail, index) => ({
       ...base,
       event_id: `d${String(index)}`.padEnd(32, '0'),
@@ -768,7 +770,9 @@ describe('AdminAuditPage', () => {
         'Leyó los cambios de personas · 2 cambios · 1 de una persona que ya no está',
       ),
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Lectura del directorio')).toHaveLength(7);
+    expect(screen.getByText('Buscó por texto · Sin resultados')).toBeInTheDocument();
+    expect(screen.queryByText(/0 resultados/)).toBeNull();
+    expect(screen.getAllByText('Lectura del directorio')).toHaveLength(8);
     // Never the raw keys, nor the outcome of a read.
     expect(screen.queryByText(/scope:|returned:|missing:|searched:|filter:/)).toBeNull();
     expect(screen.queryByText('· aplicado')).toBeNull();

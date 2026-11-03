@@ -143,7 +143,7 @@ export function AppRoutes() {
 }
 
 function AuthGate({ config }: { config: RuntimeConfig }) {
-  const { status, retryRestore } = useAuth();
+  const { status, retryRestore, restoreRetryAt } = useAuth();
   if (status === 'loading') {
     // Coming back from the IdP is a sign-in in progress, not a session being recovered.
     if (hasAuthCallbackParams(window.location.search)) return <RestoringSession step="ssoReturn" />;
@@ -154,7 +154,9 @@ function AuthGate({ config }: { config: RuntimeConfig }) {
     return <LoginPage config={config} />;
   }
   // The renewal did not answer: that is not «no session», so no sign-in form.
-  if (status === 'unavailable') return <FullPageRetry onRetry={retryRestore} />;
+  if (status === 'unavailable') {
+    return <FullPageRetry onRetry={retryRestore} retryAt={restoreRetryAt} />;
+  }
   return (
     <SessionProvider config={config}>
       <BrowserRouter>

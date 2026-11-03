@@ -6,6 +6,7 @@ import type { Agent } from '../../agents/agents';
 import type { ConversationSummary } from '../../api/schemas';
 import { formatDateTime } from '../../lib/format';
 import { PlusIcon, RefreshIcon, SearchIcon } from '../icons';
+import { RateWaitButton, RateWaitLine } from '../RateWait';
 import { ChatAgentAvatar } from './ChatAgentAvatar';
 import { formatThreadTime, groupThreads } from './threadGroups';
 
@@ -14,6 +15,13 @@ interface Props {
   /** Agents the user may use, by id: each conversation shows the one it belongs to. */
   agents: ReadonlyMap<string, Agent>;
   error: boolean;
+  /** The history failed with a 429: «Reintentar» counts down until then (design round 34). */
+  retryAt?: number | null;
+  /**
+   * The last turn failed too (design round 34 «Corte»): only the text, no button; the turn's
+   * «Reintentar» loads the history again.
+   */
+  outage?: boolean;
   activeId: string | null;
   onNew: () => void;
   /** Loads the history again after a failure. */
@@ -35,6 +43,8 @@ export function ThreadList({
   conversations,
   agents,
   error,
+  retryAt = null,
+  outage = false,
   activeId,
   onNew,
   onRetry,
@@ -89,13 +99,27 @@ export function ThreadList({
       </div>
 
       <div className="thread-list-body">
-        {error && (
+        {error && outage && (
+          <div className="thread-list-error" role="status">
+            {t('nav.historyOutage')}
+          </div>
+        )}
+        {error && !outage && (
           <div className="thread-list-error" role="alert">
             {t('nav.historyError')}
-            <button type="button" className="btn btn-sm" onClick={onRetry}>
-              <RefreshIcon size={11} />
-              {t('common.retry')}
-            </button>
+            {retryAt !== null && (
+              <span>
+                <RateWaitLine until={retryAt} />
+              </span>
+            )}
+            {retryAt !== null ? (
+              <RateWaitButton until={retryAt} onRetry={onRetry} />
+            ) : (
+              <button type="button" className="btn btn-sm" onClick={onRetry}>
+                <RefreshIcon size={11} />
+                {t('common.retry')}
+              </button>
+            )}
           </div>
         )}
         {!conversations && !error && (

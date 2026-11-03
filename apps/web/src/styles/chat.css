@@ -8,6 +8,8 @@
     overflow: hidden;
   }
   .chat-main {
+    /* Holds the «Ir al final» pill (design round 34). */
+    position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -21,6 +23,29 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+  }
+  /* Design styles.css round 34 `.chat-toend`: centered over the composer. */
+  .chat-toend {
+    position: absolute;
+    left: 50%;
+    bottom: 132px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.12);
+    transform: translateX(-50%);
+  }
+  .chat-toend:hover {
+    background: var(--row-hover);
   }
   .chat-column {
     max-width: 760px;
@@ -839,6 +864,11 @@
   .msg-notice .notice-title {
     font-size: 11px;
     font-weight: 500;
+  }
+  /* Design chat.jsx round 34: the title of a turn error, on its own line. */
+  .msg-notice-title {
+    display: block;
+    margin-bottom: 2px;
   }
 
   /* Tool calls, grouped per turn */

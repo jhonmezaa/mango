@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 import { ApiError, NotAuthenticatedError } from './errors';
 
 export type AdminErrorKey =
@@ -60,4 +62,33 @@ export function isStaleDataError(error: unknown): boolean {
 /** Code of an API failure (e.g. `rate_limited`), or null for network and client errors. */
 export function apiErrorCode(error: unknown): string | null {
   return error instanceof ApiError ? error.code : null;
+}
+
+const clock = new Intl.DateTimeFormat('es-MX', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/**
+ * When a request refused with a 429 may be sent again, in words (design round 34): «en unos
+ * segundos», «en N minutos», «a las HH:MM» today, «mañana a las HH:MM» on another day; «en unos
+ * minutos» when the answer did not say. Only the 429 has it; anything else gets ''.
+ */
+export function rateWhen(error: unknown, t: TFunction, now: Date = new Date()): string {
+  if (!(error instanceof ApiError) || error.status !== 429) return '';
+  const seconds = error.retryAfter;
+  if (seconds === null) return t('admin.rateWhen.unknown');
+  if (seconds < 60) return t('admin.rateWhen.seconds');
+  if (seconds < 3600) return t('admin.rateWhen.minutes', { count: Math.ceil(seconds / 60) });
+  const at = new Date(now.getTime() + seconds * 1000);
+  const time = clock.format(at);
+  return at.toDateString() === now.toDateString()
+    ? t('admin.rateWhen.today', { time })
+    : t('admin.rateWhen.tomorrow', { time });
+}
+
+/** The text of an admin API failure: `adminErrorKey`, with the wait of a 429 in it. */
+export function adminErrorText(t: TFunction, error: unknown): string {
+  return t(adminErrorKey(error), { when: rateWhen(error, t) });
 }

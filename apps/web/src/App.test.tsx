@@ -16,7 +16,7 @@ describe('App: opening the application while the session renewal does not answer
     const answers = [
       new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'x' } }), {
         status: 429,
-        headers: { 'Retry-After': '30' },
+        headers: { 'Retry-After': '2' },
       }),
       // The retry gets a real answer: there is no session.
       new Response(null, { status: 204 }),
@@ -33,7 +33,12 @@ describe('App: opening the application while the session renewal does not answer
     expect(screen.queryByLabelText('Correo')).toBeNull();
     expect(fetchMock).toHaveBeenCalledOnce();
 
-    await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+    // Design round 34 `RateWait`: the wait of the 429, and «Reintentar» only once it is over.
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /Puedes volver a intentarlo en unos segundos/,
+    );
+    expect(screen.getByRole('button', { name: /^Reintentar en \d s$/ })).toBeDisabled();
+    await user.click(await screen.findByRole('button', { name: 'Reintentar' }, { timeout: 4000 }));
     // Only now, with the answer that says so, the sign-in form.
     expect(await screen.findByLabelText('Correo')).toBeInTheDocument();
     expect(screen.queryByText('No se pudo abrir Mango')).toBeNull();

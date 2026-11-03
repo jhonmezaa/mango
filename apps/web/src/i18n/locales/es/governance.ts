@@ -1,5 +1,14 @@
 // Texts shared by the governance screens (Presupuestos, Ajustes, Audit log).
 export const admin = {
+  // Design round 34: when a request refused with a 429 may be sent again.
+  rateWhen: {
+    unknown: 'en unos minutos',
+    seconds: 'en unos segundos',
+    minutes_one: 'en {{count}} minuto',
+    minutes_other: 'en {{count}} minutos',
+    today: 'a las {{time}}',
+    tomorrow: 'mañana a las {{time}}',
+  },
   errors: {
     self_edit: 'No puedes cambiar algo que te afecta (tu presupuesto o el mapeo de tu área).',
     same_approver:
@@ -12,7 +21,9 @@ export const admin = {
       'Hay demasiadas propuestas pendientes. Aprueba, rechaza o retira alguna para proponer otra.',
     audit_unavailable:
       'No se pudo registrar la auditoría; el cambio no se aplicó. Intenta de nuevo en unos minutos.',
-    rate_limited: 'Hiciste demasiadas solicitudes. Espera un minuto y vuelve a intentarlo.',
+    // Design round 34: the wait comes from `Retry-After` (`rateWhen`); which limit it is and
+    // its window are not in the answer, so the design's «Llegaste al límite de {acción}…» is not.
+    rate_limited: 'Hiciste demasiadas solicitudes. Puedes volver a intentarlo {{when}}.',
     unavailable:
       'El servicio no está disponible en este momento; no se aplicó ningún cambio. Intenta de nuevo en unos minutos.',
     forbidden: 'No tienes permiso para realizar esta acción.',

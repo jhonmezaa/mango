@@ -218,6 +218,22 @@ export const auth = {
       notPending: 'La solicitud ya no está pendiente: otro admin la decidió o venció.',
     },
   },
+  // Design login.jsx round 34 `MAIL_ERR`: an email that could not be sent, always in the form's
+  // notice and never under the email field. Only rejections that do not depend on the account.
+  mail: {
+    send: {
+      fail: 'No pudimos enviar el correo. Inténtalo de nuevo en unos minutos.',
+      throttle: 'Demasiados intentos. Espera unos minutos antes de pedir otro código.',
+    },
+    resend: {
+      fail: 'No se pudo reenviar el código. Inténtalo de nuevo en unos minutos.',
+      throttle: 'Demasiados intentos. Espera unos minutos antes de pedir otro código.',
+    },
+    signup: {
+      fail: 'No pudimos enviar el código de verificación. Inténtalo de nuevo en unos minutos.',
+      throttle: 'Demasiados intentos con este correo. Espera unos minutos y vuelve a intentarlo.',
+    },
+  },
   errors: {
     signInFailed: 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.',
     // Sign-up and code sending: the generic sentence of the other modules, word for word.

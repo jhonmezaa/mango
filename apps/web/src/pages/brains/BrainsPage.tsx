@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { adminErrorKey, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode, isStaleDataError } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { Empty, GovErrorState, Skel, Spinner } from '../../components/admin/govKit';
@@ -165,7 +165,7 @@ export function BrainsPage() {
 
   const errorText = (error: unknown): string => {
     const code = apiErrorCode(error);
-    return isOwnError(code) ? t(`brains.errors.${code}`) : t(adminErrorKey(error));
+    return isOwnError(code) ? t(`brains.errors.${code}`) : adminErrorText(t, error);
   };
 
   const refresh = async () => {
@@ -214,7 +214,7 @@ export function BrainsPage() {
         try {
           setState({ kind: 'ready', data: await api.call('getAdminModels') });
         } catch (reloadError) {
-          return t(adminErrorKey(reloadError));
+          return adminErrorText(t, reloadError);
         }
       }
       return errorText(error);

@@ -57,6 +57,23 @@ export interface TurnStep {
 
 /** Stop reason of a turn whose answer the guardrail cut (the API's `GUARDRAIL_STOP`). */
 const GUARDRAIL_STOP = 'guardrail_intervened';
+/** Stop reason of a model call that reached its output cap (the API's `CAP_STOP`, D74). */
+export const CAP_STOP = 'max_tokens';
+
+/**
+ * How an answer cut at its token cap ended (design round 34, «Respuesta incompleta»): while it
+ * wrote (`tokens`) or while it prepared a tool call that was never made (`tool`). `tool` names
+ * the tool only as the API's progress named it (a tool of the published version), never the
+ * name the model wrote.
+ */
+export type Truncation = { kind: 'tokens' } | { kind: 'tool'; tool: string | null };
+
+function truncationOf(message: DisplayMessage): Truncation {
+  // The cap cut the message that called a tool: its call started and no answer came.
+  if (!message.tools.some((tool) => tool.status === 'started')) return { kind: 'tokens' };
+  const progress = message.progress;
+  return { kind: 'tool', tool: progress?.phase === 'tool' && progress.tool ? progress.tool : null };
+}
 
 function closeSteps(steps: readonly TurnStep[], keep: (step: TurnStep) => boolean): TurnStep[] {
   return steps.map((step) =>
@@ -132,6 +149,8 @@ export interface DisplayMessage {
   steps?: TurnStep[];
   /** The guardrail cut the answer: what was written stays and a notice follows it. */
   guardrail?: boolean;
+  /** The answer reached its token cap (live only, like `guardrail`): a notice follows it. */
+  truncated?: Truncation;
   /** Knowledge searches of the turn while it runs and after (not stored: live only). */
   searches?: KnowledgeSearch[];
   /** Sources of the answer, from the searches of the turn or the stored message. */
@@ -145,6 +164,8 @@ export interface DisplayMessage {
   /** ISO timestamp: `created_at` for loaded history, the client clock for messages sent now. */
   createdAt?: string;
   errorKey?: ErrorKey;
+  /** A 429 (design round 34 `RateWait`): when «Reintentar» may be used (client clock, ms). */
+  retryAt?: number;
   usage?: { inputTokens: number; outputTokens: number; costUsd: string };
 }
 
@@ -166,7 +187,8 @@ export type ErrorKey =
   | 'errors.model_unavailable'
   | 'errors.conversation_busy'
   | 'errors.network'
-  | 'errors.streamInterrupted';
+  | 'errors.streamInterrupted'
+  | 'errors.rate_limited';
 
 const ERROR_KEYS: Record<string, ErrorKey> = {
   budget_exceeded: 'errors.budget_exceeded',
@@ -179,6 +201,7 @@ const ERROR_KEYS: Record<string, ErrorKey> = {
   model_not_allowed: 'errors.model_not_allowed',
   model_unavailable: 'errors.model_unavailable',
   conversation_busy: 'errors.conversation_busy',
+  rate_limited: 'errors.rate_limited',
 };
 
 /** Maps a backend error code to a localized message; the backend text is never shown raw. */
@@ -188,6 +211,7 @@ export function errorKeyForCode(code: string, status?: number): ErrorKey {
   if (status === 402) return 'errors.budget_exceeded';
   if (status === 403) return 'errors.forbidden';
   if (status === 422) return 'errors.invalid_message';
+  if (status === 429) return 'errors.rate_limited';
   return 'errors.generic';
 }
 
@@ -208,6 +232,7 @@ export type ChatAction =
       assistantId: string;
       status: Exclude<MessageStatus, 'streaming'>;
       errorKey?: ErrorKey;
+      retryAt?: number;
     };
 
 export const initialChatState: ChatState = { conversationId: null, messages: [] };
@@ -375,6 +400,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             tools: settleTools(message.tools),
             steps: [],
             ...(event.stop_reason === GUARDRAIL_STOP ? { guardrail: true } : {}),
+            ...(event.stop_reason === CAP_STOP ? { truncated: truncationOf(message) } : {}),
             // The same registrations a reload reads from the stored message.
             ...(event.remote_sources?.length ? { remoteSources: event.remote_sources } : {}),
             usage: {
@@ -424,6 +450,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           steps: [],
         };
         if (action.errorKey) next.errorKey = action.errorKey;
+        if (action.retryAt !== undefined) next.retryAt = action.retryAt;
         return next;
       });
   }

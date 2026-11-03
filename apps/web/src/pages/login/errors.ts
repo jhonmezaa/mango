@@ -42,6 +42,24 @@ export function isSendRejection(error: unknown): boolean {
   return SEND_REJECTIONS.has(code) || SEND_REJECTION_STATUS.test(code);
 }
 
+/**
+ * The rejection is the request rate (the API's `TooManyRequestsException` or a 429 of the WAF):
+ * design round 34 «Demasiados intentos». Also decided without looking at the account; the
+ * per-user `LimitExceededException` stays out (see `SEND_REJECTIONS`).
+ */
+export function isSendThrottled(error: unknown): boolean {
+  const code = cognitoCode(error);
+  return code === 'TooManyRequestsException' || code === 'Http429';
+}
+
+/** Design login.jsx round 34 `MAIL_ERR`: the text of a send rejection, by where it happened. */
+export function mailErrorKey(
+  where: 'send' | 'resend' | 'signup',
+  error: unknown,
+): `auth.mail.${typeof where}.${'fail' | 'throttle'}` {
+  return `auth.mail.${where}.${isSendThrottled(error) ? 'throttle' : 'fail'}`;
+}
+
 export function isCodeError(error: unknown): boolean {
   return CODE_ERRORS.has(cognitoCode(error));
 }

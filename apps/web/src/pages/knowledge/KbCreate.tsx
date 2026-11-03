@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { adminErrorKey, apiErrorCode } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode } from '../../api/adminErrors';
 import { useSession } from '../../auth/useSession';
 import { CheckIcon } from '../../components/icons';
 import { Modal } from '../../components/Modal';
@@ -71,7 +71,7 @@ export function KbCreate({ groups, onClose, onCreated }: Props) {
 
   const messageOf = (error: unknown) => {
     const code = apiErrorCode(error);
-    return isErrorKey(code, OWN_ERRORS) ? t(`knowledge.errors.${code}`) : t(adminErrorKey(error));
+    return isErrorKey(code, OWN_ERRORS) ? t(`knowledge.errors.${code}`) : adminErrorText(t, error);
   };
 
   const save = async () => {

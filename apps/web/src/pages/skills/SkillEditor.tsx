@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { adminErrorKey } from '../../api/adminErrors';
+import { adminErrorText } from '../../api/adminErrors';
 import { useSession } from '../../auth/useSession';
 import { GovModal } from '../../components/admin/govKit';
 import { CheckIcon, CloseIcon } from '../../components/icons';
@@ -168,7 +168,7 @@ export function SkillEditor({ mode, categories, takenIds, onClose, onSent }: Pro
     } catch (error) {
       setSending(false);
       const code = editorErrorCode(error);
-      setServerError(code ? t(`skills.editor.server.${code}`) : t(adminErrorKey(error)));
+      setServerError(code ? t(`skills.editor.server.${code}`) : adminErrorText(t, error));
     }
   };
 

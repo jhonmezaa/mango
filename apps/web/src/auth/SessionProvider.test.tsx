@@ -9,10 +9,10 @@ import { SessionProvider } from './SessionProvider';
 
 const config = { apiBasePath: '/api' } as RuntimeConfig;
 
-function json(status: number, body: unknown) {
+function json(status: number, body: unknown, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 const noGroup = () => json(403, { error: { code: 'no_group', message: 'no group assigned yet' } });
@@ -79,7 +79,14 @@ describe('SessionProvider: account without a group (D20)', () => {
 describe('SessionProvider: the profile does not answer', () => {
   it.each([
     ['a 503', () => Promise.resolve(json(503, { error: { code: 'unavailable', message: 'x' } }))],
-    ['a 429', () => Promise.resolve(json(429, { error: { code: 'rate_limited', message: 'x' } }))],
+    // Design round 34: «Reintentar» waits for its `Retry-After`.
+    [
+      'a 429',
+      () =>
+        Promise.resolve(
+          json(429, { error: { code: 'rate_limited', message: 'x' } }, { 'Retry-After': '1' }),
+        ),
+    ],
     ['the network', () => Promise.reject(new TypeError('Failed to fetch'))],
   ])('keeps the session after %s and lets the person retry', async (_cause, failure) => {
     let down = true;
@@ -102,7 +109,7 @@ describe('SessionProvider: the profile does not answer', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo abrir Mango');
     expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).toBeNull();
     down = false;
-    await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+    await user.click(await screen.findByRole('button', { name: 'Reintentar' }, { timeout: 3000 }));
     expect(await screen.findByText('app')).toBeInTheDocument();
     expect(auth.expireSession).not.toHaveBeenCalled();
     expect(auth.logout).not.toHaveBeenCalled();

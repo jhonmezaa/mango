@@ -279,11 +279,12 @@ describe('the panel of a knowledge base', () => {
     );
     expect(await screen.findByText('no se pudo leer')).toBeVisible();
     const { panel } = await open('AWS Runbooks');
+    // Design round 34 `kbErrText`: what could not be read, why, and what to do.
+    expect(within(panel).getByText(/^Mango no pudo leer s3:\/\//)).toBeVisible();
     expect(
-      within(panel).getByText(/^No se pudo sincronizar: Mango no pudo leer el bucket\./),
-    ).toBeVisible();
-    expect(
-      within(panel).getByText(/pide a quien administra AWS que revise el bucket/),
+      within(panel).getByText(
+        /Revisa la política del bucket con su dueño y vuelve a sincronizar\./,
+      ),
     ).toBeVisible();
   });
 

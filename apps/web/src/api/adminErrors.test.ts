@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import i18n from '../i18n';
-import { adminErrorKey, isStaleDataError } from './adminErrors';
+import { adminErrorKey, adminErrorText, isStaleDataError, rateWhen } from './adminErrors';
 import { ApiError, sessionUnavailableError } from './errors';
 
 describe('adminErrorKey', () => {
@@ -65,5 +65,31 @@ describe('adminErrorKey', () => {
     expect(isStaleDataError(new ApiError(403, 'self_edit', 'x'))).toBe(false);
     // Too many pending proposals is a limit, not stale data.
     expect(isStaleDataError(new ApiError(409, 'too_many_pending', 'x'))).toBe(false);
+  });
+});
+
+describe('rateWhen · design round 34', () => {
+  const t = i18n.t.bind(i18n);
+  const limited = (seconds: number | null) =>
+    new ApiError(429, 'rate_limited', 'too many requests', seconds);
+  const now = new Date(2026, 10, 2, 9, 0, 0);
+
+  it('says when a 429 lifts, from its Retry-After', () => {
+    expect(rateWhen(limited(20), t, now)).toBe('en unos segundos');
+    expect(rateWhen(limited(60), t, now)).toBe('en 1 minuto');
+    expect(rateWhen(limited(150), t, now)).toBe('en 3 minutos');
+    expect(rateWhen(limited(2 * 3600), t, now)).toBe('a las 11:00');
+    expect(rateWhen(limited(20 * 3600), t, now)).toBe('mañana a las 05:00');
+    expect(rateWhen(limited(null), t, now)).toBe('en unos minutos');
+    expect(rateWhen(new ApiError(503, 'unavailable', 'x'), t, now)).toBe('');
+  });
+
+  it('puts it in the admin text, which no longer says «Espera un minuto»', () => {
+    expect(adminErrorText(t, limited(150))).toBe(
+      'Hiciste demasiadas solicitudes. Puedes volver a intentarlo en 3 minutos.',
+    );
+    expect(adminErrorText(t, new ApiError(403, 'forbidden', 'x'))).toBe(
+      t('admin.errors.forbidden'),
+    );
   });
 });

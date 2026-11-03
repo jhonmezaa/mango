@@ -65,6 +65,8 @@ export const nav = {
   newChat: 'Nueva conversación',
   emptyHistory: 'Aún no tienes conversaciones.',
   historyError: 'No se pudo cargar el historial.',
+  // Design chat.jsx round 34: the turn failed too; its «Reintentar» reloads both.
+  historyOutage: 'No se pudo cargar el historial. Se vuelve a cargar cuando reintentes tu mensaje.',
   openMenu: 'Abrir menú',
   closeMenu: 'Cerrar menú',
   collapse: 'Colapsar sidebar',
@@ -133,7 +135,22 @@ export const errors = {
   conversation_busy: 'Todavía se está respondiendo el mensaje anterior. Inténtalo de nuevo.',
   network: 'No se pudo conectar con Mango. Revisa tu conexión.',
   streamInterrupted: 'La respuesta se interrumpió antes de terminar.',
+  // Design chat.jsx round 34: a 429 of the turn (the edge or mango-api).
+  rate_limited: 'Llegaron muchas solicitudes desde tu red. Tu mensaje no se envió.',
+  rateLimitedTitle: 'Demasiadas solicitudes',
   retry: 'Reintentar',
+} as const;
+
+/** Design chat.jsx round 34 `RateWait`: the wait of a 429, from its `Retry-After`. */
+export const rateWait = {
+  minutes: 'Puedes volver a intentarlo en {{count}} minutos.',
+  seconds: 'Puedes volver a intentarlo en unos segundos.',
+  ready: 'Ya puedes volver a intentarlo.',
+  retryIn: 'Reintentar en {{wait}}',
+  hint: 'La espera la fija Mango; reintentar antes vuelve a contar',
+  hours_one: 'en {{count}} hora',
+  hours_other: 'en {{count}} horas',
+  secondsShort: '{{count}} s',
 } as const;
 
 export const notFound = {

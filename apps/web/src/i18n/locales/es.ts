@@ -23,7 +23,7 @@ import { connections } from './es/connections';
 import { schedules } from './es/schedules';
 import { settings } from './es/settings';
 import { skills } from './es/skills';
-import { app, common, config, errors, nav, notFound, roles, soon } from './es/shell';
+import { app, common, config, errors, nav, notFound, rateWait, roles, soon } from './es/shell';
 
 // Spanish resources, one module per view under `es/`. A view adds its texts in its own module.
 export const es = {
@@ -45,6 +45,7 @@ export const es = {
   audit,
   errors,
   notFound,
+  rateWait,
   marketplace,
   agentBuilder,
   agentReview,

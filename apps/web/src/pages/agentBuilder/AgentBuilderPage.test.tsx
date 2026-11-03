@@ -587,12 +587,19 @@ describe('AgentBuilderPage', () => {
     ).toBeInTheDocument();
     // A category outside the design's list is one more segment, and stays chosen.
     expect(screen.getByRole('button', { name: 'Costos' })).toHaveAttribute('aria-pressed', 'true');
-    // Until the version sets them, the per-call controls show the defaults.
+    // Until the version sets it, «Tokens por llamada» says «Sin fijar» (design round 34).
     const perCall = screen.getByRole('group', { name: 'Tokens por llamada' });
-    expect(within(perCall).getByRole('button', { name: '4,096' })).toHaveAttribute(
+    expect(within(perCall).getByRole('button', { name: 'Sin fijar' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
+    expect(within(perCall).getByRole('button', { name: '4,096' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(
+      screen.getByText('Sin fijar: cada llamada puede usar hasta el tope por respuesta.'),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('Temperatura')).toHaveValue('0.2');
 
     await user.click(within(perCall).getByRole('button', { name: '2,048' }));

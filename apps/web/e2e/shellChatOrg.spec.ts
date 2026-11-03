@@ -219,6 +219,58 @@ test.describe('Shell, chat and Org Chart', () => {
     await expect(page.locator('.g-toast-item')).toHaveCount(0);
   });
 
+  // Design chat.jsx round 34: an answer cut at its token cap says so, and is not offered again.
+  test('an answer cut at its token cap is announced as incomplete', async () => {
+    await pushRoute(page, '/');
+    await page.locator('#chat-input').fill('respuesta con tope');
+    await page.locator('#chat-input').press('Enter');
+    await expect(
+      page.locator('[aria-live="polite"].sr-only', { hasText: 'Respuesta incompleta. ' }),
+    ).toHaveText(/^Respuesta incompleta\. .+ no terminó de responder\.$/, { timeout: 30_000 });
+    const answer = page.locator('.msg-agent').last();
+    await expect(answer.getByRole('status')).toContainText(
+      'Respuesta incompleta. El agente llegó a su largo máximo de respuesta.',
+    );
+    await expect(answer.getByRole('button', { name: 'Reintentar' })).toHaveCount(0);
+  });
+
+  // Design chat.jsx round 34: reading higher up while the agent answers, the conversation stays
+  // put, «Respuesta nueva» takes the person back, and the end comes with the toast.
+  test('scrolling up while the agent answers keeps the place and offers «Ir al final»', async () => {
+    await resize(page, { width: 1280, height: 520 });
+    await pushRoute(page, '/');
+    for (const question of ['primera pregunta', 'segunda pregunta']) {
+      await page.locator('#chat-input').fill(question);
+      await page.locator('#chat-input').press('Enter');
+      await expect(page.locator('.msg-agent[aria-busy="true"]')).toHaveCount(1);
+      if (question === 'segunda pregunta') break;
+      await expect(page.locator('.msg-agent[aria-busy="true"]')).toHaveCount(0, {
+        timeout: 30_000,
+      });
+    }
+    // While the second answer runs, the person goes back to the top.
+    await page.evaluate(
+      `(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0; el.dispatchEvent(new Event('scroll')); })()`,
+    );
+    const pill = page.locator('.chat-toend');
+    await expect(pill).toHaveText('Respuesta nueva', { timeout: 15_000 });
+    expect(await page.evaluate(`document.querySelector('.chat-scroll').scrollTop`)).toBe(0);
+    // Not at the end when it finishes: the toast says it.
+    await expect(page.locator('.g-toast-item', { hasText: 'Respuesta completa' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(pill).toHaveText('Ir al final');
+    expect(await page.evaluate(`document.querySelector('.chat-scroll').scrollTop`)).toBe(0);
+    await pill.click();
+    await expect(pill).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        `(() => { const el = document.querySelector('.chat-scroll'); return el.scrollHeight - el.scrollTop - el.clientHeight; })()`,
+      ),
+    ).toBeLessThanOrEqual(80);
+    await resize(page, { width: 1280, height: 720 });
+  });
+
   test('leaves no errors in the console', () => {
     expect(consoleErrors).toEqual([]);
   });

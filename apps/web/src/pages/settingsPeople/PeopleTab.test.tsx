@@ -1133,8 +1133,9 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
       expect(reads).toBe(2);
     });
     expect(screen.getAllByText('Pendiente')).toHaveLength(2);
-    // Meanwhile neither change of administrators can be decided, and each card says why.
-    expect(screen.getAllByText('Otro cambio se está aplicando…')).toHaveLength(2);
+    // Meanwhile neither change of administrators can be decided, and each card says why (after
+    // 600 ms of waiting, design round 34).
+    expect(await screen.findAllByText('Otro cambio se está aplicando…')).toHaveLength(2);
     for (const name of ['Aprobar', 'Rechazar']) {
       for (const button of screen.getAllByRole('button', { name })) expect(button).toBeDisabled();
     }
@@ -1144,9 +1145,12 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
     ).toBeInTheDocument();
     expect(screen.getAllByText('Pendiente')).toHaveLength(1);
     expect(screen.getByRole('alert')).toHaveTextContent('Otro cambio de administradores');
-    // The other change moved: the wait is over and this one can be decided again.
-    expect(screen.queryByText('Otro cambio se está aplicando…')).toBeNull();
+    // The other change moved: the wait is over and this one can be decided again. The notice
+    // stays its last second (design round 34), the buttons come back at once.
     expect(screen.getByRole('button', { name: 'Aprobar' })).toBeEnabled();
+    await waitFor(() => {
+      expect(screen.queryByText('Otro cambio se está aplicando…')).toBeNull();
+    });
     expect(screen.getByRole('button', { name: 'Rechazar' })).toBeEnabled();
   }, 12_000);
 
@@ -1200,7 +1204,10 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
         expect(cards()[3]).not.toHaveTextContent('No se puede aprobar');
         expect(button(3, 'Rechazar')).toBeDisabled();
       };
-      held();
+      // Design round 34: the notice only after 600 ms of waiting; the buttons wait at once.
+      expect(cards()[0]).not.toHaveTextContent('Otro cambio se está aplicando…');
+      expect(button(0, 'Aprobar')).toBeDisabled();
+      await waitFor(held);
       for (let tick = 1; tick <= 10; tick += 1) {
         if (tick === 10) held();
         await act(async () => {
@@ -1208,9 +1215,12 @@ describe('Cambios de personas: lo que la API comprueba otra vez al aprobar', () 
         });
         expect(reads).toBe(2 + tick);
       }
-      // 30 s without a change: the buttons come back and nothing else is read.
-      expect(screen.queryByText('Otro cambio se está aplicando…')).toBeNull();
+      // 30 s without a change: the buttons come back and nothing else is read; the notice
+      // keeps its last second (design round 34).
       expect(button(0, 'Aprobar')).toBeEnabled();
+      await waitFor(() => {
+        expect(screen.queryByText('Otro cambio se está aplicando…')).toBeNull();
+      });
       expect(button(0, 'Rechazar')).toBeEnabled();
       expect(cards()[3]).toHaveTextContent('No se puede aprobar: ya no está en el directorio');
       expect(button(3, 'Rechazar')).toBeEnabled();

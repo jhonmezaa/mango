@@ -437,11 +437,8 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
 
   it.each([
     ['the renewal answered 503', sessionUnavailableError(), GENERIC],
-    ['the renewal was rate limited', sessionUnavailableError({ rateLimited: true }), GENERIC],
     ['the renewal had no network', new TypeError('Failed to fetch'), NETWORK],
     ['the API answered 503', new ApiError(503, 'http_503', ''), GENERIC],
-    // What the edge answers when it limits an office: the same body as the API's own limit.
-    ['the API or the edge answered 429', new ApiError(429, 'rate_limited', 'x', 60), GENERIC],
   ])('keeps the session and offers to retry when %s', async (_cause, failure, text) => {
     const { auth, streamChat, user } = await sendFailing(failure);
     expect(await screen.findByText(text)).toBeInTheDocument();
@@ -452,6 +449,25 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
     expect(streamChat).toHaveBeenCalledTimes(2);
     expect(streamChat.mock.calls[1]?.[0]).toMatchObject({ message: 'Hola' });
     expect(auth.expireSession).not.toHaveBeenCalled();
+  });
+
+  // Design chat.jsx round 34 `RateWait`: its own title and text, the wait of `Retry-After`,
+  // and «Reintentar» disabled with the countdown until it is over (a retry would count again).
+  it.each([
+    ['the renewal was rate limited', sessionUnavailableError({ rateLimited: true, retryAfter: 2 })],
+    // What the edge answers when it limits an office: the same body as the API's own limit.
+    ['the API or the edge answered 429', new ApiError(429, 'rate_limited', 'x', 2)],
+  ])('keeps the session and counts down «Reintentar» when %s', async (_cause, failure) => {
+    const { auth, streamChat, user } = await sendFailing(failure);
+    expect(await screen.findByText('Demasiadas solicitudes')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Llegaron muchas solicitudes desde tu red\. Tu mensaje no se envió\./),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Reintentar en \d s$/ })).toBeDisabled();
+    expect(auth.expireSession).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole('button', { name: 'Reintentar' }, { timeout: 4000 }));
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(streamChat.mock.calls[1]?.[0]).toMatchObject({ message: 'Hola' });
   });
 
   it.each([

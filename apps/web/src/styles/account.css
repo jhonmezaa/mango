@@ -229,6 +229,25 @@
     gap: 6px;
     margin-left: auto;
   }
+  /* Design round 34: the buttons keep their size; the row never breaks. */
+  .chg-act .btn {
+    flex-shrink: 0;
+  }
+  .chg-approve {
+    position: relative;
+  }
+  .chg-approve .g-spin {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    margin: -6px 0 0 -6px;
+  }
+  .chg-approve[aria-busy='true'] {
+    color: transparent;
+  }
+  .chg-held {
+    margin-top: 8px;
+  }
   /* Design `.chg-h` on phones: the header is a column; the notice and the buttons go below. */
   @media (max-width: 560px) {
     .chg-h {
@@ -241,7 +260,7 @@
     .chg-act {
       width: 100%;
       margin-left: 0;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: flex-start;
     }
     .chg-m {

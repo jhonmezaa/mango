@@ -164,6 +164,26 @@ describe('ThreadList', () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it('leaves the retry to the failed turn when it failed too (design round 34 «Corte»)', () => {
+    render(
+      <MemoryRouter>
+        <ThreadList
+          conversations={null}
+          agents={AGENTS}
+          error
+          outage
+          activeId={null}
+          onNew={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No se pudo cargar el historial. Se vuelve a cargar cuando reintentes tu mensaje.',
+    );
+    expect(screen.queryByRole('button', { name: /Reintentar/ })).toBeNull();
+  });
+
   it('shows the agent of each conversation, as text, and a neutral one when it is not listed', () => {
     renderList(CONVERSATIONS);
     const row = (title: string) => screen.getByRole('link', { name: new RegExp(title) });

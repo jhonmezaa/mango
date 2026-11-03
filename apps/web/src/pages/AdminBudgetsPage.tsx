@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { adminErrorKey, isStaleDataError } from '../api/adminErrors';
+import { adminErrorText, isStaleDataError } from '../api/adminErrors';
 import type { Budgets, UserBudget } from '../api/adminSchemas';
 import { ApiError } from '../api/errors';
 import { useSession } from '../auth/useSession';
@@ -84,7 +84,7 @@ export function AdminBudgetsPage() {
           setState({ kind: 'ready', data: fresh });
           return { kind: 'conflict', fresh };
         } catch (reloadError) {
-          return { kind: 'error', error: { title: t(adminErrorKey(reloadError)) } };
+          return { kind: 'error', error: { title: adminErrorText(t, reloadError) } };
         }
       }
       if (error instanceof ApiError && error.code === 'audit_unavailable') {
@@ -93,7 +93,7 @@ export function AdminBudgetsPage() {
           error: { title: t('budgets.errors.audit'), body: t('budgets.errors.auditBody') },
         };
       }
-      return { kind: 'error', error: { title: t(adminErrorKey(error)) } };
+      return { kind: 'error', error: { title: adminErrorText(t, error) } };
     }
   };
 

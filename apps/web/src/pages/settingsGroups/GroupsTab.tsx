@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Units } from '../../api/adminSchemas';
+import { rateWhen } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { GovErrorState, Skel } from '../../components/admin/govKit';
@@ -135,7 +136,7 @@ export function GroupsTab({ notify, onForbidden, onGoAreas }: Props) {
       await api.call('postGroupChange', { body: proposal });
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) refresh();
-      return t(groupErrorKey(error));
+      return t(groupErrorKey(error), { when: rateWhen(error, t) });
     }
     refresh();
     notify(t('groups.toast.proposed'));
@@ -153,7 +154,7 @@ export function GroupsTab({ notify, onForbidden, onGoAreas }: Props) {
       );
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) refresh();
-      return t(groupErrorKey(error));
+      return t(groupErrorKey(error), { when: rateWhen(error, t) });
     }
     notify(t('groups.toast.description'));
     return null;
@@ -168,7 +169,7 @@ export function GroupsTab({ notify, onForbidden, onGoAreas }: Props) {
       );
       return true;
     } catch (error) {
-      setDecisionError(t(decisionErrorKey(error)));
+      setDecisionError(t(decisionErrorKey(error), { when: rateWhen(error, t) }));
       if (error instanceof ApiError && (error.status === 409 || error.status === 410)) refresh();
       return false;
     }

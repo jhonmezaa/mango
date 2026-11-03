@@ -219,6 +219,7 @@ export const audit = {
       searched: 'Buscó por texto',
       results_one: '{{count}} resultado',
       results_other: '{{count}} resultados',
+      noResults: 'Sin resultados',
       changes_one: 'Leyó los cambios de personas · {{count}} cambio',
       changes_other: 'Leyó los cambios de personas · {{count}} cambios',
       changesUnknown: 'Leyó los cambios de personas',

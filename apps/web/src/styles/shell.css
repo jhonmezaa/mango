@@ -75,6 +75,14 @@
   .topbar-create:hover {
     background: var(--primary-bg-hover);
   }
+  /* Design styles.css round 34. */
+  .topbar-create:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .topbar-create:disabled:hover {
+    background: var(--primary-bg);
+  }
   .topbar-search {
     display: flex;
     align-items: center;

@@ -22,8 +22,11 @@ export class ApiError extends Error {
   }
 }
 
-/** Longest wait honored from `Retry-After`; anything else is treated as absent. */
-const RETRY_AFTER_MAX_S = 3600;
+/**
+ * Longest wait honored from `Retry-After`; anything else is treated as absent. A day: the
+ * limits of 24 hours say when they lift (design round 34, «mañana a las HH:MM»).
+ */
+const RETRY_AFTER_MAX_S = 86_400;
 
 /** `Retry-After` in delta-seconds (the form mango-api sends); HTTP dates are ignored. */
 export function parseRetryAfter(value: string | null): number | null {

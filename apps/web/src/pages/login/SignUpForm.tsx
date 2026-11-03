@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { safeHttpsHref } from '../../security/safeUrl';
-import { cognitoCode } from './errors';
+import { cognitoCode, isSendRejection, mailErrorKey } from './errors';
 import { FieldError, PasswordInput, PasswordMeter, PasswordRule } from './fields';
 import { domainOf, isEmail, meetsPasswordPolicy, normalizeEmail } from './validation';
 
@@ -81,6 +81,9 @@ export function SignUpForm({
             field: 'email',
             message: t('auth.validation.domain', { domain: domainList }),
           });
+        } else if (isSendRejection(e)) {
+          // Design round 34: the verification code could not be sent (not the account).
+          setServerError({ field: 'form', message: t(mailErrorKey('signup', e)) });
         } else {
           setServerError({ field: 'form', message: t('auth.errors.actionFailed') });
         }

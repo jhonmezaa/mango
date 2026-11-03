@@ -2,8 +2,10 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import type { ApiClient } from '../api/client';
 import { ApiError, NotAuthenticatedError } from '../api/errors';
+import { retryAtOf } from '../components/rateLimitWait';
 import type { ChatApproval } from '../api/schemas';
 import {
+  CAP_STOP,
   chatReducer,
   errorKeyForCode,
   initialChatState,
@@ -25,8 +27,11 @@ interface Options {
   api: ApiClient;
   onConversationStarted: (conversationId: string) => void;
   onTurnFinished: () => void;
-  /** The agent answered in full (`done` event): not called for stopped or failed turns. */
-  onTurnCompleted?: () => void;
+  /**
+   * The agent answered (`done` event): not called for stopped or failed turns. `incomplete`
+   * when the answer reached its token cap (design round 34, «Respuesta incompleta»).
+   */
+  onTurnCompleted?: (incomplete: boolean) => void;
   onUnauthenticated: () => void;
 }
 
@@ -72,10 +77,18 @@ export function useChatStream({
       });
 
       // Mutated from callbacks, so kept in an object rather than narrowed locals.
-      const turn: { settled: boolean; completed: boolean; errorKey: ErrorKey | null } = {
+      const turn: {
+        settled: boolean;
+        completed: boolean;
+        incomplete: boolean;
+        errorKey: ErrorKey | null;
+        retryAt: number | null;
+      } = {
         settled: false,
         completed: false,
+        incomplete: false,
         errorKey: null,
+        retryAt: null,
       };
       try {
         await api.streamChat({
@@ -89,7 +102,10 @@ export function useChatStream({
             dispatch({ type: 'event', assistantId, event, receivedAt: performance.now() });
             if (event.type === 'conversation') onConversationStarted(event.conversation_id);
             if (event.type === 'done' || event.type === 'error') turn.settled = true;
-            if (event.type === 'done') turn.completed = true;
+            if (event.type === 'done') {
+              turn.completed = true;
+              turn.incomplete = event.stop_reason === CAP_STOP;
+            }
           },
         });
       } catch (error) {
@@ -99,6 +115,7 @@ export function useChatStream({
         } else if (error instanceof ApiError) {
           if (error.status === 401) onUnauthenticated();
           turn.errorKey = errorKeyForCode(error.code, error.status);
+          turn.retryAt = retryAtOf(error);
         } else if (!controller.signal.aborted) {
           turn.errorKey =
             error instanceof TypeError ? 'errors.network' : 'errors.streamInterrupted';
@@ -107,7 +124,13 @@ export function useChatStream({
         if (controller.signal.aborted) {
           dispatch({ type: 'finish', assistantId, status: 'stopped' });
         } else if (turn.errorKey) {
-          dispatch({ type: 'finish', assistantId, status: 'error', errorKey: turn.errorKey });
+          dispatch({
+            type: 'finish',
+            assistantId,
+            status: 'error',
+            errorKey: turn.errorKey,
+            ...(turn.retryAt === null ? {} : { retryAt: turn.retryAt }),
+          });
         } else if (!turn.settled) {
           dispatch({
             type: 'finish',
@@ -123,7 +146,8 @@ export function useChatStream({
           setIsStreaming(false);
         }
         onTurnFinished();
-        if (turn.completed && !turn.errorKey && !controller.signal.aborted) onTurnCompleted?.();
+        if (turn.completed && !turn.errorKey && !controller.signal.aborted)
+          onTurnCompleted?.(turn.incomplete);
       }
     },
     [

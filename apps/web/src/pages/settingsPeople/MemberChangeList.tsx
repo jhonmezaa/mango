@@ -12,6 +12,45 @@ import {
   type MemberChange,
 } from './model';
 
+/** Design round 34: a wait shorter than this is not announced (it read as a flash). */
+export const HELD_SHOW_AFTER_MS = 600;
+/** Design round 34: once announced, the notice stays at least this long. */
+export const HELD_MIN_SHOWN_MS = 1000;
+
+/**
+ * `applying`, as the notice shows it (design round 34): only after 600 ms of waiting, and then
+ * for at least 1 s. The buttons follow `applying` itself; this is only what is said.
+ */
+function useHeldNotice(applying: boolean): boolean {
+  const [shown, setShown] = useState(false);
+  const shownAt = useRef(0);
+  useEffect(() => {
+    if (applying && !shown) {
+      const timer = setTimeout(() => {
+        shownAt.current = Date.now();
+        setShown(true);
+      }, HELD_SHOW_AFTER_MS);
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+    if (!applying && shown) {
+      const left = HELD_MIN_SHOWN_MS - (Date.now() - shownAt.current);
+      const timer = setTimeout(
+        () => {
+          setShown(false);
+        },
+        Math.max(0, left),
+      );
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+    return undefined;
+  }, [applying, shown]);
+  return shown;
+}
+
 const STATUS_BADGE: Record<MemberChange['status'], string> = {
   pending: 'badge-amber',
   approved: 'badge-green',
@@ -24,6 +63,7 @@ function ChangeItem({
   change,
   me,
   held,
+  heldShown,
   rejecting,
   onRejecting,
   onWithdraw,
@@ -34,6 +74,8 @@ function ChangeItem({
   me: Me;
   /** Another change of administrators is being applied: this one cannot be decided yet. */
   held: boolean;
+  /** The same, as the notice says it (after 600 ms, for at least 1 s; design round 34). */
+  heldShown: boolean;
   /** Whether this request shows its reject note; the list keeps a single one open. */
   rejecting: boolean;
   onRejecting: (open: boolean) => void;
@@ -118,9 +160,7 @@ function ChangeItem({
               <Reason>{t('people.changes.aboutYou')}</Reason>
             ) : gone ? (
               <>
-                <Reason>
-                  {t(held ? 'people.changes.applyingOther' : 'people.changes.cannotApproveGone')}
-                </Reason>
+                {held ? null : <Reason>{t('people.changes.cannotApproveGone')}</Reason>}
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -136,7 +176,6 @@ function ChangeItem({
               </>
             ) : (
               <>
-                {held ? <Reason>{t('people.changes.applyingOther')}</Reason> : null}
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -148,14 +187,18 @@ function ChangeItem({
                 >
                   {t('people.changes.reject')}
                 </button>
+                {/* Design round 34: the text never changes and the width is fixed; while it
+                    waits, the spinner goes inside. */}
                 <button
                   type="button"
-                  className="btn btn-sm btn-primary"
+                  className="btn btn-sm btn-primary chg-approve"
                   disabled={busy || held}
+                  aria-busy={busy}
                   onClick={() => {
                     run(onApprove);
                   }}
                 >
+                  {busy ? <span className="g-spin" aria-hidden="true" /> : null}
                   {t('people.changes.approve')}
                 </button>
               </>
@@ -163,6 +206,13 @@ function ChangeItem({
           </div>
         ) : null}
       </div>
+      {/* Design round 34: in line, under the row of actions; it never floats over the list. */}
+      {/* Only where it holds a decision: «Retirar» of one's own proposal never waits. */}
+      {change.status === 'pending' && heldShown && !mine && !aboutMe ? (
+        <div className="chg-held" role="status">
+          <Reason>{t('people.changes.applyingOther')}</Reason>
+        </div>
+      ) : null}
       <div className="chg-diff">
         <span className="new">{t(`people.changes.summary.${change.kind}`, values)}</span>
       </div>
@@ -250,6 +300,7 @@ export function MemberChangeList({
   const { t } = useTranslation();
   // Design `ChangeList`: one reject note for the whole list; opening another closes this one.
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const heldNotice = useHeldNotice(applying);
   if (changes.length === 0) return null;
   return (
     <section className="pp-changes" aria-labelledby="people-changes">
@@ -269,6 +320,7 @@ export function MemberChangeList({
             change={change}
             me={me}
             held={applying && mayTouchAdmins(change)}
+            heldShown={heldNotice && mayTouchAdmins(change)}
             rejecting={rejectingId === change.change_id}
             onRejecting={(open) => {
               setRejectingId((current) =>

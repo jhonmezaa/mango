@@ -20,6 +20,8 @@ interface Props {
   onToggleObserve: () => void;
   /** A new conversation with this same agent (design `onNewChat`). */
   onNewChat: () => void;
+  /** The first answer of a new conversation is running: «+» waits for it (design round 34). */
+  newChatDisabled?: boolean;
   /** Present below 1100px, where the conversation list is a drawer instead of a column. */
   onOpenConversations?: (() => void) | undefined;
 }
@@ -43,6 +45,7 @@ export function ChatHeader({
   observe,
   onToggleObserve,
   onNewChat,
+  newChatDisabled = false,
   onOpenConversations,
 }: Props) {
   const { t } = useTranslation();
@@ -57,6 +60,7 @@ export function ChatHeader({
     <Topbar
       crumbs={[t('nav.chat'), name]}
       onCreate={onNewChat}
+      createDisabledReason={newChatDisabled ? t('chat.newChatWait') : null}
       actions={
         <>
           <Soon name={t('soon.item', { label: t('chat.header.cost') })} className="chat-soon-cost">

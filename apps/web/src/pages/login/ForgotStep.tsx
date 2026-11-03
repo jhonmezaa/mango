@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { mailErrorKey } from './errors';
 import { isEmail } from './validation';
 
 /**
@@ -21,18 +22,21 @@ export function ForgotStep({
 }) {
   const { t } = useTranslation();
   const [err, setErr] = useState<string | null>(null);
+  // Design round 34: a send rejection goes in the form's notice, not under the email field.
+  const [mailErr, setMailErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const submit = (event: { preventDefault: () => void }) => {
     event.preventDefault();
+    setMailErr(null);
     if (!isEmail(email)) {
       setErr(t('auth.validation.emailForm'));
       return;
     }
     setLoading(true);
     onSubmit(email)
-      .catch(() => {
-        setErr(t('auth.errors.actionFailed'));
+      .catch((e: unknown) => {
+        setMailErr(t(mailErrorKey('send', e)));
       })
       .finally(() => {
         setLoading(false);
@@ -58,6 +62,7 @@ export function ForgotStep({
           onChange={(e) => {
             onEmailChange(e.target.value);
             setErr(null);
+            setMailErr(null);
           }}
           placeholder={t('auth.email')}
           aria-invalid={Boolean(err)}
@@ -67,6 +72,11 @@ export function ForgotStep({
           <span className="login-err" id="fg-err">
             {err}
           </span>
+        )}
+        {mailErr && (
+          <div className="login-err-box" role="alert">
+            {mailErr}
+          </div>
         )}
         <button type="submit" className="login-primary" disabled={loading} aria-busy={loading}>
           {loading ? t('auth.forgot.submitting') : t('auth.forgot.submit')}

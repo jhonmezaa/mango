@@ -24,7 +24,9 @@ import { ChatHeader } from '../components/chat/ChatHeader';
 import { ChatInput } from '../components/chat/ChatInput';
 import { ChatMessage } from '../components/chat/ChatMessage';
 import { ThreadList } from '../components/chat/ThreadList';
-import { CloseIcon, RefreshIcon, WarnIcon } from '../components/icons';
+import { ChevronDownIcon, CloseIcon, RefreshIcon, WarnIcon } from '../components/icons';
+import { RateWaitButton, RateWaitLine } from '../components/RateWait';
+import { retryAtOf } from '../components/rateLimitWait';
 import { fromApiMessage, type DisplayMessage, type ErrorKey } from '../hooks/chatState';
 import { useChatStream } from '../hooks/useChatStream';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -48,6 +50,7 @@ const RETRYABLE: ReadonlySet<ErrorKey> = new Set([
   'errors.upstream_error',
   'errors.agent_unavailable',
   'errors.conversation_busy',
+  'errors.rate_limited',
 ]);
 
 function retryPrompt(messages: DisplayMessage[]): string | null {
@@ -59,7 +62,8 @@ function retryPrompt(messages: DisplayMessage[]): string | null {
   return RETRYABLE.has(last.errorKey ?? 'errors.generic') ? previous.content : null;
 }
 
-type LoadResult = { id: string; ok: boolean } | null;
+/** Outcome of a conversation fetch; a 429 says when it may be asked again (design round 34). */
+type LoadResult = { id: string; ok: boolean; retryAt?: number | null } | null;
 
 /** When the pending consent of a card began: when its event arrived, or the stored message. */
 function startOf(message: DisplayMessage): number {
@@ -118,8 +122,8 @@ function fetchConversation(
       );
       onResult({ id, ok: true });
     },
-    () => {
-      if (!cancelled) onResult({ id, ok: false });
+    (error: unknown) => {
+      if (!cancelled) onResult({ id, ok: false, retryAt: retryAtOf(error) });
     },
   );
   return () => {
@@ -155,6 +159,7 @@ export function ChatPage() {
     me,
     conversations,
     conversationsError,
+    conversationsRetryAt,
     reloadConversations,
     agents,
     agentsError,
@@ -271,15 +276,21 @@ export function ChatPage() {
   // Design chat.jsx `finish`: the toast only when the person does not see the end of the
   // conversation (the tab is in the background, or they scrolled up); otherwise the answer itself
   // says it. Screen readers hear it either way: from the toast, or from the live region.
-  const onTurnCompleted = useCallback(() => {
-    const body = t('chat.toast.doneBody', { name: answeredBy });
-    const title = t('chat.toast.doneTitle');
-    const el = scrollRef.current;
-    const awayFromEnd =
-      el !== null && el.scrollHeight - el.scrollTop - el.clientHeight > SEEN_END_PX;
-    if (document.hidden || awayFromEnd) notify(body, 'success', title);
-    else setAnnouncement(`${title}. ${body}`);
-  }, [answeredBy, notify, t]);
+  // An answer cut at its token cap says «Respuesta incompleta» instead (design round 34).
+  const onTurnCompleted = useCallback(
+    (incomplete: boolean) => {
+      const body = t(incomplete ? 'chat.toast.incompleteBody' : 'chat.toast.doneBody', {
+        name: answeredBy,
+      });
+      const title = t(incomplete ? 'chat.toast.incompleteTitle' : 'chat.toast.doneTitle');
+      const el = scrollRef.current;
+      const awayFromEnd =
+        el !== null && el.scrollHeight - el.scrollTop - el.clientHeight > SEEN_END_PX;
+      if (document.hidden || awayFromEnd) notify(body, incomplete ? 'info' : 'success', title);
+      else setAnnouncement(`${title}. ${body}`);
+    },
+    [answeredBy, notify, t],
+  );
 
   const { state, isStreaming, send, stop, reset, updateApproval } = useChatStream({
     api,
@@ -341,15 +352,45 @@ export function ChatPage() {
     );
   };
 
-  // Follow the last message while it grows: text, tool calls, and its final status (error notice,
-  // usage line).
+  // Design chat.jsx round 34: the conversation follows the last message while it grows (text,
+  // tool calls, its final status) only if the person is at its end. Scrolled up to read, it
+  // stays put and «Respuesta nueva» / «Ir al final» takes them back.
   const lastMessage = state.messages.at(-1);
   const lastContentLength = lastMessage?.content.length ?? 0;
   const lastToolCount = lastMessage?.tools.length ?? 0;
   const lastStatus = lastMessage?.status;
-  useEffect(() => {
+  const [away, setAway] = useState(false);
+  const [newBelow, setNewBelow] = useState(false);
+  // Read by the effect below without re-running it when the person scrolls.
+  const awayRef = useRef(false);
+  const onConversationScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const next = el.scrollHeight - el.scrollTop - el.clientHeight > SEEN_END_PX;
+    awayRef.current = next;
+    setAway(next);
+    if (!next) setNewBelow(false);
+  }, []);
+  const toEnd = useCallback(() => {
+    awayRef.current = false;
+    setAway(false);
+    setNewBelow(false);
     bottomRef.current?.scrollIntoView({ block: 'end' });
+  }, []);
+  useEffect(() => {
+    if (awayRef.current) setNewBelow(true);
+    else bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [state.messages.length, lastContentLength, lastToolCount, lastStatus]);
+  // Another conversation starts at its end (state adjusted while rendering, the ref after).
+  const [scrollRoute, setScrollRoute] = useState(routeId);
+  if (scrollRoute !== routeId) {
+    setScrollRoute(routeId);
+    setAway(false);
+    setNewBelow(false);
+  }
+  useEffect(() => {
+    awayRef.current = false;
+  }, [routeId]);
 
   // Below 1100px the conversation list is not a column (design v0.11); it opens as a drawer so the
   // history stays reachable.
@@ -391,6 +432,10 @@ export function ChatPage() {
       if (!agentId || !canChat) return;
       // Emptied first, so the same sentence is announced again after the next answer.
       setAnnouncement('');
+      // Sending takes the person to the end, where their question is.
+      awayRef.current = false;
+      setAway(false);
+      setNewBelow(false);
       void send(text, { agentId, model });
     },
     [agentId, canChat, model, send],
@@ -407,6 +452,13 @@ export function ChatPage() {
   const isEmpty = state.messages.length === 0 && !loading && !loadError;
   const agentName = agent?.name ?? t('chat.agentUnknown');
   const retryText = isStreaming ? null : retryPrompt(state.messages);
+  // Design chat.jsx round 34: «+» waits while the first answer of a new conversation runs.
+  // Design chat.jsx round 34 «Corte»: the turn and the history failed; one «Reintentar», the
+  // turn's, which also loads the history again (every turn does when it ends).
+  const historyOutage = conversationsError && retryText !== null;
+  const loadRetryAt = loadError ? (loadResult.retryAt ?? null) : null;
+  const firstTurnRunning =
+    isStreaming && state.messages.filter((message) => message.role === 'user').length <= 1;
   // Design round 26: a «Conectar» card before the person's last question was already answered by
   // it, so «Enviar de nuevo» is not offered again (also after a reload).
   const lastQuestion = state.messages.findLastIndex((message) => message.role === 'user');
@@ -418,6 +470,8 @@ export function ChatPage() {
           conversations={conversations}
           agents={agentsById}
           error={conversationsError}
+          retryAt={conversationsRetryAt}
+          outage={historyOutage}
           activeId={routeId}
           onNew={newChat}
           onRetry={reloadConversations}
@@ -455,6 +509,8 @@ export function ChatPage() {
               conversations={conversations}
               agents={agentsById}
               error={conversationsError}
+              retryAt={conversationsRetryAt}
+              outage={historyOutage}
               activeId={routeId}
               onNew={newChat}
               onRetry={reloadConversations}
@@ -472,6 +528,7 @@ export function ChatPage() {
           observe={observe}
           onToggleObserve={toggleObserve}
           onNewChat={newChat}
+          newChatDisabled={firstTurnRunning}
           onOpenConversations={
             narrow
               ? () => {
@@ -480,7 +537,18 @@ export function ChatPage() {
               : undefined
           }
         />
-        <div ref={scrollRef} className="chat-scroll">
+        {away && state.messages.length > 0 && (
+          <button
+            type="button"
+            className="chat-toend"
+            aria-label={t('chat.toEnd.label')}
+            onClick={toEnd}
+          >
+            <ChevronDownIcon size={12} />
+            {newBelow && isStreaming ? t('chat.toEnd.newAnswer') : t('chat.toEnd.end')}
+          </button>
+        )}
+        <div ref={scrollRef} className="chat-scroll" onScroll={onConversationScroll}>
           {isEmpty && agent && canChat && (
             <AgentHero agent={agent} disabled={isStreaming} onPrompt={sendText} />
           )}
@@ -508,11 +576,24 @@ export function ChatPage() {
                 <WarnIcon size={18} />
               </span>
               <h2 className="chat-load-error-title">{t('chat.loadError')}</h2>
+              {loadRetryAt !== null && (
+                <p className="chat-load-error-body">
+                  <RateWaitLine until={loadRetryAt} />
+                </p>
+              )}
               <div className="chat-load-error-actions">
-                <button type="button" className="btn btn-sm btn-primary" onClick={retryLoad}>
-                  <RefreshIcon size={11} />
-                  {t('errors.retry')}
-                </button>
+                {loadRetryAt !== null ? (
+                  <RateWaitButton
+                    until={loadRetryAt}
+                    onRetry={retryLoad}
+                    className="btn btn-sm btn-primary"
+                  />
+                ) : (
+                  <button type="button" className="btn btn-sm btn-primary" onClick={retryLoad}>
+                    <RefreshIcon size={11} />
+                    {t('errors.retry')}
+                  </button>
+                )}
                 <button type="button" className="btn btn-sm" onClick={newChat}>
                   {t('nav.newChat')}
                 </button>

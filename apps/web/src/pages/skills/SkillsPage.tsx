@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
-import { adminErrorKey, apiErrorCode } from '../../api/adminErrors';
+import { adminErrorText, apiErrorCode } from '../../api/adminErrors';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { Denied, GovErrorState, Skel } from '../../components/admin/govKit';
@@ -201,7 +201,7 @@ export function SkillsPage() {
         return true;
       } catch (error) {
         const code = decisionErrorCode(error);
-        notify(code ? t(`skills.changes.errors.${code}`) : t(adminErrorKey(error)), 'error');
+        notify(code ? t(`skills.changes.errors.${code}`) : adminErrorText(t, error), 'error');
         // The request may have changed meanwhile (decided, withdrawn, expired).
         if (error instanceof ApiError && [404, 409, 410].includes(error.status)) {
           void reload().catch(() => undefined);
@@ -240,7 +240,7 @@ export function SkillsPage() {
         notify(
           code === 'skill_exists' || code === 'too_many_skills' || code === 'too_many_pending'
             ? t(`skills.editor.server.${code}`)
-            : t(adminErrorKey(error)),
+            : adminErrorText(t, error),
           'error',
         );
       } finally {

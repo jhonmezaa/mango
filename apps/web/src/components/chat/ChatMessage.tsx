@@ -8,6 +8,7 @@ import type {
   DisplayMessage,
   KnowledgeSearch,
   TurnProgress,
+  Truncation,
   TurnStep,
 } from '../../hooks/chatState';
 import {
@@ -16,6 +17,7 @@ import {
   CopyIcon,
   EditIcon,
   ErrorCircleIcon,
+  InfoIcon,
   LockIcon,
   RefreshIcon,
   StopIcon,
@@ -30,6 +32,7 @@ import { linkSourcesOf } from '../../pages/connections/model';
 import { useStripSources } from '../../pages/connections/useStripSources';
 import { ReadMark } from '../../pages/connections/ReadMark';
 import type { RemoteLinkSource } from '../../security/remoteLinks';
+import { RateWaitButton, RateWaitLine } from '../RateWait';
 import { Soon } from '../Soon';
 import { formatMessageTime } from './threadGroups';
 import { KnowledgeCitations, KnowledgeSteps } from './KnowledgeCitations';
@@ -187,6 +190,37 @@ function useRemoteSources(registrations: readonly string[]): readonly RemoteLink
   );
 }
 
+/**
+ * Design chat.jsx (round 34) «Respuesta incompleta»: the answer reached its token cap. No
+ * «Continuar»: the person asks for the rest in a new message. The tool name, when there is
+ * one, is plain text from the API's progress (escaped by React).
+ */
+function TruncatedNotice({ truncation }: { truncation: Truncation }) {
+  const { t } = useTranslation();
+  return (
+    <div className="mc-alert msg-guardrail" role="status">
+      <InfoIcon size={14} />
+      <div>
+        <b>{t('chat.truncated.title')}</b>{' '}
+        {truncation.kind === 'tool' ? (
+          truncation.tool ? (
+            <>
+              {t('chat.truncated.toolBefore')}
+              <span className="mono">{truncation.tool}</span>
+              {t('chat.truncated.toolAfter')}
+            </>
+          ) : (
+            t('chat.truncated.toolUnnamed')
+          )
+        ) : (
+          t('chat.truncated.tokens')
+        )}{' '}
+        {t('chat.truncated.rest')}
+      </div>
+    </div>
+  );
+}
+
 // Memoized: while a turn streams, only the message that changes re-renders.
 export const ChatMessage = memo(function ChatMessage({
   message,
@@ -305,6 +339,7 @@ export const ChatMessage = memo(function ChatMessage({
             <div>{t('chat.guardrail')}</div>
           </div>
         ) : null}
+        {message.truncated ? <TruncatedNotice truncation={message.truncated} /> : null}
         <KnowledgeCitations citations={message.citations ?? NO_CITATIONS} />
         {message.status === 'error' &&
           (budgetExceeded ? (
@@ -323,8 +358,24 @@ export const ChatMessage = memo(function ChatMessage({
           ) : (
             <div role="alert" className="notice notice-red msg-notice items-center">
               <ErrorCircleIcon size={14} />
-              <p className="min-w-0 flex-1">{t(message.errorKey ?? 'errors.generic')}</p>
-              {retryText !== null && (
+              {message.retryAt !== undefined ? (
+                // Design chat.jsx round 34: a 429 says how long to wait, from its `Retry-After`.
+                <p className="min-w-0 flex-1">
+                  <b className="msg-notice-title">{t('errors.rateLimitedTitle')}</b>
+                  {t('errors.rate_limited')} <RateWaitLine until={message.retryAt} />
+                </p>
+              ) : (
+                <p className="min-w-0 flex-1">{t(message.errorKey ?? 'errors.generic')}</p>
+              )}
+              {retryText !== null && message.retryAt !== undefined && (
+                <RateWaitButton
+                  until={message.retryAt}
+                  onRetry={() => {
+                    onSend(retryText);
+                  }}
+                />
+              )}
+              {retryText !== null && message.retryAt === undefined && (
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -351,7 +402,8 @@ export const ChatMessage = memo(function ChatMessage({
                 </span>
               </span>
             </Soon>
-            {resendText !== null && (
+            {/* Design round 34: asking again would be cut the same way and charged again. */}
+            {resendText !== null && !message.truncated && (
               <button
                 type="button"
                 className="btn btn-ghost btn-icon"

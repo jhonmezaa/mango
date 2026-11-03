@@ -354,18 +354,65 @@ describe('chatReducer · steps of a turn in flight (design chat.jsx streamSteps)
     expect(stepsOf(stopped)).toEqual([]);
   });
 
-  it('shows an answer cut at its token cap as any finished answer', () => {
+  const capDone = {
+    type: 'done',
+    message_id: 'm',
+    usage: { input_tokens: 1, output_tokens: 1 },
+    cost_usd: '0',
+  } as const;
+
+  it('keeps an answer cut at its token cap and marks it incomplete (design round 34)', () => {
     const written = feed(start(), [event({ type: 'delta', text: 'Una guía que se cor' })]);
-    const done = {
-      type: 'done',
-      message_id: 'm',
-      usage: { input_tokens: 1, output_tokens: 1 },
-      cost_usd: '0',
-    } as const;
-    const ended = chatReducer(written, event({ ...done, stop_reason: 'end_turn' })).messages[1];
-    const capped = chatReducer(written, event({ ...done, stop_reason: 'max_tokens' })).messages[1];
-    expect(capped).toEqual(ended);
+    const ended = chatReducer(written, event({ ...capDone, stop_reason: 'end_turn' })).messages[1];
+    const capped = chatReducer(written, event({ ...capDone, stop_reason: 'max_tokens' }))
+      .messages[1];
+    expect(ended?.truncated).toBeUndefined();
+    expect(capped).toEqual({ ...ended, truncated: { kind: 'tokens' } });
     expect([capped?.status, capped?.content]).toEqual(['done', 'Una guía que se cor']);
+  });
+
+  it('says the cap cut a tool call, by the name the progress gave (never the model)', () => {
+    const calling = feed(start(), [
+      event({ type: 'delta', text: 'Voy a consultar' }),
+      event({ type: 'tool', name: 'model_wrote_this', status: 'started' }),
+      event({ type: 'status', phase: 'tool', tool: 'get_cost_and_usage' }),
+    ]);
+    const capped = chatReducer(calling, event({ ...capDone, stop_reason: 'max_tokens' }));
+    expect(capped.messages[1]?.truncated).toEqual({ kind: 'tool', tool: 'get_cost_and_usage' });
+    // A tool the progress did not name (not of the published version): no name at all.
+    const unnamed = feed(start(), [
+      event({ type: 'tool', name: 'evil', status: 'started' }),
+      event({ type: 'status', phase: 'tool' }),
+    ]);
+    expect(
+      chatReducer(unnamed, event({ ...capDone, stop_reason: 'max_tokens' })).messages[1]?.truncated,
+    ).toEqual({ kind: 'tool', tool: null });
+    // A tool that answered before the cut is not the one cut.
+    const answered = feed(start(), [
+      event({ type: 'tool', name: 'get_cost_and_usage', status: 'started' }),
+      event({ type: 'tool', name: 'get_cost_and_usage', status: 'completed' }),
+      event({ type: 'delta', text: 'Según los datos' }),
+    ]);
+    expect(
+      chatReducer(answered, event({ ...capDone, stop_reason: 'max_tokens' })).messages[1]
+        ?.truncated,
+    ).toEqual({ kind: 'tokens' });
+  });
+
+  it('keeps when a turn refused with a 429 may be retried', () => {
+    const state = chatReducer(start(), {
+      type: 'finish',
+      assistantId: 'a',
+      status: 'error',
+      errorKey: 'errors.rate_limited',
+      retryAt: 1234,
+    });
+    expect([state.messages[1]?.errorKey, state.messages[1]?.retryAt]).toEqual([
+      'errors.rate_limited',
+      1234,
+    ]);
+    expect(errorKeyForCode('http_429', 429)).toBe('errors.rate_limited');
+    expect(errorKeyForCode('rate_limited')).toBe('errors.rate_limited');
   });
 });
 

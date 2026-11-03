@@ -17,6 +17,11 @@ interface Props {
   actions?: ReactNode;
   /** What the round "+" does on this page (the chat: a new conversation with its agent). */
   onCreate?: () => void;
+  /**
+   * The round "+" cannot be used now: its tooltip says why (design chat.jsx round 34, while the
+   * first answer of a new conversation runs).
+   */
+  createDisabledReason?: string | null;
 }
 
 /**
@@ -25,7 +30,7 @@ interface Props {
  * Ajustes (admins only, from `is_admin` of GET /api/me; the API authorizes anyway) and the round
  * "+" starts a new conversation: with the agent the user picks (design `AgentPicker`).
  */
-export function Topbar({ crumbs, children, actions, onCreate }: Props) {
+export function Topbar({ crumbs, children, actions, onCreate, createDisabledReason }: Props) {
   const { t } = useTranslation();
   const { isMobile, openNav } = useShell();
   const { me } = useSession();
@@ -83,7 +88,8 @@ export function Topbar({ crumbs, children, actions, onCreate }: Props) {
           type="button"
           className="topbar-create"
           aria-label={t('nav.newChat')}
-          title={t('nav.newChat')}
+          title={createDisabledReason ?? t('nav.newChat')}
+          disabled={Boolean(createDisabledReason)}
           onClick={onCreate ?? startConversation}
         >
           <PlusIcon size={16} />

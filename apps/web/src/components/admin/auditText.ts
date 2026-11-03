@@ -18,7 +18,15 @@ function directoryReadText(t: TFunction, read: DirectoryRead): string {
     return [
       t(`audit.detail.directoryRead.${read.searched ? 'searched' : 'people'}`),
       ...(read.filter && read.filter !== 'all' ? [t(`people.filters.${read.filter}`)] : []),
-      ...(returned === null ? [] : [t('audit.detail.directoryRead.results', { count: returned })]),
+      // Design round 34: no «0 resultados». The audit never keeps the searched prefix, so the
+      // design's «Sin resultados para «{texto}»» is said without the text.
+      ...(returned === null
+        ? []
+        : [
+            returned === 0
+              ? t('audit.detail.directoryRead.noResults')
+              : t('audit.detail.directoryRead.results', { count: returned }),
+          ]),
     ].join(' · ');
   }
   const text =

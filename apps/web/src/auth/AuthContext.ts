@@ -40,6 +40,11 @@ export interface AuthContextValue {
   /** Asks the server again whether this browser has a session (status `unavailable`). */
   retryRestore: () => void;
   /**
+   * Status `unavailable` because of a 429: when «Reintentar» may be used (client clock, ms;
+   * design round 34 `RateWait`). Null for any other cause.
+   */
+  restoreRetryAt: number | null;
+  /**
    * Access token with enough lifetime left for a chat turn, or null when signed out. Rejects
    * with an `ApiError` (503 or 429) when the renewal did not answer: the session is kept.
    */

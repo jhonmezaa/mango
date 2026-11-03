@@ -243,6 +243,41 @@ describe('ChatMessage: progress of a turn in flight (design chat.jsx StreamingMe
     expect(screen.getByText('Consultando una tool…')).toBeInTheDocument();
   });
 
+  it('says that the answer reached its token cap, without offering it again (round 34)', () => {
+    renderMessage(
+      {
+        id: 'a',
+        role: 'assistant',
+        content: 'Lo que alcanzó a escribir',
+        status: 'done',
+        tools: [],
+        truncated: { kind: 'tokens' },
+      },
+      { resendText: 'la pregunta' },
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Respuesta incompleta. El agente llegó a su largo máximo de respuesta. Lo de arriba es lo que alcanzó a escribir.',
+    );
+    // Asking again would be cut the same way and charged again.
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
+  });
+
+  it('names the tool call the cap cut, as text', () => {
+    renderMessage({
+      id: 'a',
+      role: 'assistant',
+      content: 'Voy a consultar',
+      status: 'done',
+      tools: [],
+      truncated: { kind: 'tool', tool: '<b>get_cost</b>' },
+    });
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent(
+      'mientras preparaba una consulta a <b>get_cost</b>, y la consulta no se hizo.',
+    );
+    expect(notice.querySelector('b b')).toBeNull();
+  });
+
   it('says that the guardrail cut the answer, under what was written', () => {
     renderMessage({
       id: 'a',
