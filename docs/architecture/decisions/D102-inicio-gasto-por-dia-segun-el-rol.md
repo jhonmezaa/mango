@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-29 (construir Inicio con lo que hay más un agregado de gasto e invocaciones por día, y según el rol, elegido por el dueño ese día, por menú; el contador, el área de un turno, los presupuestos por rol, la lectura de lo propio con RLS, las variantes que el diseño no dibuja y los días sin contador, elegidos por menú ese día durante el trabajo) · punto (10) del 2026-10-30 (lo que dibujó la ronda 28 del diseño; ocultar lo que no tiene fuente, elegido por el dueño ese día, por menú) · punto (11) del 2026-10-30 (lo que dibujó la ronda 29 del diseño; el saludo con nombre y el campo `discarded`, elegidos por el dueño ese día, por menú) · punto (12) del 2026-10-30 (lo que dibujó la ronda 30 del diseño; las marcas del eje hasta USD 5 se corrigen porque eran un defecto del producto) · punto (13) del 2026-10-31 (lo que dibujó la ronda 31 del diseño; las etiquetas del eje siguen al diseño, fuente de verdad (D24))
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (la transacción que cierra un turno suma también sus contadores del día), [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo contado por tarea: `home.reads`) y [D24](D024-diseno-de-la-ui.md) (en Inicio, lo que no tiene fuente no se muestra, punto 10)
-- **Precisada por:** —
+- **Precisada por:** [D104](D104-gasto-de-bedrock-por-agente-en-la-factura.md) (propuesta: la transacción que cierra un turno suma también `DAY#AGENT#<id>`, el contador del día del rol que llamó a Bedrock)
 
 ## Decisión
 
