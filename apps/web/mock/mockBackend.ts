@@ -32,6 +32,7 @@ import { handleActivity } from './activity.ts';
 import { handleGovernance } from './governance.ts';
 import { handleGroups } from './groups.ts';
 import { handleHome } from './home.ts';
+import { handleSearch } from './search.ts';
 import { handleInbox } from './inbox.ts';
 import { handleKnowledge, handleMockS3 } from './knowledge.ts';
 import { originOf, sendError, sendJson, type ApiHandler } from './http.ts';
@@ -57,6 +58,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleInbox,
   handleGovernance,
   handleHome,
+  handleSearch,
   handleActivity,
   handleGroups,
   handleDirectory,

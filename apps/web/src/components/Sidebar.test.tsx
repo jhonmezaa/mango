@@ -98,13 +98,15 @@ describe('Sidebar navigation', () => {
       'Chat',
       'Bandeja',
       'Marketplace',
+      'Buscar conversaciones',
       'Chat con FinOps',
       'Aprobaciones',
       'Actividad',
       'Schedules',
       'Org Chart',
     ]);
-    expect(soonItems()).toEqual(['Tickets, próximamente', 'Buscar conversaciones, próximamente']);
+    // Buscar conversaciones is available since D103.
+    expect(soonItems()).toEqual(['Tickets, próximamente']);
     // Construir only has Schedules (design 2026-10-16, D82 (1)); admin screens and the
     // Catálogo de MCP are hidden.
     expect(screen.getByRole('button', { name: 'Gobernanza' })).toBeInTheDocument();
@@ -127,6 +129,7 @@ describe('Sidebar navigation', () => {
       'Chat',
       'Bandeja',
       'Marketplace',
+      'Buscar conversaciones',
       'Chat con FinOps',
       'Aprobaciones',
       'Gobernanza',
@@ -136,7 +139,6 @@ describe('Sidebar navigation', () => {
     ]);
     expect(soonItems()).toEqual([
       'Tickets, próximamente',
-      'Buscar conversaciones, próximamente',
       'Observability, próximamente',
       'Evals, próximamente',
       'Costos, próximamente',
@@ -355,7 +357,14 @@ function advance(ms: number) {
 describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
   it('shows the main views and pinned agents, and one icon per group instead of its views', () => {
     renderRail();
-    expect(navLinks()).toEqual(['Inicio', 'Chat', 'Bandeja', 'Marketplace', 'Chat con FinOps']);
+    expect(navLinks()).toEqual([
+      'Inicio',
+      'Chat',
+      'Bandeja',
+      'Marketplace',
+      'Buscar conversaciones',
+      'Chat con FinOps',
+    ]);
     for (const name of ['Gobernanza', 'Construir', 'Operación']) {
       const button = screen.getByRole('button', { name });
       expect(button).toHaveAttribute('aria-haspopup', 'menu');

@@ -21,6 +21,7 @@ import { playground } from './es/playground';
 import { remoteMcp } from './es/remoteMcp';
 import { connections } from './es/connections';
 import { schedules } from './es/schedules';
+import { search } from './es/search';
 import { settings } from './es/settings';
 import { skills } from './es/skills';
 import { app, common, config, errors, nav, notFound, rateWait, roles, soon } from './es/shell';
@@ -58,6 +59,7 @@ export const es = {
   connections,
   approvals,
   schedules,
+  search,
   inbox,
   knowledge,
   governance,

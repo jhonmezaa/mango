@@ -14,6 +14,7 @@ import { mcpCatalogScreen } from '../pages/mcpCatalog/screen';
 import { orgChartScreen } from '../pages/orgChart/screen';
 import { playgroundScreen } from '../pages/playground/screen';
 import { schedulesScreen } from '../pages/schedules/screen';
+import { searchScreen } from '../pages/search/screen';
 import { skillsScreen } from '../pages/skills/screen';
 import type { ViewKey } from './navigation';
 
@@ -49,4 +50,5 @@ export const SCREENS: readonly Screen[] = [
   activityScreen,
   playgroundScreen,
   skillsScreen,
+  searchScreen,
 ];

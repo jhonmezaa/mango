@@ -467,3 +467,8 @@ export function toolCallsOfMine() {
     ),
   );
 }
+
+/** The mock user's conversations, newest first, for the search mock (D103). */
+export function conversationsOfMine(): readonly StoredConversation[] {
+  return [...conversations.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+}
