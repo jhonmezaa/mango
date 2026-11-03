@@ -122,7 +122,7 @@
     { id: 'CHG-10', kind: 'auth', key: 'idp', from: 'none', to: 'sso', by: 'Usuario 1', at: ago(5000), reason: 'Entrar con la cuenta corporativa.', status: 'rejected', decidedBy: 'Usuario 6', decidedAt: ago(4900), note: 'Falta el metadata del IdP.' },
   ];
   const CHG_PREFIX = { member: 'directory.member_', mfa_reset: 'account.mfa_reset_', share: 'agent.share_', group: 'group.', skill: 'skill.', policy: 'policy.', auth: 'settings.' };
-  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox', 'knowledge', 'governance', 'activity', 'playground', 'skills'];
+  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox', 'knowledge', 'governance', 'activity', 'playground', 'skills', 'search'];
 
   let state = {
     avail: ls('mango-avail4', false),

@@ -1261,3 +1261,40 @@ Responde todo lo abierto del §5 que quedaba de las rondas anteriores. Archivos:
 
 ### Menú
 - **«Próximamente» se queda.** Lo eligió el dueño. No se ocultan las vistas sin fecha.
+
+
+## Ronda 35 (2026-11-03) · «Buscar conversaciones» en la web
+Respuesta al contexto de «Buscar conversaciones». Archivos: `search.jsx`, `chat.jsx`, `app.jsx`, `store.js`, `audit-budgets.jsx`, `styles.css`. `search` entra en `AVAILABLE`: la entrada deja de ser «Próximamente». Se acepta lo construido del §1.
+
+**Diferencias del §2, decididas**
+- **Búsquedas recientes:** solo en memoria de la pestaña (variable del módulo; se conservan al ir y volver dentro de Mango, se pierden al recargar). Sin texto que lo explique: basta con que no estén. Se quitó `mango-search-recent` del diseño.
+- **Línea del tope** (`.sr-cap`): gris, 12,5 px, con el icono de información, justo bajo el contador y antes de las tarjetas. Con «Sin resultados», debajo del bloque y centrada. Textos definitivos, los de la web:
+  - lectura: «Buscamos en tus {N} conversaciones más recientes; las más antiguas no se revisaron.» ({N} = las que se leyeron de verdad; también si cortó por mensajes o por MiB);
+  - respuesta: «Se muestran las 100 conversaciones con más coincidencias; afina la búsqueda para ver otras.» (no va con «Sin resultados»).
+  - Si se cumplen los dos, dos líneas, en ese orden.
+- **«Prueba con»:** se quita del diseño. No se propone otra fuente: el filtro de agente ya cubre «los agentes que uso».
+- **Conversaciones recientes:** sin `t.last`; debajo del título solo el agente, como el historial del chat.
+- **Herramientas:** se busca solo el nombre de la tool (ya no los parámetros).
+
+**Errores y espera**
+- **Error:** en lugar de los resultados, bloque `role="alert"`: icono ámbar, «No se pudo buscar en tus conversaciones.» y «Reintentar». El buscador y los filtros siguen activos.
+- **429:** mismo bloque con el patrón de la ronda 34: «Demasiadas solicitudes» · «Hiciste muchas búsquedas seguidas. Puedes volver a intentarlo en {N minutos | unos segundos}.» y «Reintentar en m:ss» (`RateWait`). Mientras cuenta, cambiar la consulta no envía nada; al llegar a cero, «Reintentar» busca lo que haya en el buscador.
+- **Espera:** se conserva la lista anterior (`aria-busy` en la lista). Solo si tarda más de 400 ms aparece, junto al contador, mango-spinner pequeño + «Buscando…». En la primera búsqueda (sin lista anterior) esa misma línea va sola. El `role="status"` oculto anuncia «Buscando…» y luego «{N} coincidencias en {M} conversaciones», «Sin resultados» o el error.
+
+**Abrir en el mensaje de la coincidencia** (*cambio para el producto*)
+- Cada fila de coincidencia abre la conversación en su mensaje; «Abrir» de la tarjeta y Enter, en la primera coincidencia que no sea de título. Las de título abren como siempre.
+- El chat desplaza el mensaje a 96 px del borde superior, lo enfoca (`tabindex="-1"`, sin anillo) y lo resalta con `--accent-soft` (fondo + halo de 10 px) que se apaga en 0,9 s tras 2 s. Con movimiento reducido, sin transición.
+- El índice viaja con `openChat(agente, conversación, índice)`; si es una llamada agrupada, se usa el grupo que la contiene.
+- **Ya no está** (conversación más corta o mensaje borrado): se abre como siempre y aviso «Ese mensaje ya no está en la conversación.».
+- Pista de teclado: «Enter abre en la coincidencia».
+
+**Auditoría**
+- `conversation.search` → «Búsqueda en conversaciones». Detalle: «Buscó en sus conversaciones · {N} resultados» (`1 resultado`), con {N} = conversaciones con coincidencias. Panel › «Búsqueda»: «Resultados · {N} conversaciones» y «Se registra quién buscó y en cuántas conversaciones hubo coincidencias. Nunca lo que se buscó.».
+
+**Abierto de la ronda 34**
+- **Opacidad de desactivados:** `.45` en todos. `styles.css` pasa `.btn:disabled` y `.ab-seg button:disabled` de .5 a .45.
+- **«Tokens por llamada» mayor que el tope por respuesta:** se acepta lo del producto (D74), sin aviso.
+- **Esperas en administración:** no se nombra el límite; basta la cuenta atrás.
+- Sin cambios: sesión que no se renueva dentro del chat, Bedrock sin cuota y respuesta cortada (prueba pendiente), «Sin bucket» no enviado (el diseño no lo reproduce) y ronda 26.
+
+Demo: panel › «Buscar conversaciones · respuesta del servidor» (normal, lenta, error, 429, tope de lectura, más de 100) y «Buscar · mensaje de la coincidencia» (sigue ahí / ya no está).

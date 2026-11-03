@@ -117,6 +117,8 @@ function TweaksPanel({ visible, onClose, settings, setSettings, view, setView })
         <Chips label="Knowledge Bases · tokens, fragmentos, páginas y consultas de 30 días" opts={[[false, 'El servidor no los da (hoy)'], [true, 'Con los datos']]} value={!!S.get().simKbMetrics} onPick={(v) => S.set({ simKbMetrics: v })} />
         <Chips label="Builder · lista de knowledge bases" opts={[[null, 'Carga'], ['error', 'No se pudo cargar']]} value={S.get().simKbBuilder || null} onPick={(v) => S.set({ simKbBuilder: v })} />
         <Chips label="Revisión · reglas de knowledge bases" opts={[[null, 'Se cumplen'], ['gone', 'Una ya no existe'], ['groups', 'Quien la editó no está en sus grupos']]} value={S.get().simReviewKb || null} onPick={(v) => S.set({ simReviewKb: v })} />
+        <Chips label="Buscar conversaciones · respuesta del servidor" opts={[[null, 'Normal'], ['loading', 'Lenta'], ['error', 'Error'], ['429', 'Demasiadas (429)'], ['cap', 'Tope de lectura'], ['capmore', 'Más de 100']]} value={S.get().simSearch || null} onPick={(v) => S.set({ simSearch: v })} />
+        <Chips label="Buscar · mensaje de la coincidencia" opts={[[null, 'Sigue ahí'], ['gone', 'Ya no está']]} value={S.get().simSearchGone || null} onPick={(v) => S.set({ simSearchGone: v })} />
         <Chips label="Chat · búsqueda en knowledge bases (People Docs)" opts={[[null, 'Con fragmentos'], ['none', 'Sin fragmentos']]} value={S.get().simChatKb || null} onPick={(v) => S.set({ simChatKb: v })} />
         <div className="tweak-row"><div className="tweak-label">Knowledge Bases · subida abierta</div><div className="tweak-chips"><button className="tweak-chip" onClick={() => S.set({ kbDemoDrop: Date.now() })}>Agregar 5 archivos de ejemplo</button></div></div>
         <Chips label="Schedules · reporte PDF (Diseño completo)" opts={[[null, 'Normal'], ['dlfail', 'Falla la descarga'], ['genfail', 'Ejecutar ahora · falla el PDF']]} value={S.get().simReport || null} onPick={(v) => S.set({ simReport: v })} />
@@ -328,7 +330,8 @@ function App() {
     return () => { window.removeEventListener('keydown', h); window.removeEventListener('mango:cmdk', h2); };
   }, []);
 
-  const openChat = (agentId, threadId) => {
+  const openChat = (agentId, threadId, focusIdx) => {
+    S.set({ chatFocus: focusIdx != null && threadId ? { thread: threadId, idx: focusIdx } : null });
     setActiveAgentId(agentId);
     const t = threadId !== undefined ? threadId : ((window.agentSeeds || {})[agentId] || null);
     setActiveThreadId(t);

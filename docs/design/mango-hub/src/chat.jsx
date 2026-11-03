@@ -181,6 +181,24 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const onConvScroll = () => { const e = atEnd(); setAway(!e); if (e) setNewBelow(false); };
   useEffect(() => { if (!away) { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; } else setNewBelow(true); }, [messages, streamText, streaming]);
   useEffect(() => { setAway(false); setNewBelow(false); }, [activeThreadId, activeAgentId]);
+  // Abrir desde «Buscar conversaciones»: desplaza hasta el mensaje de la coincidencia y lo resalta. Si ya no está, se abre como siempre con un aviso.
+  const focus = window.useMango(s => s.chatFocus);
+  const convRef = useRef(null);
+  const [hl, setHl] = useState(null);
+  useEffect(() => {
+    if (!focus || focus.thread !== activeThreadId || !messages.length) return;
+    const t = setTimeout(() => {
+      window.MangoStore.set({ chatFocus: null });
+      const sc = scrollRef.current, box = convRef.current;
+      const gone = window.MangoStore.get().simSearchGone === 'gone' || focus.idx >= messages.length;
+      const el = gone || !box ? null : [...box.querySelectorAll('[data-mi]')].filter(e => +e.dataset.mi <= focus.idx).pop();
+      if (!el || !sc) { toast?.({ tone: 'info', msg: 'Ese mensaje ya no está en la conversación.' }); return; }
+      sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 96;
+      el.setAttribute('tabindex', '-1'); el.focus({ preventScroll: true });
+      const mi = +el.dataset.mi; setHl(mi); setTimeout(() => setHl(h => h === mi ? null : h), 2000);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [focus, activeThreadId, messages]);
 
   const sendMessage = (textOverride) => {
     const text = (textOverride ?? input).trim();
@@ -361,10 +379,10 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
           : isEmpty ? (
             <AgentHero agent={agent} onPrompt={(p) => sendMessage(p)} />
           ) : (
-            <div style={{maxWidth: 760, margin:'0 auto', padding:'0 32px'}}>
+            <div ref={convRef} style={{maxWidth: 760, margin:'0 auto', padding:'0 32px'}}>
               {soon && simAgent === 'tools-missing' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Warn size={14} /><div>Algunas tools de {agent.name} no están disponibles ahora porque se deshabilitó su MCP. Responderá sin ellas hasta que se vuelva a habilitar.</div></div>}
               {soon && simAgent === 'central-denied' && <div className="mc-alert amber" role="status" style={{ marginBottom: 18 }}><window.Icons.Lock size={14} /><div>Las tools de AWS Billing son solo para usuarios centrales. {agent.name} respondió sin esos datos.</div></div>}
-              {items.map(m => m.type === 'self_confirm' ? <window.SelfConfirmCard key={m.idx} msg={m} onConfirm={() => confirmSelf(m.idx, true)} onCancel={() => confirmSelf(m.idx, false)} /> : m.type === 'approval_request' ? <window.ApprovalCard key={m.idx} id={m.approvalId} /> : m.type === 'tool_group' ? <ToolGroup key={m.idx} calls={m.calls} /> : <Message key={m.idx} msg={m} idx={m.idx} onRetry={() => retryError(m.idx)} onEdit={() => setInput(m.text)} agent={agent} onOpenArtifact={setArtifact} />)}
+              {items.map(m => <div key={m.idx} data-mi={m.idx} className={hl === m.idx ? 'ch-mi ch-hl' : 'ch-mi'}>{m.type === 'self_confirm' ? <window.SelfConfirmCard key={m.idx} msg={m} onConfirm={() => confirmSelf(m.idx, true)} onCancel={() => confirmSelf(m.idx, false)} /> : m.type === 'approval_request' ? <window.ApprovalCard key={m.idx} id={m.approvalId} /> : m.type === 'tool_group' ? <ToolGroup key={m.idx} calls={m.calls} /> : <Message key={m.idx} msg={m} idx={m.idx} onRetry={() => retryError(m.idx)} onEdit={() => setInput(m.text)} agent={agent} onOpenArtifact={setArtifact} />}</div>)}
               {outageMsg.map(m => <Message key="outage" msg={m} onRetry={() => retryError(-1)} agent={agent} />)}
               {window.RemoteChatDemo && <window.RemoteChatDemo />}
               {streaming && <StreamingMessage phase={streamPhase} steps={streamSteps} kb={streamKb} text={streamText} agent={agent} observe={observe} />}
