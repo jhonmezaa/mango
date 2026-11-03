@@ -1,7 +1,7 @@
 # D104 · Gasto de Bedrock por agente en la factura: atribución por el rol de cada agente y conciliación diaria contra CUR 2.0
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-03 (el mecanismo, las etiquetas, la conciliación contra CUR 2.0 en esta decisión, los ajustes de la pagadora como paso manual del runbook y el destino del export en la cuenta de Mango, elegidos por el dueño ese día, por menú; el grano agente × día con un contador nuevo, elegido ese día por menú por el agente que lanzó el trabajo; lo demás, propuesto por un agente durante el trabajo)
+- **Estado:** vigente
+- **Fecha:** 2026-11-03 (el mecanismo, las etiquetas, la conciliación contra CUR 2.0 en esta decisión, los ajustes de la pagadora como paso manual del runbook y el destino del export en la cuenta de Mango, elegidos por el dueño ese día, por menú; el grano agente × día con un contador nuevo, elegido ese día por menú por el agente que lanzó el trabajo; lo demás, propuesto por un agente durante el trabajo; aceptada por el dueño el 2026-11-03, por menú)
 - **Precisa / reemplaza a:** precisa [D102](D102-inicio-gasto-por-dia-segun-el-rol.md) (1) (la transacción que cierra un turno suma también el contador del día de su agente), [D58](D058-distribucion-para-clientes.md) (el runbook de instalación gana un paso manual en la pagadora, y la desinstalación y la purga tratan un bucket nuevo) y [D76](D076-tags-del-stack-en-lo-creado-en-ejecucion.md) (los tags `mango:` de los roles de agente pasan a ser, además, la clave del costo en la factura)
 - **Precisada por:** —
 

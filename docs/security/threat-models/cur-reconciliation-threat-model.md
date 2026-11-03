@@ -1,6 +1,6 @@
 # Gasto de Bedrock por agente y conciliación contra CUR 2.0: modelo de amenazas (v0.1)
 
-> Fecha: 2026-11-03 · Skill: `security-threat-model`; revisión de IAM del diseño con `security-audit` (modo guía), que dejó dos ajustes: el ARN de origen en `us-east-1` y una llave KMS propia del bucket. Decisión: **D104** (propuesta, sin construir).
+> Fecha: 2026-11-03 · Skill: `security-threat-model`; revisión de IAM del diseño con `security-audit` (modo guía), que dejó dos ajustes: el ARN de origen en `us-east-1` y una llave KMS propia del bucket. Decisión: **D104** (vigente desde 2026-11-03, aceptada por el dueño por menú; sin construir).
 > Amplía `budget-reconciliation-threat-model.md` (D73: conciliar con las trazas) y TM-006 (gasto descontrolado) de `mango-architecture-threat-model.md`.
 > Alcance, todo por construir: el bucket del export CUR 2.0 en la cuenta de la instalación, la base y la tabla de Glue, el grupo de trabajo de Athena `Mango-<ns>-cur`, la función `Mango-<ns>-CurReconciler` con su rol, su DLQ y su alarma, el contador `DAY#AGENT#<id>` de `Budgets` y el paso manual del runbook en la pagadora (activar dos etiquetas y crear el export).
 > Se escribe con lo elegido por menú el 2026-11-03. El dueño eligió la atribución por el rol de cada agente, las etiquetas `mango:agent` y `mango:namespace`, la conciliación contra CUR en D104, los ajustes de la pagadora a mano y el destino del export en la cuenta de Mango. El agente que lanzó el trabajo eligió el grano agente × día. Nada está construido ni desplegado.

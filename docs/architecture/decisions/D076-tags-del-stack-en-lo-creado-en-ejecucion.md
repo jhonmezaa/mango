@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-14 (el punto 1, decidido por el dueño ese día, por menú; los puntos 2 a 7, propuestos por un agente y aceptados por el dueño ese día, por menú; lo que mostró la primera instalación, punto 8, nota propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D25](D025-recursos-creados-en-runtime.md) (lo que se crea por SDK lleva también los tags del stack)
-- **Precisada por:** [D77](D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md) (precisa: lo que CloudFormation no puede etiquetar también lleva los tags del stack); [D104](D104-gasto-de-bedrock-por-agente-en-la-factura.md) (propuesta: `mango:agent` y `mango:namespace` de los roles de agente son la clave del gasto de Bedrock en la factura)
+- **Precisada por:** [D77](D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md) (precisa: lo que CloudFormation no puede etiquetar también lleva los tags del stack); [D104](D104-gasto-de-bedrock-por-agente-en-la-factura.md) (`mango:agent` y `mango:namespace` de los roles de agente son la clave del gasto de Bedrock en la factura)
 
 ## Decisión
 
