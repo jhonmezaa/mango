@@ -1,4 +1,4 @@
-import { Duration, Stack } from "aws-cdk-lib";
+import { ArnFormat, Duration, Stack } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
@@ -112,6 +112,11 @@ export interface OperationalAlarmsProps {
   readonly refusingFunctions: Record<string, lambda.IFunction>;
   /** Dead-letter queues without an alarm of their own, by the name of what failed. */
   readonly deadLetterQueues: Record<string, sqs.IQueue>;
+  /**
+   * Alarms of the other stacks nested in Core, without `Mango-<ns>-`: the dashboard names them,
+   * so that this stack reads nothing of a sibling (D99 (4)).
+   */
+  readonly nestedAlarms?: string[];
 }
 
 /**
@@ -158,8 +163,22 @@ export class OperationalAlarms extends Construct {
     const edge = global ? this.edgeAlarms(props) : [];
     const userPool = this.userPoolAlarms(props, stack.region);
 
-    // Every alarm of the stack, the ones of the publication path included.
-    const alarms = stack.node.findAll().filter((c): c is cloudwatch.Alarm => c instanceof cloudwatch.Alarm);
+    // Every alarm of the stack, the ones of the publication path included. Those of another
+    // nested stack by name: a reference would make this stack read its outputs.
+    const own = Stack.of(this);
+    const alarms: cloudwatch.IAlarm[] = stack.node
+      .findAll()
+      .filter((c): c is cloudwatch.Alarm => c instanceof cloudwatch.Alarm)
+      .filter((alarm) => [stack, own].includes(Stack.of(alarm)));
+    for (const name of props.nestedAlarms ?? []) {
+      alarms.push(
+        cloudwatch.Alarm.fromAlarmArn(
+          this,
+          `Nested${name}`,
+          own.formatArn({ service: "cloudwatch", resource: "alarm", resourceName: mangoName(this.ns, name), arnFormat: ArnFormat.COLON_RESOURCE_NAME }),
+        ),
+      );
+    }
     new cloudwatch.Dashboard(this, "Dashboard", {
       dashboardName: mangoName(this.ns, "ops"),
       defaultInterval: Duration.hours(3),

@@ -580,6 +580,8 @@ def test_run_now_runs_as_the_owner_with_a_token_of_its_own(env: Env) -> None:
     # Budget reserved and settled like a chat turn (D73), with the run as its conversation.
     (turn,) = env.budgets.turns
     assert (turn.user_id, turn.conversation_id) == ("creator-1", run["run_id"])
+    # A run counts to its agent's day counter, like a chat turn (D104).
+    assert turn.cost_agent == turn.agent_id
     assert len(env.budgets.settled) == 1
     started, finished = env.events("task.run.started"), env.events("task.run.finished")
     assert (started[0]["via"], finished[0]["status"]) == ("task", "ok")

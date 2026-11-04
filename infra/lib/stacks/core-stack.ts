@@ -19,6 +19,8 @@ import { ApiService } from "../constructs/api-service.js";
 import { AccountHealth } from "../constructs/account-health.js";
 import { BudgetReconciler } from "../constructs/budget-reconciler.js";
 import { CostAnomalyEvents } from "../constructs/cost-anomaly-events.js";
+import { CUR_RECONCILER_ALARMS } from "../constructs/cur-reconciler.js";
+import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
@@ -61,7 +63,7 @@ import { tagNamespace } from "../params.js";
 import { ReleaseTarget } from "../release-target.js";
 import { MEMBER_READ_ONLY_DATA_ACTIONS } from "./member-stack.js";
 import { BILLING_READER_DATA_ACTIONS } from "./payer-stack.js";
-import { AuthorizationStack, OperationsStack, RemoteMcpStack } from "./core-nested.js";
+import { AuthorizationStack, CurReconciliationStack, OperationsStack, RemoteMcpStack } from "./core-nested.js";
 
 export interface CoreStackProps extends StackProps {
   /**
@@ -292,6 +294,20 @@ export class CoreStack extends Stack {
     // read-only (D41).
     new BudgetReconciler(this, "BudgetReconciler", {
       installation: cfg,
+      budgetsTable: governance.budgets,
+      auditIndex: governance.auditIndex,
+      auditStream: governance.auditStream,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+      alerts,
+    });
+    // D104: the payer's Data Export CUR 2.0, cut down to Bedrock of this account, lands in a
+    // bucket of Core (it holds data, D99 (2)); a function in a nested stack compares it once a
+    // day with the day counters of each agent and of the organization. It only reads.
+    const curExport = new CurExportBucket(this, "CurExport", { installation: cfg, accessLogs });
+    new CurReconciliationStack(this, "CurReconciliation", {
+      installation: cfg,
+      bucket: curExport.bucket,
       budgetsTable: governance.budgets,
       auditIndex: governance.auditIndex,
       auditStream: governance.auditStream,
@@ -638,6 +654,8 @@ export class CoreStack extends Stack {
       },
       refusingFunctions: { PreSignUp: identity.preSignUp },
       deadLetterQueues: { UninstallGuard: uninstallGuard.deadLetters },
+      // Alarms of the other nested stacks, by name: each nested stack is a leaf (D99 (4)).
+      nestedAlarms: Object.values(CUR_RECONCILER_ALARMS),
     });
     // «Probar búsqueda» throttled by Bedrock counts in the alarm of the tool (D88 (12)).
     knowledge.countApiThrottles(api.logGroup);
@@ -711,6 +729,8 @@ export class CoreStack extends Stack {
       value: `arn:${this.partition}:states:${this.region}:${this.account}:stateMachine:${remoteProvisionerName(cfg.namespace)}`,
     });
     new CfnOutput(this, "PacksBucket", { value: packPlatform.bucket.bucketName });
+    // Where the payer's Data Export CUR 2.0 delivers (runbook, D104 (4)).
+    new CfnOutput(this, "CurExportBucket", { value: curExport.bucket.bucketName });
     if (ownPackNetwork) {
       // The construct is `PackNetwork`; the output keeps that name for the operator.
       new CfnOutput(this, "PackNetworkOutput", { value: ownPackNetwork.provisionerSetting }).overrideLogicalId(

@@ -106,6 +106,10 @@ def test_the_creator_tests_a_draft_with_unsaved_changes_on_the_test_harness(env:
     # Reserved before invoking, on the person and the agent (rule 4).
     assert [s.key for s in env.budgets.scopes] == ["USER#creator-1", f"AGENT#{draft['agent_id']}"]
     assert len(env.budgets.settled) == 1
+    # Bedrock bills the Playground's role: its day counter, not the tested agent's (D104).
+    (turn,) = env.budgets.turns
+    assert turn.cost_agent == "playground"
+    assert turn.cost_counters[-1] == "DAY#AGENT#playground"
 
     (run,) = _audited(env, "playground.run")
     assert run["agent"] == draft["agent_id"]

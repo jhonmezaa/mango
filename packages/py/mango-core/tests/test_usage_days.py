@@ -11,6 +11,8 @@ import pytest
 from moto import mock_aws
 
 from mango_core import usage_days
+from mango_core.agents import AGENT_ID_PATTERN
+from mango_core.playground import PLAYGROUND_ID
 
 TABLE = "budgets"
 
@@ -95,3 +97,14 @@ def test_a_foreign_item_is_skipped_and_only_day_keys_are_read(db: Any) -> None:
 
 def test_first_day_is_none_before_the_first_turn(db: Any) -> None:
     assert usage_days.first_day(db, TABLE) is None
+
+
+def test_the_agents_counter_takes_an_agent_id_or_the_playground() -> None:
+    assert usage_days._AGENT.pattern == AGENT_ID_PATTERN
+    assert usage_days.agent_key("finops") == "DAY#AGENT#finops"
+    assert usage_days.agent_key(PLAYGROUND_ID) == "DAY#AGENT#playground"
+    assert usage_days.agent_key("abcdefghijklmnop") == "DAY#AGENT#abcdefghijklmnop"
+    for bad in ("", "a", "x/../y", "DAY#ORG", "Finops", "a" * 17):
+        assert not usage_days.is_agent(bad)
+        with pytest.raises(ValueError, match="invalid agent"):
+            usage_days.agent_key(bad)

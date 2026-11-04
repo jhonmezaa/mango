@@ -422,7 +422,13 @@ def _day(db: Any, key: str) -> tuple[Decimal, int] | None:
 
 
 def _days(db: Any, area: str | None = "ventas") -> dict[str, tuple[Decimal, int] | None]:
-    keys = ["DAY#ORG", "DAY#USER#user-1", *([f"DAY#AREA#{area}"] if area else [])]
+    """Inicio's counters (D102) and the agent's, which the bill is compared with (D104)."""
+    keys = [
+        "DAY#ORG",
+        "DAY#USER#user-1",
+        "DAY#AGENT#finops",
+        *([f"DAY#AREA#{area}"] if area else []),
+    ]
     return {key: _day(db, key) for key in keys}
 
 
@@ -443,6 +449,7 @@ def test_a_turn_without_an_area_counts_for_the_organization_and_the_person(db: A
     assert _days(db, area=None) == {
         "DAY#ORG": (Decimal("0.01"), 1),
         "DAY#USER#user-1": (Decimal("0.01"), 1),
+        "DAY#AGENT#finops": (Decimal("0.01"), 1),
     }
     assert (
         db.scan(
@@ -509,3 +516,81 @@ def test_the_area_travels_with_the_record_and_an_invalid_one_is_dropped() -> Non
         area="../x",
     )
     assert created.area is None
+
+
+# --- The agent's day counter (D104) -------------------------------------------------------------
+
+
+def test_the_turn_adds_to_its_agents_counter_and_the_title_does_not() -> None:
+    turn = _turn(area="ventas")
+    assert turn.cost_agent == "finops"
+    assert turn.cost_counters == (*turn.day_counters, "DAY#AGENT#finops")
+    # The title is mango-api's call (D73 (15)): never the agent's.
+    assert "DAY#AGENT#finops" not in turn.day_counters
+
+
+def test_a_playground_test_adds_to_the_playground_and_charges_the_tested_agent(db: Any) -> None:
+    turn = replace(_turn(), cost_agent="playground")
+    _reserve(db, turn)
+    assert budget_turns.settle(db, TABLE, turn, Decimal("0.02")) is True
+    assert _day(db, "DAY#AGENT#playground") == (Decimal("0.02"), 1)
+    assert _day(db, "DAY#AGENT#finops") is None
+    assert _budget(db, AGENT)["spent"] == Decimal("0.02")
+    created = PendingTurn.new(
+        turn_id="c" * 32,
+        user_id="u",
+        agent_id="finops",
+        agent_version=1,
+        model="m",
+        conversation_id="c" * 32,
+        period=PERIOD,
+        scopes=(USER,),
+        reserved=RESERVED,
+        price=PRICE,
+        started_at=START,
+        timeout_seconds=60,
+        cost_agent="playground",
+    )
+    assert created.cost_agent == "playground"
+    assert PendingTurn.from_item(created.to_item()).cost_agent == "playground"
+
+
+def test_a_record_from_before_the_agents_counter_adds_only_to_inicios(db: Any) -> None:
+    item = _turn().to_item()
+    del item["cost_agent"]
+    turn = PendingTurn.from_item(item)
+    assert turn.cost_agent is None
+    assert turn.cost_counters == turn.day_counters
+    _reserve(db, turn)
+    held = budget_turns.hold(db, TABLE, turn, TokenUsage(input_tokens=1000))
+    assert held is not None
+    assert (
+        budget_turns.close(db, TABLE, held, Outcome(BASIS_TRACE, usage=TokenUsage(2000)))
+        is not None
+    )
+    assert _day(db, "DAY#ORG") == (Decimal("0.006000"), 1)
+    assert _day(db, "DAY#AGENT#finops") is None
+
+
+def test_an_agent_id_that_cannot_be_a_counter_is_left_out() -> None:
+    assert replace(_turn(), cost_agent=None).cost_counters == ("DAY#ORG", "DAY#USER#user-1")
+    item = _turn().to_item()
+    item["cost_agent"] = {"S": "DAY#ORG"}
+    with pytest.raises(InvalidTurnError):
+        PendingTurn.from_item(item)
+    created = PendingTurn.new(
+        turn_id="d" * 32,
+        user_id="u",
+        agent_id="a",
+        agent_version=1,
+        model="m",
+        conversation_id="c" * 32,
+        period=PERIOD,
+        scopes=(USER,),
+        reserved=RESERVED,
+        price=PRICE,
+        started_at=START,
+        timeout_seconds=60,
+    )
+    assert created.cost_agent is None
+    assert "cost_agent" not in created.to_item()

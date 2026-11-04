@@ -22,6 +22,8 @@ export const roleNames = {
   reconciler: (ns: string) => mangoName(ns, "Reconciler"),
   /** Closes the budget reservation of chat turns whose end is unknown (D73). */
   budgetReconciler: (ns: string) => mangoName(ns, "BudgetReconciler"),
+  /** Compares Bedrock spend per agent with the CUR 2.0 bill once a day (D104). */
+  curReconciler: (ns: string) => mangoName(ns, "CurReconciler"),
   packProvisioner: (ns: string) => mangoName(ns, "PackProvisioner"),
   /** The only role that signs the approved catalog of remote MCP servers (D93 (9), D98 (13)). */
   remoteMcpProvisioner: (ns: string) => mangoName(ns, "RemoteMcpProvisioner"),

@@ -6,8 +6,13 @@ So every write that adds to ``spent`` of a turn's budget also adds, in the same 
 to three day counters: the organization's, the person's and, when the token said which, the
 person's area at the time of the turn. They are counted exactly once, as the budget.
 
-Item layout, in the Budgets table: ``PK = DAY#ORG``, ``DAY#AREA#<area>`` or
-``DAY#USER#<sub>``; ``SK = <yyyy-mm-dd>`` (UTC, the day the turn started). Attributes:
+A turn also adds to the counter of the agent whose role called Bedrock (D104): the turn's agent,
+or ``playground`` for a test of the Playground. The daily reconciliation against the bill
+(CUR 2.0) compares it with what the bill charged that role. Nothing of a person is in it.
+
+Item layout, in the Budgets table: ``PK = DAY#ORG``, ``DAY#AREA#<area>``,
+``DAY#USER#<sub>`` or ``DAY#AGENT#<agent id>``; ``SK = <yyyy-mm-dd>`` (UTC, the day the turn
+started). Attributes:
 ``spent`` (USD) and ``turns`` (turns that reached the agent). A person's own counter is read
 with row-level security (``dynamodb:LeadingKeys`` = ``DAY#USER#<sub>``). Items expire after
 ``RETENTION_DAYS``: six months and the six before them, to compare.
@@ -29,9 +34,13 @@ DAY_PREFIX: Final = "DAY#"
 ORG_KEY: Final = "DAY#ORG"
 AREA_PREFIX: Final = "DAY#AREA#"
 USER_PREFIX: Final = "DAY#USER#"
+AGENT_PREFIX: Final = "DAY#AGENT#"
 RETENTION_DAYS: Final = 400
 """Two periods of 180 days, and margin."""
 _AREA: Final = re.compile(r"^[a-z0-9-]{2,32}$")
+_AGENT: Final = re.compile(r"^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$")
+"""``mango_core.agents.AGENT_ID_PATTERN`` (a test keeps them equal): also the Playground's
+``playground``, the slug of its role ``Mango-<ns>-agent-playground``."""
 _DAY: Final = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ZERO: Final = Decimal(0)
 _QUERY_LIMIT: Final = 400
@@ -49,6 +58,17 @@ def area_key(area: str) -> str:
     if not is_area(area):
         raise ValueError("invalid area")
     return AREA_PREFIX + area
+
+
+def is_agent(value: object) -> bool:
+    return isinstance(value, str) and _AGENT.fullmatch(value) is not None
+
+
+def agent_key(agent_id: str) -> str:
+    """The day counter of the agent whose role called Bedrock (D104)."""
+    if not is_agent(agent_id):
+        raise ValueError("invalid agent")
+    return AGENT_PREFIX + agent_id
 
 
 def keys(user_id: str, area: str | None) -> tuple[str, ...]:

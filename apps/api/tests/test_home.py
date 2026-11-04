@@ -528,6 +528,8 @@ def test_the_session_policy_reads_only_the_persons_budget_keys() -> None:
     assert budgets["Condition"] == {
         "ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["USER#user-22", "DAY#USER#user-22"]}
     }
+    # Neither an agent's day counter of the bill reconciliation nor the organization's (D104).
+    assert "DAY#AGENT#" not in json.dumps(statements)
     assert (
         app_module._sibling_table_arn(
             "arn:aws:dynamodb:us-east-1:111122223333:table/Mango-test-Conversations",

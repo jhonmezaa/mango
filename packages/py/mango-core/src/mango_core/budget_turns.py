@@ -183,6 +183,10 @@ class PendingTurn:
     area: str | None = None
     """The person's area when the turn started (the verified ``mango_business_unit``): its
     day counter for Inicio (D102). ``None`` without exactly one area."""
+    cost_agent: str | None = None
+    """The agent whose role calls Bedrock in this turn, whose day counter it adds to (D104): the
+    turn's agent, or ``playground`` for a test of the Playground (its budget is still the tested
+    agent's). ``None`` in a record written before that counter: its cost is not attributed."""
 
     @staticmethod
     def new(
@@ -200,8 +204,13 @@ class PendingTurn:
         started_at: int,
         timeout_seconds: int,
         area: str | None = None,
+        cost_agent: str | None = None,
     ) -> PendingTurn:
+        """``cost_agent``: whose role calls Bedrock, when it is not ``agent_id`` (the
+        Playground's). An id that cannot be a counter's is left out, like an area: the turn's
+        cost is then not attributed to an agent, and the reconciliation reports it apart."""
         limit = started_at + timeout_seconds
+        billed = agent_id if cost_agent is None else cost_agent
         return PendingTurn(
             turn_id=turn_id,
             user_id=user_id,
@@ -218,6 +227,7 @@ class PendingTurn:
             price=price,
             retained=reserved,
             area=area if usage_days.is_area(area) else None,
+            cost_agent=billed if usage_days.is_agent(billed) else None,
         )
 
     @property
@@ -251,12 +261,22 @@ class PendingTurn:
             item["session_id"] = {"S": self.session_id}
         if self.area:
             item["area"] = {"S": self.area}
+        if self.cost_agent:
+            item["cost_agent"] = {"S": self.cost_agent}
         return item
 
     @property
     def day_counters(self) -> tuple[str, ...]:
-        """The day counters of Inicio this turn adds to (D102)."""
+        """The day counters of Inicio this turn adds to (D102). Also what the title of a new
+        conversation adds to: it is mango-api's call, not the agent's."""
         return usage_days.keys(self.user_id, self.area)
+
+    @property
+    def cost_counters(self) -> tuple[str, ...]:
+        """The day counters the turn itself adds to: Inicio's and its agent's (D104)."""
+        if self.cost_agent is None:
+            return self.day_counters
+        return (*self.day_counters, usage_days.agent_key(self.cost_agent))
 
     @property
     def day(self) -> str:
@@ -293,6 +313,8 @@ class PendingTurn:
                 outcome=_outcome_of(item),
                 # Absent in a record written before the day counters (D102).
                 area=item.get("area", {}).get("S"),
+                # Absent in a record written before the agent's day counter (D104).
+                cost_agent=item.get("cost_agent", {}).get("S"),
             )
         except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
             raise InvalidTurnError("malformed pending turn") from exc
@@ -306,6 +328,7 @@ class PendingTurn:
             or not all(_SCOPE.fullmatch(scope) for scope in turn.scopes)
             or (turn.session_id and not _SESSION_ID.fullmatch(turn.session_id))
             or (turn.area is not None and not usage_days.is_area(turn.area))
+            or (turn.cost_agent is not None and not usage_days.is_agent(turn.cost_agent))
             or not all(amount.is_finite() and amount >= 0 for amount in amounts)
         ):
             raise InvalidTurnError("malformed pending turn")
@@ -390,8 +413,9 @@ def _budget_updates(
 def _day_updates(
     table: str, turn: PendingTurn, *, spent: Decimal, turns: int
 ) -> list[dict[str, Any]]:
-    """The day counters of Inicio, in the same transaction as the budget (D102)."""
-    return usage_days.updates(table, turn.day_counters, turn.day, spent=spent, turns=turns)
+    """The day counters of Inicio and of the turn's agent, in the same transaction as the
+    budget (D102, D104)."""
+    return usage_days.updates(table, turn.cost_counters, turn.day, spent=spent, turns=turns)
 
 
 def _transact(

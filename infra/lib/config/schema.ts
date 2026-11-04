@@ -105,6 +105,23 @@ const DEFAULT_PACK_NETWORK: { cidr: string; availabilityZoneIds: (typeof AGENTCO
   availabilityZoneIds: ["use1-az1", "use1-az2"],
 };
 
+/**
+ * The daily reconciliation of Bedrock spend against the bill (D104 (7)): which product codes are
+ * Bedrock's in CUR 2.0, and when a day of an agent deviates (past both thresholds). Configuration,
+ * never code (rule 7): the release's own (`release-defaults.json`) when the installation names none.
+ * The product codes are to be confirmed against a real export (D104 (5)).
+ */
+export const curReconciliationSchema = z
+  .object({
+    bedrockProductCodes: z
+      .array(z.string().regex(/^[A-Za-z0-9_.-]{2,64}$/))
+      .min(1)
+      .max(10),
+    thresholdPercent: z.number().nonnegative().max(1000),
+    thresholdUsd: z.number().nonnegative().max(100_000),
+  })
+  .strict();
+
 export const installationSchema = z
   .object({
     /** 3-8 lowercase alphanumerics, prefixed to every global name (rule 6). */
@@ -257,6 +274,8 @@ export const installationSchema = z
       userMonthlyUsd: z.number().positive().max(10_000),
       agentMonthlyUsd: z.number().positive().max(100_000),
     }),
+    /** Reconciliation against the bill (D104); the release's when absent. */
+    curReconciliation: curReconciliationSchema.optional(),
     /** Keep data resources on stack deletion. Must be true outside the lab. */
     retainData: z.boolean(),
     /** Object Lock retention for the audit bucket (GOVERNANCE mode in the lab). */

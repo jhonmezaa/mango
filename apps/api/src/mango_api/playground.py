@@ -76,7 +76,7 @@ from mango_core.agents import (
 from mango_core.budget_turns import PendingTurn
 from mango_core.harness_tools import KNOWLEDGE_TOOL
 from mango_core.identity import UserContext
-from mango_core.playground import SETTINGS_PK, SETTINGS_SK, PlaygroundHarness
+from mango_core.playground import PLAYGROUND_ID, SETTINGS_PK, SETTINGS_SK, PlaygroundHarness
 from mango_core.skills import parse_ref as parse_skill_ref
 from mango_core.skills import s3_uri
 
@@ -441,6 +441,8 @@ def run_test(
         started_at=int(time.time()),
         timeout_seconds=limits.timeout_seconds,
         area=user.business_unit,
+        # The budget is the tested agent's; Bedrock bills the Playground's role (D104).
+        cost_agent=PLAYGROUND_ID,
     )
     try:
         deps.budgets.reserve(scopes, estimate, period, pending)

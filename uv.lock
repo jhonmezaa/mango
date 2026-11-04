@@ -12,6 +12,7 @@ members = [
     "mango-core",
     "mango-cost-anomaly-consumer",
     "mango-cost-explorer",
+    "mango-cur-reconciler",
     "mango-gateway-interceptor",
     "mango-knowledge-retrieve",
     "mango-knowledge-sources",
@@ -174,6 +175,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+athena = [
+    { name = "mypy-boto3-athena" },
+]
 bedrock-agentcore = [
     { name = "mypy-boto3-bedrock-agentcore" },
 ]
@@ -988,6 +992,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "mango-cur-reconciler"
+version = "0.1.0"
+source = { editable = "functions/cur-reconciler" }
+dependencies = [
+    { name = "boto3" },
+    { name = "mango-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.104" },
+    { name = "mango-core", editable = "packages/py/mango-core" },
+]
+
+[[package]]
 name = "mango-gateway-interceptor"
 version = "0.1.0"
 source = { editable = "functions/gateway-interceptor" }
@@ -1191,7 +1210,7 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "budgets", "ce", "cognito-idp", "dynamodb", "firehose", "iam", "kms", "lambda", "logs", "organizations", "s3", "scheduler", "sqs", "ssm", "stepfunctions", "sts", "verifiedpermissions"] },
+    { name = "boto3-stubs", extra = ["athena", "bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "budgets", "ce", "cognito-idp", "dynamodb", "firehose", "iam", "kms", "lambda", "logs", "organizations", "s3", "scheduler", "sqs", "ssm", "stepfunctions", "sts", "verifiedpermissions"] },
     { name = "cedarpy" },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1208,7 +1227,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["sts", "ce", "budgets", "organizations", "dynamodb", "firehose", "verifiedpermissions", "bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "lambda", "cognito-idp", "kms", "stepfunctions", "iam", "logs", "s3", "ssm", "scheduler", "sqs"], specifier = ">=1.40" },
+    { name = "boto3-stubs", extras = ["athena", "sts", "ce", "budgets", "organizations", "dynamodb", "firehose", "verifiedpermissions", "bedrock-agentcore", "bedrock-agentcore-control", "bedrock-runtime", "lambda", "cognito-idp", "kms", "stepfunctions", "iam", "logs", "s3", "ssm", "scheduler", "sqs"], specifier = ">=1.40" },
     { name = "cedarpy", specifier = ">=4.12,<5" },
     { name = "fastmcp", specifier = "==4.1.2" },
     { name = "httpx", specifier = ">=0.28" },
@@ -1363,6 +1382,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/58/bc/2aa98fd7f49c42dba8e9c065886fadffdd00f3c654cff3f2a7103a797ac8/mypy-2.4.0-cp313-cp313-win_amd64.whl", hash = "sha256:295ecf2e57542cd836ca537486951289678c8c7d1ee6ad74ebe29b2168a003cf", size = 11389803, upload-time = "2026-10-01T20:39:37.547Z" },
     { url = "https://files.pythonhosted.org/packages/49/41/17b60df2d946792ef6af43b89351f5c9ddabc69053206b2304945572a744/mypy-2.4.0-cp313-cp313-win_arm64.whl", hash = "sha256:bc378bdad4e9f12b5bd96466083d1e71acf00594ec9c7b2bdb5e02816f77f303", size = 10951060, upload-time = "2026-10-01T20:39:04.015Z" },
     { url = "https://files.pythonhosted.org/packages/81/12/46ae8670c98a3cd0286ca5645c2f918f8f6be65edfed81b916010619f668/mypy-2.4.0-py3-none-any.whl", hash = "sha256:d01c5d26a352acc6d5cf3128225477e1e8465e8d3029d4c345807fbf7f3cf093", size = 2800734, upload-time = "2026-10-01T20:39:26.837Z" },
+]
+
+[[package]]
+name = "mypy-boto3-athena"
+version = "1.43.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/2f/9274df33e9147ee12b3b21b75e4c50b55001d9e8849fca28ab31065c2379/mypy_boto3_athena-1.43.0.tar.gz", hash = "sha256:d3effaedd902facb838af779de11c9f9dd43f0a836671449bd44b41146998d71", size = 37536, upload-time = "2026-04-29T22:57:27.556Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/fe/57c6417d15730158bfada97e903f88291a59dac7d0275d26461663985f5b/mypy_boto3_athena-1.43.0-py3-none-any.whl", hash = "sha256:b216ec5f34c94ec45a8edec3e7a84b93280aab24509cc1a2f4c885964052cb4f", size = 42035, upload-time = "2026-04-29T22:57:25.416Z" },
 ]
 
 [[package]]

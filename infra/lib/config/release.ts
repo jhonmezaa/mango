@@ -9,7 +9,7 @@ import {
   organizationIdParameter,
   remoteMcpEnabledParameter,
 } from "../params.js";
-import { AGENTCORE_VPC_ZONE_IDS, Installation } from "./schema.js";
+import { AGENTCORE_VPC_ZONE_IDS, curReconciliationSchema, Installation } from "./schema.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -36,6 +36,7 @@ const releaseDefaultsSchema = z
         agentMonthlyUsd: z.number().positive().max(100_000),
       })
       .strict(),
+    curReconciliation: curReconciliationSchema,
   })
   .strict()
   .refine((d) => Object.hasOwn(d.modelPrices, d.models.agent) && Object.hasOwn(d.modelPrices, d.models.auxiliary), {
@@ -224,6 +225,7 @@ export function coreParameters(stack: Stack): CoreParameters {
     modelPrices: defaults.modelPrices,
     embeddingPrices: defaults.embeddingPrices,
     budgets: defaults.budgets,
+    curReconciliation: defaults.curReconciliation,
     audit: { retentionDays: Token.asNumber(auditDays.valueAsNumber), mode: "GOVERNANCE" },
     packs: { network: { cidr: "10.210.0.0/22", availabilityZoneIds: ["use1-az1", "use1-az2"] } },
     gateway: { mcpSessions: true },

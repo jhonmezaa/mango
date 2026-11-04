@@ -4,6 +4,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as avp from "aws-cdk-lib/aws-verifiedpermissions";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
+import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
 import { platformPolicies } from "../constructs/governance.js";
 import { OperationalAlarms, OperationalAlarmsProps } from "../constructs/operational-alarms.js";
 import { RemoteMcpApi } from "../constructs/remote-mcp-api.js";
@@ -108,6 +109,26 @@ export class RemoteMcpStack extends CoreNestedStack {
       role: props.apiTaskRole,
       settingsTable: props.settingsTable,
       release: props.release,
+    });
+  }
+}
+
+/**
+ * The reconciliation of Bedrock spend against the bill (D104 (6), (7)): the Glue table over the
+ * export, the Athena workgroup `Mango-<ns>-cur`, the function `Mango-<ns>-CurReconciler`, its
+ * schedule, its dead-letter queue and its alarms. Nothing here holds data: the export's bucket,
+ * which does, stays in Core (`CurExportBucket`, D99 (2)) and reaches this stack as a parameter.
+ * Its alarms are on the Operations dashboard by name (`CUR_RECONCILER_ALARMS`): this stack is a
+ * leaf, and Operations reads none of it.
+ */
+export class CurReconciliationStack extends CoreNestedStack {
+  readonly reconciler: CurReconciler;
+
+  constructor(scope: Construct, id: string, props: CurReconcilerProps) {
+    super(scope, id, "reconciliation against the bill");
+    this.reconciler = new CurReconciler(this, "CurReconciler", {
+      ...props,
+      installation: this.namespaceOf(props.installation),
     });
   }
 }

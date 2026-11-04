@@ -1,3 +1,4 @@
+import { CUR_RECONCILER_ALARMS } from "../lib/constructs/cur-reconciler.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -54,6 +55,9 @@ const PUBLICATION = [
   "Reconciler-findings",
   "AccountHealth-failed",
   "AccountHealth-invalid",
+  // The reconciliation against the bill (D104), in its nested stack: cur-reconciler.test.ts.
+  "Cur-reconciler-failed",
+  "Cur-reconciler-findings",
 ];
 const operational = Object.fromEntries(
   Object.entries(alarms).filter(([name]) => !PUBLICATION.some((suffix) => name === `Mango-${ns}-${suffix}`)),
@@ -563,7 +567,12 @@ describe("dashboard", () => {
     expect(dashboards).toHaveLength(1);
     expect(dashboards[0]![1].Properties.DashboardName).toBe(`Mango-${ns}-ops`);
     const body = JSON.stringify(dashboards[0]![1].Properties.DashboardBody);
-    for (const [id] of ofType(resources, "AWS::CloudWatch::Alarm")) expect(body, id).toContain(`"${id}"`);
+    // Those of another nested stack by name (D99 (4)): CurReconciliation's (D104).
+    const nested = Object.values(CUR_RECONCILER_ALARMS).map((name) => `Mango-${ns}-${name}`);
+    for (const [id, alarm] of ofType(resources, "AWS::CloudWatch::Alarm")) {
+      if (nested.includes(alarm.Properties.AlarmName)) expect(body, id).toContain(`alarm:${alarm.Properties.AlarmName}`);
+      else expect(body, id).toContain(`"${id}"`);
+    }
   });
 });
 

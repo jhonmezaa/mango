@@ -236,7 +236,10 @@ describe("reconciler function and schedule", () => {
     // And the function that draws the PDF of a task run (D86); details in task-reports.test.ts.
     const taskReportId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-TaskReport` });
     expect(resources[taskReportId]!.Properties.DeadLetterConfig).toBeDefined();
-    const asynchronous = [functionId, budgetReconcilerId, anomalyConsumerId, accountHealthId, taskReportId];
+    // And the reconciliation against the bill (D104); details in cur-reconciler.test.ts.
+    const curReconcilerId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-CurReconciler` });
+    expect(resources[curReconcilerId]!.Properties.DeadLetterConfig).toBeDefined();
+    const asynchronous = [functionId, budgetReconcilerId, anomalyConsumerId, accountHealthId, taskReportId, curReconcilerId];
     // Every other function is invoked synchronously and keeps the agreed exception.
     for (const [id, other] of ofType("AWS::Lambda::Function")) {
       if (asynchronous.includes(id) || id.startsWith("UninstallGuard")) continue;
