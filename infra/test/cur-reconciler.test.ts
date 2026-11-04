@@ -10,6 +10,7 @@ import { CUR_EXPORT, dataExportsSourceArn } from "../lib/constructs/cur-export.j
 import {
   CUR_BYTES_SCANNED_CUTOFF,
   CUR_COLUMNS,
+  CUR_LAKE_FORMATION_PERMISSIONS,
   CUR_RECONCILER_ALARMS,
   CUR_RECONCILER_KEYS,
   CUR_RECONCILER_METRICS,
@@ -309,5 +310,70 @@ describe("CurReconciler function (D104 (7), TM-CUR7)", () => {
     expect(types).not.toContain("AWS::S3::Bucket");
     expect(types).not.toContain("AWS::KMS::Key");
     expect(types).toContain("AWS::Lambda::Function");
+  });
+});
+
+describe("under Lake Formation (D104, TM-CUR9)", () => {
+  const nested = nestedTemplate(nestedStacks(core).find((s) => s.node.id === "CurReconciliation")!);
+  const grants = Object.entries(resources).filter(([, r]) => r.Type.startsWith("AWS::LakeFormation::"));
+  const tableId = logicalId("AWS::Glue::Table", { DatabaseName: `mango_${ns}_cur` });
+
+  it("grants the function's role SELECT and DESCRIBE on its table, and nothing else", () => {
+    expect(grants.map(([, r]) => r.Type)).toEqual(["AWS::LakeFormation::PrincipalPermissions"]);
+    const [, grant] = grants[0]!;
+    expect(CUR_LAKE_FORMATION_PERMISSIONS).toEqual(["SELECT", "DESCRIBE"]);
+    expect(grant.Properties).toEqual({
+      Catalog: account,
+      Principal: { DataLakePrincipalIdentifier: { "Fn::GetAtt": [roleId, "Arn"] } },
+      Resource: { Table: { CatalogId: account, DatabaseName: `mango_${ns}_cur`, Name: "bedrock" } },
+      Permissions: ["SELECT", "DESCRIBE"],
+      // No grant option: the role passes nothing on.
+      PermissionsWithGrantOption: [],
+    });
+    // Granted once the table exists; revoked before the table is dropped.
+    expect(grant.DependsOn).toContain(tableId);
+  });
+
+  it("leaves the data lake settings, the catalog, the database and the S3 locations alone", () => {
+    const text = JSON.stringify(resources);
+    expect(text).not.toMatch(/DataLakeSettings|DataLocation|"Catalog":\{\}|"Database":\{/);
+    // The bucket is not registered in Lake Formation: no credentials vended, IAM reads S3.
+    expect(statements.flatMap(actions).filter((a) => a.startsWith("lakeformation:"))).toEqual([]);
+  });
+
+  it("is created only when the installation says Lake Formation governs the catalog", () => {
+    const [id, grant] = grants[0]!;
+    expect(grant.Condition).toBeDefined();
+    // This installation does not say so: the condition is false and the template is IAM only.
+    expect(nested.Conditions[grant.Condition]).toEqual({ "Fn::Equals": ["false", "true"] });
+    expect(nested.Resources[id].Condition).toBe(grant.Condition);
+  });
+
+  it("queries in the context of its database, never Athena's default", () => {
+    const source = python("functions/cur-reconciler/src/mango_cur_reconciler/query.py");
+    expect(source).toContain('QueryExecutionContext={"Catalog": "AwsDataCatalog", "Database": self._database}');
+  });
+
+  it("deletes the log group, which has a fixed name, when its first create rolls back", () => {
+    const groups = Object.values(resources).filter(
+      (r) => r.Type === "AWS::Logs::LogGroup" && r.Properties.LogGroupName === `/aws/lambda/${name}`,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.DeletionPolicy).toBe("RetainExceptOnCreate");
+    expect(groups[0]!.UpdateReplacePolicy).toBe("Retain");
+  });
+});
+
+describe("an installation that says Lake Formation governs its catalog", () => {
+  it("creates the grant unconditionally", () => {
+    const governed = new CoreStack(new App({ context: { skipSpa: true } }), "Core", {
+      installation: { ...cfg, catalogGovernedByLakeFormation: true },
+      env: { account, region },
+    });
+    const nested = nestedTemplate(nestedStacks(governed).find((s) => s.node.id === "CurReconciliation")!);
+    const [grant] = Object.values(nested.Resources as Record<string, Resource>).filter(
+      (r) => r.Type === "AWS::LakeFormation::PrincipalPermissions",
+    );
+    expect(nested.Conditions[grant!.Condition]).toEqual({ "Fn::Equals": ["true", "true"] });
   });
 });

@@ -1,4 +1,4 @@
-import { CfnResource, Duration, Stack } from "aws-cdk-lib";
+import { CfnCondition, CfnResource, Duration, Fn, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as athena from "aws-cdk-lib/aws-athena";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
@@ -7,6 +7,7 @@ import * as glue from "aws-cdk-lib/aws-glue";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as firehose from "aws-cdk-lib/aws-kinesisfirehose";
 import * as kms from "aws-cdk-lib/aws-kms";
+import * as lakeformation from "aws-cdk-lib/aws-lakeformation";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
@@ -60,8 +61,21 @@ export const CUR_COLUMNS: ReadonlyArray<{ name: string; type: string }> = [
   { name: "tags", type: "map<string,string>" },
 ];
 
+/**
+ * Lake Formation permissions of the function's role on the CUR table, when Lake Formation governs
+ * the catalog (D104): read the table's metadata and query it. Nothing on the database or the
+ * catalog, no grant option, and no data location: the bucket is not registered in Lake Formation,
+ * so the role reads the export with its IAM permissions on S3.
+ */
+export const CUR_LAKE_FORMATION_PERMISSIONS = ["SELECT", "DESCRIBE"];
+
 export interface CurReconcilerProps {
   readonly installation: Installation;
+  /**
+   * "true" when Lake Formation governs the account's Glue Data Catalog (D104), as deploy-time
+   * text in a release (`CatalogGovernedByLakeFormation`).
+   */
+  readonly catalogGovernedByLakeFormation: string;
   /** The bucket of the export, in Core (`CurExportBucket`). */
   readonly bucket: s3.IBucket;
   readonly budgetsTable: dynamodb.ITableV2;
@@ -195,6 +209,8 @@ export class CurReconciler extends Construct {
       // A request without the key would pass `ForAllValues` (finding of 2026-10-19).
       Null: { "dynamodb:LeadingKeys": "false" },
     });
+    this.lakeFormationGrant(props.catalogGovernedByLakeFormation, role, databaseName, table);
+
     allow("WriteAuditIndex", ["dynamodb:PutItem"], [props.auditIndex.tableArn]);
     allow("WriteAuditTrail", ["firehose:PutRecord"], [props.auditStream.deliveryStreamArn]);
     allow(
@@ -225,7 +241,10 @@ export class CurReconciler extends Construct {
     this.function = new PythonFunction(this, "Function", {
       packageName: "mango-cur-reconciler",
       packagePath: "functions/cur-reconciler",
-      retainLogs: cfg.retainData,
+      // A fixed name: a log group retained by a failed first install would make the retry fail
+      // ("already exists"). RetainExceptOnCreate deletes it only when the operation that created
+      // it rolls back; on uninstall it is retained like every log (D58 (7)).
+      logsRemovalPolicy: cfg.retainData ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE : RemovalPolicy.DESTROY,
       handler: "mango_cur_reconciler.handler.lambda_handler",
       functionName: roleNames.curReconciler(ns),
       description: "Daily read-only reconciliation of Bedrock spend per agent against the CUR 2.0 bill",
@@ -270,6 +289,28 @@ export class CurReconciler extends Construct {
 
     this.schedule(ns);
     this.alarms(props, deadLetters);
+  }
+
+  /**
+   * Under Lake Formation the IAM policy is not enough: the table only answers principals that Lake
+   * Formation lets in (D104). Whoever deploys created the table, so Lake Formation lets them grant
+   * on it within the account; CloudFormation grants as them and revokes when the stack deletes it.
+   * The only manual step is a Lake Formation admin's CREATE_DATABASE on the catalog for whoever
+   * deploys (runbook). Without Lake Formation governance nothing is created: IAM decides.
+   */
+  private lakeFormationGrant(governed: string, role: iam.IRole, databaseName: string, table: glue.CfnTable): void {
+    const { account } = Stack.of(this);
+    const grant = new lakeformation.CfnPrincipalPermissions(this, "LakeFormationTableGrant", {
+      catalog: account,
+      principal: { dataLakePrincipalIdentifier: role.roleArn },
+      resource: { table: { catalogId: account, databaseName, name: curNames.table } },
+      permissions: CUR_LAKE_FORMATION_PERMISSIONS,
+      permissionsWithGrantOption: [],
+    });
+    grant.addDependency(table);
+    grant.cfnOptions.condition = new CfnCondition(this, "CatalogGovernedByLakeFormation", {
+      expression: Fn.conditionEquals(governed, "true"),
+    });
   }
 
   private schedule(ns: string): void {

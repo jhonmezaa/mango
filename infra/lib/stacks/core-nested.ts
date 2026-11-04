@@ -129,6 +129,19 @@ export class CurReconciliationStack extends CoreNestedStack {
     this.reconciler = new CurReconciler(this, "CurReconciler", {
       ...props,
       installation: this.namespaceOf(props.installation),
+      catalogGovernedByLakeFormation: this.governedOf(props.catalogGovernedByLakeFormation),
     });
+  }
+
+  /** Core's `CatalogGovernedByLakeFormation`, passed to a parameter of the same name. */
+  private governedOf(value: string): string {
+    if (!Token.isUnresolved(value)) return value;
+    const parameter = new CfnParameter(this, "CatalogGovernedByLakeFormation", {
+      type: "String",
+      allowedValues: ["false", "true"],
+      description: "CatalogGovernedByLakeFormation of Core",
+    });
+    this.setParameter("CatalogGovernedByLakeFormation", value);
+    return parameter.valueAsString;
   }
 }

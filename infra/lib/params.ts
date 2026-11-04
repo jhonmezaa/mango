@@ -64,6 +64,23 @@ export function remoteMcpEnabledParameter(stack: Stack): string {
 }
 
 /**
+ * Whether Lake Formation governs the Glue Data Catalog of the Mango account (D104): its default
+ * permissions for new databases and tables leave out `IAM_ALLOWED_PRINCIPALS`. `true` grants the
+ * reconciliation's role its Lake Formation permissions on the CUR table; `false` (the default)
+ * leaves the catalog to IAM, as AWS sets it up.
+ */
+export function catalogGovernedByLakeFormationParameter(stack: Stack): string {
+  return new CfnParameter(stack, "CatalogGovernedByLakeFormation", {
+    type: "String",
+    default: "false",
+    allowedValues: ["false", "true"],
+    description:
+      "true if Lake Formation governs the Glue Data Catalog of this account (see the runbook); a Lake Formation " +
+      "admin grants CREATE_DATABASE to whoever deploys first.",
+  }).valueAsString;
+}
+
+/**
  * `mango:namespace` on every resource of a parameterized stack. The value is only known at
  * deployment, so it cannot be a tag of the stack itself: whoever deploys passes that one.
  */

@@ -108,12 +108,14 @@ class Athena:
         self,
         client: AthenaClient,
         workgroup: str,
+        database: str,
         *,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._client = client
         self._workgroup = workgroup
+        self._database = database
         self._sleep = sleep
         self._clock = clock
 
@@ -121,6 +123,10 @@ class Athena:
         started = self._client.start_query_execution(
             QueryString=statement,
             WorkGroup=self._workgroup,
+            # The query names its table in full; the context is so that Athena never falls back
+            # to the `default` database, which Lake Formation would ask DESCRIBE on in an account
+            # whose catalog it governs (D104).
+            QueryExecutionContext={"Catalog": "AwsDataCatalog", "Database": self._database},
             ExecutionParameters=params,
         )
         query_id = started["QueryExecutionId"]

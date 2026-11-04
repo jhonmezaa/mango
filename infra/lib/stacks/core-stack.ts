@@ -307,6 +307,9 @@ export class CoreStack extends Stack {
     const curExport = new CurExportBucket(this, "CurExport", { installation: cfg, accessLogs });
     new CurReconciliationStack(this, "CurReconciliation", {
       installation: cfg,
+      catalogGovernedByLakeFormation: release
+        ? release.catalogGovernedByLakeFormation
+        : String(cfg.catalogGovernedByLakeFormation ?? false),
       bucket: curExport.bucket,
       budgetsTable: governance.budgets,
       auditIndex: governance.auditIndex,

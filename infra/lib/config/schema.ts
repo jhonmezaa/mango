@@ -276,6 +276,11 @@ export const installationSchema = z
     }),
     /** Reconciliation against the bill (D104); the release's when absent. */
     curReconciliation: curReconciliationSchema.optional(),
+    /**
+     * Lake Formation governs the account's Glue Data Catalog (D104): the reconciliation's role
+     * gets Lake Formation permissions on its table. A release asks for it as a parameter.
+     */
+    catalogGovernedByLakeFormation: z.boolean().optional(),
     /** Keep data resources on stack deletion. Must be true outside the lab. */
     retainData: z.boolean(),
     /** Object Lock retention for the audit bucket (GOVERNANCE mode in the lab). */

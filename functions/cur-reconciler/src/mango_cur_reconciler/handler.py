@@ -296,7 +296,9 @@ def _reconciler() -> tuple[CurReconciler, Settings]:
         CurReconciler(
             settings,
             dynamodb=dynamodb,
-            athena=query.Athena(boto3.client("athena", config=_CLIENT_CONFIG), settings.workgroup),
+            athena=query.Athena(
+                boto3.client("athena", config=_CLIENT_CONFIG), settings.workgroup, settings.database
+            ),
             audit=AuditWriter(
                 boto3.client("firehose", config=_CLIENT_CONFIG),
                 settings.audit_stream,

@@ -30,6 +30,8 @@ export interface PythonFunctionProps {
   readonly description?: string;
   /** Keep the log group when the stack is deleted (true outside the lab). */
   readonly retainLogs?: boolean;
+  /** Removal policy of the log group, in place of the one `retainLogs` gives. */
+  readonly logsRemovalPolicy?: RemovalPolicy;
   /** Required for functions invoked asynchronously (AGENTS.md): events that fail every retry. */
   readonly deadLetterQueue?: sqs.IQueue;
   /**
@@ -64,7 +66,8 @@ export class PythonFunction extends Construct {
       logGroupName: `/aws/lambda/${props.functionName}`,
       retention: logs.RetentionDays.THREE_MONTHS,
       encryptionKey: logsKeyOf(this),
-      removalPolicy: props.retainLogs === false ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
+      removalPolicy:
+        props.logsRemovalPolicy ?? (props.retainLogs === false ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN),
     });
 
     if (props.environment && !props.environmentEncryption) {

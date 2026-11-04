@@ -217,10 +217,15 @@ def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
             {"ResultSet": {"Rows": [second]}},
         ],
     )
-    athena = query.Athena(client, "Mango-lab-cur", sleep=lambda _s: None)  # type: ignore[arg-type]
+    athena = query.Athena(client, "Mango-lab-cur", "mango_lab_cur", sleep=lambda _s: None)  # type: ignore[arg-type]
     rows = athena.run("SELECT 1", ["'x'"], 60)
     assert client.started == [
-        {"QueryString": "SELECT 1", "WorkGroup": "Mango-lab-cur", "ExecutionParameters": ["'x'"]}
+        {
+            "QueryString": "SELECT 1",
+            "WorkGroup": "Mango-lab-cur",
+            "QueryExecutionContext": {"Catalog": "AwsDataCatalog", "Database": "mango_lab_cur"},
+            "ExecutionParameters": ["'x'"],
+        }
     ]
     assert [(r.day, r.tokens, r.list_cost, r.line_items) for r in rows] == [
         ("2026-11-01", True, Decimal("1.5"), 3),
@@ -229,14 +234,14 @@ def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
 
 
 def test_a_query_that_fails_or_runs_too_long_fails_the_run() -> None:
-    failed = query.Athena(FakeAthenaClient(["FAILED"]), "w", sleep=lambda _s: None)  # type: ignore[arg-type]
+    failed = query.Athena(FakeAthenaClient(["FAILED"]), "w", "d", sleep=lambda _s: None)  # type: ignore[arg-type]
     with pytest.raises(query.QueryError, match="failed") as raised:
         failed.run("SELECT 1", [], 60)
     # Only the kind of error: never a value of a row.
     assert str(raised.value) == "query failed: HIVE_BAD_DATA"
     ticks = iter([0.0, 100.0])
     client = FakeAthenaClient(["RUNNING"])
-    slow = query.Athena(client, "w", sleep=lambda _s: None, clock=lambda: next(ticks))  # type: ignore[arg-type]
+    slow = query.Athena(client, "w", "d", sleep=lambda _s: None, clock=lambda: next(ticks))  # type: ignore[arg-type]
     with pytest.raises(query.QueryError, match="timed out"):
         slow.run("SELECT 1", [], 60)
     assert client.stopped == ["q-1"]

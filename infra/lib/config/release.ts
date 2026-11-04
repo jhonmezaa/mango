@@ -8,6 +8,7 @@ import {
   namespaceParameter,
   organizationIdParameter,
   remoteMcpEnabledParameter,
+  catalogGovernedByLakeFormationParameter,
 } from "../params.js";
 import { AGENTCORE_VPC_ZONE_IDS, curReconciliationSchema, Installation } from "./schema.js";
 
@@ -67,6 +68,8 @@ export interface CoreParameters {
   readonly auditLockMode: string;
   /** `RemoteMcpEnabled` (D98 (4)): "true" or "false", as deploy-time text. */
   readonly remoteMcpEnabled: string;
+  /** `CatalogGovernedByLakeFormation` (D104): "true" or "false", as deploy-time text. */
+  readonly catalogGovernedByLakeFormation: string;
   /** What config.json of the SPA takes from parameters, as deploy-time text. */
   readonly spa: { readonly signUpDomains: string; readonly aiPolicyUrlMember: string };
 }
@@ -249,6 +252,7 @@ export function coreParameters(stack: Stack): CoreParameters {
     }),
     secondAdminEmail: secondAdmin.valueAsString,
     remoteMcpEnabled: remoteMcpEnabledParameter(stack),
+    catalogGovernedByLakeFormation: catalogGovernedByLakeFormationParameter(stack),
     auditLockMode: auditMode.valueAsString,
     spa: {
       signUpDomains: signUpDomains.valueAsString,

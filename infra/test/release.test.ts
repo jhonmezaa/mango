@@ -50,6 +50,7 @@ const WITH_DEFAULT = [
   "AuditLockMode",
   "AuditRetentionDays",
   "AvailabilityZoneIds",
+  "CatalogGovernedByLakeFormation",
   "HighRiskSignInAction",
   "MemberAccessExcludedAccountIds",
   "MemberAccessTargets",
@@ -171,6 +172,15 @@ describe("Core template of a release", () => {
 
   it("turns Transaction Search on only when the stack owns that account setting", () => {
     expect(ofType("AWS::XRay::TransactionSearchConfig").map((r) => r.Condition)).toEqual(["OwnsTransactionSearch"]);
+  });
+
+  it("passes CatalogGovernedByLakeFormation, false by default, only to the reconciliation against the bill (D104)", () => {
+    expect(source.Parameters.CatalogGovernedByLakeFormation).toMatchObject({ Default: "false", AllowedValues: ["false", "true"] });
+    const passing = Object.values(source.Resources).filter(
+      (r) => r.Type === "AWS::CloudFormation::Stack" && r.Properties.Parameters?.CatalogGovernedByLakeFormation,
+    );
+    expect(passing).toHaveLength(1);
+    expect(passing[0]!.Properties.Parameters.CatalogGovernedByLakeFormation).toEqual({ Ref: "CatalogGovernedByLakeFormation" });
   });
 
   it("seeds the defaults of the release, never values of a customer", () => {
