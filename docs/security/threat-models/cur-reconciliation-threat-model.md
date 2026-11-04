@@ -1,7 +1,8 @@
-# Gasto de Bedrock por agente y conciliación contra CUR 2.0: modelo de amenazas (v0.2)
+# Gasto de Bedrock por agente y conciliación contra CUR 2.0: modelo de amenazas (v0.3)
 
 > Fecha: 2026-11-03 · Skill: `security-threat-model`; revisión de IAM del diseño con `security-audit` (modo guía), que dejó dos ajustes: el ARN de origen en `us-east-1` y una llave KMS propia del bucket. Decisión: **D104** (vigente desde 2026-11-03, aceptada por el dueño por menú).
 > **v0.2, 2026-11-04: construido** (código y documentos, sin instalar), con `security-threat-model` y `security-audit` (modo guía) sobre el diff. Cambios frente al diseño: el bucket va con SSE-S3, porque Data Exports no entrega con una llave KMS (AWS: «encrypt with KMS after the export has been delivered»); la consulta de un export sí se puede editar después de crearlo (solo la configuración de la tabla es fija), así que TM-CUR1 sube de probabilidad y la comprobación de cada pasada es la defensa que queda; el guardrail, aunque lo facture el rol de un agente, no se compara (solo se comparan los tokens de modelo). Lo construido está en «Controles construidos».
+> **v0.3, 2026-11-04: bajo Lake Formation** (D104 (9)), con `security-threat-model` y `security-audit` (modo guía) sobre el diff. La primera instalación en un cliente se revirtió porque Lake Formation gobernaba su catálogo. Con el parámetro `CatalogGovernedByLakeFormation` = `true`, la plantilla concede a la función `SELECT` y `DESCRIBE` sobre su tabla, tras un `CREATE_DATABASE` sobre el catálogo que un administrador de Lake Formation del cliente da a mano al rol que despliega. El log group de la función pasa a `RetainExceptOnCreate`, y la consulta lleva el contexto de su base. Amenaza nueva: TM-CUR9.
 > Amplía `budget-reconciliation-threat-model.md` (D73: conciliar con las trazas) y TM-006 (gasto descontrolado) de `mango-architecture-threat-model.md`.
 > Alcance: el bucket del export CUR 2.0 en la cuenta de la instalación, la base y la tabla de Glue, el grupo de trabajo de Athena `Mango-<ns>-cur`, la función `Mango-<ns>-CurReconciler` con su rol, su DLQ y su alarma, el contador `DAY#AGENT#<id>` de `Budgets` y el paso manual del runbook en la pagadora (activar dos etiquetas y crear el export).
 > Se escribe con lo elegido por menú el 2026-11-03. El dueño eligió la atribución por el rol de cada agente, las etiquetas `mango:agent` y `mango:namespace`, la conciliación contra CUR en D104, los ajustes de la pagadora a mano y el destino del export en la cuenta de Mango. El agente que lanzó el trabajo eligió el grano agente × día. Construido el 2026-11-04; nada desplegado.
@@ -50,12 +51,14 @@ Controles del diseño:
 - **`Mango-<ns>-CurReconciler`:** Lambda diaria (Scheduler), asíncrona, con DLQ y alarma.
 - **`Budgets`:** contadores `DAY#AGENT#<id>` (nuevo) y `DAY#ORG`, escritos por `mango-api` y por el conciliador de presupuesto en la transacción que cierra un turno.
 - **Auditoría y alarmas:** el evento `cur.reconciled` y la alarma `Cur-reconciler-findings`.
+- **Lake Formation (solo si gobierna el catálogo de la cuenta, D104 (9)):** el permiso `CREATE_DATABASE` del rol que despliega `Core`, que da a mano un administrador de Lake Formation del cliente, y la concesión `AWS::LakeFormation::PrincipalPermissions` de la plantilla (`SELECT` y `DESCRIBE` sobre `mango_<ns>_cur.bedrock` al rol de la función, sin opción de concesión). El bucket no se registra en Lake Formation.
 
 ### Data flows and trust boundaries
 
 - **Pagadora → servicio de exports → bucket de Mango (frontera nueva entre cuentas):** `s3:PutObject` del servicio, acotado por `aws:SourceAccount` y `aws:SourceArn`. Solo TLS; sin ACL (el dueño del bucket es dueño de los objetos).
 - **Scheduler → función:** una invocación diaria sin datos de entrada que cuenten.
-- **Función → Athena → Glue y S3:** consultas fijas del código, sin texto de nadie, en su grupo de trabajo.
+- **Función → Athena → Glue y S3:** consultas fijas del código, sin texto de nadie, en su grupo de trabajo y en el contexto de su base. Bajo Lake Formation, Glue además exige el permiso de Lake Formation sobre la tabla. S3 se lee con IAM, porque la ubicación no está registrada.
+- **Administrador de Lake Formation del cliente → rol que despliega (frontera de administración, manual):** `CREATE_DATABASE` sobre el catálogo. Con eso, CloudFormation, como ese rol, crea la base y la tabla y concede sobre la tabla.
 - **Función → `Budgets`:** `GetItem` y `Query` sobre `DAY#AGENT#*` y `DAY#ORG`.
 - **Función → auditoría y CloudWatch:** conteos e importes.
 - **Bedrock → facturación:** el ARN del rol que llama y sus tags. Lo hace AWS, sin cambios en Mango.
@@ -91,6 +94,7 @@ flowchart LR
 - Otra cuenta de AWS que intenta entregar un export en el bucket.
 - Un creador de agentes que elige el nombre de un agente (no su id).
 - Un cambio posterior del export en la pagadora (quitar el recorte) hecho por error.
+- Un administrador de Lake Formation del cliente que, para destrabar la instalación, concede de más: hace administrador del data lake al rol que despliega, o vuelve a dar `CREATE_DATABASE` a `IAM_ALLOWED_PRINCIPALS`.
 
 ### Non-capabilities
 
@@ -106,6 +110,7 @@ flowchart LR
 | Paso manual del runbook | Consola de la pagadora | Persona del cliente → facturación | Crea el export y activa las etiquetas |
 | Invocación de la función | Scheduler | Interna | Sin entrada de usuario |
 | Consultas de Athena | Código de la función | Interna | Texto fijo, la fecha como parámetro |
+| Permisos de Lake Formation | Paso previo del runbook (manual) y la concesión de la plantilla | Administración del catálogo del cliente → Mango | Solo con `CatalogGovernedByLakeFormation` = `true` |
 
 ## Top abuse paths
 
@@ -114,6 +119,7 @@ flowchart LR
 3. **Lectura amplia desde el rol de la función:** una sentencia de `Budgets` sin `LeadingKeys`, o un `ForAllValues` sin la clave exigida, deja leer `USER#…` (presupuesto de cada persona).
 4. **Consulta cara:** un error en la consulta lee años de CUR cada día.
 5. **Tag con persona:** alguien añade a los roles un tag con un correo, que el cliente activa y queda en Cost Explorer.
+6. **Lake Formation abierto para instalar:** el cliente, siguiendo un paso vago, hace administrador del data lake al rol que despliega o abre el catálogo a IAM. Ese rol, o la plantilla, alcanza entonces datos de otras bases del data lake del cliente.
 
 ## Threat model table
 
@@ -125,6 +131,7 @@ flowchart LR
 | TM-CUR4 | Una etiqueta de costo lleva datos de una persona | Etiquetas | Baja | Medio | Baja | Solo `mango:agent` (id) y `mango:namespace`; el provisioner pone los tags `mango:` y no copia los `mango:` del stack (D76 (2)) | El runbook nombra solo esas dos etiquetas para activar |
 | TM-CUR5 | La conciliación calla un sobregasto (sin datos, o datos tarde) | Alarmas | Media | Medio | Media | Sin export, `no_data` auditado; días cerrados hasta D-2; desvíos con umbral y alarma | Alarma aparte si pasan 3 días con `no_data` después de haberse visto datos |
 | TM-CUR6 | Consulta cara o sin fin | Disponibilidad y costo | Baja | Bajo | Baja | Tope de bytes por consulta en el grupo de trabajo; proyección de particiones; 35 días | Tiempo máximo de la función y una sola consulta por pasada |
+| TM-CUR9 | Los permisos de Lake Formation que pide la instalación alcanzan más que la tabla de Mango | Datos del data lake del cliente | Baja (el paso del runbook es exacto) | Alto | Media | El runbook pide solo `CREATE_DATABASE` sobre el catálogo, y para el rol que despliega: dice que no se haga administrador del data lake, que no se cambien los ajustes y que no se registre el bucket. La plantilla concede solo `SELECT` y `DESCRIBE` sobre su tabla, sin opción de concesión, y no tiene `DataLakeSettings`, ni permisos sobre el catálogo, la base o ubicaciones. La función no gana `lakeformation:*` en IAM. Lo fijan tests. Un creador solo tiene permisos implícitos sobre lo que crea | `CREATE_DATABASE` deja al rol que despliega crear otras bases: el runbook dice que se puede revocar después de instalar |
 | TM-CUR7 | La función asíncrona falla en silencio | Alarmas | Baja | Bajo | Baja | DLQ y alarma (regla de Checkov `CKV_AWS_116`: las asíncronas la llevan) | — |
 
 ## Controles construidos (2026-11-04)
@@ -139,12 +146,14 @@ flowchart LR
 | TM-CUR6 | Tope de 1 GiB por consulta, configuración impuesta en el grupo de trabajo, proyección de particiones (`billing_period BETWEEN ? AND ?`), una sola consulta por pasada, texto fijo con las fechas como parámetros de ejecución; la función para la consulta si se acerca a su tiempo límite | `cur-reconciler.ts`, `query.py` | `test_one_fixed_query…`, `test_a_query_that_fails_or_runs_too_long_fails_the_run` |
 | TM-CUR7 | Scheduler (grupo `Mango-<ns>-cur`, rol con `aws:SourceArn` = el ARN del grupo) → función asíncrona con DLQ `Mango-<ns>-CurReconciler-dlq` y alarma `Cur-reconciler-failed`; Checkov `CKV_AWS_116` sin suprimir | `cur-reconciler.ts` | `cur-reconciler.test.ts` («is asynchronous with a dead-letter queue…») |
 
+**Controles de TM-CUR9 (2026-11-04):** la concesión `LakeFormationTableGrant`, con la condición `CatalogGovernedByLakeFormation`, y la consulta con `QueryExecutionContext` en su base (`infra/lib/constructs/cur-reconciler.ts`, `query.py`); el paso previo, la verificación y la recuperación del runbook (`install.md`, «Lake Formation y el catálogo de Glue»). Los tests, en `infra/test/cur-reconciler.test.ts` y `release.test.ts`, fijan la concesión exacta y que no haya otro recurso de Lake Formation ni acciones `lakeformation:` en el rol. Disponibilidad: el log group de nombre fijo es `RetainExceptOnCreate`, así que un primer create fallido no bloquea el reintento.
+
 **Amenaza nueva al construir, TM-CUR8 (baja):** el contador `DAY#AGENT#<id>` lo escriben `mango-api` y el conciliador de presupuesto con los permisos que ya tenían; un error que lo infle o lo omita no cambia ningún presupuesto (el conciliador solo lee), pero haría saltar o callar la alarma. Control: el contador va en la misma transacción que el presupuesto, con la misma condición sobre el turno pendiente (se escribe una sola vez), y un test por cada cierre (`settle`, `hold`, `close`, Playground, turno anterior al contador).
 
 ## Criticality calibration
 
 - **Alta:** que llegue la factura de la organización entera (TM-CUR1). Es el único camino a datos que hoy no están en la cuenta de Mango.
-- **Media:** integridad de la conciliación y alcance del rol (TM-CUR2, TM-CUR3, TM-CUR5).
+- **Media:** integridad de la conciliación y alcance del rol (TM-CUR2, TM-CUR3, TM-CUR5), y el alcance de los permisos de Lake Formation que pide la instalación (TM-CUR9).
 - **Baja:** costo de las consultas, etiquetas y fallos de la función.
 
 ## Focus paths for security review
@@ -152,14 +161,15 @@ flowchart LR
 | Ruta | Por qué importa | Amenazas |
 |---|---|---|
 | `infra/lib/constructs/cur-export.ts` | Frontera nueva entre cuentas | TM-CUR1, TM-CUR2 |
-| `infra/lib/constructs/cur-reconciler.ts` | Permiso de IAM nuevo | TM-CUR3, TM-CUR6, TM-CUR7 |
+| `infra/lib/constructs/cur-reconciler.ts` | Permiso de IAM nuevo y la concesión de Lake Formation | TM-CUR3, TM-CUR6, TM-CUR7, TM-CUR9 |
+| `docs/runbooks/install.md` («Lake Formation y el catálogo de Glue») | El permiso manual del cliente | TM-CUR9 |
 | `docs/runbooks/install.md` («Gasto de Bedrock por agente en la factura») | El recorte vive ahí | TM-CUR1, TM-CUR4 |
 | `functions/cur-reconciler/src/mango_cur_reconciler/compare.py` | Defensa si el recorte falta | TM-CUR1, TM-CUR5 |
 | `packages/py/mango-core/src/mango_core/budget_turns.py` (`cost_counters`) | Integridad de los contadores | TM-CUR5, TM-CUR8 |
 
 ## Quality check
 
-- Las cuatro superficies tienen amenaza.
+- Las cinco superficies tienen amenaza.
 - La frontera nueva (pagadora → bucket) está en TM-CUR1 y TM-CUR2.
 - Nada de esto es de CI ni de desarrollo.
 - Lo elegido por menú está reflejado.
@@ -167,4 +177,6 @@ flowchart LR
   - la lista de códigos de producto de Bedrock (`AmazonBedrock`, `AmazonBedrockService`, de las consultas de ejemplo de AWS);
   - el tipo de las columnas en el Parquet (`CUR_COLUMNS`);
   - que `line_item_iam_principal` trae el rol del agente o su sesión cuando llama el harness;
-  - que Data Exports entrega en el bucket de otra cuenta con esta política (la del documento de AWS) y que el `Deny` por `aws:SourceArn` no la frena.
+  - que Data Exports entrega en el bucket de otra cuenta con esta política (la del documento de AWS) y que el `Deny` por `aws:SourceArn` no la frena;
+  - bajo Lake Formation: la concesión de la plantilla, la primera consulta, y que Lake Formation acepte el ARN de un rol de IAM Identity Center, que lleva ruta;
+  - un catálogo cifrado con una llave KMS propia: no está cubierto (la función no tiene permiso sobre esa llave), y el runbook manda comprobarlo antes de instalar.

@@ -101,9 +101,10 @@ Leyenda: **P** = parámetro de stack sin valor por defecto. **Pa** = parámetro 
 | `orgAccess.adminAccountId` | Horneado | **Pa** `CallAs` en `OrgAccess` (`SELF`) | n/a | n/a |
 | `observability.transactionSearch` | Configurable | **Pa** `TransactionSearch` (`stack`) | n/a | `Condition` de CloudFormation |
 | `remoteMcp.enabled` | Configurable | **Pa** `RemoteMcpEnabled` (`false`) | n/a | Variable `REMOTE_MCP_ENABLED` de `mango-api` (D98 (4)) |
+| `catalogGovernedByLakeFormation` | Configurable | **Pa** `CatalogGovernedByLakeFormation` (`false`) | n/a | `Condition` del stack anidado `CurReconciliation`: concede a la conciliación su tabla en Lake Formation (D104 (9)) |
 | `alerts.emails` | Suscripciones por correo | **P** `AlertsEmail` (uno) | n/a | Más destinos: se suscriben al topic fuera del stack, como hoy |
 
-Parámetros que ve quien instala `Core`: **6 obligatorios** (`Namespace`, `OrganizationId`, `ManagementAccountId`, `FirstAdminEmail`, `AlertsEmail`, `SignUpDomains`) y 9 con valor por defecto. `Payer`: 3. `OrgAccess`: 5. `PackNetwork`: 2 (`Namespace`, `OrganizationId`).
+Parámetros que ve quien instala `Core`: **6 obligatorios** (`Namespace`, `OrganizationId`, `ManagementAccountId`, `FirstAdminEmail`, `AlertsEmail`, `SignUpDomains`) y 11 con valor por defecto. `Payer`: 3. `OrgAccess`: 5. `PackNetwork`: 2 (`Namespace`, `OrganizationId`).
 
 ### 3.1 Hueco: gestión de usuarios
 
