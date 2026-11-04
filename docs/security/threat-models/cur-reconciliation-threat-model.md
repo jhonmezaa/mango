@@ -1,9 +1,10 @@
-# Gasto de Bedrock por agente y conciliación contra CUR 2.0: modelo de amenazas (v0.1)
+# Gasto de Bedrock por agente y conciliación contra CUR 2.0: modelo de amenazas (v0.2)
 
-> Fecha: 2026-11-03 · Skill: `security-threat-model`; revisión de IAM del diseño con `security-audit` (modo guía), que dejó dos ajustes: el ARN de origen en `us-east-1` y una llave KMS propia del bucket. Decisión: **D104** (vigente desde 2026-11-03, aceptada por el dueño por menú; sin construir).
+> Fecha: 2026-11-03 · Skill: `security-threat-model`; revisión de IAM del diseño con `security-audit` (modo guía), que dejó dos ajustes: el ARN de origen en `us-east-1` y una llave KMS propia del bucket. Decisión: **D104** (vigente desde 2026-11-03, aceptada por el dueño por menú).
+> **v0.2, 2026-11-04: construido** (código y documentos, sin instalar), con `security-threat-model` y `security-audit` (modo guía) sobre el diff. Cambios frente al diseño: el bucket va con SSE-S3, porque Data Exports no entrega con una llave KMS (AWS: «encrypt with KMS after the export has been delivered»); la consulta de un export sí se puede editar después de crearlo (solo la configuración de la tabla es fija), así que TM-CUR1 sube de probabilidad y la comprobación de cada pasada es la defensa que queda; el guardrail, aunque lo facture el rol de un agente, no se compara (solo se comparan los tokens de modelo). Lo construido está en «Controles construidos».
 > Amplía `budget-reconciliation-threat-model.md` (D73: conciliar con las trazas) y TM-006 (gasto descontrolado) de `mango-architecture-threat-model.md`.
-> Alcance, todo por construir: el bucket del export CUR 2.0 en la cuenta de la instalación, la base y la tabla de Glue, el grupo de trabajo de Athena `Mango-<ns>-cur`, la función `Mango-<ns>-CurReconciler` con su rol, su DLQ y su alarma, el contador `DAY#AGENT#<id>` de `Budgets` y el paso manual del runbook en la pagadora (activar dos etiquetas y crear el export).
-> Se escribe con lo elegido por menú el 2026-11-03. El dueño eligió la atribución por el rol de cada agente, las etiquetas `mango:agent` y `mango:namespace`, la conciliación contra CUR en D104, los ajustes de la pagadora a mano y el destino del export en la cuenta de Mango. El agente que lanzó el trabajo eligió el grano agente × día. Nada está construido ni desplegado.
+> Alcance: el bucket del export CUR 2.0 en la cuenta de la instalación, la base y la tabla de Glue, el grupo de trabajo de Athena `Mango-<ns>-cur`, la función `Mango-<ns>-CurReconciler` con su rol, su DLQ y su alarma, el contador `DAY#AGENT#<id>` de `Budgets` y el paso manual del runbook en la pagadora (activar dos etiquetas y crear el export).
+> Se escribe con lo elegido por menú el 2026-11-03. El dueño eligió la atribución por el rol de cada agente, las etiquetas `mango:agent` y `mango:namespace`, la conciliación contra CUR en D104, los ajustes de la pagadora a mano y el destino del export en la cuenta de Mango. El agente que lanzó el trabajo eligió el grano agente × día. Construido el 2026-11-04; nada desplegado.
 
 ## Executive summary
 
@@ -36,7 +37,7 @@ Controles del diseño:
   - la pagadora es la cuenta de gestión de la configuración (`managementAccountId`);
   - la consulta de Data Exports admite `WHERE` por cuenta de uso y por producto (documentado);
   - la lista exacta de códigos de producto de Bedrock se fija al construir;
-  - Data Exports quizá no escriba con una llave KMS propia (por comprobar); si la usa, la llave es solo de este bucket.
+  - Data Exports no escribe con una llave KMS propia (comprobado en la documentación el 2026-11-04): SSE-S3.
 
 ## System model
 
@@ -95,7 +96,7 @@ flowchart LR
 
 - Los usuarios de Mango no llegan a nada de esto: no hay ruta HTTP, pantalla ni tool.
 - El LLM no participa: la conciliación no pasa por ningún agente.
-- La configuración de un export no se puede editar después de crearlo: quitar el recorte exige crear otro export.
+- ~~La configuración de un export no se puede editar después de crearlo~~ (corregido el 2026-11-04): la consulta sí se edita (`UpdateExport`); solo la configuración de la tabla, que trae la identidad del que llama, es fija. Quitar el recorte es editar la consulta en la pagadora: lo puede hacer quien administre la facturación del cliente.
 
 ## Entry points and attack surfaces
 
@@ -118,13 +119,27 @@ flowchart LR
 
 | ID | Amenaza | Activo | Probabilidad | Impacto | Prioridad | Control del diseño | Recomendado al construir |
 |---|---|---|---|---|---|---|---|
-| TM-CUR1 | El export trae el gasto de toda la organización | Datos de facturación | Media (paso manual) | Alto | **Alta** | `WHERE` por cuenta de uso de la instalación y producto de Bedrock en la consulta del export; columnas mínimas; el runbook trae la consulta tal cual y la aprobación del dueño | La función comprueba en cada pasada que todas las filas son de la cuenta de la instalación y de Bedrock. Si no lo son, no concilia, audita `unexpected_rows` y alarma. Un test de la consulta del runbook |
-| TM-CUR2 | Se escriben datos falsos en el bucket | Integridad del export | Baja | Medio | Media | Solo `bcm-data-exports.amazonaws.com` con `aws:SourceAccount` = `managementAccountId` y `aws:SourceArn` = sus exports (región `us-east-1`); `BucketOwnerEnforced`; llave KMS propia del bucket, no la de datos (si el servicio la usa, la frontera no alcanza otros datos); ningún rol de Mango con escritura en el prefijo del export; versionado y logs de acceso | Test de la política del bucket. Un deny explícito de `s3:PutObject` en el prefijo del export para todo principal que no sea el servicio |
+| TM-CUR1 | El export trae el gasto de toda la organización | Datos de facturación | Media (paso manual; la consulta se puede editar después) | Alto | **Alta** | `WHERE` por cuenta de uso de la instalación y producto de Bedrock en la consulta del export; columnas mínimas; el runbook trae la consulta tal cual y la aprobación del dueño | La función comprueba en cada pasada que todas las filas son de la cuenta de la instalación y de Bedrock. Si no lo son, no concilia, audita `unexpected_rows` y alarma. Un test de la consulta del runbook |
+| TM-CUR2 | Se escriben datos falsos en el bucket | Integridad del export | Baja | Medio | Media | Solo `bcm-data-exports.amazonaws.com` con `aws:SourceAccount` = `managementAccountId` y `aws:SourceArn` = sus exports (región `us-east-1`); `BucketOwnerEnforced`; SSE-S3 (Data Exports no escribe con KMS), nunca la llave de datos; ningún rol de Mango con escritura en el prefijo del export; versionado y logs de acceso | Test de la política del bucket. Un deny explícito de `s3:PutObject` en el prefijo del export para todo principal que no sea el servicio |
 | TM-CUR3 | El rol de la función lee de más | Contadores y datos | Baja | Medio | Media | ARNs concretos; `LeadingKeys` con `ForAllValues` sobre `DAY#AGENT#*` y `DAY#ORG`, más `Null` = `false` para exigir la clave (hallazgo del 2026-10-19); Athena solo en su grupo de trabajo; S3 solo en dos prefijos | Tests de IAM que fijen cada sentencia; `cdk-nag` sin supresiones nuevas salvo la que exija Athena |
 | TM-CUR4 | Una etiqueta de costo lleva datos de una persona | Etiquetas | Baja | Medio | Baja | Solo `mango:agent` (id) y `mango:namespace`; el provisioner pone los tags `mango:` y no copia los `mango:` del stack (D76 (2)) | El runbook nombra solo esas dos etiquetas para activar |
 | TM-CUR5 | La conciliación calla un sobregasto (sin datos, o datos tarde) | Alarmas | Media | Medio | Media | Sin export, `no_data` auditado; días cerrados hasta D-2; desvíos con umbral y alarma | Alarma aparte si pasan 3 días con `no_data` después de haberse visto datos |
 | TM-CUR6 | Consulta cara o sin fin | Disponibilidad y costo | Baja | Bajo | Baja | Tope de bytes por consulta en el grupo de trabajo; proyección de particiones; 35 días | Tiempo máximo de la función y una sola consulta por pasada |
 | TM-CUR7 | La función asíncrona falla en silencio | Alarmas | Baja | Bajo | Baja | DLQ y alarma (regla de Checkov `CKV_AWS_116`: las asíncronas la llevan) | — |
+
+## Controles construidos (2026-11-04)
+
+| ID | Qué se construyó | Dónde | Test |
+|---|---|---|---|
+| TM-CUR1 | Cada pasada mira la cuenta de uso y el producto de cada fila (la consulta de Athena no filtra por ellos, a propósito). Una fila de otra cuenta o de un producto que no está en `curReconciliation.bedrockProductCodes` → no concilia, audita `unexpected_rows` solo con conteos (ni la cuenta ni el importe de la fila ajena) y la métrica `Findings` dispara `Cur-reconciler-findings`. El runbook trae la consulta del export tal cual, y un test exige que nombre las columnas de la tabla y los códigos de producto de la configuración | `functions/cur-reconciler/src/mango_cur_reconciler/compare.py` (`sort`), `handler.py`; `docs/runbooks/install.md` | `test_a_row_of_another_account_or_product_stops_the_run`; `cur-reconciler.test.ts` («lists in the runbook…») |
+| TM-CUR2 | Política del bucket: `EnableAWSDataExportsToWriteToS3` (la de AWS, tal cual: `bcm-data-exports.amazonaws.com`, `s3:PutObject`, `aws:SourceArn` = `arn:aws:bcm-data-exports:us-east-1:<gestión>:export/*`, `aws:SourceAccount` = `<gestión>`) y `OnlyDataExportsWritesTheExport`: `Deny s3:PutObject` en `cur/*` a todo principal con `ArnNotLike aws:SourceArn` (una petición de un principal de IAM no lleva `aws:SourceArn`). `BucketOwnerEnforced`, bloqueo de acceso público, solo TLS, versionado (las versiones sobrescritas, 30 días), logs de acceso. SSE-S3. Ningún rol de Mango escribe en `cur/`: el conciliador solo escribe `athena-results/` | `infra/lib/constructs/cur-export.ts` | `cur-reconciler.test.ts` («the bucket of the CUR 2.0 export») |
+| TM-CUR3 | Rol `Mango-<ns>-CurReconciler`: Athena solo en `workgroup/Mango-<ns>-cur`; Glue solo su catálogo, su base y su tabla; S3 `GetObject` en `cur/*`, lectura y escritura en `athena-results/*`, `ListBucket` con `s3:prefix` de esos dos; `dynamodb:Query` en `Budgets` con `ForAllValues:StringLike` `DAY#AGENT#*` y `DAY#ORG` más `Null dynamodb:LeadingKeys = false`; auditoría y su cola. Sin KMS para S3 (SSE-S3). cdk-nag sin supresiones nuevas fuera de la de X-Ray | `infra/lib/constructs/cur-reconciler.ts` | `cur-reconciler.test.ts` («CurReconciler role») |
+| TM-CUR4 | El runbook nombra solo `mango:agent` y `mango:namespace` para activar | `docs/runbooks/install.md` | — |
+| TM-CUR5 | `no_data` auditado sin alarma; días cerrados hasta D-2; umbral de configuración (10 % y USD 1, ambos). El total se compara con `DAY#ORG` desde el día siguiente a su primer día (D102): un agente cuyo contador no se escribiera aparece como desvío del total. No se construyó la alarma aparte de «3 días con `no_data` después de haber visto datos»: un hueco del export con gasto en Mango ya sale como desvío del total | `compare.py`, `handler.py` | `test_agents_and_the_organization_are_compared…`, `test_an_agent_the_bill_charges_and_mango_never_counted_deviates` |
+| TM-CUR6 | Tope de 1 GiB por consulta, configuración impuesta en el grupo de trabajo, proyección de particiones (`billing_period BETWEEN ? AND ?`), una sola consulta por pasada, texto fijo con las fechas como parámetros de ejecución; la función para la consulta si se acerca a su tiempo límite | `cur-reconciler.ts`, `query.py` | `test_one_fixed_query…`, `test_a_query_that_fails_or_runs_too_long_fails_the_run` |
+| TM-CUR7 | Scheduler (grupo `Mango-<ns>-cur`, rol con `aws:SourceArn` = el ARN del grupo) → función asíncrona con DLQ `Mango-<ns>-CurReconciler-dlq` y alarma `Cur-reconciler-failed`; Checkov `CKV_AWS_116` sin suprimir | `cur-reconciler.ts` | `cur-reconciler.test.ts` («is asynchronous with a dead-letter queue…») |
+
+**Amenaza nueva al construir, TM-CUR8 (baja):** el contador `DAY#AGENT#<id>` lo escriben `mango-api` y el conciliador de presupuesto con los permisos que ya tenían; un error que lo infle o lo omita no cambia ningún presupuesto (el conciliador solo lee), pero haría saltar o callar la alarma. Control: el contador va en la misma transacción que el presupuesto, con la misma condición sobre el turno pendiente (se escribe una sola vez), y un test por cada cierre (`settle`, `hold`, `close`, Playground, turno anterior al contador).
 
 ## Criticality calibration
 
@@ -134,13 +149,13 @@ flowchart LR
 
 ## Focus paths for security review
 
-| Ruta (por construir) | Por qué importa | Amenazas |
+| Ruta | Por qué importa | Amenazas |
 |---|---|---|
-| El construct del bucket del export y su política | Frontera nueva entre cuentas | TM-CUR1, TM-CUR2 |
-| El rol de `Mango-<ns>-CurReconciler` | Permiso de IAM nuevo | TM-CUR3, TM-CUR6 |
-| La consulta del export en el runbook | El recorte vive ahí | TM-CUR1 |
-| La comprobación de filas en la función | Defensa si el recorte falta | TM-CUR1 |
-| La transacción que suma `DAY#AGENT#` | Integridad de los contadores | TM-CUR5 |
+| `infra/lib/constructs/cur-export.ts` | Frontera nueva entre cuentas | TM-CUR1, TM-CUR2 |
+| `infra/lib/constructs/cur-reconciler.ts` | Permiso de IAM nuevo | TM-CUR3, TM-CUR6, TM-CUR7 |
+| `docs/runbooks/install.md` («Gasto de Bedrock por agente en la factura») | El recorte vive ahí | TM-CUR1, TM-CUR4 |
+| `functions/cur-reconciler/src/mango_cur_reconciler/compare.py` | Defensa si el recorte falta | TM-CUR1, TM-CUR5 |
+| `packages/py/mango-core/src/mango_core/budget_turns.py` (`cost_counters`) | Integridad de los contadores | TM-CUR5, TM-CUR8 |
 
 ## Quality check
 
@@ -148,8 +163,8 @@ flowchart LR
 - La frontera nueva (pagadora → bucket) está en TM-CUR1 y TM-CUR2.
 - Nada de esto es de CI ni de desarrollo.
 - Lo elegido por menú está reflejado.
-- Lo que falta comprobar al construir:
-  - la lista de códigos de producto de Bedrock;
-  - si Data Exports escribe con la llave KMS de la instalación;
-  - el nombre exacto de la columna del principal en CUR 2.0;
-  - que el harness llama a Bedrock como su rol de ejecución (lo dice la documentación de AgentCore, sin ver en una factura).
+- Lo que falta comprobar en una instalación (no se puede sin el export real):
+  - la lista de códigos de producto de Bedrock (`AmazonBedrock`, `AmazonBedrockService`, de las consultas de ejemplo de AWS);
+  - el tipo de las columnas en el Parquet (`CUR_COLUMNS`);
+  - que `line_item_iam_principal` trae el rol del agente o su sesión cuando llama el harness;
+  - que Data Exports entrega en el bucket de otra cuenta con esta política (la del documento de AWS) y que el `Deny` por `aws:SourceArn` no la frena.
