@@ -473,6 +473,7 @@ def test_the_suite_shows_its_run_in_progress_case_by_case(lab: Lab) -> None:
     assert (listed.active_run.run_id, listed.active_run.status) == (run_id, "queued")
     assert (listed.active_run.cases_done, listed.active_run.case_count) == (0, 2)
     assert listed.last_attempt is None
+    assert list_suites(lab.deps, _launcher(), None).judge_models == [SONNET]
 
     body, _ = lab.queue.sent.pop(0)
     message = task_runs.parse_message(body)

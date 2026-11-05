@@ -6462,6 +6462,10 @@ export type SuiteSettingsIn = {
  */
 export type SuitesOut = {
     /**
+     * Judge Models
+     */
+    judge_models?: Array<string>;
+    /**
      * Suites
      */
     suites: Array<SuiteOut>;

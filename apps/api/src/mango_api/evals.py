@@ -230,6 +230,9 @@ class SuiteOut(_Strict):
 
 class SuitesOut(_Strict):
     suites: list[SuiteOut]
+    judge_models: list[str] = []
+    """The models that may judge in this installation (``models.judges``); the selector of the
+    judge only offers these that the catalog also has enabled. Empty while runs do not exist."""
 
 
 class CaseOut(_Strict):
@@ -463,7 +466,7 @@ def list_suites(deps: EvalsDeps, caller: Caller, agent_id: str | None) -> Suites
         if s.agent_id in visible and _may(caller, "ViewEvals", metas.get(s.agent_id))
     ]
     out.sort(key=lambda s: (s.agent_id, s.name.casefold(), s.suite_id))
-    return SuitesOut(suites=out)
+    return SuitesOut(suites=out, judge_models=list(deps.judge_models))
 
 
 def _check_cases(cases: list[EvalCase] | tuple[EvalCase, ...]) -> None:

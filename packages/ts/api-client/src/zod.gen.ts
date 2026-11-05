@@ -3052,6 +3052,7 @@ export const zSuiteSettingsInSchema = z.object({
  * SuitesOut
  */
 export const zSuitesOutSchema = z.object({
+    judge_models: z.array(z.string()).optional().default([]),
     suites: z.array(zSuiteOutSchema)
 });
 

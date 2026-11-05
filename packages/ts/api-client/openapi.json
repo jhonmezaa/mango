@@ -12266,6 +12266,14 @@
       "SuitesOut": {
         "additionalProperties": false,
         "properties": {
+          "judge_models": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Judge Models",
+            "type": "array"
+          },
           "suites": {
             "items": {
               "$ref": "#/components/schemas/SuiteOut"
