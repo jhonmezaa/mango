@@ -180,6 +180,7 @@ class Env:
             price=PRICE,
             started_at=started,
             timeout_seconds=60,
+            origin="chat",
             area=area,
         )
         budgets.reserve(scopes, Decimal(1), current_period(), pending)

@@ -664,6 +664,20 @@ def test_chat_streams_and_settles_budget(h: Harness) -> None:
     assert ("user-1", "assistant", "Hola \n\nmundo") in h.conversations.stored
 
 
+def test_a_chat_turn_counts_as_a_conversation_in_costos_and_its_title_does_not(
+    h: Harness,
+) -> None:
+    """D106: the turn adds to its model and to the origin «chat». The title of the new
+    conversation is not a turn: only Inicio's counters, «sin desglose» in Costos."""
+    response = h.client().post("/api/chat", headers=_auth(), json={"message": "¿Cuánto gasté?"})
+    assert response.status_code == 200
+    (turn,) = h.budgets.turns
+    assert turn.origin == "chat"
+    assert turn.cost_counters[-2:] == (f"DAY#MODEL#{MODEL}", "DAY#SOURCE#chat")
+    (title,) = h.budgets.charged_counters
+    assert title == turn.day_counters
+
+
 def test_chat_streams_live_progress(h: Harness) -> None:
     response = h.client().post("/api/chat", headers=_auth(), json={"message": "¿Cuánto gasté?"})
     events = _events(response.text)

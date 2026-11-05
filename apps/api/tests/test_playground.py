@@ -109,7 +109,10 @@ def test_the_creator_tests_a_draft_with_unsaved_changes_on_the_test_harness(env:
     # Bedrock bills the Playground's role: its day counter, not the tested agent's (D104).
     (turn,) = env.budgets.turns
     assert turn.cost_agent == "playground"
-    assert turn.cost_counters[-1] == "DAY#AGENT#playground"
+    assert "DAY#AGENT#playground" in turn.cost_counters
+    # Its origin in Costos is the Playground (D106).
+    assert turn.origin == "playground"
+    assert turn.cost_counters[-1] == "DAY#SOURCE#playground"
 
     (run,) = _audited(env, "playground.run")
     assert run["agent"] == draft["agent_id"]

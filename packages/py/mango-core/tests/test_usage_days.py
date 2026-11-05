@@ -11,7 +11,7 @@ import pytest
 from moto import mock_aws
 
 from mango_core import usage_days
-from mango_core.agents import AGENT_ID_PATTERN
+from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN
 from mango_core.playground import PLAYGROUND_ID
 
 TABLE = "budgets"
@@ -108,3 +108,21 @@ def test_the_agents_counter_takes_an_agent_id_or_the_playground() -> None:
         assert not usage_days.is_agent(bad)
         with pytest.raises(ValueError, match="invalid agent"):
             usage_days.agent_key(bad)
+
+
+def test_the_model_pattern_is_the_catalogs() -> None:
+    assert usage_days._MODEL.pattern == MODEL_ID_PATTERN
+
+
+def test_the_counters_of_costos_validate_their_keys() -> None:
+    assert usage_days.model_key("us.anthropic.claude-sonnet-4-6") == (
+        "DAY#MODEL#us.anthropic.claude-sonnet-4-6"
+    )
+    assert usage_days.source_key("task") == "DAY#SOURCE#task"
+    with pytest.raises(ValueError, match="model"):
+        usage_days.model_key("a/b")
+    with pytest.raises(ValueError, match="origin"):
+        usage_days.source_key("schedule")
+    assert usage_days.breakdown("m", None) == ()
+    assert usage_days.breakdown("m", "chat") == ("DAY#MODEL#m", "DAY#SOURCE#chat")
+    assert usage_days.breakdown("", "eval") == ("DAY#SOURCE#eval",)

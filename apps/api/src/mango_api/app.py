@@ -223,7 +223,7 @@ from mango_api.web_session import (
     WebSessionDeps,
     web_session_router,
 )
-from mango_core import invocation
+from mango_core import invocation, usage_days
 from mango_core import task_reports as reports
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN, VersionStatus
 from mango_core.budget_turns import PendingTurn
@@ -1775,6 +1775,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             price=turn_price(price),
             started_at=int(time.time()),
             timeout_seconds=limits.timeout_seconds,
+            origin=usage_days.ORIGIN_CHAT,
             area=user.business_unit,
         )
         try:
@@ -2472,6 +2473,8 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         price=turn_price(price),
         started_at=int(time.time()),
         timeout_seconds=limits.timeout_seconds,
+        # A run of a task (D78): Costos tells it from a conversation (D106).
+        origin=usage_days.ORIGIN_TASK,
         area=user.business_unit,
     )
     try:

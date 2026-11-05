@@ -238,6 +238,7 @@ class Lab:
                 price=PRICE,
                 started_at=START,
                 timeout_seconds=120,
+                origin="chat",
             ),
             session_id=session,
             **changes,

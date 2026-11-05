@@ -66,6 +66,7 @@ def _turn(turn_id: str = "a" * 32, **changes: Any) -> PendingTurn:
         price=PRICE,
         started_at=START,
         timeout_seconds=120,
+        origin="chat",
     )
     return replace(turn, **changes)
 
@@ -513,6 +514,7 @@ def test_the_area_travels_with_the_record_and_an_invalid_one_is_dropped() -> Non
         price=PRICE,
         started_at=START,
         timeout_seconds=60,
+        origin="chat",
         area="../x",
     )
     assert created.area is None
@@ -524,7 +526,7 @@ def test_the_area_travels_with_the_record_and_an_invalid_one_is_dropped() -> Non
 def test_the_turn_adds_to_its_agents_counter_and_the_title_does_not() -> None:
     turn = _turn(area="ventas")
     assert turn.cost_agent == "finops"
-    assert turn.cost_counters == (*turn.day_counters, "DAY#AGENT#finops")
+    assert turn.cost_counters == (*turn.day_counters, "DAY#AGENT#finops", *BREAKDOWN)
     # The title is mango-api's call (D73 (15)): never the agent's.
     assert "DAY#AGENT#finops" not in turn.day_counters
 
@@ -549,6 +551,7 @@ def test_a_playground_test_adds_to_the_playground_and_charges_the_tested_agent(d
         price=PRICE,
         started_at=START,
         timeout_seconds=60,
+        origin="chat",
         cost_agent="playground",
     )
     assert created.cost_agent == "playground"
@@ -557,7 +560,7 @@ def test_a_playground_test_adds_to_the_playground_and_charges_the_tested_agent(d
 
 def test_a_record_from_before_the_agents_counter_adds_only_to_inicios(db: Any) -> None:
     item = _turn().to_item()
-    del item["cost_agent"]
+    del item["cost_agent"], item["origin"]
     turn = PendingTurn.from_item(item)
     assert turn.cost_agent is None
     assert turn.cost_counters == turn.day_counters
@@ -573,7 +576,11 @@ def test_a_record_from_before_the_agents_counter_adds_only_to_inicios(db: Any) -
 
 
 def test_an_agent_id_that_cannot_be_a_counter_is_left_out() -> None:
-    assert replace(_turn(), cost_agent=None).cost_counters == ("DAY#ORG", "DAY#USER#user-1")
+    assert replace(_turn(), cost_agent=None).cost_counters == (
+        "DAY#ORG",
+        "DAY#USER#user-1",
+        *BREAKDOWN,
+    )
     item = _turn().to_item()
     item["cost_agent"] = {"S": "DAY#ORG"}
     with pytest.raises(InvalidTurnError):
@@ -591,6 +598,145 @@ def test_an_agent_id_that_cannot_be_a_counter_is_left_out() -> None:
         price=PRICE,
         started_at=START,
         timeout_seconds=60,
+        origin="chat",
     )
     assert created.cost_agent is None
     assert "cost_agent" not in created.to_item()
+
+
+# --- The model's and the origin's day counters of Costos (D106) --------------------------------
+
+BREAKDOWN = ("DAY#MODEL#us.anthropic.claude-sonnet-4-6", "DAY#SOURCE#chat")
+
+
+def _costs(db: Any, origin: str = "chat") -> dict[str, tuple[Decimal, int] | None]:
+    keys = ["DAY#MODEL#us.anthropic.claude-sonnet-4-6", f"DAY#SOURCE#{origin}"]
+    return {key: _day(db, key) for key in keys}
+
+
+def test_settling_adds_to_the_model_and_the_origin_once(db: Any) -> None:
+    turn = _turn(area="ventas")
+    _reserve(db, turn)
+    assert budget_turns.settle(db, TABLE, turn, Decimal("0.0045")) is True
+    assert set(_costs(db).values()) == {(Decimal("0.0045"), 1)}
+    assert budget_turns.settle(db, TABLE, turn, Decimal("0.0045")) is False
+    assert set(_costs(db).values()) == {(Decimal("0.0045"), 1)}
+
+
+def test_a_released_turn_adds_nothing_to_the_model_or_the_origin(db: Any) -> None:
+    turn = _turn()
+    _reserve(db, turn)
+    assert budget_turns.settle(db, TABLE, turn, Decimal(0), invoked=False) is True
+    assert set(_costs(db).values()) == {None}
+
+
+def test_a_held_turn_closed_by_the_reconciler_adds_to_the_model_and_the_origin(
+    db: Any,
+) -> None:
+    turn = _turn()
+    _reserve(db, turn)
+    held = budget_turns.hold(db, TABLE, turn, TokenUsage(input_tokens=1000, output_tokens=100))
+    assert held is not None
+    assert set(_costs(db).values()) == {(Decimal("0.004500"), 1)}
+    outcome = Outcome(BASIS_TRACE, usage=TokenUsage(2681, 245), invocations=1)
+    assert budget_turns.close(db, TABLE, held, outcome) is not None
+    # As the organization's and the budget: the final cost and still one turn.
+    assert set(_costs(db).values()) == {(Decimal("0.011718"), 1)}
+    assert _day(db, "DAY#ORG") == (Decimal("0.011718"), 1)
+    assert budget_turns.close(db, TABLE, held, outcome) is None
+    assert set(_costs(db).values()) == {(Decimal("0.011718"), 1)}
+
+
+def test_an_open_turn_closed_by_the_reconciler_and_one_never_invoked(db: Any) -> None:
+    ran = _turn(session_id=SESSION)
+    _reserve(db, ran)
+    outcome = Outcome(BASIS_TRACE, usage=TokenUsage(3030, 250), invocations=1)
+    assert budget_turns.close(db, TABLE, ran, outcome) is not None
+    assert set(_costs(db).values()) == {(Decimal("0.01284"), 1)}
+    never = _turn("b" * 32)
+    _reserve(db, never)
+    assert budget_turns.close(db, TABLE, never, Outcome(BASIS_NOT_INVOKED)) is not None
+    assert set(_costs(db).values()) == {(Decimal("0.01284"), 1)}
+
+
+def test_an_open_turn_without_a_trace_charges_the_reservation_to_the_model(db: Any) -> None:
+    turn = _turn(session_id=SESSION)
+    _reserve(db, turn)
+    assert budget_turns.close(db, TABLE, turn, Outcome(BASIS_RESERVATION, "no_trace")) is not None
+    assert set(_costs(db).values()) == {(RESERVED, 1)}
+
+
+@pytest.mark.parametrize("origin", ["task", "playground", "eval"])
+def test_each_origin_has_its_own_counter(db: Any, origin: str) -> None:
+    turn = replace(_turn(), origin=origin)
+    _reserve(db, turn)
+    assert budget_turns.settle(db, TABLE, turn, Decimal("0.03")) is True
+    assert _day(db, f"DAY#SOURCE#{origin}") == (Decimal("0.03"), 1)
+    assert _day(db, "DAY#SOURCE#chat") is None
+    assert PendingTurn.from_item(turn.to_item()).origin == origin
+
+
+def test_a_record_from_before_the_counters_of_costos_adds_to_neither(db: Any) -> None:
+    item = _turn().to_item()
+    del item["origin"]
+    turn = PendingTurn.from_item(item)
+    assert turn.origin is None
+    assert turn.cost_counters == (*turn.day_counters, "DAY#AGENT#finops")
+    _reserve(db, turn)
+    held = budget_turns.hold(db, TABLE, turn, TokenUsage(input_tokens=1000))
+    assert held is not None
+    outcome = Outcome(BASIS_TRACE, usage=TokenUsage(2000))
+    assert budget_turns.close(db, TABLE, held, outcome) is not None
+    assert set(_costs(db).values()) == {None}
+    assert _day(db, "DAY#AGENT#finops") == (Decimal("0.006000"), 1)
+
+
+def test_an_origin_or_a_model_that_cannot_be_a_counter() -> None:
+    with pytest.raises(ValueError, match="origin"):
+        PendingTurn.new(
+            turn_id="e" * 32,
+            user_id="u",
+            agent_id="a",
+            agent_version=1,
+            model="m",
+            conversation_id="c" * 32,
+            period=PERIOD,
+            scopes=(USER,),
+            reserved=RESERVED,
+            price=PRICE,
+            started_at=START,
+            timeout_seconds=60,
+            origin="schedule",
+        )
+    item = _turn().to_item()
+    item["origin"] = {"S": "DAY#ORG"}
+    with pytest.raises(InvalidTurnError):
+        PendingTurn.from_item(item)
+    # A model id that cannot be a key leaves the turn out of the models, not of the origin.
+    odd = replace(_turn(), model="a/b")
+    assert odd.cost_counters[-1] == "DAY#SOURCE#chat"
+    assert not any(key.startswith("DAY#MODEL#") for key in odd.cost_counters)
+
+
+def test_a_turn_closes_with_few_writes_far_below_the_transaction_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DynamoDB takes 100 items per transaction; each one is two write units."""
+    seen: list[int] = []
+
+    class Recorder:
+        class exceptions:  # noqa: N801 - the shape of a boto3 client
+            TransactionCanceledException = RuntimeError
+
+        def transact_write_items(self, TransactItems: list[Any]) -> None:  # noqa: N803
+            seen.append(len(TransactItems))
+
+    turn = _turn(area="ventas")
+    db: Any = Recorder()
+    budget_turns.settle(db, TABLE, turn, Decimal(1))
+    held = budget_turns.hold(db, TABLE, turn, TokenUsage(input_tokens=1))
+    assert held is not None
+    budget_turns.close(db, TABLE, held, Outcome(BASIS_TRACE, usage=TokenUsage(2)))
+    # The record, two budgets and six day counters (organization, person, area, agent, model,
+    # origin).
+    assert seen == [9, 9, 9]

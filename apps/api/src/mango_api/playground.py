@@ -63,7 +63,7 @@ from mango_api.rate_limits import Leases, Limiter
 from mango_api.settings import ModelPrice
 from mango_api.skills_store import SkillStore
 from mango_api.web import ApiError, Caller, rate_limited
-from mango_core import invocation
+from mango_core import invocation, usage_days
 from mango_core.agents import (
     AGENT_ID_PATTERN,
     MODEL_ID_PATTERN,
@@ -440,6 +440,7 @@ def run_test(
         price=turn_price(test.price),
         started_at=int(time.time()),
         timeout_seconds=limits.timeout_seconds,
+        origin=usage_days.ORIGIN_PLAYGROUND,
         area=user.business_unit,
         # The budget is the tested agent's; Bedrock bills the Playground's role (D104).
         cost_agent=PLAYGROUND_ID,

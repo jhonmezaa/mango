@@ -582,6 +582,9 @@ def test_run_now_runs_as_the_owner_with_a_token_of_its_own(env: Env) -> None:
     assert (turn.user_id, turn.conversation_id) == ("creator-1", run["run_id"])
     # A run counts to its agent's day counter, like a chat turn (D104).
     assert turn.cost_agent == turn.agent_id
+    # And to the origin «task» of Costos, with its model (D106).
+    assert turn.origin == "task"
+    assert turn.cost_counters[-2:] == (f"DAY#MODEL#{turn.model}", "DAY#SOURCE#task")
     assert len(env.budgets.settled) == 1
     started, finished = env.events("task.run.started"), env.events("task.run.finished")
     assert (started[0]["via"], finished[0]["status"]) == ("task", "ok")

@@ -10,9 +10,14 @@ A turn also adds to the counter of the agent whose role called Bedrock (D104): t
 or ``playground`` for a test of the Playground. The daily reconciliation against the bill
 (CUR 2.0) compares it with what the bill charged that role. Nothing of a person is in it.
 
+And, for Costos (D106), to the counter of the model the turn ran on and to the one of its
+origin: a conversation (``chat``), a run of a task (``task``, D78), a test of the Playground
+(``playground``, D91) or an evaluation (``eval``). They count from the version that writes
+them: a turn recorded before carries no origin and adds to neither.
+
 Item layout, in the Budgets table: ``PK = DAY#ORG``, ``DAY#AREA#<area>``,
-``DAY#USER#<sub>`` or ``DAY#AGENT#<agent id>``; ``SK = <yyyy-mm-dd>`` (UTC, the day the turn
-started). Attributes:
+``DAY#USER#<sub>``, ``DAY#AGENT#<agent id>``, ``DAY#MODEL#<model id>`` or
+``DAY#SOURCE#<origin>``; ``SK = <yyyy-mm-dd>`` (UTC, the day the turn started). Attributes:
 ``spent`` (USD) and ``turns`` (turns that reached the agent). A person's own counter is read
 with row-level security (``dynamodb:LeadingKeys`` = ``DAY#USER#<sub>``). Items expire after
 ``RETENTION_DAYS``: six months and the six before them, to compare.
@@ -35,12 +40,22 @@ ORG_KEY: Final = "DAY#ORG"
 AREA_PREFIX: Final = "DAY#AREA#"
 USER_PREFIX: Final = "DAY#USER#"
 AGENT_PREFIX: Final = "DAY#AGENT#"
+MODEL_PREFIX: Final = "DAY#MODEL#"
+SOURCE_PREFIX: Final = "DAY#SOURCE#"
+ORIGIN_CHAT: Final = "chat"
+ORIGIN_TASK: Final = "task"
+ORIGIN_PLAYGROUND: Final = "playground"
+ORIGIN_EVAL: Final = "eval"
+ORIGINS: Final = (ORIGIN_CHAT, ORIGIN_TASK, ORIGIN_PLAYGROUND, ORIGIN_EVAL)
+"""Where a turn comes from (D106): a closed list, set by mango-api from the route of the turn."""
 RETENTION_DAYS: Final = 400
 """Two periods of 180 days, and margin."""
 _AREA: Final = re.compile(r"^[a-z0-9-]{2,32}$")
 _AGENT: Final = re.compile(r"^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$")
 """``mango_core.agents.AGENT_ID_PATTERN`` (a test keeps them equal): also the Playground's
 ``playground``, the slug of its role ``Mango-<ns>-agent-playground``."""
+_MODEL: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$")
+"""``mango_core.agents.MODEL_ID_PATTERN`` (a test keeps them equal)."""
 _DAY: Final = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ZERO: Final = Decimal(0)
 _QUERY_LIMIT: Final = 400
@@ -69,6 +84,38 @@ def agent_key(agent_id: str) -> str:
     if not is_agent(agent_id):
         raise ValueError("invalid agent")
     return AGENT_PREFIX + agent_id
+
+
+def is_model(value: object) -> bool:
+    return isinstance(value, str) and _MODEL.fullmatch(value) is not None
+
+
+def model_key(model_id: str) -> str:
+    """The day counter of the model a turn ran on (D106)."""
+    if not is_model(model_id):
+        raise ValueError("invalid model")
+    return MODEL_PREFIX + model_id
+
+
+def is_origin(value: object) -> bool:
+    return isinstance(value, str) and value in ORIGINS
+
+
+def source_key(origin: str) -> str:
+    """The day counter of where a turn comes from (D106)."""
+    if not is_origin(origin):
+        raise ValueError("invalid origin")
+    return SOURCE_PREFIX + origin
+
+
+def breakdown(model_id: str, origin: str | None) -> tuple[str, ...]:
+    """The counters of Costos a cost adds to (D106): its origin's and, when the id can be a
+    counter's, its model's. Nothing without an origin: a turn recorded before them."""
+    if origin is None or not is_origin(origin):
+        return ()
+    if not is_model(model_id):
+        return (source_key(origin),)
+    return (model_key(model_id), source_key(origin))
 
 
 def keys(user_id: str, area: str | None) -> tuple[str, ...]:
