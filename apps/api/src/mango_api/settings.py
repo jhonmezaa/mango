@@ -153,6 +153,8 @@ class Settings:
     """The judge models of the installation config (D110 (8)): the only ones a suite may name."""
     evaluation_fee: Decimal = Decimal(0)
     """USD per evaluation of a custom evaluator of AgentCore Evaluations (rule 7)."""
+    tickets_table: str = ""
+    """Tickets of Mango (D112); empty until the tickets construct is deployed."""
     presign_role_arn: str = ""
     """``Mango-<ns>-Presign``: the only credentials that sign URLs a browser uses."""
     """``Mango-<ns>-KnowledgeSync`` (D88 (11)): indexes, deletes and verifies documents."""
@@ -257,6 +259,7 @@ class Settings:
             ),
             evaluation_fee=Decimal(env.get("EVALUATION_FEE_USD", "0")),
             skills_bucket=env.get("SKILLS_BUCKET", ""),
+            tickets_table=env.get("TICKETS_TABLE", ""),
             presign_role_arn=env.get("PRESIGN_ROLE_ARN", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h

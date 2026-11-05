@@ -19,6 +19,7 @@ AGENT_TYPE = "Mango::Agent"
 TASK_TYPE = "Mango::Task"
 KNOWLEDGE_BASE_TYPE = "Mango::KnowledgeBase"
 REMOTE_MCP_TYPE = "Mango::RemoteMcp"
+TICKET_TYPE = "Mango::Ticket"
 PLATFORM = ("Mango::Platform", "mango")
 # Limit of requests per BatchIsAuthorized call.
 _BATCH_SIZE = 30
@@ -66,6 +67,18 @@ class RemoteMcpResource:
     groups: frozenset[str] = frozenset()
 
 
+@dataclass(frozen=True)
+class TicketResource:
+    """What Cedar knows about a ticket (D112): its creator and assignee, read from the Tickets
+    table, and its agent with the groups and users of the published version (as UseAgent),
+    never from the request."""
+
+    ticket_id: str
+    creator: str
+    assignee: str | None = None
+    agent: AgentResource | None = None
+
+
 def _user_ref(user_id: str) -> dict[str, Any]:
     return {"entityIdentifier": {"entityType": USER_TYPE, "entityId": user_id}}
 
@@ -100,6 +113,26 @@ def _knowledge_entity(kb: KnowledgeBaseResource) -> dict[str, Any]:
     }
 
 
+def _ticket_entities(ticket: TicketResource) -> list[dict[str, Any]]:
+    """The ticket and, if it has one, its agent (the policy reads the agent's attributes)."""
+    attributes: dict[str, Any] = {"creator": _user_ref(ticket.creator)}
+    if ticket.assignee:
+        attributes["assignee"] = _user_ref(ticket.assignee)
+    entities: list[dict[str, Any]] = []
+    if ticket.agent is not None:
+        attributes["agent"] = {
+            "entityIdentifier": {"entityType": AGENT_TYPE, "entityId": ticket.agent.agent_id}
+        }
+        entities.append(_agent_entity(ticket.agent))
+    return [
+        {
+            "identifier": {"entityType": TICKET_TYPE, "entityId": ticket.ticket_id},
+            "attributes": attributes,
+        },
+        *entities,
+    ]
+
+
 def _remote_entity(remote: RemoteMcpResource) -> dict[str, Any]:
     return {
         "identifier": {"entityType": REMOTE_MCP_TYPE, "entityId": remote.registration_id},
@@ -127,7 +160,7 @@ class Authorizer:
             "attributes": attributes,
         }
 
-    def is_allowed(
+    def is_allowed(  # noqa: PLR0911 - one refusal per resource whose attributes do not match
         self,
         user: UserContext,
         action: str,
@@ -138,6 +171,7 @@ class Authorizer:
         task: TaskResource | None = None,
         knowledge: KnowledgeBaseResource | None = None,
         remote: RemoteMcpResource | None = None,
+        ticket: TicketResource | None = None,
     ) -> bool:
         """One decision. ``agent`` carries the attributes of an ``Mango::Agent`` resource,
         ``task`` those of a ``Mango::Task``, ``knowledge`` those of a ``Mango::KnowledgeBase``
@@ -174,13 +208,26 @@ class Authorizer:
                 logger.error("remote MCP attributes do not match the resource; denying")
                 return False
             resource = _remote_entity(remote)
+        extra: list[Any] = []
+        if ticket is not None:
+            if (
+                resource_type != TICKET_TYPE
+                or ticket.ticket_id != resource_id
+                or agent is not None
+                or task is not None
+                or knowledge is not None
+                or remote is not None
+            ):
+                logger.error("ticket attributes do not match the resource; denying")
+                return False
+            resource, *extra = _ticket_entities(ticket)
         try:
             resp = self._client.is_authorized(
                 policyStoreId=self._store,
                 principal={"entityType": USER_TYPE, "entityId": user.user_id},
                 action={"actionType": "Mango::Action", "actionId": action},
                 resource={"entityType": resource_type, "entityId": resource_id},
-                entities={"entityList": [self._user_entity(user), resource]},
+                entities={"entityList": [self._user_entity(user), resource, *extra]},
             )
         except Exception:
             logger.exception("authorization check failed; denying")
@@ -298,3 +345,41 @@ class Authorizer:
                     allowed.add(str(resource.get("entityId")))
         # Only ids that were asked for count, whatever the response says.
         return frozenset(allowed & {r.registration_id for r in unique})
+
+    def allowed_tickets(
+        self, user: UserContext, action: str, tickets: Sequence[TicketResource]
+    ) -> frozenset[str]:
+        """Ids of the tickets ``user`` may ``action`` on (fail closed), for lists (D112)."""
+        allowed: set[str] = set()
+        principal: Any = {"entityType": USER_TYPE, "entityId": user.user_id}
+        cedar_action: Any = {"actionType": "Mango::Action", "actionId": action}
+        unique = list({t.ticket_id: t for t in tickets}.values())
+        for start in range(0, len(unique), _BATCH_SIZE):
+            batch = unique[start : start + _BATCH_SIZE]
+            entities: dict[tuple[str, str], Any] = {}
+            for t in batch:
+                for entity in _ticket_entities(t):
+                    ident = entity["identifier"]
+                    entities[(ident["entityType"], ident["entityId"])] = entity
+            try:
+                resp = self._client.batch_is_authorized(
+                    policyStoreId=self._store,
+                    entities={"entityList": [self._user_entity(user), *entities.values()]},
+                    requests=[
+                        {
+                            "principal": principal,
+                            "action": cedar_action,
+                            "resource": {"entityType": TICKET_TYPE, "entityId": t.ticket_id},
+                        }
+                        for t in batch
+                    ],
+                )
+            except Exception:
+                logger.exception("batch authorization check failed; denying")
+                continue
+            for result in resp.get("results", []):
+                resource = result.get("request", {}).get("resource", {})
+                if result.get("decision") == "ALLOW" and resource.get("entityType") == TICKET_TYPE:
+                    allowed.add(str(resource.get("entityId")))
+        # Only ids that were asked for count, whatever the response says.
+        return frozenset(allowed & {t.ticket_id for t in unique})

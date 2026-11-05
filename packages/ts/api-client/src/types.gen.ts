@@ -1402,6 +1402,35 @@ export type CitationOut = {
 };
 
 /**
+ * CommentIn
+ */
+export type CommentIn = {
+    /**
+     * Body
+     */
+    body: string;
+};
+
+/**
+ * CommentOut
+ */
+export type CommentOut = {
+    author: MangoApiTicketsPersonOut;
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Comment Id
+     */
+    comment_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
  * ConnectOut
  */
 export type ConnectOut = {
@@ -2162,6 +2191,33 @@ export type EvalRunsOut = {
      * Runs
      */
     runs: Array<EvalRunOut>;
+};
+
+/**
+ * EventOut
+ */
+export type EventOut = {
+    /**
+     * Action
+     */
+    action: 'created' | 'changed' | 'commented';
+    actor: MangoApiTicketsPersonOut;
+    /**
+     * After
+     */
+    after: string | null;
+    /**
+     * Before
+     */
+    before: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Field
+     */
+    field: 'status' | 'priority' | 'assignee' | null;
 };
 
 /**
@@ -4218,6 +4274,28 @@ export type QueuedSourceOut = {
      * Withdrawn At
      */
     withdrawn_at: string | null;
+};
+
+/**
+ * QuickCountsOut
+ */
+export type QuickCountsOut = {
+    /**
+     * All
+     */
+    all: number;
+    /**
+     * High
+     */
+    high: number;
+    /**
+     * Mine
+     */
+    mine: number;
+    /**
+     * Unassigned
+     */
+    unassigned: number;
 };
 
 /**
@@ -6456,6 +6534,197 @@ export type TaskOut = {
 };
 
 /**
+ * TicketChangeIn
+ */
+export type TicketChangeIn = {
+    /**
+     * Assignee Id
+     */
+    assignee_id?: string | null;
+    /**
+     * Priority
+     */
+    priority?: 'high' | 'medium' | 'low' | null;
+    /**
+     * Status
+     */
+    status?: 'open' | 'in_progress' | 'done' | null;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * TicketDetailOut
+ */
+export type TicketDetailOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string | null;
+    /**
+     * Agent Name
+     */
+    agent_name: string | null;
+    /**
+     * Approval Id
+     */
+    approval_id: string | null;
+    assignee: MangoApiTicketsPersonOut | null;
+    /**
+     * Comment Count
+     */
+    comment_count: number;
+    /**
+     * Comments
+     */
+    comments: Array<CommentOut>;
+    /**
+     * Created At
+     */
+    created_at: string;
+    creator: MangoApiTicketsPersonOut;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * History
+     */
+    history: Array<EventOut>;
+    /**
+     * Participants
+     */
+    participants: Array<MangoApiTicketsPersonOut>;
+    /**
+     * Priority
+     */
+    priority: 'high' | 'medium' | 'low';
+    /**
+     * Source
+     */
+    source: 'web' | 'agent' | 'task';
+    /**
+     * Status
+     */
+    status: 'open' | 'in_progress' | 'needs_approval' | 'done';
+    /**
+     * Ticket Id
+     */
+    ticket_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * TicketIn
+ */
+export type TicketIn = {
+    /**
+     * Agent Id
+     */
+    agent_id?: string | null;
+    /**
+     * Assign To Me
+     */
+    assign_to_me?: boolean;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Priority
+     */
+    priority?: 'high' | 'medium' | 'low';
+    /**
+     * Status
+     */
+    status?: 'open' | 'in_progress' | 'done';
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
+ * TicketListOut
+ */
+export type TicketListOut = {
+    counts: QuickCountsOut;
+    /**
+     * Items
+     */
+    items: Array<TicketOut>;
+};
+
+/**
+ * TicketOut
+ */
+export type TicketOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string | null;
+    /**
+     * Agent Name
+     */
+    agent_name: string | null;
+    /**
+     * Approval Id
+     */
+    approval_id: string | null;
+    assignee: MangoApiTicketsPersonOut | null;
+    /**
+     * Comment Count
+     */
+    comment_count: number;
+    /**
+     * Created At
+     */
+    created_at: string;
+    creator: MangoApiTicketsPersonOut;
+    /**
+     * Priority
+     */
+    priority: 'high' | 'medium' | 'low';
+    /**
+     * Source
+     */
+    source: 'web' | 'agent' | 'task';
+    /**
+     * Status
+     */
+    status: 'open' | 'in_progress' | 'needs_approval' | 'done';
+    /**
+     * Ticket Id
+     */
+    ticket_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * ToolOut
  */
 export type ToolOut = {
@@ -7364,6 +7633,20 @@ export type MangoApiTasksRetireIn = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * PersonOut
+ */
+export type MangoApiTicketsPersonOut = {
+    /**
+     * Email
+     */
+    email: string | null;
+    /**
+     * User Id
+     */
+    user_id: string;
 };
 
 /**
@@ -12195,3 +12478,168 @@ export type RetryTaskReportResponses = {
 };
 
 export type RetryTaskReportResponse = RetryTaskReportResponses[keyof RetryTaskReportResponses];
+
+export type ListTicketsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * View
+         */
+        view?: 'all' | 'mine' | 'unassigned' | 'high';
+        /**
+         * Status
+         */
+        status?: Array<'open' | 'in_progress' | 'needs_approval' | 'done'> | null;
+        /**
+         * Priority
+         */
+        priority?: Array<'high' | 'medium' | 'low'> | null;
+        /**
+         * Agent
+         */
+        agent?: string | null;
+        /**
+         * Assignee
+         */
+        assignee?: string | null;
+        /**
+         * Q
+         */
+        q?: string;
+    };
+    url: '/tickets';
+};
+
+export type ListTicketsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ListTicketsError = ListTicketsErrors[keyof ListTicketsErrors];
+
+export type ListTicketsResponses = {
+    /**
+     * Successful Response
+     */
+    200: TicketListOut;
+};
+
+export type ListTicketsResponse = ListTicketsResponses[keyof ListTicketsResponses];
+
+export type CreateNewTicketData = {
+    body: TicketIn;
+    path?: never;
+    query?: never;
+    url: '/tickets';
+};
+
+export type CreateNewTicketErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type CreateNewTicketError = CreateNewTicketErrors[keyof CreateNewTicketErrors];
+
+export type CreateNewTicketResponses = {
+    /**
+     * Successful Response
+     */
+    201: TicketDetailOut;
+};
+
+export type CreateNewTicketResponse = CreateNewTicketResponses[keyof CreateNewTicketResponses];
+
+export type GetTicketData = {
+    body?: never;
+    path: {
+        /**
+         * Ticket Id
+         */
+        ticket_id: string;
+    };
+    query?: never;
+    url: '/tickets/{ticket_id}';
+};
+
+export type GetTicketErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetTicketError = GetTicketErrors[keyof GetTicketErrors];
+
+export type GetTicketResponses = {
+    /**
+     * Successful Response
+     */
+    200: TicketDetailOut;
+};
+
+export type GetTicketResponse = GetTicketResponses[keyof GetTicketResponses];
+
+export type ChangeTicketData = {
+    body: TicketChangeIn;
+    path: {
+        /**
+         * Ticket Id
+         */
+        ticket_id: string;
+    };
+    query?: never;
+    url: '/tickets/{ticket_id}';
+};
+
+export type ChangeTicketErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ChangeTicketError = ChangeTicketErrors[keyof ChangeTicketErrors];
+
+export type ChangeTicketResponses = {
+    /**
+     * Successful Response
+     */
+    200: TicketDetailOut;
+};
+
+export type ChangeTicketResponse = ChangeTicketResponses[keyof ChangeTicketResponses];
+
+export type AddCommentData = {
+    body: CommentIn;
+    path: {
+        /**
+         * Ticket Id
+         */
+        ticket_id: string;
+    };
+    query?: never;
+    url: '/tickets/{ticket_id}/comments';
+};
+
+export type AddCommentErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type AddCommentError = AddCommentErrors[keyof AddCommentErrors];
+
+export type AddCommentResponses = {
+    /**
+     * Successful Response
+     */
+    201: TicketDetailOut;
+};
+
+export type AddCommentResponse = AddCommentResponses[keyof AddCommentResponses];

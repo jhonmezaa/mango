@@ -39,6 +39,7 @@ from mango_api import (
     skills,
     task_reports,
     tasks,
+    tickets,
     tool_policies,
     web_session,
 )
@@ -190,6 +191,24 @@ LIMITS: dict[str, LimitSpec] = {
         HOUR,
         shared=True,
         why="Each click on «Descargar» issues a new presigned link to a run's PDF (D86, TM-R7).",
+    ),
+    "tickets.creates": LimitSpec(
+        tickets.CREATES_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Each new ticket is a record other people and agents read (D112, TM-TK8).",
+    ),
+    "tickets.changes": LimitSpec(
+        tickets.CHANGES_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Changes of status, priority and assignee of tickets (D112, TM-TK8).",
+    ),
+    "tickets.comments": LimitSpec(
+        tickets.COMMENTS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Comments on tickets: text other people and agents read (D112, TM-TK8).",
     ),
     "knowledge.changes": LimitSpec(
         knowledge.CHANGES_PER_HOUR,

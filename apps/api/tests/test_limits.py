@@ -133,6 +133,7 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             evals_table="evals",
             eval_judge_function="Mango-test-EvalJudge",
             eval_judge_models=("us.anthropic.claude-haiku-4-5-20251001-v1:0",),
+            tickets_table="tickets",
         )
         built: list[Any] = []
 

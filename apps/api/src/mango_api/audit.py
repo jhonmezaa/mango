@@ -43,6 +43,8 @@ READ_ACTIONS = frozenset(
         "ViewHome",
         "ViewCosts",
         "SearchConversations",
+        "ListTickets",
+        "ViewTicket",
     }
 )
 # Events that record a read and nothing else: reading the directory of the people screen, a

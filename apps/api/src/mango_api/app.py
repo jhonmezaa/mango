@@ -83,6 +83,7 @@ from mango_api.authz import (
     KnowledgeBaseResource,
     RemoteMcpResource,
     TaskResource,
+    TicketResource,
 )
 from mango_api.budget import (
     BudgetExceededError,
@@ -228,6 +229,7 @@ from mango_api.tasks import (
     tasks_router,
 )
 from mango_api.tasks_store import Automation, Run, RunStatus, TaskStore
+from mango_api.tickets import TicketsDeps, tickets_router
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
 from mango_api.web import ApiError, Caller, error_response
 from mango_api.web_session import (
@@ -251,6 +253,7 @@ from mango_core.identity import (
     user_from_claims,
 )
 from mango_core.skills import parse_ref as parse_skill_ref
+from mango_core.tickets import TicketStore
 
 logger = logging.getLogger("mango_api")
 
@@ -449,6 +452,8 @@ class Services:
     activity: ActivityDeps | None = None
     # Observabilidad (D108): the traces of the agents, read by the trace reader function.
     observability: ObservabilityDeps | None = None
+    # Tickets of Mango (D112); set in production once the Tickets table exists.
+    tickets: TicketsDeps | None = None
     # Knowledge bases (D88); set in production once mango-api may use the Knowledge table.
     knowledge: KnowledgeDeps | None = None
     # Skills of instructions (D92); set in production once the Skills table exists.
@@ -884,6 +889,17 @@ def build_services(settings: Settings) -> Services:
             clock=now_utc,
             reads=limits.limiter("activity.reads"),
         ),
+        tickets=TicketsDeps(
+            store=TicketStore(dynamodb, settings.tickets_table),
+            published=published,
+            audit=audit,
+            creates=limits.limiter("tickets.creates"),
+            changes=limits.limiter("tickets.changes"),
+            comments=limits.limiter("tickets.comments"),
+            approvals=approvals.store if approvals is not None else None,
+        )
+        if settings.tickets_table
+        else None,
         tool_policies=ToolPolicyDeps(
             store=policy_store,
             catalog=mcp_catalog,
@@ -1306,6 +1322,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         task: TaskResource | None = None,
         knowledge: KnowledgeBaseResource | None = None,
         remote: RemoteMcpResource | None = None,
+        ticket: TicketResource | None = None,
     ) -> Awaitable[None]:
         # Every decision is audited; ``read_only`` only lets the log hide allowed reads.
         # ``context`` (validated or server-generated ids only) links the decision to its turn.
@@ -1322,6 +1339,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             elif remote is not None:
                 # D98 (18): the groups of the registration, read from REMOTE#<reg>.
                 decide = partial(services.authorizer.is_allowed, remote=remote)
+            elif ticket is not None:
+                # D112: creator and assignee from the Tickets table, the agent as published.
+                decide = partial(services.authorizer.is_allowed, ticket=ticket)
             allowed = await asyncio.to_thread(decide, *subject, *([agent] if agent else []))
             await asyncio.to_thread(
                 services.audit.emit,
@@ -1802,6 +1822,43 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             return allowed
 
         app.include_router(tasks_router(services.tasks, current_user, require, task_allowed))
+
+    if services.tickets is not None:
+
+        def tickets_allowed(
+            caller: Caller, action: str, tickets: list[TicketResource]
+        ) -> frozenset[str]:
+            """Decisions that only shape a list, not audited one by one: the list itself was
+            authorized and audited (ListTickets)."""
+            return services.authorizer.allowed_tickets(caller.user, action, tickets)
+
+        def ticket_allowed(
+            caller: Caller,
+            action: str,
+            resource_type: str,
+            resource_id: str,
+            ticket: TicketResource,
+        ) -> bool:
+            """A decision that only shapes the answer (404), audited as a read."""
+            allowed = services.authorizer.is_allowed(
+                caller.user, action, resource_type, resource_id, ticket=ticket
+            )
+            services.audit.emit(
+                "policy.decision",
+                caller.user.user_id,
+                {
+                    "action": action,
+                    "resource": f"{resource_type}::{resource_id}",
+                    "allowed": allowed,
+                    "read_only": True,
+                },
+                caller.user,
+            )
+            return allowed
+
+        app.include_router(
+            tickets_router(services.tickets, current_user, require, tickets_allowed, ticket_allowed)
+        )
 
     if services.knowledge is not None:
 

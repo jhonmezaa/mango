@@ -492,6 +492,13 @@ export const zCitationOutSchema = z.object({
 });
 
 /**
+ * CommentIn
+ */
+export const zCommentInSchema = z.object({
+    body: z.string().min(1).max(4000)
+});
+
+/**
  * ConnectOut
  */
 export const zConnectOutSchema = z.object({
@@ -1721,6 +1728,16 @@ export const zProposalInSchema = z.object({
 export const zProposerOutSchema = z.object({
     email: z.string().nullable(),
     user_id: z.string()
+});
+
+/**
+ * QuickCountsOut
+ */
+export const zQuickCountsOutSchema = z.object({
+    all: z.int(),
+    high: z.int(),
+    mine: z.int(),
+    unassigned: z.int()
 });
 
 /**
@@ -3001,6 +3018,44 @@ export const zSyncOutSchema = z.object({
 });
 
 /**
+ * TicketChangeIn
+ */
+export const zTicketChangeInSchema = z.object({
+    assignee_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).nullish(),
+    priority: z.enum([
+        'high',
+        'medium',
+        'low'
+    ]).nullish(),
+    status: z.enum([
+        'open',
+        'in_progress',
+        'done'
+    ]).nullish(),
+    version: z.int().gte(1)
+});
+
+/**
+ * TicketIn
+ */
+export const zTicketInSchema = z.object({
+    agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/).nullish(),
+    assign_to_me: z.boolean().optional().default(false),
+    description: z.string().max(8000).optional().default(''),
+    priority: z.enum([
+        'high',
+        'medium',
+        'low'
+    ]).optional().default('medium'),
+    status: z.enum([
+        'open',
+        'in_progress',
+        'done'
+    ]).optional().default('open'),
+    title: z.string().min(1).max(200)
+});
+
+/**
  * ToolOut
  */
 export const zToolOutSchema = z.object({
@@ -3641,6 +3696,122 @@ export const zTaskListOutSchema = z.object({
  */
 export const zMangoApiTasksRetireInSchema = z.object({
     reason: z.string().min(1).max(200)
+});
+
+/**
+ * PersonOut
+ */
+export const zMangoApiTicketsPersonOutSchema = z.object({
+    email: z.string().nullable(),
+    user_id: z.string()
+});
+
+/**
+ * CommentOut
+ */
+export const zCommentOutSchema = z.object({
+    author: zMangoApiTicketsPersonOutSchema,
+    body: z.string(),
+    comment_id: z.string(),
+    created_at: z.string()
+});
+
+/**
+ * EventOut
+ */
+export const zEventOutSchema = z.object({
+    action: z.enum([
+        'created',
+        'changed',
+        'commented'
+    ]),
+    actor: zMangoApiTicketsPersonOutSchema,
+    after: z.string().nullable(),
+    before: z.string().nullable(),
+    created_at: z.string(),
+    field: z.enum([
+        'status',
+        'priority',
+        'assignee'
+    ]).nullable()
+});
+
+/**
+ * TicketDetailOut
+ */
+export const zTicketDetailOutSchema = z.object({
+    agent_id: z.string().nullable(),
+    agent_name: z.string().nullable(),
+    approval_id: z.string().nullable(),
+    assignee: zMangoApiTicketsPersonOutSchema.nullable(),
+    comment_count: z.int(),
+    comments: z.array(zCommentOutSchema),
+    created_at: z.string(),
+    creator: zMangoApiTicketsPersonOutSchema,
+    description: z.string(),
+    history: z.array(zEventOutSchema),
+    participants: z.array(zMangoApiTicketsPersonOutSchema),
+    priority: z.enum([
+        'high',
+        'medium',
+        'low'
+    ]),
+    source: z.enum([
+        'web',
+        'agent',
+        'task'
+    ]),
+    status: z.enum([
+        'open',
+        'in_progress',
+        'needs_approval',
+        'done'
+    ]),
+    ticket_id: z.string(),
+    title: z.string(),
+    updated_at: z.string(),
+    version: z.int()
+});
+
+/**
+ * TicketOut
+ */
+export const zTicketOutSchema = z.object({
+    agent_id: z.string().nullable(),
+    agent_name: z.string().nullable(),
+    approval_id: z.string().nullable(),
+    assignee: zMangoApiTicketsPersonOutSchema.nullable(),
+    comment_count: z.int(),
+    created_at: z.string(),
+    creator: zMangoApiTicketsPersonOutSchema,
+    priority: z.enum([
+        'high',
+        'medium',
+        'low'
+    ]),
+    source: z.enum([
+        'web',
+        'agent',
+        'task'
+    ]),
+    status: z.enum([
+        'open',
+        'in_progress',
+        'needs_approval',
+        'done'
+    ]),
+    ticket_id: z.string(),
+    title: z.string(),
+    updated_at: z.string(),
+    version: z.int()
+});
+
+/**
+ * TicketListOut
+ */
+export const zTicketListOutSchema = z.object({
+    counts: zQuickCountsOutSchema,
+    items: z.array(zTicketOutSchema)
 });
 
 /**
@@ -5217,3 +5388,69 @@ export const zRetryTaskReportPath = z.object({
  * Successful Response
  */
 export const zRetryTaskReportResponse = zRunOutSchema;
+
+export const zListTicketsQuery = z.object({
+    view: z.enum([
+        'all',
+        'mine',
+        'unassigned',
+        'high'
+    ]).optional().default('all'),
+    status: z.array(z.enum([
+        'open',
+        'in_progress',
+        'needs_approval',
+        'done'
+    ])).max(4).nullish(),
+    priority: z.array(z.enum([
+        'high',
+        'medium',
+        'low'
+    ])).max(3).nullish(),
+    agent: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/).nullish(),
+    assignee: z.string().regex(/^(?:none|[A-Za-z0-9-]{1,64})$/).nullish(),
+    q: z.string().max(100).optional().default('')
+});
+
+/**
+ * Successful Response
+ */
+export const zListTicketsResponse = zTicketListOutSchema;
+
+export const zCreateNewTicketBody = zTicketInSchema;
+
+/**
+ * Successful Response
+ */
+export const zCreateNewTicketResponse = zTicketDetailOutSchema;
+
+export const zGetTicketPath = z.object({
+    ticket_id: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetTicketResponse = zTicketDetailOutSchema;
+
+export const zChangeTicketBody = zTicketChangeInSchema;
+
+export const zChangeTicketPath = z.object({
+    ticket_id: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeTicketResponse = zTicketDetailOutSchema;
+
+export const zAddCommentBody = zCommentInSchema;
+
+export const zAddCommentPath = z.object({
+    ticket_id: z.string().regex(/^[a-z2-7]{12}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zAddCommentResponse = zTicketDetailOutSchema;

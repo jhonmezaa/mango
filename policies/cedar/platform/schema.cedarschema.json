@@ -51,6 +51,16 @@
           }
         }
       },
+      "Ticket": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "creator": { "type": "Entity", "name": "User", "required": true },
+            "assignee": { "type": "Entity", "name": "User", "required": false },
+            "agent": { "type": "Entity", "name": "Agent", "required": false }
+          }
+        }
+      },
       "Platform": { "shape": { "type": "Record", "attributes": {} } }
     },
     "actions": {
@@ -175,7 +185,12 @@
       },
       "ApproveEvalRequirement": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Agent"] }
-      }
+      },
+      "CreateTicket": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ListTickets": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] } },
+      "ViewTicket": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Ticket"] } },
+      "EditTicket": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Ticket"] } },
+      "CommentTicket": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Ticket"] } }
     }
   }
 }

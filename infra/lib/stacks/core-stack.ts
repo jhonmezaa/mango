@@ -29,6 +29,7 @@ import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
 import { Skills } from "../constructs/skills.js";
+import { Tickets } from "../constructs/tickets.js";
 import { Presign } from "../constructs/presign.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
@@ -188,6 +189,9 @@ export class CoreStack extends Stack {
     const evalsCapture = new EvalsCapture(this, "EvalsCapture", { installation: cfg, retainData: cfg.retainData });
     evalsCapture.allowAgents(agentPlatform.boundary);
     evalsCapture.grantApi(apiTaskRole);
+    // D112: tickets of Mango, written by mango-api (and, for agents, by the tickets tool).
+    const tickets = new Tickets(this, "Tickets", { installation: cfg, dataKey: governance.dataKey });
+    tickets.grantApi(apiTaskRole);
     // Marketplace v1 (D18, D32): agents are published by SDK, not by this stack. The agents
     // of the release (FinOps) are seeded as approved versions and published the same way (D34).
     const shipped = releaseAgents(cfg);
@@ -660,6 +664,7 @@ export class CoreStack extends Stack {
         EVAL_JUDGE_FUNCTION: evalsCapture.judgeFunctionName,
         EVAL_JUDGE_MODELS: judgeModels(cfg).join(","),
         EVALUATION_FEE_USD: EVALUATION_FEE_USD,
+        ...tickets.apiEnvironment,
         ...presign.apiEnvironment,
         ...observability.reader.apiEnvironment,
         // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
