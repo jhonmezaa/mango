@@ -56,7 +56,8 @@ export class PythonFunction extends Construct {
         execFileSync(
           resolve(REPO_ROOT, "deployment/bundle-python.sh"),
           [props.packageName, outputDir, ...(props.manylinux ? [props.manylinux] : [])],
-          { stdio: "inherit", cwd: REPO_ROOT },
+          // Linux arm64 wheels always: the host-platform switch is for the bundle tests only.
+          { stdio: "inherit", cwd: REPO_ROOT, env: { ...process.env, MANGO_BUNDLE_HOST_PLATFORM: undefined } },
         );
         return true;
       },

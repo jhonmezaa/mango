@@ -997,13 +997,13 @@ version = "0.1.0"
 source = { editable = "functions/cur-reconciler" }
 dependencies = [
     { name = "boto3" },
-    { name = "mango-core" },
+    { name = "mango-core", extra = ["agents"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.104" },
-    { name = "mango-core", editable = "packages/py/mango-core" },
+    { name = "mango-core", extras = ["agents"], editable = "packages/py/mango-core" },
 ]
 
 [[package]]

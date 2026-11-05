@@ -3,7 +3,7 @@ name = "mango-cur-reconciler"
 version = "0.1.0"
 description = "Daily read-only Lambda that compares Mango's per-agent Bedrock spend with the CUR 2.0 bill (D104)"
 requires-python = ">=3.13,<3.14"
-dependencies = ["boto3>=1.43.104", "mango-core"]
+dependencies = ["boto3>=1.43.104", "mango-core[agents]"]
 
 [tool.uv.sources]
 mango-core = { workspace = true }

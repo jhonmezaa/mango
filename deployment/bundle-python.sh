@@ -7,6 +7,10 @@
 # The tag defaults to manylinux2014. A package whose wheels are only built for a newer glibc
 # names its tag (`manylinux_2_28`): the Lambda Python 3.13 runtime is Amazon Linux 2023 (glibc
 # 2.34). Only that package's asset changes.
+#
+# MANGO_BUNDLE_HOST_PLATFORM=1 installs the same requirements for the machine running the
+# script instead of Linux arm64: only for `deployment/tests/test_lambda_bundles.py`, which
+# imports every handler from its bundle. The CDK bundler (`python-function.ts`) unsets it.
 set -euo pipefail
 
 # Callers such as the CDK CLI may force colored output; requirement files must stay plain.
@@ -29,9 +33,14 @@ trap 'rm -f "$req"' EXIT
 uv --color never export --project "$root" --package "$package" --no-dev --no-emit-workspace \
   --frozen --no-header --format requirements-txt > "$req"
 
+platform=(--python-platform "aarch64-$manylinux")
+if [[ "${MANGO_BUNDLE_HOST_PLATFORM:-}" == "1" ]]; then
+  platform=()
+fi
+
 if grep -qvE '^\s*(#|$)' "$req"; then
   uv --color never pip install --quiet --requirement "$req" --target "$out" \
-    --python-platform "aarch64-$manylinux" --python-version 3.13 --only-binary :all:
+    ${platform[@]+"${platform[@]}"} --python-version 3.13 --only-binary :all:
 fi
 
 # Copy the package itself and every workspace package it depends on.
