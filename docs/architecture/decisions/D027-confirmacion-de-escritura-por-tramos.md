@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-30 (precisada el 2026-10-07: solo un mensaje que terminó como llamada a tool pide confirmar una escritura)
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (la construye); [D74](D074-tope-de-tokens-en-cada-llamada.md) (18: solo un mensaje que terminó como llamada a tool pide confirmar una escritura)
+- **Precisada por:** [D56](D056-tools-de-escritura-con-aprobacion.md) (la construye); [D74](D074-tope-de-tokens-en-cada-llamada.md) (18: solo un mensaje que terminó como llamada a tool pide confirmar una escritura); [D112](D112-tickets-propios-de-mango.md) (un tramo por defecto en la política de una tool, solo para conectores de Mango que escriben registros de Mango; la de tickets, autoconfirmación; el fail-closed no cambia)
 
 ## Decisión
 
