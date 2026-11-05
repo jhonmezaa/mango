@@ -17,6 +17,7 @@ import { playgroundScreen } from '../pages/playground/screen';
 import { schedulesScreen } from '../pages/schedules/screen';
 import { searchScreen } from '../pages/search/screen';
 import { skillsScreen } from '../pages/skills/screen';
+import { ticketsScreen } from '../pages/tickets/screen';
 import type { ViewKey } from './navigation';
 
 /**
@@ -53,4 +54,5 @@ export const SCREENS: readonly Screen[] = [
   skillsScreen,
   searchScreen,
   observabilityScreen,
+  ticketsScreen,
 ];

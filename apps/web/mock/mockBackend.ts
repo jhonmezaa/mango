@@ -46,6 +46,7 @@ import { handlePlayground } from './playground.ts';
 import { handleSession } from './session.ts';
 import { handleSkills } from './skills.ts';
 import { handleTasks } from './tasks.ts';
+import { handleTickets } from './tickets.ts';
 
 /**
  * Tried in order until one answers. The screens of the marketplace go before `handleAgents`,
@@ -60,6 +61,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleGovernance,
   handleHome,
   handleSearch,
+  handleTickets,
   handleActivity,
   handleObservability,
   handleGroups,

@@ -59,6 +59,34 @@ interface MockApproval {
   note: string | null;
   error: string | null;
   conversation_id: string;
+  /** Another write tool than the budgets one: the tickets tool of the chat (D112). */
+  call?: MockCall;
+}
+
+/** The tool of a request, as the release's manifest names and describes it. */
+interface MockCall {
+  tool: string;
+  server_name: string;
+  description: string;
+  agent_id: string;
+  agent_name: string;
+}
+
+/**
+ * What runs a confirmed call of another tool (the tickets mock registers it); it answers an error
+ * code when the call failed. Registered to keep the tickets mock out of this module's imports.
+ */
+type Executor = (item: {
+  arguments: Record<string, unknown>;
+  approval_id: string;
+  tool: string;
+  conversation_id: string;
+  agent_id: string;
+}) => string | null;
+let executor: Executor | null = null;
+
+export function registerExecutor(run: Executor): void {
+  executor = run;
 }
 
 interface MockChange {
@@ -177,11 +205,13 @@ function out(item: MockApproval) {
     approval_id: item.approval_id,
     status,
     tier: item.tier,
-    tool: TOOL,
-    server_name: 'AWS Budgets',
-    description: 'Crear un presupuesto mensual de costo en AWS Budgets, sin notificaciones.',
-    agent_id: 'finops',
-    agent_name: 'FinOps',
+    tool: item.call?.tool ?? TOOL,
+    server_name: item.call?.server_name ?? 'AWS Budgets',
+    description:
+      item.call?.description ??
+      'Crear un presupuesto mensual de costo en AWS Budgets, sin notificaciones.',
+    agent_id: item.call?.agent_id ?? 'finops',
+    agent_name: item.call?.agent_name ?? 'FinOps',
     arguments: item.arguments,
     rule: { ...item.rule, reason: item.reason },
     approvals_needed: item.tier === 'approvers' ? item.rule.approvers : 0,
@@ -209,8 +239,8 @@ function out(item: MockApproval) {
 function audit(event: string, item: MockApproval, extra: Record<string, unknown> = {}): void {
   recordAudit(event, {
     approval_id: item.approval_id,
-    tool: TOOL,
-    agent: 'finops',
+    tool: item.call?.tool ?? TOOL,
+    agent: item.call?.agent_id ?? 'finops',
     tier: item.tier,
     requested_by: item.requested_by,
     outcome: 'applied',
@@ -242,6 +272,58 @@ export function requestFromChat(conversationId: string, name: string, amount: nu
   approvals.set(item.approval_id, item);
   audit('approval.request', item, { conversation_id: conversationId });
   return out(item);
+}
+
+/**
+ * What the chat calls when the "agent" writes a ticket (connectors/mango-tickets): the manifest
+ * declares the `self` default, so the person confirms each call (D112 (8)).
+ */
+export function requestToolFromChat(
+  conversationId: string,
+  call: MockCall,
+  args: Record<string, unknown>,
+) {
+  const rule: Rule = {
+    condition: 'self',
+    amount_usd: null,
+    count: null,
+    environment: null,
+    approvers: 1,
+    expires_hours: 24,
+  };
+  const item: MockApproval = {
+    approval_id: newId(),
+    status: 'pending',
+    tier: 'self',
+    reason: 'always',
+    arguments: args,
+    rule,
+    signatures: [],
+    requested_by: MOCK_USER,
+    created_at: iso(),
+    expires_at: iso(rule.expires_hours * HOUR_MS),
+    decided_by: null,
+    decided_at: null,
+    executed_at: null,
+    note: null,
+    error: null,
+    conversation_id: conversationId,
+    call,
+  };
+  approvals.set(item.approval_id, item);
+  audit('approval.request', item, { conversation_id: conversationId });
+  return out(item);
+}
+
+/** The open requests (D56) a person asked for: «Por aprobar» of the tickets mock. */
+export function openRequestsOf(userId: string) {
+  return [...approvals.values()]
+    .filter((item) => item.requested_by === userId && WAITING.has(statusOf(item)))
+    .map((item) => ({
+      approval_id: item.approval_id,
+      conversation_id: item.conversation_id,
+      agent_id: item.call?.agent_id ?? 'finops',
+    }));
 }
 
 /** The requests of one conversation, for GET /conversations/{id}. */
@@ -420,10 +502,20 @@ async function decide(
       audit('approval.self_confirm', item);
     }
     // A budget whose name says so fails, to review that state.
-    const fails = /falla/i.test(String(item.arguments.name));
-    item.status = fails ? 'failed' : 'executed';
+    const failure = item.call
+      ? (executor?.({
+          arguments: item.arguments,
+          approval_id: item.approval_id,
+          tool: item.call.tool,
+          conversation_id: item.conversation_id,
+          agent_id: item.call.agent_id,
+        }) ?? 'unavailable')
+      : /falla/i.test(String(item.arguments.name))
+        ? 'already_exists'
+        : null;
+    item.status = failure ? 'failed' : 'executed';
     item.executed_at = iso();
-    item.error = fails ? 'already_exists' : null;
+    item.error = failure;
     audit('approval.execute', item);
   } else {
     sendError(res, 404, 'not_found', 'Not found');

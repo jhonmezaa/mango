@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 describe('AppRoutes', () => {
-  it.each([['/tickets/MNG-1', 'Tickets']])('renders %s as "Próximamente"', async (path, label) => {
+  it.each([['/evals', 'Evals']])('renders %s as "Próximamente"', async (path, label) => {
     await renderAt(path);
     // Screen pages load on demand.
     expect(await screen.findByRole('heading', { level: 1, name: label })).toBeInTheDocument();

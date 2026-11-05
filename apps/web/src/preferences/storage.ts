@@ -17,7 +17,9 @@ export type PreferenceKey =
    * the session ended. It never decides authorization; the session cookie does (AGENTS.md).
    */
   | 'mango-had-session'
-  | 'mango-dash-period';
+  | 'mango-dash-period'
+  /** Tickets: «Tablero» or «Lista» (design `mango-tk-view`). */
+  | 'mango-tk-view';
 
 function preferenceStore(): Storage | null {
   try {

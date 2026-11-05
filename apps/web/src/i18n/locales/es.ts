@@ -26,6 +26,7 @@ import { schedules } from './es/schedules';
 import { search } from './es/search';
 import { settings } from './es/settings';
 import { skills } from './es/skills';
+import { tickets } from './es/tickets';
 import { app, common, config, errors, nav, notFound, rateWait, roles, soon } from './es/shell';
 
 // Spanish resources, one module per view under `es/`. A view adds its texts in its own module.
@@ -71,4 +72,5 @@ export const es = {
   playground,
   skills,
   ops,
+  tickets,
 } as const;

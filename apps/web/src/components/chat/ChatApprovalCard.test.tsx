@@ -187,3 +187,58 @@ describe('ChatApprovalCard · requiere aprobación', () => {
     expect(screen.getByRole('group')).toHaveTextContent('Rechazada');
   });
 });
+
+describe('ChatApprovalCard · tools de tickets (ronda 37)', () => {
+  const TICKET = 'abcdefgh2345';
+  const ticketTool = (name: string, args: Record<string, unknown>) =>
+    selfApproval({
+      tool: `mango-tickets.${name}`,
+      server_name: 'Tickets de Mango',
+      description: 'Descripción del manifiesto',
+      arguments: args,
+      rule: { ...selfApproval().rule, condition: 'self', reason: 'always' },
+    });
+
+  it('says which ticket it creates, from the stored title, as text', () => {
+    renderCard(ticketTool('create_ticket', { title: XSS, priority: 'high' }));
+    const card = screen.getByRole('group', { name: 'Confirmar acción' });
+    expect(card).toHaveTextContent(`Crea el ticket «${XSS}»`);
+    expect(card).not.toHaveTextContent('Descripción del manifiesto');
+    expect(card).toHaveTextContent(`mango-tickets.create_ticket · title=${XSS}, priority=high`);
+    expect(document.querySelector('img[src="x"]')).toBeNull();
+  });
+
+  it('reads the title of the ticket it changes and names the change', async () => {
+    vi.useRealTimers();
+    const { call } = renderCard(
+      ticketTool('update_ticket', { ticket_id: TICKET, status: 'in_progress', assign_to_me: true }),
+      { getTicket: { title: 'Costo de <b>prod</b>' } as unknown as ChatApproval },
+    );
+    const card = screen.getByRole('group', { name: 'Confirmar acción' });
+    expect(
+      await screen.findByText(/Costo de <b>prod<\/b>/, { selector: '.ap-card-t' }),
+    ).toBeInTheDocument();
+    expect(card).toHaveTextContent(
+      'Cambia el ticket abcdefgh · Costo de <b>prod</b>: estado → En curso, asignado → tú',
+    );
+    expect(call).toHaveBeenCalledWith(
+      'getTicket',
+      { path: { ticket_id: TICKET } },
+      expect.anything(),
+    );
+  });
+
+  it('keeps the short id alone when the ticket cannot be read', async () => {
+    vi.useRealTimers();
+    const { call } = renderCard(ticketTool('comment_ticket', { ticket_id: TICKET, body: 'hola' }), {
+      getTicket: new ApiError(404, 'not_found', 'not found'),
+    });
+    await vi.waitFor(() => {
+      expect(call).toHaveBeenCalled();
+    });
+    expect(screen.getByRole('group', { name: 'Confirmar acción' })).toHaveTextContent(
+      /^.*Comenta en el ticket abcdefgh(?! ·)/,
+    );
+    expect(screen.getByText('abcdefgh')).toHaveClass('tk-call-id');
+  });
+});

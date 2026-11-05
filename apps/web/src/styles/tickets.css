@@ -1,0 +1,659 @@
+/*
+ * Tickets (design tickets.jsx, styles.css `.tk-*`, D112). Values are the design's. `tk-quick`,
+ * `tk-meta`, `tk-dot` and `mk-empty` are in admin.css, `tk-chip` in agentReview.css,
+ * `tk-agent-ic` in activity.css, `tk-tabs` in knowledge.css, `tk-activity`/`tk-act` in
+ * approvals.css and `mk-seg`/`mk-count` in marketplace.css and agents.css. The helpers at the end
+ * hold the inline styles of the design's components.
+ */
+@layer components {
+  .tk-content {
+    display: flex;
+    flex-direction: column;
+  }
+  .tk-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  .tk-search {
+    flex: 1 1 220px;
+    max-width: 300px;
+  }
+  .tk-trunc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tk-board {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(250px, 1fr));
+    gap: 12px;
+    padding: 18px 28px 32px;
+    overflow-x: auto;
+    align-items: start;
+    flex: 1;
+  }
+  .tk-col {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 180px;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
+  }
+  [data-theme='light'] .tk-col {
+    background: #f7f7f9;
+  }
+  .tk-col.is-over {
+    background: var(--accent-soft) !important;
+    border-color: var(--accent-border);
+  }
+  .tk-col-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px 8px;
+  }
+  .tk-col-t {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .tk-col-n {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .tk-col-b {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tk-card {
+    padding: 11px 12px;
+    cursor: grab;
+    text-align: left;
+    transition:
+      border-color 0.12s,
+      opacity 0.12s;
+  }
+  .tk-card:hover {
+    border-color: var(--border-strong);
+  }
+  .tk-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .tk-card.is-drag {
+    opacity: 0.4;
+  }
+  .tk-id {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .tk-title {
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--text-strong);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  .tk-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    font-size: 11.5px;
+    color: var(--amber);
+    background: var(--amber-soft);
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+  .tk-empty-col {
+    border: 1px dashed var(--border-strong);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .tk-av {
+    width: 20px;
+    height: 20px;
+    font-size: 9.5px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 600;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  .tk-av.empty {
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+  }
+  .tk-agent-n {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tk-agent-n.is-sm {
+    font-size: 12px;
+  }
+  .tk-prio {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .tk-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 1.5px;
+    height: 10px;
+  }
+  .tk-bars i {
+    width: 3px;
+    border-radius: 1px;
+    background: var(--border-strong);
+  }
+  .tk-bars i:nth-child(1) {
+    height: 4px;
+  }
+  .tk-bars i:nth-child(2) {
+    height: 7px;
+  }
+  .tk-bars i:nth-child(3) {
+    height: 10px;
+  }
+  .tk-bars[data-w='1'] i:nth-child(1) {
+    background: var(--text-muted);
+  }
+  .tk-bars[data-w='2'] i:nth-child(-n + 2) {
+    background: var(--amber);
+  }
+  .tk-bars[data-w='3'] i {
+    background: var(--red);
+  }
+  .tk-listwrap {
+    padding: 18px 28px 32px;
+  }
+  .tk-list {
+    padding: 0;
+    overflow: hidden;
+  }
+  .tk-tr {
+    display: grid;
+    grid-template-columns: 78px minmax(200px, 1fr) 170px 120px 100px 80px 130px;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: left;
+    font-size: 13px;
+  }
+  .tk-tr:hover:not(.tk-head) {
+    background: var(--row-hover);
+  }
+  .tk-head {
+    border-top: none;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .tk-th {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 4px 0;
+  }
+  .tk-th.is-on {
+    color: var(--text-strong);
+  }
+  .tk-cell-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-strong);
+  }
+  .tk-st {
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  .tk-chip.is-on {
+    background: var(--accent-soft);
+    border-color: var(--accent-border);
+    color: var(--accent-ink);
+  }
+  .tk-fl {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .tk-slide {
+    display: flex;
+    flex-direction: column;
+    width: 480px;
+    max-width: 90vw;
+    height: 100%;
+    background: var(--panel);
+    border-left: 1px solid var(--border-strong);
+    animation: mango-drawer-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .tk-slide-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tk-slide-b {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .tk-slide-f {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .tk-h2 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-strong);
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  .tk-props {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 8px 12px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .tk-props > span:nth-child(odd) {
+    color: var(--text-muted);
+  }
+  .tk-sel {
+    width: auto !important;
+    min-width: 150px;
+    font-size: 12.5px !important;
+    padding: 5px 26px 5px 8px !important;
+  }
+  .tk-approval {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in oklab, var(--amber) 28%, transparent);
+    border-radius: 10px;
+  }
+  .tk-desc {
+    padding: 12px 14px;
+    background: var(--input-bg);
+    border-radius: 10px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .mk-active {
+    border-color: var(--accent-border) !important;
+    color: var(--accent-ink) !important;
+    background: var(--accent-soft) !important;
+  }
+  .mk-pop {
+    position: absolute;
+    top: 34px;
+    left: 0;
+    width: 260px;
+    padding: 14px;
+    z-index: 41;
+    box-shadow: var(--shadow, 0 12px 32px rgba(0, 0, 0, 0.2));
+  }
+
+  /* Inline styles of the design's components. */
+  .tk-pop-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+  }
+  .tk-pop {
+    width: 300px;
+  }
+  .tk-pop-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .tk-pop-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .tk-pop-sel {
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .tk-pop-sel:last-child {
+    margin-bottom: 0;
+  }
+  .tk-rel {
+    position: relative;
+  }
+  .tk-grow {
+    flex: 1;
+  }
+  .tk-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .tk-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .tk-card-side {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .tk-agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .tk-col-add {
+    margin-left: auto;
+  }
+  .tk-cell-who {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .tk-help {
+    font-size: 11.5px;
+    margin-top: 3px;
+  }
+  .tk-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tk-slide-id {
+    font-size: 12.5px;
+  }
+  .tk-slide-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+  }
+  .tk-panel-state {
+    padding: 48px 8px;
+  }
+  .tk-panel-state .mk-meta {
+    max-width: 360px;
+    line-height: 1.5;
+  }
+  .tk-lost {
+    margin-bottom: 12px;
+    font-size: 12.5px;
+  }
+  .tk-approval-ic {
+    color: var(--amber);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .tk-approval-t {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .tk-approval-d {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin: 2px 0 8px;
+  }
+  .tk-act-dot-blue {
+    background: var(--blue);
+  }
+  .tk-act-dot-gray {
+    background: var(--text-dim);
+  }
+  .tk-act-dot-amber {
+    background: var(--amber);
+  }
+  .tk-act-dot-accent {
+    background: var(--accent);
+  }
+  .tk-trace-empty {
+    font-size: 13px;
+  }
+
+  /* Comments (design system.jsx `CommentThread`). */
+  .tk-cm-empty {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .tk-cm-list {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .tk-cm {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .tk-cm-av {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+  }
+  .tk-cm-av.is-mine {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+  .tk-cm-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .tk-cm-who {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .tk-cm-who b {
+    font-weight: 600;
+  }
+  .tk-cm-at {
+    color: var(--text-muted);
+  }
+  .tk-cm-body {
+    font-size: 14px;
+    line-height: 1.55;
+    margin-top: 2px;
+  }
+  .tk-cm-form {
+    padding: 10px;
+  }
+  .tk-cm-form textarea {
+    border: none;
+    padding: 4px;
+    resize: vertical;
+    font-size: 14px;
+    background: transparent;
+    width: 100%;
+  }
+  .tk-cm-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    gap: 8px;
+  }
+  .tk-cm-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .tk-cm-hint > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* New ticket (design `NewTicketModal`). */
+  .tk-new {
+    width: 540px;
+    max-width: 92vw;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+  }
+  .tk-new-h {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 18px 20px 4px;
+  }
+  .tk-new-t {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-strong);
+    margin: 0;
+  }
+  .tk-new-d {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    max-width: 420px;
+  }
+  .tk-new-b {
+    padding: 14px 20px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .tk-new-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .tk-new-f {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+  }
+  .tk-field-h {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .tk-field-h label {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .tk-field-hint {
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .tk-field-err {
+    font-size: 12px;
+    color: var(--red);
+    margin-top: 5px;
+  }
+  .tk-field .input {
+    width: 100%;
+  }
+  .tk-field .input.is-bad {
+    border-color: var(--red);
+  }
+  .tk-field textarea {
+    resize: vertical;
+    font-family: var(--font-sans);
+  }
+
+  /* The ticket a confirmation card of the chat writes (design approvals.jsx SelfConfirmCard). */
+  .tk-call-id {
+    font-family: var(--font-mono);
+  }
+
+  @media (max-width: 1100px) {
+    .tk-tr {
+      grid-template-columns: 72px minmax(160px, 1fr) 110px 90px 70px 40px;
+    }
+    .tk-tr > :nth-child(3) {
+      display: none;
+    }
+    .tk-tr > :nth-child(7) .tk-meta {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .tk-bar,
+    .tk-board,
+    .tk-listwrap {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .tk-tr {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+    .tk-tr > :nth-child(1),
+    .tk-tr > :nth-child(5),
+    .tk-tr > :nth-child(6) {
+      display: none;
+    }
+  }
+}

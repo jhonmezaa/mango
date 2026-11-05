@@ -2,10 +2,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { agents, versionOf } from './agents.ts';
-import { approvalsOfConversation, requestFromChat } from './approvals.ts';
+import { approvalsOfConversation, requestFromChat, requestToolFromChat } from './approvals.ts';
 import { recordAudit } from './audit.ts';
 import { bearerOf, firstUsableRemote, isConnected, markConsentPending } from './connections.ts';
 import { newId, readBody, sendError, sendJson, type ApiHandler } from './http.ts';
+import { demoTicket } from './tickets.ts';
 
 interface StoredMessage {
   message_id: string;
@@ -245,6 +246,67 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   await sleep(300);
   if (/error/i.test(message)) {
     send('error', { code: 'upstream_error', message: 'Simulated upstream failure' });
+    res.end();
+    return;
+  }
+  // "abre un ticket", "comenta en el ticket", "actualiza el ticket": the agent calls the tickets
+  // tool (D112 (8)); its manifest declares the `self` default, so the person confirms each call.
+  if (/\bticket\b/i.test(message)) {
+    const target = demoTicket();
+    const kind = /coment/i.test(message)
+      ? 'comment_ticket'
+      : /actualiza|cambia|cierra|resuelve|mueve|asigna/i.test(message) && target
+        ? 'update_ticket'
+        : 'create_ticket';
+    const args: Record<string, unknown> =
+      kind === 'comment_ticket' && target
+        ? {
+            ticket_id: target.ticket_id,
+            body: 'Revisé el **desglose**: el aumento viene de prod-web.',
+          }
+        : kind === 'update_ticket' && target
+          ? { ticket_id: target.ticket_id, status: 'in_progress' }
+          : { title: 'Revisar el aumento de costo de <b>prod-web</b>', priority: 'medium' };
+    send('tool', { name: kind, status: 'started' });
+    await sleep(400);
+    send('tool', { name: kind, status: 'error' });
+    const request = requestToolFromChat(
+      conversation.conversation_id,
+      {
+        tool: `mango-tickets.${kind}`,
+        server_name: 'Tickets de Mango',
+        description:
+          kind === 'create_ticket'
+            ? 'Crear un ticket de Mango a nombre de quien conversa, ligado a este agente y a esta conversación.'
+            : kind === 'update_ticket'
+              ? 'Cambiar el estado o la prioridad de un ticket, o asignárselo a quien conversa.'
+              : 'Comentar un ticket a nombre de quien conversa.',
+        agent_id: chatAgent,
+        agent_name: version.definition.name,
+      },
+      args,
+    );
+    send('approval', request);
+    const reply = 'Para escribir en un ticket necesito **tu confirmación**.';
+    send('delta', { text: reply });
+    const replyId = newId();
+    conversation.messages.push({
+      message_id: replyId,
+      role: 'assistant',
+      content: reply,
+      created_at: new Date().toISOString(),
+      tools: [
+        { name: kind, status: 'started' },
+        { name: kind, status: 'error' },
+      ],
+      approvals: [request.approval_id],
+    });
+    send('done', {
+      message_id: replyId,
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 380, output_tokens: 40 },
+      cost_usd: '0.0024',
+    });
     res.end();
     return;
   }

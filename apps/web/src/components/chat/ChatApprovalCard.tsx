@@ -6,6 +6,8 @@ import type { ChatApproval, Me } from '../../api/schemas';
 import { ApprovalDecision } from '../../pages/approvals/ApprovalDecision';
 import { argumentEntries, personOf, ruleText, shortId } from '../../pages/approvals/model';
 import { useDecision } from '../../pages/approvals/useDecision';
+import { TicketCallTitle } from '../../pages/tickets/TicketCallTitle';
+import { ticketCall } from '../../pages/tickets/toolCall';
 import { Badge } from '../Badge';
 import { CheckIcon, LockIcon, WarnIcon } from '../icons';
 
@@ -58,6 +60,19 @@ function CallLine({ approval, rule }: { approval: ChatApproval; rule?: string })
 }
 
 /**
+ * What the card says the call does: the tool's description from the release's manifest, or,
+ * for the tickets tool, which ticket it writes (design round 37).
+ */
+function CallTitle({ api, approval }: Pick<Props, 'api' | 'approval'>) {
+  const call = ticketCall(approval);
+  return (
+    <div className="ap-card-t">
+      {call ? <TicketCallTitle api={api} call={call} /> : approval.description || approval.tool}
+    </div>
+  );
+}
+
+/**
  * Design `SelfConfirmCard`: a write action below the policy's threshold, which the person who
  * asked confirms. «Ejecutar» sends the confirmation; the API runs exactly the stored call.
  */
@@ -89,7 +104,7 @@ function SelfConfirm({ api, approval, onUpdated, notify }: Props) {
         <span>{t('approvals.card.selfTitle')}</span>
         <Badge>{t('approvals.card.write')}</Badge>
       </div>
-      <div className="ap-card-t">{approval.description || approval.tool}</div>
+      <CallTitle api={api} approval={approval} />
       <CallLine approval={approval} />
       <div className="ap-card-rule">
         {t('approvals.card.selfRule', { rule: ruleText(t, approval) })}
@@ -184,7 +199,7 @@ function NeedsApprovers({ api, me, approval, onUpdated, notify }: Props) {
         </span>
         <span className="mono ap-card-id">{id}</span>
       </div>
-      <div className="ap-card-t">{approval.description || approval.tool}</div>
+      <CallTitle api={api} approval={approval} />
       <CallLine approval={approval} rule={ruleText(t, approval)} />
       <div className="mt-2">
         <ApprovalDecision

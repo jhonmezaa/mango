@@ -392,3 +392,17 @@ export const ShareIcon = createIcon(
     <path d="m8 11 8-5M8 13l8 5" />
   </>,
 );
+
+export const KanbanIcon = createIcon(
+  'Kanban',
+  <>
+    <rect x="3" y="4" width="5" height="16" rx="1.5" />
+    <rect x="10" y="4" width="5" height="10" rx="1.5" />
+    <rect x="17" y="4" width="4" height="13" rx="1.5" />
+  </>,
+);
+
+export const ListIcon = createIcon(
+  'List',
+  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+);

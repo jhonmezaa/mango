@@ -98,6 +98,7 @@ describe('Sidebar navigation', () => {
       'Chat',
       'Bandeja',
       'Marketplace',
+      'Tickets',
       'Buscar conversaciones',
       'Chat con FinOps',
       'Aprobaciones',
@@ -105,8 +106,8 @@ describe('Sidebar navigation', () => {
       'Schedules',
       'Org Chart',
     ]);
-    // Buscar conversaciones is available since D103.
-    expect(soonItems()).toEqual(['Tickets, próximamente']);
+    // Buscar conversaciones is available since D103, Tickets since D112 (design round 37).
+    expect(soonItems()).toEqual([]);
     // Construir only has Schedules (design 2026-10-16, D82 (1)); admin screens and the
     // Catálogo de MCP are hidden.
     expect(screen.getByRole('button', { name: 'Gobernanza' })).toBeInTheDocument();
@@ -129,6 +130,7 @@ describe('Sidebar navigation', () => {
       'Chat',
       'Bandeja',
       'Marketplace',
+      'Tickets',
       'Buscar conversaciones',
       'Chat con FinOps',
       'Aprobaciones',
@@ -137,11 +139,7 @@ describe('Sidebar navigation', () => {
       'Schedules',
       'Org Chart',
     ]);
-    expect(soonItems()).toEqual([
-      'Tickets, próximamente',
-      'Evals, próximamente',
-      'Costos, próximamente',
-    ]);
+    expect(soonItems()).toEqual(['Evals, próximamente', 'Costos, próximamente']);
     // Admin-only screens stay hidden, and Skills is for creators and admins (design round 21).
     // Observability is for administrators only (D109, design round 37).
     for (const label of [
@@ -199,9 +197,11 @@ describe('Sidebar navigation', () => {
     );
   });
 
-  it('renders unavailable destinations as disabled, non-navigable "Próximamente" rows', () => {
+  it('renders unavailable destinations as disabled, non-navigable "Próximamente" rows', async () => {
+    const user = userEvent.setup();
     renderSidebar(true);
-    const item = screen.getByRole('link', { name: 'Tickets, próximamente' });
+    await user.click(screen.getByRole('button', { name: 'Operación' }));
+    const item = screen.getByRole('link', { name: 'Evals, próximamente' });
     expect(item).toHaveAttribute('aria-disabled', 'true');
     expect(item).not.toHaveAttribute('href');
     expect(item).not.toHaveAttribute('tabindex');
@@ -369,6 +369,7 @@ describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
       'Chat',
       'Bandeja',
       'Marketplace',
+      'Tickets',
       'Buscar conversaciones',
       'Chat con FinOps',
     ]);
