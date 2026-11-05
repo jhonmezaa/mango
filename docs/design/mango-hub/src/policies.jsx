@@ -3,29 +3,33 @@ const POL_COND = { always: 'Siempre', amount: 'Según monto', count: 'Según can
 const POL_EXP = [1, 4, 24, 48, 72];
 const polDefault = { cond: 'always', approvers: 1, expiresH: 24 };
 const polEff = (p) => p;
+// Tools internas de tickets (D112): nacen con «self», la persona del chat confirma cada llamada. Solo se pueden endurecer a «Siempre».
+const TICKET_TOOLS = [['create_ticket', 'Crea un ticket'], ['update_ticket', 'Cambia el estado, la prioridad o el responsable de un ticket'], ['comment_ticket', 'Comenta en un ticket']];
+const polInternal = (toolId) => TICKET_TOOLS.some(([id]) => id === toolId);
 // Datos que informa cada tool al pedir la acción. Disponible hoy: solo el monto, y solo en las tools que lo informan.
 const TOOL_REPORTS = { 'aws-budgets.create_budget': ['amount'], 'sap-s4-hana.release_payment': ['amount'] };
-const polCondOff = (toolId, k) => k !== 'always' && window.MangoStore.get().avail && !(TOOL_REPORTS[toolId] || []).includes(k);
+const polCondOff = (toolId, k) => k !== 'always' && (polInternal(toolId) || (window.MangoStore.get().avail && !(TOOL_REPORTS[toolId] || []).includes(k)));
 const polMoney = (n) => window.GovKit ? window.GovKit.usd(n || 0) : n;
-const polText = (p) => p.cond === 'amount' ? 'Más de ' + polMoney(p.amount) : p.cond === 'count' ? 'Más de ' + (p.count || 1) + ' recursos' : p.cond === 'env' ? 'En ' + (p.env || 'prod') : 'Siempre';
-const polBelow = (p) => p.cond === 'amount' ? 'Hasta ' + polMoney(p.amount) : p.cond === 'count' ? 'Hasta ' + (p.count || 1) + ' recursos' : p.cond === 'env' ? 'Fuera de ' + (p.env || 'prod') : null;
+const polText = (p) => p.cond === 'self' ? 'La persona confirma cada llamada' : p.cond === 'amount' ? 'Más de ' + polMoney(p.amount) : p.cond === 'count' ? 'Más de ' + (p.count || 1) + ' recursos' : p.cond === 'env' ? 'En ' + (p.env || 'prod') : 'Siempre';
+const polBelow = (p) => p.cond === 'self' ? null : p.cond === 'amount' ? 'Hasta ' + polMoney(p.amount) : p.cond === 'count' ? 'Hasta ' + (p.count || 1) + ' recursos' : p.cond === 'env' ? 'Fuera de ' + (p.env || 'prod') : null;
 // Ninguna condición deja una tool de escritura sin confirmación: por debajo del umbral confirma el propio usuario; por encima, N aprobadores distintos de quien la pidió.
 function approvalTier(tool, params = {}) {
   const pol = polEff({ ...polDefault, ...((window.MangoStore.get().toolPolicies || {})[tool] || {}) });
+  if (pol.cond === 'self') return { tier: 'self', pol, rule: 'La persona confirma cada llamada' };
   // Si falta el dato o no se puede interpretar, se usa el tramo de aprobadores.
   const n = (v) => (v === null || v === undefined || v === '' || !isFinite(Number(v)) || Number(v) <= 0) ? null : Number(v);
   const known = pol.cond === 'always' || (pol.cond === 'amount' ? n(params.amount) !== null : pol.cond === 'count' ? n(params.count) !== null : pol.cond === 'env' ? ['prod', 'staging'].includes(params.env) : false);
   const above = !known || pol.cond === 'always' ? true : pol.cond === 'amount' ? n(params.amount) > (pol.amount || 0) : pol.cond === 'count' ? n(params.count) > (pol.count || 1) : params.env === (pol.env || 'prod');
   return { tier: above ? 'approvers' : 'self', pol, rule: !known ? 'No se pudo determinar ' + ({ amount: 'el monto', count: 'la cantidad', env: 'el entorno' })[pol.cond] + ' · ' + pol.approvers + (pol.approvers === 1 ? ' aprobador distinto' : ' aprobadores distintos') + ' de quien la pide' : above ? polText(pol) + ' · ' + pol.approvers + (pol.approvers === 1 ? ' aprobador distinto' : ' aprobadores distintos') + ' de quien la pide' : polBelow(pol) + ' · confirma quien la pide' };
 }
-const polSummary = (p) => (polBelow(p) ? polBelow(p) + ': confirma el usuario · ' : '') + polText(p) + ': ' + p.approvers + (p.approvers === 1 ? ' aprobador' : ' aprobadores') + ' · vence en ' + p.expiresH + ' h';
+const polSummary = (p) => p.cond === 'self' ? 'La persona confirma cada llamada' : (polBelow(p) ? polBelow(p) + ': confirma el usuario · ' : '') + polText(p) + ': ' + p.approvers + (p.approvers === 1 ? ' aprobador' : ' aprobadores') + ' · vence en ' + p.expiresH + ' h';
 
 function writeTools() {
   const S = window.MangoStore;
   const cat = S.get().mcpCatalog || [];
   const fromCat = cat.flatMap(s => s.tools.filter(t => t.write && !t.destructive).map(t => ({ id: s.id + '.' + t.name, server: s.name, desc: t.desc, status: s.status })));
   const extra = Object.keys(S.get().toolPolicies || {}).filter(id => !fromCat.some(x => x.id === id)).map(id => ({ id, server: id.split('.')[0], desc: '', status: 'enabled' }));
-  return [...fromCat, ...extra];
+  return [...fromCat, ...extra.filter(x => !polInternal(x.id)), ...TICKET_TOOLS.map(([id, desc]) => ({ id, server: 'Tickets de Mango', desc, status: 'enabled', internal: true }))];
 }
 
 function PoliciesPanel() {
@@ -45,9 +49,9 @@ function PoliciesPanel() {
         {tools.map(t => { const p = polEff({ ...polDefault, ...(pols[t.id] || {}) }); const pend = pendingOf(t.id); return (
           <div key={t.id} className="pol-tr">
             <span style={{ minWidth: 0 }}><span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-strong)' }}>{t.id}</span>{t.status === 'soon' && <span style={{ marginLeft: 6 }}><window.SoonTag /></span>}{pend && <span className="badge badge-amber" style={{ marginLeft: 6 }}>Cambio pendiente</span>}<span className="mk-meta" style={{ display: 'block' }}>{t.server}{t.desc ? ' · ' + t.desc : ''}</span></span>
-            <span style={{ fontSize: 13 }}>{polBelow(p) && <span className="mk-meta" style={{ display: 'block' }}>{polBelow(p)}: confirma el usuario</span>}<span style={{ display: 'block' }}>{polText(p)}: aprobación</span></span>
-            <span className="mk-meta">{p.approvers}</span>
-            <span className="mk-meta">{p.expiresH} h · luego vence</span>
+            <span style={{ fontSize: 13 }}>{p.cond === 'self' ? <span style={{ display: 'block' }}>La persona confirma cada llamada</span> : <>{polBelow(p) && <span className="mk-meta" style={{ display: 'block' }}>{polBelow(p)}: confirma el usuario</span>}<span style={{ display: 'block' }}>{polText(p)}: aprobación</span></>}</span>
+            <span className="mk-meta">{p.cond === 'self' ? '—' : p.approvers}</span>
+            <span className="mk-meta">{p.cond === 'self' ? '—' : p.expiresH + ' h · luego vence'}</span>
             <span style={{ display: 'flex', justifyContent: 'flex-end' }}>{role === 'admin' && <button className="btn btn-sm btn-ghost" disabled={!!pend} title={pend ? 'Tiene un cambio pendiente' : 'Proponer cambio'} aria-label={'Editar política de ' + t.id} onClick={() => setEdit({ tool: t, p })}><I.Edit size={12} /></button>}</span>
           </div>
         ); })}
@@ -74,6 +78,7 @@ function PolicyModal({ tool, p: p0, onClose }) {
       <div className="g-field">
         <label>Cuándo pide aprobación de otras personas</label>
         <div className="set-choice">{Object.entries(POL_COND).map(([k, l]) => { const off = polCondOff(tool.id, k); return <button key={k} className={f.cond === k ? 'is-on' : ''} disabled={off} title={off ? 'Esta tool no informa ese dato' : undefined} onClick={() => setF({ ...f, cond: k })}>{l}</button>; })}</div>
+        {f.cond === 'self' && <div className="g-hint">Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.</div>}
         {Object.keys(POL_COND).some(k => polCondOff(tool.id, k)) && <div className="g-hint">Las opciones deshabilitadas dependen de datos que esta tool no informa.</div>}
         {f.cond === 'amount' && <K.MoneyInput id="pol-amt" label="Monto" value={String(f.amount ?? '')} onChange={(v) => setF({ ...f, amount: K.parseMoney(v).value || 0 })} hint={'Hasta este monto, la acción pide la confirmación del propio usuario en el chat (queda auditada). Por encima, requiere ' + f.approvers + (f.approvers === 1 ? ' aprobador distinto' : ' aprobadores distintos') + ' de quien la pidió.'} />}
         {f.cond === 'always' && <div className="g-hint">Cada uso requiere {f.approvers === 1 ? 'un aprobador distinto' : f.approvers + ' aprobadores distintos'} de quien la pidió.</div>}

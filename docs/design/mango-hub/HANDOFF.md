@@ -1298,3 +1298,71 @@ Respuesta al contexto de «Buscar conversaciones». Archivos: `search.jsx`, `cha
 - Sin cambios: sesión que no se renueva dentro del chat, Bedrock sin cuota y respuesta cortada (prueba pendiente), «Sin bucket» no enviado (el diseño no lo reproduce) y ronda 26.
 
 Demo: panel › «Buscar conversaciones · respuesta del servidor» (normal, lenta, error, 429, tope de lectura, más de 100) y «Buscar · mensaje de la coincidencia» (sigue ahí / ya no está).
+
+
+## Costos, Observabilidad, Evals y Tickets (2026-11-05) · D105–D112
+Respuesta al contexto del 2026-11-05. Archivos: `costs2.jsx`, `observability2.jsx`, `evals.jsx`, `eval-create.jsx`, `agent-review.jsx`, `tickets.jsx`, `system.jsx` (comentarios), `activity.jsx`, `ui.jsx`, `schedules.jsx`, `policies.jsx`, `chat.jsx`, `approvals.jsx`, `store.js`, `app.jsx`, nuevo `ops-states.jsx`. Las cuatro vistas siguen fuera de `AVAILABLE` («Próximamente» en «Disponible hoy»): se revisan en «Diseño completo». Entran cuando el producto las construya. Lo que se puede pegar ya: el selector «Crear ticket» de Schedules y la condición `self` de Ajustes › Aprobaciones.
+
+**Las cuatro vistas**
+- **Estados** (`OpsState`): cargando (mango-spinner + «Cargando {vista}…»), error (`role="alert"`, «No se pudo cargar {vista}.» + «Reintentar»), vacío (texto propio por vista) y 403 («No tienes acceso a {vista}» + quién la ve).
+- **Quién la ve** (`canView`): Costos, admin o finops-central · Observabilidad, solo admin (fuera de `OWNER_VIEWS` en la práctica) · Evals, admin, finops-central o quien puede crear agentes · Tickets, todos (ya era vista principal).
+
+**Costos**
+- Admin y finops-central ven lo mismo, incluido el presupuesto del agente en el cajón. Sin presupuesto de personas.
+- «Presupuestos», «Ver presupuestos» y «Ver trazas»: solo admin. Bajo el presupuesto, para admin: «El límite de un agente todavía no se cambia desde Mango.» («Ajustar presupuesto» pasa a «Ver presupuestos»).
+- Subtítulo: «… con los precios de lista de Brains. No incluye el guardrail ni los embeddings.»
+- **Consultas reales:** «{n} consultas», «Costo medio por consulta». Se quitó la nota de «estimaciones con datos de ejemplo».
+- **Desde cuándo cuenta:** bajo «desglose», «Cuenta desde el {fecha}» del desglose activo. «Por modelo» y «Por origen» usan la fecha de D106; «Por agente», la de su contador (D104). Lo anterior va en una fila gris «Sin desglose · Antes del {fecha}», nunca repartido. Si el mes anterior no tiene ese desglose, «vs anterior» es «—» y «Cambios frente al mes anterior» dice «El mes anterior no tiene desglose por agente: el contador empezó el {fecha}.»
+- **«Sin agente»** (fila gris en «Por agente»): los títulos de conversaciones nuevas. Nota debajo: «El título de una conversación nueva cuenta en el total del mes, pero en ningún agente: por eso va en «Sin agente».» En «Por origen» cuentan en Conversaciones.
+- **«Próximamente»:** «Por equipo» (botón desactivado con etiqueta) y «Oportunidades de ahorro» (tarjeta con etiqueta, sin cifras). Se quitaron «Asignado a equipos» del gráfico, de la proyección («Al ritmo actual») y del cierre proyectado.
+- CSV: `agente, modelo, gasto_mes, mes_anterior, consultas` + filas «Sin agente» y «Sin desglose».
+
+**Observabilidad**
+- Siempre solo metadatos. Se quitó la variante `convAccess`, «Abrir conversación» y el registro de lectura. Aviso fijo: «Solo metadatos: tipo de llamada, modelo o tool, inicio, duración, tokens y estado. El texto de la pregunta, la respuesta y lo que recibió o devolvió cada tool no se guardan en la traza.»
+- Filas: «Conversación de {correo}» o «Tarea de {correo}». Cajón: «Traza {id corto}» y debajo «{Conversación|Tarea} de {correo} · {agente} · {modelo} · {fecha}».
+- Id aleatorio de Mango (32 hex). Se muestran 8 en mono; «Copiar ID» copia el completo.
+- Llamadas al modelo: «Modelo · {modelo}», sin intención. Tool que falla: «La tool respondió con error.» Estado nuevo **«Cortado»** (gris), con «El turno se cortó antes de terminar.»
+- Búsqueda: «Buscar tool, persona o ID de traza» (tool, correo, id).
+- «Costo del modelo» con «· sin el guardrail».
+- **Tope de la lectura:** las cifras pasan a «al menos {n}» y, bajo los KPI, la línea gris `.sr-cap`: «La lectura llegó al tope de {N} trazas: las cifras son un mínimo. Acorta el rango o elige un agente para verlo completo.»
+- «Espera aprobación» y «Con aprobación» se quedan; se confirma al construir.
+
+**Evals**
+- **Quién:** admin y finops-central ven todas; un creador sin rol central, las de los agentes que edita. Crea, ajusta y ejecuta quien edita el agente (`evEdits`: admin, o `agent.edit` y dueño). Sin ningún agente editable: aviso «Solo lectura: crea, ajusta y ejecuta una suite quien edita su agente.», sin «Nueva suite», «▶», ajustes ni pie. Aprobar quitar «Obligatoria» solo lo ve un admin.
+- «Agentes sin evals» (solo con rol central): «De {n} agentes». Se quitó «Se publican sin pruebas».
+- Subtítulo: cada caso es un turno de prueba con la versión del agente; las tools de escritura nunca se ejecutan; solo una obligatoria que no pasa bloquea.
+- **Detalle:** veredicto y motivo por caso, y «la respuesta del agente no: queda 30 días en un registro que solo lee el evaluador». Sección «Ejecución y costo»: cuándo, «Corre como {persona}» (programada o en cada envío), costo estimado y quién paga.
+- **Al crear:** «Revisión humana» Próximamente; «Desde Playground» y «Generar con IA» Próximamente; «Conversaciones reales» sigue bloqueada. Queda solo «Importar CSV»: ver la pregunta abierta de abajo. «Usa la tool» lista el nombre de la tool en el Gateway (sin servidor). Juez: «Evaluador de Mango con un modelo del catálogo de Brains». Costo: «calculando…» y luego el valor del servidor (precio del modelo del agente + juez). Programada o en cada envío: «Corre a tu nombre. Si dejas de editar {agente}, la suite se pausa.»
+- **Estados nuevos:**
+  - en curso: en la fila «Caso {n} de {total}» con spinner; en el detalle, barra de progreso;
+  - «No empezó: no alcanza tu presupuesto o el de {agente}. El puntaje sigue siendo el anterior.»;
+  - «Se detuvo por presupuesto en el caso {n} de {total}. No cuenta como ejecución: …»;
+  - «La ejecución falló: no respondió el harness de evals o el Gateway. No cuenta como ejecución; vuelve a intentarlo.»;
+  - versión que ya no existe (insignia roja + «Usar la versión actual» *propuesta*);
+  - pausada (insignia ámbar, «Pausada: corre como {persona}, que ya no edita {agente}.» + «Retomar a mi nombre» *propuesta*).
+- **Revisión de agentes:** «Evals ejecutándose: {suites}. Se podrá aprobar cuando terminen y pasen.» y «Esperando evals: {suites} se ejecutan con este envío. Todavía no se puede aprobar.»; las dos bloquean («Hay evals obligatorias sin terminar.»).
+
+**Tickets**
+- **Id:** aleatorio; se muestran 8 caracteres (`tkShort`), también en la columna, la búsqueda («Buscar por título o id»), los avisos, «Copiar enlace», Actividad y la paleta.
+- **Herramientas · {n}:** tool, ok/error y latencia; sin parámetros ni desplegable. Un ticket creado en la web: «Lo creó una persona: no hay llamadas de un agente.»
+- **Asignar:** «Asignarme» o a quien participa (quien lo creó, el asignado y quienes comentaron), con la ayuda «A ti o a quien ya participa: …». «Nuevo ticket» y el filtro: «Sin asignar» / «A mí».
+- **«Por aprobar»:** desactivado en los desplegables; la columna no acepta tarjetas ni tiene «+» (al arrastrar: «Lo marca una solicitud de Aprobaciones»). Ayuda bajo Estado: «“Por aprobar” lo marca una solicitud de Aprobaciones.» Recuadro: «Hay una solicitud abierta en la conversación donde {agente} creó este ticket.» Se puede sacar de esa columna a mano (*confirmar*).
+- **Nuevo ticket:** «Un agente solo escribe en un ticket dentro de una conversación o de una tarea: elegirlo aquí no lo pone a trabajar.» Agente opcional («Sin agente»).
+- **Creado:** «{antigüedad} · {persona} · vía {agente}». Actividad: «{agente} creó el ticket en una conversación de {persona}».
+- **Comentarios:** Markdown con `renderMarkdown` (escapa el HTML). Pie: «Markdown · ⌘↵ para enviar · Menciones que avisan [Próximamente]».
+- **Panel:** cargando, error con «Reintentar», «No puedes ver este ticket» (enlace o acceso cambiado, con quién lo ve) y agente que ya no puedes usar («Ya no puedes usar {agente}. Ves este ticket porque lo creaste / lo tienes asignado…», el agente sin enlace).
+- **Chat:** la tarjeta de confirmación dice qué ticket: «Crea el ticket «{título}»», «Cambia el ticket {id} · {título}: {cambio}», «Comenta en el ticket {id} · {título}». El agente: «Para escribir en un ticket necesito tu confirmación.» Demo: escribe «abre un ticket», «comenta en el ticket» o «actualiza el ticket». En una tarea, la llamada queda como solicitud a nombre del dueño (sin cambio de pantalla).
+- **Schedules › «Crear ticket»:** deja de ser Próximamente (`f.ticket`). Al activarlo: «Cada ejecución que termina bien deja su resultado en un ticket tuyo, sin asignar, con {agente} y la tarea. Título: el nombre de la tarea y la fecha. Lo ven también quienes pueden usar {agente} y los administradores. Si el resultado parece una credencial, no se crea.» Se quita «Solo tú lo ves.».
+- Inicio, Bandeja, chat (enlaces) y Actividad siguen sin tickets hasta que se construyan.
+
+**Ajustes › Aprobaciones · tools de tickets** (*bloquea la release*)
+- `create_ticket`, `update_ticket` y `comment_ticket` aparecen bajo «Tickets de Mango» con `cond: 'self'`. La fila dice «La persona confirma cada llamada», con aprobadores y vencimiento «—». `polText`, `polSummary` y `approvalTier` leen `self` así, también en el resumen (no «Siempre»).
+- Editor: `self` no se ofrece. Solo «Siempre» está habilitado; ayuda «Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.»
+
+**Preguntas abiertas**
+- Evals sin Playground ni IA: solo queda CSV. ¿Agregamos «Escribir un caso» a mano?
+- «Usar la versión actual» y «Retomar a mi nombre» son propuestas: confirmar que el servidor los permite.
+- Evals: si una ejecución detenida o fallida cuenta en el historial (el diseño dice que no).
+- El brief llegó cortado en tres puntos (intención de la llamada al modelo, qué pasa si quien creó la eval pierde el acceso, y el final de Ajustes › Aprobaciones). Se asumió «Modelo · {modelo}» y que la suite se pausa.
+
+Demo: panel › «Costos, Observabilidad, Evals y Tickets · respuesta del servidor», «Costos · desde cuándo cuenta el desglose», «Observabilidad · lectura del rango», «Evals · al ejecutar», «Evals · estado de la primera suite», «Revisión · evals obligatorias», «Tickets · al abrir un ticket». Cuentas: «Usuario · finops» (Costos y Evals de solo lectura, sin Observabilidad), «Creador» (Evals de sus agentes, sin Costos).

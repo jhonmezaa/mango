@@ -132,7 +132,7 @@ function ReviewDetail({ r, agents, setView }) {
   const d = L.diff(r.base, r.snap);
   const uneval = avail && sim === 'rules-uneval';
   const gone = avail && sim === 'gone';
-  const errs = uneval ? [] : [...L.validate(r.snap, { review: r.status === 'review', by: r.by }), ...(!avail && (window.evalBlocks?.(r.agentId) || []).length ? [{ code: 'evals', msg: 'Hay evals obligatorias que no pasan.' }] : [])];
+  const errs = uneval ? [] : [...L.validate(r.snap, { review: r.status === 'review', by: r.by }), ...(!avail && (window.evalBlocks?.(r.agentId) || []).length ? [{ code: 'evals', msg: S.get().simReviewEvals ? 'Hay evals obligatorias sin terminar.' : 'Hay evals obligatorias que no pasan.' }] : [])];
   const mine = r.by === S.actor();
   const isAdmin = S.get().role === 'admin';
   const LIM = { tokens: 'Tokens por respuesta', iterations: 'Iteraciones', seconds: 'Tiempo máximo (s)' };

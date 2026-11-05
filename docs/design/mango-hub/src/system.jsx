@@ -176,12 +176,12 @@ function Onboarding({ open, onClose, setView, role }) {
   );
 }
 
-function CommentThread({ ticketId, composer = true, onSent, placeholder, autoFocus }) {
+function CommentThread({ ticketId, composer = true, onSent, placeholder, autoFocus, label, markdown }) {
   const allComments = window.useMango(s => s.comments);
   const comments = allComments[ticketId] || [];
   const [draft, setDraft] = useStateSys('');
   const toast = window.useToast?.();
-  const send = (e) => { e.preventDefault(); const t = draft.trim(); if (!t) return; window.MangoStore.addComment(ticketId, t); setDraft(''); toast?.({ tone: 'success', msg: 'Comentario publicado en ' + ticketId }); onSent && onSent(); };
+  const send = (e) => { e.preventDefault(); const t = draft.trim(); if (!t) return; window.MangoStore.addComment(ticketId, t); setDraft(''); toast?.({ tone: 'success', msg: 'Comentario publicado en ' + (label || ticketId) }); onSent && onSent(); };
   return (
     <div>
       {comments.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>Sin comentarios todavía.</div>}
@@ -191,7 +191,7 @@ function CommentThread({ ticketId, composer = true, onSent, placeholder, autoFoc
             <span className="sb-user-avatar" style={{ width: 28, height: 28, fontSize: 11, background: c.mine ? 'var(--accent-soft)' : undefined, color: c.mine ? 'var(--accent-ink)' : undefined }} aria-hidden="true">{c.initials}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13 }}><b style={{ fontWeight: 600 }}>{c.mine ? 'Tú' : c.author}</b> <span style={{ color: 'var(--text-muted)' }}>· {c.at}</span></div>
-              <div style={{ fontSize: 14, lineHeight: 1.55, marginTop: 2, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+              {markdown && window.renderMarkdown ? <div className="md" style={{ fontSize: 14, lineHeight: 1.55, marginTop: 2 }} dangerouslySetInnerHTML={{ __html: window.renderMarkdown(c.text) }} /> : <div style={{ fontSize: 14, lineHeight: 1.55, marginTop: 2, whiteSpace: 'pre-wrap' }}>{c.text}</div>}
             </div>
           </div>
         ))}
@@ -202,7 +202,7 @@ function CommentThread({ ticketId, composer = true, onSent, placeholder, autoFoc
           <textarea id={'cm-' + ticketId} autoFocus={autoFocus} className="input" rows={2} value={draft} onChange={e => setDraft(e.target.value)} placeholder={placeholder || 'Escribe un comentario…'} style={{ border: 'none', padding: 4, resize: 'vertical', fontSize: 14, background: 'transparent' }}
             onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) e.currentTarget.form.requestSubmit(); }} />
           <div className="row between" style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>⌘↵ para enviar</span>
+            <span className="row gap-2" style={{ fontSize: 12, color: 'var(--text-muted)', flexWrap: 'wrap' }}>{markdown ? 'Markdown · ' : ''}⌘↵ para enviar{markdown && <span className="row gap-1">· Menciones que avisan <window.SoonTag /></span>}</span>
             <button type="submit" className="btn btn-sm btn-primary" disabled={!draft.trim()}>Comentar</button>
           </div>
         </form>

@@ -136,6 +136,7 @@
       'codepipeline.put_approval_result': { cond: 'env', env: 'prod', approvers: 1, expiresH: 4 },
       'aws-ec2-ops.stop_instances': { cond: 'count', count: 3, approvers: 1, expiresH: 24 },
       'aws-ec2-ops.start_instances': { cond: 'always', approvers: 1, expiresH: 24 },
+      create_ticket: { cond: 'self', approvers: 1, expiresH: 24 }, update_ticket: { cond: 'self', approvers: 1, expiresH: 24 }, comment_ticket: { cond: 'self', approvers: 1, expiresH: 24 },
     },
     role: ls('mango-role', 'admin'),
     lang: ls('mango-lang', 'es'),
@@ -205,7 +206,7 @@
       if (store.onDecide[c.kind]) store.onDecide[c.kind](c, 'withdrawn');
       store.log((CHG_PREFIX[c.kind] || 'settings.') + 'withdraw', c.target || c.key, 'Retiró la propuesta ' + c.id);
     },
-    canView: (view, role = state.role) => { if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge' || (state.avail && (view === 'skills' || view === 'playground'))) return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); if (view === 'governance') return !!(ROLES[role] && (ROLES[role].admin || ROLES[role].central)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
+    canView: (view, role = state.role) => { const R = ROLES[role] || {}; if (view === 'costs') return !!(R.admin || R.central); if (view === 'observability') return !!R.admin; if (view === 'evals') return !!(R.admin || R.central || R.creator); if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge' || (state.avail && (view === 'skills' || view === 'playground'))) return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); if (view === 'governance') return !!(ROLES[role] && (ROLES[role].admin || ROLES[role].central)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
     can: (action, role = state.role) => { const p = PERMS[role]; return p.actions === '*' || p.actions.includes(action); },
     actorEmail: () => 'usuario' + (store.actor().match(/\d+/) || ['1'])[0] + '@empresa.com',
     emailOf: (n) => !n ? null : String(n).includes('@') ? n : /\d+/.test(n) ? 'usuario' + String(n).match(/\d+/)[0] + '@empresa.com' : null,

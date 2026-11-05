@@ -213,13 +213,18 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     if (att.length) window.MangoStore.log('chat.attach', agent.id, att.map(f => f.name).join(', '));
     setMessages(m => [...m, { type: "user_message", text: text || '(archivos adjuntos)', time: "ahora", attachments: att }]);
     setStreaming(true);
-    const isWrite = /\b(elimina|borra|apaga|termina|detén|deten|rollback|aplica|ejecuta|libera|reasigna|delete|terminate)|\bcrea(r)?\s+(un\s+)?presupuesto/i.test(text);
+    const isTicket = /\bticket\b/i.test(text);
+    const isWrite = isTicket || /\b(elimina|borra|apaga|termina|detén|deten|rollback|aplica|ejecuta|libera|reasigna|delete|terminate)|\bcrea(r)?\s+(un\s+)?presupuesto/i.test(text);
     if (isWrite) {
       setStreamPhase({ k: 'think' });
       setTimeout(() => {
         const num = (re) => { const m = text.match(re); return m ? Number(m[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')) : null; };
         const env = /\bprod/i.test(text) ? 'prod' : /\bstaging\b/i.test(text) ? 'staging' : null;
-        const call = /presupuesto/i.test(text) ? { tool: 'aws-budgets.create_budget', params: { amount: num(/(\d[\d.,]*)/), currency: 'USD' } }
+        const tk0 = (window.MangoData.tickets || [])[0]; const tkS = tk0 && window.tkShort ? window.tkShort(tk0.id) : '';
+        const call = isTicket ? (/coment/i.test(text) ? { tool: 'comment_ticket', params: { ticket: tkS }, ticket: { op: 'comment', short: tkS, title: tk0?.title } }
+            : /actualiza|cambia|cierra|resuelve|mueve|asigna/i.test(text) ? { tool: 'update_ticket', params: { ticket: tkS, status: 'in_progress' }, ticket: { op: 'update', short: tkS, title: tk0?.title, change: 'estado → En curso' } }
+            : { tool: 'create_ticket', params: { priority: 'medium' }, ticket: { op: 'create', title: 'Revisar el aumento de costo de ' + (agent.cat || agent.name) } })
+          : /presupuesto/i.test(text) ? { tool: 'aws-budgets.create_budget', params: { amount: num(/(\d[\d.,]*)/), currency: 'USD' } }
           : /pago|libera/i.test(text) ? { tool: 'sap-s4-hana.release_payment', params: { amount: num(/(\d[\d.,]*)/), currency: 'USD' } }
           : /rollback/i.test(text) ? { tool: 'codepipeline.rollback', params: { env } }
           : /det[eé]n|apaga|stop/i.test(text) ? { tool: 'aws-ec2-ops.stop_instances', params: { count: num(/(\d+)\s*instanc/i), env } }
@@ -229,7 +234,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
         const action = text.length > 70 ? text.slice(0, 70) + '…' : text;
         setStreaming(false); setStreamPhase(null);
         if (tier.tier === 'self') {
-          setMessages(m => [...m, { type: 'agent_response', text: 'Esta acción modifica recursos. Según la política, basta con **tu confirmación** antes de ejecutarla.' }, { type: 'self_confirm', status: 'pending', action, rule: tier.rule, ...call }]);
+          setMessages(m => [...m, { type: 'agent_response', text: call.ticket ? 'Para escribir en un ticket necesito **tu confirmación**.' : 'Esta acción modifica recursos. Según la política, basta con **tu confirmación** antes de ejecutarla.' }, { type: 'self_confirm', status: 'pending', action, rule: tier.rule, ...call }]);
           return;
         }
         const ap = window.MangoStore.requestApproval({ agent: agent.id, action, tool: call.tool, params: call.params, risk: /prod|elimina|borra|termina|delete|terminate/i.test(text) ? 'high' : 'medium', policy: tier.rule, impact: 'Cambio sobre recursos gestionados por ' + agent.name, threadId: activeThreadId });

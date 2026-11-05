@@ -360,7 +360,7 @@ function SelfConfirmCard({ msg, onConfirm, onCancel }) {
         <span style={{ fontSize: 13, fontWeight: 600 }}>¿Ejecutar esta acción?</span>
         <span className="badge">Escritura</span>
       </div>
-      <div style={{ fontSize: 13.5, marginBottom: 4 }}>{msg.action}</div>
+      <div style={{ fontSize: 13.5, marginBottom: 4 }}>{msg.ticket ? (msg.ticket.op === 'create' ? <>Crea el ticket «{msg.ticket.title}»</> : msg.ticket.op === 'update' ? <>Cambia el ticket <span className="mono">{msg.ticket.short}</span> · {msg.ticket.title}: {msg.ticket.change}</> : <>Comenta en el ticket <span className="mono">{msg.ticket.short}</span> · {msg.ticket.title}</>) : msg.action}</div>
       <div className="mono" style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 4 }}>{msg.tool} · {Object.entries(msg.params || {}).map(([k, v]) => k + '=' + v).join(', ')}</div>
       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Política: {msg.rule}. Tu confirmación queda registrada en Auditoría.</div>
       {done ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}><span className={'badge ' + (msg.status === 'confirmed' ? 'badge-green' : '')} style={{ marginRight: 8 }}>{msg.status === 'confirmed' ? 'Confirmada' : 'Cancelada'}</span>por {msg.by}</div>

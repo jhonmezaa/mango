@@ -92,7 +92,7 @@ function CmdK({ open, onClose, agents, tickets, threads, setView, openChat }) {
       const a = agents.find(x => x.id === t.agentId);
       return { kind: "thread", label: t.title, sub: (a ? a.name : t.agentId) + " · " + t.last, icon: "Chat", do: () => openChat(t.agentId, t.id) };
     });
-    const tks = tickets.slice(0, 20).map(t => ({ kind: "ticket", label: t.id + " — " + t.title, sub: t.status, icon: "Tickets", do: () => setView('tickets') }));
+    const tks = tickets.slice(0, 20).map(t => ({ kind: "ticket", label: (window.tkShort ? window.tkShort(t.id) : t.id) + " — " + t.title, sub: t.status, icon: "Tickets", do: () => setView('tickets') }));
     nav.push(
       { kind: "nav", label: "Aprobaciones pendientes", icon: "Check2", do: () => setView('approvals') },
       { kind: "nav", label: "Audit log", icon: "Lock", do: () => setView('audit') },

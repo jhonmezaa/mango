@@ -198,7 +198,7 @@ function ActivityView({ agents, openChat }) {
   // Disponible hoy: la conversación y la tarea solo se abren desde lo propio; Presupuestos, solo para quien lo ve.
   const linkOf = (e) => !e.link ? null : !avail ? e.link : ['chat', 'run'].includes(e.link[0]) ? (e.mine ? e.link : null) : e.link[0] === 'budgets' ? (S.canView('budgets') ? e.link : null) : e.link;
   const LINK_L = { chat: 'Abrir conversación', run: 'Ver ejecución', approvals: 'Ver aprobación', budgets: avail ? 'Ver presupuestos' : 'Ver presupuesto' };
-  const linkLabel = (e) => e.link[0] === 'tickets' ? 'Abrir ' + e.target : LINK_L[e.link[0]] || 'Ver revisión';
+  const linkLabel = (e) => e.link[0] === 'tickets' ? 'Abrir ' + (window.tkShort ? window.tkShort(e.target) : e.target) : LINK_L[e.link[0]] || 'Ver revisión';
   const shown = rows.slice(0, limit);
   const hourKey = (iso) => { const d = new Date(iso); d.setMinutes(0, 0, 0); return d.getTime(); };
   const groups = []; shown.forEach(e => { const k = hourKey(e.at); const g = groups[groups.length - 1]; if (g && g.k === k) g.items.push(e); else groups.push({ k, items: [e] }); });

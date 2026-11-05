@@ -252,8 +252,9 @@ function ScheduleEditor({ s, agents, onClose, onSaved }) {
             {noDays && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>Elige al menos un día</div>}
           </div>}
           <div><Lb>Resultado</Lb>
-            <div className="sc-ro">{inboxOn ? 'Queda en el detalle de la tarea y te llega a la Bandeja.' : 'Queda en el detalle de la tarea.'} Solo tú lo ves.</div>
-            <div className="row gap-2" style={{ marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}><span className="mk-meta">También enviar a</span><window.Soon on><div className="ab-seg"><button type="button">Canal de Slack</button></div></window.Soon><window.Soon on><div className="ab-seg"><button type="button">Crear ticket</button></div></window.Soon></div>
+            <div className="sc-ro">{inboxOn ? 'Queda en el detalle de la tarea y te llega a la Bandeja.' : 'Queda en el detalle de la tarea.'}{f.ticket ? '' : ' Solo tú lo ves.'}</div>
+            <div className="row gap-2" style={{ marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}><span className="mk-meta">También enviar a</span><window.Soon on><div className="ab-seg"><button type="button">Canal de Slack</button></div></window.Soon><div className="ab-seg"><button type="button" className={f.ticket ? 'is-on' : ''} aria-pressed={!!f.ticket} onClick={() => setF({ ...f, ticket: !f.ticket })}>Crear ticket</button></div></div>
+            {f.ticket && <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>Cada ejecución que termina bien deja su resultado en un ticket tuyo, sin asignar, con {a?.name || 'el agente'} y la tarea. Título: el nombre de la tarea y la fecha. Lo ven también quienes pueden usar {a?.name || 'el agente'} y los administradores. Si el resultado parece una credencial, no se crea.</div>}
           </div>
           <div><Lb>Reporte descargable</Lb>
             {repSoon ? <window.Soon on block><label className="sc-rep-opt"><input type="checkbox" disabled /><span><b>También un PDF con gráficos</b><span className="mk-meta">Para guardarlo o compartirlo fuera de Mango.</span></span></label></window.Soon> : <>

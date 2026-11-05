@@ -34,7 +34,7 @@ function EvalCreate({ agents, initialAgent, onClose, onCreated }) {
   const [step, setStep] = useState(1);
   const [f, setF] = useState({ agent: initialAgent || agents[0].id, type: 'golden', name: '', threshold: 80, required: true, when: 'submit', freq: 'weekly', judge: (models.find(m => /Haiku/.test(m.short)) || models[0])?.short, cases: [] });
   const convAccess = window.useMango(s => s.authCfg.convAccess);
-  const [src, setSrc] = useState(() => window.MangoStore.get().authCfg.convAccess ? 'chats' : 'pg');
+  const [src, setSrc] = useState(() => window.MangoStore.get().authCfg.convAccess ? 'chats' : 'csv');
   const [csv, setCsv] = useState(''); const [csvErr, setCsvErr] = useState('');
   const [gen, setGen] = useState(null);
   const agent = agents.find(a => a.id === f.agent);
@@ -44,7 +44,10 @@ function EvalCreate({ agents, initialAgent, onClose, onCreated }) {
   const secrets = f.cases.filter(c => L.findSecret(c.q + ' ' + c.a));
   const chats = ecFromChats(f.agent);
   const pgs = pgCases.filter(c => c.agentId === f.agent);
-  const agentTools = (agent?.mcp || []).flatMap(id => (L.serverOf(id)?.tools || []).map(t => id + '.' + t.name));
+  const agentTools = (agent?.mcp || []).flatMap(id => (L.serverOf(id)?.tools || []).map(t => t.name));
+  const [costReady, setCostReady] = useState(false);
+  useEffect(() => { if (step !== 4) return; setCostReady(false); const t = setTimeout(() => setCostReady(true), 700); return () => clearTimeout(t); }, [step, f.cases.length, f.judge]);
+  const estCost = () => { const m = (window.MangoData.models || []).find(x => x.short === agent?.model) || { inputPrice: 3, outputPrice: 15 }; const j = models.find(x => x.short === f.judge) || { inputPrice: 1, outputPrice: 5 }; const judged = f.cases.filter(c => c.crit === 'judge').length; return f.cases.length * (3000 * m.inputPrice + 800 * m.outputPrice) / 1e6 + judged * (1500 * j.inputPrice + 200 * j.outputPrice) / 1e6; };
   const stepErr = step === 1 ? (!f.name.trim() && 'Ponle un nombre a la suite') : step === 2 ? (!f.cases.length ? 'Agrega al menos un caso' : secrets.length ? `${secrets.length} ${secrets.length === 1 ? 'caso tiene' : 'casos tienen'} un posible secreto` : null) : step === 3 ? (f.cases.some(c => (c.crit === 'contains' || c.crit === 'tool') && !c.critVal) ? 'Completa el valor de cada criterio' : f.cases.some(c => c.crit === 'judge') && !f.judge ? 'Elige un modelo juez' : null) : null;
   const [tried, setTried] = useState(false);
   const next = () => { setTried(true); if (stepErr) return; setTried(false); setStep(s => s + 1); };
@@ -52,7 +55,7 @@ function EvalCreate({ agents, initialAgent, onClose, onCreated }) {
   const create = () => {
     const id = 'ev-' + Date.now().toString(36).slice(-5);
     const judged = f.cases.filter(c => c.crit === 'judge').length;
-    S.set({ evals: [...(S.get().evals || []), { id, name: f.name.trim(), agent: f.agent, type: f.type, cases: f.cases.length, caseList: f.cases, threshold: f.threshold / 100, required: f.required, when: f.when, freq: f.freq, judge: f.judge, lastScore: 0, prevScore: 0, status: 'pending', runs: 0, hist: [], lastRunAt: null, desc: `${f.cases.length} casos · ${judged ? judged + ' con juez ' + f.judge : 'sin juez'}.` }] });
+    S.set({ evals: [...(S.get().evals || []), { id, name: f.name.trim(), agent: f.agent, type: f.type, cases: f.cases.length, caseList: f.cases, threshold: f.threshold / 100, required: f.required, when: f.when, freq: f.freq, judge: f.judge, createdBy: S.actor(), lastScore: 0, prevScore: 0, status: 'pending', runs: 0, hist: [], lastRunAt: null, desc: `${f.cases.length} casos · ${judged ? judged + ' con juez ' + f.judge : 'sin juez'}.` }] });
     S.log('eval.create', id, `Creó la suite ${f.name.trim()} para ${agent.name} (${f.cases.length} casos${f.required ? ', obligatoria' : ''})`);
     toast?.({ tone: 'success', msg: 'Suite creada' + (f.when === 'manual' ? '' : ' · se ejecutará ' + (f.when === 'submit' ? 'en el próximo envío' : 'según el schedule')) });
     onCreated(id);
@@ -77,14 +80,16 @@ function EvalCreate({ agents, initialAgent, onClose, onCreated }) {
               <div><Lb>Nombre de la suite</Lb><input className="input" value={f.name} onChange={e => set({ name: e.target.value })} placeholder={'p. ej. ' + (agent?.cat || '') + ' — preguntas frecuentes'} autoFocus maxLength={60} /></div>
             </div>
             <div><Lb>Tipo</Lb><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 8 }}>
-              {[['golden', 'Golden set', 'Pregunta y respuesta esperada; se compara con criterios.'], ['regression', 'Regresión', 'Casos que ya fallaron alguna vez.'], ['human_eval', 'Revisión humana', 'Personas califican cada respuesta del 1 al 5.'], ['safety', 'Seguridad', 'Intentos de romper las reglas; debe resistirlos todos.']].map(([k, l, d]) => (
+              {[['golden', 'Golden set', 'Pregunta y respuesta esperada; se compara con criterios.'], ['regression', 'Regresión', 'Casos que ya fallaron alguna vez.'], ['human_eval', 'Revisión humana', 'Personas califican cada respuesta del 1 al 5.'], ['safety', 'Seguridad', 'Intentos de romper las reglas; debe resistirlos todos.']].map(([k, l, d]) => k === 'human_eval' ? (
+                <window.Soon key={k} on block><button type="button" className="ab-model" style={{ alignItems: 'flex-start', width: '100%' }}><span className="ab-radio" style={{ marginTop: 2 }} /><span><span style={{ display: 'block', fontSize: 13, fontWeight: 500 }}>{l}</span><span className="mk-meta">{d}</span></span></button></window.Soon>
+              ) : (
                 <button key={k} type="button" className={'ab-model' + (f.type === k ? ' is-on' : '')} style={{ alignItems: 'flex-start' }} onClick={() => set({ type: k, threshold: k === 'safety' ? 100 : f.threshold, cases: [] })}><span className="ab-radio" style={{ marginTop: 2 }} /><span><span style={{ display: 'block', fontSize: 13, fontWeight: 500 }}>{l}</span><span className="mk-meta">{d}</span></span></button>
               ))}
             </div></div>
           </div>}
 
           {step === 2 && <div style={{ display: 'grid', gap: 12 }}>
-            <div className="tk-quick" style={{ display: 'inline-flex', alignSelf: 'start' }}>{[['chats', 'Conversaciones reales'], ['pg', 'Desde Playground' + (pgs.length ? ' · ' + pgs.length : '')], ['csv', 'Importar CSV'], ['ai', 'Generar con IA']].map(([k, l]) => <button key={k} className={src === k ? 'is-on' : ''} disabled={k === 'chats' && !convAccess} title={k === 'chats' && !convAccess ? 'Requiere el acceso de admins a conversaciones' : undefined} onClick={() => setSrc(k)}>{k === 'chats' && !convAccess ? <><I.Lock size={11} /> {l}</> : l}</button>)}</div>
+            <div className="tk-quick" style={{ display: 'inline-flex', alignSelf: 'start', flexWrap: 'wrap' }}>{[['chats', 'Conversaciones reales'], ['pg', 'Desde Playground'], ['csv', 'Importar CSV'], ['ai', 'Generar con IA']].map(([k, l]) => { const soon = k === 'pg' || k === 'ai'; const off = soon || (k === 'chats' && !convAccess); return <button key={k} className={src === k ? 'is-on row gap-2' : 'row gap-2'} disabled={off} title={soon ? 'Todavía no está disponible' : k === 'chats' && !convAccess ? 'Requiere el acceso de admins a conversaciones' : undefined} onClick={() => setSrc(k)}>{k === 'chats' && !convAccess && <I.Lock size={11} />}{l}{soon && <window.SoonTag />}</button>; })}</div>
             <div className="ec-src">
               {!convAccess && src !== 'chats' && <div className="mc-alert" style={{ marginBottom: 10, fontSize: 12.5 }}><I.Lock size={13} /><div>«Conversaciones reales» está bloqueada: la instalación no activó el acceso de admins a conversaciones (Ajustes › Acceso a conversaciones).</div></div>}
               {src === 'chats' && convAccess && (chats.length ? <>
@@ -116,14 +121,14 @@ function EvalCreate({ agents, initialAgent, onClose, onCreated }) {
 
           {step === 3 && <div style={{ display: 'grid', gap: 12 }}>
             {f.type === 'human_eval' && <div className="mc-alert"><I.Info size={14} /><div>En revisión humana, cada respuesta la califican personas del 1 al 5. Los criterios sirven como guía para quien revisa.</div></div>}
-            {f.cases.some(c => c.crit === 'judge') && <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 12.5, fontWeight: 500 }}>Modelo juez</span><select className="input" style={{ width: 'auto' }} value={f.judge || ''} onChange={e => set({ judge: e.target.value })}>{models.map(m => <option key={m.id} value={m.short}>{m.short}</option>)}</select><span className="mk-meta">Solo modelos habilitados en Brains. Su costo cuenta contra el presupuesto de {agent.name}.</span></div>}
+            {f.cases.some(c => c.crit === 'judge') && <div className="row gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}><span style={{ fontSize: 12.5, fontWeight: 500 }}>Modelo juez</span><select className="input" style={{ width: 'auto' }} value={f.judge || ''} onChange={e => set({ judge: e.target.value })}>{models.map(m => <option key={m.id} value={m.short}>{m.short}</option>)}</select><span className="mk-meta">Evaluador de Mango con un modelo del catálogo de Brains. Su costo cuenta contra el presupuesto de {agent.name}.</span></div>}
             <div className="ec-list">{f.cases.map(c => (
               <div key={c.id} className="ec-crit">
                 <div style={{ fontSize: 13, marginBottom: 6 }}>{c.q}</div>
                 <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
                   <select className="input" style={{ width: 'auto', fontSize: 12.5 }} value={c.crit} onChange={e => updCase(c.id, { crit: e.target.value, critVal: '' })} aria-label="Criterio">{Object.entries(EC_CRIT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
                   {c.crit === 'contains' && <input className="input" style={{ flex: '1 1 180px', fontSize: 12.5 }} value={c.critVal} onChange={e => updCase(c.id, { critVal: e.target.value })} placeholder="Texto o número que debe aparecer" />}
-                  {c.crit === 'tool' && <select className="input" style={{ flex: '1 1 200px', fontSize: 12.5 }} value={c.critVal} onChange={e => updCase(c.id, { critVal: e.target.value })}><option value="">Elige la tool</option>{agentTools.map(t => <option key={t}>{t}</option>)}</select>}
+                  {c.crit === 'tool' && <select className="input" style={{ flex: '1 1 200px', fontSize: 12.5 }} value={c.critVal} onChange={e => updCase(c.id, { critVal: e.target.value })} aria-label="Tool, con su nombre en el Gateway"><option value="">Elige la tool</option>{agentTools.map(t => <option key={t}>{t}</option>)}</select>}
                   {c.crit === 'judge' && <input className="input" style={{ flex: '1 1 220px', fontSize: 12.5 }} value={c.a} onChange={e => updCase(c.id, { a: e.target.value })} placeholder="Respuesta esperada" />}
                   {c.crit === 'noleak' && <span className="mk-meta">Falla si muestra el prompt, credenciales o datos de otras personas.</span>}
                 </div>
@@ -133,11 +138,12 @@ function EvalCreate({ agents, initialAgent, onClose, onCreated }) {
 
           {step === 4 && <div style={{ display: 'grid', gap: 16 }}>
             <div><Lb hint={f.type === 'safety' ? 'Las de seguridad deben pasar al 100%' : null}>Umbral para pasar</Lb><div className="row gap-2"><input type="range" min="50" max="100" value={f.threshold} disabled={f.type === 'safety'} onChange={e => set({ threshold: +e.target.value })} style={{ flex: 1, accentColor: 'var(--accent)' }} /><span className="mono" style={{ width: 44, textAlign: 'right' }}>{f.threshold}%</span></div></div>
-            <label className="ab-toggle" style={{ position: 'relative' }}><input type="checkbox" checked={f.required} onChange={e => set({ required: e.target.checked })} /><span className="ab-switch" /><span style={{ flex: 1 }}><span style={{ display: 'block', fontSize: 13, fontWeight: 500 }}>Obligatoria para publicar</span><span className="ab-sub">Si no pasa, Revisión de agentes bloquea los cambios de {agent.name}. Quitarla después requiere que la apruebe otro admin.</span></span></label>
+            <label className="ab-toggle" style={{ position: 'relative' }}><input type="checkbox" checked={f.required} onChange={e => set({ required: e.target.checked })} /><span className="ab-switch" /><span style={{ flex: 1 }}><span style={{ display: 'block', fontSize: 13, fontWeight: 500 }}>Obligatoria para publicar</span><span className="ab-sub">Si no pasa, Revisión de agentes bloquea los cambios de {agent.name}. Quitarla después lo aprueba otro admin, nunca quien lo pidió.</span></span></label>
             <div><Lb>Cuándo se ejecuta</Lb><div className="ab-seg">{[['manual', 'Manual'], ['submit', 'En cada envío a aprobación'], ['schedule', 'Programada']].map(([k, l]) => <button key={k} type="button" className={f.when === k ? 'is-on' : ''} onClick={() => set({ when: k })}>{l}</button>)}</div>
               {f.when === 'schedule' && <div className="tk-quick" style={{ display: 'inline-flex', marginTop: 8 }}>{[['daily', 'Diaria'], ['weekly', 'Semanal']].map(([k, l]) => <button key={k} className={f.freq === k ? 'is-on' : ''} onClick={() => set({ freq: k })}>{l}</button>)}</div>}
+              {f.when !== 'manual' && <div className="g-hint" style={{ marginTop: 6 }}>Corre a tu nombre. Si dejas de editar {agent.name}, la suite se pausa.</div>}
             </div>
-            <div className="mc-alert"><I.Info size={14} /><div>{f.cases.length} casos · {f.cases.filter(c => c.crit === 'judge').length} con juez {f.judge} · costo estimado por ejecución ≈ {window.GovKit ? window.GovKit.usd(f.cases.length * 0.012) : ''}. Queda registrado en el Audit log.</div></div>
+            <div className="mc-alert"><I.Info size={14} /><div>{f.cases.length} casos · {f.cases.filter(c => c.crit === 'judge').length} con juez {f.judge} · costo estimado por ejecución {costReady ? <b className="mono">≈ {window.GovKit ? window.GovKit.usd(estCost()) : ''}</b> : <span className="mk-meta">calculando…</span>}. Cada caso cuenta contra tu presupuesto y el de {agent.name}; el juez, contra el de {agent.name}. Las tools de escritura no se ejecutan.</div></div>
           </div>}
         </div>
         {tried && stepErr && <div style={{ padding: '0 20px 8px', fontSize: 12.5, color: 'var(--red)' }}>{stepErr}</div>}
