@@ -438,3 +438,14 @@ def test_a_version_in_review_can_be_run(lab: Lab) -> None:
     run = lab.runs.get(suite.suite_id, run_id)
     assert run is not None and run.status == "passed"
     assert run.content_hash == review["content_hash"]
+
+
+def test_the_judge_reserves_its_tokens_at_prices_per_million(lab: Lab) -> None:
+    draft = _create(lab.env)
+    suite = lab.suite(CASES[3:], draft["agent_id"])
+    lab.start(suite, draft)
+    lab.drain()
+    # The case turn, then the judging: 6000 input and 512 output tokens at 3 and 15 USD per
+    # million, plus the fee of one evaluation. Never the tokens times the price per million.
+    judge = Decimal(6000 * 3 + 512 * 15) / Decimal(1_000_000) + Decimal("0.0015")
+    assert lab.env.budgets.reserved[-1] == judge

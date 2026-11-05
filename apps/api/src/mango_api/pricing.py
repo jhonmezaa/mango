@@ -78,3 +78,30 @@ def knowledge_cost(searches: int, embedding_price: Decimal) -> Decimal:
     the reconciliation against the bill (§4.5). An estimate that never falls short."""
     tokens = searches * query_tokens("x" * MAX_QUERY_CHARS)
     return (Decimal(tokens) * embedding_price / _MILLION).quantize(Decimal("0.000001"))
+
+
+JUDGE_INPUT_TOKENS = 6000
+"""What a judge reservation counts for its input (``mango_eval_judge.judge``)."""
+JUDGE_OUTPUT_TOKENS = 512
+
+
+def eval_case_reservation(
+    price: ModelPrice,
+    question_chars: int,
+    max_iterations: int,
+    max_output_tokens: int,
+    knowledge_price: Decimal | None,
+) -> Decimal:
+    """What one case of an eval reserves before its turn (rule 4, D111 (3)): a turn of the
+    version, plus its knowledge searches when the version has knowledge bases."""
+    estimate = estimate_max_cost(price, question_chars, max_iterations, max_output_tokens)
+    if knowledge_price is not None:
+        estimate += knowledge_cost(max_iterations, knowledge_price)
+    return estimate
+
+
+def judge_reservation(price: ModelPrice, evaluation_fee: Decimal) -> Decimal:
+    """What the judging of one case reserves on the agent's budget (D111 (3)): the judge model's
+    tokens (prices are per million tokens) and the fee of one evaluation."""
+    worst = Usage(input_tokens=JUDGE_INPUT_TOKENS, output_tokens=JUDGE_OUTPUT_TOKENS)
+    return cost(worst, price) + evaluation_fee

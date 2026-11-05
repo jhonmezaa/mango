@@ -65,7 +65,13 @@ from mango_api.evals_store import (
 )
 from mango_api.model_catalog import ModelCatalog, ModelCatalogUnavailableError
 from mango_api.playground import _signature, _skill_sources
-from mango_api.pricing import cost, estimate_max_cost, knowledge_cost, turn_price
+from mango_api.pricing import (
+    cost,
+    eval_case_reservation,
+    judge_reservation,
+    knowledge_cost,
+    turn_price,
+)
 from mango_api.published import AgentUnavailableError, PublishedAgents, usable_by
 from mango_api.settings import ModelPrice
 from mango_api.skills_store import SkillStore
@@ -94,9 +100,6 @@ logger = logging.getLogger(__name__)
 JUDGE_DELAY_SECONDS = 300
 """Traces reach CloudWatch 2 to 5 minutes after a turn (AgentCore Evaluations' guide)."""
 JUDGE_RETRY_SECONDS = 180
-JUDGE_INPUT_TOKENS = 6000
-"""What a judge reservation counts for its input (``mango_eval_judge.judge``)."""
-JUDGE_OUTPUT_TOKENS = 512
 DISCLOSURE_FRAGMENT_CHARS = 40
 """A run of this many characters of the version's prompt in an answer is a disclosure."""
 HARNESS_CACHE_SECONDS = 15
@@ -366,12 +369,12 @@ class EvalRunner:
         user = caller.user
         limits = agent.definition.limits
         price = d.price(model)
-        estimate = estimate_max_cost(
-            price, len(case.question), limits.max_iterations, limits.reserved_output_tokens
-        ) + (
-            knowledge_cost(limits.max_iterations, d.knowledge_price)
-            if agent.definition.knowledge_bases
-            else Decimal(0)
+        estimate = eval_case_reservation(
+            price,
+            len(case.question),
+            limits.max_iterations,
+            limits.reserved_output_tokens,
+            d.knowledge_price if agent.definition.knowledge_bases else None,
         )
         turn_id = secrets.token_hex(16)
         scopes = d.scopes(caller, agent.agent_id)
@@ -539,11 +542,7 @@ class EvalRunner:
             return CaseResult("fail", "judge_failed")
         price = d.price(model)
         tprice = turn_price(price)
-        estimate = (
-            Decimal(JUDGE_INPUT_TOKENS) * tprice.input
-            + Decimal(JUDGE_OUTPUT_TOKENS) * tprice.output
-            + d.evaluation_fee
-        )
+        estimate = judge_reservation(price, d.evaluation_fee)
         agent_scopes = [s for s in d.scopes(caller, run.agent_id) if s.key.startswith("AGENT#")]
         turn_id = secrets.token_hex(16)
         pending = PendingTurn.new(
