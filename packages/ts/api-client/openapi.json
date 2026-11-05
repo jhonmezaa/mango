@@ -11880,6 +11880,11 @@
             "title": "Cases",
             "type": "array"
           },
+          "completed_runs": {
+            "default": 0,
+            "title": "Completed Runs",
+            "type": "integer"
+          },
           "created_by_email": {
             "anyOf": [
               {
@@ -11938,6 +11943,14 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "recent_scores": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Recent Scores",
+            "type": "array"
           },
           "request": {
             "anyOf": [
@@ -12025,6 +12038,11 @@
             "title": "Case Count",
             "type": "integer"
           },
+          "completed_runs": {
+            "default": 0,
+            "title": "Completed Runs",
+            "type": "integer"
+          },
           "created_by_email": {
             "anyOf": [
               {
@@ -12083,6 +12101,14 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "recent_scores": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Recent Scores",
+            "type": "array"
           },
           "request": {
             "anyOf": [

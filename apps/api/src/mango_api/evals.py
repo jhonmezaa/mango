@@ -222,6 +222,9 @@ class SuiteOut(_Strict):
     last_run: LastRunOut | None
     active_run: ActiveRunOut | None = None
     last_attempt: LastAttemptOut | None = None
+    recent_scores: list[int] = []
+    """Scores of the last complete runs, oldest first (at most 6): the trend."""
+    completed_runs: int = 0
     can_edit: bool
 
 
@@ -428,6 +431,8 @@ def _suite_out(
         else None,
         active_run=_active_out(active),
         last_attempt=_attempt_out(suite),
+        recent_scores=list(suite.recent_scores),
+        completed_runs=suite.completed_runs,
         can_edit=can_edit,
     )
 

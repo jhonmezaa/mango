@@ -595,3 +595,22 @@ def test_the_judge_reserves_its_tokens_at_prices_per_million(lab: Lab) -> None:
     # million, plus the fee of one evaluation. Never the tokens times the price per million.
     judge = Decimal(6000 * 3 + 512 * 15) / Decimal(1_000_000) + Decimal("0.0015")
     assert lab.env.budgets.reserved[-1] == judge
+
+
+def test_the_trend_keeps_the_scores_of_the_complete_runs_only(lab: Lab) -> None:
+    draft = _create(lab.env)
+    suite = lab.suite(CASES[:1], draft["agent_id"])
+    for _ in range(7):
+        lab.start(suite, draft)
+        lab.drain()
+    lab.tokens.lost = True
+    lab.start(suite, draft)
+    lab.drain()
+
+    fresh = lab.store.find_suite(suite.suite_id)
+    assert fresh is not None
+    out = get_suite(lab.deps, _launcher(), fresh, True)
+    # Seven runs scored; the trend shows the last six. The stopped run is not one of them.
+    assert out.recent_scores == [100] * 6
+    assert out.completed_runs == 7
+    assert out.last_attempt is not None and out.last_attempt.status == "stopped"

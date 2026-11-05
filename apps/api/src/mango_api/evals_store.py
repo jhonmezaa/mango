@@ -154,6 +154,10 @@ class Suite:
     running: str | None = None
     """The run that holds the suite (one at a time, TM-EV6)."""
     last_attempt: LastAttempt | None = None
+    recent_scores: tuple[int, ...] = ()
+    """Scores of the last complete runs, oldest first (at most ``MAX_RECENT_SCORES``)."""
+    completed_runs: int = 0
+    """Runs that ran to the end and scored: what counts as a run."""
 
     def locked(self, now: datetime) -> bool:
         """An open request to stop requiring it: until it closes or expires."""
@@ -229,7 +233,20 @@ def _suite_item(suite: Suite) -> dict[str, Any]:
         }
     if suite.last_attempt:
         item["last_attempt"] = _attempt_item(suite.last_attempt)
+    if suite.recent_scores:
+        item["recent_scores"] = {"L": [_n(score) for score in suite.recent_scores]}
+    if suite.completed_runs:
+        item["completed_runs"] = _n(suite.completed_runs)
     return item
+
+
+def _scores(raw: Any) -> tuple[int, ...]:
+    if raw is None:
+        return ()
+    try:
+        return tuple(int(value["N"]) for value in raw["L"])
+    except (KeyError, TypeError, ValueError):
+        raise StoredEvalError("invalid recent scores") from None
 
 
 def _attempt_item(attempt: LastAttempt) -> dict[str, Any]:
@@ -314,6 +331,8 @@ def suite_from_item(item: dict[str, Any]) -> Suite:
             last_run=_last_run(item.get("last_run")),
             running=_opt(item, "running") or None,
             last_attempt=_last_attempt(item.get("last_attempt")),
+            recent_scores=_scores(item.get("recent_scores")),
+            completed_runs=_int(item, "completed_runs") if "completed_runs" in item else 0,
         )
     except (KeyError, TypeError, ValueError):
         raise StoredEvalError("invalid suite") from None
@@ -674,6 +693,8 @@ class EvalStore:
 RunStatus = Literal["queued", "running", "judging", "passed", "failed", "stopped", "error"]
 CaseStatus = Literal["pass", "fail", "judge", "skipped"]
 FINISHED: frozenset[str] = frozenset({"passed", "failed", "stopped", "error"})
+MAX_RECENT_SCORES = 6
+"""What the trend of a suite shows (design: «Últimas 6 ejecuciones»)."""
 MAX_RUNS_LISTED = 20
 
 
@@ -956,9 +977,18 @@ class EvalRuns:
             },
         }
         if status in ("passed", "failed") and score is not None:
+            # The trend keeps the last scores, written with the run that scored: the condition
+            # on ``running`` makes it once per run.
+            scores = (*suite.recent_scores, score)[-MAX_RECENT_SCORES:]
             suite_update["UpdateExpression"] = (
-                "REMOVE #running SET #last = :last, #attempt = :attempt ADD #rev :one"
+                "REMOVE #running SET #last = :last, #attempt = :attempt, #scores = :scores "
+                "ADD #rev :one, #completed :one"
             )
+            suite_update["ExpressionAttributeNames"]["#scores"] = "recent_scores"
+            suite_update["ExpressionAttributeNames"]["#completed"] = "completed_runs"
+            suite_update["ExpressionAttributeValues"][":scores"] = {
+                "L": [_n(value) for value in scores]
+            }
             suite_update["ExpressionAttributeNames"]["#last"] = "last_run"
             suite_update["ExpressionAttributeValues"][":last"] = {
                 "M": {

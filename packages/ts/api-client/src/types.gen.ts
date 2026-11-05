@@ -6290,6 +6290,10 @@ export type SuiteDetailOut = {
      */
     cases: Array<CaseOut>;
     /**
+     * Completed Runs
+     */
+    completed_runs?: number;
+    /**
      * Created By Email
      */
     created_by_email: string | null;
@@ -6311,6 +6315,10 @@ export type SuiteDetailOut = {
      * Name
      */
     name: string;
+    /**
+     * Recent Scores
+     */
+    recent_scores?: Array<number>;
     request: RequestOut | null;
     /**
      * Required
@@ -6356,6 +6364,10 @@ export type SuiteOut = {
      */
     case_count: number;
     /**
+     * Completed Runs
+     */
+    completed_runs?: number;
+    /**
      * Created By Email
      */
     created_by_email: string | null;
@@ -6377,6 +6389,10 @@ export type SuiteOut = {
      * Name
      */
     name: string;
+    /**
+     * Recent Scores
+     */
+    recent_scores?: Array<number>;
     request: RequestOut | null;
     /**
      * Required
