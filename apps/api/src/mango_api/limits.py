@@ -30,6 +30,7 @@ from mango_api import (
     knowledge,
     mcp,
     mfa_reset,
+    observability,
     people,
     playground,
     remote_mcp,
@@ -276,6 +277,18 @@ LIMITS: dict[str, LimitSpec] = {
             "administrators and central FinOps read and which bounds its own reads; a cache of "
             "30 seconds per person already absorbs reloads. It holds no exception: N times "
             "thirty a minute per person is still far below what a task serves."
+        ),
+    ),
+    "observability.reads": LimitSpec(
+        observability.READS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why=(
+            "Bounds the readings of the AgentCore spans of the Observability view (D108, "
+            "TM-OB6), which only administrators read: each one that misses the cache of a "
+            "minute invokes the trace reader, which pages through CloudWatch Logs with a "
+            "request quota the budget reconciliation shares. Counted once across the tasks of "
+            "mango-api, so N tasks do not multiply it."
         ),
     ),
     "home.reads": LimitSpec(

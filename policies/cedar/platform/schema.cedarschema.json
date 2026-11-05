@@ -108,6 +108,9 @@
       "ViewGovernance": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "ViewObservability": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ViewHome": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },

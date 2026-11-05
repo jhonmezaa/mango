@@ -87,10 +87,13 @@ class BudgetService:
         dynamodb: DynamoDBClient,
         table: str,
         sleep: Callable[[float], None] = time.sleep,
+        *,
+        on_bind: Callable[[PendingTurn, str], None] | None = None,
     ) -> None:
         self._db = dynamodb
         self._table = table
         self._sleep = sleep
+        self._on_bind = on_bind
 
     def reserve(
         self,
@@ -157,6 +160,9 @@ class BudgetService:
     def bind_session(self, turn: PendingTurn, session_id: str) -> None:
         """Record the runtime session a reserved turn is about to be invoked in."""
         budget_turns.bind_session(self._db, self._table, turn, session_id)
+        if self._on_bind is not None:
+            # The turn's reference for the Observability view (D108); it never raises.
+            self._on_bind(turn, session_id)
 
     def settle_turn(self, turn: PendingTurn, actual: Decimal, *, invoked: bool = True) -> bool:
         """The end of the turn is known: replace its reservation with the real cost (which may

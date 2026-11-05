@@ -129,6 +129,9 @@ class Settings:
     task_reports_bucket: str = ""
     """The function that draws the PDF of a run and the bucket it writes to (D86); empty until
     the reports construct is deployed."""
+    trace_reader_function: str = ""
+    """The function that reads the spans of the Observability view (D108); empty until its
+    nested stack is deployed."""
     knowledge_table: str = ""
     """Registry of the knowledge bases (D88 (21)); empty until mango-api may use it."""
     knowledge_bucket: str = ""
@@ -232,6 +235,7 @@ class Settings:
             tasks_client_secret_arn=env.get("TASKS_CLIENT_SECRET_ARN", ""),
             task_report_function=env.get("TASK_REPORT_FUNCTION", ""),
             task_reports_bucket=env.get("TASK_REPORTS_BUCKET", ""),
+            trace_reader_function=env.get("TRACE_READER_FUNCTION", ""),
             knowledge_table=env.get("KNOWLEDGE_TABLE", ""),
             knowledge_bucket=env.get("KNOWLEDGE_BUCKET", ""),
             knowledge_sync_state_machine_arn=env.get("KNOWLEDGE_SYNC_STATE_MACHINE_ARN", ""),

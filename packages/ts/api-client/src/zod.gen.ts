@@ -73,6 +73,17 @@ export const zAgentBudgetOutSchema = z.object({
 });
 
 /**
+ * AgentLatencyOut
+ */
+export const zAgentLatencyOutSchema = z.object({
+    agent_id: z.string(),
+    agent_name: z.string().nullable(),
+    failed: z.int(),
+    p95_ms: z.int(),
+    traces: z.int()
+});
+
+/**
  * AgentLimits
  *
  * Harness limits per turn. Ranges follow the Agent Builder design.
@@ -808,6 +819,15 @@ export const zHomeBudgetOutSchema = z.object({
     name: z.string().nullable(),
     scope: z.enum(['agent', 'user']),
     spent_usd: z.string()
+});
+
+/**
+ * HourOut
+ */
+export const zHourOutSchema = z.object({
+    error: z.int(),
+    hour: z.string(),
+    ok: z.int()
 });
 
 /**
@@ -2498,6 +2518,19 @@ export const zSourceRefOutSchema = z.object({
 });
 
 /**
+ * SpanOut
+ */
+export const zSpanOutSchema = z.object({
+    duration_ms: z.int(),
+    failed: z.boolean(),
+    input_tokens: z.int().nullable(),
+    kind: z.enum(['model', 'tool']),
+    name: z.string().nullable(),
+    offset_ms: z.int(),
+    output_tokens: z.int().nullable()
+});
+
+/**
  * StateIn
  */
 export const zStateInSchema = z.object({
@@ -2622,6 +2655,22 @@ export const zSubmitInSchema = z.object({
 });
 
 /**
+ * SummaryOut
+ */
+export const zSummaryOutSchema = z.object({
+    agents: z.int(),
+    cost_usd: z.string(),
+    error_percent: z.string(),
+    failed: z.int(),
+    failed_by_tool: z.int(),
+    input_tokens: z.int(),
+    output_tokens: z.int(),
+    p50_ms: z.int().nullable(),
+    p95_ms: z.int().nullable(),
+    traces: z.int()
+});
+
+/**
  * SyncOut
  */
 export const zSyncOutSchema = z.object({
@@ -2630,6 +2679,16 @@ export const zSyncOutSchema = z.object({
         'queued',
         'unavailable'
     ])
+});
+
+/**
+ * ToolOut
+ */
+export const zToolOutSchema = z.object({
+    calls: z.int(),
+    failed: z.int(),
+    name: z.string(),
+    p95_ms: z.int()
 });
 
 /**
@@ -2690,6 +2749,60 @@ export const zConversationDetailSchema = z.object({
     conversation_id: z.string(),
     messages: z.array(zMessageOutSchema),
     title: z.string()
+});
+
+/**
+ * TraceOut
+ */
+export const zTraceOutSchema = z.object({
+    agent_id: z.string(),
+    agent_name: z.string().nullable(),
+    agent_version: z.int().nullable(),
+    cost_usd: z.string().nullable(),
+    duration_ms: z.int(),
+    id: z.string(),
+    input_tokens: z.int().nullable(),
+    matched: z.boolean(),
+    model: z.string().nullable(),
+    model_calls: z.int(),
+    more_spans: z.int(),
+    origin: z.enum([
+        'chat',
+        'task',
+        'playground',
+        'eval'
+    ]).nullable(),
+    output_tokens: z.int().nullable(),
+    playground: z.boolean(),
+    spans: z.array(zSpanOutSchema),
+    started_at: z.string(),
+    status: z.enum(['ok', 'error']),
+    tool_calls: z.int(),
+    tools_failed: z.int(),
+    user_email: z.string().nullable(),
+    user_id: z.string().nullable()
+});
+
+/**
+ * ObservabilityOut
+ */
+export const zObservabilityOutSchema = z.object({
+    by_agent: z.array(zAgentLatencyOutSchema),
+    capped: z.boolean(),
+    generated_at: z.string(),
+    hourly: z.array(zHourOutSchema),
+    offset: z.int(),
+    range: z.enum([
+        '1h',
+        '6h',
+        '24h'
+    ]),
+    summary: zSummaryOutSchema,
+    tools: z.array(zToolOutSchema),
+    total: z.int(),
+    traces: z.array(zTraceOutSchema),
+    unmatched: z.int(),
+    unreadable: z.int()
 });
 
 /**
@@ -4407,6 +4520,27 @@ export const zCompleteConsentBody = zCallbackInSchema;
  * Successful Response
  */
 export const zCompleteConsentResponse = zCallbackOutSchema;
+
+export const zGetObservabilityQuery = z.object({
+    range: z.enum([
+        '1h',
+        '6h',
+        '24h'
+    ]).optional().default('24h'),
+    agent: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/).nullish(),
+    status: z.enum([
+        'all',
+        'error',
+        'slow'
+    ]).optional().default('all'),
+    offset: z.int().gte(0).lte(1000).optional().default(0),
+    limit: z.int().gte(1).lte(200).optional().default(40)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetObservabilityResponse = zObservabilityOutSchema;
 
 export const zRunPlaygroundTestBody = zPlaygroundRunInSchema;
 

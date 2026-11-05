@@ -688,6 +688,47 @@
         "title": "AgentDefinition",
         "type": "object"
       },
+      "AgentLatencyOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "p95_ms": {
+            "title": "P95 Ms",
+            "type": "integer"
+          },
+          "traces": {
+            "title": "Traces",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_id",
+          "agent_name",
+          "traces",
+          "p95_ms",
+          "failed"
+        ],
+        "title": "AgentLatencyOut",
+        "type": "object"
+      },
       "AgentLimits": {
         "additionalProperties": false,
         "description": "Harness limits per turn. Ranges follow the Agent Builder design.",
@@ -3949,6 +3990,30 @@
         "title": "HomeOut",
         "type": "object"
       },
+      "HourOut": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "integer"
+          },
+          "hour": {
+            "title": "Hour",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hour",
+          "ok",
+          "error"
+        ],
+        "title": "HourOut",
+        "type": "object"
+      },
       "InboxItem": {
         "additionalProperties": false,
         "properties": {
@@ -5419,6 +5484,91 @@
           "base_version"
         ],
         "title": "NewVersionIn",
+        "type": "object"
+      },
+      "ObservabilityOut": {
+        "additionalProperties": false,
+        "properties": {
+          "by_agent": {
+            "items": {
+              "$ref": "#/components/schemas/AgentLatencyOut"
+            },
+            "title": "By Agent",
+            "type": "array"
+          },
+          "capped": {
+            "title": "Capped",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "hourly": {
+            "items": {
+              "$ref": "#/components/schemas/HourOut"
+            },
+            "title": "Hourly",
+            "type": "array"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "range": {
+            "enum": [
+              "1h",
+              "6h",
+              "24h"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SummaryOut"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolOut"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "traces": {
+            "items": {
+              "$ref": "#/components/schemas/TraceOut"
+            },
+            "title": "Traces",
+            "type": "array"
+          },
+          "unmatched": {
+            "title": "Unmatched",
+            "type": "integer"
+          },
+          "unreadable": {
+            "title": "Unreadable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "range",
+          "generated_at",
+          "capped",
+          "unreadable",
+          "unmatched",
+          "summary",
+          "hourly",
+          "by_agent",
+          "tools",
+          "total",
+          "offset",
+          "traces"
+        ],
+        "title": "ObservabilityOut",
         "type": "object"
       },
       "OnlyAreaIn": {
@@ -10381,6 +10531,75 @@
         "title": "SourceStatus",
         "type": "string"
       },
+      "SpanOut": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "boolean"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "kind": {
+            "enum": [
+              "model",
+              "tool"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "offset_ms": {
+            "title": "Offset Ms",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "offset_ms",
+          "duration_ms",
+          "failed",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "SpanOut",
+        "type": "object"
+      },
       "StateIn": {
         "additionalProperties": false,
         "properties": {
@@ -10463,6 +10682,79 @@
           "revision"
         ],
         "title": "SubmitIn",
+        "type": "object"
+      },
+      "SummaryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "title": "Agents",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "error_percent": {
+            "title": "Error Percent",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "failed_by_tool": {
+            "title": "Failed By Tool",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "p50_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Ms"
+          },
+          "p95_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Ms"
+          },
+          "traces": {
+            "title": "Traces",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "traces",
+          "agents",
+          "p50_ms",
+          "p95_ms",
+          "failed",
+          "failed_by_tool",
+          "error_percent",
+          "cost_usd",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "SummaryOut",
         "type": "object"
       },
       "SyncOut": {
@@ -10752,6 +11044,35 @@
         "title": "TaskOut",
         "type": "object"
       },
+      "ToolOut": {
+        "additionalProperties": false,
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "p95_ms": {
+            "title": "P95 Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "calls",
+          "failed",
+          "p95_ms"
+        ],
+        "title": "ToolOut",
+        "type": "object"
+      },
       "ToolPolicyOut": {
         "additionalProperties": false,
         "properties": {
@@ -10828,6 +11149,196 @@
           "status"
         ],
         "title": "ToolStatus",
+        "type": "object"
+      },
+      "TraceOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "agent_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Version"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "model_calls": {
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "more_spans": {
+            "title": "More Spans",
+            "type": "integer"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "task",
+                  "playground",
+                  "eval"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "playground": {
+            "title": "Playground",
+            "type": "boolean"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/SpanOut"
+            },
+            "title": "Spans",
+            "type": "array"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          },
+          "tools_failed": {
+            "title": "Tools Failed",
+            "type": "integer"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "agent_id",
+          "agent_name",
+          "agent_version",
+          "playground",
+          "origin",
+          "user_id",
+          "user_email",
+          "matched",
+          "started_at",
+          "duration_ms",
+          "status",
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd",
+          "model_calls",
+          "tool_calls",
+          "tools_failed",
+          "spans",
+          "more_spans"
+        ],
+        "title": "TraceOut",
         "type": "object"
       },
       "TriggerIn": {
@@ -18077,6 +18588,107 @@
           }
         },
         "summary": "Complete Consent"
+      }
+    },
+    "/observability": {
+      "get": {
+        "operationId": "get_observability",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "24h",
+              "enum": [
+                "1h",
+                "6h",
+                "24h"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "error",
+                "slow"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 40,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservabilityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Observability"
       }
     },
     "/playground/runs": {

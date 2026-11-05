@@ -27,6 +27,7 @@ from pathlib import Path as FilePath
 from typing import Annotated, Any, Literal, cast
 
 import boto3
+from botocore.config import Config
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -158,6 +159,14 @@ from mango_api.model_catalog import (
     ModelCatalogUnavailableError,
 )
 from mango_api.models import BedrockCatalog, ModelsDeps, models_router
+from mango_api.observability import (
+    TRACE_READER_TIMEOUT_SECONDS,
+    Emails,
+    LambdaTraceSource,
+    ObservabilityDeps,
+    observability_router,
+)
+from mango_api.observability_store import TraceRefs
 from mango_api.pack_release import ReleasePacks, parse_catalog
 from mango_api.people import (
     CognitoPeople,
@@ -433,6 +442,8 @@ class Services:
     inbox: InboxDeps | None = None
     # La Actividad (D90): what the agents did, metadata only.
     activity: ActivityDeps | None = None
+    # Observabilidad (D108): the traces of the agents, read by the trace reader function.
+    observability: ObservabilityDeps | None = None
     # Knowledge bases (D88); set in production once mango-api may use the Knowledge table.
     knowledge: KnowledgeDeps | None = None
     # Skills of instructions (D92); set in production once the Skills table exists.
@@ -785,11 +796,34 @@ def build_services(settings: Settings) -> Services:
         audit=audit,
         limits=limits,
     )
+    trace_refs = TraceRefs(dynamodb, settings.audit_index_table)
     return Services(
         settings=settings,
         verifier=verifier,
         authorizer=authorizer,
-        budgets=BudgetService(dynamodb, settings.budgets_table),
+        # Each turn that binds its session leaves its reference for the traces (D108).
+        budgets=BudgetService(dynamodb, settings.budgets_table, on_bind=trace_refs.record),
+        observability=(
+            ObservabilityDeps(
+                traces=LambdaTraceSource(
+                    boto3.client(
+                        "lambda",
+                        region_name=region,
+                        config=Config(
+                            read_timeout=TRACE_READER_TIMEOUT_SECONDS, retries={"max_attempts": 1}
+                        ),
+                    ),
+                    settings.trace_reader_function,
+                ),
+                refs=trace_refs,
+                emails=Emails(CognitoDirectory(cognito, settings.cognito_user_pool_id).email_of),
+                # Set by create_app, which has the agents.
+                agent_names=dict,
+                limiter=limits.limiter("observability.reads"),
+            )
+            if settings.trace_reader_function
+            else None
+        ),
         home=HomeData(table=settings.budgets_table, dynamodb=dynamodb, own=rls.for_user),
         conversations=ConversationRepository(rls.for_user, settings.conversations_table),
         audit=audit,
@@ -1379,6 +1413,10 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             platform_allows,
         )
     )
+
+    if services.observability is not None:
+        services.observability.agent_names = lambda: _agent_names(services)
+        app.include_router(observability_router(services.observability, current_user, require))
 
     # Buscar conversaciones (D103): the caller's own, read with their row-level security client.
     app.include_router(

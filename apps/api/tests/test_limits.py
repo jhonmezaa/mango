@@ -105,6 +105,7 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             settings_table="settings",
             agents_table="agents",
             admin_probe_function="probe",
+            trace_reader_function="Mango-test-TraceReader",
             cognito_user_pool_id="us-east-1_Example",
             approvals_table="approvals",
             approval_key_arn=f"arn:aws:kms:us-east-1:{account}:key/approval",
@@ -169,6 +170,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
     assert services.tasks is not None
     assert services.skills is not None
     assert services.remote_mcp is not None
+    assert services.observability is not None
     held = {
         "people.reads": services.people.reads,
         "people.changes": services.people.changes,
@@ -187,6 +189,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
         "skills.proposals": services.skills.rate_limiter,
         "skills.reads": services.skills.reads,
         "remote_mcp.writes": services.remote_mcp.rate_limiter,
+        "observability.reads": services.observability.limiter,
     }
     for name, limiter in held.items():
         assert limiter is issued[name], f"{name} is not the limiter of the registry"

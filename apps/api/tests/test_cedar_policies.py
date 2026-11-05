@@ -240,6 +240,13 @@ def test_governance_is_for_administrators_and_central_finops(authz: Authorizer) 
         assert not authz.is_allowed(user, "ViewGovernance", *PLATFORM), user.user_id
 
 
+def test_observability_is_for_administrators_only(authz: Authorizer) -> None:
+    # D109 (b): central FinOps without administrator does not read the traces.
+    assert authz.is_allowed(ADMIN, "ViewObservability", *PLATFORM)
+    for user in (CREATOR, MEMBER, LEAD, CENTRAL, NO_GROUP):
+        assert not authz.is_allowed(user, "ViewObservability", *PLATFORM), user.user_id
+
+
 def test_any_mango_user_opens_home(authz: Authorizer) -> None:
     # D102: whose numbers each one gets is decided again with the two actions below.
     for user in (*EVERYONE, CENTRAL, NO_GROUP):

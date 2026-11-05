@@ -340,6 +340,32 @@ export type AgentDefinition = {
 };
 
 /**
+ * AgentLatencyOut
+ */
+export type AgentLatencyOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Agent Name
+     */
+    agent_name: string | null;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * P95 Ms
+     */
+    p95_ms: number;
+    /**
+     * Traces
+     */
+    traces: number;
+};
+
+/**
  * AgentLimits
  *
  * Harness limits per turn. Ranges follow the Agent Builder design.
@@ -2151,6 +2177,24 @@ export type HomeOut = {
 };
 
 /**
+ * HourOut
+ */
+export type HourOut = {
+    /**
+     * Error
+     */
+    error: number;
+    /**
+     * Hour
+     */
+    hour: string;
+    /**
+     * Ok
+     */
+    ok: number;
+};
+
+/**
  * InboxItem
  */
 export type InboxItem = {
@@ -2907,6 +2951,57 @@ export type NewVersionIn = {
      * Servers
      */
     servers: Array<string>;
+};
+
+/**
+ * ObservabilityOut
+ */
+export type ObservabilityOut = {
+    /**
+     * By Agent
+     */
+    by_agent: Array<AgentLatencyOut>;
+    /**
+     * Capped
+     */
+    capped: boolean;
+    /**
+     * Generated At
+     */
+    generated_at: string;
+    /**
+     * Hourly
+     */
+    hourly: Array<HourOut>;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Range
+     */
+    range: '1h' | '6h' | '24h';
+    summary: SummaryOut;
+    /**
+     * Tools
+     */
+    tools: Array<ToolOut>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Traces
+     */
+    traces: Array<TraceOut>;
+    /**
+     * Unmatched
+     */
+    unmatched: number;
+    /**
+     * Unreadable
+     */
+    unreadable: number;
 };
 
 /**
@@ -5432,6 +5527,40 @@ export type SourceRefOut = {
 export type SourceStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'removing';
 
 /**
+ * SpanOut
+ */
+export type SpanOut = {
+    /**
+     * Duration Ms
+     */
+    duration_ms: number;
+    /**
+     * Failed
+     */
+    failed: boolean;
+    /**
+     * Input Tokens
+     */
+    input_tokens: number | null;
+    /**
+     * Kind
+     */
+    kind: 'model' | 'tool';
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Offset Ms
+     */
+    offset_ms: number;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number | null;
+};
+
+/**
  * StateIn
  */
 export type StateIn = {
@@ -5474,6 +5603,52 @@ export type SubmitIn = {
      * Revision
      */
     revision: number;
+};
+
+/**
+ * SummaryOut
+ */
+export type SummaryOut = {
+    /**
+     * Agents
+     */
+    agents: number;
+    /**
+     * Cost Usd
+     */
+    cost_usd: string;
+    /**
+     * Error Percent
+     */
+    error_percent: string;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Failed By Tool
+     */
+    failed_by_tool: number;
+    /**
+     * Input Tokens
+     */
+    input_tokens: number;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number;
+    /**
+     * P50 Ms
+     */
+    p50_ms: number | null;
+    /**
+     * P95 Ms
+     */
+    p95_ms: number | null;
+    /**
+     * Traces
+     */
+    traces: number;
 };
 
 /**
@@ -5614,6 +5789,28 @@ export type TaskOut = {
 };
 
 /**
+ * ToolOut
+ */
+export type ToolOut = {
+    /**
+     * Calls
+     */
+    calls: number;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * P95 Ms
+     */
+    p95_ms: number;
+};
+
+/**
  * ToolPolicyOut
  */
 export type ToolPolicyOut = {
@@ -5656,6 +5853,96 @@ export type ToolStatus = {
      * Status
      */
     status: string;
+};
+
+/**
+ * TraceOut
+ */
+export type TraceOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Agent Name
+     */
+    agent_name: string | null;
+    /**
+     * Agent Version
+     */
+    agent_version: number | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd: string | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Input Tokens
+     */
+    input_tokens: number | null;
+    /**
+     * Matched
+     */
+    matched: boolean;
+    /**
+     * Model
+     */
+    model: string | null;
+    /**
+     * Model Calls
+     */
+    model_calls: number;
+    /**
+     * More Spans
+     */
+    more_spans: number;
+    /**
+     * Origin
+     */
+    origin: 'chat' | 'task' | 'playground' | 'eval' | null;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number | null;
+    /**
+     * Playground
+     */
+    playground: boolean;
+    /**
+     * Spans
+     */
+    spans: Array<SpanOut>;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Status
+     */
+    status: 'ok' | 'error';
+    /**
+     * Tool Calls
+     */
+    tool_calls: number;
+    /**
+     * Tools Failed
+     */
+    tools_failed: number;
+    /**
+     * User Email
+     */
+    user_email: string | null;
+    /**
+     * User Id
+     */
+    user_id: string | null;
 };
 
 /**
@@ -10086,6 +10373,52 @@ export type CompleteConsentResponses = {
 };
 
 export type CompleteConsentResponse = CompleteConsentResponses[keyof CompleteConsentResponses];
+
+export type GetObservabilityData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Range
+         */
+        range?: '1h' | '6h' | '24h';
+        /**
+         * Agent
+         */
+        agent?: string | null;
+        /**
+         * Status
+         */
+        status?: 'all' | 'error' | 'slow';
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/observability';
+};
+
+export type GetObservabilityErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetObservabilityError = GetObservabilityErrors[keyof GetObservabilityErrors];
+
+export type GetObservabilityResponses = {
+    /**
+     * Successful Response
+     */
+    200: ObservabilityOut;
+};
+
+export type GetObservabilityResponse = GetObservabilityResponses[keyof GetObservabilityResponses];
 
 export type RunPlaygroundTestData = {
     body: PlaygroundRunIn;
