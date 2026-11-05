@@ -149,6 +149,11 @@ class Settings:
     skills_key_arn: str = ""
     """Bucket of the ``SKILL.md`` of approved skill versions and its key (D92). Empty: a
     version with skills is not published (``skills_unavailable``)."""
+    evals_logs_key_arn: str = ""
+    """Key of the log group of the evals harness (D110 (3)): only the evaluator decrypts it."""
+    eval_judge_function: str = ""
+    """``Mango-<ns>-EvalJudge``: the provisioner asks it for the canary of a new evals harness
+    (D110 (8)). Empty, with the key: the evals harness is not deployed (``evals_unavailable``)."""
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> Settings:
@@ -184,6 +189,8 @@ class Settings:
                 ),
                 skills_bucket=env.get("SKILLS_BUCKET", ""),
                 skills_key_arn=env.get("SKILLS_KEY_ARN", ""),
+                evals_logs_key_arn=env.get("EVALS_LOGS_KEY_ARN", ""),
+                eval_judge_function=env.get("EVAL_JUDGE_FUNCTION", ""),
             )
         except KeyError as exc:
             raise ConfigError(f"missing environment variable {exc.args[0]}") from None

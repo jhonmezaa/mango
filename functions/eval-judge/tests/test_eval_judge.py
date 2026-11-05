@@ -1,0 +1,333 @@
+"""The evaluator of the evals (D110): the canary that fails closed and the judge of one case."""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Any
+
+import boto3
+import pytest
+from botocore.exceptions import ClientError
+from moto import mock_aws
+
+from mango_core.evals_harness import Capture, EvalsHarness
+from mango_core.playground import PlaygroundHarness
+from mango_eval_judge import handler
+from mango_eval_judge.canary import Canary
+from mango_eval_judge.config import ConfigError, Settings
+
+NS = "test"
+ACCOUNT = "123456789012"
+REGION = "us-east-1"
+JUDGE = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+RUNTIME = "harness_Mango_test_a_evals-AbCdEfGhIj"
+OWN = f"/aws/bedrock-agentcore/runtimes/{RUNTIME}-live"
+HARNESS_ARN = f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:harness/Mango_test_a_evals-AbCdEfGhIj"
+ENV = {
+    "MANGO_NAMESPACE": NS,
+    "AWS_REGION": REGION,
+    "MANGO_ACCOUNT_ID": ACCOUNT,
+    "SETTINGS_TABLE": "settings",
+    "BUDGETS_TABLE": "budgets",
+    "EVALUATORS": json.dumps({JUDGE: "Mango_test_judge_0-AbCdEfGhIj"}),
+    "CANARY_MODEL": JUDGE,
+    "MODEL_PRICES": json.dumps({JUDGE: {"input": 1.0, "output": 5.0}}),
+    "EVALUATION_FEE_USD": "0.0015",
+    "CANARY_MONTHLY_USD": "1",
+    "GUARDRAIL_ID": "gr123456",
+    "GUARDRAIL_VERSION": "1",
+}
+
+
+@dataclass
+class FakeLogs:
+    groups: dict[str, list[str]] = field(default_factory=dict)
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    def filter_log_events(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        group = kwargs["logGroupName"]
+        if group not in self.groups:
+            raise ClientError({"Error": {"Code": "ResourceNotFoundException"}}, "FilterLogEvents")
+        pattern = kwargs["filterPattern"]
+        needle = pattern.split('"')[1] if pattern.startswith("{") else pattern.strip('"')
+        return {"events": [{"message": m} for m in self.groups[group] if needle in m]}
+
+
+@dataclass
+class FakeAgentCore:
+    logs: FakeLogs
+    content_to_shared: bool = False
+    capture: bool = True
+    label: str = "PASS"
+    invocations: list[dict[str, Any]] = field(default_factory=list)
+    evaluations: list[dict[str, Any]] = field(default_factory=list)
+
+    def invoke_harness(self, **request: Any) -> dict[str, Any]:
+        self.invocations.append(request)
+        session = request["runtimeSessionId"]
+        text = request["messages"][0]["content"][0]["text"]
+        span = json.dumps(
+            {
+                "traceId": "t1",
+                "spanId": "s1",
+                "startTimeUnixNano": 1,
+                "attributes": {"session.id": session, "gen_ai.input.messages": text},
+            }
+        )
+        if self.capture:
+            self.logs.groups.setdefault(OWN, []).append(span)
+        if self.content_to_shared:
+            self.logs.groups.setdefault("aws/spans", []).append(span)
+        return {"stream": [{"metadata": {"usage": {"inputTokens": 40, "outputTokens": 20}}}]}
+
+    def evaluate(self, **request: Any) -> dict[str, Any]:
+        self.evaluations.append(request)
+        return {
+            "evaluationResults": [
+                {
+                    "label": self.label,
+                    "value": 1.0,
+                    "explanation": "the agent said the expected thing: " + "x" * 50,
+                    "tokenUsage": {"inputTokens": 900, "outputTokens": 100},
+                }
+            ]
+        }
+
+
+def _table(db: Any, name: str) -> None:
+    db.create_table(
+        TableName=name,
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+
+
+@dataclass
+class Env:
+    db: Any
+    logs: FakeLogs
+    agentcore: FakeAgentCore
+    settings: Settings
+    slept: list[float]
+
+    def canary(self) -> Canary:
+        return Canary(
+            self.settings,
+            dynamodb=self.db,
+            logs=self.logs,  # type: ignore[arg-type]
+            agentcore=self.agentcore,  # type: ignore[arg-type]
+            sleep=self.slept.append,
+        )
+
+    def capture(self) -> Capture:
+        item = self.db.get_item(
+            TableName="settings", Key={"PK": {"S": "EVALS"}, "SK": {"S": "CAPTURE"}}
+        )["Item"]
+        return Capture.from_item(item)
+
+    def spent(self) -> Decimal:
+        period = time.strftime("%Y-%m", time.gmtime())
+        item = self.db.get_item(
+            TableName="budgets", Key={"PK": {"S": "AGENT#evals"}, "SK": {"S": period}}
+        ).get("Item", {})
+        return Decimal(item.get("spent", {}).get("N", "0"))
+
+
+@pytest.fixture
+def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
+    for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        monkeypatch.setenv(key, "testing")
+    with mock_aws():
+        db = boto3.client("dynamodb", region_name=REGION)
+        _table(db, "settings")
+        _table(db, "budgets")
+        deployed = PlaygroundHarness(HARNESS_ARN, "3", (JUDGE,), "2026-11-05T12:00:00+00:00")
+        db.put_item(TableName="settings", Item=EvalsHarness(deployed, RUNTIME).item())
+        db.put_item(
+            TableName="settings",
+            Item=Capture("pending", "3", "2026-11-05T12:00:00+00:00").item(),
+        )
+        logs = FakeLogs({OWN: [], "aws/spans": []})
+        yield Env(db, logs, FakeAgentCore(logs), Settings.from_env(ENV), [])
+
+
+# --- The canary ---------------------------------------------------------------------------
+
+
+def test_the_canary_verifies_content_only_in_its_own_log_group(env: Env) -> None:
+    capture = env.canary().run("3")
+
+    assert capture.status == "verified"
+    assert env.capture().verified_for("3")
+    (call,) = env.agentcore.invocations
+    assert call["tools"] == [] and call["allowedTools"] == []
+    assert call["maxTokens"] == 64
+    assert call["harnessArn"] == HARNESS_ARN
+    # Paid, from its own scope (rule 4), and closed: no pending turn is left.
+    assert env.spent() > 0
+    left = env.db.scan(TableName="budgets")["Items"]
+    assert not [i for i in left if i["PK"]["S"].startswith("TURN#")]
+    # The smoke Evaluate asked about the canary's own session.
+    (evaluation,) = env.agentcore.evaluations
+    assert evaluation["evaluatorId"] == "Mango_test_judge_0-AbCdEfGhIj"
+
+
+def test_content_in_aws_spans_fails_closed(env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    env.agentcore.content_to_shared = True
+    with caplog.at_level(logging.INFO):
+        capture = env.canary().run("3")
+
+    assert capture.status == "failed"
+    assert env.capture().reason == "content_in_shared_log"
+    assert not env.capture().verified_for("3")
+    assert "evals canary failed: content_in_shared_log" in caplog.text
+    # No case content was ever involved, and the marker is not logged either.
+    marker = env.agentcore.invocations[0]["messages"][0]["content"][0]["text"].split()[-1]
+    assert marker not in caplog.text
+
+
+def test_no_content_in_its_own_log_group_fails_closed(env: Env) -> None:
+    env.agentcore.capture = False
+    capture = env.canary().run("3")
+
+    assert capture.status == "failed"
+    assert capture.reason == "no_content"
+    assert sum(env.slept) >= 9 * 60
+
+
+def test_without_budget_nothing_is_invoked(env: Env) -> None:
+    env.settings = Settings.from_env({**ENV, "CANARY_MONTHLY_USD": "0"})
+    capture = env.canary().run("3")
+
+    assert capture.reason == "budget_exceeded"
+    assert env.agentcore.invocations == []
+
+
+def test_a_newer_harness_is_left_to_its_own_canary(env: Env) -> None:
+    capture = env.canary().run("2")
+
+    assert capture.status == "pending"
+    assert env.capture().harness_version == "3"
+    assert env.capture().status == "pending"
+    assert env.agentcore.invocations == []
+
+
+def test_a_canary_model_the_harness_cannot_invoke_fails_closed(env: Env) -> None:
+    other = "us.anthropic.claude-sonnet-4-6"
+    env.settings = Settings.from_env(
+        {
+            **ENV,
+            "CANARY_MODEL": other,
+            "MODEL_PRICES": json.dumps(
+                {JUDGE: {"input": 1, "output": 5}, other: {"input": 3, "output": 15}}
+            ),
+        }
+    )
+    assert env.canary().run("3").reason == "canary_model_not_enabled"
+
+
+# --- The judge ----------------------------------------------------------------------------
+
+
+def _session_spans(env: Env, session: str) -> None:
+    env.logs.groups[OWN].append(
+        json.dumps({"traceId": "t9", "startTimeUnixNano": 5, "attributes": {"session.id": session}})
+    )
+
+
+def _judge_event(session: str, expected: str = "Un resumen por servicio") -> dict[str, Any]:
+    return {
+        "action": "judge",
+        "session_id": session,
+        "expected": expected,
+        "judge_model": JUDGE,
+        "started_at": int(time.time()) - 30,
+    }
+
+
+def _clients(env: Env) -> tuple[Any, Any, Any]:
+    return (env.db, env.logs, env.agentcore)
+
+
+def test_the_judge_answers_the_verdict_never_the_explanation(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    session = "s" * 64
+    _session_spans(env, session)
+    with caplog.at_level(logging.DEBUG):
+        out = handler.handle(_judge_event(session), env.settings, _clients(env))
+
+    assert out == {
+        "status": "scored",
+        "passed": True,
+        "label": "PASS",
+        "input_tokens": 900,
+        "output_tokens": 100,
+        "evaluations": 1,
+    }
+    (request,) = env.agentcore.evaluations
+    assert request["evaluationTarget"] == {"traceIds": ["t9"]}
+    reference = request["evaluationReferenceInputs"][0]
+    assert reference["expectedResponse"] == {"text": "Un resumen por servicio"}
+    assert "Un resumen" not in caplog.text
+    assert "explanation" not in json.dumps(out)
+    # It reads the evals runtime's own log groups, nothing else.
+    assert {c["logGroupName"] for c in env.logs.calls} <= {OWN, OWN.replace("-live", "-DEFAULT")}
+
+
+@pytest.mark.parametrize("label", ["FAIL", "Very Good", "PASS!", ""])
+def test_anything_but_the_exact_pass_label_fails(env: Env, label: str) -> None:
+    session = "s" * 64
+    _session_spans(env, session)
+    env.agentcore.label = label
+    out = handler.handle(_judge_event(session), env.settings, _clients(env))
+    assert out["passed"] is False
+
+
+def test_a_session_without_telemetry_is_not_scored(env: Env) -> None:
+    out = handler.handle(_judge_event("n" * 64), env.settings, _clients(env))
+    assert out["status"] == "no_trace"
+    assert env.agentcore.evaluations == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"judge_model": "us.anthropic.claude-sonnet-4-6"},
+        {"session_id": "../../etc"},
+        {"expected": ""},
+        {"started_at": 1},
+        {"started_at": True},
+        {"extra": "x"},
+    ],
+)
+def test_invalid_judge_events_are_refused(env: Env, change: dict[str, Any]) -> None:
+    with pytest.raises(handler.InvalidEventError):
+        handler.handle({**_judge_event("s" * 64), **change}, env.settings, _clients(env))
+    assert env.agentcore.evaluations == []
+
+
+def test_unknown_actions_are_refused(env: Env) -> None:
+    for event in ({"action": "evaluate"}, {"action": "canary", "harness_version": "x"}, []):
+        with pytest.raises(handler.InvalidEventError):
+            handler.handle(event, env.settings, _clients(env))
+
+
+def test_every_judge_and_the_canary_model_need_a_price() -> None:
+    with pytest.raises(ConfigError):
+        Settings.from_env(
+            {**ENV, "MODEL_PRICES": json.dumps({"other.model": {"input": 1, "output": 1}})}
+        )

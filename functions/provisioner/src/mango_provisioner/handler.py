@@ -70,6 +70,10 @@ def _provisioner() -> Provisioner:
             dynamodb,
             settings.audit_index_table,
         ),
+        # D110 (8): the canary of a new evals harness, asked of the evaluator.
+        judge=boto3.client("lambda", config=_CLIENT_CONFIG)
+        if settings.eval_judge_function
+        else None,
         # D98 (13): tools of remote MCPs only from the catalog the remote provisioner signed.
         remote_tools=ApprovedRemoteTools(
             dynamodb,

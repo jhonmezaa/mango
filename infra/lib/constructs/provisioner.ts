@@ -18,6 +18,7 @@ import { acknowledge, REASONS } from "../nag.js";
 import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "./agent-platform.js";
 import { AGENTS_PUBLISHED_PARTITION, MODELS_PARTITION } from "./governance.js";
 import { PACK_INSTALLED_PARTITION } from "./pack-provisioner.js";
+import { EvalsCapture } from "./evals.js";
 import { PLAYGROUND_PARTITION } from "./playground.js";
 import { APPROVED_REMOTE_PARTITION, remoteMcpKeyAlias } from "./remote-mcp-api.js";
 import { PythonFunction } from "./python-function.js";
@@ -142,6 +143,8 @@ export interface ProvisionerProps {
   readonly releaseAgents: Record<string, string>;
   /** Bucket and key of the approved skill versions (D92): written into agent roles. */
   readonly skills: { bucketName: string; keyArn: string };
+  /** The key of the evals harness's log groups and the evaluator it asks for a canary (D110). */
+  readonly evals?: EvalsCapture;
 }
 
 /**
@@ -354,6 +357,9 @@ export class Provisioner extends Construct {
       }),
     );
 
+    // D110: the key of the evals harness's log groups, and the canary of a new harness version.
+    props.evals?.grantProvisioner(role);
+
     // --- Data: read versions and the model catalog, write publication state only -------------
     const agents = props.agentsTable.tableArn;
     role.addToPolicy(
@@ -481,7 +487,8 @@ export class Provisioner extends Construct {
         actions: ["dynamodb:PutItem"],
         resources: [props.settingsTable.tableArn],
         conditions: {
-          "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [PLAYGROUND_PARTITION] },
+          // D110: and the evals harness (`EVALS`), with its capture set to `pending`.
+          "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [PLAYGROUND_PARTITION, "EVALS"] },
           StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
         },
       }),
@@ -543,6 +550,7 @@ export class Provisioner extends Construct {
         // D92: where the harness fetches the skills of a version, and their key.
         SKILLS_BUCKET: props.skills.bucketName,
         SKILLS_KEY_ARN: props.skills.keyArn,
+        ...(props.evals?.provisionerEnvironment ?? {}),
       },
       environmentEncryption: props.configKey,
     }).function;

@@ -23,7 +23,8 @@ import { CUR_RECONCILER_ALARMS } from "../constructs/cur-reconciler.js";
 import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
-import { Evals } from "../constructs/evals.js";
+import { EVAL_JUDGE_ALARMS, EVALUATION_FEE_USD } from "../constructs/eval-judge.js";
+import { Evals, EvalsCapture, judgeModels } from "../constructs/evals.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
@@ -67,6 +68,7 @@ import { BILLING_READER_DATA_ACTIONS } from "./payer-stack.js";
 import {
   AuthorizationStack,
   CurReconciliationStack,
+  EvalsStack,
   ObservabilityStack,
   OperationsStack,
   RemoteMcpStack,
@@ -182,6 +184,10 @@ export class CoreStack extends Stack {
     // D110, D111: the suites, cases and runs of the evals (data: here, not nested, D99 (2)).
     const evals = new Evals(this, "Evals", { installation: cfg, dataKey: governance.dataKey });
     evals.grantApi(apiTaskRole);
+    // D110 (3): the key of the evals harness's log groups, the only ones with content.
+    const evalsCapture = new EvalsCapture(this, "EvalsCapture", { installation: cfg, retainData: cfg.retainData });
+    evalsCapture.allowAgents(agentPlatform.boundary);
+    evalsCapture.grantApi(apiTaskRole);
     // Marketplace v1 (D18, D32): agents are published by SDK, not by this stack. The agents
     // of the release (FinOps) are seeded as approved versions and published the same way (D34).
     const shipped = releaseAgents(cfg);
@@ -198,6 +204,7 @@ export class CoreStack extends Stack {
       gatewayUrl: tools.gatewayUrl,
       releaseAgents: releaseHashes,
       skills: { bucketName: skills.bucket.bucketName, keyArn: skills.key.keyArn },
+      evals: evalsCapture,
     });
     const releaseAgentSeeds = new ReleaseAgents(this, "ReleaseAgents", {
       agents: shipped,
@@ -335,6 +342,27 @@ export class CoreStack extends Stack {
       configKey: tools.configKey,
       apiTaskRole,
     });
+    // D110: the evaluator of the evals and the evals harness, in a stack nested in Core (D99).
+    const evalJudge = new EvalsStack(this, "EvalJudge", {
+      installation: cfg,
+      settingsTable: governance.settings,
+      budgetsTable: governance.budgets,
+      dataKey: governance.dataKey,
+      configKey: tools.configKey,
+      logsKeyArn: evalsCapture.key.keyArn,
+      guardrailId: agentPlatform.guardrail.attrGuardrailId,
+      guardrailVersion: agentPlatform.guardrailVersion.attrVersion,
+      alerts,
+    });
+    // Every release asks the provisioner for the evals harness, once its evaluator exists: the
+    // canary of a new harness version is asked of it (D110 (8)).
+    const evalsHarness = new PlaygroundHarness(this, "EvalsHarness", {
+      stateMachine: provisioner.stateMachine,
+      provisioner: provisioner.function,
+      release: props.release?.label ?? "v0.0.0-unpublished",
+      kind: "evals",
+    });
+    evalsHarness.start.node.addDependency(evalJudge);
     // Cost anomalies of the organization, forwarded by the payer account, start the runs of the
     // automations subscribed to them (D79).
     const costAnomalies = new CostAnomalyEvents(this, "CostAnomalyEvents", {
@@ -520,6 +548,8 @@ export class CoreStack extends Stack {
             "dynamodb:LeadingKeys": [
               `${PACK_INSTALLED_PARTITION}*`,
               PLAYGROUND_PARTITION,
+              // D110 (8): the evals harness and its capture: the provisioner's and the canary's.
+              "EVALS",
               // D98 (13): the signed approved catalogs of remote MCP servers.
               `${APPROVED_REMOTE_PARTITION}*`,
             ],
@@ -626,6 +656,10 @@ export class CoreStack extends Stack {
         ...knowledge.apiEnvironment,
         ...skills.apiEnvironment,
         ...evals.apiEnvironment,
+        // D110: the evaluator mango-api asks for the verdict of a judge case, and its judges.
+        EVAL_JUDGE_FUNCTION: evalsCapture.judgeFunctionName,
+        EVAL_JUDGE_MODELS: judgeModels(cfg).join(","),
+        EVALUATION_FEE_USD: EVALUATION_FEE_USD,
         ...presign.apiEnvironment,
         ...observability.reader.apiEnvironment,
         // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
@@ -677,7 +711,7 @@ export class CoreStack extends Stack {
       refusingFunctions: { PreSignUp: identity.preSignUp },
       deadLetterQueues: { UninstallGuard: uninstallGuard.deadLetters },
       // Alarms of the other nested stacks, by name: each nested stack is a leaf (D99 (4)).
-      nestedAlarms: Object.values(CUR_RECONCILER_ALARMS),
+      nestedAlarms: [...Object.values(CUR_RECONCILER_ALARMS), ...Object.values(EVAL_JUDGE_ALARMS)],
     });
     // «Probar búsqueda» throttled by Bedrock counts in the alarm of the tool (D88 (12)).
     knowledge.countApiThrottles(api.logGroup);

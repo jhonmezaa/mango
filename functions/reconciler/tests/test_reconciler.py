@@ -838,3 +838,27 @@ def test_the_playground_role_keeps_the_boundary_rule(lab: Lab) -> None:
     name = lab.settings.role_name("playground")
     lab.iam.delete_role_permissions_boundary(RoleName=name)
     assert "role_without_boundary" in lab.codes()
+
+
+# --- The evals harness (D110) -------------------------------------------------------------
+
+
+def test_the_evals_harness_and_role_are_expected_not_orphans(lab: Lab) -> None:
+    lab.evals()
+    report = lab.run()
+    assert report.findings == ()
+    assert (report.stats["Harnesses"], report.stats["AgentRoles"]) == (2, 2)
+
+
+def test_an_installation_without_the_evals_harness_reports_nothing(lab: Lab) -> None:
+    assert lab.run().findings == ()
+
+
+def test_an_evals_harness_run_by_another_role_alarms(lab: Lab) -> None:
+    harness = lab.evals()
+    number = lab.agentcore.add_version(
+        harness, role_arn=lab.settings.role_arn(AGENT), markers={"MANGO_AGENT_ID": "evals"}
+    )
+    harness["live"] = {"status": "READY", "liveVersion": number}
+    finding = only(lab, "evals_harness_drift")
+    assert finding.detail == {"reason": "content"}

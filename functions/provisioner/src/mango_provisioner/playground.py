@@ -25,21 +25,62 @@ models are the catalog's, read in the steps that use them.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from mango_core.playground import PLAYGROUND_ID, PlaygroundHarness, parse_provision_input
-from mango_provisioner.audit import EVENT_PLAYGROUND, AuditWriter
+from botocore.exceptions import BotoCoreError, ClientError
+
+from mango_core import evals_harness
+from mango_core.playground import PLAYGROUND_ID, PlaygroundHarness
+from mango_core.playground import parse_provision_input as parse_playground_input
+from mango_provisioner.audit import EVENT_EVALS, EVENT_PLAYGROUND, AuditWriter
 from mango_provisioner.config import Settings
-from mango_provisioner.errors import StepError
-from mango_provisioner.harness import Harnesses, HarnessRef, playground_config
+from mango_provisioner.errors import StepError, aws_error
+from mango_provisioner.harness import Harnesses, HarnessRef, evals_config, playground_config
 from mango_provisioner.role import AgentRoles
 from mango_provisioner.runtime_logs import RuntimeLogs
 from mango_provisioner.store import ProvisionerStore
 
+if TYPE_CHECKING:
+    from mypy_boto3_lambda import LambdaClient
+
 STATE_FLAG = "playground"
+EVALS_FLAG = "evals"
+
+
+@dataclass(frozen=True)
+class Kind:
+    """What changes between the shared test harnesses: the Playground's (D91), without content,
+    and the evals' (D110), the only one with content, its own log key and a canary."""
+
+    agent_id: str
+    flag: str
+    event: str
+    parse: Callable[[object], str]
+    config: Callable[[Settings, frozenset[str]], dict[str, Any]]
+    unified_traces: bool
+
+
+PLAYGROUND = Kind(
+    agent_id=PLAYGROUND_ID,
+    flag=STATE_FLAG,
+    event=EVENT_PLAYGROUND,
+    parse=parse_playground_input,
+    config=playground_config,
+    unified_traces=False,
+)
+EVALS = Kind(
+    agent_id=evals_harness.EVALS_ID,
+    flag=EVALS_FLAG,
+    event=EVENT_EVALS,
+    parse=evals_harness.parse_provision_input,
+    config=evals_config,
+    unified_traces=True,
+)
 _EXECUTION_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _HARNESS_VERSION_RE = re.compile(r"^[1-9][0-9]{0,4}$")
 MAX_WAIT_ATTEMPTS = 60
@@ -47,6 +88,10 @@ MAX_WAIT_ATTEMPTS = 60
 
 def is_playground_state(state: object) -> bool:
     return isinstance(state, dict) and state.get(STATE_FLAG) is True
+
+
+def is_evals_state(state: object) -> bool:
+    return isinstance(state, dict) and state.get(EVALS_FLAG) is True
 
 
 class Playground:
@@ -60,7 +105,11 @@ class Playground:
         logs: RuntimeLogs,
         audit: AuditWriter,
         clock: Callable[[], datetime],
+        kind: Kind = PLAYGROUND,
+        judge: LambdaClient | None = None,
     ) -> None:
+        self._kind = kind
+        self._judge = judge
         self._settings = settings
         self._store = store
         self._roles = roles
@@ -71,8 +120,7 @@ class Playground:
 
     # --- State ----------------------------------------------------------------------------
 
-    @staticmethod
-    def _checked(state: dict[str, Any]) -> dict[str, Any]:
+    def _checked(self, state: dict[str, Any]) -> dict[str, Any]:
         execution, release = state.get("execution"), state.get("release")
         if (
             not isinstance(execution, str)
@@ -80,7 +128,7 @@ class Playground:
             or not isinstance(release, str)
         ):
             raise StepError("invalid_state")
-        parse_provision_input({"playground": "ensure", "release": release})
+        self._kind.parse({self._kind.flag: "ensure", "release": release})
         return state
 
     @staticmethod
@@ -103,12 +151,12 @@ class Playground:
     def _emit(self, state: dict[str, Any], outcome: str, **extra: Any) -> None:
         release = state.get("release")
         try:
-            parse_provision_input({"playground": "ensure", "release": release})
+            self._kind.parse({self._kind.flag: "ensure", "release": release})
         except ValueError:
             # A rejected input is audited without echoing what it carried.
             release = None
         self._audit.emit(
-            EVENT_PLAYGROUND,
+            self._kind.event,
             {
                 "outcome": outcome,
                 "release": release,
@@ -122,32 +170,41 @@ class Playground:
 
     def load(self, raw_input: object, execution: object) -> dict[str, Any]:
         try:
-            release = parse_provision_input(raw_input)
+            release = self._kind.parse(raw_input)
         except ValueError:
             raise StepError("invalid_input") from None
+        if self._kind.unified_traces and not (
+            self._settings.evals_logs_key_arn and self._settings.eval_judge_function
+        ):
+            raise StepError("evals_unavailable")
         state = self._checked(
             {
-                STATE_FLAG: True,
-                "agent_id": PLAYGROUND_ID,
+                self._kind.flag: True,
+                "agent_id": self._kind.agent_id,
                 "release": release,
                 "execution": execution,
             }
         )
         # Everything the harness needs is known before anything is created.
-        playground_config(self._settings, self._models())
+        self._kind.config(self._settings, self._models())
         self._emit(state, "requested")
         return {**state, "action": "publish"}
 
     def ensure_role(self, state: dict[str, Any]) -> dict[str, Any]:
         # Every approved skill version (D91 (12)): the tested version's come in the invocation.
-        self._roles.ensure(PLAYGROUND_ID, self._models(), all_skills=True)
+        self._roles.ensure(
+            self._kind.agent_id,
+            self._models(),
+            all_skills=True,
+            unified_traces=self._kind.unified_traces,
+        )
         return self._checked(state)
 
     def ensure_harness(self, state: dict[str, Any]) -> dict[str, Any]:
         state = self._checked(state)
         ref = self._harnesses.ensure(
-            PLAYGROUND_ID,
-            playground_config(self._settings, self._models()),
+            self._kind.agent_id,
+            self._kind.config(self._settings, self._models()),
             execution=state["execution"],
             known_arn=None,
             # A harness left failed is deleted and created again: it serves nobody yet.
@@ -163,7 +220,7 @@ class Playground:
 
     def check_harness(self, state: dict[str, Any]) -> dict[str, Any]:
         state = self._checked(state)
-        status = self._harnesses.status(PLAYGROUND_ID, self._ref(state))
+        status = self._harnesses.status(self._kind.agent_id, self._ref(state))
         if status.ready:
             return {**state, "ready": True, "runtime_id": status.runtime_id, "attempts": 0}
         return self._waiting(state, "harness_timeout")
@@ -172,7 +229,7 @@ class Playground:
         state = self._checked(state)
         ref = self._ref(state)
         self._harnesses.point_live(
-            PLAYGROUND_ID, ref.harness_id, ref.version, execution=state["execution"]
+            self._kind.agent_id, ref.harness_id, ref.version, execution=state["execution"]
         )
         return {**state, "ready": False, "attempts": 0}
 
@@ -194,32 +251,46 @@ class Playground:
         state = self._checked(state)
         runtime_id = state.get("runtime_id")
         if not isinstance(runtime_id, str) or not self._settings.runtime_id_pattern(
-            PLAYGROUND_ID
+            self._kind.agent_id
         ).fullmatch(runtime_id):
             raise StepError("runtime_reference_invalid")
-        self._logs.govern(PLAYGROUND_ID, runtime_id)
+        # D110 (3): the evals harness's log group gets its own key, before anything runs on it.
+        key = self._settings.evals_logs_key_arn if self._kind.unified_traces else None
+        self._logs.govern(self._kind.agent_id, runtime_id, key)
         return state
 
     def publish(self, state: dict[str, Any]) -> dict[str, Any]:
         state = self._checked(state)
         ref = self._ref(state)
-        if not self._settings.harness_id_pattern(PLAYGROUND_ID).fullmatch(ref.harness_id):
+        if not self._settings.harness_id_pattern(self._kind.agent_id).fullmatch(ref.harness_id):
             raise StepError("harness_reference_invalid")
         if not self._harnesses.live_ready(ref.harness_id, ref.version):
             raise StepError("endpoint_not_ready")
         # The catalog again: a model enabled or disabled during the execution counts now.
         models = self._models()
-        self._roles.ensure(PLAYGROUND_ID, models, all_skills=True)
-        harness_arn = self._settings.harness_arn(ref.harness_id)
-        self._store.write_playground(
-            PlaygroundHarness(
-                harness_arn=harness_arn,
-                harness_version=ref.version,
-                models=tuple(sorted(models)),
-                updated_at=self._now().isoformat(timespec="seconds"),
-                skills=bool(self._settings.skills_bucket and self._settings.skills_key_arn),
-            )
+        self._roles.ensure(
+            self._kind.agent_id,
+            models,
+            all_skills=True,
+            unified_traces=self._kind.unified_traces,
         )
+        harness_arn = self._settings.harness_arn(ref.harness_id)
+        deployed = PlaygroundHarness(
+            harness_arn=harness_arn,
+            harness_version=ref.version,
+            models=tuple(sorted(models)),
+            updated_at=self._now().isoformat(timespec="seconds"),
+            skills=bool(self._settings.skills_bucket and self._settings.skills_key_arn),
+        )
+        if self._kind.unified_traces:
+            runtime_id = state.get("runtime_id")
+            if not isinstance(runtime_id, str) or not self._settings.runtime_id_pattern(
+                self._kind.agent_id
+            ).fullmatch(runtime_id):
+                raise StepError("runtime_reference_invalid")
+            self._publish_evals(evals_harness.EvalsHarness(deployed, runtime_id))
+        else:
+            self._store.write_playground(deployed)
         self._emit(
             state,
             "applied",
@@ -228,6 +299,33 @@ class Playground:
             models=len(models),
         )
         return {**state, "published": True}
+
+    def _publish_evals(self, harness: evals_harness.EvalsHarness) -> None:
+        """D110 (8): the capture is ``pending`` before mango-api may read the new version, and
+        only the canary of the evaluator turns it ``verified``. Until then no eval runs."""
+        deployed = harness.deployed
+        self._store.write_test_harness(
+            evals_harness.Capture(
+                status="pending",
+                harness_version=deployed.harness_version,
+                checked_at=deployed.updated_at,
+                reason=None,
+            ).item()
+        )
+        self._store.write_test_harness(harness.item())
+        if self._judge is None:
+            raise StepError("evals_unavailable")
+        try:
+            # Asynchronous: the canary waits for the trace to reach CloudWatch (minutes).
+            self._judge.invoke(
+                FunctionName=self._settings.eval_judge_function,
+                InvocationType="Event",
+                Payload=json.dumps(
+                    {"action": "canary", "harness_version": deployed.harness_version}
+                ).encode(),
+            )
+        except (ClientError, BotoCoreError) as exc:
+            raise aws_error("Invoke", exc) from None
 
     # --- Failure path ---------------------------------------------------------------------
 

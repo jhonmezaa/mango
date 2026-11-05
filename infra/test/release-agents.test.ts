@@ -240,9 +240,9 @@ describe("publication of the release agents", () => {
       .filter((r) => r.Type === "AWS::IAM::Policy" && r.Properties.Roles.some((x: { Ref: string }) => /^AWS679f53fac/.test(x.Ref)))
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
       .filter((s) => JSON.stringify(s.Action).includes("states:"));
-    // One for the release agents and one for the Playground's test harness (D91), on the
-    // same provider role: both only start the agent provisioner.
-    expect(grants).toHaveLength(2);
+    // One for the release agents, one for the Playground's test harness (D91) and one for the
+    // evals harness (D110), on the same provider role: all only start the agent provisioner.
+    expect(grants).toHaveLength(3);
     for (const grant of grants) {
       expect(grant.Action).toBe("states:StartExecution");
       expect(grant.Resource).toEqual({ Ref: machineId });
@@ -302,8 +302,13 @@ describe("FinOps is not a resource of the stack any more (D32, D34)", () => {
       .filter((r) => r.Type === "AWS::IAM::Policy")
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
       .filter((s) => JSON.stringify(s.Action).includes("bedrock-agentcore:InvokeHarness"));
-    expect(invoke.map((s) => s.Sid)).toEqual(["InvokeAgentHarnesses"]);
-    expect(JSON.stringify(invoke[0]!.Resource)).toContain(`harness/Mango_${ns}_a_*`);
+    // Besides mango-api, only the evaluator invokes a harness: the evals one, for its canary (D110).
+    expect(invoke.map((s) => s.Sid).sort()).toEqual(["InvokeAgentHarnesses", "InvokeTheEvalsHarness"]);
+    const agents = invoke.find((s) => s.Sid === "InvokeAgentHarnesses")!;
+    expect(JSON.stringify(agents.Resource)).toContain(`harness/Mango_${ns}_a_*`);
+    const canary = invoke.find((s) => s.Sid === "InvokeTheEvalsHarness")!;
+    expect(JSON.stringify(canary.Resource)).toContain(`harness/Mango_${ns}_a_evals-*`);
+    expect(JSON.stringify(canary.Resource)).not.toContain(`_a_*`);
   });
 
   it("has no policy that names an agent: FinOps is used through its groups like any other", () => {

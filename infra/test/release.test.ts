@@ -225,11 +225,11 @@ describe("Core template of a release", () => {
     const keys = [...first!.matchAll(/"(?:S3Key|SourceObjectKeys)":(\[[^\]]*\]|"[^"]*")/g)].flatMap((m) => m[1]!.match(/[^"[\],]+/g)!);
     expect(keys.length).toBeGreaterThan(15);
     for (const key of keys) expect(key).toMatch(/^mango\/assets\/[0-9a-f]{64}\.zip$/);
-    // The label is in four places: the API task (MANGO_RELEASE), the stack tagger, which has
+    // The label is in six places: the API task (MANGO_RELEASE), the stack tagger, which has
     // to run on every version (D77 (2)), and the create and update calls that start the
-    // Playground's test harness, which the provisioner brings up to date on every version
-    // (D91). Nothing else changes between the two templates.
-    expect(first!.split("v0.1.0-g1a2b3c4")).toHaveLength(5);
+    // Playground's test harness (D91) and the evals harness (D110), which the provisioner
+    // brings up to date on every version. Nothing else changes between the two templates.
+    expect(first!.split("v0.1.0-g1a2b3c4")).toHaveLength(7);
     const tagger = Object.values(JSON.parse(first!).Resources as Record<string, Resource>).find(
       (r) => r.Type === "Custom::MangoStackTags",
     )!;
@@ -553,9 +553,11 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
       "logs:DescribeLogGroups",
       "logs:PutLogEvents",
     ]);
-    // The metric filters of the stack read the log of mango-api (D71 (18), D88 (37)), not the guard's.
+    // The metric filters of the stack read the log of mango-api (D71 (18), D88 (37)) and of the
+    // evaluator's canary (D110 (8)), not the guard's.
     const filters = Object.values(withNested.Resources).filter((r) => r.Type === "AWS::Logs::MetricFilter");
     expect(filters.map((r) => r.Properties.MetricTransformations[0].MetricName).sort()).toEqual([
+      "CanaryFailed",
       "RateLimitStoreRefusals",
       "RetrieveThrottles",
     ]);

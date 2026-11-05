@@ -239,7 +239,21 @@ describe("reconciler function and schedule", () => {
     // And the reconciliation against the bill (D104); details in cur-reconciler.test.ts.
     const curReconcilerId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-CurReconciler` });
     expect(resources[curReconcilerId]!.Properties.DeadLetterConfig).toBeDefined();
-    const asynchronous = [functionId, budgetReconcilerId, anomalyConsumerId, accountHealthId, taskReportId, curReconcilerId];
+    // And the evaluator of the evals, which the provisioner invokes for the canary (D110); details in evals.test.ts.
+    const evalJudgeId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-EvalJudge` });
+    expect(resources[evalJudgeId]!.Properties.DeadLetterConfig).toBeDefined();
+    expect((resources[evalJudgeId]!.Metadata?.checkov?.skip ?? []).map((s: { id: string }) => s.id)).not.toContain(
+      CHECKOV_EXCEPTIONS.lambdaDlq.id,
+    );
+    const asynchronous = [
+      functionId,
+      budgetReconcilerId,
+      anomalyConsumerId,
+      accountHealthId,
+      taskReportId,
+      curReconcilerId,
+      evalJudgeId,
+    ];
     // Every other function is invoked synchronously and keeps the agreed exception.
     for (const [id, other] of ofType("AWS::Lambda::Function")) {
       if (asynchronous.includes(id) || id.startsWith("UninstallGuard")) continue;

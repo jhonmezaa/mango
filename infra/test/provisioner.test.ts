@@ -404,7 +404,10 @@ describe("agent permissions boundary", () => {
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:DescribeLogStreams",
+      // D110 (8): only on the evals harness's log groups (evals.test.ts).
+      "logs:DescribeResourcePolicies",
       "logs:PutLogEvents",
+      "logs:PutResourcePolicy",
       "s3:GetObject",
       "s3:ListBucket",
       "sts:GetServiceBearerToken",
@@ -493,13 +496,23 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
     expect(invoke.Resource).toEqual([harnesses, `${harnesses}/harness-endpoint/*`, runtimes, `${runtimes}/*`]);
   });
 
-  it("is the only role that can invoke a harness", () => {
+  it("is the only role that can invoke a harness, but for the evals canary on the evals harness", () => {
+    const judgeRole = Object.keys(resources).find(
+      (id) => resources[id]!.Type === "AWS::IAM::Role" && resources[id]!.Properties.RoleName === `Mango-${ns}-EvalJudge`,
+    );
     for (const [id, resource] of Object.entries(resources)) {
       if (resource.Type !== "AWS::IAM::Policy") continue;
-      const invokes = (resource.Properties.PolicyDocument.Statement as Statement[]).some((s) =>
+      const invoking = (resource.Properties.PolicyDocument.Statement as Statement[]).filter((s) =>
         actions(s).some((a) => a.startsWith("bedrock-agentcore:InvokeHarness")),
       );
-      if (invokes) expect(resource.Properties.Roles, id).toEqual([{ Ref: apiRoleId }]);
+      if (invoking.length === 0) continue;
+      if (JSON.stringify(resource.Properties.Roles) === JSON.stringify([{ Ref: judgeRole }])) {
+        // D110 (8): the canary's one turn, on the evals harness and its runtime only.
+        expect(JSON.stringify(invoking.map((s) => s.Resource)), id).toMatch(/harness\/Mango_[a-z0-9]+_a_evals-\*/);
+        expect(JSON.stringify(invoking.map((s) => s.Resource)), id).not.toMatch(/_a_\*/);
+        continue;
+      }
+      expect(resource.Properties.Roles, id).toEqual([{ Ref: apiRoleId }]);
     }
   });
 
@@ -604,6 +617,8 @@ describe("provisioner function and state machine", () => {
       "AUDIT_INDEX_TABLE",
       "AUDIT_STREAM",
       "CONNECTOR_CATALOG",
+      "EVALS_LOGS_KEY_ARN",
+      "EVAL_JUDGE_FUNCTION",
       "GATEWAY_URL",
       "GUARDRAIL_ID",
       "GUARDRAIL_VERSION",

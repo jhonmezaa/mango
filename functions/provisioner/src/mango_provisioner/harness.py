@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_core.agents import AgentDefinition
+from mango_core.evals_harness import EVALS_ID, UNIFIED_TRACES
 from mango_core.harness_tools import (
     GATEWAY_MCP_SERVER,
     KNOWLEDGE_TARGET,
@@ -248,8 +249,14 @@ PLAYGROUND_IDLE_SECONDS = 60
 PLAYGROUND_PROMPT = "Mango Playground. Every invocation sets its own instructions."
 
 
-def playground_config(settings: Settings, models: frozenset[str]) -> dict[str, Any]:
-    """Configuration of the Playground's shared test harness (D91).
+def _test_harness_config(
+    settings: Settings,
+    models: frozenset[str],
+    agent_id: str,
+    prompt: str,
+    environment: dict[str, str],
+) -> dict[str, Any]:
+    """A shared test harness (the Playground's, D91, and the evals', D110).
 
     mango-api sends the prompt, the model, the tools and the limits of the tested version on
     every invocation; these defaults only make a valid harness and never serve a test. What
@@ -269,12 +276,12 @@ def playground_config(settings: Settings, models: frozenset[str]) -> dict[str, A
         },
     }
     config: dict[str, Any] = {
-        "executionRoleArn": settings.role_arn(PLAYGROUND_ID),
+        "executionRoleArn": settings.role_arn(agent_id),
         # None of its own (D91 (12)): the skills of the tested version come in the invocation,
         # which adds them to the harness's.
         "skills": [],
         "model": {"bedrockModelConfig": model},
-        "systemPrompt": [{"text": PLAYGROUND_PROMPT}],
+        "systemPrompt": [{"text": prompt}],
         # No tools of its own: an empty allow-list also disables the built-in shell and file
         # tools. Each test brings the Gateway and the exact tools of its version.
         "tools": [],
@@ -292,12 +299,39 @@ def playground_config(settings: Settings, models: frozenset[str]) -> dict[str, A
             }
         },
     }
-    environment = {**REDACT_GENAI_CONTENT, ENV_AGENT_ID: PLAYGROUND_ID}
     fingerprint = hashlib.sha256(
         json.dumps([config, environment], sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     config["environmentVariables"] = {**environment, ENV_CONFIG_HASH: fingerprint}
     return config
+
+
+def playground_config(settings: Settings, models: frozenset[str]) -> dict[str, Any]:
+    """Configuration of the Playground's shared test harness (D91): without content (D16)."""
+    return _test_harness_config(
+        settings,
+        models,
+        PLAYGROUND_ID,
+        PLAYGROUND_PROMPT,
+        {**REDACT_GENAI_CONTENT, ENV_AGENT_ID: PLAYGROUND_ID},
+    )
+
+
+EVALS_PROMPT = "Mango evals. Every invocation sets its own instructions."
+EVALS_ENVIRONMENT = {
+    # D110 (3): the only harness that captures content, so the redaction of D16 is left out.
+    # The ADOT instrumentation of MCP and urllib3 stays off: Strands already records the tool
+    # inputs and outputs AgentCore Evaluations reads, once.
+    "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "urllib3,aws_mcp",
+    # D110 (8): spans with their content to the runtime's own log group, never to aws/spans.
+    **UNIFIED_TRACES,
+    ENV_AGENT_ID: EVALS_ID,
+}
+
+
+def evals_config(settings: Settings, models: frozenset[str]) -> dict[str, Any]:
+    """Configuration of the evals harness (D110): with content, to its own log group."""
+    return _test_harness_config(settings, models, EVALS_ID, EVALS_PROMPT, dict(EVALS_ENVIRONMENT))
 
 
 def _client_token(*parts: str) -> str:

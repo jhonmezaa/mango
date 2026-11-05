@@ -147,6 +147,12 @@ class Settings:
     until the skills construct is deployed."""
     evals_table: str = ""
     """Suites, cases and runs of the evals (D110, D111); empty until the table is deployed."""
+    eval_judge_function: str = ""
+    """``Mango-<ns>-EvalJudge``: the verdict of a judge case (D110). Empty: runs are not offered."""
+    eval_judge_models: tuple[str, ...] = ()
+    """The judge models of the installation config (D110 (8)): the only ones a suite may name."""
+    evaluation_fee: Decimal = Decimal(0)
+    """USD per evaluation of a custom evaluator of AgentCore Evaluations (rule 7)."""
     presign_role_arn: str = ""
     """``Mango-<ns>-Presign``: the only credentials that sign URLs a browser uses."""
     """``Mango-<ns>-KnowledgeSync`` (D88 (11)): indexes, deletes and verifies documents."""
@@ -245,6 +251,11 @@ class Settings:
             knowledge_embedding_price=_price(env.get("KNOWLEDGE_EMBEDDING_PRICE", "0")),
             skills_table=env.get("SKILLS_TABLE", ""),
             evals_table=env.get("EVALS_TABLE", ""),
+            eval_judge_function=env.get("EVAL_JUDGE_FUNCTION", ""),
+            eval_judge_models=tuple(
+                m for m in env.get("EVAL_JUDGE_MODELS", "").split(",") if m.strip()
+            ),
+            evaluation_fee=Decimal(env.get("EVALUATION_FEE_USD", "0")),
             skills_bucket=env.get("SKILLS_BUCKET", ""),
             presign_role_arn=env.get("PRESIGN_ROLE_ARN", ""),
             allowed_hosts=frozenset(

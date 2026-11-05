@@ -250,6 +250,16 @@ export const installationSchema = z
       agent: z.string().regex(/^(us|global)\.anthropic\.[a-z0-9.:-]+$/),
       /** Bedrock inference profile id for auxiliary tasks (titles). */
       auxiliary: z.string().regex(/^(us|global)\.anthropic\.[a-z0-9.:-]+$/),
+      /**
+       * Models that may judge an eval (D110 (8)): one evaluator of AgentCore Evaluations each, and
+       * the only models the evaluator's role may invoke (concrete ARNs). Absent: the auxiliary model.
+       * Each still needs to be enabled in the catalog to judge.
+       */
+      judges: z
+        .array(z.string().regex(/^(us|global)\.anthropic\.[a-z0-9.:-]+$/))
+        .min(1)
+        .max(5)
+        .optional(),
     }),
     /**
      * On-demand prices per 1M tokens in USD, keyed by inference profile id (rule 7: prices are

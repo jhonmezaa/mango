@@ -246,6 +246,12 @@ LIMITS: dict[str, LimitSpec] = {
         shared=True,
         why="Each write of a suite rewrites its cases and audits twice (D110).",
     ),
+    "evals.runs": LimitSpec(
+        evals.RUNS_PER_DAY,
+        24 * HOUR,
+        shared=True,
+        why="Each run is up to 50 turns of the agent and as many judge calls (D110, TM-EV6).",
+    ),
     "evals.reads": LimitSpec(
         evals.READS_PER_MINUTE,
         MINUTE,

@@ -38,6 +38,7 @@ SETTINGS_TABLE = "Mango-test-Settings"
 AUDIT_TABLE = "Mango-test-AuditIndex"
 BOUNDARY_ARN = f"arn:aws:iam::{ACCOUNT}:policy/Mango-{NS}-agent-boundary"
 LOGS_KEY_ARN = f"arn:aws:kms:{REGION}:{ACCOUNT}:key/11111111-2222-3333-4444-555555555555"
+EVALS_LOGS_KEY_ARN = f"arn:aws:kms:{REGION}:{ACCOUNT}:key/66666666-7777-8888-9999-000000000000"
 STACK_ID = (
     f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/Mango-{NS}-Core/"
     "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
@@ -69,6 +70,8 @@ ENV = {
     "GUARDRAIL_ID": "gr123456",
     "GUARDRAIL_VERSION": "1",
     "RUNTIME_LOGS_KEY_ARN": LOGS_KEY_ARN,
+    "EVALS_LOGS_KEY_ARN": EVALS_LOGS_KEY_ARN,
+    "EVAL_JUDGE_FUNCTION": "Mango-test-EvalJudge",
     "AGENT_SESSION_IDLE_SECONDS": "300",
     "AGENT_SESSION_MAX_SECONDS": "28800",
     "RELEASE_AGENTS": "{}",
@@ -344,6 +347,17 @@ class FakeAgentCore:
         return harness
 
 
+class FakeJudge:
+    """The evaluator's function: the provisioner only asks it for a canary (D110 (8))."""
+
+    def __init__(self) -> None:
+        self.invocations: list[dict[str, Any]] = []
+
+    def invoke(self, **kwargs: Any) -> dict[str, Any]:
+        self.invocations.append({**kwargs, "Payload": json.loads(kwargs["Payload"])})
+        return {"StatusCode": 202}
+
+
 class FakeLogs:
     def __init__(self) -> None:
         self.groups: dict[str, dict[str, Any]] = {}
@@ -419,6 +433,7 @@ class Lab:
         self.agentcore = FakeAgentCore()
         self.logs = FakeLogs()
         self.firehose = FakeFirehose()
+        self.judge = FakeJudge()
         self.now = NOW
         self.store = ProvisionerStore(dynamodb, AGENTS_TABLE, SETTINGS_TABLE)
         self.provisioner = Provisioner(
@@ -429,6 +444,7 @@ class Lab:
             logs=RuntimeLogs(self.logs, self.settings),  # type: ignore[arg-type]
             audit=AuditWriter(self.firehose, "Mango-test-Audit", dynamodb, AUDIT_TABLE),  # type: ignore[arg-type]
             clock=lambda: self.now,
+            judge=self.judge,  # type: ignore[arg-type]
         )
 
     # --- What mango-api would have written ---

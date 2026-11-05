@@ -40,8 +40,9 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from mango_core import evals_harness
 from mango_core.agents import (
     AgentDefinition,
     AgentStatus,
@@ -63,7 +64,7 @@ from mango_provisioner.harness import (
     harness_config,
     no_remotes,
 )
-from mango_provisioner.playground import Playground, is_playground_state
+from mango_provisioner.playground import EVALS, Playground, is_evals_state, is_playground_state
 from mango_provisioner.release import (
     Decision,
     Outcome,
@@ -76,6 +77,9 @@ from mango_provisioner.release import (
 from mango_provisioner.role import AgentRoles
 from mango_provisioner.runtime_logs import RuntimeLogs
 from mango_provisioner.store import Meta, ProvisionerStore, Published, Version
+
+if TYPE_CHECKING:
+    from mypy_boto3_lambda import LambdaClient
 
 ACTION_PUBLISH = "publish"
 ACTION_NOOP = "noop"
@@ -188,6 +192,7 @@ class Provisioner:
         audit: AuditWriter,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         remote_tools: RemoteTools = no_remotes,
+        judge: LambdaClient | None = None,
     ) -> None:
         self._settings = settings
         self._remote_tools = remote_tools
@@ -206,6 +211,25 @@ class Provisioner:
             audit=audit,
             clock=clock,
         )
+        # D110: the evals harness, kept by the same steps, with its own key and canary.
+        self._evals = Playground(
+            settings,
+            store=store,
+            roles=roles,
+            harnesses=harnesses,
+            logs=logs,
+            audit=audit,
+            clock=clock,
+            kind=EVALS,
+            judge=judge,
+        )
+
+    def _test_harness(self, state: object) -> Playground | None:
+        if is_playground_state(state):
+            return self._playground
+        if is_evals_state(state):
+            return self._evals
+        return None
 
     # --- Shared checks --------------------------------------------------------------------
 
@@ -292,6 +316,8 @@ class Provisioner:
     def load(self, raw_input: object, execution: object) -> dict[str, Any]:
         if is_provision_input(raw_input):
             return self._playground.load(raw_input, execution)
+        if evals_harness.is_provision_input(raw_input):
+            return self._evals.load(raw_input, execution)
         if is_release_input(raw_input):
             return self._load_release(parse_release_input(raw_input, execution))
         request = parse_input(raw_input, execution)
@@ -452,8 +478,8 @@ class Provisioner:
         }
 
     def ensure_role(self, state: dict[str, Any]) -> dict[str, Any]:
-        if is_playground_state(state):
-            return self._playground.ensure_role(state)
+        if (test := self._test_harness(state)) is not None:
+            return test.ensure_role(state)
         ctx = self._context(_request(state))
         agent_id = ctx.request.agent_id
         # The published version keeps serving until the last step: its models stay allowed.
@@ -464,8 +490,8 @@ class Provisioner:
         return state
 
     def ensure_harness(self, state: dict[str, Any]) -> dict[str, Any]:
-        if is_playground_state(state):
-            return self._playground.ensure_harness(state)
+        if (test := self._test_harness(state)) is not None:
+            return test.ensure_harness(state)
         ctx = self._context(_request(state))
         request = ctx.request
         config = harness_config(
@@ -494,8 +520,8 @@ class Provisioner:
         }
 
     def check_harness(self, state: dict[str, Any]) -> dict[str, Any]:
-        if is_playground_state(state):
-            return self._playground.check_harness(state)
+        if (test := self._test_harness(state)) is not None:
+            return test.check_harness(state)
         request = _request(state)
         status = self._harnesses.status(request.agent_id, _harness_ref(state))
         if status.ready:
@@ -503,8 +529,8 @@ class Provisioner:
         return self._waiting(state, "harness_timeout")
 
     def point_live(self, state: dict[str, Any]) -> dict[str, Any]:
-        if is_playground_state(state):
-            return self._playground.point_live(state)
+        if (test := self._test_harness(state)) is not None:
+            return test.point_live(state)
         ctx = self._context(_request(state))
         ref = _harness_ref(state)
         self._harnesses.point_live(
@@ -513,8 +539,8 @@ class Provisioner:
         return {**state, "ready": False, "attempts": 0}
 
     def check_live(self, state: dict[str, Any]) -> dict[str, Any]:
-        if is_playground_state(state):
-            return self._playground.check_live(state)
+        if (test := self._test_harness(state)) is not None:
+            return test.check_live(state)
         ref = _harness_ref(state)
         if self._harnesses.live_ready(ref.harness_id, ref.version):
             return {**state, "ready": True, "attempts": 0}
@@ -528,8 +554,8 @@ class Provisioner:
         return {**state, "ready": False, "attempts": attempts}
 
     def govern_logs(self, state: dict[str, Any]) -> dict[str, Any]:
-        if is_playground_state(state):
-            return self._playground.govern_logs(state)
+        if (test := self._test_harness(state)) is not None:
+            return test.govern_logs(state)
         ctx = self._context(_request(state))
         runtime_id = state.get("runtime_id")
         if not isinstance(runtime_id, str) or not self._settings.runtime_id_pattern(
@@ -540,8 +566,8 @@ class Provisioner:
         return state
 
     def publish(self, state: dict[str, Any]) -> dict[str, Any]:
-        if is_playground_state(state):
-            return self._playground.publish(state)
+        if (test := self._test_harness(state)) is not None:
+            return test.publish(state)
         request = _request(state)
         ref = _harness_ref(state)
         harness_arn = self._settings.harness_arn(ref.harness_id)
@@ -599,6 +625,8 @@ class Provisioner:
         out: dict[str, Any] = dict(state) if isinstance(state, dict) else {}
         if out.get("playground") is not None:
             return self._playground.compensate(out)
+        if out.get("evals") is not None:
+            return self._evals.compensate(out)
         try:
             request = _request(out)
         except StepError:
@@ -676,6 +704,8 @@ class Provisioner:
         if out.get("playground") is not None:
             # Also when ``load`` failed and the state is still the execution input.
             return self._playground.mark_failed(out, step, code)
+        if out.get("evals") is not None:
+            return self._evals.mark_failed(out, step, code)
         try:
             request = _request(out)
         except StepError:

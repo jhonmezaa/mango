@@ -131,6 +131,8 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             skills_table="skills",
             skills_bucket="skills-bucket",
             evals_table="evals",
+            eval_judge_function="Mango-test-EvalJudge",
+            eval_judge_models=("us.anthropic.claude-haiku-4-5-20251001-v1:0",),
         )
         built: list[Any] = []
 
@@ -196,6 +198,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
         "observability.reads": services.observability.limiter,
         "evals.writes": services.evals.writes,
         "evals.reads": services.evals.reads,
+        "evals.runs": services.evals.run_limiter,
     }
     for name, limiter in held.items():
         assert limiter is issued[name], f"{name} is not the limiter of the registry"

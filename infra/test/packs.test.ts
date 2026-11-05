@@ -468,7 +468,7 @@ describe("mango-api and the pack provisioner", () => {
     // Also the harness the Playground invokes (D91): the agent provisioner's to say; and the
     // signed approved catalogs of remote MCP servers (D98 (13)): the remote provisioner's.
     expect(deny.Condition).toEqual({
-      "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*", "PLAYGROUND", "MCP_REMOTE#*"] },
+      "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*", "PLAYGROUND", "EVALS", "MCP_REMOTE#*"] },
     });
   });
 
@@ -832,11 +832,11 @@ describe("release packs (D36): only what the release key signed", () => {
     expect(actions(read)).toEqual(["dynamodb:GetItem"]);
     expect(read.Condition).toEqual({ "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["MCP_INSTALLED#*"] } });
     // Enablements and what is installed are never written by this role; the only write is the
-    // harness of the Playground (D91), in its own partition.
+    // harness of the Playground (D91) and of the evals (D110), each in its own partition.
     const write = bySid(onSettings, "WritePlaygroundHarness");
     expect(actions(write)).toEqual(["dynamodb:PutItem"]);
     expect(write.Condition).toEqual({
-      "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["PLAYGROUND"] },
+      "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["PLAYGROUND", "EVALS"] },
       StringEqualsIfExists: { "dynamodb:ReturnValues": ["NONE"] },
     });
     const others = onSettings.filter((s) => s.Sid !== "WritePlaygroundHarness");

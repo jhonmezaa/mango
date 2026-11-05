@@ -117,10 +117,16 @@ describe("Admin v0 infrastructure (D17)", () => {
       // CDK custom resource provider (seed), the daily account health (D84) and the agent
       // provisioner, which says which harness the Playground invokes (D91): PutItem only, one
       // partition each.
+      // The provisioner also says which evals harness runs, with its capture `pending`, and the
+      // evaluator writes whether the canary verified it (D110): `EVALS`, which mango-api may not write.
       expect(actions(statement)).toEqual(["dynamodb:PutItem"]);
-      const keys = statement.Condition?.["ForAllValues:StringEquals"]?.["dynamodb:LeadingKeys"];
+      const keys = statement.Condition?.["ForAllValues:StringEquals"]?.["dynamodb:LeadingKeys"] as string[];
+      if (keys.length === 2) {
+        expect(keys).toEqual(["PLAYGROUND", "EVALS"]);
+        continue;
+      }
       expect(keys).toHaveLength(1);
-      expect(["BUDGETS", "BU_MAPPING", "GROUPS", "MODELS", "ACCOUNT_HEALTH", "PLAYGROUND"]).toContainEqual((keys as string[])[0]);
+      expect(["BUDGETS", "BU_MAPPING", "GROUPS", "MODELS", "ACCOUNT_HEALTH", "PLAYGROUND", "EVALS"]).toContainEqual(keys[0]);
     }
     expect(writers.some((g) => g.roles.includes(connectorRoleId))).toBe(false);
     expect(writers.some((g) => g.roles.includes(probeRoleId))).toBe(false);

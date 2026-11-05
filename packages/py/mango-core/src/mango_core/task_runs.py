@@ -36,6 +36,12 @@ KIND_SCHEDULE: Final = "schedule"
 KIND_MANUAL: Final = "manual"
 KIND_EVENT: Final = "event"
 KIND_WAIT: Final = "wait"
+KIND_EVAL: Final = "eval"
+"""One step of an eval run (D110): a case, or the judging once its traces are in CloudWatch.
+Only mango-api sends it; like every message it names the run and carries no authority."""
+STEP_JUDGE: Final = "judge"
+MAX_EVAL_CASES: Final = 50
+MAX_JUDGE_ATTEMPTS: Final = 4
 EVENT_TYPES: Final = frozenset({"cost_anomaly"})
 """The events a task may subscribe to. A closed list: a new one is a new decision."""
 MAX_MESSAGE_BYTES: Final = 24 * 1024
@@ -95,7 +101,18 @@ class WaitRun:
         return self.event.run_id(self.automation_id)
 
 
-TaskMessage = ScheduledRun | ManualRun | EventRun | WaitRun
+@dataclass(frozen=True)
+class EvalStep:
+    """``step``: the 0-based case to run next, or ``STEP_JUDGE``. ``attempt`` counts the looks of
+    the judging for traces that had not arrived yet."""
+
+    suite_id: str
+    run_id: str
+    step: int | str
+    attempt: int = 0
+
+
+TaskMessage = ScheduledRun | ManualRun | EventRun | WaitRun | EvalStep
 
 
 def derived_run_id(automation_id: str, key: str) -> str:
@@ -214,7 +231,30 @@ def wait_message(automation_id: str, wake: str, event: EventRun) -> str:
 # --- Reading (mango-api) ------------------------------------------------------------------
 
 
-def parse_message(body: object) -> TaskMessage:
+def eval_message(suite_id: str, run_id: str, step: int | str, attempt: int = 0) -> str:
+    if not (is_id(suite_id) and is_id(run_id)):
+        raise ValueError("invalid ids")
+    if (
+        not (
+            (isinstance(step, int) and not isinstance(step, bool) and 0 <= step < MAX_EVAL_CASES)
+            or step == STEP_JUDGE
+        )
+        or not 0 <= attempt < MAX_JUDGE_ATTEMPTS
+    ):
+        raise ValueError("invalid step")
+    return _dumps(
+        {
+            "v": VERSION,
+            "kind": KIND_EVAL,
+            "suite_id": suite_id,
+            "run_id": run_id,
+            "step": step,
+            "attempt": attempt,
+        }
+    )
+
+
+def parse_message(body: object) -> TaskMessage:  # noqa: PLR0912 - one branch per kind
     """The trigger a message names, if it is one this module accepts exactly."""
     if not isinstance(body, str) or len(body.encode()) > MAX_MESSAGE_BYTES:
         raise InvalidTaskMessageError
@@ -247,6 +287,16 @@ def parse_message(body: object) -> TaskMessage:
         ):
             raise InvalidTaskMessageError
         return WaitRun(message["automation_id"], message["wake"], _event(message))
+    if kind == KIND_EVAL:
+        if set(message) != {"v", "kind", "suite_id", "run_id", "step", "attempt"}:
+            raise InvalidTaskMessageError
+        try:
+            eval_message(
+                message["suite_id"], message["run_id"], message["step"], message["attempt"]
+            )
+        except (ValueError, TypeError):
+            raise InvalidTaskMessageError from None
+        return EvalStep(message["suite_id"], message["run_id"], message["step"], message["attempt"])
     raise InvalidTaskMessageError
 
 

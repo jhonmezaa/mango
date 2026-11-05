@@ -192,6 +192,12 @@ class RunNotices(Protocol):
     ) -> None: ...
 
 
+class EvalSteps(Protocol):
+    """``evals_runner.EvalRunner``: one step of an eval run (D110)."""
+
+    def handle(self, step: task_runs.EvalStep) -> None: ...
+
+
 class TaskTurn(Protocol):
     """One turn without chat, run as ``caller``. Raises ``AgentAccessDeniedError`` when the
     owner may not use the agent; any other exception is a failed run."""
@@ -227,6 +233,8 @@ class TaskRuns:
     """``None`` keeps the Bandeja out (tests that do not look at it)."""
     reports: TaskReports | None = None
     """The PDFs of runs (D86); ``None`` until the reports construct is deployed."""
+    evals: EvalSteps | None = None
+    """The steps of eval runs (D110), which share the queue; ``None`` until evals exist."""
 
     # --- Entry point ------------------------------------------------------------------
 
@@ -237,7 +245,12 @@ class TaskRuns:
         except task_runs.InvalidTaskMessageError:
             self._emit("task.message.rejected", None, {})
             return
-        if isinstance(message, task_runs.ScheduledRun):
+        if isinstance(message, task_runs.EvalStep):
+            if self.evals is None:
+                self._emit("task.message.rejected", None, {})
+                return
+            self.evals.handle(message)
+        elif isinstance(message, task_runs.ScheduledRun):
             self._scheduled(message)
         elif isinstance(message, task_runs.ManualRun):
             self._manual(message)

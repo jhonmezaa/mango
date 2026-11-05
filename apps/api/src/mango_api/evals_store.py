@@ -136,6 +136,8 @@ class Suite:
     pending: str | None = None
     pending_expires_at: datetime | None = None
     last_run: LastRun | None = None
+    running: str | None = None
+    """The run that holds the suite (one at a time, TM-EV6)."""
 
     def locked(self, now: datetime) -> bool:
         """An open request to stop requiring it: until it closes or expires."""
@@ -196,6 +198,8 @@ def _suite_item(suite: Suite) -> dict[str, Any]:
         item["pending"] = _s(suite.pending)
     if suite.pending_expires_at:
         item["pending_expires_at"] = _s(iso(suite.pending_expires_at))
+    if suite.running:
+        item["running"] = _s(suite.running)
     if suite.last_run:
         run = suite.last_run
         item["last_run"] = {
@@ -257,6 +261,7 @@ def suite_from_item(item: dict[str, Any]) -> Suite:
             pending=_opt(item, "pending"),
             pending_expires_at=_when(pending_expires) if pending_expires else None,
             last_run=_last_run(item.get("last_run")),
+            running=_opt(item, "running") or None,
         )
     except (KeyError, TypeError, ValueError):
         raise StoredEvalError("invalid suite") from None
@@ -319,6 +324,14 @@ class EvalStore:
     def __init__(self, client: DynamoDBClient, table: str) -> None:
         self._db = client
         self._table = table
+
+    @property
+    def client(self) -> DynamoDBClient:
+        return self._db
+
+    @property
+    def table(self) -> str:
+        return self._table
 
     # --- Reads ---------------------------------------------------------------------------
 
@@ -591,6 +604,307 @@ class EvalStore:
                             "Key": {"PK": _s(PK_CHANGES), "SK": _s(change.change_id)},
                             "UpdateExpression": "SET " + ", ".join(sets),
                             "ConditionExpression": condition,
+                            "ExpressionAttributeNames": names,
+                            "ExpressionAttributeValues": values,
+                        }
+                    },
+                    {"Update": suite_update},
+                ]
+            )
+        except ClientError as exc:
+            if _conditional(exc):
+                raise ConflictError from None
+            raise
+
+
+# --- Runs (E2) ------------------------------------------------------------------------------
+
+RunStatus = Literal["queued", "running", "judging", "passed", "failed", "stopped", "error"]
+CaseStatus = Literal["pass", "fail", "judge", "skipped"]
+FINISHED: frozenset[str] = frozenset({"passed", "failed", "stopped", "error"})
+MAX_RUNS_LISTED = 20
+
+
+def new_run_id(now: datetime) -> str:
+    """32 hex characters: the start time first (8), so runs sort by time under ``RUN#``, then 96
+    random bits: still never guessable nor incremental."""
+    return f"{int(now.timestamp()):08x}"[-8:] + secrets.token_hex(12)
+
+
+@dataclass(frozen=True)
+class CaseResult:
+    status: CaseStatus
+    reason: str | None = None
+    """A fixed code (``missing_text``, ``tool_not_used``, ``disclosed``, ``judge_low``,
+    ``no_answer``, ``budget``, ``judge_failed``, ``no_trace``); never content."""
+    session_id: str | None = None
+    """Only while a judge case waits for its traces; its runtime session (an opaque digest)."""
+    started_at: int | None = None
+
+
+@dataclass(frozen=True)
+class Run:
+    run_id: str
+    suite_id: str
+    agent_id: str
+    version: int
+    content_hash: str
+    launched_by: str
+    launched_by_email: str | None
+    trigger: Literal["manual", "on_submit"]
+    status: RunStatus
+    case_count: int
+    threshold: int
+    judge_model: str | None
+    started_at: datetime
+    finished_at: datetime | None = None
+    results: tuple[CaseResult | None, ...] = ()
+    score: int | None = None
+    stop_reason: str | None = None
+
+
+def _run_key(suite_id: str, run_id: str) -> dict[str, Any]:
+    return {"PK": _s(f"SUITE#{suite_id}"), "SK": _s(f"RUN#{run_id}")}
+
+
+def _result_item(result: CaseResult) -> dict[str, Any]:
+    out: dict[str, Any] = {"status": _s(result.status)}
+    if result.reason:
+        out["reason"] = _s(result.reason)
+    if result.session_id:
+        out["session_id"] = _s(result.session_id)
+    if result.started_at is not None:
+        out["started_at"] = _n(result.started_at)
+    return {"M": out}
+
+
+def _result_from(raw: Any) -> CaseResult:
+    try:
+        m = raw["M"]
+        status = m["status"]["S"]
+        if status not in ("pass", "fail", "judge", "skipped"):
+            raise StoredEvalError("invalid case result")
+        started = m.get("started_at", {}).get("N")
+        return CaseResult(
+            status=status,
+            reason=_opt(m, "reason"),
+            session_id=_opt(m, "session_id"),
+            started_at=int(started) if started is not None else None,
+        )
+    except (KeyError, TypeError, ValueError):
+        raise StoredEvalError("invalid case result") from None
+
+
+def run_from_item(item: dict[str, Any]) -> Run:
+    try:
+        count = _int(item, "case_count")
+        results_map = item.get("results", {}).get("M", {})
+        results = tuple(
+            _result_from(results_map[f"c{i}"]) if f"c{i}" in results_map else None
+            for i in range(count)
+        )
+        finished = _opt(item, "finished_at")
+        score = item.get("score", {}).get("N")
+        trigger = item["trigger"]["S"]
+        status = item["status"]["S"]
+        if trigger not in ("manual", "on_submit") or status not in (
+            "queued",
+            "running",
+            "judging",
+            "passed",
+            "failed",
+            "stopped",
+            "error",
+        ):
+            raise StoredEvalError("invalid run")
+        return Run(
+            run_id=item["run_id"]["S"],
+            suite_id=item["suite_id"]["S"],
+            agent_id=item["agent_id"]["S"],
+            version=_int(item, "version"),
+            content_hash=item["content_hash"]["S"],
+            launched_by=item["launched_by"]["S"],
+            launched_by_email=_opt(item, "launched_by_email"),
+            trigger=trigger,
+            status=status,
+            case_count=count,
+            threshold=_int(item, "threshold"),
+            judge_model=_opt(item, "judge_model"),
+            started_at=_when(item["started_at"]["S"]),
+            finished_at=_when(finished) if finished else None,
+            results=results,
+            score=int(score) if score is not None else None,
+            stop_reason=_opt(item, "stop_reason"),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise StoredEvalError("invalid run") from None
+
+
+class EvalRuns:
+    """The runs of a suite and the lock that keeps one at a time per suite (TM-EV6)."""
+
+    def __init__(self, client: DynamoDBClient, table: str) -> None:
+        self._db = client
+        self._table = table
+
+    def start(self, suite: Suite, run: Run) -> None:
+        """Write the run and take the suite's lock, if no other run holds it."""
+        ttl = int((run.started_at + RUN_RETENTION).timestamp())
+        item: dict[str, Any] = {
+            **_run_key(run.suite_id, run.run_id),
+            "run_id": _s(run.run_id),
+            "suite_id": _s(run.suite_id),
+            "agent_id": _s(run.agent_id),
+            "version": _n(run.version),
+            "content_hash": _s(run.content_hash),
+            "launched_by": _s(run.launched_by),
+            "trigger": _s(run.trigger),
+            "status": _s(run.status),
+            "case_count": _n(run.case_count),
+            "threshold": _n(run.threshold),
+            "started_at": _s(iso(run.started_at)),
+            "results": {"M": {}},
+            "ttl": _n(ttl),
+        }
+        if run.launched_by_email:
+            item["launched_by_email"] = _s(run.launched_by_email)
+        if run.judge_model:
+            item["judge_model"] = _s(run.judge_model)
+        try:
+            self._db.transact_write_items(
+                TransactItems=[
+                    {
+                        "Update": {
+                            "TableName": self._table,
+                            "Key": _suite_key(suite.agent_id, suite.suite_id),
+                            # The revision moves: an edit that read the suite before conflicts.
+                            "UpdateExpression": "SET #running = :run ADD #rev :one",
+                            "ConditionExpression": (
+                                "#rev = :rev AND "
+                                "(attribute_not_exists(#running) OR #running = :none)"
+                            ),
+                            "ExpressionAttributeNames": {"#running": "running", "#rev": "revision"},
+                            "ExpressionAttributeValues": {
+                                ":run": _s(run.run_id),
+                                ":rev": _n(suite.revision),
+                                ":none": _s(""),
+                                ":one": _n(1),
+                            },
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self._table,
+                            "Item": item,
+                            "ConditionExpression": "attribute_not_exists(PK)",
+                        }
+                    },
+                ]
+            )
+        except ClientError as exc:
+            if _conditional(exc):
+                raise ConflictError from None
+            raise
+
+    def get(self, suite_id: str, run_id: str) -> Run | None:
+        item = self._db.get_item(
+            TableName=self._table, Key=_run_key(suite_id, run_id), ConsistentRead=True
+        ).get("Item")
+        return run_from_item(item) if item else None
+
+    def recent(self, suite_id: str, limit: int = MAX_RUNS_LISTED) -> list[Run]:
+        page = self._db.query(
+            TableName=self._table,
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :run)",
+            ExpressionAttributeValues={":pk": _s(f"SUITE#{suite_id}"), ":run": _s("RUN#")},
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        return [run_from_item(item) for item in page.get("Items", [])]
+
+    def record(self, run: Run, index: int, result: CaseResult, status: RunStatus) -> None:
+        """The result of one case, while the run is not finished."""
+        self._db.update_item(
+            TableName=self._table,
+            Key=_run_key(run.suite_id, run.run_id),
+            UpdateExpression="SET #results.#case = :result, #status = :status",
+            ConditionExpression="NOT #status IN (:passed, :failed, :stopped, :error)",
+            ExpressionAttributeNames={
+                "#results": "results",
+                "#case": f"c{index}",
+                "#status": "status",
+            },
+            ExpressionAttributeValues={
+                ":result": _result_item(result),
+                ":status": _s(status),
+                ":passed": _s("passed"),
+                ":failed": _s("failed"),
+                ":stopped": _s("stopped"),
+                ":error": _s("error"),
+            },
+        )
+
+    def finish(
+        self,
+        suite: Suite,
+        run: Run,
+        *,
+        status: Literal["passed", "failed", "stopped", "error"],
+        score: int | None,
+        now: datetime,
+        stop_reason: str | None = None,
+    ) -> None:
+        """Close the run, release the suite's lock and, for a run that scored, make it the
+        suite's last run (what the gate of D26 reads). Once only."""
+        names: dict[str, str] = {"#status": "status", "#finished": "finished_at"}
+        values: dict[str, Any] = {
+            ":status": _s(status),
+            ":now": _s(iso(now)),
+            ":passed": _s("passed"),
+            ":failed": _s("failed"),
+            ":stopped": _s("stopped"),
+            ":error": _s("error"),
+        }
+        sets = ["#status = :status", "#finished = :now"]
+        if score is not None:
+            names["#score"] = "score"
+            values[":score"] = _n(score)
+            sets.append("#score = :score")
+        if stop_reason:
+            names["#stop"] = "stop_reason"
+            values[":stop"] = _s(stop_reason)
+            sets.append("#stop = :stop")
+        suite_update: Any = {
+            "TableName": self._table,
+            "Key": _suite_key(suite.agent_id, suite.suite_id),
+            "UpdateExpression": "REMOVE #running ADD #rev :one",
+            "ConditionExpression": "#running = :run",
+            "ExpressionAttributeNames": {"#running": "running", "#rev": "revision"},
+            "ExpressionAttributeValues": {":run": _s(run.run_id), ":one": _n(1)},
+        }
+        if status in ("passed", "failed") and score is not None:
+            suite_update["UpdateExpression"] = "REMOVE #running SET #last = :last ADD #rev :one"
+            suite_update["ExpressionAttributeNames"]["#last"] = "last_run"
+            suite_update["ExpressionAttributeValues"][":last"] = {
+                "M": {
+                    "run_id": _s(run.run_id),
+                    "score": _n(score),
+                    "passed": {"BOOL": status == "passed"},
+                    "content_hash": _s(run.content_hash),
+                    "finished_at": _s(iso(now)),
+                }
+            }
+        try:
+            self._db.transact_write_items(
+                TransactItems=[
+                    {
+                        "Update": {
+                            "TableName": self._table,
+                            "Key": _run_key(run.suite_id, run.run_id),
+                            "UpdateExpression": "SET " + ", ".join(sets),
+                            "ConditionExpression": (
+                                "NOT #status IN (:passed, :failed, :stopped, :error)"
+                            ),
                             "ExpressionAttributeNames": names,
                             "ExpressionAttributeValues": values,
                         }

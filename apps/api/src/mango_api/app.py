@@ -122,7 +122,8 @@ from mango_api.directory import (
     directory_router,
 )
 from mango_api.evals import EvalsDeps, evals_router
-from mango_api.evals_store import EvalStore
+from mango_api.evals_runner import EvalRunner, EvalRunnerDeps, EvalsHarnesses
+from mango_api.evals_store import EvalRuns, EvalStore
 from mango_api.gateway_mcp import GatewayConnections
 from mango_api.governance import GovernanceDeps, governance_router
 from mango_api.group_admin import (
@@ -456,6 +457,8 @@ class Services:
     playground_harnesses: PlaygroundHarnesses | None = None
     # Evals (D110, D111); set in production once the Evals table exists.
     evals: EvalsDeps | None = None
+    # The evaluator's function (D110): only invoked for the verdict of a judge case.
+    eval_judge: Any = None
     limits: Limits = field(default_factory=Limits)
     """Where every rate limit comes from (D70). In production the shared ones count in
     DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
@@ -856,6 +859,9 @@ def build_services(settings: Settings) -> Services:
         )
         if settings.evals_table
         else None,
+        eval_judge=boto3.client("lambda", region_name=region)
+        if settings.eval_judge_function
+        else None,
         cognito_users=CognitoUsers(cognito, settings.cognito_user_pool_id),
         mfa_reset_store=ResetStore(dynamodb, settings.settings_table),
         directory=CognitoDirectory(cognito, settings.cognito_user_pool_id),
@@ -1130,6 +1136,60 @@ async def with_heartbeat(
         yield chunk
 
 
+# --- Evals (D110) -----------------------------------------------------------------------
+
+
+def _eval_runner(services: Services, settings: Settings) -> EvalRunner | None:
+    """Runs of evals share the queue and the identity of the tasks (D78) and need the evaluator.
+    Without any of them, suites still exist and nothing runs (503 ``evals_unavailable``)."""
+    deps = services.evals
+    if (
+        deps is None
+        or services.tasks is None
+        or services.task_tokens is None
+        or not settings.eval_judge_function
+        or services.eval_judge is None
+    ):
+        return None
+    region = settings.region
+    harnesses = EvalsHarnesses(
+        deps.store.client, settings.settings_table, namespace=settings.namespace, region=region
+    )
+    deps.runs = EvalRuns(deps.store.client, deps.store.table)
+    deps.harnesses = harnesses
+    deps.queue = services.tasks.queue
+    deps.run_limiter = services.limits.limiter("evals.runs")
+    deps.judge_models = settings.eval_judge_models
+    return EvalRunner(
+        EvalRunnerDeps(
+            store=deps.store,
+            runs=deps.runs,
+            agents=deps.agents,
+            published=services.published,
+            harnesses=harnesses,
+            catalog=services.model_catalog.catalog,
+            price=lambda model_id: _model_price(services, model_id),
+            scopes=lambda caller, agent_id: _budget_scopes(services, caller.user, agent_id),
+            budgets=services.budgets,
+            audit=services.audit,
+            agentcore=services.agentcore,
+            invocation_key=services.invocation_key,
+            gateway_url=settings.gateway_url,
+            guardrail_id=settings.guardrail_id,
+            guardrail_version=settings.guardrail_version,
+            knowledge_price=settings.knowledge_embedding_price,
+            tokens=services.task_tokens,
+            queue=services.tasks.queue,
+            judge=services.eval_judge,
+            judge_function=settings.eval_judge_function,
+            evaluation_fee=settings.evaluation_fee,
+            authorizer=services.authorizer,
+            skills=services.skills.store if services.skills is not None else None,
+            skills_bucket=settings.skills_bucket,
+        )
+    )
+
+
 # --- App --------------------------------------------------------------------------------
 
 
@@ -1139,6 +1199,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 ) -> ASGIApp:
     settings = settings or Settings.from_env()
     services = services_factory(settings)
+    eval_runner = _eval_runner(services, settings)
     if services.tasks is not None and services.task_tokens is not None:
         services.task_runs = TaskRuns(
             store=services.tasks.store,
@@ -1151,6 +1212,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             queue=services.tasks.queue,
             inbox=RunInbox(services.inbox.store) if services.inbox is not None else None,
             reports=services.tasks.reports,
+            evals=eval_runner,
         )
 
     @asynccontextmanager

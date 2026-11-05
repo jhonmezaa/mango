@@ -167,3 +167,22 @@ flowchart LR
 - Límites de confianza: persona–API, API–tabla, worker–harness–Gateway, harness–log group (`aws/spans`), API–evaluador–Evaluations, provisioner–evaluador.
 - Runtime frente a CI: solo runtime; la release fija las instrucciones de los evaluadores.
 - Supuestos explícitos arriba. Los confirmados vienen de D110, D111 y de los menús del 2026-11-05.
+
+## Construcción del harness de evals, el canario y el evaluador (2026-11-05)
+
+Decidido por el agente que lanzó el trabajo, por menú, el 2026-11-05:
+
+- **El juez se acota por configuración.** `models.judges` de la instalación, por defecto el modelo auxiliar. Un evaluador propio por modelo juez, declarado en la release (`AWS::BedrockAgentCore::Evaluator`, con instrucciones fijas). El rol del evaluador solo invoca esos modelos, por ARN concreto. Juzgar con uno exige además que esté habilitado en el catálogo. Sin evaluadores incorporados: su modelo no lo elige Mango.
+- **El canario reserva en un ámbito propio.** `AGENT#evals`, con el tope mensual de la release (1 USD). Lo cierra como un turno, con origen `eval` (D106). Un tope agotado lo hace fallar cerrado, sin invocar nada.
+
+Cómo quedó:
+
+- **Harness de evals.** El provisioner lo mantiene con los pasos del Playground (`Kind` `EVALS` en `functions/provisioner/.../playground.py`). Va sin las variables de D16 y con `UNIFIED_TRACES_DESTINATION_ENABLED=true`. Su log group lleva la llave `alias/Mango-<ns>-evals-logs`, 30 días. Su rol, bajo el boundary, puede `logs:PutResourcePolicy` solo sobre sus propios log groups; el boundary lo admite solo ahí.
+- **Al publicar.** El provisioner escribe `EVALS/CAPTURE` como `pending` antes de `EVALS/HARNESS`, y pide el canario al evaluador (invocación asíncrona).
+- **El canario** (`functions/eval-judge/.../canary.py`) hace un turno con un marcador aleatorio, sin tools y con 64 tokens. Exige que el marcador llegue a su log group (`no_content` si no) y que **no** aparezca en `aws/spans` (`content_in_shared_log`). Después lanza un `Evaluate` de prueba (`evaluate_*`). Solo entonces escribe `verified` para esa versión, y sin condición nunca pisa una versión más nueva. Cada fallo deja una línea `evals canary failed: <código>`, que cuenta la alarma `Mango-<ns>-Evals-canary-failed`; la DLQ tiene su propia alarma.
+- **El juez** (`judge.py`) lee la sesión de los log groups de evals con `FilterLogEvents` (como mucho 2.000 spans y 4 MiB). Llama a `Evaluate` sobre la última traza con `expectedResponse` y devuelve estado, si pasó, la etiqueta (`PASS`, `FAIL` u `OTHER`), los tokens y las evaluaciones cobradas. Nunca devuelve la `explanation`. Solo la etiqueta exacta `PASS` aprueba.
+- **La llave** deniega `kms:Decrypt` vía CloudWatch Logs a todo principal con ARN que no sea `Mango-<ns>-EvalJudge`. Un test de infra fija que el evaluador es el único rol con lectura de esos log groups.
+- **TM-M11 se precisa.** `mango-api` sigue siendo el único rol que invoca harness de agentes. El evaluador invoca solo el harness de evals y solo para el canario. Lo fija `infra/test/provisioner.test.ts`.
+- **Lo que no se cobra.** El canario no carga la tarifa por evaluación del `Evaluate` de prueba si el servicio no devuelve cuántas cobró; el juez de los casos sí la carga (E2b).
+
+Supuestos que siguen sin validar (ver arriba): que el harness respete el modo unificado, que la política de la llave frene la lectura a otros roles y que `Evaluate` acepte las trazas de un harness gestionado. Los tres los comprueba el canario en la instalación, salvo el segundo, que pide una lectura con otro rol (pendiente, con el OK del dueño).

@@ -26,6 +26,7 @@ from mango_core.agents_table import (
     release_key,
     version_key,
 )
+from mango_core.evals_harness import EVALS_ID
 from mango_core.playground import PLAYGROUND_ID
 from mango_reconciler.checks import Report
 from mango_reconciler.config import Settings
@@ -336,6 +337,18 @@ class Lab:
             harness,
             role_arn=self.settings.role_arn(PLAYGROUND_ID),
             markers={"MANGO_AGENT_ID": PLAYGROUND_ID, "MANGO_CONFIG_SHA256": "e" * 64},
+        )
+        harness["live"] = {"status": "READY", "liveVersion": number}
+        return harness
+
+    def evals(self) -> dict[str, Any]:
+        """The evals harness and its role as the provisioner leaves them (D110)."""
+        self.create_role(EVALS_ID)
+        harness = self.agentcore.add(self.settings.harness_name(EVALS_ID))
+        number = self.agentcore.add_version(
+            harness,
+            role_arn=self.settings.role_arn(EVALS_ID),
+            markers={"MANGO_AGENT_ID": EVALS_ID, "MANGO_CONFIG_SHA256": "d" * 64},
         )
         harness["live"] = {"status": "READY", "liveVersion": number}
         return harness

@@ -2137,6 +2137,39 @@
         "title": "CaseOut",
         "type": "object"
       },
+      "CaseResultOut": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "judge",
+              "skipped",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ],
+        "title": "CaseResultOut",
+        "type": "object"
+      },
       "CasesIn": {
         "additionalProperties": false,
         "properties": {
@@ -3697,6 +3730,136 @@
           "criterion"
         ],
         "title": "EvalCase",
+        "type": "object"
+      },
+      "EvalRunOut": {
+        "additionalProperties": false,
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseResultOut"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "launched_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launched By Email"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "judging",
+              "passed",
+              "failed",
+              "stopped",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "manual",
+              "on_submit"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "version",
+          "content_hash",
+          "status",
+          "trigger",
+          "launched_by_email",
+          "started_at",
+          "finished_at",
+          "score",
+          "threshold",
+          "stop_reason",
+          "cases"
+        ],
+        "title": "EvalRunOut",
+        "type": "object"
+      },
+      "EvalRunsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/EvalRunOut"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "title": "EvalRunsOut",
         "type": "object"
       },
       "FieldChange": {
@@ -11275,6 +11438,35 @@
         "title": "SpanOut",
         "type": "object"
       },
+      "StartRunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "version": {
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "StartRunIn",
+        "type": "object"
+      },
       "StateIn": {
         "additionalProperties": false,
         "properties": {
@@ -17820,6 +18012,94 @@
           }
         },
         "summary": "Post Eval Requirement Removal"
+      }
+    },
+    "/evals/suites/{suite_id}/runs": {
+      "get": {
+        "operationId": "get_eval_runs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalRunsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Eval Runs"
+      },
+      "post": {
+        "operationId": "post_eval_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post Eval Run"
       }
     },
     "/governance": {

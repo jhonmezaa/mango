@@ -13,6 +13,7 @@ members = [
     "mango-cost-anomaly-consumer",
     "mango-cost-explorer",
     "mango-cur-reconciler",
+    "mango-eval-judge",
     "mango-gateway-interceptor",
     "mango-knowledge-retrieve",
     "mango-knowledge-sources",
@@ -996,6 +997,21 @@ requires-dist = [
 name = "mango-cur-reconciler"
 version = "0.1.0"
 source = { editable = "functions/cur-reconciler" }
+dependencies = [
+    { name = "boto3" },
+    { name = "mango-core", extra = ["agents"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.43.104" },
+    { name = "mango-core", extras = ["agents"], editable = "packages/py/mango-core" },
+]
+
+[[package]]
+name = "mango-eval-judge"
+version = "0.1.0"
+source = { editable = "functions/eval-judge" }
 dependencies = [
     { name = "boto3" },
     { name = "mango-core", extra = ["agents"] },

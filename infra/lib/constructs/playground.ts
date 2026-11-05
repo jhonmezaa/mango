@@ -16,6 +16,11 @@ export interface PlaygroundHarnessProps {
   readonly provisioner: IDependable;
   /** Label of the release being deployed: a new one starts a new execution. */
   readonly release: string;
+  /**
+   * Which test harness: the Playground's (D91, the default) or the evals' (D110), started with
+   * `{"evals": "ensure", "release": <label>}`.
+   */
+  readonly kind?: "playground" | "evals";
 }
 
 /**
@@ -34,9 +39,9 @@ export class PlaygroundHarness extends Construct {
       action: "startExecution",
       parameters: {
         stateMachineArn: props.stateMachine.stateMachineArn,
-        input: JSON.stringify({ playground: "ensure", release: props.release }),
+        input: JSON.stringify({ [props.kind ?? "playground"]: "ensure", release: props.release }),
       },
-      physicalResourceId: cr.PhysicalResourceId.of("playground-harness"),
+      physicalResourceId: cr.PhysicalResourceId.of(`${props.kind ?? "playground"}-harness`),
     };
     const start = new cr.AwsCustomResource(this, "Ensure", {
       onCreate: startCall,
@@ -50,5 +55,9 @@ export class PlaygroundHarness extends Construct {
       installLatestAwsSdk: false,
     });
     start.node.addDependency(props.stateMachine, props.provisioner);
+    this.start = start;
   }
+
+  /** The custom resource that starts the execution. */
+  readonly start: cr.AwsCustomResource;
 }

@@ -141,6 +141,7 @@ def role_policy(
     skills: Iterable[str] = (),
     *,
     all_skills: bool = False,
+    unified_traces: bool = False,
 ) -> dict[str, Any]:
     """Inline policy of an agent role. Same statements for every agent; only the models and
     the skills vary. ``all_skills``: the Playground's test role (D91 (12)), which reads every
@@ -216,8 +217,26 @@ def role_policy(
                 if all_skills
                 else skill_statements(settings, skills)
             ),
+            *(unified_traces_statements(settings, runtime) if unified_traces else []),
         ],
     }
+
+
+def unified_traces_statements(settings: Settings, runtime: str) -> list[dict[str, Any]]:
+    """The evals harness (D110 (8)): AgentCore lets X-Ray deliver its spans to the runtime's own
+    log group with this role, which needs ``logs:PutResourcePolicy`` on that log group. Only
+    on this role's own log groups; the agent boundary allows it only there too."""
+    return [
+        {
+            "Sid": "UnifiedTracesDestination",
+            "Effect": "Allow",
+            "Action": ["logs:PutResourcePolicy", "logs:DescribeResourcePolicies"],
+            "Resource": (
+                f"arn:aws:logs:{settings.region}:{settings.account_id}:log-group:"
+                f"/aws/bedrock-agentcore/runtimes/{runtime}-*"
+            ),
+        }
+    ]
 
 
 class AgentRoles:
@@ -232,6 +251,7 @@ class AgentRoles:
         skills: Iterable[str] = (),
         *,
         all_skills: bool = False,
+        unified_traces: bool = False,
     ) -> bool:
         """Create the role if needed and set its policy. Returns whether it was created.
 
@@ -239,7 +259,14 @@ class AgentRoles:
         the provisioner never repairs a role someone changed (TM-M6), it fails.
         """
         name = self._settings.role_name(agent_id)
-        document = role_policy(self._settings, agent_id, models, skills, all_skills=all_skills)
+        document = role_policy(
+            self._settings,
+            agent_id,
+            models,
+            skills,
+            all_skills=all_skills,
+            unified_traces=unified_traces,
+        )
         created = False
         role = self._get(name)
         if role is None:

@@ -405,6 +405,20 @@ export const zCaseOutSchema = z.object({
 });
 
 /**
+ * CaseResultOut
+ */
+export const zCaseResultOutSchema = z.object({
+    reason: z.string().nullable(),
+    status: z.enum([
+        'pass',
+        'fail',
+        'judge',
+        'skipped',
+        'pending'
+    ])
+});
+
+/**
  * CatalogAgent
  */
 export const zCatalogAgentSchema = z.object({
@@ -771,6 +785,39 @@ export const zEvalCaseSchema = z.object({
 export const zCasesInSchema = z.object({
     cases: z.array(zEvalCaseSchema).min(1).max(50),
     revision: z.int().gte(1)
+});
+
+/**
+ * EvalRunOut
+ */
+export const zEvalRunOutSchema = z.object({
+    cases: z.array(zCaseResultOutSchema),
+    content_hash: z.string(),
+    finished_at: z.string().nullable(),
+    launched_by_email: z.string().nullable(),
+    run_id: z.string(),
+    score: z.int().nullable(),
+    started_at: z.string(),
+    status: z.enum([
+        'queued',
+        'running',
+        'judging',
+        'passed',
+        'failed',
+        'stopped',
+        'error'
+    ]),
+    stop_reason: z.string().nullable(),
+    threshold: z.int(),
+    trigger: z.enum(['manual', 'on_submit']),
+    version: z.int()
+});
+
+/**
+ * EvalRunsOut
+ */
+export const zEvalRunsOutSchema = z.object({
+    runs: z.array(zEvalRunOutSchema)
 });
 
 /**
@@ -2719,6 +2766,14 @@ export const zSpanOutSchema = z.object({
 });
 
 /**
+ * StartRunIn
+ */
+export const zStartRunInSchema = z.object({
+    revision: z.int().gte(1).lte(1000000).nullish(),
+    version: z.int().gte(1).lte(1000000)
+});
+
+/**
  * StateIn
  */
 export const zStateInSchema = z.object({
@@ -4411,6 +4466,26 @@ export const zPostEvalRequirementRemovalPath = z.object({
  * Successful Response
  */
 export const zPostEvalRequirementRemovalResponse = zSuiteDetailOutSchema;
+
+export const zGetEvalRunsPath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetEvalRunsResponse = zEvalRunsOutSchema;
+
+export const zPostEvalRunBody = zStartRunInSchema;
+
+export const zPostEvalRunPath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zPostEvalRunResponse = zEvalRunOutSchema;
 
 /**
  * Successful Response

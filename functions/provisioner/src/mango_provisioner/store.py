@@ -267,8 +267,12 @@ class ProvisionerStore:
 
     def write_playground(self, deployed: PlaygroundHarness) -> None:
         """What mango-api invokes for a test: only this function writes the item (IAM)."""
+        self.write_test_harness(deployed.item())
+
+    def write_test_harness(self, item: dict[str, Any]) -> None:
+        """``PLAYGROUND`` or ``EVALS`` ``HARNESS``, and ``EVALS`` ``CAPTURE`` (``pending``)."""
         try:
-            self._db.put_item(TableName=self._settings, Item=deployed.item())
+            self._db.put_item(TableName=self._settings, Item=item)
         except (ClientError, BotoCoreError) as exc:
             raise aws_error("PutItem", exc) from None
 

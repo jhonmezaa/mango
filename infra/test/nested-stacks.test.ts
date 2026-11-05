@@ -48,9 +48,9 @@ const STATEFUL = [
 ];
 
 describe("stacks nested in Core (D99)", () => {
-  it("are Operations, Authorization, RemoteMcp, CurReconciliation and Traces, and keep Core of a release under 400 resources", () => {
-    expect([...nested.keys()].sort()).toEqual(["Authorization", "CurReconciliation", "Operations", "RemoteMcp", "Traces"]);
-    expect(stackResources).toHaveLength(5);
+  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces and EvalJudge, and keep Core of a release under 400 resources", () => {
+    expect([...nested.keys()].sort()).toEqual(["Authorization", "CurReconciliation", "EvalJudge", "Operations", "RemoteMcp", "Traces"]);
+    expect(stackResources).toHaveLength(6);
     expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(400);
   });
 

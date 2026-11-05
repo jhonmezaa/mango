@@ -38,8 +38,10 @@ from mango_api.audit import AuditLog
 from mango_api.authz import AGENT_TYPE, AgentResource, Authorizer
 from mango_api.evals_store import (
     ConflictError,
+    EvalRuns,
     EvalStore,
     RequirementChange,
+    Run,
     StoredEvalError,
     Suite,
     SuiteKind,
@@ -47,11 +49,19 @@ from mango_api.evals_store import (
     cases_hash,
     dumps_cases,
     new_id,
+    new_run_id,
 )
 from mango_api.model_catalog import ModelCatalog, ModelCatalogUnavailableError
 from mango_api.rate_limits import Limiter
 from mango_api.web import ApiError, Caller, rate_limited
-from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN, AgentStatus
+from mango_core import task_runs
+from mango_core.agents import (
+    AGENT_ID_PATTERN,
+    MODEL_ID_PATTERN,
+    AgentStatus,
+    VersionStatus,
+    content_hash,
+)
 from mango_core.evals import (
     MAX_CASES,
     MAX_CSV_BYTES,
@@ -65,6 +75,8 @@ from mango_core.evals import (
 logger = logging.getLogger(__name__)
 
 WRITES_PER_HOUR = 60
+RUNS_PER_DAY = 20
+"""Runs a person may launch a day (TM-EV6): with 50 cases each, 1,000 turns at most."""
 READS_PER_MINUTE = 60
 MAX_SUITES_PER_AGENT = 20
 MAX_SUITES = 500
@@ -198,6 +210,36 @@ class SuiteDetailOut(SuiteOut):
     cases: list[CaseOut]
 
 
+class StartRunIn(_Strict):
+    version: Annotated[int, Field(ge=1, le=1_000_000)]
+    revision: Annotated[int, Field(ge=1, le=1_000_000)] | None = None
+    """Revision of the draft the person sees; required for a draft."""
+
+
+class CaseResultOut(_Strict):
+    status: Literal["pass", "fail", "judge", "skipped", "pending"]
+    reason: str | None
+
+
+class EvalRunOut(_Strict):
+    run_id: str
+    version: int
+    content_hash: str
+    status: Literal["queued", "running", "judging", "passed", "failed", "stopped", "error"]
+    trigger: Literal["manual", "on_submit"]
+    launched_by_email: str | None
+    started_at: str
+    finished_at: str | None
+    score: int | None
+    threshold: int
+    stop_reason: str | None
+    cases: list[CaseResultOut]
+
+
+class EvalRunsOut(_Strict):
+    runs: list[EvalRunOut]
+
+
 # --- Use cases --------------------------------------------------------------------------
 
 
@@ -211,6 +253,14 @@ class EvalsDeps:
     writes: Limiter
     reads: Limiter
     clock: Callable[[], datetime]
+    runs: EvalRuns | None = None
+    """Runs (E2); ``None`` until the evaluator is deployed: suites exist, nothing runs."""
+    harnesses: Any = None
+    """``evals_runner.EvalsHarnesses``: the evals harness, only once its canary verified it."""
+    queue: Any = None
+    """The queue of runs (``tasks.RunQueue``), shared with the tasks (D78)."""
+    run_limiter: Limiter | None = None
+    judge_models: tuple[str, ...] = ()
 
 
 def _iso(value: datetime) -> str:
@@ -531,6 +581,9 @@ def get_suite(deps: EvalsDeps, caller: Caller, suite: Suite, can_edit: bool) -> 
 def _current(suite: Suite, revision: int) -> None:
     if suite.revision != revision:
         raise ApiError(409, "version_conflict", "the suite changed; reload and try again")
+    if suite.running:
+        # Its cases and settings are what the run reads, case by case (TM-EV3).
+        raise ApiError(409, "run_in_progress", "the suite is running; wait for it to finish")
 
 
 def update_settings(
@@ -760,6 +813,120 @@ def withdraw(deps: EvalsDeps, caller: Caller, change: RequirementChange) -> None
     _audited(deps, "evals.requirement_withdrawn", caller, _change_detail(change), write)
 
 
+# --- Runs (E2) ---------------------------------------------------------------------------
+
+
+def _run_out(run: Run) -> EvalRunOut:
+    return EvalRunOut(
+        run_id=run.run_id,
+        version=run.version,
+        content_hash=run.content_hash,
+        status=run.status,
+        trigger=run.trigger,
+        launched_by_email=run.launched_by_email,
+        started_at=_iso(run.started_at),
+        finished_at=_iso(run.finished_at) if run.finished_at else None,
+        score=run.score,
+        threshold=run.threshold,
+        stop_reason=run.stop_reason,
+        cases=[
+            CaseResultOut(status=r.status, reason=r.reason)
+            if r is not None
+            else CaseResultOut(status="pending", reason=None)
+            for r in run.results
+        ]
+        if run.results
+        else [CaseResultOut(status="pending", reason=None)] * run.case_count,
+    )
+
+
+def list_runs(deps: EvalsDeps, suite: Suite) -> EvalRunsOut:
+    if deps.runs is None:
+        return EvalRunsOut(runs=[])
+    return EvalRunsOut(runs=[_run_out(r) for r in deps.runs.recent(suite.suite_id)])
+
+
+def _tested_version(deps: EvalsDeps, suite: Suite, body: StartRunIn) -> tuple[int, str]:
+    """The stored version a run tests: the open draft at the revision the person sees, one in
+    review, or the published one (the provisioner's pointer). Its hash is what the gate of D26
+    compares with the version an approver approves."""
+    version = deps.agents.version(suite.agent_id, body.version)
+    if version is None:
+        raise ApiError(404, "not_found", "not found")
+    if version.status is VersionStatus.DRAFT:
+        if body.revision != version.revision:
+            raise ApiError(409, "version_conflict", "the draft changed; reload and try again")
+    elif version.status is VersionStatus.PUBLISHED:
+        pointer = deps.agents.published_pointer(suite.agent_id)
+        if pointer is None or pointer.version != version.number:
+            raise ApiError(
+                409, "version_not_testable", "only a draft, one in review or the published version"
+            )
+    elif version.status is not VersionStatus.IN_REVIEW:
+        raise ApiError(
+            409, "version_not_testable", "only a draft, one in review or the published version"
+        )
+    return version.number, content_hash(version.canonical)
+
+
+def start_run(  # noqa: PLR0917 - the parts of one run, all required
+    deps: EvalsDeps,
+    caller: Caller,
+    meta: AgentMeta | None,
+    suite: Suite,
+    body: StartRunIn,
+    trigger: Literal["manual", "on_submit"] = "manual",
+) -> EvalRunOut:
+    """Queue a run of ``suite`` on a version of its agent (D110, D111 (2)): one at a time per
+    suite, and only once the canary verified the evals harness (D110 (8))."""
+    if deps.runs is None or deps.queue is None or deps.harnesses is None:
+        raise ApiError(503, "evals_unavailable", "evals cannot run in this installation yet")
+    _writable(meta)
+    if suite.running:
+        raise ApiError(409, "run_in_progress", "the suite is already running")
+    if deps.harnesses.get() is None:
+        raise ApiError(503, "evals_unavailable", "evals cannot run yet; please try again later")
+    judged = suite.judge_model is not None and any(
+        c.criterion == "judge" for c in deps.store.cases(suite)
+    )
+    if judged and suite.judge_model not in deps.judge_models:
+        raise ApiError(409, "judge_unavailable", "this model cannot judge in this installation")
+    number, digest = _tested_version(deps, suite, body)
+    now = deps.clock()
+    run = Run(
+        run_id=new_run_id(now),
+        suite_id=suite.suite_id,
+        agent_id=suite.agent_id,
+        version=number,
+        content_hash=digest,
+        launched_by=caller.user.user_id,
+        launched_by_email=caller.user.email,
+        trigger=trigger,
+        status="queued",
+        case_count=suite.case_count,
+        threshold=suite.threshold,
+        judge_model=suite.judge_model if judged else None,
+        started_at=now,
+    )
+    detail = {
+        **_detail(suite),
+        "run": run.run_id,
+        "version": number,
+        "content_hash": digest,
+        "trigger": trigger,
+    }
+
+    def write() -> None:
+        try:
+            deps.runs.start(suite, run)  # type: ignore[union-attr]
+        except ConflictError as exc:
+            raise ApiError(409, "run_in_progress", "the suite is already running") from exc
+        deps.queue.send(task_runs.eval_message(suite.suite_id, run.run_id, 0))
+
+    _audited(deps, "evals.run_started", caller, detail, write)
+    return _run_out(run)
+
+
 # --- Router -----------------------------------------------------------------------------
 
 
@@ -882,6 +1049,16 @@ def evals_router(  # noqa: PLR0915 - one route per statement group
     @router.post("/suites/{suite_id}/delete", status_code=204)
     async def delete_eval_suite(body: RevisionIn, target: Edit) -> None:
         await run(delete_suite, deps, target.caller, target.meta, target.suite, body.revision)
+
+    @router.get("/suites/{suite_id}/runs", response_model=EvalRunsOut)
+    async def get_eval_runs(target: View) -> EvalRunsOut:
+        return await run(list_runs, deps, target.suite)
+
+    @router.post("/suites/{suite_id}/runs", response_model=EvalRunOut, status_code=202)
+    async def post_eval_run(body: StartRunIn, target: Edit) -> EvalRunOut:
+        if deps.run_limiter is not None:
+            await limit(deps.run_limiter, target.caller)
+        return await run(start_run, deps, target.caller, target.meta, target.suite, body)
 
     @router.post("/suites/{suite_id}/requirement-removal", response_model=SuiteDetailOut)
     async def post_eval_requirement_removal(body: RemovalIn, target: Edit) -> SuiteDetailOut:

@@ -5,6 +5,7 @@ import * as avp from "aws-cdk-lib/aws-verifiedpermissions";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
+import { EvalJudge, EvalJudgeProps } from "../constructs/eval-judge.js";
 import { platformPolicies } from "../constructs/governance.js";
 import { OperationalAlarms, OperationalAlarmsProps } from "../constructs/operational-alarms.js";
 import { RemoteMcpApi } from "../constructs/remote-mcp-api.js";
@@ -161,6 +162,25 @@ export class ObservabilityStack extends CoreNestedStack {
       ...props,
       installation: this.namespaceOf(props.installation),
       coreNamespace: props.installation.namespace,
+    });
+  }
+}
+
+/**
+ * The evaluator of the evals (D110): `Mango-<ns>-EvalJudge`, the custom evaluators of AgentCore
+ * Evaluations, its alarms and the execution of the provisioner that keeps the evals harness.
+ * Nothing here holds data: the Evals table and the key of the evals log groups stay in Core
+ * (`Evals`, `EvalsCapture`), which name this stack's function and role by their fixed names. Its
+ * alarms are on the Operations dashboard by name (`EVAL_JUDGE_ALARMS`).
+ */
+export class EvalsStack extends CoreNestedStack {
+  readonly judge: EvalJudge;
+
+  constructor(scope: Construct, id: string, props: EvalJudgeProps) {
+    super(scope, id, "evals evaluator");
+    this.judge = new EvalJudge(this, "EvalJudge", {
+      ...props,
+      installation: this.namespaceOf(props.installation),
     });
   }
 }

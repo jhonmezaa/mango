@@ -62,12 +62,14 @@ class RuntimeLogs:
         self._logs = logs
         self._settings = settings
 
-    def govern(self, agent_id: str, runtime_id: str) -> None:
+    def govern(self, agent_id: str, runtime_id: str, key_arn: str | None = None) -> None:
+        """``key_arn``: the evals harness has a key of its own (D110 (3)); the others share the
+        runtime logs key."""
         settings = self._settings
         govern_log_groups(
             self._logs,
             settings.log_group_names(runtime_id),
-            settings.runtime_logs_key_arn,
+            key_arn or settings.runtime_logs_key_arn,
             settings.tags(agent_id),
             settings.log_group_arn,
         )

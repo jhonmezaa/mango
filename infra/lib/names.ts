@@ -47,6 +47,8 @@ export const roleNames = {
   costAnomalyForwarder: (ns: string) => mangoName(ns, "CostAnomalyForwarder"),
   /** Function that turns a cost anomaly into the runs of the automations subscribed (D79). */
   costAnomalyConsumer: (ns: string) => mangoName(ns, "CostAnomalyConsumer"),
+  /** The evaluator of the evals (D110): the only role that reads the evals harness's traces. */
+  evalJudge: (ns: string) => mangoName(ns, "EvalJudge"),
 };
 
 /**

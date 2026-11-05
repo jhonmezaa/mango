@@ -30,6 +30,8 @@ approved by the release) or ``skipped`` (the installation changed the agent; ``r
 EVENT_PLAYGROUND = "playground.harness"
 """The Playground's test harness (D91): ``requested``, ``applied`` or ``rejected``, with the
 release or catalog change that started it and how many models its role may invoke."""
+EVENT_EVALS = "evals.harness"
+"""The evals harness (D110): ``requested``, ``applied`` or ``rejected``, as the Playground's."""
 EVENT_DEPROVISION = "agent.deprovision"
 """Removal of what a retired agent left in AWS (D48): ``requested``, ``applied``, ``rejected``."""
 EVENT_PACK_ENABLED = "mcp.pack.enabled"

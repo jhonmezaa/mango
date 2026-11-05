@@ -1151,6 +1151,20 @@ export type CaseOut = {
 };
 
 /**
+ * CaseResultOut
+ */
+export type CaseResultOut = {
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Status
+     */
+    status: 'pass' | 'fail' | 'judge' | 'skipped' | 'pending';
+};
+
+/**
  * CasesIn
  */
 export type CasesIn = {
@@ -2084,6 +2098,70 @@ export type EvalCase = {
      * Value
      */
     value?: string;
+};
+
+/**
+ * EvalRunOut
+ */
+export type EvalRunOut = {
+    /**
+     * Cases
+     */
+    cases: Array<CaseResultOut>;
+    /**
+     * Content Hash
+     */
+    content_hash: string;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
+    /**
+     * Launched By Email
+     */
+    launched_by_email: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Score
+     */
+    score: number | null;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Status
+     */
+    status: 'queued' | 'running' | 'judging' | 'passed' | 'failed' | 'stopped' | 'error';
+    /**
+     * Stop Reason
+     */
+    stop_reason: string | null;
+    /**
+     * Threshold
+     */
+    threshold: number;
+    /**
+     * Trigger
+     */
+    trigger: 'manual' | 'on_submit';
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * EvalRunsOut
+ */
+export type EvalRunsOut = {
+    /**
+     * Runs
+     */
+    runs: Array<EvalRunOut>;
 };
 
 /**
@@ -5957,6 +6035,20 @@ export type SpanOut = {
 };
 
 /**
+ * StartRunIn
+ */
+export type StartRunIn = {
+    /**
+     * Revision
+     */
+    revision?: number | null;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * StateIn
  */
 export type StateIn = {
@@ -9799,6 +9891,66 @@ export type PostEvalRequirementRemovalResponses = {
 };
 
 export type PostEvalRequirementRemovalResponse = PostEvalRequirementRemovalResponses[keyof PostEvalRequirementRemovalResponses];
+
+export type GetEvalRunsData = {
+    body?: never;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}/runs';
+};
+
+export type GetEvalRunsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetEvalRunsError = GetEvalRunsErrors[keyof GetEvalRunsErrors];
+
+export type GetEvalRunsResponses = {
+    /**
+     * Successful Response
+     */
+    200: EvalRunsOut;
+};
+
+export type GetEvalRunsResponse = GetEvalRunsResponses[keyof GetEvalRunsResponses];
+
+export type PostEvalRunData = {
+    body: StartRunIn;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}/runs';
+};
+
+export type PostEvalRunErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PostEvalRunError = PostEvalRunErrors[keyof PostEvalRunErrors];
+
+export type PostEvalRunResponses = {
+    /**
+     * Successful Response
+     */
+    202: EvalRunOut;
+};
+
+export type PostEvalRunResponse = PostEvalRunResponses[keyof PostEvalRunResponses];
 
 export type GetGovernanceData = {
     body?: never;
