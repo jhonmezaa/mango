@@ -130,6 +130,7 @@ def production(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Settings, list
             knowledge_bucket="knowledge-documents",
             skills_table="skills",
             skills_bucket="skills-bucket",
+            evals_table="evals",
         )
         built: list[Any] = []
 
@@ -173,6 +174,7 @@ def test_production_routes_hold_the_limiters_of_the_registry(
     assert services.skills is not None
     assert services.remote_mcp is not None
     assert services.observability is not None
+    assert services.evals is not None
     held = {
         "people.reads": services.people.reads,
         "people.changes": services.people.changes,
@@ -192,6 +194,8 @@ def test_production_routes_hold_the_limiters_of_the_registry(
         "skills.reads": services.skills.reads,
         "remote_mcp.writes": services.remote_mcp.rate_limiter,
         "observability.reads": services.observability.limiter,
+        "evals.writes": services.evals.writes,
+        "evals.reads": services.evals.reads,
     }
     for name, limiter in held.items():
         assert limiter is issued[name], f"{name} is not the limiter of the registry"

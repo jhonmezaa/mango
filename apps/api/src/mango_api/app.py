@@ -121,6 +121,8 @@ from mango_api.directory import (
     LookupQuota,
     directory_router,
 )
+from mango_api.evals import EvalsDeps, evals_router
+from mango_api.evals_store import EvalStore
 from mango_api.gateway_mcp import GatewayConnections
 from mango_api.governance import GovernanceDeps, governance_router
 from mango_api.group_admin import (
@@ -452,6 +454,8 @@ class Services:
     skills: SkillsDeps | None = None
     # The Playground's test harness (D91); set in production.
     playground_harnesses: PlaygroundHarnesses | None = None
+    # Evals (D110, D111); set in production once the Evals table exists.
+    evals: EvalsDeps | None = None
     limits: Limits = field(default_factory=Limits)
     """Where every rate limit comes from (D70). In production the shared ones count in
     DynamoDB (build_services); the default, for tests, keeps all of them in memory."""
@@ -694,6 +698,7 @@ def build_services(settings: Settings) -> Services:
         else None
     )
     model_catalog = ModelCatalogStore(dynamodb, settings.settings_table)
+    model_cache = ModelCatalogCache(model_catalog)
     # Release data inside the image: read once, and fail closed if it is not there. Packs
     # join it from the signed statements of the release and their installation state (D36).
     pack_store = PackStore(dynamodb, settings.settings_table)
@@ -835,10 +840,22 @@ def build_services(settings: Settings) -> Services:
         budget_limits=budget_limits,
         probe=AdminProbe(boto3.client("lambda", region_name=region), settings.admin_probe_function),
         published=published,
-        model_catalog=ModelCatalogCache(model_catalog),
+        model_catalog=model_cache,
         playground_harnesses=PlaygroundHarnesses(
             dynamodb, settings.settings_table, namespace=settings.namespace, region=region
         ),
+        evals=EvalsDeps(
+            store=EvalStore(dynamodb, settings.evals_table),
+            agents=agents_store,
+            authorizer=authorizer,
+            catalog=model_cache.catalog,
+            audit=audit,
+            writes=limits.limiter("evals.writes"),
+            reads=limits.limiter("evals.reads"),
+            clock=now_utc,
+        )
+        if settings.evals_table
+        else None,
         cognito_users=CognitoUsers(cognito, settings.cognito_user_pool_id),
         mfa_reset_store=ResetStore(dynamodb, settings.settings_table),
         directory=CognitoDirectory(cognito, settings.cognito_user_pool_id),
@@ -1526,6 +1543,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         app.include_router(group_admin_router(services.group_admin, current_user, require))
     if services.skills is not None:
         app.include_router(skills_router(services.skills, current_user, require))
+    if services.evals is not None:
+        # D110, D111: suites of cases that score a version of an agent.
+        app.include_router(evals_router(services.evals, current_user, require))
 
     if services.agents is not None:
         app.include_router(agents_router(services.agents, current_user, require))

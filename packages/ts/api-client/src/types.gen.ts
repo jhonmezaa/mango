@@ -1129,6 +1129,42 @@ export type CallbackOut = {
 };
 
 /**
+ * CaseOut
+ */
+export type CaseOut = {
+    /**
+     * Criterion
+     */
+    criterion: 'contains' | 'uses_tool' | 'no_disclosure' | 'judge';
+    /**
+     * Expected
+     */
+    expected: string;
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
+ * CasesIn
+ */
+export type CasesIn = {
+    /**
+     * Cases
+     */
+    cases: Array<EvalCase>;
+    /**
+     * Revision
+     */
+    revision: number;
+};
+
+/**
  * CatalogAgent
  */
 export type CatalogAgent = {
@@ -1757,6 +1793,20 @@ export type CreateAgentIn = {
 };
 
 /**
+ * CsvIn
+ */
+export type CsvIn = {
+    /**
+     * Csv
+     */
+    csv: string;
+    /**
+     * Revision
+     */
+    revision: number;
+};
+
+/**
  * DefinitionOut
  */
 export type DefinitionOut = {
@@ -2012,6 +2062,28 @@ export type ErrorDetail = {
      * Message
      */
     message: string;
+};
+
+/**
+ * EvalCase
+ */
+export type EvalCase = {
+    /**
+     * Criterion
+     */
+    criterion: 'contains' | 'uses_tool' | 'no_disclosure' | 'judge';
+    /**
+     * Expected
+     */
+    expected?: string;
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Value
+     */
+    value?: string;
 };
 
 /**
@@ -2772,6 +2844,32 @@ export type KnowledgeBaseUpdate = {
 };
 
 /**
+ * LastRunOut
+ */
+export type LastRunOut = {
+    /**
+     * Content Hash
+     */
+    content_hash: string;
+    /**
+     * Finished At
+     */
+    finished_at: string;
+    /**
+     * Passed
+     */
+    passed: boolean;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Score
+     */
+    score: number;
+};
+
+/**
  * LimitsOut
  */
 export type LimitsOut = {
@@ -3115,6 +3213,48 @@ export type NewSkillIn = {
      * Servers
      */
     servers: Array<string>;
+};
+
+/**
+ * NewSuiteIn
+ */
+export type NewSuiteIn = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Cases
+     */
+    cases: Array<EvalCase>;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Judge Model
+     */
+    judge_model?: string | null;
+    /**
+     * Kind
+     */
+    kind: 'golden' | 'regression' | 'security';
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Required
+     */
+    required?: boolean;
+    /**
+     * Threshold
+     */
+    threshold?: number;
+    /**
+     * Trigger
+     */
+    trigger?: 'manual' | 'on_submit';
 };
 
 /**
@@ -4607,6 +4747,20 @@ export type RemoteToolsetOut = {
 };
 
 /**
+ * RemovalIn
+ */
+export type RemovalIn = {
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Revision
+     */
+    revision: number;
+};
+
+/**
  * RenewedOut
  */
 export type RenewedOut = {
@@ -4680,6 +4834,36 @@ export type ReportOut = {
      * Type
      */
     type: 'cost_summary' | 'anomaly';
+};
+
+/**
+ * RequestOut
+ */
+export type RequestOut = {
+    /**
+     * Change Id
+     */
+    change_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Mine
+     */
+    mine: boolean;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Requested By Email
+     */
+    requested_by_email: string | null;
 };
 
 /**
@@ -4962,6 +5146,16 @@ export type ReviewsOut = {
      * Queue
      */
     queue: Array<ReviewOut>;
+};
+
+/**
+ * RevisionIn
+ */
+export type RevisionIn = {
+    /**
+     * Revision
+     */
+    revision: number;
 };
 
 /**
@@ -5808,6 +6002,185 @@ export type SubmitIn = {
 };
 
 /**
+ * SuiteDetailOut
+ */
+export type SuiteDetailOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Can Edit
+     */
+    can_edit: boolean;
+    /**
+     * Case Count
+     */
+    case_count: number;
+    /**
+     * Cases
+     */
+    cases: Array<CaseOut>;
+    /**
+     * Created By Email
+     */
+    created_by_email: string | null;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string | null;
+    /**
+     * Kind
+     */
+    kind: 'golden' | 'regression' | 'security';
+    last_run: LastRunOut | null;
+    /**
+     * Name
+     */
+    name: string;
+    request: RequestOut | null;
+    /**
+     * Required
+     */
+    required: boolean;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Suite Id
+     */
+    suite_id: string;
+    /**
+     * Threshold
+     */
+    threshold: number;
+    /**
+     * Trigger
+     */
+    trigger: 'manual' | 'on_submit';
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * SuiteOut
+ */
+export type SuiteOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Can Edit
+     */
+    can_edit: boolean;
+    /**
+     * Case Count
+     */
+    case_count: number;
+    /**
+     * Created By Email
+     */
+    created_by_email: string | null;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string | null;
+    /**
+     * Kind
+     */
+    kind: 'golden' | 'regression' | 'security';
+    last_run: LastRunOut | null;
+    /**
+     * Name
+     */
+    name: string;
+    request: RequestOut | null;
+    /**
+     * Required
+     */
+    required: boolean;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Suite Id
+     */
+    suite_id: string;
+    /**
+     * Threshold
+     */
+    threshold: number;
+    /**
+     * Trigger
+     */
+    trigger: 'manual' | 'on_submit';
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * SuiteSettingsIn
+ *
+ * What changes without touching the cases. Absent: as stored. ``required`` may only be
+ * turned on here: turning it off is a request (two people).
+ */
+export type SuiteSettingsIn = {
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Judge Model
+     */
+    judge_model?: string | null;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Required
+     */
+    required?: true | null;
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * Threshold
+     */
+    threshold?: number | null;
+    /**
+     * Trigger
+     */
+    trigger?: 'manual' | 'on_submit' | null;
+};
+
+/**
+ * SuitesOut
+ */
+export type SuitesOut = {
+    /**
+     * Suites
+     */
+    suites: Array<SuiteOut>;
+};
+
+/**
  * SummaryOut
  */
 export type SummaryOut = {
@@ -6613,6 +6986,16 @@ export type MangoApiAgentsRetireIn = {
  * RejectIn
  */
 export type MangoApiApprovalsRejectIn = {
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
+ * RejectIn
+ */
+export type MangoApiEvalsRejectIn = {
     /**
      * Reason
      */
@@ -9091,6 +9474,331 @@ export type ResolveUsersResponses = {
 };
 
 export type ResolveUsersResponse = ResolveUsersResponses[keyof ResolveUsersResponses];
+
+export type GetEvalsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Agent Id
+         */
+        agent_id?: string | null;
+    };
+    url: '/evals';
+};
+
+export type GetEvalsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetEvalsError = GetEvalsErrors[keyof GetEvalsErrors];
+
+export type GetEvalsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SuitesOut;
+};
+
+export type GetEvalsResponse = GetEvalsResponses[keyof GetEvalsResponses];
+
+export type ApproveEvalRequirementData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/evals/requirement-changes/{change_id}/approve';
+};
+
+export type ApproveEvalRequirementErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ApproveEvalRequirementError = ApproveEvalRequirementErrors[keyof ApproveEvalRequirementErrors];
+
+export type ApproveEvalRequirementResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type ApproveEvalRequirementResponse = ApproveEvalRequirementResponses[keyof ApproveEvalRequirementResponses];
+
+export type RejectEvalRequirementData = {
+    body: MangoApiEvalsRejectIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/evals/requirement-changes/{change_id}/reject';
+};
+
+export type RejectEvalRequirementErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RejectEvalRequirementError = RejectEvalRequirementErrors[keyof RejectEvalRequirementErrors];
+
+export type RejectEvalRequirementResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RejectEvalRequirementResponse = RejectEvalRequirementResponses[keyof RejectEvalRequirementResponses];
+
+export type WithdrawEvalRequirementData = {
+    body: EmptyIn;
+    path: {
+        /**
+         * Change Id
+         */
+        change_id: string;
+    };
+    query?: never;
+    url: '/evals/requirement-changes/{change_id}/withdraw';
+};
+
+export type WithdrawEvalRequirementErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type WithdrawEvalRequirementError = WithdrawEvalRequirementErrors[keyof WithdrawEvalRequirementErrors];
+
+export type WithdrawEvalRequirementResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type WithdrawEvalRequirementResponse = WithdrawEvalRequirementResponses[keyof WithdrawEvalRequirementResponses];
+
+export type PostEvalSuiteData = {
+    body: NewSuiteIn;
+    path?: never;
+    query?: never;
+    url: '/evals/suites';
+};
+
+export type PostEvalSuiteErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PostEvalSuiteError = PostEvalSuiteErrors[keyof PostEvalSuiteErrors];
+
+export type PostEvalSuiteResponses = {
+    /**
+     * Successful Response
+     */
+    201: SuiteDetailOut;
+};
+
+export type PostEvalSuiteResponse = PostEvalSuiteResponses[keyof PostEvalSuiteResponses];
+
+export type GetEvalSuiteData = {
+    body?: never;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}';
+};
+
+export type GetEvalSuiteErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetEvalSuiteError = GetEvalSuiteErrors[keyof GetEvalSuiteErrors];
+
+export type GetEvalSuiteResponses = {
+    /**
+     * Successful Response
+     */
+    200: SuiteDetailOut;
+};
+
+export type GetEvalSuiteResponse = GetEvalSuiteResponses[keyof GetEvalSuiteResponses];
+
+export type PatchEvalSuiteData = {
+    body: SuiteSettingsIn;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}';
+};
+
+export type PatchEvalSuiteErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PatchEvalSuiteError = PatchEvalSuiteErrors[keyof PatchEvalSuiteErrors];
+
+export type PatchEvalSuiteResponses = {
+    /**
+     * Successful Response
+     */
+    200: SuiteDetailOut;
+};
+
+export type PatchEvalSuiteResponse = PatchEvalSuiteResponses[keyof PatchEvalSuiteResponses];
+
+export type PutEvalCasesData = {
+    body: CasesIn;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}/cases';
+};
+
+export type PutEvalCasesErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PutEvalCasesError = PutEvalCasesErrors[keyof PutEvalCasesErrors];
+
+export type PutEvalCasesResponses = {
+    /**
+     * Successful Response
+     */
+    200: SuiteDetailOut;
+};
+
+export type PutEvalCasesResponse = PutEvalCasesResponses[keyof PutEvalCasesResponses];
+
+export type PostEvalCasesCsvData = {
+    body: CsvIn;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}/cases/csv';
+};
+
+export type PostEvalCasesCsvErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PostEvalCasesCsvError = PostEvalCasesCsvErrors[keyof PostEvalCasesCsvErrors];
+
+export type PostEvalCasesCsvResponses = {
+    /**
+     * Successful Response
+     */
+    200: SuiteDetailOut;
+};
+
+export type PostEvalCasesCsvResponse = PostEvalCasesCsvResponses[keyof PostEvalCasesCsvResponses];
+
+export type DeleteEvalSuiteData = {
+    body: RevisionIn;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}/delete';
+};
+
+export type DeleteEvalSuiteErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DeleteEvalSuiteError = DeleteEvalSuiteErrors[keyof DeleteEvalSuiteErrors];
+
+export type DeleteEvalSuiteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteEvalSuiteResponse = DeleteEvalSuiteResponses[keyof DeleteEvalSuiteResponses];
+
+export type PostEvalRequirementRemovalData = {
+    body: RemovalIn;
+    path: {
+        /**
+         * Suite Id
+         */
+        suite_id: string;
+    };
+    query?: never;
+    url: '/evals/suites/{suite_id}/requirement-removal';
+};
+
+export type PostEvalRequirementRemovalErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PostEvalRequirementRemovalError = PostEvalRequirementRemovalErrors[keyof PostEvalRequirementRemovalErrors];
+
+export type PostEvalRequirementRemovalResponses = {
+    /**
+     * Successful Response
+     */
+    200: SuiteDetailOut;
+};
+
+export type PostEvalRequirementRemovalResponse = PostEvalRequirementRemovalResponses[keyof PostEvalRequirementRemovalResponses];
 
 export type GetGovernanceData = {
     body?: never;

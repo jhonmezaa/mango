@@ -428,3 +428,45 @@ def test_skills_are_seen_and_proposed_by_admins_and_creators(
 def test_skill_versions_are_approved_by_admins_only(authz: Authorizer) -> None:
     allowed = {u.user_id for u in EVERYONE if authz.is_allowed(u, "ApproveSkill", *PLATFORM)}
     assert allowed == {"admin-1"}
+
+
+# --- Evals (D111) -----------------------------------------------------------------------------
+
+CENTRAL = UserContext("central-1", "finops-central", None, False, groups=frozenset())
+
+
+def test_evals_are_seen_by_admins_central_and_whoever_edits_the_agent(authz: Authorizer) -> None:
+    resource = AgentResource(AGENT, creator="creator-1")
+    people = (*EVERYONE, CENTRAL)
+    seen = {
+        u.user_id for u in people if authz.is_allowed(u, "ViewEvals", AGENT_TYPE, AGENT, resource)
+    }
+    # FORMER_CREATOR has the same id as CREATOR: it is decided by the groups, not the id.
+    assert seen == {"admin-1", "creator-1", "central-1"}
+    assert not authz.is_allowed(FORMER_CREATOR, "ViewEvals", AGENT_TYPE, AGENT, resource)
+
+
+def test_evals_are_edited_by_whoever_edits_the_agent_only(authz: Authorizer) -> None:
+    resource = AgentResource(AGENT, creator="creator-1")
+    people = (*EVERYONE, CENTRAL)
+    edit = {
+        u.user_id for u in people if authz.is_allowed(u, "EditEvals", AGENT_TYPE, AGENT, resource)
+    }
+    assert edit == {"admin-1", "creator-1"}
+    assert not authz.is_allowed(FORMER_CREATOR, "EditEvals", AGENT_TYPE, AGENT, resource)
+    # The same as EditAgent, for everyone.
+    for user in people:
+        assert authz.is_allowed(user, "EditEvals", AGENT_TYPE, AGENT, resource) == authz.is_allowed(
+            user, "EditAgent", AGENT_TYPE, AGENT, resource
+        )
+
+
+def test_stopping_requiring_a_suite_is_decided_by_admins_only(authz: Authorizer) -> None:
+    resource = AgentResource(AGENT, creator="creator-1")
+    people = (*EVERYONE, CENTRAL)
+    allowed = {
+        u.user_id
+        for u in people
+        if authz.is_allowed(u, "ApproveEvalRequirement", AGENT_TYPE, AGENT, resource)
+    }
+    assert allowed == {"admin-1"}

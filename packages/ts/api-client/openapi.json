@@ -2102,6 +2102,66 @@
         "title": "CallbackOut",
         "type": "object"
       },
+      "CaseOut": {
+        "additionalProperties": false,
+        "properties": {
+          "criterion": {
+            "enum": [
+              "contains",
+              "uses_tool",
+              "no_disclosure",
+              "judge"
+            ],
+            "title": "Criterion",
+            "type": "string"
+          },
+          "expected": {
+            "title": "Expected",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "expected",
+          "criterion",
+          "value"
+        ],
+        "title": "CaseOut",
+        "type": "object"
+      },
+      "CasesIn": {
+        "additionalProperties": false,
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/EvalCase"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Cases",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "cases"
+        ],
+        "title": "CasesIn",
+        "type": "object"
+      },
       "CatalogAgent": {
         "additionalProperties": false,
         "properties": {
@@ -3141,6 +3201,28 @@
         "title": "CreateAgentIn",
         "type": "object"
       },
+      "CsvIn": {
+        "additionalProperties": false,
+        "properties": {
+          "csv": {
+            "maxLength": 30720,
+            "minLength": 1,
+            "title": "Csv",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "csv"
+        ],
+        "title": "CsvIn",
+        "type": "object"
+      },
       "DefinitionOut": {
         "additionalProperties": false,
         "properties": {
@@ -3576,6 +3658,45 @@
           "message"
         ],
         "title": "ErrorDetail",
+        "type": "object"
+      },
+      "EvalCase": {
+        "additionalProperties": false,
+        "properties": {
+          "criterion": {
+            "enum": [
+              "contains",
+              "uses_tool",
+              "no_disclosure",
+              "judge"
+            ],
+            "title": "Criterion",
+            "type": "string"
+          },
+          "expected": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Expected",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "criterion"
+        ],
+        "title": "EvalCase",
         "type": "object"
       },
       "FieldChange": {
@@ -5140,6 +5261,40 @@
         "title": "KnowledgeBaseUpdate",
         "type": "object"
       },
+      "LastRunOut": {
+        "additionalProperties": false,
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "score",
+          "passed",
+          "content_hash",
+          "finished_at"
+        ],
+        "title": "LastRunOut",
+        "type": "object"
+      },
       "LimitsOut": {
         "additionalProperties": false,
         "properties": {
@@ -5770,6 +5925,87 @@
           "reason"
         ],
         "title": "NewSkillIn",
+        "type": "object"
+      },
+      "NewSuiteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "pattern": "^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/EvalCase"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Cases",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "judge_model": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Model"
+          },
+          "kind": {
+            "enum": [
+              "golden",
+              "regression",
+              "security"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "threshold": {
+            "default": 80,
+            "maximum": 100.0,
+            "minimum": 50.0,
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "trigger": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "on_submit"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "name",
+          "kind",
+          "cases"
+        ],
+        "title": "NewSuiteIn",
         "type": "object"
       },
       "NewVersionIn": {
@@ -8667,6 +8903,28 @@
         "title": "RemoteToolsetOut",
         "type": "object"
       },
+      "RemovalIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "reason"
+        ],
+        "title": "RemovalIn",
+        "type": "object"
+      },
       "RenewedOut": {
         "properties": {
           "access_token": {
@@ -8807,6 +9065,52 @@
           "keep_until"
         ],
         "title": "ReportOut",
+        "type": "object"
+      },
+      "RequestOut": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "title": "Change Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "mine": {
+            "title": "Mine",
+            "type": "boolean"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By Email"
+          }
+        },
+        "required": [
+          "change_id",
+          "requested_by_email",
+          "mine",
+          "reason",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "RequestOut",
         "type": "object"
       },
       "ResetCreatedOut": {
@@ -9401,6 +9705,21 @@
           "history"
         ],
         "title": "ReviewsOut",
+        "type": "object"
+      },
+      "RevisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "RevisionIn",
         "type": "object"
       },
       "RuleOut": {
@@ -11040,6 +11359,372 @@
         "title": "SubmitIn",
         "type": "object"
       },
+      "SuiteDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseOut"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "created_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Email"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "judge_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Model"
+          },
+          "kind": {
+            "enum": [
+              "golden",
+              "regression",
+              "security"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "suite_id": {
+            "title": "Suite Id",
+            "type": "string"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "manual",
+              "on_submit"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "agent_id",
+          "name",
+          "description",
+          "kind",
+          "required",
+          "threshold",
+          "trigger",
+          "judge_model",
+          "case_count",
+          "revision",
+          "created_by_email",
+          "updated_at",
+          "request",
+          "last_run",
+          "can_edit",
+          "cases"
+        ],
+        "title": "SuiteDetailOut",
+        "type": "object"
+      },
+      "SuiteOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "created_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Email"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "judge_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Model"
+          },
+          "kind": {
+            "enum": [
+              "golden",
+              "regression",
+              "security"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "suite_id": {
+            "title": "Suite Id",
+            "type": "string"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "manual",
+              "on_submit"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "agent_id",
+          "name",
+          "description",
+          "kind",
+          "required",
+          "threshold",
+          "trigger",
+          "judge_model",
+          "case_count",
+          "revision",
+          "created_by_email",
+          "updated_at",
+          "request",
+          "last_run",
+          "can_edit"
+        ],
+        "title": "SuiteOut",
+        "type": "object"
+      },
+      "SuiteSettingsIn": {
+        "additionalProperties": false,
+        "description": "What changes without touching the cases. Absent: as stored. ``required`` may only be\nturned on here: turning it off is a request (two people).",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "judge_model": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Model"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "required": {
+            "anyOf": [
+              {
+                "const": true,
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 50.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "enum": [
+                  "manual",
+                  "on_submit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "SuiteSettingsIn",
+        "type": "object"
+      },
+      "SuitesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "suites": {
+            "items": {
+              "$ref": "#/components/schemas/SuiteOut"
+            },
+            "title": "Suites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "suites"
+        ],
+        "title": "SuitesOut",
+        "type": "object"
+      },
       "SummaryOut": {
         "additionalProperties": false,
         "properties": {
@@ -12616,6 +13301,22 @@
         "type": "object"
       },
       "mango_api__approvals__RejectIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RejectIn",
+        "type": "object"
+      },
+      "mango_api__evals__RejectIn": {
         "additionalProperties": false,
         "properties": {
           "reason": {
@@ -16624,6 +17325,501 @@
           }
         },
         "summary": "Resolve Users"
+      }
+    },
+    "/evals": {
+      "get": {
+        "operationId": "get_evals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuitesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Evals"
+      }
+    },
+    "/evals/requirement-changes/{change_id}/approve": {
+      "post": {
+        "operationId": "approve_eval_requirement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve Eval Requirement"
+      }
+    },
+    "/evals/requirement-changes/{change_id}/reject": {
+      "post": {
+        "operationId": "reject_eval_requirement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mango_api__evals__RejectIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reject Eval Requirement"
+      }
+    },
+    "/evals/requirement-changes/{change_id}/withdraw": {
+      "post": {
+        "operationId": "withdraw_eval_requirement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Withdraw Eval Requirement"
+      }
+    },
+    "/evals/suites": {
+      "post": {
+        "operationId": "post_eval_suite",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSuiteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post Eval Suite"
+      }
+    },
+    "/evals/suites/{suite_id}": {
+      "get": {
+        "operationId": "get_eval_suite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Eval Suite"
+      },
+      "patch": {
+        "operationId": "patch_eval_suite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuiteSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Patch Eval Suite"
+      }
+    },
+    "/evals/suites/{suite_id}/cases": {
+      "put": {
+        "operationId": "put_eval_cases",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CasesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Put Eval Cases"
+      }
+    },
+    "/evals/suites/{suite_id}/cases/csv": {
+      "post": {
+        "operationId": "post_eval_cases_csv",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsvIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post Eval Cases Csv"
+      }
+    },
+    "/evals/suites/{suite_id}/delete": {
+      "post": {
+        "operationId": "delete_eval_suite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Eval Suite"
+      }
+    },
+    "/evals/suites/{suite_id}/requirement-removal": {
+      "post": {
+        "operationId": "post_eval_requirement_removal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemovalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post Eval Requirement Removal"
       }
     },
     "/governance": {

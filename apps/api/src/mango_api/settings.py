@@ -145,6 +145,8 @@ class Settings:
     skills_bucket: str = ""
     """Skills of instructions (D92): their table and the bucket of their ``SKILL.md``; empty
     until the skills construct is deployed."""
+    evals_table: str = ""
+    """Suites, cases and runs of the evals (D110, D111); empty until the table is deployed."""
     presign_role_arn: str = ""
     """``Mango-<ns>-Presign``: the only credentials that sign URLs a browser uses."""
     """``Mango-<ns>-KnowledgeSync`` (D88 (11)): indexes, deletes and verifies documents."""
@@ -242,6 +244,7 @@ class Settings:
             knowledge_base_id=env.get("KNOWLEDGE_BASE_ID", ""),
             knowledge_embedding_price=_price(env.get("KNOWLEDGE_EMBEDDING_PRICE", "0")),
             skills_table=env.get("SKILLS_TABLE", ""),
+            evals_table=env.get("EVALS_TABLE", ""),
             skills_bucket=env.get("SKILLS_BUCKET", ""),
             presign_role_arn=env.get("PRESIGN_ROLE_ARN", ""),
             allowed_hosts=frozenset(

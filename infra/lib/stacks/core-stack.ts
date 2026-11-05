@@ -23,6 +23,7 @@ import { CUR_RECONCILER_ALARMS } from "../constructs/cur-reconciler.js";
 import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
+import { Evals } from "../constructs/evals.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
@@ -178,6 +179,9 @@ export class CoreStack extends Stack {
     });
     skills.allowAgents(agentPlatform.boundary);
     skills.grantApi(apiTaskRole);
+    // D110, D111: the suites, cases and runs of the evals (data: here, not nested, D99 (2)).
+    const evals = new Evals(this, "Evals", { installation: cfg, dataKey: governance.dataKey });
+    evals.grantApi(apiTaskRole);
     // Marketplace v1 (D18, D32): agents are published by SDK, not by this stack. The agents
     // of the release (FinOps) are seeded as approved versions and published the same way (D34).
     const shipped = releaseAgents(cfg);
@@ -621,6 +625,7 @@ export class CoreStack extends Stack {
         ...taskReports.apiEnvironment,
         ...knowledge.apiEnvironment,
         ...skills.apiEnvironment,
+        ...evals.apiEnvironment,
         ...presign.apiEnvironment,
         ...observability.reader.apiEnvironment,
         // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).

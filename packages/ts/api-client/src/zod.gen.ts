@@ -390,6 +390,21 @@ export const zCallbackOutSchema = z.object({
 });
 
 /**
+ * CaseOut
+ */
+export const zCaseOutSchema = z.object({
+    criterion: z.enum([
+        'contains',
+        'uses_tool',
+        'no_disclosure',
+        'judge'
+    ]),
+    expected: z.string(),
+    question: z.string(),
+    value: z.string()
+});
+
+/**
  * CatalogAgent
  */
 export const zCatalogAgentSchema = z.object({
@@ -623,6 +638,14 @@ export const zCreateAgentInSchema = z.object({
 });
 
 /**
+ * CsvIn
+ */
+export const zCsvInSchema = z.object({
+    csv: z.string().min(1).max(30720),
+    revision: z.int().gte(1)
+});
+
+/**
  * DeleteIn
  */
 export const zDeleteInSchema = z.object({
@@ -725,6 +748,29 @@ export const zErrorDetailSchema = z.object({
  */
 export const zErrorBodySchema = z.object({
     error: zErrorDetailSchema
+});
+
+/**
+ * EvalCase
+ */
+export const zEvalCaseSchema = z.object({
+    criterion: z.enum([
+        'contains',
+        'uses_tool',
+        'no_disclosure',
+        'judge'
+    ]),
+    expected: z.string().max(1000).optional().default(''),
+    question: z.string().min(1).max(1000),
+    value: z.string().max(200).optional().default('')
+});
+
+/**
+ * CasesIn
+ */
+export const zCasesInSchema = z.object({
+    cases: z.array(zEvalCaseSchema).min(1).max(50),
+    revision: z.int().gte(1)
 });
 
 /**
@@ -1024,6 +1070,17 @@ export const zKnowledgeBaseUpdateSchema = z.object({
 });
 
 /**
+ * LastRunOut
+ */
+export const zLastRunOutSchema = z.object({
+    content_hash: z.string(),
+    finished_at: z.string(),
+    passed: z.boolean(),
+    run_id: z.string(),
+    score: z.int()
+});
+
+/**
  * LimitsOut
  */
 export const zLimitsOutSchema = z.object({
@@ -1236,6 +1293,25 @@ export const zNewSkillInSchema = z.object({
     outputs: z.array(z.string().max(80)).max(10).optional().default([]),
     reason: z.string().min(1).max(500),
     servers: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/)).min(1).max(10)
+});
+
+/**
+ * NewSuiteIn
+ */
+export const zNewSuiteInSchema = z.object({
+    agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/),
+    cases: z.array(zEvalCaseSchema).min(1).max(50),
+    description: z.string().max(500).optional().default(''),
+    judge_model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$/).nullish(),
+    kind: z.enum([
+        'golden',
+        'regression',
+        'security'
+    ]),
+    name: z.string().min(1).max(80),
+    required: z.boolean().optional().default(false),
+    threshold: z.int().gte(50).lte(100).optional().default(80),
+    trigger: z.enum(['manual', 'on_submit']).optional().default('manual')
 });
 
 /**
@@ -1883,6 +1959,14 @@ export const zRemoteCatalogOutSchema = z.object({
 });
 
 /**
+ * RemovalIn
+ */
+export const zRemovalInSchema = z.object({
+    reason: z.string().min(1).max(500),
+    revision: z.int().gte(1)
+});
+
+/**
  * RenewedOut
  */
 export const zRenewedOutSchema = z.object({
@@ -1922,6 +2006,18 @@ export const zReportOutSchema = z.object({
         'failed'
     ]),
     type: z.enum(['cost_summary', 'anomaly'])
+});
+
+/**
+ * RequestOut
+ */
+export const zRequestOutSchema = z.object({
+    change_id: z.string(),
+    created_at: z.string(),
+    expires_at: z.string(),
+    mine: z.boolean(),
+    reason: z.string(),
+    requested_by_email: z.string().nullable()
 });
 
 /**
@@ -2039,6 +2135,13 @@ export const zReviewOutSchema = z.object({
 export const zReviewsOutSchema = z.object({
     history: z.array(zReviewOutSchema),
     queue: z.array(zReviewOutSchema)
+});
+
+/**
+ * RevisionIn
+ */
+export const zRevisionInSchema = z.object({
+    revision: z.int().gte(1)
 });
 
 /**
@@ -2740,6 +2843,82 @@ export const zSubmitInSchema = z.object({
 });
 
 /**
+ * SuiteDetailOut
+ */
+export const zSuiteDetailOutSchema = z.object({
+    agent_id: z.string(),
+    can_edit: z.boolean(),
+    case_count: z.int(),
+    cases: z.array(zCaseOutSchema),
+    created_by_email: z.string().nullable(),
+    description: z.string(),
+    judge_model: z.string().nullable(),
+    kind: z.enum([
+        'golden',
+        'regression',
+        'security'
+    ]),
+    last_run: zLastRunOutSchema.nullable(),
+    name: z.string(),
+    request: zRequestOutSchema.nullable(),
+    required: z.boolean(),
+    revision: z.int(),
+    suite_id: z.string(),
+    threshold: z.int(),
+    trigger: z.enum(['manual', 'on_submit']),
+    updated_at: z.string()
+});
+
+/**
+ * SuiteOut
+ */
+export const zSuiteOutSchema = z.object({
+    agent_id: z.string(),
+    can_edit: z.boolean(),
+    case_count: z.int(),
+    created_by_email: z.string().nullable(),
+    description: z.string(),
+    judge_model: z.string().nullable(),
+    kind: z.enum([
+        'golden',
+        'regression',
+        'security'
+    ]),
+    last_run: zLastRunOutSchema.nullable(),
+    name: z.string(),
+    request: zRequestOutSchema.nullable(),
+    required: z.boolean(),
+    revision: z.int(),
+    suite_id: z.string(),
+    threshold: z.int(),
+    trigger: z.enum(['manual', 'on_submit']),
+    updated_at: z.string()
+});
+
+/**
+ * SuiteSettingsIn
+ *
+ * What changes without touching the cases. Absent: as stored. ``required`` may only be
+ * turned on here: turning it off is a request (two people).
+ */
+export const zSuiteSettingsInSchema = z.object({
+    description: z.string().max(500).nullish(),
+    judge_model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$/).nullish(),
+    name: z.string().min(1).max(80).nullish(),
+    required: z.literal(true).nullish(),
+    revision: z.int().gte(1),
+    threshold: z.int().gte(50).lte(100).nullish(),
+    trigger: z.enum(['manual', 'on_submit']).nullish()
+});
+
+/**
+ * SuitesOut
+ */
+export const zSuitesOutSchema = z.object({
+    suites: z.array(zSuiteOutSchema)
+});
+
+/**
  * SummaryOut
  */
 export const zSummaryOutSchema = z.object({
@@ -3174,6 +3353,13 @@ export const zMangoApiAgentsRetireInSchema = z.object({
  * RejectIn
  */
 export const zMangoApiApprovalsRejectInSchema = z.object({
+    reason: z.string().min(1).max(500)
+});
+
+/**
+ * RejectIn
+ */
+export const zMangoApiEvalsRejectInSchema = z.object({
     reason: z.string().min(1).max(500)
 });
 
@@ -4112,6 +4298,119 @@ export const zResolveUsersBody = zResolveInSchema;
  * Successful Response
  */
 export const zResolveUsersResponse = zResolveOutSchema;
+
+export const zGetEvalsQuery = z.object({
+    agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/).nullish()
+});
+
+/**
+ * Successful Response
+ */
+export const zGetEvalsResponse = zSuitesOutSchema;
+
+export const zApproveEvalRequirementBody = zEmptyInSchema;
+
+export const zApproveEvalRequirementPath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zApproveEvalRequirementResponse = z.void();
+
+export const zRejectEvalRequirementBody = zMangoApiEvalsRejectInSchema;
+
+export const zRejectEvalRequirementPath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRejectEvalRequirementResponse = z.void();
+
+export const zWithdrawEvalRequirementBody = zEmptyInSchema;
+
+export const zWithdrawEvalRequirementPath = z.object({
+    change_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zWithdrawEvalRequirementResponse = z.void();
+
+export const zPostEvalSuiteBody = zNewSuiteInSchema;
+
+/**
+ * Successful Response
+ */
+export const zPostEvalSuiteResponse = zSuiteDetailOutSchema;
+
+export const zGetEvalSuitePath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetEvalSuiteResponse = zSuiteDetailOutSchema;
+
+export const zPatchEvalSuiteBody = zSuiteSettingsInSchema;
+
+export const zPatchEvalSuitePath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zPatchEvalSuiteResponse = zSuiteDetailOutSchema;
+
+export const zPutEvalCasesBody = zCasesInSchema;
+
+export const zPutEvalCasesPath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zPutEvalCasesResponse = zSuiteDetailOutSchema;
+
+export const zPostEvalCasesCsvBody = zCsvInSchema;
+
+export const zPostEvalCasesCsvPath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zPostEvalCasesCsvResponse = zSuiteDetailOutSchema;
+
+export const zDeleteEvalSuiteBody = zRevisionInSchema;
+
+export const zDeleteEvalSuitePath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDeleteEvalSuiteResponse = z.void();
+
+export const zPostEvalRequirementRemovalBody = zRemovalInSchema;
+
+export const zPostEvalRequirementRemovalPath = z.object({
+    suite_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zPostEvalRequirementRemovalResponse = zSuiteDetailOutSchema;
 
 /**
  * Successful Response

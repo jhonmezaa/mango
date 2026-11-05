@@ -25,6 +25,7 @@ from mango_api import (
     conversation_search,
     costs,
     directory,
+    evals,
     governance,
     group_admin,
     home,
@@ -237,6 +238,21 @@ LIMITS: dict[str, LimitSpec] = {
         why=(
             "Stops a loop of the screen. Each refresh is two free list calls to Bedrock by an "
             "administrator and writes nothing by itself; N times five a minute is harmless."
+        ),
+    ),
+    "evals.writes": LimitSpec(
+        evals.WRITES_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Each write of a suite rewrites its cases and audits twice (D110).",
+    ),
+    "evals.reads": LimitSpec(
+        evals.READS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why=(
+            "Each read of a suite returns its cases (content, D26), and each list reads the "
+            "whole suites partition and the open requests."
         ),
     ),
     "skills.reads": LimitSpec(
