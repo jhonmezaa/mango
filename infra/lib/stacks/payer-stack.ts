@@ -1,8 +1,17 @@
-import { Aws, Stack, StackProps } from "aws-cdk-lib";
+import { Aws, CfnCondition, CfnParameter, CfnRule, Fn, RemovalPolicy, Stack, StackProps } from "aws-cdk-lib";
+import * as bcm from "aws-cdk-lib/aws-bcmdataexports";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+import { loadReleaseDefaults } from "../config/release.js";
+import {
+  CUR_EXPORT,
+  CUR_TABLE,
+  CUR_TABLE_CONFIGURATION,
+  curExportQuery,
+  DATA_EXPORTS_REGION,
+} from "../constructs/cur-export.js";
 import { acknowledge } from "../nag.js";
 import {
   assertNotTheMangoAccount,
@@ -143,6 +152,8 @@ export const BUDGETS_OPERATOR_ACTIONS = ["budgets:ModifyBudget"];
  *   assume it, which in turn only the approval executor can use, for one approved call.
  * - `Mango-<ns>-CostAnomalyForwarder` and the rule `Mango-<ns>-CostAnomalies-forward`: Cost
  *   Anomaly Detection events to the Mango account (D79). The role only puts events on that bus.
+ * - The Data Export CUR 2.0 `mango-<ns>-bedrock` (D104 (4), (5)), cut down to Bedrock of the
+ *   Mango account and delivered to the export bucket of `Core`, once `CurExportBucket` names it.
  */
 export class PayerStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps = {}) {
@@ -231,6 +242,7 @@ export class PayerStack extends Stack {
     );
     this.budgetsOperator(cfg);
     this.costAnomalyForwarding(cfg);
+    this.curExport(cfg);
     acknowledge(
       reader,
       {
@@ -274,6 +286,79 @@ export class PayerStack extends Stack {
       eventPattern: costAnomalyPattern(cfg.managementAccountId),
       targets: [new targets.EventBus(events.EventBus.fromEventBusArn(this, "MangoCostAnomalyBus", busArn), { role })],
     });
+  }
+
+  /**
+   * The Data Export CUR 2.0 of the reconciliation against the bill (D104 (4), (5); precision of
+   * 2026-11-05). Created only when `CurExportBucket` names the export bucket of `Core` (its
+   * output): `Payer` is installed before `Core`, and Data Exports checks the destination when it
+   * creates the export. The query, the table configuration and the destination come from the
+   * release and the stack parameters, never from whoever installs:
+   *
+   * - the rows: the usage account is the Mango account and the product is Bedrock, with the
+   *   product codes of the release (`curReconciliation.bedrockProductCodes`, rule 7; TM-CUR1);
+   * - delivered to a bucket of the Mango account (`S3BucketOwner`), never one of this account;
+   * - deleted with the stack or when the parameter is emptied: the files already delivered stay
+   *   in the bucket (Data Exports does not delete them).
+   *
+   * Tag activation stays a manual step of the runbook: this stack gets no billing write role.
+   */
+  private curExport(cfg: PayerSettings): void {
+    const bucket = new CfnParameter(this, "CurExportBucket", {
+      type: "String",
+      default: "",
+      description:
+        "Output CurExportBucket of the Core stack. Empty: no CUR 2.0 export (install Core first, then update this stack).",
+      // The name CloudFormation gives the export bucket of `Mango-<ns>-Core`.
+      allowedPattern: "^$|^mango-[a-z0-9]{3,8}-core-curexportbucket[a-z0-9-]{1,40}$",
+      constraintDescription: "must be empty or the CurExportBucket output of the Core stack",
+    }).valueAsString;
+    const enabled = new CfnCondition(this, "HasCurExport", {
+      expression: Fn.conditionNot(Fn.conditionEquals(bucket, "")),
+    });
+    // Data Exports and its CloudFormation type live in us-east-1; Core's bucket too (D79).
+    new CfnRule(this, "CurExportInDataExportsRegion", {
+      ruleCondition: Fn.conditionNot(Fn.conditionEquals(bucket, "")),
+      assertions: [
+        {
+          assert: Fn.conditionEquals(Aws.REGION, DATA_EXPORTS_REGION),
+          assertDescription: `The CUR 2.0 export is created from ${DATA_EXPORTS_REGION}, the Region of Data Exports and of Core.`,
+        },
+      ],
+    });
+    const name = CUR_EXPORT.exportName(cfg.namespace);
+    const exportResource = new bcm.CfnExport(this, "CurExport", {
+      export: {
+        name,
+        description: "Mango: Bedrock spend of the Mango account, for the daily reconciliation against the bill (D104)",
+        dataQuery: {
+          queryStatement: curExportQuery(
+            cfg.mangoAccountId,
+            loadReleaseDefaults().curReconciliation.bedrockProductCodes,
+          ),
+          tableConfigurations: { [CUR_TABLE]: { ...CUR_TABLE_CONFIGURATION } },
+        },
+        destinationConfigurations: {
+          s3Destination: {
+            s3Bucket: bucket,
+            s3BucketOwner: cfg.mangoAccountId,
+            s3Prefix: CUR_EXPORT.prefix,
+            // Core's Region: the release installs it only in us-east-1, Data Exports' own.
+            s3Region: DATA_EXPORTS_REGION,
+            s3OutputConfigurations: {
+              outputType: "CUSTOM",
+              format: "PARQUET",
+              compression: "PARQUET",
+              overwrite: "OVERWRITE_REPORT",
+            },
+          },
+        },
+        refreshCadence: { frequency: "SYNCHRONOUS" },
+      },
+    });
+    exportResource.cfnOptions.condition = enabled;
+    // Not data: the delivered files live in Core's bucket. Without Mango, nothing is exported.
+    exportResource.applyRemovalPolicy(RemovalPolicy.DESTROY);
   }
 
   /** Write role of the first write tool: budgets named with the installation prefix (D27). */

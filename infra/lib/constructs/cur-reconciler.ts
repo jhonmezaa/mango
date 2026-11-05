@@ -18,7 +18,7 @@ import { Installation } from "../config/schema.js";
 import { mangoName, roleNames } from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
 import { Alerts } from "./alerts.js";
-import { CUR_EXPORT } from "./cur-export.js";
+import { CUR_COLUMNS, CUR_EXPORT } from "./cur-export.js";
 import { PythonFunction } from "./python-function.js";
 
 /** Namespace and dimension of the metrics the function emits (embedded metric format). */
@@ -45,21 +45,8 @@ export const curNames = {
   scheduleGroup: (ns: string) => mangoName(ns, "cur"),
 };
 
-/**
- * The columns of the export, as the runbook's query selects them (D104 (5)), and their types in
- * the Parquet files of CUR 2.0. To be confirmed against a real export, like the product codes.
- */
-export const CUR_COLUMNS: ReadonlyArray<{ name: string; type: string }> = [
-  { name: "line_item_usage_start_date", type: "timestamp" },
-  { name: "line_item_usage_account_id", type: "string" },
-  { name: "line_item_product_code", type: "string" },
-  { name: "line_item_usage_type", type: "string" },
-  { name: "line_item_line_item_type", type: "string" },
-  { name: "line_item_unblended_cost", type: "double" },
-  { name: "pricing_public_on_demand_cost", type: "double" },
-  { name: "line_item_iam_principal", type: "string" },
-  { name: "tags", type: "map<string,string>" },
-];
+// The columns of the export live with the export (Payer creates it, D104 (4)).
+export { CUR_COLUMNS };
 
 /**
  * Lake Formation permissions of the function's role on the CUR table, when Lake Formation governs

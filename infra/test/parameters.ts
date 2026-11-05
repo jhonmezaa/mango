@@ -61,6 +61,8 @@ export function payerTemplate(installation: {
   mangoAccountId: string;
   managementAccountId: string;
   organizationId: string;
+  /** The `CurExportBucket` parameter (D104 (4)): empty by default, as at install time. */
+  curExportBucket?: string;
 }): Template {
   const source = Template.fromStack(new PayerStack(new App(), "Payer")).toJSON() as Record<string, unknown>;
   return Template.fromJSON(
@@ -68,6 +70,7 @@ export function payerTemplate(installation: {
       Namespace: installation.namespace,
       MangoAccountId: installation.mangoAccountId,
       OrganizationId: installation.organizationId,
+      CurExportBucket: installation.curExportBucket ?? "",
       "AWS::AccountId": installation.managementAccountId,
       "AWS::Partition": "aws",
       // Payer and Core are installed in the same Region (D79).

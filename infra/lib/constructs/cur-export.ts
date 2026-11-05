@@ -5,8 +5,8 @@ import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 
 /**
- * Where the payer's Data Export CUR 2.0 writes, and the export's name (D104 (5)): the runbook's
- * manual step creates it with these, and the Glue table reads them. Data Exports writes
+ * Where the payer's Data Export CUR 2.0 writes, and the export's name (D104 (5)): the `Payer`
+ * stack creates it with these (D104 (4)), and the Glue table reads them. Data Exports writes
  * `<prefix>/<export name>/data/BILLING_PERIOD=<yyyy-mm>/…` and `…/metadata/…`.
  */
 export const CUR_EXPORT = {
@@ -17,6 +17,60 @@ export const CUR_EXPORT = {
   /** Prefix of the bucket's server access logs in the shared access logs bucket. */
   accessLogsPrefix: "cur-export/",
 } as const;
+
+/** The CUR 2.0 table of Data Exports. */
+export const CUR_TABLE = "COST_AND_USAGE_REPORT";
+
+/**
+ * The columns of the export (D104 (5)) and their types in the Parquet files of CUR 2.0: the
+ * export's query selects them and the Glue table reads them. To be confirmed against a real
+ * export, like the product codes.
+ */
+export const CUR_COLUMNS: ReadonlyArray<{ name: string; type: string }> = [
+  { name: "line_item_usage_start_date", type: "timestamp" },
+  { name: "line_item_usage_account_id", type: "string" },
+  { name: "line_item_product_code", type: "string" },
+  { name: "line_item_usage_type", type: "string" },
+  { name: "line_item_line_item_type", type: "string" },
+  { name: "line_item_unblended_cost", type: "double" },
+  { name: "pricing_public_on_demand_cost", type: "double" },
+  { name: "line_item_iam_principal", type: "string" },
+  { name: "tags", type: "map<string,string>" },
+];
+
+/**
+ * The table configuration of the export. It cannot change once the export exists
+ * (`cur/latest/userguide/dataexports-data-query`): a different one needs another export, with
+ * another name. `INCLUDE_IAM_PRINCIPAL_DATA` brings `line_item_iam_principal`.
+ */
+export const CUR_TABLE_CONFIGURATION: Readonly<Record<string, string>> = {
+  TIME_GRANULARITY: "DAILY",
+  INCLUDE_RESOURCES: "FALSE",
+  INCLUDE_SPLIT_COST_ALLOCATION_DATA: "FALSE",
+  INCLUDE_IAM_PRINCIPAL_DATA: "TRUE",
+};
+
+/** A product code goes into the query between quotes: never a quote or a space (TM-CUR1). */
+const PRODUCT_CODE = /^[A-Za-z0-9_.-]{2,64}$/;
+
+/**
+ * The query of the export (D104 (5), TM-CUR1): only the columns the reconciliation reads, and
+ * only the rows whose usage account is the Mango account and whose product is Bedrock. The rest
+ * of the organization's spend never leaves the payer. `mangoAccountId` may be a token (the
+ * `MangoAccountId` parameter, twelve digits by its pattern).
+ */
+export function curExportQuery(mangoAccountId: string, productCodes: readonly string[]): string {
+  if (productCodes.length === 0) throw new Error("the export needs at least one Bedrock product code");
+  for (const code of productCodes) {
+    if (!PRODUCT_CODE.test(code)) throw new Error(`invalid product code: ${code}`);
+  }
+  const columns = CUR_COLUMNS.map((c) => c.name).join(", ");
+  const codes = productCodes.map((c) => `'${c}'`).join(", ");
+  return (
+    `SELECT ${columns} FROM ${CUR_TABLE} ` +
+    `WHERE line_item_usage_account_id = '${mangoAccountId}' AND line_item_product_code IN (${codes})`
+  );
+}
 
 /** Data Exports lives in us-east-1 whatever the Region of the installation (D104 (5)). */
 export const DATA_EXPORTS_REGION = "us-east-1";

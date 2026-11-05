@@ -151,7 +151,7 @@ Cuatro stacks, cada uno con `CreateStack` sobre `https://<bucket>.s3.amazonaws.c
 
 | Orden | Cuenta | Stack | Plantilla | Parámetros | `--capabilities` | Etiqueta `mango:component` |
 |---|---|---|---|---|---|---|
-| 1 | Gestión | `Mango-<ns>-Payer` | `Payer` | `Namespace`, `MangoAccountId`, `OrganizationId` | `CAPABILITY_NAMED_IAM` | `payer` |
+| 1 | Gestión | `Mango-<ns>-Payer` | `Payer` | `Namespace`, `MangoAccountId`, `OrganizationId`. `CurExportBucket` se deja vacío: se da después de `Core` («Gasto de Bedrock por agente en la factura») | `CAPABILITY_NAMED_IAM` | `payer` |
 | 2 | Gestión (o administrador delegado de StackSets) | `Mango-<ns>-OrgAccess` | `OrgAccess` | Los tres anteriores, `Targets` (la raíz, o las OU), `ExcludedAccountIds` (debe incluir la cuenta de Mango). Opcional: `CallAs` | Ninguna | `org-access` |
 | 3 | Mango | `Mango-<ns>-PackNetwork` | `PackNetwork` | `Namespace`, `OrganizationId`. Antes que `Core`, que la importa | `CAPABILITY_IAM` | `pack-network` |
 | 4 | Mango | `Mango-<ns>-Core` | `Core` | `Namespace`, `OrganizationId`, `ManagementAccountId`, `FirstAdminEmail`, `AlertsEmail`, `SignUpDomains` | `CAPABILITY_NAMED_IAM` | `core` |
@@ -206,36 +206,85 @@ Parámetros opcionales de `Core`:
    - Ajustes › General › Instalación muestra la versión y la etiqueta de la release instalada («Publicación `v0.1.0-g…`»): sirve para confirmar qué se desplegó después de una actualización.
 5. Ajustes › Conectividad: comprobar la cuenta pagadora y las cuentas miembro.
 6. Catálogo de MCP: habilitar los packs que se vayan a usar (doble aprobación; la instalación de cada uno tarda unos 5 minutos). Si un pack queda en error, «Reintentar» repite la instalación sin pedir otra aprobación.
-7. **Gasto de Bedrock por agente en la factura** (D104): un paso manual en la cuenta de gestión, abajo. Sin él la instalación funciona igual; la conciliación diaria contra la factura audita `no_data` y no alarma.
+7. **Gasto de Bedrock por agente en la factura** (D104): en la cuenta de gestión, una actualización de `Payer` que crea el export y la activación de dos etiquetas, abajo. Sin ellas la instalación funciona igual; la conciliación diaria contra la factura audita `no_data` y no alarma.
 
-### Gasto de Bedrock por agente en la factura (paso manual en la pagadora)
+### Gasto de Bedrock por agente en la factura (en la pagadora)
 
-Lo hace **el cliente, en la consola de su cuenta de gestión** (`ManagementAccountId`), **con la aprobación expresa del dueño de Mango en cada instalación** (D104 (4)). Mango no lo hace ni tiene permisos para hacerlo: el stack `Payer` no cambia. Dos ajustes:
+Se hace **en la cuenta de gestión** (`ManagementAccountId`), **con la aprobación expresa del dueño de Mango en cada instalación** (D104 (4)), después de instalar `Core`. Dos ajustes: el export lo crea el stack `Payer` (desde la precisión de D104 del 2026-11-05) y las etiquetas se activan a mano. Mango no tiene permisos para ninguno de los dos: `Payer` no gana roles ni permisos de facturación.
 
-1. **Activar dos etiquetas de asignación de costos:** `mango:agent` y `mango:namespace` (Billing and Cost Management › Cost allocation tags). Son tags de los roles de IAM de cada agente (`Mango-<ns>-agent-<id>`): salen como etiquetas del principal de IAM. Solo esas dos: no llevan datos de personas (TM-CUR4). Tardan hasta 24 h en aparecer y no se aplican hacia atrás.
-2. **Crear un Data Export CUR 2.0** (Billing and Cost Management › Data Exports › Create), con exactamente esto:
-   - **Nombre:** `mango-<ns>-bedrock` (con el namespace de la instalación). La tabla de Glue de `Core` lee esa carpeta: otro nombre deja la conciliación sin datos.
-   - **Tipo:** Standard data export, tabla CUR 2.0 (`COST_AND_USAGE_REPORT`).
-   - **Configuración de la tabla** (no se puede cambiar después de crear el export):
+**1. El export CUR 2.0 `mango-<ns>-bedrock`: una actualización de `Payer` con `CurExportBucket`.** Con el parámetro vacío (el valor por defecto) `Payer` no crea nada; con el nombre del bucket del output `CurExportBucket` de `Core` crea el export (`AWS::BCMDataExports::Export`). Por eso `Payer` se instala con el parámetro vacío y se actualiza después de `Core`: Data Exports comprueba el bucket de destino al crear el export.
 
-     ```json
-     {"COST_AND_USAGE_REPORT": {"TIME_GRANULARITY": "DAILY", "INCLUDE_RESOURCES": "FALSE", "INCLUDE_SPLIT_COST_ALLOCATION_DATA": "FALSE", "INCLUDE_IAM_PRINCIPAL_DATA": "TRUE"}}
-     ```
+```sh
+aws cloudformation create-change-set --stack-name Mango-<ns>-Payer --change-set-name cur-export \
+  --use-previous-template --capabilities CAPABILITY_NAMED_IAM \
+  --parameters ParameterKey=Namespace,UsePreviousValue=true ParameterKey=MangoAccountId,UsePreviousValue=true \
+    ParameterKey=OrganizationId,UsePreviousValue=true ParameterKey=CurExportBucket,ParameterValue=<output CurExportBucket de Core>
+```
 
-     `INCLUDE_IAM_PRINCIPAL_DATA` es la opción de identidad del que llama: trae la columna `line_item_iam_principal`. Un export creado sin ella no la gana después: hay que crear otro.
-   - **Consulta** (la consola permite escribirla en «SQL query»; `111122223333` es un marcador: va **la cuenta de Mango**, `MangoAccountId`):
+Con una versión que aún no tiene el parámetro instalada en `Payer`, en lugar de `--use-previous-template` va `--template-url` con la plantilla `Payer` de la versión nueva (y sin `UsePreviousValue` para `CurExportBucket`). El change set trae **un solo `Add`**, `CurExport` (`AWS::BCMDataExports::Export`), y nada de IAM. Si trae otra cosa, hay que parar.
 
-     ```sql
-     SELECT line_item_usage_start_date, line_item_usage_account_id, line_item_product_code, line_item_usage_type, line_item_line_item_type, line_item_unblended_cost, pricing_public_on_demand_cost, line_item_iam_principal, tags FROM COST_AND_USAGE_REPORT WHERE line_item_usage_account_id = '111122223333' AND line_item_product_code IN ('AmazonBedrock', 'AmazonBedrockService')
-     ```
+- **Lo que crea la plantilla, sin nada que elegir:** la consulta y la configuración de la tabla de abajo («Si `Payer` no se actualiza»); destino el bucket de la cuenta de Mango (`S3BucketOwner` = `MangoAccountId`), prefijo `cur`, región `us-east-1`; Parquet; sobrescribir (`OVERWRITE_REPORT`); actualización diaria (`SYNCHRONOUS`). La consulta lleva los códigos de producto de la versión (`release-defaults.json`, `curReconciliation.bedrockProductCodes`): los mismos que acepta la función.
+- **El parámetro solo admite** el vacío o un nombre de la forma del output (`mango-<ns>-core-curexportbucket…`).
+- **Si `Core` se vuelve a crear** (una reinstalación, o un reintento tras un rollback), su bucket del export tiene otro nombre: se repite esta actualización de `Payer` con el nuevo. Cambiar el bucket o el prefijo actualiza el export sin reemplazarlo; cambiar el nombre o la cadencia lo reemplaza ([`AWS::BCMDataExports::Export`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-bcmdataexports-export-export.html), consultado el 2026-11-05).
+- **Región:** `Payer` va en `us-east-1` (D79); con el parámetro dado, en otra región la plantilla se rechaza (regla `CurExportInDataExportsRegion`).
+- **Permisos de quien actualiza `Payer`** (los que pide el tipo de recurso de CloudFormation): `bcm-data-exports:CreateExport`, `GetExport`, `UpdateExport`, `DeleteExport`, `ListTagsForResource`, `TagResource` y `UntagResource`, más **`cur:PutReportDefinition`**, que Data Exports exige para crear un export de CUR 2.0. Un rol con `AdministratorAccess` los tiene; **una SCP que niegue `cur:*` en la cuenta de gestión hace fallar el `Add`** («AccessDenied»).
+- **Quitarlo:** vaciar `CurExportBucket` (una actualización) o borrar `Payer` borra el export. Los archivos ya entregados quedan en el bucket de `Core`: Data Exports no los borra.
+- **No se cambia sin otro nombre:** la configuración de la tabla de un export no se puede cambiar después de crearlo. Una versión que la cambiara tendría que crear otro export, con otro nombre y otra carpeta.
 
-     El `WHERE` es el recorte (TM-CUR1): solo la cuenta de Mango y solo Bedrock llegan a la cuenta de Mango; el gasto del resto de la organización no sale de la pagadora. **La lista de códigos de producto está por confirmar contra un export real:** los modelos de terceros podrían facturarse con otro código. Si una fila de Bedrock quedara fuera, la conciliación vería menos gasto en la factura que en Mango y lo marcaría. La lista que la función acepta es la de `release-defaults.json` (`curReconciliation.bedrockProductCodes`): las dos deben coincidir. **La consulta de un export sí se puede editar después** (la configuración de la tabla no): quien la cambie debe dejarla igual a esta. Si un día llega una fila de otra cuenta o de otro producto, la función no concilia, audita `unexpected_rows` y salta `Cur-reconciler-findings`.
-   - **Destino:** Amazon S3, **un bucket de otra cuenta**: la cuenta de Mango y el bucket del output `CurExportBucket` de `Core`, con el prefijo `cur`. La política del bucket ya la trae `Core` (solo deja escribir al servicio de exports en nombre de la cuenta de gestión de la configuración); no hay que aplicarle ninguna.
-   - **Formato:** Parquet. **Entrega:** sobrescribir el export existente (Overwrite). **Actualización:** diaria (la que ofrece Data Exports para CUR 2.0).
+**Si la instalación ya tiene el export creado a mano** (con el nombre `mango-<ns>-bedrock`, como se hacía antes del 2026-11-05): los nombres de Data Exports son únicos, así que `Payer` fallaría al crear el suyo y se revertiría. **Se borra el manual y lo crea `Payer`** (elegido por el dueño el 2026-11-05, por menú), con su aprobación, en este orden:
+
+1. En la cuenta de gestión (us-east-1): `aws bcm-data-exports list-exports` da el ARN del export `mango-<ns>-bedrock`; `aws bcm-data-exports delete-export --export-arn <ese ARN>`.
+2. La actualización de `Payer` de arriba, con `CurExportBucket`.
+3. `aws bcm-data-exports get-export --export-arn <ARN nuevo>` → `ExportStatus.StatusCode` `HEALTHY`.
+
+Los archivos del export borrado se quedan en el bucket, y el nuevo escribe en la misma carpeta (`cur/mango-<ns>-bedrock/`), así que la tabla de Glue los sigue leyendo. Entre el borrado y la primera entrega del nuevo puede pasar hasta un día: la pasada de ese día audita `no_data` y no alarma. El nuevo vuelve a entregar el mes en curso entero; los meses anteriores ya están en el bucket. Otra salida, **sin probar,** es importar el export manual en `Payer` (un change set `IMPORT` con su ARN): no deja hueco, pero la plantilla tiene que coincidir exactamente con el export manual.
+
+**2. Activar dos etiquetas de asignación de costos: `mango:agent` y `mango:namespace`, del tipo «IAM principal».** Billing and Cost Management › Cost allocation tags. Son tags de los roles de IAM de cada agente (`Mango-<ns>-agent-<id>`) y salen en la factura como etiquetas del principal de IAM (prefijo `iamPrincipal/` en CUR 2.0), no como etiquetas de recursos (`resourceTags/`). **La misma clave aparece dos veces si algún recurso también la lleva:** una con el tipo «AWS resource» (o «User-defined») y otra con el tipo «IAM principal». Hay que activar las de **«IAM principal»**; activar las de recurso no sirve para esto (en una instalación se activaron primero por error). Solo esas dos: no llevan datos de personas (TM-CUR4). Tardan hasta 24 h en aparecer y no se aplican hacia atrás.
+
+- **Cuándo aparecen:** solo después de que un rol con esos tags haya llamado a Bedrock al menos una vez (en Mango, la primera conversación o prueba con un agente), y hasta 24 h más tarde ([IAM principal para asignación de costos](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/iam-principal-cost-allocation.html), consultado el 2026-11-05). Antes, el filtro «IAM principal» no las lista.
+- **Cómo se comprueba:** en la consola, Cost allocation tags filtrado por el tipo «IAM principal» muestra `mango:agent` y `mango:namespace` en `Active` (y la activación puede tardar otras 24 h). En el export, la columna `tags` de las filas de un agente trae las claves `iamPrincipal/mango:agent` e `iamPrincipal/mango:namespace`; si en cambio trae `resourceTags/mango:agent` o ninguna, se activaron las de recurso ([columna `tags` de CUR 2.0](https://docs.aws.amazon.com/cur/latest/userguide/table-dictionary-cur2-tag-columns.html)). La API (`aws ce list-cost-allocation-tags`) solo documenta los tipos `AWSGenerated` y `UserDefined`: no sirve para distinguir estas.
+- Se queda a mano a propósito: activarlas pediría un permiso de escritura de facturación (`ce:UpdateCostAllocationTagsStatus`) en `Payer`.
+
+**Si `Payer` no se actualiza** (una instalación que sigue con su export manual, o que no quiere el parámetro): el export se crea por API desde la cuenta de gestión (CloudShell sirve, en `us-east-1`). La consola de Data Exports no sirve: solo deja elegir columnas, no el `WHERE`, y un export sin él traería a la cuenta de Mango el gasto de toda la organización (TM-CUR1). Con `111122223333` = **la cuenta de Mango** (`MangoAccountId`) y el bucket del output `CurExportBucket` de `Core`:
+
+```json
+{
+  "Export": {
+    "Name": "mango-<ns>-bedrock",
+    "DataQuery": {
+      "QueryStatement": "SELECT line_item_usage_start_date, line_item_usage_account_id, line_item_product_code, line_item_usage_type, line_item_line_item_type, line_item_unblended_cost, pricing_public_on_demand_cost, line_item_iam_principal, tags FROM COST_AND_USAGE_REPORT WHERE line_item_usage_account_id = '111122223333' AND line_item_product_code IN ('AmazonBedrock', 'AmazonBedrockService')",
+      "TableConfigurations": {
+        "COST_AND_USAGE_REPORT": {"TIME_GRANULARITY": "DAILY", "INCLUDE_RESOURCES": "FALSE", "INCLUDE_SPLIT_COST_ALLOCATION_DATA": "FALSE", "INCLUDE_IAM_PRINCIPAL_DATA": "TRUE"}
+      }
+    },
+    "DestinationConfigurations": {
+      "S3Destination": {
+        "S3Bucket": "<output CurExportBucket de Core>",
+        "S3BucketOwner": "111122223333",
+        "S3Prefix": "cur",
+        "S3Region": "us-east-1",
+        "S3OutputConfigurations": {"OutputType": "CUSTOM", "Format": "PARQUET", "Compression": "PARQUET", "Overwrite": "OVERWRITE_REPORT"}
+      }
+    },
+    "RefreshCadence": {"Frequency": "SYNCHRONOUS"}
+  }
+}
+```
+
+```sh
+aws bcm-data-exports create-export --region us-east-1 --cli-input-json file://export.json
+aws bcm-data-exports get-export --region us-east-1 --export-arn <ARN que devuelve>   # HEALTHY
+```
+
+- **La consulta es la de la plantilla:** solo la cuenta de Mango y solo Bedrock llegan a la cuenta de Mango; el gasto del resto de la organización no sale de la pagadora (TM-CUR1). **La lista de códigos de producto está por confirmar contra un export real:** los modelos de terceros podrían facturarse con otro código. Si una fila de Bedrock quedara fuera, la conciliación vería menos gasto en la factura que en Mango y lo marcaría. Debe coincidir con `release-defaults.json` (`curReconciliation.bedrockProductCodes`).
+- **`INCLUDE_IAM_PRINCIPAL_DATA`** es la opción de identidad del que llama: trae la columna `line_item_iam_principal`. Un export creado sin ella no la gana después: hay que crear otro.
+- **La consulta de un export sí se puede editar después** (la configuración de la tabla no): quien la cambie debe dejarla igual a esta. Si un día llega una fila de otra cuenta o de otro producto, la función no concilia, audita `unexpected_rows` y salta `Cur-reconciler-findings`.
+- La política del bucket ya la trae `Core` (solo deja escribir al servicio de exports en nombre de la cuenta de gestión de la configuración); no hay que aplicarle ninguna.
+- Pide los mismos permisos de Data Exports y `cur:PutReportDefinition` que la actualización de `Payer`.
 
 **Cómo se comprueba.** Al día siguiente, en la cuenta de Mango, `aws s3 ls s3://<CurExportBucket>/cur/mango-<ns>-bedrock/data/` lista una carpeta `BILLING_PERIOD=<aaaa-mm>/` con archivos `.snappy.parquet`. En Auditoría, el evento `cur.reconciled` de la pasada siguiente (07:30 UTC) dice `reconciled` en lugar de `no_data`. Lo que la función compara empieza el día después del primer contador `DAY#AGENT#` de la instalación: lo de antes sale en la fila `before_counter` y no se compara.
 
-**Sin ver en una instalación:** que Data Exports entrega en el bucket de otra cuenta con esa política, el tipo de las columnas en el Parquet (`CUR_COLUMNS` en `infra/lib/constructs/cur-reconciler.ts`), los códigos de producto de Bedrock y que `line_item_iam_principal` trae el rol del agente (o su sesión) cuando llama el harness. La primera vez que se haga, revisar con el dueño la primera pasada `reconciled`.
+**Visto en una instalación (2026-11-05):** el export creado por API con esta configuración, en `HEALTHY`. **Sin ver en una instalación:** el export creado por `Payer`, la primera entrega en el bucket de otra cuenta con esa política, el tipo de las columnas en el Parquet (`CUR_COLUMNS` en `infra/lib/constructs/cur-reconciler.ts`), los códigos de producto de Bedrock y que `line_item_iam_principal` trae el rol del agente (o su sesión) cuando llama el harness. La primera vez que se haga, revisar con el dueño la primera pasada `reconciled`.
 
 ### Comprobar una instalación
 
@@ -366,6 +415,7 @@ Un octavo caso, el 2026-10-15, en esa instalación del cliente, de `v0.1.0-g451a
 | D99 (stacks anidados en `Core`) | Solo `Core`, sin datos movidos. **3 `Add`** de `AWS::CloudFormation::Stack` (`Operations`, `Authorization` y `RemoteMcp`). Dentro de ellos, con `--include-nested-stacks`: las 28 alarmas operativas con su nombre nuevo `Mango-<ns>-ops-…`, el filtro `Mango-<ns>-ops-Api-rate-limit-store-refusals` y el tablero `Mango-<ns>-ops`; las políticas Cedar de la plataforma; y la política `Mango-<ns>-ApiRemoteMcp` de D98 (nueva: ninguna versión publicada la tenía en `Core`). **Y los `Remove` de lo mismo en `Core`:** las alarmas, el filtro y el tablero `Mango-<ns>-Operations` con su nombre anterior, y las políticas Cedar. CloudFormation los borra al final, después de crear los nuevos: mientras dura la actualización cada política Cedar está dos veces, con el mismo texto, y Cedar responde igual. Las alarmas nuevas arrancan en `INSUFFICIENT_DATA` hasta su primer periodo. Más el `Modify` del `UninstallGuard` (su `DependsOn`) y del etiquetador del stack (su rol lee los stacks anidados). Una suscripción o una regla externa que nombre una alarma por su nombre anterior hay que cambiarla |
 | D104 (gasto de Bedrock por agente en la factura y conciliación contra CUR 2.0) | Solo `Core`; `Payer`, `OrgAccess` y `PackNetwork` no cambian. **En `Core`, 3 `Add`:** el bucket del export (`CurExportBucket…`, SSE-S3, versionado, retenido) con su política, y el stack anidado `CurReconciliation`. Dentro de él, con `--include-nested-stacks`: la base y la tabla de Glue `mango_<ns>_cur.bedrock`, el grupo de trabajo de Athena `Mango-<ns>-cur`, la función `Mango-<ns>-CurReconciler` con su rol, la política del rol y su log group, la cola `Mango-<ns>-CurReconciler-dlq` y su política, el grupo de programaciones `Mango-<ns>-cur`, la programación `Mango-<ns>-cur-daily` con su rol `Mango-<ns>-CurScheduler` y la política, y dos alarmas (`Cur-reconciler-findings` y `Cur-reconciler-failed`). **Es IAM nuevo y hay que revisarlo:** la política de `Mango-<ns>-CurReconciler` solo consulta en su grupo de trabajo, lee su tabla de Glue, lee el prefijo `cur/` del bucket y lee y escribe el prefijo `athena-results/`, hace `dynamodb:Query` en `Budgets` con `LeadingKeys` `DAY#AGENT#*` y `DAY#ORG` (y la clave exigida), escribe su evento de auditoría y envía a su cola de errores. La del rol del programador solo invoca esa función. La política del bucket deja escribir solo al servicio `bcm-data-exports.amazonaws.com` con la cuenta de gestión de la configuración y niega a cualquier otro escribir en `cur/`. Si trae otra acción, otro recurso o un comodín, hay que parar. **`Modify`:** el código de las funciones que llevan `mango-core` (el contador del día de cada agente), el acceso de logs del bucket compartido (su política gana el bucket nuevo), el tablero `Mango-<ns>-ops` (dos alarmas más, por nombre), el `UninstallGuard` (su `DependsOn`) y la imagen de `mango-api`. Ninguna tabla cambia: los contadores `DAY#AGENT#<id>` son filas nuevas de `Budgets`. Después, el paso manual en la pagadora (arriba, «Gasto de Bedrock por agente en la factura»). Sacado de las plantillas sintetizadas; sin ver en una instalación |
 | D104 bajo Lake Formation (el parámetro `CatalogGovernedByLakeFormation`) | Solo `Core`. **Antes, el paso previo** «Lake Formation y el catálogo de Glue»: si Lake Formation gobierna el catálogo, el permiso del administrador y `CatalogGovernedByLakeFormation` = `true` en el `update-stack`; si no, se omite y toma su valor por defecto, `false` (con `UsePreviousValue` falla: la versión instalada no lo tenía). **`Modify`:** el stack anidado `CurReconciliation` (un parámetro más) y el código de `Mango-<ns>-CurReconciler`: la consulta lleva el contexto de su base y no pasa por la base `default` de Athena. Con `--include-nested-stacks`, el log group `/aws/lambda/Mango-<ns>-CurReconciler` cambia su `DeletionPolicy` a `RetainExceptOnCreate`. **Con `true`, 1 `Add` en el anidado:** `AWS::LakeFormation::PrincipalPermissions` que da `SELECT` y `DESCRIBE` sobre `mango_<ns>_cur.bedrock` al rol `Mango-<ns>-CurReconciler`, sin opción de concesión. Si trae otro recurso de Lake Formation, otro permiso, opción de concesión o algo sobre el catálogo, la base o una ubicación de S3, hay que parar. Ningún IAM cambia. Sacado de las plantillas sintetizadas; sin ver en una instalación |
+| D104, precisión del 2026-11-05 (`Payer` crea el export CUR 2.0) | **`Payer` cambia** (en la cuenta de gestión, `CAPABILITY_NAMED_IAM`): un parámetro nuevo, `CurExportBucket`, una condición y una regla. **Se actualiza una sola vez, después de `Core`, con el parámetro dado** («Gasto de Bedrock por agente en la factura»): el change set trae **1 `Add`**, `CurExport` (`AWS::BCMDataExports::Export`), y ningún IAM. Con el parámetro vacío no crea nada (el change set podría salir vacío o con «didn't contain changes»). **Si la instalación tiene el export hecho a mano, se borra antes** (mismo apartado): con el mismo nombre, el `Add` falla y `Payer` se revierte. `Core`, `OrgAccess` y `PackNetwork`: sin cambios por esto. Sacado de las plantillas sintetizadas; sin ver en una instalación |
 
 ## 5. Desinstalar
 
@@ -437,7 +487,7 @@ Un octavo caso, el 2026-10-15, en esa instalación del cliente, de `v0.1.0-g451a
 
    - Los dos primeros comandos se corrieron el 2026-10-08 contra una red de packs de laboratorio: el primero devuelve la VPC y el segundo, el número de interfaces.
    - La purga de lo retenido (abajo) no corre hasta que este stack termina de borrarse.
-3. `delete-stack` de `OrgAccess` y después de `Payer`, en la cuenta de gestión.
+3. `delete-stack` de `OrgAccess` y después de `Payer`, en la cuenta de gestión. Borrar `Payer` borra también el export CUR 2.0 si lo creó (D104); los archivos ya entregados se quedan en el bucket del export de `Core`, que se retiene y entra en la purga.
 
 **Cuánto tarda.** Visto en una instalación de laboratorio el 2026-10-07, dos veces, con la versión `v0.1.0-g5bf4346` o anterior: sin agentes publicados ni packs habilitados, y con dos agentes y un pack. Debajo de la tabla, la tercera, con una versión posterior.
 
