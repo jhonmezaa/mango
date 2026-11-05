@@ -12184,6 +12184,11 @@
             "title": "Task",
             "type": "string"
           },
+          "ticket": {
+            "default": false,
+            "title": "Ticket",
+            "type": "boolean"
+          },
           "trigger": {
             "$ref": "#/components/schemas/TriggerIn"
           }
@@ -12388,6 +12393,17 @@
           "task_id": {
             "title": "Task Id",
             "type": "string"
+          },
+          "ticket": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket"
           },
           "trigger": {
             "$ref": "#/components/schemas/TriggerOut"

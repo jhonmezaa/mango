@@ -50,6 +50,7 @@ RETENTION = timedelta(days=90)
 """TTL of a run and its result (decided 2026-10-15). A retired automation stays listed."""
 MAX_RESULT_CHARS = 32 * 1024
 RUNS_SHOWN = 10
+TICKET_ON = "yes"
 _MAX_REVERSED = 10**13
 _PAGE = 100
 
@@ -125,6 +126,9 @@ class Automation:
     """Who paused it, when an administrator did; only administrators read it (D82 (2))."""
     report: str | None = None
     """The type of PDF each run also delivers (D86): ``cost_summary`` or ``anomaly``."""
+    ticket: bool = False
+    """«También enviar a · Crear ticket» (D112): each run that ends well leaves its result in
+    a ticket of the owner (stored as ``ticket = yes``)."""
 
 
 @dataclass(frozen=True)
@@ -229,6 +233,7 @@ def _automation(item: dict[str, Any]) -> Automation:
         paused_note=_str(item, "paused_note"),
         paused_by=_str(item, "paused_by"),
         report=_str(item, "report"),
+        ticket=_str(item, "ticket") == TICKET_ON,
     )
 
 
@@ -341,6 +346,8 @@ class TaskStore:
             item["event_key"] = _s(f"EVENT#{automation.event_type}")
         if automation.report:
             item["report"] = _s(automation.report)
+        if automation.ticket:
+            item["ticket"] = _s(TICKET_ON)
         count = "SET n = if_not_exists(n, :zero) + :one"
         try:
             self._db.transact_write_items(

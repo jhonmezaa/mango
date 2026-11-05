@@ -229,7 +229,7 @@ from mango_api.tasks import (
     tasks_router,
 )
 from mango_api.tasks_store import Automation, Run, RunStatus, TaskStore
-from mango_api.tickets import TicketsDeps, TicketToolGate, tickets_router
+from mango_api.tickets import RunTicketWriter, TicketsDeps, TicketToolGate, tickets_router
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
 from mango_api.web import ApiError, Caller, error_response
 from mango_api.web_session import (
@@ -490,6 +490,38 @@ def _areas(store: SettingsStore) -> list[str]:
 @cache
 def _presign_for(role_arn: str, region: str) -> PresignSessions:
     return PresignSessions(boto3.client("sts", region_name=region), role_arn, region)
+
+
+def _ticket_decider(
+    services: Services,
+) -> Callable[[UserContext, str, str, str, TicketResource | None], bool]:
+    """A decision about a ticket made outside a route (the tickets tool, a task run), decided
+    like its route and audited (D112 (9))."""
+
+    def decide(
+        user: UserContext,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        ticket: TicketResource | None,
+    ) -> bool:
+        allowed = services.authorizer.is_allowed(
+            user, action, resource_type, resource_id, ticket=ticket
+        )
+        services.audit.emit(
+            "policy.decision",
+            user.user_id,
+            {
+                "action": action,
+                "resource": f"{resource_type}::{resource_id}",
+                "allowed": allowed,
+                "read_only": False,
+            },
+            user,
+        )
+        return allowed
+
+    return decide
 
 
 def _presign_sessions(settings: Settings) -> PresignSessions | None:
@@ -1232,7 +1264,11 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             inbox=RunInbox(services.inbox.store) if services.inbox is not None else None,
             reports=services.tasks.reports,
             evals=eval_runner,
+            tickets=RunTicketWriter(services.tickets, _ticket_decider(services))
+            if services.tickets is not None
+            else None,
         )
+        services.tasks.tickets = services.tickets is not None
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -1861,33 +1897,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
 
         if services.approvals is not None:
-
-            def ticket_tool_decision(
-                user: UserContext,
-                action: str,
-                resource_type: str,
-                resource_id: str,
-                ticket: TicketResource | None,
-            ) -> bool:
-                """A call of the tickets tool, decided like its route (D112 (9)), audited."""
-                allowed = services.authorizer.is_allowed(
-                    user, action, resource_type, resource_id, ticket=ticket
-                )
-                services.audit.emit(
-                    "policy.decision",
-                    user.user_id,
-                    {
-                        "action": action,
-                        "resource": f"{resource_type}::{resource_id}",
-                        "allowed": allowed,
-                        "read_only": False,
-                        "via": "tickets_tool",
-                    },
-                    user,
-                )
-                return allowed
-
-            services.approvals.gate = TicketToolGate(services.tickets, ticket_tool_decision)
+            services.approvals.gate = TicketToolGate(services.tickets, _ticket_decider(services))
 
     if services.knowledge is not None:
 

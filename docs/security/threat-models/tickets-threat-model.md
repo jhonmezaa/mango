@@ -1,4 +1,4 @@
-# Tickets de Mango: modelo de amenazas (v0.2)
+# Tickets de Mango: modelo de amenazas (v0.3)
 
 > Fecha: 2026-11-05 · Skill: `security-threat-model`. Decisiones: D13, D27, D33, D56, D59, D63, D70, D78, D84, D99 y **D112** (tickets propios de Mango, acordada por el dueño por menú el 2026-11-05).
 > Alcance: la tabla `Mango-<ns>-Tickets`; `apps/api/src/mango_api/tickets.py` y `packages/py/mango-core/src/mango_core/tickets.py`; las políticas Cedar `tickets.cedar` y `tickets-create.cedar`; la tool interna de tickets en el Gateway (PR B) y «Crear ticket» como salida de una tarea (PR C).
@@ -164,3 +164,10 @@ Alcance: el diff de PR B (`connectors/mango-tickets`, `mango_core.ticket_tool`, 
 - **Sin hallazgos confirmados.** Identidad del token reverificado en el executor; aprobación de un solo uso ligada a `hash(tool, args)` también para estas tools; claim `conv` firmado y validado por forma (un token sin él sigue valiendo, sin conversación); Cedar en las dos rutas que ejecutan (`confirm` y `execute` pasan por `_run`); IAM del executor acotado a la tabla; la condición `self` no es proponible ni la puede declarar un pack o un conector con IAM; logs con ids y códigos.
 - **Riesgo aceptado (D112 (9)):** el executor no consulta Verified Permissions; confía en la decisión que `mango-api` toma justo antes de firmar un token que vive 2 minutos. La ventana es la de ese token.
 - **Observación sin impacto de seguridad:** cuando el gate no crea la solicitud (ticket ajeno, argumentos inválidos, límite), el modelo recibe el texto fijo del interceptor («se mostró una solicitud de confirmación»), que en ese caso no es cierto: es una diferencia de experiencia, anotada para el brief.
+
+## v0.3: «Crear ticket» como salida de una tarea, construido (2026-11-05)
+
+- **Quién escribe:** `mango-api` (`tickets.RunTicketWriter`, llamado por el worker de tareas) como el dueño de la tarea, solo tras una ejecución que terminó bien y que el worker cerró (una segunda entrega no deja otro: el id sale de la ejecución). No pasa por el Gateway ni por una aprobación: lo eligió el dueño al configurar la tarea (`ticket`), no el agente (decidido por el agente que lanzó el trabajo el 2026-11-05; D112 (8) lo dejaba al PR).
+- **Autorización:** Cedar `CreateTicket` en cada ejecución, con la identidad de esa ejecución (el token del dueño emitido para ella, D78); `UseAgent` ya se decidió para la ejecución. Sin decisión (Verified Permissions caído), no hay ticket.
+- **Contenido:** el resultado del agente es texto no confiable, igual que en la Bandeja: se guarda como texto, sin asignar, y la web lo renderiza sin HTML crudo (TM-TK6). Un resultado que parece una credencial no deja ticket (D26), y la auditoría lo dice (`ticket.create` con `outcome: rejected`, `reason: secret_in_ticket`), sin el texto.
+- **Volumen:** una tarea corre a lo sumo según su horario o sus eventos (con el tope diario de D79 (3)); el límite de tickets por persona de la API no se descuenta aquí: lo acota el de las tareas (10 por persona, 200 por instalación).

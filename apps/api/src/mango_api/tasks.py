@@ -48,6 +48,7 @@ from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.task_reports import ReportLinkOut, ReportOut, TaskReports, report_out, status_of
 from mango_api.tasks_store import (
     RUNS_SHOWN,
+    TICKET_ON,
     Automation,
     PauseReason,
     Run,
@@ -143,9 +144,11 @@ class TaskIn(_Strict):
     task: Annotated[str, Field(min_length=1, max_length=2000)]
     trigger: TriggerIn
     deliver: Literal["inbox"] = "inbox"
-    """The only delivery of this wave (A4): «Crear ticket» and Slack are «Próximamente»."""
+    """Always the Bandeja (A4). «Crear ticket» is ``ticket`` (D112); Slack, «Próximamente»."""
     report: bool = False
     """Also a PDF of each run (D86 (5)); its type is fixed by the trigger (D86 (7))."""
+    ticket: bool = False
+    """«También enviar a · Crear ticket» (D112): a ticket of the owner with each good run."""
 
 
 class RetireIn(_Strict):
@@ -253,6 +256,9 @@ class TaskOut(_Strict):
     deliver: Literal["inbox"]
     report: Literal["cost_summary", "anomaly"] | None = None
     """The PDF each run also delivers (D86), if the task asks for one."""
+    ticket: bool | None = None
+    """Each run that ends well leaves its result in a ticket of the owner (D112); always set
+    (optional in the schema, like ``report``, so the generated client keeps its shape)."""
     status: Literal["active", "paused", "retired"]
     paused_reason: Literal["owner", "admin", "access_lost"] | None
     paused_at: str | None
@@ -451,6 +457,8 @@ class TasksDeps:
     reports: TaskReports | None = None
     """The PDFs of runs (D86); ``None`` until the reports construct is deployed."""
     downloads: Limiter | None = None
+    tickets: bool = False
+    """Whether runs can leave a ticket (D112): set by ``create_app`` once tickets are deployed."""
 
 
 def _unavailable(exc: Exception) -> ApiError:
@@ -558,6 +566,7 @@ def task_out(deps: TasksDeps, automation: Automation, caller: Caller) -> TaskOut
         ),
         deliver=cast(Any, automation.deliver),
         report=cast(Any, automation.report),
+        ticket=automation.ticket,
         status=cast(Any, automation.status.value),
         paused_reason=cast(
             Any, automation.paused_reason.value if automation.paused_reason else None
@@ -615,6 +624,11 @@ def _check_trigger(caller: Caller, trigger: TriggerIn) -> None:
         raise ApiError(403, "central_only", "only central people may subscribe to this event")
 
 
+def _check_ticket(deps: TasksDeps, body: TaskIn) -> None:
+    if body.ticket and not deps.tickets:
+        raise ApiError(422, "tickets_unavailable", "tickets are not deployed in this installation")
+
+
 def _report_type(deps: TasksDeps, body: TaskIn) -> str | None:
     """The PDF of the task, if it asks for one: only with an agent that reads costs (design:
     «solo para agentes que leen Cost Explorer o la facturación») and once reports exist."""
@@ -629,6 +643,7 @@ def _report_type(deps: TasksDeps, body: TaskIn) -> str | None:
 def create_task(deps: TasksDeps, caller: Caller, body: TaskIn) -> Automation:
     _check_task(body)
     _check_trigger(caller, body.trigger)
+    _check_ticket(deps, body)
     report = _report_type(deps, body)
     now = _now_iso(deps)
     trigger = body.trigger
@@ -654,8 +669,17 @@ def create_task(deps: TasksDeps, caller: Caller, body: TaskIn) -> Automation:
         created_at=now,
         updated_at=now,
         report=report,
+        ticket=body.ticket,
     )
-    _audit(deps, "task.created", caller, automation, outcome="requested", report=report)
+    _audit(
+        deps,
+        "task.created",
+        caller,
+        automation,
+        outcome="requested",
+        report=report,
+        ticket=body.ticket,
+    )
     try:
         deps.store.create(automation)
     except TaskLimitError as exc:
@@ -669,7 +693,15 @@ def create_task(deps: TasksDeps, caller: Caller, body: TaskIn) -> Automation:
             # Never a task without its schedule, nor a schedule without its task.
             deps.store.delete_new(automation)
             raise _unavailable(exc) from exc
-    _audit(deps, "task.created", caller, automation, outcome="applied", report=report)
+    _audit(
+        deps,
+        "task.created",
+        caller,
+        automation,
+        outcome="applied",
+        report=report,
+        ticket=body.ticket,
+    )
     return automation
 
 
@@ -682,6 +714,7 @@ def update_task(
         # A trigger is what a task is: a new trigger is a new task.
         raise ApiError(409, "trigger_change", "the trigger of a task cannot change")
     _check_task(body)
+    _check_ticket(deps, body)
     trigger = body.trigger
     # Valid for the next runs (design): the runs before keep their PDF or have none.
     report = _report_type(deps, body)
@@ -693,6 +726,7 @@ def update_task(
         "spec": trigger.schedule.model_dump() if trigger.schedule else None,
         "timezone": trigger.timezone if trigger.kind == "schedule" else None,
         "report": report,
+        "ticket": TICKET_ON if body.ticket else None,
     }
     updated = replace(
         automation,
@@ -702,8 +736,17 @@ def update_task(
         spec=changes["spec"],
         timezone=changes["timezone"],
         report=report,
+        ticket=body.ticket,
     )
-    _audit(deps, "task.updated", caller, updated, outcome="requested", report=report)
+    _audit(
+        deps,
+        "task.updated",
+        caller,
+        updated,
+        outcome="requested",
+        report=report,
+        ticket=body.ticket,
+    )
     try:
         deps.store.update(automation, changes, expect_status=frozenset({automation.status}))
     except TaskConflictError as exc:
@@ -715,7 +758,9 @@ def update_task(
             deps.scheduler.update(updated, enabled=updated.status is Status.ACTIVE)
         except SchedulerUnavailableError as exc:
             raise _unavailable(exc) from exc
-    _audit(deps, "task.updated", caller, updated, outcome="applied", report=report)
+    _audit(
+        deps, "task.updated", caller, updated, outcome="applied", report=report, ticket=body.ticket
+    )
     return updated
 
 

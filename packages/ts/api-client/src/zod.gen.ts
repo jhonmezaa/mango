@@ -3210,6 +3210,7 @@ export const zTaskInSchema = z.object({
     name: z.string().min(1).max(48),
     report: z.boolean().optional().default(false),
     task: z.string().min(1).max(2000),
+    ticket: z.boolean().optional().default(false),
     trigger: zTriggerInSchema
 });
 
@@ -3681,6 +3682,7 @@ export const zTaskOutSchema = z.object({
     ]),
     task: z.string().nullable(),
     task_id: z.string(),
+    ticket: z.boolean().nullish(),
     trigger: zTriggerOutSchema,
     updated_at: z.string()
 });

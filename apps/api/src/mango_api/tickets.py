@@ -803,3 +803,86 @@ class TicketToolGate:
         self._deps.audit.emit(
             ticket_tool.AUDIT_EVENTS[name], caller.user.user_id, detail, caller.user
         )
+
+
+# --- «Crear ticket» as the output of a task (D78, D112) ----------------------------------------
+
+
+class RunTicketWriter:
+    """Leaves the result of a run that ended well in a ticket of the task's owner.
+
+    The owner chose it when setting up the task, not the agent: there is no request for
+    confirmation (D112, decided on 2026-11-05 by the lead agent). It is written as the owner
+    (``CreateTicket``, decided with Cedar on each run; ``UseAgent`` was already decided for the
+    run), with the task and its agent, unassigned. A result that looks like a credential leaves
+    no ticket (D26). Its id comes from the run: a second delivery of the run writes nothing."""
+
+    def __init__(
+        self,
+        deps: TicketsDeps,
+        decide: Callable[[UserContext, str, str, str, TicketResource | None], bool],
+    ) -> None:
+        self._deps = deps
+        self._decide = decide
+
+    def _audit(self, caller: Caller, detail: dict[str, Any]) -> None:
+        try:
+            self._deps.audit.emit("ticket.create", caller.user.user_id, detail, caller.user)
+        except Exception:
+            logger.exception("a ticket of a task run could not be audited")
+
+    def run_ended(
+        self, caller: Caller, automation: Any, run_id: str, result: str | None
+    ) -> str | None:
+        ticket_id = ticket_tool.ticket_id_for(run_id)
+        detail: dict[str, Any] = {
+            "ticket_id": ticket_id,
+            "agent": automation.agent_id,
+            "source": Source.TASK.value,
+            "task_id": automation.automation_id,
+            "run_id": run_id,
+        }
+        text = (result or "").strip()
+        if not self._decide(caller.user, "CreateTicket", *PLATFORM, None):
+            self._audit(caller, {**detail, "outcome": "rejected", "reason": "not_allowed"})
+            return None
+        if find_secrets(f"{automation.name}\n{text}"):
+            self._audit(caller, {**detail, "outcome": "rejected", "reason": "secret_in_ticket"})
+            return None
+        day = datetime.fromtimestamp(self._deps.clock(), UTC).date().isoformat()
+        title = f"{automation.name} · {day}"[:MAX_TITLE]
+        description = text if len(text) <= MAX_DESCRIPTION else text[: MAX_DESCRIPTION - 1] + "…"
+        now = core.now_iso()
+        user = caller.user
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            title=title,
+            description=description,
+            status=Status.OPEN,
+            priority=Priority.MEDIUM,
+            creator_id=user.user_id,
+            created_at=now,
+            updated_at=now,
+            source=Source.TASK,
+            agent_id=automation.agent_id,
+            people={user.user_id: user.email},
+            task_id=automation.automation_id,
+        )
+        try:
+            self._deps.store.create(ticket)
+        except TicketConflictError:
+            return ticket_id  # the run was delivered again: its ticket is there
+        except TicketStoreUnavailableError:
+            logger.exception("the ticket of a task run could not be written")
+            self._audit(caller, {**detail, "outcome": "rejected", "reason": "unavailable"})
+            return None
+        self._audit(
+            caller,
+            {
+                **detail,
+                "outcome": "applied",
+                "title_chars": len(title),
+                "description_chars": len(description),
+            },
+        )
+        return ticket_id

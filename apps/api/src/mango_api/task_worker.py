@@ -198,6 +198,15 @@ class EvalSteps(Protocol):
     def handle(self, step: task_runs.EvalStep) -> None: ...
 
 
+class RunTickets(Protocol):
+    """«Crear ticket» (D112, ``tickets.RunTicketWriter``): the result of a good run in a ticket
+    of the owner. Never raises: the run is already recorded."""
+
+    def run_ended(
+        self, caller: Caller, automation: Automation, run_id: str, result: str | None
+    ) -> str | None: ...
+
+
 class TaskTurn(Protocol):
     """One turn without chat, run as ``caller``. Raises ``AgentAccessDeniedError`` when the
     owner may not use the agent; any other exception is a failed run."""
@@ -235,6 +244,8 @@ class TaskRuns:
     """The PDFs of runs (D86); ``None`` until the reports construct is deployed."""
     evals: EvalSteps | None = None
     """The steps of eval runs (D110), which share the queue; ``None`` until evals exist."""
+    tickets: RunTickets | None = None
+    """«Crear ticket» (D112); ``None`` until the tickets are deployed."""
 
     # --- Entry point ------------------------------------------------------------------
 
@@ -356,7 +367,7 @@ class TaskRuns:
 
     # --- One run ----------------------------------------------------------------------
 
-    def _execute(  # noqa: PLR0911, PLR0912 - each return is one check a run did not pass
+    def _execute(  # noqa: PLR0911, PLR0912, PLR0915 - each return is one check a run did not pass
         self, automation: Automation, run: Run, event: task_runs.EventRun | None
     ) -> None:
         if automation.paused_reason is PauseReason.ACCESS_LOST:
@@ -454,6 +465,13 @@ class TaskRuns:
                     outcome.result,
                     remote_connect=outcome.remote_connect,
                 )
+                if (
+                    self.tickets is not None
+                    and automation.ticket
+                    and outcome.status is RunStatus.OK
+                ):
+                    # Only after this worker closed the run: a second delivery leaves no second.
+                    self.tickets.run_ended(caller, automation, run.run_id, outcome.result)
                 if self.reports is not None and report.get("report_status") == GENERATING:
                     # Only after this worker closed the run: a second delivery asks for nothing.
                     self.reports.start(run, self.store.report_failed)

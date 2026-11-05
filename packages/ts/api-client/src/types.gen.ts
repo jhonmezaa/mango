@@ -6430,6 +6430,10 @@ export type TaskIn = {
      * Task
      */
     task: string;
+    /**
+     * Ticket
+     */
+    ticket?: boolean;
     trigger: TriggerIn;
 };
 
@@ -6526,6 +6530,10 @@ export type TaskOut = {
      * Task Id
      */
     task_id: string;
+    /**
+     * Ticket
+     */
+    ticket?: boolean | null;
     trigger: TriggerOut;
     /**
      * Updated At
