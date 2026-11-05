@@ -14,6 +14,7 @@ import {
   EXPIRY_HOURS,
   NOTE_MAX_LENGTH,
   formOf,
+  isSelfConfirmed,
   parseAmount,
   parseCount,
   personOf,
@@ -139,6 +140,9 @@ function PolicyModal({
             );
           })}
         </div>
+        {isSelfConfirmed(form) ? (
+          <div className="g-hint">{t('approvals.policies.modal.selfHint')}</div>
+        ) : null}
         {CONDITIONS.some((condition) => !tool.conditions.includes(condition)) ? (
           <div className="g-hint">{t('approvals.policies.modal.conditionsHint')}</div>
         ) : null}
@@ -562,7 +566,8 @@ export function PoliciesPanel({ api, me, notify }: { api: ApiClient; me: Me; not
           </div>
         ) : null}
         {tools.map((tool) => {
-          const below = policyBelow(t, tool.policy);
+          const self = isSelfConfirmed(tool.policy);
+          const below = self ? null : policyBelow(t, tool.policy);
           const pending = tool.pending_change_id !== null;
           return (
             <div key={tool.tool} className="pol-tr">
@@ -585,12 +590,15 @@ export function PoliciesPanel({ api, me, notify }: { api: ApiClient; me: Me; not
                   </span>
                 ) : null}
                 <span className="block">
-                  {t('approvals.policies.needsApproval', { when: policyAbove(t, tool.policy) })}
+                  {self
+                    ? t('approvals.rule.selfEach')
+                    : t('approvals.policies.needsApproval', { when: policyAbove(t, tool.policy) })}
                 </span>
               </span>
-              <span className="mk-meta">{tool.policy.approvers}</span>
+              {/* A self-confirmed tool has no approvers and nothing expires (design «—»). */}
+              <span className="mk-meta">{self ? '—' : tool.policy.approvers}</span>
               <span className="mk-meta">
-                {t('approvals.policies.expires', { hours: tool.policy.expires_hours })}
+                {self ? '—' : t('approvals.policies.expires', { hours: tool.policy.expires_hours })}
               </span>
               <span className="flex justify-end">
                 {me.is_admin ? (

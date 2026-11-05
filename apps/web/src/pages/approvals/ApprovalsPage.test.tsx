@@ -9,7 +9,16 @@ import { baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { ApprovalsPage } from './ApprovalsPage';
 import type { Approval, ApprovalList, Policies } from './model';
-import { NOW, XSS, approval, policies, policyChange, source, toolPolicy } from './testFixtures';
+import {
+  NOW,
+  XSS,
+  approval,
+  policies,
+  policyChange,
+  selfToolPolicy,
+  source,
+  toolPolicy,
+} from './testFixtures';
 
 type Answer = unknown;
 type Handler = (input: {
@@ -412,6 +421,36 @@ describe('Políticas', () => {
     expect(screen.getByText('24 h · luego vence')).toBeVisible();
     // Only administrators propose changes (the API enforces it).
     expect(screen.queryByRole('button', { name: /Editar política/ })).toBeNull();
+  });
+
+  it('shows a self-confirmed tool without approvers nor expiry, and only «Siempre» to harden it', async () => {
+    const user = userEvent.setup();
+    renderPage(policiesApi(policies({ tools: [selfToolPolicy()] })), '/approvals/policies', true);
+    expect(await screen.findByText('mango-tickets.create_ticket')).toBeVisible();
+    expect(screen.getByText('La persona confirma cada llamada')).toBeVisible();
+    expect(screen.getAllByText('—')).toHaveLength(2);
+    expect(screen.queryByText('Siempre: aprobación')).toBeNull();
+    expect(screen.queryByText(/luego vence/)).toBeNull();
+    await user.click(
+      screen.getByRole('button', { name: 'Editar política de mango-tickets.create_ticket' }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Siempre' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: 'Siempre' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    for (const name of ['Según monto', 'Según cantidad de recursos', 'Según entorno']) {
+      expect(within(dialog).getByRole('button', { name })).toBeDisabled();
+    }
+    expect(
+      within(dialog).queryByRole('button', { name: 'La persona confirma cada llamada' }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByText(
+        'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.',
+      ),
+    ).toBeVisible();
   });
 
   it('lets an administrator propose a change, offering only what the tool reports', async () => {

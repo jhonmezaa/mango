@@ -34,7 +34,7 @@ type Status =
   | 'expired';
 
 interface Rule {
-  condition: 'always' | 'amount' | 'count' | 'environment';
+  condition: 'always' | 'amount' | 'count' | 'environment' | 'self';
   amount_usd: string | null;
   count: number | null;
   environment: 'prod' | 'staging' | null;
@@ -255,6 +255,28 @@ function ruleOut(rule: Rule) {
   return rule;
 }
 
+// The tickets connector of Mango (D112 (8)): born self-confirmed, only «Siempre» can harden it.
+// Read-only in the mock: proposals are only taken for TOOL.
+const TICKET_TOOLS = [
+  [
+    'create_ticket',
+    'Crear un ticket de Mango a nombre de quien conversa, ligado a este agente y a esta conversación.',
+  ],
+  [
+    'update_ticket',
+    'Cambiar el estado o la prioridad de un ticket, o asignárselo a quien conversa.',
+  ],
+  ['comment_ticket', 'Comentar un ticket a nombre de quien conversa.'],
+] as const;
+const SELF_RULE: Rule = {
+  condition: 'self',
+  amount_usd: null,
+  count: null,
+  environment: null,
+  approvers: 1,
+  expires_hours: 24,
+};
+
 function policiesOut() {
   const pending = changes.find((change) => change.status === 'pending');
   return {
@@ -268,6 +290,15 @@ function policiesOut() {
         version: policyVersion,
         pending_change_id: pending?.change_id ?? null,
       },
+      ...TICKET_TOOLS.map(([name, description]) => ({
+        tool: `mango-tickets.${name}`,
+        server_name: 'Tickets de Mango',
+        description,
+        conditions: ['always'],
+        policy: SELF_RULE,
+        version: 0,
+        pending_change_id: null,
+      })),
     ],
     changes: changes
       .toSorted((a, b) => b.created_at.localeCompare(a.created_at))

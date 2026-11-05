@@ -51,6 +51,16 @@ describe('approvals model', () => {
     expect(ruleText(t, always)).toBe('Siempre · 2 aprobadores distintos de quien la pide');
   });
 
+  it('reads a self-confirmed tool as the person confirming each call (D112 (8))', () => {
+    const self = { ...toolPolicy().policy, condition: 'self' as const };
+    expect(policySummary(t, self)).toBe('La persona confirma cada llamada');
+    expect(policySummary(t, self)).not.toContain('Siempre');
+    const ticket = selfApproval({
+      rule: { ...selfApproval().rule, condition: 'self', reason: 'always', amount_usd: null },
+    });
+    expect(ruleText(t, ticket)).toBe('La persona confirma cada llamada');
+  });
+
   it('describes a policy as the design does', () => {
     const amount = { ...toolPolicy().policy, condition: 'amount' as const, amount_usd: '500' };
     expect(policyBelow(t, amount)).toBe('Hasta USD 500,00');

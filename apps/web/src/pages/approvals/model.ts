@@ -32,7 +32,16 @@ export const QUERY_MAX_LENGTH = 80;
 export const EXPIRY_HOURS = [1, 4, 24, 48, 72] as const;
 export const APPROVER_COUNTS = [1, 2, 3] as const;
 export const ENVIRONMENTS = ['prod', 'staging'] as const;
-export const CONDITIONS: readonly Condition[] = ['always', 'amount', 'count', 'environment'];
+/**
+ * Conditions an administrator may choose. `self` is only a default (D112 (8)): a tool of Mango
+ * is born with it and can only be hardened to «Siempre», so the editor never offers it.
+ */
+export const CONDITIONS: readonly Exclude<Condition, 'self'>[] = [
+  'always',
+  'amount',
+  'count',
+  'environment',
+];
 export const REJECT_REASONS = ['window', 'context', 'risk', 'staging'] as const;
 const MINUTE_MS = 60_000;
 
@@ -122,6 +131,11 @@ function thresholdBelow(t: TFunction, rule: PolicyRule | Approval['rule']): stri
   return null;
 }
 
+/** The person who asked confirms every call (D112 (8)): no approvers and no expiry apply. */
+export function isSelfConfirmed(rule: Pick<PolicyRule, 'condition'>): boolean {
+  return rule.condition === 'self';
+}
+
 /** Design `polText` / `polBelow`: when a policy asks for approvers and when the user confirms. */
 export function policyAbove(t: TFunction, rule: PolicyRule): string {
   return thresholdAbove(t, rule);
@@ -132,6 +146,7 @@ export function policyBelow(t: TFunction, rule: PolicyRule): string | null {
 
 /** Design `polSummary`: one line for a policy, used in the proposals. */
 export function policySummary(t: TFunction, rule: PolicyRule): string {
+  if (isSelfConfirmed(rule)) return t('approvals.rule.selfEach');
   const below = thresholdBelow(t, rule);
   return (
     (below ? t('approvals.policies.summary.below', { when: below }) : '') +
@@ -146,6 +161,7 @@ export function policySummary(t: TFunction, rule: PolicyRule): string {
 /** Design `approvalTier(...).rule`: why this request fell in its tier, from what the API stored. */
 export function ruleText(t: TFunction, approval: Approval): string {
   const { rule } = approval;
+  if (rule.condition === 'self') return t('approvals.rule.selfEach');
   if (approval.tier === 'self') {
     return t('approvals.rule.join', {
       when: thresholdBelow(t, rule) ?? t('approvals.rule.always'),

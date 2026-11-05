@@ -185,11 +185,11 @@ export const approvals = {
       count: 'No se pudo determinar la cantidad',
       environment: 'No se pudo determinar el entorno',
       always: 'No se pudo determinar el tramo',
-      self: 'La persona confirma cada llamada',
     },
     approvers_one: '{{count}} aprobador distinto de quien la pide',
     approvers_other: '{{count}} aprobadores distintos de quien la pide',
     self: 'confirma quien la pide',
+    selfEach: 'La persona confirma cada llamada',
     join: '{{when}} · {{who}}',
   },
   decision: {
@@ -303,8 +303,9 @@ export const approvals = {
         amount: 'Según monto',
         count: 'Según cantidad de recursos',
         environment: 'Según entorno',
-        self: 'La persona confirma cada llamada',
       },
+      selfHint:
+        'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.',
       conditionUnsupported: 'Esta tool no informa ese dato',
       conditionsHint: 'Las opciones deshabilitadas dependen de datos que esta tool no informa.',
       amount: 'Monto',

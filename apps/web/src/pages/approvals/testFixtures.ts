@@ -90,6 +90,18 @@ export function toolPolicy(overrides: Partial<ToolPolicy> = {}): ToolPolicy {
   };
 }
 
+/** A tool of the tickets connector of Mango: born self-confirmed (D112 (8)). */
+export function selfToolPolicy(overrides: Partial<ToolPolicy> = {}): ToolPolicy {
+  return toolPolicy({
+    tool: 'mango-tickets.create_ticket',
+    server_name: 'Tickets de Mango',
+    description: 'Crear un ticket de Mango a nombre de quien conversa.',
+    conditions: ['always'],
+    policy: { ...toolPolicy().policy, condition: 'self' },
+    ...overrides,
+  });
+}
+
 export function policyChange(overrides: Partial<PolicyChange> = {}): PolicyChange {
   return {
     change_id: '9'.repeat(32),
