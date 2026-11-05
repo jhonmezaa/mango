@@ -73,6 +73,29 @@ export const zAgentBudgetOutSchema = z.object({
 });
 
 /**
+ * AgentCostBudgetOut
+ */
+export const zAgentCostBudgetOutSchema = z.object({
+    limit_usd: z.string(),
+    spent_usd: z.string()
+});
+
+/**
+ * AgentCostOut
+ */
+export const zAgentCostOutSchema = z.object({
+    budget: zAgentCostBudgetOutSchema.nullable(),
+    category: z.string().nullable(),
+    id: z.string(),
+    model: z.string().nullable(),
+    name: z.string().nullable(),
+    previous_usd: z.string(),
+    projected_usd: z.string().nullable(),
+    spent_usd: z.string(),
+    turns: z.int()
+});
+
+/**
  * AgentLimits
  *
  * Harness limits per turn. Ranges follow the Agent Builder design.
@@ -186,6 +209,16 @@ export const zAgentStateOutSchema = z.object({
     open_version: z.int().nullable(),
     published_version: z.int().nullable(),
     status: z.string()
+});
+
+/**
+ * AgentsBreakdownOut
+ */
+export const zAgentsBreakdownOutSchema = z.object({
+    counted_since: z.string().nullable(),
+    previous_unattributed_usd: z.string(),
+    rows: z.array(zAgentCostOutSchema),
+    unattributed_usd: z.string()
 });
 
 /**
@@ -517,6 +550,58 @@ export const zConversationSummarySchema = z.object({
  */
 export const zConversationListSchema = z.object({
     items: z.array(zConversationSummarySchema)
+});
+
+/**
+ * CostDayOut
+ */
+export const zCostDayOutSchema = z.object({
+    day: z.string(),
+    spent_usd: z.string(),
+    turns: z.int()
+});
+
+/**
+ * CostRowOut
+ */
+export const zCostRowOutSchema = z.object({
+    id: z.string(),
+    previous_usd: z.string(),
+    projected_usd: z.string().nullable(),
+    spent_usd: z.string(),
+    turns: z.int()
+});
+
+/**
+ * CostsBreakdownOut
+ */
+export const zCostsBreakdownOutSchema = z.object({
+    counted_since: z.string().nullable(),
+    previous_unattributed_usd: z.string(),
+    rows: z.array(zCostRowOutSchema),
+    unattributed_usd: z.string()
+});
+
+/**
+ * CostsOut
+ */
+export const zCostsOutSchema = z.object({
+    agents: zAgentsBreakdownOutSchema,
+    closed: z.boolean(),
+    counted_since: z.string().nullable(),
+    days: z.array(zCostDayOutSchema),
+    days_in_month: z.int(),
+    elapsed_days: z.int(),
+    models: zCostsBreakdownOutSchema,
+    month: z.string(),
+    previous_days: z.array(zCostDayOutSchema),
+    previous_month: z.string(),
+    previous_turns: z.int(),
+    previous_usd: z.string(),
+    projected_usd: z.string().nullable(),
+    sources: zCostsBreakdownOutSchema,
+    spent_usd: z.string(),
+    turns: z.int()
 });
 
 /**
@@ -3898,6 +3983,15 @@ export const zGetConversationPath = z.object({
  * Successful Response
  */
 export const zGetConversationResponse = zConversationDetailSchema;
+
+export const zGetCostsQuery = z.object({
+    month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/).nullish()
+});
+
+/**
+ * Successful Response
+ */
+export const zGetCostsResponse = zCostsOutSchema;
 
 export const zResolveUsersBody = zResolveInSchema;
 

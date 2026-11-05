@@ -41,6 +41,7 @@ READ_ACTIONS = frozenset(
         "ViewGovernance",
         "ViewActivity",
         "ViewHome",
+        "ViewCosts",
         "SearchConversations",
     }
 )

@@ -267,6 +267,59 @@ export type AgentBudgetOut = {
 };
 
 /**
+ * AgentCostBudgetOut
+ */
+export type AgentCostBudgetOut = {
+    /**
+     * Limit Usd
+     */
+    limit_usd: string;
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+};
+
+/**
+ * AgentCostOut
+ */
+export type AgentCostOut = {
+    budget: AgentCostBudgetOut | null;
+    /**
+     * Category
+     */
+    category: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Model
+     */
+    model: string | null;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Previous Usd
+     */
+    previous_usd: string;
+    /**
+     * Projected Usd
+     */
+    projected_usd: string | null;
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+    /**
+     * Turns
+     */
+    turns: number;
+};
+
+/**
  * AgentDefinition
  *
  * Content of one agent version. The agent's budget is not part of it (D22).
@@ -537,6 +590,28 @@ export type AgentStateOut = {
      * Status
      */
     status: string;
+};
+
+/**
+ * AgentsBreakdownOut
+ */
+export type AgentsBreakdownOut = {
+    /**
+     * Counted Since
+     */
+    counted_since: string | null;
+    /**
+     * Previous Unattributed Usd
+     */
+    previous_unattributed_usd: string;
+    /**
+     * Rows
+     */
+    rows: Array<AgentCostOut>;
+    /**
+     * Unattributed Usd
+     */
+    unattributed_usd: string;
 };
 
 /**
@@ -1519,6 +1594,133 @@ export type ConversationSummary = {
      * Updated At
      */
     updated_at: string;
+};
+
+/**
+ * CostDayOut
+ */
+export type CostDayOut = {
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+    /**
+     * Turns
+     */
+    turns: number;
+};
+
+/**
+ * CostRowOut
+ */
+export type CostRowOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Previous Usd
+     */
+    previous_usd: string;
+    /**
+     * Projected Usd
+     */
+    projected_usd: string | null;
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+    /**
+     * Turns
+     */
+    turns: number;
+};
+
+/**
+ * CostsBreakdownOut
+ */
+export type CostsBreakdownOut = {
+    /**
+     * Counted Since
+     */
+    counted_since: string | null;
+    /**
+     * Previous Unattributed Usd
+     */
+    previous_unattributed_usd: string;
+    /**
+     * Rows
+     */
+    rows: Array<CostRowOut>;
+    /**
+     * Unattributed Usd
+     */
+    unattributed_usd: string;
+};
+
+/**
+ * CostsOut
+ */
+export type CostsOut = {
+    agents: AgentsBreakdownOut;
+    /**
+     * Closed
+     */
+    closed: boolean;
+    /**
+     * Counted Since
+     */
+    counted_since: string | null;
+    /**
+     * Days
+     */
+    days: Array<CostDayOut>;
+    /**
+     * Days In Month
+     */
+    days_in_month: number;
+    /**
+     * Elapsed Days
+     */
+    elapsed_days: number;
+    models: CostsBreakdownOut;
+    /**
+     * Month
+     */
+    month: string;
+    /**
+     * Previous Days
+     */
+    previous_days: Array<CostDayOut>;
+    /**
+     * Previous Month
+     */
+    previous_month: string;
+    /**
+     * Previous Turns
+     */
+    previous_turns: number;
+    /**
+     * Previous Usd
+     */
+    previous_usd: string;
+    /**
+     * Projected Usd
+     */
+    projected_usd: string | null;
+    sources: CostsBreakdownOut;
+    /**
+     * Spent Usd
+     */
+    spent_usd: string;
+    /**
+     * Turns
+     */
+    turns: number;
 };
 
 /**
@@ -8547,6 +8749,36 @@ export type GetConversationResponses = {
 };
 
 export type GetConversationResponse = GetConversationResponses[keyof GetConversationResponses];
+
+export type GetCostsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Month
+         */
+        month?: string | null;
+    };
+    url: '/costs';
+};
+
+export type GetCostsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetCostsError = GetCostsErrors[keyof GetCostsErrors];
+
+export type GetCostsResponses = {
+    /**
+     * Successful Response
+     */
+    200: CostsOut;
+};
+
+export type GetCostsResponse = GetCostsResponses[keyof GetCostsResponses];
 
 export type ResolveUsersData = {
     body: ResolveIn;

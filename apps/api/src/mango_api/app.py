@@ -112,6 +112,8 @@ from mango_api.conversations import (
     RlsClientFactory,
     new_id,
 )
+from mango_api.costs import AgentInfo as CostAgent
+from mango_api.costs import CostsDeps, costs_router
 from mango_api.directory import (
     CognitoDirectory,
     DirectoryDeps,
@@ -1418,6 +1420,25 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             )
         )
 
+    if services.home is not None:
+        # Costos (D105, D106): the organization's counters, read with mango-api's own client.
+        app.include_router(
+            costs_router(
+                CostsDeps(
+                    table=services.home.table,
+                    dynamodb=services.home.dynamodb,
+                    agents=lambda: _cost_agents(services),
+                    models=lambda: _cost_models(services),
+                    agent_limit=lambda: services.settings_store.budget_defaults().agent_monthly_usd,
+                    default_agent=settings.agent_id,
+                    clock=now_utc,
+                    limiter=services.limits.limiter("costs.reads"),
+                ),
+                current_user,
+                require,
+            )
+        )
+
     if services.web_sessions is not None:
         app.include_router(web_session_router(services.web_sessions))
         if services.people is not None:
@@ -1981,6 +2002,29 @@ def _agent_names(services: Services) -> dict[str, str]:
         for status in (VersionStatus.RETIRED, VersionStatus.PUBLISHED)
         for version in services.agents.store.by_status(status)
     }
+
+
+def _cost_agents(services: Services) -> dict[str, CostAgent]:
+    """The published and retired agents for Costos: the published version wins."""
+    if services.agents is None:
+        return {}
+    return {
+        version.agent_id: CostAgent(
+            name=version.definition.name,
+            category=version.definition.category,
+            model=version.definition.model,
+        )
+        for status in (VersionStatus.RETIRED, VersionStatus.PUBLISHED)
+        for version in services.agents.store.by_status(status)
+    }
+
+
+def _cost_models(services: Services) -> list[str]:
+    """Every model of the catalog, enabled or not, and the auxiliary one (the titles)."""
+    return [
+        *(m.id for m in services.model_catalog.catalog().models),
+        services.settings.auxiliary_model,
+    ]
 
 
 def _latest_names(services: Services, agent_ids: Collection[str]) -> dict[str, str] | None:

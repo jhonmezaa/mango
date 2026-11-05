@@ -23,6 +23,7 @@ from mango_api import (
     approvals,
     connections,
     conversation_search,
+    costs,
     directory,
     governance,
     group_admin,
@@ -276,6 +277,18 @@ LIMITS: dict[str, LimitSpec] = {
             "administrators and central FinOps read and which bounds its own reads; a cache of "
             "30 seconds per person already absorbs reloads. It holds no exception: N times "
             "thirty a minute per person is still far below what a task serves."
+        ),
+    ),
+    "costs.reads": LimitSpec(
+        costs.READS_PER_MINUTE,
+        MINUTE,
+        shared=False,
+        why=(
+            "Stops one person's loop over Costos (D105), which only administrators and central "
+            "FinOps read; each read is one bounded query per counter of the month and the one "
+            "before, and a cache of 30 seconds per person and month absorbs reloads. It holds "
+            "no exception: N times thirty a minute per person is still far below what a task "
+            "serves."
         ),
     ),
     "home.reads": LimitSpec(

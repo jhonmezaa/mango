@@ -209,14 +209,16 @@ def read(dynamodb: DynamoDBClient, table: str, key: str, first: str, last: str) 
             return days
 
 
-def first_day(dynamodb: DynamoDBClient, table: str) -> str | None:
-    """The first day the organization's counter has: when the counters started, as far as
+def first_day(dynamodb: DynamoDBClient, table: str, key: str = ORG_KEY) -> str | None:
+    """The first day a counter has (by default the organization's): when it started, as far as
     anyone can tell (a day without turns leaves no item). ``None`` before the first turn."""
+    if not key.startswith(DAY_PREFIX):
+        raise ValueError("invalid counter")
     page = dynamodb.query(
         TableName=table,
         KeyConditionExpression="PK = :pk",
         ProjectionExpression="SK",
-        ExpressionAttributeValues={":pk": {"S": ORG_KEY}},
+        ExpressionAttributeValues={":pk": {"S": key}},
         Limit=1,
         ScanIndexForward=True,
     )
