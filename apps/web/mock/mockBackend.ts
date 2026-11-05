@@ -28,6 +28,7 @@ import {
   sessionOf,
 } from './cognito.ts';
 import { handleDirectory } from './directory.ts';
+import { handleEvals } from './evals.ts';
 import { handleActivity } from './activity.ts';
 import { handleGovernance } from './governance.ts';
 import { handleGroups } from './groups.ts';
@@ -57,6 +58,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handlePlayground,
   handleApprovals,
   handleTasks,
+  handleEvals,
   handleInbox,
   handleGovernance,
   handleHome,

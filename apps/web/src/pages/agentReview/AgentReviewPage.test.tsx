@@ -1067,4 +1067,140 @@ describe('AgentReviewPage (design agent-review.jsx)', () => {
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByText('Nada por revisar')).toBeInTheDocument();
   });
+
+  describe('evals of the version (D26, design EvalGate)', () => {
+    const evalSuite = (name: string, overrides: Record<string, unknown> = {}) => ({
+      suite_id: name
+        .padEnd(32, '0')
+        .replace(/[^0-9a-f]/g, '0')
+        .slice(0, 32),
+      agent_id: CHANGE,
+      name,
+      description: '',
+      kind: 'golden',
+      required: true,
+      threshold: 80,
+      trigger: 'on_submit',
+      judge_model: null,
+      case_count: 3,
+      revision: 2,
+      created_by_email: null,
+      updated_at: '2026-11-05T12:00:00Z',
+      request: null,
+      last_run: null,
+      active_run: null,
+      last_attempt: null,
+      recent_scores: [],
+      completed_runs: 0,
+      can_edit: true,
+      ...overrides,
+    });
+    const run = (passed: boolean) => ({
+      run_id: 'd'.repeat(32),
+      score: passed ? 100 : 40,
+      passed,
+      content_hash: HASH,
+      finished_at: '2026-11-05T12:00:00Z',
+    });
+
+    it('shows the required suites running and waiting, and blocks the approval', async () => {
+      const { calls } = setup(
+        { queue: [review()], history: [] },
+        {
+          getEvals: () =>
+            Promise.resolve({
+              judge_models: [],
+              suites: [
+                evalSuite('Golden', {
+                  active_run: {
+                    run_id: 'e'.repeat(32),
+                    status: 'running',
+                    version: 3,
+                    cases_done: 1,
+                    case_count: 3,
+                  },
+                }),
+                evalSuite('Seguridad', {
+                  active_run: {
+                    run_id: 'f'.repeat(32),
+                    status: 'queued',
+                    version: 3,
+                    cases_done: 0,
+                    case_count: 3,
+                  },
+                }),
+              ],
+            }),
+        },
+      );
+      expect(
+        await screen.findByText(
+          'Evals ejecutándose: Golden. Se podrá aprobar cuando terminen y pasen.',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Esperando evals: Seguridad se ejecuta con este envío. Todavía no se puede aprobar.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText('· Hay evals obligatorias sin terminar.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Aprobar y publicar' })).toBeDisabled();
+      expect(calls('getEvals')[0]?.[1]).toEqual({ query: { agent_id: CHANGE } });
+    });
+
+    it('blocks a required suite that does not pass on this content, not another version', async () => {
+      setup(
+        { queue: [review()], history: [] },
+        {
+          getEvals: () =>
+            Promise.resolve({
+              judge_models: [],
+              suites: [
+                evalSuite('Golden', { last_run: run(false) }),
+                evalSuite('Opcional', { required: false, last_run: run(true) }),
+              ],
+            }),
+        },
+      );
+      expect(
+        await screen.findByText('Golden es obligatoria y no pasa. No se puede aprobar.'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('evals · 1 de 2 pasan')).toBeInTheDocument();
+      expect(screen.getByText('· Hay evals obligatorias que no pasan.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Aprobar y publicar' })).toBeDisabled();
+    });
+
+    it('lets approve when the required suites passed on this content', async () => {
+      setup(
+        { queue: [review()], history: [] },
+        {
+          getEvals: () =>
+            Promise.resolve({
+              judge_models: [],
+              suites: [evalSuite('Golden', { last_run: run(true) })],
+            }),
+        },
+      );
+      expect(await screen.findByText('evals · 1 de 1 pasan')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Aprobar y publicar' })).toBeEnabled();
+    });
+
+    it('says why when the server refuses it for its evals', async () => {
+      const { user } = setup(
+        { queue: [review()], history: [] },
+        {
+          approveVersion: () =>
+            Promise.reject(
+              new ApiError(409, 'evals_not_passing', 'a required eval has not passed'),
+            ),
+        },
+      );
+      await user.click(await screen.findByRole('button', { name: 'Aprobar y publicar' }));
+      expect(
+        await screen.findByText(
+          'Hay evals obligatorias sin terminar o que no pasan en esta versión.',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
 });

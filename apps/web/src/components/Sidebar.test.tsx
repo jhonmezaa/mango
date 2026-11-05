@@ -124,7 +124,8 @@ describe('Sidebar navigation', () => {
     // Of the owner views, the Org Chart is available (read only; the API filters it, D38), the
     // Marketplace, Schedules (D78: the API lists only the caller's tasks) and Gobernanza (D89:
     // the API sends only the sections each one may read).
-    // Inicio too (D102): its data is the organization's, which central FinOps sees.
+    // Inicio too (D102): its data is the organization's, which central FinOps sees. Evals too
+    // (design round 37, D111 (1)): central FinOps sees every suite, read only.
     expect(navLinks()).toEqual([
       'Inicio',
       'Chat',
@@ -137,9 +138,10 @@ describe('Sidebar navigation', () => {
       'Gobernanza',
       'Actividad',
       'Schedules',
+      'Evals',
       'Org Chart',
     ]);
-    expect(soonItems()).toEqual(['Evals, próximamente', 'Costos, próximamente']);
+    expect(soonItems()).toEqual(['Costos, próximamente']);
     // Admin-only screens stay hidden, and Skills is for creators and admins (design round 21).
     // Observability is for administrators only (D109, design round 37).
     for (const label of [
@@ -201,7 +203,7 @@ describe('Sidebar navigation', () => {
     const user = userEvent.setup();
     renderSidebar(true);
     await user.click(screen.getByRole('button', { name: 'Operación' }));
-    const item = screen.getByRole('link', { name: 'Evals, próximamente' });
+    const item = screen.getByRole('link', { name: 'Costos, próximamente' });
     expect(item).toHaveAttribute('aria-disabled', 'true');
     expect(item).not.toHaveAttribute('href');
     expect(item).not.toHaveAttribute('tabindex');
@@ -417,7 +419,7 @@ describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
     renderRail();
     // Construir has no «Próximamente» view left since Playground and Skills (round 21).
     await user.click(railGroup(/^Operación/));
-    const soon = screen.getByRole('menuitem', { name: 'Evals, próximamente' });
+    const soon = screen.getByRole('menuitem', { name: 'Costos, próximamente' });
     expect(soon).toHaveAttribute('aria-disabled', 'true');
     expect(soon).not.toHaveAttribute('href');
     expect(within(soon).getByText('Próximamente')).toBeInTheDocument();

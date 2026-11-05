@@ -22,6 +22,7 @@ import { people } from './es/people';
 import { playground } from './es/playground';
 import { remoteMcp } from './es/remoteMcp';
 import { connections } from './es/connections';
+import { evals } from './es/evals';
 import { schedules } from './es/schedules';
 import { search } from './es/search';
 import { settings } from './es/settings';
@@ -73,4 +74,5 @@ export const es = {
   skills,
   ops,
   tickets,
+  evals,
 } as const;

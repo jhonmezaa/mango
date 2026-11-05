@@ -36,7 +36,7 @@ Controles que se construyen:
 ## Scope and assumptions
 
 - **Dentro:** las rutas `/api/evals/*`, la tabla `Evals`, las tres acciones Cedar, el runner, el harness, el rol y el log group de evals, el evaluador y sus evaluadores, el canario y el gate de `approve`.
-- **Fuera:** las pantallas (esperan a la ronda de Claude Design, D24; las cubrirá `security-best-practices` de React), «Conversaciones reales» (bloqueada mientras D23 no esté construido), «Revisión humana» (sin pantalla en el diseño: «Próximamente»), «Generar con IA» y la programación diaria o semanal (no se construyen en esta ronda: «Próximamente»).
+- **Fuera:** «Conversaciones reales» (bloqueada mientras D23 no esté construido), «Revisión humana» (sin pantalla en el diseño: «Próximamente»), «Generar con IA» y la programación diaria o semanal (no se construyen en esta ronda: «Próximamente»).
 - **Supuestos confirmados:**
   1. AgentCore Evaluations, en modo a pedido (`Evaluate`), con evaluadores propios cuyo juez es un modelo del catálogo (D110 (1), agente principal 2026-11-05).
   2. El contenido lo captura solo `Mango_<ns>_a_evals`; el Playground y los agentes, nunca (D110 (3)).
@@ -194,3 +194,14 @@ Supuestos que siguen sin validar (ver arriba): que IAM evalúe `logs:PutResource
 - **Una ejecución a la vez por suite** (el candado `running` sube la revisión, así que ninguna edición lo pisa), sin editar la suite mientras corre, y 20 ejecuciones por persona y día (compartido entre tareas).
 - **El gate** (`agents.py`, `_check_evals`) exige, dentro del `write()` de `approve` y antes de escribir, que cada suite obligatoria tenga como última ejecución una aprobada sobre el `content_hash` aprobado. Una en curso, sin ejecutar, fallida o de otra versión bloquea (409 `evals_not_passing`, con los ids de las suites y su estado). Si no puede leer las suites, 503: falla cerrado. El rechazo queda en la auditoría de `agent.version.approved`.
 - **Enviar a revisión** lanza, como quien envía, las suites obligatorias y las marcadas «al enviar» sobre la versión congelada. Un fallo al lanzarlas no impide el envío: la revisión verá la suite «sin ejecutar» y no podrá aprobar.
+
+## La pantalla de Evals (2026-11-05)
+
+`apps/web/src/pages/evals/` (ronda 37 de diseño), revisada con `security-best-practices` (React):
+
+- **Autorización en el servidor:** la web solo sigue `can_edit` de cada suite y `is_admin` para mostrar botones; cada ruta decide con Cedar (`ViewEvals`, `EditEvals`, `ApproveEvalRequirement`).
+- **Sin contenido de las respuestas:** la API no devuelve la respuesta del agente ni la explicación del juez; la vista muestra el veredicto y un texto fijo por código de motivo.
+- **CSV:** se lee como texto (`File.text()`, como mucho 30 KB), se analiza en el navegador con el mismo formato que `parse_csv` solo para mostrar los casos, y el servidor valida y busca secretos otra vez. Nada se renderiza como HTML: React escapa los textos.
+- **Navegación desde Revisión** («Crear eval»): el id del agente viaja en el estado del router, se valida con el patrón de ids y se descarta si no cumple.
+- **Costo:** `POST /api/evals/estimate` solo devuelve cifras (lo que reservaría una ejecución) a quien ve las evals del agente, con el límite de lecturas.
+

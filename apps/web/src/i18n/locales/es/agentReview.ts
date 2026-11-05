@@ -174,6 +174,9 @@ export const agentReview = {
       'No se pudo registrar la decisión en Auditoría, así que no se aplicó. Inténtalo de nuevo.',
     rules_unavailable:
       'No se pudieron evaluar las reglas de publicación. No se puede aprobar hasta que se evalúen.',
+    // propios (D26): el gate de evals del servidor
+    evals_not_passing: 'Hay evals obligatorias sin terminar o que no pasan en esta versión.',
+    evals_unavailable: 'No se pudieron leer las evals. No se puede aprobar hasta que se lean.',
     forbidden: 'No tienes permiso para realizar esta acción.',
     not_found: 'La versión ya no existe.',
     network: 'Sin conexión. Revisa tu red e inténtalo de nuevo.',

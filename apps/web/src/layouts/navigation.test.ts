@@ -66,9 +66,11 @@ describe('canView (UX only: the API authorizes every request)', () => {
     expect(canView({ role: 'bu-lead', is_admin: false, can: NOT_CREATOR }, 'org')).toBe(true);
   });
 
-  it('adds the Catálogo de MCP, Knowledge Bases, the Playground and Skills for agent creators (design CREATOR_VIEWS)', () => {
+  it('adds the Catálogo de MCP, Knowledge Bases, the Playground, Skills and Evals for agent creators (design CREATOR_VIEWS, canView)', () => {
     const views = visible({ role: null, is_admin: false, can: CREATOR });
-    expect([...views].sort()).toEqual([...USER, 'mcp', 'knowledge', 'playground', 'skills'].sort());
+    expect([...views].sort()).toEqual(
+      [...USER, 'mcp', 'knowledge', 'playground', 'skills', 'evals'].sort(),
+    );
     const central = visible({ role: 'finops-central', is_admin: false, can: CREATOR });
     expect([...central].sort()).toEqual(
       [...new Set([...USER, ...OWNER_EXTRA, 'mcp', 'knowledge', 'playground', 'skills'])].sort(),

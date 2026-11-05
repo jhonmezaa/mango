@@ -317,11 +317,17 @@ export function VersionDiff({
   version,
   refs,
   onReevaluate,
+  evalsRule = null,
+  evals = null,
 }: {
   version: Version;
   refs: ReferenceData;
   /** Reads the version again, so the API evaluates the publication rules once more. */
   onReevaluate: () => void;
+  /** The line of the required evals in «No cumple las reglas» (design `errs` «evals», D26). */
+  evalsRule?: string | null;
+  /** The evals section (design `EvalGate`), before the system prompt. */
+  evals?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { api, me } = useSession();
@@ -396,7 +402,7 @@ export function VersionDiff({
           </button>
         </Alert>
       )}
-      {violations !== null && violations.length > 0 && (
+      {violations !== null && (violations.length > 0 || evalsRule) && (
         <Alert tone="red">
           <div className="ap-alert-t">{t('agentReview.detail.rulesTitle')}</div>
           <ul>
@@ -405,6 +411,7 @@ export function VersionDiff({
                 · {ruleText(t, violation, remoteServiceIndex(version.remotes ?? []))}
               </li>
             ))}
+            {evalsRule && <li className="ap-alert-i">· {evalsRule}</li>}
           </ul>
         </Alert>
       )}
@@ -500,6 +507,7 @@ export function VersionDiff({
         )
       )}
 
+      {evals}
       <Section
         title={
           isNew

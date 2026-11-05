@@ -150,6 +150,15 @@ export function createApiClient(options: ApiClientOptions) {
     return parsed.data;
   }
 
+  /** POST of a route that answers 204 (not in the generated client: it has no JSON response). */
+  async function postNoContent(path: string): Promise<void> {
+    await authorizedFetch(path, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+  }
+
   function checkReason(reason: string): string {
     const trimmed = reason.trim();
     if (trimmed.length < 1 || trimmed.length > REASON_MAX_LENGTH) {
@@ -163,6 +172,12 @@ export function createApiClient(options: ApiClientOptions) {
     `/admin/budgets/users/${encodeURIComponent(adminUserIdSchema.parse(userId))}`;
   const changePath = (changeId: string, action: 'approve' | 'reject' | 'withdraw') =>
     `/admin/business-units/changes/${encodeURIComponent(changeIdSchema.parse(changeId))}/${action}`;
+
+  // Evals (D26): the request to stop requiring a suite, by its random id (32 hex).
+  const evalChangePath = (changeId: string, action: 'approve' | 'withdraw') => {
+    if (!/^[0-9a-f]{32}$/.test(changeId)) throw new ApiError(422, 'invalid_request', 'Invalid id');
+    return `/evals/requirement-changes/${encodeURIComponent(changeId)}/${action}`;
+  };
 
   const mfaResetPath = (changeId: string, action: 'approve' | 'reject' | 'withdraw') =>
     `/admin/mfa-resets/${encodeURIComponent(mfaResetIdSchema.parse(changeId))}/${action}`;
@@ -266,6 +281,10 @@ export function createApiClient(options: ApiClientOptions) {
           mfaResetListSchema,
         )
       ).items,
+    approveEvalRequirement: (changeId: string) =>
+      postNoContent(evalChangePath(changeId, 'approve')),
+    withdrawEvalRequirement: (changeId: string) =>
+      postNoContent(evalChangePath(changeId, 'withdraw')),
     withdrawMfaReset: async (changeId: string) =>
       (await sendJson('POST', mfaResetPath(changeId, 'withdraw'), {}, mfaResetListSchema)).items,
 

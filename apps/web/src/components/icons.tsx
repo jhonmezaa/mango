@@ -335,6 +335,8 @@ export const CommandIcon = createIcon(
 
 export const DownloadIcon = createIcon('Download', <path d="M12 3v13m0 0-4-4m4 4 4-4M5 21h14" />);
 
+export const UploadIcon = createIcon('Upload', <path d="M12 20V7m0 0L8 11m4-4 4 4M5 4h14" />);
+
 export const X2Icon = createIcon(
   'X2',
   <>

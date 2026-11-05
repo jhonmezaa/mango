@@ -10,6 +10,8 @@ import { Alert } from '../../components/Alert';
 import { Badge } from '../../components/Badge';
 import { CheckIcon, InfoIcon, LockIcon, RefreshIcon, WarnIcon } from '../../components/icons';
 import { remoteServiceIndex } from '../agentBuilder/model';
+import { EvalGate } from '../evals/EvalGate';
+import { gateRule, useEvalGate } from '../evals/useEvalGate';
 import {
   REASON_MAX_LENGTH,
   isGone,
@@ -62,6 +64,12 @@ export function ReviewDetail({ api, me, review, refs, notify, onChanged }: Props
   const [stuck, setStuck] = useState(false);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const { agent_id: agentId, version: number, status } = review;
+  // Where the required evals stand for this content (D26): the server's gate decides.
+  const gate = useEvalGate(
+    api,
+    agentId,
+    state.kind === 'ready' ? state.version.content_hash : null,
+  );
 
   const load = useCallback(
     (signal?: AbortSignal) => {
@@ -154,6 +162,8 @@ export function ReviewDetail({ api, me, review, refs, notify, onChanged }: Props
   const mine = version.is_author;
   const hash = version.content_hash;
   const reasonMissing = tried && !reason.trim();
+  const evalsRule = version.diff.is_new ? null : gateRule(gate);
+  const blocked = violations.length > 0 || evalsRule !== null;
 
   const decide = (action: () => Promise<Version>, done: (result: Version) => void) => {
     setBusy(true);
@@ -235,6 +245,20 @@ export function ReviewDetail({ api, me, review, refs, notify, onChanged }: Props
             setState({ kind: 'loading' });
             load();
           }}
+          evalsRule={
+            evalsRule
+              ? t(`evals.gate.${evalsRule === 'failing' ? 'ruleFailing' : 'ruleUnfinished'}`)
+              : null
+          }
+          evals={
+            <EvalGate
+              gate={gate}
+              agentId={agentId}
+              isNew={version.diff.is_new}
+              canCreate={me.is_admin}
+              contentHash={hash}
+            />
+          }
         />
       </div>
       <div className="ap-detail-f">
@@ -327,13 +351,13 @@ export function ReviewDetail({ api, me, review, refs, notify, onChanged }: Props
             <button
               type="button"
               className="btn btn-sm btn-primary"
-              disabled={mine || uneval || violations.length > 0 || busy || !hash}
+              disabled={mine || uneval || blocked || busy || !hash}
               title={
                 mine
                   ? t('agentReview.actions.mineTitle')
                   : uneval
                     ? t('agentReview.actions.unevalTitle')
-                    : violations.length > 0
+                    : blocked
                       ? t('agentReview.actions.rulesTitle')
                       : undefined
               }
@@ -360,7 +384,7 @@ export function ReviewDetail({ api, me, review, refs, notify, onChanged }: Props
               <span className="ap-reason">
                 <WarnIcon size={12} /> {t('agentReview.actions.uneval')}
               </span>
-            ) : violations.length > 0 ? (
+            ) : blocked ? (
               <span className="ap-reason">
                 <WarnIcon size={12} /> {t('agentReview.actions.blocked')}
               </span>

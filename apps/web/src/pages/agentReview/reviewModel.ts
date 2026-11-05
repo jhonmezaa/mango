@@ -285,6 +285,8 @@ export function agentNameIndex(org: Org): Map<string, string> {
 
 export type ReviewErrorKey =
   | 'agentReview.errors.same_approver'
+  | 'agentReview.errors.evals_not_passing'
+  | 'agentReview.errors.evals_unavailable'
   | 'agentReview.errors.version_conflict'
   | 'agentReview.errors.validation_failed'
   | 'agentReview.errors.provisioner_unavailable'
@@ -304,6 +306,8 @@ const ERROR_BY_CODE: Record<string, ReviewErrorKey> = {
   models_unavailable: 'agentReview.errors.rules_unavailable',
   groups_unavailable: 'agentReview.errors.rules_unavailable',
   catalog_unavailable: 'agentReview.errors.rules_unavailable',
+  evals_not_passing: 'agentReview.errors.evals_not_passing',
+  evals_unavailable: 'agentReview.errors.evals_unavailable',
 };
 
 /** Message key of a failed decision. The server's `message` is never shown raw. */
