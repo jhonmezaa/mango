@@ -584,6 +584,9 @@ class AgentsDeps:
     skills: SkillStore | None = None
     """The approved skill versions (D92); set in production. Without it a version that names
     one does not pass the rules (fail closed)."""
+    eval_gate: Any = None
+    """``evals.EvalGate`` (D26): a required suite that has not passed on the version's content
+    blocks its approval; submitting starts its suites. ``None`` where evals do not exist."""
 
 
 class _PendingOrg:
@@ -1500,6 +1503,9 @@ def submit(
         },
         write,
     )
+    if deps.eval_gate is not None:
+        # D26: «al enviar a revisión» runs the suites on exactly the frozen content.
+        deps.eval_gate.on_submit(caller, agent_id, number)
     return _version_out(deps, caller, frozen)
 
 
@@ -1560,6 +1566,25 @@ def _start_provisioner(
         logger.exception("audit emit failed after starting the provisioner")
 
 
+def _check_evals(deps: AgentsDeps, agent_id: str, digest: str) -> None:
+    """D26 (TM-EV3): every required suite of the agent passed on exactly this content. Fails
+    closed when the suites cannot be read."""
+    if deps.eval_gate is None:
+        return
+    try:
+        blocking = deps.eval_gate.blocking(agent_id, digest)
+    except Exception as exc:
+        logger.exception("the required evals could not be read")
+        raise ApiError(503, "evals_unavailable", "please try again") from exc
+    if blocking:
+        raise ApiError(
+            409,
+            "evals_not_passing",
+            "a required eval has not passed on this version",
+            extra={"suites": [{"suite_id": s.suite_id, "state": s.state} for s in blocking]},
+        )
+
+
 def approve(
     deps: AgentsDeps, caller: Caller, agent_id: str, number: int, body: HashIn
 ) -> VersionOut:
@@ -1581,6 +1606,7 @@ def approve(
         )
         if violations:
             raise ValidationFailedError(violations)
+        _check_evals(deps, agent_id, body.content_hash)
         deps.store.approve(
             agent_id,
             number,

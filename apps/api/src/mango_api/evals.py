@@ -1092,3 +1092,71 @@ def evals_router(  # noqa: PLR0915 - one route per statement group
         await run(withdraw, deps, caller, change)
 
     return router
+
+
+# --- The gate of the review (D26, E3) --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GateSuite:
+    suite_id: str
+    name: str
+    state: Literal["passed", "failed", "running", "not_run", "other_version"]
+
+
+class EvalGate:
+    """What the review of a version asks of the evals (D26): a required suite that has not passed
+    on exactly that content blocks its approval, in the server (TM-EV3). Sending a version to
+    review starts its required suites, and those marked to run on every submission, on it."""
+
+    def __init__(self, deps: EvalsDeps) -> None:
+        self._deps = deps
+
+    def state(self, agent_id: str, digest: str) -> list[GateSuite]:
+        """The required suites of the agent and where each stands for ``digest``. Raises when
+        the suites cannot be read: the caller fails closed."""
+        out: list[GateSuite] = []
+        for suite in self._deps.store.suites(agent_id):
+            if not suite.required:
+                continue
+            run = suite.last_run
+            state: Literal["passed", "failed", "running", "not_run", "other_version"]
+            if suite.running:
+                state = "running"
+            elif run is None:
+                state = "not_run"
+            elif run.content_hash != digest:
+                state = "other_version"
+            else:
+                state = "passed" if run.passed else "failed"
+            out.append(GateSuite(suite.suite_id, suite.name, state))
+        return out
+
+    def blocking(self, agent_id: str, digest: str) -> list[GateSuite]:
+        return [s for s in self.state(agent_id, digest) if s.state != "passed"]
+
+    def on_submit(self, caller: Caller, agent_id: str, number: int) -> list[str]:
+        """Start the suites that run on a submission; never fails the submission. Returns the
+        ids of the runs started."""
+        deps = self._deps
+        started: list[str] = []
+        try:
+            suites = [
+                s for s in deps.store.suites(agent_id) if s.required or s.trigger == "on_submit"
+            ]
+            meta = deps.agents.meta(agent_id)
+        except (ClientError, BotoCoreError, StoredEvalError):
+            logger.exception("the suites to run on submission could not be read")
+            return started
+        for suite in suites:
+            try:
+                run = start_run(deps, caller, meta, suite, StartRunIn(version=number), "on_submit")
+            except ApiError as exc:
+                # Audited by start_run when it got that far; the review shows «sin ejecutar».
+                logger.warning("a suite did not start on submission: %s", exc.code)
+                continue
+            except (ClientError, BotoCoreError, StoredEvalError):
+                logger.exception("a suite did not start on submission")
+                continue
+            started.append(run.run_id)
+        return started

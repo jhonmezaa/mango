@@ -121,7 +121,7 @@ from mango_api.directory import (
     LookupQuota,
     directory_router,
 )
-from mango_api.evals import EvalsDeps, evals_router
+from mango_api.evals import EvalGate, EvalsDeps, evals_router
 from mango_api.evals_runner import EvalRunner, EvalRunnerDeps, EvalsHarnesses
 from mango_api.evals_store import EvalRuns, EvalStore
 from mango_api.gateway_mcp import GatewayConnections
@@ -1200,6 +1200,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
     settings = settings or Settings.from_env()
     services = services_factory(settings)
     eval_runner = _eval_runner(services, settings)
+    if services.agents is not None and services.evals is not None:
+        # D26: a required suite that has not passed on a version blocks its approval.
+        services.agents.eval_gate = EvalGate(services.evals)
     if services.tasks is not None and services.task_tokens is not None:
         services.task_runs = TaskRuns(
             store=services.tasks.store,
