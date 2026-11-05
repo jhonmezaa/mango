@@ -50,6 +50,8 @@ PER_TASK = {
     "activity.reads",
     # D92 (9): the reads of the skills catalog (30 days of activations each).
     "skills.reads",
+    # D105 (5): the reads of Costos (bounded queries of the day counters, cached 30 s).
+    "costs.reads",
 }
 """Limits accepted as one per task. Adding a name here is a decision: record it (D70)."""
 

@@ -539,6 +539,113 @@
         "title": "AgentBudgetOut",
         "type": "object"
       },
+      "AgentCostBudgetOut": {
+        "additionalProperties": false,
+        "properties": {
+          "limit_usd": {
+            "title": "Limit Usd",
+            "type": "string"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "limit_usd",
+          "spent_usd"
+        ],
+        "title": "AgentCostBudgetOut",
+        "type": "object"
+      },
+      "AgentCostOut": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentCostBudgetOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "previous_usd": {
+            "title": "Previous Usd",
+            "type": "string"
+          },
+          "projected_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Usd"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "spent_usd",
+          "turns",
+          "previous_usd",
+          "projected_usd",
+          "name",
+          "category",
+          "model",
+          "budget"
+        ],
+        "title": "AgentCostOut",
+        "type": "object"
+      },
       "AgentDefinition": {
         "additionalProperties": false,
         "description": "Content of one agent version. The agent's budget is not part of it (D22).",
@@ -1091,6 +1198,45 @@
           "created_by"
         ],
         "title": "AgentStateOut",
+        "type": "object"
+      },
+      "AgentsBreakdownOut": {
+        "additionalProperties": false,
+        "properties": {
+          "counted_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted Since"
+          },
+          "previous_unattributed_usd": {
+            "title": "Previous Unattributed Usd",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AgentCostOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "unattributed_usd": {
+            "title": "Unattributed Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "counted_since",
+          "unattributed_usd",
+          "previous_unattributed_usd",
+          "rows"
+        ],
+        "title": "AgentsBreakdownOut",
         "type": "object"
       },
       "AnomalyOut": {
@@ -2770,6 +2916,216 @@
           "agent_id"
         ],
         "title": "ConversationSummary",
+        "type": "object"
+      },
+      "CostDayOut": {
+        "additionalProperties": false,
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "spent_usd",
+          "turns"
+        ],
+        "title": "CostDayOut",
+        "type": "object"
+      },
+      "CostRowOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "previous_usd": {
+            "title": "Previous Usd",
+            "type": "string"
+          },
+          "projected_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Usd"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "spent_usd",
+          "turns",
+          "previous_usd",
+          "projected_usd"
+        ],
+        "title": "CostRowOut",
+        "type": "object"
+      },
+      "CostsBreakdownOut": {
+        "additionalProperties": false,
+        "properties": {
+          "counted_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted Since"
+          },
+          "previous_unattributed_usd": {
+            "title": "Previous Unattributed Usd",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CostRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "unattributed_usd": {
+            "title": "Unattributed Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "counted_since",
+          "unattributed_usd",
+          "previous_unattributed_usd",
+          "rows"
+        ],
+        "title": "CostsBreakdownOut",
+        "type": "object"
+      },
+      "CostsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "$ref": "#/components/schemas/AgentsBreakdownOut"
+          },
+          "closed": {
+            "title": "Closed",
+            "type": "boolean"
+          },
+          "counted_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted Since"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/CostDayOut"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "days_in_month": {
+            "title": "Days In Month",
+            "type": "integer"
+          },
+          "elapsed_days": {
+            "title": "Elapsed Days",
+            "type": "integer"
+          },
+          "models": {
+            "$ref": "#/components/schemas/CostsBreakdownOut"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "previous_days": {
+            "items": {
+              "$ref": "#/components/schemas/CostDayOut"
+            },
+            "title": "Previous Days",
+            "type": "array"
+          },
+          "previous_month": {
+            "title": "Previous Month",
+            "type": "string"
+          },
+          "previous_turns": {
+            "title": "Previous Turns",
+            "type": "integer"
+          },
+          "previous_usd": {
+            "title": "Previous Usd",
+            "type": "string"
+          },
+          "projected_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Usd"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/CostsBreakdownOut"
+          },
+          "spent_usd": {
+            "title": "Spent Usd",
+            "type": "string"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "previous_month",
+          "days_in_month",
+          "elapsed_days",
+          "closed",
+          "counted_since",
+          "days",
+          "previous_days",
+          "spent_usd",
+          "turns",
+          "previous_usd",
+          "previous_turns",
+          "projected_usd",
+          "agents",
+          "models",
+          "sources"
+        ],
+        "title": "CostsOut",
         "type": "object"
       },
       "CreateAgentIn": {
@@ -16183,6 +16539,53 @@
           }
         },
         "summary": "Get Conversation"
+      }
+    },
+    "/costs": {
+      "get": {
+        "operationId": "get_costs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Costs"
       }
     },
     "/directory/users/resolve": {

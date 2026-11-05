@@ -268,6 +268,14 @@ def test_the_organizations_usage_is_for_administrators_and_central_finops(
         assert not authz.is_allowed(user, "ViewOrgUsage", *PLATFORM), user.user_id
 
 
+def test_costos_is_for_administrators_and_central_finops_alike(authz: Authorizer) -> None:
+    # D105 (c): both see the same, the agents' budgets included.
+    assert authz.is_allowed(ADMIN, "ViewCosts", *PLATFORM)
+    assert authz.is_allowed(CENTRAL, "ViewCosts", *PLATFORM)
+    for user in (CREATOR, OTHER_CREATOR, MEMBER, LEAD, NO_GROUP):
+        assert not authz.is_allowed(user, "ViewCosts", *PLATFORM), user.user_id
+
+
 def test_an_areas_usage_is_for_a_lead_with_their_area(authz: Authorizer) -> None:
     assert authz.is_allowed(LEAD, "ViewAreaUsage", *PLATFORM)
     in_area = UserContext("member-2", None, "security", False, groups=frozenset({"bu-security"}))

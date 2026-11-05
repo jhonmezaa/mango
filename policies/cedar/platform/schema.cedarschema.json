@@ -120,6 +120,9 @@
       "ViewOrgUsage": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "ViewCosts": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ViewAreaUsage": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
