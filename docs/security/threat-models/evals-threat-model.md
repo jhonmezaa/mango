@@ -113,7 +113,7 @@ flowchart LR
 
 ## Entry points and attack surfaces
 
-- `GET/POST/PATCH/DELETE /api/evals/suites…`, `PUT …/cases`, `POST …/cases/csv`, `POST …/requirement-removal`, `POST /api/evals/requirement-changes/{id}/approve|reject|withdraw`, `POST …/runs` (E2), `GET …/runs`.
+- `GET/POST/PATCH/DELETE /api/evals/suites…`, `PUT …/cases`, `POST …/cases/csv`, `POST …/requirement-removal`, `POST /api/evals/requirement-changes/{id}/approve|reject|withdraw`, `POST …/runs` (E2), `GET …/runs` y `POST /api/evals/estimate` (lo que reserva una ejecución, con `ViewEvals` sobre el agente y el límite de lecturas; solo cifras, ningún caso). Cada suite dice además su ejecución en curso (`active_run`: estado y casos hechos) y cómo terminó la última (`last_attempt`: estado, código de motivo y casos hechos), sin contenido.
 - El envío a revisión (lanza las obligatorias) y `approve` de una versión (gate).
 - La invocación del evaluador desde `mango-api` y desde el provisioner (canario).
 - El contenido que el harness de evals escribe en su log group.

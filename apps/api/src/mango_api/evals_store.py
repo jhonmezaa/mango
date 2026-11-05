@@ -115,6 +115,21 @@ class LastRun:
 
 
 @dataclass(frozen=True)
+class LastAttempt:
+    """How the most recent run of the suite ended, whatever it was: a run that stopped or failed
+    never becomes the last run (it does not count), but the view says why it ended."""
+
+    run_id: str
+    status: str
+    """``passed``, ``failed``, ``stopped`` or ``error``."""
+    stop_reason: str | None
+    cases_done: int
+    """Cases that ran (a case skipped for budget did not)."""
+    case_count: int
+    finished_at: datetime
+
+
+@dataclass(frozen=True)
 class Suite:
     suite_id: str
     agent_id: str
@@ -138,6 +153,7 @@ class Suite:
     last_run: LastRun | None = None
     running: str | None = None
     """The run that holds the suite (one at a time, TM-EV6)."""
+    last_attempt: LastAttempt | None = None
 
     def locked(self, now: datetime) -> bool:
         """An open request to stop requiring it: until it closes or expires."""
@@ -211,7 +227,42 @@ def _suite_item(suite: Suite) -> dict[str, Any]:
                 "finished_at": _s(iso(run.finished_at)),
             }
         }
+    if suite.last_attempt:
+        item["last_attempt"] = _attempt_item(suite.last_attempt)
     return item
+
+
+def _attempt_item(attempt: LastAttempt) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "run_id": _s(attempt.run_id),
+        "status": _s(attempt.status),
+        "cases_done": _n(attempt.cases_done),
+        "case_count": _n(attempt.case_count),
+        "finished_at": _s(iso(attempt.finished_at)),
+    }
+    if attempt.stop_reason:
+        out["stop_reason"] = _s(attempt.stop_reason)
+    return {"M": out}
+
+
+def _last_attempt(raw: Any) -> LastAttempt | None:
+    if raw is None:
+        return None
+    try:
+        m = raw["M"]
+        status = m["status"]["S"]
+        if status not in ("passed", "failed", "stopped", "error"):
+            raise StoredEvalError("invalid last attempt")
+        return LastAttempt(
+            run_id=m["run_id"]["S"],
+            status=status,
+            stop_reason=_opt(m, "stop_reason"),
+            cases_done=int(m["cases_done"]["N"]),
+            case_count=int(m["case_count"]["N"]),
+            finished_at=_when(m["finished_at"]["S"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise StoredEvalError("invalid last attempt") from None
 
 
 def _last_run(raw: Any) -> LastRun | None:
@@ -262,6 +313,7 @@ def suite_from_item(item: dict[str, Any]) -> Suite:
             pending_expires_at=_when(pending_expires) if pending_expires else None,
             last_run=_last_run(item.get("last_run")),
             running=_opt(item, "running") or None,
+            last_attempt=_last_attempt(item.get("last_attempt")),
         )
     except (KeyError, TypeError, ValueError):
         raise StoredEvalError("invalid suite") from None
@@ -663,6 +715,11 @@ class Run:
     stop_reason: str | None = None
 
 
+def cases_done(results: tuple[CaseResult | None, ...]) -> int:
+    """Cases of a run that ran: a case skipped for budget never reached the agent."""
+    return sum(1 for r in results if r is not None and r.status != "skipped")
+
+
 def _run_key(suite_id: str, run_id: str) -> dict[str, Any]:
     return {"PK": _s(f"SUITE#{suite_id}"), "SK": _s(f"RUN#{run_id}")}
 
@@ -874,16 +931,34 @@ class EvalRuns:
             names["#stop"] = "stop_reason"
             values[":stop"] = _s(stop_reason)
             sets.append("#stop = :stop")
+        attempt = LastAttempt(
+            run_id=run.run_id,
+            status=status,
+            stop_reason=stop_reason or None,
+            cases_done=cases_done(run.results),
+            case_count=run.case_count,
+            finished_at=now,
+        )
         suite_update: Any = {
             "TableName": self._table,
             "Key": _suite_key(suite.agent_id, suite.suite_id),
-            "UpdateExpression": "REMOVE #running ADD #rev :one",
+            "UpdateExpression": "REMOVE #running SET #attempt = :attempt ADD #rev :one",
             "ConditionExpression": "#running = :run",
-            "ExpressionAttributeNames": {"#running": "running", "#rev": "revision"},
-            "ExpressionAttributeValues": {":run": _s(run.run_id), ":one": _n(1)},
+            "ExpressionAttributeNames": {
+                "#running": "running",
+                "#rev": "revision",
+                "#attempt": "last_attempt",
+            },
+            "ExpressionAttributeValues": {
+                ":run": _s(run.run_id),
+                ":one": _n(1),
+                ":attempt": _attempt_item(attempt),
+            },
         }
         if status in ("passed", "failed") and score is not None:
-            suite_update["UpdateExpression"] = "REMOVE #running SET #last = :last ADD #rev :one"
+            suite_update["UpdateExpression"] = (
+                "REMOVE #running SET #last = :last, #attempt = :attempt ADD #rev :one"
+            )
             suite_update["ExpressionAttributeNames"]["#last"] = "last_run"
             suite_update["ExpressionAttributeValues"][":last"] = {
                 "M": {

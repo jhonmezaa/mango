@@ -15,6 +15,23 @@ export const zActionOutSchema = z.object({
 });
 
 /**
+ * ActiveRunOut
+ *
+ * The run that holds the suite now, for its progress («Caso {n} de {total}»).
+ */
+export const zActiveRunOutSchema = z.object({
+    case_count: z.int(),
+    cases_done: z.int(),
+    run_id: z.string(),
+    status: z.enum([
+        'queued',
+        'running',
+        'judging'
+    ]),
+    version: z.int()
+});
+
+/**
  * ActivityAgent
  */
 export const zActivityAgentSchema = z.object({
@@ -772,6 +789,24 @@ export const zErrorBodySchema = z.object({
 });
 
 /**
+ * EstimateIn
+ */
+export const zEstimateInSchema = z.object({
+    agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/),
+    case_count: z.int().gte(1).lte(50),
+    judge_model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$/).nullish(),
+    judged: z.int().gte(0).lte(50).optional().default(0)
+});
+
+/**
+ * EstimateOut
+ */
+export const zEstimateOutSchema = z.object({
+    model: z.string(),
+    usd: z.string()
+});
+
+/**
  * EvalCase
  */
 export const zEvalCaseSchema = z.object({
@@ -1121,6 +1156,26 @@ export const zKnowledgeBaseUpdateSchema = z.object({
         'weekly'
     ]).optional().default('manual'),
     version: z.int().gte(1)
+});
+
+/**
+ * LastAttemptOut
+ *
+ * How the most recent run ended. One that stopped or failed does not count: the score and
+ * the gate stay with ``last_run``.
+ */
+export const zLastAttemptOutSchema = z.object({
+    case_count: z.int(),
+    cases_done: z.int(),
+    finished_at: z.string(),
+    run_id: z.string(),
+    status: z.enum([
+        'passed',
+        'failed',
+        'stopped',
+        'error'
+    ]),
+    stop_reason: z.string().nullable()
 });
 
 /**
@@ -2920,6 +2975,7 @@ export const zSubmitInSchema = z.object({
  * SuiteDetailOut
  */
 export const zSuiteDetailOutSchema = z.object({
+    active_run: zActiveRunOutSchema.nullish(),
     agent_id: z.string(),
     can_edit: z.boolean(),
     case_count: z.int(),
@@ -2932,6 +2988,7 @@ export const zSuiteDetailOutSchema = z.object({
         'regression',
         'security'
     ]),
+    last_attempt: zLastAttemptOutSchema.nullish(),
     last_run: zLastRunOutSchema.nullable(),
     name: z.string(),
     request: zRequestOutSchema.nullable(),
@@ -2947,6 +3004,7 @@ export const zSuiteDetailOutSchema = z.object({
  * SuiteOut
  */
 export const zSuiteOutSchema = z.object({
+    active_run: zActiveRunOutSchema.nullish(),
     agent_id: z.string(),
     can_edit: z.boolean(),
     case_count: z.int(),
@@ -2958,6 +3016,7 @@ export const zSuiteOutSchema = z.object({
         'regression',
         'security'
     ]),
+    last_attempt: zLastAttemptOutSchema.nullish(),
     last_run: zLastRunOutSchema.nullable(),
     name: z.string(),
     request: zRequestOutSchema.nullable(),
@@ -4539,6 +4598,13 @@ export const zGetEvalsQuery = z.object({
  * Successful Response
  */
 export const zGetEvalsResponse = zSuitesOutSchema;
+
+export const zPostEvalEstimateBody = zEstimateInSchema;
+
+/**
+ * Successful Response
+ */
+export const zPostEvalEstimateResponse = zEstimateOutSchema;
 
 export const zApproveEvalRequirementBody = zEmptyInSchema;
 

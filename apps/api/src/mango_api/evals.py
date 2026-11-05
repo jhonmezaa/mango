@@ -26,6 +26,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from decimal import ROUND_CEILING, Decimal
 from typing import Annotated, Any, Literal, NoReturn
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -46,13 +47,16 @@ from mango_api.evals_store import (
     Suite,
     SuiteKind,
     Trigger,
+    cases_done,
     cases_hash,
     dumps_cases,
     new_id,
     new_run_id,
 )
 from mango_api.model_catalog import ModelCatalog, ModelCatalogUnavailableError
+from mango_api.pricing import eval_case_reservation, judge_reservation
 from mango_api.rate_limits import Limiter
+from mango_api.settings import ModelPrice
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core import task_runs
 from mango_core.agents import (
@@ -65,6 +69,7 @@ from mango_core.agents import (
 from mango_core.evals import (
     MAX_CASES,
     MAX_CSV_BYTES,
+    MAX_QUESTION_CHARS,
     CsvError,
     EvalCase,
     EvalCases,
@@ -87,6 +92,7 @@ MIN_THRESHOLD = 50
 SECURITY_THRESHOLD = 100
 REQUEST_LIFETIME = timedelta(days=7)
 SUITE_ID_PATTERN = r"^[0-9a-f]{32}$"
+_MICRO = Decimal("0.000001")
 CHANGE_ID_PATTERN = r"^[0-9a-f]{32}$"
 
 
@@ -176,6 +182,28 @@ class RequestOut(_Strict):
     expires_at: str
 
 
+class ActiveRunOut(_Strict):
+    """The run that holds the suite now, for its progress («Caso {n} de {total}»)."""
+
+    run_id: str
+    status: Literal["queued", "running", "judging"]
+    version: int
+    cases_done: int
+    case_count: int
+
+
+class LastAttemptOut(_Strict):
+    """How the most recent run ended. One that stopped or failed does not count: the score and
+    the gate stay with ``last_run``."""
+
+    run_id: str
+    status: Literal["passed", "failed", "stopped", "error"]
+    stop_reason: str | None
+    cases_done: int
+    case_count: int
+    finished_at: str
+
+
 class SuiteOut(_Strict):
     suite_id: str
     agent_id: str
@@ -192,6 +220,8 @@ class SuiteOut(_Strict):
     updated_at: str
     request: RequestOut | None
     last_run: LastRunOut | None
+    active_run: ActiveRunOut | None = None
+    last_attempt: LastAttemptOut | None = None
     can_edit: bool
 
 
@@ -240,6 +270,22 @@ class EvalRunsOut(_Strict):
     runs: list[EvalRunOut]
 
 
+class EstimateIn(_Strict):
+    agent_id: Annotated[str, Field(pattern=AGENT_ID_PATTERN)]
+    case_count: Annotated[int, Field(ge=1, le=MAX_CASES)]
+    judged: Annotated[int, Field(ge=0, le=MAX_CASES)] = 0
+    """Cases decided by the judge; at most ``case_count``."""
+    judge_model: JudgeModel | None = None
+
+
+class EstimateOut(_Strict):
+    usd: str
+    """What one run reserves, in USD (rule 4): every case on the published version of the agent,
+    with the longest question, plus the judging of the judged cases."""
+    model: str
+    """The model of the agent the cases run on."""
+
+
 # --- Use cases --------------------------------------------------------------------------
 
 
@@ -261,6 +307,10 @@ class EvalsDeps:
     """The queue of runs (``tasks.RunQueue``), shared with the tasks (D78)."""
     run_limiter: Limiter | None = None
     judge_models: tuple[str, ...] = ()
+    price: Callable[[str], ModelPrice] | None = None
+    """Price of an enabled model from the catalog (rule 7); ``None`` until runs exist."""
+    knowledge_price: Decimal = Decimal(0)
+    evaluation_fee: Decimal = Decimal(0)
 
 
 def _iso(value: datetime) -> str:
@@ -309,6 +359,39 @@ def _request_out(
     )
 
 
+def _active_out(active: Run | None) -> ActiveRunOut | None:
+    if active is None or active.status not in ("queued", "running", "judging"):
+        return None
+    return ActiveRunOut(
+        run_id=active.run_id,
+        status=active.status,
+        version=active.version,
+        cases_done=cases_done(active.results),
+        case_count=active.case_count,
+    )
+
+
+def _attempt_out(suite: Suite) -> LastAttemptOut | None:
+    attempt = suite.last_attempt
+    if attempt is None:
+        return None
+    return LastAttemptOut(
+        run_id=attempt.run_id,
+        status=attempt.status,  # type: ignore[arg-type]
+        stop_reason=attempt.stop_reason,
+        cases_done=attempt.cases_done,
+        case_count=attempt.case_count,
+        finished_at=_iso(attempt.finished_at),
+    )
+
+
+def _active(deps: EvalsDeps, suite: Suite) -> Run | None:
+    """The run that holds the suite, read only for a suite that is running."""
+    if not suite.running or deps.runs is None:
+        return None
+    return deps.runs.get(suite.suite_id, suite.running)
+
+
 def _suite_out(
     suite: Suite,
     caller: Caller,
@@ -316,6 +399,7 @@ def _suite_out(
     can_edit: bool,
     changes: dict[str, RequirementChange],
     now: datetime,
+    active: Run | None = None,
 ) -> SuiteOut:
     run = suite.last_run
     return SuiteOut(
@@ -342,6 +426,8 @@ def _suite_out(
         )
         if run
         else None,
+        active_run=_active_out(active),
+        last_attempt=_attempt_out(suite),
         can_edit=can_edit,
     )
 
@@ -366,6 +452,7 @@ def list_suites(deps: EvalsDeps, caller: Caller, agent_id: str | None) -> Suites
             can_edit=s.agent_id in editable and _may(caller, "EditEvals", metas.get(s.agent_id)),
             changes=changes,
             now=now,
+            active=_active(deps, s),
         )
         for s in suites
         if s.agent_id in visible and _may(caller, "ViewEvals", metas.get(s.agent_id))
@@ -561,8 +648,11 @@ def _detail_out(
     can_edit: bool,
     now: datetime,
     changes: dict[str, RequirementChange] | None = None,
+    active: Run | None = None,
 ) -> SuiteDetailOut:
-    base = _suite_out(suite, caller, can_edit=can_edit, changes=changes or {}, now=now)
+    base = _suite_out(
+        suite, caller, can_edit=can_edit, changes=changes or {}, now=now, active=active
+    )
     return SuiteDetailOut(
         **base.model_dump(),
         cases=[
@@ -575,7 +665,15 @@ def _detail_out(
 def get_suite(deps: EvalsDeps, caller: Caller, suite: Suite, can_edit: bool) -> SuiteDetailOut:
     cases = deps.store.cases(suite)
     changes = _open_changes(deps) if suite.pending else {}
-    return _detail_out(suite, cases, caller, can_edit=can_edit, now=deps.clock(), changes=changes)
+    return _detail_out(
+        suite,
+        cases,
+        caller,
+        can_edit=can_edit,
+        now=deps.clock(),
+        changes=changes,
+        active=_active(deps, suite),
+    )
 
 
 def _current(suite: Suite, revision: int) -> None:
@@ -927,6 +1025,39 @@ def start_run(  # noqa: PLR0917 - the parts of one run, all required
     return _run_out(run)
 
 
+def estimate(deps: EvalsDeps, body: EstimateIn) -> EstimateOut:
+    """What one run of ``body.case_count`` cases reserves (rule 4, D111 (3)), with the same
+    reservations the runner makes: each case is a turn of the published version of the agent,
+    counted with the longest question; each judged case adds its judging. Never falls short."""
+    if deps.price is None:
+        raise ApiError(503, "evals_unavailable", "evals cannot run in this installation yet")
+    if body.judged > body.case_count:
+        raise ApiError(
+            422, "invalid_request", "invalid fields: judged", extra={"fields": ["judged"]}
+        )
+    pointer = deps.agents.published_pointer(body.agent_id)
+    version = deps.agents.version(body.agent_id, pointer.version) if pointer else None
+    model = version.definition.model if version else None
+    if version is None or not model:
+        raise ApiError(409, "version_not_testable", "the agent has no published version")
+    limits = version.definition.limits
+    per_case = eval_case_reservation(
+        deps.price(model),
+        MAX_QUESTION_CHARS,
+        limits.max_iterations,
+        limits.reserved_output_tokens,
+        deps.knowledge_price if version.definition.knowledge_bases else None,
+    )
+    total = per_case * body.case_count
+    if body.judged:
+        if not body.judge_model:
+            raise ApiError(422, "judge_model_required", "choose the model that judges")
+        if body.judge_model not in deps.judge_models:
+            raise ApiError(409, "judge_unavailable", "this model cannot judge in this installation")
+        total += judge_reservation(deps.price(body.judge_model), deps.evaluation_fee) * body.judged
+    return EstimateOut(usd=str(total.quantize(_MICRO, rounding=ROUND_CEILING)), model=model)
+
+
 # --- Router -----------------------------------------------------------------------------
 
 
@@ -1013,6 +1144,12 @@ def evals_router(  # noqa: PLR0915 - one route per statement group
     ) -> SuitesOut:
         await limit(deps.reads, caller)
         return await run(list_suites, deps, caller, agent_id)
+
+    @router.post("/estimate", response_model=EstimateOut)
+    async def post_eval_estimate(body: EstimateIn, caller: CallerDep) -> EstimateOut:
+        await limit(deps.reads, caller)
+        await on_agent(caller, "ViewEvals", body.agent_id, read_only=True)
+        return await run(estimate, deps, body)
 
     @router.post("/suites", response_model=SuiteDetailOut, status_code=201)
     async def post_eval_suite(body: NewSuiteIn, caller: CallerDep) -> SuiteDetailOut:

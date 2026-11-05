@@ -31,6 +31,46 @@
         "title": "ActionOut",
         "type": "object"
       },
+      "ActiveRunOut": {
+        "additionalProperties": false,
+        "description": "The run that holds the suite now, for its progress («Caso {n} de {total}»).",
+        "properties": {
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "cases_done": {
+            "title": "Cases Done",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "judging"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "version",
+          "cases_done",
+          "case_count"
+        ],
+        "title": "ActiveRunOut",
+        "type": "object"
+      },
       "ActivityAgent": {
         "additionalProperties": false,
         "properties": {
@@ -3737,6 +3777,66 @@
         "title": "ErrorDetail",
         "type": "object"
       },
+      "EstimateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "pattern": "^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "case_count": {
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "judge_model": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Model"
+          },
+          "judged": {
+            "default": 0,
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Judged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_id",
+          "case_count"
+        ],
+        "title": "EstimateIn",
+        "type": "object"
+      },
+      "EstimateOut": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "usd": {
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "usd",
+          "model"
+        ],
+        "title": "EstimateOut",
+        "type": "object"
+      },
       "EvalCase": {
         "additionalProperties": false,
         "properties": {
@@ -5535,6 +5635,59 @@
           "version"
         ],
         "title": "KnowledgeBaseUpdate",
+        "type": "object"
+      },
+      "LastAttemptOut": {
+        "additionalProperties": false,
+        "description": "How the most recent run ended. One that stopped or failed does not count: the score and\nthe gate stay with ``last_run``.",
+        "properties": {
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "cases_done": {
+            "title": "Cases Done",
+            "type": "integer"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "stopped",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "stop_reason",
+          "cases_done",
+          "case_count",
+          "finished_at"
+        ],
+        "title": "LastAttemptOut",
         "type": "object"
       },
       "LastRunOut": {
@@ -11698,6 +11851,16 @@
       "SuiteDetailOut": {
         "additionalProperties": false,
         "properties": {
+          "active_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActiveRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "agent_id": {
             "title": "Agent Id",
             "type": "string"
@@ -11751,6 +11914,16 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "last_attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastAttemptOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "last_run": {
             "anyOf": [
@@ -11830,6 +12003,16 @@
       "SuiteOut": {
         "additionalProperties": false,
         "properties": {
+          "active_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActiveRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "agent_id": {
             "title": "Agent Id",
             "type": "string"
@@ -11876,6 +12059,16 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "last_attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastAttemptOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "last_run": {
             "anyOf": [
@@ -18162,6 +18355,44 @@
           }
         },
         "summary": "Get Evals"
+      }
+    },
+    "/evals/estimate": {
+      "post": {
+        "operationId": "post_eval_estimate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Post Eval Estimate"
       }
     },
     "/evals/requirement-changes/{change_id}/approve": {

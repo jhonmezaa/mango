@@ -1208,6 +1208,9 @@ def _eval_runner(services: Services, settings: Settings) -> EvalRunner | None:
     deps.queue = services.tasks.queue
     deps.run_limiter = services.limits.limiter("evals.runs")
     deps.judge_models = settings.eval_judge_models
+    deps.price = lambda model_id: _model_price(services, model_id)
+    deps.knowledge_price = settings.knowledge_embedding_price
+    deps.evaluation_fee = settings.evaluation_fee
     return EvalRunner(
         EvalRunnerDeps(
             store=deps.store,

@@ -19,6 +19,34 @@ export type ActionOut = {
 };
 
 /**
+ * ActiveRunOut
+ *
+ * The run that holds the suite now, for its progress («Caso {n} de {total}»).
+ */
+export type ActiveRunOut = {
+    /**
+     * Case Count
+     */
+    case_count: number;
+    /**
+     * Cases Done
+     */
+    cases_done: number;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Status
+     */
+    status: 'queued' | 'running' | 'judging';
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * ActivityAgent
  */
 export type ActivityAgent = {
@@ -2108,6 +2136,42 @@ export type ErrorDetail = {
 };
 
 /**
+ * EstimateIn
+ */
+export type EstimateIn = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Case Count
+     */
+    case_count: number;
+    /**
+     * Judge Model
+     */
+    judge_model?: string | null;
+    /**
+     * Judged
+     */
+    judged?: number;
+};
+
+/**
+ * EstimateOut
+ */
+export type EstimateOut = {
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Usd
+     */
+    usd: string;
+};
+
+/**
  * EvalCase
  */
 export type EvalCase = {
@@ -2975,6 +3039,39 @@ export type KnowledgeBaseUpdate = {
      * Version
      */
     version: number;
+};
+
+/**
+ * LastAttemptOut
+ *
+ * How the most recent run ended. One that stopped or failed does not count: the score and
+ * the gate stay with ``last_run``.
+ */
+export type LastAttemptOut = {
+    /**
+     * Case Count
+     */
+    case_count: number;
+    /**
+     * Cases Done
+     */
+    cases_done: number;
+    /**
+     * Finished At
+     */
+    finished_at: string;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Status
+     */
+    status: 'passed' | 'failed' | 'stopped' | 'error';
+    /**
+     * Stop Reason
+     */
+    stop_reason: string | null;
 };
 
 /**
@@ -6175,6 +6272,7 @@ export type SubmitIn = {
  * SuiteDetailOut
  */
 export type SuiteDetailOut = {
+    active_run?: ActiveRunOut | null;
     /**
      * Agent Id
      */
@@ -6207,6 +6305,7 @@ export type SuiteDetailOut = {
      * Kind
      */
     kind: 'golden' | 'regression' | 'security';
+    last_attempt?: LastAttemptOut | null;
     last_run: LastRunOut | null;
     /**
      * Name
@@ -6243,6 +6342,7 @@ export type SuiteDetailOut = {
  * SuiteOut
  */
 export type SuiteOut = {
+    active_run?: ActiveRunOut | null;
     /**
      * Agent Id
      */
@@ -6271,6 +6371,7 @@ export type SuiteOut = {
      * Kind
      */
     kind: 'golden' | 'regression' | 'security';
+    last_attempt?: LastAttemptOut | null;
     last_run: LastRunOut | null;
     /**
      * Name
@@ -9887,6 +9988,31 @@ export type GetEvalsResponses = {
 };
 
 export type GetEvalsResponse = GetEvalsResponses[keyof GetEvalsResponses];
+
+export type PostEvalEstimateData = {
+    body: EstimateIn;
+    path?: never;
+    query?: never;
+    url: '/evals/estimate';
+};
+
+export type PostEvalEstimateErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type PostEvalEstimateError = PostEvalEstimateErrors[keyof PostEvalEstimateErrors];
+
+export type PostEvalEstimateResponses = {
+    /**
+     * Successful Response
+     */
+    200: EstimateOut;
+};
+
+export type PostEvalEstimateResponse = PostEvalEstimateResponses[keyof PostEvalEstimateResponses];
 
 export type ApproveEvalRequirementData = {
     body: EmptyIn;

@@ -14,7 +14,15 @@ from typing import Any
 import pytest
 
 from mango_api.budget import BudgetScope
-from mango_api.evals import EvalsDeps, StartRunIn, start_run
+from mango_api.evals import (
+    EstimateIn,
+    EvalsDeps,
+    StartRunIn,
+    estimate,
+    get_suite,
+    list_suites,
+    start_run,
+)
 from mango_api.evals_runner import (
     EvalRunner,
     EvalRunnerDeps,
@@ -35,7 +43,15 @@ from mango_core.identity import UserContext
 from mango_core.playground import PlaygroundHarness
 
 from .test_admin import _table
-from .test_agents_api import SONNET, Env, _create, _h, _submit, env  # noqa: F401
+from .test_agents_api import (  # noqa: F401
+    SONNET,
+    Env,
+    _create,
+    _h,
+    _published,
+    _submit,
+    env,
+)
 
 EVALS_HARNESS = (
     "arn:aws:bedrock-agentcore:us-east-1:111111111111:harness/Mango_test_a_evals-abcdefghij"
@@ -438,6 +454,136 @@ def test_a_version_in_review_can_be_run(lab: Lab) -> None:
     run = lab.runs.get(suite.suite_id, run_id)
     assert run is not None and run.status == "passed"
     assert run.content_hash == review["content_hash"]
+
+
+# --- What the view reads: the run in progress, how the last one ended and the cost --------------
+
+
+def _launcher() -> Caller:
+    return Caller(CREATOR, "creator", int(time.time()) + 3600)
+
+
+def test_the_suite_shows_its_run_in_progress_case_by_case(lab: Lab) -> None:
+    draft = _create(lab.env)
+    suite = lab.suite(CASES[:2], draft["agent_id"])
+    run_id = lab.start(suite, draft)
+
+    listed = list_suites(lab.deps, _launcher(), None).suites[0]
+    assert listed.active_run is not None
+    assert (listed.active_run.run_id, listed.active_run.status) == (run_id, "queued")
+    assert (listed.active_run.cases_done, listed.active_run.case_count) == (0, 2)
+    assert listed.last_attempt is None
+
+    body, _ = lab.queue.sent.pop(0)
+    message = task_runs.parse_message(body)
+    assert isinstance(message, task_runs.EvalStep)
+    lab.runner.handle(message)
+    fresh = lab.store.find_suite(suite.suite_id)
+    assert fresh is not None
+    detail = get_suite(lab.deps, _launcher(), fresh, True)
+    assert detail.active_run is not None and detail.active_run.cases_done == 1
+
+    lab.drain()
+    done = lab.store.find_suite(suite.suite_id)
+    assert done is not None
+    after = get_suite(lab.deps, _launcher(), done, True)
+    assert after.active_run is None
+    assert after.last_attempt is not None
+    assert (after.last_attempt.status, after.last_attempt.cases_done) == ("passed", 2)
+    assert after.last_run is not None and after.last_run.run_id == after.last_attempt.run_id
+
+
+def test_a_run_without_budget_is_the_last_attempt_but_never_the_last_run(lab: Lab) -> None:
+    draft = _create(lab.env)
+    suite = lab.suite(CASES, draft["agent_id"])
+    lab.env.budgets.exceed = True
+    run_id = lab.start(suite, draft)
+    lab.drain()
+
+    fresh = lab.store.find_suite(suite.suite_id)
+    assert fresh is not None
+    out = get_suite(lab.deps, _launcher(), fresh, True)
+    assert out.last_run is None
+    assert out.last_attempt is not None
+    attempt = out.last_attempt
+    assert (attempt.run_id, attempt.status, attempt.stop_reason) == (run_id, "stopped", "budget")
+    # No case reached the agent: «No empezó».
+    assert (attempt.cases_done, attempt.case_count) == (0, 4)
+
+
+def test_a_stopped_run_keeps_the_score_of_the_last_complete_one(lab: Lab) -> None:
+    draft = _create(lab.env)
+    suite = lab.suite(CASES[:1], draft["agent_id"])
+    first = lab.start(suite, draft)
+    lab.drain()
+    lab.tokens.lost = True
+    lab.start(suite, draft)
+    lab.drain()
+
+    fresh = lab.store.find_suite(suite.suite_id)
+    assert fresh is not None
+    out = get_suite(lab.deps, _launcher(), fresh, True)
+    assert out.last_run is not None and out.last_run.run_id == first
+    assert out.last_attempt is not None
+    assert (out.last_attempt.status, out.last_attempt.stop_reason) == ("stopped", "access_lost")
+
+
+def _priced(lab: Lab) -> EvalsDeps:
+    price = ModelPrice(Decimal(3), Decimal(15), Decimal("0.3"), Decimal("3.75"))
+    lab.deps.price = lambda _m: price
+    lab.deps.evaluation_fee = Decimal("0.0015")
+    return lab.deps
+
+
+def test_the_estimate_is_what_the_runner_reserves_on_the_published_version(lab: Lab) -> None:
+    live = _published(lab.env)
+    deps = _priced(lab)
+    # Each case: (1000 // 3 + 1 + 6000) tokens x 8 iterations at 3 USD per million, plus the
+    # reserved output at 15; each judged case: 6000 x 3 + 512 x 15 per million, plus the fee.
+    one = estimate(deps, EstimateIn(agent_id=live["agent_id"], case_count=1))
+    two = estimate(
+        deps,
+        EstimateIn(agent_id=live["agent_id"], case_count=2, judged=1, judge_model=SONNET),
+    )
+    case = Decimal(one.usd)
+    judge = Decimal(6000 * 3 + 512 * 15) / Decimal(1_000_000) + Decimal("0.0015")
+    assert case > 0
+    assert Decimal(two.usd) == case * 2 + judge
+    assert one.model == two.model
+
+
+def test_the_estimate_needs_a_published_version_and_a_judge_that_may_judge(lab: Lab) -> None:
+    draft = _create(lab.env)
+    deps = _priced(lab)
+    with pytest.raises(ApiError) as raised:
+        estimate(deps, EstimateIn(agent_id=draft["agent_id"], case_count=1))
+    assert raised.value.code == "version_not_testable"
+
+    live = _published(lab.env)
+    for body, code in (
+        (EstimateIn(agent_id=live["agent_id"], case_count=1, judged=2), "invalid_request"),
+        (EstimateIn(agent_id=live["agent_id"], case_count=1, judged=1), "judge_model_required"),
+        (
+            EstimateIn(
+                agent_id=live["agent_id"],
+                case_count=1,
+                judged=1,
+                judge_model="anthropic.claude-haiku-x",
+            ),
+            "judge_unavailable",
+        ),
+    ):
+        with pytest.raises(ApiError) as raised:
+            estimate(deps, body)
+        assert raised.value.code == code
+
+
+def test_without_runs_there_is_no_estimate(lab: Lab) -> None:
+    live = _published(lab.env)
+    lab.deps.price = None
+    with pytest.raises(ApiError) as raised:
+        estimate(lab.deps, EstimateIn(agent_id=live["agent_id"], case_count=1))
+    assert raised.value.code == "evals_unavailable"
 
 
 def test_the_judge_reserves_its_tokens_at_prices_per_million(lab: Lab) -> None:

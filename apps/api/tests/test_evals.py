@@ -473,3 +473,23 @@ def test_one_open_request_per_suite(env: Env) -> None:
         headers=_h("creator"),
     )
     assert _code(response) == "already_pending"
+
+
+def test_the_estimate_is_for_whoever_sees_the_evals_of_the_agent(env: Env) -> None:
+    body = {"agent_id": AGENT, "case_count": 3}
+    for token in ("creator2", "user"):
+        response = env.client.post(f"{BASE}/estimate", json=body, headers=_h(token))
+        assert response.status_code == 403, token
+    # Without runs in the installation there is no price to estimate with.
+    for token in ("admin", "central", "creator"):
+        response = env.client.post(f"{BASE}/estimate", json=body, headers=_h(token))
+        assert (response.status_code, _code(response)) == (503, "evals_unavailable"), token
+    bad = env.client.post(f"{BASE}/estimate", json={**body, "case_count": 51}, headers=_h("admin"))
+    assert bad.status_code == 422
+
+
+def test_a_suite_that_never_ran_has_no_run_in_progress_nor_attempt(env: Env) -> None:
+    suite = _suite(env)
+    assert (suite["active_run"], suite["last_attempt"]) == (None, None)
+    listed = env.client.get(BASE, headers=_h("admin")).json()["suites"][0]
+    assert (listed["active_run"], listed["last_attempt"]) == (None, None)
