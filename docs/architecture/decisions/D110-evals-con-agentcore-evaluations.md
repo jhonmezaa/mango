@@ -32,4 +32,10 @@ Origen: el diseño (D24, `evals.jsx`, `eval-create.jsx`) tiene una vista «Opera
 
 **(7) Lo que implica la elegida.** Reemplaza D16 para un harness y abre una excepción de seguridad: el contenido de los casos y de las respuestas vive 30 días en un log group. Suma recursos (el harness, su rol, el log group y su llave, y la configuración de AgentCore Evaluations) que hay que contar contra el límite de `Core` (D99). Los precios de AgentCore Evaluations no estaban confirmados en la página oficial de AWS el 2026-11-05: se confirman antes de estimar el costo de una ejecución. El costo del juez lo cobra el servicio de AgentCore Evaluations, no el rol de un agente, así que en la factura sale aparte del agente (D104).
 
+**(8) Lo que el modelo de amenazas tiene que cerrar antes de construir** (señalado al registrar, en la revisión de seguridad del 2026-11-05):
+
+- **Quién lee el contenido lo impone la llave, no solo IAM.** Un rol de la cuenta con permisos amplios de CloudWatch Logs podría leer el log group. La política de la llave KMS deja descifrar solo al rol del evaluador (y al servicio de logs para escribir), y un test lo fija.
+- **El contenido no puede llegar a `aws/spans`.** Ese log group lo leen el conciliador (D73 (9)) y la función de D108. Hay que comprobar dónde escribe el harness de evals el contenido (en modo dividido, los spans van a `aws/spans` y los eventos con contenido al log group del runtime) y que ningún atributo con contenido quede en los spans de ese log group. Si no se puede garantizar, el harness de evals no se crea hasta decidirlo.
+- **Las salidas de las tools de lectura quedan capturadas.** Un caso que llama a una tool de lectura con el token de quien lanza la eval deja sus datos reales en el log group 30 días, no solo el texto del caso.
+
 Modelo de amenazas: `docs/security/threat-models/evals-threat-model.md` (lo escribe el PR que construye las evals).
