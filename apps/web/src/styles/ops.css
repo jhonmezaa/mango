@@ -1,0 +1,21 @@
+/*
+ * Operación views (Costos, Observabilidad, Evals) and Tickets, design round 37. `mk-empty` and
+ * `mk-meta` are already in admin.css and the spinner is `.spinner` (components.css, the design's
+ * `mango-spinner`). The helpers hold the inline styles of the design's `OpsState`.
+ */
+@layer components {
+  .ops-state-t {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .ops-state-d {
+    max-width: 440px;
+  }
+  .ops-state-warn {
+    color: var(--amber);
+  }
+  .ops-state-lock {
+    color: var(--text-muted);
+  }
+}
