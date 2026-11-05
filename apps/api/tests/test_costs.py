@@ -224,6 +224,31 @@ def test_what_was_counted_before_the_breakdown_is_unattributed_never_spread(db: 
     assert out.agents.unattributed_usd == "0.00"
     assert out.counted_since == "2026-11-02"
     assert out.models.counted_since == "2026-11-20"
+    # All of it before the counters started: «Sin desglose · Antes del {fecha}».
+    assert out.models.before_since_usd == out.sources.before_since_usd == "2.00"
+    assert out.agents.before_since_usd == "0.00"
+
+
+def test_before_the_counters_apart_from_what_no_row_holds_once_they_count(db: Any) -> None:
+    _turn(db, when=TODAY, cost="1")
+    # Before the agents' counter: only the organization's. Once it counts: a title (no agent).
+    for day, spent in (("2026-11-02", "2"), ("2026-11-20", "0.10"), ("2026-10-12", "4")):
+        for item in usage_days.updates("budgets", ("DAY#ORG",), day, spent=Decimal(spent), turns=1):
+            db.update_item(**item["Update"])
+    agents = costs.summary(_deps(db), "2026-11").agents
+    assert agents.counted_since == "2026-11-20"
+    assert (agents.unattributed_usd, agents.before_since_usd) == ("2.10", "2.00")
+    assert (agents.previous_unattributed_usd, agents.previous_before_since_usd) == ("4.00", "4.00")
+
+
+def test_without_counters_the_whole_month_is_before_them(db: Any) -> None:
+    for item in usage_days.updates(
+        "budgets", ("DAY#ORG",), "2026-11-03", spent=Decimal(1), turns=1
+    ):
+        db.update_item(**item["Update"])
+    out = costs.summary(_deps(db), "2026-11")
+    assert out.agents.counted_since is None
+    assert (out.agents.unattributed_usd, out.agents.before_since_usd) == ("1.00", "1.00")
 
 
 def test_a_closed_month_has_every_day_no_projection_and_no_budget(db: Any) -> None:

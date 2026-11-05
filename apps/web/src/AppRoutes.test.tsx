@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppRoutes } from './App';
+import { SoonView } from './components/SoonView';
 import { baseMe, sessionValue } from './test/fixtures';
 import { TestProviders } from './test/TestProviders';
 
@@ -37,10 +38,14 @@ afterEach(() => {
 });
 
 describe('AppRoutes', () => {
-  it.each([['/costs', 'Costos']])('renders %s as "Próximamente"', async (path, label) => {
-    await renderAt(path);
-    // Screen pages load on demand.
-    expect(await screen.findByRole('heading', { level: 1, name: label })).toBeInTheDocument();
+  it('renders a view without a backend as "Próximamente"', () => {
+    // Every view of the navigation has a backend since Costos (D105): SoonView alone.
+    render(
+      <TestProviders session={sessionValue({ me: baseMe })}>
+        <SoonView label="Costos" />
+      </TestProviders>,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Costos' })).toBeInTheDocument();
     expect(screen.getByText('Esta sección todavía no está disponible en Mango.')).toBeVisible();
     expect(screen.getByRole('link', { name: 'Ir al chat' })).toHaveAttribute('href', '/');
   });

@@ -7,6 +7,7 @@ import { auth } from './es/auth';
 import { brains } from './es/brains';
 import { budgets } from './es/budgets';
 import { agent, agentPicker, chat, markdown } from './es/chat';
+import { costs } from './es/costs';
 import { admin, gov } from './es/governance';
 import { governance } from './es/governanceView';
 import { groups } from './es/groups';
@@ -75,4 +76,5 @@ export const es = {
   ops,
   tickets,
   evals,
+  costs,
 } as const;

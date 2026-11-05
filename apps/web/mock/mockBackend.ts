@@ -33,6 +33,7 @@ import { handleActivity } from './activity.ts';
 import { handleGovernance } from './governance.ts';
 import { handleGroups } from './groups.ts';
 import { handleHome } from './home.ts';
+import { handleCosts } from './costs.ts';
 import { handleSearch } from './search.ts';
 import { handleInbox } from './inbox.ts';
 import { handleKnowledge, handleMockS3 } from './knowledge.ts';
@@ -62,6 +63,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleInbox,
   handleGovernance,
   handleHome,
+  handleCosts,
   handleSearch,
   handleTickets,
   handleActivity,

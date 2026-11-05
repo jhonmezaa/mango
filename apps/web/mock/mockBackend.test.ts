@@ -10,6 +10,7 @@ import {
   zGetAgentResponse,
   zGetBudgetsResponse,
   zGetBusinessUnitsResponse,
+  zGetCostsResponse,
   zGetConversationResponse,
   zGetObservabilityResponse,
   zGetRequestsResponse,
@@ -149,6 +150,15 @@ describe('mock backend', () => {
     expect(found.summary).toEqual(whole.summary);
     expect((await api('/observability?agent=evals')).status).toBe(422);
     expect((await api('/observability?range=7d')).status).toBe(422);
+  });
+
+  it('answers Costos with the generated contract', async () => {
+    const costs = zGetCostsResponse.parse(await json('/costs'));
+    expect(costs.agents.rows.length).toBeGreaterThan(0);
+    expect(costs.sources.rows.map((row) => row.id)).toEqual(['chat', 'task', 'playground', 'eval']);
+    // The model's and origin's counters started this month: what came before is apart (D106).
+    if (costs.elapsed_days > 1) expect(Number(costs.models.before_since_usd)).toBeGreaterThan(0);
+    expect((await api('/costs?month=2020-01')).status).toBe(422);
   });
 
   it('answers unknown routes with the error envelope', async () => {

@@ -126,6 +126,11 @@ class CostBreakdownOut(_Strict):
     unattributed_usd: str
     """What the organization spent this month that no row holds (it is never negative)."""
     previous_unattributed_usd: str
+    before_since_usd: str
+    """The part of ``unattributed_usd`` spent on the days before ``counted_since`` (the whole
+    month if its counters have not started): «Sin desglose · Antes del {fecha}». The rest of
+    ``unattributed_usd`` was spent once they counted (the titles of new conversations)."""
+    previous_before_since_usd: str
 
 
 class AgentsBreakdownOut(CostBreakdownOut):
@@ -299,6 +304,25 @@ def _rest(org: _Sum, rows: Collection[_Sum]) -> tuple[str, str]:
     return _money(max(spent, _ZERO)), _money(max(previous, _ZERO))
 
 
+def _before(
+    month: _Month,
+    org_days: Mapping[str, usage_days.Day],
+    since: str | None,
+    rest: tuple[str, str],
+) -> tuple[str, str]:
+    """What the organization spent before ``since`` in the month and the one before, never more
+    than what no row holds (``rest``)."""
+
+    def spent(days: list[str], cap: str) -> str:
+        found = sum(
+            (d.spent for k in days if (since is None or k < since) and (d := org_days.get(k))),
+            _ZERO,
+        )
+        return _money(min(found, Decimal(cap)))
+
+    return spent(month.days, rest[0]), spent(month.previous_days, rest[1])
+
+
 def _earliest(days: Collection[str | None]) -> str | None:
     found = [d for d in days if d is not None]
     return min(found) if found else None
@@ -379,6 +403,7 @@ def _agents_breakdown(
     month: _Month,
     *,
     org: _Sum,
+    org_days: Mapping[str, usage_days.Day],
     agents: Mapping[str, AgentInfo],
     counted: Mapping[str, Mapping[str, usage_days.Day]],
     since: str | None,
@@ -409,24 +434,28 @@ def _agents_breakdown(
             )
         )
     rows.sort(key=lambda r: (-Decimal(r.spent_usd), -Decimal(r.previous_usd), r.id))
-    rest, previous_rest = _rest(org, [sums[a] for a in active])
+    rest = _rest(org, [sums[a] for a in active])
+    before, previous_before = _before(month, org_days, since, rest)
     return AgentsBreakdownOut(
         counted_since=since,
-        unattributed_usd=rest,
-        previous_unattributed_usd=previous_rest,
+        unattributed_usd=rest[0],
+        previous_unattributed_usd=rest[1],
+        before_since_usd=before,
+        previous_before_since_usd=previous_before,
         rows=rows,
     )
 
 
 def _breakdown(
     month: _Month,
-    org: _Sum,
+    org: tuple[_Sum, Mapping[str, usage_days.Day]],
     counted: Mapping[str, Mapping[str, usage_days.Day]],
     prefix: str,
     since: str | None,
     *,
     keep_empty: bool,
 ) -> CostsBreakdownOut:
+    org_sum, org_days = org
     sums = {key.removeprefix(prefix): _sum(month, days) for key, days in counted.items()}
     rows = [
         _row(row_id, month, total)
@@ -435,11 +464,14 @@ def _breakdown(
     ]
     if not keep_empty:
         rows.sort(key=lambda r: (-Decimal(r.spent_usd), -Decimal(r.previous_usd), r.id))
-    rest, previous_rest = _rest(org, list(sums.values()))
+    rest = _rest(org_sum, list(sums.values()))
+    before, previous_before = _before(month, org_days, since, rest)
     return CostsBreakdownOut(
         counted_since=since,
-        unattributed_usd=rest,
-        previous_unattributed_usd=previous_rest,
+        unattributed_usd=rest[0],
+        previous_unattributed_usd=rest[1],
+        before_since_usd=before,
+        previous_before_since_usd=previous_before,
         rows=rows,
     )
 
@@ -477,13 +509,14 @@ def summary(deps: CostsDeps, month_text: str) -> CostsOut:
                 deps,
                 month,
                 org=org,
+                org_days=org_days,
                 agents=agents,
                 counted={k.removeprefix(usage_days.AGENT_PREFIX): counted[k] for k in agent_keys},
                 since=_earliest([first[k] for k in agent_keys]),
             ),
             models=_breakdown(
                 month,
-                org,
+                (org, org_days),
                 {k: counted[k] for k in model_keys},
                 usage_days.MODEL_PREFIX,
                 breakdown_since,
@@ -491,7 +524,7 @@ def summary(deps: CostsDeps, month_text: str) -> CostsOut:
             ),
             sources=_breakdown(
                 month,
-                org,
+                (org, org_days),
                 {k: counted[k] for k in source_keys},
                 usage_days.SOURCE_PREFIX,
                 breakdown_since,

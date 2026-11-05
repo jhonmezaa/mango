@@ -243,7 +243,9 @@ export const zAgentStateOutSchema = z.object({
  * AgentsBreakdownOut
  */
 export const zAgentsBreakdownOutSchema = z.object({
+    before_since_usd: z.string(),
     counted_since: z.string().nullable(),
+    previous_before_since_usd: z.string(),
     previous_unattributed_usd: z.string(),
     rows: z.array(zAgentCostOutSchema),
     unattributed_usd: z.string()
@@ -640,7 +642,9 @@ export const zCostRowOutSchema = z.object({
  * CostsBreakdownOut
  */
 export const zCostsBreakdownOutSchema = z.object({
+    before_since_usd: z.string(),
     counted_since: z.string().nullable(),
+    previous_before_since_usd: z.string(),
     previous_unattributed_usd: z.string(),
     rows: z.array(zCostRowOutSchema),
     unattributed_usd: z.string()

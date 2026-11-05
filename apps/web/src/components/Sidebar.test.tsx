@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '../agents/agents';
 import type { Me } from '../api/schemas';
 import { agentFixture, baseMe, finopsAgent, sessionValue } from '../test/fixtures';
+import { AVAILABLE_VIEWS, type ViewKey } from '../layouts/navigation';
 import { useShell } from '../layouts/ShellContext';
 import { TestProviders } from '../test/TestProviders';
 import { Sidebar } from './Sidebar';
@@ -79,8 +80,17 @@ function soonItems() {
     .map((link) => link.getAttribute('aria-label'));
 }
 
+/**
+ * Every view of the navigation has a backend since Costos (D105), so the «Próximamente» tests
+ * take one back out of the available set for the test only.
+ */
+function makeSoon(view: ViewKey) {
+  (AVAILABLE_VIEWS as Set<ViewKey>).delete(view);
+}
+
 afterEach(() => {
   window.localStorage.clear();
+  (AVAILABLE_VIEWS as Set<ViewKey>).add('costs');
 });
 
 describe('Sidebar navigation', () => {
@@ -125,7 +135,8 @@ describe('Sidebar navigation', () => {
     // Marketplace, Schedules (D78: the API lists only the caller's tasks) and Gobernanza (D89:
     // the API sends only the sections each one may read).
     // Inicio too (D102): its data is the organization's, which central FinOps sees. Evals too
-    // (design round 37, D111 (1)): central FinOps sees every suite, read only.
+    // (design round 37, D111 (1)): central FinOps sees every suite, read only. And Costos
+    // (D105): the same as administrators.
     expect(navLinks()).toEqual([
       'Inicio',
       'Chat',
@@ -139,9 +150,10 @@ describe('Sidebar navigation', () => {
       'Actividad',
       'Schedules',
       'Evals',
+      'Costos',
       'Org Chart',
     ]);
-    expect(soonItems()).toEqual(['Costos, próximamente']);
+    expect(soonItems()).toEqual([]);
     // Admin-only screens stay hidden, and Skills is for creators and admins (design round 21).
     // Observability is for administrators only (D109, design round 37).
     for (const label of [
@@ -201,6 +213,7 @@ describe('Sidebar navigation', () => {
 
   it('renders unavailable destinations as disabled, non-navigable "Próximamente" rows', async () => {
     const user = userEvent.setup();
+    makeSoon('costs');
     renderSidebar(true);
     await user.click(screen.getByRole('button', { name: 'Operación' }));
     const item = screen.getByRole('link', { name: 'Costos, próximamente' });
@@ -416,6 +429,7 @@ describe('Sidebar · collapsed rail (design 2026-10-25)', () => {
 
   it('lists «Próximamente» views as disabled items that do not navigate', async () => {
     const user = userEvent.setup();
+    makeSoon('costs');
     renderRail();
     // Construir has no «Próximamente» view left since Playground and Skills (round 21).
     await user.click(railGroup(/^Operación/));

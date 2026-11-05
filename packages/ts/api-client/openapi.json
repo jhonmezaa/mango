@@ -1243,6 +1243,10 @@
       "AgentsBreakdownOut": {
         "additionalProperties": false,
         "properties": {
+          "before_since_usd": {
+            "title": "Before Since Usd",
+            "type": "string"
+          },
           "counted_since": {
             "anyOf": [
               {
@@ -1253,6 +1257,10 @@
               }
             ],
             "title": "Counted Since"
+          },
+          "previous_before_since_usd": {
+            "title": "Previous Before Since Usd",
+            "type": "string"
           },
           "previous_unattributed_usd": {
             "title": "Previous Unattributed Usd",
@@ -1274,6 +1282,8 @@
           "counted_since",
           "unattributed_usd",
           "previous_unattributed_usd",
+          "before_since_usd",
+          "previous_before_since_usd",
           "rows"
         ],
         "title": "AgentsBreakdownOut",
@@ -3163,6 +3173,10 @@
       "CostsBreakdownOut": {
         "additionalProperties": false,
         "properties": {
+          "before_since_usd": {
+            "title": "Before Since Usd",
+            "type": "string"
+          },
           "counted_since": {
             "anyOf": [
               {
@@ -3173,6 +3187,10 @@
               }
             ],
             "title": "Counted Since"
+          },
+          "previous_before_since_usd": {
+            "title": "Previous Before Since Usd",
+            "type": "string"
           },
           "previous_unattributed_usd": {
             "title": "Previous Unattributed Usd",
@@ -3194,6 +3212,8 @@
           "counted_since",
           "unattributed_usd",
           "previous_unattributed_usd",
+          "before_since_usd",
+          "previous_before_since_usd",
           "rows"
         ],
         "title": "CostsBreakdownOut",

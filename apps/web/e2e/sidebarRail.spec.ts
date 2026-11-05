@@ -58,14 +58,11 @@ test('the collapsed rail opens each group in a floating menu, by pointer and key
   await expect(menu).toHaveCount(0);
   await expect(gov).toBeFocused();
 
-  // «Próximamente» views are listed but do not navigate (Construir has none left since round 21).
+  // No view of the navigation is «Próximamente» since Costos (D105): Sidebar.test.tsx covers
+  // those rows. A click outside (on the page title, not on a row that opens something) closes it.
   const ops = nav.getByRole('button', { name: /^Operación/ });
   await ops.click();
-  const soon = page
-    .getByRole('menu', { name: 'Operación' })
-    .getByRole('menuitem', { name: 'Costos, próximamente' });
-  await expect(soon).toHaveAttribute('aria-disabled', 'true');
-  // A click outside (on the page title, not on a row that opens something) closes it.
+  await expect(page.getByRole('menu', { name: 'Operación' })).toBeVisible();
   await page.getByRole('heading', { level: 1, name: 'Audit log' }).click();
   await expect(page.getByRole('menu')).toHaveCount(0);
 

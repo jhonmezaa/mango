@@ -651,9 +651,17 @@ export type AgentStateOut = {
  */
 export type AgentsBreakdownOut = {
     /**
+     * Before Since Usd
+     */
+    before_since_usd: string;
+    /**
      * Counted Since
      */
     counted_since: string | null;
+    /**
+     * Previous Before Since Usd
+     */
+    previous_before_since_usd: string;
     /**
      * Previous Unattributed Usd
      */
@@ -1778,9 +1786,17 @@ export type CostRowOut = {
  */
 export type CostsBreakdownOut = {
     /**
+     * Before Since Usd
+     */
+    before_since_usd: string;
+    /**
      * Counted Since
      */
     counted_since: string | null;
+    /**
+     * Previous Before Since Usd
+     */
+    previous_before_since_usd: string;
     /**
      * Previous Unattributed Usd
      */

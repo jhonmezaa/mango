@@ -6,6 +6,7 @@ import { agentReviewScreen } from '../pages/agentReview/screen';
 import { approvalsScreen } from '../pages/approvals/screen';
 import { evalsScreen } from '../pages/evals/screen';
 import { brainsScreen } from '../pages/brains/screen';
+import { costsScreen } from '../pages/costs/screen';
 import { governanceScreen } from '../pages/governance/screen';
 import { homeScreen } from '../pages/home/screen';
 import { inboxScreen } from '../pages/inbox/screen';
@@ -57,4 +58,5 @@ export const SCREENS: readonly Screen[] = [
   observabilityScreen,
   ticketsScreen,
   evalsScreen,
+  costsScreen,
 ];
