@@ -5179,7 +5179,8 @@ export const zGetObservabilityQuery = z.object({
         'slow'
     ]).optional().default('all'),
     offset: z.int().gte(0).lte(1000).optional().default(0),
-    limit: z.int().gte(1).lte(200).optional().default(40)
+    limit: z.int().gte(1).lte(200).optional().default(40),
+    q: z.string().max(100).optional().default('')
 });
 
 /**

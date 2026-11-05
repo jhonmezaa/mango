@@ -299,6 +299,24 @@ def test_status_filters_and_pages_read_the_same_reading(env: Env) -> None:
     assert len(env.reader.calls) == 1
 
 
+def test_the_search_filters_the_page_of_the_same_reading(env: Env) -> None:
+    env.turn(ago_s=901)
+    one = trace(1, ago_s=900)
+    other = trace(2, session=OTHER_SESSION, ago_s=300)
+    other["spans"][1]["name"] = "mango_jira___search_issues"
+    env.reader.traces = [one, other]
+    whole = env.get(range="1h").json()
+    joined = next(t for t in whole["traces"] if t["matched"])
+    by_email = env.get(range="1h", q="  PERSONA@ ").json()
+    assert [t["id"] for t in by_email["traces"]] == [joined["id"]] and by_email["total"] == 1
+    assert by_email["summary"] == whole["summary"]
+    assert env.get(range="1h", q="jira___SEARCH").json()["total"] == 1
+    assert env.get(range="1h", q=joined["id"][:8]).json()["traces"][0]["id"] == joined["id"]
+    assert env.get(range="1h", q="nadie").json()["total"] == 0
+    assert env.get(range="1h", q="nadie", status="error").json()["traces"] == []
+    assert len(env.reader.calls) == 1
+
+
 def test_the_reading_is_cached_a_minute_per_range_and_agent(env: Env) -> None:
     clock = [0.0]
     env.deps.monotonic = lambda: clock[0]
@@ -330,6 +348,7 @@ def test_the_window_is_asked_of_the_reader(env: Env) -> None:
         {"limit": 500},
         {"offset": -1},
         {"agent": "x" * 40},
+        {"q": "x" * 101},
     ],
 )
 def test_parameters_are_closed(env: Env, params: dict[str, Any]) -> None:

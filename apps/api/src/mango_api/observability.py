@@ -10,10 +10,12 @@ Security notes (security-best-practices, FastAPI):
 * The route declares its Cedar action, ``ViewObservability``: administrators only (D109 (b)),
   checked again in process (``is_admin``). Audited as a read. Administrators already see who
   made each turn in Auditoría (``agent.completed``), so the person adds nothing to what they see.
-* Query parameters are closed lists or have the shape of an agent id; ``limit`` and ``offset`` are
-  bounded (VALID-001). The response is an explicit model (RESP-001): the runtime ``session.id``,
-  the harness's ``traceId``, the conversation id and any text of a span have no field in it
-  (TM-OB1, TM-OB4). The id of a trace is Mango's own and random (D108 (3)).
+* Query parameters are closed lists or have the shape of an agent id; ``limit``, ``offset`` and
+  the search ``q`` are bounded (VALID-001). ``q`` is only compared as text with what the response
+  already shows (email, id, tool name); it never reaches the trace reader nor a log.
+* The response is an explicit model (RESP-001): the runtime ``session.id``, the harness's
+  ``traceId``, the conversation id and any text of a span have no field in it (TM-OB1, TM-OB4).
+  The id of a trace is Mango's own and random (D108 (3)).
 * One reading is bounded by the function (time, pages, 1,000 traces: ``capped``), limited per
   administrator and shared between tasks, and cached for a minute per range and agent: the page
   and its filters read the cache (TM-OB6).
@@ -60,6 +62,8 @@ EMAIL_CACHE_ENTRIES = 4096
 TOP_TOOLS = 10
 PAGE = 40
 MAX_PAGE = 200
+MAX_QUERY = 100
+"""Longest search the view sends (tool, email or id: «Buscar tool, persona o ID de traza»)."""
 TRACE_READER_TIMEOUT_SECONDS = 30
 """How long mango-api waits for one reading: the function stops at 20 s and times out at 25."""
 EVALS_ID = "evals"
@@ -231,7 +235,8 @@ class ObservabilityOut(_Strict):
     by_agent: list[AgentLatencyOut]
     tools: list[ToolOut]
     total: int
-    """Traces that match ``status``; ``traces`` is the page of them asked for."""
+    """Traces that match ``status`` and ``q``; ``traces`` is the page of them asked for. The
+    summary, the hours, the agents and the tools are of the whole reading."""
     offset: int
     traces: list[TraceOut]
 
@@ -578,8 +583,21 @@ def cached(deps: ObservabilityDeps, window: Range, agent_id: str | None) -> _Loa
     return loaded
 
 
-def page(loaded: _Loaded, status: StatusFilter, offset: int, limit: int) -> ObservabilityOut:
-    traces = loaded.out.traces
+def matches(trace: TraceOut, query: str) -> bool:
+    """«Buscar tool, persona o ID de traza»: a case-insensitive part of the person's email, of the
+    view's id or of a tool's name. Only what the response already shows is searched."""
+    needle = query.strip().casefold()
+    if not needle:
+        return True
+    haystack = [trace.id, trace.user_email or ""]
+    haystack += [s.name for s in trace.spans if s.kind == "tool" and s.name]
+    return any(needle in value.casefold() for value in haystack)
+
+
+def page(
+    loaded: _Loaded, status: StatusFilter, offset: int, limit: int, query: str = ""
+) -> ObservabilityOut:
+    traces = [t for t in loaded.out.traces if matches(t, query)]
     if status == "error":
         traces = [t for t in traces if t.status == "error"]
     elif status == "slow":
@@ -597,13 +615,14 @@ def observability(  # noqa: PLR0917 - the query of one reading, all required
     status: StatusFilter,
     offset: int,
     limit: int,
+    query: str = "",
 ) -> ObservabilityOut:
     try:
         loaded = cached(deps, window, agent_id)
     except TracesUnavailableError as exc:
         logger.warning("observability unavailable: %s", exc)
         raise ApiError(503, "observability_unavailable", "please try again") from None
-    return page(loaded, status, offset, limit)
+    return page(loaded, status, offset, limit, query)
 
 
 # --- Routes -----------------------------------------------------------------------------
@@ -634,6 +653,7 @@ def observability_router(
         status: Annotated[StatusFilter, Query()] = "all",
         offset: Annotated[int, Query(ge=0, le=1000)] = 0,
         limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = PAGE,
+        q: Annotated[str, Query(max_length=MAX_QUERY)] = "",
     ) -> ObservabilityOut:
         if agent == EVALS_ID:
             # The evals harness is never read (D110 (3)).
@@ -641,6 +661,6 @@ def observability_router(
         user_id = caller.user.user_id
         if not deps.limiter.allow(user_id):
             raise rate_limited(deps.limiter.retry_after(user_id))
-        return await asyncio.to_thread(observability, deps, range, agent, status, offset, limit)
+        return await asyncio.to_thread(observability, deps, range, agent, status, offset, limit, q)
 
     return router

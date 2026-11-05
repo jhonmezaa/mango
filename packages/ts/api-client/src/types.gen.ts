@@ -11781,6 +11781,10 @@ export type GetObservabilityData = {
          * Limit
          */
         limit?: number;
+        /**
+         * Q
+         */
+        q?: string;
     };
     url: '/observability';
 };
