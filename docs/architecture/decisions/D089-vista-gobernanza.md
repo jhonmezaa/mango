@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-24 (los puntos 1 a 7, elegidos por menú ese día con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió seguir con las recomendadas; el cómo, propuesto por un agente; aceptada por el dueño el 2026-10-25, por menú: «Aceptar ambas (Recomendada)»; lo visto en la instalación, punto 8, nota del 2026-10-25 propuesta por un agente, con el cierre de la variante de `finops-central` elegido por el dueño ese día, por menú: «Cedar en vivo y tests (Recomendada)»; el agente y quien lo creó en Auditoría, punto 9, nota del 2026-10-25 propuesta por un agente, con dónde resolverlos elegido por el agente que lanzó el trabajo ese día, por menú: «Al leer, del catálogo (Recomendada)»)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo contado por tarea, punto 6)
-- **Precisada por:** —
+- **Precisada por:** [D105](D105-costos-quien-ve-que.md) (1) (en la vista Costos, `finops-central` sin administrador ve también el presupuesto de cada agente; Gobernanza no cambia)
 
 ## Decisión
 

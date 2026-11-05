@@ -3,7 +3,7 @@
 - **Estado:** parcial. Falta el límite de presupuesto **por agente** editable: la API solo tiene los valores por defecto y el límite por usuario (`apps/api/src/mango_api/admin.py`, comprobado el 2026-10-05). El resto está construido.
 - **Fecha:** 2026-09-29
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D84](D084-gobernanza-de-tools.md) (la salud diaria de las cuentas miembro entra a la cadena como la identidad del sistema `mango-health`, no como un administrador)
+- **Precisada por:** [D84](D084-gobernanza-de-tools.md) (la salud diaria de las cuentas miembro entra a la cadena como la identidad del sistema `mango-health`, no como un administrador); [D105](D105-costos-quien-ve-que.md) (en la vista Costos, `finops-central` sin administrador ve también el presupuesto de cada agente)
 
 ## Decisión
 
