@@ -1,0 +1,13 @@
+[project]
+name = "mango-trace-reader"
+version = "0.1.0"
+description = "Synchronous Lambda that reads the metadata of the AgentCore spans of an installation for the Observability view (D108)"
+requires-python = ">=3.13,<3.14"
+dependencies = ["boto3>=1.43.104"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_trace_reader"]

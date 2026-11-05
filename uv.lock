@@ -26,6 +26,7 @@ members = [
     "mango-reconciler",
     "mango-task-auth",
     "mango-task-report",
+    "mango-trace-reader",
     "mango-workspace",
 ]
 
@@ -1202,6 +1203,17 @@ requires-dist = [
     { name = "mango-core", extras = ["agents"], editable = "packages/py/mango-core" },
     { name = "reportlab", specifier = ">=5.0.1,<6" },
 ]
+
+[[package]]
+name = "mango-trace-reader"
+version = "0.1.0"
+source = { editable = "functions/trace-reader" }
+dependencies = [
+    { name = "boto3" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "boto3", specifier = ">=1.43.104" }]
 
 [[package]]
 name = "mango-workspace"

@@ -24,6 +24,8 @@ export const roleNames = {
   budgetReconciler: (ns: string) => mangoName(ns, "BudgetReconciler"),
   /** Compares Bedrock spend per agent with the CUR 2.0 bill once a day (D104). */
   curReconciler: (ns: string) => mangoName(ns, "CurReconciler"),
+  /** Reads the metadata of the AgentCore spans for the Observability view (D108). */
+  traceReader: (ns: string) => mangoName(ns, "TraceReader"),
   packProvisioner: (ns: string) => mangoName(ns, "PackProvisioner"),
   /** The only role that signs the approved catalog of remote MCP servers (D93 (9), D98 (13)). */
   remoteMcpProvisioner: (ns: string) => mangoName(ns, "RemoteMcpProvisioner"),

@@ -9,6 +9,7 @@ import { platformPolicies } from "../constructs/governance.js";
 import { OperationalAlarms, OperationalAlarmsProps } from "../constructs/operational-alarms.js";
 import { RemoteMcpApi } from "../constructs/remote-mcp-api.js";
 import { RemoteRelease } from "../constructs/remote-release.js";
+import { TraceReader, TraceReaderProps } from "../constructs/trace-reader.js";
 
 /**
  * Stacks nested in Core (D99). CloudFormation counts at most 500 resources per template, and a
@@ -143,5 +144,23 @@ export class CurReconciliationStack extends CoreNestedStack {
     });
     this.setParameter("CatalogGovernedByLakeFormation", value);
     return parameter.valueAsString;
+  }
+}
+
+/**
+ * The trace reader of the Observability view (D108 (b)): the function `Mango-<ns>-TraceReader`,
+ * its role and mango-api's policy to invoke it (`Mango-<ns>-ApiObservability`). Nothing here holds
+ * data. mango-api reads the function by its name, never by an output of this stack.
+ */
+export class ObservabilityStack extends CoreNestedStack {
+  readonly reader: TraceReader;
+
+  constructor(scope: Construct, id: string, props: TraceReaderProps) {
+    super(scope, id, "observability traces");
+    this.reader = new TraceReader(this, "TraceReader", {
+      ...props,
+      installation: this.namespaceOf(props.installation),
+      coreNamespace: props.installation.namespace,
+    });
   }
 }

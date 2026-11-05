@@ -63,7 +63,13 @@ import { tagNamespace } from "../params.js";
 import { ReleaseTarget } from "../release-target.js";
 import { MEMBER_READ_ONLY_DATA_ACTIONS } from "./member-stack.js";
 import { BILLING_READER_DATA_ACTIONS } from "./payer-stack.js";
-import { AuthorizationStack, CurReconciliationStack, OperationsStack, RemoteMcpStack } from "./core-nested.js";
+import {
+  AuthorizationStack,
+  CurReconciliationStack,
+  ObservabilityStack,
+  OperationsStack,
+  RemoteMcpStack,
+} from "./core-nested.js";
 
 export interface CoreStackProps extends StackProps {
   /**
@@ -317,6 +323,13 @@ export class CoreStack extends Stack {
       dataKey: governance.dataKey,
       configKey: tools.configKey,
       alerts,
+    });
+    // D108: the Observability view reads the metadata of the AgentCore spans through a function
+    // in a nested stack, which only mango-api may invoke.
+    const observability = new ObservabilityStack(this, "Traces", {
+      installation: cfg,
+      configKey: tools.configKey,
+      apiTaskRole,
     });
     // Cost anomalies of the organization, forwarded by the payer account, start the runs of the
     // automations subscribed to them (D79).
@@ -609,6 +622,7 @@ export class CoreStack extends Stack {
         ...knowledge.apiEnvironment,
         ...skills.apiEnvironment,
         ...presign.apiEnvironment,
+        ...observability.reader.apiEnvironment,
         // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
         ...remoteMcp.api.environment,
         REMOTE_MCP_ENABLED: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
