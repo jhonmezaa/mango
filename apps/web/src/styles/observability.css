@@ -1,0 +1,317 @@
+/*
+ * Observability (design round 37 observability2.jsx: `ob-grid`, `ob-hist`, `ob-bars`, `ob-lg`,
+ * `ob-tr`, `ob-mini`, `ob-sum`, `ob-wf`, `ob-span*`). Ported from the design's styles.css; values
+ * are the design's. `bg-kpis`, `bg-toolbar`, `tk-quick`, `mk-drawer` and `mk-sel` are in
+ * admin.css, `ac-side*`, `ac-ag*` and `ac-silent` in activity.css, `sr-cap` in search.css and
+ * `mc-alert` in agents.css. The `ob-*` helpers below hold the inline styles of the design's
+ * component (colors of the tones, widths, fonts).
+ */
+@layer components {
+  .ob-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 20px;
+    padding: 0 28px 48px;
+    align-items: start;
+  }
+  .ob-grid[aria-busy='true'] {
+    opacity: 0.7;
+  }
+  .ob-hist {
+    padding: 14px 16px;
+  }
+  .ob-hist-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .ob-hist-t {
+    margin: 0;
+  }
+  .ob-hist-f {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .ob-bars {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 3px;
+    height: 72px;
+    align-items: end;
+  }
+  .ob-bars > div {
+    display: flex;
+    flex-direction: column-reverse;
+    height: 100%;
+  }
+  .ob-bars > div > span {
+    display: block;
+    width: 100%;
+    border-radius: 2px 2px 0 0;
+  }
+  .ob-lg {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin: 0 3px 0 8px;
+    vertical-align: middle;
+  }
+  .ob-table {
+    padding: 0;
+    overflow: hidden;
+    margin-top: 16px;
+  }
+  .ob-tr {
+    display: grid;
+    grid-template-columns: minmax(200px, 2fr) minmax(110px, 1fr) 130px 70px 100px 140px;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    text-align: left;
+  }
+  .ob-tr.mc-th {
+    border-top: none;
+  }
+  .ob-tr:hover:not(.mc-th),
+  .ob-tr.is-on {
+    background: var(--row-hover);
+  }
+  .ob-tr-t {
+    display: block;
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ob-tr-id {
+    display: block;
+    font-size: 11px;
+  }
+  .ob-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ob-ms {
+    font-size: 11.5px;
+  }
+  .ob-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+  }
+  .ob-mini {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    margin-bottom: 3px;
+    overflow: hidden;
+  }
+  .ob-mini > span {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+  }
+  .ob-nomatch {
+    padding: 16px;
+  }
+  .ob-more {
+    margin: 12px auto 0;
+    display: flex;
+  }
+  .ob-search {
+    flex: 1 1 220px;
+    max-width: 300px;
+  }
+  .ob-cap {
+    margin: 0 0 12px;
+    padding: 0 28px;
+  }
+  .ob-kpi-sm {
+    font-size: 19px;
+  }
+  .ob-kpi-err,
+  .ob-err {
+    color: var(--red);
+  }
+  .ob-side-card {
+    padding: 0;
+  }
+  .ob-side-tools {
+    margin-top: 12px;
+  }
+  .ob-ag-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ob-ag-bar {
+    display: block;
+    margin-top: 5px;
+  }
+  .ob-ag-bar > span {
+    display: block;
+    height: 100%;
+  }
+  .ob-tool {
+    align-items: flex-start;
+  }
+  .ob-tool-n {
+    font-size: 11.5px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .ob-tool-v {
+    white-space: nowrap;
+    text-align: right;
+  }
+  /* Tones of the design: model violet, tool blue, error red, slow amber, OK green. */
+  .ob-tone-model {
+    background: var(--violet);
+  }
+  .ob-tone-ok {
+    background: var(--blue);
+  }
+  .ob-tone-error {
+    background: var(--red);
+  }
+  .ob-tone-slow {
+    background: var(--amber);
+  }
+  .ob-tone-green {
+    background: var(--green);
+  }
+  /* The drawer (design `TraceDetail`, 620 px). */
+  .mk-drawer.ob-drawer {
+    width: 620px;
+  }
+  .ob-drawer-t {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .ob-drawer-s {
+    margin-top: 3px;
+  }
+  .ob-sum {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .ob-sum > div {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--input-bg);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ob-sum span {
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .ob-sum b {
+    font-size: 14px;
+    color: var(--text-strong);
+  }
+  .ob-wf {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .ob-span-w + .ob-span-w .ob-span {
+    border-top: 1px solid var(--border);
+  }
+  .ob-span {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) 70px;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 10px;
+    text-align: left;
+    width: 100%;
+  }
+  .ob-span:hover {
+    background: var(--row-hover);
+  }
+  .ob-span-n {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .ob-span-model,
+  .ob-span-tool {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+  }
+  .ob-span-tool {
+    font-size: 11.5px;
+  }
+  .ob-span-bar {
+    position: relative;
+    height: 10px;
+    background: var(--input-bg);
+    border-radius: 3px;
+  }
+  .ob-span-bar > span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 3px;
+  }
+  .ob-span-ms {
+    font-size: 11px;
+    text-align: right;
+  }
+  .ob-span-d {
+    padding: 6px 10px 8px 24px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--input-bg);
+  }
+  .ob-legend,
+  .ob-more-spans {
+    margin-top: 6px;
+  }
+  @media (max-width: 1100px) {
+    .ob-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ob-tr {
+      grid-template-columns: minmax(180px, 2fr) 110px 60px 130px;
+    }
+    .ob-tr > :nth-child(2),
+    .ob-tr > :nth-child(5) {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .ob-grid {
+      padding: 0 16px 32px;
+    }
+    .ob-tr {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .ob-tr > :nth-child(3),
+    .ob-tr > :nth-child(4) {
+      display: none;
+    }
+    .ob-sum {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+}

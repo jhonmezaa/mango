@@ -22,6 +22,7 @@ describe('SCREENS', () => {
       ['playground', 'playground/*'],
       ['skills', 'skills/*'],
       ['search', 'search/*'],
+      ['observability', 'observability/*'],
     ]);
   });
 

@@ -97,12 +97,12 @@ const CREATOR_VIEWS: ReadonlySet<ViewKey> = new Set(['mcp', 'knowledge', 'playgr
  * Design store.js OWNER_VIEWS: FinOps central without Admin also sees these (all "Próximamente"
  * today). Presupuestos stays admin-only, as in the design's availability mode. Knowledge Bases
  * is for creators and administrators only (design «Quién ve qué», and `ViewKnowledgeBase`).
+ * Observability is for administrators only (D109, design round 37 `canView`).
  */
 const OWNER_VIEWS: ReadonlySet<ViewKey> = new Set([
   ...USER_VIEWS,
   'governance',
   'schedules',
-  'observability',
   'evals',
   'costs',
 ]);

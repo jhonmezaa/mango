@@ -79,9 +79,9 @@ flowchart LR
 
 | Superficie | Límite | Notas |
 |---|---|---|
-| `GET /api/observability?range=&agent=&status=&offset=&limit=` | L1 `ViewObservability` + `is_admin`; límite de tasa | `range` y `status` en lista cerrada; `agent` con la forma de un id; `limit` ≤ 200 |
+| `GET /api/observability?range=&agent=&status=&q=&offset=&limit=` | L1 `ViewObservability` + `is_admin`; límite de tasa | `range` y `status` en lista cerrada; `agent` con la forma de un id; `limit` ≤ 200; `q` ≤ 100 caracteres, solo se compara como texto con lo que la respuesta ya muestra (correo, id, nombre de la tool) sobre la lectura en caché: no llega a la función ni a un log, y cada búsqueda cuenta en el límite de 30 por minuto (la pantalla espera a que se deje de escribir) |
 | Invocación de `TraceReader` | `lambda:InvokeFunction` solo del rol de `mango-api` | Evento con claves cerradas: `start`, `end`, `agent`; ventana ≤ 24 h |
-| Spans de `aws/spans` y de los runtimes | No confiables | Lista cerrada de atributos y formas |
+| Spans de `aws/spans` y de los runtimes | No confiables | Lista cerrada de atributos y formas. La pantalla (`apps/web/src/pages/observability/`) pinta los nombres de modelo, tool y agente solo como texto de React, sin HTML |
 | `bind_session` (chat, tarea, Playground) | Interno | Una escritura más por turno, sin contenido |
 
 ## Threat model table

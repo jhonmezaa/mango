@@ -38,6 +38,7 @@ import { handleKnowledge, handleMockS3 } from './knowledge.ts';
 import { originOf, sendError, sendJson, type ApiHandler } from './http.ts';
 import { handleMarketplace } from './marketplace.ts';
 import { handleMcpCatalog } from './mcpCatalog.ts';
+import { handleObservability } from './observability.ts';
 import { handleRemoteMcp } from './remoteMcp.ts';
 import { handleOrgChart } from './orgChart.ts';
 import { handlePeople } from './people.ts';
@@ -60,6 +61,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleHome,
   handleSearch,
   handleActivity,
+  handleObservability,
   handleGroups,
   handleDirectory,
   handlePeople,

@@ -11,6 +11,7 @@ import {
   zGetBudgetsResponse,
   zGetBusinessUnitsResponse,
   zGetConversationResponse,
+  zGetObservabilityResponse,
   zGetRequestsResponse,
   zListConversationsResponse,
   zMeResponse,
@@ -130,6 +131,24 @@ describe('mock backend', () => {
     const later = new Date(Date.now() + 60_000).toISOString();
     expect(zGetActivityResponse.parse(await json(`/activity?since=${later}`)).events).toEqual([]);
     expect((await api('/activity?range=30d')).status).toBe(422);
+  });
+
+  it('answers Observability with the generated contract, its filters and pages', async () => {
+    const whole = zGetObservabilityResponse.parse(await json('/observability?range=24h'));
+    expect(whole.traces).toHaveLength(40);
+    expect(whole.total).toBe(whole.summary.traces);
+    // Like the API: the hours the window touches (24, or 25 when it does not start on the hour).
+    expect(whole.hourly.length).toBeGreaterThanOrEqual(24);
+    expect(whole.traces.some((trace) => !trace.matched && trace.cost_usd === null)).toBe(true);
+    const next = zGetObservabilityResponse.parse(await json('/observability?range=24h&offset=40'));
+    expect(next.traces[0]?.id).not.toBe(whole.traces[0]?.id);
+    const errors = zGetObservabilityResponse.parse(await json('/observability?status=error'));
+    expect(errors.traces.every((trace) => trace.status === 'error')).toBe(true);
+    const found = zGetObservabilityResponse.parse(await json('/observability?q=ANOMALIES'));
+    expect(found.total).toBeGreaterThan(0);
+    expect(found.summary).toEqual(whole.summary);
+    expect((await api('/observability?agent=evals')).status).toBe(422);
+    expect((await api('/observability?range=7d')).status).toBe(422);
   });
 
   it('answers unknown routes with the error envelope', async () => {

@@ -16,6 +16,7 @@ import { knowledge } from './es/knowledge';
 import { marketplace } from './es/marketplace';
 import { mcpCatalog } from './es/mcpCatalog';
 import { ops } from './es/ops';
+import { observability } from './es/observability';
 import { orgChart } from './es/orgChart';
 import { people } from './es/people';
 import { playground } from './es/playground';
@@ -52,6 +53,7 @@ export const es = {
   agentBuilder,
   agentReview,
   orgChart,
+  observability,
   brains,
   groups,
   people,

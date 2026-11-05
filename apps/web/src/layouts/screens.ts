@@ -11,6 +11,7 @@ import { inboxScreen } from '../pages/inbox/screen';
 import { knowledgeScreen } from '../pages/knowledge/screen';
 import { marketplaceScreen } from '../pages/marketplace/screen';
 import { mcpCatalogScreen } from '../pages/mcpCatalog/screen';
+import { observabilityScreen } from '../pages/observability/screen';
 import { orgChartScreen } from '../pages/orgChart/screen';
 import { playgroundScreen } from '../pages/playground/screen';
 import { schedulesScreen } from '../pages/schedules/screen';
@@ -51,4 +52,5 @@ export const SCREENS: readonly Screen[] = [
   playgroundScreen,
   skillsScreen,
   searchScreen,
+  observabilityScreen,
 ];

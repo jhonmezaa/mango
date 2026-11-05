@@ -17,7 +17,7 @@ const USER: ViewKey[] = [
   'schedules',
   'org',
 ];
-const OWNER_EXTRA: ViewKey[] = ['governance', 'observability', 'evals', 'costs'];
+const OWNER_EXTRA: ViewKey[] = ['governance', 'evals', 'costs'];
 const NOT_CREATOR = { create_agent: false };
 const CREATOR = { create_agent: true };
 
