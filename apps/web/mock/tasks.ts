@@ -75,6 +75,8 @@ interface Task {
   updated_at: string;
   runs: Run[];
   report: ReportType | null;
+  /** «Crear ticket» (D112). */
+  ticket?: boolean;
 }
 
 const ME = { user_id: 'mock-user', email: MOCK_USER, name: null };
@@ -91,7 +93,7 @@ const isoDay = (offset: number) => {
 const TASK_ROUTE = /^\/tasks\/([0-9a-f]{32})(?:\/(run|pause|resume|retire))?$/;
 const RUN_ROUTE = /^\/tasks\/([0-9a-f]{32})\/runs\/([0-9a-f]{32})$/;
 const REPORT_ROUTE = /^\/tasks\/([0-9a-f]{32})\/runs\/([0-9a-f]{32})\/report\/(download|retry)$/;
-const TASK_FIELDS = ['name', 'agent_id', 'task', 'trigger', 'deliver', 'report'];
+const TASK_FIELDS = ['name', 'agent_id', 'task', 'trigger', 'deliver', 'report', 'ticket'];
 const ZONES = ['America/Mexico_City', 'America/Bogota', 'America/Sao_Paulo', 'UTC'];
 
 const REPORT =
@@ -429,6 +431,7 @@ function out(task: Task) {
     trigger: { ...task.trigger, daily_cap: task.trigger.event_type ? 5 : null },
     deliver: 'inbox',
     report: task.report,
+    ticket: task.ticket === true,
     status: task.status,
     paused_reason: task.paused_reason,
     paused_at: task.paused_at,
@@ -450,7 +453,7 @@ function out(task: Task) {
 
 function fromBody(
   body: Record<string, unknown>,
-): Pick<Task, 'name' | 'agent_id' | 'task' | 'trigger' | 'report'> | null {
+): Pick<Task, 'name' | 'agent_id' | 'task' | 'trigger' | 'report' | 'ticket'> | null {
   const trigger = body.trigger as Record<string, unknown> | undefined;
   if (
     typeof body.name !== 'string' ||
@@ -465,6 +468,7 @@ function fromBody(
     agent_id: body.agent_id,
     task: body.task,
     report: body.report === true ? (trigger.kind === 'event' ? 'anomaly' : 'cost_summary') : null,
+    ticket: body.ticket === true,
     trigger:
       trigger.kind === 'event'
         ? { kind: 'event', schedule: null, timezone: null, event_type: 'cost_anomaly' }

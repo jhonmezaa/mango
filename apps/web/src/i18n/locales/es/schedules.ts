@@ -256,7 +256,11 @@ export const schedules = {
     heavyHourly:
       'Cada hora son ~720 ejecuciones al mes con el presupuesto de {{agent}}. Revisa que te alcance.',
     result: 'Resultado',
-    resultValue: 'Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.',
+    resultValue: 'Queda en el detalle de la tarea y te llega a la Bandeja.',
+    resultOnlyYou: 'Solo tú lo ves.',
+    ticketOn:
+      'Cada ejecución que termina bien deja su resultado en un ticket tuyo, sin asignar, con {{agent}} y la tarea. Título: el nombre de la tarea y la fecha. Lo ven también quienes pueden usar {{agent}} y los administradores. Si el resultado parece una credencial, no se crea.',
+    ticketAgent: 'el agente',
     alsoSend: 'También enviar a',
     report: 'Reporte descargable',
     reportOption: 'También un PDF · {{type}}',

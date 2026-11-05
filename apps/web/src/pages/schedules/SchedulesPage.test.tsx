@@ -195,6 +195,7 @@ describe('SchedulesPage', () => {
           },
           deliver: 'inbox',
           report: false,
+          ticket: false,
         },
       });
     });
@@ -456,6 +457,54 @@ describe('SchedulesPage', () => {
         'Queda en el detalle de la tarea y te llega a la Bandeja. Solo tú lo ves.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('«Crear ticket» leaves each good run in a ticket, with the text of the design (D112)', async () => {
+    const created = task({ task_id: 'c'.repeat(32), name: 'Con ticket', ticket: true });
+    const call = apiWith({ ...base(list([])), createNewTask: () => created });
+    renderPage(call);
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuevo schedule' }));
+    const dialog = await screen.findByRole('dialog');
+    const ticket = within(dialog).getByRole('button', { name: 'Crear ticket' });
+    expect(ticket).toHaveAttribute('aria-pressed', 'false');
+    expect(within(dialog).queryByText(/Cada ejecución que termina bien/)).toBeNull();
+    await userEvent.click(ticket);
+    expect(ticket).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      within(dialog).getByText(
+        'Cada ejecución que termina bien deja su resultado en un ticket tuyo, sin asignar, con FinOps y la tarea. Título: el nombre de la tarea y la fecha. Lo ven también quienes pueden usar FinOps y los administradores. Si el resultado parece una credencial, no se crea.',
+      ),
+    ).toBeInTheDocument();
+    // Others see the ticket: «Solo tú lo ves.» goes away.
+    expect(
+      within(dialog).getByText('Queda en el detalle de la tarea y te llega a la Bandeja.'),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Solo tú lo ves/)).toBeNull();
+    await userEvent.type(within(dialog).getByLabelText('Nombre'), 'Con ticket');
+    await userEvent.type(within(dialog).getByLabelText('Tarea'), 'Revisa el gasto');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Crear schedule' }));
+    await waitFor(() => {
+      const sent = call.mock.calls.find(([operation]) => operation === 'createNewTask');
+      expect((sent?.[1] as { body: { ticket: boolean } } | undefined)?.body.ticket).toBe(true);
+    });
+  });
+
+  it('editing a task with a ticket keeps it on (the update replaces every field)', async () => {
+    const own = task({ ticket: true });
+    const call = apiWith({ ...base(list([own])), updateExistingTask: () => own });
+    renderPage(call, false, `/schedules/${own.task_id}`);
+    const detail = await screen.findByRole('dialog', { name: own.name });
+    await userEvent.click(within(detail).getByRole('button', { name: /Editar/ }));
+    const editor = await screen.findByRole('dialog', { name: /Editar|schedule/i });
+    expect(within(editor).getByRole('button', { name: 'Crear ticket' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(within(editor).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => {
+      const sent = call.mock.calls.find(([operation]) => operation === 'updateExistingTask');
+      expect((sent?.[1] as { body: { ticket: boolean } } | undefined)?.body.ticket).toBe(true);
+    });
   });
 
   it('nobody creates without a usable agent', async () => {

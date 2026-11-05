@@ -1145,6 +1145,8 @@ interface Draft {
   tz: TimeZone;
   /** Also a PDF of each run (D86): off by default, editable. */
   report: boolean;
+  /** «Crear ticket» (D112): each run that ends well leaves its result in a ticket. */
+  ticket: boolean;
 }
 
 function draftOf(task: Task | null, agents: Agent[]): Draft {
@@ -1157,6 +1159,7 @@ function draftOf(task: Task | null, agents: Agent[]): Draft {
       spec: DEFAULT_SPEC,
       tz: TIMEZONES[0],
       report: false,
+      ticket: false,
     };
   }
   const tz = TIMEZONES.find((zone) => zone === task.trigger.timezone) ?? TIMEZONES[0];
@@ -1168,6 +1171,7 @@ function draftOf(task: Task | null, agents: Agent[]): Draft {
     spec: { ...DEFAULT_SPEC, ...task.trigger.schedule },
     tz,
     report: task.report != null,
+    ticket: task.ticket === true,
   };
 }
 
@@ -1292,6 +1296,8 @@ function TaskEditor({
       trigger,
       deliver: 'inbox' as const,
       report: draft.report && canReport,
+      // Always sent: an update without it would turn the ticket off (TaskIn defaults to false).
+      ticket: draft.ticket,
     };
     const request = isNew
       ? api('createNewTask', { body })
@@ -1603,21 +1609,39 @@ function TaskEditor({
         ) : null}
         <div>
           <span className="sc-label">{t('schedules.editor.result')}</span>
-          <div className="sc-ro">{t('schedules.editor.resultValue')}</div>
+          <div className="sc-ro">
+            {draft.ticket
+              ? t('schedules.editor.resultValue')
+              : `${t('schedules.editor.resultValue')} ${t('schedules.editor.resultOnlyYou')}`}
+          </div>
           <div className="flex items-center gap-2" style={{ marginTop: 8, flexWrap: 'wrap' }}>
             <span className="mk-meta">{t('schedules.editor.alsoSend')}</span>
-            {/* The results stay inside Mango in this wave (A4): Slack and tickets are «Próximamente». */}
+            {/* Slack is still «Próximamente»; a ticket stays inside Mango (D112). */}
             <Soon name={t('schedules.deliver.slack')}>
               <span className="ab-seg">
                 <button type="button">{t('schedules.deliver.slack')}</button>
               </span>
             </Soon>
-            <Soon name={t('schedules.deliver.ticket')}>
-              <span className="ab-seg">
-                <button type="button">{t('schedules.deliver.ticket')}</button>
-              </span>
-            </Soon>
+            <span className="ab-seg">
+              <button
+                type="button"
+                className={draft.ticket ? 'is-on' : undefined}
+                aria-pressed={draft.ticket}
+                onClick={() => {
+                  setDraft({ ...draft, ticket: !draft.ticket });
+                }}
+              >
+                {t('schedules.deliver.ticket')}
+              </button>
+            </span>
           </div>
+          {draft.ticket ? (
+            <div className="mk-meta" style={{ marginTop: 6, lineHeight: 1.5 }}>
+              {t('schedules.editor.ticketOn', {
+                agent: agentName ?? t('schedules.editor.ticketAgent'),
+              })}
+            </div>
+          ) : null}
         </div>
         <div>
           <span className="sc-label">{t('schedules.editor.report')}</span>
