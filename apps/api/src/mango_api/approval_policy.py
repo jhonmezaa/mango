@@ -33,6 +33,9 @@ class Condition(StrEnum):
     AMOUNT = "amount"
     COUNT = "count"
     ENVIRONMENT = "environment"
+    SELF = "self"
+    """The person who asked confirms every call (D112 (8)). Only the default a connector of Mango
+    that writes records of Mango may be born with; nobody proposes it (``tool_policies``)."""
 
 
 class Tier(StrEnum):
@@ -99,6 +102,8 @@ class Policy:
 
 DEFAULT_POLICY = Policy()
 """A write tool nobody configured: every call needs one approver, within 24 hours."""
+SELF_DEFAULT_POLICY = Policy(condition=Condition.SELF)
+"""The default of a tool whose manifest says so (D112 (8)): the person confirms each call."""
 
 
 @dataclass(frozen=True)
@@ -157,6 +162,8 @@ def _environment(value: object, policy: Policy) -> Decision:
 def decide(policy: Policy, inputs: TierInputs, arguments: Mapping[str, Any]) -> Decision:
     """The tier of one call. ``arguments`` are the ones the tool would run with."""
     condition = policy.condition
+    if condition is Condition.SELF:
+        return Decision(Tier.SELF, TierReason.BELOW)
     if condition is Condition.AMOUNT:
         amount = _number(arguments.get(inputs.amount)) if inputs.amount else None
         return _threshold(amount, policy.amount_usd)

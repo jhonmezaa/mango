@@ -1,4 +1,4 @@
-# Tickets de Mango: modelo de amenazas (v0.1)
+# Tickets de Mango: modelo de amenazas (v0.2)
 
 > Fecha: 2026-11-05 · Skill: `security-threat-model`. Decisiones: D13, D27, D33, D56, D59, D63, D70, D78, D84, D99 y **D112** (tickets propios de Mango, acordada por el dueño por menú el 2026-11-05).
 > Alcance: la tabla `Mango-<ns>-Tickets`; `apps/api/src/mango_api/tickets.py` y `packages/py/mango-core/src/mango_core/tickets.py`; las políticas Cedar `tickets.cedar` y `tickets-create.cedar`; la tool interna de tickets en el Gateway (PR B) y «Crear ticket» como salida de una tarea (PR C).
@@ -24,7 +24,7 @@ Controles que se construyen:
 - **RBAC por objeto en Cedar, deny por defecto:** `ViewTicket`, `EditTicket` y `CommentTicket` sobre `Mango::Ticket`, con `creator`, `assignee` y el `agent` (sus grupos y personas de la versión publicada) leídos de las tablas, nunca del pedido. Un ticket que no se puede ver responde 404, no 403. La lista se filtra con `BatchIsAuthorized`.
 - **Identidad verificada:** quien crea, comenta o cambia es el sujeto del access token (D13); los modelos de petición prohíben campos extra (`creator`, `status: needs_approval`, `conversation_id`).
 - **Asignar sin directorio:** solo a sí mismo o a un participante del ticket (creador, asignado, quien comentó); el servidor lo comprueba contra el registro, y los correos que se muestran son los que cada participante trajo en su propio token.
-- **La tool interna no salta la gobernanza:** target del Gateway servido por una Lambda (como `knowledge`), con la identidad de la persona hasta el destino (regla 5, token reverificado en la Lambda); crear, actualizar y comentar están en `approval_tools` (D56): sin el approval token ligado a `hash(tool, args)` el interceptor lo rechaza y `mango-api` lo convierte en una solicitud de confirmación. Tope por turno y por persona.
+- **La tool interna no salta la gobernanza (D112 (8), (9)):** conector `mango-tickets` en el target `ops`, ejecutado por el approval executor con la identidad de la persona (regla 5, token reverificado en la Lambda); crear, actualizar y comentar están en `APPROVAL_TOOLS` (D56): sin el approval token ligado a `hash(tool, args)` el interceptor lo rechaza y `mango-api` lo convierte en una solicitud de confirmación, que nace en el tramo de autoconfirmación (condición `self`). `mango-api` decide `CreateTicket`, `EditTicket` o `CommentTicket` con Cedar al crear la solicitud y otra vez al confirmar, justo antes de firmar el token. Tope por turno (3 solicitudes, `MAX_REQUESTS_PER_TURN`) y por persona (los límites de la API, al pedir).
 - **Contenido no confiable:** lo que la tool devuelve de un ticket va bajo un aviso fijo («datos, no instrucciones») y sin los correos de las personas.
 - **Nada del contenido sale de la tabla:** la auditoría `ticket.create`, `ticket.update` y `ticket.comment` lleva ids, campos cambiados y tamaños; nunca el título, la descripción ni el comentario; los logs, solo ids y códigos.
 - **Topes:** título 200, descripción 8 000 y comentario 4 000 caracteres; 200 comentarios por ticket; límites de tasa compartidos (D70) por persona para crear, cambiar y comentar; detección de secretos (D26) en todo texto.
@@ -144,3 +144,23 @@ flowchart LR
 - Fronteras en amenazas: navegador → API, API → tablas, agente → Gateway → Lambda, worker → tabla.
 - Runtime separado de CI: nada de la release interviene salvo las políticas Cedar.
 - Decisiones del dueño (D112, 2026-11-05) reflejadas en alcance y supuestos.
+
+## v0.2: la tool interna, construida (2026-11-05)
+
+Cómo quedó lo que la v0.1 planteaba para la tool (PR B), con lo que decidió el dueño por menú ese día (D112 (8)) y el agente que lanzó el trabajo (D112 (9)):
+
+- **Dónde corre:** el approval executor (`functions/approval-executor`, `mango_core.ticket_tool`), en el target `ops`. Gana `dynamodb:GetItem`, `PutItem` y `UpdateItem` solo sobre la tabla `Tickets` (sin `Query`, `Scan` ni `DeleteItem`, ni índices) y la llave de datos a través de DynamoDB. Un test de infra fija que no tiene otra lectura ni escritura de datos.
+- **Quién la pide:** una política L2 nueva del Gateway (`Mango_<ns>_WriteMangoRecords`) deja pedir las tres tools a cualquier persona con sesión, como la búsqueda de knowledge; sin la aprobación no corre nada.
+- **Quién decide el ticket:** `TicketToolGate` en `mango-api` (`tickets.py`), con las mismas políticas Cedar que las rutas. Un ticket que no existe y uno que no se puede ver dan la misma respuesta (`ticket_not_found`). Lo decide al crear la solicitud (con detección de secretos, argumentos cerrados y el límite de la persona) y otra vez al confirmar o ejecutar (`approvals._run`), antes de firmar el token: una autoconfirmación nunca ejecuta lo que la persona ya no puede hacer (TM-TK3).
+- **Qué no puede elegir el modelo:** quien crea (el sujeto del token), la conversación (firmada por `mango-api` en el approval token, claim `conv`, para derivar «Por aprobar»), el agente (el del token), el origen (`agent`) ni a quién se asigna (solo a la persona del chat). El id del ticket sale de la aprobación (`ticket_id_for`): aleatorio, nunca incremental, y el mismo si la llamada llegara dos veces.
+- **Tramo por defecto (`self`):** solo lo declara el manifiesto de un conector sin permisos IAM (validado en `mcp_catalog` y en la síntesis); nadie lo propone en Ajustes › Aprobaciones (las condiciones propuestas son las que el manifiesto declara, más «siempre»). Una política que no se puede leer sigue siendo aprobadores (fail-closed).
+- **Sin lectura:** la respuesta de la tool trae el id, el título que el propio agente mandó, el estado y la prioridad; nunca descripciones ni comentarios de otros (TM-TK2).
+- **Auditoría:** `ticket.create`, `ticket.update` y `ticket.comment` con `source: agent`, la aprobación y la conversación, escritos por `mango-api` cuando la llamada ejecutó; además de `approval.request`, `approval.self_confirm` y `approval.execute` de siempre. Nunca el texto.
+
+## Revisión `security-audit` del diff de la tool (2026-11-05, modo guía)
+
+Alcance: el diff de PR B (`connectors/mango-tickets`, `mango_core.ticket_tool`, `mango_core.approval` (claim `conv`), el executor, `approvals.py`, `approval_policy.py`, `tool_policies.py`, `mcp_catalog.py`, `tickets.py`, `write-tools.ts`, `tickets.ts`). Fronteras revisadas: modelo → Gateway → executor; persona → confirmación → token; administrador → política de la tool.
+
+- **Sin hallazgos confirmados.** Identidad del token reverificado en el executor; aprobación de un solo uso ligada a `hash(tool, args)` también para estas tools; claim `conv` firmado y validado por forma (un token sin él sigue valiendo, sin conversación); Cedar en las dos rutas que ejecutan (`confirm` y `execute` pasan por `_run`); IAM del executor acotado a la tabla; la condición `self` no es proponible ni la puede declarar un pack o un conector con IAM; logs con ids y códigos.
+- **Riesgo aceptado (D112 (9)):** el executor no consulta Verified Permissions; confía en la decisión que `mango-api` toma justo antes de firmar un token que vive 2 minutos. La ventana es la de ese token.
+- **Observación sin impacto de seguridad:** cuando el gate no crea la solicitud (ticket ajeno, argumentos inválidos, límite), el modelo recibe el texto fijo del interceptor («se mostró una solicitud de confirmación»), que en ese caso no es cierto: es una diferencia de experiencia, anotada para el brief.

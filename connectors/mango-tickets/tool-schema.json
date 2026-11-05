@@ -1,0 +1,41 @@
+[
+  {
+    "name": "create_ticket",
+    "description": "Create a Mango ticket on behalf of the current user, linked to this agent and this conversation. This tool CHANGES records, so it never runs directly: calling it asks the user to confirm the exact arguments, and it runs only afterwards. Call it once with the final values; do not retry it. It returns the ticket id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Short title, at most 200 characters." },
+        "description": { "type": "string", "description": "Optional: what the ticket is about, in Markdown, at most 8000 characters. Never include credentials." },
+        "priority": { "type": "string", "enum": ["high", "medium", "low"], "description": "Optional: medium if omitted." }
+      },
+      "required": ["title"]
+    }
+  },
+  {
+    "name": "update_ticket",
+    "description": "Change the status or the priority of a Mango ticket the current user may change, or assign it to the current user. This tool CHANGES records: calling it asks the user to confirm, and it runs only afterwards. Call it once; do not retry it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ticket_id": { "type": "string", "description": "The ticket id (12 characters)." },
+        "status": { "type": "string", "enum": ["open", "in_progress", "done"], "description": "Optional: the new status." },
+        "priority": { "type": "string", "enum": ["high", "medium", "low"], "description": "Optional: the new priority." },
+        "assign_to_me": { "type": "boolean", "description": "Optional: true assigns the ticket to the current user." }
+      },
+      "required": ["ticket_id"]
+    }
+  },
+  {
+    "name": "comment_ticket",
+    "description": "Add a comment to a Mango ticket the current user may comment, on their behalf. This tool CHANGES records: calling it asks the user to confirm, and it runs only afterwards. Call it once; do not retry it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ticket_id": { "type": "string", "description": "The ticket id (12 characters)." },
+        "body": { "type": "string", "description": "The comment, in Markdown, at most 4000 characters. Never include credentials." }
+      },
+      "required": ["ticket_id", "body"]
+    }
+  }
+]

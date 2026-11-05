@@ -49,6 +49,7 @@ _SUBJECT_RE = re.compile(r"^[\w+=,.@-]{2,64}$", re.ASCII)
 """IAM's rule for ``SourceIdentity``: the subject is used as one."""
 _TOOL_RE = re.compile(r"^[A-Za-z0-9-]{1,48}___[A-Za-z0-9_-]{1,64}$")
 _AGENT_RE = re.compile(r"^[a-z0-9]{2,16}$")
+_CONVERSATION_RE = re.compile(r"^[0-9a-f]{32}$")
 _PARTS = 3
 
 
@@ -123,15 +124,18 @@ def encode_claims(
     args_hash: str,
     agent_id: str,
     expires_at: int,
+    conversation_id: str | None = None,
 ) -> str:
     """Encoded claims of one execution. ``subject`` is who asked for the action: the only
-    person whose session can run it."""
+    person whose session can run it. ``conversation_id``, where it was asked: the tickets tool
+    links the ticket to it (D112), and only mango-api, which stored it, can sign it."""
     if (
         not _ID_RE.fullmatch(approval_id)
         or not _SUBJECT_RE.fullmatch(subject)
         or not _TOOL_RE.fullmatch(tool)
         or not _HASH_RE.fullmatch(args_hash)
         or not _AGENT_RE.fullmatch(agent_id)
+        or (conversation_id is not None and not _CONVERSATION_RE.fullmatch(conversation_id))
     ):
         raise ValueError("invalid approval")
     claims = {
@@ -141,6 +145,7 @@ def encode_claims(
         "args": args_hash,
         "agent": agent_id,
         "exp": expires_at,
+        **({"conv": conversation_id} if conversation_id is not None else {}),
     }
     return _b64(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode())
 
@@ -174,6 +179,8 @@ class Approval:
     args_hash: str
     agent_id: str
     expires_at: int
+    conversation_id: str | None = None
+    """Where the action was asked, if the token names it (D112)."""
 
 
 class ApprovalVerifier:
@@ -202,6 +209,7 @@ class ApprovalVerifier:
         if not isinstance(claims, dict):
             raise ApprovalError
         approval_id, agent, expires = claims.get("jti"), claims.get("agent"), claims.get("exp")
+        conversation = claims.get("conv")
         now = self._now()
         if (
             not isinstance(approval_id, str)
@@ -216,6 +224,10 @@ class ApprovalVerifier:
             or claims.get("sub") != subject
             or claims.get("tool") != tool
             or claims.get("args") != expected
+            or (
+                conversation is not None
+                and not (isinstance(conversation, str) and _CONVERSATION_RE.fullmatch(conversation))
+            )
         ):
             raise ApprovalError
         return Approval(
@@ -225,4 +237,5 @@ class ApprovalVerifier:
             args_hash=expected,
             agent_id=agent,
             expires_at=expires,
+            conversation_id=conversation,
         )

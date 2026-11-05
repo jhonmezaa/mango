@@ -1620,7 +1620,8 @@ export const zPolicyRuleSchema = z.object({
         'always',
         'amount',
         'count',
-        'environment'
+        'environment',
+        'self'
     ]),
     count: z.int().gte(1).lte(100000).nullish(),
     environment: z.enum(['prod', 'staging']).nullish(),
@@ -2220,7 +2221,8 @@ export const zRuleOutSchema = z.object({
         'always',
         'amount',
         'count',
-        'environment'
+        'environment',
+        'self'
     ]),
     count: z.int().nullish(),
     environment: z.string().nullish(),
@@ -3073,7 +3075,8 @@ export const zToolPolicyOutSchema = z.object({
         'always',
         'amount',
         'count',
-        'environment'
+        'environment',
+        'self'
     ])),
     description: z.string(),
     pending_change_id: z.string().nullable(),
@@ -3832,7 +3835,8 @@ export const zMangoApiToolPoliciesProposeInSchema = z.object({
         'always',
         'amount',
         'count',
-        'environment'
+        'environment',
+        'self'
     ]),
     count: z.int().gte(1).lte(100000).nullish(),
     environment: z.enum(['prod', 'staging']).nullish(),

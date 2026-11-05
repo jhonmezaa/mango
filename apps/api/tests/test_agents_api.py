@@ -1463,7 +1463,7 @@ def test_the_budget_list_names_published_and_retired_agents(env: Env) -> None:
 
 def test_the_builder_reads_the_catalog_and_the_enabled_models(env: Env) -> None:
     catalog = env.client.get("/api/mcp/catalog", headers=_h("creator")).json()["items"]
-    assert [c["id"] for c in catalog] == ["aws-budgets", "cost-explorer"]
+    assert [c["id"] for c in catalog] == ["aws-budgets", "cost-explorer", "mango-tickets"]
     connector = catalog[1]
     assert (connector["data_tier"], connector["identity_mode"], connector["enabled"]) == (
         "account_data",

@@ -499,7 +499,39 @@ def test_an_unconfigured_write_tool_always_asks_for_one_approver(env: Env) -> No
                 },
                 "version": 0,
                 "pending_change_id": None,
-            }
+            },
+            # The tickets tool is born self-confirmed (D112 (8)); only "always" can be proposed.
+            *(
+                {
+                    "tool": f"mango-tickets.{name}",
+                    "server_name": "Tickets de Mango",
+                    "description": description,
+                    "conditions": ["always"],
+                    "policy": {
+                        "condition": "self",
+                        "amount_usd": None,
+                        "count": None,
+                        "environment": None,
+                        "approvers": 1,
+                        "expires_hours": 24,
+                    },
+                    "version": 0,
+                    "pending_change_id": None,
+                }
+                for name, description in (
+                    (
+                        "create_ticket",
+                        "Crear un ticket de Mango a nombre de quien conversa, ligado a este agente"
+                        " y a esta conversación.",
+                    ),
+                    (
+                        "update_ticket",
+                        "Cambiar el estado o la prioridad de un ticket, o asignárselo a quien"
+                        " conversa.",
+                    ),
+                    ("comment_ticket", "Comentar un ticket a nombre de quien conversa."),
+                )
+            ),
         ],
         "changes": [],
     }
@@ -835,7 +867,10 @@ def test_confirming_runs_exactly_what_was_shown_as_the_person_who_asked(env: Env
         gateway_tool=GATEWAY_TOOL,
         arguments='{"amount_usd":100,"name":"team-a"}',
         args_hash=call_hash(GATEWAY_TOOL, {"name": "team-a", "amount_usd": 100}),
+        # Where it was asked, signed into the token (D112): the conversation of the request.
+        conversation_id=call.conversation_id,
     )
+    assert call.conversation_id is not None and len(call.conversation_id) == 32
     applied = [e for e, _u, d in env.audit.events if d.get("outcome") == "applied"]
     assert applied[-2:] == ["approval.self_confirm", "approval.execute"]
     # Running an action is using the agent: that decision is made (and audited) again.

@@ -1,0 +1,33 @@
+{
+  "id": "mango-tickets",
+  "kind": "connector",
+  "name": "Tickets de Mango",
+  "description": "Crea, actualiza y comenta tickets de Mango con la identidad de quien conversa. Cada llamada la confirma esa persona antes de ejecutarse. No lee tickets.",
+  "provider": "Mango",
+  "data_tier": "write",
+  "identity_mode": "per_user",
+  "gateway_target": "ops",
+  "tools": [
+    {
+      "name": "create_ticket",
+      "description": "Crear un ticket de Mango a nombre de quien conversa, ligado a este agente y a esta conversación.",
+      "access": "write",
+      "audience": "all",
+      "approval": { "default": "self" }
+    },
+    {
+      "name": "update_ticket",
+      "description": "Cambiar el estado o la prioridad de un ticket, o asignárselo a quien conversa.",
+      "access": "write",
+      "audience": "all",
+      "approval": { "default": "self" }
+    },
+    {
+      "name": "comment_ticket",
+      "description": "Comentar un ticket a nombre de quien conversa.",
+      "access": "write",
+      "audience": "all",
+      "approval": { "default": "self" }
+    }
+  ]
+}

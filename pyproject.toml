@@ -11,8 +11,8 @@ package = false
 
 [tool.uv.workspace]
 members = ["packages/py/*", "connectors/*", "functions/*", "apps/api", "deployment/pack-builder"]
-# Catalog data only (manifest and tool schema); its code is functions/approval-executor.
-exclude = ["connectors/aws-budgets"]
+# Catalog data only (manifest and tool schema); their code is functions/approval-executor.
+exclude = ["connectors/aws-budgets", "connectors/mango-tickets"]
 
 [dependency-groups]
 dev = [

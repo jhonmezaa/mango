@@ -35,6 +35,7 @@ from mango_api.approval_policy import (
     DEFAULT_POLICY,
     MAX_APPROVERS,
     MIN_APPROVERS,
+    SELF_DEFAULT_POLICY,
     Condition,
     Policy,
     TierInputs,
@@ -172,8 +173,9 @@ class PolicyStore:
         self._db = dynamodb
         self._table = table
 
-    def policy(self, tool: str) -> Policy:
-        """The stored policy of ``tool``, or the default if it was never set."""
+    def policy(self, tool: str, default: Policy = DEFAULT_POLICY) -> Policy:
+        """The stored policy of ``tool``, or ``default`` if it was never set (the tool's own,
+        ``default_policy``)."""
         try:
             item = self._db.get_item(
                 TableName=self._table,
@@ -181,7 +183,7 @@ class PolicyStore:
                 ConsistentRead=True,
             ).get("Item")
             if item is None:
-                return DEFAULT_POLICY
+                return default
             return policy_from_rule(json.loads(item["rule"]["S"]), int(item["version"]["N"]))
         except (ClientError, BotoCoreError, KeyError, ValueError) as exc:
             raise PolicyUnavailableError from exc
@@ -418,7 +420,7 @@ class _Strict(BaseModel):
 
 
 Reason = Annotated[str, Field(min_length=1, max_length=500)]
-ConditionName = Literal["always", "amount", "count", "environment"]
+ConditionName = Literal["always", "amount", "count", "environment", "self"]
 
 
 class PolicyRule(_Strict):
@@ -505,6 +507,16 @@ def tier_inputs(tool: CatalogTool) -> TierInputs:
     )
 
 
+def default_policy(tool: CatalogTool) -> Policy:
+    """The policy a tool is born with until an administrator changes it (D112 (8)): the person
+    confirms each call only if its manifest says so, which the catalog allows only to a
+    connector of Mango that writes records of Mango; any other write tool, approvers."""
+    declared = tool.tool.approval
+    if declared is not None and declared.default == "self":
+        return SELF_DEFAULT_POLICY
+    return DEFAULT_POLICY
+
+
 def governed(tool: CatalogTool) -> bool:
     """A write tool Mango can run with an approval today: one of a Mango connector. Write
     tools of third-party packs are not installed yet (D43)."""
@@ -568,7 +580,7 @@ def policies_view(deps: ToolPolicyDeps, caller: Caller) -> PoliciesOut:
     pending = _read(lambda: deps.store.pending_ids(refs, now))
     rows = []
     for tool in tools:
-        policy = _read(lambda ref=tool.ref: deps.store.policy(ref))  # type: ignore[misc]
+        policy = _read(lambda tool=tool: deps.store.policy(tool.ref, default_policy(tool)))  # type: ignore[misc]
         rows.append(
             ToolPolicyOut(
                 tool=tool.ref,
@@ -653,7 +665,7 @@ def propose(deps: ToolPolicyDeps, caller: Caller, tool_ref: str, body: ProposeIn
     tool = _catalog(deps).tool(tool_ref)
     if tool is None or not governed(tool):
         raise ApiError(404, "not_found", "tool not found")
-    current = _read(lambda: deps.store.policy(tool_ref))
+    current = _read(lambda: deps.store.policy(tool_ref, default_policy(tool)))
     if body.base_version != current.version:
         raise ApiError(409, "version_conflict", "the policy changed; reload")
     after = _proposed(body, tier_inputs(tool))

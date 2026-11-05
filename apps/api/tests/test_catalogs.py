@@ -25,8 +25,11 @@ SONNET = "us.anthropic.claude-sonnet-4-6"
 
 def test_the_release_catalog_lists_only_the_connectors_that_exist() -> None:
     catalog = McpCatalog.load(CONNECTORS)
-    assert [c.id for c in catalog.connectors] == ["aws-budgets", "cost-explorer"]
-    writer, connector = catalog.connectors
+    assert [c.id for c in catalog.connectors] == ["aws-budgets", "cost-explorer", "mango-tickets"]
+    writer, connector, tickets = catalog.connectors
+    # The tickets connector (D112 (9)): records of Mango in the same target, no IAM.
+    assert tickets.data_tier is DataTier.WRITE and tickets.gateway_target == "ops"
+    assert tickets.iam == ()
     assert connector.data_tier is DataTier.ACCOUNT_DATA
     assert connector.identity_mode is IdentityMode.PER_USER
     assert connector.gateway_target == "finops"

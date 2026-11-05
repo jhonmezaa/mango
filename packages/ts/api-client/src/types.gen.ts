@@ -4119,7 +4119,7 @@ export type PolicyRule = {
     /**
      * Condition
      */
-    condition: 'always' | 'amount' | 'count' | 'environment';
+    condition: 'always' | 'amount' | 'count' | 'environment' | 'self';
     /**
      * Count
      */
@@ -5331,7 +5331,7 @@ export type RuleOut = {
     /**
      * Condition
      */
-    condition: 'always' | 'amount' | 'count' | 'environment';
+    condition: 'always' | 'amount' | 'count' | 'environment' | 'self';
     /**
      * Count
      */
@@ -6753,7 +6753,7 @@ export type ToolPolicyOut = {
     /**
      * Conditions
      */
-    conditions: Array<'always' | 'amount' | 'count' | 'environment'>;
+    conditions: Array<'always' | 'amount' | 'count' | 'environment' | 'self'>;
     /**
      * Description
      */
@@ -7678,7 +7678,7 @@ export type MangoApiToolPoliciesProposeIn = {
     /**
      * Condition
      */
-    condition: 'always' | 'amount' | 'count' | 'environment';
+    condition: 'always' | 'amount' | 'count' | 'environment' | 'self';
     /**
      * Count
      */

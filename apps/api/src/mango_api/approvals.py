@@ -26,10 +26,11 @@ Security notes (security-best-practices, FastAPI):
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, Path, Query
@@ -51,7 +52,13 @@ from mango_api.mcp_catalog import CatalogTool, InvalidCatalogError, McpCatalog
 from mango_api.probe import RateLimiter
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
 from mango_api.rate_limits import Limiter
-from mango_api.tool_policies import PolicyStore, PolicyUnavailableError, governed, tier_inputs
+from mango_api.tool_policies import (
+    PolicyStore,
+    PolicyUnavailableError,
+    default_policy,
+    governed,
+    tier_inputs,
+)
 from mango_api.web import ApiError, Caller, rate_limited
 from mango_core.approval import APPROVAL_ID_PATTERN, InvalidArgumentsError, call_hash
 from mango_core.approval import canonical_arguments as canonical
@@ -98,7 +105,7 @@ class EmptyIn(_Strict):
 class RuleOut(_Strict):
     """The policy the request was born with and why it fell in its tier."""
 
-    condition: Literal["always", "amount", "count", "environment"]
+    condition: Literal["always", "amount", "count", "environment", "self"]
     reason: Literal["always", "above", "below", "unknown"]
     amount_usd: str | None = None
     count: int | None = None
@@ -165,6 +172,23 @@ class ApprovalListOut(_Strict):
 # --- Use cases --------------------------------------------------------------------------
 
 
+class ToolGate(Protocol):
+    """What a tool needs decided beyond its tier (D112 (9)): the tickets tool decides with
+    Cedar whether the person may create, change or comment that ticket."""
+
+    def refusal(
+        self, user: UserContext, tool: str, arguments: dict[str, Any], *, at_request: bool
+    ) -> str | None:
+        """``None`` if ``user`` may make this call of ``tool`` now; else a refusal code.
+        ``at_request`` is the decision when the request is created (it also counts the
+        person's limit); otherwise the one when it is confirmed, just before it runs."""
+        ...
+
+    def executed(self, caller: Caller, record: ApprovalRecord) -> None:
+        """What the call did, once it ran (its own audit events)."""
+        ...
+
+
 @dataclass
 class ApprovalDeps:
     store: ApprovalStore
@@ -178,6 +202,8 @@ class ApprovalDeps:
     run_limiter: Limiter = field(
         default_factory=lambda: RateLimiter(limit=RUNS_PER_MINUTE, window_seconds=60)
     )
+    gate: ToolGate | None = None
+    """Set by ``create_app`` once the tickets are deployed (D112 (9))."""
 
 
 def _unavailable(exc: Exception) -> ApiError:
@@ -309,10 +335,11 @@ class WriteCall:
     """Raw JSON text of the tool input."""
 
 
-def _policy(deps: ApprovalDeps, tool: str) -> Policy:
-    """The tool's policy; one that cannot be read is the default: approvers (fail closed)."""
+def _policy(deps: ApprovalDeps, tool: CatalogTool) -> Policy:
+    """The tool's policy; one that cannot be read is the default: approvers (fail closed), also
+    for a tool born self-confirmed (D112 (8))."""
     try:
-        return deps.policies.policy(tool)
+        return deps.policies.policy(tool.ref, default_policy(tool))
     except PolicyUnavailableError:
         logger.exception("tool policy unreadable; using the approvers default")
         return DEFAULT_POLICY
@@ -346,6 +373,12 @@ def request_call(  # noqa: PLR0911 - each early return is one reason not to crea
         return None
     if args_hash in seen or len(seen) >= MAX_REQUESTS_PER_TURN:
         return None
+    if deps.gate is not None and isinstance(arguments, dict):
+        refused = deps.gate.refusal(user, ref, arguments, at_request=True)
+        if refused is not None:
+            # Like any refused call: the Gateway refused it and nobody is asked to confirm.
+            logger.info("write call not requested: %s", refused)
+            return None
     now = deps.clock()
     try:
         mine = deps.store.by_requester(user.user_id)
@@ -355,7 +388,7 @@ def request_call(  # noqa: PLR0911 - each early return is one reason not to crea
     waiting = sum(1 for r in mine if r.status is Status.PENDING and not r.expired(now))
     if waiting >= MAX_OPEN_PER_USER:
         return None
-    policy = _policy(deps, ref)
+    policy = _policy(deps, tool)
     decision = decide(policy, tier_inputs(tool), arguments)
     record = ApprovalRecord(
         approval_id=new_approval_id(),
@@ -698,6 +731,14 @@ def _run(deps: ApprovalDeps, caller: Caller, record: ApprovalRecord) -> None:
         raise rate_limited(deps.run_limiter.retry_after(actor))
     executor = deps.executor
     agent = _serving(deps, record)
+    if deps.gate is not None:
+        # Decided again just before the token is signed: a confirmation never runs what the
+        # person may no longer do (D112 (9)).
+        refused = deps.gate.refusal(
+            caller.user, record.tool, json.loads(record.arguments), at_request=False
+        )
+        if refused is not None:
+            raise ApiError(403, refused, "this action is no longer allowed")
     now = deps.clock()
     detail = _audit_detail(record)
 
@@ -715,6 +756,10 @@ def _run(deps: ApprovalDeps, caller: Caller, record: ApprovalRecord) -> None:
                 gateway_tool=record.gateway_tool,
                 arguments=record.arguments,
                 args_hash=record.args_hash,
+                # Only an id of the shape the token takes; anything else is just not named.
+                conversation_id=record.conversation_id
+                if re.fullmatch(CONVERSATION_ID_PATTERN, record.conversation_id)
+                else None,
             ),
             access_token=caller.token,
             token_expires_at=caller.expires_at,
@@ -733,6 +778,11 @@ def _run(deps: ApprovalDeps, caller: Caller, record: ApprovalRecord) -> None:
         return execution
 
     execution = _audited(deps, "approval.execute", caller, detail, write)
+    if execution.outcome is Outcome.EXECUTED and deps.gate is not None:
+        try:
+            deps.gate.executed(caller, record)
+        except Exception:
+            logger.exception("audit emit failed after an executed call")
     if execution.outcome is not Outcome.EXECUTED:
         try:
             deps.audit.emit(

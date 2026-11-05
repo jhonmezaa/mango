@@ -5,6 +5,7 @@ import * as kms from "aws-cdk-lib/aws-kms";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { mangoName } from "../names.js";
+import { PythonFunction } from "./python-function.js";
 
 /** Index names of the Tickets table; keep in sync with `mango_core.tickets`. */
 export const TICKETS_BY_UPDATED = "ByUpdated";
@@ -66,6 +67,31 @@ export class Tickets extends Construct {
   /** The table's ARN and the ARNs of its indexes. */
   get resourceArns(): string[] {
     return [this.table.tableArn, ...Object.keys(INDEX_KEYS).map((index) => `${this.table.tableArn}/index/${index}`)];
+  }
+
+  /**
+   * The approval executor runs the tickets tool (D112 (9)): it reads and writes tickets, in
+   * this table only, and only after an approval verifies. No `Query`, `Scan` nor `DeleteItem`.
+   */
+  grantToolExecutor(executor: PythonFunction): void {
+    const { region } = Stack.of(this);
+    const role = executor.function.role!;
+    role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: "TicketsTool",
+        actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+        resources: [this.table.tableArn],
+      }),
+    );
+    role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: "TicketsToolKey",
+        actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+        resources: [this.dataKey.keyArn],
+        conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
+      }),
+    );
+    executor.function.addEnvironment("TICKETS_TABLE", this.table.tableName);
   }
 
   /** mango-api: read and write tickets (no `Scan`, no `DeleteItem`: nothing deletes a ticket). */

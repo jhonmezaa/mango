@@ -506,6 +506,7 @@ def test_catalog_lists_connectors_and_the_packs_of_the_release(env: Env) -> None
     assert [(i["id"], i["kind"]) for i in body["items"]] == [
         ("aws-budgets", "connector"),
         ("cost-explorer", "connector"),
+        ("mango-tickets", "connector"),
         (PACK, "pack"),
     ]
     assert body["max_enabled_packs"] == mcp_module.MAX_ENABLED_PACKS
@@ -570,7 +571,11 @@ def test_agents_of_the_base_catalog_still_work_without_pack_administration(
     deps = McpDeps.catalog_only(env.deps)
     monkeypatch.setattr(deps, "catalog", CatalogSource(env.source._connectors, None, None))
     body = mcp_module.catalog_view(deps, _caller("admin"))
-    assert [i["id"] for i in body.model_dump()["items"]] == ["aws-budgets", "cost-explorer"]
+    assert [i["id"] for i in body.model_dump()["items"]] == [
+        "aws-budgets",
+        "cost-explorer",
+        "mango-tickets",
+    ]
     with pytest.raises(mcp_module.ApiError) as error:
         mcp_module.request_change(
             deps, _caller("admin"), PACK, mcp_module.Ask(ChangeKind.ENABLE, 0)

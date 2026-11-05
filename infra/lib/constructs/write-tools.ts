@@ -21,7 +21,8 @@ import { PythonFunction } from "./python-function.js";
 import { OPS_TARGET_NAME, Tools } from "./tools.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const CONNECTOR = resolve(REPO_ROOT, "connectors/aws-budgets");
+/** Write connectors of the release, all behind the approval executor (target `ops`). */
+const CONNECTORS = ["aws-budgets", "mango-tickets"].map((id) => resolve(REPO_ROOT, "connectors", id));
 /** FinOps roles of the pre token claim `mango_role` (D13). */
 const CENTRAL_ROLE = "finops-central";
 const AREA_ROLE = "bu-lead";
@@ -48,20 +49,44 @@ interface ToolDefinition {
 
 interface WriteManifest {
   gateway_target: string;
-  tools: { name: string; access: "read" | "write"; audience: "all" | "central" }[];
+  iam?: unknown[];
+  tools: { name: string; access: "read" | "write"; audience: "all" | "central"; approval?: { default?: "self" } }[];
 }
 
-/** Write tools of the release as the manifest of the write connector declares them. */
-export function writeTools(): { name: string; central: boolean }[] {
-  const manifest = JSON.parse(readFileSync(resolve(CONNECTOR, "manifest.json"), "utf8")) as WriteManifest;
-  if (manifest.gateway_target !== OPS_TARGET_NAME) {
-    throw new Error(`the write connector must use the Gateway target ${OPS_TARGET_NAME}`);
-  }
-  for (const tool of manifest.tools) {
-    // Every tool of this target needs an approval: a read tool here would get one for free.
-    if (tool.access !== "write") throw new Error(`${tool.name}: only write tools go behind the approval executor`);
-  }
-  return manifest.tools.map((tool) => ({ name: tool.name, central: tool.audience === "central" }));
+export interface WriteTool {
+  name: string;
+  central: boolean;
+  /** A record of Mango (D112 (8)): anyone signed in may ask for it; the approval still decides. */
+  mangoRecords: boolean;
+}
+
+function manifestOf(dir: string): WriteManifest {
+  return JSON.parse(readFileSync(resolve(dir, "manifest.json"), "utf8")) as WriteManifest;
+}
+
+/** Write tools of the release as the manifests of the write connectors declare them. */
+export function writeTools(): WriteTool[] {
+  return CONNECTORS.flatMap((dir) => {
+    const manifest = manifestOf(dir);
+    if (manifest.gateway_target !== OPS_TARGET_NAME) {
+      throw new Error(`the write connector must use the Gateway target ${OPS_TARGET_NAME}`);
+    }
+    return manifest.tools.map((tool) => {
+      // Every tool of this target needs an approval: a read tool here would get one for free.
+      if (tool.access !== "write") throw new Error(`${tool.name}: only write tools go behind the approval executor`);
+      const mangoRecords = tool.approval?.default === "self";
+      // Only a connector without IAM grants writes records of Mango (mango_api.mcp_catalog).
+      if (mangoRecords && (manifest.iam ?? []).length > 0) throw new Error(`${tool.name}: self default needs no IAM`);
+      return { name: tool.name, central: tool.audience === "central", mangoRecords };
+    });
+  });
+}
+
+/** The tool schemas of the write connectors, in the order of `writeTools`. */
+function writeSchemas(): ToolDefinition[] {
+  return CONNECTORS.flatMap(
+    (dir) => JSON.parse(readFileSync(resolve(dir, "tool-schema.json"), "utf8")) as ToolDefinition[],
+  );
 }
 
 export interface WriteToolsProps {
@@ -89,6 +114,8 @@ export interface WriteToolsProps {
  */
 export class WriteTools extends Construct {
   readonly approvals: dynamodb.TableV2;
+  /** The approval executor: the Gateway target `ops`. */
+  readonly executor: PythonFunction;
   readonly approvalKey: kms.Key;
   /** Environment mango-api needs to decide and run approvals. */
   readonly apiEnvironment: Record<string, string>;
@@ -199,7 +226,7 @@ export class WriteTools extends Construct {
     broker.addToPolicy(new iam.PolicyStatement({ actions: chain, resources: [budgetsOperatorArn] }));
     executorRole.addToPolicy(new iam.PolicyStatement({ actions: chain, resources: [broker.roleArn] }));
 
-    const executor = new PythonFunction(this, "Executor", {
+    const executor = (this.executor = new PythonFunction(this, "Executor", {
       packageName: "mango-approval-executor",
       packagePath: "functions/approval-executor",
       retainLogs: cfg.retainData,
@@ -219,7 +246,7 @@ export class WriteTools extends Construct {
         RESOURCE_PREFIX: writeResourcePrefix(ns),
       },
       environmentEncryption: tools.configKey,
-    });
+    }));
     acknowledge(executorRole, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
 
     // --- Who verifies and spends an approval ----------------------------------------------
@@ -266,7 +293,7 @@ export class WriteTools extends Construct {
       id: arnWildcardFinding(executor.function.node.defaultChild as CfnResource, ":*"),
       reason: REASONS.cdkGrant,
     });
-    const schema = JSON.parse(readFileSync(resolve(CONNECTOR, "tool-schema.json"), "utf8")) as ToolDefinition[];
+    const schema = writeSchemas();
     const names = declared.map((t) => t.name);
     if (schema.length !== names.length || schema.some((t) => !names.includes(t.name))) {
       throw new Error("the write connector's tool schema and manifest must list the same tools");
@@ -296,8 +323,8 @@ export class WriteTools extends Construct {
       `  resource == ${resource}`,
     ];
     const groups: [string, string[], string[]][] = [
-      ["WriteCentral", declared.filter((t) => t.central).map((t) => t.name), [CENTRAL_ROLE]],
-      ["Write", declared.filter((t) => !t.central).map((t) => t.name), [CENTRAL_ROLE, AREA_ROLE]],
+      ["WriteCentral", declared.filter((t) => t.central && !t.mangoRecords).map((t) => t.name), [CENTRAL_ROLE]],
+      ["Write", declared.filter((t) => !t.central && !t.mangoRecords).map((t) => t.name), [CENTRAL_ROLE, AREA_ROLE]],
     ];
     for (const [name, toolList, roles] of groups) {
       if (toolList.length === 0) continue;
@@ -313,6 +340,18 @@ export class WriteTools extends Construct {
           definition: { cedar: { statement: statement.join("\n") } },
         }).addResourceDependency(target);
       }
+    }
+
+    // Records of Mango (D112 (8), (9)): any signed-in person may ask for them, like the
+    // knowledge search. Cedar of mango-api decides the ticket; the approval decides the call.
+    const mango = declared.filter((t) => t.mangoRecords).map((t) => t.name);
+    if (mango.length > 0) {
+      new agentcore.CfnPolicy(this, "PolicyWriteMangoRecords", {
+        name: `Mango_${ns}_WriteMangoRecords`,
+        description: "Write tools over records of Mango: any signed-in user may ask for them",
+        policyEngineId: tools.policyEngine.attrPolicyEngineId,
+        definition: { cedar: { statement: [...head("permit", mango), ");"].join("\n") } },
+      }).addResourceDependency(target);
     }
 
     this.apiEnvironment = {

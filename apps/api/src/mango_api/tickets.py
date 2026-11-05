@@ -24,6 +24,7 @@ Security notes (security-best-practices, FastAPI):
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable, Sequence
@@ -32,7 +33,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from mango_api.agent_rules import find_secrets
 from mango_api.approvals_store import OPEN_STATUSES
@@ -41,8 +42,10 @@ from mango_api.authz import TICKET_TYPE, AgentResource, TicketResource
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.web import ApiError, Caller, rate_limited
+from mango_core import ticket_tool
 from mango_core import tickets as core
 from mango_core.agents import AGENT_ID_PATTERN
+from mango_core.identity import UserContext
 from mango_core.tickets import (
     MAX_COMMENT,
     MAX_DESCRIPTION,
@@ -690,3 +693,113 @@ def tickets_router(  # noqa: PLR0915 - registers the route closures
         return await detail(current or ticket, agents)
 
     return router
+
+
+# --- The tickets tool of the Gateway (D112 (8), (9)) ------------------------------------------
+
+
+class TicketToolGate:
+    """Decides a call of the tickets tool with Cedar, as mango-api decides the routes: when the
+    request for confirmation is created and again when it is confirmed (``approvals.ToolGate``).
+    Its audit events, ``ticket.*`` with ``source: agent``, are written once the call ran."""
+
+    def __init__(
+        self,
+        deps: TicketsDeps,
+        decide: Callable[[UserContext, str, str, str, TicketResource | None], bool],
+    ) -> None:
+        """``decide(user, action, resource_type, resource_id, ticket)``: one audited decision."""
+        self._deps = deps
+        self._decide = decide
+
+    @staticmethod
+    def _tool(ref: str) -> str | None:
+        server, _, name = ref.partition(".")
+        return name if server == ticket_tool.SERVER_ID and name in ticket_tool.TOOLS else None
+
+    def refusal(  # noqa: PLR0911, PLR0912 - each return is one reason to refuse the call
+        self, user: UserContext, tool: str, arguments: dict[str, Any], *, at_request: bool
+    ) -> str | None:
+        name = self._tool(tool)
+        if name is None:
+            return None
+        try:
+            args = ticket_tool.parse(name, arguments)
+        except ValidationError:
+            return "invalid_arguments"
+        if find_secrets("\n".join(ticket_tool.texts(args))):
+            return "secret_in_ticket"
+        action = ticket_tool.ACTIONS[name]
+        if name == ticket_tool.CREATE:
+            allowed = self._decide(user, action, *PLATFORM, None)
+        else:
+            ticket_id = str(getattr(args, "ticket_id", ""))
+            try:
+                ticket = self._deps.store.get(ticket_id)
+            except TicketStoreUnavailableError:
+                return "tickets_unavailable"
+            if ticket is None:
+                return "ticket_not_found"
+            try:
+                resource = ticket_resource(ticket, Agents(self._deps.published))
+            except ApiError:
+                return "tickets_unavailable"
+            # Same answer for a ticket that does not exist and one the person cannot see.
+            if not self._decide(user, "ViewTicket", TICKET_TYPE, ticket_id, resource):
+                return "ticket_not_found"
+            allowed = self._decide(user, action, TICKET_TYPE, ticket_id, resource)
+        if not allowed:
+            return "not_allowed"
+        if at_request:
+            limiter = {
+                ticket_tool.CREATE: self._deps.creates,
+                ticket_tool.UPDATE: self._deps.changes,
+                ticket_tool.COMMENT: self._deps.comments,
+            }[name]
+            try:
+                if not limiter.allow(user.user_id):
+                    return "rate_limited"
+            except RateLimitUnavailableError:
+                return "rate_limit_unavailable"
+        return None
+
+    def executed(self, caller: Caller, record: "ApprovalRecord") -> None:
+        name = self._tool(record.tool)
+        if name is None:
+            return
+        arguments = json.loads(record.arguments)
+        detail: dict[str, Any] = {
+            "agent": record.agent_id,
+            "source": Source.AGENT.value,
+            "approval_id": record.approval_id,
+            "conversation_id": record.conversation_id,
+            "outcome": "applied",
+        }
+        if name == ticket_tool.CREATE:
+            detail |= {
+                "ticket_id": ticket_tool.ticket_id_for(record.approval_id),
+                "priority": arguments.get("priority", "medium"),
+                "title_chars": len(str(arguments.get("title", ""))),
+                "description_chars": len(str(arguments.get("description", ""))),
+            }
+        elif name == ticket_tool.UPDATE:
+            detail |= {
+                "ticket_id": arguments.get("ticket_id"),
+                "fields": [
+                    f
+                    for f, given in (
+                        ("status", "status" in arguments),
+                        ("priority", "priority" in arguments),
+                        ("assignee", bool(arguments.get("assign_to_me"))),
+                    )
+                    if given
+                ],
+            }
+        else:
+            detail |= {
+                "ticket_id": arguments.get("ticket_id"),
+                "chars": len(str(arguments.get("body", ""))),
+            }
+        self._deps.audit.emit(
+            ticket_tool.AUDIT_EVENTS[name], caller.user.user_id, detail, caller.user
+        )

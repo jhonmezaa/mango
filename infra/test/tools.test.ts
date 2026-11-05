@@ -60,6 +60,8 @@ describe("Gateway Cedar policies (L2)", () => {
         "KnowledgeRetrieve",
         "WriteCentral",
         "WriteCentralForbidOthers",
+        // The tickets tool (D112 (8), (9), tickets.test.ts): any signed-in user may ask.
+        "WriteMangoRecords",
       ].map((name) => `Mango_${ns}_${name}`),
     );
     for (const statement of Object.values(policies)) {

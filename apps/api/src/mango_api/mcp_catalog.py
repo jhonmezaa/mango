@@ -121,6 +121,9 @@ class ManifestApproval(_Frozen):
     amount: Annotated[str, _ARGUMENT_NAME] | None = None
     count: Annotated[str, _ARGUMENT_NAME] | None = None
     environment: Annotated[str, _ARGUMENT_NAME] | None = None
+    default: Literal["self"] | None = None
+    """``self``: the tool's policy is born self-confirmed (D112 (8)). Only a connector of Mango
+    that writes records of Mango may say so: one without IAM grants (``McpServer``)."""
 
 
 class ManifestTool(_Frozen):
@@ -156,6 +159,15 @@ class McpServer(_Frozen):
     """Target name in the AgentCore Gateway; tools are exposed as ``<target>___<tool>``."""
     iam: tuple[ManifestIam, ...] = ()
     tools: Annotated[tuple[ManifestTool, ...], Field(max_length=200)]
+
+    @model_validator(mode="after")
+    def _self_default_only_for_mango_records(self) -> Self:
+        # D112 (8): a tool that writes in a system of the customer or of AWS is born in the
+        # approvers tier. A connector of Mango without IAM grants writes only records of Mango.
+        born_self = any(t.approval is not None and t.approval.default for t in self.tools)
+        if born_self and (self.kind != "connector" or self.iam):
+            raise ValueError("only a connector that writes records of Mango is born self-confirmed")
+        return self
 
 
 class ConnectorManifest(McpServer):

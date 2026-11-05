@@ -86,6 +86,8 @@ class ApprovedCall:
     arguments: str
     """Canonical JSON, as stored when the call was shown."""
     args_hash: str
+    conversation_id: str | None = None
+    """Signed into the approval token: the tickets tool links a ticket to it (D112)."""
 
 
 class Executor(Protocol):
@@ -147,6 +149,7 @@ class GatewayExecutor:
             args_hash=call.args_hash,
             agent_id=call.agent_id,
             expires_at=expires_at,
+            conversation_id=call.conversation_id,
         )
         signature: bytes = self._kms.sign(
             KeyId=self._key_arn,

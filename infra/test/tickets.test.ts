@@ -56,19 +56,65 @@ describe("the Tickets table (D112)", () => {
     expect(JSON.stringify(onTable.Resource)).not.toContain('"*"');
     const key = statements.find((s) => s.Sid === "TicketsTableKey")!;
     expect(key.Condition).toBeDefined();
-    // Nothing else of the stack is granted on the table.
+    // Nothing else of the stack is granted on the table but the tickets tool (below).
     const others = Object.values(resources).filter(
       (r) =>
         (r.Type === "AWS::IAM::Policy" || r.Type === "AWS::IAM::ManagedPolicy") &&
         r !== policy &&
         JSON.stringify(r.Properties.PolicyDocument).includes(tableId),
     );
-    expect(others).toEqual([]);
+    expect(others.map((r) => JSON.stringify(r.Properties.Roles))).toEqual([expect.stringContaining("ExecutorRole")]);
   });
 
   it("is named for mango-api", () => {
     const api = Object.values(resources).find((r) => r.Type === "AWS::ECS::TaskDefinition")!;
     const env = api.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
     expect(JSON.stringify(env.find((e) => e.Name === "TICKETS_TABLE")!.Value)).toContain(tableId);
+  });
+});
+
+describe("the tickets tool in the target ops (D112 (8), (9))", () => {
+  const target = Object.values(resources).find(
+    (r) => r.Type === "AWS::BedrockAgentCore::GatewayTarget" && r.Properties.Name === "ops",
+  )!;
+  const executorRoleId = Object.keys(resources).find(
+    (id) => resources[id]!.Type === "AWS::IAM::Role" && resources[id]!.Properties.RoleName === `Mango-${ns}-ApprovalExecutor`,
+  );
+
+  it("is served by the approval executor next to the approved writes", () => {
+    const tools = target.Properties.TargetConfiguration.Mcp.Lambda.ToolSchema.InlinePayload as { Name: string }[];
+    expect(tools.map((t) => t.Name).sort()).toEqual(["comment_ticket", "create_budget", "create_ticket", "update_ticket"]);
+  });
+
+  it("needs an approval token at the Gateway, like every write", () => {
+    const interceptor = Object.values(resources).find(
+      (r) => r.Type === "AWS::Lambda::Function" && r.Properties.Environment?.Variables?.APPROVAL_TOOLS,
+    )!;
+    const approvalTools = JSON.parse(interceptor.Properties.Environment.Variables.APPROVAL_TOOLS as string) as string[];
+    expect(approvalTools).toEqual(expect.arrayContaining(["ops___create_ticket", "ops___update_ticket", "ops___comment_ticket"]));
+  });
+
+  it("may be asked for by any signed-in person, and only those three tools", () => {
+    const policy = Object.values(resources).find(
+      (r) => r.Type === "AWS::BedrockAgentCore::Policy" && r.Properties.Name === `Mango_${ns}_WriteMangoRecords`,
+    )!;
+    // The Gateway's ARN is joined in: read the statement as text.
+    const statement = JSON.stringify(policy.Properties.Definition.Cedar.Statement);
+    expect(statement).toContain("permit (");
+    expect(statement).not.toContain("forbid");
+    expect(statement).not.toContain("when");
+    for (const tool of ["create_ticket", "update_ticket", "comment_ticket"]) expect(statement).toContain(`ops___${tool}`);
+    expect(statement).not.toContain("create_budget");
+  });
+
+  it("lets the executor write the Tickets table only, without Query nor Scan", () => {
+    expect(executorRoleId).toBeDefined();
+    const statements = Object.values(resources)
+      .filter((r) => r.Type === "AWS::IAM::Policy" && JSON.stringify(r.Properties.Roles).includes(executorRoleId!))
+      .flatMap((r) => r.Properties.PolicyDocument.Statement as { Sid?: string; Action: string | string[]; Resource: unknown }[]);
+    const onTickets = statements.filter((s) => JSON.stringify(s.Resource).includes(tableId));
+    expect(onTickets.map((s) => s.Sid)).toEqual(["TicketsTool"]);
+    expect([onTickets[0]!.Action].flat().sort()).toEqual(["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]);
+    expect(JSON.stringify(onTickets[0]!.Resource)).not.toContain("index");
   });
 });

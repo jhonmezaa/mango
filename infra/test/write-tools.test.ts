@@ -200,8 +200,17 @@ describe("the Gateway refuses write tools without an approval (TM-W1)", () => {
   const variables = resources[interceptorFnId]!.Properties.Environment.Variables;
 
   it("gives the interceptor the closed list of write tools of the release", () => {
-    expect(writeTools()).toEqual([{ name: "create_budget", central: true }]);
-    expect(JSON.parse(variables.APPROVAL_TOOLS as string)).toEqual(["ops___create_budget"]);
+    expect(writeTools()).toEqual([
+      { name: "create_budget", central: true, mangoRecords: false },
+      // The tickets tool (D112 (8), (9)): records of Mango, born self-confirmed.
+      ...["create_ticket", "update_ticket", "comment_ticket"].map((name) => ({ name, central: false, mangoRecords: true })),
+    ]);
+    expect(JSON.parse(variables.APPROVAL_TOOLS as string)).toEqual([
+      "ops___create_budget",
+      "ops___create_ticket",
+      "ops___update_ticket",
+      "ops___comment_ticket",
+    ]);
   });
 
   it("exposes exactly the tools the manifest declares, on their own target", () => {
@@ -210,13 +219,20 @@ describe("the Gateway refuses write tools without an approval (TM-W1)", () => {
     expect(ops).toHaveLength(1);
     const lambda = ops[0]!.Properties.TargetConfiguration.Mcp.Lambda;
     expect(lambda.LambdaArn).toEqual({ "Fn::GetAtt": [executorFnId, "Arn"] });
-    expect(lambda.ToolSchema.InlinePayload.map((t: { Name: string }) => t.Name)).toEqual(["create_budget"]);
-    const manifest = JSON.parse(
-      readFileSync(resolve(import.meta.dirname, "../../connectors/aws-budgets/manifest.json"), "utf8"),
-    ) as { gateway_target: string; tools: { access: string }[] };
-    expect(manifest.gateway_target).toBe("ops");
-    // A read tool on this target would get the approval executor for free.
-    expect(manifest.tools.every((t) => t.access === "write")).toBe(true);
+    expect(lambda.ToolSchema.InlinePayload.map((t: { Name: string }) => t.Name)).toEqual([
+      "create_budget",
+      "create_ticket",
+      "update_ticket",
+      "comment_ticket",
+    ]);
+    for (const connector of ["aws-budgets", "mango-tickets"]) {
+      const manifest = JSON.parse(
+        readFileSync(resolve(import.meta.dirname, `../../connectors/${connector}/manifest.json`), "utf8"),
+      ) as { gateway_target: string; tools: { access: string }[] };
+      expect(manifest.gateway_target).toBe("ops");
+      // A read tool on this target would get the approval executor for free.
+      expect(manifest.tools.every((t) => t.access === "write")).toBe(true);
+    }
   });
 
   it("lets only central FinOps ask for it, and forbids everyone else (Cedar L2)", () => {
@@ -255,10 +271,13 @@ describe("approval executor and the write chain (§4.10, TM-W8)", () => {
     for (const statement of executor) {
       for (const action of actions(statement)) {
         expect(action).toMatch(
-          /^(sts:(AssumeRole|SetSourceIdentity|TagSession)|dynamodb:UpdateItem|kms:(GetPublicKey|Decrypt|Encrypt|GenerateDataKey)|logs:|xray:)/,
+          /^(sts:(AssumeRole|SetSourceIdentity|TagSession)|dynamodb:(UpdateItem|GetItem|PutItem)|kms:(GetPublicKey|Decrypt|Encrypt|GenerateDataKey)|logs:|xray:)/,
         );
       }
     }
+    // Reads and new items only in the Tickets table, for the tickets tool (D112 (9)).
+    const records = executor.filter((s) => actions(s).some((a) => a === "dynamodb:GetItem" || a === "dynamodb:PutItem"));
+    expect(records.map((s) => s.Sid)).toEqual(["TicketsTool"]);
     // No AWS data or write action of its own: every change goes through the broker.
     expect(executor.flatMap(actions).some((a) => a.startsWith("budgets:"))).toBe(false);
   });

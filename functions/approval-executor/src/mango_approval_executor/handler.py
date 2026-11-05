@@ -13,6 +13,11 @@ It trusts neither the model nor the Gateway: a call that reaches the Lambda any 
 no valid approval and changes nothing. The write then runs as the person who asked
 (``SourceIdentity``), tagged with the approval, under a session policy that names the one
 resource of this call. Events, tokens and arguments are never logged.
+
+The tickets tools (D112 (9)) are records of Mango, not of an AWS account: they write the table
+``Mango-<ns>-Tickets`` (``mango_core.ticket_tool``) as the person of the token, with the agent
+and the conversation the approval token names. mango-api decided them with Cedar when the
+request was created and again when it was confirmed.
 """
 
 from __future__ import annotations
@@ -35,8 +40,9 @@ from pydantic import BaseModel, ValidationError
 from mango_approval_executor import budgets
 from mango_aws import CrossAccountSessions, RoleChain, build_session_policy
 from mango_aws.operate import write_caller
-from mango_core import approval, approval_use
+from mango_core import approval, approval_use, ticket_tool
 from mango_core.identity import AccessTokenVerifier, IdentityError, UserContext, user_from_claims
+from mango_core.tickets import TicketStore, TicketStoreUnavailableError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -59,6 +65,8 @@ class Settings:
     approval_key_arn: str
     resource_prefix: str
     """``Mango-<ns>-``: every resource this function creates is named with it (rule 6)."""
+    tickets_table: str = ""
+    """The tickets of Mango (D112 (9)); empty, the tickets tools answer unavailable."""
 
     @staticmethod
     def from_env() -> Settings:
@@ -73,6 +81,7 @@ class Settings:
             approvals_table=os.environ["APPROVALS_TABLE"],
             approval_key_arn=os.environ["APPROVAL_KEY_ARN"],
             resource_prefix=prefix,
+            tickets_table=os.environ.get("TICKETS_TABLE", ""),
         )
 
 
@@ -95,6 +104,7 @@ class Runtime:
         approvals: Callable[[], approval.ApprovalVerifier],
         claim: Callable[[approval.Approval, int], None],
         sessions: CrossAccountSessions,
+        tickets: TicketStore | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.settings = settings
@@ -102,6 +112,7 @@ class Runtime:
         self.approvals = approvals
         self.claim = claim
         self.sessions = sessions
+        self.tickets = tickets
         self.clock = clock
 
 
@@ -132,6 +143,7 @@ def _runtime() -> Runtime:
         approvals=approvals,
         claim=claim,
         sessions=CrossAccountSessions(),
+        tickets=TicketStore(dynamodb, settings.tickets_table) if settings.tickets_table else None,
     )
 
 
@@ -168,6 +180,28 @@ def _create_budget(runtime: Runtime, call: Call, args: BaseModel) -> dict[str, A
     return budgets.create_budget(client, account_id, name, args)
 
 
+def _ticket(tool: str) -> Callable[[Runtime, Call, BaseModel], dict[str, Any]]:
+    def run(runtime: Runtime, call: Call, args: BaseModel) -> dict[str, Any]:
+        if runtime.tickets is None:
+            raise _RejectedError("unavailable", "the tool is not configured")
+        try:
+            return ticket_tool.run(
+                runtime.tickets,
+                tool,
+                args,  # type: ignore[arg-type]
+                user=call.user,
+                approval_id=call.approval.approval_id,
+                agent_id=call.approval.agent_id,
+                conversation_id=call.approval.conversation_id,
+            )
+        except ticket_tool.ToolFailedError as failed:
+            raise _RejectedError(failed.code, str(failed)) from None
+        except TicketStoreUnavailableError:
+            raise _RejectedError("upstream_error", "the change could not be applied") from None
+
+    return run
+
+
 @dataclass(frozen=True)
 class ToolSpec:
     args_model: type[BaseModel]
@@ -178,6 +212,11 @@ class ToolSpec:
 
 TOOLS: dict[str, ToolSpec] = {
     "create_budget": ToolSpec(budgets.CreateBudgetArgs, _create_budget),
+    # Records of Mango for whoever is talking to the agent (D112 (9)): not central only.
+    **{
+        name: ToolSpec(ticket_tool.ARGS[name], _ticket(name), central_only=False)
+        for name in ticket_tool.TOOLS
+    },
 }
 
 

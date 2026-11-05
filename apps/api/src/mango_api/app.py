@@ -229,7 +229,7 @@ from mango_api.tasks import (
     tasks_router,
 )
 from mango_api.tasks_store import Automation, Run, RunStatus, TaskStore
-from mango_api.tickets import TicketsDeps, tickets_router
+from mango_api.tickets import TicketsDeps, TicketToolGate, tickets_router
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
 from mango_api.web import ApiError, Caller, error_response
 from mango_api.web_session import (
@@ -1859,6 +1859,35 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         app.include_router(
             tickets_router(services.tickets, current_user, require, tickets_allowed, ticket_allowed)
         )
+
+        if services.approvals is not None:
+
+            def ticket_tool_decision(
+                user: UserContext,
+                action: str,
+                resource_type: str,
+                resource_id: str,
+                ticket: TicketResource | None,
+            ) -> bool:
+                """A call of the tickets tool, decided like its route (D112 (9)), audited."""
+                allowed = services.authorizer.is_allowed(
+                    user, action, resource_type, resource_id, ticket=ticket
+                )
+                services.audit.emit(
+                    "policy.decision",
+                    user.user_id,
+                    {
+                        "action": action,
+                        "resource": f"{resource_type}::{resource_id}",
+                        "allowed": allowed,
+                        "read_only": False,
+                        "via": "tickets_tool",
+                    },
+                    user,
+                )
+                return allowed
+
+            services.approvals.gate = TicketToolGate(services.tickets, ticket_tool_decision)
 
     if services.knowledge is not None:
 

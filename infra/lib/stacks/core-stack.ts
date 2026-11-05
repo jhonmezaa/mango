@@ -192,6 +192,8 @@ export class CoreStack extends Stack {
     // D112: tickets of Mango, written by mango-api (and, for agents, by the tickets tool).
     const tickets = new Tickets(this, "Tickets", { installation: cfg, dataKey: governance.dataKey });
     tickets.grantApi(apiTaskRole);
+    // D112 (9): the tickets tool runs in the approval executor (target `ops`).
+    tickets.grantToolExecutor(writeTools.executor);
     // Marketplace v1 (D18, D32): agents are published by SDK, not by this stack. The agents
     // of the release (FinOps) are seeded as approved versions and published the same way (D34).
     const shipped = releaseAgents(cfg);

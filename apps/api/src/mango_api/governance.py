@@ -34,14 +34,14 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
 from mango_api.admin import AdminDeps, budgets_view
-from mango_api.approval_policy import Tier
+from mango_api.approval_policy import Policy, Tier
 from mango_api.approvals import ApprovalDeps
 from mango_api.approvals_store import MAX_LIST, ApprovalRecord, Status, iso
 from mango_api.audit import AgentLookup, AuditEventOut, AuditLog, AuditQuery, audit_events_out
 from mango_api.knowledge_sources import QueuedSourceOut
 from mango_api.mcp_catalog import InvalidCatalogError
 from mango_api.rate_limits import Limiter
-from mango_api.tool_policies import PolicyRule, policy_rule
+from mango_api.tool_policies import PolicyRule, default_policy, policy_rule
 from mango_api.web import ApiError, Caller, rate_limited
 
 logger = logging.getLogger(__name__)
@@ -200,6 +200,15 @@ def _server_name(deps: ApprovalDeps, ref: str) -> str:
     return tool.server.name if tool else ref.partition(".")[0]
 
 
+def _tool_policy(deps: ApprovalDeps, ref: str) -> Policy:
+    """The stored policy, or the default the tool is born with (D112 (8))."""
+    try:
+        tool = deps.catalog().tool(ref)
+    except InvalidCatalogError:
+        tool = None
+    return deps.policies.policy(ref, default_policy(tool)) if tool else deps.policies.policy(ref)
+
+
 _APPROVED = frozenset({Status.APPROVED, Status.EXECUTING, Status.EXECUTED, Status.FAILED})
 """Approved, whether it ran, failed or still waits to be run (not expired after approval)."""
 
@@ -229,7 +238,7 @@ def approvals_summary(
         PolicyLine(
             tool=ref,
             server_name=_server_name(deps, ref),
-            policy=policy_rule(deps.policies.policy(ref)),
+            policy=policy_rule(_tool_policy(deps, ref)),
             pending=sum(1 for r in items if r.approval_id in live),
             total=len(items),
         )
