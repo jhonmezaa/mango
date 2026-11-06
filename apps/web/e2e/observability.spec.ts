@@ -39,7 +39,8 @@ test('Observability shows the traces of the range to an administrator, metadata 
   await expect(page.getByText('latencia por agente · p95')).toBeVisible();
   await expect(page.getByText(/^Conversación de usuario\d@empresa\.com$/).first()).toBeVisible();
   await expect(page.getByText('Sin turno de Mango').first()).toBeVisible();
-  await expect(page.getByText('Próximamente').first()).toBeVisible();
+  // Design round 38: no «Con aprobación» chip while a turn carries no such mark.
+  await expect(page.getByText('Con aprobación')).toHaveCount(0);
   await shot(page, 'observability-24h');
 
   // A row opens its drawer: the short id, the fixed notice and «Copiar ID» of the whole id.
@@ -86,7 +87,7 @@ test('Observability says when the reading reached its cap', async ({ page }) => 
   await openObservability(page);
   await expect(page.getByText(/^al menos \d/).first()).toBeVisible();
   await expect(
-    page.getByText(/La lectura llegó al tope de \d+ trazas: las cifras son un mínimo\./),
+    page.getByText(/La lectura se detuvo en \d+ trazas: las cifras son un mínimo\./),
   ).toBeVisible();
   await shot(page, 'observability-cap');
 });

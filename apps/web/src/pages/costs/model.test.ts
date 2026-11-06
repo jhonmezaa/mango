@@ -45,6 +45,23 @@ describe('Costos model · design round 37', () => {
     expect(linesOf(empty, 'agent').at(-1)).toMatchObject({ kind: 'none', spent: 0 });
   });
 
+  it('per agent: the Playground and an agent no longer in the catalog are grey, at the end', () => {
+    const data = costsFixture();
+    const [first] = data.agents.rows;
+    if (!first) throw new Error('fixture');
+    data.agents.rows.push(
+      { ...first, id: 'playground', name: null, spent_usd: '9.00', budget: null },
+      { ...first, id: 'gone', name: null, spent_usd: '0.50', budget: null },
+    );
+    expect(linesOf(data, 'agent').map((l) => [l.kind, l.id, l.previous, l.open])).toEqual([
+      ['row', 'finops', 4, true],
+      ['row', 'legal', 5, true],
+      ['aside', 'playground', null, false],
+      ['aside', 'gone', null, false],
+      ['none', 'none', null, false],
+    ]);
+  });
+
   it('per model and origin: before the counters apart from the titles, never spread', () => {
     const models = linesOf(costsFixture(), 'model');
     expect(models.map((l) => [l.kind, l.spent, l.previous])).toEqual([

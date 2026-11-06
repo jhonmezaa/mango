@@ -56,7 +56,7 @@ test.describe('Evals: list, detail, a run and a new suite', () => {
     const panel = page.getByRole('dialog', { name: 'Casos que ya fallaron' });
     await expect(panel.getByText('No cumple: falta «rango»')).toBeVisible();
     await expect(panel.getByText(/la respuesta del agente no/)).toBeVisible();
-    await expect(panel.getByText(/≈ USD 0,64/)).toBeVisible();
+    await expect(panel.getByText(/hasta USD 0,64/)).toBeVisible();
     await panel.getByRole('button', { name: 'Cerrar' }).click();
 
     await row(page, 'Resumen semanal').click();
@@ -91,7 +91,7 @@ test.describe('Evals: list, detail, a run and a new suite', () => {
     await dialog.getByRole('button', { name: 'Siguiente' }).click();
     await expect(dialog.getByLabel('Modelo juez')).toBeVisible();
     await dialog.getByRole('button', { name: 'Siguiente' }).click();
-    await expect(dialog.getByText(/≈ USD 0,45/)).toBeVisible();
+    await expect(dialog.getByText(/hasta USD 0,45/)).toBeVisible();
     await dialog.getByRole('button', { name: 'Crear suite' }).click();
     await expect(page.getByRole('dialog', { name: 'Golden e2e' })).toBeVisible();
     await page
@@ -99,6 +99,33 @@ test.describe('Evals: list, detail, a run and a new suite', () => {
       .getByRole('button', { name: 'Cerrar' })
       .click();
     await expect(row(page, 'Golden e2e')).toContainText('Sin ejecutar');
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test('a request to stop requiring a suite shows its reason; rejecting asks for one', async () => {
+    await row(page, 'Prompt injection y fugas').click();
+    const panel = page.getByRole('dialog', { name: 'Prompt injection y fugas' });
+    await expect(panel.getByText('Motivo: Se reemplaza por otra suite')).toBeVisible();
+    await panel.getByRole('button', { name: 'Rechazar', exact: true }).click();
+    const send = panel.getByRole('button', { name: 'Rechazar pedido' });
+    await expect(send).toBeDisabled();
+    await panel.getByLabel('Por qué rechazas el pedido').fill('Es la única de seguridad');
+    await send.click();
+    await expect(page.getByText('Pedido rechazado · sigue siendo obligatoria')).toBeVisible();
+    await expect(panel.getByText(/^Motivo:/)).toHaveCount(0);
+
+    // Turning «Obligatoria» off is a request with its reason, sent from the same drawer.
+    // The toggle is enabled again once the suite is read without the request.
+    const required = panel.getByRole('checkbox', { name: /Obligatoria para aprobar/ });
+    await expect(required).toBeEnabled();
+    await panel.getByText('Obligatoria para aprobar', { exact: true }).click();
+    await panel.getByLabel('Por qué deja de ser obligatoria').fill('La reemplaza otra suite');
+    await panel.getByRole('button', { name: 'Enviar pedido' }).click();
+    await expect(page.getByText('Pedido enviado · otro admin debe aprobarlo')).toBeVisible();
+    await expect(panel.getByText('Motivo: La reemplaza otra suite')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Cancelar pedido' })).toBeVisible();
+    await panel.getByRole('button', { name: 'Cancelar pedido' }).click();
+    await panel.getByRole('button', { name: 'Cerrar' }).click();
     expect(consoleErrors).toEqual([]);
   });
 });

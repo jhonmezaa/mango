@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
@@ -6,7 +6,6 @@ import { useSession } from '../../auth/useSession';
 import type { ToastTone } from '../../components/admin/useToasts';
 import { Check2Icon, LockIcon, PlayIcon, WarnIcon } from '../../components/icons';
 import { SidePanel } from '../../components/SidePanel';
-import { Soon } from '../../components/Soon';
 import { formatUsd } from '../../lib/format';
 import {
   MIN_THRESHOLD,
@@ -24,6 +23,70 @@ import {
 } from './model';
 import { EvSpark } from './parts';
 import { errorText, pct, reasonText } from './text';
+
+type Ask = 'off' | 'reject';
+
+/** Like the API (`RemovalIn`, `RejectIn`): 1 to 500 characters. */
+const REASON_MAX = 500;
+
+/**
+ * Design round 38 `.ev-why`: the reason under the settings, with its counter. «Enviar pedido» /
+ * «Rechazar pedido» stay disabled without text; «Cancelar» closes. The text is shown as text.
+ */
+function ReasonField({
+  ask,
+  busy,
+  onCancel,
+  onSend,
+}: {
+  ask: Ask;
+  busy: boolean;
+  onCancel: () => void;
+  onSend: (reason: string) => void;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const [why, setWhy] = useState('');
+  const reason = why.trim();
+  return (
+    <div className="ev-why">
+      <label htmlFor={id}>{t(`evals.why.${ask}.label`)}</label>
+      <textarea
+        id={id}
+        className="input"
+        rows={3}
+        maxLength={REASON_MAX}
+        // The field opens on a click and is what comes next (design `autoFocus`).
+        autoFocus
+        value={why}
+        placeholder={t(`evals.why.${ask}.placeholder`)}
+        onChange={(event) => {
+          setWhy(event.target.value);
+        }}
+      />
+      <div className="ev-why-f">
+        <span className="mk-meta">
+          {t(`evals.why.${ask}.note`)} {why.length}/{REASON_MAX}
+        </span>
+        <div className="flex items-center gap-2">
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onCancel}>
+            {t('evals.why.cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={busy || !reason}
+            onClick={() => {
+              onSend(reason);
+            }}
+          >
+            {t(`evals.why.${ask}.send`)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Detail =
   { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; detail: SuiteDetail; runs: EvalRun[] };
@@ -64,6 +127,14 @@ export function EvalDetail({
   const [cost, setCost] = useState<Cost>({ kind: 'loading' });
   const [threshold, setThreshold] = useState(suite.threshold);
   const [busy, setBusy] = useState(false);
+  // Design round 38 `.ev-why`: the reason to turn «Obligatoria» off or to reject that request.
+  const [ask, setAsk] = useState<Ask | null>(null);
+  const openAsk = (next: Ask) => {
+    setAsk(next);
+  };
+  const closeAsk = () => {
+    setAsk(null);
+  };
   const { suite_id: suiteId } = suite;
   // Read again when the suite changes (a run ends, a setting is saved): its revision moves.
   const key = `${String(suite.revision)}:${String(suite.active_run?.cases_done ?? -1)}`;
@@ -317,7 +388,7 @@ export function EvalDetail({
           <span>{t('evals.detail.cost')}</span>
           <span className="mono">
             {cost.kind === 'ready'
-              ? `≈ ${formatUsd(cost.usd)}`
+              ? t('evals.upTo', { usd: formatUsd(cost.usd) })
               : cost.kind === 'loading'
                 ? t('evals.detail.costCalculating')
                 : t('evals.detail.costUnavailable')}
@@ -329,18 +400,22 @@ export function EvalDetail({
         <section>
           <h3 className="mk-sec-t">{t('evals.detail.settings')}</h3>
           {suite.required ? (
-            // Turning it off is a request with a reason (two people, D26): the design does not
-            // draw the reason yet, so it is «Próximamente» (owner, 2026-11-05).
-            <Soon name={t('evals.detail.requiredOff')} block>
-              <label className="ab-toggle">
-                <input type="checkbox" checked readOnly />
-                <span className="ab-switch" />
-                <span className="flex-1">
-                  <span className="ev-toggle-t">{t('evals.detail.requiredToggle')}</span>
-                  <span className="ab-sub">{t('evals.detail.requiredSub')}</span>
-                </span>
-              </label>
-            </Soon>
+            // Turning it off is a request with a reason (two people, D26; design round 38).
+            <label className="ab-toggle">
+              <input
+                type="checkbox"
+                checked
+                disabled={busy || Boolean(request)}
+                onChange={() => {
+                  openAsk('off');
+                }}
+              />
+              <span className="ab-switch" />
+              <span className="flex-1">
+                <span className="ev-toggle-t">{t('evals.detail.requiredToggle')}</span>
+                <span className="ab-sub">{t('evals.detail.requiredSub')}</span>
+              </span>
+            </label>
           ) : (
             <label className="ab-toggle">
               <input
@@ -372,6 +447,9 @@ export function EvalDetail({
                 {t('evals.detail.request', {
                   who: request.requested_by_email ?? t('evals.detail.someone'),
                 })}
+                <div className="ev-request-why">
+                  {t('evals.detail.requestReason', { reason: request.reason })}
+                </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   {me.is_admin && (
                     <button
@@ -405,16 +483,46 @@ export function EvalDetail({
                     </button>
                   ) : (
                     me.is_admin && (
-                      <Soon name={t('evals.detail.reject')}>
-                        <button type="button" className="btn btn-sm btn-ghost">
-                          {t('evals.detail.reject')}
-                        </button>
-                      </Soon>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        disabled={busy || ask === 'reject'}
+                        onClick={() => {
+                          openAsk('reject');
+                        }}
+                      >
+                        {t('evals.detail.reject')}
+                      </button>
                     )
                   )}
                 </div>
               </div>
             </div>
+          )}
+          {ask && (
+            <ReasonField
+              ask={ask}
+              busy={busy}
+              onCancel={closeAsk}
+              onSend={(reason) => {
+                if (ask === 'off') {
+                  change(
+                    () =>
+                      call('postEvalRequirementRemoval', {
+                        path: { suite_id: suiteId },
+                        body: { revision: suite.revision, reason },
+                      }),
+                    t('evals.toast.requestSent'),
+                  );
+                } else if (request) {
+                  change(
+                    () => api.rejectEvalRequirement(request.change_id, reason),
+                    t('evals.toast.requestRejected'),
+                  );
+                }
+                closeAsk();
+              }}
+            />
           )}
           <div className="mt-2.5 flex items-center gap-2">
             <span className="ev-small">{t('evals.detail.thresholdLabel')}</span>

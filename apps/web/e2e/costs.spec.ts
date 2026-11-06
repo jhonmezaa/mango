@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 // Costos (D105–D107, design round 37 costs2.jsx) against the local mock, as an administrator:
 // the month, the breakdowns with the day each one counts from and what came before, the agent's
-// drawer with its budget, «Próximamente» where there is no source, the CSV, and a phone width
+// drawer with its budget (no «Por origen», round 38), the CSV, and a phone width
 // without horizontal scroll. The app keeps its tokens in memory only: every step stays in the SPA.
 
 async function signIn(page: Page): Promise<void> {
@@ -42,8 +42,8 @@ test('Costos shows the month and its breakdowns from the counters', async ({ pag
   await page.locator('button.co-tr').first().click();
   const drawer = page.getByRole('dialog');
   await expect(drawer.getByText('Presupuesto', { exact: true })).toBeVisible();
-  await expect(drawer.getByText('Por origen')).toBeVisible();
-  await expect(drawer.getByText('Próximamente')).toBeVisible();
+  // Design round 38: no «Por origen» in the agent's drawer.
+  await expect(drawer.getByText('Por origen')).toHaveCount(0);
   await drawer.getByRole('button', { name: 'Ver presupuestos' }).click();
   await expect(page).toHaveURL(/\/budgets$/);
 });

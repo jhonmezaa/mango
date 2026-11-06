@@ -181,6 +181,12 @@ describe('TicketsPage · estados', () => {
     expect(await screen.findByText('Ya está')).toBeInTheDocument();
   });
 
+  it('shows a 429 with the common block and its wait (design round 38)', async () => {
+    renderPage({ listTickets: new ApiError(429, 'rate_limited', 'x', 30) });
+    expect(await screen.findByText('Demasiadas solicitudes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reintentar en/ })).toBeDisabled();
+  });
+
   it('shows 403 as «No tienes acceso a Tickets»', async () => {
     renderPage({ listTickets: new ApiError(403, 'forbidden', 'x') });
     expect(await screen.findByText('No tienes acceso a Tickets')).toBeInTheDocument();

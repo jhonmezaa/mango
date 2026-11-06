@@ -1170,6 +1170,28 @@ describe('AgentReviewPage (design agent-review.jsx)', () => {
       expect(screen.getByRole('button', { name: 'Aprobar y publicar' })).toBeDisabled();
     });
 
+    it('says a required suite has no finished run of this version (design round 38)', async () => {
+      setup(
+        { queue: [review()], history: [] },
+        {
+          getEvals: () =>
+            Promise.resolve({
+              judge_models: [],
+              suites: [
+                evalSuite('Golden', { last_run: { ...run(true), content_hash: 'e'.repeat(64) } }),
+              ],
+            }),
+        },
+      );
+      expect(
+        await screen.findByText(
+          'Golden es obligatoria y no tiene una ejecución terminada con esta versión. Ejecútala desde Evals: hasta que pase, no se puede aprobar.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText('sin ejecutar')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Aprobar y publicar' })).toBeDisabled();
+    });
+
     it('lets approve when the required suites passed on this content', async () => {
       setup(
         { queue: [review()], history: [] },

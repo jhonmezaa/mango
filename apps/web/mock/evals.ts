@@ -337,8 +337,13 @@ async function body(req: Parameters<ApiHandler>[0]): Promise<Record<string, unkn
   }
 }
 
-const SUITE_PATH = /^\/evals\/suites\/([0-9a-f]{32})(\/runs)?$/;
-const CHANGE_PATH = /^\/evals\/requirement-changes\/([0-9a-f]{32})\/(approve|withdraw)$/;
+const SUITE_PATH = /^\/evals\/suites\/([0-9a-f]{32})(\/runs|\/requirement-removal)?$/;
+const CHANGE_PATH = /^\/evals\/requirement-changes\/([0-9a-f]{32})\/(approve|reject|withdraw)$/;
+
+/** Like the API's `RemovalIn` / `RejectIn`: 1 to 500 characters once trimmed. */
+function reasonOk(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length >= 1 && value.trim().length <= 500;
+}
 
 export const handleEvals: ApiHandler = async (req, res, path, url) => {
   if (!path.startsWith('/evals')) return false;
@@ -405,6 +410,10 @@ export const handleEvals: ApiHandler = async (req, res, path, url) => {
       sendError(res, 404, 'not_found', 'request not found');
       return true;
     }
+    if (change[2] === 'reject' && !reasonOk((await body(req))?.reason)) {
+      sendError(res, 422, 'invalid_request', 'invalid fields: reason');
+      return true;
+    }
     if (change[2] === 'approve') suite.required = false;
     suite.request = null;
     suite.revision += 1;
@@ -419,7 +428,37 @@ export const handleEvals: ApiHandler = async (req, res, path, url) => {
     sendError(res, 404, 'not_found', 'not found');
     return true;
   }
-  if (match[2]) {
+  if (match[2] === '/requirement-removal' && req.method === 'POST') {
+    const input = await body(req);
+    if (!input || !reasonOk(input.reason)) {
+      sendError(res, 422, 'invalid_request', 'invalid fields: reason');
+      return true;
+    }
+    if (input.revision !== suite.revision) {
+      sendError(res, 409, 'version_conflict', 'the suite changed; reload');
+      return true;
+    }
+    if (!suite.required) {
+      sendError(res, 409, 'suite_not_required', 'this suite is not required');
+      return true;
+    }
+    if (suite.request) {
+      sendError(res, 409, 'already_pending', 'there is already an open request for this suite');
+      return true;
+    }
+    suite.request = {
+      change_id: hex(16),
+      requested_by_email: MOCK_USER,
+      mine: true,
+      reason: input.reason.trim(),
+      created_at: iso(Date.now()),
+      expires_at: iso(Date.now() + 7 * 86_400_000),
+    };
+    suite.revision += 1;
+    sendJson(res, 200, { ...out(suite), cases: suite.cases });
+    return true;
+  }
+  if (match[2] === '/runs') {
     if (req.method === 'GET') {
       for (const run of suite.runs) advance(suite, run);
       sendJson(res, 200, { runs: [...suite.runs].reverse().slice(0, 20).map(runOut) });

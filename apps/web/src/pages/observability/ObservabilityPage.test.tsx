@@ -149,12 +149,8 @@ describe('ObservabilityPage', () => {
     // A trace without a turn has no cost.
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     expect(screen.getByText('ab12cd34 · ', { exact: false })).toBeInTheDocument();
-    // «Con aprobación» has no source yet: Próximamente.
-    expect(
-      within(screen.getByRole('group', { name: 'Estado' })).getByText('Próximamente'),
-    ).toBeInTheDocument();
-    // The chip is inert: it filters nothing until the API says which turns asked an approval.
-    expect(document.querySelector('.soon-body[inert] button')).toHaveTextContent('Con aprobación');
+    // Design round 38: no «Con aprobación» chip while a turn carries no such mark.
+    expect(screen.queryByText('Con aprobación')).toBeNull();
     expect(screen.queryByText(/al menos/)).not.toBeInTheDocument();
   });
 
@@ -177,6 +173,17 @@ describe('ObservabilityPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('says under the title that a trace without a Mango turn has no person nor cost', async () => {
+    const user = userEvent.setup();
+    renderPage(answering(reading()));
+    await user.click(await screen.findByText('Sin turno de Mango'));
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        'Esta traza no tiene un turno de Mango: es anterior a la vista o no la escribió Mango. No hay persona ni costo.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('says a tool failed in the drawer of a failed trace', async () => {
     const user = userEvent.setup();
     renderPage(answering(reading()));
@@ -188,7 +195,7 @@ describe('ObservabilityPage', () => {
     renderPage(answering(reading({ capped: true })));
     expect(
       await screen.findByText(
-        'La lectura llegó al tope de 4 trazas: las cifras son un mínimo. Acorta el rango o elige un agente para verlo completo.',
+        'La lectura se detuvo en 4 trazas: las cifras son un mínimo. Acorta el rango o elige un agente para verlo completo.',
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('al menos 4')).toBeInTheDocument();
@@ -280,6 +287,11 @@ describe('ObservabilityPage', () => {
   it('waits the Retry-After of a 429 before asking again', async () => {
     renderPage(vi.fn(() => Promise.reject(new ApiError(429, 'rate_limited', 'slow down', 30))));
     expect(await screen.findByText('Demasiadas solicitudes')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /^Observabilidad admite 30 lecturas por minuto: cada filtro, búsqueda o página cuenta\./,
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Reintentar en/ })).toBeDisabled();
   });
 });

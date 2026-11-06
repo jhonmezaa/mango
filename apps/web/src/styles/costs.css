@@ -222,11 +222,6 @@
   .co-alert {
     font-size: 12.5px;
   }
-  .co-sec-soon {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
   .co-actions {
     display: flex;
     gap: 8px;

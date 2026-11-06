@@ -5,7 +5,6 @@ export const costs = {
   budgets: 'Presupuestos',
   export: 'Exportar CSV',
   exported: 'Costos exportados',
-  rateTitle: 'Demasiadas solicitudes',
   subtitle:
     'Gasto en Amazon Bedrock de {{month}}, día {{day}} de {{days}}, con los precios de lista de Brains. No incluye el guardrail ni los embeddings.',
   kpi: {
@@ -100,7 +99,6 @@ export const costs = {
     limit: 'Límite',
     used: 'Usado',
     overPace: 'Al ritmo actual superará su límite antes de fin de mes.',
-    bySource: 'Por origen',
     queries: 'Consultas',
     perQuery: 'Costo medio por consulta',
     queryCount: 'Consultas',

@@ -18,11 +18,12 @@ const MOVERS = 4;
 /**
  * A line of the breakdown table. `none` is what no row holds once the counters count (the
  * titles of new conversations), `pre` what was spent before they started: both grey, never
- * spread over the rows, and without «vs anterior».
+ * spread over the rows, and without «vs anterior». `aside` is an agent row that is not an agent
+ * of the catalog (the Playground, an agent no longer there): grey and at the end too (round 38).
  */
 export interface Line {
   key: string;
-  kind: 'row' | 'none' | 'pre';
+  kind: 'row' | 'aside' | 'none' | 'pre';
   id: string;
   spent: number;
   /** The month before; null when the breakdown did not count all of it. */
@@ -63,14 +64,17 @@ export function linesOf(data: Costs, group: Group): Line[] {
     group === 'source'
       ? SOURCES.flatMap((id) => data.sources.rows.filter((row) => row.id === id))
       : breakdown.rows
-  ).map((row) => ({
-    key: `row:${row.id}`,
-    kind: 'row',
-    id: row.id,
-    spent: num(row.spent_usd),
-    previous: withPrevious ? num(row.previous_usd) : null,
-    open: group === 'agent',
-  }));
+  ).map((row): Line => {
+    const aside = group === 'agent' && isAside(row as AgentCost);
+    return {
+      key: `row:${row.id}`,
+      kind: aside ? 'aside' : 'row',
+      id: row.id,
+      spent: num(row.spent_usd),
+      previous: withPrevious && !aside ? num(row.previous_usd) : null,
+      open: group === 'agent' && !aside,
+    };
+  });
   const before = num(breakdown.before_since_usd);
   const none = Math.max(0, num(breakdown.unattributed_usd) - before);
   const grey: Line[] = [
@@ -78,10 +82,18 @@ export function linesOf(data: Costs, group: Group): Line[] {
     { key: 'pre', kind: 'pre', id: 'pre', spent: before, previous: null, open: false },
   ];
   return [
-    ...rows.filter((line) => line.spent > 0).sort((a, b) => b.spent - a.spent),
+    ...rows
+      .filter((line) => line.spent > 0)
+      // Design round 38: the grey rows go last, like «Sin agente» (`flat` sorts after the rest).
+      .sort((a, b) => Number(a.kind === 'aside') - Number(b.kind === 'aside') || b.spent - a.spent),
     // Design: «Sin agente» stays even at zero; the other grey lines only when they hold spend.
     ...grey.filter((line) => line.spent > 0 || (group === 'agent' && line.kind === 'none')),
   ];
+}
+
+/** The Playground's row, or an agent the catalog no longer has (no name). */
+export function isAside(row: Pick<AgentCost, 'id' | 'name'>): boolean {
+  return row.id === PLAYGROUND || row.name === null;
 }
 
 export interface Mover {

@@ -8,6 +8,7 @@ import { useSession } from '../../auth/useSession';
 import { useToasts } from '../../components/admin/useToasts';
 import { EyeIcon, PlayIcon, PlusIcon, SearchIcon } from '../../components/icons';
 import { OpsState } from '../../components/ops/OpsState';
+import { retryAtOf } from '../../components/rateLimitWait';
 import { Topbar } from '../../components/Topbar';
 import { formatRelative } from '../../lib/format';
 import { EvalCreate } from './EvalCreate';
@@ -28,6 +29,7 @@ type LoadState =
   | { kind: 'loading' }
   | { kind: 'error' }
   | { kind: 'denied' }
+  | { kind: '429'; until: number }
   | { kind: 'ready'; list: SuiteList; agents: Agent[]; models: Map<string, string> };
 type Quick = 'all' | 'fail' | 'blocking' | 'pass';
 
@@ -127,9 +129,13 @@ export function EvalsPage() {
         },
         (cause: unknown) => {
           if (signal.aborted || !first) return;
-          setState({
-            kind: cause instanceof ApiError && cause.status === 403 ? 'denied' : 'error',
-          });
+          const until = retryAtOf(cause);
+          if (until !== null) setState({ kind: '429', until });
+          else {
+            setState({
+              kind: cause instanceof ApiError && cause.status === 403 ? 'denied' : 'error',
+            });
+          }
         },
       );
     };
@@ -264,6 +270,7 @@ export function EvalsPage() {
           <OpsState
             view="evals"
             kind={kind}
+            until={state.kind === '429' ? state.until : undefined}
             onRetry={() => {
               setState({ kind: 'loading' });
               refresh();

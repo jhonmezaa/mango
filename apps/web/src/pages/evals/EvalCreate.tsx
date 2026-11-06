@@ -653,7 +653,7 @@ export function EvalCreate({
                   {' · '}
                   {t('evals.create.summaryCost')}{' '}
                   {cost.kind === 'ready' ? (
-                    <b className="mono">≈ {formatUsd(cost.usd)}</b>
+                    <b className="mono">{t('evals.upTo', { usd: formatUsd(cost.usd) })}</b>
                   ) : cost.kind === 'loading' ? (
                     <span className="mk-meta">{t('evals.detail.costCalculating')}</span>
                   ) : (

@@ -16,6 +16,13 @@ export const ops = {
     title: 'No se pudo cargar {{view}}.',
     body: 'Inténtalo de nuevo en unos segundos.',
   },
+  // Design round 38: the 429 of the four views; Observabilidad says its own limit.
+  rate: {
+    title: 'Demasiadas solicitudes',
+    body: 'Hiciste muchas solicitudes seguidas.',
+    observability:
+      'Observabilidad admite 30 lecturas por minuto: cada filtro, búsqueda o página cuenta.',
+  },
   denied: {
     title: 'No tienes acceso a {{view}}',
     toChat: 'Ir al chat',

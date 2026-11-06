@@ -5,9 +5,8 @@ import { useNavigate } from 'react-router';
 import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { useToasts } from '../../components/admin/useToasts';
-import { ClockIcon, DownloadIcon } from '../../components/icons';
+import { DownloadIcon } from '../../components/icons';
 import { OpsState } from '../../components/ops/OpsState';
-import { RateWaitButton, RateWaitLine } from '../../components/RateWait';
 import { retryAtOf } from '../../components/rateLimitWait';
 import { SoonTag } from '../../components/Soon';
 import { Topbar } from '../../components/Topbar';
@@ -166,16 +165,7 @@ export function CostsPage() {
     if (load.kind === 'loading') body = <OpsState view="costs" kind="loading" />;
     else if (load.denied) body = <OpsState view="costs" kind="denied" />;
     else if (load.retryAt !== null) {
-      body = (
-        <div className="mk-empty" role="alert">
-          <ClockIcon size={18} className="ops-state-lock" />
-          <div className="ops-state-t">{t('costs.rateTitle')}</div>
-          <div className="mk-meta ops-state-d">
-            <RateWaitLine until={load.retryAt} />
-          </div>
-          <RateWaitButton until={load.retryAt} onRetry={retry} />
-        </div>
-      );
+      body = <OpsState view="costs" kind="429" until={load.retryAt} onRetry={retry} />;
     } else body = <OpsState view="costs" kind="error" onRetry={retry} />;
     return (
       <>

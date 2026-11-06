@@ -151,11 +151,11 @@ export function createApiClient(options: ApiClientOptions) {
   }
 
   /** POST of a route that answers 204 (not in the generated client: it has no JSON response). */
-  async function postNoContent(path: string): Promise<void> {
+  async function postNoContent(path: string, body: Record<string, string> = {}): Promise<void> {
     await authorizedFetch(path, {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify(body),
     });
   }
 
@@ -174,7 +174,7 @@ export function createApiClient(options: ApiClientOptions) {
     `/admin/business-units/changes/${encodeURIComponent(changeIdSchema.parse(changeId))}/${action}`;
 
   // Evals (D26): the request to stop requiring a suite, by its random id (32 hex).
-  const evalChangePath = (changeId: string, action: 'approve' | 'withdraw') => {
+  const evalChangePath = (changeId: string, action: 'approve' | 'reject' | 'withdraw') => {
     if (!/^[0-9a-f]{32}$/.test(changeId)) throw new ApiError(422, 'invalid_request', 'Invalid id');
     return `/evals/requirement-changes/${encodeURIComponent(changeId)}/${action}`;
   };
@@ -283,6 +283,9 @@ export function createApiClient(options: ApiClientOptions) {
       ).items,
     approveEvalRequirement: (changeId: string) =>
       postNoContent(evalChangePath(changeId, 'approve')),
+    /** The reason (1 to 500 characters) is required and goes to Auditoría (D26). */
+    rejectEvalRequirement: (changeId: string, reason: string) =>
+      postNoContent(evalChangePath(changeId, 'reject'), { reason: checkReason(reason) }),
     withdrawEvalRequirement: (changeId: string) =>
       postNoContent(evalChangePath(changeId, 'withdraw')),
     withdrawMfaReset: async (changeId: string) =>

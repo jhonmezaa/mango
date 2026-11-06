@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router';
 
 import { WarnIcon } from '../../components/icons';
 import { SidePanel } from '../../components/SidePanel';
-import { SoonTag } from '../../components/Soon';
 import { budgetPercent } from '../../lib/format';
 import {
   coversMonth,
@@ -37,8 +36,8 @@ interface Props {
 
 /**
  * An agent's costs this month (design round 37 `CostAgent`): the month, the one before and the
- * projection, its budget (only in the current month: past limits are not kept), «Por origen»
- * («Próximamente»: there is no counter per agent and origin) and its real queries.
+ * projection, its budget (only in the current month: past limits are not kept) and its real
+ * queries. No «Por origen»: the product counts the origin of the organization only (round 38).
  */
 export function CostAgent({ row, name, sub, data, admin, onClose }: Props) {
   const { t } = useTranslation();
@@ -91,11 +90,6 @@ export function CostAgent({ row, name, sub, data, admin, onClose }: Props) {
           )}
         </Section>
       )}
-      <section className="mk-sec">
-        <h3 className="mk-sec-t co-sec-soon">
-          {t('costs.drawer.bySource')} <SoonTag />
-        </h3>
-      </section>
       <Section title={t('costs.drawer.queries')}>
         <div className="mk-kv">
           <span>{t('costs.drawer.perQuery')}</span>

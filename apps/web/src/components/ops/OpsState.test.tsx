@@ -86,4 +86,27 @@ describe('OpsState · design round 37', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nuevo ticket' })).toBeInTheDocument();
   });
+
+  it('shows the 429 with its wait; Observabilidad says its own limit (design round 38)', () => {
+    const onRetry = vi.fn();
+    const until = Date.now() + 47_000;
+    const { unmount } = renderState(
+      <OpsState view="costs" kind="429" until={until} onRetry={onRetry} />,
+    );
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Demasiadas solicitudes');
+    expect(alert).toHaveTextContent(
+      'Hiciste muchas solicitudes seguidas. Puedes volver a intentarlo en unos segundos.',
+    );
+    expect(screen.getByRole('button', { name: /Reintentar en/ })).toBeDisabled();
+    unmount();
+    renderState(
+      <OpsState view="observability" kind="429" until={Date.now() - 1} onRetry={onRetry} />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Observabilidad admite 30 lecturas por minuto: cada filtro, búsqueda o página cuenta.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Reintentar/ }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
 });

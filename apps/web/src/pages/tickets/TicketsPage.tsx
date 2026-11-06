@@ -7,6 +7,7 @@ import { useSession } from '../../auth/useSession';
 import { useToasts } from '../../components/admin/useToasts';
 import { FilterIcon, KanbanIcon, ListIcon, PlusIcon, SearchIcon } from '../../components/icons';
 import { OpsState } from '../../components/ops/OpsState';
+import { retryAtOf } from '../../components/rateLimitWait';
 import { Topbar } from '../../components/Topbar';
 import { readPreference, writePreference } from '../../preferences/storage';
 import { NewTicketModal, type NewTicket } from './NewTicketModal';
@@ -35,7 +36,11 @@ import {
 } from './model';
 
 type Load =
-  { kind: 'loading' } | { kind: 'error' } | { kind: 'denied' } | { kind: 'ready'; items: Ticket[] };
+  | { kind: 'loading' }
+  | { kind: 'error' }
+  | { kind: 'denied' }
+  | { kind: '429'; until: number }
+  | { kind: 'ready'; items: Ticket[] };
 
 type Layout = 'kanban' | 'list';
 
@@ -76,7 +81,9 @@ export function TicketsPage() {
       },
       (error: unknown) => {
         if (controller.signal.aborted) return;
-        setLoad({ kind: (error as { status?: unknown }).status === 403 ? 'denied' : 'error' });
+        const until = retryAtOf(error);
+        if (until !== null) setLoad({ kind: '429', until });
+        else setLoad({ kind: (error as { status?: unknown }).status === 403 ? 'denied' : 'error' });
       },
     );
     return () => {
@@ -263,12 +270,18 @@ export function TicketsPage() {
   );
 
   if (load.kind !== 'ready' || load.items.length === 0) {
-    const kind = load.kind === 'ready' ? 'empty' : load.kind === 'denied' ? 'denied' : load.kind;
+    const kind = load.kind === 'ready' ? 'empty' : load.kind;
     return (
       <>
         <Topbar crumbs={[t('nav.tickets')]} actions={kind === 'empty' ? actions : undefined} />
         <div className="content">
-          <OpsState view="tickets" kind={kind} onRetry={retry} action={newButton} />
+          <OpsState
+            view="tickets"
+            kind={kind}
+            until={load.kind === '429' ? load.until : undefined}
+            onRetry={retry}
+            action={newButton}
+          />
         </div>
         {panel}
         {modal}

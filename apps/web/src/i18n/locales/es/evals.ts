@@ -97,6 +97,8 @@ export const evals = {
     nowRequired: 'Ahora es obligatoria para aprobar',
     requestApproved: 'Ya no bloquea la aprobación',
     requestWithdrawn: 'Pedido cancelado',
+    requestSent: 'Pedido enviado · otro admin debe aprobarlo',
+    requestRejected: 'Pedido rechazado · sigue siendo obligatoria',
   },
   error: {
     generic: 'No se pudo completar. Inténtalo de nuevo.',
@@ -140,17 +142,18 @@ export const evals = {
     runsAs: 'Corre como',
     // propio: la API corre «en cada envío» como quien envía la versión
     runsAsSubmitter: 'Quien envía la versión',
-    cost: 'Costo estimado por ejecución',
+    // Design round 38: the estimate is a cap (what the server reserves).
+    cost: 'Costo por ejecución',
     costCalculating: 'calculando…',
     costUnavailable: '—',
     costNote:
-      'Cada caso cuenta contra el presupuesto de quien la lanza y el de {{agent}}, como una prueba en Playground. El juez, contra el de {{agent}}. El costo lo estima el servidor con el precio del modelo del agente y el del juez.',
+      'Cada caso cuenta contra el presupuesto de quien la lanza y el de {{agent}}, como una prueba en Playground. El juez, contra el de {{agent}}. El tope lo calcula el servidor con la pregunta más larga y el máximo de iteraciones: el gasto real suele ser bastante menor.',
     settings: 'Ajustes de la suite',
     requiredToggle: 'Obligatoria para aprobar',
     requiredSub: 'Si no pasa, Revisión de agentes bloquea la aprobación de cambios de este agente.',
-    requiredOff: 'Dejar de exigirla',
     request:
       '{{who}} pidió que deje de ser obligatoria. Sigue siéndolo hasta que otro admin lo apruebe.',
+    requestReason: 'Motivo: {{reason}}',
     someone: 'Alguien',
     approve: 'Aprobar',
     approveMine: 'Lo pediste tú: debe aprobarlo otro admin',
@@ -256,9 +259,9 @@ export const evals = {
     summary_one: '{{count}} caso',
     summary_other: '{{count}} casos',
     summaryJudge: '{{count}} con juez {{judge}}',
-    summaryCost: 'costo estimado por ejecución',
+    summaryCost: 'costo por ejecución',
     summaryNote:
-      'Cada caso cuenta contra tu presupuesto y el de {{agent}}; el juez, contra el de {{agent}}. Las tools de escritura no se ejecutan.',
+      'Cada caso cuenta contra tu presupuesto y el de {{agent}}; el juez, contra el de {{agent}}. El tope supone la pregunta más larga y el máximo de iteraciones: el gasto real suele ser menor. Las tools de escritura no se ejecutan.',
     err: {
       name: 'Ponle un nombre a la suite',
       noCases: 'Agrega al menos un caso',
@@ -274,6 +277,23 @@ export const evals = {
     submit: 'Crear suite',
     close: 'Cerrar',
   },
+  // Design round 38 `.ev-why`: the reason to turn «Obligatoria» off or to reject that request.
+  why: {
+    off: {
+      label: 'Por qué deja de ser obligatoria',
+      placeholder: 'Ej.: la suite quedó vieja; la reemplaza otra obligatoria.',
+      note: 'Lo lee el admin que decide y queda en Auditoría.',
+      send: 'Enviar pedido',
+    },
+    reject: {
+      label: 'Por qué rechazas el pedido',
+      placeholder: 'Ej.: es la única suite que prueba las respuestas de costo.',
+      note: 'Lo lee quien lo pidió y queda en Auditoría.',
+      send: 'Rechazar pedido',
+    },
+    cancel: 'Cancelar',
+  },
+  upTo: 'hasta {{usd}}',
   gate: {
     title: 'evals',
     titleCount: 'evals · {{pass}} de {{count}} pasan',
@@ -285,12 +305,16 @@ export const evals = {
       'Esperando evals: {{suites}} se ejecuta con este envío. Todavía no se puede aprobar.',
     waiting_other:
       'Esperando evals: {{suites}} se ejecutan con este envío. Todavía no se puede aprobar.',
+    // Design round 38: required, without a finished run of this version.
+    notRun_one:
+      '{{suites}} es obligatoria y no tiene una ejecución terminada con esta versión. Ejecútala desde Evals: hasta que pase, no se puede aprobar.',
+    notRun_other:
+      '{{suites}} son obligatorias y no tienen una ejecución terminada con esta versión. Ejecútala desde Evals: hasta que pase, no se puede aprobar.',
     failing_one: '{{suites}} es obligatoria y no pasa. No se puede aprobar.',
     failing_other: '{{suites}} son obligatorias y no pasan. No se puede aprobar.',
     requiredTag: ' · obligatoria',
     rowRunning: 'ejecutando',
     rowWaiting: 'en espera',
-    // propio: obligatoria sin una ejecución terminada de esta versión
     rowNotRun: 'sin ejecutar',
     ruleUnfinished: 'Hay evals obligatorias sin terminar.',
     ruleFailing: 'Hay evals obligatorias que no pasan.',

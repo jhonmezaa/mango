@@ -72,6 +72,17 @@ export function EvalGate({
           </div>
         </div>
       )}
+      {gate.unfinished.length > 0 && (
+        <div className="mc-alert amber ev-gate-alert" role="status">
+          <ClockIcon size={13} />
+          <div>
+            {t('evals.gate.notRun', {
+              suites: names(gate.unfinished),
+              count: gate.unfinished.length,
+            })}
+          </div>
+        </div>
+      )}
       {gate.failing.length > 0 && (
         <div className="mc-alert red ev-gate-alert">
           <LockIcon size={13} />

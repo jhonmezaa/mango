@@ -73,9 +73,15 @@ function setup(
     const route = routes[id];
     return route ? route(input) : Promise.reject(new ApiError(404, 'not_found', id));
   });
+  const rejectEvalRequirement = vi.fn<(id: string, reason: string) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
   render(
     <TestProviders
-      session={sessionValue({ api: { call } as unknown as ApiClient, me })}
+      session={sessionValue({
+        api: { call, rejectEvalRequirement } as unknown as ApiClient,
+        me,
+      })}
       path="/evals"
     >
       <Routes>
@@ -84,7 +90,7 @@ function setup(
     </TestProviders>,
   );
   const calls = (id: string) => call.mock.calls.filter(([name]) => name === id);
-  return { calls, user: userEvent.setup() };
+  return { calls, rejectEvalRequirement, user: userEvent.setup() };
 }
 
 const rowOf = (name: string) => screen.getByText(name).closest('.ev-tr') as HTMLElement;
@@ -204,6 +210,79 @@ describe('EvalsPage (design evals.jsx, D110, D111)', () => {
     await user.click(await screen.findByText('Golden'));
     const panel = await screen.findByRole('dialog', { name: 'Golden' });
     expect(await within(panel).findByText('No cumple: falta «EC2»')).toBeInTheDocument();
-    expect(await within(panel).findByText(/≈ USD/)).toBeInTheDocument();
+    expect(await within(panel).findByText(/^hasta USD/)).toBeInTheDocument();
+    expect(within(panel).getByText('Costo por ejecución')).toBeInTheDocument();
+  });
+
+  it('asks the reason to stop requiring a suite and sends it (design round 38)', async () => {
+    const { calls, user } = setup([suite()], ADMIN, {
+      postEvalRequirementRemoval: () => Promise.resolve({ ...suite(), cases: [] }),
+    });
+    await user.click(await screen.findByText('Golden'));
+    const panel = await screen.findByRole('dialog', { name: 'Golden' });
+    await user.click(within(panel).getByRole('checkbox', { name: /Obligatoria para aprobar/ }));
+    const field = within(panel).getByLabelText('Por qué deja de ser obligatoria');
+    const send = within(panel).getByRole('button', { name: 'Enviar pedido' });
+    expect(send).toBeDisabled();
+    expect(
+      within(panel).getByText(/Lo lee el admin que decide y queda en Auditoría\. 0\/500/),
+    ).toBeInTheDocument();
+    await user.type(field, '   ');
+    expect(send).toBeDisabled();
+    await user.type(field, 'La reemplaza otra');
+    await user.click(send);
+    expect(calls('postEvalRequirementRemoval')[0]?.[1]).toEqual({
+      path: { suite_id: 'b'.repeat(32) },
+      body: { revision: 1, reason: 'La reemplaza otra' },
+    });
+    expect(
+      await screen.findByText('Pedido enviado · otro admin debe aprobarlo'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the reason of the request and lets another admin reject it with a reason', async () => {
+    const request = {
+      change_id: 'c'.repeat(32),
+      requested_by_email: 'otra@empresa.com',
+      mine: false,
+      reason: 'Quedó vieja',
+      created_at: '2026-11-05T12:00:00Z',
+      expires_at: '2026-11-12T12:00:00Z',
+    };
+    const { rejectEvalRequirement, user } = setup([suite({ request })]);
+    await user.click(await screen.findByText('Golden'));
+    const panel = await screen.findByRole('dialog', { name: 'Golden' });
+    expect(within(panel).getByText('Motivo: Quedó vieja')).toBeInTheDocument();
+    expect(
+      within(panel).getByRole('checkbox', { name: /Obligatoria para aprobar/ }),
+    ).toBeDisabled();
+    await user.click(within(panel).getByRole('button', { name: 'Rechazar' }));
+    expect(within(panel).getByRole('button', { name: 'Rechazar' })).toBeDisabled();
+    await user.type(within(panel).getByLabelText('Por qué rechazas el pedido'), 'Es la única');
+    await user.click(within(panel).getByRole('button', { name: 'Rechazar pedido' }));
+    expect(rejectEvalRequirement).toHaveBeenCalledWith('c'.repeat(32), 'Es la única');
+    expect(
+      await screen.findByText('Pedido rechazado · sigue siendo obligatoria'),
+    ).toBeInTheDocument();
+  });
+
+  it('«Cancelar» closes the reason field without sending', async () => {
+    const { calls, user } = setup([suite()]);
+    await user.click(await screen.findByText('Golden'));
+    const panel = await screen.findByRole('dialog', { name: 'Golden' });
+    await user.click(within(panel).getByRole('checkbox', { name: /Obligatoria para aprobar/ }));
+    await user.click(within(panel).getByRole('button', { name: 'Cancelar' }));
+    expect(within(panel).queryByLabelText('Por qué deja de ser obligatoria')).toBeNull();
+    expect(calls('postEvalRequirementRemoval')).toHaveLength(0);
+  });
+
+  it('waits the Retry-After of a 429 with the common block', async () => {
+    setup([], ADMIN, {
+      getEvals: () => Promise.reject(new ApiError(429, 'rate_limited', 'slow down', 30)),
+    });
+    expect(
+      await screen.findByText('Hiciste muchas solicitudes seguidas.', { exact: false }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reintentar en/ })).toBeDisabled();
   });
 });

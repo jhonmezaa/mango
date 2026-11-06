@@ -85,7 +85,8 @@ describe('CostsPage · design round 37', () => {
     expect(
       within(drawer).getByText('Al ritmo actual superará su límite antes de fin de mes.'),
     ).toBeInTheDocument();
-    expect(within(drawer).getByText('Por origen')).toBeInTheDocument();
+    // Design round 38: no «Por origen» in the drawer (the product counts it per organization).
+    expect(within(drawer).queryByText('Por origen')).toBeNull();
     expect(within(drawer).queryByRole('button', { name: 'Ver presupuestos' })).toBeNull();
   });
 
@@ -133,5 +134,13 @@ describe('CostsPage · design round 37', () => {
     await user.click(await screen.findByRole('button', { name: 'Exportar CSV' }));
     expect(click).toHaveBeenCalled();
     expect(await screen.findByText('Costos exportados')).toBeInTheDocument();
+  });
+
+  it('waits the Retry-After of a 429 with the common block', async () => {
+    renderPage(vi.fn(() => Promise.reject(new ApiError(429, 'rate_limited', 'slow down', 30))));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Demasiadas solicitudes');
+    expect(alert).toHaveTextContent('Hiciste muchas solicitudes seguidas.');
+    expect(screen.getByRole('button', { name: /Reintentar en/ })).toBeDisabled();
   });
 });

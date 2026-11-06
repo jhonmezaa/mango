@@ -6,11 +6,9 @@ import { ApiError } from '../../api/errors';
 import { useSession } from '../../auth/useSession';
 import { usd } from '../../components/admin/govFormat';
 import { useToasts } from '../../components/admin/useToasts';
-import { ClockIcon, InfoIcon, SearchIcon } from '../../components/icons';
+import { InfoIcon, SearchIcon } from '../../components/icons';
 import { OpsState } from '../../components/ops/OpsState';
-import { RateWaitButton, RateWaitLine } from '../../components/RateWait';
 import { retryAtOf } from '../../components/rateLimitWait';
-import { Soon } from '../../components/Soon';
 import { Topbar } from '../../components/Topbar';
 import { copyText } from '../../lib/clipboard';
 import {
@@ -208,16 +206,7 @@ export function ObservabilityPage() {
   } else if (state.kind === 'error') {
     body = <OpsState view="observability" kind="error" onRetry={retry} />;
   } else if (state.kind === 'rate') {
-    body = (
-      <div className="mk-empty" role="alert">
-        <ClockIcon size={18} className="ops-state-lock" />
-        <div className="ops-state-t">{t('observability.rateTitle')}</div>
-        <div className="mk-meta ops-state-d">
-          <RateWaitLine until={state.until} />
-        </div>
-        <RateWaitButton until={state.until} onRetry={retry} />
-      </div>
-    );
+    body = <OpsState view="observability" kind="429" until={state.until} onRetry={retry} />;
   } else if (reading && summary) {
     body = (
       <>
@@ -317,11 +306,6 @@ export function ObservabilityPage() {
             {t(`observability.status.${key}`)}
           </button>
         ))}
-        <Soon name={t('observability.status.approval')}>
-          <button type="button" tabIndex={-1}>
-            {t('observability.status.approval')}
-          </button>
-        </Soon>
       </div>
       <select
         className="input mk-sel"

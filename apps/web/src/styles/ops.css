@@ -18,6 +18,12 @@
   .ops-state-lock {
     color: var(--text-muted);
   }
+  /* The 429 text (design round 38: 13px, muted, at most 440px). `sr-err*` is in search.css. */
+  .ops-state-rate {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 440px;
+  }
   /* Main column and side column of Costos and Observabilidad (design `ob-grid`, `ob-sum`). */
   .ob-grid {
     display: grid;

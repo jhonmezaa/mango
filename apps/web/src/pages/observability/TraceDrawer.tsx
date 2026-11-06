@@ -57,6 +57,9 @@ export function TraceDrawer({ trace, agentName, onClose, onCopy, onActivity }: P
               ) : null}{' '}
               · {dateText(trace.started_at)}
             </div>
+            {kind === 'unmatched' && (
+              <div className="mk-meta ob-drawer-s">{t('observability.drawer.unmatched')}</div>
+            )}
           </div>
           <button
             type="button"

@@ -16,7 +16,8 @@ export const observability = {
     costSub: '{{tokens}} k tokens · sin el guardrail',
   },
   atLeast: 'al menos {{value}}',
-  cap: 'La lectura llegó al tope de {{n}} trazas: las cifras son un mínimo. Acorta el rango o elige un agente para verlo completo.',
+  // Design round 38: one text, the API does not say which limit (traces or time) stopped it.
+  cap: 'La lectura se detuvo en {{n}} trazas: las cifras son un mínimo. Acorta el rango o elige un agente para verlo completo.',
   search: 'Buscar tool, persona o ID de traza',
   searchLabel: 'Buscar trazas',
   ranges: { '1h': '1 h', '6h': '6 h', '24h': '24 h' },
@@ -24,7 +25,6 @@ export const observability = {
     all: 'Todas',
     error: 'Con error',
     slow: 'Lentas (≥ p95)',
-    approval: 'Con aprobación',
   },
   rangeLabel: 'Rango',
   statusLabel: 'Estado',
@@ -64,9 +64,11 @@ export const observability = {
     toolErrors: '{{failed}}/{{calls}} err',
     toolCalls: '{{count}} llamadas',
   },
-  rateTitle: 'Demasiadas solicitudes',
   drawer: {
     title: 'Traza',
+    // Design round 38: under the title of a trace without a Mango turn.
+    unmatched:
+      'Esta traza no tiene un turno de Mango: es anterior a la vista o no la escribió Mango. No hay persona ni costo.',
     copy: 'Copiar ID',
     copied: 'ID copiado',
     copyFailed: 'No se pudo copiar el ID',
