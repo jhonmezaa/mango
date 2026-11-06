@@ -33,6 +33,7 @@ from mango_core.agents_table import (
     unlock_item,
     version_key,
 )
+from mango_core.evals_harness import Capture
 from mango_core.playground import PlaygroundHarness
 from mango_core.remote_mcp import (
     ApprovedRemote,
@@ -268,6 +269,17 @@ class ProvisionerStore:
     def write_playground(self, deployed: PlaygroundHarness) -> None:
         """What mango-api invokes for a test: only this function writes the item (IAM)."""
         self.write_test_harness(deployed.item())
+
+    def evals_capture_verified(self) -> bool:
+        """Whether ``EVALS`` / ``CAPTURE`` says ``verified`` (D110 (9)). Anything else, a missing
+        or malformed item included, is not: mango-api runs no eval then."""
+        item = self._get(self._settings, {"PK": {"S": "EVALS"}, "SK": {"S": "CAPTURE"}})
+        if item is None:
+            return False
+        try:
+            return Capture.from_item(item).status == "verified"
+        except ValueError:
+            return False
 
     def write_test_harness(self, item: dict[str, Any]) -> None:
         """``PLAYGROUND`` or ``EVALS`` ``HARNESS``, and ``EVALS`` ``CAPTURE`` (``pending``)."""

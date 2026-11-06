@@ -110,7 +110,9 @@ export interface EvalsCaptureProps {
  * - Export or copy: `CreateExportTask` (S3), `PutSubscriptionFilter`, `IntegrateWithS3Table`,
  *   `IntegrateWithDataset`, `ProcessWithPipeline`, and `CreateLogAnomalyDetector` (anomalies
  *   carry samples of the events).
- * - `DisassociateKmsKey`: the log groups keep their own key.
+ *
+ * `DisassociateKmsKey` has a Deny of its own ({@link EvalsCapture.denyStatements}): the log groups
+ * keep their own key, and only the provisioner may take it off to bind it again (D110 (9)).
  *
  * Not here, because the evals harness's role or the provisioner need them on these log groups
  * and none returns an event: `CreateLogGroup`, `CreateLogStream`, `PutLogEvents`,
@@ -132,7 +134,6 @@ export const EVALS_CONTENT_ACTIONS = [
   "logs:IntegrateWithDataset",
   "logs:ProcessWithPipeline",
   "logs:CreateLogAnomalyDetector",
-  "logs:DisassociateKmsKey",
 ] as const;
 
 /**
@@ -172,6 +173,8 @@ export class EvalsCapture extends Construct {
   readonly key: kms.Key;
   readonly logGroupArns: string;
   readonly judgeRoleArn: string;
+  /** The provisioner's role, the only one that may take the key off to bind it again. */
+  readonly provisionerRoleArn: string;
   readonly judgeFunctionArn: string;
   readonly judgeFunctionName: string;
   /** `Mango-<ns>-evals-content-deny`: attached to every role of the installation but the evaluator. */
@@ -184,6 +187,7 @@ export class EvalsCapture extends Construct {
     const { region, account } = Stack.of(this);
     this.logGroupArns = `arn:aws:logs:${region}:${account}:log-group:/aws/bedrock-agentcore/runtimes/${evalsHarness.runtimePrefix(ns)}*`;
     this.judgeRoleArn = `arn:aws:iam::${account}:role/${roleNames.evalJudge(ns)}`;
+    this.provisionerRoleArn = `arn:aws:iam::${account}:role/${roleNames.provisioner(ns)}`;
     this.judgeFunctionName = roleNames.evalJudge(ns);
     this.judgeFunctionArn = `arn:aws:lambda:${region}:${account}:function:${this.judgeFunctionName}`;
     this.key = new kms.Key(this, "LogsKey", {
@@ -238,6 +242,16 @@ export class EvalsCapture extends Construct {
         resources: [this.logGroupArns],
       }),
       new iam.PolicyStatement({
+        // D110 (9): an association X-Ray cannot use is only repaired by taking the key off and
+        // associating it again. Only the provisioner does it, and only while no eval may run.
+        // The full ARN, never a name compared in CDK (a token in the release).
+        sid: "NoEvalsKeyRemoval",
+        effect: iam.Effect.DENY,
+        actions: ["logs:DisassociateKmsKey"],
+        resources: [this.logGroupArns],
+        conditions: { ArnNotEquals: { "aws:PrincipalArn": this.provisionerRoleArn } },
+      }),
+      new iam.PolicyStatement({
         sid: "NoAccountWideLogExport",
         effect: iam.Effect.DENY,
         actions: [...ACCOUNT_LOG_EXPORT_ACTIONS],
@@ -277,6 +291,21 @@ export class EvalsCapture extends Construct {
         resources: [this.key.keyArn],
       }),
     );
+    role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        // D110 (9): bind the key again while the canary has not verified the harness (the
+        // association made seconds after AgentCore created the log group gets no spans).
+        sid: "RebindEvalsLogsKey",
+        actions: ["logs:DisassociateKmsKey"],
+        resources: [this.logGroupArns],
+      }),
+    );
+    acknowledge(role, {
+      id: `AwsSolutions-IAM5[Resource::${this.logGroupArns}]`,
+      reason:
+        "Only the evals harness's runtime log groups (named by AgentCore after the generated runtime id): the " +
+        "provisioner takes their key off and associates it again while no eval may run (D110 (9)).",
+    });
     role.addToPrincipalPolicy(
       new iam.PolicyStatement({
         sid: "AskTheEvalsCanary",

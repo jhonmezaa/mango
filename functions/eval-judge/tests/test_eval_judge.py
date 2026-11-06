@@ -83,7 +83,11 @@ class FakeLogs:
         if group not in self.groups:
             raise ClientError({"Error": {"Code": "ResourceNotFoundException"}}, "FilterLogEvents")
         pattern = kwargs["filterPattern"]
-        needle = pattern.split('"')[1] if pattern.startswith("{") else pattern.strip('"')
+        if pattern.startswith("{"):
+            # ``{ $.attributes.['session.id'] = "<id>" }``: that attribute, not any field.
+            needle = '"session.id": "' + pattern.split('"')[1] + '"'
+        else:
+            needle = pattern.strip('"')
         return {"events": [{"message": m} for m in self.groups[group] if needle in m]}
 
 
@@ -92,6 +96,8 @@ class FakeAgentCore:
     logs: FakeLogs
     content_to_shared: bool = False
     capture: bool = True
+    spans: bool = True
+    """False: the content reaches the runtime's own logs but X-Ray delivers no span."""
     label: str = "PASS"
     invocations: list[dict[str, Any]] = field(default_factory=list)
     evaluations: list[dict[str, Any]] = field(default_factory=list)
@@ -111,7 +117,13 @@ class FakeAgentCore:
                 "attributes": {"session.id": session, "gen_ai.input.messages": text},
             }
         )
-        if self.capture:
+        if self.capture and not self.spans:
+            # A log record of the runtime (otel-rt-logs): the marker, under ``sessionId``.
+            record = json.dumps(
+                {"traceId": "t1", "attributes": {"sessionId": session}, "body": text}
+            )
+            self.logs.groups.setdefault(OWN, []).append(record)
+        elif self.capture:
             self.logs.groups.setdefault(OWN, []).append(span)
         if self.content_to_shared:
             self.logs.groups.setdefault("aws/spans", []).append(span)
@@ -242,6 +254,18 @@ def test_no_content_in_its_own_log_group_fails_closed(env: Env) -> None:
     assert capture.status == "failed"
     assert capture.reason == "no_content"
     assert sum(env.slept) >= 9 * 60
+
+
+def test_content_without_spans_fails_closed_with_its_own_reason(env: Env) -> None:
+    env.agentcore.spans = False
+    capture = env.canary().run("3")
+
+    assert capture.status == "failed"
+    assert capture.reason == "no_spans_delivered"
+    assert not env.capture().verified_for("3")
+    # Same wait as the marker's, never more than the function's time.
+    assert sum(env.slept) <= 9 * 60
+    assert env.agentcore.evaluations == []
 
 
 def test_a_denied_turn_logs_its_code_and_action_never_the_message(

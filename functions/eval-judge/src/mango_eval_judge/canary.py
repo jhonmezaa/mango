@@ -350,6 +350,16 @@ class Canary:
         logger.info("evals canary verified harness version %s", harness_version)
         return capture
 
+    def _has_spans(self, groups: tuple[str, ...], session_id: str, start_ms: int) -> bool:
+        """Whether a span of the canary's session reached its own log groups (read, never
+        logged)."""
+        end_ms = int(self._clock() * 1000) + 60_000
+        try:
+            found = spans.session_spans(self._logs, groups, session_id, start_ms, end_ms)
+        except spans.TooManySpansError:
+            return True  # There are spans; the smoke Evaluate says what it makes of them.
+        return bool(spans.trace_ids(found))
+
     def _check(self, harness_version: str) -> None:
         harness = self._harness(harness_version)
         model, prices = self._model(harness)
@@ -381,6 +391,14 @@ class Canary:
                 break
             if waited >= MAX_WAIT_SECONDS:
                 raise CanaryFailedError("no_content")
+            self._sleep(POLL_SECONDS)
+            waited += POLL_SECONDS
+        # The content can land (the runtime's own logs) while no span ever does: X-Ray delivers
+        # the spans on its own, and a log group whose key association it cannot use gets none,
+        # with no error anywhere (finding of 2026-11-06). Same wait, shared with the marker's.
+        while not self._has_spans(groups, session_id, start_ms):
+            if waited >= MAX_WAIT_SECONDS:
+                raise CanaryFailedError("no_spans_delivered")
             self._sleep(POLL_SECONDS)
             waited += POLL_SECONDS
         self._sleep(SHARED_LOG_SETTLE_SECONDS)

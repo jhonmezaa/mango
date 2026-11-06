@@ -289,7 +289,7 @@ describe("pack permissions boundary", () => {
     expect(actions(bySid(statements, "PackData"))).toEqual(PACK_DATA_ACTIONS);
     // Plus the evals content Deny every boundary carries (D110 (8), evals.test.ts).
     expect(statements.map((s) => s.Sid).sort()).toEqual([
-      "AssumeBroker", "Metrics", "NoAccountWideLogExport", "NoEvalsContent", "PackData", "RuntimeLogs", "Tracing",
+      "AssumeBroker", "Metrics", "NoAccountWideLogExport", "NoEvalsContent", "NoEvalsKeyRemoval", "PackData", "RuntimeLogs", "Tracing",
     ]);
     const allowed = statements.filter((s) => s.Effect === "Allow");
     const services = new Set(allowed.flatMap(actions).map((a) => a.split(":")[0]));
@@ -828,6 +828,8 @@ describe("release packs (D36): only what the release key signed", () => {
     expect(onSettings.map((s) => s.Sid).sort()).toEqual([
       // D98 (13): the catalog the remote provisioner signed, read only (see provisioner.test.ts).
       "ReadApprovedRemotes",
+      // D110 (9): whether the canary verified the evals harness, before binding its key again.
+      "ReadEvalsCapture",
       "ReadInstalledPacks",
       "ReadModelCatalog",
       "WritePlaygroundHarness",

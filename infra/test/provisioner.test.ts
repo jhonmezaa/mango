@@ -394,7 +394,7 @@ describe("agent permissions boundary", () => {
   const granted = statements.flatMap(actions);
 
   it("only allows what an agent runtime needs", () => {
-    expect(all.filter((s) => s.Effect !== "Allow").map((s) => s.Sid)).toEqual(["NoEvalsContent", "NoAccountWideLogExport"]);
+    expect(all.filter((s) => s.Effect !== "Allow").map((s) => s.Sid)).toEqual(["NoEvalsContent", "NoEvalsKeyRemoval", "NoAccountWideLogExport"]);
     expect(granted.sort()).toEqual([
       "bedrock-agentcore:GetWorkloadAccessToken",
       "bedrock-agentcore:GetWorkloadAccessTokenForJWT",

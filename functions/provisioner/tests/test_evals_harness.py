@@ -140,3 +140,76 @@ def test_input_is_exactly_the_action_and_a_release(lab: Lab, bad: dict[str, Any]
 
     assert state["failure"] == "invalid_input"
     assert lab.agentcore.harnesses == {}
+
+
+def _agentcore_creates_the_log_groups(lab: Lab) -> None:
+    """AgentCore creates the runtime's log groups on its own, unencrypted, and sets the unified
+    span destination up on them, seconds before the provisioner governs them (2026-11-06)."""
+    original = lab.agentcore.create_harness_endpoint
+
+    def create_with_groups(**kwargs: Any) -> dict[str, Any]:
+        out = original(**kwargs)
+        for harness in lab.agentcore.harnesses.values():
+            runtime_id = harness["runtime_id"]
+            for suffix in ("DEFAULT", "live"):
+                name = f"/aws/bedrock-agentcore/runtimes/{runtime_id}-{suffix}"
+                lab.logs.groups.setdefault(name, {"kms": None})
+        return out
+
+    lab.agentcore.create_harness_endpoint = create_with_groups  # type: ignore[method-assign]
+
+
+def _evals_groups(lab: Lab) -> set[str]:
+    return {n for n in lab.logs.groups if "Mango_test_a_evals" in n}
+
+
+def test_adopted_evals_log_groups_get_their_key_bound_again_while_not_verified(lab: Lab) -> None:
+    _agentcore_creates_the_log_groups(lab)
+    lab.run(provision_input(RELEASE))
+
+    groups = _evals_groups(lab)
+    assert len(groups) == 2
+    # D110 (9): taken off and associated again, since no eval may run yet (capture pending).
+    assert sorted(lab.logs.disassociated) == sorted(groups)
+    assert {lab.logs.groups[n]["kms"] for n in groups} == {EVALS_LOGS_KEY_ARN}
+
+
+def test_a_failed_capture_gets_the_key_bound_again_on_the_next_release(lab: Lab) -> None:
+    _agentcore_creates_the_log_groups(lab)
+    lab.run(provision_input(RELEASE))
+    version = Capture.from_item(_item(lab, "CAPTURE") or {}).harness_version
+    lab.db.put_item(
+        TableName=SETTINGS_TABLE,
+        Item=Capture("failed", version, "2026-11-06T15:20:00+00:00", "no_spans_delivered").item(),
+    )
+    lab.logs.disassociated.clear()
+    lab.run(provision_input("v0.1.1-g1a2b3c4"), execution="exec-2")
+
+    assert sorted(lab.logs.disassociated) == sorted(_evals_groups(lab))
+    assert {lab.logs.groups[n]["kms"] for n in _evals_groups(lab)} == {EVALS_LOGS_KEY_ARN}
+
+
+def test_a_verified_capture_leaves_the_key_alone(lab: Lab) -> None:
+    _agentcore_creates_the_log_groups(lab)
+    lab.run(provision_input(RELEASE))
+    version = Capture.from_item(_item(lab, "CAPTURE") or {}).harness_version
+    lab.db.put_item(
+        TableName=SETTINGS_TABLE,
+        Item=Capture("verified", version, "2026-11-06T15:20:00+00:00").item(),
+    )
+    lab.logs.disassociated.clear()
+    lab.run(provision_input("v0.1.1-g1a2b3c4"), execution="exec-2")
+
+    # Evals may be running: the content never goes a moment without its key.
+    assert lab.logs.disassociated == []
+    assert {lab.logs.groups[n]["kms"] for n in _evals_groups(lab)} == {EVALS_LOGS_KEY_ARN}
+
+
+def test_the_playground_never_gets_its_key_taken_off(lab: Lab) -> None:
+    _agentcore_creates_the_log_groups(lab)
+    lab.run(playground_input(RELEASE))
+
+    assert lab.logs.disassociated == []
+    assert {g["kms"] for n, g in lab.logs.groups.items() if "Mango_test_a_playground" in n} == {
+        LOGS_KEY_ARN
+    }

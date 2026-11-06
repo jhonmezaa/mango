@@ -256,7 +256,10 @@ class Playground:
             raise StepError("runtime_reference_invalid")
         # D110 (3): the evals harness's log group gets its own key, before anything runs on it.
         key = self._settings.evals_logs_key_arn if self._kind.unified_traces else None
-        self._logs.govern(self._kind.agent_id, runtime_id, key)
+        # D110 (9): bind the key again while no eval may run (the capture is not verified), so
+        # X-Ray delivers the spans; once the canary verified, the log groups are left alone.
+        rebind = self._kind.unified_traces and not self._store.evals_capture_verified()
+        self._logs.govern(self._kind.agent_id, runtime_id, key, rebind=rebind)
         return state
 
     def publish(self, state: dict[str, Any]) -> dict[str, Any]:

@@ -495,6 +495,15 @@ export class Provisioner extends Construct {
     );
     role.addToPolicy(
       new iam.PolicyStatement({
+        sid: "ReadEvalsCapture",
+        // D110 (9): whether the canary verified the evals harness, before binding its key again.
+        actions: ["dynamodb:GetItem"],
+        resources: [props.settingsTable.tableArn],
+        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["EVALS"] } },
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
         sid: "WriteAuditIndex",
         actions: ["dynamodb:PutItem"],
         resources: [props.auditIndex.tableArn],

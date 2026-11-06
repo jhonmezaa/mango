@@ -362,6 +362,7 @@ class FakeLogs:
     def __init__(self) -> None:
         self.groups: dict[str, dict[str, Any]] = {}
         self.deleted: list[str] = []
+        self.disassociated: list[str] = []
 
     def create_log_group(self, **kwargs: Any) -> None:
         name = kwargs["logGroupName"]
@@ -371,6 +372,10 @@ class FakeLogs:
 
     def associate_kms_key(self, **kwargs: Any) -> None:
         self.groups[kwargs["logGroupName"]]["kms"] = kwargs["kmsKeyId"]
+
+    def disassociate_kms_key(self, **kwargs: Any) -> None:
+        self.disassociated.append(kwargs["logGroupName"])
+        self.groups[kwargs["logGroupName"]]["kms"] = None
 
     def tag_resource(self, **kwargs: Any) -> None:
         prefix = f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:"

@@ -26,11 +26,18 @@ def govern_log_groups(
     key_arn: str,
     tags: Mapping[str, str],
     arn_of: Callable[[str], str],
+    *,
+    rebind: bool = False,
 ) -> None:
     """Create or adopt each log group with the key and the retention of D16, and the tags.
 
     A log group AgentCore created first is adopted: it gets the key, the retention and the
     same tags as one created here, the stack's included (D76).
+
+    ``rebind`` (only the evals harness, D110 (9)): an adopted log group gets its key taken off
+    and associated again. Associating the key seconds after AgentCore set the unified span
+    destination up left X-Ray delivering nothing, with no error anywhere; associating the same
+    key again is a no-op, and only taking it off and back repaired it (2026-11-06).
     """
     for name in names:
         try:
@@ -39,6 +46,8 @@ def govern_log_groups(
             except ClientError as exc:
                 if error_code(exc) != "ResourceAlreadyExistsException":
                     raise
+                if rebind:
+                    logs.disassociate_kms_key(logGroupName=name)
                 logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
                 logs.tag_resource(resourceArn=arn_of(name), tags=dict(tags))
             logs.put_retention_policy(logGroupName=name, retentionInDays=RUNTIME_LOG_RETENTION_DAYS)
@@ -62,9 +71,11 @@ class RuntimeLogs:
         self._logs = logs
         self._settings = settings
 
-    def govern(self, agent_id: str, runtime_id: str, key_arn: str | None = None) -> None:
+    def govern(
+        self, agent_id: str, runtime_id: str, key_arn: str | None = None, *, rebind: bool = False
+    ) -> None:
         """``key_arn``: the evals harness has a key of its own (D110 (3)); the others share the
-        runtime logs key."""
+        runtime logs key. ``rebind``: see :func:`govern_log_groups`."""
         settings = self._settings
         govern_log_groups(
             self._logs,
@@ -72,6 +83,7 @@ class RuntimeLogs:
             key_arn or settings.runtime_logs_key_arn,
             settings.tags(agent_id),
             settings.log_group_arn,
+            rebind=rebind,
         )
 
     def delete(self, runtime_id: str) -> None:

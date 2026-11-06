@@ -584,3 +584,37 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     for (const role of others) expect(JSON.stringify(role.Properties.ManagedPolicyArns ?? [])).toMatch(/ContentDeny/);
   });
 });
+
+describe("who may take the evals key off in a release (D110 (9))", () => {
+  // The namespace is a parameter here: the exception must name the provisioner by the same
+  // expression its role is created with, never by a name CDK compared (a token, finding of
+  // 2026-11-06).
+  const resolve = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (value === undefined || value === null || typeof value !== "object") return "";
+    const v = value as Record<string, unknown>;
+    if ("Ref" in v) return `{${String(v.Ref)}}`;
+    if ("Fn::Join" in v) {
+      const [sep, parts] = v["Fn::Join"] as [string, unknown[]];
+      return parts.map(resolve).join(sep);
+    }
+    return JSON.stringify(v);
+  };
+  const policies = Object.values(withNested.Resources).filter(
+    (r) => r.Type === "AWS::IAM::ManagedPolicy" && resolve(r.Properties.ManagedPolicyName).endsWith("-evals-content-deny"),
+  );
+  const provisioner = Object.values(withNested.Resources).find(
+    (r) => r.Type === "AWS::IAM::Role" && resolve(r.Properties.RoleName ?? "").endsWith("-Provisioner"),
+  )!;
+
+  it("exempts the provisioner by its full role ARN, the same expression as its RoleName", () => {
+    expect(policies).toHaveLength(1);
+    const removal = (policies[0]!.Properties.PolicyDocument.Statement as { Sid: string; Condition: any }[]).find(
+      (s) => s.Sid === "NoEvalsKeyRemoval",
+    )!;
+    const exempt = resolve(removal.Condition.ArnNotEquals["aws:PrincipalArn"]);
+    const roleName = resolve(provisioner.Properties.RoleName);
+    expect(roleName).toContain("{Namespace}");
+    expect(exempt).toBe(`arn:aws:iam::{AWS::AccountId}:role/${roleName}`);
+  });
+});

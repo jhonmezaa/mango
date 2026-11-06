@@ -124,7 +124,17 @@ describe("who reads the evals content: IAM (D110 (8), 2026-11-06)", () => {
     expect(account.Effect).toBe("Deny");
     expect(resourcesOf(account)).toEqual(["*"]);
     expect(actions(account)).toEqual([...ACCOUNT_LOG_EXPORT_ACTIONS]);
-    expect(denyStatements).toHaveLength(2);
+    expect(denyStatements).toHaveLength(3);
+  });
+
+  it("lets only the provisioner take the key off, by its full ARN (D110 (9))", () => {
+    const removal = denyStatements.find((s) => s.Sid === "NoEvalsKeyRemoval")!;
+    expect(removal.Effect).toBe("Deny");
+    expect(actions(removal)).toEqual(["logs:DisassociateKmsKey"]);
+    expect(resourcesOf(removal)).toEqual([evalLogGroups]);
+    expect(JSON.stringify(removal.Condition)).toContain(`:role/Mango-${ns}-Provisioner`);
+    expect(Object.keys(removal.Condition as object)).toEqual(["ArnNotEquals"]);
+    expect(actions(denyStatements.find((s) => s.Sid === "NoEvalsContent")!)).not.toContain("logs:DisassociateKmsKey");
   });
 
   it("never denies what the evals harness writes with nor what the provisioner sets on its log groups", () => {
@@ -154,6 +164,7 @@ describe("who reads the evals content: IAM (D110 (8), 2026-11-06)", () => {
       expect(actions(content)).toEqual([...EVALS_CONTENT_ACTIONS]);
       expect(resourcesOf(content)).toEqual([evalLogGroups]);
       expect(statements.find((s) => s.Sid === "NoAccountWideLogExport")?.Effect, name).toBe("Deny");
+      expect(statements.find((s) => s.Sid === "NoEvalsKeyRemoval")?.Effect, name).toBe("Deny");
     }
   });
 });
