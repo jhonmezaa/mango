@@ -43,7 +43,14 @@ from mango_core import usage_days
 from mango_core.playground import PLAYGROUND_ID
 from mango_cur_reconciler import query
 from mango_cur_reconciler.audit import EVENT_RECONCILED, AuditWriter
-from mango_cur_reconciler.compare import MAX_DEVIATIONS, Comparison, Sorted, compare, sort
+from mango_cur_reconciler.compare import (
+    MAX_DEVIATIONS,
+    Bedrock,
+    Comparison,
+    Sorted,
+    compare,
+    sort,
+)
 from mango_cur_reconciler.config import Settings
 
 if TYPE_CHECKING:
@@ -149,9 +156,8 @@ class CurReconciler:
         if not rows:
             report = Report(STATUS_NO_DATA, {**base, "status": STATUS_NO_DATA}, 0, 0, 0)
             return self._finish(report, now)
-        sorted_rows = sort(
-            rows, account=s.account_id, products=s.product_codes, prefix=s.agent_role_prefix
-        )
+        bedrock = Bedrock(s.product_codes, s.marketplace_entity, s.product_family)
+        sorted_rows = sort(rows, account=s.account_id, bedrock=bedrock, prefix=s.agent_role_prefix)
         if sorted_rows.unexpected:
             # Nothing of what was read is compared or described: only how much there was.
             report = Report(

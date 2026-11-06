@@ -11,6 +11,7 @@
   "budgets": { "userMonthlyUsd": 5, "agentMonthlyUsd": 30 },
   "curReconciliation": {
     "bedrockProductCodes": ["AmazonBedrock", "AmazonBedrockService"],
+    "bedrockMarketplace": { "billingEntity": "AWS Marketplace", "productFamily": "Amazon Bedrock" },
     "thresholdPercent": 10,
     "thresholdUsd": 1
   }

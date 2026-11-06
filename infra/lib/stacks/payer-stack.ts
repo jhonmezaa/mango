@@ -296,7 +296,9 @@ export class PayerStack extends Stack {
    * release and the stack parameters, never from whoever installs:
    *
    * - the rows: the usage account is the Mango account and the product is Bedrock, with the
-   *   product codes of the release (`curReconciliation.bedrockProductCodes`, rule 7; TM-CUR1);
+   *   product codes of the release (`curReconciliation.bedrockProductCodes`, rule 7; TM-CUR1), or
+   *   a Bedrock model sold through AWS Marketplace (`bedrockMarketplace`, precision of
+   *   2026-11-06);
    * - delivered to a bucket of the Mango account (`S3BucketOwner`), never one of this account;
    * - deleted with the stack or when the parameter is emptied: the files already delivered stay
    *   in the bucket (Data Exports does not delete them).
@@ -335,6 +337,7 @@ export class PayerStack extends Stack {
           queryStatement: curExportQuery(
             cfg.mangoAccountId,
             loadReleaseDefaults().curReconciliation.bedrockProductCodes,
+            loadReleaseDefaults().curReconciliation.bedrockMarketplace,
           ),
           tableConfigurations: { [CUR_TABLE]: { ...CUR_TABLE_CONFIGURATION } },
         },

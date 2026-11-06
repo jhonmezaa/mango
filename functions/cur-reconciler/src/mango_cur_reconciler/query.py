@@ -1,5 +1,5 @@
 """The one Athena query of a run (D104 (6), TM-CUR6): the CUR 2.0 rows of the window, summed by
-day, usage account, product, caller and kind of usage.
+day, usage account, product (its code, billing entity and family), caller and kind of usage.
 
 Its text is fixed by this module; only the dates travel, as execution parameters. It does not
 filter by account or product: the rows that are not of the installation's account or of
@@ -19,27 +19,37 @@ from typing import TYPE_CHECKING, Any, Final
 if TYPE_CHECKING:
     from mypy_boto3_athena import AthenaClient
 
-TOKEN_USAGE: Final = r"(input-tokens|output-tokens|input-token-count)"  # noqa: S105
-"""The usage types of model tokens (input, output, cache read and cache write), as Bedrock's
-CUR guide names them (``cost-mgmt-understanding-cur-data``). What Mango counts per turn is model
-tokens; anything else of Bedrock (a guardrail, for one) is reported apart and never compared."""
+TOKEN_USAGE: Final = r"([Ii]nput|[Oo]utput)[-_]{0,1}[Tt]oken"  # noqa: S105
+"""The usage types of model tokens (input, output, cache read and cache write). Bedrock's own rows
+name them as its CUR guide does (``USE1-Claude4.6Sonnet-input-tokens``,
+``…-cache-read-input-token-count``; ``cost-mgmt-understanding-cur-data``); the rows of a model
+sold through AWS Marketplace in Marketplace's way (``USE1-MP:USE1_InputTokenCount-Units``,
+``…_CacheReadInputTokenCount-Units``, ``APN1-MP:APN1_output_tokens_global_standard-Units``).
+What Mango counts per turn is model tokens; anything else of Bedrock (a guardrail, for one) is
+reported apart and never compared. No ``?`` in it: Athena's execution parameters are ``?``."""
 
 _SQL: Final = """
 SELECT
   date_format(line_item_usage_start_date, '%Y-%m-%d') AS day,
   line_item_usage_account_id AS account,
   line_item_product_code AS product,
+  coalesce(bill_billing_entity, '') AS entity,
+  coalesce(product_product_family, '') AS family,
   coalesce(line_item_iam_principal, '') AS principal,
   regexp_like(line_item_usage_type, '{tokens}') AS tokens,
   line_item_line_item_type AS kind,
-  sum(coalesce(pricing_public_on_demand_cost, 0)) AS list_cost,
+  sum(coalesce(pricing_public_on_demand_cost, line_item_unblended_cost, 0)) AS list_cost,
   count(*) AS line_items
 FROM "{database}"."{table}"
 WHERE billing_period BETWEEN ? AND ?
   AND line_item_usage_start_date >= CAST(? AS timestamp)
   AND line_item_usage_start_date < CAST(? AS timestamp)
-GROUP BY 1, 2, 3, 4, 5, 6
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 """
+"""The list price is the public on-demand cost. Where a row has none, the unblended cost stands in
+for it: whether the rows of AWS Marketplace carry a public on-demand cost is not documented, and
+Marketplace's model prices are list prices (D104, precision of 2026-11-06). The files delivered
+before that precision have no billing entity nor product family: they read as empty."""
 
 _DONE: Final = frozenset({"SUCCEEDED", "FAILED", "CANCELLED"})
 _PAGE: Final = 1000
@@ -56,6 +66,10 @@ class Row:
     day: str
     account: str
     product: str
+    entity: str
+    """``bill_billing_entity``: ``AWS`` or ``AWS Marketplace``."""
+    family: str
+    """``product_product_family``: ``Amazon Bedrock`` on every Bedrock line item."""
     principal: str
     tokens: bool
     kind: str
@@ -83,7 +97,7 @@ def _next_day(day: str) -> str:
 
 
 def _row(values: list[str]) -> Row:
-    day, account, product, principal, tokens, kind, cost, count = values
+    day, account, product, entity, family, principal, tokens, kind, cost, count = values
     try:
         amount = Decimal(cost or "0")
         items = int(count or "0")
@@ -95,6 +109,8 @@ def _row(values: list[str]) -> Row:
         day=day,
         account=account,
         product=product,
+        entity=entity,
+        family=family,
         principal=principal,
         tokens=tokens == "true",
         kind=kind,

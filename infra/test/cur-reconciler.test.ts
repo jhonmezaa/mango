@@ -264,6 +264,10 @@ describe("CurReconciler function (D104 (7), TM-CUR7)", () => {
     const env = fn.Properties.Environment.Variables;
     const defaults = loadReleaseDefaults().curReconciliation;
     expect(env.BEDROCK_PRODUCT_CODES).toBe(defaults.bedrockProductCodes.join(","));
+    expect([env.MARKETPLACE_BILLING_ENTITY, env.BEDROCK_PRODUCT_FAMILY]).toEqual([
+      defaults.bedrockMarketplace.billingEntity,
+      defaults.bedrockMarketplace.productFamily,
+    ]);
     expect([env.THRESHOLD_PERCENT, env.THRESHOLD_USD]).toEqual(["10", "1"]);
     expect([env.CUR_DATABASE, env.CUR_TABLE, env.CUR_WORKGROUP]).toEqual([`mango_${ns}_cur`, "bedrock", `Mango-${ns}-cur`]);
     expect(env.MANGO_ACCOUNT_ID).toBe(account);

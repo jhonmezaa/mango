@@ -13,6 +13,7 @@ _ACCOUNT_RE = re.compile(r"^[0-9]{12}$")
 _NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,255}$")
 _GLUE_RE = re.compile(r"^[a-z0-9_]{1,128}$")
 _PRODUCT_RE = re.compile(r"^[A-Za-z0-9_.-]{2,64}$")
+_WORDS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,62}[A-Za-z0-9]$")
 MAX_PRODUCT_CODES = 10
 
 
@@ -32,7 +33,12 @@ class Settings:
     table: str
     workgroup: str
     product_codes: frozenset[str]
-    """Bedrock's product codes in the bill; any other one is an unexpected row."""
+    """Bedrock's product codes in the bill."""
+    marketplace_entity: str
+    product_family: str
+    """A Bedrock model sold through AWS Marketplace (precision of D104 of 2026-11-06): a row of
+    that billing entity and of Bedrock's product family, whatever its product code. Any other row
+    is an unexpected one."""
     threshold_percent: Decimal
     threshold_usd: Decimal
     """A day of an agent deviates when the difference passes both thresholds."""
@@ -57,6 +63,8 @@ class Settings:
                 table=env["CUR_TABLE"],
                 workgroup=env["CUR_WORKGROUP"],
                 product_codes=codes,
+                marketplace_entity=env["MARKETPLACE_BILLING_ENTITY"],
+                product_family=env["BEDROCK_PRODUCT_FAMILY"],
                 threshold_percent=Decimal(env["THRESHOLD_PERCENT"]),
                 threshold_usd=Decimal(env["THRESHOLD_USD"]),
             )
@@ -85,6 +93,10 @@ class Settings:
             or not all(_PRODUCT_RE.fullmatch(c) for c in codes)
         ):
             raise ConfigError("invalid BEDROCK_PRODUCT_CODES")
+        if not _WORDS_RE.fullmatch(settings.marketplace_entity) or not _WORDS_RE.fullmatch(
+            settings.product_family
+        ):
+            raise ConfigError("invalid MARKETPLACE_BILLING_ENTITY or BEDROCK_PRODUCT_FAMILY")
         for value in (settings.threshold_percent, settings.threshold_usd):
             if not value.is_finite() or value < 0:
                 raise ConfigError("invalid threshold")

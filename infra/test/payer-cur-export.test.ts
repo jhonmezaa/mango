@@ -30,6 +30,7 @@ const exports = Object.values(installed.Resources).filter((r) => r.Type === "AWS
 const theExport = exports[0]!;
 const props = theExport.Properties.Export;
 const codes = loadReleaseDefaults().curReconciliation.bedrockProductCodes;
+const marketplace = loadReleaseDefaults().curReconciliation.bedrockMarketplace;
 
 describe("the CUR 2.0 export of the Payer stack (D104 (4), precision of 2026-11-05)", () => {
   it("is one export, named with the namespace, where the Glue table of Core reads", () => {
@@ -53,19 +54,34 @@ describe("the CUR 2.0 export of the Payer stack (D104 (4), precision of 2026-11-
 
   it("cuts the rows down to Bedrock of the Mango account, with the product codes of the release (TM-CUR1)", () => {
     const query: string = props.DataQuery.QueryStatement;
-    expect(query).toBe(curExportQuery(cfg.mangoAccountId, codes));
+    expect(query).toBe(curExportQuery(cfg.mangoAccountId, codes, marketplace));
     const where = query.slice(query.indexOf(" WHERE "));
     expect(where).toBe(
-      ` WHERE line_item_usage_account_id = '${cfg.mangoAccountId}' AND line_item_product_code IN (` +
+      ` WHERE line_item_usage_account_id = '${cfg.mangoAccountId}' AND (line_item_product_code IN (` +
         codes.map((c) => `'${c}'`).join(", ") +
-        ")",
+        ") OR (bill_billing_entity = 'AWS Marketplace' AND product_product_family = 'Amazon Bedrock'))",
     );
     expect(query.startsWith(`SELECT ${CUR_COLUMNS.map((c) => c.name).join(", ")} FROM COST_AND_USAGE_REPORT`)).toBe(true);
   });
 
-  it("refuses a product code that could break out of the quotes", () => {
-    expect(() => curExportQuery("111122223333", ["AmazonBedrock') OR ('1'='1"])).toThrow();
-    expect(() => curExportQuery("111122223333", [])).toThrow();
+  it("brings the Bedrock models sold through AWS Marketplace, and no other Marketplace product (precision of 2026-11-06)", () => {
+    expect(marketplace).toEqual({ billingEntity: "AWS Marketplace", productFamily: "Amazon Bedrock" });
+    const query: string = props.DataQuery.QueryStatement;
+    // Both conditions of the Marketplace rows go together, inside the account's condition.
+    expect(query).toContain("OR (bill_billing_entity = 'AWS Marketplace' AND product_product_family = 'Amazon Bedrock'))");
+    expect(query).not.toMatch(/LIKE/i);
+    for (const column of ["bill_billing_entity", "product_product_family"]) {
+      expect(CUR_COLUMNS.map((c) => c.name)).toContain(column);
+    }
+  });
+
+  it("refuses a value that could break out of the quotes", () => {
+    expect(() => curExportQuery("111122223333", ["AmazonBedrock') OR ('1'='1"], marketplace)).toThrow();
+    expect(() => curExportQuery("111122223333", [], marketplace)).toThrow();
+    expect(() =>
+      curExportQuery("111122223333", codes, { billingEntity: "AWS Marketplace' OR '1'='1", productFamily: "Amazon Bedrock" }),
+    ).toThrow();
+    expect(() => curExportQuery("111122223333", codes, { billingEntity: "AWS Marketplace", productFamily: "" })).toThrow();
   });
 
   it("asks for the caller's identity, daily", () => {
@@ -111,7 +127,7 @@ describe("the CUR 2.0 export of the Payer stack (D104 (4), precision of 2026-11-
 
   it("the runbook gives the same query and table configuration for the API fallback", () => {
     const runbook = readFileSync(resolve(import.meta.dirname, "../../docs/runbooks/install.md"), "utf8");
-    expect(runbook).toContain(curExportQuery("111122223333", codes));
+    expect(runbook).toContain(curExportQuery("111122223333", codes, marketplace));
     for (const [key, value] of Object.entries(CUR_TABLE_CONFIGURATION)) {
       expect(runbook).toContain(`"${key}": "${value}"`);
     }

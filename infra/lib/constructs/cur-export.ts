@@ -30,6 +30,8 @@ export const CUR_COLUMNS: ReadonlyArray<{ name: string; type: string }> = [
   { name: "line_item_usage_start_date", type: "timestamp" },
   { name: "line_item_usage_account_id", type: "string" },
   { name: "line_item_product_code", type: "string" },
+  { name: "bill_billing_entity", type: "string" },
+  { name: "product_product_family", type: "string" },
   { name: "line_item_usage_type", type: "string" },
   { name: "line_item_line_item_type", type: "string" },
   { name: "line_item_unblended_cost", type: "double" },
@@ -52,23 +54,47 @@ export const CUR_TABLE_CONFIGURATION: Readonly<Record<string, string>> = {
 
 /** A product code goes into the query between quotes: never a quote or a space (TM-CUR1). */
 const PRODUCT_CODE = /^[A-Za-z0-9_.-]{2,64}$/;
+/** A billing entity or a product family: words, never a quote (TM-CUR1). */
+const QUOTED_WORDS = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,62}[A-Za-z0-9]$/;
+
+/**
+ * The models of other providers (Anthropic's Claude, for one) are billed as products of AWS
+ * Marketplace, each with a product code of its own (precision of D104 of 2026-11-06): their rows
+ * are those of the billing entity `AWS Marketplace` whose product family is Bedrock's
+ * (`product_product_family` is `Amazon Bedrock` on every Bedrock line item,
+ * `cur/latest/userguide/table-dictionary-cur2-product`).
+ */
+export interface BedrockMarketplace {
+  readonly billingEntity: string;
+  readonly productFamily: string;
+}
 
 /**
  * The query of the export (D104 (5), TM-CUR1): only the columns the reconciliation reads, and
- * only the rows whose usage account is the Mango account and whose product is Bedrock. The rest
- * of the organization's spend never leaves the payer. `mangoAccountId` may be a token (the
- * `MangoAccountId` parameter, twelve digits by its pattern).
+ * only the rows whose usage account is the Mango account and that are Bedrock's: its product
+ * codes, or a model of Bedrock sold through AWS Marketplace. The rest of the organization's spend,
+ * and any other Marketplace product, never leaves the payer. The SQL of Data Exports has no
+ * `LIKE`: the rows are told by equality (`cur/latest/userguide/dataexports-data-query`).
+ * `mangoAccountId` may be a token (the `MangoAccountId` parameter, twelve digits by its pattern).
  */
-export function curExportQuery(mangoAccountId: string, productCodes: readonly string[]): string {
+export function curExportQuery(
+  mangoAccountId: string,
+  productCodes: readonly string[],
+  marketplace: BedrockMarketplace,
+): string {
   if (productCodes.length === 0) throw new Error("the export needs at least one Bedrock product code");
   for (const code of productCodes) {
     if (!PRODUCT_CODE.test(code)) throw new Error(`invalid product code: ${code}`);
+  }
+  for (const value of [marketplace.billingEntity, marketplace.productFamily]) {
+    if (!QUOTED_WORDS.test(value)) throw new Error(`invalid Marketplace value: ${value}`);
   }
   const columns = CUR_COLUMNS.map((c) => c.name).join(", ");
   const codes = productCodes.map((c) => `'${c}'`).join(", ");
   return (
     `SELECT ${columns} FROM ${CUR_TABLE} ` +
-    `WHERE line_item_usage_account_id = '${mangoAccountId}' AND line_item_product_code IN (${codes})`
+    `WHERE line_item_usage_account_id = '${mangoAccountId}' AND (line_item_product_code IN (${codes}) ` +
+    `OR (bill_billing_entity = '${marketplace.billingEntity}' AND product_product_family = '${marketplace.productFamily}'))`
   );
 }
 

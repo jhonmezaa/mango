@@ -3,7 +3,11 @@
 The bill's rows (``query.Row``) are sorted into:
 
 * **unexpected**: a row of another usage account or of a product that is not Bedrock. One is
-  enough to refuse the whole run: the export was created without its query (TM-CUR1).
+  enough to refuse the whole run: the export was created without its query (TM-CUR1). A row is
+  Bedrock's by its product code, or, for the models of other providers, which AWS Marketplace
+  bills with a product code per model, by its billing entity (``AWS Marketplace``) and
+  product family (``Amazon Bedrock``; precision of D104 of 2026-11-06). Any other Marketplace
+  row is unexpected.
 * **agent**: model tokens billed to a role ``Mango-<ns>-agent-<id>`` (an agent or the
   Playground): compared, per day, with ``DAY#AGENT#<id>``.
 * **unattributed**, reported in a row of its own and never compared: the tokens of any other
@@ -89,14 +93,28 @@ class Sorted:
     line_items: int = 0
 
 
-def sort(rows: Iterable[Row], *, account: str, products: frozenset[str], prefix: str) -> Sorted:
+@dataclass(frozen=True)
+class Bedrock:
+    """What makes a row of the bill Bedrock's (``config.Settings``)."""
+
+    product_codes: frozenset[str]
+    marketplace_entity: str
+    product_family: str
+
+    def owns(self, row: Row) -> bool:
+        if row.product in self.product_codes:
+            return True
+        return row.entity == self.marketplace_entity and row.family == self.product_family
+
+
+def sort(rows: Iterable[Row], *, account: str, bedrock: Bedrock, prefix: str) -> Sorted:
     result = Sorted()
     agents: defaultdict[str, defaultdict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
     total: defaultdict[str, Decimal] = defaultdict(Decimal)
     unattributed: defaultdict[str, Decimal] = defaultdict(Decimal)
     for row in rows:
         result.line_items += row.line_items
-        if row.account != account or row.product not in products:
+        if row.account != account or not bedrock.owns(row):
             result.unexpected += row.line_items
             continue
         if row.kind != USAGE:

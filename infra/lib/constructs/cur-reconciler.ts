@@ -250,6 +250,8 @@ export class CurReconciler extends Construct {
         CUR_TABLE: curNames.table,
         CUR_WORKGROUP: workgroupName,
         BEDROCK_PRODUCT_CODES: settings.bedrockProductCodes.join(","),
+        MARKETPLACE_BILLING_ENTITY: settings.bedrockMarketplace.billingEntity,
+        BEDROCK_PRODUCT_FAMILY: settings.bedrockMarketplace.productFamily,
         THRESHOLD_PERCENT: String(settings.thresholdPercent),
         THRESHOLD_USD: String(settings.thresholdUsd),
       },

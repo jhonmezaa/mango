@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -20,6 +21,7 @@ from mango_cur_reconciler.compare import (
     UNATTRIBUTED_BEFORE_COUNTER,
     UNATTRIBUTED_NOT_TOKENS,
     UNATTRIBUTED_OTHER_CALLER,
+    Bedrock,
     agent_of,
     deviates,
     role_name,
@@ -49,10 +51,16 @@ ENV = {
     "CUR_TABLE": "bedrock",
     "CUR_WORKGROUP": "Mango-lab-cur",
     "BEDROCK_PRODUCT_CODES": "AmazonBedrock,AmazonBedrockService",
+    "MARKETPLACE_BILLING_ENTITY": "AWS Marketplace",
+    "BEDROCK_PRODUCT_FAMILY": "Amazon Bedrock",
     "THRESHOLD_PERCENT": "10",
     "THRESHOLD_USD": "1",
 }
 SETTINGS = Settings.from_env(ENV)
+BEDROCK = Bedrock(SETTINGS.product_codes, SETTINGS.marketplace_entity, SETTINGS.product_family)
+MARKETPLACE = "AWS Marketplace"
+CLAUDE = "a1b2c3d4e5f6g7h8i9j0k1l2m"
+"""A Marketplace product code: one per model, random-looking (synthetic)."""
 FINOPS = f"arn:aws:sts::{ACCOUNT}:assumed-role/Mango-lab-agent-finops/session-1"
 PLAYGROUND = f"arn:aws:iam::{ACCOUNT}:role/Mango-lab-agent-playground"
 API = f"arn:aws:sts::{ACCOUNT}:assumed-role/Mango-lab-ApiTask/task-1"
@@ -66,10 +74,19 @@ def row(
     tokens: bool = True,
     account: str = ACCOUNT,
     product: str = "AmazonBedrock",
+    entity: str = "AWS",
+    family: str = "Amazon Bedrock",
     kind: str = "Usage",
     items: int = 4,
 ) -> query.Row:
-    return query.Row(day, account, product, principal, tokens, kind, Decimal(cost), items)
+    return query.Row(
+        day, account, product, entity, family, principal, tokens, kind, Decimal(cost), items
+    )
+
+
+def claude(day: str, cost: str, **kwargs: Any) -> query.Row:
+    """A row of a Bedrock model sold through AWS Marketplace."""
+    return row(day, cost, **{"product": CLAUDE, "entity": MARKETPLACE, **kwargs})
 
 
 @dataclass
@@ -150,6 +167,8 @@ def test_settings_refuse_what_the_stack_never_sets() -> None:
         ("CUR_DATABASE", 'x"; DROP'),
         ("BEDROCK_PRODUCT_CODES", ""),
         ("BEDROCK_PRODUCT_CODES", "Amazon Bedrock"),
+        ("MARKETPLACE_BILLING_ENTITY", "AWS Marketplace' OR '1'='1"),
+        ("BEDROCK_PRODUCT_FAMILY", ""),
         ("THRESHOLD_PERCENT", "-1"),
         ("THRESHOLD_USD", "abc"),
     ):
@@ -171,6 +190,8 @@ def test_one_fixed_query_with_the_dates_as_parameters() -> None:
     assert statement.count("?") == 4
     # Not filtered by account or product: what does not belong must be seen (TM-CUR1).
     assert "line_item_usage_account_id =" not in statement
+    assert "bill_billing_entity" in statement and "product_product_family" in statement
+    assert "coalesce(pricing_public_on_demand_cost, line_item_unblended_cost, 0)" in statement
     assert query.parameters("2026-10-16", "2026-11-18") == [
         "'2026-10'",
         "'2026-11'",
@@ -206,10 +227,57 @@ def _cells(*values: str) -> dict[str, Any]:
     return {"Data": [{"VarCharValue": v} for v in values]}
 
 
+def test_the_token_usage_types_of_bedrock_and_of_marketplace() -> None:
+    tokens = re.compile(query.TOKEN_USAGE)
+    for usage in (
+        "USE1-Claude4.6Sonnet-input-tokens",
+        "USE1-Claude4.6Sonnet-output-tokens-cross-region-global",
+        "USE1-Claude4.6Sonnet-cache-read-input-token-count",
+        "USE1-Claude4.6Sonnet-cache-write-input-token-count",
+        "USE1-openai.gpt-oss-120b-mantle-input-tokens-standard",
+        "USE1-MP:USE1_InputTokenCount-Units",
+        "USE1-MP:USE1_OutputTokenCount-Units",
+        "USE1-MP:USE1_CacheReadInputTokenCount-Units",
+        "USE1-MP:USE1_CacheWriteInputTokenCount-Units",
+        "APN1-MP:APN1_output_tokens_global_standard-Units",
+    ):
+        assert tokens.search(usage), usage
+    for usage in (
+        "USE1-ContentPolicyUnitsConsumed",
+        "USE1-guardrail-text-units",
+        "USE1-MP:USE1_Hours",
+    ):
+        assert not tokens.search(usage), usage
+
+
 def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
-    header = _cells("day", "account", "product", "principal", "tokens", "kind", "list_cost", "n")
-    first = _cells("2026-11-01", ACCOUNT, "AmazonBedrock", FINOPS, "true", "Usage", "1.5", "3")
-    second = _cells("2026-11-02", ACCOUNT, "AmazonBedrock", "", "false", "Usage", "0.2", "1")
+    header = _cells(
+        "day", "account", "product", "entity", "family", "principal", "tokens", "kind", "c", "n"
+    )
+    first = _cells(
+        "2026-11-01",
+        ACCOUNT,
+        CLAUDE,
+        MARKETPLACE,
+        "Amazon Bedrock",
+        FINOPS,
+        "true",
+        "Usage",
+        "1.5",
+        "3",
+    )
+    second = _cells(
+        "2026-11-02",
+        ACCOUNT,
+        "AmazonBedrock",
+        "AWS",
+        "Amazon Bedrock",
+        "",
+        "false",
+        "Usage",
+        "0.2",
+        "1",
+    )
     client = FakeAthenaClient(
         ["RUNNING", "SUCCEEDED"],
         [
@@ -227,9 +295,9 @@ def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
             "ExecutionParameters": ["'x'"],
         }
     ]
-    assert [(r.day, r.tokens, r.list_cost, r.line_items) for r in rows] == [
-        ("2026-11-01", True, Decimal("1.5"), 3),
-        ("2026-11-02", False, Decimal("0.2"), 1),
+    assert [(r.day, r.entity, r.tokens, r.list_cost, r.line_items) for r in rows] == [
+        ("2026-11-01", MARKETPLACE, True, Decimal("1.5"), 3),
+        ("2026-11-02", "AWS", False, Decimal("0.2"), 1),
     ]
 
 
@@ -273,7 +341,7 @@ def test_the_bill_is_sorted_into_agents_total_and_unattributed() -> None:
             row("2026-11-01", "9", kind="Credit"),
         ],
         account=ACCOUNT,
-        products=SETTINGS.product_codes,
+        bedrock=BEDROCK,
         prefix=SETTINGS.agent_role_prefix,
     )
     assert sorted_rows.unexpected == 0
@@ -286,6 +354,51 @@ def test_the_bill_is_sorted_into_agents_total_and_unattributed() -> None:
         UNATTRIBUTED_OTHER_CALLER: Decimal("0.25"),
         UNATTRIBUTED_NOT_TOKENS: Decimal("0.75"),
     }
+
+
+def test_the_marketplace_rows_of_a_bedrock_model_count_like_bedrock_s() -> None:
+    """Claude on Bedrock is billed as a product of AWS Marketplace (D104, 2026-11-06)."""
+    sorted_rows = sort(
+        [
+            row("2026-11-01", "0.5"),
+            claude("2026-11-01", "3"),
+            claude("2026-11-01", "1", principal=PLAYGROUND),
+            claude("2026-11-01", "0.25", principal=API),
+            claude("2026-11-01", "0.1", tokens=False),
+            # Another model of Marketplace: another product code, the same entity and family.
+            claude("2026-11-02", "2", product="z9y8x7w6v5u4t3s2r1q0p9o8n"),
+        ],
+        account=ACCOUNT,
+        bedrock=BEDROCK,
+        prefix=SETTINGS.agent_role_prefix,
+    )
+    assert sorted_rows.unexpected == 0
+    assert sorted_rows.agents == {
+        "finops": {"2026-11-01": Decimal("3.5"), "2026-11-02": Decimal(2)},
+        "playground": {"2026-11-01": Decimal(1)},
+    }
+    assert sorted_rows.total == {"2026-11-01": Decimal("4.75"), "2026-11-02": Decimal(2)}
+    assert sorted_rows.unattributed == {
+        UNATTRIBUTED_OTHER_CALLER: Decimal("0.25"),
+        UNATTRIBUTED_NOT_TOKENS: Decimal("0.1"),
+    }
+
+
+def test_a_marketplace_row_that_is_not_a_bedrock_model_is_unexpected() -> None:
+    for foreign in (
+        claude("2026-11-01", "5", family="Software", items=2),
+        claude("2026-11-01", "5", family="", items=2),
+        claude("2026-11-01", "5", account=OTHER_ACCOUNT, items=2),
+        # Bedrock's family under AWS, but with a product code that is not Bedrock's.
+        row("2026-11-01", "5", product="AmazonSageMaker", items=2),
+    ):
+        sorted_rows = sort(
+            [claude("2026-11-01", "3"), foreign],
+            account=ACCOUNT,
+            bedrock=BEDROCK,
+            prefix=SETTINGS.agent_role_prefix,
+        )
+        assert sorted_rows.unexpected == 2, foreign
 
 
 def test_both_thresholds_must_be_passed() -> None:
@@ -374,6 +487,27 @@ def test_agents_and_the_organization_are_compared_from_the_day_after_the_first_c
     assert (printed["Findings"], printed["Deviations"], printed["NoData"]) == (2, 2, 0)
     # Read only: the counters are as they were.
     assert usage_days.read(db, TABLE, "DAY#AGENT#finops", "2026-11-02", "2026-11-02")[0].spent == 3
+
+
+def test_the_spend_of_claude_billed_by_marketplace_reconciles(db: Any) -> None:
+    """The case of the installation: Claude's tokens are Marketplace rows, Bedrock's own rows are
+    only what is not model tokens. Before the precision of 2026-11-06 the bill read 0 USD."""
+    count(db, "DAY#AGENT#finops", "2026-10-30", "0.1")
+    count(db, usage_days.ORG_KEY, "2026-10-30", "0.1")
+    for day, spent in (("2026-11-01", "3.4"), ("2026-11-02", "4.8")):
+        count(db, "DAY#AGENT#finops", day, spent)
+        count(db, usage_days.ORG_KEY, day, spent)
+    rows = [
+        claude("2026-11-01", "3.35"),
+        claude("2026-11-02", "4.78"),
+        row("2026-11-01", "0.06", tokens=False),
+        row("2026-11-02", "0.06", tokens=False),
+    ]
+    detail = make(db, rows).go()
+    assert detail["status"] == STATUS_RECONCILED
+    assert detail["deviations"] == 0
+    assert detail["cur_usd"] == "8.130000"
+    assert detail["unattributed_usd"] == {UNATTRIBUTED_NOT_TOKENS: "0.120000"}
 
 
 def test_an_agent_the_bill_charges_and_mango_never_counted_deviates(db: Any) -> None:
