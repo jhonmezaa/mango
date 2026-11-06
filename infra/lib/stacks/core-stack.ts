@@ -780,7 +780,7 @@ export class CoreStack extends Stack {
 
     Aspects.of(this).add(new ShortKeyDeletionWindow());
     // D110 (8): every role of Core and of its nested stacks, but the evaluator's.
-    Aspects.of(this).add(new DenyEvalsContent(evalsCapture, roleNames.evalJudge(cfg.namespace)));
+    Aspects.of(this).add(new DenyEvalsContent(evalsCapture, evalJudge.judge.role));
     evalsCapture.denyInBoundary(knowledge.sourceBoundary);
     evalsCapture.denyInBoundary(packPlatform.boundary);
     Aspects.of(this).add(new GuardSuppressions());

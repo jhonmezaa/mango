@@ -311,13 +311,14 @@ export class EvalsCapture extends Construct {
 export class DenyEvalsContent implements IAspect {
   constructor(
     private readonly capture: EvalsCapture,
-    private readonly evaluatorRoleName: string,
+    // The role itself, not its name: in a release the name is a token (the Namespace parameter,
+    // passed again into the nested stack), which never equals the name the stack computes.
+    private readonly evaluator: iam.IRole,
   ) {}
 
   visit(node: IConstruct): void {
     if (node instanceof iam.Role) {
-      const cfn = node.node.defaultChild as iam.CfnRole;
-      if (cfn.roleName === this.evaluatorRoleName) return;
+      if (node === this.evaluator) return;
       node.addManagedPolicy(this.capture.contentDeny);
       return;
     }

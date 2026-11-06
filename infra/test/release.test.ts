@@ -572,4 +572,15 @@ describe("uninstall guard (TM-D13, TM-D14)", () => {
     );
     expect(permissions).toHaveLength(0);
   });
+  it("leaves the evaluator out of the evals content Deny, with the namespace as a parameter (D110 (8))", () => {
+    const roles = Object.values(withNested.Resources).filter((r) => r.Type === "AWS::IAM::Role");
+    const isEvaluator = (r: Resource) => JSON.stringify(r.Properties.RoleName ?? "").includes("-EvalJudge");
+    const evaluator = roles.filter(isEvaluator);
+    expect(evaluator).toHaveLength(1);
+    expect(JSON.stringify(evaluator[0]?.Properties.ManagedPolicyArns ?? [])).not.toMatch(/ContentDeny/);
+    // Every other role of Core and of its nested stacks still carries it.
+    const others = roles.filter((r) => !isEvaluator(r));
+    expect(others.length).toBeGreaterThan(40);
+    for (const role of others) expect(JSON.stringify(role.Properties.ManagedPolicyArns ?? [])).toMatch(/ContentDeny/);
+  });
 });

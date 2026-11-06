@@ -81,6 +81,8 @@ export interface EvalJudgeProps {
  */
 export class EvalJudge extends Construct {
   readonly function: PythonFunction["function"];
+  /** The only role of Mango that reads the evals harness's log groups (D110 (8)). */
+  readonly role: iam.Role;
 
   constructor(scope: Construct, id: string, props: EvalJudgeProps) {
     super(scope, id);
@@ -120,11 +122,11 @@ export class EvalJudge extends Construct {
     });
 
     // --- The role --------------------------------------------------------------------------
-    const role = new iam.Role(this, "Role", {
+    const role = (this.role = new iam.Role(this, "Role", {
       roleName: roleNames.evalJudge(ns),
       description: "Evaluator of the evals: reads the evals harness traces and scores them (D110)",
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-    });
+    }));
     const allow = (sid: string, actions: string[], resources: string[], conditions?: Record<string, unknown>) =>
       role.addToPolicy(new iam.PolicyStatement({ sid, actions, resources, ...(conditions ? { conditions } : {}) }));
     allow("ReadTheEvalsTraces", ["logs:FilterLogEvents"], [logGroups, `${logGroups}:*`]);
