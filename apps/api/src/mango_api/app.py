@@ -856,8 +856,12 @@ def build_services(settings: Settings) -> Services:
                     boto3.client(
                         "lambda",
                         region_name=region,
+                        # One attempt: in the legacy mode `max_attempts` counts retries, and
+                        # a repeated 20 s reading only doubles the wait (obs-perf).
                         config=Config(
-                            read_timeout=TRACE_READER_TIMEOUT_SECONDS, retries={"max_attempts": 1}
+                            connect_timeout=3,
+                            read_timeout=TRACE_READER_TIMEOUT_SECONDS,
+                            retries={"total_max_attempts": 1},
                         ),
                     ),
                     settings.trace_reader_function,

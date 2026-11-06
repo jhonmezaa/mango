@@ -1,6 +1,6 @@
-# Observabilidad: trazas de los agentes: modelo de amenazas (v0.1)
+# Observabilidad: trazas de los agentes: modelo de amenazas (v0.2)
 
-> Fecha: 2026-11-05 · Skill: `security-threat-model`. Decisiones: D16, D23, D73, D90, D99, **D108** (b) y **D109** (b), acordadas por el dueño por menú el 2026-11-05.
+> Fecha: 2026-11-05 · Skill: `security-threat-model`. Decisiones: D16, D23, D73, D90, D99, **D108** (b) y **D109** (b), acordadas por el dueño por menú el 2026-11-05, y **D113** (Logs Insights en el lector, elegida por el dueño por menú el 2026-11-06; v0.2 de este modelo, TM-OB8).
 > Amplía `budget-reconciliation-threat-model.md` (la otra lectora de `aws/spans`) y `activity-threat-model.md` (metadatos de tools sin contenido).
 > Alcance: la función `Mango-<ns>-TraceReader` (`functions/trace-reader`, en el stack anidado `Observability` de `Core`), la referencia de turno `TRACEREF#<día>` que `mango-api` escribe en `AuditIndex`, la ruta `GET /api/observability` (`apps/api/src/mango_api/observability.py`) y la política Cedar `policies/cedar/platform/observability-view.cedar`. La pantalla espera a Claude Design (D24).
 > Se escribe **antes** de construir (regla de `AGENTS.md`), con las precisiones del 2026-11-05 (por menú, vía el agente principal): leer **los dos destinos** posibles de los spans (`aws/spans` y el stream `spans` del log group de cada runtime) y asociar cada traza a su persona con una **referencia de turno** escrita por `mango-api`. Nada está desplegado.
@@ -27,7 +27,7 @@ Controles que se construyen:
 - **La persona solo sale de Mango, nunca del span:** la referencia de turno (`TRACEREF#<día>`, escrita por `mango-api` con la identidad verificada del turno) da persona, conversación, versión y precio. Una traza sin referencia se muestra «Sin turno de Mango» y sin persona.
 - **L1 `ViewObservability`** solo para administradores (D109 (b)), con `is_admin` otra vez en proceso; auditada como lectura; límite de tasa por administrador compartido entre tareas (D70); caché corta; tope de trazas con `capped`.
 - **`session.id` nunca sale de `mango-api`,** ni el `traceId` del harness: la respuesta lleva un id propio y aleatorio (D108 (3)), la clave aleatoria que guarda la referencia de cada turno más el orden de la traza en el turno; una traza sin turno recibe uno nuevo en cada lectura.
-- **IAM mínimo:** `logs:FilterLogEvents` sobre `aws/spans` y sobre los log groups `/aws/bedrock-agentcore/runtimes/harness_Mango_<ns>_a_*`; `logs:DescribeLogGroups` (no admite recurso, documentado); nada más. Solo el rol de `mango-api` puede invocarla.
+- **IAM mínimo:** `logs:StartQuery` y `logs:FilterLogEvents` sobre `aws/spans` y sobre los log groups `/aws/bedrock-agentcore/runtimes/harness_Mango_<ns>_a_*`; `logs:DescribeLogGroups`, `logs:GetQueryResults` y `logs:StopQuery` (no admiten recurso, documentado; excepción del 2026-11-06, TM-OB8); sin `logs:DescribeQueries`; nada más. Solo el rol de `mango-api` puede invocarla.
 
 ## Scope and assumptions
 
@@ -42,7 +42,7 @@ Controles que se construyen:
 ## System model
 
 - **`mango-api`**: al ligar la sesión de un turno (`bind_session`, chat, tarea y Playground) escribe la referencia; `GET /api/observability` invoca la función, lee las referencias del rango, une por `session.id` y calcula los agregados.
-- **`Mango-<ns>-TraceReader`** (Lambda síncrona, sin DLQ por la excepción `CKV_AWS_116`): `FilterLogEvents` con patrón por prefijo de `harness.id` y nombres `invoke_agent*`, `chat*`, `execute_tool*`; agrupa por `traceId`.
+- **`Mango-<ns>-TraceReader`** (Lambda síncrona, sin DLQ por la excepción `CKV_AWS_116`): una consulta de Logs Insights (`StartQuery` + `GetQueryResults` de los ids que ella lanzó) por prefijo de `harness.id` y nombres `invoke_agent`, `chat <modelo>`, `execute_tool` (D113); si falla o no termina en 10 s, `FilterLogEvents` con el patrón equivalente; agrupa por `traceId`.
 - **`aws/spans`** (Transaction Search, D16) y los log groups de los runtimes (KMS propio, 30 días, D16).
 - **Tabla `Mango-<ns>-AuditIndex`** (TTL 30 días): `TRACEREF#<día>` / `<session.id>#<inicio>#<turno>`.
 
@@ -54,8 +54,8 @@ flowchart LR
   B[Navegador admin] -->|HTTPS, access token| R[GET /api/observability]
   R -->|L1 ViewObservability| V[Verified Permissions]
   R -->|lambda:InvokeFunction| T[TraceReader]
-  T -->|FilterLogEvents| S
-  T -->|DescribeLogGroups + FilterLogEvents| L
+  T -->|StartQuery + GetQueryResults, o FilterLogEvents| S
+  T -->|DescribeLogGroups + StartQuery, o FilterLogEvents| L
   R -->|Query TRACEREF#día| X
 ```
 
@@ -92,15 +92,17 @@ flowchart LR
 | TM-OB2 | Spans falsos de otro principal de la cuenta inventan trazas, errores o latencias de un agente de Mango | Integridad | Baja | Media | **Media** | Prefijo `Mango_<ns>_a_` en el filtro y en la salida; la persona y la conversación solo salen de la referencia de turno de `mango-api` (una traza sin referencia no tiene persona y se marca); agente desconocido se muestra por su id, no por un nombre que el span diga |
 | TM-OB3 | Quien no es administrador lee las trazas (uso de cada persona) | Uso | Baja | Media | **Media** | L1 `ViewObservability` solo con `isAdmin` (deny por defecto) y `is_admin` en proceso; test por regla con `cedarpy` |
 | TM-OB4 | `session.id` sale en la respuesta, en un log o en la auditoría | `session.id` | Baja | Media | **Media** | El modelo de respuesta no tiene el campo; el id de traza es propio y aleatorio (D108 (3)), nunca el `traceId` del harness; tests que buscan el `session.id` y el `traceId` en la salida serializada |
-| TM-OB5 | La función lee más de lo necesario (otros log groups, el del harness de evals) o otro principal la invoca | Contenido | Baja | Alta | **Media** | `FilterLogEvents` solo sobre `aws/spans` y `harness_Mango_<ns>_a_*`, con `Deny` sobre `harness_Mango_<ns>_a_evals-*` (D110 (3)), que la función además descarta; `DescribeLogGroups` (`*`, sin recurso posible, solo nombres); `logStreamNamePrefix: spans` en los runtimes; `InvokeFunction` solo en la política de `mango-api` con el ARN concreto; tests de IAM. Residual: el permiso alcanza también los streams de stdout y `otel-rt-logs` del runtime (contenido `[REDACTED]` por D16) |
-| TM-OB6 | Lecturas repetidas de 24 h agotan tiempo, costo o el límite de la API de Logs | Disponibilidad | Media | Baja | **Baja** | 30 lecturas por minuto por administrador (compartido); caché de 60 s por consulta; tope de páginas, de tiempo (20 s) y de trazas (1.000) con `capped`; `FilterLogEvents` no cobra por consulta |
+| TM-OB5 | La función lee más de lo necesario (otros log groups, el del harness de evals) o otro principal la invoca | Contenido | Baja | Alta | **Media** | `StartQuery` y `FilterLogEvents` solo sobre `aws/spans` y `harness_Mango_<ns>_a_*`, con `Deny` de `logs:*` sobre `harness_Mango_<ns>_a_evals-*` (D110 (3)), que la función además nunca nombra; `DescribeLogGroups` (`*`, sin recurso posible, solo nombres); `logStreamNamePrefix: spans` en los runtimes; `InvokeFunction` solo en la política de `mango-api` con el ARN concreto; tests de IAM. Residual: el permiso alcanza también los streams de stdout y `otel-rt-logs` del runtime (contenido `[REDACTED]` por D16) |
+| TM-OB6 | Lecturas repetidas de 24 h agotan tiempo, costo o el límite de la API de Logs | Disponibilidad | Media | Baja | **Baja** | 30 lecturas por minuto por administrador (compartido); caché de 60 s por consulta y una sola lectura en curso por consulta y tarea, en hilos propios (no ocupa los del resto de la API) y con espera de 50 s como mucho; Logs Insights escanea en paralelo (24 h en 1,7 s medidos el 2026-11-06) y cobra 0,005 USD/GB (~0,00005 USD por lectura con el volumen medido); el respaldo, dos llamadas a `FilterLogEvents` a la vez como mucho; tope de filas (10.000), páginas, tiempo (20 s) y trazas (1.000) con `capped` |
 | TM-OB7 | La referencia de turno rompe o retrasa el turno, o guarda contenido | Disponibilidad, contenido | Baja | Media | **Baja** | Escritura de un ítem tras `bind_session`; un fallo solo se loguea sin datos y el turno sigue; atributos fijos (sub, agente, versión, modelo, conversación o ejecución, origen del turno de D106, precio por token y una clave aleatoria para el id de sus trazas); TTL 30 días como `ACTIVITY#` (D90 (6)) |
+| TM-OB8 | Con el `queryId` de una consulta de Logs Insights ajena (por ejemplo, la de un operador de la cuenta sobre los log groups de evals), el rol de la función lee sus resultados: `GetQueryResults` no admite recurso | Contenido | Baja | Alta | **Media** | El código solo pide resultados de los ids que su propio `StartQuery` le dio en esa lectura y para solo esos; el rol no tiene `logs:DescribeQueries`, así que no puede listar ids ajenos (son aleatorios); el `Deny` de `logs:*` sobre los log groups de evals impide que la función lance una consulta sobre ellos; la consulta es fija y no lleva nada de la petición como texto; tests de infra fijan acciones y recursos, y tests del lector que nunca nombra evals ni pide un id que no lanzó. Residual: un código de la función comprometido que conociera un id ajeno por otra vía podría leer esos resultados (excepción de IAM acordada el 2026-11-06, D113 (4)) |
 
 ## Focus paths for security review
 
 - `functions/trace-reader/src/mango_trace_reader/spans.py`: la lista cerrada y las formas.
 - `functions/trace-reader/src/mango_trace_reader/handler.py`: validación del evento, topes y logs.
-- `infra/lib/constructs/trace-reader.ts`: el rol, los ARNs y la política de `mango-api`.
+- `infra/lib/constructs/trace-reader.ts`: el rol, los ARNs (y `ReadOwnQueries`, `Resource: "*"`, TM-OB8) y la política de `mango-api`.
+- `functions/trace-reader/src/mango_trace_reader/reader.py`: `_read_insights` (solo los ids propios) y el respaldo con `FilterLogEvents`.
 - `apps/api/src/mango_api/observability.py`: `ViewObservability`, unión por `session.id`, campos de salida.
 - `apps/api/src/mango_api/observability_store.py`: la referencia de turno.
 

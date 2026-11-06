@@ -87,6 +87,7 @@ def handle(reader: SpanReader, event: Any, now_ms: int, deadline: float) -> dict
                 "window_ms": end - start,
                 "agent_filter": agent is not None,
                 "traces": len(traces),
+                "engine": reading.engine,
                 "pages": reading.pages,
                 "capped": reading.capped,
                 "unreadable": reading.unreadable + mixed,

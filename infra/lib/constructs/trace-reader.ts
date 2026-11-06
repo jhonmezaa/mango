@@ -54,6 +54,7 @@ export class TraceReader extends Construct {
     const logGroups = `arn:${stack.partition}:logs:${stack.region}:${stack.account}:log-group:`;
     // IAM names a log group with the `:*` suffix for every action but tagging.
     const spans = `${logGroups}${SPANS_LOG_GROUP}:*`;
+    const spansGroup = `${logGroups}${SPANS_LOG_GROUP}`;
     const runtimes = `${logGroups}${RUNTIME_LOG_GROUP_PREFIX}${agentNames.runtimePrefix(ns)}*`;
     const evals = `${logGroups}${RUNTIME_LOG_GROUP_PREFIX}${agentNames.runtimePrefix(ns)}${EVALS_ID}-*`;
     const name = roleNames.traceReader(ns);
@@ -68,10 +69,31 @@ export class TraceReader extends Construct {
         sid: "ReadAgentSpans",
         // `aws/spans` holds the spans of the whole account: IAM cannot narrow it to Mango's. The
         // function filters by the installation's harnesses and keeps a closed list of fields.
-        // The runtimes' log groups are only the installation's harnesses'. No Logs Insights
-        // (`GetQueryResults` has no resource scope).
+        // The runtimes' log groups are only the installation's harnesses'. Logs Insights reads
+        // first (`QueryAgentSpans`); `FilterLogEvents` only if it fails (D113).
         actions: ["logs:FilterLogEvents"],
         resources: [spans, runtimes],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "QueryAgentSpans",
+        // Logs Insights over the same log groups (D113). `aws/spans` named both with and without
+        // `:*`: the ARN `StartQuery` is checked against is not checked in an installation yet,
+        // and both name that one log group. The runtimes' prefix already ends in `*`.
+        actions: ["logs:StartQuery"],
+        resources: [spansGroup, spans, runtimes],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: "ReadOwnQueries",
+        // `GetQueryResults` and `StopQuery` take no resource (Service Authorization Reference):
+        // they name a query by its id. The function only asks for the ids `StartQuery` gave it
+        // in the same reading, and it may not list queries (`DescribeQueries`), so it cannot
+        // learn the id of another's query (D113, TM-OB8).
+        actions: ["logs:GetQueryResults", "logs:StopQuery"],
+        resources: ["*"],
       }),
     );
     role.addToPolicy(
@@ -111,11 +133,16 @@ export class TraceReader extends Construct {
 
     acknowledge(
       role,
-      { id: "AwsSolutions-IAM5[Resource::*]", reason: `${REASONS.xray} logs:DescribeLogGroups has no resource scope.` },
+      {
+        id: "AwsSolutions-IAM5[Resource::*]",
+        reason:
+          `${REASONS.xray} logs:DescribeLogGroups, logs:GetQueryResults and logs:StopQuery have no resource scope; ` +
+          "the function only reads the queries it started itself and cannot list others' (D113, TM-OB8).",
+      },
       {
         id: `AwsSolutions-IAM5[Resource::${spans}]`,
         reason:
-          "Not a wildcard over resources: `:*` is how IAM names one log group for logs:FilterLogEvents. " +
+          "Not a wildcard over resources: `:*` is how IAM names one log group for logs:FilterLogEvents and logs:StartQuery. " +
           "Read-only, on the single log group Transaction Search writes the spans to (D108).",
       },
       {

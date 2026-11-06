@@ -18,13 +18,17 @@ Security notes (security-best-practices, FastAPI):
   The id of a trace is Mango's own and random (D108 (3)).
 * One reading is bounded by the function (time, pages, 1,000 traces: ``capped``), limited per
   administrator and shared between tasks, and cached for a minute per range and agent: the page
-  and its filters read the cache (TM-OB6).
+  and its filters read the cache (TM-OB6). Requests for a range and agent that is being read
+  wait for that reading instead of starting another (one in flight per key and task), on a small
+  pool of their own: a slow reading never holds the threads the rest of the API uses, and the
+  wait is bounded below the distribution's origin timeout, so the edge never retries it.
 * Text that comes from a span (model and tool names) was checked for shape by the function and is
   checked again here; the SPA renders it as text.
 """
 
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
 import asyncio
+import concurrent.futures
 import json
 import logging
 import math
@@ -66,6 +70,11 @@ MAX_QUERY = 100
 """Longest search the view sends (tool, email or id: «Buscar tool, persona o ID de traza»)."""
 TRACE_READER_TIMEOUT_SECONDS = 30
 """How long mango-api waits for one reading: the function stops at 20 s and times out at 25."""
+READ_WORKERS = 3
+"""Readings one task runs at a time (one per range, any agent): their own threads."""
+WAIT_SECONDS = 50.0
+"""Longest a request waits for its reading: under the 60 s the distribution waits for the
+origin (``edge.ts``), which would otherwise retry the GET on another task."""
 EVALS_ID = "evals"
 """The evals harness (D110 (3)): the trace reader never reads it."""
 START_SKEW_SECONDS = 2
@@ -326,6 +335,12 @@ class ObservabilityDeps:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     monotonic: Callable[[], float] = time.monotonic
     _cache: dict[tuple[str, str | None], tuple[float, "_Loaded"]] = field(default_factory=dict)
+    _inflight: dict[tuple[str, str | None], "asyncio.Future[_Loaded]"] = field(default_factory=dict)
+    _pool: concurrent.futures.ThreadPoolExecutor = field(
+        default_factory=lambda: concurrent.futures.ThreadPoolExecutor(
+            max_workers=READ_WORKERS, thread_name_prefix="observability"
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -568,19 +583,48 @@ def load(deps: ObservabilityDeps, window: Range, agent_id: str | None) -> _Loade
     return _Loaded(out=out, slow_ms=summary.p95_ms)
 
 
-def cached(deps: ObservabilityDeps, window: Range, agent_id: str | None) -> _Loaded:
-    """One reading per range and agent for a minute, for every administrator: they all see the
-    same (D109 (b)). The filters and pages of the view read it."""
-    key = (window, agent_id)
-    now = deps.monotonic()
+def _fresh(deps: ObservabilityDeps, key: tuple[str, str | None]) -> "_Loaded | None":
     hit = deps._cache.get(key)
-    if hit is not None and now - hit[0] < CACHE_SECONDS:
+    if hit is not None and deps.monotonic() - hit[0] < CACHE_SECONDS:
         return hit[1]
-    loaded = load(deps, window, agent_id)
+    return None
+
+
+def _store(deps: ObservabilityDeps, key: tuple[str, str | None], loaded: _Loaded) -> None:
     if len(deps._cache) >= CACHE_ENTRIES:
         deps._cache.clear()
-    deps._cache[key] = (now, loaded)
-    return loaded
+    deps._cache[key] = (deps.monotonic(), loaded)
+
+
+async def shared(deps: ObservabilityDeps, window: Range, agent_id: str | None) -> _Loaded:
+    """One reading per range and agent for a minute, for every administrator: they all see the
+    same (D109 (b)); the filters and pages of the view read it. A reading in flight for the same
+    range and agent is awaited, not repeated (two tabs, a reload, a filter changed back), and it
+    runs on the view's own threads. A request that gives up (the browser aborts it) leaves the
+    reading to finish for the others and for the cache."""
+    key = (window, agent_id)
+    hit = _fresh(deps, key)
+    if hit is not None:
+        return hit
+    future = deps._inflight.get(key)
+    if future is None:
+        loop = asyncio.get_running_loop()
+        future = asyncio.ensure_future(
+            loop.run_in_executor(deps._pool, load, deps, window, agent_id)
+        )
+        deps._inflight[key] = future
+
+        def done(f: "asyncio.Future[_Loaded]", key: tuple[str, str | None] = key) -> None:
+            if deps._inflight.get(key) is f:
+                del deps._inflight[key]
+            if not f.cancelled() and f.exception() is None:
+                _store(deps, key, f.result())
+
+        future.add_done_callback(done)
+    try:
+        return await asyncio.wait_for(asyncio.shield(future), WAIT_SECONDS)
+    except TimeoutError:
+        raise TracesUnavailableError("reading took too long") from None
 
 
 def matches(trace: TraceOut, query: str) -> bool:
@@ -608,21 +652,9 @@ def page(
     )
 
 
-def observability(  # noqa: PLR0917 - the query of one reading, all required
-    deps: ObservabilityDeps,
-    window: Range,
-    agent_id: str | None,
-    status: StatusFilter,
-    offset: int,
-    limit: int,
-    query: str = "",
-) -> ObservabilityOut:
-    try:
-        loaded = cached(deps, window, agent_id)
-    except TracesUnavailableError as exc:
-        logger.warning("observability unavailable: %s", exc)
-        raise ApiError(503, "observability_unavailable", "please try again") from None
-    return page(loaded, status, offset, limit, query)
+def _unavailable(exc: Exception) -> ApiError:
+    logger.warning("observability unavailable: %s", exc)
+    return ApiError(503, "observability_unavailable", "please try again")
 
 
 # --- Routes -----------------------------------------------------------------------------
@@ -661,6 +693,10 @@ def observability_router(
         user_id = caller.user.user_id
         if not deps.limiter.allow(user_id):
             raise rate_limited(deps.limiter.retry_after(user_id))
-        return await asyncio.to_thread(observability, deps, range, agent, status, offset, limit, q)
+        try:
+            loaded = await shared(deps, range, agent)
+        except TracesUnavailableError as exc:
+            raise _unavailable(exc) from None
+        return page(loaded, status, offset, limit, q)
 
     return router

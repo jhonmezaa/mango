@@ -124,6 +124,32 @@ def filter_pattern(harness_prefix: str, agent_id: str | None = None) -> str:
     )
 
 
+QUERY_LIMIT: Final = 10_000
+"""Rows one Logs Insights query returns at most (its own limit): more says ``capped``."""
+
+
+def insights_query(harness_prefix: str, agent_id: str | None = None) -> str:
+    """The Logs Insights query for the same spans as ``filter_pattern`` (D113), newest first.
+
+    Built only from the installation's prefix and an agent id that matched its pattern: nothing
+    of a request reaches the query as text. ``@log`` says which log group each event came from.
+    """
+    if not re.fullmatch(r"Mango_[a-z0-9]{3,8}_a_", harness_prefix):
+        raise ValueError("invalid harness prefix")
+    if agent_id is not None and (
+        not re.fullmatch(AGENT_ID_PATTERN, agent_id) or agent_id == EVALS_ID
+    ):
+        raise ValueError("invalid agent id")
+    harness = f"{harness_prefix}{agent_id}-" if agent_id else harness_prefix
+    return (
+        "fields @log, @message"
+        f" | filter `attributes.harness.id` like /^{harness}/"
+        f" | filter name like /^({INVOCATION_PREFIX}|{MODEL_CALL_PREFIX}|{TOOL_PREFIX})/"
+        " | sort @timestamp desc"
+        f" | limit {QUERY_LIMIT}"
+    )
+
+
 def _count(attributes: dict[str, Any], names: tuple[str, ...]) -> int | None:
     for name in names:
         if name in attributes:

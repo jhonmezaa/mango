@@ -5,6 +5,8 @@ from __future__ import annotations
 import itertools
 import json
 import re
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -13,7 +15,14 @@ from botocore.exceptions import ClientError
 from mango_core.agents import AGENT_ID_PATTERN as CORE_AGENT_ID_PATTERN
 from mango_trace_reader import handler, spans
 from mango_trace_reader.config import ConfigError, Settings
-from mango_trace_reader.reader import CHUNK_MS, MAX_TRACES, ReadError, SpanReader
+from mango_trace_reader.reader import (
+    CHUNK_MS,
+    INSIGHTS_SECONDS,
+    MAX_TRACES,
+    READ_THREADS,
+    ReadError,
+    SpanReader,
+)
 
 SETTINGS = Settings(namespace="lab")
 HARNESS = "Mango_lab_a_finops-aY7MuccEkb"
@@ -107,12 +116,66 @@ def turn(trace: str = "6ac55ba6" + "0" * 24, start_ms: int = NOW_MS - HOUR) -> l
 
 
 class FakeLogs:
-    """``FilterLogEvents`` and ``DescribeLogGroups`` of CloudWatch Logs, by log group."""
+    """``FilterLogEvents``, Logs Insights and ``DescribeLogGroups`` of CloudWatch Logs, by log
+    group. With ``insights=False`` every ``StartQuery`` fails, as when its quota is spent."""
 
-    def __init__(self, groups: dict[str, list[dict[str, Any]]], page_size: int = 100) -> None:
+    def __init__(
+        self,
+        groups: dict[str, list[dict[str, Any]]],
+        page_size: int = 100,
+        *,
+        insights: bool = True,
+    ) -> None:
         self.groups = groups
         self.page_size = page_size
+        self.insights = insights
         self.calls: list[dict[str, Any]] = []
+        self.queries: list[dict[str, Any]] = []
+        self.results: dict[str, list[list[dict[str, str]]]] = {}
+        self.polled: list[str] = []
+        self.stopped: list[str] = []
+
+    def start_query(self, **request: Any) -> dict[str, Any]:
+        self.queries.append(dict(request))
+        if not self.insights:
+            raise ClientError({"Error": {"Code": "LimitExceededException"}}, "StartQuery")
+        missing = [g for g in request["logGroupNames"] if g not in self.groups]
+        if missing:
+            raise ClientError({"Error": {"Code": "ResourceNotFoundException"}}, "StartQuery")
+        harness, names = re.findall(r"like /\^([^/]+)/", request["queryString"])
+        rows = sorted(
+            (
+                (s["endTimeUnixNano"] // 1_000_000, group, s)
+                for group in request["logGroupNames"]
+                for s in self.groups[group]
+                if request["startTime"] * 1000
+                <= s["endTimeUnixNano"] // 1_000_000
+                <= request["endTime"] * 1000
+                and str(s.get("attributes", {}).get("harness.id", "")).startswith(harness)
+                and re.match(names, s["name"])
+            ),
+            key=lambda r: -r[0],
+        )[: request["limit"]]
+        query_id = f"q{len(self.queries)}"
+        self.results[query_id] = [
+            [
+                {"field": "@log", "value": f"111122223333:{group}"},
+                {"field": "@message", "value": json.dumps(s)},
+                {"field": "@ptr", "value": "x"},
+            ]
+            for _ts, group, s in rows
+        ]
+        return {"queryId": query_id}
+
+    def get_query_results(self, queryId: str) -> dict[str, Any]:  # noqa: N803
+        self.polled.append(queryId)
+        if self.polled.count(queryId) == 1:
+            return {"status": "Running", "results": []}
+        return {"status": "Complete", "results": self.results[queryId]}
+
+    def stop_query(self, queryId: str) -> dict[str, Any]:  # noqa: N803
+        self.stopped.append(queryId)
+        return {"success": True}
 
     def filter_log_events(self, **request: Any) -> dict[str, Any]:
         self.calls.append(dict(request))
@@ -151,7 +214,7 @@ def read(
     deadline: float = 1e18,
 ) -> dict[str, Any]:
     return handler.handle(
-        SpanReader(logs, SETTINGS),
+        SpanReader(logs, SETTINGS, sleep=lambda _s: None),
         {"start": start, "end": NOW_MS, "agent": agent},
         NOW_MS,
         deadline,
@@ -260,7 +323,7 @@ def test_a_model_that_does_not_look_like_one_is_not_returned() -> None:
 
 def test_both_destinations_are_read_and_a_span_in_both_counts_once() -> None:
     first, second = turn("1" * 32), turn("2" * 32, start_ms=NOW_MS - 2 * HOUR)
-    logs = FakeLogs({"aws/spans": first, RUNTIME: [*first, *second]})
+    logs = FakeLogs({"aws/spans": first, RUNTIME: [*first, *second]}, insights=False)
     out = read(logs)
     assert [t["trace_id"] for t in out["traces"]] == ["1" * 32, "2" * 32]
     assert out["traces"][0]["model_calls"] == 2
@@ -268,26 +331,56 @@ def test_both_destinations_are_read_and_a_span_in_both_counts_once() -> None:
     assert runtime_calls and all(c["logStreamNamePrefix"] == "spans" for c in runtime_calls)
 
 
-def test_an_account_without_aws_spans_still_reads_the_runtimes() -> None:
-    out = read(FakeLogs({RUNTIME: turn()}))
+@pytest.mark.parametrize("insights", [True, False])
+def test_an_account_without_aws_spans_still_reads_the_runtimes(insights: bool) -> None:
+    out = read(FakeLogs({RUNTIME: turn()}, insights=insights))
     assert len(out["traces"]) == 1 and out["found"]["runtime"] == 4
 
 
 def test_one_agent_filters_the_pattern_and_the_runtime_groups() -> None:
     other_runtime = "/aws/bedrock-agentcore/runtimes/harness_Mango_lab_a_other-AbCdEf0123-live"
-    logs = FakeLogs({"aws/spans": turn(), RUNTIME: [], other_runtime: []})
+    logs = FakeLogs({"aws/spans": turn(), RUNTIME: [], other_runtime: []}, insights=False)
     read(logs, agent="finops")
     assert {c["logGroupName"] for c in logs.calls} == {"aws/spans", RUNTIME}
     assert all('"Mango_lab_a_finops-*"' in c["filterPattern"] for c in logs.calls)
 
 
-def test_aws_spans_is_read_an_hour_at_a_time_newest_first() -> None:
-    logs = FakeLogs({"aws/spans": []})
-    read(logs)
-    windows = [(c["startTime"], c["endTime"]) for c in logs.calls]
+def test_aws_spans_is_read_six_hours_at_a_time_covering_the_window() -> None:
+    logs = FakeLogs({"aws/spans": []}, insights=False)
+    read(logs, start=NOW_MS - 24 * HOUR)
+    # Two calls go at once, so they are compared newest first, not in the order they were made.
+    windows = sorted(((c["startTime"], c["endTime"]) for c in logs.calls), reverse=True)
+    assert CHUNK_MS == 6 * HOUR and len(windows) == 4
     assert windows[0][1] == NOW_MS and windows[0][1] - windows[0][0] == CHUNK_MS
-    assert windows[-1][0] == NOW_MS - 6 * HOUR
+    assert windows[-1][0] == NOW_MS - 24 * HOUR
     assert all(a[0] == b[1] for a, b in itertools.pairwise(windows))
+
+
+def test_a_reading_makes_at_most_two_calls_at_once() -> None:
+
+    class Counting(FakeLogs):
+        def __init__(self, groups: dict[str, list[dict[str, Any]]]) -> None:
+            super().__init__(groups, insights=False)
+            self.now = self.peak = 0
+            self.lock = threading.Lock()
+
+        def filter_log_events(self, **request: Any) -> dict[str, Any]:
+            with self.lock:
+                self.now += 1
+                self.peak = max(self.peak, self.now)
+            time.sleep(0.01)
+            try:
+                return super().filter_log_events(**request)
+            finally:
+                with self.lock:
+                    self.now -= 1
+
+    runtimes = {f"{RUNTIME[:-5]}{i}-live": [] for i in range(6)}
+    logs = Counting({"aws/spans": turn(), **runtimes})
+    out = read(logs, start=NOW_MS - 24 * HOUR)
+    assert logs.peak == READ_THREADS == 2
+    assert len(out["traces"]) == 1
+    assert {c["logGroupName"] for c in logs.calls} == {"aws/spans", *runtimes}
 
 
 def test_only_traces_that_started_in_the_window_are_returned() -> None:
@@ -322,7 +415,7 @@ def test_a_read_error_fails_the_invocation() -> None:
             raise ClientError({"Error": {"Code": "AccessDeniedException"}}, "FilterLogEvents")
 
     with pytest.raises(ReadError):
-        read(Broken({}))
+        read(Broken({}, insights=False))
 
 
 @pytest.mark.parametrize(
@@ -385,7 +478,8 @@ def test_without_the_attributes_the_span_names_say_the_model_and_the_tool() -> N
     assert trace["tokens"] == {"input": 300, "output": 90, "cache_read": 0, "cache_write": 0}
 
 
-def test_the_evals_harness_is_never_read() -> None:
+@pytest.mark.parametrize("insights", [True, False])
+def test_the_evals_harness_is_never_read(insights: bool) -> None:
     # D110 (3): its log group holds content and only the evaluator's role reads it.
     evals_runtime = "/aws/bedrock-agentcore/runtimes/harness_Mango_lab_a_evals-AbCdEf0123-live"
     leaked = [
@@ -396,9 +490,106 @@ def test_the_evals_harness_is_never_read() -> None:
             **{"gen_ai.input.messages": SECRET},
         )
     ]
-    logs = FakeLogs({"aws/spans": leaked, evals_runtime: turn(), RUNTIME: []})
+    logs = FakeLogs({"aws/spans": leaked, evals_runtime: turn(), RUNTIME: []}, insights=insights)
     out = read(logs)
     assert out["traces"] == []
     assert evals_runtime not in {c["logGroupName"] for c in logs.calls}
+    assert not any(evals_runtime in q["logGroupNames"] for q in logs.queries)
+    assert logs.queries and all("evals" not in q["queryString"] for q in logs.queries)
     with pytest.raises(ValueError, match="agent"):
         spans.filter_pattern("Mango_lab_a_", "evals")
+
+
+def test_logs_insights_reads_aws_spans_and_the_runtimes_in_one_query() -> None:
+    first, second = turn("1" * 32), turn("2" * 32, start_ms=NOW_MS - 2 * HOUR)
+    logs = FakeLogs({"aws/spans": first, RUNTIME: [*first, *second]})
+    out = read(logs, start=NOW_MS - 24 * HOUR)
+    assert [t["trace_id"] for t in out["traces"]] == ["1" * 32, "2" * 32]
+    assert out["traces"][0]["model_calls"] == 2
+    assert out["found"] == {"aws_spans": 4, "runtime": 8}
+    assert logs.calls == []  # no FilterLogEvents
+    [query] = logs.queries
+    assert query["logGroupNames"] == ["aws/spans", RUNTIME]
+    assert query["startTime"] == (NOW_MS - 24 * HOUR) // 1000
+    assert query["endTime"] == NOW_MS // 1000
+    assert query["limit"] == spans.QUERY_LIMIT
+    # Only the results of the query it started; a completed query is not stopped.
+    assert set(logs.polled) == {"q1"} and logs.stopped == []
+
+
+def test_logs_insights_with_one_agent_names_its_harness_and_runtimes() -> None:
+    other_runtime = "/aws/bedrock-agentcore/runtimes/harness_Mango_lab_a_other-AbCdEf0123-live"
+    logs = FakeLogs({"aws/spans": turn(), RUNTIME: [], other_runtime: []})
+    read(logs, agent="finops")
+    [query] = logs.queries
+    assert query["logGroupNames"] == ["aws/spans", RUNTIME]
+    assert "/^Mango_lab_a_finops-/" in query["queryString"]
+
+
+def test_the_insights_query_only_takes_known_shapes() -> None:
+    assert spans.insights_query("Mango_lab_a_") == (
+        "fields @log, @message"
+        " | filter `attributes.harness.id` like /^Mango_lab_a_/"
+        " | filter name like /^(invoke_agent|chat |execute_tool)/"
+        " | sort @timestamp desc"
+        " | limit 10000"
+    )
+    with pytest.raises(ValueError, match="agent"):
+        spans.insights_query("Mango_lab_a_", "x/ | fields @message")
+    with pytest.raises(ValueError, match="agent"):
+        spans.insights_query("Mango_lab_a_", "evals")
+    with pytest.raises(ValueError, match="prefix"):
+        spans.insights_query("*")
+
+
+def test_many_runtime_groups_go_in_queries_of_fifty_log_groups() -> None:
+    runtimes = {f"{RUNTIME[:-5]}{i:02d}-live": [] for i in range(60)}
+    logs = FakeLogs({"aws/spans": turn(), **runtimes})
+    out = read(logs)
+    assert [len(q["logGroupNames"]) for q in logs.queries] == [50, 11]
+    assert len(out["traces"]) == 1
+
+
+def test_a_full_page_of_rows_says_capped() -> None:
+    many = [
+        span("invoke_agent x", trace=f"{i:032x}", start_ms=NOW_MS - HOUR + i)
+        for i in range(spans.QUERY_LIMIT + 5)
+    ]
+    out = read(FakeLogs({"aws/spans": many}))
+    assert out["capped"] is True
+
+
+@pytest.mark.parametrize("status", ["Failed", "Cancelled", "Timeout"])
+def test_a_failed_query_falls_back_to_filter_log_events(status: str) -> None:
+    class Failing(FakeLogs):
+        def get_query_results(self, queryId: str) -> dict[str, Any]:  # noqa: N803
+            self.polled.append(queryId)
+            return {"status": status, "results": []}
+
+    logs = Failing({"aws/spans": turn()})
+    out = read(logs)
+    assert len(out["traces"]) == 1 and logs.calls
+    assert logs.stopped == ["q1"]
+
+
+def test_a_query_that_cannot_start_falls_back_to_filter_log_events() -> None:
+    logs = FakeLogs({"aws/spans": turn()}, insights=False)
+    out = read(logs)
+    assert len(out["traces"]) == 1 and logs.calls and logs.stopped == []
+
+
+def test_a_slow_query_is_stopped_and_the_rest_of_the_deadline_filters() -> None:
+    clock = [0.0]
+
+    class Slow(FakeLogs):
+        def get_query_results(self, queryId: str) -> dict[str, Any]:  # noqa: N803
+            clock[0] += 1.0
+            self.polled.append(queryId)
+            return {"status": "Running", "results": []}
+
+    logs = Slow({"aws/spans": turn()})
+    reading = SpanReader(logs, SETTINGS, monotonic=lambda: clock[0], sleep=lambda _s: None).read(
+        NOW_MS - HOUR, NOW_MS, NOW_MS, None, 20.0
+    )
+    assert reading.engine == "filter" and len(reading.traces) == 1
+    assert len(logs.polled) == INSIGHTS_SECONDS and logs.stopped == ["q1"]

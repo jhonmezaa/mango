@@ -4,8 +4,11 @@ and a fake trace reader."""
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
+import threading
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -332,6 +335,71 @@ def test_the_reading_is_cached_a_minute_per_range_and_agent(env: Env) -> None:
         (3_600_000, "finops"),
         (3_600_000, None),
     ]
+
+
+@dataclass
+class SlowReader(FakeReader):
+    """Holds each reading until ``release`` is set, like a reading of 20 s."""
+
+    release: threading.Event = field(default_factory=threading.Event)
+
+    def read(self, start_ms: int, end_ms: int, agent_id: str | None) -> dict[str, Any]:
+        self.release.wait(5)
+        return super().read(start_ms, end_ms, agent_id)
+
+
+def test_requests_for_a_reading_in_flight_wait_for_it(env: Env) -> None:
+    reader = SlowReader()
+    env.deps.traces = reader
+
+    async def two_tabs() -> list[obs._Loaded]:
+        first = asyncio.ensure_future(obs.shared(env.deps, "24h", None))
+        second = asyncio.ensure_future(obs.shared(env.deps, "24h", None))
+        other = asyncio.ensure_future(obs.shared(env.deps, "1h", None))
+        await asyncio.sleep(0.05)
+        reader.release.set()
+        return await asyncio.gather(first, second, other)
+
+    first, second, _ = asyncio.run(two_tabs())
+    assert first is second
+    assert sorted(e - s for s, e, _a in reader.calls) == [3_600_000, 24 * 3_600_000]
+    assert not env.deps._inflight
+
+
+def test_a_request_waits_less_than_the_edge_and_the_reading_still_lands(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reader = SlowReader()
+    env.deps.traces = reader
+    monkeypatch.setattr(obs, "WAIT_SECONDS", 0.05)
+    assert obs.WAIT_SECONDS < 60  # the distribution's origin timeout (edge.ts)
+
+    async def gives_up() -> None:
+        with pytest.raises(obs.TracesUnavailableError):
+            await obs.shared(env.deps, "24h", None)
+        reader.release.set()
+        while env.deps._inflight:
+            await asyncio.sleep(0.01)
+
+    asyncio.run(gives_up())
+    began = time.monotonic()
+    assert asyncio.run(obs.shared(env.deps, "24h", None)).out.range == "24h"
+    assert time.monotonic() - began < 1
+    assert len(reader.calls) == 1
+
+
+def test_readings_run_on_their_own_threads(env: Env) -> None:
+    names: list[str] = []
+
+    class Reader(FakeReader):
+        def read(self, start_ms: int, end_ms: int, agent_id: str | None) -> dict[str, Any]:
+            names.append(threading.current_thread().name)
+            return super().read(start_ms, end_ms, agent_id)
+
+    env.deps.traces = Reader()
+    assert env.get(range="1h").status_code == 200
+    assert names and names[0].startswith("observability")
+    assert env.deps._pool._max_workers == obs.READ_WORKERS
 
 
 def test_the_window_is_asked_of_the_reader(env: Env) -> None:

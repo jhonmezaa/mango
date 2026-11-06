@@ -61,29 +61,51 @@ describe("the trace reader (D108 (b))", () => {
     expect(fn.Handler).toBe("mango_trace_reader.handler.lambda_handler");
   });
 
-  it("may filter aws/spans and the installation's runtime log groups, list log groups, and nothing else", () => {
+  it("may query or filter aws/spans and the installation's runtime log groups, read its own queries, list log groups, and nothing else", () => {
     // Besides X-Ray (every function) and writing its own log group.
     const logs = statements.filter((s) => actions(s).includes("logs:PutLogEvents"));
     expect(logs).toHaveLength(1);
     expect(text(logs[0]!.Resource)).toContain("TraceReaderFunctionLogs");
     const own = statements.filter((s) => s.Sid !== undefined);
     expect(statements.filter((s) => s.Sid === undefined)).toHaveLength(2);
-    expect(own.map((s) => s.Sid).sort()).toEqual(["FindRuntimeLogGroups", "NeverTheEvalsHarness", "ReadAgentSpans"]);
+    expect(own.map((s) => s.Sid).sort()).toEqual([
+      "FindRuntimeLogGroups",
+      "NeverTheEvalsHarness",
+      "QueryAgentSpans",
+      "ReadAgentSpans",
+      "ReadOwnQueries",
+    ]);
     const deny = own.find((s) => s.Sid === "NeverTheEvalsHarness")!;
     expect(deny.Effect).toBe("Deny");
     expect(text(deny.Resource)).toContain(`:log-group:/aws/bedrock-agentcore/runtimes/harness_Mango_${ns}_a_evals-*`);
+    // The Deny covers Logs Insights too: no query of the reader may name the evals log groups (D113).
+    expect(deny.Action).toBe("logs:*");
     const read = own.find((s) => s.Sid === "ReadAgentSpans")!;
     expect(actions(read)).toEqual(["logs:FilterLogEvents"]);
+    const query = own.find((s) => s.Sid === "QueryAgentSpans")!;
+    expect(actions(query)).toEqual(["logs:StartQuery"]);
+    const queried = query.Resource as unknown[];
+    expect(queried).toHaveLength(3);
+    expect(text(queried)).toContain(`:log-group:aws/spans"`);
+    expect(text(queried)).toContain(`:log-group:aws/spans:*`);
+    expect(text(queried)).toContain(`:log-group:/aws/bedrock-agentcore/runtimes/harness_Mango_${ns}_a_*`);
     const arns = text(read.Resource);
     expect(arns).toContain(`:log-group:aws/spans:*`);
     expect(arns).toContain(`:log-group:/aws/bedrock-agentcore/runtimes/harness_Mango_${ns}_a_*`);
     expect((read.Resource as unknown[]).length).toBe(2);
     const find = own.find((s) => s.Sid === "FindRuntimeLogGroups")!;
     expect(actions(find)).toEqual(["logs:DescribeLogGroups"]);
+    // The query APIs without a resource: its own queries only, and never a way to list others'.
+    const queries = own.find((s) => s.Sid === "ReadOwnQueries")!;
+    expect(actions(queries)).toEqual(["logs:GetQueryResults", "logs:StopQuery"]);
+    expect(queries.Resource).toBe("*");
+    expect(statements.flatMap(actions)).not.toContain("logs:DescribeQueries");
     for (const s of statements.filter((x) => x.Sid !== "NeverTheEvalsHarness")) {
       expect(s.Effect).toBe("Allow");
       for (const a of actions(s))
-        expect(a).toMatch(/^(logs:(FilterLogEvents|DescribeLogGroups|CreateLogStream|PutLogEvents)|xray:Put\w+)$/);
+        expect(a).toMatch(
+          /^(logs:(StartQuery|GetQueryResults|StopQuery|FilterLogEvents|DescribeLogGroups|CreateLogStream|PutLogEvents)|xray:Put\w+)$/,
+        );
     }
   });
 

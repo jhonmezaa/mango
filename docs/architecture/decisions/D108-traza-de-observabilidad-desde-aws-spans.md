@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-11-05 (elegida por el dueño ese día, por menú; dónde escribe el harness, comprobado ese día en la instalación, y leer también el stream `spans` del runtime, elegido ese día por el agente que lanzó el trabajo, punto 4)
 - **Precisa / reemplaza a:** precisa [D73](D073-turno-cortado-nunca-cuesta-cero.md) (7) y (8) (las trazas de `aws/spans` se leen también para una vista, no solo para cobrar, y no desde `mango-api`) y [D16](D016-observabilidad-de-agentes.md) (las trazas sin contenido pasan a ser, además, la fuente de la vista Observabilidad)
-- **Precisada por:** —
+- **Precisada por:** [D113](D113-observabilidad-con-logs-insights.md) (2) a (4): la función consulta con Logs Insights y usa `FilterLogEvents` solo de respaldo (elegido por el dueño el 2026-11-06, por menú)
 
 ## Decisión
 
