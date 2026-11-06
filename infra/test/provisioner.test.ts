@@ -510,6 +510,7 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
         // D110 (8): the canary's one turn, on the evals harness and its runtime only.
         expect(JSON.stringify(invoking.map((s) => s.Resource)), id).toMatch(/harness\/Mango_[a-z0-9]+_a_evals-\*/);
         expect(JSON.stringify(invoking.map((s) => s.Resource)), id).not.toMatch(/_a_\*/);
+        expect(JSON.stringify(invoking.map((s) => s.Resource)), id).toMatch(/runtime\/harness_Mango_[a-z0-9]+_a_evals-\*/);
         continue;
       }
       expect(resource.Properties.Roles, id).toEqual([{ Ref: apiRoleId }]);

@@ -146,10 +146,21 @@ export class EvalJudge extends Construct {
       `arn:aws:bedrock:*::foundation-model/${model.replace(/^(us|global)\./, "")}`,
     ]);
     allow("InvokeTheJudgeModels", ["bedrock:InvokeModel", "bedrock:Converse"], modelArns);
-    allow("InvokeTheEvalsHarness", ["bedrock-agentcore:InvokeHarness"], [
-      `${agentcore}:harness/${evalsHarness.harnessName(ns)}-*`,
-      `${agentcore}:runtime/${evalsHarness.runtimePrefix(ns)}*`,
-    ]);
+    // What mango-api needs to invoke a harness, on the evals one only (TM-M11): a managed
+    // harness also authorizes InvokeAgentRuntime on its runtime, or the turn is denied.
+    const evalsHarnessArn = `${agentcore}:harness/${evalsHarness.harnessName(ns)}-*`;
+    const evalsRuntimeArn = `${agentcore}:runtime/${evalsHarness.runtimePrefix(ns)}*`;
+    const evalsInvokeArns = [
+      evalsHarnessArn,
+      `${evalsHarnessArn}/harness-endpoint/*`,
+      evalsRuntimeArn,
+      `${evalsRuntimeArn}/*`,
+    ];
+    allow(
+      "InvokeTheEvalsHarness",
+      ["bedrock-agentcore:InvokeHarness", "bedrock-agentcore:InvokeAgentRuntime"],
+      evalsInvokeArns,
+    );
     allow("ReadTheEvalsHarness", ["dynamodb:GetItem"], [props.settingsTable.tableArn], {
       "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["EVALS"] },
       Null: { "dynamodb:LeadingKeys": "false" },
@@ -256,12 +267,20 @@ export class EvalJudge extends Construct {
         reason: "One judge model of the installation config through its cross-region profile, which routes to any region.",
       })),
       {
-        id: `AwsSolutions-IAM5[Resource::${agentcore}:harness/${evalsHarness.harnessName(ns)}-*]`,
+        id: `AwsSolutions-IAM5[Resource::${evalsHarnessArn}]`,
         reason: "The one evals harness; AgentCore appends a generated suffix to its name.",
       },
       {
-        id: `AwsSolutions-IAM5[Resource::${agentcore}:runtime/${evalsHarness.runtimePrefix(ns)}*]`,
+        id: `AwsSolutions-IAM5[Resource::${evalsHarnessArn}/harness-endpoint/*]`,
+        reason: "The endpoints of that one harness, which an invocation names.",
+      },
+      {
+        id: `AwsSolutions-IAM5[Resource::${evalsRuntimeArn}]`,
         reason: "The runtime AgentCore creates for that harness, named after it.",
+      },
+      {
+        id: `AwsSolutions-IAM5[Resource::${evalsRuntimeArn}/*]`,
+        reason: "The endpoints of that one runtime, which invoking the harness also authorizes.",
       },
     );
 

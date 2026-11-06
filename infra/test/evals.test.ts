@@ -126,6 +126,18 @@ describe("the evaluator's role (D110 (8))", () => {
     }
   });
 
+  it("invokes the evals harness as mango-api invokes one, on that harness and its runtime only (TM-M11)", () => {
+    // A managed harness also authorizes InvokeAgentRuntime on its runtime: InvokeHarness alone
+    // is denied (v0.1.0-ge926178, 2026-11-06).
+    const agentcore = `arn:aws:bedrock-agentcore:${region}:${account}`;
+    const harness = `${agentcore}:harness/Mango_${ns}_a_evals-*`;
+    const runtime = `${agentcore}:runtime/harness_Mango_${ns}_a_evals-*`;
+    const invoke = judgeStatements.filter((s) => actions(s).some((a) => a.startsWith("bedrock-agentcore:Invoke")));
+    expect(invoke.map((s) => s.Sid)).toEqual(["InvokeTheEvalsHarness"]);
+    expect(actions(invoke[0]!).sort()).toEqual(["bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeHarness"]);
+    expect(resourcesOf(invoke[0]!)).toEqual([harness, `${harness}/harness-endpoint/*`, runtime, `${runtime}/*`]);
+  });
+
   it("never gets a wildcard over every resource, nor bedrock:*", () => {
     const xray = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"];
     for (const s of judgeStatements) {

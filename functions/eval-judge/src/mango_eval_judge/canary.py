@@ -58,6 +58,30 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ERROR_CODE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
+# An IAM denial names the action it refused ("... not authorized to perform: <action> on ...").
+_DENIED_ACTION = re.compile(r"\bperform: ([a-z0-9-]{1,32}:[A-Za-z0-9]{1,64})\b")
+
+
+def _turn_error(exc: Exception) -> str:
+    """The failed turn as codes: exception, AWS error code, operation and a denied IAM action.
+
+    The message itself is never logged: an error of the stream may carry model output.
+    """
+    parts = [type(exc).__name__]
+    if isinstance(exc, ClientError):
+        error = exc.response.get("Error", {})
+        code = str(error.get("Code", ""))
+        parts.append(f"code={code if _ERROR_CODE.fullmatch(code) else 'other'}")
+        operation = str(exc.operation_name or "")
+        if _ERROR_CODE.fullmatch(operation):
+            parts.append(f"operation={operation}")
+        denied = _DENIED_ACTION.search(str(error.get("Message", "")))
+        if denied:
+            parts.append(f"action={denied.group(1)}")
+    return " ".join(parts)
+
+
 CANARY_USER = "mango-canary"
 """Whom the canary's turn is recorded for: no person. Its day counter only ever holds this."""
 MAX_TOKENS = 64
@@ -343,7 +367,8 @@ class Canary:
             budget_turns.bind_session(self._db, self._s.budgets_table, turn, session_id)
             usage = self._invoke(harness, model, session_id, marker)
         except (ClientError, BotoCoreError) as exc:
-            logger.error("evals canary turn failed: %s", type(exc).__name__)  # noqa: TRY400 - no content
+            # Codes only, never the message: diagnosable without prompt or answer (D110 (8)).
+            logger.error("evals canary turn failed: %s", _turn_error(exc))  # noqa: TRY400 - no content
             raise CanaryFailedError("turn_failed") from None
         finally:
             cost = budget_turns.token_cost(usage, turn.price)

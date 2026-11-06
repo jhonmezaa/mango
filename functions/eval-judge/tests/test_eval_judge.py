@@ -12,7 +12,7 @@ from typing import Any
 
 import boto3
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EventStreamError
 from moto import mock_aws
 
 from mango_core.evals_harness import Capture, EvalsHarness
@@ -95,9 +95,12 @@ class FakeAgentCore:
     label: str = "PASS"
     invocations: list[dict[str, Any]] = field(default_factory=list)
     evaluations: list[dict[str, Any]] = field(default_factory=list)
+    fail: Exception | None = None
 
     def invoke_harness(self, **request: Any) -> dict[str, Any]:
         self.invocations.append(request)
+        if self.fail is not None:
+            raise self.fail
         session = request["runtimeSessionId"]
         text = request["messages"][0]["content"][0]["text"]
         span = json.dumps(
@@ -239,6 +242,59 @@ def test_no_content_in_its_own_log_group_fails_closed(env: Env) -> None:
     assert capture.status == "failed"
     assert capture.reason == "no_content"
     assert sum(env.slept) >= 9 * 60
+
+
+def test_a_denied_turn_logs_its_code_and_action_never_the_message(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    message = (
+        "User: arn:aws:sts::111122223333:assumed-role/Mango-test-EvalJudge/x is not authorized"
+        " to perform: bedrock-agentcore:InvokeAgentRuntime on resource: arn:aws:bedrock-agentcore"
+    )
+    env.agentcore.fail = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": message}}, "InvokeHarness"
+    )
+    with caplog.at_level(logging.INFO):
+        capture = env.canary().run("3")
+
+    assert capture.reason == "turn_failed"
+    assert (
+        "evals canary turn failed: ClientError code=AccessDeniedException"
+        " operation=InvokeHarness action=bedrock-agentcore:InvokeAgentRuntime"
+    ) in caplog.text
+    assert "111122223333" not in caplog.text
+    assert "not authorized" not in caplog.text
+    # The reserved turn is closed even when it failed.
+    left = env.db.scan(TableName="budgets")["Items"]
+    assert not [i for i in left if i["PK"]["S"].startswith("TURN#")]
+
+
+def test_a_stream_error_logs_its_code_never_the_message(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    env.agentcore.fail = EventStreamError(
+        {"Error": {"Code": "runtimeClientError", "Message": "the model said: secreto"}},
+        "InvokeHarness",
+    )
+    with caplog.at_level(logging.INFO):
+        capture = env.canary().run("3")
+
+    assert capture.reason == "turn_failed"
+    assert (
+        "evals canary turn failed: EventStreamError code=runtimeClientError operation=InvokeHarness"
+    ) in caplog.text
+    assert "secreto" not in caplog.text
+
+
+def test_an_odd_error_code_is_not_logged_as_is(env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    env.agentcore.fail = ClientError(
+        {"Error": {"Code": "no such code\nforged line"}}, "InvokeHarness"
+    )
+    with caplog.at_level(logging.INFO):
+        env.canary().run("3")
+
+    assert "code=other operation=InvokeHarness" in caplog.text
+    assert "forged line" not in caplog.text
 
 
 def test_without_budget_nothing_is_invoked(env: Env) -> None:
