@@ -1,4 +1,4 @@
-import { Duration, Stack } from "aws-cdk-lib";
+import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -96,7 +96,9 @@ export class TraceReader extends Construct {
     this.function = new PythonFunction(this, "Function", {
       packageName: "mango-trace-reader",
       packagePath: "functions/trace-reader",
-      retainLogs: props.installation.retainData,
+      // A fixed name: a log group retained by a rolled-back create would make the retry fail
+      // ("already exists"). RetainExceptOnCreate deletes it only then; otherwise it is retained (D58 (27)).
+      logsRemovalPolicy: props.installation.retainData ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE : RemovalPolicy.DESTROY,
       handler: "mango_trace_reader.handler.lambda_handler",
       functionName: name,
       description: "Reads the metadata of the AgentCore spans of the installation for the Observability view",

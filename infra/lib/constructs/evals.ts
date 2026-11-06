@@ -130,7 +130,9 @@ export class EvalsCapture extends Construct {
       alias: `alias/${mangoName(ns, "evals-logs")}`,
       description: "Encrypts the log groups of the evals harness, the only ones with content (D110)",
       enableKeyRotation: true,
-      removalPolicy: props.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      // Retained on uninstall; deleted only if the operation that created it rolls back, so a
+      // failed first update leaves no orphan key behind (D58 (27)).
+      removalPolicy: props.retainData ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE : RemovalPolicy.DESTROY,
     });
     this.key.addToResourcePolicy(
       new iam.PolicyStatement({

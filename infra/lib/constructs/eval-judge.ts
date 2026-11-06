@@ -270,7 +270,6 @@ export class EvalJudge extends Construct {
       metricNamespace: "Mango/Evals",
       metricName: "CanaryFailed",
       metricValue: "1",
-      dimensions: {},
     });
     failures.node.addDependency(this.function);
     new cloudwatch.Alarm(this, "CanaryAlarm", {
