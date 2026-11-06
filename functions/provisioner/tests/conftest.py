@@ -364,6 +364,7 @@ class FakeLogs:
         self.deleted: list[str] = []
         self.disassociated: list[str] = []
         self.associated: list[str] = []
+        self.retention_set: list[str] = []
 
     def create_log_group(self, **kwargs: Any) -> None:
         name = kwargs["logGroupName"]
@@ -379,7 +380,11 @@ class FakeLogs:
         prefix = kwargs["logGroupNamePrefix"]
         return {
             "logGroups": [
-                {"logGroupName": n, **({"kmsKeyId": g["kms"]} if g.get("kms") else {})}
+                {
+                    "logGroupName": n,
+                    **({"kmsKeyId": g["kms"]} if g.get("kms") else {}),
+                    **({"retentionInDays": g["retention"]} if g.get("retention") else {}),
+                }
                 for n, g in self.groups.items()
                 if n.startswith(prefix)
             ]
@@ -396,6 +401,7 @@ class FakeLogs:
         group["tags"] = {**group.get("tags", {}), **kwargs["tags"]}
 
     def put_retention_policy(self, **kwargs: Any) -> None:
+        self.retention_set.append(kwargs["logGroupName"])
         self.groups[kwargs["logGroupName"]]["retention"] = kwargs["retentionInDays"]
 
     def delete_log_group(self, **kwargs: Any) -> None:

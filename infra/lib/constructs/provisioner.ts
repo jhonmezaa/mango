@@ -207,9 +207,11 @@ export class Provisioner extends Construct {
         // to report one that lost its boundary (`role_without_boundary`). With the condition
         // IAM would refuse to read a role without the boundary and the function could no
         // longer report it; what IAM answers for a role that does not exist was not checked,
-        // so that is not risked either. No Attach/Detach policy, no boundary changes and no
-        // trust policy updates.
-        actions: ["iam:GetRole", "iam:TagRole"],
+        // so that is not risked either. GetRolePolicy reads the role's own policy, so an
+        // unchanged one is not written again (a turn of the evals harness seconds after that
+        // write got no span, 2026-11-06, D110 (9)); it only reads. No Attach/Detach policy, no
+        // boundary changes and no trust policy updates.
+        actions: ["iam:GetRole", "iam:GetRolePolicy", "iam:TagRole"],
         resources: [platform.agentRoleArns],
       }),
     );

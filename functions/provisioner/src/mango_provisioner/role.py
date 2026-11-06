@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -275,6 +276,10 @@ class AgentRoles:
             if role is None:
                 raise StepError("role_not_found")
         self._verify(agent_id, role)
+        if not created and self._policy(name) == _canonical(document):
+            # Rewriting it unchanged is not harmless: a turn of the evals harness seconds
+            # after it got no span at all (2026-11-06, D110 (9)).
+            return created
         try:
             self._iam.put_role_policy(
                 RoleName=name,
@@ -319,6 +324,22 @@ class AgentRoles:
             raise aws_error("GetRole", exc) from None
         except BotoCoreError as exc:
             raise aws_error("GetRole", exc) from None
+
+    def _policy(self, name: str) -> str | None:
+        """The role's own policy as it is now, canonical; ``None`` if it has none."""
+        try:
+            document = self._iam.get_role_policy(RoleName=name, PolicyName=ROLE_POLICY_NAME)[
+                "PolicyDocument"
+            ]
+        except ClientError as exc:
+            if error_code(exc) == _NOT_FOUND:
+                return None
+            raise aws_error("GetRolePolicy", exc) from None
+        except BotoCoreError as exc:
+            raise aws_error("GetRolePolicy", exc) from None
+        if isinstance(document, str):
+            document = json.loads(unquote(document))
+        return _canonical(document)
 
     def _create(self, agent_id: str, name: str) -> bool:
         settings = self._settings

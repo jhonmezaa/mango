@@ -9,6 +9,10 @@ tools, a 64-token cap) and checks, before any eval may run:
 3. ``Evaluate`` scores that session with the first judge of the installation (the service
    accepts the managed harness's traces).
 
+If the marker lands but no span of its session does within ``SPANS_RETRY_SECONDS``, it sends
+one more turn in a new session (reserved like the first) before failing with
+``no_spans_delivered``; both turns share the same wait.
+
 Only then it writes ``verified`` for that harness version. Any other result, or any error, is
 ``failed`` with a fixed reason and an error log line the alarm counts: mango-api runs no eval.
 The canary only ever saw its own marker, never content of a case.
@@ -89,6 +93,12 @@ TIMEOUT_SECONDS = 60
 POLL_SECONDS = 30
 MAX_WAIT_SECONDS = 9 * 60
 """Traces arrive in CloudWatch 2 to 5 minutes after a turn; the function times out at 15."""
+SPANS_RETRY_SECONDS = 3 * 60
+"""How long after a turn the canary waits for its spans before one more turn in a new session.
+Spans of a turn land within seconds (2 to 4 s, 2026-11-06). A turn that ran seconds after the
+provisioner rewrote the harness's role, unchanged, got no span at all, with no error anywhere,
+while the same harness version delivered them ten minutes later (finding of 2026-11-06)."""
+TURN_ATTEMPTS = 2
 SHARED_LOG_SETTLE_SECONDS = 60
 """After the marker is in its own log group, how long until ``aws/spans`` is read: spans of a
 turn land together, within seconds of each other."""
@@ -360,15 +370,14 @@ class Canary:
             return True  # There are spans; the smoke Evaluate says what it makes of them.
         return bool(spans.trace_ids(found))
 
-    def _check(self, harness_version: str) -> None:
-        harness = self._harness(harness_version)
-        model, prices = self._model(harness)
-        logger.info("evals canary model: %s", model)
-        groups = self._s.runtime_log_groups(harness.runtime_id)
+    def _turn(
+        self, harness: EvalsHarness, model: str, prices: tuple[Decimal, Decimal]
+    ) -> tuple[str, str, int]:
+        """One turn with a new marker in a new session, reserved first (rule 4)."""
         marker = secrets.token_hex(16)
         session_id = "mango-canary-" + secrets.token_hex(24)
         started = int(self._clock())
-        # The marker prompt is under 200 tokens; the answer is capped (rule 4: reserved first).
+        # The marker prompt is under 200 tokens; the answer is capped.
         turn = self._reserve(
             model, prices, started, input_tokens=TURN_INPUT_TOKENS, output_tokens=MAX_TOKENS
         )
@@ -383,28 +392,56 @@ class Canary:
         finally:
             cost = budget_turns.token_cost(usage, turn.price)
             budget_turns.settle(self._db, self._s.budgets_table, turn, cost)
-        start_ms = started * 1000 - 60_000
+        return session_id, marker, started
+
+    def _check(self, harness_version: str) -> None:
+        harness = self._harness(harness_version)
+        model, prices = self._model(harness)
+        logger.info("evals canary model: %s", model)
+        groups = self._s.runtime_log_groups(harness.runtime_id)
+        markers: list[str] = []
+        first_start_ms = 0
         waited = 0
-        while True:
-            end_ms = int(self._clock() * 1000) + 60_000
-            if spans.marker_count(self._logs, groups[1], marker, start_ms, end_ms):
+        for attempt in range(1, TURN_ATTEMPTS + 1):
+            session_id, marker, started = self._turn(harness, model, prices)
+            markers.append(marker)
+            start_ms = started * 1000 - 60_000
+            first_start_ms = first_start_ms or start_ms
+            turn_waited = waited
+            while True:
+                end_ms = int(self._clock() * 1000) + 60_000
+                if spans.marker_count(self._logs, groups[1], marker, start_ms, end_ms):
+                    break
+                if waited >= MAX_WAIT_SECONDS:
+                    raise CanaryFailedError("no_content")
+                self._sleep(POLL_SECONDS)
+                waited += POLL_SECONDS
+            # The content can land (the runtime's own logs) while no span ever does: X-Ray
+            # delivers the spans on its own, with no error anywhere when it delivers none
+            # (findings of 2026-11-06). One more turn in a new session if the first gets none.
+            last = attempt == TURN_ATTEMPTS
+            limit = (
+                MAX_WAIT_SECONDS
+                if last
+                else min(turn_waited + SPANS_RETRY_SECONDS, MAX_WAIT_SECONDS)
+            )
+            delivered = self._has_spans(groups, session_id, start_ms)
+            while not delivered and waited < limit:
+                self._sleep(POLL_SECONDS)
+                waited += POLL_SECONDS
+                delivered = self._has_spans(groups, session_id, start_ms)
+            if delivered:
                 break
-            if waited >= MAX_WAIT_SECONDS:
-                raise CanaryFailedError("no_content")
-            self._sleep(POLL_SECONDS)
-            waited += POLL_SECONDS
-        # The content can land (the runtime's own logs) while no span ever does: X-Ray delivers
-        # the spans on its own, and a log group whose key association it cannot use gets none,
-        # with no error anywhere (finding of 2026-11-06). Same wait, shared with the marker's.
-        while not self._has_spans(groups, session_id, start_ms):
-            if waited >= MAX_WAIT_SECONDS:
+            if last or waited >= MAX_WAIT_SECONDS:
                 raise CanaryFailedError("no_spans_delivered")
-            self._sleep(POLL_SECONDS)
-            waited += POLL_SECONDS
+            logger.warning("evals canary: no spans of its turn yet, one more turn in a new session")
         self._sleep(SHARED_LOG_SETTLE_SECONDS)
         end_ms = int(self._clock() * 1000) + 60_000
-        if spans.marker_count(self._logs, self._s.spans_log_group, marker, start_ms, end_ms):
-            raise CanaryFailedError("content_in_shared_log")
+        for sent in markers:
+            if spans.marker_count(
+                self._logs, self._s.spans_log_group, sent, first_start_ms, end_ms
+            ):
+                raise CanaryFailedError("content_in_shared_log")
         first_judge = sorted(self._s.evaluators)[0]
         # The smoke Evaluate, reserved first too: a one-turn session and the judge's answer.
         judge_turn = self._reserve(

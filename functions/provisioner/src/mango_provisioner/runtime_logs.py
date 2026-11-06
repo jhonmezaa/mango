@@ -35,13 +35,15 @@ def govern_log_groups(
     same tags as one created here, the stack's included (D76).
 
     ``rebind`` (only the evals harness, D110 (9)): an adopted log group gets its key taken off
-    and associated again. Associating the key seconds after AgentCore set the unified span
-    destination up left X-Ray delivering nothing, with no error anywhere; only taking it off
-    and back repaired it (2026-11-06).
+    and associated again, while no eval may run. It was the first explanation of a harness that
+    delivered no span; that the key caused it is not proven (2026-11-06: every turn without
+    spans ran seconds after a release rewrote the harness's role), and it is kept because it
+    is harmless then.
 
-    Otherwise an adopted log group that already has this key is left as it is: associating the
-    same key again is not a no-op, it stopped X-Ray delivering the spans of a log group that
-    had been delivering them (2026-11-06).
+    Otherwise an adopted log group that already has this key, or this retention, is not
+    written again. Turns of the evals harness seconds after the release rewrote, unchanged, its
+    role and its log groups' settings got no span at all (2026-11-06, D110 (9)); a write that
+    changes nothing is left out.
     """
     for name in names:
         try:
@@ -50,21 +52,24 @@ def govern_log_groups(
             except ClientError as exc:
                 if error_code(exc) != "ResourceAlreadyExistsException":
                     raise
+                current = _group(logs, name)
                 if rebind:
                     logs.disassociate_kms_key(logGroupName=name)
                     logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
-                elif _key_of(logs, name) != key_arn:
+                elif current.get("kmsKeyId") != key_arn:
                     logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
                 logs.tag_resource(resourceArn=arn_of(name), tags=dict(tags))
+                if current.get("retentionInDays") == RUNTIME_LOG_RETENTION_DAYS:
+                    continue
             logs.put_retention_policy(logGroupName=name, retentionInDays=RUNTIME_LOG_RETENTION_DAYS)
         except (ClientError, BotoCoreError) as exc:
             raise aws_error("RuntimeLogGroup", exc) from None
 
 
-def _key_of(logs: CloudWatchLogsClient, name: str) -> str | None:
-    """The key a log group is associated with, if any."""
+def _group(logs: CloudWatchLogsClient, name: str) -> Mapping[str, object]:
+    """The log group as it is now (its key and retention), or nothing if it is not listed."""
     groups = logs.describe_log_groups(logGroupNamePrefix=name)["logGroups"]
-    return next((g.get("kmsKeyId") for g in groups if g.get("logGroupName") == name), None)
+    return next((dict(g) for g in groups if g.get("logGroupName") == name), {})
 
 
 def delete_log_groups(logs: CloudWatchLogsClient, names: Iterable[str]) -> None:

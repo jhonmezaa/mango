@@ -203,9 +203,37 @@ def test_a_verified_capture_leaves_the_key_alone(lab: Lab) -> None:
 
     # Evals may be running: the content never goes a moment without its key.
     assert lab.logs.disassociated == []
-    # Nor is the same key associated again, which stops X-Ray delivering the spans.
+    # Nor is the same key associated again: a write that changes nothing is left out.
     assert lab.logs.associated == []
     assert {lab.logs.groups[n]["kms"] for n in _evals_groups(lab)} == {EVALS_LOGS_KEY_ARN}
+
+
+def test_a_release_that_changes_nothing_rewrites_neither_the_role_nor_the_retention(
+    lab: Lab,
+) -> None:
+    """A turn of the evals harness seconds after a release rewrote its role and its log groups'
+    retention, unchanged, got no span at all (2026-11-06, D110 (9))."""
+    _agentcore_creates_the_log_groups(lab)
+    lab.run(provision_input(RELEASE))
+    version = Capture.from_item(_item(lab, "CAPTURE") or {}).harness_version
+    lab.db.put_item(
+        TableName=SETTINGS_TABLE,
+        Item=Capture("verified", version, "2026-11-06T15:20:00+00:00").item(),
+    )
+    writes: list[str] = []
+    real = lab.iam.put_role_policy
+
+    def put_role_policy(**kwargs: Any) -> Any:
+        writes.append(kwargs["RoleName"])
+        return real(**kwargs)
+
+    lab.iam.put_role_policy = put_role_policy  # type: ignore[method-assign]
+    lab.logs.retention_set.clear()
+    lab.run(provision_input("v0.1.1-g1a2b3c4"), execution="exec-2")
+
+    assert writes == []
+    assert lab.logs.retention_set == []
+    assert {lab.logs.groups[n]["retention"] for n in _evals_groups(lab)} == {30}
 
 
 def test_the_playground_never_gets_its_key_taken_off(lab: Lab) -> None:

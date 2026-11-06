@@ -98,6 +98,8 @@ class FakeAgentCore:
     capture: bool = True
     spans: bool = True
     """False: the content reaches the runtime's own logs but X-Ray delivers no span."""
+    turns_without_spans: int = 0
+    """The first turns whose spans X-Ray never delivers (as right after the role was rewritten)."""
     label: str = "PASS"
     invocations: list[dict[str, Any]] = field(default_factory=list)
     evaluations: list[dict[str, Any]] = field(default_factory=list)
@@ -117,7 +119,8 @@ class FakeAgentCore:
                 "attributes": {"session.id": session, "gen_ai.input.messages": text},
             }
         )
-        if self.capture and not self.spans:
+        delivered = self.spans and len(self.invocations) > self.turns_without_spans
+        if self.capture and not delivered:
             # A log record of the runtime (otel-rt-logs): the marker, under ``sessionId``.
             record = json.dumps(
                 {"traceId": "t1", "attributes": {"sessionId": session}, "body": text}
@@ -266,6 +269,50 @@ def test_content_without_spans_fails_closed_with_its_own_reason(env: Env) -> Non
     # Same wait as the marker's, never more than the function's time.
     assert sum(env.slept) <= 9 * 60
     assert env.agentcore.evaluations == []
+    # One more turn in a new session before failing, never a third.
+    first, second = env.agentcore.invocations
+    assert first["runtimeSessionId"] != second["runtimeSessionId"]
+
+
+def test_a_turn_without_spans_is_tried_once_more_in_a_new_session(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    env.agentcore.turns_without_spans = 1
+    with caplog.at_level(logging.INFO):
+        capture = env.canary().run("3")
+
+    assert capture.status == "verified"
+    first, second = env.agentcore.invocations
+    assert first["runtimeSessionId"] != second["runtimeSessionId"]
+    marker = first["messages"][0]["content"][0]["text"].split()[-1]
+    assert marker != second["messages"][0]["content"][0]["text"].split()[-1]
+    # The first turn waited for its spans three minutes, not the whole wait.
+    assert 3 * 60 <= sum(env.slept) <= 3 * 60 + 60 + 30
+    assert "one more turn in a new session" in caplog.text
+    assert marker not in caplog.text
+    # Both turns were reserved and closed (rule 4); the Evaluate scored the second session.
+    left = env.db.scan(TableName="budgets")["Items"]
+    assert not [i for i in left if i["PK"]["S"].startswith("TURN#")]
+    (evaluation,) = env.agentcore.evaluations
+    assert second["runtimeSessionId"] in json.dumps(evaluation)
+
+
+def test_the_marker_of_the_first_turn_in_aws_spans_still_fails_closed(env: Env) -> None:
+    env.agentcore.turns_without_spans = 1
+    real = env.agentcore.invoke_harness
+
+    def invoke(**request: Any) -> dict[str, Any]:
+        response = real(**request)
+        if len(env.agentcore.invocations) == 1:
+            text = request["messages"][0]["content"][0]["text"]
+            env.logs.groups["aws/spans"].append(json.dumps({"body": text}))
+        return response
+
+    env.agentcore.invoke_harness = invoke  # type: ignore[method-assign]
+    capture = env.canary().run("3")
+
+    assert capture.status == "failed"
+    assert capture.reason == "content_in_shared_log"
 
 
 def test_a_denied_turn_logs_its_code_and_action_never_the_message(

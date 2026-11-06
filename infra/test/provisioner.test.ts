@@ -90,12 +90,13 @@ describe("provisioner role: IAM (TM-M1)", () => {
     }
   });
 
-  it("has only two IAM actions that IAM does not tie to the boundary or to a service", () => {
+  it("has only three IAM actions that IAM does not tie to the boundary or to a service", () => {
     // TagRole has no boundary condition key. GetRole has one and stays without it: the
     // function reads a role to learn whether it exists and whether it still carries the boundary.
+    // GetRolePolicy only reads the role's own policy, to leave an unchanged one unwritten.
     const unconditioned = iamStatements.filter((s) => s.Condition === undefined);
     expect(unconditioned.map((s) => s.Sid)).toEqual(["AgentRoleLifecycle"]);
-    expect(actions(unconditioned[0]!).sort()).toEqual(["iam:GetRole", "iam:TagRole"]);
+    expect(actions(unconditioned[0]!).sort()).toEqual(["iam:GetRole", "iam:GetRolePolicy", "iam:TagRole"]);
   });
 
   it("passes agent roles only to AgentCore", () => {
@@ -115,6 +116,7 @@ describe("provisioner role: IAM (TM-M1)", () => {
       "iam:DeleteRole",
       "iam:DeleteRolePolicy",
       "iam:GetRole",
+      "iam:GetRolePolicy",
       "iam:PassRole",
       "iam:PutRolePolicy",
       "iam:TagRole",

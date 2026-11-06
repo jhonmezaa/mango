@@ -44,6 +44,31 @@ def test_repeating_changes_nothing_and_new_models_replace_the_policy(lab: Lab) -
     assert all("haiku" in r for r in resources)
 
 
+def test_an_unchanged_policy_is_not_written_again(lab: Lab) -> None:
+    roles = _roles(lab)
+    roles.ensure(AGENT, [MODEL])
+    writes: list[str] = []
+    real = lab.iam.put_role_policy
+
+    def put_role_policy(**kwargs: Any) -> Any:
+        writes.append(kwargs["PolicyName"])
+        return real(**kwargs)
+
+    lab.iam.put_role_policy = put_role_policy  # type: ignore[method-assign]
+    roles.ensure(AGENT, [MODEL])
+    assert writes == []
+    roles.ensure(AGENT, [MODEL_2])
+    assert writes == ["agent"]
+
+
+def test_a_role_without_its_policy_gets_it(lab: Lab) -> None:
+    roles = _roles(lab)
+    roles.ensure(AGENT, [MODEL])
+    lab.iam.delete_role_policy(RoleName=ROLE, PolicyName="agent")
+    roles.ensure(AGENT, [MODEL])
+    assert lab.iam.list_role_policies(RoleName=ROLE)["PolicyNames"] == ["agent"]
+
+
 def test_trust_is_only_agentcore_for_this_agent() -> None:
     (statement,) = trust_policy(SETTINGS, AGENT)["Statement"]
     assert statement["Principal"] == {"Service": "bedrock-agentcore.amazonaws.com"}
