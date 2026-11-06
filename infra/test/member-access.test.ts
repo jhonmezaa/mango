@@ -15,6 +15,7 @@ import {
 } from "../lib/stacks/member-stack.js";
 import { FAILURE_TOLERANCE_PERCENT, OrgAccessStack } from "../lib/stacks/org-access-stack.js";
 import { instantiate, Values } from "./parameters.js";
+import { expectOnlyTheEvalsContentDeny } from "./evals-deny.js";
 
 const examplePath = resolve(import.meta.dirname, "../config/example.json");
 const cfg = loadInstallation(examplePath);
@@ -373,7 +374,7 @@ describe("ReadBroker (Core)", () => {
   });
 
   it("can only assume the spoke role, in accounts of the organization, and holds no data permission", () => {
-    expect(broker.Properties.ManagedPolicyArns).toBeUndefined();
+    expectOnlyTheEvalsContentDeny(broker.Properties.ManagedPolicyArns);
     const own = policies.filter((p) => refersTo(p.Properties.Roles, brokerId));
     expect(own).toHaveLength(1);
     const statements = own[0]!.Properties.PolicyDocument.Statement as Statement[];

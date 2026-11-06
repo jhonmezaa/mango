@@ -4,7 +4,7 @@ import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { CANARY_BUDGET_KEYS, EVAL_JUDGE_ALARMS, JUDGE_INSTRUCTIONS } from "../lib/constructs/eval-judge.js";
-import { judgeModels } from "../lib/constructs/evals.js";
+import { ACCOUNT_LOG_EXPORT_ACTIONS, EVALS_CONTENT_ACTIONS, judgeModels } from "../lib/constructs/evals.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
 
@@ -74,10 +74,11 @@ describe("the key of the evals log groups (D110 (8), TM-EV1)", () => {
   )!;
   const policy = key.Properties.KeyPolicy.Statement as Statement[];
 
-  it("denies decrypting through CloudWatch Logs to every principal but the evaluator", () => {
+  it("keeps its Deny of kms:Decrypt unchanged, which is not what decides who reads (D110 (8), 2026-11-06)", () => {
+    // An administrator of the account read the evals log groups with this Deny in place: the
+    // key promises nothing about readers until a tested Deny replaces it. IAM decides (below).
     const deny = policy.find((s) => s.Sid === "OnlyTheEvaluatorReadsTheContent")!;
     expect(deny.Effect).toBe("Deny");
-    expect(deny.Principal).toEqual({ AWS: "*" });
     expect(actions(deny)).toEqual(["kms:Decrypt"]);
     expect(deny.Condition).toEqual({
       StringEquals: { "kms:ViaService": `logs.${region}.amazonaws.com` },
@@ -99,6 +100,61 @@ describe("the key of the evals log groups (D110 (8), TM-EV1)", () => {
     expect(env.EVAL_JUDGE_FUNCTION).toBe(judgeName);
     expect(env.EVALS_LOGS_KEY_ARN).toBeDefined();
     expect(env.EVALS_LOGS_KEY_ARN).not.toEqual(env.RUNTIME_LOGS_KEY_ARN);
+  });
+});
+
+describe("who reads the evals content: IAM (D110 (8), 2026-11-06)", () => {
+  const [denyId, deny] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-evals-content-deny` });
+  const denyStatements = deny.Properties.PolicyDocument.Statement as Statement[];
+  const carries = (role: Resource) =>
+    JSON.stringify(role.Properties.ManagedPolicyArns ?? []).includes(JSON.stringify({ Ref: denyId }));
+
+  it("denies reading and exporting the evals log groups, Logs Insights and Live Tail included", () => {
+    const content = denyStatements.find((s) => s.Sid === "NoEvalsContent")!;
+    expect(content.Effect).toBe("Deny");
+    expect(resourcesOf(content)).toEqual([evalLogGroups]);
+    expect(actions(content)).toEqual([...EVALS_CONTENT_ACTIONS]);
+    for (const a of [
+      "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:Unmask", "logs:StartQuery",
+      "logs:GetQueryResults", "logs:StartLiveTail", "logs:CreateExportTask", "logs:PutSubscriptionFilter",
+    ]) {
+      expect(actions(content)).toContain(a);
+    }
+    const account = denyStatements.find((s) => s.Sid === "NoAccountWideLogExport")!;
+    expect(account.Effect).toBe("Deny");
+    expect(resourcesOf(account)).toEqual(["*"]);
+    expect(actions(account)).toEqual([...ACCOUNT_LOG_EXPORT_ACTIONS]);
+    expect(denyStatements).toHaveLength(2);
+  });
+
+  it("never denies what the evals harness writes with nor what the provisioner sets on its log groups", () => {
+    const denied = denyStatements.flatMap(actions);
+    for (const a of [
+      "logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams",
+      "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:AssociateKmsKey", "logs:PutRetentionPolicy",
+      "logs:TagResource", "logs:DeleteLogGroup",
+    ]) {
+      expect(denied).not.toContain(a);
+    }
+  });
+
+  it("is attached to every role of Core and of its nested stacks but the evaluator's", () => {
+    const roles = Object.entries(resources).filter(([, r]) => r.Type === "AWS::IAM::Role");
+    expect(roles.length).toBeGreaterThan(40);
+    const without = roles.filter(([, r]) => !carries(r)).map(([id]) => id);
+    expect(without).toEqual([judgeRoleId]);
+  });
+
+  it("is in the boundary of every role created at runtime: agents, packs and knowledge base sources", () => {
+    for (const name of ["agent-boundary", "mcp-boundary", "kbsrc-boundary"]) {
+      const [, boundary] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-${name}` });
+      const statements = boundary.Properties.PolicyDocument.Statement as Statement[];
+      const content = statements.find((s) => s.Sid === "NoEvalsContent")!;
+      expect(content.Effect, name).toBe("Deny");
+      expect(actions(content)).toEqual([...EVALS_CONTENT_ACTIONS]);
+      expect(resourcesOf(content)).toEqual([evalLogGroups]);
+      expect(statements.find((s) => s.Sid === "NoAccountWideLogExport")?.Effect, name).toBe("Deny");
+    }
   });
 });
 
@@ -186,7 +242,7 @@ describe("the evaluator's role (D110 (8))", () => {
       )
       .flatMap((r) => (r.Properties.Roles ?? []) as { Ref: string }[]);
     // A role that may read the runtimes' log groups by prefix (Observability, D108) must deny
-    // the evals harness's explicitly; the key denies it decrypting them too.
+    // the evals harness's explicitly; every role but the evaluator also carries the content Deny.
     const denied = new Set(
       policies
         .filter((r) =>

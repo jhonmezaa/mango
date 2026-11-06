@@ -287,8 +287,12 @@ describe("pack permissions boundary", () => {
 
   it("allows only the listed data actions, the broker and what the runtime needs for itself", () => {
     expect(actions(bySid(statements, "PackData"))).toEqual(PACK_DATA_ACTIONS);
-    expect(statements.map((s) => s.Sid).sort()).toEqual(["AssumeBroker", "Metrics", "PackData", "RuntimeLogs", "Tracing"]);
-    const services = new Set(statements.flatMap(actions).map((a) => a.split(":")[0]));
+    // Plus the evals content Deny every boundary carries (D110 (8), evals.test.ts).
+    expect(statements.map((s) => s.Sid).sort()).toEqual([
+      "AssumeBroker", "Metrics", "NoAccountWideLogExport", "NoEvalsContent", "PackData", "RuntimeLogs", "Tracing",
+    ]);
+    const allowed = statements.filter((s) => s.Effect === "Allow");
+    const services = new Set(allowed.flatMap(actions).map((a) => a.split(":")[0]));
     expect([...services].sort()).toEqual(["cloudwatch", "logs", "pricing", "sts", "xray"]);
     // Rule 5 (D37, D51): the only roles a pack may ever assume are the installation's two
     // brokers, which demand a SourceIdentity and name in their trust the exact pack roles of

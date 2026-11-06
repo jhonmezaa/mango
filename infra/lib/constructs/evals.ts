@@ -1,8 +1,8 @@
-import { RemovalPolicy, Stack } from "aws-cdk-lib";
+import { CfnResource, IAspect, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
-import { Construct } from "constructs";
+import { Construct, IConstruct } from "constructs";
 import { Installation } from "../config/schema.js";
 import { agentNames, mangoName, roleNames } from "../names.js";
 import { acknowledge } from "../nag.js";
@@ -100,15 +100,73 @@ export interface EvalsCaptureProps {
 }
 
 /**
- * Where the content of the evals harness lives (D110 (3), (8)): the log groups of its own runtime,
- * encrypted with a key of their own that only the evaluator may decrypt. It lives in Core because
- * the provisioner (Core) associates it with those log groups when it deploys the harness; the
- * evaluator, in its nested stack, is named here by its fixed role name.
+ * CloudWatch Logs actions that return, or send elsewhere, the events of a log group, denied on
+ * the evals harness's log groups to every role of Mango but the evaluator (D110 (8)). Every
+ * action here takes a `log-group` resource (Service Authorization Reference, 2026-11-06); the
+ * ARN pattern ends in `*`, so it also names their log streams (`GetLogEvents`).
  *
- * The key policy, not only IAM, decides who reads the content: CloudWatch Logs asks KMS, as the
- * caller (`kms:ViaService`), to decrypt what a reader reads, and the policy denies that to every
- * principal but the evaluator's role. The services that write (CloudWatch Logs, X-Ray) are no
- * principal with an ARN and are not denied.
+ * - Read: `GetLogEvents`, `FilterLogEvents`, `GetLogRecord` (also `GetLogObject`), `Unmask`,
+ *   `StartQuery` and `GetQueryResults` (Logs Insights), `StartLiveTail`, `GetLogGroupFields`.
+ * - Export or copy: `CreateExportTask` (S3), `PutSubscriptionFilter`, `IntegrateWithS3Table`,
+ *   `IntegrateWithDataset`, `ProcessWithPipeline`, and `CreateLogAnomalyDetector` (anomalies
+ *   carry samples of the events).
+ * - `DisassociateKmsKey`: the log groups keep their own key.
+ *
+ * Not here, because the evals harness's role or the provisioner need them on these log groups
+ * and none returns an event: `CreateLogGroup`, `CreateLogStream`, `PutLogEvents`,
+ * `DescribeLogStreams`, `PutResourcePolicy`, `AssociateKmsKey`, `PutRetentionPolicy`,
+ * `TagResource`, `DeleteLogGroup`.
+ */
+export const EVALS_CONTENT_ACTIONS = [
+  "logs:GetLogEvents",
+  "logs:FilterLogEvents",
+  "logs:GetLogRecord",
+  "logs:Unmask",
+  "logs:StartQuery",
+  "logs:GetQueryResults",
+  "logs:StartLiveTail",
+  "logs:GetLogGroupFields",
+  "logs:CreateExportTask",
+  "logs:PutSubscriptionFilter",
+  "logs:IntegrateWithS3Table",
+  "logs:IntegrateWithDataset",
+  "logs:ProcessWithPipeline",
+  "logs:CreateLogAnomalyDetector",
+  "logs:DisassociateKmsKey",
+] as const;
+
+/**
+ * Account-wide ways to send log events elsewhere, which name no log group (their API takes no
+ * resource, so the statement uses `*`): an account subscription policy (`PutAccountPolicy`),
+ * an S3 Tables or OpenSearch integration, a telemetry pipeline and a scheduled query. No role
+ * of Mango uses them.
+ */
+export const ACCOUNT_LOG_EXPORT_ACTIONS = [
+  "logs:PutAccountPolicy",
+  "logs:AssociateSourceToS3TableIntegration",
+  "logs:PutIntegration",
+  "logs:PutPipelineRule",
+  "logs:CreateScheduledQuery",
+  "logs:UpdateScheduledQuery",
+] as const;
+
+/**
+ * Where the content of the evals harness lives (D110 (3), (8)): the log groups of its own runtime,
+ * encrypted with a key of their own. It lives in Core because the provisioner (Core) associates
+ * it with those log groups when it deploys the harness; the evaluator, in its nested stack, is
+ * named here by its fixed role name.
+ *
+ * IAM, not the key, decides who reads the content (D110 (8), precised 2026-11-06). An
+ * administrator of the account read these log groups without error: CloudWatch Logs checked
+ * that reader with a dry-run `kms:Decrypt` (CloudTrail shows the reader's role, invoked by
+ * Logs) and the key's Deny below did not stop it. Why it did not, and whether another Deny in
+ * the key would, is still being tested; until then the key promises nothing about readers.
+ * Every role of Mango but the evaluator carries an explicit Deny of {@link EVALS_CONTENT_ACTIONS}
+ * on them ({@link contentDeny}, attached by {@link DenyEvalsContent}, and in the boundaries of
+ * the roles created at runtime). An administrator of the account can still read them, like any
+ * data of the account. The key keeps what it does give: a customer managed key of its own, only
+ * for these log groups (encryption context), whose every use is in CloudTrail and whose deletion
+ * makes the content unreadable.
  */
 export class EvalsCapture extends Construct {
   readonly key: kms.Key;
@@ -116,6 +174,8 @@ export class EvalsCapture extends Construct {
   readonly judgeRoleArn: string;
   readonly judgeFunctionArn: string;
   readonly judgeFunctionName: string;
+  /** `Mango-<ns>-evals-content-deny`: attached to every role of the installation but the evaluator. */
+  readonly contentDeny: iam.ManagedPolicy;
   private readonly namespace: string;
 
   constructor(scope: Construct, id: string, props: EvalsCaptureProps) {
@@ -143,6 +203,10 @@ export class EvalsCapture extends Construct {
         conditions: { ArnLike: { "kms:EncryptionContext:aws:logs:arn": this.logGroupArns } },
       }),
     );
+    // Did not stop a reader: an administrator of the account read these log groups through
+    // CloudWatch Logs (2026-11-06), whose dry-run Decrypt as that reader was allowed. Why is
+    // being tested; it is kept unchanged until then, and who reads is decided in IAM
+    // ({@link contentDeny}).
     this.key.addToResourcePolicy(
       new iam.PolicyStatement({
         sid: "OnlyTheEvaluatorReadsTheContent",
@@ -153,11 +217,38 @@ export class EvalsCapture extends Construct {
         conditions: {
           StringEquals: { "kms:ViaService": `logs.${region}.amazonaws.com` },
           ArnNotEquals: { "aws:PrincipalArn": this.judgeRoleArn },
-          // Only principals with an ARN: the services that write are not denied.
           Null: { "aws:PrincipalArn": "false" },
         },
       }),
     );
+    this.contentDeny = new iam.ManagedPolicy(this, "ContentDeny", {
+      managedPolicyName: mangoName(ns, "evals-content-deny"),
+      description: "No role of Mango but the evaluator reads or exports the evals harness's log groups (D110)",
+      statements: this.denyStatements(),
+    });
+  }
+
+  /** The Deny of {@link EVALS_CONTENT_ACTIONS} and {@link ACCOUNT_LOG_EXPORT_ACTIONS}. */
+  denyStatements(): iam.PolicyStatement[] {
+    return [
+      new iam.PolicyStatement({
+        sid: "NoEvalsContent",
+        effect: iam.Effect.DENY,
+        actions: [...EVALS_CONTENT_ACTIONS],
+        resources: [this.logGroupArns],
+      }),
+      new iam.PolicyStatement({
+        sid: "NoAccountWideLogExport",
+        effect: iam.Effect.DENY,
+        actions: [...ACCOUNT_LOG_EXPORT_ACTIONS],
+        resources: ["*"],
+      }),
+    ];
+  }
+
+  /** The same Deny in the boundary of roles created at runtime (agents, packs, KB sources). */
+  denyInBoundary(boundary: iam.ManagedPolicy): void {
+    boundary.addStatements(...this.denyStatements());
   }
 
   /** The ceiling of agent roles: only the evals role sets the trace destination of its log groups. */
@@ -209,5 +300,32 @@ export class EvalsCapture extends Construct {
   /** Environment the provisioner needs (D110). */
   get provisionerEnvironment(): Record<string, string> {
     return { EVALS_LOGS_KEY_ARN: this.key.keyArn, EVAL_JUDGE_FUNCTION: this.judgeFunctionName };
+  }
+}
+
+/**
+ * Attaches {@link EvalsCapture.contentDeny} to every IAM role of the stack it is added to and of
+ * the stacks nested in it, but the evaluator's (D110 (8)). A role added later gets it without
+ * anyone remembering to; `infra/test/evals.test.ts` checks every role of the template.
+ */
+export class DenyEvalsContent implements IAspect {
+  constructor(
+    private readonly capture: EvalsCapture,
+    private readonly evaluatorRoleName: string,
+  ) {}
+
+  visit(node: IConstruct): void {
+    if (node instanceof iam.Role) {
+      const cfn = node.node.defaultChild as iam.CfnRole;
+      if (cfn.roleName === this.evaluatorRoleName) return;
+      node.addManagedPolicy(this.capture.contentDeny);
+      return;
+    }
+    // Roles CDK writes as a plain resource (CustomResourceProvider, e.g. the S3 auto-delete one).
+    if (node instanceof CfnResource && node.cfnResourceType === "AWS::IAM::Role" && !(node instanceof iam.CfnRole)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const current = ((node as any)._cfnProperties?.ManagedPolicyArns ?? []) as unknown[];
+      node.addPropertyOverride("ManagedPolicyArns", [...current, this.capture.contentDeny.managedPolicyArn]);
+    }
   }
 }

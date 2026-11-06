@@ -6,6 +6,7 @@ import { loadInstallation } from "../lib/config/schema.js";
 import { connectorCatalog, PROVISIONER_WRITABLE_ATTRIBUTES, RELEASE_META_ATTRIBUTES, RELEASE_VERSION_ATTRIBUTES } from "../lib/constructs/provisioner.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
+import { expectOnlyTheEvalsContentDeny } from "./evals-deny.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
@@ -368,7 +369,7 @@ describe("provisioner role: wildcards and the rest", () => {
 
   it("has no managed policies and is assumed only by Lambda", () => {
     const role = resources[provisionerRoleId]!;
-    expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+    expectOnlyTheEvalsContentDeny(role.Properties.ManagedPolicyArns);
     expect(role.Properties.AssumeRolePolicyDocument.Statement).toEqual([
       { Action: "sts:AssumeRole", Effect: "Allow", Principal: { Service: "lambda.amazonaws.com" } },
     ]);
@@ -387,11 +388,13 @@ describe("provisioner role: tags of the installation's stack (D76)", () => {
 });
 
 describe("agent permissions boundary", () => {
-  const statements = resources[boundaryId]!.Properties.PolicyDocument.Statement as Statement[];
+  const all = resources[boundaryId]!.Properties.PolicyDocument.Statement as Statement[];
+  // The only Deny is the evals content one every boundary carries (D110 (8), evals.test.ts).
+  const statements = all.filter((s) => s.Effect === "Allow");
   const granted = statements.flatMap(actions);
 
   it("only allows what an agent runtime needs", () => {
-    expect(statements.every((s) => s.Effect === "Allow")).toBe(true);
+    expect(all.filter((s) => s.Effect !== "Allow").map((s) => s.Sid)).toEqual(["NoEvalsContent", "NoAccountWideLogExport"]);
     expect(granted.sort()).toEqual([
       "bedrock-agentcore:GetWorkloadAccessToken",
       "bedrock-agentcore:GetWorkloadAccessTokenForJWT",

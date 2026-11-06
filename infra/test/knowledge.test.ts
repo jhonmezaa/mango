@@ -213,7 +213,10 @@ describe("knowledge bases: fixed resources in Core", () => {
     const [, boundary] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-kbsrc-boundary` });
     const statements = boundary.Properties.PolicyDocument.Statement as Statement[];
     const sids = bySid(statements);
-    expect(statements).toHaveLength(2);
+    // Plus the evals content Deny every boundary carries (D110 (8), evals.test.ts).
+    expect(statements.map((s) => s.Sid).sort()).toEqual(
+      ["NeverMangoBuckets", "NoAccountWideLogExport", "NoEvalsContent", "ReadBucketsOfThisAccount"],
+    );
     expect(actions(sids.ReadBucketsOfThisAccount!).sort()).toEqual(["s3:GetObject", "s3:ListBucket"]);
     expect(sids.ReadBucketsOfThisAccount!.Condition).toEqual({ StringEquals: { "s3:ResourceAccount": account } });
     expect(sids.NeverMangoBuckets!.Effect).toBe("Deny");

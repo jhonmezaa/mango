@@ -24,7 +24,7 @@ import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { EVAL_JUDGE_ALARMS, EVALUATION_FEE_USD } from "../constructs/eval-judge.js";
-import { Evals, EvalsCapture, judgeModels } from "../constructs/evals.js";
+import { DenyEvalsContent, Evals, EvalsCapture, judgeModels } from "../constructs/evals.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
@@ -61,7 +61,7 @@ import { acknowledge, KMS_GRANT_ACTIONS, REASONS } from "../nag.js";
 import { CheckovSuppressions } from "../checkov.js";
 import { GUARD_EXCEPTIONS, GuardSuppressions, suppressGuard } from "../guard.js";
 import { LogsKey, ShortKeyDeletionWindow } from "../logs.js";
-import { mangoName } from "../names.js";
+import { mangoName, roleNames } from "../names.js";
 import { tagNamespace } from "../params.js";
 import { ReleaseTarget } from "../release-target.js";
 import { MEMBER_READ_ONLY_DATA_ACTIONS } from "./member-stack.js";
@@ -188,6 +188,8 @@ export class CoreStack extends Stack {
     // D110 (3): the key of the evals harness's log groups, the only ones with content.
     const evalsCapture = new EvalsCapture(this, "EvalsCapture", { installation: cfg, retainData: cfg.retainData });
     evalsCapture.allowAgents(agentPlatform.boundary);
+    // D110 (8): no role of Mango but the evaluator reads the evals content; IAM decides it.
+    evalsCapture.denyInBoundary(agentPlatform.boundary);
     evalsCapture.grantApi(apiTaskRole);
     // D112: tickets of Mango, written by mango-api (and, for agents, by the tickets tool).
     const tickets = new Tickets(this, "Tickets", { installation: cfg, dataKey: governance.dataKey });
@@ -777,6 +779,10 @@ export class CoreStack extends Stack {
     }
 
     Aspects.of(this).add(new ShortKeyDeletionWindow());
+    // D110 (8): every role of Core and of its nested stacks, but the evaluator's.
+    Aspects.of(this).add(new DenyEvalsContent(evalsCapture, roleNames.evalJudge(cfg.namespace)));
+    evalsCapture.denyInBoundary(knowledge.sourceBoundary);
+    evalsCapture.denyInBoundary(packPlatform.boundary);
     Aspects.of(this).add(new GuardSuppressions());
     Aspects.of(this).add(new CheckovSuppressions());
 

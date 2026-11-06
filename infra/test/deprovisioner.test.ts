@@ -10,6 +10,7 @@ import {
 import { releaseAgents } from "../lib/constructs/release-agents.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
+import { expectOnlyTheEvalsContentDeny } from "./evals-deny.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
@@ -272,7 +273,7 @@ describe("deprovisioner role: data", () => {
 
   it("has no managed policies, is assumed only by Lambda and is not the provisioner's role", () => {
     const role = resources[roleId]!;
-    expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+    expectOnlyTheEvalsContentDeny(role.Properties.ManagedPolicyArns);
     expect(role.Properties.AssumeRolePolicyDocument.Statement).toEqual([
       { Action: "sts:AssumeRole", Effect: "Allow", Principal: { Service: "lambda.amazonaws.com" } },
     ]);

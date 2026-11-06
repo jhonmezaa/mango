@@ -5,6 +5,7 @@ import { App } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { CoreStack } from "../lib/stacks/core-stack.js";
+import { expectOnlyTheEvalsContentDeny } from "./evals-deny.js";
 
 /* D77: the stack tagger gives the stack's tags to what CloudFormation cannot tag. Its role
  * writes tags only, and only on the installation's policies and network resources
@@ -51,7 +52,7 @@ const json = (value: unknown) => JSON.stringify(value);
 describe("stack tagger role (D77)", () => {
   it("is assumed only by Lambda and has no managed policies", () => {
     const role = resources[roleId]!.Properties;
-    expect(role.ManagedPolicyArns).toBeUndefined();
+    expectOnlyTheEvalsContentDeny(role.ManagedPolicyArns);
     expect(role.AssumeRolePolicyDocument.Statement).toEqual([
       { Action: "sts:AssumeRole", Effect: "Allow", Principal: { Service: "lambda.amazonaws.com" } },
     ]);

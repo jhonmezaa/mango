@@ -11,6 +11,7 @@ import {
 } from "../lib/constructs/reconciler.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
+import { expectOnlyTheEvalsContentDeny } from "./evals-deny.js";
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
 const ns = cfg.namespace;
@@ -183,7 +184,7 @@ describe("reconciler role: read-only (plan A11, TM-M6)", () => {
     expect(role.AssumeRolePolicyDocument.Statement).toEqual([
       { Action: "sts:AssumeRole", Effect: "Allow", Principal: { Service: "lambda.amazonaws.com" } },
     ]);
-    expect(role.ManagedPolicyArns).toBeUndefined();
+    expectOnlyTheEvalsContentDeny(role.ManagedPolicyArns);
   });
 });
 
