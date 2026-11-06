@@ -20,6 +20,19 @@ export function focusMessageFrom(state: unknown): string | null {
   return typeof id === 'string' && MESSAGE_ID.test(id) ? id : null;
 }
 
+/**
+ * Whether the browser's history entry is still `key`, the one a page rendered for. A navigation
+ * the person starts (a sidebar link) pushes its entry at once, while React may keep the old page
+ * mounted until the new one commits; a delayed `navigate(..., { replace: true })` from the old page
+ * would then overwrite the new entry and send the person back. Only the router's `key` is read
+ * from `history.state`, compared as data. Without a router entry (a memory router) it is current.
+ */
+export function isCurrentHistoryEntry(key: string): boolean {
+  const state: unknown = window.history.state;
+  if (typeof state !== 'object' || state === null || !('key' in state)) return true;
+  return typeof state.key !== 'string' || state.key === key;
+}
+
 /** Design chat.jsx: the message sits this far below the top edge of the conversation. */
 export const FOCUS_TOP_PX = 96;
 /** Design styles.css `.ch-hl`: the highlight stays 2 s, then fades in 0.9 s (CSS). */

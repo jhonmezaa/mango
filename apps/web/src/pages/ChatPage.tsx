@@ -28,7 +28,12 @@ import { ChevronDownIcon, CloseIcon, RefreshIcon, WarnIcon } from '../components
 import { RateWaitButton, RateWaitLine } from '../components/RateWait';
 import { retryAtOf } from '../components/rateLimitWait';
 import { fromApiMessage, type DisplayMessage, type ErrorKey } from '../hooks/chatState';
-import { FOCUS_HIGHLIGHT_MS, FOCUS_TOP_PX, focusMessageFrom } from './chatFocus';
+import {
+  FOCUS_HIGHLIGHT_MS,
+  FOCUS_TOP_PX,
+  focusMessageFrom,
+  isCurrentHistoryEntry,
+} from './chatFocus';
 import { useChatStream } from '../hooks/useChatStream';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -408,6 +413,9 @@ export function ChatPage() {
     !loading &&
     state.messages.length > 0;
   const focusMessage = useEffectEvent((target: string) => {
+    // The person already left (the new page has not committed yet): neither replace their new
+    // history entry with this conversation nor move the focus.
+    if (!isCurrentHistoryEntry(location.key)) return;
     void navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
     const scroller = scrollRef.current;
     // Compared as data, never put into a selector: the id comes from history state.

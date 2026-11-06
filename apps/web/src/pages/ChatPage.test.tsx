@@ -471,6 +471,25 @@ describe('ChatPage opened at a message', () => {
     expect(document.querySelector('.ch-hl')).toBeNull();
   });
 
+  it('leaves the history alone when the person has already left the conversation', async () => {
+    const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue(twoMessages());
+    renderChat({ getConversation } as unknown as ApiClient, false, {
+      path: { pathname: `/c/${CONVERSATION_ID}`, state: { focusMessage: 'm2' } },
+    });
+    await screen.findByText('Fueron 120 USD.');
+    // A sidebar link has pushed its entry; this page is still mounted until the next one commits.
+    window.history.pushState({ usr: null, key: 'elsewhere', idx: 1 }, '', '/search');
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(window.location.pathname).toBe('/search');
+      expect(window.history.state).toMatchObject({ key: 'elsewhere' });
+      expect(document.querySelector('.ch-hl')).toBeNull();
+      expect(screen.queryByText('Ese mensaje ya no está en la conversación.')).toBeNull();
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   it('ignores a malformed id in the navigation state', async () => {
     const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue(twoMessages());
     renderChat({ getConversation } as unknown as ApiClient, false, {
