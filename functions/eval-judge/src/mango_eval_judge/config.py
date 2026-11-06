@@ -31,8 +31,8 @@ def _match(pattern: re.Pattern[str], name: str, value: str) -> str:
 
 
 def _prices(raw: str) -> Mapping[str, tuple[Decimal, Decimal]]:
-    """USD per million input and output tokens of the canary's model and of every judge model
-    (rule 7: prices are configuration)."""
+    """USD per million input and output tokens of every judge model (rule 7: prices are
+    configuration). The canary's turn is priced from the model catalog instead (``canary``)."""
     try:
         data = json.loads(raw)
         prices = {
@@ -77,8 +77,10 @@ class Settings:
     budgets_table: str
     evaluators: Mapping[str, str]
     canary_model: str
+    """The model the canary prefers (the release's auxiliary): used only if the harness it
+    checks has it and the catalog prices it; otherwise the cheapest one that does."""
     prices: Mapping[str, tuple[Decimal, Decimal]]
-    """Of the canary's model and of every judge model."""
+    """Of every judge model."""
     evaluation_fee: Decimal
     """USD per evaluation of a custom evaluator (AgentCore pricing, 2026-11-05: 1.50 per 1,000)."""
     canary_monthly_usd: Decimal
@@ -110,13 +112,9 @@ class Settings:
             raise ConfigError(f"missing environment variable {exc.args[0]}") from None
         except InvalidOperation:
             raise ConfigError("invalid amount") from None
-        settings_check = settings
-        missing = {settings_check.canary_model, *settings_check.evaluators} - set(
-            settings_check.prices
-        )
-        if missing:
-            raise ConfigError("a model without a price")
-        return settings_check
+        if set(settings.evaluators) - set(settings.prices):
+            raise ConfigError("a judge model without a price")
+        return settings
 
     @property
     def harness_prefix(self) -> str:

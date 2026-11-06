@@ -25,6 +25,7 @@ NS = "test"
 ACCOUNT = "123456789012"
 REGION = "us-east-1"
 JUDGE = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+SONNET = "us.anthropic.claude-sonnet-4-6"
 RUNTIME = "harness_Mango_test_a_evals-AbCdEfGhIj"
 OWN = f"/aws/bedrock-agentcore/runtimes/{RUNTIME}-live"
 HARNESS_ARN = f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:harness/Mango_test_a_evals-AbCdEfGhIj"
@@ -42,6 +43,33 @@ ENV = {
     "GUARDRAIL_ID": "gr123456",
     "GUARDRAIL_VERSION": "1",
 }
+
+
+def _entry(model: str, input_usd: str, output_usd: str, *, enabled: bool = True) -> dict[str, Any]:
+    """A model of the catalog as mango-api writes it (``ModelEntry``, prices per million)."""
+    return {
+        "id": model,
+        "name": model,
+        "provider": "Anthropic",
+        "enabled": enabled,
+        "supports_tools": True,
+        "input_usd": input_usd,
+        "output_usd": output_usd,
+        "cache_read_usd": "0",
+        "cache_write_usd": "0",
+    }
+
+
+def _catalog(db: Any, *models: dict[str, Any]) -> None:
+    db.put_item(
+        TableName="settings",
+        Item={
+            "PK": {"S": "MODELS"},
+            "SK": {"S": "CATALOG"},
+            "models": {"S": json.dumps(list(models))},
+            "version": {"N": "1"},
+        },
+    )
 
 
 @dataclass
@@ -138,6 +166,10 @@ class Env:
         )["Item"]
         return Capture.from_item(item)
 
+    def harness(self, *models: str) -> None:
+        deployed = PlaygroundHarness(HARNESS_ARN, "3", models, "2026-11-05T12:00:00+00:00")
+        self.db.put_item(TableName="settings", Item=EvalsHarness(deployed, RUNTIME).item())
+
     def spent(self) -> Decimal:
         period = time.strftime("%Y-%m", time.gmtime())
         item = self.db.get_item(
@@ -160,6 +192,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
             TableName="settings",
             Item=Capture("pending", "3", "2026-11-05T12:00:00+00:00").item(),
         )
+        _catalog(db, _entry(JUDGE, "1", "5"), _entry(SONNET, "3", "15"))
         logs = FakeLogs({OWN: [], "aws/spans": []})
         yield Env(db, logs, FakeAgentCore(logs), Settings.from_env(ENV), [])
 
@@ -225,18 +258,94 @@ def test_a_newer_harness_is_left_to_its_own_canary(env: Env) -> None:
     assert env.agentcore.invocations == []
 
 
-def test_a_canary_model_the_harness_cannot_invoke_fails_closed(env: Env) -> None:
-    other = "us.anthropic.claude-sonnet-4-6"
-    env.settings = Settings.from_env(
-        {
-            **ENV,
-            "CANARY_MODEL": other,
-            "MODEL_PRICES": json.dumps(
-                {JUDGE: {"input": 1, "output": 5}, other: {"input": 3, "output": 15}}
-            ),
-        }
+def test_the_auxiliary_model_is_used_when_the_harness_has_it(env: Env) -> None:
+    # Even when a cheaper model is enabled too: the release's auxiliary is preferred.
+    cheap = "us.anthropic.claude-cheap-v1:0"
+    env.harness(SONNET, JUDGE, cheap)
+    _catalog(
+        env.db, _entry(JUDGE, "1", "5"), _entry(SONNET, "3", "15"), _entry(cheap, "0.1", "0.5")
     )
-    assert env.canary().run("3").reason == "canary_model_not_enabled"
+
+    assert env.canary().run("3").status == "verified"
+    (call,) = env.agentcore.invocations
+    assert call["model"]["bedrockModelConfig"]["modelId"] == JUDGE
+
+
+def test_only_sonnet_enabled_the_canary_uses_sonnet(env: Env) -> None:
+    # The installation of 2026-11-06: the organization enabled only Sonnet, not the auxiliary.
+    env.harness(SONNET)
+    _catalog(env.db, _entry(JUDGE, "1", "5", enabled=False), _entry(SONNET, "3", "15"))
+
+    capture = env.canary().run("3")
+
+    assert capture.status == "verified"
+    assert env.capture().verified_for("3")
+    (call,) = env.agentcore.invocations
+    assert call["model"]["bedrockModelConfig"]["modelId"] == SONNET
+    # Reserved and settled at Sonnet's catalog price (per million): 40 in, 20 out.
+    turns = [
+        i
+        for i in env.db.scan(TableName="budgets")["Items"]
+        if i["PK"]["S"].startswith("DAY#MODEL#") and SONNET in i["PK"]["S"]
+    ]
+    assert turns
+    sonnet_cost = (Decimal(40) * 3 + Decimal(20) * 15) / 1_000_000
+    assert env.spent() >= sonnet_cost
+    assert env.spent() < Decimal(1)
+
+
+def test_without_the_auxiliary_the_cheapest_model_wins_ties_by_id(env: Env) -> None:
+    a, b = "us.anthropic.model-a-v1:0", "us.anthropic.model-b-v1:0"
+    env.harness(SONNET, b, a)
+    _catalog(env.db, _entry(SONNET, "3", "15"), _entry(b, "0.8", "4"), _entry(a, "0.8", "4"))
+
+    assert env.canary().run("3").status == "verified"
+    assert env.agentcore.invocations[0]["model"]["bedrockModelConfig"]["modelId"] == a
+
+
+def test_a_model_disabled_since_the_harness_was_published_is_not_used(env: Env) -> None:
+    env.harness(JUDGE, SONNET)
+    _catalog(env.db, _entry(JUDGE, "1", "5", enabled=False), _entry(SONNET, "3", "15"))
+
+    assert env.canary().run("3").status == "verified"
+    assert env.agentcore.invocations[0]["model"]["bedrockModelConfig"]["modelId"] == SONNET
+
+
+@pytest.mark.parametrize(
+    "models",
+    [
+        # Priced, but not a model of the harness.
+        (_entry(SONNET, "3", "15"),),
+        # A model of the harness, without a price.
+        (_entry(JUDGE, "0", "0"),),
+        # A model of the harness, disabled.
+        (_entry(JUDGE, "1", "5", enabled=False),),
+        (),
+    ],
+)
+def test_no_model_with_a_known_price_fails_closed(
+    env: Env, caplog: pytest.LogCaptureFixture, models: tuple[dict[str, Any], ...]
+) -> None:
+    _catalog(env.db, *models)
+    with caplog.at_level(logging.INFO):
+        capture = env.canary().run("3")
+
+    assert capture.status == "failed"
+    assert env.capture().reason == "canary_model_unpriced"
+    assert "evals canary failed: canary_model_unpriced" in caplog.text
+    assert env.agentcore.invocations == []
+
+
+@pytest.mark.parametrize("models", [None, "not json", '{"id": "x"}', '[{"id": "x"}]'])
+def test_a_missing_or_malformed_catalog_fails_closed(env: Env, models: str | None) -> None:
+    key = {"PK": {"S": "MODELS"}, "SK": {"S": "CATALOG"}}
+    if models is None:
+        env.db.delete_item(TableName="settings", Key=key)
+    else:
+        env.db.put_item(TableName="settings", Item={**key, "models": {"S": models}})
+
+    assert env.canary().run("3").reason == "model_catalog_unavailable"
+    assert env.agentcore.invocations == []
 
 
 # --- The judge ----------------------------------------------------------------------------
@@ -326,8 +435,14 @@ def test_unknown_actions_are_refused(env: Env) -> None:
             handler.handle(event, env.settings, _clients(env))
 
 
-def test_every_judge_and_the_canary_model_need_a_price() -> None:
+def test_every_judge_needs_a_price() -> None:
     with pytest.raises(ConfigError):
         Settings.from_env(
             {**ENV, "MODEL_PRICES": json.dumps({"other.model": {"input": 1, "output": 1}})}
         )
+
+
+def test_the_canary_model_needs_no_release_price() -> None:
+    # It is priced from the model catalog, like every turn mango-api reserves.
+    settings = Settings.from_env({**ENV, "CANARY_MODEL": SONNET})
+    assert SONNET not in settings.prices

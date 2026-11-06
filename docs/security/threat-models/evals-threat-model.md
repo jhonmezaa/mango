@@ -53,7 +53,7 @@ Controles que se construyen:
 - **Runner (worker de tareas, D78):** un caso es un turno del harness de evals con la versión elegida, el token de quien lanza y la firma con la marca de prueba; reserva y concilia como un turno (D73).
 - **Harness `Mango_<ns>_a_evals` y rol `Mango-<ns>-agent-evals`** (provisioner, por SDK, D25): bajo el boundary de agentes, con los modelos habilitados; con contenido y modo unificado.
 - **Log group del runtime del harness de evals:** llave `alias/Mango-<ns>-evals-logs`, 30 días.
-- **Evaluador `Mango-<ns>-EvalJudge`** (Lambda en un stack anidado, D99): `FilterLogEvents` sobre el log group de evals y sobre `aws/spans` (solo el canario), `bedrock-agentcore:Evaluate` sobre los evaluadores de Mango, `bedrock:InvokeModel` sobre los modelos juez del catálogo, `InvokeHarness` solo del harness de evals (el canario) y escribir `EVALS/CAPTURE` en `Settings`.
+- **Evaluador `Mango-<ns>-EvalJudge`** (Lambda en un stack anidado, D99): `FilterLogEvents` sobre el log group de evals y sobre `aws/spans` (solo el canario), `bedrock-agentcore:Evaluate` sobre los evaluadores de Mango, `bedrock:InvokeModel` sobre los modelos juez del catálogo, `InvokeHarness` solo del harness de evals (el canario) y escribir `EVALS/CAPTURE` en `Settings`. Lee además la fila del catálogo de modelos (`MODELS`/`CATALOG`, solo `GetItem`) para elegir el modelo del canario entre los del harness (D110 (8), 2026-11-06).
 - **Evaluadores propios** (`CreateEvaluator`, por el provisioner): uno por modelo juez habilitado, con las instrucciones fijas de la release.
 
 ### Data flows and trust boundaries

@@ -144,6 +144,20 @@ describe("the evaluator's role (D110 (8))", () => {
     expect(CANARY_BUDGET_KEYS.some((k) => k.startsWith("USER#") || k === "DAY#USER#*")).toBe(false);
   });
 
+  it("reads in Settings only EVALS and the model catalog, which prices the canary's model", () => {
+    const reads = judgeStatements.filter((s) => actions(s).includes("dynamodb:GetItem"));
+    expect(reads.map((s) => s.Condition!["ForAllValues:StringEquals"]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))).toEqual([
+      { "dynamodb:LeadingKeys": ["EVALS"] },
+      { "dynamodb:LeadingKeys": ["MODELS"] },
+    ]);
+    for (const s of reads) expect(actions(s)).toEqual(["dynamodb:GetItem"]);
+    // The release prices only the judges; the canary prefers the auxiliary but needs no release price.
+    const [, fn] = only("AWS::Lambda::Function", { FunctionName: judgeName });
+    const env = fn.Properties.Environment.Variables;
+    expect(Object.keys(JSON.parse(env.MODEL_PRICES)).sort()).toEqual(judgeModels(cfg));
+    expect(env.CANARY_MODEL).toBe(cfg.models.auxiliary);
+  });
+
   it("is the only role of the installation that may read the evals log groups", () => {
     const reads = ["logs:FilterLogEvents", "logs:GetLogEvents", "logs:StartQuery"];
     const policies = Object.values(resources).filter(

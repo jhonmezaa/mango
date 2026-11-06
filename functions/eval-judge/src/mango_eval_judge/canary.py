@@ -2,7 +2,7 @@
 
 After the provisioner deploys a version of the evals harness it writes ``EVALS`` / ``CAPTURE``
 as ``pending`` and asks for this. The canary sends one short turn with a random marker (no
-tools, the release's cheapest model, a 64-token cap) and checks, before any eval may run:
+tools, a 64-token cap) and checks, before any eval may run:
 
 1. the marker reaches the evals runtime's own log group (content is captured where agreed);
 2. the marker never reaches ``aws/spans``, the log group of the whole account (D16, D73);
@@ -13,23 +13,34 @@ Only then it writes ``verified`` for that harness version. Any other result, or 
 ``failed`` with a fixed reason and an error log line the alarm counts: mango-api runs no eval.
 The canary only ever saw its own marker, never content of a case.
 
+Its model is one the harness it checks was published with (``harness.deployed.models``, the
+models enabled in the catalog then): the release's auxiliary model if it is one of them, else the
+cheapest of them by the prices of the model catalog (``MODELS`` / ``CATALOG``, the source
+mango-api reserves from; rule 7), ties broken by id. A model disabled in the catalog since, or
+without a price there, is not a candidate; with none left the canary fails closed
+(``canary_model_unpriced``). Decided 2026-11-06: an installation must not depend on its
+organization enabling one given model.
+
 Its cost is reserved first (rule 4) in a scope of its own, ``AGENT#evals``, with the monthly cap
 of the release, and closed like a turn (D73), from origin ``eval`` (decided 2026-11-05).
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import secrets
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 
 from mango_core import budget_turns, usage_days
+from mango_core.agents import MODEL_ID_PATTERN
 from mango_core.evals_harness import (
     EVALS_ID,
     HARNESS_SK,
@@ -59,6 +70,38 @@ SHARED_LOG_SETTLE_SECONDS = 60
 turn land together, within seconds of each other."""
 _ZERO = Decimal(0)
 _MILLION = Decimal(1_000_000)
+TURN_INPUT_TOKENS = 200
+"""What the canary's turn is reserved for: the marker prompt is under 200 tokens."""
+CATALOG_KEY = {"PK": {"S": "MODELS"}, "SK": {"S": "CATALOG"}}
+_MODEL_ID_RE = re.compile(MODEL_ID_PATTERN)
+
+
+def _price(raw: object) -> Decimal:
+    value = Decimal(str(raw))
+    if not value.is_finite():
+        raise ValueError("not a price")
+    return value
+
+
+def catalog_prices(raw: str) -> dict[str, tuple[Decimal, Decimal]]:
+    """USD per million input and output tokens of the models enabled in the model catalog
+    (``MODELS`` / ``CATALOG``, as mango-api writes it) with a positive price. Raises
+    ``ValueError``, ``KeyError``, ``TypeError`` or ``InvalidOperation`` on a malformed one."""
+    models = json.loads(raw)
+    if not isinstance(models, list):
+        raise TypeError("not a list of models")
+    prices: dict[str, tuple[Decimal, Decimal]] = {}
+    for m in models:
+        model_id = m["id"]
+        if not isinstance(model_id, str) or not _MODEL_ID_RE.fullmatch(model_id):
+            raise TypeError("invalid model id")
+        if m["enabled"] is not True:
+            continue
+        input_usd, output_usd = _price(m["input_usd"]), _price(m["output_usd"])
+        # As mango-api: a model without a positive price is not reserved for.
+        if input_usd > 0 and output_usd > 0:
+            prices[model_id] = (input_usd, output_usd)
+    return prices
 
 
 class CanaryFailedError(Exception):
@@ -122,8 +165,37 @@ class Canary:
 
     # --- Budget (rule 4) ------------------------------------------------------------------
 
-    def _price(self, model: str) -> budget_turns.TurnPrice:
-        input_price, output_price = self._s.prices[model]
+    def _catalog_prices(self) -> dict[str, tuple[Decimal, Decimal]]:
+        item = self._db.get_item(
+            TableName=self._s.settings_table, Key=CATALOG_KEY, ConsistentRead=True
+        ).get("Item")
+        if item is None:
+            raise CanaryFailedError("model_catalog_unavailable")
+        try:
+            return catalog_prices(item["models"]["S"])
+        except (KeyError, TypeError, ValueError, InvalidOperation):
+            raise CanaryFailedError("model_catalog_unavailable") from None
+
+    def _model(self, harness: EvalsHarness) -> tuple[str, tuple[Decimal, Decimal]]:
+        """The canary's model: one the harness was published with and the catalog prices."""
+        prices = self._catalog_prices()
+        candidates = {m: prices[m] for m in harness.deployed.models if m in prices}
+        preferred = self._s.canary_model
+        if preferred in candidates:
+            return preferred, candidates[preferred]
+        if not candidates:
+            raise CanaryFailedError("canary_model_unpriced")
+
+        def turn_cost(model: str) -> tuple[Decimal, str]:
+            input_price, output_price = candidates[model]
+            return input_price * TURN_INPUT_TOKENS + output_price * MAX_TOKENS, model
+
+        model = min(candidates, key=turn_cost)
+        return model, candidates[model]
+
+    @staticmethod
+    def _turn_price(prices: tuple[Decimal, Decimal]) -> budget_turns.TurnPrice:
+        input_price, output_price = prices
         return budget_turns.TurnPrice(
             input=input_price / _MILLION,
             output=output_price / _MILLION,
@@ -134,13 +206,14 @@ class Canary:
     def _reserve(
         self,
         model: str,
+        prices: tuple[Decimal, Decimal],
         started: int,
         *,
         input_tokens: int,
         output_tokens: int,
         fee: Decimal = _ZERO,
     ) -> budget_turns.PendingTurn:
-        price = self._price(model)
+        price = self._turn_price(prices)
         estimate = (
             Decimal(input_tokens) * price.input + Decimal(output_tokens) * price.output + fee
         ).quantize(Decimal("0.000001"))
@@ -197,7 +270,7 @@ class Canary:
     # --- The turn -------------------------------------------------------------------------
 
     def _invoke(
-        self, harness: EvalsHarness, session_id: str, marker: str
+        self, harness: EvalsHarness, model: str, session_id: str, marker: str
     ) -> budget_turns.TokenUsage:
         request: dict[str, Any] = {
             "harnessArn": harness.deployed.harness_arn,
@@ -213,7 +286,7 @@ class Canary:
             "timeoutSeconds": TIMEOUT_SECONDS,
             "model": {
                 "bedrockModelConfig": {
-                    "modelId": self._s.canary_model,
+                    "modelId": model,
                     "maxTokens": MAX_TOKENS,
                     "additionalParams": {
                         "guardrailConfig": {
@@ -255,20 +328,20 @@ class Canary:
 
     def _check(self, harness_version: str) -> None:
         harness = self._harness(harness_version)
-        if self._s.canary_model not in harness.deployed.models:
-            raise CanaryFailedError("canary_model_not_enabled")
+        model, prices = self._model(harness)
+        logger.info("evals canary model: %s", model)
         groups = self._s.runtime_log_groups(harness.runtime_id)
         marker = secrets.token_hex(16)
         session_id = "mango-canary-" + secrets.token_hex(24)
         started = int(self._clock())
         # The marker prompt is under 200 tokens; the answer is capped (rule 4: reserved first).
         turn = self._reserve(
-            self._s.canary_model, started, input_tokens=200, output_tokens=MAX_TOKENS
+            model, prices, started, input_tokens=TURN_INPUT_TOKENS, output_tokens=MAX_TOKENS
         )
         usage = budget_turns.TokenUsage()
         try:
             budget_turns.bind_session(self._db, self._s.budgets_table, turn, session_id)
-            usage = self._invoke(harness, session_id, marker)
+            usage = self._invoke(harness, model, session_id, marker)
         except (ClientError, BotoCoreError) as exc:
             logger.error("evals canary turn failed: %s", type(exc).__name__)  # noqa: TRY400 - no content
             raise CanaryFailedError("turn_failed") from None
@@ -293,6 +366,7 @@ class Canary:
         # The smoke Evaluate, reserved first too: a one-turn session and the judge's answer.
         judge_turn = self._reserve(
             first_judge,
+            self._s.prices[first_judge],
             started,
             input_tokens=judge.ESTIMATED_INPUT_TOKENS,
             output_tokens=judge.MAX_OUTPUT_TOKENS,

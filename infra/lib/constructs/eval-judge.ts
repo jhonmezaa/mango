@@ -154,6 +154,12 @@ export class EvalJudge extends Construct {
       "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["EVALS"] },
       Null: { "dynamodb:LeadingKeys": "false" },
     });
+    // The canary's model: one the evals harness was published with, priced by the model
+    // catalog (rule 7), the same source mango-api reserves from (D110 (8), 2026-11-06).
+    allow("ReadTheModelCatalog", ["dynamodb:GetItem"], [props.settingsTable.tableArn], {
+      "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["MODELS"] },
+      Null: { "dynamodb:LeadingKeys": "false" },
+    });
     allow("WriteTheCapture", ["dynamodb:PutItem"], [props.settingsTable.tableArn], {
       "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["EVALS"] },
       Null: { "dynamodb:LeadingKeys": "false" },
@@ -188,8 +194,9 @@ export class EvalJudge extends Construct {
       { StringEquals: { "kms:ViaService": `sqs.${region}.amazonaws.com` } },
     );
 
+    // The judges' prices only: the canary's turn is priced from the model catalog.
     const prices = Object.fromEntries(
-      [...new Set([...judges, cfg.models.auxiliary])].map((model) => {
+      judges.map((model) => {
         const price = cfg.modelPrices[model];
         if (!price) throw new Error(`the judge model ${model} has no price (rule 7)`);
         return [model, { input: price.input, output: price.output }];
@@ -215,6 +222,7 @@ export class EvalJudge extends Construct {
         EVALUATORS: stack.toJsonString(
           Object.fromEntries(evaluators.map((e) => [e.model, e.evaluator.attrEvaluatorId])),
         ),
+        // Preferred, not required: the canary falls back to the cheapest model of the harness.
         CANARY_MODEL: cfg.models.auxiliary,
         MODEL_PRICES: JSON.stringify(prices),
         EVALUATION_FEE_USD: EVALUATION_FEE_USD,
