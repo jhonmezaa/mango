@@ -157,7 +157,8 @@ function ScheduleDetail({ s, agent, health, me, isAdmin, inboxOn, repOn, onRetry
               {nx.length > 0 && <div className="mk-kv"><span>Próximas · tu hora</span><span style={{ textAlign: 'right' }}>{nx.map(d => <div key={+d}>{scFmt(d)}</div>)}</span></div>}
             </MkSec>}
             <MkSec title="Entrega y control">
-              <div className="mk-kv"><span>Resultado</span><span style={{ textAlign: 'right' }}>{dest} · solo {P.own ? 'tú lo ves' : s.owner + ' lo ve'}</span></div>
+              <div className="mk-kv"><span>Resultado</span><span style={{ textAlign: 'right' }}>{dest}{s.ticket ? '' : ' · solo ' + (P.own ? 'tú lo ves' : s.owner + ' lo ve')}</span></div>
+              {s.ticket && <div className="mk-kv"><span>Ticket</span><span style={{ textAlign: 'right' }}>También crea un ticket con cada ejecución que termina bien</span></div>}
               {repOn && s.report && <div className="mk-kv"><span>Reporte</span><span style={{ textAlign: 'right' }}>PDF · {(SC_REPORT[s.report] || [''])[0]} · solo {P.own ? 'tú lo descargas' : s.owner + ' lo descarga'}</span></div>}
               <div className="mk-kv"><span>Se ejecuta como</span><span>{s.owner} · con su identidad y sus permisos</span></div>
               <div className="mk-kv"><span>Agente</span><span>{agent?.name} · usa su presupuesto</span></div>

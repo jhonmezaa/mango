@@ -172,11 +172,6 @@ function CostAgent({ r, frac, splitFrac, since, admin, onClose, money, SRC }) {
         <div className="mk-drawer-b">
           <div className="ob-sum" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}><div><span>Este mes</span><b className="mono">{money(spent)}</b></div><div><span>Anterior</span><b className="mono">{frac < 1 ? '—' : money(r.prev)}</b></div><div><span>Proyección</span><b className="mono">{r.proj && frac === 1 ? money(r.proj) : '—'}</b></div></div>
           {b && <MkSec title="Presupuesto"><div className="mk-kv"><span>Límite</span><span className="mono">{money(b.limit)}</span></div><div className="mk-kv"><span>Usado</span><span className="mono">{Math.round(b.spent / b.limit * 100)}%</span></div>{r.proj && r.proj > b.limit && <div className="mc-alert amber" style={{ fontSize: 12.5 }}><I.Warn size={13} /><div>Al ritmo actual superará su límite antes de fin de mes.</div></div>}</MkSec>}
-          <MkSec title="Por origen">
-            <div className="mk-meta" style={{ marginBottom: 4 }}>Cuenta desde el {since}</div>
-            {SRC.map(([k, l]) => <div key={k} className="mk-kv"><span>{l}</span><span className="mono">{money(r.spent * r.src[k] * splitFrac)} · {Math.round(r.src[k] * 100)}%</span></div>)}
-            {splitFrac < 1 && <div className="mk-kv"><span style={{ color: 'var(--text-muted)' }}>Sin desglose</span><span className="mono">{money(r.spent * (1 - splitFrac))}</span></div>}
-          </MkSec>
           <MkSec title="Consultas"><div className="mk-kv"><span>Costo medio por consulta</span><span className="mono">{money(r.spent / Math.max(1, r.queries))}</span></div><div className="mk-kv"><span>Consultas</span><span className="mono">{r.queries.toLocaleString('es-ES', { useGrouping: 'always' })}</span></div></MkSec>
           {admin && <div className="row gap-2" style={{ flexWrap: 'wrap' }}><button className="btn btn-sm" onClick={() => { onClose(); window.MangoNav?.('budgets'); }}>Ver presupuestos</button><button className="btn btn-sm" onClick={() => { onClose(); window.MangoNav?.('observability'); }}>Ver trazas</button></div>}
           {admin && b && <div className="mk-meta">El límite de un agente todavía no se cambia desde Mango.</div>}

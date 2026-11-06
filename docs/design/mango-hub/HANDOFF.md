@@ -1301,7 +1301,7 @@ Demo: panel › «Buscar conversaciones · respuesta del servidor» (normal, len
 
 
 ## Costos, Observabilidad, Evals y Tickets (2026-11-05) · D105–D112
-Respuesta al contexto del 2026-11-05. Archivos: `costs2.jsx`, `observability2.jsx`, `evals.jsx`, `eval-create.jsx`, `agent-review.jsx`, `tickets.jsx`, `system.jsx` (comentarios), `activity.jsx`, `ui.jsx`, `schedules.jsx`, `policies.jsx`, `chat.jsx`, `approvals.jsx`, `store.js`, `app.jsx`, nuevo `ops-states.jsx`. Las cuatro vistas siguen fuera de `AVAILABLE` («Próximamente» en «Disponible hoy»): se revisan en «Diseño completo». Entran cuando el producto las construya. Lo que se puede pegar ya: el selector «Crear ticket» de Schedules y la condición `self` de Ajustes › Aprobaciones.
+Respuesta al contexto del 2026-11-05. Archivos: `costs2.jsx`, `observability2.jsx`, `evals.jsx`, `eval-create.jsx`, `agent-review.jsx`, `tickets.jsx`, `system.jsx` (comentarios), `activity.jsx`, `ui.jsx`, `schedules.jsx`, `policies.jsx`, `chat.jsx`, `approvals.jsx`, `store.js`, `app.jsx`, nuevo `ops-states.jsx`. Desde la ronda 37 las cuatro vistas están en `AVAILABLE` (ver «Ronda 37»). Lo que cambió allí manda sobre esta sección.
 
 **Las cuatro vistas**
 - **Estados** (`OpsState`): cargando (mango-spinner + «Cargando {vista}…»), error (`role="alert"`, «No se pudo cargar {vista}.» + «Reintentar»), vacío (texto propio por vista) y 403 («No tienes acceso a {vista}» + quién la ve).
@@ -1313,7 +1313,7 @@ Respuesta al contexto del 2026-11-05. Archivos: `costs2.jsx`, `observability2.js
 - Subtítulo: «… con los precios de lista de Brains. No incluye el guardrail ni los embeddings.»
 - **Consultas reales:** «{n} consultas», «Costo medio por consulta». Se quitó la nota de «estimaciones con datos de ejemplo».
 - **Desde cuándo cuenta:** bajo «desglose», «Cuenta desde el {fecha}» del desglose activo. «Por modelo» y «Por origen» usan la fecha de D106; «Por agente», la de su contador (D104). Lo anterior va en una fila gris «Sin desglose · Antes del {fecha}», nunca repartido. Si el mes anterior no tiene ese desglose, «vs anterior» es «—» y «Cambios frente al mes anterior» dice «El mes anterior no tiene desglose por agente: el contador empezó el {fecha}.»
-- **«Sin agente»** (fila gris en «Por agente»): los títulos de conversaciones nuevas. Nota debajo: «El título de una conversación nueva cuenta en el total del mes, pero en ningún agente: por eso va en «Sin agente».» En «Por origen» cuentan en Conversaciones.
+- **«Sin agente»** (fila gris en «Por agente»): los títulos de conversaciones nuevas. Nota debajo: «El título de una conversación nueva cuenta en el total del mes, pero en ningún agente: por eso va en «Sin agente».» En «Por modelo» y «Por origen» van en su propia fila gris: «Sin modelo» / «Sin origen» · «Títulos de conversaciones nuevas» (ronda 37).
 - **«Próximamente»:** «Por equipo» (botón desactivado con etiqueta) y «Oportunidades de ahorro» (tarjeta con etiqueta, sin cifras). Se quitaron «Asignado a equipos» del gráfico, de la proyección («Al ritmo actual») y del cierre proyectado.
 - CSV: `agente, modelo, gasto_mes, mes_anterior, consultas` + filas «Sin agente» y «Sin desglose».
 
@@ -1366,3 +1366,52 @@ Respuesta al contexto del 2026-11-05. Archivos: `costs2.jsx`, `observability2.js
 - El brief llegó cortado en tres puntos (intención de la llamada al modelo, qué pasa si quien creó la eval pierde el acceso, y el final de Ajustes › Aprobaciones). Se asumió «Modelo · {modelo}» y que la suite se pausa.
 
 Demo: panel › «Costos, Observabilidad, Evals y Tickets · respuesta del servidor», «Costos · desde cuándo cuenta el desglose», «Observabilidad · lectura del rango», «Evals · al ejecutar», «Evals · estado de la primera suite», «Revisión · evals obligatorias», «Tickets · al abrir un ticket». Cuentas: «Usuario · finops» (Costos y Evals de solo lectura, sin Observabilidad), «Creador» (Evals de sus agentes, sin Costos).
+
+
+## Ronda 37 (2026-11-05) · lo que entró de D105–D112, y la ronda 36
+Respuesta a los contextos de las rondas 37 y 36. Archivos: `store.js`, `ops-states.jsx`, `costs2.jsx`, `observability2.jsx`, `evals.jsx`, `eval-create.jsx`, `policies.jsx`, `tickets.jsx`, `schedules.jsx`, `search.jsx`, `app.jsx`, `styles.css`. `costs`, `observability`, `evals` y `tickets` entran en `AVAILABLE`: ya no queda ninguna vista de la navegación en «Próximamente». Se aceptan todas las diferencias del §1–§5 de la ronda 37 salvo lo que se decide abajo.
+
+**Comunes**
+- **429 en `OpsState`** (`kind: '429'`): el bloque común de la ronda 34 (icono de reloj, «Demasiadas solicitudes», la espera y «Reintentar en m:ss»). Observabilidad: «Observabilidad admite 30 lecturas por minuto: cada filtro, búsqueda o página cuenta.»; las demás, «Hiciste muchas solicitudes seguidas.». Demo: panel › «…respuesta del servidor» › «Demasiadas (429)».
+- **Modelos:** el id (`us.anthropic.…`, mono) vale. No se pide el nombre corto.
+
+**Costos**
+- «Por origen» del cajón del agente **se quita** (no «Próximamente»): el producto cuenta el origen de la organización.
+- Se aceptan las filas «Sin modelo» / «Sin origen» · «Títulos de conversaciones nuevas», «Playground · Pruebas antes de publicar» y «Agente que ya no está en el catálogo», todas grises y al final, como «Sin agente».
+- **Selector de mes:** no en esta ronda. Solo el mes en curso; el mes cerrado se dibuja en una ronda propia.
+
+**Observabilidad**
+- En «Disponible hoy» se quitan «Con aprobación», «Espera aprobación» y «Cortado» (chip, estado, avisos). Quedan en «Diseño completo» hasta que la referencia del turno traiga una marca.
+- **«Sin turno de Mango»:** en el cajón, debajo del título: «Esta traza no tiene un turno de Mango: es anterior a la vista o no la escribió Mango. No hay persona ni costo.»
+- Se aceptan «Prueba en Playground de {correo}» y «{n} llamadas más no se muestran.».
+- **Tope por tiempo:** como la API no dice cuál se cumplió, un solo texto: «La lectura se detuvo en {N} trazas: las cifras son un mínimo. Acorta el rango o elige un agente para verlo completo.»
+- Spans que no se pudieron leer: sin aviso.
+
+**Evals**
+- Se quitan «Pausada», «Retomar a mi nombre» y «Usar la versión actual» (y su control del panel de demo). «Corre como» dice «Quien envía la versión» en las de cada envío; en las programadas, quien la creó.
+- **Paso 4:** en cada envío, «Corre a nombre de quien envía cada versión de {agente} a aprobación.»; programada, «Corre a tu nombre, con la versión publicada de {agente}.».
+- **Costo:** se rotula como tope: «Costo por ejecución · hasta {X}». Nota: «El tope lo calcula el servidor con la pregunta más larga y el máximo de iteraciones: el gasto real suele ser bastante menor.»
+- **Motivo** (`.ev-why`): apagar «Obligatoria» y «Rechazar» abren debajo un campo (1 a 500 caracteres, contador, «Queda en Auditoría»). Botones «Enviar pedido» / «Rechazar pedido», desactivados sin texto; «Cancelar» cierra. El pedido muestra «Motivo: {texto}» al admin que decide. «Rechazar» solo lo ve un admin que no lo pidió.
+- **Revisión «sin ejecutar»:** aviso propio, ámbar: «{suite} es obligatoria y no tiene una ejecución terminada con esta versión. Ejecútala desde Evals: hasta que pase, no se puede aprobar.» La fila dice «sin ejecutar». Demo: «Revisión · evals obligatorias» › «Sin ejecutar con esta versión».
+- Se aceptan los textos propios de detención, de caso y del juez sin modelos.
+- **Caso escrito a mano:** no en esta ronda; sigue solo CSV.
+
+**Tickets**
+- **«Por aprobar»:** bajo Estado, «Mientras la solicitud siga abierta, solo se puede marcar «Resuelto».»; Abierto y En curso desactivados en el desplegable.
+- **«Herramientas»:** se queda «Próximamente». Si se construye, desde las aprobaciones del ticket, no desde la traza.
+- **Descripción de un resultado de tarea:** Markdown con el renderizador seguro de la web; la de un ticket creado a mano sigue en texto plano.
+- **Admin que perdió el agente:** «Ya no puedes usar {agente}. Ves este ticket porque eres administrador.»
+- **«Nuevo ticket»:** empieza en «Sin agente».
+- Se aceptan los textos propios.
+
+**Ajustes › Aprobaciones y Schedules**
+- El id con prefijo (`mango-tickets.create_ticket`) y las descripciones del manifiesto valen.
+- **Editor con `self`:** no se marca nada; aprobadores y vencimiento van a .45 y sin interacción hasta elegir «Siempre». La ayuda suma «Aprobadores y vencimiento se eligen después de marcar «Siempre».»
+- **`tickets_unavailable`:** el botón se queda; al guardar, «Esta instalación no tiene Tickets: la tarea no puede crear tickets. Apaga «Crear ticket» para guardarla.»
+- **Detalle de una tarea:** en «Entrega y control», fila «Ticket · También crea un ticket con cada ejecución que termina bien», y «Resultado» deja de decir «solo tú lo ves».
+
+**Ronda 36 (Buscar conversaciones)**
+- **Recargar en la coincidencia:** basta abrir desde el principio. El id no vuelve a la URL.
+- **Volver a «Buscar conversaciones»:** la pantalla recuerda la última consulta y los filtros, solo en memoria, mientras la pestaña siga abierta (`srMemo` en `search.jsx`); la búsqueda se vuelve a pedir al entrar.
+
+**Sigue abierto:** ronda 26 (cancelar en Microsoft, descripción del servicio y de permisos en el perfil); sesión que no se renueva en el chat; Bedrock sin cuota y respuesta cortada por tiempo; «Sin bucket» en Knowledge Bases.

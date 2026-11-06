@@ -67,6 +67,7 @@ function PolicyModal({ tool, p: p0, onClose }) {
   const toast = window.useToast?.();
   const p = polEff(p0);
   const [f, setF] = useState({ ...p });
+  const self = f.cond === 'self'; const offF = self ? { opacity: .45, pointerEvents: 'none' } : undefined;
   const [reason, setReason] = useState('');
   const [tried, setTried] = useState(false);
   const same = JSON.stringify(f) === JSON.stringify(p);
@@ -78,7 +79,7 @@ function PolicyModal({ tool, p: p0, onClose }) {
       <div className="g-field">
         <label>Cuándo pide aprobación de otras personas</label>
         <div className="set-choice">{Object.entries(POL_COND).map(([k, l]) => { const off = polCondOff(tool.id, k); return <button key={k} className={f.cond === k ? 'is-on' : ''} disabled={off} title={off ? 'Esta tool no informa ese dato' : undefined} onClick={() => setF({ ...f, cond: k })}>{l}</button>; })}</div>
-        {f.cond === 'self' && <div className="g-hint">Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.</div>}
+        {f.cond === 'self' && <div className="g-hint">Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores. Aprobadores y vencimiento se eligen después de marcar «Siempre».</div>}
         {Object.keys(POL_COND).some(k => polCondOff(tool.id, k)) && <div className="g-hint">Las opciones deshabilitadas dependen de datos que esta tool no informa.</div>}
         {f.cond === 'amount' && <K.MoneyInput id="pol-amt" label="Monto" value={String(f.amount ?? '')} onChange={(v) => setF({ ...f, amount: K.parseMoney(v).value || 0 })} hint={'Hasta este monto, la acción pide la confirmación del propio usuario en el chat (queda auditada). Por encima, requiere ' + f.approvers + (f.approvers === 1 ? ' aprobador distinto' : ' aprobadores distintos') + ' de quien la pidió.'} />}
         {f.cond === 'always' && <div className="g-hint">Cada uso requiere {f.approvers === 1 ? 'un aprobador distinto' : f.approvers + ' aprobadores distintos'} de quien la pidió.</div>}
@@ -87,12 +88,12 @@ function PolicyModal({ tool, p: p0, onClose }) {
         {f.cond === 'count' && <div className="row gap-2" style={{ alignItems: 'center' }}><input type="number" min="1" className="input" style={{ width: 90 }} value={f.count || 1} onChange={e => setF({ ...f, count: +e.target.value })} aria-label="Recursos" /><span className="g-hint">recursos por solicitud</span></div>}
         {f.cond === 'env' && <div className="set-choice">{['prod', 'staging'].map(e => <button key={e} className={(f.env || 'prod') === e ? 'is-on' : ''} onClick={() => setF({ ...f, env: e })}>{e}</button>)}</div>}
       </div>
-      <div className="g-field">
+      <div className="g-field" style={offF} aria-disabled={self || undefined}>
         <label>Aprobadores necesarios</label>
         <div className="set-choice">{[1, 2, 3].map(n => <button key={n} className={f.approvers === n ? 'is-on' : ''} onClick={() => setF({ ...f, approvers: n })}>{n}</button>)}</div>
         <div className="g-hint">Personas distintas de quien pidió la acción; esa persona no puede aprobarla.</div>
       </div>
-      <div className="g-field">
+      <div className="g-field" style={offF} aria-disabled={self || undefined}>
         <label>La solicitud vence en</label>
         <div className="set-choice">{POL_EXP.map(h => <button key={h} className={f.expiresH === h ? 'is-on' : ''} onClick={() => setF({ ...f, expiresH: h })}>{h} h</button>)}</div>
         <div className="g-hint">Si nadie la resuelve a tiempo, queda «Vencida» y en Auditoría.</div>

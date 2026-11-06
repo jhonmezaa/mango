@@ -48,14 +48,17 @@ function SrSnip({ snip }) {
   return <>{snip.pre && '…'}{snip.parts.map((p, i) => p.hit ? <mark key={i} className="sr-mark">{p.hit}</mark> : <React.Fragment key={i}>{p.txt}</React.Fragment>)}{snip.post && '…'}</>;
 }
 
+// La última búsqueda se recuerda solo en memoria, mientras la pestaña siga abierta.
+let srMemo = null;
 function GlobalSearch({ threads, agents, openChat }) {
   const I = window.Icons;
   const S = window.MangoStore;
   const sim = window.useMango(s => s.simSearch) || null;
-  const [q, setQ] = useStateSr('');
-  const [agent, setAgent] = useStateSr('all');
-  const [kind, setKind] = useStateSr('all');
-  const [when, setWhen] = useStateSr('all');
+  const [q, setQ] = useStateSr(srMemo?.q || '');
+  const [agent, setAgent] = useStateSr(srMemo?.agent || 'all');
+  const [kind, setKind] = useStateSr(srMemo?.kind || 'all');
+  const [when, setWhen] = useStateSr(srMemo?.when || 'all');
+  React.useEffect(() => { srMemo = { q, agent, kind, when }; }, [q, agent, kind, when]);
   const [sort, setSort] = useStateSr('relevance');
   const [expanded, setExpanded] = useStateSr({});
   const [active, setActive] = useStateSr(0);

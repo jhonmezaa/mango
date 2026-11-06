@@ -295,9 +295,9 @@ function TicketSlideOver({ ticket, agents, me, sim, onClose, onUpdate, onMove })
             <span>Estado</span>
             <div>
               <select className="input tk-sel" value={ticket.status} onChange={e => onMove(ticket.id, e.target.value)} aria-label="Estado">
-                {TK_STATUS.map(s => <option key={s.k} value={s.k} disabled={s.k === 'needs_approval'}>{s.l}</option>)}
+                {TK_STATUS.map(s => <option key={s.k} value={s.k} disabled={s.k === 'needs_approval' || (ticket.status === 'needs_approval' && s.k !== 'done')}>{s.l}</option>)}
               </select>
-              {ticket.status !== 'needs_approval' && <div className="mk-meta" style={{ fontSize: 11.5, marginTop: 3 }}>«Por aprobar» lo marca una solicitud de Aprobaciones.</div>}
+              <div className="mk-meta" style={{ fontSize: 11.5, marginTop: 3 }}>{ticket.status === 'needs_approval' ? 'Mientras la solicitud siga abierta, solo se puede marcar «Resuelto».' : '«Por aprobar» lo marca una solicitud de Aprobaciones.'}</div>
             </div>
             <span>Prioridad</span>
             <select className="input tk-sel" value={ticket.prio} onChange={e => set('prio', e.target.value, `cambió la prioridad a ${tkPrio(e.target.value).l.toLowerCase()}`)} aria-label="Prioridad">
@@ -417,7 +417,7 @@ function NewTicketModal({ agents, onClose, onCreate, initialStatus }) {
   const I = window.Icons;
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
-  const [agent, setAgent] = useState(agents[0]?.id || '');
+  const [agent, setAgent] = useState('');
   const [prio, setPrio] = useState('medium');
   const [status, setStatus] = useState(initialStatus && initialStatus !== 'needs_approval' ? initialStatus : 'open');
   const [assignee, setAssignee] = useState('');

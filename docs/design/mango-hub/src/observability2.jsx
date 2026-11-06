@@ -48,7 +48,9 @@ function ObservabilityView({ agents, openChat }) {
   const I = window.Icons;
   const sim = window.useOpsSim(); const capSim = window.useMango(s => s.simObsCap);
   const qText = (t) => (t.kind === 'task' ? 'Tarea de ' : 'Conversación de ') + t.user;
-  const all0 = React.useMemo(() => obsTraces(agents), [agents]);
+  const avail = window.useMango(s => s.avail);
+  // Disponible hoy: el producto no sabe si un turno pidió aprobación ni si se cortó; la traza solo dice OK o Error.
+  const all0 = React.useMemo(() => obsTraces(agents).map(t => !avail ? t : { ...t, status: t.status === 'error' ? 'error' : 'ok', spans: t.spans.map(s => s.status === 'approval' ? { ...s, status: 'ok' } : s) }), [agents, avail]);
   const all = capSim ? all0.slice(0, OBS_CAP) : all0;
   const [range, setRange] = useState('24h'); const [ag, setAg] = useState('all'); const [st, setSt] = useState('all'); const [q, setQ] = useState('');
   const [sel, setSel] = useState(null); const [limit, setLimit] = useState(40);
@@ -89,7 +91,7 @@ function ObservabilityView({ agents, openChat }) {
         <div className="bg-toolbar">
           <div className="search-wrap" style={{ flex: '1 1 220px', maxWidth: 300 }}><I.Search size={13} /><input className="input" placeholder="Buscar tool, persona o ID de traza" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar trazas" /></div>
           <div className="tk-quick">{[['1h', '1 h'], ['6h', '6 h'], ['24h', '24 h']].map(([k, l]) => <button key={k} className={range === k ? 'is-on' : ''} onClick={() => setRange(k)}>{l}</button>)}</div>
-          <div className="tk-quick">{[['all', 'Todas'], ['error', 'Con error'], ['slow', 'Lentas (≥ p95)'], ['approval', 'Con aprobación']].map(([k, l]) => <button key={k} className={st === k ? 'is-on' : ''} onClick={() => setSt(k)}>{l}</button>)}</div>
+          <div className="tk-quick">{[['all', 'Todas'], ['error', 'Con error'], ['slow', 'Lentas (≥ p95)'], ...(avail ? [] : [['approval', 'Con aprobación']])].map(([k, l]) => <button key={k} className={st === k ? 'is-on' : ''} onClick={() => setSt(k)}>{l}</button>)}</div>
           <select className="input mk-sel" value={ag} onChange={e => setAg(e.target.value)} aria-label="Agente"><option value="all">Todos los agentes</option>{agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
         </div>
         <div className="ob-grid">

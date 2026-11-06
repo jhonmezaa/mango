@@ -15,9 +15,11 @@ const OPS_EMPTY = {
 function useOpsSim() { return window.useMango(s => s.simOps || null); }
 function OpsState({ view, kind, onRetry, action }) {
   const I = window.Icons; const S = window.MangoStore;
+  const at = React.useRef(null); if (kind === '429' && !at.current) at.current = Date.now() + 47000; if (kind !== '429') at.current = null;
   const retry = onRetry || (() => S.set({ simOps: null }));
   if (kind === 'loading') return <div className="mk-empty" role="status" aria-live="polite"><span className="mango-spinner" aria-hidden="true" /><span className="mk-meta">Cargando {OPS_LABEL[view].toLowerCase()}…</span></div>;
   if (kind === 'error') return <div className="mk-empty" role="alert"><I.Warn size={18} style={{ color: 'var(--amber)' }} /><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}>No se pudo cargar {OPS_LABEL[view]}.</div><div className="mk-meta">Inténtalo de nuevo en unos segundos.</div><button className="btn btn-sm" onClick={retry}><I.Refresh size={12} /> Reintentar</button></div>;
+  if (kind === '429') return <div className="mk-empty sr-err" role="alert"><span className="sr-err-ic"><I.Clock size={16} /></span><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}>Demasiadas solicitudes</div><div style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 440 }}>{view === 'observability' ? 'Observabilidad admite 30 lecturas por minuto: cada filtro, búsqueda o página cuenta.' : 'Hiciste muchas solicitudes seguidas.'}<window.RateWait inline at={at.current} /></div><window.RateWait at={at.current} onRetry={retry} /></div>;
   if (kind === '403') return <div className="mk-empty"><I.Lock size={18} style={{ color: 'var(--text-muted)' }} /><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}>No tienes acceso a {OPS_LABEL[view]}</div><div className="mk-meta" style={{ maxWidth: 440 }}>{OPS_DENIED[view]}</div><button className="btn btn-sm" onClick={() => { S.set({ simOps: null }); window.MangoNav?.('chat'); }}>Ir al chat</button></div>;
   if (kind === 'empty') return <div className="mk-empty"><div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-strong)' }}>{OPS_EMPTY[view][0]}</div><div className="mk-meta" style={{ maxWidth: 440 }}>{OPS_EMPTY[view][1]}</div>{action}</div>;
   return null;
