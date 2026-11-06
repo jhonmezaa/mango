@@ -255,9 +255,16 @@ describe("provisioner role: AgentCore", () => {
 describe("provisioner role: wildcards and the rest", () => {
   it('uses Resource "*" only where the API has no resource scope', () => {
     const wildcard = provisioner.filter((s) => list(s.Resource).includes("*"));
-    const allowed = new Set(["bedrock-agentcore:ListHarnesses", "xray:PutTraceSegments", "xray:PutTelemetryRecords"]);
+    const allowed = new Set([
+      "bedrock-agentcore:ListHarnesses",
+      "logs:DescribeLogGroups",
+      "xray:PutTraceSegments",
+      "xray:PutTelemetryRecords",
+    ]);
     for (const statement of wildcard) for (const action of actions(statement)) expect(allowed).toContain(action);
     expect(wildcard.flatMap(actions)).toContain("bedrock-agentcore:ListHarnesses");
+    // An adopted log group that already has its key is not associated again (2026-11-06).
+    expect(actions(bySid(provisioner, "ReadRuntimeLogGroupKeys"))).toEqual(["logs:DescribeLogGroups"]);
   });
 
   it("governs only the runtime log groups of this installation's agents", () => {

@@ -36,8 +36,12 @@ def govern_log_groups(
 
     ``rebind`` (only the evals harness, D110 (9)): an adopted log group gets its key taken off
     and associated again. Associating the key seconds after AgentCore set the unified span
-    destination up left X-Ray delivering nothing, with no error anywhere; associating the same
-    key again is a no-op, and only taking it off and back repaired it (2026-11-06).
+    destination up left X-Ray delivering nothing, with no error anywhere; only taking it off
+    and back repaired it (2026-11-06).
+
+    Otherwise an adopted log group that already has this key is left as it is: associating the
+    same key again is not a no-op, it stopped X-Ray delivering the spans of a log group that
+    had been delivering them (2026-11-06).
     """
     for name in names:
         try:
@@ -48,11 +52,19 @@ def govern_log_groups(
                     raise
                 if rebind:
                     logs.disassociate_kms_key(logGroupName=name)
-                logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
+                    logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
+                elif _key_of(logs, name) != key_arn:
+                    logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
                 logs.tag_resource(resourceArn=arn_of(name), tags=dict(tags))
             logs.put_retention_policy(logGroupName=name, retentionInDays=RUNTIME_LOG_RETENTION_DAYS)
         except (ClientError, BotoCoreError) as exc:
             raise aws_error("RuntimeLogGroup", exc) from None
+
+
+def _key_of(logs: CloudWatchLogsClient, name: str) -> str | None:
+    """The key a log group is associated with, if any."""
+    groups = logs.describe_log_groups(logGroupNamePrefix=name)["logGroups"]
+    return next((g.get("kmsKeyId") for g in groups if g.get("logGroupName") == name), None)
 
 
 def delete_log_groups(logs: CloudWatchLogsClient, names: Iterable[str]) -> None:

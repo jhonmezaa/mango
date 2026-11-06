@@ -198,10 +198,13 @@ def test_a_verified_capture_leaves_the_key_alone(lab: Lab) -> None:
         Item=Capture("verified", version, "2026-11-06T15:20:00+00:00").item(),
     )
     lab.logs.disassociated.clear()
+    lab.logs.associated.clear()
     lab.run(provision_input("v0.1.1-g1a2b3c4"), execution="exec-2")
 
     # Evals may be running: the content never goes a moment without its key.
     assert lab.logs.disassociated == []
+    # Nor is the same key associated again, which stops X-Ray delivering the spans.
+    assert lab.logs.associated == []
     assert {lab.logs.groups[n]["kms"] for n in _evals_groups(lab)} == {EVALS_LOGS_KEY_ARN}
 
 

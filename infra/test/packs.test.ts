@@ -230,6 +230,7 @@ describe("pack provisioner role: AgentCore", () => {
     const star = provisioner.filter((s) => list(s.Resource).includes("*"));
     expect(star.flatMap(actions).sort()).toEqual([
       "bedrock-agentcore:ListAgentRuntimes",
+      "logs:DescribeLogGroups",
       "xray:PutTelemetryRecords",
       "xray:PutTraceSegments",
     ]);

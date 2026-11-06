@@ -363,6 +363,7 @@ class FakeLogs:
         self.groups: dict[str, dict[str, Any]] = {}
         self.deleted: list[str] = []
         self.disassociated: list[str] = []
+        self.associated: list[str] = []
 
     def create_log_group(self, **kwargs: Any) -> None:
         name = kwargs["logGroupName"]
@@ -371,7 +372,18 @@ class FakeLogs:
         self.groups[name] = {"kms": kwargs["kmsKeyId"], "tags": kwargs["tags"]}
 
     def associate_kms_key(self, **kwargs: Any) -> None:
+        self.associated.append(kwargs["logGroupName"])
         self.groups[kwargs["logGroupName"]]["kms"] = kwargs["kmsKeyId"]
+
+    def describe_log_groups(self, **kwargs: Any) -> dict[str, Any]:
+        prefix = kwargs["logGroupNamePrefix"]
+        return {
+            "logGroups": [
+                {"logGroupName": n, **({"kmsKeyId": g["kms"]} if g.get("kms") else {})}
+                for n, g in self.groups.items()
+                if n.startswith(prefix)
+            ]
+        }
 
     def disassociate_kms_key(self, **kwargs: Any) -> None:
         self.disassociated.append(kwargs["logGroupName"])

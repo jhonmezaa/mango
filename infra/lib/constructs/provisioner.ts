@@ -350,6 +350,15 @@ export class Provisioner extends Construct {
     );
     role.addToPolicy(
       new iam.PolicyStatement({
+        sid: "ReadRuntimeLogGroupKeys",
+        // An adopted log group that already has its key is not associated again: that stops
+        // X-Ray delivering its spans (2026-11-06). DescribeLogGroups has no resource scope.
+        actions: ["logs:DescribeLogGroups"],
+        resources: ["*"],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
         sid: "RuntimeLogsKey",
         // CloudWatch Logs checks that the caller can use the key it associates.
         actions: ["kms:DescribeKey"],
@@ -566,7 +575,7 @@ export class Provisioner extends Construct {
 
     acknowledge(
       role,
-      { id: "AwsSolutions-IAM5[Resource::*]", reason: `${REASONS.xray} bedrock-agentcore:ListHarnesses has no resource scope either.` },
+      { id: "AwsSolutions-IAM5[Resource::*]", reason: `${REASONS.xray} bedrock-agentcore:ListHarnesses has no resource scope either, nor logs:DescribeLogGroups.` },
       {
         id: `AwsSolutions-IAM5[Resource::${platform.agentRoleArns}]`,
         reason:
