@@ -259,13 +259,19 @@ function Body({
   const [tab, setTab] = useState<Tab>('comments');
   const [busy, setBusy] = useState(false);
   const agent = detail.agent_id ? agents.get(detail.agent_id) : undefined;
-  // Design: the agent is no longer one the person may use; they see the ticket because they
-  // created it or have it assigned (an administrator sees every ticket: no notice then).
-  const lost =
-    detail.agent_id !== null &&
-    usable !== null &&
-    !usable.has(detail.agent_id) &&
-    (detail.creator.user_id === me.user_id || detail.assignee?.user_id === me.user_id);
+  // Design: the agent is no longer one the person may use; the notice says why they still see
+  // the ticket: they created it, have it assigned or are an administrator (design round 38).
+  const lostReason: 'lostCreator' | 'lostAssignee' | 'lostAdmin' | null =
+    detail.agent_id === null || usable === null || usable.has(detail.agent_id)
+      ? null
+      : detail.creator.user_id === me.user_id
+        ? 'lostCreator'
+        : detail.assignee?.user_id === me.user_id
+          ? 'lostAssignee'
+          : me.is_admin
+            ? 'lostAdmin'
+            : null;
+  const lost = lostReason !== null;
   const agentName = agent?.name ?? detail.agent_name;
   const people = assignable(detail, me.user_id);
   const pending = detail.status === 'needs_approval';
@@ -282,14 +288,7 @@ function Body({
       {lost && agentName ? (
         <div className="mc-alert tk-lost">
           <LockIcon size={13} />
-          <div>
-            {t(
-              detail.creator.user_id === me.user_id
-                ? 'tickets.panel.lostCreator'
-                : 'tickets.panel.lostAssignee',
-              { agent: agentName },
-            )}
-          </div>
+          <div>{t(`tickets.panel.${lostReason}`, { agent: agentName })}</div>
         </div>
       ) : null}
       <div className="tk-props">
@@ -315,7 +314,9 @@ function Body({
               </option>
             ))}
           </select>
-          {!pending && <div className="mk-meta tk-help">{t('tickets.panel.statusHelp')}</div>}
+          <div className="mk-meta tk-help">
+            {t(pending ? 'tickets.panel.statusHelpPending' : 'tickets.panel.statusHelp')}
+          </div>
         </div>
         <span>{t('tickets.panel.priority')}</span>
         <select
@@ -416,7 +417,17 @@ function Body({
         </div>
       )}
 
-      {detail.description ? <div className="tk-desc">{detail.description}</div> : null}
+      {detail.description ? (
+        // A task's result is Markdown, rendered without raw HTML; a ticket written by a person
+        // or an agent in chat stays plain text (design round 38).
+        <div className={detail.source === 'task' ? 'tk-desc is-md' : 'tk-desc'}>
+          {detail.source === 'task' ? (
+            <ChatMarkdown>{detail.description}</ChatMarkdown>
+          ) : (
+            detail.description
+          )}
+        </div>
+      ) : null}
 
       <div className="tk-tabs" role="tablist">
         {(['comments', 'activity', 'tools'] as const).map((key) => (

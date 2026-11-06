@@ -30,6 +30,8 @@ import {
   clearRecentSearches,
   focusMessageOf,
   isSearching,
+  keepLastSearch,
+  lastSearch,
   listedHits,
   queryOf,
   recentSearches,
@@ -85,15 +87,18 @@ function Snippet({ hit }: { hit: SearchHit }) {
 /**
  * Buscar conversaciones (design search.jsx `GlobalSearch`, D103): the person's own conversations,
  * searched by mango-api. Titles, snippets and agent names come from the API and are rendered as
- * text. Recent searches live in memory while the tab is open (not in `localStorage`, unlike the
- * design). Opening a result opens its conversation, as the design's `openChat`.
+ * text. Recent searches and the last query with its filters live in memory while the tab is open
+ * (never in `localStorage`); coming back shows the last search and asks for it again. Opening a
+ * result opens its conversation, as the design's `openChat`.
  */
 export function SearchPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { api, me, agents, conversations } = useSession();
-  const [q, setQ] = useState('');
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  // Design round 38: back here, the last query and filters (in memory, D103); asked again.
+  const [last] = useState(() => lastSearch(me.user_id));
+  const [q, setQ] = useState(last?.q ?? '');
+  const [filters, setFilters] = useState<Filters>(last?.filters ?? NO_FILTERS);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [active, setActive] = useState(0);
   const [recent, setRecent] = useState(() => recentSearches(me.user_id));
@@ -188,6 +193,10 @@ export function SearchPage() {
       block: 'nearest',
     });
   }, [active]);
+
+  useEffect(() => {
+    keepLastSearch(me.user_id, q, filters);
+  }, [me.user_id, q, filters]);
 
   const remember = useCallback(
     (term: string) => {

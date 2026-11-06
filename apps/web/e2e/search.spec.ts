@@ -57,6 +57,18 @@ test('Buscar conversaciones finds the terms and opens the conversation with Ente
   await searchBox(page).press('Enter');
   await expect(page).toHaveURL(/\/c\/[A-Za-z0-9_-]+$/);
   await expect(page.getByText('Gasto de EC2 del mes').first()).toBeVisible();
+
+  // Design round 38: back on the screen, the last query is there and is asked again; it lives
+  // in memory only, never in Web Storage (D103).
+  const again = page.waitForResponse((r) => r.url().endsWith('/search/conversations'));
+  await openSearch(page);
+  await expect(searchBox(page)).toHaveValue('ec2 mes');
+  expect((await again).status()).toBe(200);
+  await expect(first).toContainText('Gasto de EC2 del mes');
+  const stored = await page.evaluate<string>(
+    'JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)])',
+  );
+  expect(stored).not.toContain('ec2 mes');
 });
 
 test('Buscar conversaciones says when a search did not cover everything', async ({ page }) => {

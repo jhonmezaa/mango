@@ -181,6 +181,11 @@ export const schedules = {
     result: 'Resultado',
     resultValueMine: 'En el detalle y en tu Bandeja · solo tú lo ves',
     resultValueOther: 'En el detalle y en la Bandeja de {{owner}} · solo {{owner}} lo ve',
+    // With «Crear ticket» the result is no longer only the owner's (design round 38).
+    resultValueMineTicket: 'En el detalle y en tu Bandeja',
+    resultValueOtherTicket: 'En el detalle y en la Bandeja de {{owner}}',
+    ticket: 'Ticket',
+    ticketValue: 'También crea un ticket con cada ejecución que termina bien',
     report: 'Reporte',
     reportValueMine: 'PDF · {{type}} · solo tú lo descargas',
     reportValueOther: 'PDF · {{type}} · solo {{owner}} lo descarga',
@@ -280,6 +285,8 @@ export const schedules = {
     errTask: 'Describe la tarea',
     errDays: 'Elige al menos un día',
     errSecret: 'Hay un posible secreto en la tarea',
+    errTicketsUnavailable:
+      'Esta instalación no tiene Tickets: la tarea no puede crear tickets. Apaga «Crear ticket» para guardarla.',
     cancel: 'Cancelar',
     create: 'Crear schedule',
     save: 'Guardar',

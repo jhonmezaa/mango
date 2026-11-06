@@ -305,7 +305,7 @@ export const approvals = {
         environment: 'Según entorno',
       },
       selfHint:
-        'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.',
+        'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores. Aprobadores y vencimiento se eligen después de marcar «Siempre».',
       conditionUnsupported: 'Esta tool no informa ese dato',
       conditionsHint: 'Las opciones deshabilitadas dependen de datos que esta tool no informa.',
       amount: 'Monto',

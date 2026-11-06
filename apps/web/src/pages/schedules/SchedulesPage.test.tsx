@@ -507,6 +507,38 @@ describe('SchedulesPage', () => {
     });
   });
 
+  it('says why a task with a ticket cannot be saved without Tickets (tickets_unavailable)', async () => {
+    const own = task({ ticket: true });
+    const call = apiWith({
+      ...base(list([own])),
+      updateExistingTask: () => new ApiError(422, 'tickets_unavailable', 'x'),
+    });
+    renderPage(call, false, `/schedules/${own.task_id}`);
+    const detail = await screen.findByRole('dialog', { name: own.name });
+    await userEvent.click(within(detail).getByRole('button', { name: /Editar/ }));
+    const editor = await screen.findByRole('dialog', { name: /Editar|schedule/i });
+    await userEvent.click(within(editor).getByRole('button', { name: 'Guardar' }));
+    expect(
+      await within(editor).findByText(
+        'Esta instalación no tiene Tickets: la tarea no puede crear tickets. Apaga «Crear ticket» para guardarla.',
+      ),
+    ).toBeInTheDocument();
+    // The button stays: turning it off is how the task can be saved.
+    expect(within(editor).getByRole('button', { name: 'Crear ticket' })).toBeEnabled();
+  });
+
+  it('the detail of a task with a ticket says so, and the result is not only the owner’s', async () => {
+    const own = task({ ticket: true });
+    renderPage(apiWith(base(list([own]))), false, `/schedules/${own.task_id}`);
+    const detail = await screen.findByRole('dialog', { name: own.name });
+    expect(within(detail).getByText('Ticket')).toBeInTheDocument();
+    expect(
+      within(detail).getByText('También crea un ticket con cada ejecución que termina bien'),
+    ).toBeInTheDocument();
+    expect(within(detail).getByText('En el detalle y en tu Bandeja')).toBeInTheDocument();
+    expect(within(detail).queryByText(/solo tú lo ves/)).toBeNull();
+  });
+
   it('nobody creates without a usable agent', async () => {
     renderPage(apiWith({ listTasksOfCaller: () => list([]), getAgents: () => ({ items: [] }) }));
     const button = await screen.findByRole('button', { name: 'Nuevo schedule' });

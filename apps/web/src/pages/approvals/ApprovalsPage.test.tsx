@@ -448,9 +448,25 @@ describe('Políticas', () => {
     ).toBeNull();
     expect(
       within(dialog).getByText(
-        'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.',
+        'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores. Aprobadores y vencimiento se eligen después de marcar «Siempre».',
       ),
     ).toBeVisible();
+    // Design round 38: approvers and expiry stay dimmed and inert until «Siempre» is chosen.
+    const fields = ['Aprobadores necesarios', 'La solicitud vence en'].map(
+      (label) => within(dialog).getByText(label).parentElement as HTMLElement,
+    );
+    for (const field of fields) {
+      expect(field).toHaveClass('pol-off');
+      expect(field).toHaveAttribute('aria-disabled', 'true');
+      expect(field).toHaveAttribute('inert');
+    }
+    await user.click(within(dialog).getByRole('button', { name: 'Siempre' }));
+    for (const field of fields) {
+      expect(field).not.toHaveClass('pol-off');
+      expect(field).not.toHaveAttribute('aria-disabled');
+      expect(field).not.toHaveAttribute('inert');
+    }
+    expect(within(dialog).getByRole('button', { name: '2' })).toBeEnabled();
   });
 
   it('lets an administrator propose a change, offering only what the tool reports', async () => {

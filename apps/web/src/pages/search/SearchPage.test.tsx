@@ -7,7 +7,14 @@ import type { ApiClient } from '../../api/client';
 import { ApiError } from '../../api/errors';
 import { agentFixture, baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
-import { clearRecentSearches, recentSearches, type SearchAnswer, type SearchResult } from './model';
+import {
+  clearRecentSearches,
+  forgetLastSearch,
+  lastSearch,
+  recentSearches,
+  type SearchAnswer,
+  type SearchResult,
+} from './model';
 import { focusMessageFrom } from '../chatFocus';
 import { SearchPage } from './SearchPage';
 
@@ -79,6 +86,7 @@ const answering = (data: SearchAnswer) => vi.fn(() => Promise.resolve(data));
 
 afterEach(() => {
   clearRecentSearches(baseMe.user_id);
+  forgetLastSearch(baseMe.user_id);
 });
 
 describe('SearchPage', () => {
@@ -151,6 +159,46 @@ describe('SearchPage', () => {
     await user.click(screen.getByRole('button', { name: 'Quitar filtros' }));
     expect(await screen.findByText(/Revisa la ortografía/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Todo' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('comes back with the last query and filters, in memory only, and asks again', async () => {
+    const user = userEvent.setup();
+    const first = answering(answer({ results: [] }));
+    const api = { call: first } as unknown as ApiClient;
+    const { unmount } = render(
+      <TestProviders
+        session={sessionValue({ api, agents: [agentFixture(), security] })}
+        path="/search"
+      >
+        <SearchPage />
+      </TestProviders>,
+    );
+    await user.type(searchBox(), 'buckets');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Agente' }), 'security');
+    await user.click(screen.getByRole('button', { name: 'Herramientas' }));
+    await waitFor(() => {
+      expect(lastSearch(baseMe.user_id)).toMatchObject({
+        q: 'buckets',
+        filters: { agent: 'security', kind: 'tool' },
+      });
+    });
+    unmount();
+    // Design round 38: nothing in Web Storage (D103).
+    expect(localStorage.length + sessionStorage.length).toBe(0);
+
+    const again = answering(answer({ results: [] }));
+    renderPage(again);
+    expect(searchBox()).toHaveValue('buckets');
+    expect(screen.getByRole('combobox', { name: 'Agente' })).toHaveValue('security');
+    expect(screen.getByRole('button', { name: 'Herramientas' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await waitFor(() => {
+      expect(again).toHaveBeenCalledTimes(1);
+    });
+    const sent = again.mock.lastCall as unknown as [string, { body: Record<string, unknown> }];
+    expect(sent[1].body).toMatchObject({ q: 'buckets', agent: 'security', kind: 'tool' });
   });
 
   it('moves with the arrows and opens the conversation with Enter', async () => {

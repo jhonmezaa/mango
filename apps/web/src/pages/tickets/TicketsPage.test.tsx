@@ -300,6 +300,39 @@ describe('TicketsPage · panel', () => {
     expect(within(panel).queryByRole('link', { name: /Reportes/ })).toBeNull();
   });
 
+  it('tells an administrator who lost the agent why they still see the ticket', async () => {
+    const item = detail({
+      title: 'Costo',
+      agent_id: 'reportes',
+      agent_name: 'Reportes',
+      source: 'agent',
+      creator: person(OTHER, 'otra@example.com'),
+    });
+    renderPage({ listTickets: list([item]), getTicket: item }, `/tickets/${item.ticket_id}`, {
+      me: { ...baseMe, is_admin: true },
+    });
+    const panel = await screen.findByRole('dialog');
+    expect(
+      await within(panel).findByText(
+        'Ya no puedes usar Reportes. Ves este ticket porque eres administrador.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the description of a task result as Markdown, without raw HTML', async () => {
+    opened({ source: 'task', description: `## Resumen\n\n**Listo** ${XSS}` });
+    const panel = await screen.findByRole('dialog');
+    expect(await within(panel).findByRole('heading', { name: 'Resumen' })).toBeInTheDocument();
+    expect(within(panel).getByText('Listo').tagName).toBe('STRONG');
+    expect(document.querySelector('img[src="x"]')).toBeNull();
+  });
+
+  it('keeps the description of a ticket written by hand as plain text', async () => {
+    opened({ source: 'web', description: '**no es Markdown**' });
+    const panel = await screen.findByRole('dialog');
+    expect(await within(panel).findByText('**no es Markdown**')).toHaveClass('tk-desc');
+  });
+
   it('opens the request that keeps it «Por aprobar»', async () => {
     const approval = 'f'.repeat(32);
     const { user } = opened({
@@ -315,6 +348,18 @@ describe('TicketsPage · panel', () => {
         'Hay una solicitud abierta en la conversación donde FinOps creó este ticket.',
       ),
     ).toBeInTheDocument();
+    expect(
+      within(panel).getByText(
+        'Mientras la solicitud siga abierta, solo se puede marcar «Resuelto».',
+      ),
+    ).toBeInTheDocument();
+    const status = within(panel).getByRole('combobox', { name: 'Estado' });
+    expect(
+      within(status)
+        .getAllByRole('option')
+        .filter((o) => !(o as HTMLOptionElement).disabled)
+        .map((o) => o.textContent),
+    ).toEqual(['Por aprobar', 'Resuelto']);
     await user.click(within(panel).getByRole('button', { name: 'Revisar en Aprobaciones' }));
     expect(screen.getAllByTestId('where')[0]).toHaveTextContent(`/approvals/pending/${approval}`);
   });
@@ -409,11 +454,12 @@ describe('TicketsPage · nuevo ticket', () => {
         .getAllByRole('option')
         .map((o) => o.textContent),
     ).toEqual(['Sin agente', 'FinOps · FinOps']);
+    // Design round 38: it starts on «Sin agente».
+    expect(agent).toHaveValue('');
     expect(within(dialog).queryByRole('option', { name: 'Por aprobar' })).toBeNull();
     await user.click(within(dialog).getByRole('button', { name: 'Crear ticket' }));
     expect(within(dialog).getByText('Escribe un título')).toBeInTheDocument();
     await user.type(within(dialog).getByRole('textbox', { name: 'Título' }), 'Nuevo');
-    await user.selectOptions(agent, '');
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Asignar a' }), 'me');
     await user.click(within(dialog).getByRole('button', { name: 'Crear ticket' }));
     expect(call).toHaveBeenCalledWith('createNewTicket', {

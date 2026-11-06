@@ -84,8 +84,10 @@ export const tickets = {
       'Ya no puedes usar {{agent}}. Ves este ticket porque lo creaste; el agente no se abre desde aquí.',
     lostAssignee:
       'Ya no puedes usar {{agent}}. Ves este ticket porque lo tienes asignado; el agente no se abre desde aquí.',
+    lostAdmin: 'Ya no puedes usar {{agent}}. Ves este ticket porque eres administrador.',
     status: 'Estado',
     statusHelp: '«Por aprobar» lo marca una solicitud de Aprobaciones.',
+    statusHelpPending: 'Mientras la solicitud siga abierta, solo se puede marcar «Resuelto».',
     priority: 'Prioridad',
     assignee: 'Asignado',
     assignMe: 'Asignarme',

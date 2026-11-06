@@ -105,6 +105,33 @@ export function clearRecentSearches(userId: string): void {
   recentByUser.delete(userId);
 }
 
+// --- The last search (design round 38, `srMemo`) --------------------------------------------
+// Back on «Buscar conversaciones» the screen shows the last query and filters again, and asks
+// for the search again. In memory only, like the recent searches: what a person searches for is
+// content of their conversations (D103). The order is not kept (design).
+
+export interface LastSearch {
+  q: string;
+  filters: Filters;
+}
+
+const lastByUser = new Map<string, LastSearch>();
+
+export function lastSearch(userId: string): LastSearch | null {
+  return lastByUser.get(userId) ?? null;
+}
+
+export function keepLastSearch(userId: string, q: string, filters: Filters): void {
+  lastByUser.set(userId, {
+    q: q.slice(0, MAX_QUERY),
+    filters: { ...filters, sort: NO_FILTERS.sort },
+  });
+}
+
+export function forgetLastSearch(userId: string): void {
+  lastByUser.delete(userId);
+}
+
 // --- Open at the hit (design round 35) ---------------------------------------------------------
 
 /**

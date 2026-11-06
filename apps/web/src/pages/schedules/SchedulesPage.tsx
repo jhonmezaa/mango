@@ -228,6 +228,7 @@ function errorToast(t: Translate, error: unknown): string {
     if (error.code === 'task_limit') return t('schedules.toast.limit');
     if (error.code === 'secret_in_task') return t('schedules.editor.errSecret');
     if (error.code === 'central_only') return t('schedules.editor.centralOnly');
+    if (error.code === 'tickets_unavailable') return t('schedules.editor.errTicketsUnavailable');
     if (error.status === 429) return t('schedules.toast.rateLimited');
   }
   return t('schedules.toast.error');
@@ -1055,11 +1056,21 @@ function TaskDetail({
             <div className="mk-kv">
               <span>{t('schedules.detail.result')}</span>
               <span style={{ textAlign: 'right' }}>
-                {perms.own
-                  ? t('schedules.detail.resultValueMine')
-                  : t('schedules.detail.resultValueOther', { owner })}
+                {task.ticket
+                  ? perms.own
+                    ? t('schedules.detail.resultValueMineTicket')
+                    : t('schedules.detail.resultValueOtherTicket', { owner })
+                  : perms.own
+                    ? t('schedules.detail.resultValueMine')
+                    : t('schedules.detail.resultValueOther', { owner })}
               </span>
             </div>
+            {task.ticket ? (
+              <div className="mk-kv">
+                <span>{t('schedules.detail.ticket')}</span>
+                <span style={{ textAlign: 'right' }}>{t('schedules.detail.ticketValue')}</span>
+              </div>
+            ) : null}
             {task.report ? (
               <div className="mk-kv">
                 <span>{t('schedules.detail.report')}</span>

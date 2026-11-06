@@ -86,6 +86,9 @@ test('a ticket «Por aprobar» only leaves as resolved, and an unknown one canno
   const status = panel.getByRole('combobox', { name: 'Estado' });
   await expect(status.getByRole('option', { name: 'Abierto' })).toBeDisabled();
   await expect(status.getByRole('option', { name: 'Resuelto' })).toBeEnabled();
+  await expect(
+    panel.getByText('Mientras la solicitud siga abierta, solo se puede marcar «Resuelto».'),
+  ).toBeVisible();
   await panel.getByRole('button', { name: 'Revisar en Aprobaciones' }).click();
   await expect(page).toHaveURL(/\/approvals\/pending\/[0-9a-f]{32}$/);
 
@@ -98,6 +101,25 @@ test('a ticket «Por aprobar» only leaves as resolved, and an unknown one canno
   await expect(page.getByText('No puedes ver este ticket')).toBeVisible();
   await page.getByRole('button', { name: 'Volver a Tickets' }).click();
   await expect(page).toHaveURL(/\/tickets$/);
+});
+
+test('the result of a task reads as Markdown and a new ticket starts without an agent', async ({
+  page,
+}) => {
+  await signIn(page);
+  await openTickets(page);
+  await page.getByRole('button', { name: /Resumen semanal de gasto/ }).click();
+  const panel = page.getByRole('dialog').filter({ hasText: 'Resumen semanal de gasto' });
+  // Design round 38: a task's description is Markdown (no raw HTML), not its asterisks.
+  await expect(panel.locator('.tk-desc strong')).toHaveText('USD 1.240');
+  await expect(panel.getByText('**USD 1.240**')).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Cerrar' }).click();
+
+  await page.getByRole('button', { name: 'Nuevo ticket', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Nuevo ticket' });
+  await expect(dialog.getByRole('combobox', { name: 'Agente' })).toHaveValue('');
+  await dialog.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(dialog).toBeHidden();
 });
 
 test('the chat confirms the tickets tool with the ticket it writes', async ({ page }) => {

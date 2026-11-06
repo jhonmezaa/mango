@@ -34,9 +34,16 @@ test('the ticket tools read «La persona confirma cada llamada» and only harden
   await expect(dialog.getByRole('button', { name: 'Según monto' })).toBeDisabled();
   await expect(
     dialog.getByText(
-      'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores.',
+      'Hoy: la persona del chat confirma cada llamada. Con «Siempre», cada llamada pide aprobadores. Aprobadores y vencimiento se eligen después de marcar «Siempre».',
     ),
   ).toBeVisible();
+  // Design round 38: approvers and expiry are dimmed and inert until «Siempre» is chosen.
+  const approvers = dialog.locator('.g-field').filter({ hasText: 'Aprobadores necesarios' });
+  await expect(approvers).toHaveClass(/pol-off/);
+  await expect(approvers).toHaveCSS('opacity', '0.45');
+  await dialog.getByRole('button', { name: 'Siempre' }).click();
+  await expect(approvers).not.toHaveClass(/pol-off/);
+  await expect(approvers.getByRole('button', { name: '2' })).toBeEnabled();
   await dialog.getByRole('button', { name: 'Cancelar' }).click();
   await expect(dialog).toBeHidden();
 });

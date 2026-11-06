@@ -326,6 +326,10 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  /* A task's result is Markdown: its blocks bring their own spacing. */
+  .tk-desc.is-md {
+    white-space: normal;
+  }
   .mk-active {
     border-color: var(--accent-border) !important;
     color: var(--accent-ink) !important;

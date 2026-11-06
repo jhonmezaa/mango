@@ -72,6 +72,7 @@ function PolicyModal({
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<PolicyForm>(() => formOf(tool.policy));
+  const self = isSelfConfirmed(form);
   const [reason, setReason] = useState('');
   const [tried, setTried] = useState(false);
   const rule = ruleOf(form);
@@ -140,9 +141,7 @@ function PolicyModal({
             );
           })}
         </div>
-        {isSelfConfirmed(form) ? (
-          <div className="g-hint">{t('approvals.policies.modal.selfHint')}</div>
-        ) : null}
+        {self ? <div className="g-hint">{t('approvals.policies.modal.selfHint')}</div> : null}
         {CONDITIONS.some((condition) => !tool.conditions.includes(condition)) ? (
           <div className="g-hint">{t('approvals.policies.modal.conditionsHint')}</div>
         ) : null}
@@ -201,7 +200,13 @@ function PolicyModal({
           hint={t('approvals.policies.modal.amountHint', { count: form.approvers })}
         />
       ) : null}
-      <div className="g-field">
+      {/* Design round 38: with «self» nothing is asked of approvers, so approvers and expiry are
+          dimmed and inert until «Siempre» is chosen. */}
+      <div
+        className={self ? 'g-field pol-off' : 'g-field'}
+        aria-disabled={self || undefined}
+        inert={self || undefined}
+      >
         <span className="g-label" id="pol-approvers">
           {t('approvals.policies.modal.approvers')}
         </span>
@@ -222,7 +227,11 @@ function PolicyModal({
         </div>
         <div className="g-hint">{t('approvals.policies.modal.approversHint')}</div>
       </div>
-      <div className="g-field">
+      <div
+        className={self ? 'g-field pol-off' : 'g-field'}
+        aria-disabled={self || undefined}
+        inert={self || undefined}
+      >
         <span className="g-label" id="pol-expires">
           {t('approvals.policies.modal.expires')}
         </span>

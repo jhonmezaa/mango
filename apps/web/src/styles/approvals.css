@@ -336,4 +336,9 @@
       display: none;
     }
   }
+  /* Design round 38: approvers and expiry while the policy is «self» (policies.jsx `offF`). */
+  .pol-off {
+    opacity: 0.45;
+    pointer-events: none;
+  }
 }

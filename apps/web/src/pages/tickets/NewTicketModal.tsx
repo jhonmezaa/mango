@@ -77,7 +77,8 @@ export function NewTicketModal({
   const id = useId();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [agentId, setAgentId] = useState(agents[0]?.id ?? '');
+  // Design round 38: a new ticket starts on «Sin agente».
+  const [agentId, setAgentId] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
   const [status, setStatus] = useState<ChosenStatus>(initialStatus);
   const [assignToMe, setAssignToMe] = useState(false);
