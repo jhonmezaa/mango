@@ -205,3 +205,4 @@ Supuestos que siguen sin validar (ver arriba): que IAM evalúe `logs:PutResource
 - **Navegación desde Revisión** («Crear eval»): el id del agente viaja en el estado del router, se valida con el patrón de ids y se descarta si no cumple.
 - **Costo:** `POST /api/evals/estimate` solo devuelve cifras (lo que reservaría una ejecución) a quien ve las evals del agente, con el límite de lecturas.
 
+- **Motivo del pedido (ronda 38 de diseño):** quitar «Obligatoria» y rechazar ese pedido abren un campo de 1 a 500 caracteres; la web recorta y comprueba la longitud antes de enviar, y el servidor la valida otra vez (`RemovalIn`, `RejectIn`). El motivo del pedido (`request.reason`) se muestra a quien ve la suite como texto, nunca como HTML (React escapa). «Rechazar» solo se ofrece a un administrador que no lo pidió, pero quien decide es `ApproveEvalRequirement` en el servidor, y `decide` exige que lo decida otro administrador, también al rechazar (`same_approver`).
