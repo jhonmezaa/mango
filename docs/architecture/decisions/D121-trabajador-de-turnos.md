@@ -1,7 +1,7 @@
 # D121 · El turno del chat corre en un trabajador fuera de `mango-api`
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Trabajador desde el inicio»; el cómo, puntos 2 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
+- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Trabajador desde el inicio»; cómo llega el token, punto 4, elegido ese día por menú en el modelo de amenazas: «Token cifrado en SQS (Recomendada)»; el resto del cómo, puntos 2 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
 - **Precisa / reemplaza a:** precisa [D70](D070-dos-tareas-y-limites-compartidos.md) (6) (un despliegue de `mango-api` ya no corta un turno, porque el turno no vive en la petición) y [D78](D078-tareas-sin-chat.md) (2) (las ejecuciones de las tareas pasan por el mismo trabajador, no por las tareas de `mango-api`); respeta la regla 4 y la regla 5 de `AGENTS.md` y [D73](D073-turno-cortado-nunca-cuesta-cero.md)
 - **Precisada por:** —
 
@@ -15,7 +15,7 @@ Origen: el plan de capacidades del chat ([`docs/specs/chat-capacidades-plan.md`]
 
 **(3) El trabajador (propuesto por un agente).** `mango-turn-worker`: un servicio de ECS con la misma imagen que `mango-api` y otro punto de entrada, dos tareas, sin balanceador, con los permisos del turno que hoy tiene `mango-api`. Mientras corre un turno protege su tarea (protección de tarea de ECS), así que un despliegue espera a que termine. Antes de construirlo se prueba en AWS que esa protección detiene el despliegue y si la sesión del harness sigue cuando se corta el stream de `InvokeHarness` (R0 del plan, con autorización del dueño).
 
-**(4) Identidad de la persona (propuesto por un agente).** El turno sigue corriendo como la persona: el Gateway recibe su token y la firma de la invocación (regla 5, [D13](D013-identidad-hasta-las-tools.md)). Cómo llega ese token al trabajador lo decide el modelo de amenazas del trabajador (PR P1 del plan), entre el token del turno en el mensaje de la cola, cifrado con su llave, y uno emitido para el turno como el de una ejecución de tarea ([D78](D078-tareas-sin-chat.md) (1)). Nunca en logs.
+**(4) Identidad de la persona (cómo llega el token, elegido el 2026-11-07, por menú, en el modelo de amenazas del trabajador: «Token cifrado en SQS (Recomendada)»).** El turno sigue corriendo como la persona: el Gateway recibe su token y la firma de la invocación (regla 5, [D13](D013-identidad-hasta-las-tools.md)). `mango-api` comprueba que al token le queda vida para el turno (`timeout + 60 s`, TM-I5) y lo pone en el mensaje de la cola, cifrada con su llave propia, que solo descifra el trabajador; el trabajador vuelve a comprobar ese margen y a autorizar antes de invocar, y nunca guarda el token, ni en DynamoDB, ni en la auditoría, ni en logs. No se emite un token propio por turno como el de una tarea ([D78](D078-tareas-sin-chat.md) (1)). Modelo de amenazas: [`turn-worker-threat-model.md`](../../security/threat-models/turn-worker-threat-model.md) (TM-TW1, TM-TW2).
 
 **(5) Tareas (propuesto por un agente).** Las ejecuciones de [D78](D078-tareas-sin-chat.md) pasan por el mismo trabajador y el mismo camino; la cola `Mango-<ns>-TaskRuns` sigue siendo su entrada.
 

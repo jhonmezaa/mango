@@ -1,7 +1,7 @@
 # D116 · Archivos del chat: bucket propio, 20 archivos de 100 MB, 90 días y escaneo de malware de subidas y generados
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-07 (los límites, punto 1, elegidos por el dueño ese día, por menú: «20 × 100 MB, 90 días»; el escaneo, punto 2, elegido ese día por menú: «Sí: subidas y generados (Recomendada)»; el cómo, puntos 3 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
+- **Fecha:** 2026-11-07 (los límites, punto 1, elegidos por el dueño ese día, por menú: «20 × 100 MB, 90 días»; el escaneo, punto 2, elegido ese día por menú: «Sí: subidas y generados (Recomendada)»; el borrado, punto 9, elegido ese día por menú en el modelo de amenazas: «Borrar con la conversación (Recomendada)»; el cómo, puntos 3 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
 - **Precisa / reemplaza a:** precisa [D88](D088-knowledge-bases-sobre-s3.md) (25) (el escaneo de malware deja de ser «para más adelante» en los archivos del chat); precisa [D86](D086-reportes-descargables-de-tareas.md) (1) y (5) (una vía de archivos aparte de los reportes, con su propia lista de tipos, y que sí se pide desde el chat); precisa la CSP de la SPA (`img-src` gana `blob:`); reutiliza el patrón de subida de [D88](D088-knowledge-bases-sobre-s3.md) (9) y (33) y el rol de [D86](D086-reportes-descargables-de-tareas.md) (10)
 - **Precisada por:** —
 
@@ -23,4 +23,6 @@ Origen: el plan de capacidades del chat ([`docs/specs/chat-capacidades-plan.md`]
 
 **(7) Auditoría (propuesto por un agente).** `chat.file_upload` y `chat.file_download` con conversación, archivo, tipo, tamaño y SHA-256; nunca el contenido ([D16](D016-observabilidad-de-agentes.md)).
 
-**(8) Antes de construir (propuesto por un agente).** Modelo de amenazas `chat-files-threat-model.md` (PR P1 del plan).
+**(8) Antes de construir (propuesto por un agente).** Modelo de amenazas [`chat-files-threat-model.md`](../../security/threat-models/chat-files-threat-model.md) (PR P1 del plan).
+
+**(9) Borrado (elegido el 2026-11-07, por menú, en el modelo de amenazas: «Borrar con la conversación (Recomendada)»).** Además de los 90 días, dar de baja a una persona, y borrar una conversación cuando exista esa ruta, borra sus archivos (subidos y generados), para su sesión del Code Interpreter ([D114](D114-code-interpreter-detras-del-gateway.md)) y borra su registro; se audita sin contenido (TM-CF7).

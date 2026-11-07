@@ -1,6 +1,6 @@
 # Trabajador de turnos del chat y stream reanudable (v1): modelo de amenazas (v0.1)
 
-> Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, fase 1: R0–R5, §7). Decisiones que lo enmarcan: D120 (stream de parches JSON `v1`, numerado y reanudable) y D121 (el turno corre en un trabajador fuera de `mango-api`), **por registrar en P0**; precisan D57, D70 (6) y D78 (2). Además D16, D23, D39, D63, D70, D73 y las reglas 4 y 5 de `AGENTS.md`.
+> Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, fase 1: R0–R5, §7). Decisiones que lo enmarcan: [D120](../../architecture/decisions/D120-stream-del-chat-en-parches-json.md) (stream de parches JSON `v1`, numerado y reanudable) y [D121](../../architecture/decisions/D121-trabajador-de-turnos.md) (el turno corre en un trabajador fuera de `mango-api`; su punto 4, cómo llega el token, lo fijó este modelo), vigentes; precisan D57, D70 (6) y D78 (2). Además D16, D23, D39, D63, D70, D73 y las reglas 4 y 5 de `AGENTS.md`.
 > Amplía `identity-propagation-threat-model.md` (TM-I5, token que debe sobrevivir al turno), `chat-live-progress-threat-model.md` (TM-LP1–LP4, qué texto del modelo sale del stream) y `tasks-threat-model.md` (cola, DLQ y una ejecución fuera de la petición, D78).
 > v0.1 se escribe **antes** de construir: no hay código ni recursos. Supuestos confirmados el 2026-11-07, por menú, por el agente que lanzó este trabajo.
 

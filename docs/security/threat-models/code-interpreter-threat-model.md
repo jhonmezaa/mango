@@ -1,6 +1,6 @@
 # Sandbox de código del chat (Code Interpreter detrás del Gateway) y render de documentos: modelo de amenazas (v0.1)
 
-> Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, fases 2 y 3, §7). Decisiones que lo enmarcan: D114 (sandbox de código detrás del Gateway), D115 (presupuesto por tiempo), D117 (render de Office con LibreOffice) y D119 (skills de documentos con helpers de la release), **por registrar en P0**; reglas 1, 3, 4 y 5 de `AGENTS.md`; D13, D16, D25, D26, D39, D58, D73, D90, D92.
+> Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, fases 2 y 3, §7). Decisiones que lo enmarcan: [D114](../../architecture/decisions/D114-code-interpreter-detras-del-gateway.md) (sandbox de código detrás del Gateway, vigente; su punto 9 recoge lo que este modelo fijó), [D115](../../architecture/decisions/D115-presupuesto-del-sandbox-de-codigo.md) (presupuesto por tiempo, propuesta), [D117](../../architecture/decisions/D117-render-de-office-con-libreoffice.md) (render de Office con LibreOffice, vigente) y [D119](../../architecture/decisions/D119-skills-de-documentos-con-helpers-de-la-release.md) (skills de documentos con helpers de la release, propuesta); reglas 1, 3, 4 y 5 de `AGENTS.md`; D13, D16, D25, D26, D39, D58, D73, D90, D92.
 > Amplía `mango-architecture-threat-model.md` (TM-001 inyección indirecta, TM-007 aislamiento entre personas, TM-012 contenido no confiable) e `identity-propagation-threat-model.md` (identidad hasta el destino). Los archivos (subida, descarga, escaneo) están en [`chat-files-threat-model.md`](chat-files-threat-model.md) y el trabajador que corre el turno en [`turn-worker-threat-model.md`](turn-worker-threat-model.md).
 > v0.1 se escribe **antes** de construir: no hay código ni recursos. La evidencia es la de la prueba del 2026-11-07 en una instalación (Code Interpreter del sistema, solo lectura, plan §2.1), los modelos de servicio de botocore y el código de `main`. Supuestos confirmados el 2026-11-07, por menú, por el agente que lanzó este trabajo (ver «Supuestos validados»).
 
@@ -46,7 +46,7 @@ Ninguno queda en **high** si se construyen las mitigaciones listadas con su PR. 
 | `connectors/code-interpreter` (Lambda) | Reverifica token y firma; busca o crea la sesión de (persona, conversación); ejecuta; copia salidas a S3; devuelve solo texto con tope; mide el uso | C2 |
 | Registro de sesiones (DynamoDB) | `sessionId` cifrado con KMS, ligado a persona y conversación, con TTL | C2 |
 | `Mango_<ns>_sandbox` (`CodeInterpreterCustom`) | Ejecuta el código; `SANDBOX`, sin rol | C1 |
-| Bucket `Mango-<ns>-chat-files` | Salidas de cada celda bajo `owner/<sub>/conv/<id>/` | C1, `chat-files-threat-model.md` |
+| Bucket `Mango-<ns>-chat-files` | Salidas de cada celda bajo `owner/<sub>/<conversación>/` | C1, `chat-files-threat-model.md` |
 | `render-document` (Lambda-contenedor) | LibreOffice headless: archivo por id → PDF y PNG por página a S3 y a la sesión | D1 |
 | Trabajador del turno | Reserva, invoca, traduce el resultado a mensajes `code.run_python` y pasa lo mostrado por `ApplyGuardrail` | C4, R2 |
 
@@ -56,7 +56,7 @@ Ninguno queda en **high** si se construyen las mitigaciones listadas con su PR. 
 - **Gateway → conector.** Invocación Lambda del servicio; el interceptor añade `_mango_ctx` con el token. El conector reverifica (`iss`, `aud`, `exp`, `token_use`) y la firma (versión, tool).
 - **Conector → Code Interpreter.** SigV4 con el rol de la Lambda: `Start/Invoke/Stop/GetCodeInterpreterSession` sobre el ARN exacto de `Mango_<ns>_sandbox`. La sesión se nombra por cabecera; **no hay control de IAM por sesión**.
 - **Sandbox → red.** `SANDBOX`: sin internet; «acceso limitado a servicios de AWS, S3 incluido» según la documentación (T5).
-- **Conector → S3.** `PutObject` de las salidas en `owner/<sub>/conv/<id>/<archivo>` con CMK; `GetObject` de adjuntos con `NO_THREATS_FOUND` para hidratar.
+- **Conector → S3.** `PutObject` de las salidas en `owner/<sub>/<conversación>/<archivo>` con CMK; `GetObject` de adjuntos con `NO_THREATS_FOUND` para hidratar.
 - **Conector → modelo.** Texto con tope (stdout, stderr, excepción, lista de archivos por id). Nunca `sessionId`, rutas internas reales ni URLs firmadas.
 - **Trabajador → navegador.** Código, stdout y stderr mostrados, tras `ApplyGuardrail`; figuras y archivos solo por id.
 - **`render-document`.** Recibe un id de archivo del Gateway; lee de S3 el objeto, convierte en `/tmp` y escribe el resultado. Sin red de salida más allá de S3 y KMS.
