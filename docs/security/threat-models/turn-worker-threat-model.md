@@ -146,11 +146,13 @@ flowchart LR
 
 Confirmado el 2026-11-07, por menú, por el agente que lanzó este trabajo: el trabajador usa el access token de la persona, que `mango-api` pone cifrado en el mensaje de la cola con una CMK propia, tras comprobar el margen; no se emite un token propio por turno (D78) ni se guarda en DynamoDB («Token cifrado en SQS (Recomendada)»).
 
-## Riesgos residuales (necesitan aceptación del dueño)
+## Riesgos residuales
 
-- **TM-TW1:** un portador de la persona vive en la cola mientras el turno espera y corre (≤ 11 min de margen sobre su vida). Sin la firma de `mango-api` no sirve contra el Gateway, pero quien controle el rol del trabajador o la llave de la cola actúa como la persona durante ese tiempo.
-- **TM-TW5:** un turno cortado por la caída del trabajador se cierra como interrumpido y no se reintenta: la persona vuelve a enviar. Depende de R0 (si la sesión del harness sigue tras cortar el stream).
-- **TM-TW2:** un turno largo enviado en los últimos minutos de vida del token falla con «Vuelve a enviar» (como hoy con TM-I5).
+Siete residuales de los tres modelos (TM-CI1, CI3 y CI8; TM-CF3 y CF5; TM-TW1 y TW5) los aceptó el dueño el 2026-11-07, por menú, con la opción «Aceptar los siete (Recomendada)». Cada uno lo dice abajo.
+
+- **TM-TW1:** un portador de la persona vive en la cola mientras el turno espera y corre (≤ 11 min de margen sobre su vida). Sin la firma de `mango-api` no sirve contra el Gateway, pero quien controle el rol del trabajador o la llave de la cola actúa como la persona durante ese tiempo. **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».**
+- **TM-TW5:** un turno cortado por la caída del trabajador se cierra como interrumpido y no se reintenta: la persona vuelve a enviar. Depende de R0 (si la sesión del harness sigue tras cortar el stream). **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».**
+- **TM-TW2:** un turno largo enviado en los últimos minutos de vida del token falla con «Vuelve a enviar» (como hoy con TM-I5). No entró en el menú de aceptación del 2026-11-07: **sin aceptar todavía** (es el mismo comportamiento que hoy).
 
 ## Quality check
 

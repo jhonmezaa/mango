@@ -152,11 +152,13 @@ flowchart LR
 
 Confirmados el 2026-11-07, por menú, por el agente que lanzó este trabajo: al dar de baja a una persona o borrar una conversación (cuando exista esa ruta) se borran sus archivos y su sesión del Code Interpreter («Borrar con la conversación (Recomendada)»). El tamaño (20 × 100 MB, 90 días) y el escaneo de subidas y generados los decidió el dueño el 2026-11-07 (decisiones 6 y 7 del plan).
 
-## Riesgos residuales (necesitan aceptación del dueño)
+## Riesgos residuales
 
-- **Escaneo como control único** (TM-CF3): GuardDuty detecta malware conocido; un documento con un exploit nuevo o un enlace de phishing dentro de un PDF limpio llega igual. Lo acotan `attachment`, la lista de tipos y que no haya macros.
-- **Estados no escaneables** (TM-CF3): un archivo cifrado o `UNSUPPORTED` no se entrega; si la persona necesita esos tipos, es una decisión aparte.
-- **Reenvío de la URL** (TM-CF5): durante 5 minutos, quien la tenga descarga el archivo; es el mismo residual aceptado en D86.
+Siete residuales de los tres modelos (TM-CI1, CI3 y CI8; TM-CF3 y CF5; TM-TW1 y TW5) los aceptó el dueño el 2026-11-07, por menú, con la opción «Aceptar los siete (Recomendada)». Cada uno lo dice abajo.
+
+- **Escaneo como control único** (TM-CF3): GuardDuty detecta malware conocido; un documento con un exploit nuevo o un enlace de phishing dentro de un PDF limpio llega igual. Lo acotan `attachment`, la lista de tipos y que no haya macros. **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».**
+- **Estados no escaneables** (TM-CF3): un archivo cifrado o `UNSUPPORTED` no se entrega; si la persona necesita esos tipos, es una decisión aparte. **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».**
+- **Reenvío de la URL** (TM-CF5): durante 5 minutos, quien la tenga descarga el archivo; es el mismo residual aceptado en D86. **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».**
 
 ## Quality check
 

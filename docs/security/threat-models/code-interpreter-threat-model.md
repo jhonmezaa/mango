@@ -1,6 +1,6 @@
 # Sandbox de código del chat (Code Interpreter detrás del Gateway) y render de documentos: modelo de amenazas (v0.1)
 
-> Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, fases 2 y 3, §7). Decisiones que lo enmarcan: [D114](../../architecture/decisions/D114-code-interpreter-detras-del-gateway.md) (sandbox de código detrás del Gateway, vigente; su punto 9 recoge lo que este modelo fijó), [D115](../../architecture/decisions/D115-presupuesto-del-sandbox-de-codigo.md) (presupuesto por tiempo, propuesta), [D117](../../architecture/decisions/D117-render-de-office-con-libreoffice.md) (render de Office con LibreOffice, vigente) y [D119](../../architecture/decisions/D119-skills-de-documentos-con-helpers-de-la-release.md) (skills de documentos con helpers de la release, propuesta); reglas 1, 3, 4 y 5 de `AGENTS.md`; D13, D16, D25, D26, D39, D58, D73, D90, D92.
+> Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, fases 2 y 3, §7). Decisiones que lo enmarcan: [D114](../../architecture/decisions/D114-code-interpreter-detras-del-gateway.md) (sandbox de código detrás del Gateway, vigente; su punto 9 recoge lo que este modelo fijó), [D115](../../architecture/decisions/D115-presupuesto-del-sandbox-de-codigo.md) (presupuesto por tiempo, vigente), [D117](../../architecture/decisions/D117-render-de-office-con-libreoffice.md) (render de Office con LibreOffice, vigente) y [D119](../../architecture/decisions/D119-skills-de-documentos-con-helpers-de-la-release.md) (skills de documentos con helpers de la release, vigente); reglas 1, 3, 4 y 5 de `AGENTS.md`; D13, D16, D25, D26, D39, D58, D73, D90, D92.
 > Amplía `mango-architecture-threat-model.md` (TM-001 inyección indirecta, TM-007 aislamiento entre personas, TM-012 contenido no confiable) e `identity-propagation-threat-model.md` (identidad hasta el destino). Los archivos (subida, descarga, escaneo) están en [`chat-files-threat-model.md`](chat-files-threat-model.md) y el trabajador que corre el turno en [`turn-worker-threat-model.md`](turn-worker-threat-model.md).
 > v0.1 se escribe **antes** de construir: no hay código ni recursos. La evidencia es la de la prueba del 2026-11-07 en una instalación (Code Interpreter del sistema, solo lectura, plan §2.1), los modelos de servicio de botocore y el código de `main`. Supuestos confirmados el 2026-11-07, por menú, por el agente que lanzó este trabajo (ver «Supuestos validados»).
 
@@ -172,12 +172,14 @@ Confirmados el 2026-11-07, por menú, por el agente que lanzó este trabajo:
 - La salida por la red `SANDBOX` queda abierta hasta la prueba T5 de C1; C2 no se integra si T5 muestra salida sin una mitigación que decida el dueño («T5 bloquea C2 (Recomendada)»).
 - Al borrar una conversación (cuando exista esa ruta) o dar de baja a una persona, se para su sesión del Code Interpreter y se borra su registro («Borrar con la conversación (Recomendada)»).
 
-## Riesgos residuales (necesitan aceptación del dueño)
+## Riesgos residuales
 
-- **TM-CI3:** hasta T5 no se sabe si la red `SANDBOX` deja salir a S3 ajeno. Si lo deja, la alternativa es el modo VPC sin salida, que cambia D15.
-- **TM-CI1:** el `sessionId` sigue siendo la única barrera dentro del recurso; quien controle el rol del conector puede leer cualquier sesión viva (como el rol de `mango-api` puede leer cualquier conversación hoy).
-- **TM-CI8:** `render-document` va fuera de la VPC (excepción `LAMBDA_INSIDE_VPC`): no hay control de salida de red si LibreOffice se explotara; lo acota que su rol no tenga más que su objeto.
-- **TM-CI6:** una inyección indirecta puede seguir dirigiendo el código dentro de la sesión de la persona; el daño queda dentro de esa conversación y sin escritura fuera (las tools de escritura siguen exigiendo aprobación, D56).
+Siete residuales de los tres modelos (TM-CI1, CI3 y CI8; TM-CF3 y CF5; TM-TW1 y TW5) los aceptó el dueño el 2026-11-07, por menú, con la opción «Aceptar los siete (Recomendada)». Cada uno lo dice abajo.
+
+- **TM-CI3:** hasta T5 no se sabe si la red `SANDBOX` deja salir a S3 ajeno. Si lo deja, la alternativa es el modo VPC sin salida, que cambia D15. **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».** La aceptación no levanta el bloqueo: C2 no se integra hasta el resultado de T5.
+- **TM-CI1:** el `sessionId` sigue siendo la única barrera dentro del recurso; quien controle el rol del conector puede leer cualquier sesión viva (como el rol de `mango-api` puede leer cualquier conversación hoy). **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».**
+- **TM-CI8:** `render-document` va fuera de la VPC (excepción `LAMBDA_INSIDE_VPC`): no hay control de salida de red si LibreOffice se explotara; lo acota que su rol no tenga más que su objeto. **Aceptado por el dueño el 2026-11-07, por menú: «Aceptar los siete (Recomendada)».**
+- **TM-CI6:** una inyección indirecta puede seguir dirigiendo el código dentro de la sesión de la persona; el daño queda dentro de esa conversación y sin escritura fuera (las tools de escritura siguen exigiendo aprobación, D56). No entró en el menú de aceptación del 2026-11-07: **sin aceptar todavía**.
 
 ## Quality check
 
