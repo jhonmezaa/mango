@@ -153,9 +153,11 @@ def sampled_trace_header(clock: Callable[[], float] = time.time) -> str:
 
 
 def own_trace_on_invoke(params: dict[str, Any], **_kwargs: Any) -> None:
-    """``before-call`` handler for ``InvokeHarness``: replaces the inherited trace header.
+    """``before-call`` handler for ``InvokeHarness``: sets the trace header of the turn.
 
-    Registered after botocore's own, so it overrides the copy of ``_X_AMZN_TRACE_ID``."""
+    botocore's hierarchical emitter calls this event (``before-call.bedrock-agentcore.
+    InvokeHarness``) before the generic ``before-call``, where ``add_recursion_detection_header``
+    then leaves an existing header alone: ``_X_AMZN_TRACE_ID`` is never copied."""
     params.setdefault("headers", {})[TRACE_HEADER] = sampled_trace_header()
 
 
