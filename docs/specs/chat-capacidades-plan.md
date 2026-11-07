@@ -128,7 +128,7 @@ Va primero: el sandbox alarga los turnos y el formato del stream cambia para tod
 
 | PR | Qué | Tamaño | Depende de | Claude Design |
 |---|---|---|---|---|
-| **R0** | Prueba en AWS (si el dueño la autoriza): la protección de tarea de ECS detiene un despliegue mientras un turno corre; ¿sigue la sesión del harness si se corta el stream de `InvokeHarness`? Resultado en D121 | — | P0 | — |
+| **R0** | **Hecha el 2026-11-07** (D121 (9)): la protección de tarea de ECS detiene un despliegue mientras un turno corre; cortar el stream de `InvokeHarness` no corta el turno y la sesión guarda la respuesta, así que tras un turno interrumpido la conversación pasa a una sesión nueva (D121 (7)) | — | P0 | — |
 | **R1** | Infra: cola `Mango-<ns>-ChatTurns` (CMK, DLQ), servicio `mango-turn-worker` (misma imagen, otro punto de entrada, 2 tareas, sin balanceador), permisos (los del turno, que hoy tiene `mango-api`) | M | R0 | — |
 | **R2** | Dominio del turno en `mango-core` o en un módulo compartido: el camino de `POST /api/chat` sale de la petición; `mango-api` autoriza, valida y encola; el trabajador reserva, invoca y escribe eventos `TURN#<turn>#EVT#<seq>` (TTL 4 h) y el mensaje final. Las ejecuciones de tareas (D78) pasan por el mismo camino | L | R1 | — |
 | **R3** | Protocolo v1 en el servidor: mensajes `{id, author.role, recipient, channel, content_type, content, status, metadata}`, deltas `{c,p,o,v}`, `GET /api/chat/turns/{turn}/stream?after=` desde cualquier tarea, heartbeat con un test que lo fije por debajo del `readTimeout` de CloudFront | L | R2 | — |
@@ -209,7 +209,7 @@ Todas en la instalación del cliente solo si el dueño lo autoriza por menú; re
 |---|---|---|
 | T5 | Si la red `SANDBOX` deja subir a un bucket ajeno (exfiltración); C2 no se integra sin su resultado (TM-CI3) | C1 |
 | T6/T7 | Nombre de la tool en `allowedTools` y sesión del CI que usa el harness (solo para cerrar la comparación) | — |
-| R0 | Protección de tarea de ECS frente a un despliegue; sesión del harness tras cortar el stream | R0 |
+| R0 | Protección de tarea de ECS frente a un despliegue; sesión del harness tras cortar el stream. **Hecha el 2026-11-07** (D121 (9)) | R0 |
 | G | Imagen en el resultado MCP del Gateway: ¿la ve el modelo? | D3 |
 | L | Tiempo máximo de una llamada del Gateway a un target Lambda (60, 180, 300 s) | C2 |
 | M | Aislamiento de namespaces de AgentCore Memory | M0 |
