@@ -93,11 +93,15 @@ TIMEOUT_SECONDS = 60
 POLL_SECONDS = 30
 MAX_WAIT_SECONDS = 9 * 60
 """Traces arrive in CloudWatch 2 to 5 minutes after a turn; the function times out at 15."""
-SPANS_RETRY_SECONDS = 3 * 60
+SPANS_RETRY_SECONDS = 2 * 60
 """How long after a turn the canary waits for its spans before one more turn in a new session.
-Spans of a turn land within seconds (2 to 4 s, 2026-11-06). A turn that ran seconds after the
-provisioner rewrote the harness's role, unchanged, got no span at all, with no error anywhere,
-while the same harness version delivered them ten minutes later (finding of 2026-11-06)."""
+Spans of a turn land within seconds (2 to 4 s, 2026-11-06)."""
+RETRY_AFTER_SECONDS = 10 * 60
+"""How long after the first turn the second one is sent. During a release the turns of the first
+minutes got no span at all, with no error anywhere: one 3 minutes after the first failed too,
+while the same harness version delivered them 10 minutes after the update (2026-11-06/07; the
+cause is still unknown and asked of AWS). The second turn then has ``SPANS_RETRY_SECONDS``, all
+within the function's 15 minutes."""
 TURN_ATTEMPTS = 2
 SHARED_LOG_SETTLE_SECONDS = 60
 """After the marker is in its own log group, how long until ``aws/spans`` is read: spans of a
@@ -408,11 +412,13 @@ class Canary:
             start_ms = started * 1000 - 60_000
             first_start_ms = first_start_ms or start_ms
             turn_waited = waited
+            # The second turn has its own, shorter wait: the first one already took 10 minutes.
+            marker_limit = MAX_WAIT_SECONDS if attempt == 1 else turn_waited + SPANS_RETRY_SECONDS
             while True:
                 end_ms = int(self._clock() * 1000) + 60_000
                 if spans.marker_count(self._logs, groups[1], marker, start_ms, end_ms):
                     break
-                if waited >= MAX_WAIT_SECONDS:
+                if waited >= marker_limit:
                     raise CanaryFailedError("no_content")
                 self._sleep(POLL_SECONDS)
                 waited += POLL_SECONDS
@@ -420,11 +426,7 @@ class Canary:
             # delivers the spans on its own, with no error anywhere when it delivers none
             # (findings of 2026-11-06). One more turn in a new session if the first gets none.
             last = attempt == TURN_ATTEMPTS
-            limit = (
-                MAX_WAIT_SECONDS
-                if last
-                else min(turn_waited + SPANS_RETRY_SECONDS, MAX_WAIT_SECONDS)
-            )
+            limit = turn_waited + SPANS_RETRY_SECONDS
             delivered = self._has_spans(groups, session_id, start_ms)
             while not delivered and waited < limit:
                 self._sleep(POLL_SECONDS)
@@ -432,9 +434,14 @@ class Canary:
                 delivered = self._has_spans(groups, session_id, start_ms)
             if delivered:
                 break
-            if last or waited >= MAX_WAIT_SECONDS:
+            if last:
                 raise CanaryFailedError("no_spans_delivered")
-            logger.warning("evals canary: no spans of its turn yet, one more turn in a new session")
+            logger.warning(
+                "evals canary: no spans of its turn yet, one more turn in a new session later"
+            )
+            if waited < RETRY_AFTER_SECONDS:
+                self._sleep(RETRY_AFTER_SECONDS - waited)
+                waited = RETRY_AFTER_SECONDS
         self._sleep(SHARED_LOG_SETTLE_SECONDS)
         end_ms = int(self._clock() * 1000) + 60_000
         for sent in markers:

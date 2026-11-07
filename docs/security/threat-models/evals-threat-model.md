@@ -206,6 +206,12 @@ Elegido por el dueño, por menú, el 2026-11-06 («Así» y «Excepción solo al
 - **Quién puede quitar la llave.** Solo `Mango-<ns>-Provisioner`: tiene `logs:DisassociateKmsKey` sobre esos log groups, y `NoEvalsKeyRemoval` lo deniega a todo otro rol de Mango y en los tres boundaries, con `ArnNotEquals aws:PrincipalArn` = el ARN completo de su rol (nunca un nombre comparado en CDK, que en la release es un *token*; `infra/test/release.test.ts` lo fija). Quitar la llave no abre la lectura: el provisioner sigue sin ninguna acción que devuelva eventos. Lee `EVALS`/`CAPTURE` con `dynamodb:GetItem` y `LeadingKeys` `EVALS`; un ítem que falta o está mal formado cuenta como no verificado, así que reenlaza, y eso solo pasa cuando ninguna eval puede correr.
 - **Riesgo residual.** No se sabe si un reenlace a los pocos segundos de que AgentCore crea el log group basta en la primera instalación. Si no basta, el canario falla cerrado y no se pierde nada. Un rol de la cuenta del cliente con permisos amplios podría quitar la llave, como antes; no lee nada por eso, pero el contenido que entre después quedaría cifrado solo con la llave de AWS. Queda en CloudTrail.
 
+## Precisión del 2026-11-07: el segundo turno sale a los 10 minutos
+
+- **Lo que se vio.** Con el provisioner ya sin escrituras que no cambian nada, la release del 2026-11-07 tampoco recibió spans en su canario ni en el segundo turno, 3 minutos después; uno lanzado a mano 11 minutos después de la actualización pasó. Las escrituras no eran la causa; la causa sigue sin saberse (pregunta a AWS).
+- **Control.** El segundo turno sale 10 minutos después del primero (el primero espera sus spans 2 minutos; el segundo, otros 2), dentro de los 15 minutos de la función. Sigue reservado antes, con el mismo tope de 1 USD al mes, y si tampoco recibe spans el canario falla cerrado: ninguna eval corre.
+- **Riesgo residual.** Si la ventana sin spans de una release pasa de 10 minutos, las evals quedan apagadas hasta relanzar el canario (la alarma `Evals-canary-failed` lo avisa).
+
 ## Precisión del 2026-11-06: el segundo turno del canario y las escrituras que no cambian nada
 
 Elegido por el dueño, por menú, el 2026-11-06 («Sin no-op + reintento», «Corregir texto, mantener código»). Revisado con `security-audit` (modo guía, IAM) y `security-best-practices` (Python).

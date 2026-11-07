@@ -266,8 +266,8 @@ def test_content_without_spans_fails_closed_with_its_own_reason(env: Env) -> Non
     assert capture.status == "failed"
     assert capture.reason == "no_spans_delivered"
     assert not env.capture().verified_for("3")
-    # Same wait as the marker's, never more than the function's time.
-    assert sum(env.slept) <= 9 * 60
+    # The second turn waits 10 minutes after the first; all within the function's 15 minutes.
+    assert sum(env.slept) <= 13 * 60
     assert env.agentcore.evaluations == []
     # One more turn in a new session before failing, never a third.
     first, second = env.agentcore.invocations
@@ -286,9 +286,10 @@ def test_a_turn_without_spans_is_tried_once_more_in_a_new_session(
     assert first["runtimeSessionId"] != second["runtimeSessionId"]
     marker = first["messages"][0]["content"][0]["text"].split()[-1]
     assert marker != second["messages"][0]["content"][0]["text"].split()[-1]
-    # The first turn waited for its spans three minutes, not the whole wait.
-    assert 3 * 60 <= sum(env.slept) <= 3 * 60 + 60 + 30
-    assert "one more turn in a new session" in caplog.text
+    # The second turn went 10 minutes after the first: in a release the first minutes deliver
+    # no span (2026-11-06/07), and it had two more minutes for its spans.
+    assert 10 * 60 <= sum(env.slept) <= 10 * 60 + 2 * 60 + 60 + 30
+    assert "one more turn in a new session later" in caplog.text
     assert marker not in caplog.text
     # Both turns were reserved and closed (rule 4); the Evaluate scored the second session.
     left = env.db.scan(TableName="budgets")["Items"]
