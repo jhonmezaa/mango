@@ -1,6 +1,6 @@
 # Capacidades del chat (código, gráficas, archivos, documentos, UI interactiva, memoria): plan de implementación (v0.1)
 
-> Fecha: 2026-11-07 · Estado: **decisiones del dueño tomadas (12, por menú, el 2026-11-07); D114–D125 por registrar (P0); listo para P0**.
+> Fecha: 2026-11-07 · Estado: **decisiones del dueño tomadas (12, por menú, el 2026-11-07); D114–D125 registradas en P0 (2026-11-07)**.
 > Origen: el dueño pidió que el chat de Mango tenga lo que tiene el de ChatGPT: ejecución de código, gráficas, PDF, Word, Excel, PowerPoint, chats interactivos, «básicamente todo». Antes de este plan se hizo una investigación de ingeniería inversa del chat de ChatGPT (cuatro informes, más el análisis con REA de su JavaScript público) y cuatro investigaciones de AWS y del repo. Los informes viven fuera del repo, en la carpeta local del laboratorio; §10 resume qué dicen.
 > Decisiones afectadas: D13, D16, D23, D24, D25, D26, D39, D57, D58, D63, D69, D70, D73, D78, D86, D87, D88, D90, D92, D93, D98; reglas 1, 3, 4, 5 y 7 de `AGENTS.md`.
 
@@ -72,7 +72,7 @@ Autorizada por el dueño por menú («Sesión del CI del sistema»). Una sesión
 
 ## 4. Decisiones a registrar (P0)
 
-Se registran en `docs/architecture/decisions/` con estado `vigente` (las tomó el dueño), su línea en §8 y el cuerpo de la arquitectura en el mismo cambio. Los puntos de «cómo» que propone este plan llevan la marca «propuesto por un agente» y se aceptan en la revisión de P0.
+Se registran en `docs/architecture/decisions/`, con su línea en §8 y el cuerpo de la arquitectura en el mismo cambio. Nacen `vigente` las que eligió el dueño (D114, D116, D117, D120 a D123 y D125); D115, D118, D119 y D124 no salen de ninguna de sus respuestas y nacen `propuesta` hasta que las acepte (`decisions/README.md`). Los puntos de «cómo» que propone este plan llevan la marca «propuesto por un agente» y se aceptan en la revisión de P0.
 
 | ID | Título | Precisa o contradice |
 |---|---|---|

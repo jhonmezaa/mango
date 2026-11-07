@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-27 (las respuestas de (1) a (10), elegidas por el dueño ese día, por menú, sobre el plan de construcción; los contratos de (11) a (20), propuestos por un agente y aceptados cuando el dueño apruebe integrar el cambio que registra esta decisión) · 2026-10-29 (el toolset «Repositorios» de (6), pedido por el dueño ese día; ese día, los campos `sensitivity`, `note` y `requirement` de un toolset en el perfil firmado, elegidos por menú: «Campos en el perfil firmado»)
 - **Precisa / reemplaza a:** precisa [D94](D094-consentimiento-iniciado-por-el-gateway.md) (2) (a dónde vuelve el navegador y cómo se cierra el consentimiento; dónde vive el pendiente); precisa [D93](D093-mcp-remotos-de-terceros.md) (7) (cambiar toolsets o grupos; dónde se aplica `UseRemoteMcp`), (8) (formato del ítem firmado y de las cabeceras), (10) (el parámetro de stack y la auditoría) y (12) (el aviso del Builder); precisa [D97](D097-desconectar-borra-el-token.md) (3) (la marca de desconexión es el claim `cx` de la firma); respeta [D46](D046-api-del-catalogo-de-mcp.md) (4) a (7), [D63](D063-sesion-web-con-cookie.md) y [D84](D084-gobernanza-de-tools.md) (5)
-- **Precisada por:** [D100](D100-consentimiento-lo-cierra-la-pestana-que-lo-pidio.md) (1); [D101](D101-mcp-remoto-manda-x-mcp-tools.md) (6), (13) y (16): la cabecera es `X-MCP-Tools` con las tools aprobadas, no `X-MCP-Toolsets`
+- **Precisada por:** [D100](D100-consentimiento-lo-cierra-la-pestana-que-lo-pidio.md) (1); [D101](D101-mcp-remoto-manda-x-mcp-tools.md) (6), (13) y (16): la cabecera es `X-MCP-Tools` con las tools aprobadas, no `X-MCP-Toolsets`; [D125](D125-mcp-apps-de-solo-lectura.md) (16): el Gateway sigue sin `resources/read`; el HTML de una MCP App viene del perfil
 
 ## Decisión
 

@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-19 (los nueve puntos, tomados por el dueño ese día, por menú, todos con la opción «(Recomendada)»); 2026-10-21 (punto 10, el rol que firma los enlaces, elegido por el dueño ese día; nota propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D78](D078-tareas-sin-chat.md) (lo que entrega una ejecución) y [D79](D079-investigacion-de-anomalias-por-evento.md) (lo que entrega la investigación de una anomalía)
-- **Precisada por:** [D87](D087-como-se-construyen-los-reportes.md) (2: ReportLab en el zip de la función, con IBM Plex; 6: la tool interna es una `inline_function` del harness y la serie diaria sale de la consulta cuando se puede)
+- **Precisada por:** [D87](D087-como-se-construyen-los-reportes.md) (2: ReportLab en el zip de la función, con IBM Plex; 6: la tool interna es una `inline_function` del harness y la serie diaria sale de la consulta cuando se puede); [D116](D116-archivos-del-chat.md) (1) y (5): los archivos del chat son una vía aparte, con su lista de tipos y pedida desde el chat
 
 ## Decisión
 

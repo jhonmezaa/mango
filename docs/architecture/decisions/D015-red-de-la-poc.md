@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-28
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D63](D063-sesion-web-con-cookie.md) (amplía la excepción del tramo HTTP, punto 6)
+- **Precisada por:** [D63](D063-sesion-web-con-cookie.md) (amplía la excepción del tramo HTTP, punto 6); [D123](D123-segundo-origen-para-codigo-no-confiable.md) (una segunda distribución de CloudFront para el código no confiable)
 
 ## Decisión
 

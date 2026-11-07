@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D42](D042-chat-con-varios-agentes.md) (precisa, punto 4); [D57](D057-progreso-del-turno-en-vivo.md) (precisa)
+- **Precisada por:** [D42](D042-chat-con-varios-agentes.md) (precisa, punto 4); [D57](D057-progreso-del-turno-en-vivo.md) (precisa); [D120](D120-stream-del-chat-en-parches-json.md) (cada bloque revisado por el guardrail llega como un parche del stream v1)
 
 ## Decisión
 

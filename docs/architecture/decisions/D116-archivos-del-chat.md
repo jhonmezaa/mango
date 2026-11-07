@@ -1,0 +1,26 @@
+# D116 · Archivos del chat: bucket propio, 20 archivos de 100 MB, 90 días y escaneo de malware de subidas y generados
+
+- **Estado:** vigente
+- **Fecha:** 2026-11-07 (los límites, punto 1, elegidos por el dueño ese día, por menú: «20 × 100 MB, 90 días»; el escaneo, punto 2, elegido ese día por menú: «Sí: subidas y generados (Recomendada)»; el cómo, puntos 3 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
+- **Precisa / reemplaza a:** precisa [D88](D088-knowledge-bases-sobre-s3.md) (25) (el escaneo de malware deja de ser «para más adelante» en los archivos del chat); precisa [D86](D086-reportes-descargables-de-tareas.md) (1) y (5) (una vía de archivos aparte de los reportes, con su propia lista de tipos, y que sí se pide desde el chat); precisa la CSP de la SPA (`img-src` gana `blob:`); reutiliza el patrón de subida de [D88](D088-knowledge-bases-sobre-s3.md) (9) y (33) y el rol de [D86](D086-reportes-descargables-de-tareas.md) (10)
+- **Precisada por:** —
+
+## Decisión
+
+Origen: el plan de capacidades del chat ([`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md)). Los archivos del chat son los que sube una persona y los que genera el sandbox de [D114](D114-code-interpreter-detras-del-gateway.md) (figuras, CSV, PDF, Office).
+
+**(1) Límites (elegido por el dueño, por menú: «20 × 100 MB, 90 días»).** Hasta 20 archivos de hasta 100 MB por mensaje, y 90 días de vida. El compositor del diseño dibuja 5 archivos de 25 MB: se corrige primero en Claude Design, en la ronda de la fase de adjuntos ([D24](D024-diseno-de-la-ui.md)).
+
+**(2) Malware (elegido por el dueño, por menú: «Sí: subidas y generados (Recomendada)»).** GuardDuty Malware Protection for S3 escanea cada objeto al crearse, tanto lo que sube una persona como lo que genera el sandbox. Deja la etiqueta `GuardDutyMalwareScanStatus`, y una política por etiqueta (TBAC) cierra el acceso hasta `NO_THREATS_FOUND`: nada se entrega ni llega al sandbox antes. Precisa [D88](D088-knowledge-bases-sobre-s3.md) (25): los documentos de las knowledge bases siguen como allí, porque solo vuelven como fragmentos de texto. El escaneo admite la llave propia del bucket; la prueba GD del plan lo confirma antes de construir. Cuota: 25 buckets protegidos por región y cuenta.
+
+**(3) El bucket (propuesto por un agente).** `Mango-<ns>-chat-files`, con llave KMS propia, `RETAIN`, solo TLS, versionado (las versiones anteriores se borran al día), `uploads/` a 1 día, el resto a 90 días, y un deny a las firmas viejas (`s3:signatureAge`). Datos de la persona bajo `owner/<sub>/<conversación>/`.
+
+**(4) Subida (propuesto por un agente).** Como las knowledge bases ([D88](D088-knowledge-bases-sobre-s3.md) (9) y (33)): `POST` prefirmado con la clave que decide el servidor, `content-length-range`, el tipo exacto y comprobación por bytes. El mensaje nombra sus adjuntos por id; el sandbox los recibe por `writeFiles` solo tras el escaneo.
+
+**(5) Descarga (propuesto por un agente).** Un enlace prefirmado de 5 minutos con el rol `Mango-<ns>-Presign` ([D86](D086-reportes-descargables-de-tareas.md) (10)), siempre `attachment`, con el tipo de una lista cerrada que decide el servidor, auditado y con un límite de 60 por persona y hora. Las imágenes se muestran desde una ruta autenticada como `blob:`; la CSP de la SPA pasa a `img-src 'self' data: blob:`. Es una vía aparte de los reportes de [D86](D086-reportes-descargables-de-tareas.md): aquellos siguen siendo solo PDF y se piden en la tarea; estos se piden desde el chat.
+
+**(6) Tipos (propuesto por un agente).** Lista cerrada de extensiones, para subir y para generar: sin HTML, SVG, macros ni ejecutables. Las rutas que el modelo escribe para enlazar un archivo del sandbox las valida el servidor (prefijo fijo, sin `.`, `..` ni caracteres de control, decodificación hasta un punto fijo).
+
+**(7) Auditoría (propuesto por un agente).** `chat.file_upload` y `chat.file_download` con conversación, archivo, tipo, tamaño y SHA-256; nunca el contenido ([D16](D016-observabilidad-de-agentes.md)).
+
+**(8) Antes de construir (propuesto por un agente).** Modelo de amenazas `chat-files-threat-model.md` (PR P1 del plan).

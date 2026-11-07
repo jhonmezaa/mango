@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-19 (los puntos 1 a 4, tomados por el dueño ese día, por menú: «Sí, las cuatro (Recomendada)»; la precisión de la regla 3 del punto 3, validada por el dueño ese día en el panel principal, por menú: «Aceptar la precisión (Recomendada)»; el cómo, punto 5, y las diferencias con el diseño, punto 6, propuestos por un agente y aceptados por el dueño ese día, por menú: «Aceptar (Recomendada)»); 2026-10-20 (el punto 7, tomado por el dueño ese día, por menú: «Totals + descripción (Recomendada)»; lo que mostró la instalación, punto 8, nota de ese día propuesta por un agente); 2026-10-21 (el PDF de anomalía y un fallo real al dibujar, en el punto 8, notas de ese día propuestas por un agente); 2026-10-23 (los dos detalles del PDF de anomalía de la ronda de diseño 17, punto 9, nota de ese día propuesta por un agente)
 - **Precisa / reemplaza a:** precisa [D86](D086-reportes-descargables-de-tareas.md) (2) (el motor y cómo viaja) y (6) (qué es la tool interna y de dónde salen las series); precisa la regla 3 de `AGENTS.md` y el principio P2 de la arquitectura de referencia (punto 3)
-- **Precisada por:** —
+- **Precisada por:** [D117](D117-render-de-office-con-libreoffice.md) (2): el render de Office sí usa una imagen de contenedor, en otra función
 
 ## Decisión
 

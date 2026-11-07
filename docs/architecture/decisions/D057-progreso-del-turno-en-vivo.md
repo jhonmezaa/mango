@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-02
 - **Precisa / reemplaza a:** precisa [D39](D039-sesion-del-runtime-y-latencia.md)
-- **Precisada por:** —
+- **Precisada por:** [D120](D120-stream-del-chat-en-parches-json.md) (reemplaza su formato de eventos por parches JSON; la fase del turno, sin texto del modelo, pasa a los metadatos del mensaje)
 - **Tema en el registro original:** Progreso del turno en vivo en el chat (precisa [D39](D039-sesion-del-runtime-y-latencia.md))
 
 ## Decisión

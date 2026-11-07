@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-24 (los puntos 1 a 6, respondidos ese día por menú con la opción «(Recomendada)», por el agente principal en nombre del dueño, que pidió esa noche seguir con las recomendadas; el punto 7, propuesto por un agente, con lo que pide la ronda de diseño 19; aceptada por el dueño el 2026-10-25, por menú: «Aceptar ambas (Recomendada)»; lo visto en la instalación, punto 8, nota del 2026-10-25 propuesta por un agente; el estado «vencida» de una aprobación, punto 9, nota del 2026-10-25 propuesta por un agente, con lo que pide la ronda de diseño 20)
 - **Precisa / reemplaza a:** precisa [D16](D016-observabilidad-de-agentes.md) (las llamadas a tools se registran, fuera de las trazas, como metadatos sin contenido), [D70](D070-dos-tareas-y-limites-compartidos.md) (un límite nuevo por tarea, `activity.reads`) y [D83](D083-la-bandeja.md) (2) (la partición de cada persona guarda también su actividad)
-- **Precisada por:** —
+- **Precisada por:** [D114](D114-code-interpreter-detras-del-gateway.md) (3): el bloque de código del chat es contenido de la conversación, no Actividad
 
 ## Decisión
 

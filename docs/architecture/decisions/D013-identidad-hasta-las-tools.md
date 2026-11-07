@@ -1,9 +1,9 @@
 # D13 · Propagación de identidad a las tools
 
-- **Estado:** vigente
+- **Estado:** parcial. Rige todo salvo «Harness con `Memory: Disabled`», que contradice y reemplaza [D122](D122-memoria-de-agentcore-por-persona.md) (2026-11-07, elegida por el dueño por menú): la memoria de AgentCore pasa a ser por persona. Hasta que se construya D122, la memoria sigue desactivada en el código.
 - **Fecha:** 2026-09-28 · complemento del 2026-09-29
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D33](D033-autorizacion-de-agentes-y-tools.md) (firma v2 en lugar de la v1); [D93](D093-mcp-remotos-de-terceros.md) (un interceptor `RESPONSE` y el borrado de `_meta` hacia los MCP remotos; en estado propuesta)
+- **Precisada por:** [D33](D033-autorizacion-de-agentes-y-tools.md) (firma v2 en lugar de la v1); [D93](D093-mcp-remotos-de-terceros.md) (un interceptor `RESPONSE` y el borrado de `_meta` hacia los MCP remotos; en estado propuesta); [D122](D122-memoria-de-agentcore-por-persona.md) (contradice y reemplaza «Harness con `Memory: Disabled`»: memoria de AgentCore por persona; el resto sigue rigiendo)
 
 ## Decisión
 

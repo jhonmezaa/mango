@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-09-29
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D73](D073-turno-cortado-nunca-cuesta-cero.md) (las trazas de `aws/spans` pasan a ser, además, la fuente del gasto de un turno cortado; el contenido sigue fuera); [D108](D108-traza-de-observabilidad-desde-aws-spans.md) (las trazas pasan a ser, además, la fuente de la vista Observabilidad); [D110](D110-evals-con-agentcore-evaluations.md) (reemplaza la captura apagada solo para el harness de evals, que captura el contenido a un log group propio; los demás harness siguen como aquí)
+- **Precisada por:** [D73](D073-turno-cortado-nunca-cuesta-cero.md) (las trazas de `aws/spans` pasan a ser, además, la fuente del gasto de un turno cortado; el contenido sigue fuera); [D108](D108-traza-de-observabilidad-desde-aws-spans.md) (las trazas pasan a ser, además, la fuente de la vista Observabilidad); [D110](D110-evals-con-agentcore-evaluations.md) (reemplaza la captura apagada solo para el harness de evals, que captura el contenido a un log group propio; los demás harness siguen como aquí); [D114](D114-code-interpreter-detras-del-gateway.md) (el código del sandbox y su salida solo en la conversación o en S3); [D122](D122-memoria-de-agentcore-por-persona.md) (una memoria es contenido)
 
 ## Decisión
 
