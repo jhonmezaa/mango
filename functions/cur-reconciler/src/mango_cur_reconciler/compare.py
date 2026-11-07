@@ -106,6 +106,11 @@ class Bedrock:
             return True
         return row.entity == self.marketplace_entity and row.family == self.product_family
 
+    def cost(self, row: Row) -> Decimal:
+        """The list cost of a row: AWS Marketplace's rows bring a public on-demand cost of 0, and
+        their unblended cost is the list price (precision of D104 of 2026-11-07)."""
+        return row.unblended_cost if row.entity == self.marketplace_entity else row.list_cost
+
 
 def sort(rows: Iterable[Row], *, account: str, bedrock: Bedrock, prefix: str) -> Sorted:
     result = Sorted()
@@ -119,15 +124,16 @@ def sort(rows: Iterable[Row], *, account: str, bedrock: Bedrock, prefix: str) ->
             continue
         if row.kind != USAGE:
             continue
+        cost = bedrock.cost(row)
         if not row.tokens:
-            unattributed[UNATTRIBUTED_NOT_TOKENS] += row.list_cost
+            unattributed[UNATTRIBUTED_NOT_TOKENS] += cost
             continue
-        total[row.day] += row.list_cost
+        total[row.day] += cost
         agent = agent_of(row.principal, prefix)
         if agent is None:
-            unattributed[UNATTRIBUTED_OTHER_CALLER] += row.list_cost
+            unattributed[UNATTRIBUTED_OTHER_CALLER] += cost
         else:
-            agents[agent][row.day] += row.list_cost
+            agents[agent][row.day] += cost
     result.agents = {agent: dict(days) for agent, days in agents.items()}
     result.total = dict(total)
     result.unattributed = dict(unattributed)

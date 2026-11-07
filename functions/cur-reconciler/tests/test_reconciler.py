@@ -78,15 +78,28 @@ def row(
     family: str = "Amazon Bedrock",
     kind: str = "Usage",
     items: int = 4,
+    public: str | None = None,
 ) -> query.Row:
+    """A row whose public on-demand cost is ``cost`` (or ``public``) and unblended cost ``cost``."""
     return query.Row(
-        day, account, product, entity, family, principal, tokens, kind, Decimal(cost), items
+        day,
+        account,
+        product,
+        entity,
+        family,
+        principal,
+        tokens,
+        kind,
+        Decimal(cost if public is None else public),
+        Decimal(cost),
+        items,
     )
 
 
 def claude(day: str, cost: str, **kwargs: Any) -> query.Row:
-    """A row of a Bedrock model sold through AWS Marketplace."""
-    return row(day, cost, **{"product": CLAUDE, "entity": MARKETPLACE, **kwargs})
+    """A row of a Bedrock model sold through AWS Marketplace: its public on-demand cost is 0, as
+    in the bill (2026-11-07), and ``cost`` is its unblended cost."""
+    return row(day, cost, **{"product": CLAUDE, "entity": MARKETPLACE, "public": "0", **kwargs})
 
 
 @dataclass
@@ -192,6 +205,7 @@ def test_one_fixed_query_with_the_dates_as_parameters() -> None:
     assert "line_item_usage_account_id =" not in statement
     assert "bill_billing_entity" in statement and "product_product_family" in statement
     assert "coalesce(pricing_public_on_demand_cost, line_item_unblended_cost, 0)" in statement
+    assert "sum(coalesce(line_item_unblended_cost, 0)) AS unblended_cost" in statement
     assert query.parameters("2026-10-16", "2026-11-18") == [
         "'2026-10'",
         "'2026-11'",
@@ -252,7 +266,17 @@ def test_the_token_usage_types_of_bedrock_and_of_marketplace() -> None:
 
 def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
     header = _cells(
-        "day", "account", "product", "entity", "family", "principal", "tokens", "kind", "c", "n"
+        "day",
+        "account",
+        "product",
+        "entity",
+        "family",
+        "principal",
+        "tokens",
+        "kind",
+        "c",
+        "u",
+        "n",
     )
     first = _cells(
         "2026-11-01",
@@ -263,6 +287,7 @@ def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
         FINOPS,
         "true",
         "Usage",
+        "0.0",
         "1.5",
         "3",
     )
@@ -275,6 +300,7 @@ def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
         "",
         "false",
         "Usage",
+        "0.2",
         "0.2",
         "1",
     )
@@ -295,9 +321,11 @@ def test_athena_runs_in_the_workgroup_and_reads_every_page() -> None:
             "ExecutionParameters": ["'x'"],
         }
     ]
-    assert [(r.day, r.entity, r.tokens, r.list_cost, r.line_items) for r in rows] == [
-        ("2026-11-01", MARKETPLACE, True, Decimal("1.5"), 3),
-        ("2026-11-02", "AWS", False, Decimal("0.2"), 1),
+    assert [
+        (r.day, r.entity, r.tokens, r.list_cost, r.unblended_cost, r.line_items) for r in rows
+    ] == [
+        ("2026-11-01", MARKETPLACE, True, Decimal("0.0"), Decimal("1.5"), 3),
+        ("2026-11-02", "AWS", False, Decimal("0.2"), Decimal("0.2"), 1),
     ]
 
 
@@ -382,6 +410,25 @@ def test_the_marketplace_rows_of_a_bedrock_model_count_like_bedrock_s() -> None:
         UNATTRIBUTED_OTHER_CALLER: Decimal("0.25"),
         UNATTRIBUTED_NOT_TOKENS: Decimal("0.1"),
     }
+
+
+def test_the_cost_of_a_row_is_its_list_price_and_marketplace_s_is_its_unblended() -> None:
+    """Marketplace's rows bring a public on-demand cost of 0 (2026-11-07); Bedrock's own rows are
+    compared at their public on-demand cost, never at a discounted unblended one."""
+    assert BEDROCK.cost(claude("2026-11-01", "2.75")) == Decimal("2.75")
+    assert BEDROCK.cost(row("2026-11-01", "0.8", public="1")) == Decimal(1)
+    sorted_rows = sort(
+        [
+            claude("2026-11-04", "2.7464"),
+            claude("2026-11-04", "0.3691"),
+            # A discount line of Marketplace: not usage, never compared.
+            claude("2026-11-04", "-0.3", kind="EdpDiscount"),
+        ],
+        account=ACCOUNT,
+        bedrock=BEDROCK,
+        prefix=SETTINGS.agent_role_prefix,
+    )
+    assert sorted_rows.total == {"2026-11-04": Decimal("3.1155")}
 
 
 def test_a_marketplace_row_that_is_not_a_bedrock_model_is_unexpected() -> None:

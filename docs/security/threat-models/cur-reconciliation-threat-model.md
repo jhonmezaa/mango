@@ -188,9 +188,9 @@ flowchart LR
 - Lo que falta comprobar en una instalación (no se puede sin el export real):
   - el export creado por `Payer`, y el reemplazo del export manual en la instalación que ya lo tiene;
   - que las etiquetas activadas son las del tipo «IAM principal» (la columna `tags` trae `iamPrincipal/…`);
-  - la lista de códigos de producto de Bedrock (`AmazonBedrock`, `AmazonBedrockService`, de las consultas de ejemplo de AWS) y, en las filas de Claude por Marketplace, la entidad `AWS Marketplace`, la familia `Amazon Bedrock`, el principal de IAM y el costo público;
+  - la lista de códigos de producto de Bedrock (`AmazonBedrock`, `AmazonBedrockService`, de las consultas de ejemplo de AWS). **Visto en el cliente el 2026-11-07** (D104 (12)): en las filas de Claude por Marketplace, la entidad `AWS Marketplace`, la familia `Amazon Bedrock`, el principal de IAM con la sesión del rol de cada agente, y el costo público en 0 (la función toma ahí el sin mezclar; sin superficie nueva: es una columna más de la misma consulta fija);
   - el tipo de las columnas en el Parquet (`CUR_COLUMNS`);
-  - que `line_item_iam_principal` trae el rol del agente o su sesión cuando llama el harness;
+  - ~~que `line_item_iam_principal` trae el rol del agente o su sesión cuando llama el harness~~: visto el 2026-11-07 (`assumed-role/Mango-<ns>-agent-<id>/…`);
   - que Data Exports entrega en el bucket de otra cuenta con esta política (la del documento de AWS) y que el `Deny` por `aws:SourceArn` no la frena;
   - bajo Lake Formation: la concesión de la plantilla, la primera consulta, y que Lake Formation acepte el ARN de un rol de IAM Identity Center, que lleva ruta;
   - un catálogo cifrado con una llave KMS propia: no está cubierto (la función no tiene permiso sobre esa llave), y el runbook manda comprobarlo antes de instalar.

@@ -39,6 +39,7 @@ SELECT
   regexp_like(line_item_usage_type, '{tokens}') AS tokens,
   line_item_line_item_type AS kind,
   sum(coalesce(pricing_public_on_demand_cost, line_item_unblended_cost, 0)) AS list_cost,
+  sum(coalesce(line_item_unblended_cost, 0)) AS unblended_cost,
   count(*) AS line_items
 FROM "{database}"."{table}"
 WHERE billing_period BETWEEN ? AND ?
@@ -47,9 +48,11 @@ WHERE billing_period BETWEEN ? AND ?
 GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 """
 """The list price is the public on-demand cost. Where a row has none, the unblended cost stands in
-for it: whether the rows of AWS Marketplace carry a public on-demand cost is not documented, and
-Marketplace's model prices are list prices (D104, precision of 2026-11-06). The files delivered
-before that precision have no billing entity nor product family: they read as empty."""
+for it. The rows of AWS Marketplace carry a public on-demand cost of 0, not none (2026-11-07):
+their cost is the unblended one, summed apart (``Row.unblended_cost``) and chosen by
+``compare.Bedrock.cost``; Marketplace's model prices are list prices (D104, precisions of
+2026-11-06 and 2026-11-07). The files delivered before the first precision have no billing
+entity nor product family: they read as empty."""
 
 _DONE: Final = frozenset({"SUCCEEDED", "FAILED", "CANCELLED"})
 _PAGE: Final = 1000
@@ -74,6 +77,9 @@ class Row:
     tokens: bool
     kind: str
     list_cost: Decimal
+    unblended_cost: Decimal
+    """``line_item_unblended_cost``: the cost of a row of AWS Marketplace
+    (``compare.Bedrock.cost``)."""
     line_items: int
 
 
@@ -97,13 +103,14 @@ def _next_day(day: str) -> str:
 
 
 def _row(values: list[str]) -> Row:
-    day, account, product, entity, family, principal, tokens, kind, cost, count = values
+    day, account, product, entity, family, principal, tokens, kind, cost, unblended, count = values
     try:
         amount = Decimal(cost or "0")
+        unblended_amount = Decimal(unblended or "0")
         items = int(count or "0")
     except (InvalidOperation, ValueError) as exc:
         raise QueryError("unreadable result") from exc
-    if not amount.is_finite():
+    if not amount.is_finite() or not unblended_amount.is_finite():
         raise QueryError("unreadable result")
     return Row(
         day=day,
@@ -115,6 +122,7 @@ def _row(values: list[str]) -> Row:
         tokens=tokens == "true",
         kind=kind,
         list_cost=amount,
+        unblended_cost=unblended_amount,
         line_items=items,
     )
 
