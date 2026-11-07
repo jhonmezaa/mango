@@ -192,11 +192,12 @@ Choques de archivos: `app.py` (R2, C3, U1: en ese orden); `chatEvents.ts`, `chat
 ## 7. Seguridad
 
 - **Modelos de amenazas** antes de construir: código (P1), archivos (P1), trabajador (P1), memoria (M0), sandbox de UI (V0). La skill `security-threat-model` los escribe; los riesgos aceptados se consultan con el dueño.
+  - Escritos en P1 (2026-11-07): [`code-interpreter-threat-model.md`](../security/threat-models/code-interpreter-threat-model.md) (TM-CI1–CI12), [`chat-files-threat-model.md`](../security/threat-models/chat-files-threat-model.md) (TM-CF1–CF9) y [`turn-worker-threat-model.md`](../security/threat-models/turn-worker-threat-model.md) (TM-TW1–TW10). Fijan cuatro supuestos (por menú, el 2026-11-07): el trabajador usa el access token de la persona, cifrado en el mensaje de la cola; lo que muestra el bloque «Analizando» pasa por `ApplyGuardrail`; C2 no se integra hasta que la prueba T5 diga si la red `SANDBOX` deja salir a S3 ajeno; borrar una conversación o dar de baja a una persona borra sus archivos y para su sesión del Code Interpreter.
 - **El `sessionId` del Code Interpreter es la única barrera entre personas dentro del mismo recurso** (IAM no acota por sesión): nunca llega al modelo, al navegador ni a los logs.
 - **Sin credenciales en el código:** el Code Interpreter va sin rol de ejecución; todo movimiento de archivos lo hace la Lambda con `writeFiles`/`readFiles` (tope de 100 MB por llamada).
 - **Inyección indirecta con ejecución:** un adjunto puede pedir al modelo que empaquete otros archivos. La sesión es por persona y conversación, sin red, y cada archivo generado lleva su origen en la tarjeta.
 - **Archivos hostiles:** lista cerrada de extensiones, `attachment` siempre, tipo decidido por el servidor, comprobación por bytes, escaneo de malware antes de entregar.
-- **El guardrail no revisa el código ni la salida que se muestran:** el modelo de amenazas decide si pasan por `ApplyGuardrail`.
+- **El guardrail no revisa el código ni la salida que se muestran:** pasan por `ApplyGuardrail` antes de mostrarse (TM-CI5, C4).
 - **Segundo origen:** `unsafe-eval` solo dentro del sandbox; un test impide que la distribución de la SPA sirva el runner; la CSP de la SPA no gana `unsafe-eval` ni pierde Trusted Types.
 - **Memoria:** namespace por persona, tests de aislamiento, borrado completo al dar de baja, los administradores no la leen.
 
@@ -206,7 +207,7 @@ Todas en la instalación del cliente solo si el dueño lo autoriza por menú; re
 
 | # | Qué confirma | PR |
 |---|---|---|
-| T5 | Si la red `SANDBOX` deja subir a un bucket ajeno (exfiltración) | C1 |
+| T5 | Si la red `SANDBOX` deja subir a un bucket ajeno (exfiltración); C2 no se integra sin su resultado (TM-CI3) | C1 |
 | T6/T7 | Nombre de la tool en `allowedTools` y sesión del CI que usa el harness (solo para cerrar la comparación) | — |
 | R0 | Protección de tarea de ECS frente a un despliegue; sesión del harness tras cortar el stream | R0 |
 | G | Imagen en el resultado MCP del Gateway: ¿la ve el modelo? | D3 |
