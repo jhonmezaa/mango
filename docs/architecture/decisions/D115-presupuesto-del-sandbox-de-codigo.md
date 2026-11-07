@@ -1,7 +1,7 @@
 # D115 · Presupuesto del sandbox de código: se reserva el tiempo de cómputo antes del turno y se liquida con lo medido
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola)
+- **Estado:** vigente
+- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)»
 - **Precisa / reemplaza a:** precisa la regla 4 de `AGENTS.md` y [D73](D073-turno-cortado-nunca-cuesta-cero.md) (una tool que se cobra por tiempo de cómputo); usa la regla 7 (precios como configuración)
 - **Precisada por:** —
 

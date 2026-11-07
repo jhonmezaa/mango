@@ -1,7 +1,7 @@
 # D118 · Gráficas y tablas por un spec JSON cerrado, dibujadas por componentes propios
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola)
+- **Estado:** vigente
+- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)»
 - **Precisa / reemplaza a:** — (ninguna regla cambia: el modelo solo produce datos JSON, nunca código ni HTML que se ejecute en la SPA); respeta [D24](D024-diseno-de-la-ui.md)
 - **Precisada por:** —
 

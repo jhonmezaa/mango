@@ -1,7 +1,7 @@
 # D119 · Skills de documentos: instrucciones del harness y helpers firmados en la release, copiados a la sesión del sandbox
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; el render que usa su bucle lo eligió el dueño ese día en [D117](D117-render-de-office-con-libreoffice.md))
+- **Estado:** vigente
+- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; el render que usa su bucle lo eligió el dueño ese día en [D117](D117-render-de-office-con-libreoffice.md)) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)»
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) («las skills con scripts solo vienen en la release»: el código viaja firmado en la release y corre en el sandbox, no en el harness) y [D92](D092-skills-de-solo-instrucciones.md) (2) («sin scripts»: las skills siguen siendo de instrucciones; los scripts son helpers del sandbox)
 - **Precisada por:** —
 

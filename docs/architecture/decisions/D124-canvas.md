@@ -1,7 +1,7 @@
 # D124 · Canvas: documentos y código editables junto al chat, con vista previa en el segundo origen
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat, que el dueño pidió completo ese día, por menú: «Todo detallado»; ninguna pregunta de ese día la eligió por sí sola)
+- **Estado:** vigente
+- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat, que el dueño pidió completo ese día, por menú: «Todo detallado»; ninguna pregunta de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)»
 - **Precisa / reemplaza a:** precisa la regla 1 de `AGENTS.md` (transpilar en el navegador de la persona, dentro del segundo origen, no es compilar ni descargar código en la cuenta del cliente)
 - **Precisada por:** —
 
