@@ -25,7 +25,7 @@ from botocore.config import Config
 
 from mango_core.evals_harness import HARNESS_SK, SETTINGS_PK, Capture, EvalsHarness
 from mango_eval_judge import judge
-from mango_eval_judge.canary import Canary
+from mango_eval_judge.canary import INVOKE_HARNESS_EVENT, Canary, own_trace_on_invoke
 from mango_eval_judge.config import Settings
 
 logger = logging.getLogger()
@@ -48,12 +48,20 @@ def _settings() -> Settings:
     return Settings.from_env()
 
 
+def agentcore_client(**kwargs: Any) -> Any:
+    """The AgentCore client: its ``InvokeHarness`` carries a sampled trace of its own, never the
+    invocation's (``canary.TRACE_HEADER``)."""
+    client = boto3.client("bedrock-agentcore", config=_CLIENT_CONFIG, **kwargs)
+    client.meta.events.register(INVOKE_HARNESS_EVENT, own_trace_on_invoke)
+    return client
+
+
 @cache
 def _clients() -> tuple[Any, Any, Any]:
     return (
         boto3.client("dynamodb", config=_CLIENT_CONFIG),
         boto3.client("logs", config=_CLIENT_CONFIG),
-        boto3.client("bedrock-agentcore", config=_CLIENT_CONFIG),
+        agentcore_client(),
     )
 
 

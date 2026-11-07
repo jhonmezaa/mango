@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -18,7 +19,7 @@ from moto import mock_aws
 from mango_core.evals_harness import Capture, EvalsHarness
 from mango_core.playground import PlaygroundHarness
 from mango_eval_judge import handler
-from mango_eval_judge.canary import Canary
+from mango_eval_judge.canary import Canary, sampled_trace_header
 from mango_eval_judge.config import ConfigError, Settings
 
 NS = "test"
@@ -574,3 +575,67 @@ def test_the_canary_model_needs_no_release_price() -> None:
     # It is priced from the model catalog, like every turn mango-api reserves.
     settings = Settings.from_env({**ENV, "CANARY_MODEL": SONNET})
     assert SONNET not in settings.prices
+
+
+# --- The canary's own trace ---------------------------------------------------------------
+
+INHERITED = "Root=1-6aeec32d-000000000000000000000000;Parent=1111111111111111;Sampled=0"
+
+
+class _SentError(Exception):
+    pass
+
+
+def _sent_trace_header(monkeypatch: pytest.MonkeyPatch, client: Any) -> str:
+    """The trace header ``client`` sends on ``InvokeHarness`` inside a Lambda invocation that
+    inherited an unsampled trace (as the provisioner's canary does)."""
+    monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "Mango-test-EvalJudge")
+    monkeypatch.setenv("_X_AMZN_TRACE_ID", INHERITED)
+    sent: dict[str, str] = {}
+
+    def capture(request: Any, **_kwargs: Any) -> None:
+        sent["header"] = request.headers.get("X-Amzn-Trace-Id", b"").decode()
+        raise _SentError
+
+    event = "before-send.bedrock-agentcore.InvokeHarness"
+    client.meta.events.register(event, capture)
+    try:
+        with pytest.raises(_SentError):
+            client.invoke_harness(
+                harnessArn=HARNESS_ARN,
+                runtimeSessionId="mango-canary-" + "0" * 48,
+                messages=[{"role": "user", "content": [{"text": "x"}]}],
+            )
+    finally:
+        client.meta.events.unregister(event, capture)
+    return sent["header"]
+
+
+def _fake_credentials(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        monkeypatch.setenv(key, "testing")
+    return {"region_name": REGION}
+
+
+def test_botocore_forwards_the_inherited_unsampled_trace(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Why the canary of a release got no span (2026-11-07): a plain client sends the caller's.
+    plain = boto3.client("bedrock-agentcore", **_fake_credentials(monkeypatch))
+    assert _sent_trace_header(monkeypatch, plain) == INHERITED
+
+
+def test_the_canary_turn_sends_a_sampled_trace_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = handler.agentcore_client(**_fake_credentials(monkeypatch))
+    header = _sent_trace_header(monkeypatch, client)
+
+    root, sampled = header.split(";")
+    assert sampled == "Sampled=1"
+    assert root.startswith("Root=1-")
+    assert root != INHERITED.split(";", maxsplit=1)[0]
+    assert "Parent=" not in header
+    # A new root per turn.
+    assert _sent_trace_header(monkeypatch, client) != header
+
+
+def test_the_sampled_trace_header_has_the_x_ray_form() -> None:
+    header = sampled_trace_header(lambda: 0x6AEEC32D)
+    assert re.fullmatch(r"Root=1-6aeec32d-[0-9a-f]{24};Sampled=1", header)

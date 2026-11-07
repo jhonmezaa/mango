@@ -206,6 +206,15 @@ Elegido por el dueño, por menú, el 2026-11-06 («Así» y «Excepción solo al
 - **Quién puede quitar la llave.** Solo `Mango-<ns>-Provisioner`: tiene `logs:DisassociateKmsKey` sobre esos log groups, y `NoEvalsKeyRemoval` lo deniega a todo otro rol de Mango y en los tres boundaries, con `ArnNotEquals aws:PrincipalArn` = el ARN completo de su rol (nunca un nombre comparado en CDK, que en la release es un *token*; `infra/test/release.test.ts` lo fija). Quitar la llave no abre la lectura: el provisioner sigue sin ninguna acción que devuelva eventos. Lee `EVALS`/`CAPTURE` con `dynamodb:GetItem` y `LeadingKeys` `EVALS`; un ítem que falta o está mal formado cuenta como no verificado, así que reenlaza, y eso solo pasa cuando ninguna eval puede correr.
 - **Riesgo residual.** No se sabe si un reenlace a los pocos segundos de que AgentCore crea el log group basta en la primera instalación. Si no basta, el canario falla cerrado y no se pierde nada. Un rol de la cuenta del cliente con permisos amplios podría quitar la llave, como antes; no lee nada por eso, pero el contenido que entre después quedaría cifrado solo con la llave de AWS. Queda en CloudTrail.
 
+## Precisión del 2026-11-07: el turno del canario lleva su propia traza
+
+Revisado con `security-best-practices` (Python, modo generación).
+
+- **Lo que se vio.** Los canarios lanzados por la release (00:45 y 06:07 UTC) corrieron sin traza de X-Ray muestreada; los lanzados a mano (00:56 y 06:20), con `Sampled=1`, en el mismo entorno de la Lambda y con el mismo evento. En Lambda, botocore copia la traza de la invocación en la cabecera `X-Amzn-Trace-Id` de cada llamada, y la del provisioner (Step Functions, regla por defecto: 1 por segundo y 5 %) casi nunca va muestreada. Con `Sampled=0` el harness no exporta ningún span del turno, aunque sus logs llegan. Esta es la causa de las dos precisiones siguientes, que la buscaban en la llave, en las escrituras y en el tiempo.
+- **Control.** El cliente de AgentCore del evaluador reemplaza esa cabecera en `InvokeHarness` por una traza raíz nueva y aleatoria con `Sampled=1`. Un test fija que botocore reenvía la heredada y que el turno no la lleva.
+- **Qué no cambia.** La cabecera solo lleva un id aleatorio y la decisión de muestreo: ni contenido, ni identidad, ni datos de la invocación. Los spans del canario siguen yendo solo a los log groups del harness de evals, y el canario sigue exigiendo que el marcador no esté en `aws/spans`. El turno ya no se enlaza con la traza del provisioner en X-Ray; nada lo usaba.
+- **Riesgo residual.** Ninguno nuevo. El segundo turno y el reenlace de la llave se mantienen como red de seguridad; si los spans faltan por otra causa, el canario sigue fallando cerrado.
+
 ## Precisión del 2026-11-07: el segundo turno sale a los 10 minutos
 
 - **Lo que se vio.** Con el provisioner ya sin escrituras que no cambian nada, la release del 2026-11-07 tampoco recibió spans en su canario ni en el segundo turno, 3 minutos después; uno lanzado a mano 11 minutos después de la actualización pasó. Las escrituras no eran la causa; la causa sigue sin saberse (pregunta a AWS).

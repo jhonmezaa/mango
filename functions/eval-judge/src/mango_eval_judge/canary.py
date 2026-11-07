@@ -97,12 +97,17 @@ SPANS_RETRY_SECONDS = 2 * 60
 """How long after a turn the canary waits for its spans before one more turn in a new session.
 Spans of a turn land within seconds (2 to 4 s, 2026-11-06)."""
 RETRY_AFTER_SECONDS = 10 * 60
-"""How long after the first turn the second one is sent. During a release the turns of the first
-minutes got no span at all, with no error anywhere: one 3 minutes after the first failed too,
-while the same harness version delivered them 10 minutes after the update (2026-11-06/07; the
-cause is still unknown and asked of AWS). The second turn then has ``SPANS_RETRY_SECONDS``, all
-within the function's 15 minutes."""
+"""How long after the first turn the second one is sent, should the first get no span. The
+second turn then has ``SPANS_RETRY_SECONDS``, all within the function's 15 minutes. The turns of
+a release got no span because they carried the provisioner's unsampled trace (``TRACE_HEADER``,
+2026-11-07); this is a safety net only."""
 TURN_ATTEMPTS = 2
+TRACE_HEADER = "X-Amzn-Trace-Id"
+"""In Lambda, botocore copies the invocation's X-Ray trace (``_X_AMZN_TRACE_ID``) into this header
+of every request. The canary invoked by the provisioner inherits its trace through Step
+Functions, usually with ``Sampled=0``, and the harness then exports no span of the turn while its
+logs still land (2026-11-07: every release-launched canary was unsampled and failed; every manual
+one was ``Sampled=1`` and passed). The turn sends a trace of its own instead."""
 SHARED_LOG_SETTLE_SECONDS = 60
 """After the marker is in its own log group, how long until ``aws/spans`` is read: spans of a
 turn land together, within seconds of each other."""
@@ -140,6 +145,21 @@ def catalog_prices(raw: str) -> dict[str, tuple[Decimal, Decimal]]:
         if input_usd > 0 and output_usd > 0:
             prices[model_id] = (input_usd, output_usd)
     return prices
+
+
+def sampled_trace_header(clock: Callable[[], float] = time.time) -> str:
+    """A new X-Ray root trace, sampled: the canary's spans never depend on its caller's."""
+    return f"Root=1-{int(clock()):08x}-{secrets.token_hex(12)};Sampled=1"
+
+
+def own_trace_on_invoke(params: dict[str, Any], **_kwargs: Any) -> None:
+    """``before-call`` handler for ``InvokeHarness``: replaces the inherited trace header.
+
+    Registered after botocore's own, so it overrides the copy of ``_X_AMZN_TRACE_ID``."""
+    params.setdefault("headers", {})[TRACE_HEADER] = sampled_trace_header()
+
+
+INVOKE_HARNESS_EVENT = "before-call.bedrock-agentcore.InvokeHarness"
 
 
 class CanaryFailedError(Exception):
