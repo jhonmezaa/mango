@@ -14,6 +14,7 @@ import { Installation } from "../config/schema.js";
 import { mangoName, packNames, roleArn, roleNames, SESSION_TAG_KEYS } from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
 import { accountHealthRoleArn, NOT_THE_SYSTEM_IDENTITY, trustAccountHealth } from "./account-health.js";
+import { CODE_TARGET_NAME } from "./code-connector.js";
 import { PythonFunction } from "./python-function.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -131,9 +132,11 @@ export class Tools extends Construct {
   readonly policyEngine: agentcore.CfnPolicyEngine;
   /**
    * Gateway targets of Mango connectors: the only ones that receive the caller's token. The
-   * knowledge search also gets the knowledge bases mango-api signed for the agent (D88 (14)).
+   * knowledge search also gets the knowledge bases mango-api signed for the agent (D88 (14)),
+   * and the code tools the conversation and the turn (D114, their target is in the sandbox
+   * stack nested in Core).
    */
-  readonly connectorTargets = [TARGET_NAME, OPS_TARGET_NAME, KNOWLEDGE_TARGET_NAME];
+  readonly connectorTargets = [TARGET_NAME, OPS_TARGET_NAME, KNOWLEDGE_TARGET_NAME, CODE_TARGET_NAME];
   /** REQUEST interceptor of the Gateway; `WriteTools` adds the approval check to it (D27). */
   readonly interceptor: lambda.Function;
   /**

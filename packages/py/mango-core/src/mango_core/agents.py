@@ -28,7 +28,7 @@ import secrets
 import unicodedata
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
@@ -71,6 +71,11 @@ MAX_MODELS = 10
 MAX_GROUPS = 50
 MAX_USERS = 50
 MAX_KNOWLEDGE_BASES = 5
+CODE_INTERPRETER = "code_interpreter"
+"""Capability of a version that runs code in the installation's sandbox (D114 (6)): the tools
+of the ``code`` target of the Gateway follow from it, nobody adds them by hand."""
+Capability = Literal["code_interpreter"]
+CAPABILITIES: tuple[Capability, ...] = ("code_interpreter",)
 """Knowledge bases one version may use (D88 (15))."""
 ICON_COLORS = 8
 
@@ -252,12 +257,21 @@ class AgentDefinition(_Frozen):
     """Whether the agent remembers its people across conversations (D122, TM-ME6): set in the
     version, so turning it on goes through the version's approval. It has no effect while the
     installation's memory is off (``memory_enabled``)."""
+    capabilities: Annotated[
+        tuple[Capability, ...], Field(max_length=8), AfterValidator(_sorted_unique)
+    ] = ()
+    """What the version may do besides its tools (D114 (6)): ``code_interpreter`` runs code in
+    the sandbox of the installation. Part of the approved content, like every other field."""
+
+    @property
+    def code_interpreter(self) -> bool:
+        return CODE_INTERPRETER in self.capabilities
 
 
 # --- Canonical form and hash ------------------------------------------------------------
 
 
-_OMITTED_WHEN_EMPTY = ("knowledge_bases", "skills", "memory")
+_OMITTED_WHEN_EMPTY = ("knowledge_bases", "skills", "memory", "capabilities")
 """Fields added after agents were published: left out while empty, so the bytes and the hash
 of every version written before them (and of the release agents, which the stack writes from
 TypeScript) stay the same."""

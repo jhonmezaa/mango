@@ -18,6 +18,11 @@ A version with knowledge bases also names them (``kbs``, D88 (14)): the intercep
 to the ``knowledge-retrieve`` tool, which searches only those, and of those only the ones the
 person can use. The model never names them. Without the claim, the list is empty.
 
+A version with the ``code_interpreter`` capability also names the conversation and the turn
+(``conv`` and ``turn``, D114 (4), TM-CI2): the interceptor hands them to the code connector, which
+keys the person's sandbox session by (subject, conversation) and meters each cell against the
+turn. The model never names them. Without the claims, the code tools refuse to run.
+
 A call mango-api makes itself from «Mis conexiones» carries the claim ``cx`` (``connect`` or
 ``disconnect``, D97 (3), D98 (15)): the reserved agent ``mangoconn``, version 1 and exactly
 one tool of a remote target, with no knowledge bases and no Playground mark. The interceptor
@@ -55,6 +60,9 @@ _MAX_TOOLS = 100
 _MAX_AGENT_VERSION = 999_999
 _MAX_KNOWLEDGE_BASES = 5
 _KB_RE = re.compile(KNOWLEDGE_BASE_ID)
+SCOPE_ID_PATTERN = r"^[0-9a-f]{32}$"
+"""A conversation, a task run, a test or a turn: mango-api's random ids (``secrets.token_hex``)."""
+_SCOPE_RE = re.compile(SCOPE_ID_PATTERN)
 
 Connection = Literal["connect", "disconnect"]
 CONNECTIONS: frozenset[str] = frozenset({"connect", "disconnect"})
@@ -76,6 +84,10 @@ class Invocation:
     """A test of the Playground (D91): no write tool goes through, approval or not."""
     connection: Connection | None = None
     """A call of «Mis conexiones» (D97 (3)): only the probe tool of one remote target."""
+    conversation_id: str | None = None
+    """The conversation (or task run, or test) of the turn: the code connector's session key."""
+    turn_id: str | None = None
+    """The turn the code connector meters each cell against (D115 (3))."""
 
 
 def _mac(key: bytes, signed: str) -> str:
@@ -93,13 +105,23 @@ def sign(
     knowledge_bases: Iterable[str] = (),
     playground: bool = False,
     connection: Connection | None = None,
+    conversation_id: str | None = None,
+    turn_id: str | None = None,
 ) -> str:
     """Signature of one harness invocation. ``tools`` are Gateway names (``target___tool``);
     ``knowledge_bases``, the ids of the version's knowledge bases; ``playground``, a test of
     a version that may not be approved (D91); ``connection``, a call of «Mis conexiones»
-    (D97 (3))."""
+    (D97 (3)); ``conversation_id`` and ``turn_id``, both or neither, the turn of a version that
+    runs code (D114 (4))."""
     names = sorted(set(tools))
     kbs = sorted(set(knowledge_bases))
+    if (
+        (conversation_id is None) != (turn_id is None)
+        or (conversation_id is not None and not _SCOPE_RE.fullmatch(conversation_id))
+        or (turn_id is not None and not _SCOPE_RE.fullmatch(turn_id))
+        or (conversation_id is not None and connection is not None)
+    ):
+        raise ValueError("invalid invocation")
     if (
         not subject
         or not _AGENT_RE.fullmatch(agent_id)
@@ -134,6 +156,10 @@ def sign(
     if connection is not None:
         # Only on a call of «Mis conexiones»: every other signature stays as it was.
         claims["cx"] = connection
+    if conversation_id is not None and turn_id is not None:
+        # Only on a turn of a version that runs code: every other signature stays as it was.
+        claims["conv"] = conversation_id
+        claims["turn"] = turn_id
     payload = json.dumps(claims, separators=(",", ":"), sort_keys=True)
     encoded = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     signed = f"{_VERSION}.{encoded}"
@@ -160,6 +186,8 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
     kbs = payload.get("kbs", [])
     playground = payload.get("pg", False)
     connection = payload.get("cx")
+    conversation = payload.get("conv")
+    turn = payload.get("turn")
     if (
         not isinstance(sub, str)
         or not hmac.compare_digest(sub.encode(), subject.encode())
@@ -176,6 +204,13 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
         or not all(isinstance(kb, str) and _KB_RE.fullmatch(kb) for kb in kbs)
         or not isinstance(playground, bool)
         or not (connection is None or connection in CONNECTIONS)
+        or (conversation is None) != (turn is None)
+        or not (
+            conversation is None
+            or (isinstance(conversation, str) and _SCOPE_RE.fullmatch(conversation))
+        )
+        or not (turn is None or (isinstance(turn, str) and _SCOPE_RE.fullmatch(turn)))
+        or (conversation is not None and connection is not None)
         or not _is_connection_shape(
             cast("Connection | None", connection),
             agent_id=agent,
@@ -195,6 +230,8 @@ def verify(key: bytes, subject: str, value: str, now: float | None = None) -> In
         knowledge_bases=tuple(sorted(set(kbs))),
         playground=playground,
         connection=cast("Connection | None", connection),
+        conversation_id=conversation,
+        turn_id=turn,
     )
 
 

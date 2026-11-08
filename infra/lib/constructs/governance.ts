@@ -51,6 +51,11 @@ export interface GovernanceProps {
    * The role lives in a stack nested in Core (D99), which Core names and never reads.
    */
   readonly turnWorkerRoleArn?: string;
+  /**
+   * The role of the code connector (D114 (4)), by its ARN: it keeps the sandbox sessions and
+   * cells of one person at a time in that person's rows. Nested in Core too (D99).
+   */
+  readonly codeConnectorRoleArn?: string;
 }
 
 /**
@@ -199,7 +204,11 @@ export class Governance extends Construct {
       description: "Assumed per request with a LeadingKeys session policy (row-level security)",
       assumedBy: new iam.AccountPrincipal(account).withConditions({
         ArnEquals: {
-          "aws:PrincipalArn": [props.apiTaskRole.roleArn, ...(props.turnWorkerRoleArn ? [props.turnWorkerRoleArn] : [])],
+          "aws:PrincipalArn": [
+            props.apiTaskRole.roleArn,
+            ...(props.turnWorkerRoleArn ? [props.turnWorkerRoleArn] : []),
+            ...(props.codeConnectorRoleArn ? [props.codeConnectorRoleArn] : []),
+          ],
         },
       }),
       maxSessionDuration: Duration.hours(1),

@@ -1029,6 +1029,7 @@ def build_services(settings: Settings) -> Services:
         agents=AgentsDeps(
             store=agents_store,
             audit=audit,
+            code_interpreter=settings.code_interpreter_prices is not None,
             authorizer=authorizer,
             groups=group_registry,
             models=model_catalog,
@@ -1382,6 +1383,8 @@ def _eval_runner(services: Services, settings: Settings) -> EvalRunner | None:
             authorizer=services.authorizer,
             skills=services.skills.store if services.skills is not None else None,
             skills_bucket=settings.skills_bucket,
+            code_prices=settings.code_interpreter_prices,
+            code_uses=services.conversations.code_uses,
         )
     )
 
@@ -1992,6 +1995,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                         skills=services.skills.store if services.skills is not None else None,
                         skills_bucket=settings.skills_bucket,
                         authorizer=services.authorizer,
+                        code_prices=settings.code_interpreter_prices,
+                        code_uses=services.conversations.code_uses,
                     ),
                     current_user,
                     require,
@@ -2270,7 +2275,17 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             agent=turns.use_resource(agent_id, agent),
         )
         agent = turns.admit(agent_id, agent, record, body.agent_id)
-        checked = await asyncio.to_thread(turns.check_turn, services, caller, agent, body.model)
+        checked = await asyncio.to_thread(
+            partial(
+                turns.check_turn,
+                services,
+                caller,
+                agent,
+                body.model,
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+            )
+        )
         # The files of the question (D116, TM-CF9): uploaded to this conversation by this
         # person and ready. A conversation the server names has none yet.
         if body.attachments and is_new:
@@ -2543,13 +2558,19 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
         return TurnOutcome(status=RunStatus.FAILED, reason="identity_unavailable")
     try:
         invocation_request = turns.agent_invocation(services, agent, model_id)
-        signature = turns.sign_invocation(services, caller, agent)
+        # A run is the task's conversation: a version that runs code gets a session per run.
+        signature = turns.sign_invocation(
+            services, caller, agent, conversation_id=run.run_id, turn_id=turn_id
+        )
+        code = turns.code_reserve(services, agent)
     except ApiError:
         return TurnOutcome(status=RunStatus.FAILED, reason="agent_unavailable")
     history = [harness.ChatTurn("user", message)]
-    estimate = estimate_max_cost(
-        price, len(message), limits.max_iterations, limits.reserved_output_tokens
-    ) + turns.knowledge_reserve(services, agent)
+    estimate = (
+        estimate_max_cost(price, len(message), limits.max_iterations, limits.reserved_output_tokens)
+        + turns.knowledge_reserve(services, agent)
+        + code
+    )
     period = current_period()
     try:
         scopes = turns.budget_scopes(services, user, agent_id)
@@ -2706,7 +2727,13 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
             logger.exception("task turn failed")
     finally:
         turns.settle_turn(
-            services, user=user, turn=pending, price=price, detail=detail, result=result
+            services,
+            user=user,
+            turn=pending,
+            price=price,
+            detail=detail,
+            result=result,
+            runs_code=definition.code_interpreter,
         )
         if activity is not None:
             activity.end()

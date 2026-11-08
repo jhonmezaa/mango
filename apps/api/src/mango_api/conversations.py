@@ -21,6 +21,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from mango_api.sessions import SessionBusyError, SessionState
+from mango_core import code_sandbox
 
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
@@ -529,6 +530,29 @@ class ConversationRepository:
         if item is None:
             return None
         return item.get("title", {}).get("S", ""), item.get("agent_id", {}).get("S"), owner_of(item)
+
+    def code_uses(self, user_id: str, turn_id: str) -> list[code_sandbox.CellUse]:
+        """What the cells of a turn used, as the code connector metered them (D115 (3)), from
+        the person's own partition. A cell that never wrote its end counts at its cutoff."""
+        uses: list[code_sandbox.CellUse] = []
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+            "ExpressionAttributeValues": {
+                ":pk": self._pk(user_id),
+                ":prefix": {"S": code_sandbox.turn_prefix(turn_id)},
+            },
+            "ProjectionExpression": "#state, cpu_seconds, session_seconds",
+            "ExpressionAttributeNames": {"#state": "state"},
+            "ConsistentRead": True,
+        }
+        while True:
+            resp = self._clients(user_id).query(**kwargs)
+            uses.extend(code_sandbox.cell_use(item) for item in resp.get("Items", []))
+            start = resp.get("LastEvaluatedKey")
+            if not start:
+                return uses
+            kwargs["ExclusiveStartKey"] = start
 
     def messages(self, user_id: str, conversation_id: str) -> list[StoredMessage]:
         out: list[StoredMessage] = []

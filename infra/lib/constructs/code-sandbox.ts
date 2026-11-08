@@ -115,7 +115,7 @@ export interface CodeSandboxProps {
 
 /**
  * The code sandbox of the installation (D114) and the malware scan of the chat files (D116 (2)).
- * Nothing here holds data (D99 (2)); nothing uses it yet (the connector is C2 of the plan).
+ * Nothing here holds data (D99 (2)); its connector (`code-connector.ts`) is in the same stack.
  *
  * - Code Interpreter `Mango_<ns>_sandbox`: VPC mode, in two isolated subnets of the sandbox VPC
  *   (a route table each, with the local route only) and a security group without a single
@@ -134,11 +134,6 @@ export class CodeSandbox extends Construct {
   readonly subnets: ec2.PrivateSubnet[];
   readonly scanner: iam.Role;
   readonly scanPlan: guardduty.CfnMalwareProtectionPlan;
-  /**
-   * What the connector of the sandbox will need (C2 of the plan): the name of the Code
-   * Interpreter and its prices. Nothing reads it yet.
-   */
-  readonly connectorEnvironment: Record<string, string>;
 
   constructor(scope: Construct, id: string, props: CodeSandboxProps) {
     super(scope, id);
@@ -189,11 +184,6 @@ export class CodeSandbox extends Construct {
       },
     });
     for (const subnet of this.subnets) this.codeInterpreter.node.addDependency(subnet);
-
-    this.connectorEnvironment = {
-      CODE_INTERPRETER_NAME: codeInterpreterName(ns),
-      CODE_INTERPRETER_PRICES: JSON.stringify(codeInterpreterPrices(cfg)),
-    };
 
     // --- Malware scan of the chat files ------------------------------------------------------
     const bucket = props.chatFiles.bucket;

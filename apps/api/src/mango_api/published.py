@@ -35,6 +35,8 @@ from mango_core.agents import (
 )
 from mango_core.harness_tools import (
     allowed_tool,
+    code_allowed_tools,
+    code_gateway_tools,
     gateway_tool_name,
     knowledge_allowed_tool,
     knowledge_gateway_tool,
@@ -282,6 +284,8 @@ class PublishedAgents:
 
         A version with knowledge bases also has the knowledge search (D88 (14)), which no
         catalog lists: it follows from ``knowledge_bases``, and the invocation signs them.
+        A version with the ``code_interpreter`` capability has the code tools (D114 (6)), the
+        same way: the invocation then signs the conversation and the turn.
 
         Tools of a remote MCP count only while its registration is active and the signed
         catalog names them (D98 (13)); otherwise the agent serves without them. Who may use
@@ -338,6 +342,9 @@ class PublishedAgents:
         if definition.knowledge_bases:
             allowed.append(knowledge_allowed_tool())
             gateway.append(knowledge_gateway_tool())
+        if definition.code_interpreter:
+            allowed.extend(code_allowed_tools())
+            gateway.extend(code_gateway_tools())
         return (
             tuple(sorted(allowed)),
             tuple(sorted(gateway)),

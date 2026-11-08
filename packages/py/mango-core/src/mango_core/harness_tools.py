@@ -49,6 +49,25 @@ def knowledge_allowed_tool() -> str:
     return allowed_tool(KNOWLEDGE_TARGET, KNOWLEDGE_TOOL)
 
 
+CODE_TARGET = "code"
+"""Gateway target of the code connector (D114 (1)): a Mango connector over the installation's
+Code Interpreter. A version with the ``code_interpreter`` capability has its tools, and only
+such a version."""
+CODE_RUN_TOOL = "run_python"
+CODE_TOOLS = (CODE_RUN_TOOL, "list_files", "read_file")
+"""The tools of that target (D114 (5)); no ``run_shell`` in this version."""
+
+
+def code_gateway_tools() -> tuple[str, ...]:
+    """Gateway names of the code tools (``code___run_python``…)."""
+    return tuple(gateway_tool_name(CODE_TARGET, tool) for tool in CODE_TOOLS)
+
+
+def code_allowed_tools() -> tuple[str, ...]:
+    """``allowedTools`` entries of the code tools."""
+    return tuple(allowed_tool(CODE_TARGET, tool) for tool in CODE_TOOLS)
+
+
 SKILLS_TOOL = "skills"
 """Built-in tool of the harness that loads the instructions of one of its skills (D92): the
 ``AgentSkills`` plugin of Strands, which the harness runs. A version with skills has it, and

@@ -700,6 +700,71 @@ def test_the_knowledge_search_needs_its_name_in_the_signature() -> None:
     assert _denied(handle(event, KEY, frozenset({"finops", "knowledge"})))
 
 
+# --- The code tools (D114, TM-CI2) ---------------------------------------------------------
+
+CODE = "code___run_python"
+CONVERSATION = "a" * 32
+TURN = "b" * 32
+CODE_TARGETS = frozenset({"finops", "knowledge", "code"})
+
+
+def _code_headers(
+    *, conversation: str | None = CONVERSATION, turn: str | None = TURN, playground: bool = False
+) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {_token()}",
+        invocation.HEADER: invocation.sign(
+            KEY,
+            "user-1",
+            int(time.time()) + 300,
+            agent_id="analista",
+            agent_version=2,
+            tools=(CODE, TOOL),
+            playground=playground,
+            conversation_id=conversation,
+            turn_id=turn,
+        ),
+    }
+
+
+def test_the_code_tools_get_the_signed_conversation_and_turn() -> None:
+    supplied = {
+        "code": "print(1)",
+        # What the model writes there is dropped: only what mango-api signed counts.
+        "_mango_ctx": {"token": "forged", "conversation_id": "c" * 32, "turn_id": "d" * 32},
+    }
+    event = _event("tools/call", supplied, _code_headers(playground=True), name=CODE)
+    assert _args(handle(event, KEY, CODE_TARGETS)) == {
+        "code": "print(1)",
+        "_mango_ctx": {
+            "token": _token(),
+            "subject": "user-1",
+            "agent_id": "analista",
+            "agent_version": 2,
+            "conversation_id": CONVERSATION,
+            "turn_id": TURN,
+            "playground": True,
+        },
+    }
+
+
+def test_a_code_tool_without_a_signed_conversation_is_refused() -> None:
+    event = _event(
+        "tools/call", {"code": "1"}, _code_headers(conversation=None, turn=None), name=CODE
+    )
+    assert _denied(handle(event, KEY, CODE_TARGETS))
+
+
+def test_other_connectors_never_get_the_conversation() -> None:
+    result = handle(_event("tools/call", {}, _code_headers()), KEY, CODE_TARGETS)
+    assert _args(result) == {"_mango_ctx": {"token": _token()}}
+
+
+def test_the_code_tools_need_their_name_in_the_signature() -> None:
+    event = _event("tools/call", {"code": "1"}, _headers(), name=CODE)
+    assert _denied(handle(event, KEY, CODE_TARGETS))
+
+
 def test_a_playground_test_never_writes_even_with_a_valid_approval() -> None:
     # D91 (2): a version nobody approved never changes anything; the approval is not spent.
     spent = _Spent()

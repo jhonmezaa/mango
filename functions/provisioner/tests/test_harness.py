@@ -193,6 +193,22 @@ def test_a_version_with_knowledge_bases_gets_the_knowledge_search() -> None:
             allowed_tools(SETTINGS, make_definition(tools=[tool]))
 
 
+def test_a_version_that_runs_code_gets_the_code_tools_and_nothing_of_the_harness() -> None:
+    # D114 (6): they follow from the capability; the harness keeps no shell nor file tools.
+    allowed = allowed_tools(SETTINGS, make_definition(capabilities=["code_interpreter"]))
+    assert allowed == [
+        "@mango/code___list_files",
+        "@mango/code___read_file",
+        "@mango/code___run_python",
+        "@mango/finops___get_cost_and_usage",
+    ]
+    assert not {"shell", "file_operations"} & set(allowed)
+    assert not any("code___" in t for t in allowed_tools(SETTINGS, make_definition()))
+    for tool in ("code.run_python", "code.run_shell"):
+        with pytest.raises(StepError, match="unknown_tool"):
+            allowed_tools(SETTINGS, make_definition(tools=[tool]))
+
+
 def test_fingerprint_follows_the_content() -> None:
     def fingerprint(**overrides: Any) -> str:
         kwargs: dict[str, Any] = {

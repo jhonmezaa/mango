@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** ajusta [D18](D018-creacion-y-publicacion-de-agentes.md); en el texto: la firma `X-Mango-Invocation` v2 sustituye a la v1 de [D13](D013-identidad-hasta-las-tools.md)
-- **Precisada por:** [D70](D070-dos-tareas-y-limites-compartidos.md) (precisa: los límites de la consulta de personas se cuentan entre todas las tareas); [D91](D091-playground.md) (precisa: la firma de una prueba lleva la marca `pg` y el interceptor rechaza con ella toda tool de escritura)
+- **Precisada por:** [D70](D070-dos-tareas-y-limites-compartidos.md) (precisa: los límites de la consulta de personas se cuentan entre todas las tareas); [D91](D091-playground.md) (precisa: la firma de una prueba lleva la marca `pg` y el interceptor rechaza con ella toda tool de escritura); [D114](D114-code-interpreter-detras-del-gateway.md) (13) (precisa: la firma de una versión con `code_interpreter` nombra además la conversación y el turno, `conv` y `turn`, y el interceptor rechaza una tool `code` sin ellos)
 - **Tema en el registro original:** Autorización de agentes y de sus tools (ajusta [D18](D018-creacion-y-publicacion-de-agentes.md))
 
 ## Decisión

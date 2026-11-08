@@ -144,6 +144,7 @@ export const zAgentLimitsSchema = z.object({
 export const zAgentDefinitionSchema = z.object({
     allowed_models: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$/)).max(10).optional().default([]),
     approval_tools: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}\.[A-Za-z0-9_-]{1,64}$/)).max(50).optional().default([]),
+    capabilities: z.array(z.literal('code_interpreter')).max(8).optional().default([]),
     category: z.string().optional().default(''),
     color: z.int().gte(0).lt(8).optional().default(0),
     description: z.string().optional().default(''),
@@ -1302,6 +1303,7 @@ export const zLimitsOutSchema = z.object({
 export const zDefinitionOutSchema = z.object({
     allowed_models: z.array(z.string()),
     approval_tools: z.array(z.string()),
+    capabilities: z.array(z.literal('code_interpreter')),
     category: z.string(),
     color: z.int(),
     description: z.string(),

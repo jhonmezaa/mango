@@ -190,6 +190,10 @@ class PendingTurn:
     origin: str | None = None
     """Where the turn comes from (``usage_days.ORIGINS``): its model's and its origin's day
     counters for Costos (D106). ``None`` in a record written before them: neither is added."""
+    tool_cost: Decimal = _ZERO
+    """What the turn's tools cost that mango-api metered when it held the turn: the code
+    sandbox (D115 (3)). Part of ``charged``; the reconciler adds it to the tokens it reads, so
+    the final cost never drops it. Absent (zero) in every other record."""
 
     @staticmethod
     def new(
@@ -273,6 +277,8 @@ class PendingTurn:
             item["cost_agent"] = {"S": self.cost_agent}
         if self.origin:
             item["origin"] = {"S": self.origin}
+        if self.tool_cost > 0:
+            item["tool_cost"] = _n(self.tool_cost)
         return item
 
     @property
@@ -327,10 +333,18 @@ class PendingTurn:
                 cost_agent=item.get("cost_agent", {}).get("S"),
                 # Absent in a record written before the counters of Costos (D106).
                 origin=item.get("origin", {}).get("S"),
+                # Absent unless the turn's tools cost something metered (D115 (3)).
+                tool_cost=Decimal(item.get("tool_cost", {}).get("N", "0")),
             )
         except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
             raise InvalidTurnError("malformed pending turn") from exc
-        amounts = (turn.reserved, turn.charged, turn.retained, *_prices(turn.price))
+        amounts = (
+            turn.reserved,
+            turn.charged,
+            turn.retained,
+            turn.tool_cost,
+            *_prices(turn.price),
+        )
         if (
             not _TURN_ID.fullmatch(turn.turn_id)
             or item.get("PK", {}).get("S") != TURN_PREFIX + turn.turn_id[0]
@@ -518,10 +532,13 @@ def hold(
     turn: PendingTurn,
     usage: TokenUsage,
     sleep: Callable[[float], None] = time.sleep,
+    *,
+    tool_cost: Decimal = _ZERO,
 ) -> PendingTurn | None:
-    """The end of the turn is not known: charge the usage counted so far and keep the rest of
-    the reservation held for the reconciler. None if the turn was already closed."""
-    known = token_cost(usage, turn.price)
+    """The end of the turn is not known: charge the usage counted so far, and ``tool_cost``
+    (the metered cost of its tools, D115 (3)), and keep the rest of the reservation held for
+    the reconciler. None if the turn was already closed."""
+    known = token_cost(usage, turn.price) + tool_cost
     retained = max(turn.reserved - known, _ZERO)
     items = [
         {
@@ -530,19 +547,21 @@ def hold(
                 "Key": turn.key,
                 "UpdateExpression": (
                     "SET #state = :held, #charged = :charged, #retained = :retained, "
+                    "#tool_cost = :tool_cost, "
                     "#input_tokens = :input_tokens, #output_tokens = :output_tokens, "
                     "#cache_read_tokens = :cache_read_tokens, "
                     "#cache_write_tokens = :cache_write_tokens"
                 ),
                 "ConditionExpression": "attribute_exists(PK) AND #state = :open",
                 "ExpressionAttributeNames": _names(
-                    "state", "charged", "retained", *_usage_values(usage, prefix="")
+                    "state", "charged", "retained", "tool_cost", *_usage_values(usage, prefix="")
                 ),
                 "ExpressionAttributeValues": {
                     ":held": {"S": STATE_HELD},
                     ":open": {"S": STATE_OPEN},
                     ":charged": _n(known),
                     ":retained": _n(retained),
+                    ":tool_cost": _n(tool_cost),
                     **{
                         f":{name}": value for name, value in _usage_values(usage, prefix="").items()
                     },
@@ -562,7 +581,14 @@ def hold(
     ]
     if not _transact(dynamodb, items, sleep):
         return None
-    return replace(turn, state=STATE_HELD, charged=known, retained=retained, usage=usage)
+    return replace(
+        turn,
+        state=STATE_HELD,
+        charged=known,
+        retained=retained,
+        usage=usage,
+        tool_cost=tool_cost,
+    )
 
 
 def due(
@@ -607,12 +633,13 @@ def due(
 
 def final_cost(turn: PendingTurn, outcome: Outcome) -> Decimal:
     """What the turn costs in the end. Never less than what mango-api already counted."""
+    tokens = token_cost(outcome.usage, turn.price) + turn.tool_cost
     if outcome.basis == BASIS_RESERVATION:
         # The traces written so far may already show more than the reservation.
-        return max(turn.charged + turn.retained, token_cost(outcome.usage, turn.price))
+        return max(turn.charged + turn.retained, tokens)
     if outcome.basis == BASIS_NOT_INVOKED:
         return turn.charged
-    return max(token_cost(outcome.usage, turn.price), turn.charged)
+    return max(tokens, turn.charged)
 
 
 def close(

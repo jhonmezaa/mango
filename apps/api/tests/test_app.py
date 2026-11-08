@@ -280,7 +280,9 @@ class FakeBudgets:
         self.invoked.append(invoked)
         return True
 
-    def hold_turn(self, turn: PendingTurn, usage: TokenUsage) -> PendingTurn | None:
+    def hold_turn(
+        self, turn: PendingTurn, usage: TokenUsage, *, tool_cost: Decimal = Decimal(0)
+    ) -> PendingTurn | None:
         if self.fail_settle:
             raise RuntimeError("dynamodb down")
         if self.closed_elsewhere:
@@ -315,6 +317,15 @@ class FakeConversations:
     """The citations of each message stored, in order (D88 (44))."""
     options: list[dict[str, Any]] = field(default_factory=list)
     """The keyword arguments of each message stored, in order."""
+    code_cells: list[Any] | None = field(default_factory=list)
+    """What the code connector metered for any turn (D115 (3)); ``None``: it cannot be read."""
+    code_turns: list[str] = field(default_factory=list)
+
+    def code_uses(self, _user: str, turn_id: str) -> list[Any]:
+        self.code_turns.append(turn_id)
+        if self.code_cells is None:
+            raise RuntimeError("unreadable")
+        return list(self.code_cells)
 
     def session_state(self, user: str, cid: str) -> SessionState | None:
         if (user, cid) in self.sessions:

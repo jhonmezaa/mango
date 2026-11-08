@@ -22,9 +22,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 from mango_core.agents import AgentDefinition
 from mango_core.evals_harness import EVALS_ID, UNIFIED_TRACES
 from mango_core.harness_tools import (
+    CODE_TARGET,
     GATEWAY_MCP_SERVER,
     KNOWLEDGE_TARGET,
     allowed_tool,
+    code_allowed_tools,
     knowledge_allowed_tool,
     skills_allowed_tool,
 )
@@ -112,10 +114,14 @@ def allowed_tools(
 
     A tool of a remote MCP (``remote-<registration>.<tool>``, D93) counts only if the catalog
     the remote provisioner signed for that registration names it (D98 (13)): all ``read``.
+
+    A version with the ``code_interpreter`` capability also has the code tools (D114 (6)):
+    they follow from the capability, never from a catalog. The harness itself still gets no
+    ``shell`` nor ``file_operations`` (D26, D92 (2)).
     """
     approval = set(definition.approval_tools)
     targets = {connector.target for connector in settings.connectors.values()}
-    targets.add(KNOWLEDGE_TARGET)
+    targets.update({KNOWLEDGE_TARGET, CODE_TARGET})
     out: list[str] = []
     for ref in definition.tools:
         server_id, _, tool = ref.partition(".")
@@ -148,6 +154,8 @@ def allowed_tools(
         raise StepError("write_tools_unsupported")
     if definition.knowledge_bases:
         out.append(knowledge_allowed_tool())
+    if definition.code_interpreter:
+        out.extend(code_allowed_tools())
     return sorted(out)
 
 

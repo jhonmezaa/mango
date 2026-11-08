@@ -32,7 +32,8 @@ import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/k
 import { Skills } from "../constructs/skills.js";
 import { Tickets } from "../constructs/tickets.js";
 import { ChatFiles, CHAT_FILES_PREFIXES } from "../constructs/chat-files.js";
-import { SandboxVpc } from "../constructs/code-sandbox.js";
+import { codeConnectorRoleArn } from "../constructs/code-connector.js";
+import { codeInterpreterPrices, SandboxVpc } from "../constructs/code-sandbox.js";
 import { Presign } from "../constructs/presign.js";
 import { RENDER_DOCUMENT_ALARMS } from "../constructs/render-document.js";
 import { MemberAccess } from "../constructs/member-access.js";
@@ -138,8 +139,10 @@ export class CoreStack extends Stack {
     const governance = new Governance(this, "Governance", {
       installation: cfg,
       apiTaskRole,
-      // D121: the turn worker takes a person's rows the same way.
+      // D121: the turn worker takes a person's rows the same way, and so does the code
+      // connector, for the sessions and cells of the sandbox (D114 (4)).
       turnWorkerRoleArn: turnWorkerRoleArn(this, cfg.namespace),
+      codeConnectorRoleArn: codeConnectorRoleArn(this, cfg.namespace),
       ...(release ? { auditLockMode: release.auditLockMode } : {}),
     });
     // D99: the Cedar policies of the store, in a stack nested in Core.
@@ -303,6 +306,8 @@ export class CoreStack extends Stack {
     // D114: the network of the code sandbox. Its VPC is here because the stack tagger tags its
     // defaults; the subnets, the Code Interpreter and the scan plan are in a nested stack (D99).
     const sandboxVpc = new SandboxVpc(this, "SandboxVpc", { installation: cfg, accessLogs });
+    // Its connector (D114 (1)) is a Mango connector behind the Gateway, in the same nested stack:
+    // Core trusts its role by name and reads nothing of it (D99 (4)).
     new SandboxStack(this, "Sandbox", {
       installation: cfg,
       vpcId: sandboxVpc.vpc.vpcId,
@@ -315,6 +320,25 @@ export class CoreStack extends Stack {
         alerts,
       },
       apiTaskRole,
+      connector: {
+        conversations: governance.conversations,
+        dataKey: governance.dataKey,
+        dataAccessRoleArn: governance.dataAccessRole.roleArn,
+        chatFiles: { bucket: chatFiles.bucket, key: chatFiles.key },
+        rateLimits: governance.rateLimits,
+        auditIndex: governance.auditIndex,
+        auditStream: governance.auditStream,
+        configKey: tools.configKey,
+        issuer: identity.issuer,
+        webClientId: identity.webClient.userPoolClientId,
+        tasksClientId: tasks.client.userPoolClientId,
+        gateway: {
+          id: tools.gateway.attrGatewayIdentifier,
+          arn: tools.gateway.attrGatewayArn,
+          roleArn: tools.gatewayRole.roleArn,
+        },
+        policyEngineId: tools.policyEngine.attrPolicyEngineId,
+      },
     });
     // D117: Word, Excel and PowerPoint to PDF and PNG pages, from the image of the release in the
     // repository of mango-api, by digest. Only in a release: there is no image to name without one.
@@ -689,6 +713,8 @@ export class CoreStack extends Stack {
       AGENT_SESSION_MAX_SECONDS: String(SESSION_MAX_SECONDS),
       AUXILIARY_MODEL: cfg.models.auxiliary,
       MODEL_PRICES: JSON.stringify(cfg.modelPrices),
+      // What a turn of a version that runs code reserves and is charged (D115 (2), rule 7).
+      CODE_INTERPRETER_PRICES: JSON.stringify(codeInterpreterPrices(cfg)),
       POLICY_STORE_ID: governance.policyStore.attrPolicyStoreId,
       CONVERSATIONS_TABLE: governance.conversations.tableName,
       CONVERSATIONS_TABLE_ARN: governance.conversations.tableArn,

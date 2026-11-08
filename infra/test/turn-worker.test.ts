@@ -279,7 +279,11 @@ describe("the role of the turn worker", () => {
     ]);
     const dataRoleId = logicalId("AWS::IAM::Role", { RoleName: `Mango-${ns}-ConversationData` });
     const trust = resources[dataRoleId]!.Properties.AssumeRolePolicyDocument.Statement[0];
-    expect(trust.Condition).toEqual({ ArnEquals: { "aws:PrincipalArn": [apiRoleArn, workerRoleArn] } });
+    // And the code connector, for the sandbox sessions of one person (D114 (13)).
+    expect(trust.Condition).toEqual({
+      ArnEquals: { "aws:PrincipalArn": [apiRoleArn, workerRoleArn, expect.objectContaining({})] },
+    });
+    expect(JSON.stringify(trust.Condition)).toContain(`:role/Mango-${ns}-CodeInterpreter`);
     expect(bySid(statements, "ConversationDataRls").Resource).toEqual({ "Fn::GetAtt": [dataRoleId, "Arn"] });
   });
 

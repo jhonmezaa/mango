@@ -41,6 +41,8 @@ export interface MockAgentDefinition {
   /** Knowledge base ids (D88 (15)); the Builder has no picker for them yet. */
   knowledge_bases: string[];
   skills: string[];
+  /** `code_interpreter` (D114 (6)); the Builder has no checkbox for it yet (W1). */
+  capabilities: 'code_interpreter'[];
 }
 
 export interface MockAgentVersion {
@@ -191,6 +193,7 @@ function definition(
     users: [],
     knowledge_bases: [],
     skills: [],
+    capabilities: [],
     ...overrides,
   };
 }

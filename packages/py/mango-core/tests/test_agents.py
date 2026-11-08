@@ -250,3 +250,26 @@ def test_skills_are_left_out_of_the_canonical_form_while_empty() -> None:
 def test_skills_are_one_version_of_each_and_at_most_ten(value: list[str]) -> None:
     with pytest.raises(ValidationError):
         _definition(skills=value)
+
+
+# --- Capabilities (D114 (6)) ----------------------------------------------------------------
+
+
+def test_a_version_without_capabilities_keeps_its_bytes_and_hash() -> None:
+    assert "capabilities" not in dumps_definition(_definition())
+    assert content_hash(dumps_definition(_definition(capabilities=()))) == BASE_HASH
+
+
+def test_the_code_interpreter_is_part_of_the_approved_content() -> None:
+    with_code = _definition(capabilities=["code_interpreter", "code_interpreter"])
+    assert with_code.capabilities == ("code_interpreter",)
+    assert with_code.code_interpreter
+    assert not _definition().code_interpreter
+    assert content_hash(dumps_definition(with_code)) != BASE_HASH
+    assert json.loads(dumps_definition(with_code))["capabilities"] == ["code_interpreter"]
+
+
+@pytest.mark.parametrize("value", [["shell"], ["file_operations"], ["CODE_INTERPRETER"], "x"])
+def test_only_known_capabilities_are_accepted(value: object) -> None:
+    with pytest.raises(ValidationError):
+        _definition(capabilities=value)

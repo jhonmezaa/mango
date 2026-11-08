@@ -445,7 +445,7 @@ describe("who can reach a pack runtime (TM-M14, TM-B8)", () => {
       FunctionName: `Mango-${ns}-GatewayInterceptor`,
       // The Cost Explorer connector, the approval executor (D27) and the knowledge search
       // (D88 (36)): all Mango's own code.
-      Environment: { Variables: { CONTEXT_TARGETS: '["finops","ops","knowledge"]' } },
+      Environment: { Variables: { CONTEXT_TARGETS: '["finops","ops","knowledge","code"]' } },
     });
   });
 });
@@ -541,7 +541,7 @@ describe("pack provisioner function and state machine", () => {
     expect(environment.PACK_BOUNDARY_ARN).toEqual({ Ref: boundaryId });
     expect(JSON.parse(environment.PACK_ALLOWED_ACTIONS as string)).toEqual(PACK_DATA_ACTIONS);
     expect(environment.PACKS_BUCKET).toEqual({ Ref: bucketId });
-    expect(environment.CONNECTOR_TARGETS).toBe('["finops","ops","knowledge"]');
+    expect(environment.CONNECTOR_TARGETS).toBe('["finops","ops","knowledge","code"]');
     expect(environment.GATEWAY_ID).toEqual({ "Fn::GetAtt": [gatewayId, "GatewayIdentifier"] });
     expect(environment.POLICY_ENGINE_ID).toEqual({ "Fn::GetAtt": [engineId, "PolicyEngineId"] });
   });

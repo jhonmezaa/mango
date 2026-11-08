@@ -182,6 +182,7 @@ export function blankDefinition(context: BuilderContext): Definition {
     users: [],
     knowledge_bases: [],
     skills: [],
+    capabilities: [],
   };
 }
 
@@ -204,7 +205,7 @@ export function applyTemplate(
 }
 
 /** `[a, b, c]` as the backend stores sets: unique and sorted. */
-const sortedUnique = (values: readonly string[]) => [...new Set(values)].sort();
+const sortedUnique = <T extends string>(values: readonly T[]): T[] => [...new Set(values)].sort();
 
 /**
  * The definition as it is sent: trimmed texts, the design's default description and every
@@ -240,6 +241,8 @@ export function toInput(
     // No picker yet (D88, awaiting its design round): the ones the version has are kept.
     knowledge_bases: sortedUnique(definition.knowledge_bases),
     skills: sortedUnique(definition.skills),
+    // No checkbox yet (D114 (6), awaiting its design round, W1): the version's are kept.
+    capabilities: sortedUnique(definition.capabilities),
   };
 }
 

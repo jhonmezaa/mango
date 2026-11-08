@@ -710,6 +710,16 @@
             "title": "Approval Tools",
             "type": "array"
           },
+          "capabilities": {
+            "default": [],
+            "items": {
+              "const": "code_interpreter",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Capabilities",
+            "type": "array"
+          },
           "category": {
             "default": "",
             "title": "Category",
@@ -3668,6 +3678,14 @@
             "title": "Approval Tools",
             "type": "array"
           },
+          "capabilities": {
+            "items": {
+              "const": "code_interpreter",
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "category": {
             "title": "Category",
             "type": "string"
@@ -3774,7 +3792,8 @@
           "groups",
           "users",
           "knowledge_bases",
-          "skills"
+          "skills",
+          "capabilities"
         ],
         "title": "DefinitionOut",
         "type": "object"

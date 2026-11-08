@@ -50,9 +50,10 @@ describe("Gateway Cedar policies (L2)", () => {
 
   it("creates two permits and the matching forbids, and nothing else", () => {
     // Plus the pair of the write tools (D27, write-tools.test.ts) and the knowledge search
-    // (D88 (14), knowledge.test.ts).
+    // (D88 (14), knowledge.test.ts), and the code tools (D114 (13), code-connector.test.ts).
     expect(Object.keys(policies).sort()).toEqual(
       [
+        "CodeInterpreter",
         "FinopsOrgWide",
         "FinopsOrgWideForbidOthers",
         "FinopsRead",

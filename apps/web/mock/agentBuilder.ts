@@ -256,7 +256,7 @@ function secondsToNextUtcDay(): number {
 
 // --- Requests -------------------------------------------------------------------------------
 
-const sortedUnique = (values: string[]) => [...new Set(values)].sort();
+const sortedUnique = <T extends string>(values: T[]): T[] => [...new Set(values)].sort();
 
 /** The definition as the backend stores it, or null when it is not valid (422). */
 function parseDefinition(value: unknown): MockAgentDefinition | null {
@@ -296,6 +296,7 @@ function parseDefinition(value: unknown): MockAgentDefinition | null {
     users: sortedUnique(data.users),
     knowledge_bases: sortedUnique(data.knowledge_bases),
     skills: sortedUnique(data.skills),
+    capabilities: sortedUnique(data.capabilities),
   };
 }
 

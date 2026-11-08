@@ -11,7 +11,7 @@ Rows of the table in ``docs/architecture/decisions/D073-…``:
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any
 
@@ -25,8 +25,9 @@ from mango_api import app as app_module
 from mango_api import turns as turns_module
 from mango_api.budget import BudgetService, current_period
 from mango_api.settings import Settings
-from mango_core import budget_turns
+from mango_core import budget_turns, code_sandbox, invocation
 from mango_core.budget_turns import STATE_HELD, STATE_OPEN, PendingTurn
+from mango_core.code_sandbox import CellUse, Prices
 
 from .harness_wire import wire_stream
 from .test_app import (
@@ -42,6 +43,7 @@ from .test_app import (
     _auth,
     _events,
     _settings,
+    served,
 )
 from .test_approvals import GATEWAY_TOOL, write_agent
 
@@ -107,6 +109,7 @@ class Env:
     """The auxiliary model: only the title of a new conversation calls it."""
     seen: list[PendingTurn] = field(default_factory=list)
     """The pending records as they were when the agent was invoked."""
+    code_prices: Prices | None = None
 
     def __post_init__(self) -> None:
         self.agentcore.before = lambda: self.seen.extend(self.records())
@@ -130,7 +133,8 @@ class Env:
                 invocation_key=KEY,
             )
 
-        asgi = app_module.create_app(_settings(), services_factory=factory)
+        settings = replace(_settings(), code_interpreter_prices=self.code_prices)
+        asgi = app_module.create_app(settings, services_factory=factory)
         return TestClient(asgi, base_url=f"http://{HOST}", raise_server_exceptions=False)  # type: ignore[arg-type]
 
     def chat(self, conversation_id: str | None = CONVERSATION) -> Any:
@@ -287,6 +291,82 @@ def test_a_turn_whose_last_message_never_reported_its_usage_is_held(env: Env) ->
     assert (record.state, record.charged) == (STATE_HELD, CALL_COST)
     assert env.completed()["settlement"] == "pending"
     assert not _session_reusable(env)
+
+
+# --- Code cells (D115) -----------------------------------------------------------------
+
+PRICES = Prices.parse('{"vcpuHour": 0.0895, "gbHour": 0.00945}')
+
+
+def _runs_code(env: Env) -> None:
+    env.code_prices = PRICES
+    env.published.agents["finops"] = served(capabilities=["code_interpreter"])
+
+
+def test_a_turn_that_runs_code_reserves_its_cells_and_is_charged_what_was_metered(
+    env: Env,
+) -> None:
+    _runs_code(env)
+    env.conversations.code_cells = [CellUse(12, 1800), CellUse(3, 0)]
+    assert env.chat().status_code == 200
+    (pending,) = env.seen
+    # Rule 4: the cells at their cutoff and one new session, before the agent is called.
+    assert pending.reserved > code_sandbox.reserve(5, PRICES)
+    code = code_sandbox.cost(env.conversations.code_cells, PRICES)
+    assert env.conversations.code_turns == [pending.turn_id]
+    for scope in (USER, AGENT):
+        assert env.budget(scope) == _amounts(CALL_COST + code, Decimal(0))
+    assert env.completed()["code_usd"] == str(code)
+
+
+def test_the_invocation_of_a_turn_that_runs_code_names_its_conversation_and_turn(
+    env: Env,
+) -> None:
+    _runs_code(env)
+    assert env.chat().status_code == 200
+    (pending,) = env.seen
+    [gateway] = [t for t in env.agentcore.requests[0]["tools"] if t["type"] == "remote_mcp"]
+    header = gateway["config"]["remoteMcp"]["headers"][invocation.HEADER]
+    signed = invocation.verify(KEY, "user-1", header)
+    assert signed is not None
+    assert (signed.conversation_id, signed.turn_id) == (CONVERSATION, pending.turn_id)
+
+
+def test_a_turn_without_code_signs_and_charges_as_before(env: Env) -> None:
+    assert env.chat().status_code == 200
+    [gateway] = [t for t in env.agentcore.requests[0]["tools"] if t["type"] == "remote_mcp"]
+    signed = invocation.verify(
+        KEY, "user-1", gateway["config"]["remoteMcp"]["headers"][invocation.HEADER]
+    )
+    assert signed is not None
+    assert signed.conversation_id is None
+    assert env.conversations.code_turns == []
+    assert "code_usd" not in env.completed()
+
+
+def test_cells_that_cannot_be_read_are_charged_the_most_a_turn_may_run(env: Env) -> None:
+    _runs_code(env)
+    env.conversations.code_cells = None
+    assert env.chat().status_code == 200
+    most = code_sandbox.reserve(code_sandbox.CELLS_PER_TURN, PRICES)
+    assert env.budget()["spent"] == CALL_COST + most
+
+
+def test_a_held_turn_still_charges_its_cells(env: Env) -> None:
+    _runs_code(env)
+    env.conversations.code_cells = [CellUse(20, 1800)]
+    env.agentcore.stream = lambda: [TEXT, TOOL_USE, CALL, TEXT, TOOL_USE]
+    env.chat()
+    code = code_sandbox.cost(env.conversations.code_cells, PRICES)
+    (record,) = env.records()
+    assert (record.state, record.charged, record.tool_cost) == (STATE_HELD, CALL_COST + code, code)
+
+
+def test_a_version_that_runs_code_is_not_served_without_the_prices(env: Env) -> None:
+    env.published.agents["finops"] = served(capabilities=["code_interpreter"])
+    assert env.chat().status_code == 503
+    assert env.agentcore.requests == []
+    assert env.records() == []
 
 
 # --- 6. The harness reports an error ----------------------------------------------------

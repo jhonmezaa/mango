@@ -26,6 +26,11 @@ The ``knowledge-retrieve`` tool (D88 (14)) also gets, in ``_mango_ctx``, the kno
 mango-api signed for the agent version in use, and that agent: it searches no other base, and
 of those only the ones the person may use. The model can name none outside that list.
 
+The code tools (D114, ``code`` target) also get the subject, the agent, the conversation and
+the turn mango-api signed (claims ``conv`` and ``turn``, TM-CI2): the connector keys the
+person's sandbox session by them and meters each cell against the turn. A call of a code tool
+under a signature without them is refused here: the model can never name a conversation.
+
 A tool of an MCP pack goes through only if the release's signed manifest classifies it
 ``read`` (D84, ``PACK_TOOLS``): a write, destructive or unclassified tool of a pack, or a tool
 of a target the release does not know, is refused here whatever the agent version names. The
@@ -79,7 +84,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from mango_core import approval, approval_use, invocation, pack_identity, remote_mcp
-from mango_core.harness_tools import KNOWLEDGE_TARGET
+from mango_core.harness_tools import CODE_TARGET, KNOWLEDGE_TARGET
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -438,6 +443,20 @@ def _context(
                 "knowledge_bases": list(signed.knowledge_bases),
                 "agent_id": signed.agent_id,
                 "agent_version": signed.agent_version,
+            }
+        if target == CODE_TARGET:
+            if signed.conversation_id is None or signed.turn_id is None:
+                raise _RefusedError(
+                    403, _FORBIDDEN, "tool not allowed", "code_without_conversation"
+                )
+            return {
+                "token": token,
+                "subject": signed.subject,
+                "agent_id": signed.agent_id,
+                "agent_version": signed.agent_version,
+                "conversation_id": signed.conversation_id,
+                "turn_id": signed.turn_id,
+                "playground": signed.playground,
             }
         return {"token": token}
     if packs is None or target not in packs.targets:

@@ -27,12 +27,13 @@ export const RULE_CODES = [
   'skill_server_not_enabled',
   'skill_server_without_tools',
   'remote_not_usable',
+  'code_interpreter_unavailable',
 ] as const;
 export type RuleCode = (typeof RULE_CODES)[number];
 
 /** Codes the design has no text for yet: shown as an unknown rule, by their code. */
-const UNWORDED: ReadonlySet<string> = new Set<RuleCode>([]);
-export type WordedRuleCode = RuleCode;
+const UNWORDED: ReadonlySet<string> = new Set<RuleCode>(['code_interpreter_unavailable']);
+export type WordedRuleCode = Exclude<RuleCode, 'code_interpreter_unavailable'>;
 
 const KNOWN: ReadonlySet<string> = new Set(RULE_CODES);
 

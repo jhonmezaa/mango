@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
+from mango_core.code_sandbox import Prices
+
 
 @dataclass(frozen=True)
 class ModelPrice:
@@ -148,6 +150,10 @@ class Settings:
     knowledge_embedding_price: Decimal = Decimal(0)
     """USD per million tokens of the embedding model of the knowledge bases (rule 7): what a
     search of an agent adds to its turn (D88 (14))."""
+    code_interpreter_prices: Prices | None = None
+    """USD per vCPU-hour and per GB-hour of the code sandbox (D115 (2), rule 7): what a turn of
+    a version with ``code_interpreter`` reserves and is charged. ``None`` until the stack sets
+    it: then no version may run code (fail closed)."""
     skills_table: str = ""
     skills_bucket: str = ""
     """Skills of instructions (D92): their table and the bucket of their ``SKILL.md``; empty
@@ -267,6 +273,11 @@ class Settings:
             knowledge_sync_state_machine_arn=env.get("KNOWLEDGE_SYNC_STATE_MACHINE_ARN", ""),
             knowledge_base_id=env.get("KNOWLEDGE_BASE_ID", ""),
             knowledge_embedding_price=_price(env.get("KNOWLEDGE_EMBEDDING_PRICE", "0")),
+            code_interpreter_prices=(
+                Prices.parse(env["CODE_INTERPRETER_PRICES"])
+                if env.get("CODE_INTERPRETER_PRICES")
+                else None
+            ),
             skills_table=env.get("SKILLS_TABLE", ""),
             evals_table=env.get("EVALS_TABLE", ""),
             eval_judge_function=env.get("EVAL_JUDGE_FUNCTION", ""),

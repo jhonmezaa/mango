@@ -9,6 +9,7 @@ import {
   ChatFilesScanResultsProps,
   grantChatFilesApi,
 } from "../constructs/chat-files-scan.js";
+import { CodeConnector, CodeConnectorProps } from "../constructs/code-connector.js";
 import { CodeSandbox, CodeSandboxProps } from "../constructs/code-sandbox.js";
 import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
 import { EvalJudge, EvalJudgeProps } from "../constructs/eval-judge.js";
@@ -214,7 +215,8 @@ export class TurnWorkerStack extends CoreNestedStack {
 
 /**
  * The code sandbox (D114) and the malware scan of the chat files (D116 (2)): the Code Interpreter
- * `Mango_<ns>_sandbox` with its subnets and security group, the GuardDuty Malware Protection plan
+ * `Mango_<ns>_sandbox` with its subnets and security group, its connector behind the Gateway
+ * (target `code` and its Cedar policy), the GuardDuty Malware Protection plan
  * of the chat files bucket and its role `Mango-<ns>-ChatFilesScan`, the function that records
  * what each scan said (`Mango-<ns>-ChatFilesScanResults`) and mango-api's policy on the bucket.
  * Nothing here holds data: the bucket, its key and the sandbox VPC stay in Core (`ChatFiles`,
@@ -223,11 +225,14 @@ export class TurnWorkerStack extends CoreNestedStack {
 export interface SandboxStackProps extends CodeSandboxProps {
   readonly scanResults: Omit<ChatFilesScanResultsProps, "installation" | "bucket">;
   readonly apiTaskRole: iam.IRole;
+  /** The code connector behind the Gateway (D114 (1)): what it reaches of Core. */
+  readonly connector: Omit<CodeConnectorProps, "installation" | "codeInterpreter">;
 }
 
 export class SandboxStack extends CoreNestedStack {
   readonly sandbox: CodeSandbox;
   readonly scanResults: ChatFilesScanResults;
+  readonly connector: CodeConnector;
 
   constructor(scope: Construct, id: string, props: SandboxStackProps) {
     super(scope, id, "code sandbox");
@@ -247,6 +252,11 @@ export class SandboxStack extends CoreNestedStack {
       apiTaskRole: props.apiTaskRole,
       bucket: props.chatFiles.bucket,
       key: props.chatFiles.key,
+    });
+    this.connector = new CodeConnector(this, "CodeConnector", {
+      ...props.connector,
+      installation,
+      codeInterpreter: this.sandbox.codeInterpreter,
     });
   }
 }

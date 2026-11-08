@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import logging
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from mango_api.settings import ModelPrice
+from mango_core import code_sandbox
+from mango_core.agents import AgentDefinition
 from mango_core.budget_turns import TokenUsage, TurnPrice, token_cost
 from mango_core.knowledge_search import MAX_QUERY_CHARS, query_tokens
 
@@ -78,6 +81,44 @@ def knowledge_cost(searches: int, embedding_price: Decimal) -> Decimal:
     the reconciliation against the bill (§4.5). An estimate that never falls short."""
     tokens = searches * query_tokens("x" * MAX_QUERY_CHARS)
     return (Decimal(tokens) * embedding_price / _MILLION).quantize(Decimal("0.000001"))
+
+
+logger = logging.getLogger(__name__)
+
+
+class CodeUnavailableError(Exception):
+    """A version that runs code, without the sandbox prices: it cannot reserve (fail closed)."""
+
+
+def code_reservation(definition: AgentDefinition, prices: code_sandbox.Prices | None) -> Decimal:
+    """What the code cells of one turn of ``definition`` may cost (``_code_reserve``, D115 (1)):
+    its cells at the cutoff and one new session, at the prices of the configuration (rule 7)."""
+    if not definition.code_interpreter:
+        return Decimal(0)
+    if prices is None:
+        raise CodeUnavailableError
+    return code_sandbox.reserve(definition.limits.max_iterations, prices)
+
+
+CodeUses = Callable[[str, str], list[code_sandbox.CellUse]]
+"""``(user_id, turn_id) -> uses``: the cells of a turn as the connector metered them."""
+
+
+def code_charge(
+    uses: CodeUses | None, user_id: str, turn_id: str, prices: code_sandbox.Prices | None
+) -> Decimal:
+    """What the code cells of a turn cost (D115 (3)). When they cannot be read, the most a turn
+    may run: "I do not know" is never "nothing" (D73). Never raises."""
+    if prices is None:
+        return Decimal(0)
+    if uses is None:
+        logger.error("the code cells of a turn have no reader")
+        return code_sandbox.reserve(code_sandbox.CELLS_PER_TURN, prices)
+    try:
+        return code_sandbox.cost(uses(user_id, turn_id), prices)
+    except Exception:
+        logger.exception("the code cells of a turn could not be read")
+        return code_sandbox.reserve(code_sandbox.CELLS_PER_TURN, prices)
 
 
 JUDGE_INPUT_TOKENS = 6000

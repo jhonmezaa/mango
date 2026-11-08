@@ -55,7 +55,16 @@ from mango_api.budget import (
 )
 from mango_api.conversations import ConversationRecord, ConversationRepository, new_id
 from mango_api.model_catalog import ModelCatalogUnavailableError
-from mango_api.pricing import Usage, cost, estimate_max_cost, knowledge_cost, turn_price
+from mango_api.pricing import (
+    CodeUnavailableError,
+    Usage,
+    code_charge,
+    code_reservation,
+    cost,
+    estimate_max_cost,
+    knowledge_cost,
+    turn_price,
+)
 from mango_api.published import AgentUnavailableError, PublishedAgent, usable_by
 from mango_api.settings import ModelPrice
 from mango_api.settings_store import SettingsUnavailableError
@@ -220,10 +229,19 @@ def skill_counter(services: Services) -> Callable[[str], None] | None:
     return count
 
 
-def sign_invocation(services: Services, caller: Caller, agent: PublishedAgent) -> str:
+def sign_invocation(
+    services: Services,
+    caller: Caller,
+    agent: PublishedAgent,
+    *,
+    conversation_id: str,
+    turn_id: str,
+) -> str:
     """Signature binding this invocation's Gateway calls to mango-api, this user and the tools
-    of the agent version in use (audit finding F1, D33), with its knowledge bases (D88 (14))."""
+    of the agent version in use (audit finding F1, D33), with its knowledge bases (D88 (14))
+    and, for a version that runs code, the conversation and the turn (D114 (4), TM-CI2)."""
     expiry = min(caller.expires_at, int(time.time()) + agent.definition.limits.timeout_seconds + 60)
+    code = agent.definition.code_interpreter
     try:
         return invocation.sign(
             services.invocation_key,
@@ -233,6 +251,8 @@ def sign_invocation(services: Services, caller: Caller, agent: PublishedAgent) -
             agent_version=agent.version,
             tools=agent.gateway_tools,
             knowledge_bases=agent.definition.knowledge_bases,
+            conversation_id=conversation_id if code else None,
+            turn_id=turn_id if code else None,
         )
     except ValueError as exc:
         logger.exception("the agent's tools cannot be signed")
@@ -328,6 +348,26 @@ def knowledge_reserve(services: Services, agent: PublishedAgent) -> Decimal:
     )
 
 
+def code_reserve(services: Services, agent: PublishedAgent) -> Decimal:
+    """What the code cells of a turn may cost (``_code_reserve``, D115 (1)). A version that
+    runs code is not served without the sandbox prices."""
+    try:
+        return code_reservation(agent.definition, services.settings.code_interpreter_prices)
+    except CodeUnavailableError:
+        logger.exception("a version that runs code is served without the sandbox prices")
+        raise ApiError(503, "agent_unavailable", "please try again") from None
+
+
+def code_spent(services: Services, turn: PendingTurn) -> Decimal:
+    """What the code cells of the turn cost, as the connector metered them (D115 (3))."""
+    return code_charge(
+        services.conversations.code_uses,
+        turn.user_id,
+        turn.turn_id,
+        services.settings.code_interpreter_prices,
+    )
+
+
 def knowledge_searches(result: harness.InvocationResult) -> int:
     """Calls of the knowledge search the turn started. Counted from the stream, so a call of a
     pack tool with the same name counts too: at most a few millionths of a dollar more."""
@@ -342,6 +382,7 @@ def settle_turn(
     price: ModelPrice,
     detail: dict[str, Any],
     result: harness.InvocationResult,
+    runs_code: bool = False,
 ) -> bool:
     """Close the turn's reservation and audit the turn; never raises.
 
@@ -353,10 +394,14 @@ def settle_turn(
     pending record stays and the reconciler closes it.
 
     True when the reservation was closed here with a known end. The knowledge searches of the
-    turn are charged with it (D88 (14)).
+    turn are charged with it (D88 (14)), and so are its code cells (``runs_code``, D115 (3)),
+    held or not.
     """
-    known = cost(result.usage, price) + knowledge_cost(
-        knowledge_searches(result), services.settings.knowledge_embedding_price
+    code = code_spent(services, turn) if runs_code and result.started else Decimal(0)
+    known = (
+        cost(result.usage, price)
+        + knowledge_cost(knowledge_searches(result), services.settings.knowledge_embedding_price)
+        + code
     )
     final = result.usage_final or not result.started
     held = Decimal(0)
@@ -364,7 +409,7 @@ def settle_turn(
         if final:
             recorded = services.budgets.settle_turn(turn, known)
         else:
-            held_turn = services.budgets.hold_turn(turn, result.usage.tokens())
+            held_turn = services.budgets.hold_turn(turn, result.usage.tokens(), tool_cost=code)
             recorded = held_turn is not None
             held = held_turn.retained if held_turn is not None else held
         if not recorded:
@@ -381,6 +426,7 @@ def settle_turn(
                 "input_tokens": result.usage.input_tokens,
                 "output_tokens": result.usage.output_tokens,
                 "cost_usd": str(known),
+                **({"code_usd": str(code)} if runs_code else {}),
                 # ``pending``: the cost above is only what was known when the turn was cut;
                 # ``budget.reconciled`` says what it cost in the end.
                 "settlement": ("reconciler" if not recorded else "final" if final else "pending"),
@@ -603,7 +649,13 @@ class CheckedTurn:
 
 
 def check_turn(
-    services: Services, caller: Caller, agent: PublishedAgent, requested_model: str | None
+    services: Services,
+    caller: Caller,
+    agent: PublishedAgent,
+    requested_model: str | None,
+    *,
+    conversation_id: str,
+    turn_id: str,
 ) -> CheckedTurn:
     """Model, price, the token's margin and the signature: checked on receipt by mango-api
     and again by the worker right before it reserves (TM-TW2, TM-TW9)."""
@@ -620,7 +672,12 @@ def check_turn(
         # The token must outlive the agent loop (TM-I5); a turn that waited in the queue is
         # checked again before it starts (TM-TW2).
         raise HTTPException(status_code=401, detail="token about to expire; sign in again")
-    return CheckedTurn(agent, model_id, price, sign_invocation(services, caller, agent))
+    return CheckedTurn(
+        agent,
+        model_id,
+        price,
+        sign_invocation(services, caller, agent, conversation_id=conversation_id, turn_id=turn_id),
+    )
 
 
 # --- The chat turn: transport -----------------------------------------------------------
@@ -1249,7 +1306,14 @@ class ChatTurns:
         if not allowed:
             raise HTTPException(status_code=403, detail="not allowed")
         agent = admit(agent_id, agent, record, message.agent_id)
-        checked = check_turn(services, caller, agent, message.model)
+        checked = check_turn(
+            services,
+            caller,
+            agent,
+            message.model,
+            conversation_id=message.conversation_id,
+            turn_id=message.turn_id,
+        )
         agent = checked.agent
         if signature_context(agent) != message.signature_context:
             # Another version (or other tools) than the one mango-api checked: never signed.
@@ -1278,14 +1342,18 @@ class ChatTurns:
             services.chat_files, user.user_id, conversation_id, message.attachments
         )
 
-        # Reserved with the price of the model this turn runs on (D22, rule 4), and the
-        # knowledge searches it may make (D88 (14)).
-        estimate = estimate_max_cost(
-            price,
-            sum(len(t.text) for t in history),
-            limits.max_iterations,
-            limits.reserved_output_tokens,
-        ) + knowledge_reserve(services, agent)
+        # Reserved with the price of the model this turn runs on (D22, rule 4), the knowledge
+        # searches it may make (D88 (14)) and its code cells (D115 (1)).
+        estimate = (
+            estimate_max_cost(
+                price,
+                sum(len(t.text) for t in history),
+                limits.max_iterations,
+                limits.reserved_output_tokens,
+            )
+            + knowledge_reserve(services, agent)
+            + code_reserve(services, agent)
+        )
         period = current_period()
         scopes = budget_scopes(services, user, agent_id)
         turn = {"agent": agent_id, "version": agent.version, "model": model_id}
@@ -1549,6 +1617,7 @@ class ChatTurns:
                 price=started.price,
                 detail=started.detail,
                 result=result,
+                runs_code=agent.definition.code_interpreter,
             )
             if activity is not None:
                 activity.end()

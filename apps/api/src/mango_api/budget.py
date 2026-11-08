@@ -172,10 +172,15 @@ class BudgetService:
             self._db, self._table, turn, actual, self._sleep, invoked=invoked
         )
 
-    def hold_turn(self, turn: PendingTurn, usage: TokenUsage) -> PendingTurn | None:
-        """The end of the turn is not known: charge the usage counted so far and keep the rest
-        of the reservation until the reconciler closes it. None if it was already closed."""
-        return budget_turns.hold(self._db, self._table, turn, usage, self._sleep)
+    def hold_turn(
+        self, turn: PendingTurn, usage: TokenUsage, *, tool_cost: Decimal = Decimal(0)
+    ) -> PendingTurn | None:
+        """The end of the turn is not known: charge the usage counted so far, and the metered
+        cost of its tools (``tool_cost``, D115 (3)), and keep the rest of the reservation until
+        the reconciler closes it. None if it was already closed."""
+        return budget_turns.hold(
+            self._db, self._table, turn, usage, self._sleep, tool_cost=tool_cost
+        )
 
     def charge(
         self,

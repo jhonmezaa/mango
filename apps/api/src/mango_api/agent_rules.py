@@ -52,6 +52,8 @@ class RuleContext:
     skills: Mapping[str, SkillVersion] = field(default_factory=dict)
     """The approved skill versions the version names, by ``<id>@<version>`` (D92). One that is
     not here was never approved."""
+    code_interpreter: bool = False
+    """The installation serves the code sandbox (D114); without it no version may run code."""
 
 
 @dataclass(frozen=True)
@@ -157,9 +159,14 @@ def _models(definition: AgentDefinition, models: ModelCatalog) -> list[Violation
     disabled = tuple(m for m, entry in entries.items() if entry is None or not entry.enabled)
     if disabled:
         out.append(Violation("model_not_enabled", "allowed_models", disabled))
-    # The knowledge bases are searched with a tool too (``knowledge-retrieve``, D88 (14)), and
-    # skills are loaded with one (``skills``, D92).
-    if definition.tools or definition.knowledge_bases or definition.skills:
+    # The knowledge bases are searched with a tool too (``knowledge-retrieve``, D88 (14)),
+    # skills are loaded with one (``skills``, D92) and code runs with three (D114).
+    if (
+        definition.tools
+        or definition.knowledge_bases
+        or definition.skills
+        or definition.capabilities
+    ):
         no_tools = tuple(m for m, e in entries.items() if e is not None and not e.supports_tools)
         if no_tools:
             out.append(Violation("model_without_tools", "allowed_models", no_tools))
@@ -220,6 +227,13 @@ def _knowledge(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]
         if (kb := ctx.knowledge.get(kb_id)) is None or kb.status is KnowledgeStatus.DELETING
     )
     return [Violation("knowledge_base_unavailable", "knowledge_bases", gone)] if gone else []
+
+
+def _capabilities(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]:
+    """Running code needs the installation's sandbox (D114 (6)): fail closed without it."""
+    if definition.code_interpreter and not ctx.code_interpreter:
+        return [Violation("code_interpreter_unavailable", "capabilities")]
+    return []
 
 
 def _skills(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]:
@@ -340,4 +354,5 @@ def validate_for_review(
         *_access(definition, ctx),
         *_knowledge(definition, ctx),
         *_skills(definition, ctx),
+        *_capabilities(definition, ctx),
     ]

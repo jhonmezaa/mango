@@ -438,3 +438,21 @@ def test_skills_need_a_model_with_tools() -> None:
     ctx = replace(_ctx(), skills={"costs@1": _skill("costs", 1, ["cost-explorer"])})
     ctx = replace(ctx, models=ModelCatalog((_model(SONNET, tools=False),), version=1))
     assert "model_without_tools" in _codes(_definition(skills=["costs@1"]), ctx)
+
+
+# --- Running code (D114 (6)) -----------------------------------------------------------
+
+
+def test_running_code_needs_the_installations_sandbox() -> None:
+    code = _definition(capabilities=["code_interpreter"])
+    assert _codes(code, replace(_ctx(), code_interpreter=True)) == []
+    assert validate_for_review(SELF, code, _ctx()) == [
+        Violation("code_interpreter_unavailable", "capabilities")
+    ]
+
+
+def test_running_code_needs_a_model_with_tools() -> None:
+    ctx = replace(_ctx(models=(_model(SONNET, tools=False),)), code_interpreter=True)
+    assert _codes(_definition(tools=[], capabilities=["code_interpreter"]), ctx) == [
+        "model_without_tools"
+    ]

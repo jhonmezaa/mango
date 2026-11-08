@@ -90,6 +90,7 @@ from mango_core.agents import (
     ROOT_SUPERVISOR,
     AgentDefinition,
     AgentStatus,
+    Capability,
     InvalidDefinitionError,
     VersionStatus,
     dumps_definition,
@@ -136,6 +137,7 @@ _SET_FIELDS = (
     "users",
     "knowledge_bases",
     "skills",
+    "capabilities",
 )
 _IN_USE_STATUSES = (VersionStatus.APPROVED, VersionStatus.PUBLISHED, VersionStatus.FAILED)
 """Versions that serve, or may serve without another review: a failed one is retried as it is."""
@@ -226,6 +228,8 @@ class DefinitionOut(_Strict):
     knowledge_bases: list[str]
     skills: list[str]
     """``<id>@<version>`` of the approved skill versions the agent uses (D92)."""
+    capabilities: list[Capability]
+    """What the version may do besides its tools: ``code_interpreter`` runs code (D114 (6))."""
 
 
 class KnowledgeBaseRefOut(_Strict):
@@ -600,6 +604,9 @@ class AgentsDeps:
     eval_gate: Any = None
     """``evals.EvalGate`` (D26): a required suite that has not passed on the version's content
     blocks its approval; submitting starts its suites. ``None`` where evals do not exist."""
+    code_interpreter: bool = False
+    """The installation serves the code sandbox (D114): its prices are configured. Without it
+    a version with ``code_interpreter`` does not pass the rules (fail closed)."""
 
 
 class _PendingOrg:
@@ -651,6 +658,7 @@ def _rule_context(
         org=_PendingOrg(deps.store) if approving else deps.store,
         knowledge=_knowledge_bases(deps, definition.knowledge_bases),
         skills=_skill_versions(deps, definition.skills),
+        code_interpreter=deps.code_interpreter,
     )
 
 
@@ -687,6 +695,7 @@ def _definition_out(definition: AgentDefinition) -> DefinitionOut:
         users=list(definition.users),
         knowledge_bases=list(definition.knowledge_bases),
         skills=list(definition.skills),
+        capabilities=list(definition.capabilities),
     )
 
 

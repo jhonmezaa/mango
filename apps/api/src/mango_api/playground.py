@@ -57,7 +57,16 @@ from mango_api.budget import (
     current_period,
 )
 from mango_api.model_catalog import ModelCatalog, ModelCatalogUnavailableError
-from mango_api.pricing import cost, estimate_max_cost, knowledge_cost, turn_price
+from mango_api.pricing import (
+    CodeUnavailableError,
+    CodeUses,
+    code_charge,
+    code_reservation,
+    cost,
+    estimate_max_cost,
+    knowledge_cost,
+    turn_price,
+)
 from mango_api.published import AgentUnavailableError, PublishedAgent, PublishedAgents, usable_by
 from mango_api.rate_limits import Leases, Limiter
 from mango_api.settings import ModelPrice
@@ -74,6 +83,7 @@ from mango_core.agents import (
     dumps_definition,
 )
 from mango_core.budget_turns import PendingTurn
+from mango_core.code_sandbox import Prices
 from mango_core.harness_tools import KNOWLEDGE_TOOL
 from mango_core.identity import UserContext
 from mango_core.playground import PLAYGROUND_ID, SETTINGS_PK, SETTINGS_SK, PlaygroundHarness
@@ -200,6 +210,11 @@ class PlaygroundDeps:
     authorizer: Authorizer | None = None
     """Decides which remote MCP tools the person gets (``UseRemoteMcp``, D98 (2)). Without it a
     test gets none."""
+    code_prices: Prices | None = None
+    """Prices of the code sandbox (D115 (2)); without them a version that runs code is not
+    tested."""
+    code_uses: CodeUses | None = None
+    """The cells of a test as the code connector metered them (D115 (3))."""
 
 
 @dataclass(frozen=True)
@@ -341,11 +356,16 @@ def _prepare(
     )
 
 
-def _signature(deps: PlaygroundDeps, caller: Caller, agent: PublishedAgent) -> str:
+def _signature(
+    deps: PlaygroundDeps | Any, caller: Caller, agent: PublishedAgent, run_id: str
+) -> str:
     """The invocation names the person, the version tested, its tools and knowledge bases,
-    and ``pg``: the Gateway refuses every write tool under it (D91 (2))."""
+    and ``pg``: the Gateway refuses every write tool under it (D91 (2)). A version that runs
+    code also names its run, as conversation and turn: a new sandbox session per test, which
+    its life closes (D115 (5))."""
     limits = agent.definition.limits
     expiry = min(caller.expires_at, int(time.time()) + limits.timeout_seconds + 60)
+    code = agent.definition.code_interpreter
     try:
         return invocation.sign(
             deps.invocation_key,
@@ -356,6 +376,8 @@ def _signature(deps: PlaygroundDeps, caller: Caller, agent: PublishedAgent) -> s
             tools=agent.gateway_tools,
             knowledge_bases=agent.definition.knowledge_bases,
             playground=True,
+            conversation_id=run_id if code else None,
+            turn_id=run_id if code else None,
         )
     except ValueError as exc:
         raise ApiError(422, "version_not_testable", "this version cannot be tested") from exc
@@ -397,6 +419,16 @@ def run_test(
         if agent.definition.knowledge_bases
         else Decimal(0)
     )
+    try:
+        estimate += code_reservation(agent.definition, deps.code_prices)
+    except CodeUnavailableError:
+        put(
+            _sse(
+                "error",
+                {"code": "version_not_testable", "message": "this version cannot be tested"},
+            )
+        )
+        return
     detail: dict[str, Any] = {
         "agent": agent.agent_id,
         "version": agent.version,
@@ -490,7 +522,7 @@ def run_test(
             # A test harness without memory (D122 (8), TM-ME9).
             actor_id=memory.TEST_ACTOR,
             access_token=caller.token,
-            invocation_signature=_signature(deps, caller, agent),
+            invocation_signature=_signature(deps, caller, agent, run_id),
             history=[harness.ChatTurn("user", message)],
             test_skills=test.skill_sources,
         )
@@ -540,7 +572,16 @@ def run_test(
         )
         put(_sse("error", {"code": "upstream_error", "message": "the test failed"}))
     finally:
-        _settle(deps, caller, pending, test.price, result, detail, simulated)
+        _settle(
+            deps,
+            caller,
+            pending,
+            test.price,
+            result,
+            detail,
+            simulated,
+            runs_code=agent.definition.code_interpreter,
+        )
 
 
 def _settle(  # noqa: PLR0917 - the parts of one test, all required
@@ -551,18 +592,27 @@ def _settle(  # noqa: PLR0917 - the parts of one test, all required
     result: harness.InvocationResult,
     detail: dict[str, Any],
     simulated: list[str],
+    *,
+    runs_code: bool = False,
 ) -> None:
-    """Close the reservation like a chat turn (D73) and audit the test; never raises."""
+    """Close the reservation like a chat turn (D73) and audit the test; never raises. Its code
+    cells are charged with it, held or not (D115 (3), (5))."""
     searches = sum(
         1 for t in result.tools if t["name"] == KNOWLEDGE_TOOL and t["status"] == "started"
     )
-    known = cost(result.usage, price) + knowledge_cost(searches, deps.knowledge_price)
+    code = (
+        code_charge(deps.code_uses, turn.user_id, turn.turn_id, deps.code_prices)
+        if runs_code and result.started
+        else Decimal(0)
+    )
+    known = cost(result.usage, price) + knowledge_cost(searches, deps.knowledge_price) + code
     final = result.usage_final or not result.started
     try:
         if final:
             recorded = deps.budgets.settle_turn(turn, known)
         else:
-            recorded = deps.budgets.hold_turn(turn, result.usage.tokens()) is not None
+            held = deps.budgets.hold_turn(turn, result.usage.tokens(), tool_cost=code)
+            recorded = held is not None
         deps.audit.emit(
             "playground.run",
             caller.user.user_id,

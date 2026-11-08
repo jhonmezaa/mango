@@ -324,3 +324,59 @@ def test_the_connection_claim_is_under_the_mac() -> None:
     payload["cx"] = "disconnect"
     swapped = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
     assert verify(KEY, "user-1", f"v2.{swapped}.{mac}", now=NOW) is None
+
+
+# --- The conversation and the turn of a version that runs code (D114 (4), TM-CI2) -----------
+
+CONVERSATION = "a" * 32
+TURN = "b" * 32
+
+
+def test_the_conversation_and_the_turn_are_signed_together() -> None:
+    signed = verify(KEY, "user-1", _sign(conversation_id=CONVERSATION, turn_id=TURN), now=NOW)
+    assert signed is not None
+    assert (signed.conversation_id, signed.turn_id) == (CONVERSATION, TURN)
+
+
+def test_a_signature_without_them_stays_as_it_was() -> None:
+    assert _sign(conversation_id=None, turn_id=None) == PINNED
+    signed = verify(KEY, "user-1", PINNED, now=NOW)
+    assert signed is not None
+    assert (signed.conversation_id, signed.turn_id) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"conversation_id": CONVERSATION},
+        {"turn_id": TURN},
+        {"conversation_id": "not-an-id", "turn_id": TURN},
+        {"conversation_id": CONVERSATION, "turn_id": "B" * 32},
+    ],
+)
+def test_sign_refuses_half_a_scope_or_one_that_is_not_an_id(overrides: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="invalid invocation"):
+        _sign(**overrides)
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        {"conv": CONVERSATION},
+        {"turn": TURN},
+        {"conv": 1, "turn": TURN},
+        {"conv": CONVERSATION, "turn": ["x"]},
+        {"conv": "../" + "a" * 29, "turn": TURN},
+    ],
+)
+def test_a_well_signed_scope_of_another_shape_is_refused(claims: dict[str, Any]) -> None:
+    payload = {"sub": "user-1", "exp": EXPIRES, "agent": "finops", "ver": 3, "tools": TOOLS}
+    assert verify(KEY, "user-1", _forge({**payload, **claims}), now=NOW) is None
+
+
+def test_the_conversation_is_under_the_mac() -> None:
+    _, encoded, mac = _sign(conversation_id=CONVERSATION, turn_id=TURN).split(".")
+    payload = json.loads(base64.urlsafe_b64decode(encoded + "=="))
+    payload["conv"] = "c" * 32
+    swapped = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    assert verify(KEY, "user-1", f"v2.{swapped}.{mac}", now=NOW) is None

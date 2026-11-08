@@ -221,6 +221,9 @@ describe("Admin v0 infrastructure (D17)", () => {
         // (knowledge.test.ts, D88 (40)).
         g.statement.Sid !== "DeadLetterQueueKey" &&
         !(g.statement.Sid === "DocumentsKey" && g.statement.Condition?.StringEquals?.["kms:ViaService"] === "s3.us-east-1.amazonaws.com") &&
+        // The code connector writes the cells' files with the chat files key through S3, only
+        // (code-connector.test.ts, D114 (13)).
+        !(g.statement.Sid === "ChatFilesKey" && g.statement.Condition?.StringEquals?.["kms:ViaService"] === "s3.us-east-1.amazonaws.com") &&
         !JSON.stringify(g.statement.Resource).includes("RunQueueKey") &&
         grants().some((o) => o.roles.join() === g.roles.join() && actions(o.statement).includes("dynamodb:PutItem")),
     );

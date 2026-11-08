@@ -76,6 +76,7 @@ const DEFINITION: Version['definition'] = {
   users: [],
   knowledge_bases: [],
   skills: [],
+  capabilities: [],
 };
 
 /** A change to a published agent: every kind of difference the backend reports. */

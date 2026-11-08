@@ -362,6 +362,10 @@ export type AgentDefinition = {
      */
     approval_tools?: Array<string>;
     /**
+     * Capabilities
+     */
+    capabilities?: Array<'code_interpreter'>;
+    /**
      * Category
      */
     category?: string;
@@ -2071,6 +2075,10 @@ export type DefinitionOut = {
      * Approval Tools
      */
     approval_tools: Array<string>;
+    /**
+     * Capabilities
+     */
+    capabilities: Array<'code_interpreter'>;
     /**
      * Category
      */

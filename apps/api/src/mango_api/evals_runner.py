@@ -66,6 +66,10 @@ from mango_api.evals_store import (
 from mango_api.model_catalog import ModelCatalog, ModelCatalogUnavailableError
 from mango_api.playground import _signature, _skill_sources
 from mango_api.pricing import (
+    CodeUnavailableError,
+    CodeUses,
+    code_charge,
+    code_reservation,
     cost,
     eval_case_reservation,
     judge_reservation,
@@ -80,6 +84,7 @@ from mango_api.web import Caller
 from mango_core import task_runs, usage_days
 from mango_core.agents import VersionStatus, content_hash
 from mango_core.budget_turns import PendingTurn, TokenUsage, token_cost
+from mango_core.code_sandbox import Prices
 from mango_core.evals import EvalCase
 from mango_core.evals_harness import (
     CAPTURE_SK,
@@ -246,6 +251,11 @@ class EvalRunnerDeps:
     skills: SkillStore | None = None
     skills_bucket: str = ""
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    code_prices: Prices | None = None
+    """Prices of the code sandbox (D115 (2)); without them a case of a version that runs code
+    is skipped."""
+    code_uses: CodeUses | None = None
+    """The cells of a case as the code connector metered them (D115 (3))."""
 
 
 class StopRunError(Exception):
@@ -376,6 +386,10 @@ class EvalRunner:
             limits.reserved_output_tokens,
             d.knowledge_price if agent.definition.knowledge_bases else None,
         )
+        try:
+            estimate += code_reservation(agent.definition, d.code_prices)
+        except CodeUnavailableError:
+            return CaseResult("skipped", "code_unavailable")
         turn_id = secrets.token_hex(16)
         scopes = d.scopes(caller, agent.agent_id)
         pending = PendingTurn.new(
@@ -430,7 +444,7 @@ class EvalRunner:
                 actor_id=memory.TEST_ACTOR,
                 access_token=caller.token,
                 # The test mark: the Gateway refuses every write tool under it (D91 (2)).
-                invocation_signature=_signature(d, caller, agent),  # type: ignore[arg-type]
+                invocation_signature=_signature(d, caller, agent, turn_id),
                 history=[harness.ChatTurn("user", case.question)],
                 test_skills=sources,
             )
@@ -475,12 +489,17 @@ class EvalRunner:
         searches = sum(
             1 for t in result.tools if t["name"] == KNOWLEDGE_TOOL and t["status"] == "started"
         )
-        known = cost(result.usage, price) + knowledge_cost(searches, d.knowledge_price)
+        code = (
+            code_charge(d.code_uses, pending.user_id, pending.turn_id, d.code_prices)
+            if result.started
+            else Decimal(0)
+        )
+        known = cost(result.usage, price) + knowledge_cost(searches, d.knowledge_price) + code
         try:
             if result.usage_final or not result.started:
                 d.budgets.settle_turn(pending, known, invoked=result.started)
             else:
-                d.budgets.hold_turn(pending, result.usage.tokens())
+                d.budgets.hold_turn(pending, result.usage.tokens(), tool_cost=code)
         except Exception:
             logger.exception("eval case accounting failed")
         return verdict
