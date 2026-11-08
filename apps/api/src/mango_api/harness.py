@@ -29,6 +29,8 @@ from mango_api.pricing import Usage
 from mango_core import invocation, remote_mcp
 from mango_core.agents import AgentLimits
 from mango_core.harness_tools import (
+    CODE_RUN_TOOL,
+    CODE_TARGET,
     GATEWAY_MCP_SERVER,
     KNOWLEDGE_TARGET,
     KNOWLEDGE_TOOL,
@@ -181,6 +183,8 @@ class Phase(StrEnum):
     """Every tool call has answered and the model is working on the results."""
     WRITING = "writing"
     """Checked text of the answer is arriving."""
+    CODE = "code"
+    """A cell of the code sandbox is running (D114, design «Ejecutando código…»)."""
 
 
 class _Progress:
@@ -383,6 +387,20 @@ def paragraph_separator(text: str) -> str:
     if not text or text.endswith(PARAGRAPH_BREAK):
         return ""
     return "\n" if text.endswith("\n") else PARAGRAPH_BREAK
+
+
+CODE_RUN = gateway_tool_name(CODE_TARGET, CODE_RUN_TOOL)
+"""Gateway name of the tool that runs a cell (``code___run_python``, D114 (5))."""
+
+
+def code_run_names(allowed: Iterable[str]) -> frozenset[str]:
+    """The cell tool, when the invocation allows it: only then is a call of it a cell (the name
+    in the stream is written by the model, TM-LP1)."""
+    return (
+        frozenset({CODE_RUN})
+        if allowed_tool(CODE_TARGET, CODE_RUN_TOOL) in allowed
+        else frozenset()
+    )
 
 
 def _captured_tool(raw: str, capture: frozenset[str]) -> str | None:
@@ -773,6 +791,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     searches = _Searches(request.get("allowedTools", []))
     skill_calls = _SkillCalls(skills, on_skill)
     remote_calls = _RemoteCalls(remotes or {}, result)
+    code_runs = code_run_names(request.get("allowedTools", []))
+    code_calls: set[str] = set()
     # Write tool calls in flight: the Gateway refuses them, whatever the harness does next.
     refused: set[str] = set()
     asked = False
@@ -827,8 +847,14 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                     result.text += separator
                     yield StreamEvent("delta", {"text": separator})
                 result.tools.append({"name": name, "status": "started"})
-                yield StreamEvent("tool", {"name": name, "status": "started"})
-                yield from progress.to(Phase.TOOL, name if name in known_tools else "")
+                if code_runs and _captured_tool(raw_name, code_runs) is not None:
+                    # A cell of the sandbox: the chat shows it as its «Analizando» block.
+                    code_calls.add(tool_id)
+                    yield StreamEvent("tool", {"name": name, "status": "started", "code": True})
+                    yield from progress.to(Phase.CODE)
+                else:
+                    yield StreamEvent("tool", {"name": name, "status": "started"})
+                    yield from progress.to(Phase.TOOL, name if name in known_tools else "")
             elif "toolResult" in start:
                 # The message before this result never reported its end: nothing is asked.
                 write_calls.drop()
@@ -846,7 +872,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                     block.get("contentBlockIndex", -1), tool_id, failed=status == "error"
                 )
                 result.tools.append({"name": name, "status": status})
-                yield StreamEvent("tool", {"name": name, "status": status})
+                cell = {"code": True} if tool_id in code_calls else {}
+                code_calls.discard(tool_id)
+                yield StreamEvent("tool", {"name": name, "status": status, **cell})
                 if on_call is not None and tool_id in called_at and name in known_tools:
                     elapsed = max(0, round((clock() - called_at.pop(tool_id)) * 1000))
                     on_call(ToolCall(name=name, ok=status != "error", ms=elapsed))

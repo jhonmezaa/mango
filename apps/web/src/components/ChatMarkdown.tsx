@@ -15,7 +15,13 @@ import remarkGfm from 'remark-gfm';
 import { useConnections } from '../pages/connections/ConnectionsContext';
 import { RemoteLinkDialog } from '../security/RemoteLinkDialog';
 import { classifyRemoteLink, type RemoteLinkSource } from '../security/remoteLinks';
-import { markdownUrlTransform, parseExternalHttpUrl } from '../security/safeUrl';
+import {
+  fileLinkTarget,
+  isFileLink,
+  markdownUrlTransform,
+  parseExternalHttpUrl,
+} from '../security/safeUrl';
+import { useDownload } from './chat/chatFiles';
 import { ExternalLinkDialog } from './ExternalLinkDialog';
 import { ShieldIcon } from './icons';
 import { rehypeNumericColumns } from './markdownTables';
@@ -29,6 +35,36 @@ const RemoteSources = createContext<readonly RemoteLinkSource[]>([]);
  */
 export type StripLinks = readonly RemoteLinkSource[] | 'pending' | 'failed' | null;
 const StripSources = createContext<StripLinks>(null);
+/** The files the server announced in this answer (C4): the only ones its links may name. */
+export interface AnnouncedFile {
+  file_id: string;
+  name: string;
+}
+const AnnouncedFiles = createContext<readonly AnnouncedFile[]>([]);
+
+/**
+ * A link of the answer to one of its files (`mango-file:<id>` or `sandbox:/mnt/data/<name>`,
+ * rea-gaps §2.3): a button that downloads it by id. A link to anything else stays plain text.
+ */
+function FileLink({ href, children }: { href: string; children: ReactNode }) {
+  const files = useContext(AnnouncedFiles);
+  const download = useDownload();
+  const fileId = fileLinkTarget(href, files);
+  const file = fileId ? files.find((f) => f.file_id === fileId) : undefined;
+  if (!file) return <span>{children}</span>;
+  return (
+    <button
+      type="button"
+      className="md-link"
+      title={file.name}
+      onClick={() => {
+        void download(file);
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 function ExternalLink({ href, children }: { href: string | undefined; children: ReactNode }) {
   const { t } = useTranslation();
@@ -125,7 +161,12 @@ const remarkPlugins = [remarkGfm];
 const rehypePlugins = [rehypeNumericColumns];
 
 const components: Components = {
-  a: ({ href, children }) => <ExternalLink href={href}>{children}</ExternalLink>,
+  a: ({ href, children }) =>
+    href && isFileLink(href) ? (
+      <FileLink href={href}>{children}</FileLink>
+    ) : (
+      <ExternalLink href={href}>{children}</ExternalLink>
+    ),
   img: () => <BlockedImage />,
   // Design markdown.js: `####` renders as the smallest heading (h3).
   h4: ({ children }) => <h3>{children}</h3>,
@@ -147,15 +188,19 @@ interface Props {
    * are shown struck through, without a link, with a note under the text (design round 25).
    */
   strip?: StripLinks;
+  /** The files the server announced in this answer: its links to them download them (C4). */
+  files?: readonly AnnouncedFile[];
 }
 
 const NO_REMOTE: readonly RemoteLinkSource[] = [];
+const NO_FILES: readonly AnnouncedFile[] = [];
 
 /**
  * Renders untrusted LLM markdown (TM-012):
  * - raw HTML is dropped (`skipHtml`, no rehype-raw), so no element or attribute from the model
  *   reaches the DOM as markup;
- * - URLs are limited to http(s) and every link needs explicit confirmation;
+ * - URLs are limited to http(s) and every link needs explicit confirmation; a link to a file
+ *   of the answer only downloads one the server announced in it, by id (C4);
  * - images are replaced by a placeholder;
  * - the only rehype plugin is ours and only adds a class to table cells (no raw HTML);
  * - no Mermaid, KaTeX or other plugins that execute or inject content.
@@ -165,6 +210,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   streaming = false,
   remote = NO_REMOTE,
   strip = null,
+  files = NO_FILES,
 }: Props) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -182,26 +228,28 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   if (remote.length > 0) classes.push('rm-md');
   return (
     <RemoteSources value={remote}>
-      <StripSources value={strip}>
-        <div ref={ref} className={classes.join(' ')}>
-          <Markdown
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={rehypePlugins}
-            skipHtml
-            urlTransform={markdownUrlTransform}
-            components={components}
-          >
-            {children}
-          </Markdown>
-        </div>
-        {strip === 'failed' && LINK_IN_TEXT.test(children) && <RecheckNote />}
-        {stripped > 0 && (
-          <div className="rm-nolink-note">
-            <ShieldIcon size={12} />
-            <span>{t('connections.stripped.note', { count: stripped })}</span>
+      <AnnouncedFiles value={files}>
+        <StripSources value={strip}>
+          <div ref={ref} className={classes.join(' ')}>
+            <Markdown
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={rehypePlugins}
+              skipHtml
+              urlTransform={markdownUrlTransform}
+              components={components}
+            >
+              {children}
+            </Markdown>
           </div>
-        )}
-      </StripSources>
+          {strip === 'failed' && LINK_IN_TEXT.test(children) && <RecheckNote />}
+          {stripped > 0 && (
+            <div className="rm-nolink-note">
+              <ShieldIcon size={12} />
+              <span>{t('connections.stripped.note', { count: stripped })}</span>
+            </div>
+          )}
+        </StripSources>
+      </AnnouncedFiles>
     </RemoteSources>
   );
 });

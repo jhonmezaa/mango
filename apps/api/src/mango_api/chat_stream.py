@@ -11,7 +11,12 @@ and translates it here into deltas ``{c, p, o, v}`` over messages
   for are data of its ``metadata``;
 * each tool call is a message of its own (``recipient`` = the tool's display name, as the
   stream of D57 named it) and its result another one, ``author.role = "tool"``, without
-  content: what a tool answered never reaches the browser (D90 (3)).
+  content: what a tool answered never reaches the browser (D90 (3));
+* a cell of the code sandbox (C4, D114 (7)) is a call with ``recipient = "code.run_python"``
+  and ``content_type = "code"``; its result carries what the chat shows of the cell in
+  ``metadata.aggregate_result`` (``code_blocks.CodeCellOut``: code, output with its cap, the
+  exception and its files by id, after ``ApplyGuardrail``), the «Analizando» block. It is
+  content of the conversation, not of the tool's answer to the model.
 
 The translation is a pure function of the record: the same events always give the same
 deltas, numbered from 1. A reader that resumes with ``after=<n>`` replays the record without
@@ -30,6 +35,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from mango_api.code_blocks import CODE_RECIPIENT
 from mango_api.turns_store import TurnEvent, TurnState, TurnStatus
 
 ENCODING = "v1"
@@ -51,6 +57,7 @@ MESSAGE_PATHS: frozenset[str] = frozenset(
         "/metadata/connection_required",
         "/metadata/result",
         "/metadata/error",
+        "/metadata/aggregate_result",
     }
 )
 """Every path a delta of this server writes, relative to its channel's message."""
@@ -135,6 +142,8 @@ class Translator:
     ended: bool = False
     _channels: int = 0
     _calls: dict[str, deque[int]] = field(default_factory=dict)
+    _cells: deque[int] = field(default_factory=deque)
+    """Result channels of code calls still waiting for what their cell showed."""
     _final_open: bool = False
 
     def _id(self, channel: int) -> str:
@@ -176,7 +185,7 @@ class Translator:
             )
         ]
 
-    def feed(self, event: TurnEvent) -> list[Delta]:
+    def feed(self, event: TurnEvent) -> list[Delta]:  # noqa: PLR0912 - one branch per kind
         if self.ended:
             return []
         out = self._final()
@@ -193,7 +202,15 @@ class Translator:
             if isinstance(text, str) and text:
                 out.append(Delta(FINAL, "/content/text", "append", text))
         elif kind == "tool":
-            out.extend(self._tool(str(data.get("name", "tool")), str(data.get("status", ""))))
+            out.extend(
+                self._tool(
+                    str(data.get("name", "tool")),
+                    str(data.get("status", "")),
+                    code=data.get("code") is True,
+                )
+            )
+        elif kind == "code":
+            out.extend(self._cell(data))
         elif kind == "knowledge":
             out.append(Delta(FINAL, "/metadata/knowledge", "append", [data]))
         elif kind == "approval":
@@ -223,8 +240,13 @@ class Translator:
             out.append(self._end("error", "/metadata/error", error_of(status.rejection)))
         return out
 
-    def _tool(self, name: str, status: str) -> list[Delta]:
+    def _tool(self, name: str, status: str, *, code: bool = False) -> list[Delta]:
         out: list[Delta] = []
+        if code:
+            name = CODE_RECIPIENT
+        elif name == CODE_RECIPIENT:
+            # Only a call the harness knew as a cell is one (TM-LP1).
+            name = "tool"
         if status == "started":
             channel = self._new_channel()
             self._calls.setdefault(name, deque()).append(channel)
@@ -251,14 +273,44 @@ class Translator:
                     name=name,
                     recipient="all",
                     channel="commentary",
-                    content_type="tool_result",
+                    content_type="code_result" if code else "tool_result",
                     content={},
                     status=ended,
-                    metadata={"call_id": self._id(call)},
+                    metadata={
+                        "call_id": self._id(call),
+                        **({"aggregate_result": None} if code else {}),
+                    },
                 ),
             )
         )
+        if code:
+            self._cells.append(channel)
         return out
+
+    def _cell(self, cell: dict[str, Any]) -> list[Delta]:
+        """What a cell showed, on the result of its call. A cell without a result waiting for it
+        (more cells than answered calls) gets a result message of its own."""
+        if self._cells:
+            return [Delta(self._cells.popleft(), "/metadata/aggregate_result", "replace", cell)]
+        channel = self._new_channel()
+        return [
+            Delta(
+                channel,
+                "",
+                "add",
+                _message(
+                    self._id(channel),
+                    role="tool",
+                    name=CODE_RECIPIENT,
+                    recipient="all",
+                    channel="commentary",
+                    content_type="code_result",
+                    content={},
+                    status="finished",
+                    metadata={"call_id": None, "aggregate_result": cell},
+                ),
+            )
+        ]
 
     def _call(self, channel: int, name: str) -> dict[str, Any]:
         return _message(
@@ -266,7 +318,7 @@ class Translator:
             role="assistant",
             recipient=name,
             channel="commentary",
-            content_type="tool_call",
+            content_type="code" if name == CODE_RECIPIENT else "tool_call",
             content={},
             status="in_progress",
             metadata={},

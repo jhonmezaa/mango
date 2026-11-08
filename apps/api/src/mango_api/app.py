@@ -33,7 +33,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from mango_api import chat_files, harness, memory, sessions, turns
+from mango_api import chat_files, code_blocks, harness, memory, sessions, turns
 from mango_api.activity import (
     ActivityDeps,
     AgentView,
@@ -114,6 +114,7 @@ from mango_api.conversations import (
     ConversationRecord,
     ConversationRepository,
     RlsClientFactory,
+    StoredMessage,
     new_id,
 )
 from mango_api.costs import AgentInfo as CostAgent
@@ -399,6 +400,9 @@ class MessageOut(_Strict):
     lost halfway (``turn_interrupted``, «Respuesta interrumpida»). ``None`` when it was not
     cut, or for an answer stored before the code existed."""
     attachments: list[MessageAttachmentOut] = []
+    code: list[code_blocks.CodeCellOut] = []
+    """The cells of the code sandbox this answer showed (C4): the «Analizando» block, as it was
+    shown (a cell the guardrail blocked comes without content)."""
 
 
 class ConversationDetail(_Strict):
@@ -1694,8 +1698,16 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             await asyncio.to_thread(
                 chat_files.present, services.chat_files, user_id, conversation_id
             )
-            if any(m.attachments for m in messages)
+            if any(m.attachments or m.code_runs for m in messages)
             else frozenset()
+        )
+        # The «Analizando» block of the answers that ran code (C4): one read per turn.
+        cells = (
+            await asyncio.to_thread(
+                _stored_cells, services.conversations, user_id, messages, present
+            )
+            if any(m.code_runs for m in messages)
+            else {}
         )
         # Only when some message asked to confirm a write tool call (D27).
         approvals = (
@@ -1730,6 +1742,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                         )
                         for a in m.attachments
                     ],
+                    code=cells.get(m.message_id, []),
                 )
                 for m in messages
             ],
@@ -2409,6 +2422,23 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 
 
 # --- The agent a turn runs on -----------------------------------------------------------
+
+
+def _stored_cells(
+    repo: ConversationRepository,
+    user_id: str,
+    messages: list[StoredMessage],
+    present: frozenset[str],
+) -> dict[str, list[code_blocks.CodeCellOut]]:
+    """The cells of each answer that ran code, read again from the person's own partition."""
+    out: dict[str, list[code_blocks.CodeCellOut]] = {}
+    for m in messages:
+        refs = code_blocks.references(m.code_runs)
+        if refs:
+            out[m.message_id] = code_blocks.history(
+                refs, lambda turn: repo.code_runs(user_id, turn), present
+            )
+    return out
 
 
 def _stop_code(code: str) -> Literal["cancelled", "turn_interrupted"] | None:

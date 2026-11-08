@@ -96,6 +96,7 @@ export const chat = {
     toolCount: 'Consultando {{count}} tools…',
     tool_result: 'Procesando resultados…',
     writing: 'Escribiendo…',
+    code: 'Ejecutando código…',
   },
   // Knowledge searches of a turn and the sources of an answer (design kb-agent.jsx, D88 (44)).
   knowledge: {
@@ -119,7 +120,57 @@ export const chat = {
     toolOk: 'Consultó {{tool}}',
     toolFailed: 'Falló {{tool}}',
     toolUnnamed: 'una tool',
+    codeRunning: 'Ejecutando código',
+    codeOk: 'Ejecutó código',
+    codeFailed: 'Falló el código',
     status: { running: 'En curso', ok: 'Listo', failed: 'Falló' },
+  },
+  // Design round 40 `CodeBlock` (D114, C4): the cells the answer ran.
+  code: {
+    running: 'Analizando…',
+    completed: 'Analizado',
+    error: 'Error',
+    paused: 'Pausado',
+    cells_one: '{{count}} celda',
+    cells_other: '{{count}} celdas',
+    show: 'Ver código',
+    hide: 'Ocultar código',
+    cell: 'Celda {{n}}',
+    cellRunning: 'corriendo',
+    unfinished: 'sin terminar',
+    pausedNote: 'Quedó sin terminar porque la respuesta se detuvo.',
+    truncated: 'Salida recortada: se muestran los primeros 20.000 caracteres.',
+    timeout: 'La celda pasó su tope de 300 s y se detuvo.',
+    timeoutLabel: 'TIEMPO',
+    exceptionLabel: 'EXCEPCIÓN',
+    blocked:
+      'Mango no muestra el código ni la salida de esta celda: infringían una regla de seguridad.',
+  },
+  // Design round 40 `CrFigure`.
+  figure: {
+    loading: 'Cargando la figura',
+    error: 'No se pudo cargar la figura.',
+    retry: 'Reintentar',
+    expand: 'Ampliar {{name}}',
+    expandShort: 'Ampliar',
+    download: 'Descargar {{name}}',
+    downloadShort: 'Descargar',
+  },
+  // Design round 40 `FileCard` (D116): a file the agent generated.
+  file: {
+    meta: '{{kind}} · {{size}} · de {{agent}}',
+    scanning: 'Revisando el archivo…',
+    blocked: 'El escaneo de malware bloqueó este archivo. No se puede descargar.',
+    gone: 'Ya no está disponible. Los archivos se guardan 90 días y se borran con la conversación.',
+    dlError: 'No se pudo preparar la descarga. Inténtalo de nuevo.',
+    rate_one:
+      'Llegaste al máximo de 60 descargas por hora. Podrás descargar de nuevo en {{count}} minuto.',
+    rate_other:
+      'Llegaste al máximo de 60 descargas por hora. Podrás descargar de nuevo en {{count}} minutos.',
+    download: 'Descargar',
+    retry: 'Reintentar',
+    preparing: 'Preparando…',
+    downloading: 'Descargando {{name}}',
   },
   guardrail:
     'La respuesta se cortó porque infringía una regla de seguridad de Mango. Lo que ves arriba es lo que alcanzó a escribir. Reformula la pregunta si necesitas más.',

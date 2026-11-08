@@ -605,6 +605,51 @@ export const zCitationOutSchema = z.object({
 });
 
 /**
+ * CodeExceptionOut
+ */
+export const zCodeExceptionOutSchema = z.object({
+    message: z.string(),
+    name: z.string()
+});
+
+/**
+ * CodeFileOut
+ *
+ * A file a cell wrote, by id: the chat asks for it through the files routes (D116).
+ */
+export const zCodeFileOutSchema = z.object({
+    file_id: z.string(),
+    gone: z.boolean().optional().default(false),
+    image: z.boolean(),
+    kind: z.string(),
+    name: z.string(),
+    size_bytes: z.int()
+});
+
+/**
+ * CodeCellOut
+ *
+ * One cell as the chat shows it (the ``aggregate_result`` of its result message).
+ */
+export const zCodeCellOutSchema = z.object({
+    blocked: z.boolean(),
+    code: z.string().optional().default(''),
+    exception: zCodeExceptionOutSchema.nullish(),
+    files: z.array(zCodeFileOutSchema).optional().default([]),
+    run_id: z.string(),
+    seconds: z.int().nullish(),
+    status: z.enum([
+        'completed',
+        'error',
+        'timeout'
+    ]),
+    stderr: z.string().optional().default(''),
+    stderr_truncated: z.boolean().optional().default(false),
+    stdout: z.string().optional().default(''),
+    stdout_truncated: z.boolean().optional().default(false)
+});
+
+/**
  * CommentIn
  */
 export const zCommentInSchema = z.object({
@@ -3318,6 +3363,7 @@ export const zMessageOutSchema = z.object({
     approvals: z.array(z.string()).optional().default([]),
     attachments: z.array(zMessageAttachmentOutSchema).optional().default([]),
     citations: z.array(zCitationOutSchema).optional().default([]),
+    code: z.array(zCodeCellOutSchema).optional().default([]),
     connection_required: z.array(z.string()).optional().default([]),
     content: z.string(),
     created_at: z.string(),
@@ -4794,6 +4840,16 @@ export const zGetConversationPath = z.object({
  * Successful Response
  */
 export const zGetConversationResponse = zConversationDetailSchema;
+
+export const zChatFileStatusPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    file_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zChatFileStatusResponse = zChatAttachmentOutSchema;
 
 export const zChatFileContentPath = z.object({
     conversation_id: z.string().regex(/^[0-9a-f]{32}$/),

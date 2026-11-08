@@ -26,6 +26,7 @@ export const SECTION_IDS = [
   'brain',
   'tools',
   'kbs',
+  'code',
   'skills',
   'limits',
   'access',
@@ -241,7 +242,7 @@ export function toInput(
     // No picker yet (D88, awaiting its design round): the ones the version has are kept.
     knowledge_bases: sortedUnique(definition.knowledge_bases),
     skills: sortedUnique(definition.skills),
-    // No checkbox yet (D114 (6), awaiting its design round, W1): the version's are kept.
+    // «Puede ejecutar código» (D114 (6), design round 40).
     capabilities: sortedUnique(definition.capabilities),
   };
 }
@@ -333,6 +334,7 @@ const FIELD_SECTION: Record<string, SectionId> = {
   tools: 'tools',
   approval_tools: 'tools',
   knowledge_bases: 'kbs',
+  capabilities: 'code',
   skills: 'skills',
   groups: 'access',
   users: 'access',

@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Migrar a parches JSON»; el cómo, puntos 2 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión; cómo lo lee la web, notas de la construcción R4, lo que el servidor le añade, notas de la construcción R3b del 2026-11-08, y cómo lo usa la web, notas de la construcción R5a del 2026-11-08, elegidos por la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07)
 - **Precisa / reemplaza a:** reemplaza el formato de eventos de [D57](D057-progreso-del-turno-en-vivo.md) (la fase del turno, calculada por `mango-api` y sin texto del modelo, se conserva como dato del mensaje); precisa [D39](D039-sesion-del-runtime-y-latencia.md) (el texto sigue llegando en los bloques que revisa el guardrail: cada bloque es un parche)
-- **Precisada por:** — (notas de la construcción R3, R4, R3b y R5a al final de este archivo)
+- **Precisada por:** [D114](D114-code-interpreter-detras-del-gateway.md) (14) (la llamada de una celda y su `aggregate_result`); notas de la construcción R3, R4, R3b y R5a al final de este archivo
 
 ## Decisión
 

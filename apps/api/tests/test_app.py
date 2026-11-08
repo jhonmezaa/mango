@@ -320,6 +320,11 @@ class FakeConversations:
     code_cells: list[Any] | None = field(default_factory=list)
     """What the code connector metered for any turn (D115 (3)); ``None``: it cannot be read."""
     code_turns: list[str] = field(default_factory=list)
+    code_rows: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    """Rows of the code cells of each turn, as the connector writes them (C4)."""
+
+    def code_runs(self, _user: str, turn_id: str) -> list[dict[str, Any]]:
+        return list(self.code_rows.get(turn_id, []))
 
     def code_uses(self, _user: str, turn_id: str) -> list[Any]:
         self.code_turns.append(turn_id)

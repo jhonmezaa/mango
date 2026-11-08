@@ -244,6 +244,19 @@ exports[`the role of the turn worker > is only granted by the identity policies 
  },
  {
   "Action": [
+   "bedrock:ApplyGuardrail"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "FinOpsAgentGuardrailEC59A646",
+    "GuardrailArn"
+   ]
+  },
+  "Sid": "GuardShownCode"
+ },
+ {
+  "Action": [
    "secretsmanager:DescribeSecret",
    "secretsmanager:GetSecretValue"
   ],

@@ -328,7 +328,9 @@ export class Edge extends Construct {
             "script-src 'self'",
             // The page of a block carries its own style (see `RATE_LIMITED_STYLE`).
             `style-src 'self' ${RATE_LIMITED_STYLE_HASH}`,
-            "img-src 'self' data:",
+            // The figures of a code cell are read with the person's token and shown as `blob:`
+            // URLs (C4, D116 (5)): never an image URL of the model or of another origin.
+            "img-src 'self' data: blob:",
             "font-src 'self'",
             Lazy.string({
               produce: () =>

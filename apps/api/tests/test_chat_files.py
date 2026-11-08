@@ -721,3 +721,61 @@ def test_a_stored_status_survives_a_read(env: Env) -> None:
     file_id = env.ready()
     record = env.deps.store.file(SUB, CONVERSATION, file_id)
     assert record is not None and record.status is FileStatus.READY
+
+
+# --- Files a code cell wrote (C4, W1) ------------------------------------------------------
+
+
+def _generated(env: Env, name: str = "detalle.pdf") -> str:
+    """A file a cell wrote, as the code connector records it: in ``verifying``."""
+    file_id = "01" + "A" * 24
+    key = core.owner_key(SUB, CONVERSATION, file_id)
+    env.s3.put_object(Bucket=BUCKET, Key=key, Body=PDF)
+    now = int(env.clock.now)
+    env.db.put_item(
+        TableName=TABLE,
+        Item={
+            "PK": {"S": f"USER#{SUB}"},
+            "SK": {"S": f"CFILE#{CONVERSATION}#{file_id}"},
+            "file_id": {"S": file_id},
+            "conversation_id": {"S": CONVERSATION},
+            "origin": {"S": "generated"},
+            "name": {"S": name},
+            "kind": {"S": "pdf"},
+            "size": {"N": str(len(PDF))},
+            "status": {"S": "verifying"},
+            "status_at": {"N": str(now)},
+            "created_at": {"N": str(now)},
+            "expires_at": {"N": str(now + RETENTION_SECONDS)},
+            "sha256": {"S": "0" * 64},
+        },
+    )
+    return file_id
+
+
+def _status(env: Env, file_id: str, token: str = "good") -> Any:
+    return env.client.get(f"/api/conversations/{CONVERSATION}/files/{file_id}", headers=_h(token))
+
+
+def test_a_generated_file_waits_for_its_scan_and_is_then_ready(env: Env) -> None:
+    file_id = _generated(env)
+    waiting = _status(env, file_id)
+    assert waiting.status_code == 200, waiting.text
+    assert (waiting.json()["status"], waiting.json()["origin"]) == ("scanning", "generated")
+    assert env.download(file_id).status_code == 409
+    env.scanned(core.owner_key(SUB, CONVERSATION, file_id))
+    assert _status(env, file_id).json()["status"] == "ready"
+    assert env.download(file_id).status_code == 200
+
+
+def test_a_generated_file_the_scan_blocked_is_never_delivered(env: Env) -> None:
+    file_id = _generated(env)
+    env.scanned(core.owner_key(SUB, CONVERSATION, file_id), "THREATS_FOUND")
+    assert _status(env, file_id).json()["status"] == "blocked"
+    assert _code(env.download(file_id)) == "file_blocked"
+
+
+def test_the_status_of_someone_elses_file_answers_like_one_that_does_not_exist(env: Env) -> None:
+    file_id = _generated(env)
+    assert _status(env, file_id, token="admin").status_code == 404
+    assert _status(env, "0" * 26).status_code == 404

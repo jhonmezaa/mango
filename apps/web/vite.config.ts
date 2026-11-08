@@ -17,7 +17,7 @@ const BUILD_CSP = [
   "script-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
-  "img-src 'self' data:",
+  "img-src 'self' data: blob:",
   "require-trusted-types-for 'script'",
   "trusted-types 'none'",
 ].join('; ');

@@ -1605,6 +1605,101 @@ export type CitationOut = {
 };
 
 /**
+ * CodeCellOut
+ *
+ * One cell as the chat shows it (the ``aggregate_result`` of its result message).
+ */
+export type CodeCellOut = {
+    /**
+     * Blocked
+     */
+    blocked: boolean;
+    /**
+     * Code
+     */
+    code?: string;
+    exception?: CodeExceptionOut | null;
+    /**
+     * Files
+     */
+    files?: Array<CodeFileOut>;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Seconds
+     */
+    seconds?: number | null;
+    /**
+     * Status
+     */
+    status: 'completed' | 'error' | 'timeout';
+    /**
+     * Stderr
+     */
+    stderr?: string;
+    /**
+     * Stderr Truncated
+     */
+    stderr_truncated?: boolean;
+    /**
+     * Stdout
+     */
+    stdout?: string;
+    /**
+     * Stdout Truncated
+     */
+    stdout_truncated?: boolean;
+};
+
+/**
+ * CodeExceptionOut
+ */
+export type CodeExceptionOut = {
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * CodeFileOut
+ *
+ * A file a cell wrote, by id: the chat asks for it through the files routes (D116).
+ */
+export type CodeFileOut = {
+    /**
+     * File Id
+     */
+    file_id: string;
+    /**
+     * Gone
+     */
+    gone?: boolean;
+    /**
+     * Image
+     */
+    image: boolean;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Size Bytes
+     */
+    size_bytes: number;
+};
+
+/**
  * CommentIn
  */
 export type CommentIn = {
@@ -3561,6 +3656,10 @@ export type MessageOut = {
      * Citations
      */
     citations?: Array<CitationOut>;
+    /**
+     * Code
+     */
+    code?: Array<CodeCellOut>;
     /**
      * Connection Required
      */
@@ -10359,6 +10458,40 @@ export type GetConversationResponses = {
 };
 
 export type GetConversationResponse = GetConversationResponses[keyof GetConversationResponses];
+
+export type ChatFileStatusData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/files/{file_id}';
+};
+
+export type ChatFileStatusErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ChatFileStatusError = ChatFileStatusErrors[keyof ChatFileStatusErrors];
+
+export type ChatFileStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatAttachmentOut;
+};
+
+export type ChatFileStatusResponse = ChatFileStatusResponses[keyof ChatFileStatusResponses];
 
 export type ChatFileContentData = {
     body?: never;

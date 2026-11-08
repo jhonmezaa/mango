@@ -1,4 +1,4 @@
-# Archivos del chat (subida, generados, escaneo y descarga): modelo de amenazas (v0.2)
+# Archivos del chat (subida, generados, escaneo y descarga): modelo de amenazas (v0.3)
 
 > Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, PR C1, C5, W1 y U1, §7). Decisión que lo enmarca: [D116](../../architecture/decisions/D116-archivos-del-chat.md) (bucket propio, 20 × 100 MB, 90 días, escaneo de malware; vigente; su punto 9, el borrado, lo fijó este modelo); precisa D88 (25) (escaneo) y D86 (1), (5) y (10) (vía nueva, firma con `Mango-<ns>-Presign`). Además D16, D23, D24, D59, D63, D70 y la CSP de `infra/lib/constructs/edge.ts`.
 > Amplía `knowledge-bases-threat-model.md` (TM-K11, firma con rol propio; el patrón de subida de D88 (9), (30) y (33)) y `task-reports-threat-model.md` (descarga prefirmada de 5 min). El sandbox que genera archivos está en [`code-interpreter-threat-model.md`](code-interpreter-threat-model.md).
@@ -188,3 +188,16 @@ Siete residuales de los tres modelos (TM-CI1, CI3 y CI8; TM-CF3 y CF5; TM-TW1 y 
 - Entradas cubiertas: subida, guardado, adjuntos del mensaje, contenido, descarga, enlaces del modelo, eventos de GuardDuty.
 - Fronteras: navegador → API (CF1, CF9), navegador → S3 (CF6), S3 → GuardDuty (CF3), Presign → navegador (CF5), API → SPA (CF4), modelo → navegador (CF2).
 - Runtime frente a CI: todo es runtime; el plan de GuardDuty y el bucket van en la plantilla (D25).
+
+## Estado tras C4 + W1 (v0.3, 2026-11-08)
+
+Lo que construyó la vista de los archivos generados en el chat ([D116](../../architecture/decisions/D116-archivos-del-chat.md) (13)), con tests y sin ver en una instalación:
+
+| Amenaza | Control construido | Sigue abierto |
+|---|---|---|
+| TM-CF4 | La CSP de la SPA gana solo `img-src blob:` (CloudFront y la meta del build, con test); una figura se lee de `…/content` con el token de la persona y solo si su tipo declarado es PNG o JPEG; ninguna imagen del modelo ni de otro origen se carga | — |
+| TM-CF5 | El enlace de 5 minutos se pide al pulsar «Descargar», se comprueba (`https`, sin credenciales; `http` solo en loopback para el mock) y se abre como descarga; no se guarda, no se muestra ni se copia | — |
+| TM-CF3 | `GET …/files/{archivo}` mueve un archivo generado de `verifying` a `ready` solo con el resultado del escaneo de su objeto; la tarjeta dice «Revisando el archivo…» hasta entonces, y uno bloqueado no ofrece descarga (la ruta de descarga lo niega igual) | — |
+| TM-CF1 | La ruta de estado tiene los dos controles de las demás (partición y `OwnConversation`, 404 igual para lo ajeno y lo inexistente; test) y el límite de 120 por minuto | — |
+| TM-CF8 | Los enlaces del texto del modelo a un archivo se validan con las reglas de rutas (4096 caracteres, punto fijo de 4 decodificaciones, sin `/` final, `.`, `..` ni control) y solo resuelven a un id anunciado en esa respuesta (tests) | — |
+

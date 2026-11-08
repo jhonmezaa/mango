@@ -12,6 +12,7 @@ import { recordAudit } from './audit.ts';
 import { turnAttachments, type StoredAttachment } from './chatFiles.ts';
 import { bearerOf, firstUsableRemote, isConnected, markConsentPending } from './connections.ts';
 import { newId, readBody, sendError, sendJson, type ApiHandler } from './http.ts';
+import { codeVariant, demoAnswer, demoCells, type DemoCell } from './codeDemo.ts';
 import { demoTicket } from './tickets.ts';
 import {
   CANCELLED,
@@ -43,6 +44,8 @@ interface StoredMessage {
   stop_code?: 'cancelled' | 'turn_interrupted';
   /** The files of a question (D116 (11)); `gone` after 90 days. */
   attachments?: StoredAttachment[];
+  /** The cells of the code sandbox the answer showed (C4), as the API returns them. */
+  code?: DemoCell[];
 }
 
 interface StoredConversation {
@@ -354,6 +357,46 @@ async function runTurn(admitted: AdmittedTurn, sink: TurnSink): Promise<void> {
   }
   if (/error/i.test(message)) {
     send('error', { code: 'upstream_error', message: 'Simulated upstream failure' });
+    return;
+  }
+  // Design round 40 «Ejecuta código»: the agent runs two cells in the sandbox (C4); the words of
+  // the message pick the variant of the block, the figure and the files (see codeDemo.ts).
+  const variant = codeVariant(message);
+  if (variant) {
+    const cells = demoCells(conversation.conversation_id, variant, message);
+    for (const cell of cells) {
+      send('tool', { name: 'run_python', status: 'started', code: true });
+      send('status', { phase: 'code' });
+      await sleep(cell.status === 'timeout' ? 2400 : 1100);
+      if (sink.closed()) return;
+      send('tool', {
+        name: 'run_python',
+        status: cell.status === 'completed' || cell.blocked ? 'completed' : 'error',
+        code: true,
+      });
+      send('code', cell);
+    }
+    send('status', { phase: 'writing' });
+    const reply = demoAnswer(variant);
+    send('delta', { text: reply });
+    const replyId = newId();
+    keep({
+      message_id: replyId,
+      role: 'assistant',
+      content: reply,
+      created_at: new Date().toISOString(),
+      tools: cells.flatMap((cell) => [
+        { name: 'run_python', status: 'started' },
+        { name: 'run_python', status: cell.status === 'completed' ? 'completed' : 'error' },
+      ]),
+      code: cells,
+    });
+    send('done', {
+      message_id: replyId,
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1240, output_tokens: 310 },
+      cost_usd: '0.0084',
+    });
     return;
   }
   // "abre un ticket", "comenta en el ticket", "actualiza el ticket": the agent calls the tickets

@@ -27,6 +27,12 @@ import {
   WarnIcon,
   X2Icon,
 } from '../icons';
+import {
+  announcedFiles,
+  CODE_RECIPIENT,
+  CODE_TOOL_NAME,
+  codeFileCards,
+} from '../../hooks/codeBlock';
 import { copyText } from '../../lib/clipboard';
 import { useConnections } from '../../pages/connections/ConnectionsContext';
 import { linkSourcesOf } from '../../pages/connections/model';
@@ -37,6 +43,8 @@ import { RateWaitButton, RateWaitLine } from '../RateWait';
 import { Soon } from '../Soon';
 import { AttachmentChips } from './AttachmentChips';
 import { formatMessageTime } from './threadGroups';
+import { CodeBlock } from './CodeBlock';
+import { FileCard } from './FileCard';
 import { KnowledgeCitations, KnowledgeSteps } from './KnowledgeCitations';
 import { ToolGroup } from './ToolGroup';
 
@@ -105,6 +113,11 @@ function useProgressLabel(progress: TurnProgress | undefined, running: number): 
 }
 
 function stepText(t: TFunction, step: TurnStep): string {
+  if (step.kind === 'code') {
+    // Design round 40: «Ejecutando código» / «Ejecutó código» / «Falló el código».
+    if (step.status === 'failed') return t('chat.steps.codeFailed');
+    return step.status === 'running' ? t('chat.steps.codeRunning') : t('chat.steps.codeOk');
+  }
   if (step.kind !== 'tool') return t(`chat.steps.${step.kind}`);
   const tool = step.tool ?? t('chat.steps.toolUnnamed');
   if (step.status === 'failed') return t('chat.steps.toolFailed', { tool });
@@ -161,6 +174,7 @@ function TurnSteps({ steps, observe }: { steps: TurnStep[]; observe: boolean }) 
 const NO_SEARCHES: KnowledgeSearch[] = [];
 const NO_CITATIONS: Citation[] = [];
 const NO_STEPS: TurnStep[] = [];
+const NO_FILES: never[] = [];
 
 interface Props {
   message: DisplayMessage;
@@ -292,6 +306,17 @@ export const ChatMessage = memo(function ChatMessage({
     message.connectionRequired ?? NO_SOURCES,
     message.remoteSources ?? NO_SOURCES,
   );
+  const code = message.code;
+  // The cells are the «Analizando» block, not entries of the tool list (design round 40).
+  const tools = useMemo(
+    () =>
+      message.tools.filter(
+        (tool) => tool.name !== CODE_RECIPIENT && !(code && tool.name === CODE_TOOL_NAME),
+      ),
+    [message.tools, code],
+  );
+  const files = useMemo(() => (code ? announcedFiles(code) : NO_FILES), [code]);
+  const cards = useMemo(() => (code ? codeFileCards(code) : NO_FILES), [code]);
 
   if (message.role === 'user') {
     const time = formatMessageTime(message.createdAt);
@@ -360,9 +385,11 @@ export const ChatMessage = memo(function ChatMessage({
             <TurnSteps steps={steps} observe={observe} />
           ) : null
         ) : (
-          <ToolGroup tools={message.tools} live={false} />
+          <ToolGroup tools={tools} live={false} />
         )}
         <KnowledgeSteps searches={message.searches ?? NO_SEARCHES} />
+        {/* Design round 40: the block of the cells goes before the text of the answer. */}
+        {code ? <CodeBlock block={code} streaming={streaming} /> : null}
         {/* Design remote-core.jsx: the answer read a remote service (content from outside). */}
         {remote.map((source) => (
           <ReadMark key={source.service} service={source.service} />
@@ -370,7 +397,7 @@ export const ChatMessage = memo(function ChatMessage({
         {message.content ? (
           // Until the markdown chunk loads, the text is shown as plain text (escaped by React).
           <Suspense fallback={<p className="md whitespace-pre-wrap">{message.content}</p>}>
-            <ChatMarkdown streaming={writing && !cut} remote={remote} strip={strip}>
+            <ChatMarkdown streaming={writing && !cut} remote={remote} strip={strip} files={files}>
               {message.content}
             </ChatMarkdown>
           </Suspense>
@@ -425,6 +452,10 @@ export const ChatMessage = memo(function ChatMessage({
           </p>
         ) : null}
         <KnowledgeCitations citations={message.citations ?? NO_CITATIONS} />
+        {/* Design round 40: the files of the answer after its text (bloque → texto → archivos). */}
+        {cards.map((file) => (
+          <FileCard key={file.file_id} file={file} />
+        ))}
         {message.status === 'error' &&
           (budgetExceeded ? (
             <div role="alert" className="notice notice-amber msg-notice">

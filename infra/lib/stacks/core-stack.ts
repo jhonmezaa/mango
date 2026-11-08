@@ -809,6 +809,7 @@ export class CoreStack extends Stack {
       apiEnvironment,
       turn: {
         auxiliaryModel: cfg.models.auxiliary,
+        guardrailArn: agentPlatform.guardrail.attrGuardrailArn,
         policyStoreArn: governance.policyStore.attrArn,
         dataAccessRole: governance.dataAccessRole,
         dataKey: governance.dataKey,

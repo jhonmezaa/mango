@@ -37,6 +37,7 @@ export const agentBuilder = {
     brain: 'Modelo e instrucciones',
     tools: 'Tools',
     kbs: 'Knowledge bases',
+    code: 'Ejecutar código',
     skills: 'Skills',
     limits: 'Límites',
     access: 'Acceso',
@@ -84,6 +85,12 @@ export const agentBuilder = {
     submitMany: 'No se pudo enviar: {{count}} problemas',
     saveOne: 'No se pudo guardar',
     saveMany: 'No se pudo guardar: {{count}} problemas',
+  },
+  // Design round 40 (D114 (6)): the version may run code in the sandbox of the installation.
+  code: {
+    desc: 'Python en un entorno aislado de la instalación, sin internet y sin instalar paquetes. Es parte de la versión: se aprueba como el resto.',
+    label: 'Puede ejecutar código',
+    sub: 'Analiza datos y genera gráficas, tablas y archivos (CSV, Excel, Word, PowerPoint, PDF, imágenes). Trae pandas, matplotlib, openpyxl, python-docx, python-pptx, ReportLab y otros. Cada celda tiene un tope de 300 s. Sin esto, el agente no puede leer archivos adjuntos en el chat.',
   },
   kbs: {
     desc: 'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.',

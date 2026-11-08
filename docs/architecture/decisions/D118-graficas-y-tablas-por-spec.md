@@ -1,7 +1,7 @@
 # D118 · Gráficas y tablas por un spec JSON cerrado, dibujadas por componentes propios
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)»
+- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)» · notas de la construcción W1, 2026-11-08, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07
 - **Precisa / reemplaza a:** — (ninguna regla cambia: el modelo solo produce datos JSON, nunca código ni HTML que se ejecute en la SPA); respeta [D24](D024-diseno-de-la-ui.md)
 - **Precisada por:** —
 
@@ -20,3 +20,8 @@ Origen: el plan de capacidades del chat ([`docs/specs/chat-capacidades-plan.md`]
 **(5) Tablas.** El sandbox escribe un `*.table.json`; la SPA lo pinta en una grilla virtualizada con tope de filas y ofrece el CSV como archivo del chat ([D116](D116-archivos-del-chat.md)).
 
 **(6) Diseño.** La gráfica, la tabla y sus estados salen de la ronda de Claude Design de esa fase ([D24](D024-diseno-de-la-ui.md), [D114](D114-code-interpreter-detras-del-gateway.md) (10)).
+
+## Notas de la construcción (W1, 2026-11-08; elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07)
+
+El bloque «Analizando» y la tarjeta de archivo de la ronda 40 están construidos ([D114](D114-code-interpreter-detras-del-gateway.md) (14), [D116](D116-archivos-del-chat.md) (13)). La gráfica y la tabla (G1 y T1 del plan) llevarán al pie la misma tarjeta para su CSV, con sus estados: no cambia nada de esta decisión.
+

@@ -309,6 +309,8 @@ export interface TurnResources {
   /** The namespace as the stack of the role names it (D99: a parameter of a nested stack). */
   readonly namespace: string;
   readonly auxiliaryModel: string;
+  /** The base guardrail: what a cell of the code sandbox shows goes through it first (C4, TM-CI5). */
+  readonly guardrailArn: string;
   readonly policyStoreArn: string;
   readonly dataAccessRole: iam.IRole;
   readonly dataKey: kms.IKey;
@@ -358,6 +360,14 @@ export function grantChatTurn(role: iam.Role, turn: TurnResources): void {
       sid: "AuxiliaryModel",
       actions: ["bedrock:InvokeModel"],
       resources: [`arn:aws:bedrock:${region}:${account}:inference-profile/${turn.auxiliaryModel}`, foundation],
+    }),
+  );
+  // The «Analizando» block (C4): code, output and exception of a cell, before they are shown.
+  add(
+    new iam.PolicyStatement({
+      sid: "GuardShownCode",
+      actions: ["bedrock:ApplyGuardrail"],
+      resources: [turn.guardrailArn],
     }),
   );
   add(

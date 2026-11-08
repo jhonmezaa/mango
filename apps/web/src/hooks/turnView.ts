@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { citationSchema, remoteConnectionEvent } from '../api/chatEvents';
+import { codeCellSchema } from '../api/codeSchemas';
 import type { Channels, Json } from '../api/deltas';
 import {
   approvalSchema,
@@ -8,6 +9,7 @@ import {
   type ChatApproval,
   type ToolStatus,
 } from '../api/schemas';
+import { CODE_RECIPIENT, type CodeBlockData } from './codeBlock';
 
 /**
  * What the chat shows of a turn read in `v1` (D120 (2), R3 notes): the documents of its
@@ -31,6 +33,15 @@ const messageSchema = z.object({
   channel: z.string().max(32),
   content_type: z.string().max(32),
   status: statusSchema,
+});
+
+/** The result of a cell (C4): what it showed, once the guardrail checked it. */
+const codeResultSchema = z.object({
+  metadata: z.object({
+    call_id: z.string().max(200).nullable().optional(),
+    // An invalid cell is left out (`safeParse` of the whole result fails): never shown raw.
+    aggregate_result: codeCellSchema.nullable().optional(),
+  }),
 });
 
 const phaseSchema = z.object({ phase: z.string().max(32), tool: z.string().max(128).optional() });
@@ -85,6 +96,8 @@ export interface TurnView {
   connectionRequired: string[];
   result: z.infer<typeof resultSchema> | null;
   error: z.infer<typeof errorSchema> | null;
+  /** The «Analizando» block (C4): the cells shown and the calls still waiting for theirs. */
+  code: CodeBlockData;
 }
 
 export const EMPTY_TURN: TurnView = {
@@ -97,6 +110,7 @@ export const EMPTY_TURN: TurnView = {
   connectionRequired: [],
   result: null,
   error: null,
+  code: { cells: [], pending: 0 },
 };
 
 /** A turn whose documents do not have the shape this client knows. */
@@ -121,16 +135,35 @@ export function turnViewOf(channels: Channels): TurnView {
   if (!answer.success || answer.data.author.role !== 'assistant') return INVALID_TURN;
   const { metadata } = answer.data;
   const tools: TurnTool[] = [];
+  const calls: string[] = [];
+  const cells = new Map<string, z.infer<typeof codeCellSchema>>();
+  const loose: z.infer<typeof codeCellSchema>[] = [];
   for (const [channel, doc] of [...channels.entries()].sort(([a], [b]) => a - b)) {
     if (channel === 0) continue;
     const message = messageSchema.safeParse(doc);
     // A message this client does not know is left out, never shown raw.
     if (!message.success) continue;
     const { data } = message;
-    if (data.content_type === 'tool_call' && data.author.role === 'assistant') {
+    const call = data.author.role === 'assistant';
+    if (call && data.content_type === 'tool_call') {
       tools.push({ name: data.recipient, status: TOOL_STATUS[data.status] });
+    } else if (call && data.content_type === 'code' && data.recipient === CODE_RECIPIENT) {
+      // A cell of the sandbox: a step of its own and the «Analizando» block.
+      tools.push({ name: CODE_RECIPIENT, status: TOOL_STATUS[data.status] });
+      calls.push(data.id);
+    } else if (data.author.role === 'tool' && data.content_type === 'code_result') {
+      const result = codeResultSchema.safeParse(doc);
+      if (!result.success || !result.data.metadata.aggregate_result) continue;
+      const cell = result.data.metadata.aggregate_result;
+      const callId = result.data.metadata.call_id;
+      if (callId && calls.includes(callId)) cells.set(callId, cell);
+      else loose.push(cell);
     }
   }
+  const code: CodeBlockData = {
+    cells: [...calls.flatMap((id) => cells.get(id) ?? []), ...loose],
+    pending: calls.filter((id) => !cells.has(id)).length,
+  };
   // Each approval is the request as the API stored it (D27); one that does not parse is left out.
   const approvals = (metadata.approvals ?? []).flatMap((item) => {
     const parsed = approvalSchema.safeParse(item);
@@ -146,5 +179,6 @@ export function turnViewOf(channels: Channels): TurnView {
     connectionRequired: metadata.connection_required ?? [],
     result: metadata.result ?? null,
     error: metadata.error ?? null,
+    code,
   };
 }

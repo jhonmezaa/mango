@@ -701,6 +701,18 @@ def snapshot(files: Sequence[ChatFile]) -> list[dict[str, Any]]:
     return [{"file_id": f.file_id, "name": f.name, "kind": f.kind, "size": f.size} for f in files]
 
 
+def file_status(deps: ChatFilesDeps, f: ChatFile) -> ChatAttachmentOut:
+    """A file as the chat shows it. A generated file is moved as far as its scan allows, without
+    an audit of its own: the cell that wrote it audited it (``code.execute``); an upload moves
+    only through the composer's confirmation, which audits its end."""
+    if f.origin == "generated":
+        try:
+            f = advance(deps, None, f)
+        except (ChatFilesStorageUnavailableError, ChatFileStoreUnavailableError) as exc:
+            raise _unavailable(exc) from exc
+    return attachment_out(f, deps.clock())
+
+
 def _deliverable(deps: ChatFilesDeps, f: ChatFile | None) -> ChatFile:
     if f is None:
         raise HTTPException(status_code=404, detail="not found")
@@ -879,6 +891,17 @@ def chat_files_router(
         await writable(caller, conversation_id)
         _limit(deps.checks, caller.user.user_id)
         return await run(confirm_uploads, deps, caller, conversation_id, upload_id, body)
+
+    @router.get("/{conversation_id}/files/{file_id}", response_model=ChatAttachmentOut)
+    async def chat_file_status(
+        conversation_id: ConversationId, file_id: FilePath, caller: SignedIn
+    ) -> ChatAttachmentOut:
+        """Where a file of the conversation is (C4, W1): a generated one waits for its scan
+        («Revisando el archivo…») and is moved here once its scan said. Shares the limit of the
+        checks of the composer."""
+        f = await file_of(caller, conversation_id, file_id)
+        _limit(deps.checks, caller.user.user_id)
+        return await run(file_status, deps, f)
 
     @router.post("/{conversation_id}/files/{file_id}/download", response_model=ChatFileLinkOut)
     async def download_chat_file(

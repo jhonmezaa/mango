@@ -90,6 +90,9 @@ class StoredMessage:
     attachments: list[dict[str, Any]] = field(default_factory=list)
     """Files of a question (D116): id, name, kind and size of each, never a key of the bucket
     (``chat_files.snapshot``)."""
+    code_runs: list[dict[str, Any]] = field(default_factory=list)
+    """Cells of the code sandbox this answer showed (C4): turn, run and the guardrail's verdict,
+    never their content (``code_blocks.Reference``)."""
 
 
 @dataclass(frozen=True)
@@ -408,6 +411,7 @@ class ConversationRepository:
         stopped: bool = False,
         stop_code: str = "",
         attachments: list[dict[str, Any]] | None = None,
+        code_runs: list[dict[str, Any]] | None = None,
     ) -> str:
         message_id = message_id or new_id()
         item: dict[str, Any] = {
@@ -434,6 +438,8 @@ class ConversationRepository:
             item["stop_code"] = {"S": stop_code[:40]}
         if attachments:
             item["attachments"] = {"S": json.dumps(attachments, ensure_ascii=False)}
+        if code_runs:
+            item["code_runs"] = {"S": json.dumps(code_runs)}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
 
@@ -554,6 +560,36 @@ class ConversationRepository:
                 return uses
             kwargs["ExclusiveStartKey"] = start
 
+    def code_runs(self, user_id: str, turn_id: str) -> list[dict[str, Any]]:
+        """The cells of a turn as the code connector wrote them (C4), from the person's own
+        partition: what the chat shows of each one (``code_blocks``)."""
+        items: list[dict[str, Any]] = []
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+            "ExpressionAttributeValues": {
+                ":pk": self._pk(user_id),
+                ":prefix": {"S": code_sandbox.turn_prefix(turn_id)},
+            },
+            "ProjectionExpression": (
+                "SK, #state, #status, code, stdout, stderr, stdout_chars, stderr_chars, "
+                "#exception, files, cpu_seconds, created_at"
+            ),
+            "ExpressionAttributeNames": {
+                "#state": "state",
+                "#status": "status",
+                "#exception": "exception",
+            },
+            "ConsistentRead": True,
+        }
+        while True:
+            resp = self._clients(user_id).query(**kwargs)
+            items.extend(resp.get("Items", []))
+            start = resp.get("LastEvaluatedKey")
+            if not start:
+                return items
+            kwargs["ExclusiveStartKey"] = start
+
     def messages(self, user_id: str, conversation_id: str) -> list[StoredMessage]:
         out: list[StoredMessage] = []
         kwargs: dict[str, Any] = {
@@ -583,6 +619,7 @@ class ConversationRepository:
                         stopped=i.get("stopped", {}).get("BOOL", False),
                         stop_code=i.get("stop_code", {}).get("S", ""),
                         attachments=json.loads(i.get("attachments", {}).get("S", "[]")),
+                        code_runs=json.loads(i.get("code_runs", {}).get("S", "[]")),
                     )
                 )
             if "LastEvaluatedKey" not in resp:

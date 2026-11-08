@@ -2885,6 +2885,149 @@
         "title": "CitationOut",
         "type": "object"
       },
+      "CodeCellOut": {
+        "additionalProperties": false,
+        "description": "One cell as the chat shows it (the ``aggregate_result`` of its result message).",
+        "properties": {
+          "blocked": {
+            "title": "Blocked",
+            "type": "boolean"
+          },
+          "code": {
+            "default": "",
+            "title": "Code",
+            "type": "string"
+          },
+          "exception": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodeExceptionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CodeFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "error",
+              "timeout"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stderr": {
+            "default": "",
+            "title": "Stderr",
+            "type": "string"
+          },
+          "stderr_truncated": {
+            "default": false,
+            "title": "Stderr Truncated",
+            "type": "boolean"
+          },
+          "stdout": {
+            "default": "",
+            "title": "Stdout",
+            "type": "string"
+          },
+          "stdout_truncated": {
+            "default": false,
+            "title": "Stdout Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "blocked"
+        ],
+        "title": "CodeCellOut",
+        "type": "object"
+      },
+      "CodeExceptionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "message"
+        ],
+        "title": "CodeExceptionOut",
+        "type": "object"
+      },
+      "CodeFileOut": {
+        "additionalProperties": false,
+        "description": "A file a cell wrote, by id: the chat asks for it through the files routes (D116).",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "gone": {
+            "default": false,
+            "title": "Gone",
+            "type": "boolean"
+          },
+          "image": {
+            "title": "Image",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id",
+          "name",
+          "kind",
+          "size_bytes",
+          "image"
+        ],
+        "title": "CodeFileOut",
+        "type": "object"
+      },
       "CommentIn": {
         "additionalProperties": false,
         "properties": {
@@ -6523,6 +6666,14 @@
               "$ref": "#/components/schemas/CitationOut"
             },
             "title": "Citations",
+            "type": "array"
+          },
+          "code": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CodeCellOut"
+            },
+            "title": "Code",
             "type": "array"
           },
           "connection_required": {
@@ -18955,6 +19106,57 @@
           }
         },
         "summary": "Get Conversation"
+      }
+    },
+    "/conversations/{conversation_id}/files/{file_id}": {
+      "get": {
+        "description": "Where a file of the conversation is (C4, W1): a generated one waits for its scan\n(«Revisando el archivo…») and is moved here once its scan said. Shares the limit of the\nchecks of the composer.",
+        "operationId": "chat_file_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAttachmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Chat File Status"
       }
     },
     "/conversations/{conversation_id}/files/{file_id}/content": {

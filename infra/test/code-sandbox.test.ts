@@ -351,6 +351,12 @@ describe("chat files (D116)", () => {
     expect(csp.some((directive) => directive.includes("chat-files-"))).toBe(true);
   });
 
+  it("shows the figures of a cell as blob: URLs read from the API, and no image of another origin (C4)", () => {
+    const csp = JSON.stringify(template.toJSON()).match(/img-src[^;]*/g) ?? [];
+    expect(csp.length).toBeGreaterThan(0);
+    for (const directive of csp) expect(directive).toBe("img-src 'self' data: blob:");
+  });
+
   it("tells mango-api its bucket, and nothing else of it", () => {
     const [, service] = ofType("AWS::ECS::TaskDefinition").find(([, r]) =>
       JSON.stringify(r.Properties.ContainerDefinitions).includes("CHAT_FILES_BUCKET"),

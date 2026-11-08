@@ -12,6 +12,7 @@ import {
   type Units,
 } from './adminSchemas';
 import { parseChatEvent, type ChatEvent } from './chatEvents';
+import { chatFileIdSchema, chatFileLinkSchema, chatFileStatusSchema } from './codeSchemas';
 import { ApiError, NotAuthenticatedError, apiErrorFromResponse } from './errors';
 import { mfaResetCreatedSchema, mfaResetIdSchema, mfaResetListSchema } from './mfaResetSchemas';
 import { createOperationCaller } from './operations';
@@ -210,6 +211,9 @@ export function createApiClient(options: ApiClientOptions) {
     return `/conversations/${encodeURIComponent(id)}`;
   }
 
+  const chatFilePath = (conversationId: string, fileId: string) =>
+    `${conversationPath(conversationId)}/files/${encodeURIComponent(chatFileIdSchema.parse(fileId))}`;
+
   const call = createOperationCaller((path, init) => authorizedFetch(path, init));
 
   return {
@@ -222,6 +226,27 @@ export function createApiClient(options: ApiClientOptions) {
     listConversations: async () => (await getJson('/conversations', conversationListSchema)).items,
     getConversation: async (conversationId: string) =>
       getJson(conversationPath(conversationId), conversationSchema),
+    /** Where a file of the conversation is (C4): «Revisando el archivo…» until its scan says. */
+    getChatFile: (conversationId: string, fileId: string) =>
+      getJson(chatFilePath(conversationId, fileId), chatFileStatusSchema),
+    /** A new link of 5 minutes to download a file, asked when the person clicks (D116). */
+    chatFileLink: (conversationId: string, fileId: string) =>
+      sendJson('POST', `${chatFilePath(conversationId, fileId)}/download`, {}, chatFileLinkSchema),
+    /**
+     * The bytes of an image of the conversation, for a `blob:` URL (CSP `img-src blob:`): only
+     * PNG and JPEG, with the type the server declared; anything else is refused.
+     */
+    chatFileImage: async (conversationId: string, fileId: string, signal?: AbortSignal) => {
+      const response = await authorizedFetch(`${chatFilePath(conversationId, fileId)}/content`, {
+        headers: { Accept: 'image/png, image/jpeg' },
+        ...(signal ? { signal } : {}),
+      });
+      const type = (response.headers.get('Content-Type') ?? '').split(';')[0]?.trim() ?? '';
+      if (type !== 'image/png' && type !== 'image/jpeg') {
+        throw new ApiError(response.status, 'invalid_response', 'Not an image');
+      }
+      return new Blob([await response.arrayBuffer()], { type });
+    },
     /** One page of the audit log, newest first; `next_cursor` is null on the last page. */
     listAuditEvents: async (options: AuditListOptions = {}) => {
       const query = new URLSearchParams();

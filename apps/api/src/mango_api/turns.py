@@ -36,7 +36,15 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from mango_api import chat_files, chat_stream, harness, knowledge_citations, memory, sessions
+from mango_api import (
+    chat_files,
+    chat_stream,
+    code_blocks,
+    harness,
+    knowledge_citations,
+    memory,
+    sessions,
+)
 from mango_api.activity import TurnActivity
 from mango_api.activity_store import Origin
 from mango_api.approvals import (
@@ -365,6 +373,29 @@ def code_spent(services: Services, turn: PendingTurn) -> Decimal:
         turn.user_id,
         turn.turn_id,
         services.settings.code_interpreter_prices,
+    )
+
+
+def turn_cells(
+    services: Services, user_id: str, turn_id: str, agent: PublishedAgent
+) -> code_blocks.TurnCells | None:
+    """The «Analizando» block of a turn of a version that runs code (C4), else ``None``."""
+    if not agent.definition.code_interpreter:
+        return None
+    settings = services.settings
+    return code_blocks.TurnCells(
+        services.conversations.code_runs,
+        code_blocks.Guardrail(services.bedrock, settings.guardrail_id, settings.guardrail_version),
+        user_id,
+        turn_id,
+    )
+
+
+def _cell_answered(event: harness.StreamEvent) -> bool:
+    return (
+        event.kind == "tool"
+        and event.data.get("code") is True
+        and event.data.get("status") != "started"
     )
 
 
@@ -934,6 +965,9 @@ class ChatTurns:
         while True:
             for event in pending:
                 seq = event.seq
+                if event.kind == "code":
+                    # The «Analizando» block only exists in ``v1`` (C4): D57 never had it.
+                    continue
                 yield sse(event.kind, _d57(event))
                 sent_at = loop()
                 ended = ended or event.kind in TERMINAL_EVENTS
@@ -1060,6 +1094,9 @@ class ChatTurns:
                     for e in written
                     if e.kind == "remote_connection_required"
                 ],
+                code_runs=code_blocks.stored_of_events(
+                    turn_id, (e.data for e in written if e.kind == "code")
+                ),
                 stopped=True,
                 stop_code=code,
             )
@@ -1505,6 +1542,7 @@ class ChatTurns:
             services,
             Origin(user.user_id, agent.agent_id, agent.version, conversation_id=conversation_id),
         )
+        cells = turn_cells(services, user.user_id, turn_id, agent)
         try:
             services.audit.emit(
                 "agent.invoke",
@@ -1524,6 +1562,10 @@ class ChatTurns:
             ):
                 if event.kind != harness.WRITE_CALL:
                     put(event.kind, event.data)
+                    if cells is not None and _cell_answered(event):
+                        # What the cell showed, once the guardrail checked it (TM-CI5).
+                        for cell in cells.new():
+                            put("code", cell)
                     continue
                 if stopped:
                     # Nobody reads this turn any more: nothing is asked of the person.
@@ -1572,6 +1614,7 @@ class ChatTurns:
                     connection_required=result.connection_required,
                     remote_sources=result.remote_sources,
                     message_id=message_id,
+                    code_runs=cells.stored() if cells is not None else None,
                 )
                 answered = True
         except Exception as exc:
@@ -1605,6 +1648,7 @@ class ChatTurns:
                         approvals=approval_ids,
                         connection_required=result.connection_required,
                         remote_sources=result.remote_sources,
+                        code_runs=cells.stored() if cells is not None else None,
                         stopped=True,
                         stop_code=TURN_INTERRUPTED["code"],
                     )

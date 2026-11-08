@@ -1611,3 +1611,258 @@
     opacity: 1;
   }
 }
+
+/* Design round 40 `.cr-code`, `.cr-fig`, `.cr-file` (styles.css): the «Analizando» block of an
+   answer that ran code, its figures and the cards of the files it wrote (D114, D116, C4). */
+@layer components {
+  .cr-code {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    margin: 0 0 14px;
+    overflow: hidden;
+  }
+  .cr-code-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    flex-wrap: wrap;
+  }
+  .cr-code-h > svg {
+    flex-shrink: 0;
+  }
+  .cr-code.is-completed .cr-code-h > svg {
+    color: var(--green);
+  }
+  .cr-code.is-error .cr-code-h > svg {
+    color: var(--red);
+  }
+  .cr-code.is-paused .cr-code-h > svg {
+    color: var(--text-muted);
+  }
+  .cr-code-t {
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .cr-code-m {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .cr-code-o {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .cr-code-sum {
+    padding: 0 12px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .cr-code.is-error .cr-code-sum {
+    color: var(--red);
+  }
+  .cr-code-b {
+    border-top: 1px solid var(--border);
+    display: grid;
+  }
+  .cr-cell {
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+  }
+  .cr-cell + .cr-cell {
+    border-top: 1px dashed var(--border);
+  }
+  .cr-cell-h {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .cr-pre,
+  .cr-out pre,
+  .cr-exc pre {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.55;
+    white-space: pre;
+    overflow: auto;
+    max-height: 240px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+  }
+  .cr-out,
+  .cr-exc {
+    display: grid;
+    gap: 4px;
+  }
+  .cr-out-k {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+  .cr-out.is-stderr pre {
+    color: var(--amber);
+  }
+  .cr-exc pre {
+    color: var(--red);
+    background: var(--red-soft);
+    border-color: color-mix(in oklab, var(--red) 25%, transparent);
+  }
+  .cr-exc .cr-out-k {
+    color: var(--red);
+  }
+  .cr-note,
+  .cr-cell-blk {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .cr-cell-blk {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--amber-soft);
+    color: var(--text);
+  }
+  .cr-cell-blk svg {
+    color: var(--amber);
+  }
+  .cr-figs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    padding: 0 12px 12px;
+  }
+  .cr-fig {
+    margin: 0;
+    display: grid;
+    gap: 4px;
+  }
+  .cr-fig figcaption {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-height: 24px;
+  }
+  .cr-fig-btn {
+    display: block;
+    width: 100%;
+    padding: 0;
+    cursor: zoom-in;
+    border-radius: 6px;
+  }
+  .cr-fig-img {
+    width: 100%;
+    aspect-ratio: 2 / 1;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .cr-fig-img.is-err {
+    gap: 8px;
+    padding: 10px;
+    text-align: center;
+  }
+  .cr-fig-img.is-err > svg {
+    color: var(--amber);
+  }
+  /* The figure itself: what the cell drew, at its own proportions. */
+  .cr-fig-pic {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 320px;
+    object-fit: contain;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .cr-fig-pic.is-big {
+    max-height: 70vh;
+  }
+  .cr-file {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    margin-top: 12px;
+  }
+  .cr-file.is-compact {
+    margin-top: 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+  .cr-file-ic {
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .cr-file.is-blocked .cr-file-ic {
+    background: var(--red-soft);
+    color: var(--red);
+  }
+  .cr-file.is-gone .cr-file-ic {
+    background: var(--row-hover);
+    color: var(--text-dim);
+  }
+  .cr-file-n {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-strong);
+    overflow-wrap: anywhere;
+  }
+  .cr-file-m {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .cr-file-s {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  .cr-file-s.is-red {
+    color: var(--red);
+  }
+  .cr-file-s.is-amber {
+    color: var(--amber);
+  }
+  .cr-file .btn {
+    flex-shrink: 0;
+  }
+}

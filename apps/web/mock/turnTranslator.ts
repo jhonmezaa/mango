@@ -28,6 +28,8 @@ export type TurnEnd =
   | { state: 'failed'; error: { status: number; code: string; message: string } };
 
 export const CANCELLED = { code: 'cancelled', message: 'the turn was stopped' };
+/** A cell of the code sandbox (C4): the `recipient` of its call. */
+export const CODE_RECIPIENT = 'code.run_python';
 
 /** A field of a stored event as text: only strings are kept (the API's `str()` of a string). */
 export const textOf = (value: unknown, fallback = ''): string =>
@@ -62,6 +64,8 @@ export class Translator {
   ended = false;
   private channels = 0;
   private readonly calls = new Map<string, number[]>();
+  /** Result channels of code calls still waiting for what their cell showed. */
+  private readonly cells: number[] = [];
   private finalOpen = false;
 
   constructor(
@@ -120,7 +124,11 @@ export class Translator {
         out.push({ c: 0, p: '/content/text', o: 'append', v: data.text });
       }
     } else if (kind === 'tool') {
-      out.push(...this.tool(textOf(data.name, 'tool'), textOf(data.status, '')));
+      out.push(
+        ...this.tool(textOf(data.name, 'tool'), textOf(data.status, ''), data.code === true),
+      );
+    } else if (kind === 'code') {
+      out.push(...this.cell(data));
     } else if (kind === 'knowledge') {
       out.push({ c: 0, p: '/metadata/knowledge', o: 'append', v: [data] });
     } else if (kind === 'approval') {
@@ -154,8 +162,35 @@ export class Translator {
     return out;
   }
 
-  private tool(name: string, status: string): Delta[] {
+  private cell(cell: Record<string, unknown>): Delta[] {
+    const waiting = this.cells.shift();
+    if (waiting !== undefined) {
+      return [{ c: waiting, p: '/metadata/aggregate_result', o: 'replace', v: cell }];
+    }
+    const channel = this.next();
+    return [
+      {
+        c: channel,
+        p: '',
+        o: 'add',
+        v: message(
+          this.id(channel),
+          'tool',
+          'all',
+          'commentary',
+          'code_result',
+          {},
+          'finished',
+          { call_id: null, aggregate_result: cell },
+          CODE_RECIPIENT,
+        ),
+      },
+    ];
+  }
+
+  private tool(rawName: string, status: string, code = false): Delta[] {
     const out: Delta[] = [];
+    const name = code ? CODE_RECIPIENT : rawName === CODE_RECIPIENT ? 'tool' : rawName;
     if (status === 'started') {
       const channel = this.next();
       const pending = this.calls.get(name) ?? [];
@@ -181,13 +216,14 @@ export class Translator {
         'tool',
         'all',
         'commentary',
-        'tool_result',
+        code ? 'code_result' : 'tool_result',
         {},
         ended,
-        { call_id: this.id(call) },
+        code ? { call_id: this.id(call), aggregate_result: null } : { call_id: this.id(call) },
         name,
       ),
     });
+    if (code) this.cells.push(channel);
     return out;
   }
 
@@ -197,7 +233,7 @@ export class Translator {
       'assistant',
       name,
       'commentary',
-      'tool_call',
+      name === CODE_RECIPIENT ? 'code' : 'tool_call',
       {},
       'in_progress',
       {},

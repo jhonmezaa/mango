@@ -106,6 +106,11 @@ export const messageSchema = z.object({
     )
     .max(20)
     .optional(),
+  /**
+   * The cells of the code sandbox this answer showed (C4), validated one by one by
+   * `parseCells`: a cell that does not parse is left out without losing the conversation.
+   */
+  code: z.array(z.unknown()).max(32).optional(),
 });
 export type Message = z.infer<typeof messageSchema>;
 

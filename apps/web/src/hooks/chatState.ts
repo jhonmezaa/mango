@@ -1,6 +1,8 @@
 import type { ChatEvent } from '../api/chatEvents';
+import { parseCells } from '../api/codeSchemas';
 import type { ChatApproval, Message, ToolCall, ToolStatus } from '../api/schemas';
 import type { MessageAttachment } from '../components/chat/attachments';
+import { CODE_RECIPIENT, type CodeBlockData } from './codeBlock';
 import type { TurnView } from './turnView';
 
 /**
@@ -40,8 +42,11 @@ export function settleTools(tools: DisplayToolCall[]): DisplayToolCall[] {
     : tools;
 }
 
-/** What the agent is doing while the turn streams (SSE `status`); structured, never model text. */
-export type ProgressPhase = 'thinking' | 'tool' | 'tool_result' | 'writing';
+/**
+ * What the agent is doing while the turn streams (SSE `status`); structured, never model text.
+ * `code`: a cell of the sandbox runs (design round 40 «Ejecutando código…»).
+ */
+export type ProgressPhase = 'thinking' | 'tool' | 'tool_result' | 'writing' | 'code';
 
 export interface TurnProgress {
   phase: ProgressPhase;
@@ -54,6 +59,7 @@ const PROGRESS_PHASES: ReadonlySet<string> = new Set<ProgressPhase>([
   'tool',
   'tool_result',
   'writing',
+  'code',
 ]);
 
 function isProgressPhase(phase: string): phase is ProgressPhase {
@@ -95,12 +101,17 @@ function closeSteps(steps: readonly TurnStep[], keep: (step: TurnStep) => boolea
   );
 }
 
-const isToolStep = (step: TurnStep) => step.kind === 'tool';
+// A cell is a tool call with a step of its own («Ejecutó código», design round 40).
+const isToolStep = (step: TurnStep) => step.kind === 'tool' || step.kind === 'code';
 
 /** A phase of the turn began: what was running (except tools, which report on their own) ends. */
 function stepsOnPhase(steps: readonly TurnStep[], phase: ProgressPhase): TurnStep[] {
   const next = closeSteps(steps, (step) => isToolStep(step) || step.kind === phase);
-  if (phase === 'tool' || next.some((step) => step.kind === phase && step.status === 'running')) {
+  if (
+    phase === 'tool' ||
+    phase === 'code' ||
+    next.some((step) => step.kind === phase && step.status === 'running')
+  ) {
     return next;
   }
   return [...next, { id: next.length, kind: phase, status: 'running' }];
@@ -110,6 +121,9 @@ function stepsOnPhase(steps: readonly TurnStep[], phase: ProgressPhase): TurnSte
 function stepsOnTool(steps: readonly TurnStep[], tool: ToolCall): TurnStep[] {
   if (tool.status === 'started') {
     const next = closeSteps(steps, isToolStep);
+    if (tool.name === CODE_RECIPIENT) {
+      return [...next, { id: next.length, kind: 'code', tool: tool.name, status: 'running' }];
+    }
     return [...next, { id: next.length, kind: 'tool', tool: tool.name, status: 'running' }];
   }
   const index = steps.findLastIndex(
@@ -190,6 +204,8 @@ export interface DisplayMessage {
   /** A 429 (design round 34 `RateWait`): when «Reintentar» may be used (client clock, ms). */
   retryAt?: number;
   usage?: { inputTokens: number; outputTokens: number; costUsd: string };
+  /** The «Analizando» block of an answer that ran code (C4): live from `v1`, or stored. */
+  code?: CodeBlockData;
 }
 
 export interface ChatState {
@@ -312,6 +328,7 @@ export function fromApiMessage(
     })),
     connectionRequired: message.connection_required ?? [],
     remoteSources: message.remote_sources ?? [],
+    ...(message.code?.length ? { code: { cells: parseCells(message.code), pending: 0 } } : {}),
     // How a cut answer ended, after a reload (R3b): «Detener», or Mango lost the turn.
     status:
       message.stop_code === 'cancelled'
@@ -413,6 +430,8 @@ function endOfTurn(message: DisplayMessage, view: TurnView): DisplayMessage {
   if (view.status === 'finished') {
     const result = view.result ?? {};
     const stop = result.stop_reason;
+    // A call that ended without its cell was refused before it ran (no cell to wait for).
+    if (settled.code?.pending) settled.code = { ...settled.code, pending: 0 };
     return {
       ...settled,
       status: 'done',
@@ -444,6 +463,17 @@ function endOfTurn(message: DisplayMessage, view: TurnView): DisplayMessage {
   };
 }
 
+const hasCode = (block: CodeBlockData) => block.cells.length > 0 || block.pending > 0;
+
+function sameBlock(a: CodeBlockData | undefined, b: CodeBlockData): boolean {
+  return (
+    a !== undefined &&
+    a.pending === b.pending &&
+    a.cells.length === b.cells.length &&
+    a.cells.every((cell, i) => cell.run_id === b.cells[i]?.run_id)
+  );
+}
+
 function eventReducer(
   state: ChatState,
   assistantId: string,
@@ -468,12 +498,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       for (const event of eventsOfChange(previous, view)) {
         next = eventReducer(next, assistantId, event, action.receivedAt);
       }
-      return updateMessage(next, assistantId, (message) =>
-        endOfTurn(
-          message.content === view.text ? message : { ...message, content: view.text },
-          view,
-        ),
-      );
+      return updateMessage(next, assistantId, (message) => {
+        const withText =
+          message.content === view.text ? message : { ...message, content: view.text };
+        // A cell never changes once shown: the block keeps its object (and its memo) until a
+        // cell is added or a call starts or ends.
+        const changed = hasCode(view.code) && !sameBlock(message.code, view.code);
+        return endOfTurn(changed ? { ...withText, code: view.code } : withText, view);
+      });
     }
     case 'connection':
       return updateMessage(state, action.assistantId, (message) => {
