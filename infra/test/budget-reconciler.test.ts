@@ -148,7 +148,7 @@ describe("budget reconciler role (D73, TM-BR6, TM-BR7)", () => {
     const days = python("packages/py/mango-core/src/mango_core/usage_days.py");
     expect(days).toContain('DAY_PREFIX: Final = "DAY#"');
     expect(BUDGET_RECONCILER_KEYS.budgets).toContain("DAY#*");
-    const api = python("apps/api/src/mango_api/app.py");
+    const api = python("apps/api/src/mango_api/turns.py");
     expect(api).toContain('BudgetScope(f"USER#{user.user_id}"');
     expect(api).toContain('BudgetScope(f"AGENT#{agent_id}"');
   });
