@@ -225,6 +225,12 @@ describe("Admin v0 infrastructure (D17)", () => {
         // (code-connector.test.ts, D114 (13)).
         !(g.statement.Sid === "ChatFilesKey" && g.statement.Condition?.StringEquals?.["kms:ViaService"] === "s3.us-east-1.amazonaws.com") &&
         !JSON.stringify(g.statement.Resource).includes("RunQueueKey") &&
+        // The turn worker writes the events of the agents' memory with its key through AgentCore,
+        // only (agent-memory.test.ts, D122 (8)).
+        !(
+          g.statement.Sid === "WorkerMemoryKey" &&
+          g.statement.Condition?.StringEquals?.["kms:ViaService"] === "bedrock-agentcore.us-east-1.amazonaws.com"
+        ) &&
         grants().some((o) => o.roles.join() === g.roles.join() && actions(o.statement).includes("dynamodb:PutItem")),
     );
     expect(seedKms.length).toBeGreaterThan(0);

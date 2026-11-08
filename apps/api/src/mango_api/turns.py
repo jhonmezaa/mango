@@ -88,6 +88,7 @@ from mango_core.harness_tools import KNOWLEDGE_TOOL
 from mango_core.identity import IdentityError, NoAreaError, NoGroupError, user_from_claims
 from mango_core.knowledge import ID_PATTERN as FILE_ID_PATTERN
 from mango_core.memory import SENTINEL_ACTOR
+from mango_core.memory import turn_cost as memory_turn_cost
 from mango_core.skills import parse_ref as parse_skill_ref
 
 if TYPE_CHECKING:
@@ -369,6 +370,28 @@ def code_reserve(services: Services, agent: PublishedAgent) -> Decimal:
         raise ApiError(503, "agent_unavailable", "please try again") from None
 
 
+def memory_reserve(services: Services, agent: PublishedAgent) -> Decimal:
+    """What the memory of a chat turn may cost (TM-ME7, rule 4): its recalls and its event, only
+    while memory is on and the served version has it. Such a version is not served without the
+    memory prices (fail closed)."""
+    if not (services.settings.memory_enabled and agent.definition.memory):
+        return Decimal(0)
+    prices = services.settings.memory_prices
+    if prices is None:
+        logger.error("a version with memory is served without the memory prices")
+        raise ApiError(503, "agent_unavailable", "please try again")
+    return memory_turn_cost(prices)
+
+
+def memory_spent(services: Services, actor: str) -> Decimal:
+    """What the memory of a turn cost (TM-ME7): its whole bound when the turn recalled and may
+    write with a person's actor; nothing with the sentinel. Never raises."""
+    prices = services.settings.memory_prices
+    if actor == SENTINEL_ACTOR or prices is None:
+        return Decimal(0)
+    return memory_turn_cost(prices)
+
+
 def code_spent(services: Services, turn: PendingTurn) -> Decimal:
     """What the code cells of the turn cost, as the connector metered them (D115 (3))."""
     return code_charge(
@@ -434,6 +457,7 @@ def settle_turn(
     detail: dict[str, Any],
     result: harness.InvocationResult,
     runs_code: bool = False,
+    memory_actor: str = SENTINEL_ACTOR,
 ) -> bool:
     """Close the turn's reservation and audit the turn; never raises.
 
@@ -445,14 +469,17 @@ def settle_turn(
     pending record stays and the reconciler closes it.
 
     True when the reservation was closed here with a known end. The knowledge searches of the
-    turn are charged with it (D88 (14)), and so are its code cells (``runs_code``, D115 (3)),
+    turn are charged with it (D88 (14)), and so are its code cells (``runs_code``, D115 (3))
+    and its memory (``memory_actor``, TM-ME7: the recalls ran before the agent was invoked),
     held or not.
     """
     code = code_spent(services, turn) if runs_code and result.started else Decimal(0)
+    remembered = memory_spent(services, memory_actor)
+    tools = code + remembered
     known = (
         cost(result.usage, price)
         + knowledge_cost(knowledge_searches(result), services.settings.knowledge_embedding_price)
-        + code
+        + tools
     )
     final = result.usage_final or not result.started
     held = Decimal(0)
@@ -460,7 +487,7 @@ def settle_turn(
         if final:
             recorded = services.budgets.settle_turn(turn, known)
         else:
-            held_turn = services.budgets.hold_turn(turn, result.usage.tokens(), tool_cost=code)
+            held_turn = services.budgets.hold_turn(turn, result.usage.tokens(), tool_cost=tools)
             recorded = held_turn is not None
             held = held_turn.retained if held_turn is not None else held
         if not recorded:
@@ -478,6 +505,7 @@ def settle_turn(
                 "output_tokens": result.usage.output_tokens,
                 "cost_usd": str(known),
                 **({"code_usd": str(code)} if runs_code else {}),
+                **({"memory_usd": str(remembered)} if remembered else {}),
                 # ``pending``: the cost above is only what was known when the turn was cut;
                 # ``budget.reconciled`` says what it cost in the end.
                 "settlement": ("reconciler" if not recorded else "final" if final else "pending"),
@@ -1412,7 +1440,7 @@ class ChatTurns:
         )
 
         # Reserved with the price of the model this turn runs on (D22, rule 4), the knowledge
-        # searches it may make (D88 (14)) and its code cells (D115 (1)).
+        # searches it may make (D88 (14)), its code cells (D115 (1)) and its memory (TM-ME7).
         estimate = (
             estimate_max_cost(
                 price,
@@ -1422,6 +1450,7 @@ class ChatTurns:
             )
             + knowledge_reserve(services, agent)
             + code_reserve(services, agent)
+            + memory_reserve(services, agent)
         )
         period = current_period()
         scopes = budget_scopes(services, user, agent_id)
@@ -1726,6 +1755,7 @@ class ChatTurns:
                 detail=started.detail,
                 result=result,
                 runs_code=agent.definition.code_interpreter,
+                memory_actor=started.memory_actor,
             )
             if activity is not None:
                 activity.end()

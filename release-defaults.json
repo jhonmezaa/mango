@@ -9,6 +9,7 @@
   },
   "embeddingPrices": { "amazon.titan-embed-text-v2:0": 0.02 },
   "codeInterpreterPrices": { "vcpuHour": 0.0895, "gbHour": 0.00945 },
+  "memoryPrices": { "gbIngested": 1.0, "thousandRetrievals": 0.5 },
   "budgets": { "userMonthlyUsd": 5, "agentMonthlyUsd": 30 },
   "curReconciliation": {
     "bedrockProductCodes": ["AmazonBedrock", "AmazonBedrockService"],

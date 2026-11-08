@@ -280,8 +280,6 @@ export class CoreStack extends Stack {
     });
     skills.allowAgents(agentPlatform.boundary);
     skills.grantApi(apiTaskRole);
-    // D122: «Memoria» of each person and the purge, only while memory is on.
-    agentPlatform.memory.grantApi(apiTaskRole);
     // D110, D111: the suites, cases and runs of the evals (data: here, not nested, D99 (2)).
     const evals = new Evals(this, "Evals", {
       installation: cfg,
@@ -959,7 +957,7 @@ export class CoreStack extends Stack {
       ].join(","),
       // D121: where mango-api sends the chat turns.
       [CHAT_TURNS_QUEUE_ENV]: chatTurns.queue.queueUrl,
-      // D122: the agents' memory, off until M0.
+      // D122: the agents' memory (on since 2026-11-08), its least score and its prices (TM-ME7).
       ...agentPlatform.memory.environment,
     };
     const api = new ApiService(this, "Api", {
@@ -1020,6 +1018,9 @@ export class CoreStack extends Stack {
       },
     });
     turnWorker.node.addDependency(...releaseAgentSeeds.seeds);
+    // D122: «Memoria» of each person and the purge, only while memory is on. Its managed policy
+    // holds no data: in the nested stack of the chat turn, beside the worker's (D99 (2)).
+    agentPlatform.memory.grantApi(apiTaskRole, turnWorker);
 
     // D71: what would otherwise fail in silence. Last, so that it sees every table of the stack.
     // In a stack nested in Core, with names of their own (D99).

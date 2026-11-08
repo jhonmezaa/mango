@@ -13,6 +13,7 @@ import {
 import {
   AGENTCORE_VPC_ZONE_IDS,
   codeInterpreterPricesSchema,
+  memoryPricesSchema,
   curReconciliationSchema,
   Installation,
 } from "./schema.js";
@@ -38,6 +39,8 @@ const releaseDefaultsSchema = z
     embeddingPrices: z.record(z.string().regex(/^amazon\.titan-embed-[a-z0-9.:-]+$/), price),
     /** USD per vCPU-hour and per GB-hour of the Code Interpreter sandbox (D115 (2)). */
     codeInterpreterPrices: codeInterpreterPricesSchema,
+    /** USD per GB of memory events and per thousand recalls of the agents' memory (D122, TM-ME7). */
+    memoryPrices: memoryPricesSchema,
     budgets: z
       .object({
         userMonthlyUsd: z.number().positive().max(10_000),
@@ -235,6 +238,7 @@ export function coreParameters(stack: Stack): CoreParameters {
     modelPrices: defaults.modelPrices,
     embeddingPrices: defaults.embeddingPrices,
     codeInterpreterPrices: defaults.codeInterpreterPrices,
+    memoryPrices: defaults.memoryPrices,
     budgets: defaults.budgets,
     curReconciliation: defaults.curReconciliation,
     audit: { retentionDays: Token.asNumber(auditDays.valueAsNumber), mode: "GOVERNANCE" },

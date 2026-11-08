@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
+from decimal import Decimal
 from typing import Any
 
 import boto3
@@ -449,35 +450,38 @@ def test_memory_off_answers_nothing_without_calling_aws(fake: FakeMemory) -> Non
     assert fake.calls == []
 
 
+_ENV_BASE = {
+    "MODEL_PRICES": "{}",
+    "MANGO_NAMESPACE": "test",
+    "COGNITO_ISSUER": "https://issuer.example.com",
+    "COGNITO_CLIENT_ID": "client",
+    "GATEWAY_URL": "https://gw.example.com/mcp",
+    "AGENT_ID": AGENT,
+    "AGENT_MODEL": "m",
+    "AUXILIARY_MODEL": "a",
+    "POLICY_STORE_ID": "ps",
+    "CONVERSATIONS_TABLE": "conv",
+    "CONVERSATIONS_TABLE_ARN": "arn:aws:dynamodb:us-east-1:111122223333:table/conv",
+    "DATA_KEY_ARN": "arn:aws:kms:us-east-1:111122223333:key/k",
+    "DATA_ACCESS_ROLE_ARN": "arn:aws:iam::111122223333:role/data",
+    "BUDGETS_TABLE": "budgets",
+    "AUDIT_STREAM": "audit",
+    "AUDIT_INDEX_TABLE": "audit-index",
+    "USER_MONTHLY_BUDGET_USD": "5",
+    "AGENT_MONTHLY_BUDGET_USD": "30",
+    "INVOCATION_KEY_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:111122223333:secret:k",
+    "SETTINGS_TABLE": "settings",
+    "AGENTS_TABLE": "agents",
+    "GUARDRAIL_ID": "gr",
+    "GUARDRAIL_VERSION": "1",
+    "RATE_LIMITS_TABLE": "rate-limits",
+    # The ARN alone does not turn it on.
+    "AGENT_MEMORY_ARN": ARN,
+}
+
+
 def test_memory_is_off_by_default() -> None:
-    env = {
-        "MODEL_PRICES": "{}",
-        "MANGO_NAMESPACE": "test",
-        "COGNITO_ISSUER": "https://issuer.example.com",
-        "COGNITO_CLIENT_ID": "client",
-        "GATEWAY_URL": "https://gw.example.com/mcp",
-        "AGENT_ID": AGENT,
-        "AGENT_MODEL": "m",
-        "AUXILIARY_MODEL": "a",
-        "POLICY_STORE_ID": "ps",
-        "CONVERSATIONS_TABLE": "conv",
-        "CONVERSATIONS_TABLE_ARN": "arn:aws:dynamodb:us-east-1:111122223333:table/conv",
-        "DATA_KEY_ARN": "arn:aws:kms:us-east-1:111122223333:key/k",
-        "DATA_ACCESS_ROLE_ARN": "arn:aws:iam::111122223333:role/data",
-        "BUDGETS_TABLE": "budgets",
-        "AUDIT_STREAM": "audit",
-        "AUDIT_INDEX_TABLE": "audit-index",
-        "USER_MONTHLY_BUDGET_USD": "5",
-        "AGENT_MONTHLY_BUDGET_USD": "30",
-        "INVOCATION_KEY_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:111122223333:secret:k",
-        "SETTINGS_TABLE": "settings",
-        "AGENTS_TABLE": "agents",
-        "GUARDRAIL_ID": "gr",
-        "GUARDRAIL_VERSION": "1",
-        "RATE_LIMITS_TABLE": "rate-limits",
-        # The ARN alone does not turn it on.
-        "AGENT_MEMORY_ARN": ARN,
-    }
+    env = dict(_ENV_BASE)
     assert not worker_settings(env).memory_enabled
     assert not worker_settings({**env, "AGENT_MEMORY_ENABLED": "false"}).memory_enabled
     on = worker_settings({**env, "AGENT_MEMORY_ENABLED": "true"})
@@ -815,8 +819,11 @@ def test_the_least_score_is_configuration() -> None:
 # --- The turn, end to end (worker in-process) --------------------------------------------
 
 
-def _memory_harness(fake: FakeMemory) -> Harness:
-    h = Harness(settings=replace(_settings(), memory_arn=ARN))
+PRICES = memory.MemoryPrices.parse('{"gbIngested": 1.0, "thousandRetrievals": 0.5}')
+
+
+def _memory_harness(fake: FakeMemory, prices: memory.MemoryPrices | None = PRICES) -> Harness:
+    h = Harness(settings=replace(_settings(), memory_arn=ARN, memory_prices=prices))
     h.published.agents["finops"] = served(memory=True)
     h.memory = mem.MemoryDeps(
         store=mem.MemoryStore(fake, ARN),
@@ -861,3 +868,63 @@ def test_a_question_the_guardrail_stopped_is_not_remembered(fake: FakeMemory) ->
     response = h.client().post("/api/chat", headers=_auth(), json={"message": "algo"})
     assert response.status_code == 200, response.text
     assert fake.written == []
+
+
+# --- What the memory of a turn costs (TM-ME7, rule 4) -------------------------------------
+
+
+def test_the_memory_prices_are_configuration() -> None:
+    assert PRICES.gb_ingested == 1 and PRICES.thousand_retrievals == Decimal("0.5")
+    for raw in ("", "{}", '{"gbIngested": -1, "thousandRetrievals": 1}', '{"gbIngested": "x"}'):
+        with pytest.raises(ValueError, match="memory prices"):
+            memory.MemoryPrices.parse(raw)
+    # Two recalls and one event of the longest text, never short of it.
+    assert memory.RECALLS_PER_TURN == 2
+    assert memory.turn_cost(PRICES) == Decimal("0.001400")
+
+
+def test_a_turn_with_memory_reserves_its_recalls_and_event_and_is_charged_them(
+    fake: FakeMemory,
+) -> None:
+    with_memory = _memory_harness(fake)
+    response = with_memory.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    assert response.status_code == 200, response.text
+    without = Harness()
+    assert (
+        without.client().post("/api/chat", headers=_auth(), json={"message": "hola"}).status_code
+        == 200
+    )
+    (reserved,) = with_memory.budgets.reserved
+    assert reserved - without.budgets.reserved[0] == memory.turn_cost(PRICES)
+    ((_, charged),) = with_memory.budgets.settled
+    ((_, charged_without),) = without.budgets.settled
+    assert charged - charged_without == memory.turn_cost(PRICES)
+
+
+def test_a_version_without_memory_reserves_nothing_for_it(fake: FakeMemory) -> None:
+    h = _memory_harness(fake)
+    h.published.agents["finops"] = served(memory=False)
+    assert (
+        h.client().post("/api/chat", headers=_auth(), json={"message": "hola"}).status_code == 200
+    )
+    without = Harness()
+    assert (
+        without.client().post("/api/chat", headers=_auth(), json={"message": "hola"}).status_code
+        == 200
+    )
+    assert h.budgets.reserved == without.budgets.reserved
+
+
+def test_a_turn_with_memory_is_not_served_without_its_prices(fake: FakeMemory) -> None:
+    h = _memory_harness(fake, prices=None)
+    response = h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    assert response.status_code == 503
+    assert h.budgets.reserved == []
+    assert fake.written == [] and h.agentcore.requests == []
+
+
+def test_the_worker_reads_the_memory_prices() -> None:
+    assert _settings().memory_prices is None
+    assert worker_settings(_ENV_BASE).memory_prices is None
+    env = {"AGENT_MEMORY_PRICES": '{"gbIngested": 1, "thousandRetrievals": 0.5}'}
+    assert worker_settings({**_ENV_BASE, **env}).memory_prices == PRICES

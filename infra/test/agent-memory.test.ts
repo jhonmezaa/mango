@@ -12,13 +12,16 @@ import {
   MEMORY_EVENT_EXPIRY_DAYS,
   MEMORY_MIN_SCORE,
   MEMORY_STRATEGIES,
+  memoryPrices,
   WORKER_MEMORY_ACTIONS,
 } from "../lib/constructs/agent-memory.js";
+import { loadReleaseDefaults } from "../lib/config/release.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore, nestedStacks, nestedTemplate } from "./nested.js";
 
 /* The AgentCore Memory of the installation (D122); threat model memory-threat-model.md
- * (TM-ME1, ME2, ME5, ME8). Off until a release turns it on. Read and written by the turn worker
+ * (TM-ME1, ME2, ME5, ME7, ME8). On in the release since 2026-11-08 (the owner accepted TM-ME1,
+ * ME2, ME4 and ME5); each agent turns it on in an approved version. Read and written by the turn worker
  * only (D122 (8), precised 2026-11-08): the harness of an agent has none. */
 
 const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
@@ -58,16 +61,22 @@ const containerEnv = (family: string): Record<string, unknown> => {
 };
 
 describe("the memory of the installation (D122)", () => {
-  it("is off in the release, and mango-api and the worker are told so", () => {
-    expect(AGENT_MEMORY_ENABLED).toBe(false);
-    expect(containerEnv(`Mango-${ns}-api`).AGENT_MEMORY_ENABLED).toBe("false");
+  it("is on in the release, and mango-api and the worker are told so, with its prices (TM-ME7)", () => {
+    expect(AGENT_MEMORY_ENABLED).toBe(true);
+    const api = containerEnv(`Mango-${ns}-api`);
+    expect(api.AGENT_MEMORY_ENABLED).toBe("true");
+    expect(JSON.parse(api.AGENT_MEMORY_PRICES as string)).toEqual(memoryPrices(cfg));
     const worker = nestedStacks(core)
       .flatMap((stack) => Object.values(nestedTemplate(stack).Resources as Record<string, Resource>))
       .find((r) => r.Type === "AWS::ECS::TaskDefinition" && r.Properties.Family === `Mango-${ns}-turn-worker`)!;
     const env = Object.fromEntries(
       (worker.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[]).map((e) => [e.Name, e.Value]),
     );
-    expect(Object.keys(env)).toEqual(expect.arrayContaining(["AGENT_MEMORY_ENABLED", "AGENT_MEMORY_ARN", "AGENT_MEMORY_MIN_SCORE"]));
+    expect(Object.keys(env)).toEqual(
+      expect.arrayContaining(["AGENT_MEMORY_ENABLED", "AGENT_MEMORY_ARN", "AGENT_MEMORY_MIN_SCORE", "AGENT_MEMORY_PRICES"]),
+    );
+    expect(env.AGENT_MEMORY_ENABLED).toBe("true");
+    expect(env.AGENT_MEMORY_PRICES).toBe(api.AGENT_MEMORY_PRICES);
     // Never the key: the worker uses it through the service only.
     expect(env.AGENT_MEMORY_KEY_ARN).toBeUndefined();
   });
@@ -131,11 +140,48 @@ describe("the memory of the installation (D122)", () => {
     expect(python).toContain(`RETRIEVAL_MIN_SCORE = ${MEMORY_MIN_SCORE}`);
   });
 
-  it("gives no role a permission on it while it is off (TM-ME1)", () => {
+  it("is priced by the release unless the installation says otherwise (TM-ME7, rule 7)", () => {
+    expect(memoryPrices({ ...cfg, memoryPrices: undefined })).toEqual(loadReleaseDefaults().memoryPrices);
+    expect(memoryPrices({ ...cfg, memoryPrices: { gbIngested: 2, thousandRetrievals: 3 } })).toEqual({
+      gbIngested: 2,
+      thousandRetrievals: 3,
+    });
+    // As AWS lists them (2026-11-08): $1.00 per GB ingested and $0.50 per 1,000 retrievals.
+    expect(loadReleaseDefaults().memoryPrices).toEqual({ gbIngested: 1, thousandRetrievals: 0.5 });
+  });
+
+  it("is reached in the release by mango-api and the turn worker only, never an agent (TM-ME1, TM-ME8)", () => {
     const onMemory = allStatements.filter((s) => JSON.stringify(s.Resource).includes(memoryId));
-    expect(onMemory).toEqual([]);
-    const memoryActions = allStatements.flatMap(actions).filter((a) => /Memory|Event|Actors|Sessions/.test(a) && a.startsWith("bedrock-agentcore:"));
-    expect(memoryActions).toEqual([]);
+    expect(onMemory.map((s) => s.Sid).sort()).toEqual(["ApiMemory", "WorkerMemoryEvents", "WorkerMemoryRecall"]);
+    const memoryActions = allStatements
+      .flatMap(actions)
+      .filter((a) => /Memory|Event|Actors|Sessions/.test(a) && a.startsWith("bedrock-agentcore:"));
+    expect([...new Set(memoryActions)].sort()).toEqual([...new Set([...API_MEMORY_ACTIONS, ...WORKER_MEMORY_ACTIONS])].sort());
+    // Each Sid in one policy only: the API's on the task role of mango-api, the worker's on its own.
+    const policies = Object.values(resources).filter(
+      (r) =>
+        (r.Type === "AWS::IAM::Policy" || r.Type === "AWS::IAM::ManagedPolicy") &&
+        JSON.stringify(r.Properties.PolicyDocument).includes("Memory"),
+    );
+    // mango-api's in a managed policy of its own: its role is close to its limit of inline policies.
+    const apiMemory = Object.values(resources).filter(
+      (r) => r.Type === "AWS::IAM::ManagedPolicy" && r.Properties.ManagedPolicyName === `Mango-${ns}-ApiMemory`,
+    );
+    expect(apiMemory).toHaveLength(1);
+    expect((apiMemory[0]!.Properties.PolicyDocument.Statement as Statement[]).map((s) => s.Sid)).toEqual([
+      "ApiMemory",
+      "ApiMemoryKey",
+    ]);
+    const owners = policies.flatMap((r) =>
+      (r.Properties.PolicyDocument.Statement as Statement[])
+        .filter((s) => s.Sid?.includes("Memory"))
+        .map((s) => [s.Sid, JSON.stringify(r.Properties.Roles)] as const),
+    );
+    const apiRoles = new Set(owners.filter(([sid]) => sid!.startsWith("Api")).map(([, roles]) => roles));
+    const workerRoles = new Set(owners.filter(([sid]) => sid!.startsWith("Worker")).map(([, roles]) => roles));
+    expect(apiRoles.size).toBe(1);
+    expect(workerRoles.size).toBe(1);
+    expect([...apiRoles][0]).not.toEqual([...workerRoles][0]);
   });
 });
 
@@ -152,7 +198,11 @@ describe("the memory once on", () => {
   const policyOf = (roleLogical: string): Record<string, Statement> =>
     Object.fromEntries(
       Object.values(json)
-        .filter((r) => r.Type === "AWS::IAM::Policy" && JSON.stringify(r.Properties.Roles).includes(roleLogical))
+        .filter(
+          (r) =>
+            (r.Type === "AWS::IAM::Policy" || r.Type === "AWS::IAM::ManagedPolicy") &&
+            JSON.stringify(r.Properties.Roles).includes(roleLogical),
+        )
         .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
         .map((s) => [s.Sid, s]),
     );

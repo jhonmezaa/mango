@@ -115,6 +115,16 @@ export const codeInterpreterPricesSchema = z
   .strict();
 
 /**
+ * Prices of the agents' memory (D122, TM-ME7, rule 7): USD per GB of short-term events ingested
+ * and per thousand retrievals of long-term records, as AWS lists them. A turn of an agent with
+ * `memory` reserves its recalls and its event with them; never in the code. The extraction of the
+ * strategies and the storage of records happen outside any turn: the bill reconciles them.
+ */
+export const memoryPricesSchema = z
+  .object({ gbIngested: z.number().positive(), thousandRetrievals: z.number().positive() })
+  .strict();
+
+/**
  * The daily reconciliation of Bedrock spend against the bill (D104 (7)): which product codes are
  * Bedrock's in CUR 2.0, and when a day of an agent deviates (past both thresholds). Configuration,
  * never code (rule 7): the release's own (`release-defaults.json`) when the installation names none.
@@ -301,6 +311,11 @@ export const installationSchema = z
      * Optional: the release's own (`release-defaults.json`) when the installation names none.
      */
     codeInterpreterPrices: codeInterpreterPricesSchema.optional(),
+    /**
+     * USD per GB of memory events and per thousand recalls (D122, TM-ME7, rule 7). Optional: the
+     * release's own (`release-defaults.json`) when the installation names none.
+     */
+    memoryPrices: memoryPricesSchema.optional(),
     /** Budget per user per calendar month, in USD (MVP v0: user and agent scopes). */
     budgets: z.object({
       userMonthlyUsd: z.number().positive().max(10_000),

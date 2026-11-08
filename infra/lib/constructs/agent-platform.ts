@@ -50,7 +50,7 @@ export class AgentPlatform extends Construct {
   readonly harnessLogsKey: kms.Key;
   /** Ceiling of what any agent execution role may be allowed to do. */
   readonly boundary: iam.ManagedPolicy;
-  /** The AgentCore Memory of the installation (D122): off until M0. */
+  /** The AgentCore Memory of the installation (D122): on in the release since 2026-11-08. */
   readonly memory: AgentMemory;
 
   /** `role/Mango-<ns>-agent-*`. */

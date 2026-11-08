@@ -560,6 +560,64 @@ exports[`the role of the turn worker > is only granted by the identity policies 
    ]
   },
   "Sid": "TicketToolGate"
+ },
+ {
+  "Action": [
+   "bedrock-agentcore:CreateEvent"
+  ],
+  "Condition": {
+   "StringLike": {
+    "bedrock-agentcore:actorId": "m1:*"
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "AgentPlatformMemory4120DF14",
+    "MemoryArn"
+   ]
+  },
+  "Sid": "WorkerMemoryEvents"
+ },
+ {
+  "Action": [
+   "kms:Decrypt",
+   "kms:GenerateDataKey"
+  ],
+  "Condition": {
+   "StringEquals": {
+    "kms:ViaService": "bedrock-agentcore.us-east-1.amazonaws.com"
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "AgentPlatformMemoryKey36A07138",
+    "Arn"
+   ]
+  },
+  "Sid": "WorkerMemoryKey"
+ },
+ {
+  "Action": [
+   "bedrock-agentcore:RetrieveMemoryRecords"
+  ],
+  "Condition": {
+   "StringLike": {
+    "bedrock-agentcore:namespace": [
+     "/mango/m1:*/preferences/",
+     "/mango/m1:*/facts/"
+    ]
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "AgentPlatformMemory4120DF14",
+    "MemoryArn"
+   ]
+  },
+  "Sid": "WorkerMemoryRecall"
  }
 ]"
 `;

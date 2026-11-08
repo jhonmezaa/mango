@@ -18,9 +18,9 @@ extract. This module:
   exists) and everything of a person who is disabled, with a sweep the day after
   (``MemorySweeper``, TM-ME5).
 
-Memory is **off** until the release turns it on (D122 (2)): ``Settings.memory_enabled`` is false
-by default. Off, every turn names the sentinel actor, the routes answer that there is nothing and
-no call reaches AWS.
+The release turns memory on (``AGENT_MEMORY_ENABLED``, on since 2026-11-08); without it
+``Settings.memory_enabled`` is false. Off, every turn names the sentinel actor, the routes answer
+that there is nothing and no call reaches AWS.
 
 Security notes (security-best-practices, FastAPI): the actor is never read from a request, only
 from the verified token; a record is deleted only after its namespace says it is the caller's,

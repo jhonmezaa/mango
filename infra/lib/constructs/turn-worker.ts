@@ -115,10 +115,12 @@ export const TURN_WORKER_ENVIRONMENT = [
   "TASKS_CLIENT_ID",
   "TASK_REPORT_FUNCTION",
   // The agents' memory (D122 (8)): the worker recalls before the harness and writes what the
-  // person said. Only whether it is on, the memory and the least score; never its key.
+  // person said. Only whether it is on, the memory, the least score and its prices (TM-ME7);
+  // never its key.
   "AGENT_MEMORY_ENABLED",
   "AGENT_MEMORY_ARN",
   "AGENT_MEMORY_MIN_SCORE",
+  "AGENT_MEMORY_PRICES",
 ] as const;
 /** The environment variable both services read the queue from. */
 export const CHAT_TURNS_QUEUE_ENV = "MANGO_CHAT_TURNS_QUEUE_URL";

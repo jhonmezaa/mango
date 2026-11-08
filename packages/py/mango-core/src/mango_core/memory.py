@@ -13,14 +13,17 @@ role, the same for every person: what keeps one person's memories from another's
 * whoever cannot build the actor of a person fails closed (``MemoryActorError``): the turn does
   not run with another actor instead.
 
-Memory is off until the release turns it on (D122 (2)): ``Settings.memory_enabled`` is false
-by default, and with it off nothing calls the memory API.
+The release turns memory on (``AGENT_MEMORY_ENABLED``, on since 2026-11-08);
+``Settings.memory_enabled`` is false without it, and then nothing calls the memory API. A turn
+that uses it reserves its recalls and its event first (``turn_cost``, TM-ME7).
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from decimal import ROUND_CEILING, Decimal
 from enum import StrEnum
 
 SENTINEL_ACTOR = "mango-none"
@@ -76,6 +79,52 @@ record is read from its namespace (TM-ME3). The infra writes the same templates
 (``infra/lib/constructs/agent-memory.ts``); a test keeps them equal."""
 RECALLED = (Kind.PREFERENCES, Kind.FACTS)
 """What a turn recalls. A summary belongs to one conversation, which its session already has."""
+
+
+RECALLS_PER_TURN = len(RECALLED)
+"""``RetrieveMemoryRecords`` calls of one turn: one per recalled strategy (TM-ME7)."""
+EVENT_BYTES = MAX_EVENT_TEXT * 4
+"""The most one turn's event may ingest: its longest text, at four bytes a character in UTF-8."""
+_GB = Decimal(1_000_000_000)
+_THOUSAND = Decimal(1000)
+_MICRO = Decimal("0.000001")
+
+
+@dataclass(frozen=True)
+class MemoryPrices:
+    """USD per GB of events ingested and per thousand retrievals of the memory (TM-ME7, rule 7).
+    The extraction of the strategies and the storage of records are outside any turn: the bill
+    reconciles them."""
+
+    gb_ingested: Decimal
+    thousand_retrievals: Decimal
+
+    @staticmethod
+    def parse(raw: str) -> MemoryPrices:
+        """``{"gbIngested": …, "thousandRetrievals": …}`` as the stack writes it; raises
+        ``ValueError``."""
+        try:
+            data = json.loads(raw)
+            prices = MemoryPrices(
+                Decimal(str(data["gbIngested"])), Decimal(str(data["thousandRetrievals"]))
+            )
+        except (ValueError, KeyError, TypeError, ArithmeticError) as exc:
+            raise ValueError("invalid memory prices") from exc
+        for value in (prices.gb_ingested, prices.thousand_retrievals):
+            if not value.is_finite() or value < 0:
+                raise ValueError("invalid memory prices")
+        return prices
+
+
+def turn_cost(prices: MemoryPrices) -> Decimal:
+    """What the memory of one chat turn may cost (TM-ME7, rule 4): its recalls and one event of
+    the longest text. Reserved before the turn and charged when the turn used a person's actor:
+    an estimate that never falls short (a GB is counted as 10^9 bytes, the most it may be)."""
+    total = (
+        RECALLS_PER_TURN * prices.thousand_retrievals / _THOUSAND
+        + EVENT_BYTES * prices.gb_ingested / _GB
+    )
+    return total.quantize(_MICRO, rounding=ROUND_CEILING)
 
 
 def summaries_namespace(actor: str, session_id: str) -> str:

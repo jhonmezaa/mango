@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
+import { API_MEMORY_ACTIONS } from "../lib/constructs/agent-memory.js";
 import { connectorCatalog, PROVISIONER_WRITABLE_ATTRIBUTES, RELEASE_META_ATTRIBUTES, RELEASE_VERSION_ATTRIBUTES } from "../lib/constructs/provisioner.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
@@ -616,8 +617,11 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
     // hold the app's secret an administrator types (D98 (17)), and only those.
     // CompleteResourceTokenAuth is of the data plane: it closes a person's consent with their
     // own access token (D98 (1)), and only in its own statement.
-    const dataPlane = ["bedrock-agentcore:CompleteResourceTokenAuth"];
-    expect(allowed.filter((s) => actions(s).some((a) => dataPlane.includes(a))).map((s) => s.Sid)).toEqual([
+    // The agents' memory of each person, «Memoria» and the purge (D122): data plane, on the one
+    // memory of the installation and only in its own statement (agent-memory.test.ts).
+    const dataPlane = ["bedrock-agentcore:CompleteResourceTokenAuth", ...API_MEMORY_ACTIONS];
+    expect(allowed.filter((s) => actions(s).some((a) => dataPlane.includes(a))).map((s) => s.Sid).sort()).toEqual([
+      "ApiMemory",
       "CompleteRemoteConsent",
     ]);
     const controlPlane = allowed.filter((s) =>

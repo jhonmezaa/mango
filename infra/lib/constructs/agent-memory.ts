@@ -3,17 +3,19 @@ import * as agentcore from "aws-cdk-lib/aws-bedrockagentcore";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import { Construct } from "constructs";
+import { loadReleaseDefaults } from "../config/release.js";
 import { Installation } from "../config/schema.js";
 import { mangoName, memoryName } from "../names.js";
 
 /**
- * Whether the agents of the installation remember their people (D122). **Off** until a release
- * turns it on, once «Memoria» is in the web (M3). Off, the memory exists but nothing reaches it:
- * no role gets a permission on it, the turn worker neither recalls nor writes and mango-api
- * answers that nothing is remembered. Turning it on is a change of this constant in a release,
- * never a parameter of one customer.
+ * Whether the agents of the installation remember their people (D122). **On** since 2026-11-08,
+ * by decision of the owner, who accepted the residual risks TM-ME1, ME2, ME4 and ME5: each agent
+ * still turns it on in an approved version (`memory`). Off, the memory exists but nothing
+ * reaches it: no role gets a permission on it, the turn worker neither recalls nor writes and
+ * mango-api answers that nothing is remembered. It is a constant of the release, never a
+ * parameter of one customer (rule 8).
  */
-export const AGENT_MEMORY_ENABLED = false;
+export const AGENT_MEMORY_ENABLED = true;
 
 /** Days a short-term event lives (TM-ME5): a copy of the turn that must not outlive its need. */
 export const MEMORY_EVENT_EXPIRY_DAYS = 7;
@@ -70,6 +72,14 @@ export const API_MEMORY_ACTIONS = [
   "bedrock-agentcore:BatchDeleteMemoryRecords",
 ];
 
+/**
+ * Prices of the memory (TM-ME7, rule 7): of the installation, or of the release. What a turn of
+ * an agent with `memory` reserves for its recalls and its event.
+ */
+export function memoryPrices(cfg: Installation): { gbIngested: number; thousandRetrievals: number } {
+  return cfg.memoryPrices ?? loadReleaseDefaults().memoryPrices;
+}
+
 export interface AgentMemoryProps {
   readonly installation: Installation;
   /** Tests only: the release decides with `AGENT_MEMORY_ENABLED`. */
@@ -92,6 +102,7 @@ export interface AgentMemoryProps {
  */
 export class AgentMemory extends Construct {
   readonly enabled: boolean;
+  private readonly namespace: string;
   readonly key: kms.Key;
   readonly memory: agentcore.CfnMemory;
   /** What mango-api and the provisioner read: whether memory is on, the memory and its key. */
@@ -102,6 +113,7 @@ export class AgentMemory extends Construct {
     const cfg = props.installation;
     const ns = cfg.namespace;
     this.enabled = props.enabled ?? AGENT_MEMORY_ENABLED;
+    this.namespace = ns;
     const removalPolicy = cfg.retainData ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE : RemovalPolicy.DESTROY;
 
     this.key = new kms.Key(this, "Key", {
@@ -147,6 +159,7 @@ export class AgentMemory extends Construct {
       AGENT_MEMORY_ARN: this.memory.attrMemoryArn,
       AGENT_MEMORY_KEY_ARN: this.key.keyArn,
       AGENT_MEMORY_MIN_SCORE: String(MEMORY_MIN_SCORE),
+      AGENT_MEMORY_PRICES: JSON.stringify(memoryPrices(cfg)),
     };
   }
 
@@ -185,12 +198,21 @@ export class AgentMemory extends Construct {
     role.addToPrincipalPolicy(this.keyStatement("WorkerMemoryKey"));
   }
 
-  /** mango-api: «Memoria» of the person and the purge. Nothing while memory is off. */
-  grantApi(role: iam.IRole): void {
+  /**
+   * mango-api: «Memoria» of the person and the purge. Nothing while memory is off. A managed
+   * policy of its own (`Mango-<ns>-ApiMemory`): the role is close to its limit of inline policies.
+   * It holds no data, so it goes where `scope` says: a stack nested in Core (D99 (2)).
+   */
+  grantApi(role: iam.IRole, scope: Construct = this): void {
     if (!this.enabled) return;
-    role.addToPrincipalPolicy(
-      new iam.PolicyStatement({ sid: "ApiMemory", actions: API_MEMORY_ACTIONS, resources: [this.memory.attrMemoryArn] }),
-    );
-    role.addToPrincipalPolicy(this.keyStatement("ApiMemoryKey"));
+    new iam.ManagedPolicy(scope, "ApiMemoryPolicy", {
+      managedPolicyName: mangoName(this.namespace, "ApiMemory"),
+      description: "mango-api: the agents' memory of each person and its purge (D122)",
+      roles: [role],
+      statements: [
+        new iam.PolicyStatement({ sid: "ApiMemory", actions: API_MEMORY_ACTIONS, resources: [this.memory.attrMemoryArn] }),
+        this.keyStatement("ApiMemoryKey"),
+      ],
+    });
   }
 }

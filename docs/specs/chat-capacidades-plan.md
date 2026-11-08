@@ -165,6 +165,7 @@ Va primero: el sandbox alarga los turnos y el formato del stream cambia para tod
 | **M1** | Infra: AgentCore Memory de la instalación, estrategias (preferencias, hechos, resumen), por persona y agente; el harness la usa solo con el `actorId` de quien pregunta, que arma el servidor, y falla cerrado sin él (D122 (8)). **Construido apagado el 2026-11-08** (D122, notas de construcción). **M4 (2026-11-08), tras M0:** el harness sin memoria; el trabajador recupera antes de invocar y escribe solo lo que dijo la persona (D122 (8), decisión del dueño) | M | M0 | — |
 | **M2** | API: listar, editar y borrar las memorias propias; borrado al dar de baja a una persona; auditoría sin contenido. **Construido apagado el 2026-11-08** salvo editar | M | M1 | — |
 | **M3** | Web: «Memoria» en Ajustes, indicador en el chat cuando se usa. **Construido el 2026-11-08** con la ronda 41 (D122, notas de M3): página propia desde el menú de la cuenta, casilla del Builder y «capacidades» en la revisión; el indicador por turno espera a M0 | M | M2 | **Ronda 4** |
+| **Encendido** | `AGENT_MEMORY_ENABLED = true` en la release y el precio de la memoria con su reserva por turno (TM-ME7). **Hecho el 2026-11-08** (D122, «Encendida en la release»): decisión del dueño, que acepta TM-ME1, ME2, ME4 y ME5 | S | M3 | — |
 
 ### Fase 5 — Segundo origen y Canvas (D123, D124)
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from mango_core.code_sandbox import Prices
-from mango_core.memory import RETRIEVAL_MIN_SCORE
+from mango_core.memory import RETRIEVAL_MIN_SCORE, MemoryPrices
 
 
 @dataclass(frozen=True)
@@ -127,6 +127,10 @@ class Settings:
     memory routes answer that there is nothing, without calling AWS."""
     memory_min_score: float = RETRIEVAL_MIN_SCORE
     """Least score of a record the worker recalls (``AGENT_MEMORY_MIN_SCORE``, D122 (8))."""
+    memory_prices: MemoryPrices | None = None
+    """USD per GB of events and per thousand recalls (``AGENT_MEMORY_PRICES``, TM-ME7, rule 7):
+    what a turn of a version with ``memory`` reserves and is charged. ``None`` until the stack
+    sets it: then such a turn is not served while memory is on (fail closed)."""
     task_runs_queue_arn: str = ""
     """Queue every run starts from: Scheduler, «Ejecutar ahora» and events (D78)."""
     task_schedule_group: str = ""
@@ -266,6 +270,11 @@ class Settings:
                 else ""
             ),
             memory_min_score=_score(env.get("AGENT_MEMORY_MIN_SCORE", "")),
+            memory_prices=(
+                MemoryPrices.parse(env["AGENT_MEMORY_PRICES"])
+                if env.get("AGENT_MEMORY_PRICES")
+                else None
+            ),
             task_runs_queue_arn=env.get("TASK_RUNS_QUEUE_ARN", ""),
             task_schedule_group=env.get("TASK_SCHEDULE_GROUP", ""),
             task_scheduler_role_arn=env.get("TASK_SCHEDULER_ROLE_ARN", ""),
