@@ -46,10 +46,16 @@ jobs:
       - run: pnpm -r --if-present run typecheck
       # The infra stacks embed the SPA build, so it is built before infra tests and synth.
       - run: pnpm --filter @mango/web build
+      # And the runner of the second origin with the npm part of its mirror (D123). The Pyodide
+      # packages are downloaded only by the release build.
+      - run: pnpm --filter @mango/ui-sandbox build
       - run: pnpm -r --if-present run test
       # Browser flow (create, review, use an agent) against the local mock: no AWS, no secrets.
       - run: pnpm --filter @mango/web exec playwright install --with-deps chromium
       - run: pnpm --filter @mango/web run e2e
+      # The runner in Chromium, served as CloudFront would, from another site: no AWS.
+      - run: pnpm --filter @mango/ui-sandbox run build:e2e
+      - run: pnpm --filter @mango/ui-sandbox run e2e
       # Synthesis runs cdk-nag (AwsSolutions); the templates carry no account, so it needs no AWS credentials.
       - run: pnpm --filter @mango/infra exec cdk synth --quiet
       - run: mise run guard

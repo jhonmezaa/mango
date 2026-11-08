@@ -1,0 +1,9 @@
+{
+  "$comment": "The Pyodide packages of the mirror (D123 (3)). The release downloads them in its CI (never in a customer account, D25) and checks each against pyodide-lock.json, whose sha256 is pinned here; the lock itself comes from the pinned npm package.",
+  "pyodide": {
+    "version": "0.26.4",
+    "baseUrl": "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/",
+    "lockSha256": "cd50b49de944c579045e122fe8628b31f9ce446379f032f36c05e273d38766e0",
+    "packages": ["numpy", "pandas", "matplotlib"]
+  }
+}

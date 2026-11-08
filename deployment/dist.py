@@ -4,7 +4,8 @@
 A release is what a customer installs with CloudFormation and nothing else:
 
 * ``global-s3-assets/``: the templates (``Core``, ``Payer``, ``OrgAccess``, ``Member``).
-* ``regional-s3-assets/``: every file the templates read (Lambda code, the SPA, signed packs),
+* ``regional-s3-assets/``: every file the templates read (Lambda code, the SPA, the runner of
+  the UI sandbox and its mirror of browser dependencies (D123), signed packs),
   the templates of the stacks nested in Core among them (D99): CloudFormation reads each one
   from the ``TemplateURL`` of its parent, which names it by content like any other asset.
 * the ``mango-api`` image and the ``render-document`` image (D117 (2)), in the provider's
@@ -404,6 +405,18 @@ def check_remote_profiles(repo: Path = REMOTES, signed: Path = RELEASE_REMOTES) 
             )
 
 
+def build_web() -> None:
+    """The SPA, and the runner of the second origin with its mirror of browser dependencies
+    (D123 (3)): the npm part from the lockfile, the Pyodide packages downloaded here, in the
+    release's CI, each checked against the pinned ``pyodide-lock.json``. Nothing is downloaded
+    in a customer account (D25)."""
+    print("· building the SPA")
+    run("pnpm", "--filter", "@mango/web", "build")
+    print("· building the UI sandbox and its mirror")
+    run("pnpm", "--filter", "@mango/ui-sandbox", "build")
+    run("pnpm", "--filter", "@mango/ui-sandbox", "run", "vendor:pyodide")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument(
@@ -434,8 +447,7 @@ def main() -> None:
         shutil.rmtree(out)
 
     print(f"Mango {label} ({revision[:12]})")
-    print("· building the SPA")
-    run("pnpm", "--filter", "@mango/web", "build")
+    build_web()
     if args.publish:
         for field, (name, dockerfile, prefix) in IMAGES.items():
             print(f"· building and pushing the {name} image")

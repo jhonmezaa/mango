@@ -8,6 +8,7 @@ published key with other bytes ends the release instead of being skipped.
 import base64
 import hashlib
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -484,3 +485,18 @@ def test_the_render_image_is_built_on_bases_pinned_by_digest_and_one_debian_snap
     assert re.search(r"^ARG DEBIAN_SNAPSHOT=\d{8}T\d{6}Z$", dockerfile, re.M)
     assert "deb.debian.org" not in dockerfile
     assert f"--date=@{dist.IMAGE_EPOCH}" in dockerfile
+
+
+def test_the_release_builds_the_ui_sandbox_and_its_pinned_mirror_before_synthesizing() -> None:
+    # D123 (3): the mirror is downloaded in the release's CI, never in a customer account, and
+    # each Pyodide package is checked against the lock whose sha256 vendor.json pins.
+    steps = inspect.getsource(dist.build_web)
+    build = steps.index('"@mango/ui-sandbox", "build"')
+    assert build < steps.index('"@mango/ui-sandbox", "run", "vendor:pyodide"')
+    main = inspect.getsource(dist.main)
+    assert main.index("build_web()") < main.index('"cdk", "synth"')
+    pinned = json.loads((REPO / "apps" / "ui-sandbox" / "vendor.json").read_text())["pyodide"]
+    assert re.fullmatch(r"[0-9a-f]{64}", pinned["lockSha256"])
+    assert pinned["baseUrl"] == f"https://cdn.jsdelivr.net/pyodide/v{pinned['version']}/full/"
+    fetcher = (REPO / "apps" / "ui-sandbox" / "scripts" / "fetch-pyodide-packages.mjs").read_text()
+    assert "lockSha256" in fetcher and "is not the lock's" in fetcher

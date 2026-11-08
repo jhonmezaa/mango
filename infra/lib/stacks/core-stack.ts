@@ -23,7 +23,7 @@ import { CUR_RECONCILER_ALARMS } from "../constructs/cur-reconciler.js";
 import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
-import { UiSandboxOrigin } from "../constructs/ui-sandbox-origin.js";
+import { UI_SANDBOX_ALARMS, UiSandboxOrigin } from "../constructs/ui-sandbox-origin.js";
 import { EVAL_JUDGE_ALARMS, EVALUATION_FEE_USD } from "../constructs/eval-judge.js";
 import { CHAT_FILES_ALARMS } from "../constructs/chat-files-scan.js";
 import { DenyEvalsContent, Evals, EvalsCapture, judgeModels } from "../constructs/evals.js";
@@ -136,13 +136,6 @@ export class CoreStack extends Stack {
       webAclArn: edge.webAclArn,
     });
     edge.allowFrameFrom(uiSandbox.origin);
-    new UiSandboxStack(this, "UiSandbox", {
-      installation: cfg,
-      keyValueStoreArn: uiSandbox.keyValueStore.keyValueStoreArn,
-      spaOrigin: edge.origin,
-      distributionId: uiSandbox.distribution.distributionId,
-      accessLogDestinationArn: edge.accessLogDestinationArn,
-    });
     const identity = new Identity(this, "Identity", {
       installation: cfg,
       appOrigin: edge.origin,
@@ -279,6 +272,28 @@ export class CoreStack extends Stack {
       releaseAgents: releaseHashes,
     });
     const alerts = new Alerts(this, "Alerts", { installation: cfg });
+    new UiSandboxStack(this, "UiSandbox", {
+      installation: cfg,
+      keyValueStoreArn: uiSandbox.keyValueStore.keyValueStoreArn,
+      spaOrigin: edge.origin,
+      distributionId: uiSandbox.distribution.distributionId,
+      accessLogDestinationArn: edge.accessLogDestinationArn,
+      alertsTopic: alerts.topic,
+      // The runner and the mirror (D123 (3), (4)), built like the SPA: not when the web is skipped.
+      ...(this.node.tryGetContext("skipSpa")
+        ? {}
+        : {
+            content: {
+              bucket: uiSandbox.bucket,
+              assetsBucket: props.release
+                ? `${props.release.bucket}-${this.region}`
+                : `cdk-hnb659fds-assets-${this.account}-${this.region}`,
+              distributionDomainName: uiSandbox.distribution.distributionDomainName,
+              spaOrigin: edge.origin,
+              release: release !== undefined,
+            },
+          }),
+    });
     // D78: a task run whose message failed every receipt never ran.
     tasks.alarmOnFailedRuns(alerts);
     // D86: the PDF of a task run, drawn by a function of the release and downloaded only by
@@ -883,6 +898,7 @@ export class CoreStack extends Stack {
       nestedAlarms: [
         ...Object.values(CUR_RECONCILER_ALARMS),
         ...Object.values(EVAL_JUDGE_ALARMS),
+        ...Object.values(UI_SANDBOX_ALARMS),
         ...(props.release ? Object.values(RENDER_DOCUMENT_ALARMS) : []),
         ...Object.values(CHAT_FILES_ALARMS),
       ],

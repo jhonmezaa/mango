@@ -1,9 +1,16 @@
-import { CfnResource, CustomResource, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { CfnResource, CustomResource, Duration, RemovalPolicy, Size, Stack } from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
+import * as sns from "aws-cdk-lib/aws-sns";
 import { Construct } from "constructs";
 import { CHECKOV_EXCEPTIONS, suppressCheckov } from "../checkov.js";
 import { Installation } from "../config/schema.js";
@@ -276,5 +283,169 @@ export class UiSandboxWriter extends Construct {
       s3SuffixPath: "{DistributionId}/{yyyy}/{MM}/{dd}/{HH}",
     });
     delivery.addDependency(source);
+  }
+}
+
+/** The built runner and mirror (`pnpm --filter @mango/ui-sandbox build`, D123 (3), (4)). */
+export const UI_SANDBOX_DIST = resolve(dirname(fileURLToPath(import.meta.url)), "../../../apps/ui-sandbox/dist");
+
+/** The alarm of the second origin, by name: the operations dashboard lists it (D99 (4)). */
+export const UI_SANDBOX_ALARMS = { bytes: "UiSandbox-bytes" };
+
+/**
+ * Bytes the second origin may serve in one hour before its alarm (TM-UI12): about 140 cold loads
+ * of the whole mirror (~78 MB), far above an installation's use, since browsers keep what
+ * `/vendor/` serves (`immutable`) and Python, its heaviest part, loads only when a run needs it.
+ */
+export const UI_SANDBOX_BYTES_PER_HOUR = 10 * 1024 ** 3;
+
+/** Every file of the mirror's manifest, as `build`/`vendor:pyodide` wrote it (TM-UI8). */
+interface MirrorManifest {
+  readonly files: Record<string, { sha256: string; bytes: number }>;
+  readonly pyodidePackages?: string[];
+}
+
+/**
+ * What a synthesis takes from the built sandbox: the runner and its mirror, complete. A release
+ * also needs the Pyodide packages (`vendor:pyodide`), which only its CI downloads (D25).
+ */
+export function checkUiSandboxDist(dist: string, release: boolean): MirrorManifest {
+  const missing = ["sandbox.html", "assets", "vendor/manifest.json", "vendor-wasm"].filter(
+    (path) => !existsSync(resolve(dist, path)),
+  );
+  if (missing.length) {
+    throw new Error(`UI sandbox not built: run 'pnpm --filter @mango/ui-sandbox build' (${dist}: ${missing.join(", ")})`);
+  }
+  const manifest = JSON.parse(readFileSync(resolve(dist, "vendor/manifest.json"), "utf8")) as MirrorManifest;
+  for (const [path, { bytes }] of Object.entries(manifest.files)) {
+    const file = resolve(dist, path.endsWith(".wasm") ? "vendor-wasm" : "vendor", path);
+    if (!existsSync(file) || statSync(file).size !== bytes) throw new Error(`the mirror does not match its manifest: ${path}`);
+  }
+  if (release) {
+    const wanted = (
+      JSON.parse(readFileSync(resolve(dist, "../vendor.json"), "utf8")) as { pyodide: { packages: string[] } }
+    ).pyodide.packages;
+    const have = new Set(manifest.pyodidePackages ?? []);
+    const absent = wanted.filter((name) => !have.has(name));
+    if (absent.length) {
+      throw new Error(`a release needs the Pyodide packages of the mirror (pnpm --filter @mango/ui-sandbox run vendor:pyodide): ${absent.join(", ")}`);
+    }
+  }
+  return manifest;
+}
+
+export interface UiSandboxContentProps {
+  /** The sandbox bucket, in Core. */
+  readonly bucket: s3.IBucket;
+  /** The sandbox distribution, in Core: the entry point is invalidated on every release. */
+  readonly distributionId: string;
+  readonly distributionDomainName: string;
+  /** The SPA's origin, the only window the runner answers (`runner-config.json`). */
+  readonly spaOrigin: string;
+  /** Where the built runner and mirror are; {@link UI_SANDBOX_DIST} by default. */
+  readonly dist?: string;
+  /** A release: the mirror must hold the Pyodide packages. */
+  readonly release: boolean;
+}
+
+/**
+ * The content of the second origin, from the release (D123 (3), (4); D69): the mirror under
+ * `/vendor/<package>/<version>/`, which never changes once published (`immutable`), with its
+ * `.wasm` uploaded apart as `application/wasm` (`WebAssembly.instantiateStreaming` needs it),
+ * the runner's hashed assets, and its entry point with `runner-config.json`, never cached.
+ * Nothing is downloaded or built in the account (D25): the bytes are assets of the release.
+ */
+export class UiSandboxContent extends Construct {
+  constructor(scope: Construct, id: string, props: UiSandboxContentProps) {
+    super(scope, id);
+    const dist = props.dist ?? UI_SANDBOX_DIST;
+    checkUiSandboxDist(dist, props.release);
+    // Core's bucket, by name and ARN (parameters of the nested stack): no grant changes Core.
+    const bucket = s3.Bucket.fromBucketAttributes(this, "Bucket", {
+      bucketName: props.bucket.bucketName,
+      bucketArn: props.bucket.bucketArn,
+    });
+    const distribution = cloudfront.Distribution.fromDistributionAttributes(this, "Distribution", {
+      distributionId: props.distributionId,
+      domainName: props.distributionDomainName,
+    });
+    const immutable = [s3deploy.CacheControl.fromString("public, max-age=31536000, immutable")];
+    // ~80 MB of mirror: the handler unzips it in its own storage.
+    const handler = { memoryLimit: 1024, ephemeralStorageSize: Size.gibibytes(2) };
+
+    const mirror = new s3deploy.BucketDeployment(this, "Mirror", {
+      destinationBucket: bucket,
+      destinationKeyPrefix: "vendor/",
+      sources: [s3deploy.Source.asset(resolve(dist, "vendor"))],
+      cacheControl: immutable,
+      prune: false,
+      ...handler,
+    });
+    const wasm = new s3deploy.BucketDeployment(this, "MirrorWasm", {
+      destinationBucket: bucket,
+      destinationKeyPrefix: "vendor/",
+      sources: [s3deploy.Source.asset(resolve(dist, "vendor-wasm"))],
+      contentType: "application/wasm",
+      cacheControl: immutable,
+      prune: false,
+      ...handler,
+    });
+    const assets = new s3deploy.BucketDeployment(this, "RunnerAssets", {
+      destinationBucket: bucket,
+      destinationKeyPrefix: "assets/",
+      sources: [s3deploy.Source.asset(resolve(dist, "assets"))],
+      cacheControl: immutable,
+      prune: false,
+      ...handler,
+    });
+    // Last: a runner is only served once what it loads is there.
+    const entry = new s3deploy.BucketDeployment(this, "RunnerEntry", {
+      destinationBucket: bucket,
+      sources: [
+        s3deploy.Source.asset(dist, { exclude: ["*", "!sandbox.html"] }),
+        s3deploy.Source.jsonData("runner-config.json", { spaOrigin: props.spaOrigin }),
+      ],
+      cacheControl: [s3deploy.CacheControl.noStore()],
+      prune: false,
+      distribution,
+      distributionPaths: ["/sandbox.html", "/runner-config.json"],
+      ...handler,
+    });
+    entry.node.addDependency(mirror, wasm, assets);
+  }
+}
+
+export interface UiSandboxBytesAlarmProps {
+  readonly installation: Installation;
+  readonly distributionId: string;
+  readonly alertsTopic: sns.ITopic;
+}
+
+/**
+ * TM-UI12: the mirror answers any site (CORS `*`), so a site that hotlinks it costs the customer
+ * CloudFront traffic. The web ACL limits each IP; this alarm sees the total. CloudFront
+ * publishes its metrics in us-east-1 only, where a release installs.
+ */
+export class UiSandboxBytesAlarm extends Construct {
+  constructor(scope: Construct, id: string, props: UiSandboxBytesAlarmProps) {
+    super(scope, id);
+    new cloudwatch.Alarm(this, "Alarm", {
+      alarmName: mangoName(props.installation.namespace, UI_SANDBOX_ALARMS.bytes),
+      alarmDescription:
+        "The UI sandbox origin served more than 10 GiB in one hour: far more than the previews of an installation " +
+        "need, since browsers keep its mirror. Look first at its access logs (prefix of the sandbox distribution in the " +
+        "access-logs bucket): the referers, the IPs and the paths under /vendor/, then at the rate limits of the web ACL.",
+      metric: new cloudwatch.Metric({
+        namespace: "AWS/CloudFront",
+        metricName: "BytesDownloaded",
+        dimensionsMap: { DistributionId: props.distributionId, Region: "Global" },
+        statistic: cloudwatch.Stats.SUM,
+        period: Duration.hours(1),
+      }),
+      threshold: UI_SANDBOX_BYTES_PER_HOUR,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(new cloudwatchActions.SnsAction(props.alertsTopic));
   }
 }

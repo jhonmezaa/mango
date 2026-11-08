@@ -1,6 +1,7 @@
-import { CfnParameter, NestedStack, Token } from "aws-cdk-lib";
+import { CfnParameter, CfnResource, NestedStack, Token } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as sns from "aws-cdk-lib/aws-sns";
 import * as avp from "aws-cdk-lib/aws-verifiedpermissions";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
@@ -10,6 +11,7 @@ import {
   grantChatFilesApi,
 } from "../constructs/chat-files-scan.js";
 import { CodeConnector, CodeConnectorProps } from "../constructs/code-connector.js";
+import { acknowledge, arnWildcardFinding } from "../nag.js";
 import { CodeSandbox, CodeSandboxProps } from "../constructs/code-sandbox.js";
 import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
 import { EvalJudge, EvalJudgeProps } from "../constructs/eval-judge.js";
@@ -20,7 +22,13 @@ import { RemoteRelease } from "../constructs/remote-release.js";
 import { RenderDocument, RenderDocumentProps } from "../constructs/render-document.js";
 import { TraceReader, TraceReaderProps } from "../constructs/trace-reader.js";
 import { TurnWorker, TurnWorkerProps } from "../constructs/turn-worker.js";
-import { UiSandboxWriter, UiSandboxWriterProps } from "../constructs/ui-sandbox-origin.js";
+import {
+  UiSandboxBytesAlarm,
+  UiSandboxContent,
+  UiSandboxContentProps,
+  UiSandboxWriter,
+  UiSandboxWriterProps,
+} from "../constructs/ui-sandbox-origin.js";
 
 /**
  * Stacks nested in Core (D99). CloudFormation counts at most 500 resources per template, and a
@@ -283,22 +291,74 @@ export class RenderDocumentStack extends CoreNestedStack {
   }
 }
 
+export interface UiSandboxStackProps extends UiSandboxWriterProps {
+  /** The alerts topic of the installation, for the alarm of bytes served (TM-UI12). */
+  readonly alertsTopic: sns.ITopic;
+  /** The runner and the mirror of the release; absent when the synthesis skips the web (`skipSpa`). */
+  readonly content?: Omit<UiSandboxContentProps, "distributionId"> & {
+    /** The bucket the release's assets are copied from, as the provider's policy names it. */
+    readonly assetsBucket: string;
+  };
+}
+
 /**
  * The second origin's pieces that Core does not read (D123 (2)): the custom resource that writes
  * the SPA's origin to the key value store of the sandbox distribution, its function
- * `Mango-<ns>-UiSandboxOrigin`, and the v2 access log delivery of that distribution. Nothing here
- * holds data: the bucket, the distribution, its headers policy, function and store stay in Core,
- * because the CSP of the SPA names the distribution (`frame-src`). Writing the store from here,
- * after both distributions exist, is what keeps them from waiting for each other.
+ * `Mango-<ns>-UiSandboxOrigin`, the v2 access log delivery of that distribution, the content of
+ * the release (the runner and the mirror of dependencies, V2/V3) and the alarm of bytes served.
+ * Nothing here holds data: the bucket, the distribution, its headers policy, function and store
+ * stay in Core, because the CSP of the SPA names the distribution (`frame-src`). Writing the
+ * store from here, after both distributions exist, is what keeps them from waiting for each other.
  */
 export class UiSandboxStack extends CoreNestedStack {
   readonly writer: UiSandboxWriter;
 
-  constructor(scope: Construct, id: string, props: UiSandboxWriterProps) {
+  constructor(scope: Construct, id: string, props: UiSandboxStackProps) {
     super(scope, id, "UI sandbox origin");
-    this.writer = new UiSandboxWriter(this, "UiSandboxWriter", {
-      ...props,
-      installation: this.namespaceOf(props.installation),
+    const installation = this.namespaceOf(props.installation);
+    this.writer = new UiSandboxWriter(this, "UiSandboxWriter", { ...props, installation });
+    new UiSandboxBytesAlarm(this, "BytesAlarm", {
+      installation,
+      distributionId: props.distributionId,
+      alertsTopic: props.alertsTopic,
     });
+    if (props.content) {
+      new UiSandboxContent(this, "Content", { ...props.content, distributionId: props.distributionId });
+      acknowledgeBucketDeploymentProvider(this, [
+        "Action::s3:Abort*",
+        "Action::s3:DeleteObject*",
+        "Action::s3:GetBucket*",
+        "Action::s3:GetObject*",
+        "Action::s3:List*",
+        "Resource::*",
+        `Resource::arn:aws:s3:::${props.content.assetsBucket}/*`,
+        arnWildcardFinding(props.content.bucket.node.defaultChild as CfnResource, "/*", "Arn", this).replace(
+          /^AwsSolutions-IAM5\[(.*)\]$/,
+          "$1",
+        ),
+      ]);
+    }
+  }
+}
+
+/**
+ * The findings of the provider aws-cdk-lib creates for the `BucketDeployment`s of a nested stack
+ * (its singleton function, role and policy), as Core acknowledges its own.
+ */
+function acknowledgeBucketDeploymentProvider(stack: NestedStack, findings: string[]): void {
+  for (const child of stack.node.children) {
+    if (!/^(AWS[0-9a-f]{32}|Custom::)/.test(child.node.id)) continue;
+    acknowledge(
+      child,
+      { id: "AwsSolutions-L1", reason: "CDK-managed provider; runtime is chosen by aws-cdk-lib." },
+      {
+        id: "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]",
+        reason: "CDK-managed provider uses AWSLambdaBasicExecutionRole for its own logs.",
+      },
+      ...findings.map((finding) => ({
+        id: `AwsSolutions-IAM5[${finding}]`,
+        reason: "CDK-managed provider policy generated by aws-cdk-lib (release assets copied to the UI sandbox bucket).",
+      })),
+    );
   }
 }

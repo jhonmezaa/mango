@@ -1,6 +1,7 @@
 import { CUR_RECONCILER_ALARMS } from "../lib/constructs/cur-reconciler.js";
 import { EVAL_JUDGE_ALARMS } from "../lib/constructs/eval-judge.js";
 import { CHAT_FILES_ALARMS } from "../lib/constructs/chat-files-scan.js";
+import { UI_SANDBOX_ALARMS } from "../lib/constructs/ui-sandbox-origin.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -71,6 +72,9 @@ const PUBLICATION = [
   // The scan results of the chat files (D116 (11)), in the sandbox stack: code-sandbox.test.ts.
   "ChatFiles-blocked",
   "ChatFilesScanResults-failed",
+  // The bytes the second origin serves per hour (TM-UI12), in its nested stack: a cost signal
+  // over one hour, not an outage; ui-sandbox-origin.test.ts.
+  "UiSandbox-bytes",
 ];
 const operational = Object.fromEntries(
   Object.entries(alarms).filter(([name]) => !PUBLICATION.some((suffix) => name === `Mango-${ns}-${suffix}`)),
@@ -615,6 +619,7 @@ describe("dashboard", () => {
       ...Object.values(CUR_RECONCILER_ALARMS),
       ...Object.values(EVAL_JUDGE_ALARMS),
       ...Object.values(CHAT_FILES_ALARMS),
+      ...Object.values(UI_SANDBOX_ALARMS),
     ].map(
       (name) => `Mango-${ns}-${name}`,
     );

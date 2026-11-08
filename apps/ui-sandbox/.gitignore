@@ -1,0 +1,7 @@
+dist/
+node_modules/
+coverage/
+.vendor-build/
+dist-e2e/
+test-results/
+playwright-report/

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@mango/api-client": "workspace:*",
+    "@mango/ui-sandbox": "workspace:*",
     "i18next": "26.5.2",
     "oidc-client-ts": "3.5.0",
     "qrcode-generator": "2.0.4",

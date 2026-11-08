@@ -2,13 +2,19 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
-import { App } from "aws-cdk-lib";
+import { App, CfnParameter, Stack } from "aws-cdk-lib";
+import { Template } from "aws-cdk-lib/assertions";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { assertNoSandboxContent } from "../lib/constructs/edge.js";
 import { ACCESS_LOG_FIELDS } from "../lib/constructs/edge.js";
 import {
+  checkUiSandboxDist,
   SPA_ORIGIN_KEY,
+  UI_SANDBOX_ALARMS,
+  UI_SANDBOX_BYTES_PER_HOUR,
+  UiSandboxContent,
   UI_SANDBOX_CSP,
   UI_SANDBOX_PERMISSIONS,
   uiSandboxFunctionCode,
@@ -305,5 +311,120 @@ describe("what writes the store, in the UiSandbox nested stack (D99)", () => {
     // The same destination as the SPA's: the access-logs bucket, prefix `cloudfront`.
     const spaDelivery = ofType("AWS::Logs::Delivery").find(([, d]) => d !== delivery[1])!;
     expect(delivery[1].Properties.DeliveryDestinationArn).toEqual(spaDelivery[1].Properties.DeliveryDestinationArn);
+  });
+});
+
+describe("the alarm of bytes served (TM-UI12)", () => {
+  it("watches the bytes of the sandbox distribution per hour and notifies the alerts topic", () => {
+    const alarms = ofType("AWS::CloudWatch::Alarm").filter(
+      ([, a]) => a.Properties.AlarmName === `Mango-${ns}-${UI_SANDBOX_ALARMS.bytes}`,
+    );
+    expect(alarms).toHaveLength(1);
+    const alarm = alarms[0]![1].Properties;
+    expect(alarm.Namespace).toBe("AWS/CloudFront");
+    expect(alarm.MetricName).toBe("BytesDownloaded");
+    expect(alarm.Statistic).toBe("Sum");
+    expect(alarm.Period).toBe(3600);
+    expect(alarm.Threshold).toBe(UI_SANDBOX_BYTES_PER_HOUR);
+    const dimensions = Object.fromEntries((alarm.Dimensions as Json[]).map((d) => [d.Name, d.Value]));
+    expect(dimensions.Region).toBe("Global");
+    expect(JSON.stringify(dimensions.DistributionId)).toContain(sandboxId);
+    expect(alarm.TreatMissingData).toBe("notBreaching");
+    const actions = JSON.stringify(alarm.AlarmActions);
+    expect(ofType("AWS::SNS::Topic").some(([id]) => actions.includes(`"${id}"`))).toBe(true);
+  });
+
+  it("is on the operations dashboard", () => {
+    const [, dashboard] = ofType("AWS::CloudWatch::Dashboard")[0]!;
+    expect(JSON.stringify(dashboard.Properties.DashboardBody)).toContain(`${UI_SANDBOX_ALARMS.bytes}`);
+  });
+});
+
+describe("the content of the second origin, from the release (V2, D123 (3))", () => {
+  const root = mkdtempSync(join(tmpdir(), "ui-sandbox-dist-"));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  /** A built sandbox: the runner and a small mirror, its .wasm in its own tree. */
+  function built(pyodidePackages?: string[]): string {
+    const dist = mkdtempSync(join(root, "dist-"));
+    const files: Record<string, string> = {
+      "sandbox.html": "<!doctype html>",
+      "assets/sandbox-abc.js": "void 0",
+      "vendor/react/18.3.1/react.mjs": "export default 1",
+      "vendor/pyodide/0.26.4/pyodide.js": "void 0",
+      "vendor-wasm/pyodide/0.26.4/pyodide.asm.wasm": "\0asm",
+    };
+    for (const [path, body] of Object.entries(files)) {
+      mkdirSync(join(dist, path, ".."), { recursive: true });
+      writeFileSync(join(dist, path), body);
+    }
+    const listed = Object.fromEntries(
+      Object.entries(files)
+        .filter(([path]) => path.startsWith("vendor"))
+        .map(([path, body]) => [path.replace(/^vendor(-wasm)?\//, ""), { sha256: "0".repeat(64), bytes: Buffer.byteLength(body) }]),
+    );
+    writeFileSync(join(dist, "vendor/manifest.json"), JSON.stringify({ files: listed, ...(pyodidePackages ? { pyodidePackages } : {}) }));
+    writeFileSync(join(root, "vendor.json"), JSON.stringify({ pyodide: { packages: ["numpy", "pandas", "matplotlib"] } }));
+    return dist;
+  }
+
+  function synth(dist: string): Record<string, Json> {
+    const stack = new Stack(new App(), "Content", { env: { account: "111122223333", region: "us-east-1" } });
+    const bucket = new s3.Bucket(stack, "SandboxBucket");
+    const spaOrigin = new CfnParameter(stack, "SpaOrigin", { type: "String" }).valueAsString;
+    new UiSandboxContent(stack, "Content", {
+      bucket,
+      distributionId: "E2EXAMPLE",
+      distributionDomainName: "d123.cloudfront.net",
+      spaOrigin,
+      dist,
+      release: false,
+    });
+    return Template.fromStack(stack).toJSON().Resources as Record<string, Json>;
+  }
+
+  const deployments = synth(built());
+  const all = Object.values(deployments).filter((r) => r.Type === "Custom::CDKBucketDeployment");
+  const prefixed = (prefix: string) => all.filter((d) => d.Properties.DestinationBucketKeyPrefix === prefix);
+
+  it("serves .wasm as application/wasm, uploaded apart from the rest of the mirror (P4)", () => {
+    const mirror = prefixed("vendor/");
+    expect(mirror).toHaveLength(2);
+    const wasm = mirror.filter((d) => d.Properties.SystemMetadata?.["content-type"] === "application/wasm");
+    expect(wasm).toHaveLength(1);
+    const rest = mirror.find((d) => d !== wasm[0])!;
+    expect(rest.Properties.SystemMetadata?.["content-type"]).toBeUndefined();
+  });
+
+  it("keeps the mirror and the runner's assets forever in the browser, and never the entry point", () => {
+    for (const deployment of [...prefixed("vendor/"), ...prefixed("assets/")]) {
+      expect(deployment.Properties.SystemMetadata["cache-control"]).toBe("public, max-age=31536000, immutable");
+      expect(deployment.Properties.Prune).toBe(false);
+    }
+    const entry = all.filter((d) => d.Properties.DestinationBucketKeyPrefix === undefined);
+    expect(entry).toHaveLength(1);
+    expect(entry[0].Properties.SystemMetadata["cache-control"]).toBe("no-store");
+    expect(entry[0].Properties.DistributionPaths).toEqual(["/sandbox.html", "/runner-config.json"]);
+    expect(entry[0].Properties.DistributionId).toBe("E2EXAMPLE");
+  });
+
+  it("writes runner-config.json with the SPA's origin, the only window the runner answers", () => {
+    const entry = all.find((d) => d.Properties.DestinationBucketKeyPrefix === undefined)!;
+    // sandbox.html and runner-config.json; the origin is a deploy-time value of the template.
+    expect(entry.Properties.SourceObjectKeys).toHaveLength(2);
+    expect(JSON.stringify(entry.Properties.SourceMarkers)).toContain('{"Ref":"SpaOrigin"}');
+  });
+
+  it("refuses a sandbox that is not built, or a mirror that is not its manifest", () => {
+    const dist = built();
+    expect(() => checkUiSandboxDist(join(root, "nothing"), false)).toThrow(/not built/);
+    writeFileSync(join(dist, "vendor/react/18.3.1/react.mjs"), "changed after the manifest");
+    expect(() => checkUiSandboxDist(dist, false)).toThrow(/does not match its manifest/);
+  });
+
+  it("refuses a release whose mirror lacks the Pyodide packages", () => {
+    expect(() => checkUiSandboxDist(built(), true)).toThrow(/Pyodide packages/);
+    expect(() => checkUiSandboxDist(built(["numpy"]), true)).toThrow(/pandas, matplotlib/);
+    expect(() => checkUiSandboxDist(built(["matplotlib", "numpy", "pandas"]), true)).not.toThrow();
   });
 });
