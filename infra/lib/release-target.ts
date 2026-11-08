@@ -27,6 +27,12 @@ const releaseTargetSchema = z
     imageRepository: z.string().regex(/^[a-z0-9][a-z0-9._/-]{1,200}$/),
     /** Digest of the published image: a release never names a tag. */
     imageDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+    /**
+     * Digest of the image of `Mango-<ns>-RenderDocument` (D117 (2)), in the same repository as
+     * mango-api under the tag `render-document-<label>`: the repository policy that lets the
+     * customer organizations pull is the one of mango-api.
+     */
+    renderDocumentDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
   })
   .strict();
 
@@ -42,6 +48,7 @@ export const UNPUBLISHED_TARGET: ReleaseTarget = {
   label: "v0.0.0-unpublished",
   imageRepository: "mango-provider/api",
   imageDigest: `sha256:${"0".repeat(64)}`,
+  renderDocumentDigest: `sha256:${"1".repeat(64)}`,
 };
 
 /** The target `mise run dist` passes as CDK context, or the unpublished one. */

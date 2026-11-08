@@ -1,5 +1,6 @@
 # Publish a Mango release to the provider account (D58): templates and assets to the release
-# buckets, the mango-api image to the provider's repository, and the signed manifest.
+# buckets, the mango-api and render-document images to the provider's repository (D117 (6)), and
+# the signed manifest.
 # Nothing is deployed to a customer account from here: customers install with CloudFormation
 # from what this publishes (docs/runbooks/install.md).
 #

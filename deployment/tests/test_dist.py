@@ -458,3 +458,29 @@ def test_a_release_takes_exactly_the_signed_profile_of_its_revision(tmp_path: Pa
         dist.check_remote_profiles(repo, signed)
     (signed / "azure-devops-2026.10.27-1.remote.json").unlink()
     dist.check_remote_profiles(repo, signed)
+
+
+def test_both_images_go_to_the_repository_of_mango_api_under_their_own_tags() -> None:
+    # D117 (2): render-document reuses the repository (and its pull policy) of mango-api.
+    assert dist.IMAGES == {
+        "imageDigest": ("mango-api", "apps/api/Dockerfile", ""),
+        "renderDocumentDigest": (
+            "render-document",
+            "functions/render-document/Dockerfile",
+            "render-document-",
+        ),
+    }
+    assert set(dist.IMAGES) <= set(dist.UNPUBLISHED)
+    for _name, dockerfile, _prefix in dist.IMAGES.values():
+        assert (REPO / dockerfile).is_file()
+
+
+def test_the_render_image_is_built_on_bases_pinned_by_digest_and_one_debian_snapshot() -> None:
+    dockerfile = (REPO / "functions" / "render-document" / "Dockerfile").read_text()
+    bases = re.findall(r"^FROM (\S+)", dockerfile, re.M)
+    assert bases[-1] == "scratch"
+    for base in bases[:-1]:
+        assert re.fullmatch(r"[a-z0-9./-]+:[0-9][a-z0-9.-]*@sha256:[0-9a-f]{64}", base), base
+    assert re.search(r"^ARG DEBIAN_SNAPSHOT=\d{8}T\d{6}Z$", dockerfile, re.M)
+    assert "deb.debian.org" not in dockerfile
+    assert f"--date=@{dist.IMAGE_EPOCH}" in dockerfile

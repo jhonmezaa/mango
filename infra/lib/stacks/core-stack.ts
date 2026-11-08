@@ -33,6 +33,7 @@ import { Tickets } from "../constructs/tickets.js";
 import { ChatFiles, CHAT_FILES_PREFIXES } from "../constructs/chat-files.js";
 import { SandboxVpc } from "../constructs/code-sandbox.js";
 import { Presign } from "../constructs/presign.js";
+import { RENDER_DOCUMENT_ALARMS } from "../constructs/render-document.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
@@ -81,6 +82,7 @@ import {
   ObservabilityStack,
   OperationsStack,
   RemoteMcpStack,
+  RenderDocumentStack,
   SandboxStack,
   TurnWorkerStack,
 } from "./core-nested.js";
@@ -301,6 +303,21 @@ export class CoreStack extends Stack {
       vpcId: sandboxVpc.vpc.vpcId,
       chatFiles: { bucket: chatFiles.bucket, key: chatFiles.key },
     });
+    // D117: Word, Excel and PowerPoint to PDF and PNG pages, from the image of the release in the
+    // repository of mango-api, by digest. Only in a release: there is no image to name without one.
+    if (props.release) {
+      new RenderDocumentStack(this, "RenderDocument", {
+        installation: cfg,
+        chatFiles: { bucket: chatFiles.bucket, key: chatFiles.key },
+        image: {
+          repositoryArn: `arn:${this.partition}:ecr:${this.region}:${props.release.providerAccount}:repository/${props.release.imageRepository}`,
+          repositoryName: props.release.imageRepository,
+          digest: props.release.renderDocumentDigest,
+        },
+        configKey: tools.configKey,
+        alertsTopic: alerts.topic,
+      });
+    }
     // Every URL a browser uses is signed by a role of its own, never with the task's
     // credentials: GuardDuty reports those used outside AWS (2026-10-21).
     const presign = new Presign(this, "Presign", {
@@ -796,7 +813,11 @@ export class CoreStack extends Stack {
         deadLetters: chatTurns.deadLetters,
       },
       // Alarms of the other nested stacks, by name: each nested stack is a leaf (D99 (4)).
-      nestedAlarms: [...Object.values(CUR_RECONCILER_ALARMS), ...Object.values(EVAL_JUDGE_ALARMS)],
+      nestedAlarms: [
+        ...Object.values(CUR_RECONCILER_ALARMS),
+        ...Object.values(EVAL_JUDGE_ALARMS),
+        ...(props.release ? Object.values(RENDER_DOCUMENT_ALARMS) : []),
+      ],
     });
     // «Probar búsqueda» throttled by Bedrock counts in the alarm of the tool (D88 (12)).
     knowledge.countApiThrottles(api.logGroup);

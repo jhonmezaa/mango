@@ -63,8 +63,10 @@ RUN printf '%s\n' \
  && rm -rf /var/log/*
 COPY --from=build /app /app
 # One date for every file: the layer depends on what the files hold, not on when it was built.
-RUN find / -xdev -not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' \
-      -exec touch --no-dereference --date=@315532800 {} + 2>/dev/null; true
+# ldconfig's auxiliary cache records inodes and times of the build machine: it is only a cache.
+RUN rm -f /var/cache/ldconfig/aux-cache \
+ && find / -xdev -not -path '/proc/*' -not -path '/sys/*' -not -path '/dev/*' \
+      -exec touch --no-dereference --date=@315532800 {} + 2>/dev/null || true
 
 # One layer: the final image is the runtime stage's filesystem, without the history of how it
 # was made (package lists, caches), so the same inputs give the same digest.
@@ -77,5 +79,8 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     MANGO_SOFFICE=/usr/bin/soffice MANGO_PDFTOPPM=/usr/bin/pdftoppm MANGO_PDFINFO=/usr/bin/pdfinfo
 WORKDIR /app
 USER 10001:10001
+# Lambda ignores it; it serves local runs: LibreOffice and Poppler of the image start.
+HEALTHCHECK --interval=5m --timeout=30s --retries=1 \
+  CMD ["/usr/bin/soffice", "--headless", "--version"]
 ENTRYPOINT ["/usr/local/bin/python", "-m", "awslambdaric"]
 CMD ["mango_render_document.handler.lambda_handler"]

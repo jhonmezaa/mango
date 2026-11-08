@@ -48,22 +48,24 @@ const STATEFUL = [
 ];
 
 describe("stacks nested in Core (D99)", () => {
-  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker and Sandbox, and keep Core of a release under 405 resources", () => {
+  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox and RenderDocument, and keep Core of a release under 411 resources", () => {
     expect([...nested.keys()].sort()).toEqual([
       "Authorization",
       "CurReconciliation",
       "EvalJudge",
       "Operations",
       "RemoteMcp",
+      "RenderDocument",
       "Sandbox",
       "Traces",
       "TurnWorker",
     ]);
-    expect(stackResources).toHaveLength(8);
+    expect(stackResources).toHaveLength(9);
     // 405 since the turn worker (D121): its queues and key hold data and stay in Core (D99 (2)).
     // 410 since the chat files and the code sandbox (D114, D116): the bucket, its key and the
-    // sandbox VPC stay in Core; the rest of the sandbox is in a nested stack.
-    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(410);
+    // sandbox VPC stay in Core; the rest of the sandbox is in a nested stack. The render of Office
+    // documents (D117 (8)) is one more resource of Core: its nested stack, 411.
+    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(411);
   });
 
   it("are created from a template of the release's assets bucket, named by its content (D25, D69)", () => {

@@ -7,7 +7,8 @@ A release is what a customer installs with CloudFormation and nothing else:
 * ``regional-s3-assets/``: every file the templates read (Lambda code, the SPA, signed packs),
   the templates of the stacks nested in Core among them (D99): CloudFormation reads each one
   from the ``TemplateURL`` of its parent, which names it by content like any other asset.
-* the ``mango-api`` image, in the provider's repository, named by digest in the template.
+* the ``mango-api`` image and the ``render-document`` image (D117 (2)), in the provider's
+  repository (tags ``<label>`` and ``render-document-<label>``), named by digest in the templates.
 * ``manifest.json``: the digest of each of those, signed with the provider's key.
 
 Nothing is built in the customer account (rules 1 and 2). Published keys are never
@@ -65,6 +66,17 @@ UNPUBLISHED = {
     "bucket": "mango-releases-unpublished",
     "imageRepository": "mango-provider/api",
     "imageDigest": "sha256:" + "0" * 64,
+    "renderDocumentDigest": "sha256:" + "1" * 64,
+}
+# The images of a release: what each is built from and the tag it is pushed with (the label,
+# after a prefix). Both go to the repository of mango-api (D117 (2)).
+IMAGES = {
+    "imageDigest": ("mango-api", "apps/api/Dockerfile", ""),
+    "renderDocumentDigest": (
+        "render-document",
+        "functions/render-document/Dockerfile",
+        "render-document-",
+    ),
 }
 
 
@@ -233,15 +245,17 @@ def publisher_environment(role_arn: str | None) -> dict[str, str]:
     return env
 
 
-def publish_image(target: dict[str, str], region: str, env: dict[str, str]) -> str:
-    """Build the mango-api image for arm64, push it and return the digest the registry holds.
+def publish_image(
+    target: dict[str, str], region: str, env: dict[str, str], dockerfile: str, tag: str
+) -> str:
+    """Build one image of the release for arm64, push it and return the digest the registry holds.
 
     The image is always built, never taken from the registry by a tag of its inputs: what a
     release names is what this run built. A build of unchanged inputs gives the digest already
     published, and pushing it again only adds the tag of the label.
     """
     registry = f"{target['providerAccount']}.dkr.ecr.{region}.amazonaws.com"
-    reference = f"{registry}/{target['imageRepository']}:{target['label']}"
+    reference = f"{registry}/{target['imageRepository']}:{tag}"
     password = run("aws", "ecr", "get-login-password", "--region", region, env=env)
     login = subprocess.run(  # noqa: S603
         ["docker", "login", "--username", "AWS", "--password-stdin", registry],  # noqa: S607
@@ -255,7 +269,7 @@ def publish_image(target: dict[str, str], region: str, env: dict[str, str]) -> s
             "docker", "buildx", "build", "--platform", "linux/arm64",
             "--provenance=false", "--sbom=false",
             "--build-arg", f"SOURCE_DATE_EPOCH={IMAGE_EPOCH}",
-            "--file", "apps/api/Dockerfile", "--tag", reference, "--push", ".",
+            "--file", dockerfile, "--tag", reference, "--push", ".",
         )  # fmt: skip
     finally:
         subprocess.run(["docker", "logout", registry], capture_output=True, check=False)  # noqa: S603, S607
@@ -263,7 +277,7 @@ def publish_image(target: dict[str, str], region: str, env: dict[str, str]) -> s
         "aws", "ecr", "describe-images", "--region", region,
         "--registry-id", target["providerAccount"],
         "--repository-name", target["imageRepository"],
-        "--image-ids", f"imageTag={target['label']}",
+        "--image-ids", f"imageTag={tag}",
         "--query", "imageDetails[0].imageDigest", "--output", "text", env=env,
     )  # fmt: skip
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
@@ -423,9 +437,11 @@ def main() -> None:
     print("· building the SPA")
     run("pnpm", "--filter", "@mango/web", "build")
     if args.publish:
-        print("· building and pushing the mango-api image")
-        target["imageDigest"] = publish_image(target, region, env)
-        print(f"  {target['imageDigest']}")
+        for field, (name, dockerfile, prefix) in IMAGES.items():
+            print(f"· building and pushing the {name} image")
+            tag = prefix + target["label"]
+            target[field] = publish_image(target, region, env, dockerfile, tag)
+            print(f"  {target[field]}")
     check_remote_profiles()
     print("· synthesizing the templates")
     if CDK_OUT.exists():
@@ -453,6 +469,12 @@ def main() -> None:
             "image_repository": target["imageRepository"],
         },
         "image": {"digest": target["imageDigest"]},
+        # Every image the templates name, by digest (D117 (2)): `verify-release.py` checks that
+        # the templates name exactly these.
+        "images": [
+            {"name": name, "tag": prefix + label, "digest": target[field]}
+            for field, (name, _dockerfile, prefix) in IMAGES.items()
+        ],
         "member_template_sha256": member_template_sha256(),
         "templates": templates,
         # The templates of the stacks nested in Core (D99): assets the verification requires.

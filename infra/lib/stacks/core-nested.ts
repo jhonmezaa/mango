@@ -11,6 +11,7 @@ import { platformPolicies } from "../constructs/governance.js";
 import { OperationalAlarms, OperationalAlarmsProps } from "../constructs/operational-alarms.js";
 import { RemoteMcpApi } from "../constructs/remote-mcp-api.js";
 import { RemoteRelease } from "../constructs/remote-release.js";
+import { RenderDocument, RenderDocumentProps } from "../constructs/render-document.js";
 import { TraceReader, TraceReaderProps } from "../constructs/trace-reader.js";
 import { TurnWorker, TurnWorkerProps } from "../constructs/turn-worker.js";
 
@@ -219,6 +220,24 @@ export class SandboxStack extends CoreNestedStack {
   constructor(scope: Construct, id: string, props: CodeSandboxProps) {
     super(scope, id, "code sandbox");
     this.sandbox = new CodeSandbox(this, "CodeSandbox", {
+      ...props,
+      installation: this.namespaceOf(props.installation),
+    });
+  }
+}
+
+/**
+ * `Mango-<ns>-RenderDocument` (D117): the Lambda container of the release that renders a Word,
+ * Excel or PowerPoint file of the chat to a PDF and PNG pages, with its role, log group and
+ * alarms. Nothing here holds data: it reads and writes the chat files bucket of Core, which
+ * passes the bucket and its key as parameters.
+ */
+export class RenderDocumentStack extends CoreNestedStack {
+  readonly render: RenderDocument;
+
+  constructor(scope: Construct, id: string, props: RenderDocumentProps) {
+    super(scope, id, "render of Office documents");
+    this.render = new RenderDocument(this, "RenderDocument", {
       ...props,
       installation: this.namespaceOf(props.installation),
     });

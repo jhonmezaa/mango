@@ -100,3 +100,53 @@ def test_a_nested_stack_from_another_bucket_is_not_verified(tmp_path: Path) -> N
     manifest = _release(tmp_path, url=other)
     with pytest.raises(verify.ReleaseError, match="not created from a template of the release"):
         verify.verify_nested(tmp_path, manifest)
+
+
+# --- Images (D117 (2)) -------------------------------------------------------------------------
+
+API = "sha256:" + "a" * 64
+RENDER = "sha256:" + "c" * 64
+
+
+def _with_images(root: Path, in_core: list[str], in_nested: list[str]) -> dict[str, Any]:
+    manifest = _release(root)
+    core = root / "global-s3-assets" / "Core.template.json"
+    template = json.loads(core.read_text())
+    template["Resources"]["Api"] = {"Properties": {"Image": [f"repo@{d}" for d in in_core]}}
+    core.write_text(json.dumps(template))
+    nested = root / "regional-s3-assets" / Path(KEY).name
+    body = json.loads(nested.read_text())
+    body["Resources"]["Render"] = {"Properties": {"ImageUri": [f"repo@{d}" for d in in_nested]}}
+    nested.write_text(json.dumps(body))
+    manifest["nested_templates"][0]["sha256"] = hashlib.sha256(nested.read_bytes()).hexdigest()
+    manifest["images"] = [
+        {"name": "mango-api", "tag": "v1.2.3", "digest": API},
+        {"name": "render-document", "tag": "render-document-v1.2.3", "digest": RENDER},
+    ]
+    return manifest
+
+
+def test_the_templates_run_exactly_the_images_of_the_manifest(tmp_path: Path) -> None:
+    verify.verify_images(tmp_path, _with_images(tmp_path, [API], [RENDER]))
+
+
+@pytest.mark.parametrize(
+    ("in_core", "in_nested"),
+    [
+        ([API], []),  # an image of the manifest that nothing runs
+        ([API], ["sha256:" + "d" * 64]),  # an image the manifest does not sign
+        ([API, "sha256:" + "d" * 64], [RENDER]),
+    ],
+)
+def test_an_image_the_manifest_does_not_name_is_not_verified(
+    tmp_path: Path, in_core: list[str], in_nested: list[str]
+) -> None:
+    with pytest.raises(verify.ReleaseError, match="images"):
+        verify.verify_images(tmp_path, _with_images(tmp_path, in_core, in_nested))
+
+
+def test_a_release_before_render_document_names_only_the_image_of_mango_api() -> None:
+    images = verify.manifest_images({"image": {"digest": API}})
+    assert images == [{"name": "mango-api", "digest": API}]
+    with pytest.raises(verify.ReleaseError):
+        verify.manifest_images({"images": [{"name": "x", "digest": "latest"}]})

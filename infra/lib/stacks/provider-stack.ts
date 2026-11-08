@@ -43,7 +43,8 @@ export interface ProviderStackProps extends StackProps {
  *
  * - Release store: a global bucket for templates and a regional bucket for assets. Customers
  *   read by organization id; only the release publisher writes, and never over a published key.
- * - Image repository of mango-api, pulled by digest by the customer organizations.
+ * - Image repository of mango-api, pulled by digest by the customer organizations; it also holds
+ *   the image of the render-document function (D117 (2)), which the Lambda service pulls.
  * - Signing key (KMS, ECC P-256): signs pack statements and release manifests (D36).
  * - GitHub OIDC provider and one role per job: pack signing and release publishing.
  * - Alerts on any use or change outside those two paths.
@@ -319,6 +320,21 @@ export class ProviderStack extends Stack {
         principals: [new iam.AnyPrincipal()],
         actions: ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
         conditions: fromCustomers,
+      }),
+    );
+    // D117 (2): the image of `Mango-<ns>-RenderDocument` lives here too (tag
+    // `render-document-<label>`). A Lambda function created from an image of another account is
+    // pulled by the Lambda service itself, not by the caller, so the service needs its own
+    // statement: only for functions of the customer organizations, and only that function.
+    repository.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "CustomerRenderFunctionPull",
+        principals: [new iam.ServicePrincipal("lambda.amazonaws.com")],
+        actions: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+        conditions: {
+          StringEquals: { "aws:SourceOrgID": customers.valueAsList },
+          ArnLike: { "aws:SourceArn": `arn:${Aws.PARTITION}:lambda:*:*:function:Mango-*-RenderDocument` },
+        },
       }),
     );
     acknowledge(repository, {

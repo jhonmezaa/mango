@@ -11,6 +11,8 @@ Checks, without trusting the place the files came from:
 4. The templates of the stacks nested in Core (D99) are there with their digest, and every
    nested stack of every template is created from one of them: CloudFormation reads them from
    the regional assets bucket, so a template the manifest does not name would go unverified.
+5. The images the templates run (mango-api and render-document, D117 (2)) are exactly the
+   digests the manifest names: an image is installed by digest, never by tag.
 
 Usage, either:
 
@@ -39,6 +41,8 @@ ALGORITHM = "ECDSA_SHA_256"
 DEFAULT_KEY = Path(__file__).resolve().parent.parent / "packs" / "signing-key.pub"
 # How a TemplateURL names a nested template: an asset of the release, named by its hash.
 NESTED_KEY = re.compile(r"mango/assets/[0-9a-f]{64}\.json")
+# How a template names an image: `<repository>@sha256:<digest>`.
+IMAGE_DIGEST = re.compile(r"@(sha256:[0-9a-f]{64})")
 
 
 class ReleaseError(Exception):
@@ -115,6 +119,7 @@ def verify_directory(directory: Path, public_key: Path) -> dict[str, object]:
                 raise ReleaseError(f"{file.name} is not the file the manifest names")
             checked += 1
     checked += verify_nested(directory, manifest)
+    verify_images(directory, manifest)
     manifest["_checked_files"] = checked
     return manifest
 
@@ -165,6 +170,40 @@ def verify_nested(directory: Path, manifest: dict[str, object]) -> int:
     if sorted(named) != sorted(files):
         raise ReleaseError("the nested stacks and the nested templates of the manifest differ")
     return len(entries)
+
+
+def manifest_images(manifest: dict[str, object]) -> list[dict[str, str]]:
+    """The images of a release; one before render-document (D117) named only mango-api's."""
+    images = manifest.get("images")
+    if images is None:
+        image = manifest.get("image")
+        images = (
+            [{"name": "mango-api", "digest": image.get("digest")}]
+            if isinstance(image, dict)
+            else []
+        )
+    if not isinstance(images, list) or not images:
+        raise ReleaseError("malformed list of images")
+    for entry in images:
+        if not isinstance(entry, dict) or not IMAGE_DIGEST.fullmatch(
+            "@" + str(entry.get("digest"))
+        ):
+            raise ReleaseError("malformed image in the manifest")
+    return images
+
+
+def verify_images(directory: Path, manifest: dict[str, object]) -> None:
+    """Every image digest in the templates is one the manifest signs, and the other way round."""
+    named = {str(entry["digest"]) for entry in manifest_images(manifest)}
+    templates = manifest["templates"]
+    nested = manifest.get("nested_templates", [])
+    if not isinstance(templates, list) or not isinstance(nested, list):
+        raise ReleaseError("malformed lists of templates")
+    files = [directory / "global-s3-assets" / Path(t["file"]).name for t in templates]
+    files += [directory / "regional-s3-assets" / Path(e["key"]).name for e in nested]
+    used = {digest for file in files for digest in IMAGE_DIGEST.findall(file.read_text())}
+    if used != named:
+        raise ReleaseError("the images of the templates are not the images of the manifest")
 
 
 def download(bucket: str, label: str, directory: Path) -> None:
@@ -239,7 +278,8 @@ def main() -> None:
         f" (commit {str(manifest['source_revision'])[:12]})"
     )
     print(f"  signed by the provider's key; {manifest['_checked_files']} files match the manifest")
-    print(f"  image {manifest['image']['digest']}")
+    for image in manifest_images(manifest):
+        print(f"  image {image['name']:<20}{image['digest']}")
     for entry in manifest["templates"]:
         print(f"  {entry['file']:<26}sha256:{entry['sha256']}")
 

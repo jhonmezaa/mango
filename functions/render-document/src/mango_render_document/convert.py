@@ -75,12 +75,10 @@ PROFILE_SETTINGS: tuple[tuple[str, str, str, str], ...] = (
     # A spreadsheet written by a library has formulas without values: recalculate on load, so
     # that the render shows what Excel would (D119). Links stay off and the proxy is dead.
     ("/org.openoffice.Office.Calc/Formula/Load", "OOXMLRecalcMode", "xs:int", "0"),
-    # No Java (none in the image) and no first-start dialogs or update checks.
+    # No Java (none in the image) and no first-start dialogs. The image has no update checker.
     ("/org.openoffice.Office.Java/VirtualMachine", "Enable", "xs:boolean", "false"),
     ("/org.openoffice.Office.Common/Misc", "FirstRun", "xs:boolean", "false"),
     ("/org.openoffice.Office.Common/Misc", "ShowTipOfTheDay", "xs:boolean", "false"),
-    ("/org.openoffice.Office.Jobs/Jobs/org.openoffice.Office.Jobs:Job['UpdateCheck']/Arguments",
-     "AutoCheckEnabled", "xs:boolean", "false"),
 )  # fmt: skip
 
 

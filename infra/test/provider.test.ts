@@ -164,13 +164,29 @@ describe("provider stack", () => {
     const repository = resources("AWS::ECR::Repository")[0]!;
     expect(repository.Properties.ImageTagMutability).toBe("IMMUTABLE");
     const statements = (repository.Properties.RepositoryPolicyText as { Statement: Statement[] }).Statement;
-    expect(statements).toHaveLength(1);
+    expect(statements).toHaveLength(2);
     expect(statements[0]!.Condition).toEqual(ORG_CONDITION);
     expect(actions(statements[0]!).sort()).toEqual([
       "ecr:BatchCheckLayerAvailability",
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer",
     ]);
+    // D117 (2): the Lambda service pulls the render image, for that function of a customer only.
+    const lambda = statements[1]!;
+    expect(lambda.Principal).toEqual({ Service: "lambda.amazonaws.com" });
+    expect(actions(lambda).sort()).toEqual(["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]);
+    expect(Object.keys(lambda.Condition!).sort()).toEqual(["ArnLike", "StringEquals"]);
+    expect(lambda.Condition!.StringEquals).toEqual({
+      "aws:SourceOrgID": ORG_CONDITION.StringEquals["aws:PrincipalOrgID"],
+    });
+    expect(JSON.stringify(lambda.Condition!.ArnLike)).toContain(":lambda:*:*:function:Mango-*-RenderDocument");
+  });
+
+  it("never expires an image: a release names the images it installs by digest (D117 (2))", () => {
+    const repository = resources("AWS::ECR::Repository")[0]!;
+    // No lifecycle policy: nothing deletes `<label>` or `render-document-<label>` of a release
+    // that an installation still runs.
+    expect(repository.Properties.LifecyclePolicy).toBeUndefined();
   });
 
   it("alerts on signing misuse and on changes to roles, key, buckets and repository", () => {
