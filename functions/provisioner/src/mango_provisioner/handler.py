@@ -82,6 +82,8 @@ def _provisioner() -> Provisioner:
             key_id=settings.remote_mcp_key_alias,
             gateway_id=settings.gateway_id,
         ),
+        # D119: the document skills of the release, written into the skills bucket.
+        skills_s3=boto3.client("s3", config=_CLIENT_CONFIG) if settings.skills_bucket else None,
     )
 
 

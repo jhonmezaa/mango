@@ -15,6 +15,7 @@ from urllib.parse import unquote
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from mango_core import document_skills
 from mango_core.skills import BUCKET_PREFIX as SKILLS_ROOT
 from mango_core.skills import parse_ref as parse_skill_ref
 from mango_core.skills import prefix
@@ -68,8 +69,16 @@ def trust_policy(settings: Settings, agent_id: str) -> dict[str, Any]:
 
 def skill_statements(settings: Settings, refs: Iterable[str]) -> list[dict[str, Any]]:
     """Reading the ``SKILL.md`` of exactly the skill versions of the agent (D92): the harness
-    lists and downloads each directory with this role. Nothing else of the bucket."""
-    prefixes = sorted({prefix(*parse_skill_ref(ref)) for ref in refs})
+    lists and downloads each directory with this role. Nothing else of the bucket. A ref
+    ``release:<id>`` is a document skill of the release (D119), in its own folder."""
+    prefixes = sorted(
+        {
+            document_skills.prefix(ref.removeprefix(document_skills.REF_PREFIX))
+            if ref.startswith(document_skills.REF_PREFIX)
+            else prefix(*parse_skill_ref(ref))
+            for ref in refs
+        }
+    )
     if not prefixes:
         return []
     if not settings.skills_bucket or not settings.skills_key_arn:

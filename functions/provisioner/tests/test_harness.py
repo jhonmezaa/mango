@@ -8,6 +8,7 @@ import boto3
 import pytest
 from botocore.stub import ANY, Stubber
 
+from mango_core import document_skills
 from mango_provisioner.config import Settings
 from mango_provisioner.errors import RetryableError, StepError
 from mango_provisioner.harness import (
@@ -199,6 +200,7 @@ def test_a_version_that_runs_code_gets_the_code_tools_and_nothing_of_the_harness
     assert allowed == [
         "@mango/code___list_files",
         "@mango/code___read_file",
+        "@mango/code___render_document",
         "@mango/code___run_python",
         "@mango/finops___get_cost_and_usage",
     ]
@@ -519,6 +521,42 @@ def test_a_version_without_skills_clears_them_and_keeps_its_fingerprint() -> Non
         SKILLED, agent_id=AGENT, version=3, content_hash="a" * 64, definition=make_definition()
     )
     assert again["environmentVariables"] == CONFIG["environmentVariables"]
+
+
+def test_a_version_that_runs_code_gets_the_document_skills_of_the_release() -> None:
+    # D119 (1): the four, from their own folder of the bucket, loaded with the skills tool.
+    config = harness_config(
+        SKILLED,
+        agent_id=AGENT,
+        version=3,
+        content_hash="a" * 64,
+        definition=make_definition(skills=["cost-analysis@1"], capabilities=["code_interpreter"]),
+    )
+    uris = [s["s3"]["uri"] for s in config["skills"]]
+    assert uris[0] == "s3://skills-bucket/skills/cost-analysis/v1/cost-analysis/"
+    assert uris[1:] == [document_skills.s3_uri("skills-bucket", i) for i in document_skills.IDS]
+    assert "skills" in config["allowedTools"]
+    assert "@mango/code___render_document" in config["allowedTools"]
+    # Without a skills bucket the version still runs code, without them.
+    bare = harness_config(
+        SETTINGS,
+        agent_id=AGENT,
+        version=3,
+        content_hash="a" * 64,
+        definition=make_definition(capabilities=["code_interpreter"]),
+    )
+    assert bare["skills"] == []
+
+
+def test_a_skill_named_as_one_of_the_release_is_not_published_with_code() -> None:
+    with pytest.raises(StepError, match="skill_reserved"):
+        harness_config(
+            SKILLED,
+            agent_id=AGENT,
+            version=3,
+            content_hash="a" * 64,
+            definition=make_definition(skills=["xlsx@1"], capabilities=["code_interpreter"]),
+        )
 
 
 def test_skills_without_their_bucket_are_not_published() -> None:

@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)»; cómo se mide y se liquida, punto 7, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07, el 2026-11-08 (PR C2 del plan)
 - **Precisa / reemplaza a:** precisa la regla 4 de `AGENTS.md` y [D73](D073-turno-cortado-nunca-cuesta-cero.md) (una tool que se cobra por tiempo de cómputo; con su punto 7, un turno retenido guarda el coste medido de sus tools); usa la regla 7 (precios como configuración)
-- **Precisada por:** —
+- **Precisada por:** [D119](D119-skills-de-documentos-con-helpers-de-la-release.md) (8) (un render de un documento cuenta como una celda del turno y se cobra por sus segundos al precio de CPU del sandbox)
 
 ## Decisión
 

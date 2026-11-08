@@ -31,5 +31,23 @@
       },
       "required": ["path"]
     }
+  },
+  {
+    "name": "render_document",
+    "description": "Render a Word, Excel or PowerPoint file of this conversation (one a run_python cell saved in /mnt/data, or one the user attached) to a PDF and one PNG per page, written into the sandbox under .renders/ of the working folder. Name the file by the id run_python gave it or by its name. Excel formulas are recalculated, so the pages show the values a user will see. You cannot see the images: inspect them with run_python and mango_docs.inspect_render(folder). Each call counts as one cell of the turn. PDF files are rendered with mango_docs.render_pdf in run_python instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "The file's id (from the run_python output) or its name in /mnt/data, such as 'report.docx' (at most 512 characters)."
+        },
+        "pages": {
+          "type": "integer",
+          "description": "How many pages to render, from the first (1 to 50, 20 if omitted)."
+        }
+      },
+      "required": ["file"]
+    }
   }
 ]

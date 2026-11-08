@@ -843,3 +843,29 @@ def test_unreadable_installed_pointer_fails_closed(lab: Lab, tools: object) -> N
     state = lab.run(lab.approve(make_definition(tools=["aws-pricing.get_pricing"])))
     assert state["failure"] == "installed_pack_invalid"
     assert not lab.role_exists()
+
+
+def test_a_version_that_runs_code_writes_and_reads_the_document_skills(lab: Lab) -> None:
+    # D119: the provisioner writes the texts of the release before the harness names them,
+    # once, and the agent role reads exactly their folders.
+    from dataclasses import replace  # noqa: PLC0415
+
+    from mango_core import document_skills  # noqa: PLC0415
+
+    key = "arn:aws:kms:us-east-1:123456789012:key/22222222-3333-4444-5555-666666666666"
+    settings = replace(lab.settings, skills_bucket="mango-test-skills", skills_key_arn=key)
+    lab.provisioner._settings = settings
+    lab.provisioner._roles._settings = settings
+    lab.run(lab.approve(make_definition(capabilities=["code_interpreter"])))
+    expected = sorted(document_skills.object_key(i) for i in document_skills.IDS)
+    assert sorted(lab.skills_s3.objects) == expected
+    assert {p["Bucket"] for p in lab.skills_s3.puts} == {"mango-test-skills"}
+    config = lab.agentcore.only()["versions"][-1]["config"]
+    assert config["skills"] == document_skills.sources("mango-test-skills")
+    document = lab.iam.get_role_policy(RoleName=settings.role_name(AGENT), PolicyName="agent")[
+        "PolicyDocument"
+    ]
+    read = {s.get("Sid"): s for s in document["Statement"]}["ReadSkills"]["Resource"]
+    assert read == [
+        f"arn:aws:s3:::mango-test-skills/{document_skills.prefix(i)}*" for i in document_skills.IDS
+    ]

@@ -54,7 +54,10 @@ CODE_TARGET = "code"
 Code Interpreter. A version with the ``code_interpreter`` capability has its tools, and only
 such a version."""
 CODE_RUN_TOOL = "run_python"
-CODE_TOOLS = (CODE_RUN_TOOL, "list_files", "read_file")
+CODE_RENDER_TOOL = "render_document"
+"""Renders a Word, Excel or PowerPoint file of the conversation to PDF and PNG pages, back into
+the sandbox (D117, D119): the step "look" of the loop of the document skills."""
+CODE_TOOLS = (CODE_RUN_TOOL, "list_files", "read_file", CODE_RENDER_TOOL)
 """The tools of that target (D114 (5)); no ``run_shell`` in this version."""
 
 

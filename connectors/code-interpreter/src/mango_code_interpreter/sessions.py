@@ -23,6 +23,7 @@ from botocore.exceptions import ClientError
 from mango_code_interpreter.programs import Layout
 from mango_core.code_sandbox import (
     CELL_SECONDS,
+    RENDER_TOOL,
     SESSION_SECONDS,
     run_sk,
     session_sk,
@@ -57,6 +58,18 @@ class GeneratedFile:
     kind: str
     size: int
     sha256: str
+
+
+@dataclass(frozen=True)
+class ChatFile:
+    """A file of the conversation as its record says (``mango_api.chat_files_store``)."""
+
+    file_id: str
+    name: str
+    origin: str
+    """``upload`` (the person attached it) or ``generated`` (a cell wrote it)."""
+    status: str
+    created_at: int
 
 
 class SessionBusyError(Exception):
@@ -356,6 +369,48 @@ class SessionStore:
                 return out
             kwargs["ExclusiveStartKey"] = start
 
+    def chat_file(self, conversation_id: str, wanted: str, now: int) -> ChatFile | None:
+        """The file of the conversation the model named, by id or by name: not deleted, not
+        expired, not blocked by its scan. By name, the newest one that has it (a cell that
+        saves the same name again hands out a new file). Read in the person's own partition:
+        the model cannot name another person's or another conversation's file."""
+        best: ChatFile | None = None
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+            "ExpressionAttributeValues": {
+                ":pk": self._pk,
+                ":prefix": _s(f"{FILE_PREFIX}{conversation_id}#"),
+            },
+            "ConsistentRead": True,
+        }
+        while True:
+            page = self._db.query(**kwargs)
+            for item in page.get("Items", []):
+                if (
+                    item.get("deleted", {}).get("BOOL", False)
+                    or int(item.get("expires_at", {}).get("N", "0")) <= now
+                    or item.get("status", {}).get("S") not in {"ready", "verifying"}
+                ):
+                    continue
+                found = ChatFile(
+                    file_id=item["file_id"]["S"],
+                    name=item["name"]["S"],
+                    origin=item.get("origin", {}).get("S", ""),
+                    status=item["status"]["S"],
+                    created_at=int(item.get("created_at", {}).get("N", "0")),
+                )
+                if found.file_id == wanted:
+                    return found
+                if wanted in {found.name, found.name.rsplit("/", 1)[-1]} and (
+                    best is None or found.created_at >= best.created_at
+                ):
+                    best = found
+            start = page.get("LastEvaluatedKey")
+            if not start:
+                return best
+            kwargs["ExclusiveStartKey"] = start
+
     def record_generated(self, conversation_id: str, files: list[GeneratedFile], now: int) -> None:
         """A record per file a cell handed out, as mango-api records an attached one, waiting
         for the scan of its object (``verifying``): the chat delivers it once it is clean."""
@@ -403,21 +458,31 @@ class SessionStore:
         session_seconds: int,
         code: str,
         now: int,
+        render_of: str | None = None,
     ) -> None:
         """The cell before it runs: if nothing more is ever written, it counts its whole
-        cutoff (``mango_core.code_sandbox.cell_use``)."""
+        cutoff (``mango_core.code_sandbox.cell_use``).
+
+        ``render_of``: a call of ``render_document`` on that file id instead of a cell of code
+        (``tool = render_document``, no ``code``): it counts as one of the turn's cells and is
+        charged its seconds like one (D119)."""
+        item: dict[str, Any] = {
+            "PK": self._pk,
+            "SK": _s(run_sk(turn_id, run_id)),
+            "conversation_id": _s(conversation_id),
+            "state": _s("running"),
+            "session_seconds": _n(session_seconds),
+            "created_at": _n(now),
+            "ttl": _n(now + RUN_RETENTION_SECONDS),
+        }
+        if render_of is None:
+            item["code"] = _s(code)
+        else:
+            item["tool"] = _s(RENDER_TOOL)
+            item["file_id"] = _s(render_of)
         self._db.put_item(
             TableName=self._table,
-            Item={
-                "PK": self._pk,
-                "SK": _s(run_sk(turn_id, run_id)),
-                "conversation_id": _s(conversation_id),
-                "state": _s("running"),
-                "code": _s(code),
-                "session_seconds": _n(session_seconds),
-                "created_at": _n(now),
-                "ttl": _n(now + RUN_RETENTION_SECONDS),
-            },
+            Item=item,
             ConditionExpression="attribute_not_exists(SK)",
         )
 

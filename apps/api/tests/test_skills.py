@@ -292,6 +292,13 @@ def test_a_name_in_use_or_waiting_is_refused(env: Env) -> None:
     assert _code(response) == "skill_exists"
 
 
+@pytest.mark.parametrize("name", ["PDF", "xlsx", "Docx"])
+def test_the_names_of_the_document_skills_of_the_release_are_taken(env: Env, name: str) -> None:
+    # D119: a version that runs code holds them; a harness cannot hold two of one name.
+    response = env.client.post(BASE, json=_body(name=name), headers=_h("admin"))
+    assert _code(response) == "skill_exists"
+
+
 def test_an_expired_request_is_shown_expired_and_cannot_be_approved(env: Env) -> None:
     change_id = _propose(env)
     env.clock.now += CHANGE_LIFETIME + timedelta(minutes=1)

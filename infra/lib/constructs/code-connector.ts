@@ -14,6 +14,7 @@ import { Installation } from "../config/schema.js";
 import { mangoName } from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
 import { PythonFunction } from "./python-function.js";
+import { renderDocumentName } from "./render-document.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -69,6 +70,11 @@ export interface CodeConnectorProps {
   readonly gateway: { readonly id: string; readonly arn: string; readonly roleArn: string };
   /** Cedar policy engine of the Gateway (L2, default deny). */
   readonly policyEngineId: string;
+  /**
+   * Whether `Mango-<ns>-RenderDocument` exists (D117 (8): only in a release). Then the tool
+   * `render_document` invokes it, and this connector is the only principal that may (D119).
+   */
+  readonly renderDocument?: boolean;
 }
 
 /**
@@ -97,7 +103,8 @@ export class CodeConnector extends Construct {
     super(scope, id);
     const cfg = props.installation;
     const ns = cfg.namespace;
-    const { region } = Stack.of(this);
+    const { region, partition, account } = Stack.of(this);
+    const renderFunctionArn = `arn:${partition}:lambda:${region}:${account}:function:${renderDocumentName(ns)}`;
     const viaDynamoDb = { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } };
 
     this.role = new iam.Role(this, "Role", {
@@ -174,6 +181,17 @@ export class CodeConnector extends Construct {
           actions: ["firehose:PutRecord"],
           resources: [props.auditStream.deliveryStreamArn],
         }),
+        // D119: `render_document`, with the keys this connector builds from the signature
+        // (D117 (7)); it then reads the pages under `renders/` with ReadAttachedFiles.
+        ...(props.renderDocument
+          ? [
+              new iam.PolicyStatement({
+                sid: "InvokeRenderDocument",
+                actions: ["lambda:InvokeFunction"],
+                resources: [renderFunctionArn],
+              }),
+            ]
+          : []),
       ],
     });
     acknowledge(this.role, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
@@ -197,7 +215,8 @@ export class CodeConnector extends Construct {
       functionName: mangoName(ns, "CodeInterpreter"),
       description: "Code tools: run the model's Python in the code sandbox (D114)",
       role: this.role,
-      // A cell runs up to its cutoff; its files are read and copied after it.
+      // A cell runs up to its cutoff; its files are read and copied after it. A render waits
+      // for two malware scans (60 s and 90 s) and the render function (3 min): less than this.
       timeout: Duration.seconds(CODE_CELL_SECONDS + 60),
       memorySize: 1536,
       environment: {
@@ -216,6 +235,7 @@ export class CodeConnector extends Construct {
         AUDIT_STREAM: props.auditStream.deliveryStreamName,
         AUDIT_INDEX_TABLE: props.auditIndex.tableName,
         CELL_SECONDS: String(CODE_CELL_SECONDS),
+        ...(props.renderDocument ? { RENDER_FUNCTION: renderDocumentName(ns) } : {}),
       },
       environmentEncryption: props.configKey,
     }).function;

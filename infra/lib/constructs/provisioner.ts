@@ -162,6 +162,8 @@ export interface ProvisionerProps {
 export class Provisioner extends Construct {
   readonly function: lambda.Function;
   readonly stateMachine: sfn.StateMachine;
+  /** `Mango-<ns>-Provisioner`: the skills bucket lets it write the release's skills (D119 (5)). */
+  readonly role: iam.Role;
 
   constructor(scope: Construct, id: string, props: ProvisionerProps) {
     super(scope, id);
@@ -178,6 +180,7 @@ export class Provisioner extends Construct {
       description: "Agent provisioner: creates agent roles (with boundary) and harnesses by SDK",
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     });
+    this.role = role;
 
     // D122: the memory a harness names, only while memory is on.
     platform.memory.grantProvisioner(role);

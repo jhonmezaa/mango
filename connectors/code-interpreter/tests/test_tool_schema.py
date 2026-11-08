@@ -8,9 +8,11 @@ from pathlib import Path
 from mango_code_interpreter.handler import (
     MAX_CODE_CHARS,
     MAX_PATH_CHARS,
+    MAX_RENDER_PAGES,
     RESERVED_CONTEXT_ARG,
     ListArguments,
     ReadArguments,
+    RenderArguments,
     RunArguments,
 )
 from mango_code_interpreter.outputs import TYPES
@@ -27,6 +29,7 @@ def test_the_tools_and_their_arguments_are_the_ones_accepted() -> None:
         ("run_python", RunArguments),
         ("list_files", ListArguments),
         ("read_file", ReadArguments),
+        ("render_document", RenderArguments),
     ):
         assert set(tools[name]["inputSchema"]["properties"]) == set(model.model_fields)
     # The model never sees the argument the interceptor sets.
@@ -45,3 +48,11 @@ def test_the_descriptions_say_the_real_limits_and_types() -> None:
         str(MAX_PATH_CHARS)
         in tools["read_file"]["inputSchema"]["properties"]["path"]["description"]
     )
+
+
+def test_render_document_says_its_limits_and_what_it_takes() -> None:
+    render = {t["name"]: t for t in json.loads(SCHEMA.read_text())}["render_document"]
+    assert render["inputSchema"]["required"] == ["file"]
+    assert f"1 to {MAX_RENDER_PAGES}" in render["inputSchema"]["properties"]["pages"]["description"]
+    for kind in ("Word", "Excel", "PowerPoint", "mango_docs.inspect_render"):
+        assert kind in render["description"]

@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from mango_core import document_skills
 from mango_core.agents import AgentDefinition
 from mango_core.evals_harness import EVALS_ID, UNIFIED_TRACES
 from mango_core.harness_tools import (
@@ -159,17 +160,41 @@ def allowed_tools(
     return sorted(out)
 
 
+def release_skills(settings: Settings, definition: AgentDefinition) -> bool:
+    """Whether the harness of this version gets the document skills of the release (D119 (1)):
+    a version that runs code, in an installation with a skills bucket (every installation of
+    a release has one; without it the version runs code without them)."""
+    return definition.code_interpreter and bool(settings.skills_bucket)
+
+
+def skill_refs(settings: Settings, definition: AgentDefinition) -> tuple[str, ...]:
+    """What the role of the agent reads of the skills bucket: its approved skill versions and
+    the document skills of the release when it gets them (``release:<id>``, see
+    :func:`mango_provisioner.role.skill_statements`)."""
+    release = document_skills.refs() if release_skills(settings, definition) else ()
+    return (*definition.skills, *release)
+
+
 def skill_sources(settings: Settings, definition: AgentDefinition) -> list[dict[str, Any]]:
     """The approved skill versions of the definition, as the harness fetches them (D92): one
-    S3 directory each, in the bucket of the installation, written once by mango-api."""
-    if not definition.skills:
+    S3 directory each, in the bucket of the installation, written once by mango-api. A version
+    that runs code also gets the four document skills of the release (D119 (1)), which the
+    provisioner writes before (``Provisioner._release_skills``)."""
+    release = release_skills(settings, definition)
+    if not definition.skills and not release:
         return []
     if not settings.skills_bucket:
         raise StepError("skills_unavailable")
     sources = []
     for ref in definition.skills:
         skill_id, version = parse_skill_ref(ref)
+        if release and document_skills.is_reserved(skill_id):
+            # A harness cannot hold two skills of one name; no creator may propose these ids
+            # any more, so only a skill older than this release can collide.
+            raise StepError("skill_reserved")
         sources.append({"s3": {"uri": s3_uri(settings.skills_bucket, skill_id, version)}})
+    if release:
+        sources.extend(document_skills.sources(settings.skills_bucket))
     return sources
 
 

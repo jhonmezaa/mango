@@ -10,6 +10,12 @@ import { acknowledge } from "../nag.js";
 
 /** Where the `SKILL.md` of every approved version lives: `skills/<id>/v<N>/<id>/SKILL.md`. */
 export const SKILLS_PREFIX = "skills/";
+/**
+ * The document skills of the release (D119), under `skills/` (agents and the Playground read it)
+ * in a folder no skill id can name; written only by the provisioner
+ * (`mango_core.document_skills.RELEASE_PREFIX`).
+ */
+export const RELEASE_SKILLS_PREFIX = `${SKILLS_PREFIX}_release/`;
 
 export interface SkillsProps {
   readonly installation: Installation;
@@ -24,7 +30,8 @@ export interface SkillsProps {
  * - Table `Mango-<ns>-Skills`: the catalog, the approved versions, the requests waiting for an
  *   administrator and the daily activations. Only mango-api writes it.
  * - Bucket: the `SKILL.md` of each approved version, written once by mango-api, with a key of
- *   its own. The AgentCore harness fetches them with the role of each agent, whose policy
+ *   its own; and the document skills of the release (D119), written once by the provisioner
+ *   under `skills/_release/`, a folder no skill id can name. The AgentCore harness fetches them with the role of each agent, whose policy
  *   (written by the provisioner) names only the versions of that agent; the agent boundary is
  *   the ceiling: read this bucket and decrypt with its key, through S3, nothing else.
  */
@@ -128,6 +135,35 @@ export class Skills extends Construct {
       id: `AwsSolutions-IAM5[Resource::<${Stack.of(this).getLogicalId(this.bucket.node.defaultChild as s3.CfnBucket)}.Arn>/${SKILLS_PREFIX}*]`,
       reason: "Each approved version is written at runtime under skills/<id>/v<N>/ (D92): the prefix is the scope.",
     });
+  }
+
+  /**
+   * The provisioner writes the document skills of the release (D119 (5)), once each and never
+   * over an object (`If-None-Match`), under `skills/_release/` only. Granted on the bucket and
+   * on its key, not in the provisioner's own policy, which is at the size limit of an inline
+   * policy (an overflow would be one more resource of Core, D99).
+   */
+  allowReleaseSkillWrites(provisionerRole: iam.IRole): void {
+    const { region } = Stack.of(this);
+    this.bucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "ProvisionerWritesReleaseSkills",
+        principals: [new iam.ArnPrincipal(provisionerRole.roleArn)],
+        actions: ["s3:PutObject"],
+        resources: [this.bucket.arnForObjects(`${RELEASE_SKILLS_PREFIX}*`)],
+        // Only a conditional create: S3 itself refuses a write that could replace an object.
+        conditions: { StringEquals: { "s3:if-none-match": "*" } },
+      }),
+    );
+    this.key.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "ProvisionerEncryptsReleaseSkills",
+        principals: [new iam.ArnPrincipal(provisionerRole.roleArn)],
+        actions: ["kms:GenerateDataKey"],
+        resources: ["*"],
+        conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+      }),
+    );
   }
 
   /**

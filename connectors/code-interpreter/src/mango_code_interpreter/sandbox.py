@@ -29,6 +29,8 @@ _STREAM_ERRORS: Mapping[str, ErrorKind] = {
     "internalServerException": "unavailable",
     "validationException": "unavailable",
 }
+WRITE_CALL_BYTES = 90 * 1024 * 1024
+"""What one ``writeFiles`` call carries at most (the API takes up to 100 MB inline)."""
 _BUSY_CODES = frozenset({"ThrottlingException", "ServiceQuotaExceededException"})
 _GONE_CODES = frozenset({"ResourceNotFoundException", "ConflictException"})
 
@@ -123,6 +125,25 @@ class Sandbox:
         result = self._invoke(
             self._client, session_id, "writeFiles", {"content": [{"path": path, "blob": data}]}
         )
+        if result.is_error:
+            raise SandboxError("unavailable")
+
+    def write_files(self, session_id: str, files: Iterable[tuple[str, bytes]]) -> None:
+        """Several files into the session, in as few ``writeFiles`` calls as their size
+        allows (each one under ``WRITE_CALL_BYTES``)."""
+        batch: list[dict[str, Any]] = []
+        size = 0
+        for path, data in files:
+            if batch and size + len(data) > WRITE_CALL_BYTES:
+                self._write(session_id, batch)
+                batch, size = [], 0
+            batch.append({"path": path, "blob": data})
+            size += len(data)
+        if batch:
+            self._write(session_id, batch)
+
+    def _write(self, session_id: str, content: list[dict[str, Any]]) -> None:
+        result = self._invoke(self._client, session_id, "writeFiles", {"content": content})
         if result.is_error:
             raise SandboxError("unavailable")
 

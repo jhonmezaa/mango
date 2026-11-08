@@ -50,6 +50,7 @@ from mango_api.skills_store import (
     new_change_id,
 )
 from mango_api.web import ApiError, Caller, rate_limited
+from mango_core import document_skills
 from mango_core.agents import InvalidDefinitionError, VersionStatus
 from mango_core.skills import (
     CATEGORIES,
@@ -658,7 +659,11 @@ def propose_skill(deps: SkillsDeps, caller: Caller, body: NewSkillIn) -> ChangeC
                 raise ApiError(404, "not_found", "the skill to duplicate was not found")
     except (ClientError, BotoCoreError, StoredSkillError) as exc:
         raise _unavailable(exc) from exc
-    if any(m.skill_id == skill_id and (m.version > 0 or m.locked(now)) for m in metas):
+    if document_skills.is_reserved(skill_id) or any(
+        m.skill_id == skill_id and (m.version > 0 or m.locked(now)) for m in metas
+    ):
+        # The document skills of the release have these names (D119): a harness that runs
+        # code holds them, and cannot hold two skills of one name.
         raise ApiError(409, "skill_exists", "a skill with that name exists")
     waiting = {c.skill_id for c in changes if c.is_new and _open(c, now)}
     if len({m.skill_id for m in metas if m.version > 0} | waiting) >= MAX_SKILLS:

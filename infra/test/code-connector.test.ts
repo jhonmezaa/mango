@@ -123,7 +123,7 @@ describe("code connector (D114)", () => {
   it("is a target of the Gateway with the tool schema of the connector, invoked with the Gateway's role", () => {
     const tools = target.Properties.TargetConfiguration.Mcp.Lambda.ToolSchema.InlinePayload as { Name: string }[];
     expect(tools.map((t) => t.Name)).toEqual(codeTools().map((t) => t.name));
-    expect(tools.map((t) => t.Name)).toEqual(["run_python", "list_files", "read_file"]);
+    expect(tools.map((t) => t.Name)).toEqual(["run_python", "list_files", "read_file", "render_document"]);
     expect(target.Properties.CredentialProviderConfigurations).toEqual([{ CredentialProviderType: "GATEWAY_IAM_ROLE" }]);
     const invoke = Object.values(resources).find(
       (r) =>
@@ -135,13 +135,18 @@ describe("code connector (D114)", () => {
     expect(statement!.Resource).toEqual({ "Fn::GetAtt": [fnId, "Arn"] });
   });
 
-  it("has a Cedar policy (L2) for its three tools, on this Gateway only", () => {
+  it("has a Cedar policy (L2) for its four tools, on this Gateway only", () => {
     const statement = JSON.stringify(cedar.Properties.Definition.Cedar.Statement);
-    for (const tool of ["run_python", "list_files", "read_file"]) {
+    for (const tool of ["run_python", "list_files", "read_file", "render_document"]) {
       expect(statement).toContain(`AgentCore::Action::\\"code___${tool}\\"`);
     }
     expect(statement).toContain("principal is AgentCore::OAuthUser");
     expect(statement).not.toContain("run_shell");
+  });
+
+  it("invokes no render function where there is none: an installation without a release (D117 (8))", () => {
+    expect(statements.flatMap(actions)).not.toContain("lambda:InvokeFunction");
+    expect(fn.Properties.Environment.Variables.RENDER_FUNCTION).toBeUndefined();
   });
 
   it("gets the caller's context from the interceptor, like every Mango connector", () => {

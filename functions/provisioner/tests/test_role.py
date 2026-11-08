@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from mango_core import document_skills
 from mango_provisioner.config import Settings
 from mango_provisioner.errors import StepError
 from mango_provisioner.role import AgentRoles, model_arns, role_policy, trust_policy
@@ -220,6 +221,13 @@ def test_skills_are_read_only_under_the_prefixes_of_their_versions() -> None:
     assert by_sid["SkillsKey"]["Condition"] == {
         "StringEquals": {"kms:ViaService": "s3.us-east-1.amazonaws.com"}
     }
+    # The document skills of the release (D119): their own folders, nothing else of it.
+    release = role_policy(settings, AGENT, [MODEL], ["release:pdf", "release:xlsx"])
+    read = {s["Sid"]: s for s in release["Statement"]}["ReadSkills"]["Resource"]
+    assert read == [
+        f"arn:aws:s3:::skills-bucket/{document_skills.prefix('pdf')}*",
+        f"arn:aws:s3:::skills-bucket/{document_skills.prefix('xlsx')}*",
+    ]
     # Without skills, the role reads nothing of the bucket.
     assert "ReadSkills" not in {
         s["Sid"] for s in role_policy(settings, AGENT, [MODEL])["Statement"]

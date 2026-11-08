@@ -35,6 +35,7 @@ from mango_core.harness_tools import (
     SKILLS_TOOL,
     allowed_inline_tool,
     allowed_tool,
+    code_allowed_tools,
     gateway_tool_name,
     skills_allowed_tool,
 )
@@ -275,6 +276,10 @@ REMOTE_CONNECT_LINE = (
 """Platform line for agents with remote MCP tools: a model told to connect invents a link."""
 
 
+def _runs_code(allowed_tools: Iterable[str]) -> bool:
+    return any(tool in allowed_tools for tool in code_allowed_tools())
+
+
 def _has_remote_tools(allowed_tools: Iterable[str]) -> bool:
     return any(
         remote_mcp.split_gateway_tool(name.rpartition("/")[2]) is not None for name in allowed_tools
@@ -360,7 +365,8 @@ def build_request(
         "allowedTools": [
             *agent.allowed_tools,
             *(allowed_inline_tool(str(t["name"])) for t in inline_tools),
-            *([skills_allowed_tool()] if agent.skills else []),
+            # A version that runs code also has the document skills of the release (D119).
+            *([skills_allowed_tool()] if agent.skills or _runs_code(agent.allowed_tools) else []),
         ],
         "maxIterations": limits.max_iterations,
         "maxTokens": limits.max_tokens,

@@ -12,6 +12,7 @@ import pytest
 from botocore.exceptions import ClientError, EventStreamError, ReadTimeoutError
 
 from mango_api import harness
+from mango_core.harness_tools import code_allowed_tools
 
 from .harness_wire import event_frame, wire_stream
 
@@ -1353,6 +1354,14 @@ def test_only_the_playground_sends_skills_in_the_invocation() -> None:
     request = harness.build_request(agent, **common, test_skills=(source,))
     assert request["skills"] == [source]
     assert "skills" in request["allowedTools"]
+
+
+def test_a_version_that_runs_code_may_load_the_document_skills() -> None:
+    # D119: its harness holds the document skills of the release, so the invocation allows
+    # the tool that loads them even without skills of creators.
+    agent = dataclasses.replace(_invocation(), allowed_tools=code_allowed_tools(), skills=())
+    assert "skills" in _request(agent)["allowedTools"]
+    assert "skills" not in _request(_invocation())["allowedTools"]
 
 
 def test_an_agent_with_remote_tools_is_told_never_to_write_a_connect_link() -> None:

@@ -7,7 +7,10 @@ the person's partition of ``Conversations`` (``PK = USER#<sub>``, row-level secu
 * ``CODE#SESSION#<conversation>``: the sandbox session of (person, conversation), with its
   ``sessionId`` sealed with KMS, the person and the conversation as encryption context (TM-CI1).
 * ``CODE#TURN#<turn>#RUN#<run>``: one cell, its result for the chat (status, code, output with a
-  cap, exception, files by id) and its metered use: what mango-api settles the turn with.
+  cap, exception, files by id) and its metered use: what mango-api settles the turn with. A call
+  of ``render_document`` (D119) is a run too, with ``tool = render_document`` and the file id
+  instead of ``code``: it counts as one of the turn's cells and is charged its seconds at the
+  CPU price of the sandbox, more than the render function costs (2 GB of Lambda on arm64).
 
 The prices are configuration (rule 7): USD per vCPU-hour and per GB-hour of the release or of
 the installation. A session is charged its memory for the whole life it is given, idle or not
@@ -31,6 +34,8 @@ CELLS_PER_TURN = 8
 SANDBOX_VCPUS = 2
 SANDBOX_GB = 8
 """Hardware of a session (fixed by AWS): what a second of it may cost, at most."""
+RENDER_TOOL = "render_document"
+"""``tool`` of a run that rendered a document instead of running code (D119)."""
 SESSION_PREFIX = "CODE#SESSION#"
 TURN_PREFIX = "CODE#TURN#"
 _HOUR = Decimal(3600)

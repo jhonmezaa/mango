@@ -423,6 +423,20 @@ class FakeFirehose:
         self.records.append(json.loads(kwargs["Record"]["Data"]))
 
 
+class FakeSkillsS3:
+    """``PutObject`` of the skills bucket: what the provisioner writes there (D119)."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.puts: list[dict[str, Any]] = []
+
+    def put_object(self, **kwargs: Any) -> None:
+        self.puts.append(kwargs)
+        if kwargs.get("IfNoneMatch") == "*" and kwargs["Key"] in self.objects:
+            raise _error("PreconditionFailed", "PutObject")
+        self.objects[kwargs["Key"]] = kwargs["Body"]
+
+
 class FakeCloudFormation:
     """``DescribeStacks`` of the installation's own stack, with the tags it was deployed with."""
 
@@ -457,6 +471,7 @@ class Lab:
         self.logs = FakeLogs()
         self.firehose = FakeFirehose()
         self.judge = FakeJudge()
+        self.skills_s3 = FakeSkillsS3()
         self.now = NOW
         self.store = ProvisionerStore(dynamodb, AGENTS_TABLE, SETTINGS_TABLE)
         self.provisioner = Provisioner(
@@ -468,6 +483,7 @@ class Lab:
             audit=AuditWriter(self.firehose, "Mango-test-Audit", dynamodb, AUDIT_TABLE),  # type: ignore[arg-type]
             clock=lambda: self.now,
             judge=self.judge,  # type: ignore[arg-type]
+            skills_s3=self.skills_s3,
         )
 
     # --- What mango-api would have written ---

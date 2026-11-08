@@ -22,8 +22,9 @@ from mango_render_document import convert, handler, ooxml
 
 BUCKET = "mango-ns-chat-files-example"
 SUB = "0b8c4f2e-1d2a-4c5b-9e7f-112233445566"
-KEY_IN = f"owner/{SUB}/01JCONVERSATION0000000000/01JFILE0000000000000000000"
-PREFIX = f"owner/{SUB}/01JCONVERSATION0000000000/renders/01JRENDER00000000000000000/"
+CONVERSATION = "0123456789abcdef0123456789abcdef"
+KEY_IN = f"owner/{SUB}/conv/{CONVERSATION}/01JFILE0000000000000000000"
+PREFIX = f"owner/{SUB}/conv/{CONVERSATION}/renders/01JRENDER00000000000000000/"
 
 WORD = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
 EXCEL = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
@@ -296,12 +297,15 @@ def test_a_document_comes_back_as_a_pdf_and_its_first_pages(fake_render: list[Pa
     [
         {"bucket": "another-bucket"},
         {"key_in": f"uploads/{SUB}/01JFILE"},
-        {"key_in": f"owner/{SUB}/01JCONVERSATION0000000000/../other/01JFILE"},
+        {"key_in": f"owner/{SUB}/conv/{CONVERSATION}/../other/01JFILE"},
+        # The layout of the chat files is `owner/<sub>/conv/<conversation>/<file>` (U1).
+        {"key_in": f"owner/{SUB}/{CONVERSATION}/01JFILE0000000000000000000"},
+        {"key_out_prefix": f"owner/{SUB}/{CONVERSATION}/renders/01JR/"},
         # Another person's render prefix, or another conversation.
         {"key_out_prefix": PREFIX.replace(SUB, SUB.replace("0b8c", "ffff"))},
-        {"key_out_prefix": f"owner/{SUB}/01JOTHER/renders/01JR/"},
+        {"key_out_prefix": f"owner/{SUB}/conv/fedcba9876543210fedcba9876543210/renders/01JR/"},
         # Outside `renders/`: it would replace a file of the person.
-        {"key_out_prefix": f"owner/{SUB}/01JCONVERSATION0000000000/"},
+        {"key_out_prefix": f"owner/{SUB}/conv/{CONVERSATION}/"},
         {"pages_max": 0},
         {"pages_max": 51},
         {"pages_max": True},

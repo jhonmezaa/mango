@@ -343,7 +343,12 @@ class EvalRunner:
             )
         except AgentUnavailableError:
             raise StopRunError("version_not_testable") from None
-        sources, skill_ids = _skill_sources(d, version.definition.skills, deployed)  # type: ignore[arg-type]
+        sources, skill_ids = _skill_sources(
+            d,  # type: ignore[arg-type]
+            version.definition.skills,
+            deployed,
+            runs_code=version.definition.code_interpreter,
+        )
         agent = usable_by(agent, d.authorizer, caller.user)
         result = self._turn(run, caller, agent, case, model, sources, skill_ids)
         d.runs.record(run, index, result, "running")

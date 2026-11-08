@@ -113,6 +113,33 @@ describe("render-document (D117)", { timeout: 120_000 }, () => {
     for (const [, alarm] of ofType("AWS::CloudWatch::Alarm")) expect(alarm.Properties.AlarmActions).toHaveLength(1);
   });
 
+  it("is invoked by the code connector only, which names it by its name (D119)", () => {
+    const sandbox = nestedStacks(release).find((stack) => stack.node.id === "Sandbox")!;
+    const sandboxResources = nestedTemplate(sandbox).Resources as Record<string, Resource>;
+    const connectorFn = Object.values(sandboxResources).find(
+      (r) => r.Type === "AWS::Lambda::Function" && JSON.stringify(r.Properties.FunctionName).includes("-CodeInterpreter"),
+    )!;
+    expect(connectorFn.Properties.Environment.Variables.RENDER_FUNCTION).toEqual(role.Properties.RoleName);
+    // Every grant of lambda:InvokeFunction on it, in Core and in every stack nested in it.
+    // `installed` is Core with every stack nested in it.
+    const grants = Object.values(installed)
+      .filter((r) => r.Type === "AWS::IAM::Policy" || r.Type === "AWS::IAM::ManagedPolicy")
+      .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
+      .filter((st) => JSON.stringify(st.Resource ?? "").includes("RenderDocument"))
+      .filter((st) => actions(st).some((a) => a.startsWith("lambda:")));
+    expect(grants.map((g) => g.Sid)).toEqual(["InvokeRenderDocument"]);
+    expect(actions(grants[0]!)).toEqual(["lambda:InvokeFunction"]);
+    expect(JSON.stringify(grants[0]!.Resource)).toContain(":function:Mango-");
+    const owner = Object.values(sandboxResources).find(
+      (r) =>
+        r.Type === "AWS::IAM::Policy" &&
+        (r.Properties.PolicyDocument.Statement as Statement[]).some((st) => st.Sid === "InvokeRenderDocument"),
+    )!;
+    expect(JSON.stringify(owner.Properties.Roles)).toContain("CodeConnectorRole");
+    // No resource policy opens it to anyone else either.
+    expect(JSON.stringify(own)).not.toContain("AWS::Lambda::Permission");
+  });
+
   it("exists only in a release: without one there is no image to name", () => {
     const cfg = loadInstallation(resolve(import.meta.dirname, "../config/example.json"));
     const lab = nestedStacks(

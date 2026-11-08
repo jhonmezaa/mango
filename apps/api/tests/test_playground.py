@@ -347,6 +347,21 @@ def test_the_tested_versions_skills_go_in_the_test_invocation(env: Env) -> None:
     assert test.skill_ids == ("revisar-costos",)
 
 
+def test_a_tested_version_that_runs_code_gets_the_document_skills(env: Env) -> None:  # noqa: F811
+    from mango_api import playground  # noqa: PLC0415
+    from mango_core import document_skills  # noqa: PLC0415
+
+    deployed = PlaygroundHarness(PLAYGROUND, "2", (SONNET,), "now", skills=True)
+    deps, _ = _deps(env, FakeSkills({SKILL_REF}))
+    sources, ids = playground._skill_sources(deps, (SKILL_REF,), deployed, runs_code=True)
+    assert sources[1:] == tuple(document_skills.sources(BUCKET))
+    # Their loads are not counted as activations of skills of creators (D92 (7)).
+    assert ids == ("revisar-costos",)
+    alone, none = playground._skill_sources(deps, (), deployed, runs_code=True)
+    assert (len(alone), none) == (4, ())
+    assert playground._skill_sources(deps, (), deployed) == ((), ())
+
+
 def test_a_skill_that_is_not_approved_is_not_tested(env: Env) -> None:  # noqa: F811
     from mango_api import playground  # noqa: PLC0415
     from mango_api.web import ApiError  # noqa: PLC0415

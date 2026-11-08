@@ -72,7 +72,7 @@ from mango_api.rate_limits import Leases, Limiter
 from mango_api.settings import ModelPrice
 from mango_api.skills_store import SkillStore
 from mango_api.web import ApiError, Caller, rate_limited
-from mango_core import invocation, usage_days
+from mango_core import document_skills, invocation, usage_days
 from mango_core.agents import (
     AGENT_ID_PATTERN,
     MODEL_ID_PATTERN,
@@ -297,13 +297,25 @@ def _with_overrides(
 
 
 def _skill_sources(
-    deps: PlaygroundDeps, refs: tuple[str, ...], deployed: PlaygroundHarness
+    deps: PlaygroundDeps,
+    refs: tuple[str, ...],
+    deployed: PlaygroundHarness,
+    *,
+    runs_code: bool = False,
 ) -> tuple[tuple[dict[str, Any], ...], tuple[str, ...]]:
     """The tested version's skills as the test harness loads them (D91 (12)): only approved
     versions, from this installation's bucket, built here from the stored version; nothing
-    from the request. The harness has none of its own, so these are exactly the version's."""
+    from the request. The harness has none of its own, so these are exactly the version's.
+
+    ``runs_code``: the version has the ``code_interpreter`` capability, so it also gets the
+    document skills of the release (D119), which the provisioner wrote into the bucket when it
+    set the test harness up. Their ids are not returned: activations are counted only for the
+    skills of creators (D92 (7))."""
+    release: tuple[dict[str, Any], ...] = ()
+    if runs_code and deps.skills_bucket and deployed.skills:
+        release = tuple(document_skills.sources(deps.skills_bucket))
     if not refs:
-        return (), ()
+        return release, ()
     if deps.skills is None or not deps.skills_bucket or not deployed.skills:
         raise ApiError(503, "skills_unavailable", "the playground cannot load skills")
     try:
@@ -324,7 +336,7 @@ def _skill_sources(
         {"s3": {"uri": s3_uri(deps.skills_bucket, skill_id, version)}}
         for skill_id, version in pairs
     )
-    return sources, tuple(skill_id for skill_id, _ in pairs)
+    return (*sources, *release), tuple(skill_id for skill_id, _ in pairs)
 
 
 def _prepare(
@@ -344,7 +356,12 @@ def _prepare(
         )
     except AgentUnavailableError as exc:
         raise ApiError(422, "version_not_testable", "this version cannot be tested") from exc
-    sources, skill_ids = _skill_sources(deps, tested.definition.skills, deployed)
+    sources, skill_ids = _skill_sources(
+        deps,
+        tested.definition.skills,
+        deployed,
+        runs_code=tested.definition.code_interpreter,
+    )
     return _Test(
         # As themselves (rule 5): only the remote tools of registrations they may use.
         agent=usable_by(agent, deps.authorizer, user),

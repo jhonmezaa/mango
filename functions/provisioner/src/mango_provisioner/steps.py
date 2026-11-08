@@ -42,7 +42,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from mango_core import evals_harness
+from botocore.exceptions import BotoCoreError, ClientError
+
+from mango_core import document_skills, evals_harness
 from mango_core.agents import (
     AgentDefinition,
     AgentStatus,
@@ -56,13 +58,15 @@ from mango_core.agents_table import MAX_VERSION
 from mango_core.playground import is_provision_input
 from mango_provisioner.audit import EVENT_PUBLISHED, EVENT_RELEASE_UPDATE, AuditWriter
 from mango_provisioner.config import RELEASE_APPROVER_PREFIX, Settings
-from mango_provisioner.errors import BusyError, RetryableError, StepError
+from mango_provisioner.errors import BusyError, RetryableError, StepError, aws_error
 from mango_provisioner.harness import (
     Harnesses,
     HarnessRef,
     RemoteTools,
     harness_config,
     no_remotes,
+    release_skills,
+    skill_refs,
 )
 from mango_provisioner.playground import EVALS, Playground, is_evals_state, is_playground_state
 from mango_provisioner.release import (
@@ -193,8 +197,11 @@ class Provisioner:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         remote_tools: RemoteTools = no_remotes,
         judge: LambdaClient | None = None,
+        skills_s3: Any | None = None,
     ) -> None:
         self._settings = settings
+        self._skills_s3 = skills_s3
+        self._skills_written = False
         self._remote_tools = remote_tools
         self._store = store
         self._roles = roles
@@ -210,6 +217,7 @@ class Provisioner:
             logs=logs,
             audit=audit,
             clock=clock,
+            release_skills=self._release_skills,
         )
         # D110: the evals harness, kept by the same steps, with its own key and canary.
         self._evals = Playground(
@@ -222,7 +230,22 @@ class Provisioner:
             clock=clock,
             kind=EVALS,
             judge=judge,
+            release_skills=self._release_skills,
         )
+
+    def _release_skills(self) -> None:
+        """Write the document skills of this release into the skills bucket before a harness
+        names them (D119): once per container, never replacing an object (its key is the
+        digest of its text, ``mango_core.document_skills.ensure``)."""
+        if self._skills_written or not self._settings.skills_bucket:
+            return
+        if self._skills_s3 is None:
+            raise StepError("skills_unavailable")
+        try:
+            document_skills.ensure(self._skills_s3, self._settings.skills_bucket)
+        except (ClientError, BotoCoreError) as exc:
+            raise aws_error("PutObject", exc) from exc
+        self._skills_written = True
 
     def _test_harness(self, state: object) -> Playground | None:
         if is_playground_state(state):
@@ -295,7 +318,7 @@ class Provisioner:
         if version is None or not verify_content(version.canonical, published.content_hash):
             return ()
         try:
-            return loads_definition(version.canonical).skills
+            return skill_refs(self._settings, loads_definition(version.canonical))
         except InvalidDefinitionError:
             return ()
 
@@ -498,7 +521,10 @@ class Provisioner:
         # The published version keeps serving until the last step: its models stay allowed.
         published = self._store.published(agent_id)
         models = {*self._models(ctx.definition), *self._published_models(agent_id, published)}
-        skills = {*ctx.definition.skills, *self._published_skills(agent_id, published)}
+        skills = {
+            *skill_refs(self._settings, ctx.definition),
+            *self._published_skills(agent_id, published),
+        }
         memory = ctx.definition.memory or self._published_memory(agent_id, published)
         self._roles.ensure(agent_id, models, skills, memory=memory)
         return state
@@ -517,6 +543,8 @@ class Provisioner:
             pack_tools=self._store.installed_pack_tools,
             remote_tools=self._remote_tools,
         )
+        if release_skills(self._settings, ctx.definition):
+            self._release_skills()
         published = self._store.published(request.agent_id)
         ref = self._harnesses.ensure(
             request.agent_id,
@@ -624,7 +652,7 @@ class Provisioner:
         self._roles.ensure(
             request.agent_id,
             self._models(ctx.definition),
-            ctx.definition.skills,
+            skill_refs(self._settings, ctx.definition),
             memory=ctx.definition.memory,
         )
         self._audit.emit(

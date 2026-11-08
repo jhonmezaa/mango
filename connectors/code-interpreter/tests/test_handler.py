@@ -654,20 +654,21 @@ def test_the_attached_files_that_are_ready_reach_the_session_once(world: World) 
     _attach(world, READY, "ventas.csv", b"x,y\n1,2\n")
     _attach(world, SCANNING, "otro.csv", b"a\n", status={"S": "scanning"})
     text = _text(_run(world, "print(open('ventas.csv').read())"))
-    assert "sandbox:/mnt/data/ventas.csv (attached by the user)" in text
+    assert f"sandbox:/mnt/data/ventas.csv (attached by the user, id {READY})" in text
     assert "x,y\n1,2" in text
     assert "otro.csv" not in text
     # Written once per session: the next cell does not write it again.
     _run(world, "1")
     writes = [c for c in world.agentcore.calls if c[0] == "writeFiles"]
-    assert len(writes) == 1
+    # The helpers of the document skills when the session started, then the attached file.
+    assert len(writes) == 2
 
 
 def test_an_attached_name_cannot_leave_the_folder(world: World) -> None:
     _attach(world, READY, "../../etc/x.csv", b"a\n")
     text = _text(_run(world, "import os\nprint(sorted(os.listdir('.')))"))
     assert "..-..-etc-x.csv" in text or "etc-x.csv" in text
-    [(_, write)] = [c for c in world.agentcore.calls if c[0] == "writeFiles"]
+    [_, (_, write)] = [c for c in world.agentcore.calls if c[0] == "writeFiles"]
     assert ".." not in write["arguments"]["content"][0]["path"].replace("mnt/data", "")
 
 
@@ -685,3 +686,196 @@ def test_the_generated_files_are_recorded_as_the_chat_records_an_attached_one(
         "name": {"S": "resumen.csv"},
     }
     assert record["sha256"]["S"] == f["sha256"]
+
+
+# --- render_document (D117, D119) ------------------------------------------------------------
+
+DOCX = "01JABCDEFGHJKMNPQRSTVWXYZ2"
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+
+@dataclass
+class FakeRender:
+    """``Mango-<ns>-RenderDocument`` as its contract says (D117 (7)), writing into moto's S3."""
+
+    s3: Any
+    events: list[dict[str, Any]]
+    pages: int = 2
+    answer: dict[str, Any] | None = None
+
+    def __call__(self, event: dict[str, Any]) -> dict[str, Any]:
+        self.events.append(event)
+        if self.answer is not None:
+            return self.answer
+        prefix = event["key_out_prefix"]
+        keys = [f"{prefix}page-{n:03d}.png" for n in range(1, self.pages + 1)]
+        self.s3.put_object(Bucket="chat-files", Key=f"{prefix}document.pdf", Body=b"%PDF-1.7")
+        for key in keys:
+            self.s3.put_object(Bucket="chat-files", Key=key, Body=PNG)
+        return {
+            "status": "ready",
+            "kind": "docx",
+            "pdf_key": f"{prefix}document.pdf",
+            "page_keys": keys,
+            "pages_total": self.pages,
+            "pages_rendered": self.pages,
+            "truncated": False,
+        }
+
+
+@pytest.fixture
+def render(world: World) -> FakeRender:
+    fake = FakeRender(world.s3, [])
+    world.deps = replace(
+        world.deps, render=fake, sleep=lambda s: world.clock.__setitem__(0, world.clock[0] + s)
+    )
+    return fake
+
+
+def _render(world: World, file: str, **args: Any) -> dict[str, Any]:
+    return _call(world, "render_document", {"file": file, **args})
+
+
+def test_a_new_session_gets_the_helpers_of_the_document_skills(world: World) -> None:
+    text = _text(_run(world, "import mango_docs\nmango_docs.clean_text('a\u2011b\u200bc')"))
+    assert "'a-bc'" in text
+    [(_, write)] = [c for c in world.agentcore.calls if c[0] == "writeFiles"]
+    [item] = write["arguments"]["content"]
+    assert item["path"].endswith("/.mango/lib/mango_docs.py")
+
+
+def test_a_document_is_rendered_into_the_session_by_name(world: World, render: FakeRender) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx", kind={"S": "docx"})
+    text = _text(_render(world, "informe.docx"))
+    assert text.startswith(NOTICE)
+    assert "status: ready" in text
+    assert f"id {DOCX}" in text
+    assert "pages: 2 rendered of 2" in text
+    # The keys come from the signed identity, never from the model (D117 (7)).
+    [event] = render.events
+    assert event["key_in"] == chat_files.owner_key("user-ana", CONV, DOCX)
+    assert event["key_out_prefix"].startswith(f"owner/user-ana/conv/{CONV}/renders/")
+    assert event["bucket"] == "chat-files"
+    assert event["pages_max"] == 20
+    # The pages are in a hidden folder of the session: never handed out to the person.
+    folder = text.split("folder: ", 1)[1].split(" ", 1)[0]
+    assert folder.startswith(".renders/informe-")
+    session_id = next(iter(world.agentcore.sessions))
+    written = sorted(p.name for p in (world.agentcore.data_root(session_id) / folder).iterdir())
+    assert written == ["document.pdf", "page-001.png", "page-002.png"]
+    listing = _text(_run(world, "import os\nsorted(os.listdir('.'))"))
+    assert "files shown to the user" not in listing
+
+
+def test_a_render_is_a_cell_of_the_turn_charged_its_seconds(
+    world: World, render: FakeRender
+) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    _render(world, DOCX)
+    [run] = world.runs("user-ana")
+    assert run["tool"] == {"S": "render_document"}
+    assert run["file_id"] == {"S": DOCX}
+    assert "code" not in run
+    assert run["state"] == {"S": "done"}
+    assert cell_use(run).cpu_seconds >= 1
+    [audit] = [a for a in _audits(world) if a["event"] == "code.render"]
+    assert audit["detail"]["outcome"] == "ready"
+    assert audit["detail"]["pages"] == 2
+    assert "informe" not in json.dumps(audit)
+
+
+def test_another_conversations_file_is_not_found(world: World, render: FakeRender) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    result = _call(world, "render_document", {"file": DOCX}, _ctx(conversation_id=OTHER_CONV))
+    assert result["error"]["code"] == "not_found"
+    assert render.events == []
+    bob = _call(world, "render_document", {"file": DOCX}, _ctx(token="token-bob", sub="user-bob"))
+    assert bob["error"]["code"] == "not_found"
+
+
+def test_only_office_files_are_rendered(world: World, render: FakeRender) -> None:
+    _attach(world, DOCX, "informe.pdf", b"%PDF-1.7")
+    result = _render(world, "informe.pdf")
+    assert result["error"]["code"] == "unsupported"
+    assert "mango_docs.render_pdf" in result["error"]["message"]
+    assert render.events == []
+
+
+def test_without_the_render_function_it_says_so(world: World) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    assert _render(world, DOCX)["error"]["code"] == "unavailable"
+
+
+def test_a_file_whose_scan_never_clears_is_not_rendered(world: World, render: FakeRender) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    world.deps = replace(world.deps, readable=lambda key: False)
+    text = _text(_render(world, DOCX))
+    assert "status: refused" in text
+    assert "still being scanned" in text
+    assert render.events == []
+
+
+def test_pages_still_being_scanned_are_announced_not_written(
+    world: World, render: FakeRender
+) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    world.deps = replace(world.deps, readable=lambda key: "/renders/" not in key)
+    text = _text(_render(world, DOCX))
+    assert "status: pending" in text
+    paths = [
+        item["path"]
+        for name, call in world.agentcore.calls
+        if name == "writeFiles"
+        for item in call["arguments"]["content"]
+    ]
+    assert not [p for p in paths if "/.renders/" in p]
+
+
+def test_keys_outside_the_chosen_prefix_are_never_read(world: World, render: FakeRender) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    other = chat_files.owner_key("user-bob", CONV, DOCX)
+    render.answer = {
+        "status": "ready",
+        "kind": "docx",
+        "pdf_key": other,
+        "page_keys": [],
+        "pages_total": 1,
+        "pages_rendered": 0,
+    }
+    text = _text(_render(world, DOCX))
+    assert "status: failed" in text
+
+
+def test_a_refusal_of_the_function_is_explained(world: World, render: FakeRender) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    render.answer = {"status": "refused", "reason": "macros"}
+    assert "macros" in _text(_render(world, DOCX))
+
+
+def test_renders_count_against_the_cells_of_the_turn(world: World, render: FakeRender) -> None:
+    _attach(world, DOCX, "informe.docx", b"PK\x03\x04docx")
+    for _ in range(CELLS_PER_TURN):
+        _text(_render(world, DOCX))
+    assert _render(world, DOCX)["error"]["code"] == "cell_limit"
+
+
+@pytest.mark.parametrize("pages", [0, 51, "5", True])
+def test_pages_outside_the_range_are_refused(world: World, render: FakeRender, pages: Any) -> None:
+    assert _render(world, DOCX, pages=pages)["error"]["code"] == "invalid_arguments"
+
+
+def test_helpers_that_do_not_match_their_digest_are_never_written(world: World) -> None:
+    # TM-CI12: the session still runs, without them, and the mismatch is counted.
+    world.deps = replace(world.deps, docs_helper=code._DOCS_SOURCE + b"\nimport os\n")
+    text = _text(
+        _run(world, "import importlib.util\nimportlib.util.find_spec('mango_docs') is None")
+    )
+    assert "True" in text
+    assert [c for c in world.agentcore.calls if c[0] == "writeFiles"] == []
+    assert (code.DOCS_MISMATCH_METRIC, 1) in world.metrics
+
+
+def test_the_pinned_digest_is_the_reviewed_file() -> None:
+    import hashlib  # noqa: PLC0415
+
+    assert hashlib.sha256(code._DOCS_SOURCE).hexdigest() == code.DOCS_SHA256

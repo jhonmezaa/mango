@@ -7,13 +7,14 @@ never from the model (TM-CI8)::
 
     {
       "bucket": "<the chat files bucket>",           # must be this installation's
-      "key_in": "owner/<sub>/<conversation>/<file>",  # a scanned, clean object (D116 (10))
-      "key_out_prefix": "owner/<sub>/<conversation>/renders/<render>/",
+      "key_in": "owner/<sub>/conv/<conversation>/<file>",  # scanned and clean (D116 (10))
+      "key_out_prefix": "owner/<sub>/conv/<conversation>/renders/<render>/",
       "pages_max": 20                                 # optional, 1..50
     }
 
-``<sub>`` is a Cognito subject (UUID); ``<conversation>``, ``<file>`` and ``<render>`` are ids
-(ULID or UUID). The output prefix must be under the same owner and conversation as the input,
+``<sub>`` is a Cognito subject (UUID), ``<conversation>`` a conversation id (32 hex characters,
+the layout of ``mango_core.chat_files.owner_key``); ``<file>`` and ``<render>`` are ids (ULID or
+UUID). The output prefix must be under the same owner and conversation as the input,
 and under ``renders/``: the role of the function writes nowhere else, so a render never
 replaces a file of the person. A new ``<render>`` per call: nothing is overwritten
 (``If-None-Match``).
@@ -67,8 +68,9 @@ WORK_ROOT = Path(os.environ.get("MANGO_WORK_ROOT", "/tmp"))  # noqa: S108 - Lamb
 
 _ID = r"[0-9A-Za-z][0-9A-Za-z-]{0,63}"
 _SUB = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-KEY_IN = re.compile(rf"owner/(?P<owner>{_SUB}/{_ID})/{_ID}")
-KEY_OUT = re.compile(rf"owner/(?P<owner>{_SUB}/{_ID})/renders/{_ID}/")
+_CONVERSATION = r"[0-9a-f]{32}"
+KEY_IN = re.compile(rf"owner/(?P<owner>{_SUB}/conv/{_CONVERSATION})/{_ID}")
+KEY_OUT = re.compile(rf"owner/(?P<owner>{_SUB}/conv/{_CONVERSATION})/renders/{_ID}/")
 
 CONTENT_TYPES = {"pdf": "application/pdf", "png": "image/png"}
 

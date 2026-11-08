@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from mango_core import document_skills
 from mango_core.playground import PlaygroundHarness, provision_input
 from mango_provisioner.harness import PLAYGROUND_IDLE_SECONDS, PLAYGROUND_PROMPT
 
@@ -184,7 +185,12 @@ def test_the_role_reads_every_approved_skill_version(lab: Lab) -> None:
     # The installation has a skills bucket: what the steps and the roles read.
     lab.provisioner._playground._settings = settings
     lab.provisioner._roles._settings = settings
+    lab.provisioner._settings = settings
     lab.run(provision_input(RELEASE))
+    # A tested version that runs code gets the document skills of the release (D119).
+    assert sorted(lab.skills_s3.objects) == sorted(
+        document_skills.object_key(i) for i in document_skills.IDS
+    )
 
     statements = {s["Sid"]: s for s in _policy(lab)["Statement"]}
     assert statements["ReadSkills"]["Action"] == "s3:GetObject"

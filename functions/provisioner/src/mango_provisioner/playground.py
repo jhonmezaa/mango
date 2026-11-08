@@ -107,8 +107,10 @@ class Playground:
         clock: Callable[[], datetime],
         kind: Kind = PLAYGROUND,
         judge: LambdaClient | None = None,
+        release_skills: Callable[[], None] | None = None,
     ) -> None:
         self._kind = kind
+        self._release_skills = release_skills
         self._judge = judge
         self._settings = settings
         self._store = store
@@ -202,6 +204,10 @@ class Playground:
 
     def ensure_harness(self, state: dict[str, Any]) -> dict[str, Any]:
         state = self._checked(state)
+        if self._release_skills is not None and self._settings.skills_bucket:
+            # A tested version that runs code gets the document skills of the release in its
+            # invocation (D119): they must be in the bucket before mango-api names them.
+            self._release_skills()
         ref = self._harnesses.ensure(
             self._kind.agent_id,
             self._kind.config(self._settings, self._models()),

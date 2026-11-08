@@ -355,6 +355,28 @@ describe("provisioner role: wildcards and the rest", () => {
     expect(dataKey.Condition).toEqual({ StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } });
   });
 
+  it("writes only the document skills of the release, granted by the skills bucket and its key (D119 (5))", () => {
+    // Nothing of S3 in its own policy: the bucket and the key say what it may write.
+    expect(provisioner.flatMap(actions).filter((a) => a.startsWith("s3:"))).toEqual([]);
+    const bucketPolicy = Object.values(resources).find(
+      (r) => r.Type === "AWS::S3::BucketPolicy" && JSON.stringify(r.Properties.Bucket).includes("SkillsBucket"),
+    )!;
+    const grants = (bucketPolicy.Properties.PolicyDocument.Statement as (Statement & { Principal?: unknown })[]).filter(
+      (st) => JSON.stringify(st.Principal ?? "").includes(provisionerRoleId),
+    );
+    expect(grants.map((g) => [g.Sid, g.Effect, g.Action])).toEqual([["ProvisionerWritesReleaseSkills", "Allow", "s3:PutObject"]]);
+    expect(JSON.stringify(grants[0]!.Resource)).toMatch(/\/skills\/_release\/\*"\]\]\}$/);
+    expect(grants[0]!.Condition).toEqual({ StringEquals: { "s3:if-none-match": "*" } });
+    const key = Object.values(resources).find(
+      (r) => r.Type === "AWS::KMS::Key" && JSON.stringify(r.Properties.Description ?? "").includes("SKILL.md"),
+    )!;
+    const keyGrants = (key.Properties.KeyPolicy.Statement as (Statement & { Principal?: unknown })[]).filter((st) =>
+      JSON.stringify(st.Principal ?? "").includes(provisionerRoleId),
+    );
+    expect(keyGrants.map((g) => [g.Sid, g.Action])).toEqual([["ProvisionerEncryptsReleaseSkills", "kms:GenerateDataKey"]]);
+    expect(keyGrants[0]!.Condition).toEqual({ StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } });
+  });
+
   it("reads only the signed catalog of remote MCPs, and only the public half of its key (D98 (13))", () => {
     const read = bySid(provisioner, "ReadApprovedRemotes");
     expect(actions(read)).toEqual(["dynamodb:GetItem"]);

@@ -234,6 +234,8 @@ export class CoreStack extends Stack {
       skills: { bucketName: skills.bucket.bucketName, keyArn: skills.key.keyArn },
       evals: evalsCapture,
     });
+    // D119 (5): the provisioner writes the document skills of the release, before naming them.
+    skills.allowReleaseSkillWrites(provisioner.role);
     const releaseAgentSeeds = new ReleaseAgents(this, "ReleaseAgents", {
       agents: shipped,
       agentsTable: governance.agents,
@@ -338,6 +340,8 @@ export class CoreStack extends Stack {
           roleArn: tools.gatewayRole.roleArn,
         },
         policyEngineId: tools.policyEngine.attrPolicyEngineId,
+        // D119: `render_document` invokes the render function, which exists only in a release.
+        renderDocument: props.release !== undefined,
       },
     });
     // D117: Word, Excel and PowerPoint to PDF and PNG pages, from the image of the release in the
