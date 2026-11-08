@@ -736,7 +736,7 @@ describe("release packs (D36): only what the release key signed", () => {
 
   const raw = JSON.parse(readFileSync(examplePath, "utf8")) as Record<string, unknown>;
 
-  it("keeps Core under its budget of 455 resources with packs, of the 500 CloudFormation allows (D99)", () => {
+  it("keeps Core under its budget of 458 resources with packs, of the 500 CloudFormation allows (D99)", () => {
     const release = signedRelease({ also: [{ id: "aws-billing" }] });
     const lab = installationSchema.parse({
       ...raw,
@@ -750,7 +750,8 @@ describe("release packs (D36): only what the release key signed", () => {
     // Core's own template: what grows goes in a stack nested in it (RemoteMcp for remote MCP).
     const own = Template.fromStack(core).toJSON().Resources as Record<string, unknown>;
     // 455 since the chat files and the code sandbox (D114, D116, precision of D99 of 2026-11-07).
-    expect(Object.keys(own).length).toBeLessThanOrEqual(455);
+    // 458 since the agents' memory, its key and alias (D122: data, so in Core, D99 (2)).
+    expect(Object.keys(own).length).toBeLessThanOrEqual(458);
   });
 
   it("ships the pack to the bucket and the catalog to the provisioner", () => {

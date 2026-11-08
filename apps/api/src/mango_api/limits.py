@@ -31,6 +31,7 @@ from mango_api import (
     home,
     knowledge,
     mcp,
+    memory,
     mfa_reset,
     observability,
     people,
@@ -248,6 +249,12 @@ LIMITS: dict[str, LimitSpec] = {
             "Each «Buscar conversaciones» may read up to 4,000 messages of the person's own "
             "conversations with their row-level security session (D103)."
         ),
+    ),
+    "memory.requests": LimitSpec(
+        memory.REQUESTS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="Each read or deletion of «Memoria» calls the memory of the installation (D122).",
     ),
     "admin.probe": LimitSpec(
         admin.PROBE_CALLS_PER_MINUTE,

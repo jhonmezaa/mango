@@ -387,6 +387,10 @@ export type AgentDefinition = {
     knowledge_bases?: Array<string>;
     limits?: AgentLimits;
     /**
+     * Memory
+     */
+    memory?: boolean;
+    /**
      * Model
      */
     model?: string | null;
@@ -3282,6 +3286,68 @@ export type MemberHealthOut = {
      * Total
      */
     total: number;
+};
+
+/**
+ * MemoryDeletedOut
+ */
+export type MemoryDeletedOut = {
+    /**
+     * Events
+     */
+    events: number;
+    /**
+     * Records
+     */
+    records: number;
+};
+
+/**
+ * MemoryOut
+ */
+export type MemoryOut = {
+    /**
+     * Complete
+     */
+    complete: boolean;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Records
+     */
+    records: Array<MemoryRecordOut>;
+};
+
+/**
+ * MemoryRecordOut
+ */
+export type MemoryRecordOut = {
+    /**
+     * Agent Id
+     */
+    agent_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Kind
+     */
+    kind: 'preferences' | 'facts' | 'summaries';
+    /**
+     * Record Id
+     */
+    record_id: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Truncated
+     */
+    truncated: boolean;
 };
 
 /**
@@ -12053,6 +12119,86 @@ export type DisconnectMyAccountResponses = {
 };
 
 export type DisconnectMyAccountResponse = DisconnectMyAccountResponses[keyof DisconnectMyAccountResponses];
+
+export type DeleteMemoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/memory';
+};
+
+export type DeleteMemoryErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DeleteMemoryError = DeleteMemoryErrors[keyof DeleteMemoryErrors];
+
+export type DeleteMemoryResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryDeletedOut;
+};
+
+export type DeleteMemoryResponse = DeleteMemoryResponses[keyof DeleteMemoryResponses];
+
+export type GetMemoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/memory';
+};
+
+export type GetMemoryErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetMemoryError = GetMemoryErrors[keyof GetMemoryErrors];
+
+export type GetMemoryResponses = {
+    /**
+     * Successful Response
+     */
+    200: MemoryOut;
+};
+
+export type GetMemoryResponse = GetMemoryResponses[keyof GetMemoryResponses];
+
+export type DeleteMemoryRecordData = {
+    body?: never;
+    path: {
+        /**
+         * Record Id
+         */
+        record_id: string;
+    };
+    query?: never;
+    url: '/memory/{record_id}';
+};
+
+export type DeleteMemoryRecordErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DeleteMemoryRecordError = DeleteMemoryRecordErrors[keyof DeleteMemoryRecordErrors];
+
+export type DeleteMemoryRecordResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteMemoryRecordResponse = DeleteMemoryRecordResponses[keyof DeleteMemoryRecordResponses];
 
 export type GetModelsData = {
     body?: never;

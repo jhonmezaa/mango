@@ -27,6 +27,7 @@ from mango_core.agents import AgentDefinition, VersionStatus, dumps_definition
 from mango_core.agents import content_hash as hash_content
 from mango_core.budget_turns import PendingTurn, TokenUsage, token_cost
 from mango_core.identity import IdentityError
+from mango_core.memory import SENTINEL_ACTOR
 
 from .harness_wire import wire_stream
 
@@ -727,7 +728,8 @@ def test_harness_request_is_built_server_side(h: Harness) -> None:
         "@mango/finops___get_cost_and_usage",
         "@mango/finops___list_accounts_in_scope",
     ]
-    assert request["actorId"] == "user-1"
+    # Memory is off (D122): every turn names the sentinel actor, never a person's.
+    assert request["actorId"] == SENTINEL_ACTOR
     assert (request["maxIterations"], request["maxTokens"], request["timeoutSeconds"]) == (
         5,
         1000,
@@ -984,7 +986,8 @@ def test_session_is_never_shared_between_users(h: Harness) -> None:
     _turn(h, "good", CONVERSATION)
     _turn(h, "named", CONVERSATION)
     first, second = h.agentcore.requests
-    assert (first["actorId"], second["actorId"]) == ("user-1", "user-3")
+    # Memory is off (D122): the sentinel for both; their memory would be their own actor.
+    assert (first["actorId"], second["actorId"]) == (SENTINEL_ACTOR, SENTINEL_ACTOR)
     assert first["runtimeSessionId"] != second["runtimeSessionId"]
     # The second user starts their own session: nothing of the first one is continued.
     assert _texts(second) == ["hola", "¿y el mes pasado?"]

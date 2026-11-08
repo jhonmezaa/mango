@@ -135,6 +135,9 @@
       "SearchConversations": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
+      "OwnMemory": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
+      },
       "ViewOrgUsage": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },

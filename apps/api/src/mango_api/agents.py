@@ -35,7 +35,7 @@ from typing import Annotated, Any, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, Path, Query, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mango_api.agent_rules import (
     MAX_DRAFTS,
@@ -157,13 +157,26 @@ class EmptyIn(_Strict):
     pass
 
 
+def _without_memory(definition: AgentDefinition) -> AgentDefinition:
+    """No version turns memory on yet (D122, TM-ME6): the installation's memory is off until
+    M0, and neither the Builder nor the review shows the field (M3), so a reviewer could
+    approve it without seeing it. The day both exist, this check goes."""
+    if definition.memory:
+        raise ValueError("memory is not available yet")
+    return definition
+
+
 class CreateAgentIn(_Strict):
     definition: AgentDefinition
+
+    _no_memory = field_validator("definition")(_without_memory)
 
 
 class SaveDraftIn(_Strict):
     revision: Revision
     definition: AgentDefinition
+
+    _no_memory = field_validator("definition")(_without_memory)
 
 
 class SubmitIn(_Strict):

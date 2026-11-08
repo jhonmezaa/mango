@@ -272,12 +272,12 @@ describe("budget reconciler alarms", () => {
       AlarmActions: [{ Ref: topicId }],
     });
     // Embedded metric format: no metric filter and no PutMetricData. The filters of the stack
-    // read the log of mango-api (D71 (18), D88 (37)) and of the evaluator's canary (D110 (8)).
+    // read the log of mango-api (D71 (18), D88 (37), D122) and of the evaluator's canary (D110 (8)).
     expect(
       ofType("AWS::Logs::MetricFilter")
         .map(([, r]) => r.Properties.MetricTransformations[0].MetricName)
         .sort(),
-    ).toEqual(["CanaryFailed", "RateLimitStoreRefusals", "RetrieveThrottles"]);
+    ).toEqual(["CanaryFailed", "MemoryPurgeFailures", "RateLimitStoreRefusals", "RetrieveThrottles"]);
     const handler = python("functions/budget-reconciler/src/mango_budget_reconciler/handler.py");
     expect(handler).toContain(`METRIC_NAMESPACE = "${BUDGET_RECONCILER_METRICS.namespace}"`);
     expect(handler).toContain(`METRIC_DIMENSION = "${BUDGET_RECONCILER_METRICS.dimension}"`);

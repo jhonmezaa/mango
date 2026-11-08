@@ -33,7 +33,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from mango_api import harness, sessions, turns
+from mango_api import harness, memory, sessions, turns
 from mango_api.activity import (
     ActivityDeps,
     AgentView,
@@ -152,6 +152,7 @@ from mango_api.limits import Limits
 from mango_api.mcp import McpDeps, mcp_router
 from mango_api.mcp_catalog import CatalogSource, McpCatalog, RemoteStates
 from mango_api.mcp_store import PackStore
+from mango_api.memory import MemoryDeps
 from mango_api.mfa_reset import CognitoUsers, MfaResetDeps, ResetStore, mfa_reset_router
 from mango_api.model_capabilities import load_capabilities
 from mango_api.model_catalog import (
@@ -493,6 +494,8 @@ class Services:
     skills: SkillsDeps | None = None
     # The Playground's test harness (D91); set in production.
     playground_harnesses: PlaygroundHarnesses | None = None
+    # «Memoria» (D122): the person's own memories and the purge sweep; off by default.
+    memory: MemoryDeps | None = None
     # Evals (D110, D111); set in production once the Evals table exists.
     evals: EvalsDeps | None = None
     # The evaluator's function (D110): only invoked for the verdict of a judge case.
@@ -1154,7 +1157,31 @@ def build_services(settings: Settings) -> Services:
         limits=limits,
     )
     services.chat_turns = _chat_turns(services, rls.for_user)
+    services.memory = _memory_deps(services, dynamodb)
     return services
+
+
+def _memory_deps(services: Services, dynamodb: Any) -> MemoryDeps:
+    """«Memoria» (D122). Off by default: without the installation's memory the routes answer
+    that nothing is remembered, no turn gets a person's actor and nothing is swept."""
+    settings = services.settings
+    store = sweeper = None
+    if settings.memory_enabled:
+        store = memory.MemoryStore(
+            boto3.client("bedrock-agentcore", region_name=settings.region), settings.memory_arn
+        )
+        sweeper = memory.MemorySweeper(dynamodb, settings.settings_table, store, services.audit)
+        if services.people is not None:
+            person = memory.PersonMemory(sweeper)
+            services.people.forget_memory = person.disabled
+            services.people.keep_memory = person.enabled
+    return memory.MemoryDeps(
+        store=store,
+        index=services.conversations,
+        audit=services.audit,
+        limiter=services.limits.limiter("memory.requests"),
+        sweeper=sweeper,
+    )
 
 
 def dispatched_runs(services: Services) -> DispatchedRuns | None:
@@ -1366,11 +1393,17 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
         if worker is not None:
             worker.start()
+        # The purge of disabled people and the sweep of the sentinel (D122, TM-ME5).
+        sweeper = services.memory.sweeper if services.memory is not None else None
+        if sweeper is not None:
+            sweeper.start()
         try:
             yield
         finally:
             if worker is not None:
                 await asyncio.to_thread(worker.stop)
+            if sweeper is not None:
+                await asyncio.to_thread(sweeper.stop)
 
     app = FastAPI(
         title="mango-api",
@@ -1739,6 +1772,21 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
     if services.observability is not None:
         services.observability.agent_names = lambda: _agent_names(services)
         app.include_router(observability_router(services.observability, current_user, require))
+
+    # «Memoria» (D122): only the caller's own, never another person's (D23).
+    app.include_router(
+        memory.memory_router(
+            services.memory
+            or memory.MemoryDeps(
+                store=None,
+                index=services.conversations,
+                audit=services.audit,
+                limiter=services.limits.limiter("memory.requests"),
+            ),
+            current_user,
+            require,
+        )
+    )
 
     # Buscar conversaciones (D103): the caller's own, read with their row-level security client.
     app.include_router(
@@ -2480,7 +2528,14 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     request = harness.build_request(
         invocation_request,
         session_id=session_id,
-        actor_id=user.user_id,
+        # Task runs do not use memory in v1 (D122 (8), TM-ME9): a throwaway actor of the run.
+        actor_id=memory.task_actor(
+            enabled=services.settings.memory_enabled,
+            user=user,
+            agent_id=agent_id,
+            agent_memory=agent.definition.memory,
+            run_id=run.run_id,
+        ),
         access_token=caller.token,
         invocation_signature=signature,
         history=history,

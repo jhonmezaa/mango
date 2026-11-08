@@ -761,6 +761,11 @@
               "timeout_seconds": 120
             }
           },
+          "memory": {
+            "default": false,
+            "title": "Memory",
+            "type": "boolean"
+          },
           "model": {
             "anyOf": [
               {
@@ -6072,6 +6077,96 @@
           "identity_required"
         ],
         "title": "MemberHealthOut",
+        "type": "object"
+      },
+      "MemoryDeletedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "title": "Events",
+            "type": "integer"
+          },
+          "records": {
+            "title": "Records",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "records",
+          "events"
+        ],
+        "title": "MemoryDeletedOut",
+        "type": "object"
+      },
+      "MemoryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecordOut"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "records",
+          "complete"
+        ],
+        "title": "MemoryOut",
+        "type": "object"
+      },
+      "MemoryRecordOut": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "preferences",
+              "facts",
+              "summaries"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "record_id",
+          "agent_id",
+          "kind",
+          "text",
+          "truncated",
+          "created_at"
+        ],
+        "title": "MemoryRecordOut",
         "type": "object"
       },
       "MessageOut": {
@@ -21570,6 +21665,93 @@
           }
         },
         "summary": "Disconnect My Account"
+      }
+    },
+    "/memory": {
+      "delete": {
+        "operationId": "delete_memory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryDeletedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Memory"
+      },
+      "get": {
+        "operationId": "get_memory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Memory"
+      }
+    },
+    "/memory/{record_id}": {
+      "delete": {
+        "operationId": "delete_memory_record",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "pattern": "^mem-[a-zA-Z0-9_-]{36,46}$",
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete Memory Record"
       }
     },
     "/models": {

@@ -44,7 +44,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat
 
-from mango_api import harness, sessions
+from mango_api import harness, memory, sessions
 from mango_api.agent_rules import find_secrets
 from mango_api.agents_store import AgentsStore, AgentVersion
 from mango_api.audit import AuditLog
@@ -487,7 +487,8 @@ def run_test(
                 skills=test.skill_ids,
             ),
             session_id=session_id,
-            actor_id=user.user_id,
+            # A test harness without memory (D122 (8), TM-ME9).
+            actor_id=memory.TEST_ACTOR,
             access_token=caller.token,
             invocation_signature=_signature(deps, caller, agent),
             history=[harness.ChatTurn("user", message)],

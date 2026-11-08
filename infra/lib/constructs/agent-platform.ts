@@ -7,6 +7,7 @@ import { CHECKOV_EXCEPTIONS, suppressCheckov } from "../checkov.js";
 import { Installation } from "../config/schema.js";
 import { agentNames } from "../names.js";
 import { acknowledge } from "../nag.js";
+import { AgentMemory } from "./agent-memory.js";
 
 /**
  * Runtime session lifecycle (D39). mango-api keeps one session per conversation and receives
@@ -39,6 +40,8 @@ export class AgentPlatform extends Construct {
   readonly runtimeLogsKey: kms.Key;
   /** Ceiling of what any agent execution role may be allowed to do. */
   readonly boundary: iam.ManagedPolicy;
+  /** The AgentCore Memory of the installation (D122): off until M0. */
+  readonly memory: AgentMemory;
 
   /** `role/Mango-<ns>-agent-*`. */
   readonly agentRoleArns: string;
@@ -120,6 +123,9 @@ export class AgentPlatform extends Construct {
       "FinOpsAgentRuntimeLogsKeyAliasD7F791BF",
     );
 
+    // D122: what the agents remember of each person. It holds data: here, in Core (D99 (2)).
+    this.memory = new AgentMemory(this, "Memory", { installation: cfg });
+
     // --- Permissions boundary of agent roles (TM-M1) ---------------------------------------
     // The provisioner can only create roles that carry this policy, so whatever it writes in an
     // agent role, the role can never do more than this: call Bedrock models through the base
@@ -180,6 +186,8 @@ export class AgentPlatform extends Construct {
             `${agentcore}:workload-identity-directory/default/workload-identity/${agentNames.runtimePrefix(ns)}*`,
           ],
         }),
+        // D122: the memory's events and recall, only while memory is on.
+        ...this.memory.agentStatements(),
       ],
     });
     // Same agreed exception as the agent execution role (AGENTS.md): the boundary must allow

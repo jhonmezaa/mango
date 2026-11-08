@@ -34,6 +34,20 @@ export const RATE_LIMIT_STORE_SIGNAL = {
 };
 
 /**
+ * A purge of the agents' memory that failed (D122, TM-ME5): the purge of a disabled person, the
+ * sweep of the day after that still found records, or the hourly sweep of the sentinel actor.
+ * Same format and reading as {@link RATE_LIMIT_STORE_SIGNAL}.
+ */
+export const MEMORY_PURGE_SIGNAL = {
+  namespacePrefix: "Mango/Api",
+  metric: "MemoryPurgeFailures",
+  level: "ERROR",
+  logger: "mango_api.memory",
+  /** `PURGE_FAILED_LOG` of `memory.py`. A test compares them. */
+  message: "memory purge failed;",
+};
+
+/**
  * Thresholds of the operational alarms (D71). Rates only count above a minimum of requests,
  * so that one failed request of a quiet installation is not an incident.
  */
@@ -361,6 +375,7 @@ export class OperationalAlarms extends Construct {
     );
 
     traffic.push(this.rateLimitStoreAlarm(props.apiLogGroup));
+    traffic.push(this.memoryPurgeAlarm(props.apiLogGroup));
 
     const utilization = (metricName: string) => tasks(metricName).with({ statistic: cloudwatch.Stats.AVERAGE, period: FIVE_MINUTES });
     return [
@@ -382,34 +397,7 @@ export class OperationalAlarms extends Construct {
    * refuses for permissions or for its key reports neither throttles nor internal errors.
    */
   private rateLimitStoreAlarm(logGroup: logs.ILogGroup): cloudwatch.Metric {
-    const signal = RATE_LIMIT_STORE_SIGNAL;
-    const words = signal.message.split(" ");
-    const columns = ["date", "time", "level", "logger", ...words.map((_, index) => `word${index + 1}`)];
-    let pattern = logs.FilterPattern.spaceDelimited(...columns, "...")
-      .whereString("level", "=", signal.level)
-      .whereString("logger", "=", signal.logger);
-    words.forEach((word, index) => {
-      pattern = pattern.whereString(`word${index + 1}`, "=", word);
-    });
-    const namespace = `${signal.namespacePrefix}/${this.ns}`;
-    new logs.MetricFilter(this, "RateLimitStoreRefusals", {
-      logGroup,
-      filterName: mangoName(this.ns, `${OPERATIONS_PREFIX}Api-rate-limit-store-refusals`),
-      filterPattern: pattern,
-      metricNamespace: namespace,
-      metricName: signal.metric,
-      metricValue: "1",
-      // Zero whenever mango-api logs anything else: the metric exists in a healthy
-      // installation, and the alarm has data to go back to OK after the last refusal.
-      defaultValue: 0,
-      unit: cloudwatch.Unit.COUNT,
-    });
-    const refusals = new cloudwatch.Metric({
-      namespace,
-      metricName: signal.metric,
-      statistic: cloudwatch.Stats.SUM,
-      period: FIVE_MINUTES,
-    });
+    const refusals = this.logSignal(logGroup, RATE_LIMIT_STORE_SIGNAL, "RateLimitStoreRefusals", "Api-rate-limit-store-refusals");
     this.alarm(
       "RateLimitStoreUnavailable",
       "Api-rate-limit-store-unavailable",
@@ -427,6 +415,58 @@ export class OperationalAlarms extends Construct {
       },
     );
     return refusals.with({ label: "Refused: rate limit table unavailable" });
+  }
+
+  /** D122 (TM-ME5): a purge of the agents' memory that failed or found records it should not. */
+  private memoryPurgeAlarm(logGroup: logs.ILogGroup): cloudwatch.Metric {
+    const failures = this.logSignal(logGroup, MEMORY_PURGE_SIGNAL, "MemoryPurgeFailures", "Api-memory-purge-failures");
+    this.alarm(
+      "MemoryPurgeFailed",
+      "Api-memory-purge-failed",
+      "A purge of the agents' memory failed or found records it should not have (D122): the memory of a " +
+        "disabled person, of a task run or of the sentinel actor may still be there. Look first at the lines \"memory " +
+        "purge failed\" in the log group of mango-api (/mango/<namespace>/api): each says which purge and the " +
+        "type of the error, never what was remembered. A failed purge stays pending in the Settings table " +
+        "(MEMORY_PURGE) and is retried every 15 minutes.",
+      { metric: failures, threshold: 1, comparisonOperator: AT_LEAST, evaluationPeriods: 1 },
+    );
+    return failures.with({ label: "Memory purges failed" });
+  }
+
+  /** A metric that counts the lines of `signal` in the log of mango-api, by the place of each word. */
+  private logSignal(
+    logGroup: logs.ILogGroup,
+    signal: typeof RATE_LIMIT_STORE_SIGNAL,
+    id: string,
+    filterName: string,
+  ): cloudwatch.Metric {
+    const words = signal.message.split(" ");
+    const columns = ["date", "time", "level", "logger", ...words.map((_, index) => `word${index + 1}`)];
+    let pattern = logs.FilterPattern.spaceDelimited(...columns, "...")
+      .whereString("level", "=", signal.level)
+      .whereString("logger", "=", signal.logger);
+    words.forEach((word, index) => {
+      pattern = pattern.whereString(`word${index + 1}`, "=", word);
+    });
+    const namespace = `${signal.namespacePrefix}/${this.ns}`;
+    new logs.MetricFilter(this, id, {
+      logGroup,
+      filterName: mangoName(this.ns, `${OPERATIONS_PREFIX}${filterName}`),
+      filterPattern: pattern,
+      metricNamespace: namespace,
+      metricName: signal.metric,
+      metricValue: "1",
+      // Zero whenever mango-api logs anything else: the metric exists in a healthy
+      // installation, and the alarm has data to go back to OK after the last refusal.
+      defaultValue: 0,
+      unit: cloudwatch.Unit.COUNT,
+    });
+    return new cloudwatch.Metric({
+      namespace,
+      metricName: signal.metric,
+      statistic: cloudwatch.Stats.SUM,
+      period: FIVE_MINUTES,
+    });
   }
 
   /** Cognito triggers and the Gateway interceptor: nobody signs in or calls a tool without them. */

@@ -261,6 +261,13 @@ def test_any_mango_user_searches_their_own_conversations(authz: Authorizer) -> N
         assert authz.is_allowed(user, "SearchConversations", *PLATFORM), user.user_id
 
 
+def test_any_mango_user_reads_and_deletes_their_own_memory(authz: Authorizer) -> None:
+    # D122: the action opens the routes; whose memory is the caller's own actor, built by
+    # mango-api from the verified sub. No route names another person (D23).
+    for user in (*EVERYONE, CENTRAL, NO_GROUP):
+        assert authz.is_allowed(user, "OwnMemory", *PLATFORM), user.user_id
+
+
 def test_the_organizations_usage_is_for_administrators_and_central_finops(
     authz: Authorizer,
 ) -> None:

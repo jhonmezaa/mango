@@ -45,10 +45,12 @@ const STATEFUL = [
   "AWS::Cognito::UserPool",
   "AWS::SecretsManager::Secret",
   "AWS::VerifiedPermissions::PolicyStore",
+  // D122: what the agents remember of each person.
+  "AWS::BedrockAgentCore::Memory",
 ];
 
 describe("stacks nested in Core (D99)", () => {
-  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox and RenderDocument, and keep Core of a release under 411 resources", () => {
+  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox and RenderDocument, and keep Core of a release under 414 resources", () => {
     expect([...nested.keys()].sort()).toEqual([
       "Authorization",
       "CurReconciliation",
@@ -65,7 +67,8 @@ describe("stacks nested in Core (D99)", () => {
     // 410 since the chat files and the code sandbox (D114, D116): the bucket, its key and the
     // sandbox VPC stay in Core; the rest of the sandbox is in a nested stack. The render of Office
     // documents (D117 (8)) is one more resource of Core: its nested stack, 411.
-    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(411);
+    // 414 since the agents' memory, its key and alias (D122): they hold data (D99 (2)).
+    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(414);
   });
 
   it("are created from a template of the release's assets bucket, named by its content (D25, D69)", () => {

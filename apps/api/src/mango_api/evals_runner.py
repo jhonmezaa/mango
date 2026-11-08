@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from mango_api import harness, sessions
+from mango_api import harness, memory, sessions
 from mango_api.agent_rules import find_secrets
 from mango_api.agents_store import AgentsStore, AgentVersion
 from mango_api.audit import AuditLog
@@ -426,7 +426,8 @@ class EvalRunner:
                     skills=skill_ids,
                 ),
                 session_id=session_id,
-                actor_id=user.user_id,
+                # A test harness without memory (D122 (8), TM-ME9).
+                actor_id=memory.TEST_ACTOR,
                 access_token=caller.token,
                 # The test mark: the Gateway refuses every write tool under it (D91 (2)).
                 invocation_signature=_signature(d, caller, agent),  # type: ignore[arg-type]

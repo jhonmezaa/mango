@@ -30,7 +30,15 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, ValidationError
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    ValidationError,
+)
 
 from mango_core.knowledge import ID_PATTERN as KNOWLEDGE_BASE_ID_PATTERN
 from mango_core.remote_mcp import CONNECTION_AGENT_ID
@@ -240,12 +248,16 @@ class AgentDefinition(_Frozen):
     ] = ()
     """Approved skill versions the agent uses, ``<id>@<version>`` (D92): fixed by the version,
     so a new version of a skill reaches the agent with its next approved version."""
+    memory: StrictBool = False
+    """Whether the agent remembers its people across conversations (D122, TM-ME6): set in the
+    version, so turning it on goes through the version's approval. It has no effect while the
+    installation's memory is off (``memory_enabled``)."""
 
 
 # --- Canonical form and hash ------------------------------------------------------------
 
 
-_OMITTED_WHEN_EMPTY = ("knowledge_bases", "skills")
+_OMITTED_WHEN_EMPTY = ("knowledge_bases", "skills", "memory")
 """Fields added after agents were published: left out while empty, so the bytes and the hash
 of every version written before them (and of the release agents, which the stack writes from
 TypeScript) stay the same."""

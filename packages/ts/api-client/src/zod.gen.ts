@@ -155,6 +155,7 @@ export const zAgentDefinitionSchema = z.object({
         max_tokens: 4096,
         timeout_seconds: 120
     }),
+    memory: z.boolean().optional().default(false),
     model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$/).nullish(),
     name: z.string(),
     reports_to: z.string().nullish(),
@@ -1302,6 +1303,39 @@ export const zMemberHealthOutSchema = z.object({
     checked_at: z.string().nullable(),
     identity_required: z.boolean().nullable(),
     total: z.int()
+});
+
+/**
+ * MemoryDeletedOut
+ */
+export const zMemoryDeletedOutSchema = z.object({
+    events: z.int(),
+    records: z.int()
+});
+
+/**
+ * MemoryRecordOut
+ */
+export const zMemoryRecordOutSchema = z.object({
+    agent_id: z.string(),
+    created_at: z.string(),
+    kind: z.enum([
+        'preferences',
+        'facts',
+        'summaries'
+    ]),
+    record_id: z.string(),
+    text: z.string(),
+    truncated: z.boolean()
+});
+
+/**
+ * MemoryOut
+ */
+export const zMemoryOutSchema = z.object({
+    complete: z.boolean(),
+    enabled: z.boolean(),
+    records: z.array(zMemoryRecordOutSchema)
 });
 
 /**
@@ -5307,6 +5341,25 @@ export const zDisconnectMyAccountPath = z.object({
  * Successful Response
  */
 export const zDisconnectMyAccountResponse = zConnectionOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zDeleteMemoryResponse = zMemoryDeletedOutSchema;
+
+/**
+ * Successful Response
+ */
+export const zGetMemoryResponse = zMemoryOutSchema;
+
+export const zDeleteMemoryRecordPath = z.object({
+    record_id: z.string().regex(/^mem-[a-zA-Z0-9_-]{36,46}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDeleteMemoryRecordResponse = z.void();
 
 /**
  * Successful Response

@@ -7,7 +7,12 @@ import { App } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
-import { GLOBAL_METRICS_REGION, OPERATIONAL_THRESHOLDS, RATE_LIMIT_STORE_SIGNAL } from "../lib/constructs/operational-alarms.js";
+import {
+  GLOBAL_METRICS_REGION,
+  MEMORY_PURGE_SIGNAL,
+  OPERATIONAL_THRESHOLDS,
+  RATE_LIMIT_STORE_SIGNAL,
+} from "../lib/constructs/operational-alarms.js";
 import { PACK_DNS_BLOCKED_QUERIES } from "../lib/constructs/pack-network.js";
 import { UNINSTALL_GUARD_METRICS } from "../lib/constructs/uninstall-guard.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
@@ -122,6 +127,7 @@ describe("operational alarms of Core", () => {
     expect(names.sort()).toEqual(
       [
         "Api-errors",
+        "Api-memory-purge-failed",
         "Api-no-healthy-targets",
         "Api-rate-limit-store-unavailable",
         "Api-slow",
@@ -395,6 +401,32 @@ describe("Bedrock", () => {
     expect(JSON.stringify(properties)).not.toMatch(/anthropic|claude|nova/i);
   });
 
+});
+
+// D122 (TM-ME5): a purge of the agents' memory that failed stays pending, and says so.
+describe("the purges of the agents' memory", () => {
+  const python = (path: string) => readFileSync(resolve(import.meta.dirname, "../..", path), "utf8");
+  const filters = ofType(resources, "AWS::Logs::MetricFilter").filter(
+    ([, r]) => r.Properties.FilterName === `Mango-${ns}-ops-Api-memory-purge-failures`,
+  );
+
+  it("are counted from the log of mango-api by the words mango-api writes", () => {
+    expect(filters).toHaveLength(1);
+    expect(filters[0]![1].Properties.FilterPattern).toBe(
+      '[date, time, level = "ERROR", logger = "mango_api.memory", word1 = "memory", word2 = "purge", ' +
+        'word3 = "failed;", ...]',
+    );
+    expect(python("apps/api/src/mango_api/memory.py")).toContain(`PURGE_FAILED_LOG = "${MEMORY_PURGE_SIGNAL.message}"`);
+    expect(python("apps/api/src/mango_api/memory.py")).toContain("logger = logging.getLogger(__name__)");
+  });
+
+  it("raise an alarm at the first one", () => {
+    const alarms = ofType(resources, "AWS::CloudWatch::Alarm").filter(
+      ([, r]) => r.Properties.AlarmName === `Mango-${ns}-ops-Api-memory-purge-failed`,
+    );
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0]![1].Properties.Threshold).toBe(1);
+  });
 });
 
 // D71 (18): the shared rate limits fail closed (D70), and a 429 shows in no other alarm.

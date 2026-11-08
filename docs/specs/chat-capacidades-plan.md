@@ -162,8 +162,8 @@ Va primero: el sandbox alarga los turnos y el formato del stream cambia para tod
 | PR | Qué | Tamaño | Depende de | Claude Design |
 |---|---|---|---|---|
 | **M0** | Modelo de amenazas `memory-threat-model.md` y prueba de aislamiento de namespaces (R4/TM-007) en AWS, si el dueño la autoriza | M | P0 | — |
-| **M1** | Infra: AgentCore Memory de la instalación, estrategias (preferencias, hechos, resumen), por persona y agente; el harness la usa solo con el `actorId` de quien pregunta, que arma el servidor, y falla cerrado sin él (D122 (8)) | M | M0 | — |
-| **M2** | API: listar, editar y borrar las memorias propias; borrado al dar de baja a una persona; auditoría sin contenido | M | M1 | — |
+| **M1** | Infra: AgentCore Memory de la instalación, estrategias (preferencias, hechos, resumen), por persona y agente; el harness la usa solo con el `actorId` de quien pregunta, que arma el servidor, y falla cerrado sin él (D122 (8)). **Construido apagado el 2026-11-08** (D122, notas de construcción): se enciende tras M0 | M | M0 | — |
+| **M2** | API: listar, editar y borrar las memorias propias; borrado al dar de baja a una persona; auditoría sin contenido. **Construido apagado el 2026-11-08** salvo editar | M | M1 | — |
 | **M3** | Web: «Memoria» en Ajustes, indicador en el chat cuando se usa | M | M2 | **Ronda 4** |
 
 ### Fase 5 — Segundo origen y Canvas (D123, D124)

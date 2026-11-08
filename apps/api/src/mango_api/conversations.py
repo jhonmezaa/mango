@@ -33,6 +33,10 @@ MAX_USER_CLIENTS = 1000
 255 KB (measured): the cap is 250 MB of the 1 GB of a task. Over it the oldest goes first, and
 that person's next request asks STS for credentials again."""
 _MAX_LIST = 50
+MEMORY_PREFIX = "MEMORY#"
+"""Items of the agents that remembered the person (D122): ``MEMORY#<agent id>``."""
+MAX_MEMORY_SESSIONS = 500
+"""Memory sessions noted per conversation: one per runtime session it used."""
 
 
 def new_id() -> str:
@@ -425,6 +429,67 @@ class ConversationRepository:
             item["stop_code"] = {"S": stop_code[:40]}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
+
+    # --- Memory of the agents (D122): which agents remembered the person, and the memory
+    # sessions of each conversation. Only ids: what is remembered lives in AgentCore Memory.
+
+    def note_memory(
+        self, user_id: str, agent_id: str, conversation_id: str, session_id: str
+    ) -> None:
+        """Written before a turn with memory runs (TM-ME1): the person finds in «Memoria»
+        every agent that remembered them, and deleting a conversation finds its sessions."""
+        client = self._clients(user_id)
+        client.update_item(
+            TableName=self._table,
+            Key={"PK": self._pk(user_id), "SK": {"S": f"{MEMORY_PREFIX}{agent_id}"}},
+            UpdateExpression="SET agent_id = :a, first_used = if_not_exists(first_used, :t)",
+            ExpressionAttributeValues={":a": {"S": agent_id}, ":t": {"S": _now_iso()}},
+        )
+        client.update_item(
+            TableName=self._table,
+            Key={"PK": self._pk(user_id), "SK": {"S": f"CONV#{conversation_id}"}},
+            UpdateExpression="ADD memory_sessions :s",
+            ConditionExpression=(
+                "attribute_not_exists(memory_sessions) OR size(memory_sessions) < :max"
+            ),
+            ExpressionAttributeValues={
+                ":s": {"SS": [session_id]},
+                ":max": {"N": str(MAX_MEMORY_SESSIONS)},
+            },
+        )
+
+    def memory_agents(self, user_id: str) -> list[str]:
+        items: list[str] = []
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+            "ExpressionAttributeValues": {
+                ":pk": self._pk(user_id),
+                ":prefix": {"S": MEMORY_PREFIX},
+            },
+        }
+        while True:
+            page = self._clients(user_id).query(**kwargs)
+            items.extend(i["SK"]["S"].removeprefix(MEMORY_PREFIX) for i in page.get("Items", []))
+            if "LastEvaluatedKey" not in page:
+                return items
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+
+    def memory_sessions(self, user_id: str, conversation_id: str) -> tuple[str | None, list[str]]:
+        item = (
+            self._clients(user_id)
+            .get_item(
+                TableName=self._table,
+                Key={"PK": self._pk(user_id), "SK": {"S": f"CONV#{conversation_id}"}},
+                ConsistentRead=True,
+            )
+            .get("Item")
+        )
+        if item is None:
+            return None, []
+        return item.get("agent_id", {}).get("S"), sorted(
+            item.get("memory_sessions", {}).get("SS", [])
+        )
 
     def list_conversations(self, user_id: str) -> list[dict[str, str | None]]:
         resp = self._clients(user_id).query(

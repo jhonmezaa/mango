@@ -179,6 +179,9 @@ export class Provisioner extends Construct {
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     });
 
+    // D122: the memory a harness names, only while memory is on.
+    platform.memory.grantProvisioner(role);
+
     // --- IAM: agent roles only, always with the boundary ---------------------------------
     const withBoundary = { StringEquals: { "iam:PermissionsBoundary": platform.boundary.managedPolicyArn } };
     role.addToPolicy(
@@ -571,6 +574,8 @@ export class Provisioner extends Construct {
         SKILLS_BUCKET: props.skills.bucketName,
         SKILLS_KEY_ARN: props.skills.keyArn,
         ...(props.evals?.provisionerEnvironment ?? {}),
+        // D122: the installation's memory, which a harness names only while memory is on.
+        ...platform.memory.environment,
       },
       environmentEncryption: props.configKey,
     }).function;

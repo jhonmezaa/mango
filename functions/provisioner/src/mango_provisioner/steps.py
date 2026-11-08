@@ -299,6 +299,19 @@ class Provisioner:
         except InvalidDefinitionError:
             return ()
 
+    def _published_memory(self, agent_id: str, published: Published | None) -> bool:
+        """Whether the version that is live uses memory (D122): its harness keeps reaching
+        the memory until the new one serves."""
+        if published is None:
+            return False
+        version = self._store.version(agent_id, published.version)
+        if version is None or not verify_content(version.canonical, published.content_hash):
+            return False
+        try:
+            return loads_definition(version.canonical).memory
+        except InvalidDefinitionError:
+            return False
+
     def _audit_detail(self, ctx: Context, outcome: str, **extra: Any) -> dict[str, Any]:
         return {
             "agent": ctx.request.agent_id,
@@ -486,7 +499,8 @@ class Provisioner:
         published = self._store.published(agent_id)
         models = {*self._models(ctx.definition), *self._published_models(agent_id, published)}
         skills = {*ctx.definition.skills, *self._published_skills(agent_id, published)}
-        self._roles.ensure(agent_id, models, skills)
+        memory = ctx.definition.memory or self._published_memory(agent_id, published)
+        self._roles.ensure(agent_id, models, skills, memory=memory)
         return state
 
     def ensure_harness(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -607,7 +621,12 @@ class Provisioner:
             )
         # The previous version no longer serves: the role keeps only this version's models
         # and skills.
-        self._roles.ensure(request.agent_id, self._models(ctx.definition), ctx.definition.skills)
+        self._roles.ensure(
+            request.agent_id,
+            self._models(ctx.definition),
+            ctx.definition.skills,
+            memory=ctx.definition.memory,
+        )
         self._audit.emit(
             EVENT_PUBLISHED,
             self._audit_detail(

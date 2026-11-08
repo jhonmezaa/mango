@@ -36,7 +36,7 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from mango_api import chat_stream, harness, knowledge_citations, sessions
+from mango_api import chat_stream, harness, knowledge_citations, memory, sessions
 from mango_api.activity import TurnActivity
 from mango_api.activity_store import Origin
 from mango_api.approvals import (
@@ -1339,6 +1339,17 @@ class ChatTurns:
             )
             # Where the reconciler looks for what the turn cost if this task never says.
             services.budgets.bind_session(pending, session_id)
+            # The person's actor with this agent, or the sentinel (D122, TM-ME1). Built by the
+            # one function of mango_core.memory from the verified sub; fails closed.
+            actor = memory.turn_actor(
+                enabled=services.settings.memory_enabled,
+                index=repo,
+                user=user,
+                agent_id=agent_id,
+                agent_memory=definition.memory,
+                conversation_id=conversation_id,
+                session_id=session_id,
+            )
         except Exception:
             # Nothing was invoked: release the reservation when the turn cannot start (audit
             # finding F2). If this fails too, the reconciler releases it.
@@ -1347,7 +1358,7 @@ class ChatTurns:
         request = harness.build_request(
             invocation_request,
             session_id=session_id,
-            actor_id=user.user_id,
+            actor_id=actor,
             access_token=caller.token,
             invocation_signature=checked.signature,
             # A live session already holds the earlier turns: resending them would duplicate

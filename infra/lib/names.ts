@@ -66,6 +66,13 @@ export const roleNames = {
 export const codeInterpreterName = (ns: string) => `Mango_${ns}_sandbox`;
 
 /**
+ * The AgentCore Memory of the installation (D122): `Mango_<ns>_memory`, with underscores, because
+ * a memory name only admits `[a-zA-Z][a-zA-Z0-9_]{0,47}`. AgentCore appends `-<10 characters>` to
+ * its id; the provisioner checks the ARN it is given against this name.
+ */
+export const memoryName = (ns: string) => `Mango_${ns}_memory`;
+
+/**
  * Cost anomalies (D79): the bus of the Mango account the payer forwards them to, and the rule
  * of the payer that forwards them. The bus name is fixed so that `Payer`, installed before
  * `Core`, can name it.

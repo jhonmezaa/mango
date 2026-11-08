@@ -661,10 +661,10 @@ describe("sign-in activity export (D31)", () => {
 
   it("does not forward the events anywhere else", () => {
     template.resourceCountIs("AWS::Logs::SubscriptionFilter", 0);
-    // The metric filters of the stack read the log group of mango-api (D71 (18), D88 (37)) and
+    // The metric filters of the stack read the log group of mango-api (D71 (18), D88 (37), D122) and
     // of the evaluator's canary (D110 (8)).
     const filters = Object.values(template.findResources("AWS::Logs::MetricFilter"));
-    expect(filters).toHaveLength(3);
+    expect(filters).toHaveLength(4);
     for (const filter of filters) {
       expect(JSON.stringify(filter.Properties.LogGroupName)).not.toContain("AuthEvents");
     }

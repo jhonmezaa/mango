@@ -196,6 +196,8 @@ export class CoreStack extends Stack {
     });
     skills.allowAgents(agentPlatform.boundary);
     skills.grantApi(apiTaskRole);
+    // D122: «Memoria» of each person and the purge, only while memory is on.
+    agentPlatform.memory.grantApi(apiTaskRole);
     // D110, D111: the suites, cases and runs of the evals (data: here, not nested, D99 (2)).
     const evals = new Evals(this, "Evals", { installation: cfg, dataKey: governance.dataKey });
     evals.grantApi(apiTaskRole);
@@ -733,6 +735,8 @@ export class CoreStack extends Stack {
       ].join(","),
       // D121: where mango-api sends the chat turns.
       [CHAT_TURNS_QUEUE_ENV]: chatTurns.queue.queueUrl,
+      // D122: the agents' memory, off until M0.
+      ...agentPlatform.memory.environment,
     };
     const api = new ApiService(this, "Api", {
       installation: cfg,

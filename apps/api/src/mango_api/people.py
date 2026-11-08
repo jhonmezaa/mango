@@ -840,6 +840,11 @@ class PeopleDeps:
     end_sessions: Callable[[str, RevocationCause], None] | None = None
     """Ends the web sessions of a user id (D63), next to the Cognito sign-out, and records
     why: the reason of their ``session.ended``."""
+    forget_memory: Callable[[str], None] | None = None
+    """What disabling a person adds while the agents' memory is on (D122 (4), TM-ME5): the
+    purge of all their memory, now and the day after (``memory.PersonMemory``)."""
+    keep_memory: Callable[[str], None] | None = None
+    """Enabling them again cancels the sweep still pending."""
 
 
 def _directory[T](call: Callable[[], T]) -> T:
@@ -1267,6 +1272,24 @@ def _sign_out(deps: PeopleDeps, target: _Target, cause: RevocationCause) -> None
     deps.people.sign_out(target.user.username)
 
 
+def _disable(deps: PeopleDeps, target: _Target) -> None:
+    """The purge of their memory is pending before the person is disabled: if it cannot be,
+    nothing changes and the administrator retries (fail closed, TM-ME5)."""
+    sub = target.user.sub
+    if deps.forget_memory is not None:
+        try:
+            deps.forget_memory(sub)
+        except Exception as exc:
+            raise DirectoryUnavailableError from exc
+    try:
+        deps.people.disable(target.user.username)
+    except Exception:
+        if deps.keep_memory is not None:
+            deps.keep_memory(sub)
+        raise
+    _sign_out(deps, target, "disabled")
+
+
 def _write(deps: PeopleDeps, kind: Kind, target: _Target, group: str | None) -> None:
     username = target.user.username
     try:
@@ -1277,10 +1300,11 @@ def _write(deps: PeopleDeps, kind: Kind, target: _Target, group: str | None) -> 
             if group in SENSITIVE_GROUPS:
                 _sign_out(deps, target, "group_removed")
         elif kind == "disable":
-            deps.people.disable(username)
-            _sign_out(deps, target, "disabled")
+            _disable(deps, target)
         elif kind == "enable":
             deps.people.enable(username)
+            if deps.keep_memory is not None:
+                deps.keep_memory(target.user.sub)
     except DirectoryUnavailableError as exc:
         raise ApiError(502, "upstream_error", "the directory could not be changed; retry") from exc
 

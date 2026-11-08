@@ -118,6 +118,10 @@ class Settings:
     task_runs_queue_url: str = ""
     chat_turns_queue_url: str = ""
     """``Mango-<ns>-ChatTurns`` (D121): where mango-api sends the turns of the chat."""
+    memory_arn: str = ""
+    """The installation's AgentCore Memory (D122), only while memory is on
+    (``AGENT_MEMORY_ENABLED``). Empty: memory is off, no turn gets a person's actor and the
+    memory routes answer that there is nothing, without calling AWS."""
     task_runs_queue_arn: str = ""
     """Queue every run starts from: Scheduler, «Ejecutar ahora» and events (D78)."""
     task_schedule_group: str = ""
@@ -241,6 +245,11 @@ class Settings:
             tasks_table=env.get("TASKS_TABLE", ""),
             task_runs_queue_url=env.get("TASK_RUNS_QUEUE_URL", ""),
             chat_turns_queue_url=env.get("MANGO_CHAT_TURNS_QUEUE_URL", ""),
+            memory_arn=(
+                env.get("AGENT_MEMORY_ARN", "")
+                if env.get("AGENT_MEMORY_ENABLED", "false") == "true"
+                else ""
+            ),
             task_runs_queue_arn=env.get("TASK_RUNS_QUEUE_ARN", ""),
             task_schedule_group=env.get("TASK_SCHEDULE_GROUP", ""),
             task_scheduler_role_arn=env.get("TASK_SCHEDULER_ROLE_ARN", ""),
@@ -269,6 +278,11 @@ class Settings:
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),
         )
+
+    @property
+    def memory_enabled(self) -> bool:
+        """Memory is on only with the installation's memory configured (D122)."""
+        return bool(self.memory_arn)
 
 
 def _price(raw: str) -> Decimal:

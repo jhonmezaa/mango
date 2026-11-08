@@ -28,6 +28,7 @@ from mango_core.harness_tools import (
     knowledge_allowed_tool,
     skills_allowed_tool,
 )
+from mango_core.memory import harness_memory
 from mango_core.playground import PLAYGROUND_ID
 from mango_core.remote_mcp import registration_of_target
 from mango_core.skills import parse_ref as parse_skill_ref
@@ -214,7 +215,10 @@ def harness_config(
         else [],
         "allowedTools": tools,
         **({"skills": skills} if skills else {}),
-        "memory": {"disabled": {}},
+        # The installation's memory by ARN, with the sentinel actor: each turn names its own
+        # (D122, TM-ME1). Only for a version with memory while the installation has it on;
+        # never the managed memory a harness gets when nothing is said (TM-ME8).
+        "memory": harness_memory(settings.memory_arn if definition.memory else None),
         "maxIterations": limits.max_iterations,
         "maxTokens": limits.max_tokens,
         "timeoutSeconds": limits.timeout_seconds,
