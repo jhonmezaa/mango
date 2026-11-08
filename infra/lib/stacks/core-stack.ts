@@ -290,7 +290,6 @@ export class CoreStack extends Stack {
                 : `cdk-hnb659fds-assets-${this.account}-${this.region}`,
               distributionDomainName: uiSandbox.distribution.distributionDomainName,
               spaOrigin: edge.origin,
-              release: release !== undefined,
             },
           }),
     });

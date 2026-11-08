@@ -415,6 +415,17 @@ def build_web() -> None:
     print("· building the UI sandbox and its mirror")
     run("pnpm", "--filter", "@mango/ui-sandbox", "build")
     run("pnpm", "--filter", "@mango/ui-sandbox", "run", "vendor:pyodide")
+    check_ui_sandbox_mirror()
+
+
+def check_ui_sandbox_mirror(root: Path = ROOT / "apps" / "ui-sandbox") -> None:
+    """A release ships the Pyodide packages that ``vendor.json`` names: without them a Python
+    preview would fail in every installation. CI and tests synthesize without them."""
+    wanted = json.loads((root / "vendor.json").read_text())["pyodide"]["packages"]
+    manifest = json.loads((root / "dist" / "vendor" / "manifest.json").read_text())
+    absent = sorted(set(wanted) - set(manifest.get("pyodidePackages", [])))
+    if absent:
+        sys.exit(f"the UI sandbox mirror lacks the Pyodide packages {absent}: run vendor:pyodide")
 
 
 def main() -> None:

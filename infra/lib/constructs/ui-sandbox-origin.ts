@@ -306,10 +306,11 @@ interface MirrorManifest {
 }
 
 /**
- * What a synthesis takes from the built sandbox: the runner and its mirror, complete. A release
- * also needs the Pyodide packages (`vendor:pyodide`), which only its CI downloads (D25).
+ * What a synthesis takes from the built sandbox: the runner and its mirror, as its manifest
+ * lists it. The Pyodide packages, which only the release build downloads (D25), are required by
+ * `deployment/dist.py` before it synthesizes: CI and tests synthesize without them.
  */
-export function checkUiSandboxDist(dist: string, release: boolean): MirrorManifest {
+export function checkUiSandboxDist(dist: string): MirrorManifest {
   const missing = ["sandbox.html", "assets", "vendor/manifest.json", "vendor-wasm"].filter(
     (path) => !existsSync(resolve(dist, path)),
   );
@@ -320,16 +321,6 @@ export function checkUiSandboxDist(dist: string, release: boolean): MirrorManife
   for (const [path, { bytes }] of Object.entries(manifest.files)) {
     const file = resolve(dist, path.endsWith(".wasm") ? "vendor-wasm" : "vendor", path);
     if (!existsSync(file) || statSync(file).size !== bytes) throw new Error(`the mirror does not match its manifest: ${path}`);
-  }
-  if (release) {
-    const wanted = (
-      JSON.parse(readFileSync(resolve(dist, "../vendor.json"), "utf8")) as { pyodide: { packages: string[] } }
-    ).pyodide.packages;
-    const have = new Set(manifest.pyodidePackages ?? []);
-    const absent = wanted.filter((name) => !have.has(name));
-    if (absent.length) {
-      throw new Error(`a release needs the Pyodide packages of the mirror (pnpm --filter @mango/ui-sandbox run vendor:pyodide): ${absent.join(", ")}`);
-    }
   }
   return manifest;
 }
@@ -344,8 +335,6 @@ export interface UiSandboxContentProps {
   readonly spaOrigin: string;
   /** Where the built runner and mirror are; {@link UI_SANDBOX_DIST} by default. */
   readonly dist?: string;
-  /** A release: the mirror must hold the Pyodide packages. */
-  readonly release: boolean;
 }
 
 /**
@@ -359,7 +348,7 @@ export class UiSandboxContent extends Construct {
   constructor(scope: Construct, id: string, props: UiSandboxContentProps) {
     super(scope, id);
     const dist = props.dist ?? UI_SANDBOX_DIST;
-    checkUiSandboxDist(dist, props.release);
+    checkUiSandboxDist(dist);
     // Core's bucket, by name and ARN (parameters of the nested stack): no grant changes Core.
     const bucket = s3.Bucket.fromBucketAttributes(this, "Bucket", {
       bucketName: props.bucket.bucketName,

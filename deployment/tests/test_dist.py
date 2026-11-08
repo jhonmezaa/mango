@@ -500,3 +500,18 @@ def test_the_release_builds_the_ui_sandbox_and_its_pinned_mirror_before_synthesi
     assert pinned["baseUrl"] == f"https://cdn.jsdelivr.net/pyodide/v{pinned['version']}/full/"
     fetcher = (REPO / "apps" / "ui-sandbox" / "scripts" / "fetch-pyodide-packages.mjs").read_text()
     assert "lockSha256" in fetcher and "is not the lock's" in fetcher
+
+
+def test_a_release_without_the_pyodide_packages_ends_the_build(tmp_path: Path) -> None:
+    root = _tree(
+        tmp_path,
+        {
+            "vendor.json": json.dumps({"pyodide": {"packages": ["numpy", "pandas"]}}).encode(),
+            "dist/vendor/manifest.json": json.dumps({"files": {}}).encode(),
+        },
+    )
+    with pytest.raises(SystemExit, match="numpy"):
+        dist.check_ui_sandbox_mirror(root)
+    manifest = {"files": {}, "pyodidePackages": ["numpy", "pandas"]}
+    (root / "dist" / "vendor" / "manifest.json").write_text(json.dumps(manifest))
+    dist.check_ui_sandbox_mirror(root)

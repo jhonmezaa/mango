@@ -378,7 +378,6 @@ describe("the content of the second origin, from the release (V2, D123 (3))", ()
       distributionDomainName: "d123.cloudfront.net",
       spaOrigin,
       dist,
-      release: false,
     });
     return Template.fromStack(stack).toJSON().Resources as Record<string, Json>;
   }
@@ -417,14 +416,8 @@ describe("the content of the second origin, from the release (V2, D123 (3))", ()
 
   it("refuses a sandbox that is not built, or a mirror that is not its manifest", () => {
     const dist = built();
-    expect(() => checkUiSandboxDist(join(root, "nothing"), false)).toThrow(/not built/);
+    expect(() => checkUiSandboxDist(join(root, "nothing"))).toThrow(/not built/);
     writeFileSync(join(dist, "vendor/react/18.3.1/react.mjs"), "changed after the manifest");
-    expect(() => checkUiSandboxDist(dist, false)).toThrow(/does not match its manifest/);
-  });
-
-  it("refuses a release whose mirror lacks the Pyodide packages", () => {
-    expect(() => checkUiSandboxDist(built(), true)).toThrow(/Pyodide packages/);
-    expect(() => checkUiSandboxDist(built(["numpy"]), true)).toThrow(/pandas, matplotlib/);
-    expect(() => checkUiSandboxDist(built(["matplotlib", "numpy", "pandas"]), true)).not.toThrow();
+    expect(() => checkUiSandboxDist(dist)).toThrow(/does not match its manifest/);
   });
 });
