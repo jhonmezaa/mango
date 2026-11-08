@@ -11,6 +11,11 @@ every task of mango-api reach them only through a client bound to that person.
   «Detener»: ``POST /api/chat/turns/{turn}/cancel``).
 * ``TURN#<turn>#EVT#<seq:08d>``: one item per event of the stream, numbered from 1, written
   once (conditional), read in order.
+* ``INFLIGHT#<conversation>``: the turn of the conversation that is queued or running, if any
+  (D121 (6): one at a time). Taken with a conditional write when a turn is queued, released
+  (``until`` = 0, never deleted: the per-person session policy has no ``DeleteItem``) when it
+  ends. ``until`` bounds it: a holder whose worker died never blocks the conversation longer
+  than a turn may last. Read by ``GET /api/conversations/{id}/turn`` without a scan.
 
 Every item expires after 4 hours (TTL): the conversation keeps the stored message, these are
 only the way to it (TM-TW7). Nothing here ever holds the person's access token.
@@ -105,6 +110,21 @@ class TurnLog(Protocol):
 
     def status(self, user_id: str, turn_id: str) -> TurnStatus | None: ...
 
+    def holder(self, user_id: str, conversation_id: str) -> str | None:
+        """The turn that holds the conversation (``None`` when free or past its ``until``)."""
+        ...
+
+    def take(
+        self, user_id: str, conversation_id: str, turn_id: str, *, until: int, replaces: str | None
+    ) -> bool:
+        """Make ``turn_id`` the holder until ``until`` if the conversation is free, past its
+        ``until`` or held by ``replaces`` (a holder known to have ended); False otherwise."""
+        ...
+
+    def release(self, user_id: str, conversation_id: str, turn_id: str) -> None:
+        """Free the conversation if ``turn_id`` holds it; nothing otherwise."""
+        ...
+
     notifies: bool
     """True when ``wait`` wakes up on a change; otherwise readers poll on their own clock."""
 
@@ -115,6 +135,10 @@ class TurnLog(Protocol):
 
 def _state_key(user_id: str, turn_id: str) -> dict[str, Any]:
     return {"PK": {"S": f"USER#{user_id}"}, "SK": {"S": f"TURN#{turn_id}#STATE"}}
+
+
+def _holder_key(user_id: str, conversation_id: str) -> dict[str, Any]:
+    return {"PK": {"S": f"USER#{user_id}"}, "SK": {"S": f"INFLIGHT#{conversation_id}"}}
 
 
 def _event_sk(turn_id: str, seq: int) -> str:
@@ -288,6 +312,63 @@ class DynamoTurnLog:
             owner=item.get("owner", {}).get("S", ""),
         )
 
+    def holder(self, user_id: str, conversation_id: str) -> str | None:
+        item = (
+            self._clients(user_id)
+            .get_item(
+                TableName=self._table,
+                Key=_holder_key(user_id, conversation_id),
+                ConsistentRead=True,
+            )
+            .get("Item")
+        )
+        if item is None or int(item.get("until", {}).get("N", "0")) < int(self._clock()):
+            return None
+        turn_id = item.get("turn_id", {}).get("S", "")
+        return turn_id or None
+
+    def take(
+        self, user_id: str, conversation_id: str, turn_id: str, *, until: int, replaces: str | None
+    ) -> bool:
+        condition = "attribute_not_exists(SK) OR #until < :now"
+        values: dict[str, Any] = {
+            ":t": {"S": turn_id},
+            ":until": {"N": str(until)},
+            ":now": {"N": str(int(self._clock()))},
+            ":ttl": self._ttl(),
+        }
+        if replaces is not None:
+            condition += " OR turn_id = :old"
+            values[":old"] = {"S": replaces}
+        try:
+            self._clients(user_id).update_item(
+                TableName=self._table,
+                Key=_holder_key(user_id, conversation_id),
+                UpdateExpression="SET turn_id = :t, #until = :until, #ttl = :ttl",
+                ConditionExpression=condition,
+                ExpressionAttributeNames={"#until": "until", "#ttl": "ttl"},
+                ExpressionAttributeValues=values,
+            )
+        except ClientError as exc:
+            if _conditional_failed(exc):
+                return False
+            raise
+        return True
+
+    def release(self, user_id: str, conversation_id: str, turn_id: str) -> None:
+        try:
+            self._clients(user_id).update_item(
+                TableName=self._table,
+                Key=_holder_key(user_id, conversation_id),
+                UpdateExpression="SET #until = :zero",
+                ConditionExpression="turn_id = :t",
+                ExpressionAttributeNames={"#until": "until"},
+                ExpressionAttributeValues={":zero": {"N": "0"}, ":t": {"S": turn_id}},
+            )
+        except ClientError as exc:
+            if not _conditional_failed(exc):
+                raise
+
     def wait(self, user_id: str, turn_id: str, seconds: float) -> None:
         # Two tasks share nothing but the table (D70): the reader polls it.
         time.sleep(min(seconds, self._poll))
@@ -308,9 +389,11 @@ class MemoryTurnLog:
 
     notifies = True
 
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], float] = time.time) -> None:
         self._turns: dict[tuple[str, str], _MemoryTurn] = {}
+        self._holders: dict[tuple[str, str], tuple[str, int]] = {}
         self._changed = threading.Condition()
+        self._clock = clock
 
     def create(self, user_id: str, conversation_id: str, turn_id: str, *, deadline: int) -> None:
         with self._changed:
@@ -379,6 +462,34 @@ class MemoryTurnLog:
         with self._changed:
             turn = self._turns.get((user_id, turn_id))
             return max(turn.events, default=0) if turn is not None else 0
+
+    def holder(self, user_id: str, conversation_id: str) -> str | None:
+        with self._changed:
+            held = self._holders.get((user_id, conversation_id))
+            if held is None or held[1] < int(self._clock()):
+                return None
+            return held[0]
+
+    def take(
+        self, user_id: str, conversation_id: str, turn_id: str, *, until: int, replaces: str | None
+    ) -> bool:
+        with self._changed:
+            held = self._holders.get((user_id, conversation_id))
+            free = (
+                held is None
+                or held[1] < int(self._clock())
+                or (replaces is not None and held[0] == replaces)
+            )
+            if not free:
+                return False
+            self._holders[(user_id, conversation_id)] = (turn_id, until)
+            return True
+
+    def release(self, user_id: str, conversation_id: str, turn_id: str) -> None:
+        with self._changed:
+            held = self._holders.get((user_id, conversation_id))
+            if held is not None and held[0] == turn_id:
+                self._holders[(user_id, conversation_id)] = (turn_id, 0)
 
     def wait(self, user_id: str, turn_id: str, seconds: float) -> None:
         with self._changed:

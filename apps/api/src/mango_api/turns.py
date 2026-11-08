@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
+from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
@@ -95,6 +96,14 @@ END_ATTEMPTS = 5
 """Tries to write the end of a turn stopped from outside its worker after its last event."""
 TERMINAL_EVENTS = frozenset({"done", "error"})
 UPSTREAM_ERROR = {"code": "upstream_error", "message": "the agent failed"}
+TURN_INTERRUPTED = chat_stream.TURN_INTERRUPTED
+"""The end of a turn lost halfway: its worker stopped or lost the agent's stream after the
+agent started (D121 (7)). The stream of D57 still says ``upstream_error``."""
+BUSY_REJECTION: dict[str, Any] = {
+    "status": 409,
+    "code": "conversation_busy",
+    "message": "another message is being answered; try again",
+}
 MESSAGE_VERSION = 1
 _ID = r"^[0-9a-f]{32}$"
 
@@ -242,14 +251,13 @@ def start_turn(
     binding: str,
     turn_seconds: int,
 ) -> sessions.SessionPlan:
-    """Store the user's message and take the runtime session this turn runs in.
+    """Take the runtime session this turn runs in and store the user's message.
 
     When another turn of the conversation takes the session first, this one plans again from
     the new state (a turn in flight is never continued, so it gets a session of its own).
     """
     repo, settings = services.conversations, services.settings
     repo.upsert_conversation(user_id, conversation_id, message[:60], agent_id)
-    repo.add_message(user_id, conversation_id, "user", message)
     for _ in range(SESSION_ATTEMPTS):
         session = sessions.plan(
             state,
@@ -271,6 +279,9 @@ def start_turn(
         except sessions.SessionBusyError:
             state = repo.session_state(user_id, conversation_id) or sessions.SessionState()
             continue
+        # Only a turn that goes ahead stores its question: one refused as busy was never sent
+        # (design round 40, «Tu mensaje no se envió»).
+        repo.add_message(user_id, conversation_id, "user", message)
         return session
     raise ApiError(409, "conversation_busy", "another message is being answered; try again")
 
@@ -732,6 +743,13 @@ class ChatTurns:
         user_id = caller.user.user_id
         now = int(self._clock())
         self._log.create(user_id, conversation_id, turn_id, deadline=now + PICKUP_SECONDS)
+        if not self._hold(user_id, conversation_id, turn_id):
+            # Another turn of the conversation is queued or running (D121 (6)): this one never
+            # runs nor stores anything, and its stream ends with ``conversation_busy``.
+            self._try_end(
+                user_id, turn_id, TurnState.FAILED, frozenset({TurnState.QUEUED}), BUSY_REJECTION
+            )
+            return
         body = json.dumps(
             {
                 "v": MESSAGE_VERSION,
@@ -754,7 +772,52 @@ class ChatTurns:
         except Exception:
             logger.exception("a chat turn could not be queued")
             self._try_end(user_id, turn_id, TurnState.FAILED, frozenset({TurnState.QUEUED}))
+            self._release(user_id, conversation_id, turn_id)
             raise ApiError(503, "agent_unavailable", "please try again") from None
+
+    def _hold(self, user_id: str, conversation_id: str, turn_id: str) -> bool:
+        """Make this turn the one in flight of its conversation; False while another one is
+        queued or running. A holder that ended, expired or stalled past its deadline (its
+        worker died) frees the conversation: the stalled one is given up first."""
+        for _ in range(2):
+            current = self._log.holder(user_id, conversation_id)
+            if current is not None:
+                status = self._log.status(user_id, current)
+                if status is not None and status.state not in ENDED:
+                    if int(self._clock()) <= status.deadline:
+                        return False
+                    self._give_up(user_id, current, status)
+            if self._log.take(
+                user_id, conversation_id, turn_id, until=self._in_flight_until(), replaces=current
+            ):
+                return True
+        return False
+
+    def _in_flight_until(self) -> int:
+        """The longest a turn may be in flight: queued, run and settled."""
+        return int(self._clock()) + PICKUP_SECONDS + MAX_TURN_SECONDS + SETTLE_SECONDS
+
+    def _release(self, user_id: str, conversation_id: str, turn_id: str) -> None:
+        """Free the conversation of this turn once it ended; never raises (``until`` frees it
+        anyway)."""
+        if not conversation_id:
+            return
+        try:
+            self._log.release(user_id, conversation_id, turn_id)
+        except Exception:
+            logger.exception("chat turn %s did not free its conversation", turn_id)
+
+    def in_flight(self, user_id: str, conversation_id: str) -> tuple[str, TurnStatus] | None:
+        """The turn of the conversation that is queued or running and its state, if any: what
+        a reloaded page or another tab reads to follow it (D120). ``None`` when there is
+        none."""
+        current = self._log.holder(user_id, conversation_id)
+        if current is None:
+            return None
+        status = self._log.status(user_id, current)
+        if status is None or status.state in ENDED or status.conversation_id != conversation_id:
+            return None
+        return current, status
 
     async def opening(self, user_id: str, turn_id: str) -> list[TurnEvent]:
         """The first events of the turn, once its stream started; raises what the request
@@ -783,6 +846,7 @@ class ChatTurns:
                 )
                 if ended:
                     logger.warning("chat turn %s was given up %s", turn_id, status.state.value)
+                    await asyncio.to_thread(self._release, user_id, status.conversation_id, turn_id)
                     raise ApiError(503, "agent_unavailable", "please try again")
                 continue
             await self._pause(user_id, turn_id, backoff.wait())
@@ -800,7 +864,7 @@ class ChatTurns:
         while True:
             for event in pending:
                 seq = event.seq
-                yield sse(event.kind, event.data)
+                yield sse(event.kind, _d57(event))
                 sent_at = loop()
                 ended = ended or event.kind in TERMINAL_EVENTS
             if ended:
@@ -850,7 +914,7 @@ class ChatTurns:
         user_id: str,
         turn_id: str,
         *,
-        error: dict[str, Any] = UPSTREAM_ERROR,
+        error: dict[str, Any] = TURN_INTERRUPTED,
         were: frozenset[TurnState] = frozenset({TurnState.RUNNING}),
     ) -> bool:
         """Mark a turn ``interrupted`` from outside its worker (it stalled past its deadline,
@@ -866,14 +930,28 @@ class ChatTurns:
             for _ in range(END_ATTEMPTS):
                 seq = self._log.last_seq(user_id, turn_id) + 1
                 if self._log.append(user_id, turn_id, seq, "error", error):
-                    self._keep_written(user_id, turn_id, seq)
-                    return True
-            logger.warning("the end of interrupted chat turn %s was not recorded", turn_id)
+                    self._keep_written(user_id, turn_id, seq, str(error.get("code", "")))
+                    break
+            else:
+                logger.warning("the end of interrupted chat turn %s was not recorded", turn_id)
         except Exception:
             logger.exception("the end of an interrupted chat turn was not recorded")
+        finally:
+            # After what was written is kept: the next question of the conversation goes
+            # after it in the history.
+            self._release_ended(user_id, turn_id)
         return True
 
-    def _keep_written(self, user_id: str, turn_id: str, end: int) -> None:
+    def _release_ended(self, user_id: str, turn_id: str) -> None:
+        try:
+            status = self._log.status(user_id, turn_id)
+        except Exception:
+            logger.exception("chat turn %s was not read to free its conversation", turn_id)
+            return
+        if status is not None:
+            self._release(user_id, status.conversation_id, turn_id)
+
+    def _keep_written(self, user_id: str, turn_id: str, end: int, code: str) -> None:
         """Store what the person saw of a stopped answer (D121 (7)): the text, tools and
         requests of the events before its end, marked ``stopped``; nothing the worker
         receives after it. Not when the turn never reached its stream (nothing to keep) nor
@@ -913,6 +991,7 @@ class ChatTurns:
                     if e.kind == "remote_connection_required"
                 ],
                 stopped=True,
+                stop_code=code,
             )
         except Exception:
             logger.exception("what was written of stopped chat turn %s was not kept", turn_id)
@@ -998,6 +1077,7 @@ class ChatTurns:
         if status.state == TurnState.QUEUED:
             if self._log.end(user_id, turn_id, TurnState.FAILED, were=frozenset({status.state})):
                 logger.warning("chat turn %s was given up queued", turn_id)
+                self._release(user_id, status.conversation_id, turn_id)
         elif self.interrupt(user_id, turn_id):
             logger.warning("chat turn %s was given up running", turn_id)
 
@@ -1020,13 +1100,14 @@ class ChatTurns:
             caller = self._identity(message)
         except (ApiError, HTTPException) as exc:
             _safe(ack)
-            self._try_end(
+            if self._try_end(
                 message.owner_sub,
                 message.turn_id,
                 TurnState.FAILED,
                 frozenset({TurnState.QUEUED}),
                 _rejection(exc),
-            )
+            ):
+                self._release(message.owner_sub, message.conversation_id, message.turn_id)
             return
         if caller is None:
             _safe(ack)
@@ -1075,6 +1156,14 @@ class ChatTurns:
         return Caller(user=user, token=token, expires_at=int(claims["exp"]))
 
     def _run(self, caller: Caller, message: TurnMessage) -> None:
+        try:
+            self._run_claimed(caller, message)
+        finally:
+            # Whatever happened, the conversation is free for its next question once its
+            # state is final. Only this turn's hold is released: never a newer turn's.
+            self._release(caller.user.user_id, message.conversation_id, message.turn_id)
+
+    def _run_claimed(self, caller: Caller, message: TurnMessage) -> None:
         user_id, turn_id = caller.user.user_id, message.turn_id
         try:
             started = self._start(caller, message)
@@ -1385,7 +1474,7 @@ class ChatTurns:
                     message_id=message_id,
                 )
                 answered = True
-        except Exception:
+        except Exception as exc:
             if result.harness_missing:
                 # Not a failure of this turn: the agent cannot answer anybody until it is
                 # published again.
@@ -1394,8 +1483,31 @@ class ChatTurns:
                 )
             else:
                 logger.exception("chat turn failed")
+            # Lost halfway: the agent was reached and its stream broke (a timeout, a dropped
+            # connection), so the harness may still be answering (D121 (7)). An error the
+            # service answered or reported in the stream (``ClientError``) is the agent's.
+            lost = (
+                result.started
+                and not result.usage_final
+                and not result.harness_missing
+                and not isinstance(exc, ClientError)
+            )
             try:
-                put("error", UPSTREAM_ERROR)
+                put("error", TURN_INTERRUPTED if lost else UPSTREAM_ERROR)
+                if lost and not stopped:
+                    # What the person saw is kept, as when a turn is stopped from outside.
+                    repo.add_message(
+                        user.user_id,
+                        conversation_id,
+                        "assistant",
+                        result.text,
+                        result.tools,
+                        approvals=approval_ids,
+                        connection_required=result.connection_required,
+                        remote_sources=result.remote_sources,
+                        stopped=True,
+                        stop_code=TURN_INTERRUPTED["code"],
+                    )
             except Exception:
                 logger.exception("the end of a failed chat turn was not recorded")
         finally:
@@ -1435,6 +1547,14 @@ class ChatTurns:
         return (
             TurnState.INTERRUPTED if result.started and not result.usage_final else TurnState.FAILED
         )
+
+
+def _d57(event: TurnEvent) -> dict[str, Any]:
+    """The data of an event as the stream of D57 says it: it has no code of its own for a turn
+    lost halfway (it does not change until R5 retires it)."""
+    if event.kind == "error" and event.data.get("code") == TURN_INTERRUPTED["code"]:
+        return dict(UPSTREAM_ERROR)
+    return event.data
 
 
 def _safe(ack: Callable[[], None]) -> None:

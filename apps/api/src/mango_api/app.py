@@ -226,7 +226,7 @@ from mango_api.tasks import (
 from mango_api.tasks_store import Automation, Run, RunStatus, TaskStore
 from mango_api.tickets import RunTicketWriter, TicketsDeps, TicketToolGate, tickets_router
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
-from mango_api.turns_store import DynamoTurnLog, MemoryTurnLog
+from mango_api.turns_store import DynamoTurnLog, MemoryTurnLog, TurnState
 from mango_api.web import ApiError, Caller, error_response, rate_limited
 from mango_api.web_session import (
     CognitoTokens,
@@ -287,6 +287,20 @@ class TurnCreated(_Strict):
 
     conversation_id: str
     turn_id: str
+
+
+class TurnInFlight(_Strict):
+    """The turn of a conversation that is queued or running: read it with
+    ``GET /api/chat/turns/{turn_id}/stream`` from ``after=0`` (none of it is in the history
+    until it ends, so the whole turn is what the client is missing)."""
+
+    turn_id: str
+    state: Literal["queued", "running"]
+
+
+class ConversationTurn(_Strict):
+    turn: TurnInFlight | None
+    """``None`` when no turn of the conversation is in flight."""
 
 
 class TurnCancelled(_Strict):
@@ -353,7 +367,11 @@ class MessageOut(_Strict):
     remote_sources: list[str] = []
     """Remote MCP registrations whose tools answered (design «Leyó {servicio}»)."""
     stopped: bool = False
-    """What was written of an answer until it was stopped (D121 (7)): «Respuesta detenida»."""
+    """What was written of an answer until it was stopped or lost (D121 (7))."""
+    stop_code: Literal["cancelled", "turn_interrupted"] | None = None
+    """Why it was cut: the owner's «Detener» (``cancelled``, «Respuesta detenida») or a turn
+    lost halfway (``turn_interrupted``, «Respuesta interrumpida»). ``None`` when it was not
+    cut, or for an answer stored before the code existed."""
 
 
 class ConversationDetail(_Strict):
@@ -1610,11 +1628,38 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     connection_required=m.connection_required,
                     remote_sources=m.remote_sources,
                     stopped=m.stopped,
+                    stop_code=_stop_code(m.stop_code),
                 )
                 for m in messages
             ],
             approvals=approvals,
         )
+
+    @app.get("/api/conversations/{conversation_id}/turn", response_model=ConversationTurn)
+    async def conversation_turn(conversation_id: str, caller: CallerDependency) -> ConversationTurn:
+        """The conversation's turn in flight, if any (D120, D121 (6)): what a reloaded page or
+        another tab follows. Only its owner: looked up in their partition only (row-level
+        security) and ``OwnConversation`` decided and audited, with the same 404 for someone
+        else's, a missing one and a denial (TM-TW3). One read of the conversation's
+        ``INFLIGHT#`` item and one of its turn: no scan."""
+        if not CONVERSATION_ID_RE.fullmatch(conversation_id):
+            raise HTTPException(status_code=404, detail="not found")
+        user_id = caller.user.user_id
+        summary = await asyncio.to_thread(services.conversations.summary, user_id, conversation_id)
+        if summary is None:
+            raise HTTPException(status_code=404, detail="not found")
+        await own_conversation(caller, conversation_id, summary[2], read_only=True)
+        chat_turns = services.chat_turns
+        if chat_turns is None:
+            return ConversationTurn(turn=None)
+        flight = await asyncio.to_thread(chat_turns.in_flight, user_id, conversation_id)
+        if flight is None:
+            return ConversationTurn(turn=None)
+        turn_id, status = flight
+        state: Literal["queued", "running"] = (
+            "queued" if status.state == TurnState.QUEUED else "running"
+        )
+        return ConversationTurn(turn=TurnInFlight(turn_id=turn_id, state=state))
 
     @app.get("/api/admin/audit", response_model=AuditList)
     async def admin_audit(
@@ -2204,6 +2249,15 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 
 
 # --- The agent a turn runs on -----------------------------------------------------------
+
+
+def _stop_code(code: str) -> Literal["cancelled", "turn_interrupted"] | None:
+    """The stored reason an answer was cut, as the API says it (anything else: none)."""
+    if code == "cancelled":
+        return "cancelled"
+    if code == "turn_interrupted":
+        return "turn_interrupted"
+    return None
 
 
 def _agent_names(services: Services) -> dict[str, str]:

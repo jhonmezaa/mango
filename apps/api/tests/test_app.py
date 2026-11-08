@@ -1490,6 +1490,7 @@ def test_every_conversation_route_decides_own_conversation(h: Harness) -> None:
     covered = {
         ("GET", "/api/conversations"),
         ("GET", "/api/conversations/{conversation_id}"),
+        ("GET", "/api/conversations/{conversation_id}/turn"),  # the turn in flight (D120)
         ("POST", "/api/search/conversations"),  # D103
         ("GET", "/api/chat/turns/{turn_id}/stream"),
         ("POST", "/api/chat/turns/{turn_id}/cancel"),

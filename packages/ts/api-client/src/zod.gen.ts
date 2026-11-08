@@ -3182,6 +3182,7 @@ export const zMessageOutSchema = z.object({
     message_id: z.string(),
     remote_sources: z.array(z.string()).optional().default([]),
     role: z.string(),
+    stop_code: z.enum(['cancelled', 'turn_interrupted']).nullish(),
     stopped: z.boolean().optional().default(false),
     tools: z.array(zToolStatusSchema)
 });
@@ -3321,6 +3322,25 @@ export const zTurnCancelledSchema = z.object({
 export const zTurnCreatedSchema = z.object({
     conversation_id: z.string(),
     turn_id: z.string()
+});
+
+/**
+ * TurnInFlight
+ *
+ * The turn of a conversation that is queued or running: read it with
+ * ``GET /api/chat/turns/{turn_id}/stream`` from ``after=0`` (none of it is in the history
+ * until it ends, so the whole turn is what the client is missing).
+ */
+export const zTurnInFlightSchema = z.object({
+    state: z.enum(['queued', 'running']),
+    turn_id: z.string()
+});
+
+/**
+ * ConversationTurn
+ */
+export const zConversationTurnSchema = z.object({
+    turn: zTurnInFlightSchema.nullable()
 });
 
 /**
@@ -4632,6 +4652,15 @@ export const zGetConversationPath = z.object({
  * Successful Response
  */
 export const zGetConversationResponse = zConversationDetailSchema;
+
+export const zConversationTurnPath = z.object({
+    conversation_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zConversationTurnResponse = zConversationTurnSchema;
 
 export const zGetCostsQuery = z.object({
     month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/).nullish()

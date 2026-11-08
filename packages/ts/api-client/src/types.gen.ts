@@ -1738,6 +1738,13 @@ export type ConversationSummary = {
 };
 
 /**
+ * ConversationTurn
+ */
+export type ConversationTurn = {
+    turn: TurnInFlight | null;
+};
+
+/**
  * CostDayOut
  */
 export type CostDayOut = {
@@ -3313,6 +3320,10 @@ export type MessageOut = {
      * Role
      */
     role: string;
+    /**
+     * Stop Code
+     */
+    stop_code?: 'cancelled' | 'turn_interrupted' | null;
     /**
      * Stopped
      */
@@ -7107,6 +7118,24 @@ export type TurnCreated = {
 };
 
 /**
+ * TurnInFlight
+ *
+ * The turn of a conversation that is queued or running: read it with
+ * ``GET /api/chat/turns/{turn_id}/stream`` from ``after=0`` (none of it is in the history
+ * until it ends, so the whole turn is what the client is missing).
+ */
+export type TurnInFlight = {
+    /**
+     * State
+     */
+    state: 'queued' | 'running';
+    /**
+     * Turn Id
+     */
+    turn_id: string;
+};
+
+/**
  * UnreadOut
  */
 export type UnreadOut = {
@@ -10065,6 +10094,36 @@ export type GetConversationResponses = {
 };
 
 export type GetConversationResponse = GetConversationResponses[keyof GetConversationResponses];
+
+export type ConversationTurnData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/turn';
+};
+
+export type ConversationTurnErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ConversationTurnError = ConversationTurnErrors[keyof ConversationTurnErrors];
+
+export type ConversationTurnResponses = {
+    /**
+     * Successful Response
+     */
+    200: ConversationTurn;
+};
+
+export type ConversationTurnResponse = ConversationTurnResponses[keyof ConversationTurnResponses];
 
 export type GetCostsData = {
     body?: never;

@@ -57,6 +57,11 @@ MESSAGE_PATHS: frozenset[str] = frozenset(
 
 CANCELLED = {"code": "cancelled", "message": "the turn was stopped"}
 """The end the owner's «Detener» writes (D121 (7)): the turn is ``interrupted``."""
+TURN_INTERRUPTED = {"code": "turn_interrupted", "message": "the answer was interrupted"}
+"""The end of a turn lost halfway (D121 (7)): its worker stopped, or lost the agent's stream,
+after the agent started. Its message ends in ``error`` with this code, never
+``upstream_error`` (the agent failed): it is charged in full and asking again does not
+continue it."""
 
 MessageStatus = Literal["in_progress", "finished", "error", "interrupted"]
 
