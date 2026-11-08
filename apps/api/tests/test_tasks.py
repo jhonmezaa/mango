@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 
 from mango_api import app as app_module
+from mango_api import turns as turns_module
 from mango_api.authz import Authorizer
 from mango_api.task_identity import OwnerAccessLostError, TaskIdentityUnavailableError
 from mango_api.task_worker import (
@@ -760,13 +761,13 @@ def test_a_run_never_writes_it_leaves_a_request_for_its_owner(env: Env) -> None:
         requested.append(call)
         return type("Shown", (), {"approval_id": "d" * 32})()
 
-    original = app_module._request_approval
-    app_module._request_approval = request_approval  # type: ignore[assignment]
+    original = turns_module.request_approval
+    turns_module.request_approval = request_approval  # type: ignore[assignment]
     try:
         task = env.created()
         env.deliver(_scheduled(task["task_id"]))
     finally:
-        app_module._request_approval = original
+        turns_module.request_approval = original
     # The harness was asked with the owner's run token and no approval header at all.
     headers = writer.requests[0]["tools"][0]["config"]["remoteMcp"]["headers"]
     assert "X-Mango-Approval" not in headers

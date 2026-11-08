@@ -1073,7 +1073,8 @@ def test_chat_runs_the_agent_the_client_names(h: Harness) -> None:
 
 def test_chat_without_an_agent_uses_the_release_agent(h: Harness) -> None:
     assert _chat(h).status_code == 200
-    assert h.published.asked == ["finops"]
+    # Resolved on receipt and again by the turn worker before it runs (TM-TW9).
+    assert h.published.asked == ["finops", "finops"]
     assert h.conversations.agents and set(h.conversations.agents.values()) == {"finops"}
 
 
@@ -1255,7 +1256,8 @@ def test_conversations_stored_before_agents_were_data_belong_to_the_release_agen
     h: Harness,
 ) -> None:
     assert _chat(h, conversation_id=CONVERSATION).status_code == 200
-    assert h.published.asked == ["finops"]
+    # On receipt and again in the turn worker (TM-TW9): always the release agent.
+    assert h.published.asked == ["finops", "finops"]
     assert _chat(h, conversation_id=CONVERSATION, agent_id=OTHER_AGENT).status_code == 409
 
 

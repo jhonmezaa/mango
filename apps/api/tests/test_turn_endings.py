@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 
 from mango_api import app as app_module
+from mango_api import turns as turns_module
 from mango_api.budget import BudgetService, current_period
 from mango_api.settings import Settings
 from mango_core import budget_turns
@@ -732,7 +733,7 @@ def test_a_turn_whose_task_dies_leaves_a_record_the_reconciler_can_close(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A killed task runs nothing more of the turn: neither the ``except`` nor the ``finally``.
-    monkeypatch.setattr(app_module, "_settle_turn", lambda *_a, **_kw: False)
+    monkeypatch.setattr(turns_module, "settle_turn", lambda *_a, **_kw: False)
     env.chat()
     (record,) = env.records()
     assert record.state == STATE_OPEN

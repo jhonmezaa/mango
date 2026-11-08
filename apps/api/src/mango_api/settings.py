@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -115,6 +116,8 @@ class Settings:
     tasks_table: str = ""
     """Automations and their runs (D78); empty until the tasks construct is deployed."""
     task_runs_queue_url: str = ""
+    chat_turns_queue_url: str = ""
+    """``Mango-<ns>-ChatTurns`` (D121): where mango-api sends the turns of the chat."""
     task_runs_queue_arn: str = ""
     """Queue every run starts from: Scheduler, «Ejecutar ahora» and events (D78)."""
     task_schedule_group: str = ""
@@ -162,8 +165,8 @@ class Settings:
     """KMS key whose signature answers that client's challenge; only mango-api signs."""
 
     @staticmethod
-    def from_env() -> Settings:
-        env = os.environ
+    def from_env(env: Mapping[str, str] | None = None) -> Settings:
+        env = os.environ if env is None else env
         prices = {
             model: ModelPrice(
                 input=Decimal(str(p["input"])),
@@ -237,6 +240,7 @@ class Settings:
             rate_limits_table=env["RATE_LIMITS_TABLE"],
             tasks_table=env.get("TASKS_TABLE", ""),
             task_runs_queue_url=env.get("TASK_RUNS_QUEUE_URL", ""),
+            chat_turns_queue_url=env.get("MANGO_CHAT_TURNS_QUEUE_URL", ""),
             task_runs_queue_arn=env.get("TASK_RUNS_QUEUE_ARN", ""),
             task_schedule_group=env.get("TASK_SCHEDULE_GROUP", ""),
             task_scheduler_role_arn=env.get("TASK_SCHEDULER_ROLE_ARN", ""),

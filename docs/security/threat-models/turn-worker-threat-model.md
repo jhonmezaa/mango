@@ -159,3 +159,16 @@ Siete residuales de los tres modelos (TM-CI1, CI3 y CI8; TM-CF3 y CF5; TM-TW1 y 
 - Entradas cubiertas: `POST /api/chat`, la cola y su DLQ, la ruta de stream, los parches.
 - Fronteras: navegador → API (TW3, TW6), API → cola (TW1, TW2), cola → trabajador (TW5, TW9, TW10), trabajador → tabla (TW7, TW8), servidor → aplicador (TW4).
 - Runtime frente a CI: el mock de dev (R4) reproduce los parches con las mismas reglas del aplicador; no es superficie de producción.
+
+## Estado de las mitigaciones de R2 (2026-11-07)
+
+Construidas en el código del turno (`apps/api/src/mango_api/turns.py`, `turns_store.py`, `turn_worker.py`) y con test (`test_chat_turns.py`, `test_turn_worker.py`):
+
+- **TM-TW1 (parte R2):** el token va en un campo propio del mensaje (`SecretStr`: nunca sale en `repr` ni en un volcado); el trabajador lo verifica otra vez y exige que su `sub` sea el dueño del mensaje; nunca se escribe en `Conversations`, en la auditoría ni en un log (test sobre la tabla con moto, la auditoría y los logs, también en un turno fallido y en mensajes inválidos, que se registran solo por nombre de campo). El mensaje se borra en cuanto se reclama el turno, así que el token sale de la cola enseguida; el trabajador nunca lee la DLQ.
+- **TM-TW2:** margen comprobado al encolar y otra vez en el trabajador; si no alcanza, el turno termina con el mismo 401 de hoy sin reservar ni invocar (test).
+- **TM-TW5:** reclamo condicional `queued` → `running` (test con ocho reclamos a la vez sobre moto: gana uno); una segunda entrega no invoca ni cobra (test). Un turno cuyo trabajador cae queda `interrupted` por quien lo lee al pasar su plazo, con la reserva retenida para el conciliador (D73), y nunca se reintenta. Sin lector, su estado vence con el TTL de 4 h. La protección de tarea se pone antes de leer la cola (test).
+- **TM-TW7:** eventos y estado solo bajo `USER#<sub>` en `Conversations`, con TTL de 4 h (test); ninguna línea de log lleva texto, eventos ni el cuerpo del mensaje. Mango no borra conversaciones todavía: los eventos se van con su TTL.
+- **TM-TW9:** el trabajador vuelve a decidir `UseAgent` (auditado, `via: turn-worker`) y comprueba que la versión y las tools firmadas no cambiaron, antes de reservar (tests).
+- **TM-TW10 (parte R2):** 8 turnos a la vez por tarea del trabajador; un turno que nadie toma en 30 s se da por perdido y no corre después (test).
+
+Quedan para R3/R4 TM-TW3, TW4, TW6 y TW8 (stream `v1`, ruta de reanudación y aplicador de parches).
