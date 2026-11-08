@@ -336,7 +336,10 @@ export const CommandIcon = createIcon(
 export const DownloadIcon = createIcon('Download', <path d="M12 3v13m0 0-4-4m4 4 4-4M5 21h14" />);
 
 /** Design icons.jsx `Expand` (round 40, «Ampliar» a figure). */
-export const ExpandIcon = createIcon('Expand', <path d="M4 10V4h6M20 14v6h-6M4 4l7 7M20 20l-7-7" />);
+export const ExpandIcon = createIcon(
+  'Expand',
+  <path d="M4 10V4h6M20 14v6h-6M4 4l7 7M20 20l-7-7" />,
+);
 
 export const UploadIcon = createIcon('Upload', <path d="M12 20V7m0 0L8 11m4-4 4 4M5 4h14" />);
 
