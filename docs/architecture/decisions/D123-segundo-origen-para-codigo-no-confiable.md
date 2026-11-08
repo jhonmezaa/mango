@@ -1,7 +1,7 @@
 # D123 · Segundo origen para código no confiable y espejo de dependencias en la release
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Dominio registrable aparte (Recomendada)» en producción y, en la PoC, una segunda distribución `*.cloudfront.net`; el cómo, puntos 2 a 7, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
+- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Dominio registrable aparte (Recomendada)» en producción y, en la PoC, una segunda distribución `*.cloudfront.net`; el punto 8, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07, en el modelo de amenazas; el cómo, puntos 2 a 7, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
 - **Precisa / reemplaza a:** precisa [D25](D025-recursos-creados-en-runtime.md) y [D69](D069-assets-por-contenido-y-prefijo-unico.md) (el espejo de dependencias viaja en la release, nombrado por su contenido; nada se descarga en ejecución); precisa [D15](D015-red-de-la-poc.md) (una distribución de CloudFront más); precisa la CSP de la SPA (`frame-src` del segundo origen) y la excepción `CKV_AWS_174` de `AGENTS.md` (punto 6)
 - **Precisada por:** —
 
@@ -22,3 +22,13 @@ Origen: el plan de capacidades del chat ([`docs/specs/chat-capacidades-plan.md`]
 **(6) La excepción de TLS (propuesto por un agente).** Mientras la segunda distribución use el certificado por defecto `*.cloudfront.net`, le aplicaría la misma excepción de la PoC que a la de la SPA (`CKV_AWS_174`). No se registra ni se suprime todavía: se consulta con el dueño en el PR de infraestructura (V1 del plan), como toda excepción.
 
 **(7) Cuotas (propuesto por un agente).** 20 Response Headers Policies por cuenta: el segundo origen usa una.
+
+**(8) Lo que fijó el modelo de amenazas (2026-11-07, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07).** El modelo [`ui-sandbox-threat-model.md`](../../security/threat-models/ui-sandbox-threat-model.md) (TM-UI1 a TM-UI12) fija:
+- **El iframe interior:** de origen opaco (`allow-scripts` sin `allow-same-origin`), uno por documento o app, creado con `srcdoc` dentro del runner y recreado para cambiar su CSP; sin `allow-forms`, `allow-popups`, `allow-top-navigation` ni `allow-modals` (TM-UI4, TM-UI5).
+- **Su red:** solo el propio segundo origen (el espejo). Una MCP App gana solo los dominios de su `_meta.ui` curado ([D125](D125-mcp-apps-de-solo-lectura.md)); Pyodide no llega a PyPI (TM-UI4, TM-UI8).
+- **Lo que cruza:** el host manda al sandbox solo lo que hay que dibujar, nunca tokens, URLs prefirmadas ni ids internos; acepta el `init` solo de su iframe, de su origen, con su `initId` y el conjunto exacto de puertos, y después solo escucha los puertos (TM-UI3).
+- **La distribución:** buckets distintos para la SPA y el sandbox, con un test que impide que la SPA sirva el runner (TM-UI1); la función del `frame-ancestors` falla cerrada (`'none'` sin valor en la KVS) (TM-UI11); la segunda distribución lleva el mismo web ACL que la SPA (TM-UI12).
+- **Integridad:** el host vuelve a comprobar el hash del HTML curado antes de mandarlo al runner (TM-UI8).
+- **Antes de V1, la prueba V0** mide además qué canales de salida deja el iframe interior con esa CSP (WebRTC, `prefetch`, DNS) en cada navegador.
+
+Sus riesgos residuales quedan pendientes de aceptación del dueño.

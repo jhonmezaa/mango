@@ -1,7 +1,7 @@
 # D125 · MCP Apps de solo lectura, con su interfaz curada en el perfil firmado
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Solo lectura, ui:// curado en el perfil (Recomendada)»; el cómo, puntos 2 a 5, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
+- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Solo lectura, ui:// curado en el perfil (Recomendada)»; el punto 6, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07, en el modelo de amenazas; el cómo, puntos 2 a 5, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión)
 - **Precisa / reemplaza a:** precisa [D98](D098-contratos-de-los-mcp-remotos.md) (16) (el Gateway sigue sin dejar pasar `resources/read`: el HTML de la app viene del perfil firmado, no del servidor) y [D93](D093-mcp-remotos-de-terceros.md) (3) y (8) (el `_meta.ui` de una tool está curado en el perfil; el interceptor sigue borrando el `_meta` del modelo y del servidor); respeta [D93](D093-mcp-remotos-de-terceros.md) (2) (solo lectura)
 - **Precisada por:** —
 
@@ -18,3 +18,5 @@ Origen: el plan de capacidades del chat ([`docs/specs/chat-capacidades-plan.md`]
 **(4) Las llamadas de la app (propuesto por un agente).** Cada `tools/call` de la app vuelve por la SPA a `mango-api`, que la autoriza, la reserva y la manda al Gateway con el token de la persona y la firma de la invocación: Cedar L2 y presupuesto como una tool del modelo, y solo tools `read`.
 
 **(5) Diseño (propuesto por un agente).** El marco de una app en el chat sale de la ronda de Claude Design de su fase ([D24](D024-diseno-de-la-ui.md)).
+
+**(6) Lo que fijó el modelo de amenazas (2026-11-07, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07).** El modelo [`ui-sandbox-threat-model.md`](../../security/threat-models/ui-sandbox-threat-model.md) fija que, en v1, el host solo atiende los métodos del punto 3 y `tools/call`; `ui/message`, `ui/update-model-context`, `ui/open-link` y las descargas responden «no admitido» hasta una decisión propia (TM-UI7). Una app solo llama tools de su propio ítem del perfil y visibles para la app, con un límite por app y por turno y otro por persona y minuto, y su `tools/call` se audita con origen «app» (TM-UI6). El brief del marco (punto 5) pide, fuera del iframe, la etiqueta de su origen («app de <MCP>»), para que una app no se haga pasar por Mango (TM-UI10).

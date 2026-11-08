@@ -162,7 +162,7 @@ Va primero: el sandbox alarga los turnos y el formato del stream cambia para tod
 | PR | Qué | Tamaño | Depende de | Claude Design |
 |---|---|---|---|---|
 | **M0** | Modelo de amenazas `memory-threat-model.md` y prueba de aislamiento de namespaces (R4/TM-007) en AWS, si el dueño la autoriza | M | P0 | — |
-| **M1** | Infra: AgentCore Memory de la instalación, estrategias (preferencias, hechos, resumen), namespace por persona; el harness la usa solo con el namespace de quien pregunta | M | M0 | — |
+| **M1** | Infra: AgentCore Memory de la instalación, estrategias (preferencias, hechos, resumen), por persona y agente; el harness la usa solo con el `actorId` de quien pregunta, que arma el servidor, y falla cerrado sin él (D122 (8)) | M | M0 | — |
 | **M2** | API: listar, editar y borrar las memorias propias; borrado al dar de baja a una persona; auditoría sin contenido | M | M1 | — |
 | **M3** | Web: «Memoria» en Ajustes, indicador en el chat cuando se usa | M | M2 | **Ronda 4** |
 
@@ -170,7 +170,7 @@ Va primero: el sandbox alarga los turnos y el formato del stream cambia para tod
 
 | PR | Qué | Tamaño | Depende de | Claude Design |
 |---|---|---|---|---|
-| **V0** | Modelo de amenazas `ui-sandbox-threat-model.md` y pruebas en AWS (dos distribuciones son dos sitios, CSP de 1.783, `.wasm` con su tipo, Worker y Pyodide en origen opaco) | M | P0 | — |
+| **V0** | Modelo de amenazas `ui-sandbox-threat-model.md` y pruebas en AWS (dos distribuciones son dos sitios, CSP de 1.783, `.wasm` con su tipo, Worker y Pyodide en origen opaco, canales de salida del iframe interior por navegador) | M | P0 | — |
 | **V1** | Infra: segunda distribución con OAC a un bucket de la release, Response Headers Policy propia (`frame-ancestors` por CloudFront Function + KeyValueStore para no cerrar un ciclo entre las dos distribuciones), CORS en `/vendor/*`, `frame-src` en la CSP de la SPA; con dominio propio, alias comodín y validación del `Host` | L | V0 | — |
 | **V2** | Espejo: script de build que fija versiones y sha256 (React, Recharts, esbuild-wasm, Babel, `@tailwindcss/browser`, núcleo de Pyodide con numpy, pandas y matplotlib; ~100 MB), empaquetado en la release; `.wasm` como `application/wasm` con un test | M | V1 | — |
 | **V3** | Runner del sandbox: doble iframe, handshake y RPC de §2.3, CSP interior que solo se endurece, límites de tamaño en el RPC | L | V2 | — |
@@ -193,13 +193,14 @@ Choques de archivos: `app.py` (R2, C3, U1: en ese orden); `chatEvents.ts`, `chat
 
 - **Modelos de amenazas** antes de construir: código (P1), archivos (P1), trabajador (P1), memoria (M0), sandbox de UI (V0). La skill `security-threat-model` los escribe; los riesgos aceptados se consultan con el dueño.
   - Escritos en P1 (2026-11-07): [`code-interpreter-threat-model.md`](../security/threat-models/code-interpreter-threat-model.md) (TM-CI1–CI12), [`chat-files-threat-model.md`](../security/threat-models/chat-files-threat-model.md) (TM-CF1–CF9) y [`turn-worker-threat-model.md`](../security/threat-models/turn-worker-threat-model.md) (TM-TW1–TW10). Fijan cuatro supuestos (por menú, el 2026-11-07): el trabajador usa el access token de la persona, cifrado en el mensaje de la cola; lo que muestra el bloque «Analizando» pasa por `ApplyGuardrail`; C2 no se integra hasta que la prueba T5 diga si la red `SANDBOX` deja salir a S3 ajeno; borrar una conversación o dar de baja a una persona borra sus archivos y para su sesión del Code Interpreter.
+  - Escritos en M0 y V0 (2026-11-07, sin la prueba en AWS, que sigue pendiente de autorización): [`memory-threat-model.md`](../security/threat-models/memory-threat-model.md) (TM-ME1–ME10) y [`ui-sandbox-threat-model.md`](../security/threat-models/ui-sandbox-threat-model.md) (TM-UI1–UI12). Sus supuestos los fijó el agente que los escribió con la opción recomendada, por delegación expresa del dueño del 2026-11-07, y quedan en [D122](../architecture/decisions/D122-memoria-de-agentcore-por-persona.md) (8), [D123](../architecture/decisions/D123-segundo-origen-para-codigo-no-confiable.md) (8) y [D125](../architecture/decisions/D125-mcp-apps-de-solo-lectura.md) (6): memoria por persona y agente con un `actorId` del servidor y fallo cerrado, sin memoria en tareas, evals y Playground; iframe interior de origen opaco sin más red que el espejo; MCP Apps con una lista cerrada de métodos. Sus riesgos residuales quedan pendientes de aceptación del dueño.
 - **El `sessionId` del Code Interpreter es la única barrera entre personas dentro del mismo recurso** (IAM no acota por sesión): nunca llega al modelo, al navegador ni a los logs.
 - **Sin credenciales en el código:** el Code Interpreter va sin rol de ejecución; todo movimiento de archivos lo hace la Lambda con `writeFiles`/`readFiles` (tope de 100 MB por llamada).
 - **Inyección indirecta con ejecución:** un adjunto puede pedir al modelo que empaquete otros archivos. La sesión es por persona y conversación, sin red, y cada archivo generado lleva su origen en la tarjeta.
 - **Archivos hostiles:** lista cerrada de extensiones, `attachment` siempre, tipo decidido por el servidor, comprobación por bytes, escaneo de malware antes de entregar.
 - **El guardrail no revisa el código ni la salida que se muestran:** pasan por `ApplyGuardrail` antes de mostrarse (TM-CI5, C4).
-- **Segundo origen:** `unsafe-eval` solo dentro del sandbox; un test impide que la distribución de la SPA sirva el runner; la CSP de la SPA no gana `unsafe-eval` ni pierde Trusted Types.
-- **Memoria:** namespace por persona, tests de aislamiento, borrado completo al dar de baja, los administradores no la leen.
+- **Segundo origen:** `unsafe-eval` solo dentro del sandbox; un test impide que la distribución de la SPA sirva el runner; la CSP de la SPA no gana `unsafe-eval` ni pierde Trusted Types; el iframe interior es de origen opaco y solo llega al espejo; el host manda al sandbox solo lo que hay que dibujar (TM-UI1–UI4).
+- **Memoria:** por persona y agente, con el `actorId` que arma el servidor y fallo cerrado sin él; tests de aislamiento, borrado completo al dar de baja, los administradores no la leen, tampoco en las trazas (TM-ME1, ME4, ME5).
 
 ## 8. Pruebas en AWS pendientes (cada una con autorización del dueño)
 
