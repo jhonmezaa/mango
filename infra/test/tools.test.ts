@@ -59,6 +59,8 @@ describe("Gateway Cedar policies (L2)", () => {
         "FinopsRead",
         "FinopsReadForbidOthers",
         "KnowledgeRetrieve",
+        // The Canvas tools (D124 (6), textdoc-connector.test.ts).
+        "Textdoc",
         "WriteCentral",
         "WriteCentralForbidOthers",
         // The tickets tool (D112 (8), (9), tickets.test.ts): any signed-in user may ask.

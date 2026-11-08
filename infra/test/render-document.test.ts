@@ -113,7 +113,7 @@ describe("render-document (D117)", { timeout: 120_000 }, () => {
     for (const [, alarm] of ofType("AWS::CloudWatch::Alarm")) expect(alarm.Properties.AlarmActions).toHaveLength(1);
   });
 
-  it("is invoked by the code connector only, which names it by its name (D119)", () => {
+  it("is invoked by the code connector and, for the PDF of a Canvas export, by mango-api only (D119, D124 (6))", () => {
     const sandbox = nestedStacks(release).find((stack) => stack.node.id === "Sandbox")!;
     const sandboxResources = nestedTemplate(sandbox).Resources as Record<string, Resource>;
     const connectorFn = Object.values(sandboxResources).find(
@@ -127,9 +127,18 @@ describe("render-document (D117)", { timeout: 120_000 }, () => {
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
       .filter((st) => JSON.stringify(st.Resource ?? "").includes("RenderDocument"))
       .filter((st) => actions(st).some((a) => a.startsWith("lambda:")));
-    expect(grants.map((g) => g.Sid)).toEqual(["InvokeRenderDocument"]);
-    expect(actions(grants[0]!)).toEqual(["lambda:InvokeFunction"]);
-    expect(JSON.stringify(grants[0]!.Resource)).toContain(":function:Mango-");
+    expect(grants.map((g) => g.Sid).sort()).toEqual(["InvokeRenderDocument", "RenderCanvasPdf"]);
+    for (const grant of grants) {
+      expect(actions(grant)).toEqual(["lambda:InvokeFunction"]);
+      expect(JSON.stringify(grant.Resource)).toContain(":function:Mango-");
+    }
+    // mango-api's: in its managed policy of the chat files, on its task role.
+    const api = Object.values(installed).find(
+      (r) =>
+        r.Type === "AWS::IAM::ManagedPolicy" &&
+        (r.Properties.PolicyDocument.Statement as Statement[]).some((st) => st.Sid === "RenderCanvasPdf"),
+    )!;
+    expect(JSON.stringify(api.Properties.ManagedPolicyName)).toContain("-ApiChatFiles");
     const owner = Object.values(sandboxResources).find(
       (r) =>
         r.Type === "AWS::IAM::Policy" &&

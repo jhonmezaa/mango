@@ -307,13 +307,15 @@ describe("mango-api on two tasks with shared rate limits (D70)", () => {
     const onTable = statements.filter((s) => JSON.stringify(s.Resource).includes(rateLimitsId!));
     // mango-api's, the knowledge search's, which only keeps its own limit (D88 (36)), and the
     // turn worker's, the same as mango-api's: the gate of the tickets tool counts there (D112);
-    // and the code connector's, which only keeps its own two limits (D114 (13)).
-    expect(onTable).toHaveLength(4);
+    // the code connector's, which only keeps its own two limits (D114 (13)); and the Canvas
+    // connector's, its one limit (D124 (6)).
+    expect(onTable).toHaveLength(5);
     expect(onTable.filter((s) => s.Sid === "RateLimitsTable")).toHaveLength(2);
     expect(onTable.filter((s) => s.Sid === "LimitPerPerson").map((s) => s.Condition)).toEqual(
       expect.arrayContaining([
         { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#kb.retrieve#*"] } },
         { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#code.run#*", "LIMIT#code.session#*"] } },
+        { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#textdoc.write#*"] } },
       ]),
     );
     expect(onTable.find((s) => s.Sid === "RateLimitsTable")).toEqual({
@@ -325,7 +327,7 @@ describe("mango-api on two tasks with shared rate limits (D70)", () => {
     });
   });
 
-  it("gives the table to the task roles of mango-api and the turn worker, the knowledge search and the code tools only", () => {
+  it("gives the table to the task roles of mango-api and the turn worker, the knowledge search, the code and the Canvas tools only", () => {
     const policies = Object.entries(template.findResources("AWS::IAM::Policy")).filter(([, p]) =>
       JSON.stringify(p.Properties.PolicyDocument).includes(rateLimitsId!),
     );
@@ -333,6 +335,7 @@ describe("mango-api on two tasks with shared rate limits (D70)", () => {
       expect.stringMatching(/^ApiTaskRoleDefaultPolicy/),
       expect.stringMatching(/^CodeConnectorPolicy/),
       expect.stringMatching(/^KnowledgeRetrievePolicy/),
+      expect.stringMatching(/^TextdocConnectorPolicy/),
       expect.stringMatching(/^TurnWorkerTaskRoleDefaultPolicy/),
     ]);
   });

@@ -180,7 +180,9 @@ describe("edge web ACL (D72)", () => {
     // while the web ACL still declared one of its own, because the policy of CloudFront
     // overrides it. So the web ACL declares none, and the policy must stay on every behavior,
     // with `override` and with its CSP.
-    for (const r of rules.filter((x) => x.Action?.Block)) {
+    // The rate limits answer with a body of their own; the body size rule (D124 (6) (i)) with
+    // the plain block of the managed group.
+    for (const r of rules.filter((x) => x.Action?.Block?.CustomResponse)) {
       const names = r.Action.Block.CustomResponse.ResponseHeaders.map(
         (h: any) => h.Name.toLowerCase(),
       );
