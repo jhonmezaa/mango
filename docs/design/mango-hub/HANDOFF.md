@@ -1415,3 +1415,39 @@ Respuesta a los contextos de las rondas 37 y 36. Archivos: `store.js`, `ops-stat
 - **Volver a «Buscar conversaciones»:** la pantalla recuerda la última consulta y los filtros, solo en memoria, mientras la pestaña siga abierta (`srMemo` en `search.jsx`); la búsqueda se vuelve a pedir al entrar.
 
 **Sigue abierto:** ronda 26 (cancelar en Microsoft, descripción del servicio y de permisos en el perfil); sesión que no se renueva en el chat; Bedrock sin cuota y respuesta cortada por tiempo; «Sin bucket» en Knowledge Bases.
+
+
+## Turnos que siguen sin la pestaña · código, archivos, gráficas y tablas (2026-11-07, D114–D125)
+Archivos: `chat-run.jsx` (nuevo: bloque «Analizando», figuras, tarjeta de archivo, gráfica, tabla, adjuntos, línea de reconexión), `chat.jsx`, `admin.jsx` (Builder), `app.jsx` (panel de demo), `styles.css` (`.cr-*`).
+
+### 1. El turno corre en el servidor (D120, D121) · ya
+- **Reconectando:** debajo del texto recibido, «Se cortó la conexión. Reconectando… · intento {n} de 12» (`role="status"`). El texto sigue en pantalla; se ocultan el cursor y la línea de fase. «Cancelar» sigue disponible.
+- **Reanudado:** «Reconectado. La respuesta sigue donde iba.» en verde, 2,5 s, y el texto continúa sin repetirse.
+- **No se pudo reconectar:** aviso ámbar «No se pudo reconectar. La respuesta puede seguir en Mango. «Volver a conectar» trae lo que haya, sin preguntar otra vez. También la verás al abrir de nuevo la conversación.» + «Volver a conectar». Se llama así (no «Reintentar») para no confundirlo con el «Reintentar» de un error, que vuelve a enviar.
+- **Turno en curso al volver:** la conversación abre con la pregunta y la respuesta sigue en vivo (fase, pasos y texto), sin aviso extra. Si terminó, se ve como cualquier respuesta guardada.
+- **Turno interrumpido:** texto parcial + aviso ámbar «Respuesta interrumpida. Mango perdió el turno a mitad. Lo de arriba es lo que alcanzó a escribir; el turno se cobra entero. Puedes volver a preguntar: el agente solo recordará lo que se ve aquí.». Sin «Reintentar» en esa respuesta.
+- **Cancelar:** `stopped_note` pasa a «Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.». Sin «Reintentar» en la respuesta detenida.
+- **Otra pestaña con turno en curso:** si el servidor rechaza el envío, el mensaje se queda en el cuadro de texto y se ve el turno de la otra pestaña en vivo (la pregunta lleva «Desde otra pestaña»). Aviso: «Tu mensaje no se envió: hay una respuesta en curso en esta conversación, desde otra pestaña. Sigue en el cuadro de texto; envíalo cuando termine.».
+- **Sesión que termina mientras se reconecta:** `session_end` con otro final: «Tu sesión terminó. Vuelve a entrar para seguir. La respuesta sigue en Mango y la verás al volver a entrar.». El texto parcial queda con «La respuesta sigue en Mango. La verás completa al volver a entrar.».
+- Demo: «Chat · progreso del turno» › «Se corta · reconecta», «Se corta · no reconecta», «Sesión termina al reconectar», «Turno interrumpido», «Turno en otra pestaña». «Chat · historial y conversación» › «Turno en curso al abrir» (abre cualquier conversación del historial).
+
+### 2. Código, archivos, gráficas y tablas (D114, D116, D118) · fase posterior
+- **Builder:** sección «Ejecutar código» tras Knowledge bases, casilla «Puede ejecutar código» (`snap.code`), parte de la versión. «Próximamente» en «Disponible hoy». *Falta:* que la Revisión la liste en el diff como el resto.
+- **Fase del turno:** «Ejecutando código…»; paso «Ejecutó código» / «Falló el código».
+- **Bloque:** una cabecera para todas las celdas de la respuesta: «Analizando…» (spinner), «Analizado», «Error», «Pausado», con «{n} celdas · {duración}» y «Ver código». Plegado por defecto; las figuras se ven siempre. Plegado con error muestra la primera línea de la excepción; pausado, «Quedó sin terminar porque la respuesta se detuvo.». Abierto: por celda, el código, STDOUT y STDERR (rótulos en mono; la salida seguida del mismo tipo va junta), «Salida recortada: se muestran los primeros 20.000 caracteres.» (el número lo fija el servidor) y la excepción. Tope de 300 s: «La celda pasó su tope de 300 s y se detuvo.». Celda bloqueada por el guardrail: «Mango no muestra el código ni la salida de esta celda: infringían una regla de seguridad.».
+- **Figuras:** miniaturas en rejilla; cargando, «No se pudo cargar la figura.» + «Reintentar», ampliar (modal) y descargar. En el prototipo la imagen es un marcador con nombre y tamaño.
+- **Tarjeta de archivo:** tipo (insignia), nombre, «{tipo} · {tamaño} · de {agente} · {conversación}» y «Descargar». Estados: «Revisando el archivo…», listo, «El escaneo de malware bloqueó este archivo. No se puede descargar.», «No se pudo preparar la descarga. Inténtalo de nuevo.» (el botón pasa a «Reintentar»), «Llegaste al máximo de 60 descargas por hora. Podrás descargar de nuevo en {m} minutos.», «Ya no está disponible. Los archivos se guardan 90 días y se borran con la conversación.». El enlace de 5 minutos no se nombra: se pide al pulsar y baja como archivo.
+- **Gráfica:** barras, líneas, tarta y dispersión con título, subtítulo, leyenda (con más de una serie) y el valor bajo el puntero. «Copiar datos» copia una tabla separada por tabulaciones; aviso «Datos copiados. Pégalos en Excel o en una hoja de cálculo.». Números con `Intl` del navegador (formato regional). Estados: «Cargando la gráfica…» y «No se pudo dibujar esta gráfica. Los datos que mandó el agente no tienen el formato que espera Mango. Pídele que la vuelva a generar o que te los dé en una tabla.».
+- **Tabla:** nombre, «{n} filas · {n} columnas», cabecera fija y scroll (máx. 300 px), tope visible de 200 filas: «Se muestran 200 de {n} filas. Descarga el CSV para verlas todas.» y la tarjeta del CSV al pie (mismos estados).
+- Orden en la respuesta: bloque → texto → gráfica → tabla → archivos. La tarjeta de «artifact» (Canvas, D124) no cambia.
+- Demo: «Chat · progreso del turno» › «Ejecuta código» y envía cualquier mensaje. Variantes: «Chat · bloque «Analizando»», «Chat · figuras», «Chat · archivo generado», «Chat · gráfica». «Cancelar» mientras corre deja el bloque en «Pausado».
+
+### 3. Compositor con adjuntos (D116) · fase posterior
+- 20 archivos de hasta 100 MB. Texto al arrastrar: «Hasta 20 archivos · 100 MB c/u · PDF, CSV, TXT, JSON, Excel, Word, PowerPoint, PNG, JPG» (la lista la fija el servidor; el prototipo usa esa).
+- Estados de cada adjunto: «Subiendo · {n} %», «Revisando el archivo…», listo (tamaño), «Bloqueado por el escaneo», «Tipo no permitido», «El contenido no es del tipo que dice» (lo comprueba el servidor), «Supera 100 MB», «No se pudo subir» + «Reintentar». Con más de 20: «Puedes adjuntar hasta 20 archivos por mensaje. {n} se quedaron fuera.».
+- En el historial, un adjunto de más de 90 días sale tachado con «Ya no disponible» (`gone` en el adjunto).
+- Demo: «Chat · adjuntos» y «Chat · adjuntar ejemplo» (en «Diseño completo»).
+
+### 4. Decisiones de diseño (por confirmar con el producto)
+- **Enviar espera a que todos los adjuntos estén listos.** Mientras alguno sube o se revisa, «Enviar» queda desactivado con «Enviar se activa cuando terminen de subirse y revisarse los archivos.». Con alguno con problemas: «Quita los archivos con problemas para enviar el mensaje.». Motivo: si el mensaje sale antes, el agente puede responder sin el archivo y el turno se cobra igual.
+- **«Adjuntar» en un agente sin «Ejecutar código»: deshabilitado con su motivo**, no oculto, para que se sepa que existe. Al pulsarlo: «{agente} no puede leer archivos: su versión no tiene «Ejecutar código». Quien lo administra puede activarlo en el Builder.». Al arrastrar: «{agente} no puede leer archivos». En el prototipo tienen la capacidad FinOps, Data y Ops (`CR_CODE_AGENTS`, o `agent.code`).

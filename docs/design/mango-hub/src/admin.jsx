@@ -18,7 +18,7 @@ const AB_TEMPLATES = [
 ];
 const AB_SECTIONS = [
   { id: 'identity', label: 'Información básica' }, { id: 'org', label: 'Organización' }, { id: 'brain', label: 'Modelo e instrucciones' },
-  { id: 'tools', label: 'Tools' }, { id: 'kbs', label: 'Knowledge bases' }, { id: 'skills', label: 'Skills' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
+  { id: 'tools', label: 'Tools' }, { id: 'kbs', label: 'Knowledge bases' }, { id: 'code', label: 'Ejecutar código' }, { id: 'skills', label: 'Skills' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
 ];
 const AB_SERVER_ERR = {
   cycle: ['org', 'El supervisor elegido reporta, directa o indirectamente, a este agente. Elige otro para no crear un ciclo.'],
@@ -323,6 +323,13 @@ function AgentAdmin({ agents, models, setView, routeId }) {
 
               <ABSection id="kbs" title="Knowledge bases" desc={'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.'}>
                 {window.KbAgentSection && <window.KbAgentSection snap={snap} set={set} setView={setView} />}
+              </ABSection>
+
+              <ABSection id="code" title="Ejecutar código" desc="Python en un entorno aislado de la instalación, sin internet y sin instalar paquetes. Es parte de la versión: se aprueba como el resto.">
+                <window.Soon on={avail} block><button type="button" className={'ab-item' + (snap.code ? ' is-on' : '')} aria-pressed={!!snap.code} onClick={() => set({ code: !snap.code })}>
+                  <span className="ab-check">{snap.code && <I.Check size={10} />}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 12.5, fontWeight: 500 }}>Puede ejecutar código</span><span className="ab-sub">Analiza datos y genera gráficas, tablas y archivos (CSV, Excel, Word, PowerPoint, PDF, imágenes). Trae pandas, matplotlib, openpyxl, python-docx, python-pptx, ReportLab y otros. Cada celda tiene un tope de 300 s. Sin esto, el agente no puede leer archivos adjuntos en el chat.</span></span>
+                </button></window.Soon>
               </ABSection>
 
               <ABSection id="skills" title="Skills" desc="Playbooks que el agente carga cuando le sirven. Cada una queda fijada en una versión aprobada; una versión nueva de la skill llega al agente con su siguiente aprobación.">

@@ -128,6 +128,9 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const [streamPhase, setStreamPhase] = useState(null);
   const [streamSteps, setStreamSteps] = useState([]);
   const [streamKb, setStreamKb] = useState(null);
+  const [streamCode, setStreamCode] = useState(null); const codeRef = useRef(null);
+  const [conn, setConn] = useState(null); const pausedRef = useRef(false); const resumeRef = useRef(null);
+  const [attNote, setAttNote] = useState(null);
   const streamTimers = useRef([]);
   const [artifact, setArtifact] = useState(null);
   const [observe, setObserve] = useState(false);
@@ -158,12 +161,10 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
         ...(ap.status === 'approved' ? [{ type: 'agent_response', text: `Listo. ${ap.decidedBy} aprobó **${ap.id}** y ejecuté \`${ap.tool}\`. El cambio quedó registrado en el audit log.` }] : [])]);
     });
   }, [approvals, messages]);
-  const addFiles = (files) => {
-    const list = [...files].slice(0, 5).map(f => ({ name: f.name, size: f.size, type: f.type }));
-    const tooBig = list.filter(f => f.size > 25 * 1024 * 1024);
-    if (tooBig.length) toast?.({ tone: 'error', msg: `${tooBig[0].name} supera 25 MB` });
-    setAttachments(a => [...a, ...list.filter(f => f.size <= 25 * 1024 * 1024)].slice(0, 5));
-  };
+  // Adjuntos (D116): 20 archivos de hasta 100 MB; solo agentes con «Ejecutar código» tienen dónde leerlos.
+  const addFiles = (files) => { if (!window.crCanCode(agent)) return; setAttNote(window.crAddFiles(files, attachments, setAttachments)); };
+  const attDemo = window.useMango(s => s.attDemo);
+  useEffect(() => { if (!attDemo) return; const mk = (name, mb) => ({ name, size: Math.round(mb * 1048576), type: '' }); addFiles([mk('cur_octubre_2026.csv', 18.4), mk('presupuesto_2027.xlsx', 2.1), mk('captura_consola.png', 0.6), mk('reporte_proveedor.html', 0.2), mk('macros_finanzas.xlsm', 1.3), mk('cur_anual_2026.csv', 142)]); }, [attDemo]);
 
   useEffect(() => {
     if (activeThreadId && seedMessages[activeThreadId]) {
@@ -171,7 +172,9 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     } else {
       setMessages([]);
     }
-    setStreaming(false); setStreamText(""); setArtifact(null);
+    setStreaming(false); setStreamText(""); setArtifact(null); setStreamCode(null); setConn(null); pausedRef.current = false;
+    // Turno que sigue en curso al volver (D120): se ve la pregunta y la respuesta sigue en vivo.
+    if (activeThreadId && window.MangoStore.get().simChat === 'inflight') { const tm = setTimeout(() => { setMessages(m => [...m, { type: 'user_message', text: '¿Y cómo viene el pronóstico para el trimestre?', time: 'hace 2 min' }]); setStreaming(true); runTurn('pronóstico'); }, 50); return () => clearTimeout(tm); }
   }, [activeThreadId, activeAgentId]);
 
   // Subir a leer: la conversación solo baja sola si la persona ya estaba al final (a menos de 80 px). Si subió, aparece «Ir al final».
@@ -202,14 +205,16 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
 
   const sendMessage = (textOverride) => {
     const text = (textOverride ?? input).trim();
-    if ((!text && !attachments.length) || streaming) return;
+    if ((!text && !attachments.length) || streaming || window.crAttGate(attachments)) return;
     const simT = window.MangoStore.get().simProgress;
+    // Otra pestaña ya tiene un turno en curso en esta conversación: el mensaje no sale y se ve ese turno en vivo.
+    if (simT === 'busy') { window.MangoStore.set({ simProgress: null }); setMessages(m => [...m.filter(x => x.type !== 'busy_note'), { type: 'user_message', text: '¿Qué cuentas explican el aumento de EC2?', time: 'ahora', other: true }, { type: 'busy_note' }]); setStreaming(true); setTimeout(() => runTurn('otra'), 0); return; }
     // Sesión que no se pudo renovar: el mensaje no sale y se queda en el cuadro de texto.
     if (simT === 'renew') { setMessages(m => [...m.filter(x => x.type !== 'session_end'), { type: 'session_end' }]); return; }
     setAway(false);
     setInput("");
     const att = attachments;
-    setAttachments([]);
+    setAttachments([]); setAttNote(null);
     if (att.length) window.MangoStore.log('chat.attach', agent.id, att.map(f => f.name).join(', '));
     setMessages(m => [...m, { type: "user_message", text: text || '(archivos adjuntos)', time: "ahora", attachments: att }]);
     setStreaming(true);
@@ -269,9 +274,33 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     const at = (ms, fn) => { t += ms; timers.push(setTimeout(fn, t)); };
     const push = (s) => { steps = [...steps, s]; setStreamSteps(steps); };
     const done = (id, st, extra) => { steps = steps.map(s => s.id === id ? { ...s, status: st, ...extra } : s); setStreamSteps(steps); };
-    const write = (chunk, then) => { let i = 0; const base = txt; streamRef.current = setInterval(() => { i += 3; txt = base + chunk.slice(0, i); setStreamText(txt); if (i >= chunk.length) { clearInterval(streamRef.current); then(); } }, 22); };
+    const write = (chunk, then) => { let i = 0; const base = txt; streamRef.current = setInterval(() => { if (pausedRef.current) return; i += 3; txt = base + chunk.slice(0, i); setStreamText(txt); if (i >= chunk.length) { clearInterval(streamRef.current); then(); } }, 22); };
     streamTimers.current = timers;
-    setStreamSteps([]); setStreamText(''); setStreamKb(null);
+    setStreamSteps([]); setStreamText(''); setStreamKb(null); setStreamCode(null); setConn(null); pausedRef.current = false;
+    // Corte de la conexión (D121): la web reintenta hasta 12 veces en ~35 s sin repetir el turno.
+    const drop = () => { pausedRef.current = true; let n = 1; setConn({ k: 're', n });
+      if (sim === 'session-drop') { timers.push(setTimeout(() => { clearInterval(streamRef.current); pausedRef.current = false; setConn(null); setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamSteps([]); setMessages(m => [...m, ...tools, { type: 'agent_response', text: txt, away: true }, { type: 'session_end', turn: true }]); }, 1300)); return; }
+      const fail = sim === 'reconnect-fail'; const ok = () => { pausedRef.current = false; setConn({ k: 'ok' }); timers.push(setTimeout(() => setConn(null), 2500)); };
+      const tick = () => { n++; if (!fail && n > 3) return ok(); if (fail && n > 12) { setConn({ k: 'fail' }); resumeRef.current = () => { setConn({ k: 're', n: 1 }); timers.push(setTimeout(ok, 900)); }; return; } setConn({ k: 're', n }); timers.push(setTimeout(tick, fail ? 260 : 700)); };
+      timers.push(setTimeout(tick, fail ? 260 : 700)); };
+    if (sim === 'code') {
+      const simC = S.get().simCode; const setCode = (b) => { codeRef.current = b; setStreamCode(b); };
+      setStreamPhase({ k: 'think' }); push({ id: 's0', k: 'think', status: 'run' });
+      at(700, () => { done('s0', 'ok'); push({ id: 'c1', k: 'code', status: 'run' }); setStreamPhase({ k: 'code' }); setCode({ state: 'run', cells: window.crBuildCells(1) }); });
+      at(1500, () => setCode({ state: 'run', cells: window.crBuildCells(2) }));
+      at(simC === 'timeout' ? 2400 : 1800, () => { const cells = window.crBuildCells(3); const st = window.crBlockState(cells); done('c1', st === 'error' ? 'fail' : 'ok'); setCode({ state: st, cells });
+        push({ id: 'w1', k: 'write', status: 'run' }); setStreamPhase({ k: 'write' });
+        const ans = simC === 'timeout' ? 'La segunda celda pasó su tope de 300 s y se detuvo, así que no llegué a generar la tabla ni el Excel. Con la primera ya se ve que **EC2** explica casi todo el aumento desde agosto. Puedo repetirlo con menos meses.'
+          : st === 'error' ? 'La segunda celda falló: el export no trae la columna `region` en todas las filas. Con la primera ya se ve que **EC2** explica casi todo el aumento desde agosto. Si quieres, rehago la tabla por cuenta sin la región.'
+          : simC === 'blocked' ? 'Terminé el análisis, pero Mango ocultó una parte del código y su salida. Con lo que sí se ve: **EC2** explica casi todo el aumento desde agosto.'
+          : 'Revisé los últimos seis meses del CUR. **EC2** explica casi todo el aumento desde agosto (de USD 44.100 a 58.300); S3 y RDS se mantienen estables. Abajo van la gráfica, la tabla por cuenta y el Excel con el detalle.';
+        write(ans, () => timers.push(setTimeout(() => { const block = codeRef.current; codeRef.current = null; setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamSteps([]); setStreamCode(null);
+          const th = allThreads.find(x => x.id === activeThreadId); const thread = th ? (th.title || th.name) : 'Conversación nueva';
+          const outputs = st === 'error' || simC === 'blocked' ? [] : [{ type: 'chart', spec: window.crDemoSpec('bar') }, { type: 'table', title: 'costo_por_cuenta.csv', file: { name: 'costo_por_cuenta.csv', size: 88400, agent: agent.name, thread } }, { type: 'file', file: { name: 'detalle_costos.xlsx', size: 214000, agent: agent.name, thread } }];
+          setMessages(m => [...m, { type: 'agent_response', text: txt, code: block, outputs }]); }, 200)));
+      });
+      return;
+    }
     if (window.KB && agent.id === 'hr-01') {
       const none = S.get().simChatKb === 'none'; const kbName = (window.KB.get('kb-02') || {}).name || 'Políticas de RH';
       const answer = none ? 'No encontré nada sobre eso en los documentos que consulto. Si es una política nueva, puede que todavía no esté cargada; pregúntale al equipo de Personas.' : 'Según el **Handbook 2026**, las vacaciones se piden en el portal de personas con al menos **15 días de anticipación**, salvo acuerdo con el líder del equipo [1]. Desde 2026 se acumulan desde el primer mes de trabajo [2].';
@@ -286,13 +315,15 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     if (parallel) at(700, () => { done('tA1', 'fail'); tools.push({ type: 'tool_call', tool: toolB.id, params: toolB.params, ms: 700, measured: true, status: 'error' }); setStreamPhase({ k: 'tool', name: label(toolA) }); });
     at(parallel ? 400 : 1000, () => { done('tA0', 'ok'); tools.unshift({ type: 'tool_call', tool: toolA.id, params: toolA.params, ms: parallel ? 1100 : 1000, measured: true, status: 'ok' }); push({ id: 'p1', k: 'process', status: 'run' }); setStreamPhase({ k: 'process' }); });
     at(600, () => { done('p1', 'ok'); push({ id: 'w1', k: 'write', status: 'run' }); setStreamPhase({ k: 'write' });
+      if (['reconnect', 'reconnect-fail', 'session-drop'].includes(sim)) timers.push(setTimeout(drop, 450));
       write(part1, () => { done('w1', 'ok');
-        const finish = (cut, trunc) => { setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamSteps([]);
-          setMessages(m => [...m, ...tools, { type: 'agent_response', text: txt, ...(cut ? { guardrail: true } : {}), ...(trunc ? { truncated: trunc, truncTool: trunc === 'tool' ? toolC.id : null } : {}) }]);
+        const finish = (cut, trunc, intr) => { setStreaming(false); setStreamText(''); setStreamPhase(null); setStreamSteps([]);
+          setMessages(m => [...m, ...tools, { type: 'agent_response', text: txt, ...(cut ? { guardrail: true } : {}), ...(trunc ? { truncated: trunc, truncTool: trunc === 'tool' ? toolC.id : null } : {}), ...(intr ? { interrupted: true } : {}) }]);
           if (cut) S.log('chat.guardrail', agent.id, 'Respuesta cortada por guardrail');
           else { const el = scrollRef.current; const seen = !document.hidden && !(el && el.scrollHeight - el.scrollTop - el.clientHeight > 80); const msg = trunc ? agent.name + ' no terminó de responder.' : agent.name + ' terminó de responder.';
             if (!seen) toast?.({ tone: trunc ? 'info' : 'success', title: trunc ? 'Respuesta incompleta' : 'Respuesta completa', msg });
             else { let r = document.getElementById('mg-live'); if (!r) { r = document.createElement('div'); r.id = 'mg-live'; r.setAttribute('aria-live', 'polite'); r.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; document.body.appendChild(r); } r.textContent = ''; setTimeout(() => { r.textContent = (trunc ? 'Respuesta incompleta. ' : 'Respuesta completa. ') + msg; }, 60); } } };
+        if (sim === 'interrupted') { timers.push(setTimeout(() => finish(false, null, true), 500)); return; }
         if (cutKind === 'tokens' || cutKind === 'timeout') { timers.push(setTimeout(() => finish(false, cutKind), 200)); return; }
         if (cutKind === 'tool') { push({ id: 'tC', k: 'tool', name: label(toolC), tool: toolC.id, status: 'run' }); setStreamPhase({ k: 'tool', name: label(toolC) }); timers.push(setTimeout(() => finish(false, 'tool'), 700)); return; }
         push({ id: 'tC', k: 'tool', name: label(toolC), tool: toolC.id, status: 'run' }); setStreamPhase({ k: 'tool', name: label(toolC) });
@@ -316,8 +347,9 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     if (streamRef.current) clearInterval(streamRef.current);
     streamTimers.current.forEach(clearTimeout); streamTimers.current = [];
     setStreaming(false);
-    setMessages(m => [...m, ...(streamText ? [{ type: "agent_response", text: streamText, stopped: true }] : []), { type: "stopped_note" }]);
-    setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreamKb(null);
+    const block = codeRef.current; codeRef.current = null;
+    setMessages(m => [...m, ...(streamText || block ? [{ type: "agent_response", text: streamText, stopped: true, ...(block ? { code: block.state === 'run' ? { ...block, state: 'paused' } : block } : {}) }] : []), { type: "stopped_note" }]);
+    setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreamKb(null); setStreamCode(null); setConn(null); pausedRef.current = false;
   };
 
   const retryError = (idx) => {
@@ -336,7 +368,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
   const newChat = () => {
     if (unsavedFirst) return;
     setActiveThreadId?.(null);
-    setMessages([]); setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreamKb(null); setStreaming(false); setArtifact(null);
+    setMessages([]); setStreamText(""); setStreamPhase(null); setStreamSteps([]); setStreamKb(null); setStreaming(false); setArtifact(null); setStreamCode(null); setConn(null); pausedRef.current = false;
     toast?.({ tone: 'info', msg: 'Nueva conversación iniciada.' });
   };
 
@@ -365,7 +397,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
         onDragOver={e => { if (!soon && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); setDragOver(true); } }}
         onDragLeave={e => { if (e.currentTarget === e.target) setDragOver(false); }}
         onDrop={e => { e.preventDefault(); setDragOver(false); if (!soon) addFiles(e.dataTransfer.files); }}>
-        {dragOver && <div aria-hidden="true" style={{position:'absolute', inset: 12, zIndex: 30, border:'2px dashed var(--accent)', borderRadius: 12, background:'color-mix(in oklab, var(--bg) 85%, transparent)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap: 8, pointerEvents:'none'}}><I.Upload size={22} style={{color:'var(--accent-ink)'}} /><div style={{fontSize: 14}}>Suelta los archivos para adjuntarlos</div><div style={{fontSize: 12, color:'var(--text-muted)'}}>Hasta 5 archivos · 25 MB c/u · PDF, CSV, XLSX, imágenes</div></div>}
+        {dragOver && <div aria-hidden="true" style={{position:'absolute', inset: 12, zIndex: 30, border:'2px dashed var(--accent)', borderRadius: 12, background:'color-mix(in oklab, var(--bg) 85%, transparent)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap: 8, pointerEvents:'none'}}><I.Upload size={22} style={{color:'var(--accent-ink)'}} />{window.crCanCode(agent) ? <><div style={{fontSize: 14}}>Suelta los archivos para adjuntarlos</div><div style={{fontSize: 12, color:'var(--text-muted)'}}>Hasta 20 archivos · 100 MB c/u · PDF, CSV, TXT, JSON, Excel, Word, PowerPoint, PNG, JPG</div></> : <><div style={{fontSize: 14}}>{agent.name} no puede leer archivos</div><div style={{fontSize: 12, color:'var(--text-muted)'}}>Su versión no tiene «Ejecutar código».</div></>}</div>}
         {away && !isEmpty && <button className="chat-toend" onClick={toEnd} aria-label="Ir al final de la conversación"><window.Icons.ChevronDown size={12} /> {newBelow && streaming ? 'Respuesta nueva' : 'Ir al final'}</button>}
         <ChatHeader agent={agent} onNewChat={newChat} newDisabled={unsavedFirst} observe={observe} setObserve={setObserve} messages={messages} onOpenThreads={() => setThreadsOpen(true)} />
         <div ref={scrollRef} onScroll={onConvScroll} style={{flex: 1, overflowY:'auto', padding: isEmpty ? 0 : '28px 0'}}>
@@ -390,13 +422,13 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
               {items.map(m => <div key={m.idx} data-mi={m.idx} className={hl === m.idx ? 'ch-mi ch-hl' : 'ch-mi'}>{m.type === 'self_confirm' ? <window.SelfConfirmCard key={m.idx} msg={m} onConfirm={() => confirmSelf(m.idx, true)} onCancel={() => confirmSelf(m.idx, false)} /> : m.type === 'approval_request' ? <window.ApprovalCard key={m.idx} id={m.approvalId} /> : m.type === 'tool_group' ? <ToolGroup key={m.idx} calls={m.calls} /> : <Message key={m.idx} msg={m} idx={m.idx} onRetry={() => retryError(m.idx)} onEdit={() => setInput(m.text)} agent={agent} onOpenArtifact={setArtifact} />}</div>)}
               {outageMsg.map(m => <Message key="outage" msg={m} onRetry={() => retryError(-1)} agent={agent} />)}
               {window.RemoteChatDemo && <window.RemoteChatDemo />}
-              {streaming && <StreamingMessage phase={streamPhase} steps={streamSteps} kb={streamKb} text={streamText} agent={agent} observe={observe} />}
+              {streaming && <StreamingMessage phase={streamPhase} steps={streamSteps} kb={streamKb} text={streamText} agent={agent} observe={observe} code={streamCode} conn={conn} onReconnect={() => resumeRef.current?.()} />}
             </div>
           )}
         </div>
         <div style={{maxWidth: 760, margin:'0 auto', width:'100%'}}>
           {blocked === 'load-error' ? null : blocked ? <div style={{ padding: '0 32px 20px' }}><div className="row gap-2" style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', fontSize: 13, color: 'var(--text-muted)', background: 'var(--input-bg)', flexWrap: 'wrap' }}><window.Icons.Lock size={13} />{blocked === 'none' ? 'Necesitas un agente para conversar.' : blocked === 'retired' ? 'No se pueden enviar mensajes a un agente retirado.' : 'No puedes enviar mensajes a este agente.'}<button className="sr-link" style={{ marginLeft: 'auto' }} onClick={() => window.MangoNav?.('marketplace')}>Ir al Marketplace</button></div></div>
-            : <ChatInput value={input} setValue={setInput} onSend={sendMessage} onCancel={cancelStream} streaming={streaming} agent={agent} attachments={attachments} setAttachments={setAttachments} addFiles={addFiles} />}
+            : <ChatInput value={input} setValue={setInput} onSend={sendMessage} onCancel={cancelStream} streaming={streaming} agent={agent} attachments={attachments} setAttachments={setAttachments} addFiles={addFiles} attNote={attNote} setAttNote={setAttNote} canAttach={window.crCanCode(agent)} />}
         </div>
       </div>
       {artifact && <ArtifactPanel artifact={artifact} onClose={() => setArtifact(null)} agent={agent} />}
@@ -763,7 +795,8 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
     return (
       <div className="msg-hover" style={{display:'flex', justifyContent:'flex-end', marginBottom: 22}}>
         <div style={{maxWidth: '78%', display:'flex', flexDirection:'column', alignItems:'flex-end', gap: 6}}>
-          {msg.attachments?.length > 0 && <AttachmentChips files={msg.attachments} />}
+          {msg.other && <span style={{fontSize: 11, color:'var(--text-dim)'}}>Desde otra pestaña</span>}
+          {msg.attachments?.length > 0 && <window.CrAttachChips files={msg.attachments} />}
           <div style={{padding:'10px 16px', background:'var(--card)', color:'var(--text)', border:'1px solid var(--border)', borderRadius: 14, fontSize: 14.5, lineHeight: 1.55}}>{msg.text}</div>
           <div className="msg-actions row gap-1" style={{fontSize: 11, color:'var(--text-dim)'}}>
             {msg.time && <span style={{marginRight: 4}}>{msg.time}</span>}
@@ -777,9 +810,13 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
   if (msg.type === "agent_response") {
     return (
       <div className="msg-hover" style={{marginBottom: 24, maxWidth: 760}}>
-        <div className="md" style={{fontSize: 15.5, lineHeight: 1.7, color:'var(--text)'}}
-             dangerouslySetInnerHTML={{__html: window.renderMarkdown(msg.text)}} />
+        {msg.code && <window.CodeBlock block={msg.code} />}
+        {msg.text && <div className="md" style={{fontSize: 15.5, lineHeight: 1.7, color:'var(--text)'}}
+             dangerouslySetInnerHTML={{__html: window.renderMarkdown(msg.text)}} />}
         {msg.cites?.length > 0 && window.KbCitations && <window.KbCitations cites={msg.cites} />}
+        {msg.outputs?.length > 0 && <window.CrOutputs items={msg.outputs} />}
+        {msg.interrupted && <div className="mc-alert amber" role="status" style={{ marginTop: 10 }}><I.Warn size={14} /><div><b>Respuesta interrumpida.</b> Mango perdió el turno a mitad. Lo de arriba es lo que alcanzó a escribir; el turno se cobra entero. Puedes volver a preguntar: el agente solo recordará lo que se ve aquí.</div></div>}
+        {msg.away && <div className="row gap-2" style={{ marginTop: 10, fontSize: 12.5, color: 'var(--text-muted)' }}><span className="mango-spinner" aria-hidden="true" /> La respuesta sigue en Mango. La verás completa al volver a entrar.</div>}
         {msg.truncated && <div className="mc-alert" role="status" style={{ marginTop: 10 }}><I.Info size={14} /><div><b>Respuesta incompleta.</b> {msg.truncated === 'tool' ? <>El agente llegó a su largo máximo mientras preparaba una consulta a <span className="mono">{msg.truncTool}</span>, y la consulta no se hizo.</> : msg.truncated === 'timeout' ? 'El turno llegó a su límite de tiempo antes de terminar.' : 'El agente llegó a su largo máximo de respuesta.'} Lo de arriba es lo que alcanzó a escribir. Si necesitas el resto, pídelo en un mensaje nuevo; por ejemplo, «sigue desde donde quedaste».</div></div>}
         {msg.guardrail && <div className="mc-alert amber" role="status" style={{ marginTop: 10 }}><I.Lock size={14} /><div>La respuesta se cortó porque infringía una regla de seguridad de Mango. Lo que ves arriba es lo que alcanzó a escribir. Reformula la pregunta si necesitas más.</div></div>}
         {msg.artifact && (
@@ -798,7 +835,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
           <button className="btn btn-ghost btn-icon" title="Copiar" onClick={() => navigator.clipboard?.writeText(msg.text)}><I.Copy size={11} /></button>
           <window.Soon on={soon}><span className="row gap-1"><button className="btn btn-ghost btn-icon" title="Útil" aria-label="Útil"><I.ThumbsUp size={11} /></button>
           <button className="btn btn-ghost btn-icon" title="Mejorable" aria-label="Mejorable"><I.ThumbsDown size={11} /></button></span></window.Soon>
-          {!msg.truncated && <button className="btn btn-ghost btn-icon" title="Reintentar"><I.Refresh size={11} /></button>}
+          {!msg.truncated && !msg.interrupted && !msg.stopped && !msg.away && <button className="btn btn-ghost btn-icon" title="Reintentar"><I.Refresh size={11} /></button>}
         </div>
       </div>
     );
@@ -845,10 +882,13 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
     );
   }
   if (msg.type === "session_end") {
-    return <div className="mc-alert amber" role="alert" style={{ marginBottom: 14, maxWidth: 760 }}><I.Lock size={14} /><div style={{ flex: 1 }}><b>Tu sesión terminó. Vuelve a entrar para seguir.</b> Tu mensaje no se envió y sigue en el cuadro de texto.</div><button className="btn btn-sm btn-primary" onClick={() => { window.MangoStore.set({ simProgress: null }); window.dispatchEvent(new CustomEvent('mango:reload', { detail: 'app-out' })); }}>Entrar</button></div>;
+    return <div className="mc-alert amber" role="alert" style={{ marginBottom: 14, maxWidth: 760 }}><I.Lock size={14} /><div style={{ flex: 1 }}><b>Tu sesión terminó. Vuelve a entrar para seguir.</b> {msg.turn ? 'La respuesta sigue en Mango y la verás al volver a entrar.' : 'Tu mensaje no se envió y sigue en el cuadro de texto.'}</div><button className="btn btn-sm btn-primary" onClick={() => { window.MangoStore.set({ simProgress: null }); window.dispatchEvent(new CustomEvent('mango:reload', { detail: 'app-out' })); }}>Entrar</button></div>;
   }
   if (msg.type === "stopped_note") {
-    return <div className="row gap-2" style={{ margin: '-14px 0 22px', fontSize: 12.5, color: 'var(--text-muted)' }}><I.Stop size={11} /> Respuesta detenida.</div>;
+    return <div className="row gap-2" style={{ margin: '-14px 0 22px', fontSize: 12.5, color: 'var(--text-muted)' }}><I.Stop size={11} /> Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.</div>;
+  }
+  if (msg.type === "busy_note") {
+    return <div className="mc-alert" role="status" style={{ marginBottom: 18 }}><I.Info size={14} /><div>Tu mensaje no se envió: hay una respuesta en curso en esta conversación, desde otra pestaña. Sigue en el cuadro de texto; envíalo cuando termine.</div></div>;
   }
   if (msg.type === "system_notice") {
     return (
@@ -887,9 +927,9 @@ function RateWait({ at, onRetry, inline }) {
   return left ? <button className="btn btn-sm" disabled aria-disabled="true" title="La espera la fija Mango; reintentar antes vuelve a contar">Reintentar en {fmtWait(left)}</button> : <button className="btn btn-sm" onClick={onRetry}><window.Icons.Refresh size={11} /> Reintentar</button>;
 }
 window.RateWait = RateWait;
-const PHASE_TXT = (p) => !p ? '' : p.k === 'think' ? 'Pensando' : p.k === 'process' ? 'Procesando resultados' : p.k === 'write' ? 'Escribiendo' : p.count ? 'Consultando ' + p.count + ' tools' : p.name ? 'Consultando ' + p.name : 'Consultando una tool';
-const STEP_TXT = (s) => s.k === 'think' ? 'Pensó' : s.k === 'process' ? 'Procesó resultados' : s.k === 'write' ? 'Escribió' : (s.status === 'fail' ? 'Falló ' : s.status === 'run' ? 'Consultando ' : 'Consultó ') + (s.name || 'una tool');
-function StreamingMessage({ phase, steps = [], kb, text, agent, observe }) {
+const PHASE_TXT = (p) => !p ? '' : p.k === 'code' ? 'Ejecutando código' : p.k === 'think' ? 'Pensando' : p.k === 'process' ? 'Procesando resultados' : p.k === 'write' ? 'Escribiendo' : p.count ? 'Consultando ' + p.count + ' tools' : p.name ? 'Consultando ' + p.name : 'Consultando una tool';
+const STEP_TXT = (s) => s.k === 'code' ? (s.status === 'run' ? 'Ejecutando código' : s.status === 'fail' ? 'Falló el código' : 'Ejecutó código') : s.k === 'think' ? 'Pensó' : s.k === 'process' ? 'Procesó resultados' : s.k === 'write' ? 'Escribió' : (s.status === 'fail' ? 'Falló ' : s.status === 'run' ? 'Consultando ' : 'Consultó ') + (s.name || 'una tool');
+function StreamingMessage({ phase, steps = [], kb, text, agent, observe, code, conn, onReconnect }) {
   const I = window.Icons;
   const [open, setOpen] = useState(false);
   const fails = steps.filter(s => s.status === 'fail').length;
@@ -902,13 +942,15 @@ function StreamingMessage({ phase, steps = [], kb, text, agent, observe }) {
           {open && <ol className="ch-steps-l">{steps.map(s => <li key={s.id} className={'is-' + s.status}>{s.status === 'run' ? <span className="mango-spinner sm" /> : s.status === 'fail' ? <I.X2 size={12} /> : <I.Check size={12} />}<span>{STEP_TXT(s)}</span>{s.tool && <span className="mono">{s.tool}</span>}{s.err && <span className="ch-step-err">{s.err}</span>}</li>)}</ol>}
         </div>
       )}
+      {code && window.CodeBlock && <window.CodeBlock block={code} />}
       {text && (
         <div className="md" style={{fontSize: 15.5, lineHeight: 1.7, color:'var(--text)'}}>
           <span dangerouslySetInnerHTML={{__html: window.renderMarkdown(text)}} />
-          {phase?.k === 'write' && <span className="md-cursor" />}
+          {phase?.k === 'write' && !conn && <span className="md-cursor" />}
         </div>
       )}
-      {phase && !(phase.k === 'write' && text) && (
+      {window.ConnLine && <window.ConnLine conn={conn} onReconnect={onReconnect} />}
+      {phase && !(phase.k === 'write' && text) && !(conn && conn.k !== 'ok') && (
         <div className="ch-phase" role="status" aria-live="polite">
           <span className="ch-orb" data-k={phase.k} aria-hidden="true"><i><b /></i><i><b /></i><i><b /></i></span>
           <span className="ch-phase-t">{PHASE_TXT(phase)}…</span>
@@ -937,13 +979,16 @@ function AttachmentChips({ files, onRemove }) {
   );
 }
 
-function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attachments = [], setAttachments, addFiles }) {
+function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attachments = [], setAttachments, addFiles, attNote, setAttNote, canAttach = true }) {
   const I = window.Icons;
   const fileRef = useRef(null);
   const soon = window.useSoon();
   const MAX = 4000;
   const over = value.length > MAX;
-  const send = () => { if (over) return; onSend(); };
+  const [why, setWhy] = useState(false);
+  useEffect(() => setWhy(false), [agent.id]);
+  const gate = window.crAttGate(attachments);
+  const send = () => { if (over || gate) return; onSend(); };
   const showSlash = !soon && value.startsWith('/') && !value.includes(' ');
   const filtered = showSlash ? slashCommands.filter(c => c.cmd.startsWith(value.toLowerCase())) : [];
   return (
@@ -964,7 +1009,8 @@ function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attach
         </div>
       )}
       <div style={{border:'1px solid var(--border)', borderRadius: 10, background:'var(--input-bg)', padding: 10}}>
-        {attachments.length > 0 && <div style={{marginBottom: 8}}><AttachmentChips files={attachments} onRemove={(i) => setAttachments(a => a.filter((_, j) => j !== i))} /></div>}
+        {attachments.length > 0 && <div style={{marginBottom: 8}}><window.CrAttachChips files={attachments} onRemove={(i) => { setAttachments(a => a.filter((_, j) => j !== i)); setAttNote?.(null); }} onRetry={(id) => window.crRetryUpload(id, setAttachments)} /></div>}
+        {attNote && <div role="alert" style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>{attNote}</div>}
         <input ref={fileRef} type="file" multiple hidden onChange={e => { addFiles?.(e.target.files); e.target.value = ''; }} />
         <textarea
           aria-label={`Mensaje a ${agent.name}`}
@@ -977,16 +1023,19 @@ function ChatInput({ value, setValue, onSend, onCancel, streaming, agent, attach
         />
         <div className="row between ch-compose-bar">
           <div className="row gap-1">
-            <window.Soon on={soon}><button className="btn btn-ghost btn-icon" title="Adjuntar archivos" aria-label="Adjuntar archivos" onClick={() => fileRef.current?.click()}><I.Paperclip size={14} /></button></window.Soon>
+            <window.Soon on={soon}>{canAttach ? <button className="btn btn-ghost btn-icon" title="Adjuntar archivos" aria-label="Adjuntar archivos" onClick={() => fileRef.current?.click()}><I.Paperclip size={14} /></button>
+              : <button className="btn btn-ghost btn-icon" aria-disabled="true" style={{ opacity: .45 }} title={agent.name + ' no puede leer archivos: su versión no tiene «Ejecutar código».'} aria-label="Adjuntar archivos (no disponible)" aria-describedby={why ? 'ci-why' : undefined} onClick={() => setWhy(true)}><I.Paperclip size={14} /></button>}</window.Soon>
 
           </div>
           <div className="row gap-2 ch-send-row">
             <span className="row gap-1 ch-send-hint" style={{fontSize: 11, color:'var(--text-dim)'}}><window.Soon on={soon}><span><span className="mono">/</span> comandos</span></window.Soon> · <span className="mono">⇧↵</span> nueva línea</span>
             {streaming
               ? <button className="btn btn-sm ch-send-btn" onClick={onCancel} aria-label="Cancelar respuesta"><I.Stop size={11} /><span className="ch-send-lbl">Cancelar</span></button>
-              : <button className="btn btn-sm btn-primary ch-send-btn" disabled={over} onClick={send} aria-label="Enviar"><span className="ch-send-lbl">Enviar</span><I.Send size={11} /></button>}
+              : <button className="btn btn-sm btn-primary ch-send-btn" disabled={over || !!gate} onClick={send} aria-label="Enviar"><span className="ch-send-lbl">Enviar</span><I.Send size={11} /></button>}
           </div>
         </div>
+        {!soon && !canAttach && why && <div id="ci-why" role="status" style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>{agent.name} no puede leer archivos: su versión no tiene «Ejecutar código». Quien lo administra puede activarlo en el Builder.</div>}
+        {gate && <div role="status" style={{ fontSize: 12, color: gate === 'bad' ? 'var(--red)' : 'var(--text-muted)', marginTop: 8 }}>{gate === 'busy' ? 'Enviar se activa cuando terminen de subirse y revisarse los archivos.' : 'Quita los archivos con problemas para enviar el mensaje.'}</div>}
         {over && <div id="ci-err" role="alert" style={{ fontSize: 12, color: 'var(--red)', marginTop: 8 }}>El mensaje supera el máximo de 4.000 caracteres. Acórtalo para enviarlo.</div>}
       </div>
     </div>
