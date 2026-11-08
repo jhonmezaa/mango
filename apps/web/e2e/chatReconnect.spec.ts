@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 // Design round 40 (D120, D121): a chat turn read in `v1` patches, cut and resumed, against the
 // local mock. The mock's demo words cut the connection («reconecta»), refuse the next 12
-// («no reconecta») or lose the turn halfway («interrumpido»).
+// («no reconecta»), lose the turn halfway («interrumpido») or find another tab's turn in flight
+// («otra pestaña»). Opening a conversation reads its turn in flight from the API (R3b).
 
 async function signIn(page: Page): Promise<void> {
   await page.goto('/');
@@ -81,7 +82,7 @@ test.describe('Chat turns that reconnect', () => {
     await expect(answer.getByText('Principal driver:')).toHaveCount(1);
   });
 
-  test('a turn Mango lost halfway says so, without «Reintentar»', async () => {
+  test('a turn Mango lost halfway says so, without «Reintentar», also when opened again', async () => {
     await pushRoute(page, '/');
     await page.locator('#chat-input').fill('turno interrumpido');
     await page.locator('#chat-input').press('Enter');
@@ -90,16 +91,66 @@ test.describe('Chat turns that reconnect', () => {
       timeout: 30_000,
     });
     await expect(answer.getByRole('button', { name: 'Reintentar' })).toHaveCount(0);
+    // From the history (its `stop_code`), the same notice.
+    const conversation = new URL(page.url()).pathname;
+    await pushRoute(page, '/');
+    await pushRoute(page, conversation);
+    await expect(page.locator('.msg-agent').last().getByRole('status')).toContainText(
+      'Respuesta interrumpida.',
+    );
+  });
+
+  test('a turn still running is read live when its conversation opens again', async () => {
+    await pushRoute(page, '/');
+    await page.locator('#chat-input').fill('hola');
+    await page.locator('#chat-input').press('Enter');
+    await expect(page).toHaveURL(/\/c\/[0-9a-f]{32}$/);
+    await expect(page.locator('.msg-agent').last()).toContainText('gasto', { timeout: 30_000 });
+    const conversation = new URL(page.url()).pathname;
+    await pushRoute(page, '/');
+    await pushRoute(page, conversation);
+    await expect(page.getByRole('button', { name: 'Cancelar respuesta' })).toBeVisible();
+    await expect(
+      page.locator('[aria-live="polite"].sr-only', { hasText: 'Respuesta completa. ' }),
+    ).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator('.msg-agent').last().getByText('Principal driver:')).toHaveCount(1);
+  });
+
+  test('another tab answering: the message stays, that turn is shown live', async () => {
+    await pushRoute(page, '/');
+    await page.locator('#chat-input').fill('desde otra pestaña');
+    await page.locator('#chat-input').press('Enter');
+    await expect(
+      page.getByText(
+        'Tu mensaje no se envió: hay una respuesta en curso en esta conversación, desde otra pestaña. Sigue en el cuadro de texto; envíalo cuando termine.',
+      ),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#chat-input')).toHaveValue('desde otra pestaña');
+    await expect(page.locator('.msg-user-origin')).toHaveText('Desde otra pestaña');
+    await expect(page.locator('.msg-user-bubble').last()).toHaveText(
+      '¿Qué cuentas explican el aumento de EC2?',
+    );
+    await expect(
+      page.locator('[aria-live="polite"].sr-only', { hasText: 'Respuesta completa. ' }),
+    ).toHaveCount(1, { timeout: 30_000 });
   });
 
   test('«Cancelar» stops the answer with the round 40 note', async () => {
     await pushRoute(page, '/');
     await page.locator('#chat-input').fill('hola');
     await page.locator('#chat-input').press('Enter');
+    // Once it wrote something: what was written is kept with the note.
+    await expect(page.locator('.msg-agent').last()).toContainText('gasto', { timeout: 30_000 });
     await page.getByRole('button', { name: 'Cancelar respuesta' }).click();
-    await expect(page.locator('.msg-stopped').last()).toHaveText(
-      'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.',
-    );
+    const note =
+      'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.';
+    await expect(page.locator('.msg-stopped').last()).toHaveText(note);
+    // From the history (its `stop_code`), the same note.
+    await expect(page).toHaveURL(/\/c\/[0-9a-f]{32}$/);
+    const conversation = new URL(page.url()).pathname;
+    await pushRoute(page, '/');
+    await pushRoute(page, conversation);
+    await expect(page.locator('.msg-stopped').last()).toHaveText(note);
   });
 
   test('leaves no other errors in the console', () => {

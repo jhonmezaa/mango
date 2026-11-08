@@ -155,6 +155,7 @@ export const chat = {
   // Design round 40: the session ended while the turn was read.
   away: 'La respuesta sigue en Mango. La verás completa al volver a entrar.',
   // Design round 40 «Otra pestaña»: the server refused the turn (`conversation_busy`).
+  fromOtherTab: 'Desde otra pestaña',
   busy: 'Tu mensaje no se envió: hay una respuesta en curso en esta conversación, desde otra pestaña. Sigue en el cuadro de texto; envíalo cuando termine.',
   loadError: 'No se pudo cargar la conversación',
   // Design round 34: «+» while the first answer of a new conversation runs.

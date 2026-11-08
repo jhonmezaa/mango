@@ -29,16 +29,13 @@ export interface ChatTarget {
 /** Design round 40: «Reconectado. La respuesta sigue donde iba.» stays this long. */
 export const RESUMED_MS = 2500;
 
-/**
- * The turn in flight of each conversation this tab started, while the page lives (in memory
- * only: a turn id is not a secret, but nothing of the chat goes to Web Storage). Leaving the
- * conversation and coming back reads it again (design round 40, «Turno en curso al volver»).
- */
-const turnsInFlight = new Map<string, string>();
-
-/** For tests: forget the turns of other tests. */
-export function forgetTurnsInFlight(): void {
-  turnsInFlight.clear();
+/** How a conversation is opened again (`reset`). */
+export interface ResetOptions {
+  /**
+   * This tab's message was refused because another tab is answering in the conversation: the
+   * question of that turn, when it is the last message, says «Desde otra pestaña».
+   */
+  otherTab?: boolean;
 }
 
 interface Options {
@@ -88,6 +85,8 @@ export function useChatStream({
   // A turn being created (before its id is known), so a second send waits.
   const creatingRef = useRef<{ controller: AbortController; assistantId: string } | null>(null);
   const resumedTimer = useRef<number | undefined>(undefined);
+  // Bumped on each detach: a turn in flight found for a conversation left since is not followed.
+  const openedRef = useRef(0);
 
   // Read through refs: the callbacks of the page change, the reading outlives a render.
   const callbacks = useRef({
@@ -111,6 +110,7 @@ export function useChatStream({
 
   /** Stops reading (the turn goes on in Mango); nothing is said to the API. */
   const detach = useCallback(() => {
+    openedRef.current += 1;
     creatingRef.current?.controller.abort();
     creatingRef.current = null;
     readingRef.current?.controller.abort();
@@ -138,7 +138,6 @@ export function useChatStream({
           errorKey: 'errors.streamInterrupted',
         });
         readingRef.current = null;
-        turnsInFlight.delete(reading.conversationId);
         setIsStreaming(false);
         callbacks.current.onTurnFinished();
         return;
@@ -156,7 +155,6 @@ export function useChatStream({
       ended();
       return;
     }
-    turnsInFlight.delete(reading.conversationId);
     const view = reading.view;
     if (view.status === 'error' && view.error?.code === 'conversation_busy' && reading.text) {
       // Design round 40 «Otra pestaña»: the message did not go out; it goes back to the box.
@@ -236,35 +234,43 @@ export function useChatStream({
     [api, settle],
   );
 
+  /**
+   * Shows a conversation: `messages` once its history is loaded (none while it loads). Design
+   * round 40 «Turno en curso al abrir»: a turn of it still queued or running (this tab's after a
+   * reload, or another tab's) is read live from its first delta (R3b), after the history.
+   */
   const reset = useCallback(
-    (conversationId: string | null, messages: DisplayMessage[] = []) => {
+    (conversationId: string | null, messages?: DisplayMessage[], options: ResetOptions = {}) => {
       detach();
-      dispatch({ type: 'reset', conversationId, messages });
-      // Design round 40 «Turno en curso al volver»: a turn of this conversation that this tab
-      // started and that the loaded history does not answer yet is read again, live.
-      const turnId = conversationId ? turnsInFlight.get(conversationId) : undefined;
-      if (!conversationId || !turnId || messages.length === 0) return;
-      if (messages.at(-1)?.role !== 'user') {
-        turnsInFlight.delete(conversationId);
-        return;
-      }
-      const assistantId = crypto.randomUUID();
-      dispatch({ type: 'resume', assistantId });
-      const reading: Reading = {
-        turnId,
-        conversationId,
-        assistantId,
-        controller: new AbortController(),
-        progress: TURN_START,
-        view: EMPTY_TURN,
-        text: null,
-        userId: null,
-      };
-      readingRef.current = reading;
-      setIsStreaming(true);
-      read(reading);
+      const opened = openedRef.current;
+      dispatch({ type: 'reset', conversationId, messages: messages ?? [] });
+      if (!conversationId || messages === undefined) return;
+      api.conversationTurn(conversationId).then(
+        (turn) => {
+          // Another conversation was opened, or this tab started a turn, meanwhile.
+          if (!turn || openedRef.current !== opened) return;
+          if (readingRef.current || creatingRef.current) return;
+          const assistantId = crypto.randomUUID();
+          dispatch({ type: 'resume', assistantId, otherTab: options.otherTab === true });
+          const reading: Reading = {
+            turnId: turn.turn_id,
+            conversationId,
+            assistantId,
+            controller: new AbortController(),
+            progress: TURN_START,
+            view: EMPTY_TURN,
+            text: null,
+            userId: null,
+          };
+          readingRef.current = reading;
+          setIsStreaming(true);
+          read(reading);
+        },
+        // Not knowing is the same as no turn in flight: the history is already on screen.
+        () => undefined,
+      );
     },
-    [detach, read],
+    [api, detach, read],
   );
 
   const send = useCallback(
@@ -326,7 +332,6 @@ export function useChatStream({
         return;
       }
       creatingRef.current = null;
-      turnsInFlight.set(created.conversationId, created.turnId);
       dispatch({ type: 'conversation', conversationId: created.conversationId });
       callbacks.current.onConversationStarted(created.conversationId);
       const reading: Reading = {
@@ -356,7 +361,6 @@ export function useChatStream({
     if (reading) {
       reading.controller.abort();
       readingRef.current = null;
-      turnsInFlight.delete(reading.conversationId);
       void api.cancelTurn(reading.turnId).catch(() => undefined);
     }
     window.clearTimeout(resumedTimer.current);

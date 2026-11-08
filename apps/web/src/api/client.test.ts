@@ -334,6 +334,32 @@ describe('createApiClient', () => {
     });
   });
 
+  describe('conversationTurn', () => {
+    const CONVERSATION = 'a'.repeat(32);
+    const TURN = 'b'.repeat(32);
+
+    it('tells the turn in flight of a conversation, or none (R3b)', async () => {
+      const fetchMock = vi.fn<typeof fetch>((input) =>
+        Promise.resolve(
+          jsonResponse({
+            turn: (input as string).includes(CONVERSATION)
+              ? { turn_id: TURN, state: 'running' }
+              : null,
+          }),
+        ),
+      );
+      const { client } = setup(fetchMock);
+      await expect(client.conversationTurn(CONVERSATION)).resolves.toEqual({
+        turn_id: TURN,
+        state: 'running',
+      });
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(`/api/conversations/${CONVERSATION}/turn`);
+      await expect(client.conversationTurn('c'.repeat(32))).resolves.toBeNull();
+      await expect(client.conversationTurn('../admin')).rejects.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('streamPlayground', () => {
     const base = {
       agentId: 'k3fq7zr2m5xw6n4a',

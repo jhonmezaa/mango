@@ -88,6 +88,11 @@ export const messageSchema = z.object({
   connection_required: z.array(registrationIdSchema).max(10).optional(),
   /** Remote MCP registrations whose tools answered in this turn («Leyó {servicio}»). */
   remote_sources: remoteSourcesSchema.optional(),
+  /**
+   * Why a stored answer was cut (R3b): `cancelled` («Detener») or `turn_interrupted`. Kept as a
+   * bounded string so a reason added later does not break the conversation: unknown is none.
+   */
+  stop_code: z.string().max(64).nullable().optional(),
 });
 export type Message = z.infer<typeof messageSchema>;
 

@@ -298,6 +298,9 @@ export const ChatMessage = memo(function ChatMessage({
       <article className="msg-user msg-hover">
         <h2 className="sr-only">{t('chat.you')}</h2>
         <div className="msg-user-inner">
+          {message.fromOtherTab && (
+            <span className="msg-user-origin">{t('chat.fromOtherTab')}</span>
+          )}
           {/* User text is shown verbatim (escaped by React), never interpreted as markdown. */}
           <p className="msg-user-bubble">{message.content}</p>
           <div className="msg-actions">

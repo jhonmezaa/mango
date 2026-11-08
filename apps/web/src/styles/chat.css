@@ -690,6 +690,11 @@
     gap: 6px;
     max-width: 78%;
   }
+  /* Design round 40 «Desde otra pestaña» (chat.jsx `msg.other`). */
+  .msg-user-origin {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
   .msg-user-bubble {
     margin: 0;
     padding: 10px 16px;

@@ -19,13 +19,13 @@ import { ChatPage } from './ChatPage';
 const STOPPED =
   'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.';
 
-type StreamArgs = Parameters<ApiClient['streamChat']>[0];
+type ScriptArgs = Parameters<ApiClient['streamChat']>[0];
 
 /** API whose chat stream emits the given events and then waits until `finish` is called. */
 function streamingApi(events: ChatEvent[]) {
   const pending: { finish: () => void } = { finish: () => undefined };
   const streamChat = vi.fn(
-    ({ onEvent }: StreamArgs) =>
+    ({ onEvent }: ScriptArgs) =>
       new Promise<void>((resolve) => {
         events.forEach(onEvent);
         pending.finish = () => {
@@ -58,6 +58,10 @@ function renderChat(
     auth?: AuthContextValue;
   } = {},
 ) {
+  // A conversation without a turn in flight unless the test says otherwise (R3b).
+  if (!('conversationTurn' in api)) {
+    Object.assign(api, { conversationTurn: () => Promise.resolve(null) });
+  }
   render(
     <TestProviders
       session={sessionValue({ api, me: { ...baseMe, is_admin: isAdmin }, ...session })}
@@ -238,7 +242,7 @@ describe('ChatPage', () => {
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
     // Before the API reports anything, the design's first step.
     expect(await screen.findByText('Pensando…')).toBeInTheDocument();
-    const onEvent = (streamChat.mock.calls[0] as [StreamArgs])[0].onEvent;
+    const onEvent = (streamChat.mock.calls[0] as [ScriptArgs])[0].onEvent;
 
     act(() => {
       onEvent({ type: 'status', phase: 'tool', tool: '<b>get_cost_and_usage</b>' });
@@ -328,7 +332,7 @@ describe('ChatPage', () => {
   it('does not toast a stopped answer', async () => {
     const user = userEvent.setup();
     const streamChat = vi.fn(
-      ({ signal }: StreamArgs) =>
+      ({ signal }: ScriptArgs) =>
         new Promise<void>((_resolve, reject) => {
           signal?.addEventListener('abort', () => {
             reject(new DOMException('aborted', 'AbortError'));
@@ -384,7 +388,7 @@ describe('ChatPage', () => {
         },
       ],
     } as unknown as Awaited<ReturnType<ApiClient['getConversation']>>);
-    const streamChat = vi.fn(({ onEvent }: StreamArgs) => {
+    const streamChat = vi.fn(({ onEvent }: ScriptArgs) => {
       onEvent({ type: 'error', code: 'conversation_busy', message: 'busy' });
       return Promise.resolve();
     });
@@ -402,6 +406,125 @@ describe('ChatPage', () => {
     expect(input).toHaveValue('¿Y RDS?');
     // The question that did not go out is not in the conversation.
     expect(screen.queryByText('¿Y RDS?', { selector: '.msg-user-bubble' })).toBeNull();
+  });
+
+  it('shows the turn of the other tab live, its question «Desde otra pestaña» (round 40)', async () => {
+    const user = userEvent.setup();
+    const asked = {
+      message_id: 'q2',
+      role: 'user',
+      content: '¿Qué cuentas explican el aumento de EC2?',
+      created_at: '2026-11-07T10:01:00Z',
+      tools: [],
+    };
+    const history = [
+      {
+        message_id: 'q1',
+        role: 'user',
+        content: 'Gasto de EC2',
+        created_at: '2026-11-07T10:00:00Z',
+        tools: [],
+      },
+      {
+        message_id: 'a1',
+        role: 'assistant',
+        content: 'Fueron USD 10.',
+        created_at: '2026-11-07T10:00:05Z',
+        tools: [],
+      },
+    ];
+    const getConversation = vi
+      .fn<ApiClient['getConversation']>()
+      .mockResolvedValueOnce({ ...conversationOf('finops'), messages: history } as never)
+      // Read again after the refusal: the other tab's question is in it by then.
+      .mockResolvedValue({ ...conversationOf('finops'), messages: [...history, asked] } as never);
+    let other: (() => void) | null = null;
+    const streamChat = vi.fn(({ message, onEvent }: ScriptArgs) => {
+      if (message === '¿Y RDS?') {
+        onEvent({ type: 'error', code: 'conversation_busy', message: 'busy' });
+        return Promise.resolve();
+      }
+      onEvent({ type: 'delta', text: 'Las cuentas de prod' });
+      return new Promise<void>((resolve) => {
+        other = resolve;
+      });
+    });
+    const api = turnsApi({ getConversation, streamChat });
+    // The other tab's turn, already running.
+    await api.createTurn({ conversationId: CONVERSATION_ID, message: asked.content });
+    let calls = 0;
+    const inFlight = api.conversationTurn.bind(api);
+    // Opening the conversation finds nothing (the other tab sends just after).
+    api.conversationTurn = (id) => (calls++ === 0 ? Promise.resolve(null) : inFlight(id));
+    renderChat(api as unknown as ApiClient, false, { path: `/c/${CONVERSATION_ID}` });
+    await screen.findByText('Fueron USD 10.');
+    const input = screen.getByRole('textbox', { name: 'Mensaje a FinOps' });
+    await user.type(input, '¿Y RDS?{Enter}');
+    expect(await screen.findByText('Las cuentas de prod')).toBeInTheDocument();
+    expect(screen.getByText('Desde otra pestaña')).toBeInTheDocument();
+    expect(screen.getByText(asked.content, { selector: '.msg-user-bubble' })).toBeInTheDocument();
+    expect(input).toHaveValue('¿Y RDS?');
+    expect(other).not.toBeNull();
+  });
+
+  it('reads the turn still running when a conversation opens (round 40)', async () => {
+    const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue({
+      ...conversationOf('finops'),
+      messages: [
+        {
+          message_id: 'q1',
+          role: 'user',
+          content: '¿Y el pronóstico?',
+          created_at: '2026-11-07T10:00:00Z',
+          tools: [],
+        },
+      ],
+    } as never);
+    const streamChat = vi.fn(({ onEvent }: ScriptArgs) => {
+      onEvent({ type: 'delta', text: 'El pronóstico sube' });
+      return new Promise<void>(() => undefined);
+    });
+    const api = turnsApi({ getConversation, streamChat });
+    await api.createTurn({ conversationId: CONVERSATION_ID, message: '¿Y el pronóstico?' });
+    renderChat(api as unknown as ApiClient, false, { path: `/c/${CONVERSATION_ID}` });
+    expect(await screen.findByText('El pronóstico sube')).toBeInTheDocument();
+    expect(screen.queryByText('Desde otra pestaña')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancelar respuesta' })).toBeInTheDocument();
+  });
+
+  it('says how a cut answer ended after a reload, from its stop code (R3b)', async () => {
+    const answer = (id: string, content: string, stop_code: string) => ({
+      message_id: id,
+      role: 'assistant',
+      content,
+      created_at: '2026-11-07T10:00:05Z',
+      tools: [],
+      stopped: true,
+      stop_code,
+    });
+    const question = (id: string) => ({
+      message_id: id,
+      role: 'user',
+      content: `Pregunta ${id}`,
+      created_at: '2026-11-07T10:00:00Z',
+      tools: [],
+    });
+    const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue({
+      ...conversationOf('finops'),
+      messages: [
+        question('q1'),
+        answer('a1', 'Lo que alcanzó', 'turn_interrupted'),
+        question('q2'),
+        answer('a2', 'Lo detenido', 'cancelled'),
+      ],
+    } as never);
+    renderChat({ getConversation, call: vi.fn() } as unknown as ApiClient, false, {
+      path: `/c/${CONVERSATION_ID}`,
+    });
+    await screen.findByText('Lo que alcanzó');
+    expect(screen.getByText(/Mango perdió el turno a mitad/)).toBeInTheDocument();
+    expect(screen.getByText(STOPPED)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
   });
 
   it('shows the design skeleton while a conversation loads', async () => {
@@ -632,7 +755,7 @@ describe('ChatPage with several agents', () => {
     cost_usd: '0.01',
   };
   const finishingApi = () => {
-    const streamChat = vi.fn(({ onEvent }: StreamArgs) => {
+    const streamChat = vi.fn(({ onEvent }: ScriptArgs) => {
       onEvent({ type: 'conversation', conversation_id: CONVERSATION_ID });
       onEvent(done);
       return Promise.resolve();

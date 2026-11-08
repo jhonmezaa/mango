@@ -304,12 +304,30 @@ export function ChatPage() {
   const [busy, setBusy] = useState<{ text: string; key: number; conversationId: string } | null>(
     null,
   );
+  // The route and `reset` as they are now, for callbacks that outlive a render.
+  const currentRouteRef = useRef(routeId);
+  useEffect(() => {
+    currentRouteRef.current = routeId;
+  }, [routeId]);
+  const resetRef = useRef<ReturnType<typeof useChatStream>['reset'] | null>(null);
   const onBusy = useCallback(
     (text: string) => {
       if (routeId === null) return;
       setBusy((current) => ({ text, key: (current?.key ?? 0) + 1, conversationId: routeId }));
+      // The turn of the other tab is shown live, after its question (R3b): the history is read
+      // again, since this tab loaded it before that question was asked.
+      fetchConversation(
+        api,
+        routeId,
+        (messages, conversationId) => {
+          if (currentRouteRef.current === routeId) {
+            resetRef.current?.(conversationId, messages, { otherTab: true });
+          }
+        },
+        () => undefined,
+      );
     },
-    [routeId],
+    [api, routeId],
   );
   const onSessionEndedDuringTurn = useCallback(() => {
     expireSession('turn');
@@ -324,6 +342,9 @@ export function ChatPage() {
     onSessionEndedDuringTurn,
     onBusy,
   });
+  useEffect(() => {
+    resetRef.current = reset;
+  }, [reset]);
 
   // Reacts to navigation only. Reading the in-memory conversation through an effect event means
   // that a conversation created by the stream (state updated first, URL replaced afterwards) is
@@ -356,12 +377,7 @@ export function ChatPage() {
     routeId !== null && state.messages.length === 0 && !loadError && loadResult?.id !== routeId;
 
   // The retry fetch is not tied to an effect, so it checks that the route has not changed before
-  // replacing the conversation on screen.
-  const currentRouteRef = useRef(routeId);
-  useEffect(() => {
-    currentRouteRef.current = routeId;
-  }, [routeId]);
-
+  // replacing the conversation on screen (`currentRouteRef`).
   const retryLoad = () => {
     if (routeId === null) return;
     setLoadResult(null);

@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import {
   zAdminAuditResponse,
   zCancelTurnResponse,
+  zConversationTurnResponse,
   zCreateTurnResponse,
   zGetActivityResponse,
   zGetAdminGroupsResponse,
@@ -614,17 +615,41 @@ describe('mock chat turns in v1 (D120, D121)', () => {
     expect((await read(turnId)).status).toBe(401);
   });
 
-  it('ends «otra pestaña» refused, and «interrumpido» lost halfway', async () => {
-    const busy = await read((await create('desde otra pestaña')).turn_id);
+  it("ends «otra pestaña» refused, with the other tab's turn in flight (R3b)", async () => {
+    const created = await create('desde otra pestaña');
+    const busy = await read(created.turn_id);
     expect(busy.body).toContain('"code":"conversation_busy"');
     expect(busy.body).toContain('"status":409');
-    const lost = await read((await create('turno interrumpido')).turn_id);
-    expect(lost.body).toContain('"code":"upstream_error"');
+    const conversation = created.conversation_id;
+    const { turn } = zConversationTurnResponse.parse(
+      await json(`/conversations/${conversation}/turn`),
+    );
+    expect(turn?.state).toBe('running');
+    const detail = zGetConversationResponse.parse(await json(`/conversations/${conversation}`));
+    expect(detail.messages.map((m) => [m.role, m.content])).toEqual([
+      ['user', '¿Qué cuentas explican el aumento de EC2?'],
+    ]);
+    expect((await read(turn?.turn_id ?? '')).body).toContain('[DONE]');
+    const after = zConversationTurnResponse.parse(
+      await json(`/conversations/${conversation}/turn`),
+    );
+    expect(after.turn).toBeNull();
+    expect((await api('/conversations/nope/turn')).status).toBe(404);
+  });
+
+  it('ends «interrumpido» lost halfway with its own code, and stores why (R3b)', async () => {
+    const created = await create('turno interrumpido');
+    const lost = await read(created.turn_id);
+    expect(lost.body).toContain('"code":"turn_interrupted"');
     expect(lost.body).toContain('/content/text');
+    const detail = zGetConversationResponse.parse(
+      await json(`/conversations/${created.conversation_id}`),
+    );
+    expect(detail.messages.at(-1)).toMatchObject({ stopped: true, stop_code: 'turn_interrupted' });
   });
 
   it('stops a turn with «Cancelar» and keeps what it wrote', async () => {
-    const { turn_id: turnId } = await create('hola');
+    const { turn_id: turnId, conversation_id: conversationId } = await create('hola');
     await new Promise((resolve) => setTimeout(resolve, 3200));
     const cancel = await post(`/chat/turns/${turnId}/cancel`, {});
     const body = zCancelTurnResponse.parse(await cancel.json());
@@ -632,6 +657,8 @@ describe('mock chat turns in v1 (D120, D121)', () => {
     const stream = await read(turnId);
     expect(stream.body).toContain('"v":"interrupted"');
     expect(stream.body).toContain('[DONE]');
+    const detail = zGetConversationResponse.parse(await json(`/conversations/${conversationId}`));
+    expect(detail.messages.at(-1)).toMatchObject({ stopped: true, stop_code: 'cancelled' });
     const again = zCancelTurnResponse.parse(
       await (await post(`/chat/turns/${turnId}/cancel`, {})).json(),
     );

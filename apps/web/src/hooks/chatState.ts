@@ -174,6 +174,11 @@ export interface DisplayMessage {
   connectionAt?: number;
   /** Remote registrations whose tools answered («Leyó {servicio}», link dialog A1). */
   remoteSources?: string[];
+  /**
+   * A question of a turn another tab is answering (design round 40 «Desde otra pestaña»): shown
+   * when this tab's message was refused because of it.
+   */
+  fromOtherTab?: boolean;
   /** ISO timestamp: `created_at` for loaded history, the client clock for messages sent now. */
   createdAt?: string;
   errorKey?: ErrorKey;
@@ -216,6 +221,8 @@ const ERROR_KEYS: Record<string, ErrorKey> = {
   model_not_allowed: 'errors.model_not_allowed',
   model_unavailable: 'errors.model_unavailable',
   conversation_busy: 'errors.conversation_busy',
+  // Lost before it wrote anything: said as the agent's failure, with «Reintentar».
+  turn_interrupted: 'errors.upstream_error',
   rate_limited: 'errors.rate_limited',
 };
 
@@ -251,8 +258,11 @@ export type ChatAction =
       receivedAt?: number;
     }
   | { type: 'connection'; assistantId: string; connection: ConnectionView | null }
-  /** A turn in flight read again: its answer follows the conversation as it was loaded. */
-  | { type: 'resume'; assistantId: string }
+  /**
+   * A turn in flight read again: its answer follows the conversation as it was loaded. With
+   * `otherTab`, its question (the last message, when it is one) is marked as from another tab.
+   */
+  | { type: 'resume'; assistantId: string; otherTab?: boolean }
   /** Messages that never reached the conversation (the server refused the turn). */
   | { type: 'withdraw'; ids: readonly string[] }
   /** A request changed (confirmed, signed, run…): replace it wherever it is shown. */
@@ -292,7 +302,13 @@ export function fromApiMessage(
     })),
     connectionRequired: message.connection_required ?? [],
     remoteSources: message.remote_sources ?? [],
-    status: 'done',
+    // How a cut answer ended, after a reload (R3b): «Detener», or Mango lost the turn.
+    status:
+      message.stop_code === 'cancelled'
+        ? 'stopped'
+        : message.stop_code === 'turn_interrupted'
+          ? 'interrupted'
+          : 'done',
     createdAt: message.created_at,
   };
 }
@@ -331,8 +347,8 @@ function updateMessage(
   };
 }
 
-/** A turn that ended in an error and is known to have started: Mango lost it halfway. */
-const LOST_CODE = 'upstream_error';
+/** The end of a turn Mango lost halfway (D121 (7), R3b): never an error of the agent. */
+const LOST_CODE = 'turn_interrupted';
 /** The end «Cancelar» writes (D121 (7)). */
 const CANCELLED_CODE = 'cancelled';
 
@@ -398,7 +414,7 @@ function endOfTurn(message: DisplayMessage, view: TurnView): DisplayMessage {
   if (view.status === 'interrupted' || code === CANCELLED_CODE) {
     return { ...settled, status: 'stopped' };
   }
-  // The turn failed after it wrote something: Mango lost it halfway and it is charged in full
+  // Mango lost the turn after it wrote something: charged in full
   // (D121 (7)); sending it again would not continue it, so there is no «Reintentar».
   if (code === LOST_CODE && view.text) return { ...settled, status: 'interrupted' };
   return {
@@ -449,11 +465,16 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         }
         return { ...message, connection: action.connection };
       });
-    case 'resume':
+    case 'resume': {
+      const last = state.messages.at(-1);
+      const marked =
+        action.otherTab && last?.role === 'user'
+          ? [...state.messages.slice(0, -1), { ...last, fromOtherTab: true }]
+          : state.messages;
       return {
         ...state,
         messages: [
-          ...state.messages,
+          ...marked,
           {
             id: action.assistantId,
             role: 'assistant',
@@ -463,6 +484,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           },
         ],
       };
+    }
     case 'withdraw': {
       const ids = new Set(action.ids);
       return { ...state, messages: state.messages.filter((message) => !ids.has(message.id)) };

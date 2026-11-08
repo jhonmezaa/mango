@@ -1,6 +1,7 @@
 /**
  * Chat of the mock: conversations in memory, the turns of `POST /api/chat/turns` read in `v1`
- * (D120, D121) and the old SSE stream of `POST /api/chat` (retired in R5).
+ * (D120, D121) with the turn in flight of a conversation (R3b), and the old SSE stream of
+ * `POST /api/chat` (retired in its own PR, D120 (7)).
  */
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -36,6 +37,9 @@ interface StoredMessage {
   /** Remote registrations that asked to connect, and the ones that answered (D98 (20)). */
   connection_required?: string[];
   remote_sources?: string[];
+  /** Why a stored answer was cut (R3b): «Detener», or Mango lost the turn. */
+  stopped?: boolean;
+  stop_code?: 'cancelled' | 'turn_interrupted';
 }
 
 interface StoredConversation {
@@ -292,6 +296,15 @@ async function runTurn(admitted: AdmittedTurn, sink: TurnSink): Promise<void> {
   // its question never reaches the conversation.
   if (/otra pestaña/i.test(message)) {
     conversation.messages.pop();
+    // The turn of the other tab, live: this tab reads it after the refusal (R3b).
+    startTurn({ ...admitted, message: OTHER_TAB_QUESTION, turn: { ...turn, turn: newId() } });
+    conversation.messages.push({
+      message_id: newId(),
+      role: 'user',
+      content: OTHER_TAB_QUESTION,
+      created_at: new Date().toISOString(),
+      tools: [],
+    });
     sink.reject({
       status: 409,
       code: 'conversation_busy',
@@ -493,7 +506,17 @@ async function runTurn(admitted: AdmittedTurn, sink: TurnSink): Promise<void> {
   for (const [index, piece] of pieces.entries()) {
     if (sink.closed()) break;
     if (lost && index > pieces.length * 0.4) {
-      send('error', { code: 'upstream_error', message: 'the agent failed' });
+      // As the API: what the person saw is kept with why it was cut, then its own code (R3b).
+      keep({
+        message_id: newId(),
+        role: 'assistant',
+        content: answer,
+        created_at: new Date().toISOString(),
+        tools: [],
+        stopped: true,
+        stop_code: 'turn_interrupted',
+      });
+      send('error', { code: 'turn_interrupted', message: 'the answer was interrupted' });
       return;
     }
     answer += piece;
@@ -593,10 +616,19 @@ function notify(turn: MockTurn): void {
   for (const reader of turn.readers) reader();
 }
 
-/** `POST /api/chat/turns` (D120, D121 (2)): admitted like `POST /api/chat`, answered apart. */
+/** The question of the other tab's turn in the demo «Turno en otra pestaña» (design round 40). */
+const OTHER_TAB_QUESTION = '¿Qué cuentas explican el aumento de EC2?';
+
+/** `POST /api/chat/turns` (D120, D121 (2)): the turn is admitted, then run apart. */
 async function createTurn(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const admitted = await admitTurn(req, res);
   if (!admitted) return;
+  const turn = startTurn(admitted);
+  sendJson(res, 200, { conversation_id: turn.conversationId, turn_id: turn.turnId });
+}
+
+/** Runs an admitted turn into its record, read by `GET …/stream` (the worker of D121). */
+function startTurn(admitted: AdmittedTurn): MockTurn {
   const turnId = admitted.turn.turn;
   const turn: MockTurn = {
     turnId,
@@ -612,7 +644,6 @@ async function createTurn(req: IncomingMessage, res: ServerResponse): Promise<vo
   turns.set(turnId, turn);
   const ended = () =>
     turn.end !== null || turn.events.some((e) => e.kind === 'done' || e.kind === 'error');
-  sendJson(res, 200, { conversation_id: turn.conversationId, turn_id: turnId });
   void runTurn(admitted, {
     send: (event, data) => {
       if (ended() || event === 'conversation') return;
@@ -629,7 +660,12 @@ async function createTurn(req: IncomingMessage, res: ServerResponse): Promise<vo
     if (!ended()) turn.end = { state: 'done' };
     notify(turn);
   });
+  return turn;
 }
+
+/** A turn still running: its events end neither in `done` nor `error`. */
+const running = (turn: MockTurn) =>
+  turn.end === null && !turn.events.some((e) => e.kind === 'done' || e.kind === 'error');
 
 /** `GET /api/chat/turns/{turn}/stream?after=<n>`: the turn in `v1`, from delta `after + 1`. */
 function streamTurn(req: IncomingMessage, res: ServerResponse, turnId: string): void {
@@ -702,9 +738,8 @@ function cancelTurn(res: ServerResponse, turnId: string): void {
     sendError(res, 404, 'not_found', 'not found');
     return;
   }
-  const running =
-    turn.end === null && !turn.events.some((e) => e.kind === 'done' || e.kind === 'error');
-  if (running) {
+  const cancelled = running(turn);
+  if (cancelled) {
     turn.events.push({ kind: 'error', data: { ...CANCELLED } });
     const text = turn.events
       .flatMap((e) => (e.kind === 'delta' ? [textOf(e.data.text, '')] : []))
@@ -720,14 +755,16 @@ function cancelTurn(res: ServerResponse, turnId: string): void {
             ? [{ name: textOf(e.data.name, ''), status: textOf(e.data.status, '') }]
             : [],
         ),
+        stopped: true,
+        stop_code: 'cancelled',
       });
     }
     notify(turn);
   }
   sendJson(res, 200, {
     turn_id: turnId,
-    state: running ? 'interrupted' : turn.end?.state === 'failed' ? 'failed' : 'done',
-    cancelled: running,
+    state: cancelled ? 'interrupted' : turn.end?.state === 'failed' ? 'failed' : 'done',
+    cancelled,
   });
 }
 
@@ -763,6 +800,18 @@ export const handleChatApi: ApiHandler = async (req, res, path) => {
   }
   if (path === '/chat' && req.method === 'POST') {
     await handleChat(req, res);
+    return true;
+  }
+  // The turn of a conversation that is still running (R3b): what a reloaded page follows.
+  const inFlight = /^\/conversations\/([A-Za-z0-9_-]+)\/turn$/.exec(path);
+  if (inFlight && req.method === 'GET') {
+    const id = inFlight[1] ?? '';
+    if (!conversations.has(id)) {
+      sendError(res, 404, 'not_found', 'not found');
+      return true;
+    }
+    const turn = [...turns.values()].find((t) => t.conversationId === id && running(t));
+    sendJson(res, 200, { turn: turn ? { turn_id: turn.turnId, state: 'running' } : null });
     return true;
   }
   if (path === '/chat/turns' && req.method === 'POST') {

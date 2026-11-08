@@ -357,6 +357,17 @@ export function createApiClient(options: ApiClientOptions) {
       );
     },
 
+    /**
+     * The turn of a conversation that is queued or running, if any (R3b): what a reloaded page
+     * or another tab follows live from `after=0`. Null when there is none.
+     */
+    conversationTurn: async (conversationId: string) =>
+      (
+        await call('conversationTurn', {
+          path: { conversation_id: conversationIdSchema.parse(conversationId) },
+        })
+      ).turn,
+
     /** «Cancelar» (D121 (7)): POST /api/chat/turns/{turn}/cancel; idempotent. */
     cancelTurn: (turnId: string) =>
       call('cancelTurn', { path: { turn_id: turnIdSchema.parse(turnId) } }),

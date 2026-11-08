@@ -1,12 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '../api/chatEvents';
 import type { ApiClient, StreamChatRequest } from '../api/client';
 import { ApiError } from '../api/errors';
 import { turnsApi } from '../test/turnsApi';
 import type { DisplayMessage } from './chatState';
-import { forgetTurnsInFlight, useChatStream } from './useChatStream';
+import { useChatStream } from './useChatStream';
 
 const TARGET = { agentId: 'finops', model: null };
 const CONVERSATION = 'c1';
@@ -55,10 +55,6 @@ function setup(api: ApiClient) {
 
 const last = (messages: DisplayMessage[]) => messages.at(-1);
 
-afterEach(() => {
-  forgetTurnsInFlight();
-});
-
 describe('useChatStream (v1)', () => {
   it('creates the turn, reads it and ends with its answer', async () => {
     const { streamChat, control } = pendingScript([{ type: 'delta', text: 'Gastaron USD 10' }]);
@@ -102,7 +98,11 @@ describe('useChatStream (v1)', () => {
     act(() => {
       hook.result.current.reset(CONVERSATION, [question]);
     });
-    expect(hook.result.current.isStreaming).toBe(true);
+    // The API says the turn of the conversation that is in flight (R3b): read from its start.
+    await waitFor(() => {
+      expect(hook.result.current.isStreaming).toBe(true);
+    });
+    expect(last(hook.result.current.state.messages)?.fromOtherTab).toBeUndefined();
     await waitFor(() => {
       expect(last(hook.result.current.state.messages)?.content).toBe('Gastaron');
     });
@@ -117,26 +117,92 @@ describe('useChatStream (v1)', () => {
       'Gastaron y listo.',
     ]);
     // Once answered, opening it again reads nothing.
-    act(() => {
+    await act(async () => {
       hook.result.current.reset(CONVERSATION, [question]);
+      await Promise.resolve();
     });
     expect(hook.result.current.isStreaming).toBe(false);
   });
 
-  it('does not read again a turn the loaded history already answers', async () => {
-    const { streamChat } = pendingScript([]);
-    const api = turnsApi({ streamChat }) as unknown as ApiClient;
-    const { hook } = setup(api);
+  it('reads nothing when the conversation has no turn in flight, nor while it loads', async () => {
+    const { streamChat, control } = pendingScript([]);
+    const api = turnsApi({ streamChat });
+    const asked = vi.spyOn(api, 'conversationTurn');
+    const { hook } = setup(api as unknown as ApiClient);
     await act(() => hook.result.current.send('Hola', TARGET));
+    act(() => {
+      control.finish();
+    });
+    await waitFor(() => {
+      expect(hook.result.current.isStreaming).toBe(false);
+    });
+    // While its history loads, nothing is asked.
+    act(() => {
+      hook.result.current.reset(CONVERSATION);
+    });
+    expect(asked).not.toHaveBeenCalled();
     const history: DisplayMessage[] = [
       { id: 'q', role: 'user', content: 'Hola', tools: [], status: 'done' },
       { id: 'a', role: 'assistant', content: 'Listo', tools: [], status: 'done' },
     ];
-    act(() => {
+    await act(async () => {
       hook.result.current.reset(CONVERSATION, history);
+      await Promise.resolve();
     });
+    expect(asked).toHaveBeenCalledWith(CONVERSATION);
     expect(hook.result.current.isStreaming).toBe(false);
     expect(hook.result.current.state.messages).toHaveLength(2);
+  });
+
+  it('follows the turn of another tab live, its question marked (round 40)', async () => {
+    const { streamChat, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ streamChat }) as unknown as ApiClient;
+    const { hook } = setup(api);
+    // «The other tab»: a turn of the conversation in flight.
+    await act(() => api.createTurn({ conversationId: CONVERSATION, message: 'EC2' }));
+    const question: DisplayMessage = {
+      id: 'q',
+      role: 'user',
+      content: 'EC2',
+      tools: [],
+      status: 'done',
+    };
+    act(() => {
+      hook.result.current.reset(CONVERSATION, [question], { otherTab: true });
+    });
+    await waitFor(() => {
+      expect(last(hook.result.current.state.messages)?.content).toBe('Gastaron');
+    });
+    expect(hook.result.current.state.messages[0]?.fromOtherTab).toBe(true);
+    act(() => {
+      control.finish();
+    });
+    await waitFor(() => {
+      expect(last(hook.result.current.state.messages)?.status).toBe('done');
+    });
+  });
+
+  it('does not follow a turn found for a conversation left meanwhile', async () => {
+    const { streamChat } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ streamChat });
+    let answer: (turn: { turn_id: string; state: 'running' }) => void = () => undefined;
+    api.conversationTurn = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const { hook } = setup(api as unknown as ApiClient);
+    act(() => {
+      hook.result.current.reset(CONVERSATION, []);
+    });
+    act(() => {
+      hook.result.current.reset(null);
+    });
+    await act(async () => {
+      answer({ turn_id: 'turn1', state: 'running' });
+      await Promise.resolve();
+    });
+    expect(hook.result.current.isStreaming).toBe(false);
+    expect(hook.result.current.state.messages).toEqual([]);
   });
 
   it('gives the message back when another tab has a turn in flight (round 40)', async () => {
@@ -159,7 +225,7 @@ describe('useChatStream (v1)', () => {
     const streamChat = vi.fn(({ onEvent }: StreamChatRequest) => {
       onEvent({ type: 'conversation', conversation_id: CONVERSATION });
       onEvent({ type: 'delta', text: 'Gastaron' });
-      onEvent({ type: 'error', code: 'upstream_error', message: 'the agent failed' });
+      onEvent({ type: 'error', code: 'turn_interrupted', message: 'the answer was interrupted' });
       return Promise.resolve();
     });
     const api = turnsApi({ streamChat }) as unknown as ApiClient;
@@ -169,6 +235,24 @@ describe('useChatStream (v1)', () => {
       expect(last(hook.result.current.state.messages)?.status).toBe('interrupted');
     });
     expect(last(hook.result.current.state.messages)?.content).toBe('Gastaron');
+  });
+
+  it('keeps a failure of the agent after it wrote as an error, with «Reintentar» (R3b)', async () => {
+    const streamChat = vi.fn(({ onEvent }: StreamChatRequest) => {
+      onEvent({ type: 'conversation', conversation_id: CONVERSATION });
+      onEvent({ type: 'delta', text: 'Gastaron' });
+      onEvent({ type: 'error', code: 'upstream_error', message: 'the agent failed' });
+      return Promise.resolve();
+    });
+    const { hook } = setup(turnsApi({ streamChat }) as unknown as ApiClient);
+    await act(() => hook.result.current.send('Hola', TARGET));
+    await waitFor(() => {
+      expect(last(hook.result.current.state.messages)).toMatchObject({
+        status: 'error',
+        errorKey: 'errors.upstream_error',
+        content: 'Gastaron',
+      });
+    });
   });
 
   it('keeps an error that wrote nothing as an error', async () => {

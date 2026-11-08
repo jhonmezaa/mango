@@ -69,7 +69,10 @@ function streamOf(turn: TestTurn, after: number, signal: AbortSignal): Response 
  */
 export function turnsApi<T extends { streamChat: Script }>(
   base: T,
-): T & Pick<ApiClient, 'createTurn' | 'openTurnStream' | 'cancelTurn'> & { turns: TestTurn[] } {
+): T &
+  Pick<ApiClient, 'createTurn' | 'openTurnStream' | 'cancelTurn' | 'conversationTurn'> & {
+    turns: TestTurn[];
+  } {
   const turns: TestTurn[] = [];
   const controllers = new Map<string, AbortController>();
   return {
@@ -137,6 +140,11 @@ export function turnsApi<T extends { streamChat: Script }>(
       const turn = turns.find((item) => item.turnId === turnId);
       if (!turn) return Promise.reject(new Error('unknown turn'));
       return Promise.resolve(streamOf(turn, after, signal));
+    },
+    // The turn of the conversation still running, as `GET /api/conversations/{id}/turn` (R3b).
+    conversationTurn(conversationId) {
+      const turn = turns.find((item) => item.conversationId === conversationId && !ended(item));
+      return Promise.resolve(turn ? { turn_id: turn.turnId, state: 'running' as const } : null);
     },
     cancelTurn(turnId) {
       const turn = turns.find((item) => item.turnId === turnId);

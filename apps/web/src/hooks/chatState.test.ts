@@ -182,6 +182,51 @@ describe('fromApiMessage', () => {
   });
 });
 
+describe('fromApiMessage · how a cut answer ended (R3b)', () => {
+  const stored = (stop_code: string | null) =>
+    fromApiMessage({
+      message_id: 'm1',
+      role: 'assistant',
+      content: 'Lo que alcanzó',
+      created_at: '2026-11-07T12:00:00Z',
+      tools: [],
+      stop_code,
+    });
+
+  it('says «Detener» and a turn Mango lost from the stored stop code', () => {
+    expect(stored('cancelled').status).toBe('stopped');
+    expect(stored('turn_interrupted').status).toBe('interrupted');
+    // None, or one this client does not know yet: a plain answer.
+    expect(stored(null).status).toBe('done');
+    expect(stored('later_reason').status).toBe('done');
+  });
+});
+
+describe('chatReducer · a turn in flight read again (round 40)', () => {
+  const question = {
+    id: 'q',
+    role: 'user' as const,
+    content: 'EC2',
+    tools: [],
+    status: 'done' as const,
+  };
+
+  it('marks the question of another tab only when asked, and only a question', () => {
+    const opened = chatReducer(initialChatState, {
+      type: 'reset',
+      conversationId: 'c1',
+      messages: [question],
+    });
+    const other = chatReducer(opened, { type: 'resume', assistantId: 'a', otherTab: true });
+    expect(other.messages.map((m) => [m.role, m.fromOtherTab, m.status])).toEqual([
+      ['user', true, 'done'],
+      ['assistant', undefined, 'streaming'],
+    ]);
+    const mine = chatReducer(opened, { type: 'resume', assistantId: 'a' });
+    expect(mine.messages[0]?.fromOtherTab).toBeUndefined();
+  });
+});
+
 describe('dangling tool calls', () => {
   function withRunningTool(): ChatState {
     return chatReducer(start(), {
