@@ -294,7 +294,7 @@ def test_conversation_keeps_the_agent_of_its_first_turn(repo: ConversationReposi
     record = repo.conversation(USER, CID)
     assert record is not None
     assert (record.agent_id, record.session) == ("abcdefghijklmnop", SessionState())
-    assert repo.summary(USER, CID) == ("t", "abcdefghijklmnop")
+    assert repo.summary(USER, CID) == ("t", "abcdefghijklmnop", USER)
     assert repo.list_conversations(USER)[0]["agent_id"] == "abcdefghijklmnop"
     assert repo.conversation(OTHER, CID) is None
     assert repo.summary(OTHER, CID) is None
@@ -321,7 +321,7 @@ def test_conversation_stored_before_agents_were_data_has_no_agent(
     assert record.agent_id is None
     # Its session predates the binding: the next turn starts a new one and replays history.
     assert record.session == SessionState(2, NOW, NOW + 5, "")
-    assert repo.summary(USER, CID) == ("antigua", None)
+    assert repo.summary(USER, CID) == ("antigua", None, USER)
     assert repo.list_conversations(USER)[0]["agent_id"] is None
 
 

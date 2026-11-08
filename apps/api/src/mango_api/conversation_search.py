@@ -41,6 +41,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
 from mango_api.audit import AuditLog
+from mango_api.authz import ConversationResource
 from mango_api.conversations import SearchableConversation, SearchCorpus
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.web import ApiError, Caller, rate_limited
@@ -315,6 +316,9 @@ def search(
 class SearchDeps:
     read: Callable[[str], SearchCorpus]
     """The caller's corpus, read with their row-level security client within the caps."""
+    owned: Callable[[Caller, list[ConversationResource]], frozenset[str]]
+    """The results the caller owns: Cedar ``OwnConversation`` on them in one batch, with the
+    owner of the partition they were read from, audited once (TM-TW3)."""
     audit: AuditLog
     limiter: Limiter
     default_agent: str
@@ -346,6 +350,16 @@ def run(
     user = caller.user
     corpus, cached = deps.corpus(user.user_id)
     outcome = search(corpus, params, default_agent=deps.default_agent, now=deps.clock())
+    found = outcome.out.results
+    # The row-level security already read only the caller's partition; Cedar decides as well,
+    # and a result it does not allow is left out as if it did not exist (fail closed).
+    owned = (
+        deps.owned(caller, [ConversationResource(r.conversation_id, corpus.owner) for r in found])
+        if found
+        else frozenset()
+    )
+    results = [r for r in found if r.conversation_id in owned]
+    out = outcome.out.model_copy(update={"results": results})
     # Counts only: never the query, its terms or any content (D103 (5)).
     deps.audit.emit(
         "conversation.search",
@@ -353,16 +367,16 @@ def run(
         {
             "query_length": len(params.q),
             "terms": outcome.terms,
-            "hits": outcome.hits,
-            "conversations_found": len(outcome.out.results),
-            "conversations_read": outcome.out.conversations_read,
-            "capped": outcome.out.capped,
+            "hits": sum(len(r.hits) for r in results),
+            "conversations_found": len(results),
+            "conversations_read": out.conversations_read,
+            "capped": out.capped,
             "cached": cached,
             "filtered": params.agent is not None or params.kind != "all" or params.when != "all",
         },
         user,
     )
-    return outcome.out
+    return out
 
 
 def _unavailable(exc: Exception) -> ApiError:

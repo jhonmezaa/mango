@@ -286,6 +286,7 @@ def test_the_cache_expires() -> None:
 
     deps = cs.SearchDeps(
         read=read,
+        owned=lambda _caller, _found: frozenset(),
         audit=None,
         limiter=None,
         default_agent="x",
@@ -347,3 +348,23 @@ def test_snippet_window_and_ellipses() -> None:
     assert pre is True and post is True
     assert [p.text for p in parts if p.hit] == ["clave"]
     assert len("".join(p.text for p in parts)) == cs.SNIPPET_BEFORE + cs.SNIPPET_AFTER
+
+
+def test_results_are_decided_own_conversation_for_the_partition_they_were_read_from(
+    env: Env,
+) -> None:
+    # TM-TW3: one batch for the results, its owner read from the partition (USER#<sub>).
+    body = _search(env, q="ec2").json()
+    assert {x["conversation_id"] for x in body["results"]} == {CONV_A, CONV_OLD}
+    decision = next(
+        d
+        for e, d in zip(env.h.audit.events, env.h.audit.details, strict=True)
+        if e == "policy.decision" and d.get("action") == "OwnConversation"
+    )
+    assert (decision["scope"], decision["visible"], decision["denied"]) == ("search", 2, 0)
+    # What Cedar does not allow is left out, as if it did not exist (fail closed).
+    env.h.authorizer.allowed_conversations = lambda *_a: frozenset()  # type: ignore[method-assign]
+    body = _search(env, q="buckets").json()
+    assert body["results"] == []
+    assert env.h.audit.details[-1]["conversations_found"] == 0
+    assert env.h.audit.details[-1]["hits"] == 0

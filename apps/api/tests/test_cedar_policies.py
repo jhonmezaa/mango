@@ -490,3 +490,26 @@ def test_only_the_owner_reads_or_stops_the_turns_of_a_conversation(authz: Author
         MEMBER, "OwnConversation", CONVERSATION_TYPE, "d" * 32, conversation=conversation
     )
     assert not authz.is_allowed(MEMBER, "OwnConversation", *PLATFORM)
+
+
+def test_lists_of_conversations_are_decided_for_their_owner_only(
+    authz: Authorizer, store: CedarPolicyStore
+) -> None:
+    # TM-TW3: the conversation list and the search results, in batches of 30 sent at once.
+    mine = [ConversationResource(f"{i:032x}", owner=MEMBER.user_id) for i in range(70)]
+    theirs = [ConversationResource(f"{i + 100:032x}", owner=LEAD.user_id) for i in range(5)]
+    allowed = authz.allowed_conversations(MEMBER, "OwnConversation", [*mine, *theirs])
+    assert allowed == {c.conversation_id for c in mine}
+    assert len(store.decisions) == 75
+    assert store.errors == []
+    # Not even an administrator (D23).
+    assert authz.allowed_conversations(ADMIN, "OwnConversation", mine) == frozenset()
+    assert authz.allowed_conversations(MEMBER, "OwnConversation", []) == frozenset()
+
+
+def test_a_failed_batch_denies_its_conversations(
+    authz: Authorizer, store: CedarPolicyStore
+) -> None:
+    store.fail = True
+    conversation = ConversationResource("c" * 32, owner=MEMBER.user_id)
+    assert authz.allowed_conversations(MEMBER, "OwnConversation", [conversation]) == frozenset()

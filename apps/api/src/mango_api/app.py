@@ -1421,6 +1421,58 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
 
         return check()
 
+    async def own_conversation(
+        caller: Caller,
+        conversation_id: str,
+        owner: str,
+        *,
+        read_only: bool,
+        context: dict[str, str] | None = None,
+    ) -> None:
+        """L1 ``OwnConversation`` on one conversation (TM-TW3), audited, after the row-level
+        security found it in the caller's partition: ``owner`` is the partition its record was
+        read from, never the request. A denial answers the same 404 as a conversation that
+        does not exist, so nobody learns that someone else's exists."""
+        try:
+            await require(
+                caller,
+                "OwnConversation",
+                CONVERSATION_TYPE,
+                conversation_id,
+                read_only=read_only,
+                context={"conversation_id": conversation_id, **(context or {})},
+                conversation=ConversationResource(conversation_id, owner),
+            )
+        except HTTPException:
+            raise HTTPException(status_code=404, detail="not found") from None
+
+    def owned_conversations(
+        caller: Caller, conversations: list[ConversationResource], scope: str
+    ) -> frozenset[str]:
+        """The conversations of a list the caller owns: ``OwnConversation`` in one batch (one
+        round trip), audited as one read decision of the whole list (like the agent lists),
+        never one event per conversation. Fails closed: what Cedar does not allow is left out."""
+        if not conversations:
+            return frozenset()
+        user = caller.user
+        allowed = services.authorizer.allowed_conversations(user, "OwnConversation", conversations)
+        asked = {c.conversation_id for c in conversations}
+        services.audit.emit(
+            "policy.decision",
+            user.user_id,
+            {
+                "action": "OwnConversation",
+                "resource": f"{CONVERSATION_TYPE}::*",
+                "allowed": allowed == asked,
+                "read_only": True,
+                "scope": scope,
+                "visible": len(allowed),
+                "denied": len(asked - allowed),
+            },
+            user,
+        )
+        return allowed
+
     @app.get(HEALTH_PATH)
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -1449,6 +1501,17 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         items = await asyncio.to_thread(
             services.conversations.list_conversations, caller.user.user_id
         )
+        # Read from the caller's partition only (row-level security); Cedar decides as well.
+        owned = await asyncio.to_thread(
+            owned_conversations,
+            caller,
+            [
+                ConversationResource(str(i["conversation_id"]), str(i.get("owner") or ""))
+                for i in items
+            ],
+            "list",
+        )
+        items = [i for i in items if i["conversation_id"] in owned]
         return ConversationList(
             items=[
                 ConversationSummary(
@@ -1472,7 +1535,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         summary = await asyncio.to_thread(services.conversations.summary, user_id, conversation_id)
         if summary is None:
             raise HTTPException(status_code=404, detail="not found")
-        title, agent_id = summary
+        title, agent_id, owner = summary
+        await own_conversation(caller, conversation_id, owner, read_only=True)
         messages = await asyncio.to_thread(
             services.conversations.messages, user_id, conversation_id
         )
@@ -1597,6 +1661,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                 audit=services.audit,
                 limiter=services.limits.limiter("conversations.searches"),
                 default_agent=settings.agent_id,
+                owned=lambda caller, found: owned_conversations(caller, found, "search"),
             ),
             current_user,
             require,
@@ -1958,6 +2023,11 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             else await asyncio.to_thread(repo.conversation, user.user_id, conversation_id)
         )
         existing = None if is_new or record is None else record
+        if existing is not None:
+            # A turn adds to the conversation: only its owner (TM-TW3), as its record says.
+            await own_conversation(
+                caller, conversation_id, existing.owner, read_only=False, context={"turn": turn_id}
+            )
         agent_id = turns.turn_agent(services, existing, body.agent_id)
 
         agent = await asyncio.to_thread(turns.served_agent, services, agent_id)

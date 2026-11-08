@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +26,9 @@ PLATFORM = ("Mango::Platform", "mango")
 # Limit of requests per BatchIsAuthorized call. That operation has no IAM action of its own:
 # the roles allow it with ``verifiedpermissions:IsAuthorized`` (API reference).
 _BATCH_SIZE = 30
+_PARALLEL_BATCHES = 4
+"""At most this many BatchIsAuthorized calls at once for one list of conversations: the
+largest list (100 search results) is decided in one round trip."""
 
 
 @dataclass(frozen=True)
@@ -411,3 +415,54 @@ class Authorizer:
                     allowed.add(str(resource.get("entityId")))
         # Only ids that were asked for count, whatever the response says.
         return frozenset(allowed & {t.ticket_id for t in unique})
+
+    def allowed_conversations(
+        self, user: UserContext, action: str, conversations: Sequence[ConversationResource]
+    ) -> frozenset[str]:
+        """Ids of the conversations ``user`` may ``action`` on (fail closed), for lists: the
+        conversation list and the search results (TM-TW3). Their batches go at once, so a
+        list costs one round trip to Verified Permissions however many batches it takes."""
+        principal: Any = {"entityType": USER_TYPE, "entityId": user.user_id}
+        cedar_action: Any = {"actionType": "Mango::Action", "actionId": action}
+        unique = list({c.conversation_id: c for c in conversations}.values())
+        batches = [unique[i : i + _BATCH_SIZE] for i in range(0, len(unique), _BATCH_SIZE)]
+
+        def decide(batch: list[ConversationResource]) -> set[str]:
+            entities: Any = [self._user_entity(user), *(_conversation_entity(c) for c in batch)]
+            try:
+                resp = self._client.batch_is_authorized(
+                    policyStoreId=self._store,
+                    entities={"entityList": entities},
+                    requests=[
+                        {
+                            "principal": principal,
+                            "action": cedar_action,
+                            "resource": {
+                                "entityType": CONVERSATION_TYPE,
+                                "entityId": c.conversation_id,
+                            },
+                        }
+                        for c in batch
+                    ],
+                )
+            except Exception:
+                logger.exception("batch authorization check failed; denying")
+                return set()
+            allowed: set[str] = set()
+            for result in resp.get("results", []):
+                resource = result.get("request", {}).get("resource", {})
+                if (
+                    result.get("decision") == "ALLOW"
+                    and resource.get("entityType") == CONVERSATION_TYPE
+                ):
+                    allowed.add(str(resource.get("entityId")))
+            return allowed
+
+        if len(batches) <= 1:
+            decided = [decide(b) for b in batches]
+        else:
+            with ThreadPoolExecutor(max_workers=min(len(batches), _PARALLEL_BATCHES)) as pool:
+                decided = list(pool.map(decide, batches))
+        allowed = set().union(*decided)
+        # Only ids that were asked for count, whatever the response says.
+        return frozenset(allowed & {c.conversation_id for c in unique})

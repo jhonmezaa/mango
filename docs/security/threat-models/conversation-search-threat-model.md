@@ -19,6 +19,7 @@ Riesgos dominantes:
 Controles que se construyen:
 
 - **L1 `SearchConversations`** para toda persona de Mango, deny por defecto, auditada como lectura; ninguna entrada nombra a una persona (el cuerpo es `extra="forbid"`).
+- **L1 `OwnConversation`** sobre los resultados (desde el 2026-11-07, siguiente paso de TM-TW3, D121): en lote, con el dueño de la partición leída (`USER#<sub>`); lo que Cedar no permite se quita, y una sola decisión auditada por búsqueda (`scope: "search"`). Segundo control de TM-CS1 además de la sesión limitada a la partición.
 - **Lectura con la sesión de STS de la persona** (`dynamodb:LeadingKeys` = `USER#<sub>`): un error que pidiera otra partición falla en STS. La caché solo se guarda y se devuelve bajo la persona que la leyó.
 - **`POST` con cuerpo JSON:** los términos no viajan en la URL. Auditoría con conteos solamente; logs con el tipo del error, nunca contenido. Búsquedas recientes solo en memoria de la pestaña.
 - **Fragmentos en partes de texto plano** (`{text, hit}`) que la web pinta como texto y `<mark>`; nunca HTML.
@@ -43,7 +44,7 @@ Controles que se construyen:
 ### Data flows and trust boundaries
 
 - **Navegador → CloudFront → ALB → `mango-api`**: HTTPS hasta CloudFront (tramo interno HTTP en PoC, excepción registrada); WAF con límite por IP; la consulta en el cuerpo.
-- **`mango-api` → Verified Permissions**: `SearchConversations` (auditada como lectura).
+- **`mango-api` → Verified Permissions**: `SearchConversations` (auditada como lectura) y, desde el 2026-11-07, `OwnConversation` sobre los resultados, en lote.
 - **`mango-api` → `RateLimits`**: `GetItem` y `PutItem` condicional por persona.
 - **`mango-api` → STS → `Conversations`**: `Query` de `CONV#` y de `MSG#<id>#` con la sesión de la persona.
 - **`mango-api` → Firehose (auditoría)**: `conversation.search` con conteos.
@@ -53,7 +54,7 @@ Controles que se construyen:
 ```mermaid
 flowchart LR
   B["Navegador"] -->|"POST /api/search/conversations"| A["mango-api"]
-  A -->|"SearchConversations"| V["Verified Permissions"]
+  A -->|"SearchConversations, OwnConversation"| V["Verified Permissions"]
   A -->|"conversations.searches"| L["RateLimits"]
   A -->|"AssumeRole + session policy"| S["STS"]
   S -->|"Query CONV# / MSG# de USER#sub"| C["Conversations"]
@@ -103,7 +104,7 @@ flowchart LR
 
 | ID | Amenaza | Activo | Probabilidad | Impacto | Prioridad | Controles |
 |---|---|---|---|---|---|---|
-| TM-CS1 | Leer conversaciones de otra persona | Contenido | Baja | Alta | **Media** | Sin parámetros de persona (`extra="forbid"`); partición desde el token; sesión de STS limitada a `USER#<sub>` (test con un doble que niega otras particiones); caché por `sub` (test) |
+| TM-CS1 | Leer conversaciones de otra persona | Contenido | Baja | Alta | **Media** | Sin parámetros de persona (`extra="forbid"`); partición desde el token; sesión de STS limitada a `USER#<sub>` (test con un doble que niega otras particiones); caché por `sub` (test); desde el 2026-11-07, L1 `OwnConversation` en lote sobre los resultados, con el dueño de la partición leída (test) |
 | TM-CS2 | La consulta o el contenido llegan a logs, auditoría o Web Storage | Lo que se busca, contenido | Media | Media | **Media** | `POST` con cuerpo (los logs del ALB no guardan cuerpos); auditoría con conteos (test que busca los términos en los detalles); log con el tipo del error; recientes en memoria (test y e2e que leen Web Storage) |
 | TM-CS3 | XSS almacenado en un fragmento | Navegador | Baja | Alta | **Media** | Partes de texto plano en la API; React las pinta como texto; CSP `script-src 'self'` y Trusted Types en CloudFront; tests con HTML en título y fragmento |
 | TM-CS4 | Abuso de costo o de CPU | Disponibilidad | Media | Baja | **Baja** | `conversations.searches` 60/min compartido; caché 30 s y 16 entradas; 200 conversaciones, 4.000 mensajes, 4 MiB; 8 términos; respuesta de 100 conversaciones y 20 coincidencias cada una |

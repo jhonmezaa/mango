@@ -99,8 +99,19 @@ class RoleAuthorizer:
     deny_use: bool = False
     decisions: list[tuple[str, str, bool]] = field(default_factory=list)
 
-    def is_allowed(self, user: Any, action: str, _rt: str, _rid: str, _agent: Any = None) -> bool:
-        if action == "ViewApprovals":
+    def is_allowed(
+        self,
+        user: Any,
+        action: str,
+        _rt: str,
+        _rid: str,
+        _agent: Any = None,
+        conversation: Any = None,
+    ) -> bool:
+        if action == "OwnConversation":
+            # conversations-own.cedar: the owner only, not even an administrator.
+            allowed = conversation is not None and conversation.owner == user.user_id
+        elif action == "ViewApprovals":
             allowed = True
         elif action == "ApproveToolCall":
             allowed = user.is_admin or user.role == "finops-central"

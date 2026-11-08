@@ -55,6 +55,9 @@ class ConversationRecord:
     agent_id: str | None
     """Agent the conversation belongs to; ``None`` for conversations stored before agents
     were data (they belong to the release agent)."""
+    owner: str = ""
+    """Whose partition the record was read from (``USER#<sub>``): the owner Cedar is given for
+    ``OwnConversation`` (TM-TW3). Empty for a conversation not stored yet."""
 
 
 @dataclass(frozen=True)
@@ -107,6 +110,16 @@ class SearchCorpus:
     """A cap stopped the read: older conversations, or part of one, were not read."""
     items_read: int
     bytes_read: int
+    owner: str = ""
+    """Whose partition the conversations were read from: their owner for ``OwnConversation``
+    (TM-TW3). Empty when none was read."""
+
+
+def owner_of(item: dict[str, Any]) -> str:
+    """The owner of a stored item: the person of its partition (``USER#<sub>``), as the
+    record says, never the request. Empty when the key is not a person's partition."""
+    pk = item.get("PK", {}).get("S", "")
+    return pk.removeprefix("USER#") if pk.startswith("USER#") else ""
 
 
 def _tool_names(raw: str) -> tuple[str, ...]:
@@ -268,6 +281,7 @@ class ConversationRepository:
                 binding=item.get("session_binding", {}).get("S", ""),
             ),
             agent_id=item.get("agent_id", {}).get("S"),
+            owner=owner_of(item),
         )
 
     def session_state(self, user_id: str, conversation_id: str) -> SessionState | None:
@@ -418,14 +432,15 @@ class ConversationRepository:
                 "title": i.get("title", {}).get("S", ""),
                 "updated_at": i.get("updated_at", {}).get("S", ""),
                 "agent_id": i.get("agent_id", {}).get("S"),
+                "owner": owner_of(i),
             }
             for i in resp.get("Items", [])
         ]
         items.sort(key=lambda c: c["updated_at"] or "", reverse=True)
         return items[:_MAX_LIST]
 
-    def summary(self, user_id: str, conversation_id: str) -> tuple[str, str | None] | None:
-        """``(title, agent_id)`` of a conversation, or ``None`` if it does not exist."""
+    def summary(self, user_id: str, conversation_id: str) -> tuple[str, str | None, str] | None:
+        """``(title, agent_id, owner)`` of a conversation, or ``None`` if it does not exist."""
         item = (
             self._clients(user_id)
             .get_item(
@@ -436,7 +451,7 @@ class ConversationRepository:
         )
         if item is None:
             return None
-        return item.get("title", {}).get("S", ""), item.get("agent_id", {}).get("S")
+        return item.get("title", {}).get("S", ""), item.get("agent_id", {}).get("S"), owner_of(item)
 
     def messages(self, user_id: str, conversation_id: str) -> list[StoredMessage]:
         out: list[StoredMessage] = []
@@ -494,7 +509,7 @@ class ConversationRepository:
             "TableName": self._table,
             "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
             "ExpressionAttributeValues": {":pk": pk, ":prefix": {"S": "CONV#"}},
-            "ProjectionExpression": "SK, #t, updated_at, agent_id",
+            "ProjectionExpression": "PK, SK, #t, updated_at, agent_id",
             "ExpressionAttributeNames": {"#t": "title"},
         }
         while True:
@@ -571,5 +586,9 @@ class ConversationRepository:
                 )
             )
         return SearchCorpus(
-            conversations=tuple(out), capped=capped, items_read=items, bytes_read=size
+            conversations=tuple(out),
+            capped=capped,
+            items_read=items,
+            bytes_read=size,
+            owner=next((o for o in map(owner_of, listed) if o), ""),
         )

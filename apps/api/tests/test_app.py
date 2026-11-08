@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from mango_api import app as app_module
 from mango_api.agents_store import AgentVersion
 from mango_api.audit import AuditPage
+from mango_api.authz import ConversationResource
 from mango_api.budget import BudgetExceededError
 from mango_api.conversations import ConversationRecord, StoredMessage
 from mango_api.model_catalog import ModelCatalog, ModelCatalogUnavailableError, ModelEntry
@@ -192,6 +193,12 @@ class FakeAuthorizer:
         self.resources.append(agent if agent is not None else next(iter(other.values()), None))
         return self.allow
 
+    def allowed_conversations(self, user: Any, _action: str, conversations: Any) -> frozenset[str]:
+        # As the policy: the owner only (conversations-own.cedar).
+        return frozenset(
+            c.conversation_id for c in conversations if self.allow and c.owner == user.user_id
+        )
+
 
 @dataclass
 class FakePublished:
@@ -318,7 +325,7 @@ class FakeConversations:
         if session is None:
             return None
         # The seeded conversation ("a" * 32) predates agents as data: it has no agent.
-        return ConversationRecord(session, self.agents.get((user, cid)))
+        return ConversationRecord(session, self.agents.get((user, cid)), owner=user)
 
     def begin_session(
         self,
@@ -373,17 +380,29 @@ class FakeConversations:
 
     def list_conversations(self, user: str) -> list[dict[str, str | None]]:
         return [
-            {"conversation_id": "a" * 32, "title": "t", "updated_at": "now", "agent_id": None},
+            {
+                "conversation_id": "a" * 32,
+                "title": "t",
+                "updated_at": "now",
+                "agent_id": None,
+                "owner": user,
+            },
             *(
-                {"conversation_id": cid, "title": "t", "updated_at": "now", "agent_id": agent}
+                {
+                    "conversation_id": cid,
+                    "title": "t",
+                    "updated_at": "now",
+                    "agent_id": agent,
+                    "owner": owner,
+                }
                 for (owner, cid), agent in self.agents.items()
                 if owner == user
             ),
         ]
 
-    def summary(self, user: str, cid: str) -> tuple[str, str | None] | None:
+    def summary(self, user: str, cid: str) -> tuple[str, str | None, str] | None:
         if cid == "a" * 32 or (user, cid) in self.agents:
-            return "t", self.agents.get((user, cid))
+            return "t", self.agents.get((user, cid)), user
         return None
 
 
@@ -1393,3 +1412,94 @@ def test_the_sources_of_a_knowledge_search_reach_the_chat_and_stay_with_the_answ
     detail = h.client().get(f"/api/conversations/{CONVERSATION}", headers=_auth()).json()
     assert detail["messages"][-1]["citations"] == [source]
     assert detail["messages"][0]["citations"] == []
+
+
+# --- OwnConversation on the conversation routes (TM-TW3) ---------------------------------
+
+
+def _own_decisions(h: Harness) -> list[dict[str, Any]]:
+    return [
+        d
+        for e, d in zip(h.audit.events, h.audit.details, strict=True)
+        if e == "policy.decision" and d.get("action") == "OwnConversation"
+    ]
+
+
+def test_the_conversation_list_is_decided_in_one_batch_and_audited_once(h: Harness) -> None:
+    client = h.client()
+    listed = client.get("/api/conversations", headers=_auth()).json()["items"]
+    assert [i["conversation_id"] for i in listed] == ["a" * 32]
+    assert _own_decisions(h) == [
+        {
+            "action": "OwnConversation",
+            "resource": "Mango::Conversation::*",
+            "allowed": True,
+            "read_only": True,
+            "scope": "list",
+            "visible": 1,
+            "denied": 0,
+        }
+    ]
+    # What Cedar does not allow is left out (fail closed), and the denial is in the log.
+    h.authorizer.allow = False
+    assert client.get("/api/conversations", headers=_auth()).json()["items"] == []
+    denied = _own_decisions(h)[-1]
+    assert (denied["allowed"], denied["visible"], denied["denied"]) == (False, 0, 1)
+
+
+def test_a_denied_conversation_answers_the_same_404_as_a_missing_one(h: Harness) -> None:
+    client = h.client()
+    assert client.get("/api/conversations/" + "a" * 32, headers=_auth()).status_code == 200
+    allowed = _own_decisions(h)[-1]
+    assert allowed["resource"] == "Mango::Conversation::" + "a" * 32
+    assert (allowed["allowed"], allowed["read_only"]) == (True, True)
+    assert allowed["conversation_id"] == "a" * 32
+    assert h.authorizer.resources[-1] == ConversationResource("a" * 32, "user-1")
+    missing = client.get("/api/conversations/" + "b" * 32, headers=_auth())
+    h.authorizer.allow = False
+    denied = client.get("/api/conversations/" + "a" * 32, headers=_auth())
+    assert denied.status_code == missing.status_code == 404
+    assert denied.json() == missing.json()
+    assert _own_decisions(h)[-1]["allowed"] is False
+
+
+def test_a_turn_in_an_existing_conversation_needs_its_owner(h: Harness) -> None:
+    client = h.client()
+    client.post("/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": "a" * 32})
+    (decision,) = _own_decisions(h)
+    assert decision["read_only"] is False
+    assert decision["conversation_id"] == "a" * 32
+    assert len(decision["turn"]) == 32
+    # A new conversation has nobody else's to protect: no decision on it.
+    client.post("/api/chat", headers=_auth(), json={"message": "hola"})
+    assert len(_own_decisions(h)) == 1
+    # Denied: the same 404 as a conversation that does not exist, and nothing runs.
+    h.authorizer.allow = False
+    calls = len(h.agentcore.requests)
+    denied = client.post(
+        "/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": "a" * 32}
+    )
+    assert denied.status_code == 404
+    assert denied.json() == {"error": {"code": "not_found", "message": "not found"}}
+    assert len(h.agentcore.requests) == calls
+
+
+def test_every_conversation_route_decides_own_conversation(h: Harness) -> None:
+    # A new route that reads or changes a conversation must be added here once it decides
+    # OwnConversation (TM-TW3): this list is the routes that do.
+    covered = {
+        ("GET", "/api/conversations"),
+        ("GET", "/api/conversations/{conversation_id}"),
+        ("POST", "/api/search/conversations"),  # D103
+        ("GET", "/api/chat/turns/{turn_id}/stream"),
+        ("POST", "/api/chat/turns/{turn_id}/cancel"),
+    }
+    # The OpenAPI document: it has the routes of the included routers too.
+    paths = h.client().app.app.openapi()["paths"]  # type: ignore[attr-defined]
+    routes = {
+        (method.upper(), path)
+        for path, operations in paths.items()
+        if "conversation" in path or path.startswith("/api/chat/turns/")
+        for method in operations
+    }
+    assert routes == covered
