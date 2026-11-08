@@ -765,6 +765,8 @@ describe("provisioner function and state machine", () => {
     expect(s["HarnessReady?"].Choices[0].Next).toBe("PointLive");
     expect(s.PointLive.Next).toBe("WaitLive");
     expect(s["LiveReady?"].Default).toBe("WaitLive");
+    // 60 checks (MAX_WAIT_ATTEMPTS) of 10 s: AgentCore can take minutes to move `live`.
+    expect(s.WaitLive.Seconds).toBe(10);
     expect(s["LiveReady?"].Choices[0].Next).toBe("GovernLogs");
     expect(s.GovernLogs.Next).toBe("Publish");
     expect(s.Publish.Next).toBe("Published");

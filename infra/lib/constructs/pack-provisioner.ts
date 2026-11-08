@@ -14,6 +14,7 @@ import { logsKeyOf } from "../logs.js";
 import { mangoName, packNames, roleNames } from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
 import { AgentPlatform } from "./agent-platform.js";
+import { LIVE_WAIT_SECONDS } from "./live-wait.js";
 import { NO_PACK_NETWORK, PackNetworkRef, provisionerSetting } from "./pack-network.js";
 import { PACK_DATA_ACTIONS, PackPlatform } from "./pack-platform.js";
 import { PythonFunction } from "./python-function.js";
@@ -649,7 +650,7 @@ export class PackProvisioner extends Construct {
     );
     const governLogs = forward("GovernLogs", "govern_logs").next(target);
     const live = forward("PointLive", "point_live").next(
-      waitFor("Live", forward("CheckLive", "check_live"), 3, governLogs),
+      waitFor("Live", forward("CheckLive", "check_live"), LIVE_WAIT_SECONDS, governLogs),
     );
     // Nothing reaches the new runtime version until it served exactly the signed tools.
     const verifyTools = forward("VerifyTools", "verify_tools").next(live);

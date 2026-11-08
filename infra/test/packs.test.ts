@@ -590,6 +590,11 @@ describe("pack provisioner function and state machine", () => {
     ]);
   });
 
+  it("waits for the live endpoint long enough for AgentCore to move it", () => {
+    // 60 checks (MAX_WAIT_ATTEMPTS) of 10 s: about 10 min, inside the 40 min timeout.
+    expect(states.WaitLive.Seconds).toBe(10);
+  });
+
   it("compensates any failed step of an installation, and never undoes a removal", () => {
     for (const [name, state] of Object.entries(states)) {
       if (state.Type !== "Task") continue;

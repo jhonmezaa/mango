@@ -17,6 +17,7 @@ import { agentNames, mangoName, roleNames } from "../names.js";
 import { acknowledge, REASONS } from "../nag.js";
 import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "./agent-platform.js";
 import { AGENTS_PUBLISHED_PARTITION, MODELS_PARTITION } from "./governance.js";
+import { LIVE_WAIT_SECONDS } from "./live-wait.js";
 import { PACK_INSTALLED_PARTITION } from "./pack-provisioner.js";
 import { EvalsCapture } from "./evals.js";
 import { PLAYGROUND_PARTITION } from "./playground.js";
@@ -709,7 +710,7 @@ export class Provisioner extends Construct {
     const publish = forward("Publish", "publish");
 
     const waitHarness = new sfn.Wait(this, "WaitHarness", { time: sfn.WaitTime.duration(Duration.seconds(5)) });
-    const waitLive = new sfn.Wait(this, "WaitLive", { time: sfn.WaitTime.duration(Duration.seconds(3)) });
+    const waitLive = new sfn.Wait(this, "WaitLive", { time: sfn.WaitTime.duration(Duration.seconds(LIVE_WAIT_SECONDS)) });
     const isReady = sfn.Condition.booleanEquals("$.ready", true);
 
     const definition = load.next(
