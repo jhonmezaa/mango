@@ -296,8 +296,10 @@ describe("mango-api on two tasks with shared rate limits (D70)", () => {
 
   it("lets mango-api read and put its own counters, and nothing else of that table", () => {
     const onTable = statements.filter((s) => JSON.stringify(s.Resource).includes(rateLimitsId!));
-    // mango-api's, and the knowledge search's, which only keeps its own limit (D88 (36)).
-    expect(onTable).toHaveLength(2);
+    // mango-api's, the knowledge search's, which only keeps its own limit (D88 (36)), and the
+    // turn worker's, the same as mango-api's: the gate of the tickets tool counts there (D112).
+    expect(onTable).toHaveLength(3);
+    expect(onTable.filter((s) => s.Sid === "RateLimitsTable")).toHaveLength(2);
     expect(onTable.find((s) => s.Sid === "LimitPerPerson")?.Condition).toEqual({
       "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#kb.retrieve#*"] },
     });
@@ -310,13 +312,14 @@ describe("mango-api on two tasks with shared rate limits (D70)", () => {
     });
   });
 
-  it("gives the table to the task role of mango-api and to the knowledge search only", () => {
+  it("gives the table to the task roles of mango-api and the turn worker and to the knowledge search only", () => {
     const policies = Object.entries(template.findResources("AWS::IAM::Policy")).filter(([, p]) =>
       JSON.stringify(p.Properties.PolicyDocument).includes(rateLimitsId!),
     );
     expect(policies.map(([id]) => id).sort()).toEqual([
       expect.stringMatching(/^ApiTaskRoleDefaultPolicy/),
       expect.stringMatching(/^KnowledgeRetrievePolicy/),
+      expect.stringMatching(/^TurnWorkerTaskRoleDefaultPolicy/),
     ]);
   });
 

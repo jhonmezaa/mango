@@ -231,8 +231,8 @@ describe("the service mango-turn-worker (D121 (3))", () => {
     expect(service.EnableExecuteCommand).toBe(false);
   });
 
-  it("stays at zero tasks until its entry point is in the image (R2 sets it to 2)", () => {
-    expect(TURN_WORKER_TASKS).toBe(0);
+  it("runs two tasks now that its entry point is in the image (R2)", () => {
+    expect(TURN_WORKER_TASKS).toBe(2);
     expect(service.DesiredCount).toBe(TURN_WORKER_TASKS);
   });
 
@@ -322,6 +322,14 @@ describe("the role of the turn worker", () => {
     for (const sid of ["ReadSettings", "ReadAgents"]) {
       expect(list(bySid(statements, sid).Action).sort()).toEqual(["dynamodb:BatchGetItem", "dynamodb:GetItem", "dynamodb:Query"]);
     }
+  });
+
+  it("reads a ticket and counts the person's limits for the gate of the tickets tool, nothing more", () => {
+    // D112: a call of the tickets tool is decided when its request is created, in the worker too.
+    expect(bySid(statements, "TicketToolGate").Action).toBe("dynamodb:GetItem");
+    const limits = bySid(statements, "RateLimitsTable");
+    expect(list(limits.Action).sort()).toEqual(["dynamodb:GetItem", "dynamodb:PutItem"]);
+    expect(limits.Condition).toEqual({ "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#*"] } });
   });
 
   it("is only granted by the identity policies of this stack", () => {

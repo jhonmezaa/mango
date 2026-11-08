@@ -272,6 +272,27 @@ exports[`the role of the turn worker > is only granted by the identity policies 
  },
  {
   "Action": [
+   "dynamodb:GetItem",
+   "dynamodb:PutItem"
+  ],
+  "Condition": {
+   "ForAllValues:StringLike": {
+    "dynamodb:LeadingKeys": [
+     "LIMIT#*"
+    ]
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceRateLimitsC5EBFEB2",
+    "Arn"
+   ]
+  },
+  "Sid": "RateLimitsTable"
+ },
+ {
+  "Action": [
    "dynamodb:BatchGetItem",
    "dynamodb:GetItem",
    "dynamodb:Query"
@@ -412,6 +433,19 @@ exports[`the role of the turn worker > is only granted by the identity policies 
    ]
   },
   "Sid": "TablesKey"
+ },
+ {
+  "Action": [
+   "dynamodb:GetItem"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "TicketsE9920DA6",
+    "Arn"
+   ]
+  },
+  "Sid": "TicketToolGate"
  }
 ]"
 `;

@@ -26,7 +26,7 @@ import { remoteMcpKeyAlias } from "./remote-mcp-api.js";
  * parameter: an update keeps the previous value of a parameter, and an installation would be
  * left enqueueing turns nobody reads.
  */
-export const TURN_WORKER_TASKS = 0;
+export const TURN_WORKER_TASKS = 2;
 /** What the worker runs: the image of mango-api with another entry point (D121 (3)). */
 export const TURN_WORKER_COMMAND = ["python", "-m", "mango_api.turn_worker"];
 /**
@@ -94,6 +94,7 @@ export const TURN_WORKER_ENVIRONMENT = [
   "AGENT_SESSION_IDLE_SECONDS",
   "AGENT_SESSION_MAX_SECONDS",
   "APPROVALS_TABLE",
+  "TICKETS_TABLE",
   "SKILLS_TABLE",
   "SKILLS_BUCKET",
   "KNOWLEDGE_EMBEDDING_PRICE",
@@ -309,6 +310,10 @@ export interface TurnResources {
   readonly settings: dynamodb.ITable;
   readonly agents: dynamodb.ITable;
   readonly approvals: dynamodb.ITable;
+  /** Read by the gate of the tickets tool when a call becomes a request (D112). */
+  readonly tickets: dynamodb.ITable;
+  /** The shared counters of that gate (D70). */
+  readonly rateLimits: dynamodb.ITable;
   readonly skills: dynamodb.ITable;
   /** The secret the invocation is signed with (X-Mango-Invocation), and the key it is encrypted with. */
   readonly invocationKey: secretsmanager.ISecret;
@@ -400,6 +405,23 @@ export function grantChatTurn(role: iam.Role, turn: TurnResources): void {
         "ForAllValues:StringEquals": { "dynamodb:Attributes": ["PK", "SK", "notified"] },
         StringEqualsIfExists: { "dynamodb:ReturnValues": "NONE" },
       },
+    }),
+  );
+  // A call of the tickets tool is decided when its request is created, as in mango-api (D112):
+  // the ticket is read and the request is counted against the shared limits of the person.
+  add(
+    new iam.PolicyStatement({
+      sid: "TicketToolGate",
+      actions: ["dynamodb:GetItem"],
+      resources: [turn.tickets.tableArn],
+    }),
+  );
+  add(
+    new iam.PolicyStatement({
+      sid: "RateLimitsTable",
+      actions: ["dynamodb:GetItem", "dynamodb:PutItem"],
+      resources: [turn.rateLimits.tableArn],
+      conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#*"] } },
     }),
   );
   add(

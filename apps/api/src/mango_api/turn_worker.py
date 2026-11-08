@@ -49,10 +49,10 @@ ECS_AGENT_HOST = "169.254.170.2"
 HTTP_TIMEOUT_SECONDS = 5
 HTTP_OK = 200
 WORKER_DEFAULTS = {
-    # What only the HTTP routes of mango-api need: the worker serves none.
+    # What only the HTTP routes of mango-api need: the worker serves none. Its environment
+    # (TURN_WORKER_ENVIRONMENT in infra) brings them anyway; these only keep it starting.
     "ALLOWED_HOSTS": "",
     "ADMIN_PROBE_FUNCTION": "",
-    "RATE_LIMITS_TABLE": "",
     "COGNITO_USER_POOL_ID": "",
 }
 
@@ -249,12 +249,14 @@ def worker_settings(env: Mapping[str, str] | None = None) -> Settings:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     # Imported here: building the services of mango-api pulls its whole app.
-    from mango_api.app import build_services  # noqa: PLC0415
+    from mango_api.app import build_services, wire_ticket_gate  # noqa: PLC0415
 
     settings = worker_settings()
     if not settings.chat_turns_queue_url:
         raise SystemExit("MANGO_CHAT_TURNS_QUEUE_URL is not set")
     services = build_services(settings)
+    # What create_app adds to the services the turn uses: the gate of the tickets tool.
+    wire_ticket_gate(services)
     chat_turns = services.chat_turns
     if chat_turns is None:
         raise SystemExit("the chat turns are not configured")

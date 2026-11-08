@@ -734,6 +734,8 @@ export class CoreStack extends Stack {
         settings: governance.settings,
         agents: governance.agents,
         approvals: writeTools.approvals,
+        tickets: tickets.table,
+        rateLimits: governance.rateLimits,
         skills: skills.table,
         invocationKey: tools.invocationKey,
         configKey: tools.configKey,

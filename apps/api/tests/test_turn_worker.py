@@ -7,11 +7,14 @@ import json
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from mango_api import turn_worker
+from mango_api.app import wire_ticket_gate
+from mango_api.tickets import TicketToolGate
 from mango_api.turn_worker import Holds, TaskProtection, TurnWorker, worker_settings
 
 AGENT = "http://169.254.170.2/api/task-1"
@@ -253,8 +256,20 @@ def test_the_worker_needs_only_the_settings_of_the_turn() -> None:
         "AGENTS_TABLE": "agents",
         "GUARDRAIL_ID": "gr",
         "GUARDRAIL_VERSION": "1",
+        "RATE_LIMITS_TABLE": "rate-limits",
         "MANGO_CHAT_TURNS_QUEUE_URL": "https://sqs.us-east-1.amazonaws.com/111122223333/q",
     }
     settings = worker_settings(env)
     assert settings.chat_turns_queue_url.endswith("/q")
     assert settings.allowed_hosts == frozenset()
+
+
+def test_the_worker_decides_calls_of_the_tickets_tool_as_mango_api() -> None:
+    """The gate of the tickets tool counts a request against the person's limits only when it is
+    created (D112): without it in the worker, the limit would not apply to the chat."""
+    services = SimpleNamespace(approvals=SimpleNamespace(gate=None), tickets=object())
+    wire_ticket_gate(services)  # type: ignore[arg-type]
+    assert isinstance(services.approvals.gate, TicketToolGate)
+    untouched = SimpleNamespace(approvals=SimpleNamespace(gate=None), tickets=None)
+    wire_ticket_gate(untouched)  # type: ignore[arg-type]
+    assert untouched.approvals.gate is None

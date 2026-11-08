@@ -485,6 +485,13 @@ def _presign_for(role_arn: str, region: str) -> PresignSessions:
     return PresignSessions(boto3.client("sts", region_name=region), role_arn, region)
 
 
+def wire_ticket_gate(services: Services) -> None:
+    """Calls of the tickets tool are decided when their request is created (D112): in
+    mango-api and in the turn worker alike, with the shared limits of the person (D70)."""
+    if services.approvals is not None and services.tickets is not None:
+        services.approvals.gate = TicketToolGate(services.tickets, _ticket_decider(services))
+
+
 def _ticket_decider(
     services: Services,
 ) -> Callable[[UserContext, str, str, str, TicketResource | None], bool]:
@@ -1888,8 +1895,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             tickets_router(services.tickets, current_user, require, tickets_allowed, ticket_allowed)
         )
 
-        if services.approvals is not None:
-            services.approvals.gate = TicketToolGate(services.tickets, _ticket_decider(services))
+        wire_ticket_gate(services)
 
     if services.knowledge is not None:
 
