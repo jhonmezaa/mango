@@ -898,6 +898,7 @@ def build_services(settings: Settings) -> Services:
         published=published,
         limits=limits,
     )
+    bedrock = boto3.client("bedrock-runtime", region_name=region)
     people_deps = PeopleDeps(
         people=CognitoPeople(cognito, settings.cognito_user_pool_id),
         store=MemberChangeStore(dynamodb, settings.settings_table),
@@ -954,7 +955,7 @@ def build_services(settings: Settings) -> Services:
         conversations=ConversationRepository(rls.for_user, settings.conversations_table),
         audit=audit,
         agentcore=harness.TurnClients(region),
-        bedrock=boto3.client("bedrock-runtime", region_name=region),
+        bedrock=bedrock,
         settings_store=settings_store,
         budget_limits=budget_limits,
         probe=AdminProbe(boto3.client("lambda", region_name=region), settings.admin_probe_function),
@@ -1140,6 +1141,10 @@ def build_services(settings: Settings) -> Services:
             checks=limits.limiter("chat.upload_checks"),
             downloads=limits.limiter("chat.file_downloads"),
             contents=limits.limiter("chat.file_contents"),
+            # The texts of a chart or a table of a cell, before they are shown (TM-CI5, D118).
+            guardrail=code_blocks.Guardrail(
+                bedrock, settings.guardrail_id, settings.guardrail_version
+            ),
         ),
         knowledge=(
             KnowledgeDeps(

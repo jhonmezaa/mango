@@ -14,7 +14,11 @@ const runId = (): string => randomBytes(16).toString('hex');
  * - block: «recortad» (output cut), «excepción» (error), «tope» (300 s), «bloquea» (guardrail);
  * - figure: «figura lenta» (loads slowly), «figura falla» (first load fails, «Reintentar» works);
  * - file: «revisando» (a long scan), «malware» (blocked), «ya no está» (gone),
- *   «descarga falla» (download error), «60 descargas» (the hourly limit).
+ *   «descarga falla» (download error), «60 descargas» (the hourly limit);
+ * - chart and table (D118, G1 and T1): «línea», «tarta», «dispersión» (the chart's type; bars
+ *   otherwise), «gráfica inválida» (cannot be drawn), «gráfica retenida» (the guardrail),
+ *   «gráfica falla» (the first read fails, «Reintentar» works), «gráfica en el texto» (a
+ *   ```` ```mango-chart ```` block in the answer instead of a chart file).
  */
 
 export interface DemoCell {
@@ -28,7 +32,14 @@ export interface DemoCell {
   stderr_truncated: boolean;
   exception: { name: string; message: string } | null;
   seconds: number | null;
-  files: { file_id: string; name: string; kind: string; size_bytes: number; image: boolean }[];
+  files: {
+    file_id: string;
+    name: string;
+    kind: string;
+    role: 'file' | 'figure' | 'chart' | 'table';
+    size_bytes: number;
+    image: boolean;
+  }[];
 }
 
 interface DemoFile {
@@ -43,6 +54,8 @@ interface DemoFile {
   /** Image loads that still fail («figura falla»), or ms they take («figura lenta»). */
   failLoads: number;
   slowMs: number;
+  /** A chart or a table: what `…/output` answers (`mango_api.chat_outputs`). */
+  output?: { status: number; body: unknown } | undefined;
 }
 
 const files = new Map<string, DemoFile>();
@@ -86,6 +99,110 @@ const CELL_2 = [
   "cuentas.to_excel('/mnt/data/detalle_costos.xlsx')",
 ].join('\n');
 
+/** Design round 40 `CR_MONTHS` and `crDemoSpec`: the specs as the API returns them. */
+const MONTHS = (
+  [
+    ['may', 41200, 9800, 12800],
+    ['jun', 42900, 9650, 13100],
+    ['jul', 44100, 9900, 12950],
+    ['ago', 51800, 10100, 13300],
+    ['sep', 55600, 10050, 13400],
+    ['oct', 58300, 10200, 13600],
+  ] as const
+).map(([mes, EC2, RDS, S3]) => ({ mes, EC2, RDS, S3 }));
+
+const series = (key: string, label: string) => ({
+  key,
+  label,
+  valueFormat: 'compact',
+  valuePrefix: '',
+  valueSuffix: '',
+  stack: null,
+});
+
+export function demoChart(message: string): Record<string, unknown> {
+  const meta = (title: string, subtitle: string) => ({ title, subtitle, footer: null });
+  const base = { layout: 'horizontal', valueFormat: 'compact' };
+  if (/tarta/i.test(message)) {
+    return {
+      ...base,
+      chartType: 'pie',
+      xKey: 'servicio',
+      series: [series('costo', 'Costo')],
+      axes: { x: { label: null }, y: { label: null } },
+      meta: meta('Reparto del costo de octubre', 'oct 2026 · USD'),
+      data: [
+        { servicio: 'EC2', costo: 58300 },
+        { servicio: 'S3', costo: 13600 },
+        { servicio: 'RDS', costo: 10200 },
+        { servicio: 'Otros', costo: 6400 },
+      ],
+    };
+  }
+  if (/dispersi[oó]n/i.test(message)) {
+    return {
+      ...base,
+      chartType: 'scatter',
+      xKey: 'cpu',
+      series: [series('costo', 'Instancias EC2')],
+      axes: { x: { label: 'CPU media (%)' }, y: { label: 'USD / mes' } },
+      meta: meta('Uso contra costo por instancia', '42 instancias · oct 2026'),
+      data: Array.from({ length: 42 }, (_, i) => ({
+        cpu: Math.round(4 + ((i * 37) % 88)),
+        costo: Math.round(120 + ((i * 53) % 17) * 95 + ((i * 7) % 5) * 40),
+      })),
+    };
+  }
+  return {
+    ...base,
+    chartType: /l[ií]nea/i.test(message) ? 'line' : 'bar',
+    xKey: 'mes',
+    series: [series('EC2', 'EC2'), series('RDS', 'RDS'), series('S3', 'S3')],
+    axes: { x: { label: null }, y: { label: 'USD' } },
+    meta: meta('Costo mensual por servicio', 'may – oct 2026 · USD'),
+    data: MONTHS,
+  };
+}
+
+/** Design round 40 `CR_TABLE`: 1.248 rows by account, service and region; the API sends 200. */
+function demoTable(): Record<string, unknown> {
+  const services = ['EC2', 'S3', 'RDS', 'Lambda', 'CloudFront', 'DynamoDB'];
+  const regions = ['us-east-1', 'us-west-2', 'eu-west-1', 'sa-east-1'];
+  const rows = Array.from({ length: 1248 }, (_, i) => [
+    `1111111111${String(11 + (i % 9))}`,
+    services[(i * 7) % 6] ?? 'EC2',
+    regions[(i * 3) % 4] ?? 'us-east-1',
+    ((i * 7919) % 9000) + 40,
+  ]).sort((a, b) => Number(b[3]) - Number(a[3]));
+  return {
+    name: 'costo_por_cuenta',
+    columns: ['cuenta', 'servicio', 'region', 'costo_usd'],
+    rows: rows.slice(0, 200),
+    total_rows: rows.length,
+    csv: 'costo_por_cuenta.csv',
+  };
+}
+
+function outputOf(name: string, message: string): DemoFile['output'] {
+  if (name.endsWith('.table.json')) {
+    return { status: 200, body: { kind: 'table', chart: null, table: demoTable() } };
+  }
+  if (!name.endsWith('.chart.json')) return undefined;
+  if (/gr[aá]fica inv[aá]lida/i.test(message)) {
+    return {
+      status: 422,
+      body: { error: { code: 'invalid_output', message: 'this chart or table cannot be drawn' } },
+    };
+  }
+  if (/gr[aá]fica retenida/i.test(message)) {
+    return {
+      status: 409,
+      body: { error: { code: 'output_withheld', message: 'this chart or table is not shown' } },
+    };
+  }
+  return { status: 200, body: { kind: 'chart', chart: demoChart(message), table: null } };
+}
+
 export type CodeVariant = 'ok' | 'trunc' | 'error' | 'timeout' | 'blocked';
 
 export function codeVariant(message: string): CodeVariant | null {
@@ -118,8 +235,13 @@ function addFile(conversationId: string, name: string, size: number, message: st
       : /60 descargas/i.test(message)
         ? 'rate'
         : 'ok',
-    failLoads: image && /figura falla/i.test(message) ? 1 : 0,
+    failLoads:
+      (image && /figura falla/i.test(message)) ||
+      (name.endsWith('.chart.json') && /gr[aá]fica falla/i.test(message))
+        ? 1
+        : 0,
     slowMs: image && /figura lenta/i.test(message) ? 6000 : 400,
+    output: outputOf(name, message),
   });
   return id;
 }
@@ -189,15 +311,25 @@ export function demoCells(
     file_id: addFile(conversationId, name, size, message),
     name,
     kind: (name.split('.').pop() ?? '').toLowerCase(),
+    role: name.endsWith('.chart.json')
+      ? ('chart' as const)
+      : name.endsWith('.table.json')
+        ? ('table' as const)
+        : name.endsWith('.png')
+          ? ('figure' as const)
+          : ('file' as const),
     size_bytes: size,
     image: name.endsWith('.png'),
   });
+  const inText = /gr[aá]fica en el texto/i.test(message);
   return [
     first,
     {
       ...base,
       files: [
         made('costo_por_servicio.png', FIGURE.length),
+        ...(inText ? [] : [made('costo_mensual.chart.json', 2_300)]),
+        made('costo_por_cuenta.table.json', 41_000),
         made('costo_por_cuenta.csv', 88_400),
         made('detalle_costos.xlsx', 214_000),
       ],
@@ -206,7 +338,22 @@ export function demoCells(
 }
 
 /** The answer of the demo, after its cells (design round 40). */
-export function demoAnswer(variant: CodeVariant): string {
+export function demoAnswer(variant: CodeVariant, message = ''): string {
+  if (variant === 'ok' && /gr[aá]fica en el texto/i.test(message)) {
+    return [
+      'Revisé los últimos seis meses del CUR. **EC2** explica casi todo el aumento desde agosto.',
+      '',
+      '```mango-chart',
+      JSON.stringify({
+        chartType: 'line',
+        xKey: 'mes',
+        series: [{ key: 'EC2', label: 'EC2' }],
+        meta: { title: 'Costo de EC2', subtitle: 'may – oct 2026 · USD' },
+        data: MONTHS.map(({ mes, EC2 }) => ({ mes, EC2 })),
+      }),
+      '```',
+    ].join('\n');
+  }
   if (variant === 'timeout') {
     return 'La segunda celda pasó su tope de 300 s y se detuvo, así que no llegué a generar la tabla ni el Excel. Con la primera ya se ve que **EC2** explica casi todo el aumento desde agosto. Puedo repetirlo con menos meses.';
   }
@@ -245,7 +392,9 @@ export const handleCodeFiles: ApiHandler = async (
   path,
 ) => {
   const match =
-    /^\/conversations\/([0-9a-f]{32})\/files\/([0-9A-Z]{26})(\/download|\/content)?$/.exec(path);
+    /^\/conversations\/([0-9a-f]{32})\/files\/([0-9A-Z]{26})(\/download|\/content|\/output)?$/.exec(
+      path,
+    );
   if (!match) return false;
   const [, conversationId = '', id = '', action] = match;
   const file = fileOf(res, conversationId, id);
@@ -275,6 +424,20 @@ export const handleCodeFiles: ApiHandler = async (
       return true;
     }
     sendJson(res, 200, { url: `${originOf(req)}/mock-files/${id}`, file: file.name });
+    return true;
+  }
+  if (action === '/output' && req.method === 'GET') {
+    await sleep(500);
+    if (!file.output) {
+      sendError(res, 415, 'not_an_output', 'only the charts and tables of a cell are drawn');
+      return true;
+    }
+    if (file.failLoads > 0) {
+      file.failLoads -= 1;
+      sendError(res, 503, 'storage_unavailable', 'please try again');
+      return true;
+    }
+    sendJson(res, file.output.status, file.output.body);
     return true;
   }
   if (action === '/content' && req.method === 'GET') {

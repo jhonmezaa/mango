@@ -10,7 +10,8 @@ sandbox anyway.
 
 What the model may call:
 
-* ``display_table(df, name)``: writes ``<name>.table.json`` for the chat's grid (D118 (5)).
+* ``display_table(df, name)``: writes ``<name>.table.json`` for the chat's grid and
+  ``<name>.csv`` with every row, the file of the table's card (D118 (5)).
 * ``display_chart(spec, name)``: writes ``<name>.chart.json``, a closed spec the server
   validates (D118 (1)).
 
@@ -20,6 +21,7 @@ Everything a cell prints is untrusted: the connector treats this module's report
 from __future__ import annotations
 
 import ast
+import csv
 import json
 import os
 import re
@@ -76,22 +78,65 @@ def _write(name: str, suffix: str, payload: dict[str, Any]) -> str:
     return path
 
 
+_FORMULA = ("=", "+", "-", "@", "\t", "\r")
+_TABLE_CSVS: set[str] = set()
+"""The CSVs ``display_table`` wrote in this session: only those it may write again."""
+
+
+def _csv_cell(value: Any) -> Any:
+    """A text cell that a spreadsheet would read as a formula gets a ``'`` in front (CSV
+    injection, D118 (4)); numbers stay numbers."""
+    if isinstance(value, str) and value.startswith(_FORMULA):
+        return "'" + value
+    return value
+
+
+def _csv_name(base: str) -> str:
+    """``<base>.csv`` in the working folder, or ``<base>-table.csv`` when a file of that name is
+    there that this module did not write (an attachment, the model's own file)."""
+    for name in (f"{base}.csv", f"{base}-table.csv"):
+        if name in _TABLE_CSVS or not os.path.exists(os.path.join(DATA, name)):
+            return name
+    return f"{base}-table.csv"
+
+
+def _write_csv(name: str, columns: list[str], rows: Any) -> None:
+    with open(os.path.join(DATA, name), "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow([_csv_cell(c) for c in columns])
+        for row in rows:
+            writer.writerow([_csv_cell(v) for v in row])
+    _TABLE_CSVS.add(name)
+
+
 def display_table(df: Any, name: str = "table") -> None:
-    """Show a table in the chat: a pandas DataFrame or a list of dicts, at most 5,000 rows."""
+    """Show a table in the chat: a pandas DataFrame or a list of dicts. The chat shows its first
+    rows (at most 5,000 reach it) and offers every row as ``<name>.csv``."""
     if hasattr(df, "to_dict") and hasattr(df, "columns"):
         columns = [str(c) for c in df.columns]
         total = len(df)
         rows = df.head(MAX_ROWS).to_dict(orient="split")["data"]
+        every = df.itertuples(index=False, name=None)
     else:
-        records = list(df)
-        columns = sorted({str(k) for r in records for k in dict(r)})
+        records = [dict(r) for r in df]
+        columns = sorted({str(k) for r in records for k in r})
         total = len(records)
-        rows = [[dict(r).get(c) for c in columns] for r in records[:MAX_ROWS]]
+        every = [[r.get(c) for c in columns] for r in records]
+        rows = every[:MAX_ROWS]
+    base = _safe_name(name, "table")
+    csv_name = _csv_name(base)
     _write(
-        _safe_name(name, "table"),
+        base,
         ".table.json",
-        {"name": str(name)[:200], "columns": columns, "rows": rows, "total_rows": total},
+        {
+            "name": str(name)[:200],
+            "columns": columns,
+            "rows": rows,
+            "total_rows": total,
+            "csv": csv_name,
+        },
     )
+    _write_csv(csv_name, columns, every)
 
 
 def display_chart(spec: dict[str, Any], name: str | None = None) -> None:

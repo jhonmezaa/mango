@@ -2535,6 +2535,219 @@
         "title": "ChangeListOut",
         "type": "object"
       },
+      "ChartAxesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "$ref": "#/components/schemas/ChartAxisOut"
+          },
+          "y": {
+            "$ref": "#/components/schemas/ChartAxisOut"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "ChartAxesOut",
+        "type": "object"
+      },
+      "ChartAxisOut": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "ChartAxisOut",
+        "type": "object"
+      },
+      "ChartMetaOut": {
+        "additionalProperties": false,
+        "properties": {
+          "footer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Footer"
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ChartMetaOut",
+        "type": "object"
+      },
+      "ChartSeriesOut": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "valueFormat": {
+            "enum": [
+              "compact",
+              "integer",
+              "raw"
+            ],
+            "title": "Valueformat",
+            "type": "string"
+          },
+          "valuePrefix": {
+            "title": "Valueprefix",
+            "type": "string"
+          },
+          "valueSuffix": {
+            "title": "Valuesuffix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "valueFormat",
+          "valuePrefix",
+          "valueSuffix"
+        ],
+        "title": "ChartSeriesOut",
+        "type": "object"
+      },
+      "ChartSpecOut": {
+        "additionalProperties": false,
+        "description": "A chart as the chat draws it (D118 (1)), normalized: every default is filled in.",
+        "properties": {
+          "axes": {
+            "$ref": "#/components/schemas/ChartAxesOut"
+          },
+          "chartType": {
+            "enum": [
+              "bar",
+              "line",
+              "pie",
+              "scatter"
+            ],
+            "title": "Charttype",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "layout": {
+            "enum": [
+              "horizontal",
+              "vertical"
+            ],
+            "title": "Layout",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ChartMetaOut"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/ChartSeriesOut"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "valueFormat": {
+            "enum": [
+              "compact",
+              "integer",
+              "raw"
+            ],
+            "title": "Valueformat",
+            "type": "string"
+          },
+          "xKey": {
+            "title": "Xkey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chartType",
+          "data",
+          "xKey",
+          "series",
+          "layout",
+          "valueFormat",
+          "axes",
+          "meta"
+        ],
+        "title": "ChartSpecOut",
+        "type": "object"
+      },
       "ChatAttachmentOut": {
         "additionalProperties": false,
         "properties": {
@@ -2660,6 +2873,45 @@
         "title": "ChatFileLinkOut",
         "type": "object"
       },
+      "ChatOutputOut": {
+        "additionalProperties": false,
+        "description": "``GET /api/conversations/{id}/files/{file}/output``: what one chart or table file shows.",
+        "properties": {
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartSpecOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "enum": [
+              "chart",
+              "table"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "table": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatTableOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ChatOutputOut",
+        "type": "object"
+      },
       "ChatRequest": {
         "additionalProperties": false,
         "description": "A turn. Besides the message the client only picks the agent of a new conversation and\none of that agent's allowed models; everything else comes from the published version.",
@@ -2782,6 +3034,72 @@
           "status"
         ],
         "title": "ChatSignedUploadOut",
+        "type": "object"
+      },
+      "ChatTableOut": {
+        "additionalProperties": false,
+        "description": "A table of a cell (D118 (5)): its first rows; the CSV of the same cell has them all.",
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "csv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csv"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "columns",
+          "rows",
+          "total_rows"
+        ],
+        "title": "ChatTableOut",
         "type": "object"
       },
       "ChatUploadFileIn": {
@@ -3011,6 +3329,17 @@
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "default": "file",
+            "enum": [
+              "file",
+              "figure",
+              "chart",
+              "table"
+            ],
+            "title": "Role",
             "type": "string"
           },
           "size_bytes": {
@@ -19267,6 +19596,57 @@
           }
         },
         "summary": "Download Chat File"
+      }
+    },
+    "/conversations/{conversation_id}/files/{file_id}/output": {
+      "get": {
+        "description": "A chart or a table of a cell (D118), validated and checked by the guardrail. A\ngenerated file is moved as far as its scan allows first («Cargando la gráfica…»).",
+        "operationId": "chat_file_output",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatOutputOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Chat File Output"
       }
     },
     "/conversations/{conversation_id}/turn": {

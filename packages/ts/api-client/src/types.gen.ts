@@ -1405,6 +1405,108 @@ export type ChangeListOut = {
 };
 
 /**
+ * ChartAxesOut
+ */
+export type ChartAxesOut = {
+    x: ChartAxisOut;
+    y: ChartAxisOut;
+};
+
+/**
+ * ChartAxisOut
+ */
+export type ChartAxisOut = {
+    /**
+     * Label
+     */
+    label?: string | null;
+};
+
+/**
+ * ChartMetaOut
+ */
+export type ChartMetaOut = {
+    /**
+     * Footer
+     */
+    footer?: string | null;
+    /**
+     * Subtitle
+     */
+    subtitle?: string | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+};
+
+/**
+ * ChartSeriesOut
+ */
+export type ChartSeriesOut = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Stack
+     */
+    stack?: string | null;
+    /**
+     * Valueformat
+     */
+    valueFormat: 'compact' | 'integer' | 'raw';
+    /**
+     * Valueprefix
+     */
+    valuePrefix: string;
+    /**
+     * Valuesuffix
+     */
+    valueSuffix: string;
+};
+
+/**
+ * ChartSpecOut
+ *
+ * A chart as the chat draws it (D118 (1)), normalized: every default is filled in.
+ */
+export type ChartSpecOut = {
+    axes: ChartAxesOut;
+    /**
+     * Charttype
+     */
+    chartType: 'bar' | 'line' | 'pie' | 'scatter';
+    /**
+     * Data
+     */
+    data: Array<{
+        [key: string]: string | number | number | boolean | null;
+    }>;
+    /**
+     * Layout
+     */
+    layout: 'horizontal' | 'vertical';
+    meta: ChartMetaOut;
+    /**
+     * Series
+     */
+    series: Array<ChartSeriesOut>;
+    /**
+     * Valueformat
+     */
+    valueFormat: 'compact' | 'integer' | 'raw';
+    /**
+     * Xkey
+     */
+    xKey: string;
+};
+
+/**
  * ChatAttachmentOut
  */
 export type ChatAttachmentOut = {
@@ -1484,6 +1586,20 @@ export type ChatFileLinkOut = {
 };
 
 /**
+ * ChatOutputOut
+ *
+ * ``GET /api/conversations/{id}/files/{file}/output``: what one chart or table file shows.
+ */
+export type ChatOutputOut = {
+    chart?: ChartSpecOut | null;
+    /**
+     * Kind
+     */
+    kind: 'chart' | 'table';
+    table?: ChatTableOut | null;
+};
+
+/**
  * ChatRequest
  *
  * A turn. Besides the message the client only picks the agent of a new conversation and
@@ -1540,6 +1656,34 @@ export type ChatSignedUploadOut = {
      * Url
      */
     url?: string | null;
+};
+
+/**
+ * ChatTableOut
+ *
+ * A table of a cell (D118 (5)): its first rows; the CSV of the same cell has them all.
+ */
+export type ChatTableOut = {
+    /**
+     * Columns
+     */
+    columns: Array<string>;
+    /**
+     * Csv
+     */
+    csv?: string | null;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Rows
+     */
+    rows: Array<Array<string | number | number | boolean | null>>;
+    /**
+     * Total Rows
+     */
+    total_rows: number;
 };
 
 /**
@@ -1693,6 +1837,10 @@ export type CodeFileOut = {
      * Name
      */
     name: string;
+    /**
+     * Role
+     */
+    role?: 'file' | 'figure' | 'chart' | 'table';
     /**
      * Size Bytes
      */
@@ -10558,6 +10706,40 @@ export type DownloadChatFileResponses = {
 };
 
 export type DownloadChatFileResponse = DownloadChatFileResponses[keyof DownloadChatFileResponses];
+
+export type ChatFileOutputData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/files/{file_id}/output';
+};
+
+export type ChatFileOutputErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ChatFileOutputError = ChatFileOutputErrors[keyof ChatFileOutputErrors];
+
+export type ChatFileOutputResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatOutputOut;
+};
+
+export type ChatFileOutputResponse = ChatFileOutputResponses[keyof ChatFileOutputResponses];
 
 export type ConversationTurnData = {
     body?: never;

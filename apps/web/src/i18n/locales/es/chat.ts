@@ -156,6 +156,34 @@ export const chat = {
     download: 'Descargar {{name}}',
     downloadShort: 'Descargar',
   },
+  // Design round 40 `ChatChart` (D118, G1). `withheld` and `error` are not drawn by the design
+  // yet (reported for the next round of Claude Design).
+  chart: {
+    loading: 'Cargando la gráfica…',
+    loadingLabel: 'Cargando la gráfica',
+    invalidTitle: 'No se pudo dibujar esta gráfica.',
+    invalid:
+      'Los datos que mandó el agente no tienen el formato que espera Mango. Pídele que la vuelva a generar o que te los dé en una tabla.',
+    withheld: 'Mango no muestra esta gráfica: infringía una regla de seguridad.',
+    error: 'No se pudo cargar la gráfica.',
+    retry: 'Reintentar',
+    copy: 'Copiar datos',
+    copied: 'Datos copiados. Pégalos en Excel o en una hoja de cálculo.',
+    chart: 'Gráfica',
+  },
+  // Design round 40 `DataTable` (D118 (5), T1).
+  table: {
+    loadingLabel: 'Cargando la tabla',
+    rows_one: '{{n}} fila',
+    rows_other: '{{n}} filas',
+    columns_one: '{{count}} columna',
+    columns_other: '{{count}} columnas',
+    capped: 'Se muestran {{shown}} de {{total}} filas. Descarga el CSV para verlas todas.',
+    invalid: 'No se pudo mostrar esta tabla. Pídele al agente que la vuelva a generar.',
+    withheld: 'Mango no muestra esta tabla: infringía una regla de seguridad.',
+    error: 'No se pudo cargar la tabla.',
+    retry: 'Reintentar',
+  },
   // Design round 40 `FileCard` (D116): a file the agent generated.
   file: {
     meta: '{{kind}} · {{size}} · de {{agent}}',

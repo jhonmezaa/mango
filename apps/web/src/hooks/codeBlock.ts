@@ -46,9 +46,54 @@ export function codeFigures(block: CodeBlockData): CodeFile[] {
   return block.cells.flatMap((cell) => cell.files.filter((file) => file.image && !file.gone));
 }
 
-/** The files of the answer shown as cards (any other kind, or an image no longer there). */
+const isOutput = (file: CodeFile) => file.role === 'chart' || file.role === 'table';
+
+/** A table of a cell and the CSV with all its rows, its card at the foot (D118 (5)). */
+export interface CodeTable {
+  file: CodeFile;
+  csv?: CodeFile | undefined;
+}
+
+/**
+ * The CSV `display_table` wrote next to `<name>.table.json` in the same cell: `<name>.csv`, or
+ * `<name>-table.csv` when the cell already had a file of that name (`sandbox_helper`).
+ */
+function tableCsv(table: CodeFile, files: readonly CodeFile[]): CodeFile | undefined {
+  const base = table.name.replace(/\.table\.json$/, '');
+  const csvs = files.filter((f) => f.role === 'file' && f.kind === 'csv');
+  return (
+    csvs.find((f) => f.name === `${base}-table.csv`) ?? csvs.find((f) => f.name === `${base}.csv`)
+  );
+}
+
+/**
+ * The charts and the tables of the answer, in the order of the design round 40 (after the text:
+ * «bloque → texto → gráfica → tabla → archivos»). Only those of cells the guardrail let be shown
+ * are here: a blocked cell has no files.
+ */
+export function codeOutputs(block: CodeBlockData): { charts: CodeFile[]; tables: CodeTable[] } {
+  const charts: CodeFile[] = [];
+  const tables: CodeTable[] = [];
+  for (const cell of block.cells) {
+    for (const file of cell.files) {
+      if (file.role === 'chart') charts.push(file);
+      if (file.role === 'table') tables.push({ file, csv: tableCsv(file, cell.files) });
+    }
+  }
+  return { charts, tables };
+}
+
+/**
+ * The files of the answer shown as cards (any other kind, or an image no longer there): not the
+ * specs of its charts and tables, nor the CSV a table shows at its foot.
+ */
 export function codeFileCards(block: CodeBlockData): CodeFile[] {
-  return block.cells.flatMap((cell) => cell.files.filter((file) => !file.image || file.gone));
+  const atFoot = new Set(codeOutputs(block).tables.flatMap((t) => (t.csv ? [t.csv.file_id] : [])));
+  return block.cells.flatMap((cell) =>
+    cell.files.filter(
+      (file) => (!file.image || file.gone) && !isOutput(file) && !atFoot.has(file.file_id),
+    ),
+  );
 }
 
 /** The files a link of this answer may name (`mango-file:`, `sandbox:/mnt/data/`). */

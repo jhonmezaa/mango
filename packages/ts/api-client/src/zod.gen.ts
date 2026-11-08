@@ -490,6 +490,76 @@ export const zChangeKindSchema = z.enum([
 ]);
 
 /**
+ * ChartAxisOut
+ */
+export const zChartAxisOutSchema = z.object({
+    label: z.string().nullish()
+});
+
+/**
+ * ChartAxesOut
+ */
+export const zChartAxesOutSchema = z.object({
+    x: zChartAxisOutSchema,
+    y: zChartAxisOutSchema
+});
+
+/**
+ * ChartMetaOut
+ */
+export const zChartMetaOutSchema = z.object({
+    footer: z.string().nullish(),
+    subtitle: z.string().nullish(),
+    title: z.string().nullish()
+});
+
+/**
+ * ChartSeriesOut
+ */
+export const zChartSeriesOutSchema = z.object({
+    key: z.string(),
+    label: z.string(),
+    stack: z.string().nullish(),
+    valueFormat: z.enum([
+        'compact',
+        'integer',
+        'raw'
+    ]),
+    valuePrefix: z.string(),
+    valueSuffix: z.string()
+});
+
+/**
+ * ChartSpecOut
+ *
+ * A chart as the chat draws it (D118 (1)), normalized: every default is filled in.
+ */
+export const zChartSpecOutSchema = z.object({
+    axes: zChartAxesOutSchema,
+    chartType: z.enum([
+        'bar',
+        'line',
+        'pie',
+        'scatter'
+    ]),
+    data: z.array(z.record(z.string(), z.union([
+        z.string(),
+        z.int(),
+        z.number(),
+        z.boolean()
+    ]).nullable())),
+    layout: z.enum(['horizontal', 'vertical']),
+    meta: zChartMetaOutSchema,
+    series: z.array(zChartSeriesOutSchema),
+    valueFormat: z.enum([
+        'compact',
+        'integer',
+        'raw'
+    ]),
+    xKey: z.string()
+});
+
+/**
  * ChatAttachmentOut
  */
 export const zChatAttachmentOutSchema = z.object({
@@ -570,6 +640,36 @@ export const zChatSignedUploadOutSchema = z.object({
 });
 
 /**
+ * ChatTableOut
+ *
+ * A table of a cell (D118 (5)): its first rows; the CSV of the same cell has them all.
+ */
+export const zChatTableOutSchema = z.object({
+    columns: z.array(z.string()),
+    csv: z.string().nullish(),
+    name: z.string(),
+    rows: z.array(z.array(z.union([
+        z.string(),
+        z.int(),
+        z.number(),
+        z.boolean(),
+        z.null()
+    ]))),
+    total_rows: z.int()
+});
+
+/**
+ * ChatOutputOut
+ *
+ * ``GET /api/conversations/{id}/files/{file}/output``: what one chart or table file shows.
+ */
+export const zChatOutputOutSchema = z.object({
+    chart: zChartSpecOutSchema.nullish(),
+    kind: z.enum(['chart', 'table']),
+    table: zChatTableOutSchema.nullish()
+});
+
+/**
  * ChatUploadFileIn
  */
 export const zChatUploadFileInSchema = z.object({
@@ -623,6 +723,12 @@ export const zCodeFileOutSchema = z.object({
     image: z.boolean(),
     kind: z.string(),
     name: z.string(),
+    role: z.enum([
+        'file',
+        'figure',
+        'chart',
+        'table'
+    ]).optional().default('file'),
     size_bytes: z.int()
 });
 
@@ -4867,6 +4973,16 @@ export const zDownloadChatFilePath = z.object({
  * Successful Response
  */
 export const zDownloadChatFileResponse = zChatFileLinkOutSchema;
+
+export const zChatFileOutputPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    file_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zChatFileOutputResponse = zChatOutputOutSchema;
 
 export const zConversationTurnPath = z.object({
     conversation_id: z.string()

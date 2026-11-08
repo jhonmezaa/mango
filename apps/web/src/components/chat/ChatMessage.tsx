@@ -32,6 +32,7 @@ import {
   CODE_RECIPIENT,
   CODE_TOOL_NAME,
   codeFileCards,
+  codeOutputs,
 } from '../../hooks/codeBlock';
 import { copyText } from '../../lib/clipboard';
 import { useConnections } from '../../pages/connections/ConnectionsContext';
@@ -43,7 +44,9 @@ import { RateWaitButton, RateWaitLine } from '../RateWait';
 import { Soon } from '../Soon';
 import { AttachmentChips } from './AttachmentChips';
 import { formatMessageTime } from './threadGroups';
+import { ChatChartFile } from './ChatChart';
 import { CodeBlock } from './CodeBlock';
+import { ChatTableFile } from './DataTable';
 import { FileCard } from './FileCard';
 import { KnowledgeCitations, KnowledgeSteps } from './KnowledgeCitations';
 import { ToolGroup } from './ToolGroup';
@@ -175,6 +178,7 @@ const NO_SEARCHES: KnowledgeSearch[] = [];
 const NO_CITATIONS: Citation[] = [];
 const NO_STEPS: TurnStep[] = [];
 const NO_FILES: never[] = [];
+const NO_OUTPUTS: ReturnType<typeof codeOutputs> = { charts: [], tables: [] };
 
 interface Props {
   message: DisplayMessage;
@@ -317,6 +321,7 @@ export const ChatMessage = memo(function ChatMessage({
   );
   const files = useMemo(() => (code ? announcedFiles(code) : NO_FILES), [code]);
   const cards = useMemo(() => (code ? codeFileCards(code) : NO_FILES), [code]);
+  const outputs = useMemo(() => (code ? codeOutputs(code) : NO_OUTPUTS), [code]);
 
   if (message.role === 'user') {
     const time = formatMessageTime(message.createdAt);
@@ -452,7 +457,14 @@ export const ChatMessage = memo(function ChatMessage({
           </p>
         ) : null}
         <KnowledgeCitations citations={message.citations ?? NO_CITATIONS} />
-        {/* Design round 40: the files of the answer after its text (bloque → texto → archivos). */}
+        {/* Design round 40: after the text, its charts, its tables and then its files
+            (bloque → texto → gráfica → tabla → archivos). */}
+        {outputs.charts.map((file) => (
+          <ChatChartFile key={file.file_id} file={file} />
+        ))}
+        {outputs.tables.map((table) => (
+          <ChatTableFile key={table.file.file_id} file={table.file} csv={table.csv} />
+        ))}
         {cards.map((file) => (
           <FileCard key={file.file_id} file={file} />
         ))}

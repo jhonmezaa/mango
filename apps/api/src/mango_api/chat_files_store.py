@@ -80,6 +80,9 @@ class ChatFile:
     upload_id: str = ""
     sha256: str = ""
     deleted: bool = False
+    guard: str = ""
+    """What the guardrail said of the texts of a chart or a table (``pass`` or ``blocked``),
+    once: a file never changes. Empty until it was asked."""
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,7 @@ def _file(item: dict[str, Any]) -> ChatFile:
         upload_id=item.get("upload_id", {}).get("S", ""),
         sha256=item.get("sha256", {}).get("S", ""),
         deleted=item.get("deleted", {}).get("BOOL", False),
+        guard=item.get("guard", {}).get("S", ""),
     )
 
 
@@ -230,6 +234,24 @@ class ChatFileStore:
         except BotoCoreError as exc:
             raise ChatFileStoreUnavailableError(type(exc).__name__) from exc
         return replace(f, status=to, status_at=now, sha256=sha256 or f.sha256)
+
+    def set_guard(self, f: ChatFile, verdict: str) -> ChatFile:
+        """Keep what the guardrail said of a chart or a table (``chat_outputs``). Only the first
+        verdict is kept: a file's bytes never change, so two requests say the same."""
+        try:
+            self._clients(f.owner).update_item(
+                TableName=self._table,
+                Key=self._key(f.owner, file_sk(f.conversation_id, f.file_id)),
+                UpdateExpression="SET guard = :v",
+                ConditionExpression="attribute_exists(PK) AND attribute_not_exists(guard)",
+                ExpressionAttributeValues={":v": {"S": verdict}},
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise ChatFileStoreUnavailableError(type(exc).__name__) from exc
+        except BotoCoreError as exc:
+            raise ChatFileStoreUnavailableError(type(exc).__name__) from exc
+        return replace(f, guard=verdict)
 
     def mark_deleted(self, f: ChatFile, *, now: int) -> None:
         """The file is gone (D116 (9)): its record says so and expires with the TTL."""

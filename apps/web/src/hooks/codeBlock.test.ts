@@ -12,6 +12,7 @@ const FIGURE = {
   name: 'g.png',
   kind: 'png',
   size_bytes: 1,
+  role: 'figure' as const,
   image: true,
 };
 const SHEET = {
@@ -19,6 +20,7 @@ const SHEET = {
   name: 'd.xlsx',
   kind: 'xlsx',
   size_bytes: 1,
+  role: 'file' as const,
   image: false,
 };
 const CELL = {

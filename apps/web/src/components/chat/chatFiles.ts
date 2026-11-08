@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 
 import type { ChatFileStatus } from '../../api/codeSchemas';
 import { ApiError } from '../../api/errors';
+import type { OperationOutput } from '../../api/operations';
 import { useSession } from '../../auth/useSession';
 import { isAllowedOrigin, parseExternalHttpUrl } from '../../security/safeUrl';
 
@@ -18,6 +19,8 @@ export interface ChatFilesScope {
   threadTitle: string;
   /** Design round 40: «Descargando {nombre}» once the download started. */
   onDownload?: (name: string) => void;
+  /** Design round 40: «Datos copiados. Pégalos en Excel o en una hoja de cálculo.». */
+  onCopied?: () => void;
 }
 
 const Scope = createContext<ChatFilesScope>({
@@ -172,4 +175,64 @@ export function useImageUrl(
   }, [api, conversationId, fileId, enabled, key]);
   // Another file or another attempt: loading until its own answer arrives.
   return state.key === key && enabled ? state : { url: null, failed: false };
+}
+
+/** A chart or a table as the API answers it (`mango_api.chat_outputs.ChatOutputOut`). */
+export type ChatOutput = OperationOutput<'chatFileOutput'>;
+
+/** How the read of a chart or a table of a cell ended (D118): what its card shows. */
+export type OutputView =
+  | { kind: 'loading' }
+  | { kind: 'ready'; output: ChatOutput }
+  | { kind: 'invalid' }
+  | { kind: 'withheld' }
+  | { kind: 'error' };
+
+function outputFailure(error: unknown): OutputView {
+  if (error instanceof ApiError) {
+    // «No se pudo dibujar esta gráfica…»: the spec is not one Mango draws.
+    if (error.code === 'invalid_output' || error.code === 'not_an_output') {
+      return { kind: 'invalid' };
+    }
+    // The guardrail did not let its texts be shown (TM-CI5).
+    if (error.code === 'output_withheld') return { kind: 'withheld' };
+  }
+  return { kind: 'error' };
+}
+
+/**
+ * A chart or a table of a cell, validated by the API (`GET …/files/{file}/output`, checked
+ * again with the generated schema), once its scan let it be read (`enabled`). `attempt` asks
+ * again after «Reintentar».
+ */
+export function useChatOutput(fileId: string, enabled: boolean, attempt: number): OutputView {
+  const { api } = useSession();
+  const { conversationId } = useChatFilesScope();
+  const key = `${fileId}:${String(attempt)}`;
+  const [state, setState] = useState<{ key: string; view: OutputView }>({
+    key: '',
+    view: { kind: 'loading' },
+  });
+  useEffect(() => {
+    if (!enabled || !conversationId) return undefined;
+    const controller = new AbortController();
+    api
+      .call(
+        'chatFileOutput',
+        { path: { conversation_id: conversationId, file_id: fileId } },
+        { signal: controller.signal },
+      )
+      .then(
+        (output) => {
+          if (!controller.signal.aborted) setState({ key, view: { kind: 'ready', output } });
+        },
+        (error: unknown) => {
+          if (!controller.signal.aborted) setState({ key, view: outputFailure(error) });
+        },
+      );
+    return () => {
+      controller.abort();
+    };
+  }, [api, conversationId, fileId, enabled, key]);
+  return state.key === key && enabled ? state.view : { kind: 'loading' };
 }

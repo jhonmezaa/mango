@@ -18,6 +18,8 @@ export const codeFileSchema = z.object({
   file_id: chatFileIdSchema,
   name: z.string().min(1).max(255),
   kind: z.string().max(8),
+  /** A file card, a figure of the block, or the spec of a chart or a table (D118). */
+  role: z.enum(['file', 'figure', 'chart', 'table']).default('file'),
   size_bytes: z.number().int().min(0),
   image: z.boolean(),
   gone: z.boolean().optional(),

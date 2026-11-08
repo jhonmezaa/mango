@@ -1,4 +1,4 @@
-# Archivos del chat (subida, generados, escaneo y descarga): modelo de amenazas (v0.3)
+# Archivos del chat (subida, generados, escaneo y descarga): modelo de amenazas (v0.4)
 
 > Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, PR C1, C5, W1 y U1, §7). Decisión que lo enmarca: [D116](../../architecture/decisions/D116-archivos-del-chat.md) (bucket propio, 20 × 100 MB, 90 días, escaneo de malware; vigente; su punto 9, el borrado, lo fijó este modelo); precisa D88 (25) (escaneo) y D86 (1), (5) y (10) (vía nueva, firma con `Mango-<ns>-Presign`). Además D16, D23, D24, D59, D63, D70 y la CSP de `infra/lib/constructs/edge.ts`.
 > Amplía `knowledge-bases-threat-model.md` (TM-K11, firma con rol propio; el patrón de subida de D88 (9), (30) y (33)) y `task-reports-threat-model.md` (descarga prefirmada de 5 min). El sandbox que genera archivos está en [`code-interpreter-threat-model.md`](code-interpreter-threat-model.md).
@@ -201,3 +201,14 @@ Lo que construyó la vista de los archivos generados en el chat ([D116](../../ar
 | TM-CF1 | La ruta de estado tiene los dos controles de las demás (partición y `OwnConversation`, 404 igual para lo ajeno y lo inexistente; test) y el límite de 120 por minuto | — |
 | TM-CF8 | Los enlaces del texto del modelo a un archivo se validan con las reglas de rutas (4096 caracteres, punto fijo de 4 decodificaciones, sin `/` final, `.`, `..` ni control) y solo resuelven a un id anunciado en esa respuesta (tests) | — |
 
+## Estado tras G1 + T1 (v0.4, 2026-11-08)
+
+Lo que añadió la lectura de las gráficas y las tablas de una celda ([D118](../../architecture/decisions/D118-graficas-y-tablas-por-spec.md) (7)), con tests y sin ver en una instalación:
+
+| Amenaza | Control construido | Sigue abierto |
+|---|---|---|
+| TM-CF1 | `GET …/files/{archivo}/output` tiene los mismos controles que `…/content`: la partición de la persona, `OwnConversation` (404 igual para lo ajeno y lo inexistente), el límite de 120 por minuto y la auditoría `chat.file_download` (`inline`) sin nombre ni contenido (tests) | — |
+| TM-CF3 | La ruta mueve el archivo generado hasta donde su escaneo lo deja y solo lee el que está `ready`; uno bloqueado no se audita ni se lee (tests) | — |
+| TM-CF4 | Solo lee archivos generados de tipo `json` cuyo nombre es `*.chart.json` o `*.table.json` (415 para el resto) y nunca los sirve: devuelve el modelo cerrado de `mango_api.chat_outputs` | — |
+
+El veredicto del guardrail sobre sus textos se guarda en el registro del archivo (`guard`), que es de la partición de la persona.

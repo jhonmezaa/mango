@@ -614,6 +614,9 @@ export function ChatPage() {
       onDownload: (name: string) => {
         notify(t('chat.file.downloading', { name }), 'success');
       },
+      onCopied: () => {
+        notify(t('chat.chart.copied'), 'success');
+      },
     }),
     [state.conversationId, scopeAgent, threadTitle, notify, t],
   );

@@ -21,6 +21,8 @@ import {
   markdownUrlTransform,
   parseExternalHttpUrl,
 } from '../security/safeUrl';
+import { ChartBlock } from './chat/ChatChart';
+import { CHART_FENCE } from './chat/chartSpec';
 import { useDownload } from './chat/chatFiles';
 import { ExternalLinkDialog } from './ExternalLinkDialog';
 import { ShieldIcon } from './icons';
@@ -41,6 +43,38 @@ export interface AnnouncedFile {
   name: string;
 }
 const AnnouncedFiles = createContext<readonly AnnouncedFile[]>([]);
+/** The answer is still arriving: a chart block that does not parse yet is still being written. */
+const Streaming = createContext(false);
+
+/** The hast node of a `<pre>` as react-markdown hands it (only what is read of it). */
+interface FenceNode {
+  children?: readonly {
+    type: string;
+    tagName?: string;
+    properties?: { className?: unknown };
+    children?: readonly { type: string; value?: string }[];
+  }[];
+}
+
+/** The text of a ```` ```mango-chart ```` fence, or null for any other `<pre>`. */
+function chartFence(node: FenceNode | undefined): string | null {
+  const code = node?.children?.[0];
+  if (code?.type !== 'element' || code.tagName !== 'code') return null;
+  const classes = code.properties?.className;
+  if (!Array.isArray(classes) || !classes.includes(`language-${CHART_FENCE}`)) return null;
+  return (code.children ?? []).map((child) => (child.type === 'text' ? child.value : '')).join('');
+}
+
+/**
+ * A ```` ```mango-chart ```` block (D118 (2)): drawn from its JSON with the closed spec, never
+ * run; any other code block stays a code block.
+ */
+function Pre({ node, children }: { node?: FenceNode | undefined; children?: ReactNode }) {
+  const streaming = useContext(Streaming);
+  const body = chartFence(node);
+  if (body !== null) return <ChartBlock body={body} streaming={streaming} />;
+  return <pre>{children}</pre>;
+}
 
 /**
  * A link of the answer to one of its files (`mango-file:<id>` or `sandbox:/mnt/data/<name>`,
@@ -168,6 +202,7 @@ const components: Components = {
       <ExternalLink href={href}>{children}</ExternalLink>
     ),
   img: () => <BlockedImage />,
+  pre: ({ node, children }) => <Pre node={node}>{children}</Pre>,
   // Design markdown.js: `####` renders as the smallest heading (h3).
   h4: ({ children }) => <h3>{children}</h3>,
   table: ({ children }) => (
@@ -203,7 +238,8 @@ const NO_FILES: readonly AnnouncedFile[] = [];
  *   of the answer only downloads one the server announced in it, by id (C4);
  * - images are replaced by a placeholder;
  * - the only rehype plugin is ours and only adds a class to table cells (no raw HTML);
- * - no Mermaid, KaTeX or other plugins that execute or inject content.
+ * - no Mermaid, KaTeX or other plugins that execute or inject content; a ```` ```mango-chart ````
+ *   block is JSON data drawn by Mango's own chart (D118), never code that runs.
  */
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
@@ -228,28 +264,30 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   if (remote.length > 0) classes.push('rm-md');
   return (
     <RemoteSources value={remote}>
-      <AnnouncedFiles value={files}>
-        <StripSources value={strip}>
-          <div ref={ref} className={classes.join(' ')}>
-            <Markdown
-              remarkPlugins={remarkPlugins}
-              rehypePlugins={rehypePlugins}
-              skipHtml
-              urlTransform={markdownUrlTransform}
-              components={components}
-            >
-              {children}
-            </Markdown>
-          </div>
-          {strip === 'failed' && LINK_IN_TEXT.test(children) && <RecheckNote />}
-          {stripped > 0 && (
-            <div className="rm-nolink-note">
-              <ShieldIcon size={12} />
-              <span>{t('connections.stripped.note', { count: stripped })}</span>
+      <Streaming value={streaming}>
+        <AnnouncedFiles value={files}>
+          <StripSources value={strip}>
+            <div ref={ref} className={classes.join(' ')}>
+              <Markdown
+                remarkPlugins={remarkPlugins}
+                rehypePlugins={rehypePlugins}
+                skipHtml
+                urlTransform={markdownUrlTransform}
+                components={components}
+              >
+                {children}
+              </Markdown>
             </div>
-          )}
-        </StripSources>
-      </AnnouncedFiles>
+            {strip === 'failed' && LINK_IN_TEXT.test(children) && <RecheckNote />}
+            {stripped > 0 && (
+              <div className="rm-nolink-note">
+                <ShieldIcon size={12} />
+                <span>{t('connections.stripped.note', { count: stripped })}</span>
+              </div>
+            )}
+          </StripSources>
+        </AnnouncedFiles>
+      </Streaming>
     </RemoteSources>
   );
 });

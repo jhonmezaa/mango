@@ -40,6 +40,7 @@ Security notes (security-best-practices, FastAPI):
 # No `from __future__ import annotations`: FastAPI resolves route annotations at runtime.
 import asyncio
 import base64
+import json
 import logging
 import math
 import time
@@ -55,6 +56,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from mango_api import chat_outputs
 from mango_api.audit import AuditLog
 from mango_api.chat_files_store import (
     ENDED,
@@ -63,9 +65,13 @@ from mango_api.chat_files_store import (
     ChatFileStoreUnavailableError,
     FileStatus,
 )
+from mango_api.chat_outputs import ChatOutputOut
 from mango_api.presign import PresignSessions, SigningUnavailableError
 from mango_api.rate_limits import Limiter, RateLimitUnavailableError
 from mango_api.web import ApiError, Caller, rate_limited
+
+if TYPE_CHECKING:
+    from mango_api.code_blocks import Guardrail
 from mango_core import knowledge
 from mango_core.chat_files import (
     HEAD_BYTES,
@@ -374,6 +380,9 @@ class ChatFilesDeps:
     checks: Limiter | None = None
     downloads: Limiter | None = None
     contents: Limiter | None = None
+    guardrail: "Guardrail | None" = None
+    """``ApplyGuardrail`` of the base guardrail, for the texts of a chart or a table: without
+    it none is shown (fail closed)."""
     clock: Callable[[], float] = field(default=time.time)
 
 
@@ -713,6 +722,16 @@ def file_status(deps: ChatFilesDeps, f: ChatFile) -> ChatAttachmentOut:
     return attachment_out(f, deps.clock())
 
 
+def _advanced(deps: ChatFilesDeps, f: ChatFile) -> ChatFile:
+    """A generated file moved as far as its scan allows (as ``file_status`` does)."""
+    if f.origin != "generated":
+        return f
+    try:
+        return advance(deps, None, f)
+    except (ChatFilesStorageUnavailableError, ChatFileStoreUnavailableError) as exc:
+        raise _unavailable(exc) from exc
+
+
 def _deliverable(deps: ChatFilesDeps, f: ChatFile | None) -> ChatFile:
     if f is None:
         raise HTTPException(status_code=404, detail="not found")
@@ -801,6 +820,86 @@ def content(deps: ChatFilesDeps, caller: Caller, f: ChatFile) -> StreamingRespon
         media_type=kind.content_type,
         headers={**_CONTENT_HEADERS, "Content-Disposition": content_disposition(f.name)},
     )
+
+
+GUARD_PASS = "pass"  # noqa: S105 - a verdict of the guardrail, not a secret
+
+
+def _spec_bytes(chunks: Iterator[bytes]) -> bytes | None:
+    """The bytes of a spec file, ``None`` past ``MAX_SPEC_BYTES``."""
+    out = bytearray()
+    try:
+        for chunk in chunks:
+            out += chunk
+            if len(out) > chat_outputs.MAX_SPEC_BYTES:
+                return None
+    except (BotoCoreError, ClientError) as exc:
+        raise ChatFilesStorageUnavailableError(type(exc).__name__) from exc
+    return bytes(out)
+
+
+def _guarded(deps: ChatFilesDeps, f: ChatFile, shown: ChatOutputOut) -> bool:
+    """Whether the guardrail lets the chat show ``shown`` (TM-CI5): asked once per file and
+    kept on its record. A guardrail that cannot answer shows nothing and keeps nothing."""
+    if f.guard:
+        return f.guard == GUARD_PASS
+    texts = chat_outputs.texts(shown)
+    if deps.guardrail is None or texts is None:
+        return False
+    if deps.guardrail.blocks_texts(texts):
+        # ``blocks_texts`` also says so when it could not ask: only a real answer is kept.
+        return False
+    deps.store.set_guard(f, GUARD_PASS)
+    return True
+
+
+def output(deps: ChatFilesDeps, caller: Caller, f: ChatFile) -> ChatOutputOut:
+    """A chart or a table of a cell, as the chat draws it (D118): the spec file the sandbox
+    wrote, read, validated against the closed models of ``chat_outputs`` and checked by the
+    guardrail. Audited like the bytes of a figure; shares their limit.
+
+    Errors: ``not_an_output`` (415) for any other file; ``invalid_output`` (422) when it cannot
+    be drawn («No se pudo dibujar esta gráfica…»); ``output_withheld`` (409) when the guardrail
+    does not let it be shown."""
+    kind = chat_outputs.output_kind(f.name)
+    if kind is None or f.kind != "json" or f.origin != "generated":
+        raise ApiError(415, "not_an_output", "only the charts and tables of a cell are drawn")
+    storage = _storage(deps)
+    _limit(deps.contents, caller.user.user_id)
+    _audit(
+        deps,
+        "chat.file_download",
+        caller,
+        conversation_id=f.conversation_id,
+        file_id=f.file_id,
+        kind=f.kind,
+        size=f.size,
+        sha256=f.sha256,
+        origin=f.origin,
+        inline=True,
+        outcome="applied",
+    )
+    try:
+        chunks = storage.open(owner_key(f.owner, f.conversation_id, f.file_id))
+        if chunks is None:
+            raise ApiError(409, "file_not_ready", "the file is not ready yet")
+        raw = _spec_bytes(chunks)
+    except ChatFilesStorageUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    try:
+        data = json.loads(raw) if raw is not None else None
+    except ValueError:
+        data = None
+    shown = chat_outputs.parse_output(kind, data)
+    if shown is None:
+        raise ApiError(422, "invalid_output", "this chart or table cannot be drawn")
+    try:
+        allowed = _guarded(deps, f, shown)
+    except ChatFileStoreUnavailableError as exc:
+        raise _unavailable(exc) from exc
+    if not allowed:
+        raise ApiError(409, "output_withheld", "this chart or table is not shown")
+    return shown
 
 
 def delete_conversation_files(deps: ChatFilesDeps, caller: Caller, conversation_id: str) -> int:
@@ -919,5 +1018,15 @@ def chat_files_router(
     ) -> StreamingResponse:
         f = _deliverable(deps, await file_of(caller, conversation_id, file_id))
         return await run(content, deps, caller, f)
+
+    @router.get("/{conversation_id}/files/{file_id}/output", response_model=ChatOutputOut)
+    async def chat_file_output(
+        conversation_id: ConversationId, file_id: FilePath, caller: SignedIn
+    ) -> ChatOutputOut:
+        """A chart or a table of a cell (D118), validated and checked by the guardrail. A
+        generated file is moved as far as its scan allows first («Cargando la gráfica…»)."""
+        f = await file_of(caller, conversation_id, file_id)
+        f = _deliverable(deps, await run(_advanced, deps, f))
+        return await run(output, deps, caller, f)
 
     return router

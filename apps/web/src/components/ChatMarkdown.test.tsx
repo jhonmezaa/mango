@@ -4,6 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ChatMarkdown } from './ChatMarkdown';
 
+vi.mock('./chat/ChartView', () => ({
+  // Recharts needs a laid-out container; the drawing is checked in the browser (e2e).
+  default: ({ spec }: { spec: { chartType: string } }) => (
+    <div data-testid="chart-view">{spec.chartType}</div>
+  ),
+}));
+
 function renderMarkdown(markdown: string) {
   return render(<ChatMarkdown>{markdown}</ChatMarkdown>);
 }
@@ -85,6 +92,29 @@ describe('ChatMarkdown (untrusted LLM output, TM-012)', () => {
     await user.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('draws a ```mango-chart``` block from its JSON and leaves other code blocks as code', async () => {
+    const chart = JSON.stringify({
+      chartType: 'line',
+      xKey: 'mes',
+      meta: { title: 'Costo de EC2' },
+      data: [{ mes: 'may', EC2: 41200 }],
+    });
+    const { container } = renderMarkdown(
+      `Antes\n\n\`\`\`mango-chart\n${chart}\n\`\`\`\n\n\`\`\`json\n{"a": 1}\n\`\`\``,
+    );
+    expect(await screen.findByTestId('chart-view')).toHaveTextContent('line');
+    expect(screen.getByText('Costo de EC2')).toBeInTheDocument();
+    // The JSON of the chart is not shown as code; the other block still is.
+    expect(container.querySelectorAll('pre')).toHaveLength(1);
+    expect(container.querySelector('pre')?.textContent).toContain('"a": 1');
+  });
+
+  it('says a ```mango-chart``` block it cannot draw is invalid, never runs it', () => {
+    renderMarkdown('```mango-chart\nalert(document.domain)\n```');
+    expect(screen.getByText('No se pudo dibujar esta gráfica.')).toBeInTheDocument();
+    expect(screen.queryByText(/alert/)).toBeNull();
   });
 
   it('blocks remote images (no request is made)', () => {

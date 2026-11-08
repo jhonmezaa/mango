@@ -195,6 +195,7 @@ describe('CodeBlock (design round 40)', () => {
       name: 'costo.png',
       kind: 'png',
       size_bytes: 10,
+      role: 'figure' as const,
       image: true,
     };
     render(
@@ -225,6 +226,7 @@ describe('CodeBlock (design round 40)', () => {
       name: 'costo.png',
       kind: 'png',
       size_bytes: 10,
+      role: 'figure' as const,
       image: true,
     };
     render(
@@ -245,6 +247,7 @@ describe('FileCard (design round 40)', () => {
     name: 'detalle.xlsx',
     kind: 'xlsx',
     size_bytes: 214_000,
+    role: 'file' as const,
     image: false,
   };
 

@@ -64,14 +64,14 @@ def row(
 FIGURE = {
     "file_id": "f" * 26,
     "name": "costo.png",
-    "kind": "png",
+    "kind": "figure",
     "mime": "image/png",
     "size": 4096,
     "sha256": "0" * 64,
     "key": "owner/x/conv/y/z",
     "extension": "png",
 }
-SHEET = {**FIGURE, "file_id": "e" * 26, "name": "detalle.xlsx", "kind": "xlsx", "extension": "xlsx"}
+SHEET = {**FIGURE, "file_id": "e" * 26, "name": "detalle.xlsx", "kind": "file", "extension": "xlsx"}
 
 
 @dataclass
@@ -354,3 +354,27 @@ def test_a_turn_shows_its_cells_after_the_guardrail_and_keeps_which_ones(env: En
     (pending,) = env.seen
     kept = env.conversations.options[-1]["code_runs"]
     assert kept == [{"turn": pending.turn_id, "run": "a", "blocked": False}]
+
+
+def test_the_files_of_a_cell_say_their_role_and_their_extension() -> None:
+    chart = {
+        **FIGURE,
+        "file_id": "g" * 26,
+        "name": "costo.chart.json",
+        "kind": "chart",
+        "extension": "json",
+    }
+    table = {**chart, "file_id": "h" * 26, "name": "cuentas.table.json", "kind": "table"}
+    csv = {**SHEET, "file_id": "i" * 26, "name": "cuentas.csv", "extension": "csv"}
+    legacy = {**FIGURE, "file_id": "j" * 26, "kind": "png"}
+    run = code_blocks.code_run(row("a1", files=[FIGURE, SHEET, chart, table, csv, legacy]))
+    assert run is not None
+    cell = code_blocks.shown(run, blocked=False)
+    assert [(f.kind, f.role, f.image) for f in cell.files] == [
+        ("png", "figure", True),
+        ("xlsx", "file", False),
+        ("json", "chart", False),
+        ("json", "table", False),
+        ("csv", "file", False),
+        ("png", "figure", True),
+    ]

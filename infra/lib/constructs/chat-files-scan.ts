@@ -195,6 +195,8 @@ export interface ChatFilesApiProps {
   readonly apiTaskRole: iam.IRole;
   readonly bucket: s3.IBucket;
   readonly key: kms.IKey;
+  /** The base guardrail: the texts of a chart or a table of a cell, before the chat draws it. */
+  readonly guardrailArn: string;
 }
 
 /**
@@ -225,6 +227,13 @@ export function grantChatFilesApi(scope: Construct, props: ChatFilesApiProps): i
         actions: ["kms:Decrypt", "kms:GenerateDataKey"],
         resources: [props.key.keyArn],
         conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+      }),
+      // D118 (7), TM-CI5: the texts of a chart or a table of a cell, before the chat draws it;
+      // the same base guardrail the turn worker asks about the cells, and only it.
+      new iam.PolicyStatement({
+        sid: "GuardShownOutputs",
+        actions: ["bedrock:ApplyGuardrail"],
+        resources: [props.guardrailArn],
       }),
     ],
   });

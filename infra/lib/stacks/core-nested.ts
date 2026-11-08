@@ -225,6 +225,8 @@ export class TurnWorkerStack extends CoreNestedStack {
 export interface SandboxStackProps extends CodeSandboxProps {
   readonly scanResults: Omit<ChatFilesScanResultsProps, "installation" | "bucket">;
   readonly apiTaskRole: iam.IRole;
+  /** The base guardrail, which mango-api asks about the texts of a chart or a table (D118 (7)). */
+  readonly guardrailArn: string;
   /** The code connector behind the Gateway (D114 (1)): what it reaches of Core. */
   readonly connector: Omit<CodeConnectorProps, "installation" | "codeInterpreter">;
 }
@@ -252,6 +254,7 @@ export class SandboxStack extends CoreNestedStack {
       apiTaskRole: props.apiTaskRole,
       bucket: props.chatFiles.bucket,
       key: props.chatFiles.key,
+      guardrailArn: props.guardrailArn,
     });
     this.connector = new CodeConnector(this, "CodeConnector", {
       ...props.connector,

@@ -377,7 +377,7 @@ async function runTurn(admitted: AdmittedTurn, sink: TurnSink): Promise<void> {
       send('code', cell);
     }
     send('status', { phase: 'writing' });
-    const reply = demoAnswer(variant);
+    const reply = demoAnswer(variant, message);
     send('delta', { text: reply });
     const replyId = newId();
     keep({

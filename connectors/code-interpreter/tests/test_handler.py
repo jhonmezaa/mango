@@ -393,6 +393,7 @@ def test_tables_charts_and_data_files_go_out_by_id(world: World) -> None:
     files = {f["name"]: f for f in json.loads(world.runs("user-ana")[0]["files"]["S"])}
     assert {n: f["kind"] for n, f in files.items()} == {
         "ventas.csv": "file",
+        "resumen.csv": "file",
         "resumen.table.json": "table",
         "Ventas.chart.json": "chart",
     }
@@ -401,7 +402,36 @@ def test_tables_charts_and_data_files_go_out_by_id(world: World) -> None:
         # Keys are made of ids only, never of the names the model chose.
         assert f["name"] not in f["key"]
     table = world.s3.get_object(Bucket="chat-files", Key=files["resumen.table.json"]["key"])
-    assert json.loads(table["Body"].read())["rows"] == [[1, 2]]
+    spec = json.loads(table["Body"].read())
+    assert spec["rows"] == [[1, 2]]
+    # D118 (5): the table names its CSV, the card at its foot.
+    assert spec["csv"] == "resumen.csv"
+
+
+def test_the_csv_of_a_table_has_every_row_and_defuses_formulas(world: World) -> None:
+    source = (
+        "from _mango import display_table\n"
+        "rows = [{'cuenta': '=HYPERLINK(1)', 'costo': -5}] + [{'cuenta': f'c{i}', 'costo': i}"
+        " for i in range(5100)]\n"
+        "open('costos.csv', 'w').write('mine\\n')\n"
+        "display_table(rows, 'costos')\n"
+    )
+    _run(world, source)
+    files = {f["name"]: f for f in json.loads(world.runs("user-ana")[0]["files"]["S"])}
+    # The model's own costos.csv is kept: the table's CSV takes another name.
+    assert {"costos.csv", "costos-table.csv", "costos.table.json"} <= set(files)
+    body = world.s3.get_object(Bucket="chat-files", Key=files["costos-table.csv"]["key"])
+    lines = body["Body"].read().decode().splitlines()
+    assert lines[0] == "costo,cuenta"
+    # A text cell a spreadsheet would run gets a quote; a negative number stays a number.
+    assert lines[1] == "-5,'=HYPERLINK(1)"
+    assert len(lines) == 5102
+    spec = json.loads(
+        world.s3.get_object(Bucket="chat-files", Key=files["costos.table.json"]["key"])[
+            "Body"
+        ].read()
+    )
+    assert (len(spec["rows"]), spec["total_rows"], spec["csv"]) == (5000, 5101, "costos-table.csv")
 
 
 @pytest.mark.parametrize(

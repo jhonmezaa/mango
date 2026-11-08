@@ -336,6 +336,16 @@ describe("the role of the turn worker", () => {
     expect(applying.map((s) => s.Sid)).toEqual(["GuardShownCode"]);
   });
 
+  it("lets mango-api ask the base guardrail about the texts of a chart or a table, and no other guardrail (G1)", () => {
+    const api = statementsOf(apiRoleId);
+    const guard = bySid(api, "GuardShownOutputs");
+    expect(guard.Action).toBe("bedrock:ApplyGuardrail");
+    expect(JSON.stringify(guard.Resource)).not.toContain("*");
+    expect(guard.Resource).toEqual(bySid(statements, "GuardShownCode").Resource);
+    const applying = api.filter((s) => list(s.Action).includes("bedrock:ApplyGuardrail"));
+    expect(applying.map((s) => s.Sid)).toEqual(["GuardShownOutputs"]);
+  });
+
   it("reads a ticket and counts the person's limits for the gate of the tickets tool, nothing more", () => {
     // D112: a call of the tickets tool is decided when its request is created, in the worker too.
     expect(bySid(statements, "TicketToolGate").Action).toBe("dynamodb:GetItem");

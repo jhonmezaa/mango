@@ -52,15 +52,24 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+FileRole = Literal["file", "figure", "chart", "table"]
+"""What a file of a cell is to the chat: a file card, a figure of the block, or the spec of a
+chart or a table (D118), drawn after the text («bloque → texto → gráfica → tabla → archivos»)."""
+_ROLES: frozenset[str] = frozenset({"file", "figure", "chart", "table"})
+
+
 class CodeFileOut(_Strict):
     """A file a cell wrote, by id: the chat asks for it through the files routes (D116)."""
 
     file_id: str
     name: str
     kind: str
+    """Its extension (``png``, ``xlsx``, ``json``…), the card's badge."""
+    role: FileRole = "file"
     size_bytes: int
     image: bool
-    """PNG or JPEG: shown as a figure of the block; any other kind is a file card."""
+    """PNG or JPEG: shown as a figure of the block; a chart or a table is drawn; any other
+    kind is a file card."""
     gone: bool = False
     """After 90 days or with its conversation: «Ya no está disponible» (history only)."""
 
@@ -143,11 +152,19 @@ def _files(raw: str) -> tuple[dict[str, Any], ...]:
         if not isinstance(f, dict):
             continue
         try:
+            name = str(f["name"])[:255]
+            # The connector writes its role as ``kind`` (``outputs.Exported``) and the extension
+            # apart; the extension is what a card shows.
+            role = str(f.get("kind", ""))
+            extension = str(f.get("extension") or name.rpartition(".")[2]).lower()[:8]
+            if role not in _ROLES:
+                role = "figure" if extension in _IMAGE_KINDS else "file"
             out.append(
                 {
                     "file_id": str(f["file_id"]),
-                    "name": str(f["name"])[:255],
-                    "kind": str(f.get("kind") or f.get("extension", "")).lower()[:8],
+                    "name": name,
+                    "kind": extension,
+                    "role": role,
                     "size_bytes": max(int(f.get("size", 0)), 0),
                 }
             )
@@ -235,13 +252,9 @@ class Guardrail:
     def blocks(self, run: CodeRun) -> bool:
         """Whether nothing of the cell may be shown: the guardrail intervened in any of its
         parts, or could not be asked (fail closed). Never logs any of it."""
-        if not self._id or not self._version:
-            logger.error("no base guardrail configured: code cells are not shown")
-            return True
         exception = run.exception or {}
-        texts = [
-            t
-            for t in (
+        return self.blocks_texts(
+            (
                 run.code,
                 run.stdout,
                 run.stderr,
@@ -249,10 +262,17 @@ class Guardrail:
                 exception.get("message", ""),
                 *(f["name"] for f in run.files),
             )
-            if t
-        ]
+        )
+
+    def blocks_texts(self, texts: Iterable[str]) -> bool:
+        """Whether any of ``texts`` may not be shown: the guardrail intervened, or could not
+        be asked (fail closed). Also the texts of a chart or a table (``chat_outputs``)."""
+        if not self._id or not self._version:
+            logger.error("no base guardrail configured: code outputs are not shown")
+            return True
+        shown = [t for t in texts if t]
         try:
-            for call in _chunks(texts):
+            for call in _chunks(shown):
                 response = self._client.apply_guardrail(
                     guardrailIdentifier=self._id,
                     guardrailVersion=self._version,
