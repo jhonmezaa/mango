@@ -8,6 +8,7 @@
     "us.anthropic.claude-haiku-4-5-20251001-v1:0": { "input": 1.0, "output": 5.0, "cacheRead": 0.1, "cacheWrite": 1.25 }
   },
   "embeddingPrices": { "amazon.titan-embed-text-v2:0": 0.02 },
+  "codeInterpreterPrices": { "vcpuHour": 0.0895, "gbHour": 0.00945 },
   "budgets": { "userMonthlyUsd": 5, "agentMonthlyUsd": 30 },
   "curReconciliation": {
     "bedrockProductCodes": ["AmazonBedrock", "AmazonBedrockService"],

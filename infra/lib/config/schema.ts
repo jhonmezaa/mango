@@ -106,6 +106,15 @@ const DEFAULT_PACK_NETWORK: { cidr: string; availabilityZoneIds: (typeof AGENTCO
 };
 
 /**
+ * Prices of the Code Interpreter sandbox (D115 (2), rule 7): USD per vCPU-hour and per GB-hour
+ * of memory, as AWS lists them. A turn of an agent with `code_interpreter` reserves its cells
+ * with them; never in the code.
+ */
+export const codeInterpreterPricesSchema = z
+  .object({ vcpuHour: z.number().positive(), gbHour: z.number().positive() })
+  .strict();
+
+/**
  * The daily reconciliation of Bedrock spend against the bill (D104 (7)): which product codes are
  * Bedrock's in CUR 2.0, and when a day of an agent deviates (past both thresholds). Configuration,
  * never code (rule 7): the release's own (`release-defaults.json`) when the installation names none.
@@ -287,6 +296,11 @@ export const installationSchema = z
      * release's own (`release-defaults.json`) when the installation config names none.
      */
     embeddingPrices: z.record(z.string(), z.number().nonnegative()).optional(),
+    /**
+     * USD per vCPU-hour and per GB-hour of the Code Interpreter sandbox (D115 (2), rule 7).
+     * Optional: the release's own (`release-defaults.json`) when the installation names none.
+     */
+    codeInterpreterPrices: codeInterpreterPricesSchema.optional(),
     /** Budget per user per calendar month, in USD (MVP v0: user and agent scopes). */
     budgets: z.object({
       userMonthlyUsd: z.number().positive().max(10_000),

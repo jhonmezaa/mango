@@ -30,6 +30,8 @@ import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
 import { Skills } from "../constructs/skills.js";
 import { Tickets } from "../constructs/tickets.js";
+import { ChatFiles, CHAT_FILES_PREFIXES } from "../constructs/chat-files.js";
+import { SandboxVpc } from "../constructs/code-sandbox.js";
 import { Presign } from "../constructs/presign.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
@@ -79,6 +81,7 @@ import {
   ObservabilityStack,
   OperationsStack,
   RemoteMcpStack,
+  SandboxStack,
   TurnWorkerStack,
 } from "./core-nested.js";
 
@@ -287,6 +290,17 @@ export class CoreStack extends Stack {
     tools.addKnowledgeTarget(knowledge.retrieveFunction);
     // The browser posts documents to that bucket only (D88 (9)).
     edge.allowConnectTo(knowledge.uploadOrigin);
+    // D116: the files of the chat (uploads and what the code sandbox generates), read only once
+    // their malware scan cleared them. The bucket and its key hold data and stay in Core.
+    const chatFiles = new ChatFiles(this, "ChatFiles", { installation: cfg, accessLogs });
+    // D114: the network of the code sandbox. Its VPC is here because the stack tagger tags its
+    // defaults; the subnets, the Code Interpreter and the scan plan are in a nested stack (D99).
+    const sandboxVpc = new SandboxVpc(this, "SandboxVpc", { installation: cfg, accessLogs });
+    new SandboxStack(this, "Sandbox", {
+      installation: cfg,
+      vpcId: sandboxVpc.vpc.vpcId,
+      chatFiles: { bucket: chatFiles.bucket, key: chatFiles.key },
+    });
     // Every URL a browser uses is signed by a role of its own, never with the task's
     // credentials: GuardDuty reports those used outside AWS (2026-10-21).
     const presign = new Presign(this, "Presign", {
@@ -294,6 +308,12 @@ export class CoreStack extends Stack {
       apiTaskRole,
       documents: { bucket: knowledge.bucket, key: knowledge.key, prefix: KNOWLEDGE_PREFIXES.uploads },
       reports: { bucket: taskReports.bucket, key: taskReports.key, prefix: "owner/" },
+      chatFiles: {
+        bucket: chatFiles.bucket,
+        key: chatFiles.key,
+        uploads: CHAT_FILES_PREFIXES.uploads,
+        owner: CHAT_FILES_PREFIXES.owner,
+      },
     });
     // Daily read-only reconciliation and the alarms of the publication path (TM-M6, TM-M9).
     // It also reports a release agent that serves content other than the release's (D42).
@@ -460,7 +480,7 @@ export class CoreStack extends Stack {
         : undefined;
     new StackTagger(this, "StackTagger", {
       installation: cfg,
-      vpcIds: [network.vpc.vpcId, ...(packVpcId ? [packVpcId] : [])],
+      vpcIds: [network.vpc.vpcId, sandboxVpc.vpc.vpcId, ...(packVpcId ? [packVpcId] : [])],
       release: props.release?.label ?? "v0.0.0-unpublished",
       configKey: tools.configKey,
     });

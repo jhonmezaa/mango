@@ -49,7 +49,21 @@ export const roleNames = {
   costAnomalyConsumer: (ns: string) => mangoName(ns, "CostAnomalyConsumer"),
   /** The evaluator of the evals (D110): the only role that reads the evals harness's traces. */
   evalJudge: (ns: string) => mangoName(ns, "EvalJudge"),
+  /**
+   * The role GuardDuty Malware Protection assumes to scan and tag the chat files (D116 (2)).
+   * Fixed, because the bucket policy in Core lets only it read an object before its scan, and
+   * the role lives in a stack nested in Core (D99).
+   */
+  chatFilesScanner: (ns: string) => mangoName(ns, "ChatFilesScan"),
 };
+
+/**
+ * The Code Interpreter of the installation (D114 (3)): `Mango_<ns>_sandbox`, the rule 6 name
+ * with underscores, because a code interpreter name only admits `[a-zA-Z][a-zA-Z0-9_]{0,47}`.
+ * Every property but its tags requires a replacement, which collides with a fixed name: a change
+ * of any other property must change this name too (a suffix such as `_v2`).
+ */
+export const codeInterpreterName = (ns: string) => `Mango_${ns}_sandbox`;
 
 /**
  * Cost anomalies (D79): the bus of the Mango account the payer forwards them to, and the rule

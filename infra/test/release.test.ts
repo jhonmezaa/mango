@@ -334,8 +334,8 @@ describe("pack network of a release, in its own stack", () => {
     expect(packNetworkExports.securityGroup("acme", "aws-pricing")).toBe("Mango-acme-PackNetwork-SecurityGroup-aws-pricing");
   });
 
-  it("is not part of Core in a release: Core holds one VPC, the one of mango-api", () => {
-    expect(ofType("AWS::EC2::VPC")).toHaveLength(1);
+  it("is not part of Core in a release: Core holds two VPCs, mango-api's and the code sandbox's (D114 (11))", () => {
+    expect(ofType("AWS::EC2::VPC")).toHaveLength(2);
     expect(ofType("AWS::Route53Resolver::FirewallRuleGroup")).toHaveLength(0);
   });
 });

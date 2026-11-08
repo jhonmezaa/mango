@@ -74,10 +74,19 @@ describe("presign role", () => {
     expect(PRESIGN_SESSION.toSeconds()).toBeLessThanOrEqual(presign.Properties.MaxSessionDuration);
   });
 
-  it("puts only under uploads/ of the documents and gets only under owner/ of the reports", () => {
+  it("puts only under uploads/ of the documents and of the chat files, and gets only under owner/ of the reports and of the chat files", () => {
     const statements = statementsOf(presignId);
     const sids = Object.fromEntries(statements.map((s) => [s.Sid, s]));
-    expect(Object.keys(sids).sort()).toEqual(["DocumentsKey", "DownloadReports", "ReportsKey", "UploadDocuments"]);
+    // The chat files' statements are checked in code-sandbox.test.ts (D116).
+    expect(Object.keys(sids).sort()).toEqual([
+      "ChatFilesKey",
+      "DocumentsKey",
+      "DownloadChatFiles",
+      "DownloadReports",
+      "ReportsKey",
+      "UploadChatFiles",
+      "UploadDocuments",
+    ]);
     expect(actions(sids.UploadDocuments!)).toEqual(["s3:PutObject"]);
     expect(JSON.stringify(sids.UploadDocuments!.Resource)).toContain(documentsBucket);
     expect(JSON.stringify(sids.UploadDocuments!.Resource)).toContain("/uploads/*");

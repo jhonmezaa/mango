@@ -17,6 +17,16 @@ export interface PresignProps {
   readonly documents: { readonly bucket: s3.IBucket; readonly key: kms.IKey; readonly prefix: string };
   /** PDFs of task runs: the browser downloads them under `owner/` (D86 (4)). */
   readonly reports: { readonly bucket: s3.IBucket; readonly key: kms.IKey; readonly prefix: string };
+  /**
+   * Files of the chat (D116 (4), (5)): the browser posts uploads under `uploads/` and downloads
+   * under `owner/`, only once their scan cleared them (the bucket's policy).
+   */
+  readonly chatFiles: {
+    readonly bucket: s3.IBucket;
+    readonly key: kms.IKey;
+    readonly uploads: string;
+    readonly owner: string;
+  };
 }
 
 /**
@@ -26,8 +36,9 @@ export interface PresignProps {
  * mango-api assumes this role with STS, one session per person with `SourceIdentity` = that
  * person (rule 5), and signs only with it (`mango_api.presign`).
  *
- * It may put objects under `uploads/` of the documents bucket and get them under `owner/` of
- * the reports bucket, each with its key through S3, and nothing else. Its trust takes only the
+ * It may put objects under `uploads/` of the documents bucket and of the chat files bucket, and
+ * get them under `owner/` of the reports bucket and of the chat files bucket, each with its key
+ * through S3, and nothing else. Its trust takes only the
  * task role of mango-api, and only with a source identity.
  */
 export class Presign extends Construct {
@@ -40,7 +51,7 @@ export class Presign extends Construct {
     const withIdentity = { Null: { "sts:SourceIdentity": "false" } };
     this.role = new iam.Role(this, "Role", {
       roleName: mangoName(props.namespace, "Presign"),
-      description: "Signs the URLs a browser uses (uploads of knowledge documents, PDFs of tasks); mango-api only",
+      description: "Signs the URLs a browser uses (knowledge uploads, task PDFs, chat files); mango-api only",
       assumedBy: new iam.ArnPrincipal(props.apiTaskRole.roleArn).withConditions(withIdentity),
       maxSessionDuration: Duration.hours(1),
     });
@@ -53,6 +64,8 @@ export class Presign extends Construct {
     );
     const uploads = props.documents.bucket.arnForObjects(`${props.documents.prefix}*`);
     const reports = props.reports.bucket.arnForObjects(`${props.reports.prefix}*`);
+    const chatUploads = props.chatFiles.bucket.arnForObjects(`${props.chatFiles.uploads}*`);
+    const chatDownloads = props.chatFiles.bucket.arnForObjects(`${props.chatFiles.owner}*`);
     const viaS3 = { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } };
     const policy = new iam.Policy(this, "Policy", {
       roles: [this.role],
@@ -71,6 +84,14 @@ export class Presign extends Construct {
           resources: [props.reports.key.keyArn],
           conditions: viaS3,
         }),
+        new iam.PolicyStatement({ sid: "UploadChatFiles", actions: ["s3:PutObject"], resources: [chatUploads] }),
+        new iam.PolicyStatement({ sid: "DownloadChatFiles", actions: ["s3:GetObject"], resources: [chatDownloads] }),
+        new iam.PolicyStatement({
+          sid: "ChatFilesKey",
+          actions: ["kms:GenerateDataKey", "kms:Decrypt"],
+          resources: [props.chatFiles.key.keyArn],
+          conditions: viaS3,
+        }),
       ],
     });
     const objects = (bucket: s3.IBucket, prefix: string) =>
@@ -84,6 +105,14 @@ export class Presign extends Construct {
       {
         id: objects(props.reports.bucket, props.reports.prefix),
         reason: "One PDF per run, created at runtime under its owner's prefix (D86 (3)).",
+      },
+      {
+        id: objects(props.chatFiles.bucket, props.chatFiles.uploads),
+        reason: "Chat uploads are keyed at runtime by caller and ULIDs (D116 (4)); the prefix uploads/ is the scope.",
+      },
+      {
+        id: objects(props.chatFiles.bucket, props.chatFiles.owner),
+        reason: "Chat files are created at runtime under their owner's prefix (D116 (3)).",
       },
     );
 

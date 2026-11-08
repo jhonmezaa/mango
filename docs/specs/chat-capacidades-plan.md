@@ -139,7 +139,7 @@ Va primero: el sandbox alarga los turnos y el formato del stream cambia para tod
 
 | PR | Qué | Tamaño | Depende de | Claude Design |
 |---|---|---|---|---|
-| **C1** | Infra: `CodeInterpreterCustom` `Mango_<ns>_sandbox` (SANDBOX, sin rol de ejecución, tags del stack) en `Core` o un anidado (D99); bucket `Mango-<ns>-chat-files` (CMK, `RETAIN`, TLS, versionado con versiones viejas a 1 día, `uploads/` a 1 día, 90 días, deny por `s3:signatureAge`); plan de GuardDuty Malware Protection con etiqueta; TBAC; el rol Presign gana `uploads/` y `owner/` de ese bucket | M | P1 | — |
+| **C1** | Infra: `CodeInterpreterCustom` `Mango_<ns>_sandbox` (modo `VPC` en una VPC propia sin salida ni DNS tras T5, D114 (11); sin rol de ejecución, tags del stack) en el anidado `Sandbox` (D99); bucket `Mango-<ns>-chat-files` (CMK, `RETAIN`, TLS, versionado con versiones viejas a 1 día, `uploads/` a 1 día, 90 días, deny por `s3:signatureAge`); plan de GuardDuty Malware Protection con etiqueta; TBAC; el rol Presign gana `uploads/` y `owner/` de ese bucket | M | P1 | — |
 | **C2** | Conector `connectors/code-interpreter/`: tools `run_python`, `list_files`, `read_file`; verifica token y firma; sesión por (persona, conversación) en DynamoDB con el `sessionId` cifrado y nunca devuelto; bootstrap (`/mnt/data` lógico, `Agg`, módulo de display con un nombre no registrable en PyPI); tras cada celda, `listFiles` + `readFiles` de las salidas → S3; respuesta al modelo solo texto con tope; corte propio de 300 s; uso medido y auditoría `code.execute` (nunca el código). Target `code` del Gateway y política Cedar L2 | L | C1 | — |
 | **C3** | Dominio: capacidad `code_interpreter` en `AgentDefinition`, Builder (API), firma y `allowedTools` en `mango-api` y el provisioner; reserva `_code_reserve` con precios del catálogo (regla 7) y liquidación medida (D115) | M | C2 | Builder (casilla) |
 | **C4** | Trabajador: mensajes `recipient: "code.run_python"` y su resultado (`aggregate_result` propio: estado, stdout/stderr con tope, excepción, imágenes y archivos por id) | M | C2, R3 | — |
@@ -207,7 +207,7 @@ Todas en la instalación del cliente solo si el dueño lo autoriza por menú; re
 
 | # | Qué confirma | PR |
 |---|---|---|
-| T5 | Si la red `SANDBOX` deja subir a un bucket ajeno (exfiltración); C2 no se integra sin su resultado (TM-CI3) | C1 |
+| T5 | Si la red `SANDBOX` deja subir a un bucket ajeno (exfiltración); C2 no se integra sin su resultado (TM-CI3). **Hecha el 2026-11-07**, con el visto bueno del dueño, desde el CI del sistema: S3 de la región responde (HTTP 307); S3 de otra región, STS, DynamoDB e internet, no. Mitigación: modo `VPC` sin salida ni DNS (D114 (11)); falta repetirla desde el CI de Mango en una instalación | C1 |
 | T6/T7 | Nombre de la tool en `allowedTools` y sesión del CI que usa el harness (solo para cerrar la comparación) | — |
 | R0 | Protección de tarea de ECS frente a un despliegue; sesión del harness tras cortar el stream. **Hecha el 2026-11-07** (D121 (9)) | R0 |
 | G | Imagen en el resultado MCP del Gateway: ¿la ve el modelo? | D3 |

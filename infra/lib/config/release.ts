@@ -10,7 +10,12 @@ import {
   remoteMcpEnabledParameter,
   catalogGovernedByLakeFormationParameter,
 } from "../params.js";
-import { AGENTCORE_VPC_ZONE_IDS, curReconciliationSchema, Installation } from "./schema.js";
+import {
+  AGENTCORE_VPC_ZONE_IDS,
+  codeInterpreterPricesSchema,
+  curReconciliationSchema,
+  Installation,
+} from "./schema.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -31,6 +36,8 @@ const releaseDefaultsSchema = z
     ),
     /** USD per million input tokens of each embedding model (D88 (7), (24)). */
     embeddingPrices: z.record(z.string().regex(/^amazon\.titan-embed-[a-z0-9.:-]+$/), price),
+    /** USD per vCPU-hour and per GB-hour of the Code Interpreter sandbox (D115 (2)). */
+    codeInterpreterPrices: codeInterpreterPricesSchema,
     budgets: z
       .object({
         userMonthlyUsd: z.number().positive().max(10_000),
@@ -227,6 +234,7 @@ export function coreParameters(stack: Stack): CoreParameters {
     models: defaults.models,
     modelPrices: defaults.modelPrices,
     embeddingPrices: defaults.embeddingPrices,
+    codeInterpreterPrices: defaults.codeInterpreterPrices,
     budgets: defaults.budgets,
     curReconciliation: defaults.curReconciliation,
     audit: { retentionDays: Token.asNumber(auditDays.valueAsNumber), mode: "GOVERNANCE" },

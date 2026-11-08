@@ -73,15 +73,18 @@ describe("stack tagger role (D77)", () => {
     expect(tag.Condition).toEqual({ StringEquals: ownNamespace });
   });
 
-  it("tags the defaults of the network only in the installation's two VPCs", () => {
+  it("tags the defaults of the network only in the installation's three VPCs", () => {
     const tag = bySid("TagVpcDefaults");
     expect(actions(tag)).toEqual(["ec2:CreateTags"]);
     const kinds = (tag.Resource as unknown[]).map((r) => json(r).match(/:(security-group|network-acl|route-table)\/\*/)?.[1]);
     expect(kinds.sort()).toEqual(["network-acl", "route-table", "security-group"]);
     const vpcs = tag.Condition!.StringEquals!["ec2:Vpc"] as unknown[];
-    expect(vpcs).toHaveLength(2);
+    // mango-api's, the code sandbox's (D114 (11)) and the pack network's.
+    expect(vpcs).toHaveLength(3);
     expect(json(vpcs[0])).toContain(":vpc/");
-    expect(json(vpcs[1])).toContain("-PackNetwork-VpcId");
+    expect(json(vpcs[1])).toContain(":vpc/");
+    expect(json(vpcs[1])).toContain("SandboxVpc");
+    expect(json(vpcs[2])).toContain("-PackNetwork-VpcId");
     expect(tag.Condition!.StringEquals!["aws:RequestTag/mango:namespace"]).toEqual({ Ref: "Namespace" });
   });
 
