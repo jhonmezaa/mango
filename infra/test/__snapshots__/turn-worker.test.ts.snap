@@ -196,6 +196,54 @@ exports[`the role of the turn worker > is only granted by the identity policies 
  },
  {
   "Action": [
+   "dynamodb:UpdateItem"
+  ],
+  "Condition": {
+   "ForAllValues:StringLike": {
+    "dynamodb:LeadingKeys": [
+     "AUTO#*"
+    ]
+   },
+   "ForAllValues:StringEquals": {
+    "dynamodb:Attributes": [
+     "PK",
+     "SK",
+     "status",
+     "started_at",
+     "ended_at",
+     "reason",
+     "result",
+     "cost_usd",
+     "turn_id",
+     "approvals",
+     "steps",
+     "report_status",
+     "report_reason",
+     "report_meta",
+     "report_data",
+     "report_at",
+     "running_run",
+     "running_since"
+    ]
+   },
+   "Null": {
+    "dynamodb:Attributes": "false"
+   },
+   "StringEqualsIfExists": {
+    "dynamodb:ReturnValues": "NONE"
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "Tasks8FFE6845",
+    "Arn"
+   ]
+  },
+  "Sid": "EndTaskRuns"
+ },
+ {
+  "Action": [
    "secretsmanager:DescribeSecret",
    "secretsmanager:GetSecretValue"
   ],
@@ -392,6 +440,26 @@ exports[`the role of the turn worker > is only granted by the identity policies 
  },
  {
   "Action": [
+   "dynamodb:GetItem"
+  ],
+  "Condition": {
+   "ForAllValues:StringLike": {
+    "dynamodb:LeadingKeys": [
+     "AUTO#*"
+    ]
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "Tasks8FFE6845",
+    "Arn"
+   ]
+  },
+  "Sid": "ReadTaskRuns"
+ },
+ {
+  "Action": [
    "kms:GetPublicKey"
   ],
   "Condition": {
@@ -433,6 +501,39 @@ exports[`the role of the turn worker > is only granted by the identity policies 
    ]
   },
   "Sid": "TablesKey"
+ },
+ {
+  "Action": [
+   "lambda:InvokeFunction"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "TaskReportsFunction3E7B45D1",
+    "Arn"
+   ]
+  },
+  "Sid": "TaskRunReport"
+ },
+ {
+  "Action": [
+   "dynamodb:PutItem"
+  ],
+  "Condition": {
+   "ForAllValues:StringLike": {
+    "dynamodb:LeadingKeys": [
+     "TICKET#*"
+    ]
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "TicketsE9920DA6",
+    "Arn"
+   ]
+  },
+  "Sid": "TaskRunTicket"
  },
  {
   "Action": [

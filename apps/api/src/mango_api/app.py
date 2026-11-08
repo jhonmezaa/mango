@@ -209,6 +209,7 @@ from mango_api.task_reports import LambdaRenderer, S3Links, TaskReports
 from mango_api.task_worker import (
     REMOTE_CONSENT_REQUIRED,
     AgentAccessDeniedError,
+    DispatchedRuns,
     QueueWorker,
     TaskRuns,
     TaskSteps,
@@ -1138,6 +1139,46 @@ def build_services(settings: Settings) -> Services:
     return services
 
 
+def dispatched_runs(services: Services) -> DispatchedRuns | None:
+    """The runs of tasks in the turn worker (D121 (5)): the Tasks table, the tasks client to
+    verify their tokens with, the Bandeja, «Crear ticket» and the PDF of a report. Never the
+    tasks client's secret, the identity key or Scheduler: mango-api keeps every one of them
+    (TM-T1). ``None`` without the table or the client."""
+    settings = services.settings
+    if not settings.tasks_table or not settings.tasks_client_id:
+        return None
+    region = settings.region
+    run_reports = (
+        TaskReports(
+            renderer=LambdaRenderer(
+                boto3.client("lambda", region_name=region), settings.task_report_function
+            ),
+            # The worker asks for PDFs and never signs a link to one.
+            links=S3Links(None, ""),
+        )
+        if settings.task_report_function
+        else None
+    )
+    return DispatchedRuns(
+        store=TaskStore(
+            boto3.client("dynamodb", region_name=region),
+            settings.tasks_table,
+            per_owner=MAX_PER_OWNER,
+            per_installation=MAX_PER_INSTALLATION,
+        ),
+        verifier=AccessTokenVerifier(settings.cognito_issuer, settings.tasks_client_id),
+        turn=lambda caller, automation, run, message: _task_turn(
+            services, caller, automation, run, message, reports_on=run_reports is not None
+        ),
+        audit=services.audit,
+        inbox=RunInbox(services.inbox.store) if services.inbox is not None else None,
+        reports=run_reports,
+        tickets=RunTicketWriter(services.tickets, _ticket_decider(services))
+        if services.tickets is not None
+        else None,
+    )
+
+
 def _chat_turns(services: Services, clients: Callable[[str], Any]) -> turns.ChatTurns:
     """The chat turn (D121): sent to ``Mango-<ns>-ChatTurns`` for the turn worker. Without the
     queue (an installation whose stack does not have it yet) this task runs the same handler
@@ -1272,20 +1313,27 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         # D26: a required suite that has not passed on a version blocks its approval.
         services.agents.eval_gate = EvalGate(services.evals)
     if services.tasks is not None and services.task_tokens is not None:
+        tasks = services.tasks
         services.task_runs = TaskRuns(
-            store=services.tasks.store,
+            store=tasks.store,
             tokens=services.task_tokens,
             turn=lambda caller, automation, run, message: _task_turn(
-                services, caller, automation, run, message
+                services, caller, automation, run, message, reports_on=tasks.reports is not None
             ),
             scheduler=services.tasks.scheduler,
             audit=services.audit,
             queue=services.tasks.queue,
             inbox=RunInbox(services.inbox.store) if services.inbox is not None else None,
-            reports=services.tasks.reports,
+            reports=tasks.reports,
             evals=eval_runner,
             tickets=RunTicketWriter(services.tickets, _ticket_decider(services))
             if services.tickets is not None
+            else None,
+            # D121 (5): the turn of a run goes to the turn worker, like a chat turn's.
+            dispatch=turns.SqsTurnSender(
+                boto3.client("sqs", region_name=settings.region), settings.chat_turns_queue_url
+            )
+            if settings.chat_turns_queue_url
             else None,
         )
         services.tasks.tickets = services.tickets is not None
@@ -2240,8 +2288,11 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     automation: Automation,
     run: Run,
     message: str,
+    *,
+    reports_on: bool,
 ) -> TurnOutcome:
     """One turn without chat, as the owner of the task: the path of ``POST /api/chat``.
+    ``reports_on``: the PDFs of runs are deployed (D86). In mango-api or in the turn worker.
 
     The run has no conversation: its id stands for one in the turn's pending record and its
     runtime session, which is always new (a run never continues another). The answer goes to
@@ -2369,9 +2420,7 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     # A task with a report hands its data over with the internal tool (D86 (6), D87 (3)).
     report_type = (
         cast(reports.ReportType, automation.report)
-        if automation.report in reports.TYPE_NAMES
-        and services.tasks is not None
-        and services.tasks.reports is not None
+        if automation.report in reports.TYPE_NAMES and reports_on
         else None
     )
     request = harness.build_request(

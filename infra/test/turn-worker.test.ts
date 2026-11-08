@@ -8,6 +8,7 @@ import {
   CHAT_TURN_RETENTION,
   CHAT_TURN_VISIBILITY,
   CHAT_TURNS_QUEUE_ENV,
+  TASK_RUN_ATTRIBUTES,
   TURN_WORKER_COMMAND,
   TURN_WORKER_ENVIRONMENT,
   TURN_WORKER_STOP_SECONDS,
@@ -308,7 +309,6 @@ describe("the role of the turn worker", () => {
     }
     for (const action of [
       "states:StartExecution",
-      "lambda:InvokeFunction",
       "kms:Sign",
       "cognito-idp:AdminInitiateAuth",
       "iam:PassRole",
@@ -330,6 +330,47 @@ describe("the role of the turn worker", () => {
     const limits = bySid(statements, "RateLimitsTable");
     expect(list(limits.Action).sort()).toEqual(["dynamodb:GetItem", "dynamodb:PutItem"]);
     expect(limits.Condition).toEqual({ "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#*"] } });
+  });
+
+  it("ends task runs without changing who a task runs as, what it asks or its agent (TM-T1)", () => {
+    // D121 (5): the worker reads a task and its run and records the run's end.
+    const tasksTable = resources[logicalId("AWS::DynamoDB::GlobalTable", { TableName: `Mango-${ns}-Tasks` })];
+    expect(tasksTable).toBeDefined();
+    const items = { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["AUTO#*"] } };
+    const read = bySid(statements, "ReadTaskRuns");
+    expect(read.Action).toBe("dynamodb:GetItem");
+    expect(read.Condition).toEqual(items);
+    const end = bySid(statements, "EndTaskRuns");
+    expect(end.Action).toBe("dynamodb:UpdateItem");
+    expect(end.Condition).toEqual({
+      ...items,
+      "ForAllValues:StringEquals": { "dynamodb:Attributes": [...TASK_RUN_ATTRIBUTES] },
+      Null: { "dynamodb:Attributes": "false" },
+      StringEqualsIfExists: { "dynamodb:ReturnValues": "NONE" },
+    });
+    for (const name of ["owner_id", "agent_id", "task", "spec", "trigger", "paused_reason", "event_type", "ticket"]) {
+      expect(TASK_RUN_ATTRIBUTES as readonly string[], name).not.toContain(name);
+    }
+    // Only these two statements name the Tasks table: no Query, no PutItem, no DeleteItem.
+    const onTasks = statements.filter((s) => JSON.stringify(s.Resource).includes("Tasks"));
+    expect(onTasks.map((s) => s.Sid).sort()).toEqual(["EndTaskRuns", "ReadTaskRuns"]);
+    // A ticket of a run (D112) and the PDF of a report (D86); nothing of the identity of runs.
+    const ticket = bySid(statements, "TaskRunTicket");
+    expect(ticket.Action).toBe("dynamodb:PutItem");
+    expect(ticket.Condition).toEqual({ "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["TICKET#*"] } });
+    const report = bySid(statements, "TaskRunReport");
+    expect(report.Action).toBe("lambda:InvokeFunction");
+    const invokes = statements.filter((s) => list(s.Action).includes("lambda:InvokeFunction"));
+    expect(invokes.map((s) => s.Sid)).toEqual(["TaskRunReport"]);
+    expect(JSON.stringify(report.Resource)).toMatch(/TaskReport/);
+    const apiEnv = envOf(apiContainer);
+    const workerEnv = envOf(container);
+    for (const name of ["TASKS_TABLE", "TASKS_CLIENT_ID", "TASK_REPORT_FUNCTION"]) {
+      expect(workerEnv[name], name).toEqual(apiEnv[name]);
+    }
+    for (const name of ["TASKS_CLIENT_SECRET_ARN", "TASK_IDENTITY_KEY_ARN", "TASK_RUNS_QUEUE_URL", "TASK_SCHEDULER_ROLE_ARN"]) {
+      expect(workerEnv, name).not.toHaveProperty(name);
+    }
   });
 
   it("is only granted by the identity policies of this stack", () => {

@@ -5,6 +5,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as firehose from "aws-cdk-lib/aws-kinesisfirehose";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sqs from "aws-cdk-lib/aws-sqs";
@@ -106,6 +107,12 @@ export const TURN_WORKER_ENVIRONMENT = [
   "REMOTE_MCP_ENABLED",
   "REMOTE_MCP_KEY_ID",
   "MANGO_VERSION",
+  // The turns of task runs (D78, D121 (5)): their table, the tasks client their tokens are
+  // verified against and the function that draws the PDF of a report (D86). Never the client's
+  // secret, the identity key, the queue of runs or Scheduler: those stay mango-api's (TM-T1).
+  "TASKS_TABLE",
+  "TASKS_CLIENT_ID",
+  "TASK_REPORT_FUNCTION",
 ] as const;
 /** The environment variable both services read the queue from. */
 export const CHAT_TURNS_QUEUE_ENV = "MANGO_CHAT_TURNS_QUEUE_URL";
@@ -497,6 +504,91 @@ export function turnWorkerRole(scope: Construct, id: string, namespace: string):
   });
 }
 
+/** What a task run reaches beyond a chat turn (D78, D121 (5)). */
+export interface TaskRunResources {
+  readonly tasks: dynamodb.ITable;
+  /** «Crear ticket» of a run that ended well (D112). */
+  readonly tickets: dynamodb.ITable;
+  /** `Mango-<ns>-TaskReport`: draws the PDF of a run (D86). */
+  readonly reportFunction: lambda.IFunction;
+}
+
+/**
+ * What the worker writes in the Tasks table: the end of a run and the release of the hold of its
+ * task. Never who a task runs as, what it asks, its agent or its schedule: mango-api issues the
+ * token of a run for the owner the table names (TM-T1), so a worker that could write `owner_id`
+ * could get the token of anybody.
+ */
+export const TASK_RUN_ATTRIBUTES = [
+  "PK",
+  "SK",
+  "status",
+  "started_at",
+  "ended_at",
+  "reason",
+  "result",
+  "cost_usd",
+  "turn_id",
+  "approvals",
+  "steps",
+  "report_status",
+  "report_reason",
+  "report_meta",
+  "report_data",
+  "report_at",
+  "running_run",
+  "running_since",
+] as const;
+
+/**
+ * The turn of a task run in the worker (D121 (5)): read a task and its run, record the run's
+ * end and release its hold (only the attributes of {@link TASK_RUN_ATTRIBUTES}, only items of a
+ * task), leave a ticket of the run (D112) and ask for its PDF (D86). The notice in the Bandeja
+ * goes to the Conversations table through the role of conversation data (RLS), as the turn's
+ * rows. Nothing of Cognito, KMS signing, Scheduler or the queue of runs.
+ */
+export function grantTaskRuns(role: iam.Role, runs: TaskRunResources): void {
+  const add = (statement: iam.PolicyStatement) => role.addToPrincipalPolicy(statement);
+  const tasks = { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["AUTO#*"] } };
+  add(
+    new iam.PolicyStatement({
+      sid: "ReadTaskRuns",
+      actions: ["dynamodb:GetItem"],
+      resources: [runs.tasks.tableArn],
+      conditions: tasks,
+    }),
+  );
+  add(
+    new iam.PolicyStatement({
+      sid: "EndTaskRuns",
+      actions: ["dynamodb:UpdateItem"],
+      resources: [runs.tasks.tableArn],
+      conditions: {
+        ...tasks,
+        "ForAllValues:StringEquals": { "dynamodb:Attributes": [...TASK_RUN_ATTRIBUTES] },
+        // A `ForAllValues` condition holds when the key is absent: the request must name them.
+        Null: { "dynamodb:Attributes": "false" },
+        StringEqualsIfExists: { "dynamodb:ReturnValues": "NONE" },
+      },
+    }),
+  );
+  add(
+    new iam.PolicyStatement({
+      sid: "TaskRunTicket",
+      actions: ["dynamodb:PutItem"],
+      resources: [runs.tickets.tableArn],
+      conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["TICKET#*"] } },
+    }),
+  );
+  add(
+    new iam.PolicyStatement({
+      sid: "TaskRunReport",
+      actions: ["lambda:InvokeFunction"],
+      resources: [runs.reportFunction.functionArn],
+    }),
+  );
+}
+
 export interface TurnWorkerProps {
   readonly installation: Installation;
   readonly network: Network;
@@ -508,6 +600,8 @@ export interface TurnWorkerProps {
   readonly turn: Omit<TurnResources, "namespace">;
   /** The environment of mango-api: the worker takes {@link TURN_WORKER_ENVIRONMENT} from it. */
   readonly apiEnvironment: Record<string, string>;
+  /** The runs of tasks, which the worker takes from mango-api (D121 (5)). */
+  readonly taskRuns: TaskRunResources;
 }
 
 /**
@@ -528,6 +622,7 @@ export class TurnWorker extends Construct {
     const { account, region, partition } = Stack.of(this);
     this.role = turnWorkerRole(this, "TaskRole", ns);
     grantChatTurn(this.role, { ...props.turn, namespace: ns });
+    grantTaskRuns(this.role, props.taskRuns);
     props.queue.grantWorker(this.role);
 
     // IAM names no task of a service, only of a cluster: the task ARN carries the cluster,

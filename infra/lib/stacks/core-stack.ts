@@ -744,6 +744,8 @@ export class CoreStack extends Stack {
           remoteRelease.grantRead(grantee);
         },
       },
+      // D121 (5): the turns of task runs too.
+      taskRuns: { tasks: tasks.table, tickets: tickets.table, reportFunction: taskReports.function },
     });
     turnWorker.node.addDependency(...releaseAgentSeeds.seeds);
 

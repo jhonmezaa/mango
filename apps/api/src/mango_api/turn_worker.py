@@ -2,7 +2,9 @@
 
 ``python -m mango_api.turn_worker``: the same image as mango-api, another entry point, no
 port. Each message is one turn, handled by ``turns.ChatTurns.handle``: claimed with a
-conditional write, deleted at once, and never run twice (TM-TW5, D121 (7)).
+conditional write, deleted at once, and never run twice (TM-TW5, D121 (7)). A message with
+``kind`` = ``task_run`` is the turn of a task run (D78, D121 (5)), handled by
+``task_worker.DispatchedRuns.handle`` the same way: claimed in the Tasks table.
 
 While the task may hold a turn it is protected (ECS task scale-in protection, D121 (9)): the
 protection is set **before** a message is read and dropped once no receive and no turn is in
@@ -32,6 +34,7 @@ from urllib.parse import urlparse
 import boto3
 
 from mango_api.settings import Settings
+from mango_api.task_worker import TASK_RUN_KIND
 from mango_api.turns import Handler
 
 logger = logging.getLogger("mango_api.turn_worker")
@@ -241,6 +244,36 @@ class TurnWorker:
             self._holds.renew()
 
 
+def _kind(body: str) -> str | None:
+    """The ``kind`` of a message, if it has one; nothing of the body is logged."""
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return None
+    kind = parsed.get("kind") if isinstance(parsed, dict) else None
+    return kind if isinstance(kind, str) else None
+
+
+def route(chat: Handler, task_runs: Handler | None) -> Handler:
+    """Chat turns and task runs share the queue (D121 (5)): each goes to its handler."""
+
+    def handle(body: str, ack: Callable[[], None]) -> None:
+        if _kind(body) != TASK_RUN_KIND:
+            chat(body, ack)
+            return
+        if task_runs is None:
+            # The tasks are not configured here: mango-api gives the run up after its pickup.
+            logger.error("a task run reached a worker without tasks: not run")
+            try:
+                ack()
+            except Exception:
+                logger.exception("a task run message could not be deleted")
+            return
+        task_runs(body, ack)
+
+    return handle
+
+
 def worker_settings(env: Mapping[str, str] | None = None) -> Settings:
     """The settings of mango-api, without what only its HTTP routes need."""
     return Settings.from_env({**WORKER_DEFAULTS, **(os.environ if env is None else env)})
@@ -249,7 +282,7 @@ def worker_settings(env: Mapping[str, str] | None = None) -> Settings:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     # Imported here: building the services of mango-api pulls its whole app.
-    from mango_api.app import build_services, wire_ticket_gate  # noqa: PLC0415
+    from mango_api.app import build_services, dispatched_runs, wire_ticket_gate  # noqa: PLC0415
 
     settings = worker_settings()
     if not settings.chat_turns_queue_url:
@@ -260,10 +293,11 @@ def main() -> None:
     chat_turns = services.chat_turns
     if chat_turns is None:
         raise SystemExit("the chat turns are not configured")
+    task_runs = dispatched_runs(services)
     worker = TurnWorker(
         boto3.client("sqs", region_name=settings.region),
         settings.chat_turns_queue_url,
-        chat_turns.handle,
+        route(chat_turns.handle, task_runs.handle if task_runs is not None else None),
         Holds(TaskProtection(os.environ.get("ECS_AGENT_URI"))),
     )
 
