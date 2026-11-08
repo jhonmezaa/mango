@@ -13,7 +13,11 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 import { coreParameters, loadReleaseDefaults } from "../config/release.js";
 import { Installation } from "../config/schema.js";
-import { AgentPlatform, SESSION_IDLE_SECONDS, SESSION_MAX_SECONDS } from "../constructs/agent-platform.js";
+import {
+  AgentPlatform,
+  SESSION_IDLE_SECONDS,
+  SESSION_MAX_SECONDS,
+} from "../constructs/agent-platform.js";
 import { Alerts } from "../constructs/alerts.js";
 import { ApiService } from "../constructs/api-service.js";
 import { AccountHealth } from "../constructs/account-health.js";
@@ -23,25 +27,46 @@ import { CUR_RECONCILER_ALARMS } from "../constructs/cur-reconciler.js";
 import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
-import { UI_SANDBOX_ALARMS, UiSandboxOrigin } from "../constructs/ui-sandbox-origin.js";
-import { EVAL_JUDGE_ALARMS, EVALUATION_FEE_USD } from "../constructs/eval-judge.js";
+import {
+  UI_SANDBOX_ALARMS,
+  UiSandboxOrigin,
+} from "../constructs/ui-sandbox-origin.js";
+import {
+  EVAL_JUDGE_ALARMS,
+  EVALUATION_FEE_USD,
+} from "../constructs/eval-judge.js";
 import { CHAT_FILES_ALARMS } from "../constructs/chat-files-scan.js";
 import { DenyEvalsContent, Evals, EVALS_CONTENT_ACTIONS, EvalsCapture, judgeModels } from "../constructs/evals.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
-import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
+import {
+  INDEXING_PROFILE,
+  Knowledge,
+  KNOWLEDGE_PREFIXES,
+} from "../constructs/knowledge.js";
 import { Skills } from "../constructs/skills.js";
 import { Tickets } from "../constructs/tickets.js";
 import { ChatFiles, CHAT_FILES_PREFIXES } from "../constructs/chat-files.js";
 import { codeConnectorRoleArn } from "../constructs/code-connector.js";
 import { textdocConnectorRoleArn } from "../constructs/textdoc-connector.js";
-import { codeInterpreterPrices, SandboxVpc } from "../constructs/code-sandbox.js";
+import {
+  codeInterpreterPrices,
+  SandboxVpc,
+} from "../constructs/code-sandbox.js";
 import { Presign } from "../constructs/presign.js";
-import { RENDER_DOCUMENT_ALARMS, renderDocumentName } from "../constructs/render-document.js";
+import {
+  RENDER_DOCUMENT_ALARMS,
+  renderDocumentName,
+} from "../constructs/render-document.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
-import { importPackNetwork, PackNetwork, PackNetworkRef, packNetworkExports } from "../constructs/pack-network.js";
+import {
+  importPackNetwork,
+  PackNetwork,
+  PackNetworkRef,
+  packNetworkExports,
+} from "../constructs/pack-network.js";
 import { StackTagger } from "../constructs/stack-tagger.js";
 import {
   accountDataPacks,
@@ -51,14 +76,27 @@ import {
   packReadTools,
   payerChainPacks,
 } from "../constructs/pack-platform.js";
-import { PACK_INSTALLED_PARTITION, PackProvisioner } from "../constructs/pack-provisioner.js";
-import { PLAYGROUND_PARTITION, PlaygroundHarness } from "../constructs/playground.js";
+import {
+  PACK_INSTALLED_PARTITION,
+  PackProvisioner,
+} from "../constructs/pack-provisioner.js";
+import {
+  PLAYGROUND_PARTITION,
+  PlaygroundHarness,
+} from "../constructs/playground.js";
 import { RemoteMcpProvisioner } from "../constructs/remote-provisioner.js";
 import { Provisioner } from "../constructs/provisioner.js";
 import { Reconciler } from "../constructs/reconciler.js";
-import { APPROVED_REMOTE_PARTITION, remoteProvisionerName } from "../constructs/remote-mcp-api.js";
+import {
+  APPROVED_REMOTE_PARTITION,
+  remoteProvisionerName,
+} from "../constructs/remote-mcp-api.js";
 import { RemoteRelease } from "../constructs/remote-release.js";
-import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
+import {
+  ReleaseAgents,
+  releaseAgents,
+  releaseVersion,
+} from "../constructs/release-agents.js";
 import { TaskReports } from "../constructs/task-reports.js";
 import { TaskPlatform } from "../constructs/tasks.js";
 import {
@@ -72,7 +110,11 @@ import { UninstallGuard } from "../constructs/uninstall-guard.js";
 import { WriteTools } from "../constructs/write-tools.js";
 import { acknowledge, KMS_GRANT_ACTIONS, REASONS } from "../nag.js";
 import { CheckovSuppressions } from "../checkov.js";
-import { GUARD_EXCEPTIONS, GuardSuppressions, suppressGuard } from "../guard.js";
+import {
+  GUARD_EXCEPTIONS,
+  GuardSuppressions,
+  suppressGuard,
+} from "../guard.js";
 import { LogsKey, ShortKeyDeletionWindow } from "../logs.js";
 import { mangoName, roleNames } from "../names.js";
 import { tagNamespace } from "../params.js";
@@ -106,7 +148,8 @@ export interface CoreStackProps extends StackProps {
 export class CoreStack extends Stack {
   constructor(scope: Construct, id: string, props: CoreStackProps) {
     super(scope, id, props);
-    const release = props.installation === undefined ? coreParameters(this) : undefined;
+    const release =
+      props.installation === undefined ? coreParameters(this) : undefined;
     const cfg = props.installation ?? release!.installation;
     // A release names its resources after a parameter: the tag goes on them, not on the stack.
     if (release) tagNamespace(this, cfg.namespace);
@@ -117,7 +160,9 @@ export class CoreStack extends Stack {
       enforceSSL: true,
       encryption: s3.BucketEncryption.S3_MANAGED,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
-      removalPolicy: cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      removalPolicy: cfg.retainData
+        ? RemovalPolicy.RETAIN
+        : RemovalPolicy.DESTROY,
       autoDeleteObjects: !cfg.retainData,
       lifecycleRules: [{ expiration: Duration.days(90) }],
     });
@@ -127,8 +172,15 @@ export class CoreStack extends Stack {
       GUARD_EXCEPTIONS.logBucketVersioning,
     );
 
-    const network = new Network(this, "Network", { installation: cfg, accessLogs });
-    const edge = new Edge(this, "Edge", { installation: cfg, alb: network.alb, accessLogs });
+    const network = new Network(this, "Network", {
+      installation: cfg,
+      accessLogs,
+    });
+    const edge = new Edge(this, "Edge", {
+      installation: cfg,
+      alb: network.alb,
+      accessLogs,
+    });
     // D123: the second origin, for code Mango did not write (Canvas previews, MCP Apps). Its
     // distribution is in Core because the SPA's CSP names it; the SPA frames only that origin.
     const uiSandbox = new UiSandboxOrigin(this, "UiSandboxOrigin", {
@@ -140,7 +192,14 @@ export class CoreStack extends Stack {
     const identity = new Identity(this, "Identity", {
       installation: cfg,
       appOrigin: edge.origin,
-      ...(release ? { secondAdmin: { email: release.secondAdminEmail, when: release.hasSecondAdmin } } : {}),
+      ...(release
+        ? {
+            secondAdmin: {
+              email: release.secondAdminEmail,
+              when: release.hasSecondAdmin,
+            },
+          }
+        : {}),
     });
 
     const apiTaskRole = new iam.Role(this, "ApiTaskRole", {
@@ -159,10 +218,16 @@ export class CoreStack extends Stack {
       ...(release ? { auditLockMode: release.auditLockMode } : {}),
     });
     // D99: the Cedar policies of the store, in a stack nested in Core.
-    new AuthorizationStack(this, "Authorization", { policyStoreId: governance.policyStore.attrPolicyStoreId });
+    new AuthorizationStack(this, "Authorization", {
+      policyStoreId: governance.policyStore.attrPolicyStoreId,
+    });
     // D35: the pre-token trigger derives `mango_central` from the group registry (and reads
     // nothing else of the Settings table).
-    identity.readGroupRegistry(governance.settings, governance.dataKey, GROUPS_PARTITION);
+    identity.readGroupRegistry(
+      governance.settings,
+      governance.dataKey,
+      GROUPS_PARTITION,
+    );
 
     // Signed MCP packs of the release (D36), verified here once. Those that read account
     // data act as the calling user through the Billing broker (D37).
@@ -203,7 +268,9 @@ export class CoreStack extends Stack {
       adminProbe: tools.adminProbe,
       memberChainPacks: memberChainPacks(packRelease),
     });
-    const agentPlatform = new AgentPlatform(this, "AgentPlatform", { installation: cfg });
+    const agentPlatform = new AgentPlatform(this, "AgentPlatform", {
+      installation: cfg,
+    });
     // D92: skills of instructions, versioned and approved; their SKILL.md is read by the
     // harness of each agent with that agent's role.
     const skills = new Skills(this, "Skills", {
@@ -216,10 +283,16 @@ export class CoreStack extends Stack {
     // D122: «Memoria» of each person and the purge, only while memory is on.
     agentPlatform.memory.grantApi(apiTaskRole);
     // D110, D111: the suites, cases and runs of the evals (data: here, not nested, D99 (2)).
-    const evals = new Evals(this, "Evals", { installation: cfg, dataKey: governance.dataKey });
+    const evals = new Evals(this, "Evals", {
+      installation: cfg,
+      dataKey: governance.dataKey,
+    });
     evals.grantApi(apiTaskRole);
     // D110 (3): the key of the evals harness's log groups, the only ones with content.
-    const evalsCapture = new EvalsCapture(this, "EvalsCapture", { installation: cfg, retainData: cfg.retainData });
+    const evalsCapture = new EvalsCapture(this, "EvalsCapture", {
+      installation: cfg,
+      retainData: cfg.retainData,
+    });
     evalsCapture.allowAgents(agentPlatform.boundary);
     // D16, precised 2026-11-08: the harnesses' runtime log groups are content too. The same
     // policy and boundaries deny reading them to every role but the trace reader (D108).
@@ -228,14 +301,19 @@ export class CoreStack extends Stack {
     evalsCapture.denyInBoundary(agentPlatform.boundary);
     evalsCapture.grantApi(apiTaskRole);
     // D112: tickets of Mango, written by mango-api (and, for agents, by the tickets tool).
-    const tickets = new Tickets(this, "Tickets", { installation: cfg, dataKey: governance.dataKey });
+    const tickets = new Tickets(this, "Tickets", {
+      installation: cfg,
+      dataKey: governance.dataKey,
+    });
     tickets.grantApi(apiTaskRole);
     // D112 (9): the tickets tool runs in the approval executor (target `ops`).
     tickets.grantToolExecutor(writeTools.executor);
     // Marketplace v1 (D18, D32): agents are published by SDK, not by this stack. The agents
     // of the release (FinOps) are seeded as approved versions and published the same way (D34).
     const shipped = releaseAgents(cfg);
-    const releaseHashes = Object.fromEntries(shipped.map((a) => [a.id, a.contentHash]));
+    const releaseHashes = Object.fromEntries(
+      shipped.map((a) => [a.id, a.contentHash]),
+    );
     const provisioner = new Provisioner(this, "Provisioner", {
       installation: cfg,
       platform: agentPlatform,
@@ -247,7 +325,10 @@ export class CoreStack extends Stack {
       configKey: tools.configKey,
       gatewayUrl: tools.gatewayUrl,
       releaseAgents: releaseHashes,
-      skills: { bucketName: skills.bucket.bucketName, keyArn: skills.key.keyArn },
+      skills: {
+        bucketName: skills.bucket.bucketName,
+        keyArn: skills.key.keyArn,
+      },
       evals: evalsCapture,
     });
     // D119 (5): the provisioner writes the document skills of the release, before naming them.
@@ -294,7 +375,8 @@ export class CoreStack extends Stack {
               assetsBucket: props.release
                 ? `${props.release.bucket}-${this.region}`
                 : `cdk-hnb659fds-assets-${this.account}-${this.region}`,
-              distributionDomainName: uiSandbox.distribution.distributionDomainName,
+              distributionDomainName:
+                uiSandbox.distribution.distributionDomainName,
               spaOrigin: edge.origin,
             },
           }),
@@ -339,12 +421,19 @@ export class CoreStack extends Stack {
     edge.allowConnectTo(knowledge.uploadOrigin);
     // D116: the files of the chat (uploads and what the code sandbox generates), read only once
     // their malware scan cleared them. The bucket and its key hold data and stay in Core.
-    const chatFiles = new ChatFiles(this, "ChatFiles", { installation: cfg, accessLogs, appOrigin: edge.origin });
+    const chatFiles = new ChatFiles(this, "ChatFiles", {
+      installation: cfg,
+      accessLogs,
+      appOrigin: edge.origin,
+    });
     // The browser posts the chat's attachments to that bucket only (D116 (4)).
     edge.allowConnectTo(chatFiles.uploadOrigin);
     // D114: the network of the code sandbox. Its VPC is here because the stack tagger tags its
     // defaults; the subnets, the Code Interpreter and the scan plan are in a nested stack (D99).
-    const sandboxVpc = new SandboxVpc(this, "SandboxVpc", { installation: cfg, accessLogs });
+    const sandboxVpc = new SandboxVpc(this, "SandboxVpc", {
+      installation: cfg,
+      accessLogs,
+    });
     // Its connector (D114 (1)) is a Mango connector behind the Gateway, in the same nested stack:
     // Core trusts its role by name and reads nothing of it (D99 (4)).
     new SandboxStack(this, "Sandbox", {
@@ -403,8 +492,16 @@ export class CoreStack extends Stack {
     const presign = new Presign(this, "Presign", {
       namespace: cfg.namespace,
       apiTaskRole,
-      documents: { bucket: knowledge.bucket, key: knowledge.key, prefix: KNOWLEDGE_PREFIXES.uploads },
-      reports: { bucket: taskReports.bucket, key: taskReports.key, prefix: "owner/" },
+      documents: {
+        bucket: knowledge.bucket,
+        key: knowledge.key,
+        prefix: KNOWLEDGE_PREFIXES.uploads,
+      },
+      reports: {
+        bucket: taskReports.bucket,
+        key: taskReports.key,
+        prefix: "owner/",
+      },
       chatFiles: {
         bucket: chatFiles.bucket,
         key: chatFiles.key,
@@ -455,7 +552,10 @@ export class CoreStack extends Stack {
     // D104: the payer's Data Export CUR 2.0, cut down to Bedrock of this account, lands in a
     // bucket of Core (it holds data, D99 (2)); a function in a nested stack compares it once a
     // day with the day counters of each agent and of the organization. It only reads.
-    const curExport = new CurExportBucket(this, "CurExport", { installation: cfg, accessLogs });
+    const curExport = new CurExportBucket(this, "CurExport", {
+      installation: cfg,
+      accessLogs,
+    });
     new CurReconciliationStack(this, "CurReconciliation", {
       installation: cfg,
       catalogGovernedByLakeFormation: release
@@ -531,11 +631,16 @@ export class CoreStack extends Stack {
     // not wait for them to be deleted.
     const ownPackNetwork =
       packRelease.packs.length > 0 && !release
-        ? new PackNetwork(this, "PackNetwork", { installation: cfg, packs: packRelease.packs })
+        ? new PackNetwork(this, "PackNetwork", {
+            installation: cfg,
+            packs: packRelease.packs,
+          })
         : undefined;
     const packNetwork: PackNetworkRef | undefined =
       ownPackNetwork ??
-      (packRelease.packs.length > 0 ? importPackNetwork(cfg.namespace, packRelease.packs) : undefined);
+      (packRelease.packs.length > 0
+        ? importPackNetwork(cfg.namespace, packRelease.packs)
+        : undefined);
     const packProvisioner = new PackProvisioner(this, "PackProvisioner", {
       installation: cfg,
       platform: agentPlatform,
@@ -568,7 +673,10 @@ export class CoreStack extends Stack {
       connectorTargets: tools.connectorTargets,
       configKey: tools.configKey,
       alerts,
-      sourceRoles: { boundary: knowledge.sourceBoundary, roleArns: knowledge.sourceRoleArns },
+      sourceRoles: {
+        boundary: knowledge.sourceBoundary,
+        roleArns: knowledge.sourceRoleArns,
+      },
     });
     new Observability(this, "Observability", {
       installation: cfg,
@@ -583,7 +691,11 @@ export class CoreStack extends Stack {
         : undefined;
     new StackTagger(this, "StackTagger", {
       installation: cfg,
-      vpcIds: [network.vpc.vpcId, sandboxVpc.vpc.vpcId, ...(packVpcId ? [packVpcId] : [])],
+      vpcIds: [
+        network.vpc.vpcId,
+        sandboxVpc.vpc.vpcId,
+        ...(packVpcId ? [packVpcId] : []),
+      ],
       release: props.release?.label ?? "v0.0.0-unpublished",
       configKey: tools.configKey,
     });
@@ -593,7 +705,10 @@ export class CoreStack extends Stack {
     apiTaskRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "InvokeAgentHarnesses",
-        actions: ["bedrock-agentcore:InvokeHarness", "bedrock-agentcore:InvokeAgentRuntime"],
+        actions: [
+          "bedrock-agentcore:InvokeHarness",
+          "bedrock-agentcore:InvokeAgentRuntime",
+        ],
         resources: [
           agentPlatform.harnessArns,
           `${agentPlatform.harnessArns}/harness-endpoint/*`,
@@ -638,7 +753,9 @@ export class CoreStack extends Stack {
       signingPublicKey: packRelease.signingPublicKey,
       appOrigin: edge.origin,
       signingKey: tools.remoteMcpKey,
-      enabled: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
+      enabled: release
+        ? release.remoteMcpEnabled
+        : String(cfg.remoteMcp.enabled),
     });
     // The REQUEST interceptor that reads the catalog's new format goes first (D101): the sweep
     // after the install signs only what it can verify.
@@ -681,7 +798,12 @@ export class CoreStack extends Stack {
         effect: iam.Effect.DENY,
         // Every write action the grant above gives: `BatchWriteItem` is its own IAM action,
         // not `PutItem`/`DeleteItem` (transactions are authorized as the single-item ones).
-        actions: ["dynamodb:BatchWriteItem", "dynamodb:DeleteItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+        actions: [
+          "dynamodb:BatchWriteItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+        ],
         resources: [governance.settings.tableArn],
         conditions: {
           "ForAnyValue:StringLike": {
@@ -726,7 +848,8 @@ export class CoreStack extends Stack {
       ...KMS_GRANT_ACTIONS,
       {
         id: `AwsSolutions-IAM5[Resource::arn:aws:bedrock:*::foundation-model/${cfg.models.auxiliary.replace(/^(us|global)\./, "")}]`,
-        reason: "Cross-region inference profiles route to the model in several regions.",
+        reason:
+          "Cross-region inference profiles route to the model in several regions.",
       },
       ...[
         agentPlatform.harnessArns,
@@ -742,7 +865,10 @@ export class CoreStack extends Stack {
     );
 
     // D121: the queue every chat turn starts from (TM-TW1). It holds data: it stays in Core (D99).
-    const chatTurns = new ChatTurnQueue(this, "ChatTurns", { installation: cfg, apiTaskRole });
+    const chatTurns = new ChatTurnQueue(this, "ChatTurns", {
+      installation: cfg,
+      apiTaskRole,
+    });
 
     // The release agent: the default of a chat that names no agent. Its definition is data
     // (Agents table); mango-api only needs to know which one it is.
@@ -779,8 +905,10 @@ export class CoreStack extends Stack {
       SETTINGS_TABLE: governance.settings.tableName,
       AGENTS_TABLE: governance.agents.tableName,
       PROVISIONER_STATE_MACHINE_ARN: provisioner.stateMachine.stateMachineArn,
-      DEPROVISIONER_STATE_MACHINE_ARN: deprovisioner.stateMachine.stateMachineArn,
-      PACK_PROVISIONER_STATE_MACHINE_ARN: packProvisioner.stateMachine.stateMachineArn,
+      DEPROVISIONER_STATE_MACHINE_ARN:
+        deprovisioner.stateMachine.stateMachineArn,
+      PACK_PROVISIONER_STATE_MACHINE_ARN:
+        packProvisioner.stateMachine.stateMachineArn,
       ...packPlatform.apiEnvironment,
       ...writeTools.apiEnvironment,
       ...tasks.apiEnvironment,
@@ -789,7 +917,9 @@ export class CoreStack extends Stack {
       // D116: attachments and generated files of the chat.
       CHAT_FILES_BUCKET: chatFiles.bucket.bucketName,
       // D124 (3): the PDF of a Canvas document, where the render function exists (a release).
-      ...(props.release ? { RENDER_DOCUMENT_FUNCTION: renderDocumentName(cfg.namespace) } : {}),
+      ...(props.release
+        ? { RENDER_DOCUMENT_FUNCTION: renderDocumentName(cfg.namespace) }
+        : {}),
       ...skills.apiEnvironment,
       ...evals.apiEnvironment,
       // D110: the evaluator mango-api asks for the verdict of a judge case, and its judges.
@@ -801,7 +931,9 @@ export class CoreStack extends Stack {
       ...observability.reader.apiEnvironment,
       // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
       ...remoteMcp.api.environment,
-      REMOTE_MCP_ENABLED: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
+      REMOTE_MCP_ENABLED: release
+        ? release.remoteMcpEnabled
+        : String(cfg.remoteMcp.enabled),
       ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
       // D60: who may be invited, and what Settings > General > Installation shows to
       // administrators (served by mango-api, not by the public config.json of the SPA).
@@ -820,7 +952,9 @@ export class CoreStack extends Stack {
       MANAGEMENT_ACCOUNT_ID: cfg.managementAccountId,
       ALERTS_EMAIL: cfg.alerts.emails.join(","),
       FIRST_ADMIN_EMAILS: [
-        ...cfg.users.filter((u) => !u.e2e && u.groups.includes("mango-admin")).map((u) => u.email),
+        ...cfg.users
+          .filter((u) => !u.e2e && u.groups.includes("mango-admin"))
+          .map((u) => u.email),
         ...(release ? [release.secondAdminEmail] : []),
       ].join(","),
       // D121: where mango-api sends the chat turns.
@@ -879,7 +1013,11 @@ export class CoreStack extends Stack {
         grantMemory: (role) => agentPlatform.memory.grantWorker(role),
       },
       // D121 (5): the turns of task runs too.
-      taskRuns: { tasks: tasks.table, tickets: tickets.table, reportFunction: taskReports.function },
+      taskRuns: {
+        tasks: tasks.table,
+        tickets: tickets.table,
+        reportFunction: taskReports.function,
+      },
     });
     turnWorker.node.addDependency(...releaseAgentSeeds.seeds);
 
@@ -943,7 +1081,9 @@ export class CoreStack extends Stack {
           : {
               ...spa,
               signUpDomains: cfg.auth.signUpDomains,
-              ...(cfg.auth.aiPolicyUrl ? { aiPolicyUrl: cfg.auth.aiPolicyUrl } : {}),
+              ...(cfg.auth.aiPolicyUrl
+                ? { aiPolicyUrl: cfg.auth.aiPolicyUrl }
+                : {}),
             },
       );
     }
@@ -953,10 +1093,14 @@ export class CoreStack extends Stack {
       if (/^(AWS[0-9a-f]{32}|Custom::)/.test(child.node.id)) {
         acknowledge(
           child,
-          { id: "AwsSolutions-L1", reason: "CDK-managed provider; runtime is chosen by aws-cdk-lib." },
+          {
+            id: "AwsSolutions-L1",
+            reason: "CDK-managed provider; runtime is chosen by aws-cdk-lib.",
+          },
           {
             id: "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]",
-            reason: "CDK-managed provider uses AWSLambdaBasicExecutionRole for its own logs.",
+            reason:
+              "CDK-managed provider uses AWSLambdaBasicExecutionRole for its own logs.",
           },
           ...[
             "Action::s3:Abort*",
@@ -970,7 +1114,8 @@ export class CoreStack extends Stack {
             `Resource::<${this.resolve(this.getLogicalId(packPlatform.bucket.node.defaultChild as CfnResource))}.Arn>/*`,
           ].map((finding) => ({
             id: `AwsSolutions-IAM5[${finding}]`,
-            reason: "CDK-managed provider policy generated by aws-cdk-lib (asset copy to the SPA and packs buckets).",
+            reason:
+              "CDK-managed provider policy generated by aws-cdk-lib (asset copy to the SPA and packs buckets).",
           })),
         );
       }
@@ -978,7 +1123,9 @@ export class CoreStack extends Stack {
 
     Aspects.of(this).add(new ShortKeyDeletionWindow());
     // D110 (8): every role of Core and of its nested stacks, but the evaluator's.
-    Aspects.of(this).add(new DenyEvalsContent(evalsCapture, evalJudge.judge.role));
+    Aspects.of(this).add(
+      new DenyEvalsContent(evalsCapture, evalJudge.judge.role),
+    );
     evalsCapture.denyInBoundary(knowledge.sourceBoundary);
     evalsCapture.denyInBoundary(packPlatform.boundary);
     Aspects.of(this).add(new GuardSuppressions());
@@ -986,23 +1133,35 @@ export class CoreStack extends Stack {
 
     new CfnOutput(this, "AppUrl", { value: edge.origin });
     new CfnOutput(this, "UserPoolId", { value: identity.userPool.userPoolId });
-    new CfnOutput(this, "WebClientId", { value: identity.webClient.userPoolClientId });
+    new CfnOutput(this, "WebClientId", {
+      value: identity.webClient.userPoolClientId,
+    });
     new CfnOutput(this, "GatewayUrl", { value: tools.gatewayUrl });
-    new CfnOutput(this, "AgentProvisionerArn", { value: provisioner.stateMachine.stateMachineArn });
-    new CfnOutput(this, "AgentDeprovisionerArn", { value: deprovisioner.stateMachine.stateMachineArn });
-    new CfnOutput(this, "PackProvisionerArn", { value: packProvisioner.stateMachine.stateMachineArn });
+    new CfnOutput(this, "AgentProvisionerArn", {
+      value: provisioner.stateMachine.stateMachineArn,
+    });
+    new CfnOutput(this, "AgentDeprovisionerArn", {
+      value: deprovisioner.stateMachine.stateMachineArn,
+    });
+    new CfnOutput(this, "PackProvisionerArn", {
+      value: packProvisioner.stateMachine.stateMachineArn,
+    });
     // Named, not read from the nested stack: Core reads none of its outputs (D99).
     new CfnOutput(this, "RemoteMcpProvisionerArn", {
       value: `arn:${this.partition}:states:${this.region}:${this.account}:stateMachine:${remoteProvisionerName(cfg.namespace)}`,
     });
-    new CfnOutput(this, "PacksBucket", { value: packPlatform.bucket.bucketName });
+    new CfnOutput(this, "PacksBucket", {
+      value: packPlatform.bucket.bucketName,
+    });
     // Where the payer's Data Export CUR 2.0 delivers (runbook, D104 (4)).
-    new CfnOutput(this, "CurExportBucket", { value: curExport.bucket.bucketName });
+    new CfnOutput(this, "CurExportBucket", {
+      value: curExport.bucket.bucketName,
+    });
     if (ownPackNetwork) {
       // The construct is `PackNetwork`; the output keeps that name for the operator.
-      new CfnOutput(this, "PackNetworkOutput", { value: ownPackNetwork.provisionerSetting }).overrideLogicalId(
-        "PackNetwork",
-      );
+      new CfnOutput(this, "PackNetworkOutput", {
+        value: ownPackNetwork.provisionerSetting,
+      }).overrideLogicalId("PackNetwork");
     }
   }
 }
@@ -1012,6 +1171,7 @@ export class CoreStack extends Stack {
 function embeddingPrice(cfg: Installation): number {
   const prices = cfg.embeddingPrices ?? loadReleaseDefaults().embeddingPrices;
   const price = prices[INDEXING_PROFILE.embeddingModel];
-  if (price === undefined) throw new Error(`no price for ${INDEXING_PROFILE.embeddingModel}`);
+  if (price === undefined)
+    throw new Error(`no price for ${INDEXING_PROFILE.embeddingModel}`);
   return price;
 }

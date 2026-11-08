@@ -29,7 +29,7 @@ Con las mitigaciones listadas, ninguno queda en **high**. Los residuales más al
   - la vista previa de Canvas (K1) y el host de MCP Apps (A2), en lo que toca al navegador;
   - el `_meta.ui` curado en el perfil firmado y su hash (A1).
 - **Fuera:**
-  - las tools `textdoc.*` y su almacenamiento (K1) más allá de lo que se manda al sandbox: se modelan con su PR;
+  - las tools `textdoc.*` y su almacenamiento (K1) más allá de lo que se manda al sandbox: [`canvas-threat-model.md`](canvas-threat-model.md) (TM-CV1 a TM-CV8);
   - la exportación con `render_document` (`code-interpreter-threat-model.md`, TM-CI8);
   - el servidor MCP remoto y su autorización (`remote-mcp-threat-model.md`);
   - el render de mensajes, gráficas y tablas en la SPA (D118), que no ejecuta código;

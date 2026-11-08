@@ -11,9 +11,19 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
-import { mangoName, packNames, roleArn, roleNames, SESSION_TAG_KEYS } from "../names.js";
+import {
+  mangoName,
+  packNames,
+  roleArn,
+  roleNames,
+  SESSION_TAG_KEYS,
+} from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
-import { accountHealthRoleArn, NOT_THE_SYSTEM_IDENTITY, trustAccountHealth } from "./account-health.js";
+import {
+  accountHealthRoleArn,
+  NOT_THE_SYSTEM_IDENTITY,
+  trustAccountHealth,
+} from "./account-health.js";
 import { CODE_TARGET_NAME } from "./code-connector.js";
 import { TEXTDOC_TARGET_NAME } from "./textdoc-connector.js";
 import { PythonFunction } from "./python-function.js";
@@ -60,9 +70,14 @@ interface ConnectorManifest {
  */
 export function orgWideTools(): string[] {
   const manifest = JSON.parse(
-    readFileSync(resolve(REPO_ROOT, "connectors/cost-explorer/manifest.json"), "utf8"),
+    readFileSync(
+      resolve(REPO_ROOT, "connectors/cost-explorer/manifest.json"),
+      "utf8",
+    ),
   ) as ConnectorManifest;
-  return manifest.tools.filter((t) => t.audience === "central").map((t) => t.name);
+  return manifest.tools
+    .filter((t) => t.audience === "central")
+    .map((t) => t.name);
 }
 
 interface ToolDefinition {
@@ -185,9 +200,12 @@ export class Tools extends Construct {
     // Customer-managed key for the functions' configuration and the invocation key secret.
     const configKey = (this.configKey = new kms.Key(this, "ConfigKey", {
       alias: `alias/${mangoName(ns, "tools-config")}`,
-      description: "Encrypts Mango tools function environment variables and the invocation key",
+      description:
+        "Encrypts Mango tools function environment variables and the invocation key",
       enableKeyRotation: true,
-      removalPolicy: cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      removalPolicy: cfg.retainData
+        ? RemovalPolicy.RETAIN
+        : RemovalPolicy.DESTROY,
     }));
 
     // --- Connector and broker (D10) ---------------------------------------------------
@@ -205,8 +223,14 @@ export class Tools extends Construct {
     // the role of each pack of the release that reads account data as the user (D37). A pack
     // role does not exist until an administrator enables the pack; it is named here by its
     // exact ARN, in a condition, so the trust does not depend on it existing.
-    const packRoles = props.payerChainPacks.map((id) => roleArn(account, `${packNames.rolePrefix(ns)}${id}`));
-    const brokerCallers = [connectorRole.roleArn, probeRole.roleArn, ...packRoles];
+    const packRoles = props.payerChainPacks.map((id) =>
+      roleArn(account, `${packNames.rolePrefix(ns)}${id}`),
+    );
+    const brokerCallers = [
+      connectorRole.roleArn,
+      probeRole.roleArn,
+      ...packRoles,
+    ];
 
     const broker = new iam.Role(this, "BillingBroker", {
       roleName: roleNames.billingBroker(ns),
@@ -243,8 +267,15 @@ export class Tools extends Construct {
     );
     // The daily account health lists the member accounts through this chain, only as
     // `mango-health` (D84).
-    trustAccountHealth(broker, new iam.AccountPrincipal(account), accountHealthRoleArn(account, ns));
-    const readerArn = roleArn(cfg.managementAccountId, roleNames.billingReader(ns));
+    trustAccountHealth(
+      broker,
+      new iam.AccountPrincipal(account),
+      accountHealthRoleArn(account, ns),
+    );
+    const readerArn = roleArn(
+      cfg.managementAccountId,
+      roleNames.billingReader(ns),
+    );
     this.billingBrokerArn = roleArn(account, roleNames.billingBroker(ns));
     this.billingReaderArn = readerArn;
     broker.addToPolicy(
@@ -256,7 +287,11 @@ export class Tools extends Construct {
     for (const role of [connectorRole, probeRole]) {
       role.addToPolicy(
         new iam.PolicyStatement({
-          actions: ["sts:AssumeRole", "sts:SetSourceIdentity", "sts:TagSession"],
+          actions: [
+            "sts:AssumeRole",
+            "sts:SetSourceIdentity",
+            "sts:TagSession",
+          ],
           resources: [broker.roleArn],
         }),
       );
@@ -267,7 +302,11 @@ export class Tools extends Construct {
         sid: "ReadAreaMapping",
         actions: ["dynamodb:GetItem"],
         resources: [props.settingsTable.tableArn],
-        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [MAPPING_PARTITION] } },
+        conditions: {
+          "ForAllValues:StringEquals": {
+            "dynamodb:LeadingKeys": [MAPPING_PARTITION],
+          },
+        },
       }),
     );
     connectorRole.addToPolicy(
@@ -276,7 +315,9 @@ export class Tools extends Construct {
         actions: ["kms:Decrypt"],
         resources: [props.dataKey.keyArn],
         conditions: {
-          StringEquals: { "kms:ViaService": `dynamodb.${Stack.of(this).region}.amazonaws.com` },
+          StringEquals: {
+            "kms:ViaService": `dynamodb.${Stack.of(this).region}.amazonaws.com`,
+          },
         },
       }),
     );
@@ -310,7 +351,8 @@ export class Tools extends Construct {
       retainLogs: cfg.retainData,
       handler: "mango_admin_probe.handler.lambda_handler",
       functionName: roleNames.adminProbe(ns),
-      description: "Read-only organization listing and connectivity check for Mango admins",
+      description:
+        "Read-only organization listing and connectivity check for Mango admins",
       role: probeRole,
       timeout: Duration.seconds(30),
       memorySize: 256,
@@ -320,7 +362,9 @@ export class Tools extends Construct {
         // Where the member roles are deployed (D51): the accounts the probe checks. Empty
         // without `orgAccess`.
         ORG_ACCESS_TARGETS: (cfg.orgAccess?.targets ?? []).join(","),
-        ORG_ACCESS_EXCLUDED_ACCOUNT_IDS: (cfg.orgAccess?.excludedAccountIds ?? []).join(","),
+        ORG_ACCESS_EXCLUDED_ACCOUNT_IDS: (
+          cfg.orgAccess?.excludedAccountIds ?? []
+        ).join(","),
       },
       environmentEncryption: configKey,
     }).function;
@@ -328,7 +372,8 @@ export class Tools extends Construct {
 
     this.invocationKey = new secretsmanager.Secret(this, "InvocationKey", {
       secretName: mangoName(ns, "gateway-invocation-key"),
-      description: "Signs mango-api harness invocations so the Gateway rejects direct calls",
+      description:
+        "Signs mango-api harness invocations so the Gateway rejects direct calls",
       generateSecretString: { passwordLength: 64, excludePunctuation: true },
       encryptionKey: configKey,
     });
@@ -344,7 +389,8 @@ export class Tools extends Construct {
     // key is asymmetric so that a pack (which only holds the public key) cannot sign.
     this.packIdentityKey = new kms.Key(this, "PackIdentityKey", {
       alias: `alias/${mangoName(ns, "pack-identity")}`,
-      description: "Signs the caller identity the Gateway interceptor hands to MCP packs over account data",
+      description:
+        "Signs the caller identity the Gateway interceptor hands to MCP packs over account data",
       keySpec: kms.KeySpec.ECC_NIST_P256,
       keyUsage: kms.KeyUsage.SIGN_VERIFY,
       // No data is encrypted with it: a new key only needs the packs' runtimes updated.
@@ -355,7 +401,8 @@ export class Tools extends Construct {
     // verifies (the interceptor, mango-api, the agent provisioner) cannot sign.
     this.remoteMcpKey = new kms.Key(this, "RemoteMcpKey", {
       alias: `alias/${mangoName(ns, "remote-mcp")}`,
-      description: "Signs the approved catalog of remote MCP servers; only the remote MCP provisioner signs",
+      description:
+        "Signs the approved catalog of remote MCP servers; only the remote MCP provisioner signs",
       keySpec: kms.KeySpec.ECC_NIST_P256,
       keyUsage: kms.KeyUsage.SIGN_VERIFY,
       // No data is encrypted with it: a new key only needs the catalog items signed again.
@@ -375,10 +422,13 @@ export class Tools extends Construct {
         conditions: { ArnNotEquals: { "aws:PrincipalArn": remoteSigner } },
       }),
     );
-    const gatewayIdParameterName = (this.gatewayIdParameterName = `/${mangoName(ns, "tools")}/gateway-id`);
+    const gatewayIdParameterName =
+      (this.gatewayIdParameterName = `/${mangoName(ns, "tools")}/gateway-id`);
     const region = Stack.of(this).region;
     const gatewayIdParameterArn = `arn:aws:ssm:${region}:${account}:parameter${gatewayIdParameterName}`;
-    const viaDynamoDb = { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } };
+    const viaDynamoDb = {
+      StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` },
+    };
 
     const interceptor = new PythonFunction(this, "Interceptor", {
       packageName: "mango-gateway-interceptor",
@@ -413,7 +463,9 @@ export class Tools extends Construct {
         actions: ["dynamodb:GetItem"],
         resources: [props.settingsTable.tableArn],
         conditions: {
-          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [REMOTE_APPROVED_PARTITION] },
+          "ForAllValues:StringLike": {
+            "dynamodb:LeadingKeys": [REMOTE_APPROVED_PARTITION],
+          },
           Null: { "dynamodb:LeadingKeys": "false" },
         },
       }),
@@ -443,21 +495,26 @@ export class Tools extends Construct {
 
     // RESPONSE interceptor (D98 (16)): its own function and role. The only writer of the
     // pending consents, and only of their attributes (TM-017).
-    const responseInterceptor = new PythonFunction(this, "ResponseInterceptor", {
-      packageName: "mango-gateway-interceptor",
-      packagePath: "functions/gateway-interceptor",
-      retainLogs: cfg.retainData,
-      handler: "mango_gateway_interceptor.response.lambda_handler",
-      functionName: mangoName(ns, "GatewayResponseInterceptor"),
-      description: "Keeps consent URLs of remote MCP servers away from the model and cuts their results",
-      timeout: Duration.seconds(10),
-      memorySize: 256,
-      environment: {
-        INVOCATION_KEY_SECRET_ARN: this.invocationKey.secretArn,
-        SETTINGS_TABLE: props.settingsTable.tableName,
+    const responseInterceptor = new PythonFunction(
+      this,
+      "ResponseInterceptor",
+      {
+        packageName: "mango-gateway-interceptor",
+        packagePath: "functions/gateway-interceptor",
+        retainLogs: cfg.retainData,
+        handler: "mango_gateway_interceptor.response.lambda_handler",
+        functionName: mangoName(ns, "GatewayResponseInterceptor"),
+        description:
+          "Keeps consent URLs of remote MCP servers away from the model and cuts their results",
+        timeout: Duration.seconds(10),
+        memorySize: 256,
+        environment: {
+          INVOCATION_KEY_SECRET_ARN: this.invocationKey.secretArn,
+          SETTINGS_TABLE: props.settingsTable.tableName,
+        },
+        environmentEncryption: configKey,
       },
-      environmentEncryption: configKey,
-    });
+    );
     this.responseInterceptor = responseInterceptor.function;
     this.invocationKey.grantRead(this.responseInterceptor);
     this.responseInterceptor.addToRolePolicy(
@@ -466,10 +523,17 @@ export class Tools extends Construct {
         actions: ["dynamodb:PutItem"],
         resources: [props.settingsTable.tableArn],
         conditions: {
-          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [REMOTE_CONSENT_PARTITION] },
-          "ForAllValues:StringEquals": { "dynamodb:Attributes": REMOTE_CONSENT_ATTRIBUTES },
+          "ForAllValues:StringLike": {
+            "dynamodb:LeadingKeys": [REMOTE_CONSENT_PARTITION],
+          },
+          "ForAllValues:StringEquals": {
+            "dynamodb:Attributes": REMOTE_CONSENT_ATTRIBUTES,
+          },
           // A set operator is true for a key the request does not carry: require both.
-          Null: { "dynamodb:LeadingKeys": "false", "dynamodb:Attributes": "false" },
+          Null: {
+            "dynamodb:LeadingKeys": "false",
+            "dynamodb:Attributes": "false",
+          },
         },
       }),
     );
@@ -493,7 +557,11 @@ export class Tools extends Construct {
         principals: [new iam.AnyPrincipal()],
         actions: ["kms:Sign"],
         resources: ["*"],
-        conditions: { ArnNotEquals: { "aws:PrincipalArn": interceptor.function.role!.roleArn } },
+        conditions: {
+          ArnNotEquals: {
+            "aws:PrincipalArn": interceptor.function.role!.roleArn,
+          },
+        },
       }),
     );
 
@@ -514,17 +582,30 @@ export class Tools extends Construct {
     acknowledge(
       gatewayRole,
       ...[connector, interceptor, responseInterceptor].map((f) => ({
-        id: arnWildcardFinding(f.function.node.defaultChild as CfnResource, ":*"),
+        id: arnWildcardFinding(
+          f.function.node.defaultChild as CfnResource,
+          ":*",
+        ),
         reason: REASONS.cdkGrant,
       })),
     );
-    acknowledge(connectorRole, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
-    acknowledge(probeRole, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
+    acknowledge(connectorRole, {
+      id: "AwsSolutions-IAM5[Resource::*]",
+      reason: REASONS.xray,
+    });
+    acknowledge(probeRole, {
+      id: "AwsSolutions-IAM5[Resource::*]",
+      reason: REASONS.xray,
+    });
 
-    const policyEngine = (this.policyEngine = new agentcore.CfnPolicyEngine(this, "PolicyEngine", {
-      name: `Mango_${ns}_Tools`,
-      description: "Cedar authorization for Mango tools (default deny)",
-    }));
+    const policyEngine = (this.policyEngine = new agentcore.CfnPolicyEngine(
+      this,
+      "PolicyEngine",
+      {
+        name: `Mango_${ns}_Tools`,
+        description: "Cedar authorization for Mango tools (default deny)",
+      },
+    ));
 
     // Policy evaluation by the Gateway (AuthorizeAction / PartiallyAuthorizeActions need both the
     // engine and the gateway ARN). The gateway id derives from its name, which avoids a cycle.
@@ -549,7 +630,8 @@ export class Tools extends Construct {
     );
     acknowledge(gatewayRole, {
       id: `AwsSolutions-IAM5[Resource::${gatewayArnPattern}]`,
-      reason: "The gateway id is generated from its name; the pattern pins this installation's gateway.",
+      reason:
+        "The gateway id is generated from its name; the pattern pins this installation's gateway.",
     });
 
     // MCP packs (D36): the Gateway reaches a pack's runtime with SigV4 of this role. Runtimes
@@ -564,10 +646,13 @@ export class Tools extends Construct {
     );
     acknowledge(
       gatewayRole,
-      ...[packRuntimes, `${packRuntimes}/runtime-endpoint/*`].map((resource) => ({
-        id: `AwsSolutions-IAM5[Resource::${resource}]`,
-        reason: "Pack runtimes are created at runtime by the pack provisioner (D36): the name prefix is the scope.",
-      })),
+      ...[packRuntimes, `${packRuntimes}/runtime-endpoint/*`].map(
+        (resource) => ({
+          id: `AwsSolutions-IAM5[Resource::${resource}]`,
+          reason:
+            "Pack runtimes are created at runtime by the pack provisioner (D36): the name prefix is the scope.",
+        }),
+      ),
     );
 
     this.gateway = new agentcore.CfnGateway(this, "Gateway", {
@@ -590,12 +675,17 @@ export class Tools extends Construct {
         },
         // With the headers: it verifies the invocation signature before it writes a consent.
         {
-          interceptor: { lambda: { arn: responseInterceptor.function.functionArn } },
+          interceptor: {
+            lambda: { arn: responseInterceptor.function.functionArn },
+          },
           interceptionPoints: ["RESPONSE"],
           inputConfiguration: { passRequestHeaders: true },
         },
       ],
-      policyEngineConfiguration: { arn: policyEngine.attrPolicyEngineArn, mode: "ENFORCE" },
+      policyEngineConfiguration: {
+        arn: policyEngine.attrPolicyEngineArn,
+        mode: "ENFORCE",
+      },
       // D47: with a session, the Gateway keeps the session of each MCP server target and
       // reuses it for the next call, so a pack runtime answers from the same microVM. The
       // Gateway binds the session to the `sub` of the caller's token, and every request
@@ -604,7 +694,9 @@ export class Tools extends Construct {
         mcp: {
           supportedVersions: GATEWAY_MCP_VERSIONS,
           ...(cfg.gateway.mcpSessions && {
-            sessionConfiguration: { sessionTimeoutInSeconds: GATEWAY_SESSION_SECONDS },
+            sessionConfiguration: {
+              sessionTimeoutInSeconds: GATEWAY_SESSION_SECONDS,
+            },
           }),
         },
       },
@@ -615,7 +707,8 @@ export class Tools extends Construct {
       parameterName: gatewayIdParameterName,
       // A path (it starts with `/`): the namespace may be a parameter of the release.
       simpleName: false,
-      description: "Id of the tools Gateway, read by its interceptor (the signed remote MCP catalog names it)",
+      description:
+        "Id of the tools Gateway, read by its interceptor (the signed remote MCP catalog names it)",
       stringValue: this.gateway.attrGatewayIdentifier,
     });
 
@@ -647,8 +740,14 @@ export class Tools extends Construct {
     gatewayRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "RemoteMcpWorkloadIdentity",
-        actions: ["bedrock-agentcore:GetWorkloadAccessToken", "bedrock-agentcore:GetWorkloadAccessTokenForJWT"],
-        resources: [`${identityBase}:workload-identity-directory/default`, gatewayIdentity],
+        actions: [
+          "bedrock-agentcore:GetWorkloadAccessToken",
+          "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
+        ],
+        resources: [
+          `${identityBase}:workload-identity-directory/default`,
+          gatewayIdentity,
+        ],
       }),
     );
     gatewayRole.addToPolicy(
@@ -667,18 +766,24 @@ export class Tools extends Construct {
       })),
       {
         id: `AwsSolutions-IAM5[Resource::${gatewayIdentity}]`,
-        reason: "The workload identity of the Gateway is named after its generated id; the pattern pins this installation's gateway.",
+        reason:
+          "The workload identity of the Gateway is named after its generated id; the pattern pins this installation's gateway.",
       },
     );
 
     const tools = JSON.parse(
-      readFileSync(resolve(REPO_ROOT, "connectors/cost-explorer/tool-schema.json"), "utf8"),
+      readFileSync(
+        resolve(REPO_ROOT, "connectors/cost-explorer/tool-schema.json"),
+        "utf8",
+      ),
     ) as ToolDefinition[];
     const target = new agentcore.CfnGatewayTarget(this, "FinOpsTarget", {
       gatewayIdentifier: this.gateway.attrGatewayIdentifier,
       name: TARGET_NAME,
       description: "Cost Explorer connector",
-      credentialProviderConfigurations: [{ credentialProviderType: "GATEWAY_IAM_ROLE" }],
+      credentialProviderConfigurations: [
+        { credentialProviderType: "GATEWAY_IAM_ROLE" },
+      ],
       targetConfiguration: {
         mcp: {
           lambda: {
@@ -695,12 +800,14 @@ export class Tools extends Construct {
     // of the AgentCore Policy guide, "Common policy patterns"): Cedar evaluates `forbid` over
     // any `permit`, so a policy added to this engine later (the pack provisioner creates
     // policies, B2) cannot open these tools to anyone else.
-    const action = (tool: string) => `AgentCore::Action::"${TARGET_NAME}___${tool}"`;
+    const action = (tool: string) =>
+      `AgentCore::Action::"${TARGET_NAME}___${tool}"`;
     const resource = `AgentCore::Gateway::"${this.gateway.attrGatewayArn}"`;
     const orgWide = orgWideTools();
     const toolNames = tools.map((t) => t.name);
     for (const tool of orgWide) {
-      if (!toolNames.includes(tool)) throw new Error(`manifest tool ${tool} is not in the tool schema`);
+      if (!toolNames.includes(tool))
+        throw new Error(`manifest tool ${tool} is not in the tool schema`);
     }
     const generalTools = toolNames.filter((n) => !orgWide.includes(n));
     const hasRole = (roles: string[]) =>
@@ -713,22 +820,39 @@ export class Tools extends Construct {
       `  action in [${toolList.map(action).join(", ")}],`,
       `  resource == ${resource}`,
     ];
-    const policies: Record<string, { statement: string[]; description: string }> = {
+    const policies: Record<
+      string,
+      { statement: string[]; description: string }
+    > = {
       FinopsRead: {
-        statement: [...head("permit", generalTools), `) when { ${hasRole([CENTRAL_ROLE, AREA_ROLE])} };`],
+        statement: [
+          ...head("permit", generalTools),
+          `) when { ${hasRole([CENTRAL_ROLE, AREA_ROLE])} };`,
+        ],
         description: "FinOps users may call scoped read tools",
       },
       FinopsOrgWide: {
-        statement: [...head("permit", orgWide), `) when { ${hasRole([CENTRAL_ROLE])} };`],
+        statement: [
+          ...head("permit", orgWide),
+          `) when { ${hasRole([CENTRAL_ROLE])} };`,
+        ],
         description: "Only central FinOps may call organization-wide tools",
       },
       FinopsReadForbidOthers: {
-        statement: [...head("forbid", generalTools), `) unless { ${hasRole([CENTRAL_ROLE, AREA_ROLE])} };`],
-        description: "No added policy can open the scoped read tools to users without a FinOps role",
+        statement: [
+          ...head("forbid", generalTools),
+          `) unless { ${hasRole([CENTRAL_ROLE, AREA_ROLE])} };`,
+        ],
+        description:
+          "No added policy can open the scoped read tools to users without a FinOps role",
       },
       FinopsOrgWideForbidOthers: {
-        statement: [...head("forbid", orgWide), `) unless { ${hasRole([CENTRAL_ROLE])} };`],
-        description: "No added policy can open organization-wide tools to anyone but central FinOps",
+        statement: [
+          ...head("forbid", orgWide),
+          `) unless { ${hasRole([CENTRAL_ROLE])} };`,
+        ],
+        description:
+          "No added policy can open organization-wide tools to anyone but central FinOps",
       },
     };
     for (const [name, p] of Object.entries(policies)) {
@@ -755,21 +879,34 @@ export class Tools extends Construct {
       reason: REASONS.cdkGrant,
     });
     const tools = JSON.parse(
-      readFileSync(resolve(REPO_ROOT, "connectors/knowledge-retrieve/tool-schema.json"), "utf8"),
+      readFileSync(
+        resolve(REPO_ROOT, "connectors/knowledge-retrieve/tool-schema.json"),
+        "utf8",
+      ),
     ) as ToolDefinition[];
     const target = new agentcore.CfnGatewayTarget(this, "KnowledgeTarget", {
       gatewayIdentifier: this.gateway.attrGatewayIdentifier,
       name: KNOWLEDGE_TARGET_NAME,
       description: "Knowledge search of Mango's agents",
-      credentialProviderConfigurations: [{ credentialProviderType: "GATEWAY_IAM_ROLE" }],
+      credentialProviderConfigurations: [
+        { credentialProviderType: "GATEWAY_IAM_ROLE" },
+      ],
       targetConfiguration: {
-        mcp: { lambda: { lambdaArn: fn.functionArn, toolSchema: { inlinePayload: tools } } },
+        mcp: {
+          lambda: {
+            lambdaArn: fn.functionArn,
+            toolSchema: { inlinePayload: tools },
+          },
+        },
       },
     });
-    const actions = tools.map((t) => `AgentCore::Action::"${KNOWLEDGE_TARGET_NAME}___${t.name}"`);
+    const actions = tools.map(
+      (t) => `AgentCore::Action::"${KNOWLEDGE_TARGET_NAME}___${t.name}"`,
+    );
     const policy = new agentcore.CfnPolicy(this, "PolicyKnowledgeRetrieve", {
       name: `Mango_${this.namespace}_KnowledgeRetrieve`,
-      description: "Signed-in users may search the knowledge bases of their agents; the tool decides which answer",
+      description:
+        "Signed-in users may search the knowledge bases of their agents; the tool decides which answer",
       policyEngineId: this.policyEngine.attrPolicyEngineId,
       definition: {
         cedar: {
@@ -797,7 +934,10 @@ export class Tools extends Construct {
    */
   allowTasksClient(clientId: string): void {
     this.gateway.authorizerConfiguration = {
-      customJwtAuthorizer: { discoveryUrl: this.discoveryUrl, allowedClients: [this.webClientId, clientId] },
+      customJwtAuthorizer: {
+        discoveryUrl: this.discoveryUrl,
+        allowedClients: [this.webClientId, clientId],
+      },
     };
     this.costExplorer.function.addEnvironment("TASKS_CLIENT_ID", clientId);
     // A consent asked by a run is marked as coming from a task (D98 (3)).

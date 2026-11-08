@@ -242,6 +242,13 @@ export function createApiClient(options: ApiClientOptions) {
     listConversations: async () => (await getJson('/conversations', conversationListSchema)).items,
     getConversation: async (conversationId: string) =>
       getJson(conversationPath(conversationId), conversationSchema),
+    /** «Resolver» a comment of the Canvas (D124): a route without JSON answer (204). */
+    resolveTextdocComment: (conversationId: string, textdocId: string, commentId: string) =>
+      postNoContent(
+        `${conversationPath(conversationId)}/textdocs/${encodeURIComponent(
+          chatFileIdSchema.parse(textdocId),
+        )}/comments/${encodeURIComponent(chatFileIdSchema.parse(commentId))}/resolve`,
+      ),
     /** Where a file of the conversation is (C4): «Revisando el archivo…» until its scan says. */
     getChatFile: (conversationId: string, fileId: string) =>
       getJson(chatFilePath(conversationId, fileId), chatFileStatusSchema),

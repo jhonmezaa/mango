@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; el render que usa su bucle lo eligió el dueño ese día en [D117](D117-render-de-office-con-libreoffice.md)) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)»; los puntos 5 a 9, al construirla el 2026-11-08 (PR D2), elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07
 - **Precisa / reemplaza a:** precisa [D26](D026-reglas-del-ciclo-de-vida.md) («las skills con scripts solo vienen en la release»: el código viaja firmado en la release y corre en el sandbox, no en el harness) y [D92](D092-skills-de-solo-instrucciones.md) (2) («sin scripts»: las skills siguen siendo de instrucciones; los scripts son helpers del sandbox); con el punto 5, [D92](D092-skills-de-solo-instrucciones.md) (6) (el provisioner también escribe en el bucket de skills, solo bajo `skills/_release/`) y (4) (las versiones con código reciben estas cuatro sin elegirlas); con el punto 8, [D114](D114-code-interpreter-detras-del-gateway.md) (5) (una cuarta tool del target `code`) y [D115](D115-presupuesto-del-sandbox-de-codigo.md) (1) y (3) (un render cuenta como una celda del turno y se cobra por sus segundos)
-- **Precisada por:** —
+- **Precisada por:** [D124](D124-canvas.md) (6) (f) (además del conector de código, mango-api invoca la función de render, para el PDF de una exportación del Canvas)
 
 ## Decisión
 

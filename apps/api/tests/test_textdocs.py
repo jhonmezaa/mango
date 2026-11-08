@@ -531,3 +531,31 @@ def test_only_the_canvas_tools_the_invocation_allows_are_canvas_calls() -> None:
         {"textdoc___create"}
     )
     assert textdoc_names(["@mango/code___run_python"]) == frozenset()
+
+
+def test_only_the_save_of_a_version_takes_a_body_over_32_kib() -> None:
+    # D124 (6) (i): the same route the edge lets through (infra `CANVAS_VERSIONS_PATH`).
+    path = f"/api/conversations/{CONVERSATION}/textdocs/01{'D' * 24}/versions"
+    assert app_module.body_limit("POST", path) == app_module.TEXTDOC_BODY_BYTES == 640 * 1024
+    for method, other in (
+        ("GET", path),
+        ("POST", f"{path}/1"),
+        ("POST", path.replace("/versions", "/exports")),
+        ("POST", "/api/chat"),
+    ):
+        assert app_module.body_limit(method, other) == app_module.MAX_BODY_BYTES
+
+
+def test_a_version_of_256_kib_reaches_the_route(env: Env) -> None:
+    doc = env.doc()
+    content = "a\n" * (128 * 1024 - 1)
+    saved = env.client.post(
+        env.url(doc, "/versions"), headers=H, json={"content": content, "base": 1}
+    )
+    assert saved.status_code == 201, saved.text[:200]
+    over = env.client.post(
+        f"/api/conversations/{CONVERSATION}/textdocs/{doc}/exports",
+        headers={**H, "Content-Type": "application/json"},
+        content=b'{"format":"docx","version":1,"x":"' + b"a" * 40_000 + b'"}',
+    )
+    assert over.status_code == 413

@@ -3,6 +3,7 @@ import {
   memo,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -21,6 +22,7 @@ import {
   markdownUrlTransform,
   parseExternalHttpUrl,
 } from '../security/safeUrl';
+import { remarkMarks } from './chat/canvas/remarkMarks';
 import { ChartBlock } from './chat/ChatChart';
 import { CHART_FENCE } from './chat/chartSpec';
 import { useDownload } from './chat/chatFiles';
@@ -225,10 +227,13 @@ interface Props {
   strip?: StripLinks;
   /** The files the server announced in this answer: its links to them download them (C4). */
   files?: readonly AnnouncedFile[];
+  /** Quotes of the Canvas comments, marked in the text (design round 41; D124). */
+  marks?: readonly string[];
 }
 
 const NO_REMOTE: readonly RemoteLinkSource[] = [];
 const NO_FILES: readonly AnnouncedFile[] = [];
+const NO_MARKS: readonly string[] = [];
 
 /**
  * Renders untrusted LLM markdown (TM-012):
@@ -247,8 +252,14 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   remote = NO_REMOTE,
   strip = null,
   files = NO_FILES,
+  marks = NO_MARKS,
 }: Props) {
   const { t } = useTranslation();
+  // A plugin of the Markdown tree, never of HTML: the marks are elements React renders.
+  const remark = useMemo(
+    () => (marks.length > 0 ? [remarkGfm, remarkMarks(marks)] : remarkPlugins),
+    [marks],
+  );
   const ref = useRef<HTMLDivElement>(null);
   const [stripped, setStripped] = useState(0);
   // The links Mango took out, counted once they are on screen.
@@ -269,7 +280,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
           <StripSources value={strip}>
             <div ref={ref} className={classes.join(' ')}>
               <Markdown
-                remarkPlugins={remarkPlugins}
+                remarkPlugins={remark}
                 rehypePlugins={rehypePlugins}
                 skipHtml
                 urlTransform={markdownUrlTransform}

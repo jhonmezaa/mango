@@ -113,6 +113,10 @@ export const messageSchema = z.object({
    * `parseCells`: a cell that does not parse is left out without losing the conversation.
    */
   code: z.array(z.unknown()).max(32).optional(),
+  /** The cards of the Canvas documents this answer wrote (D124), validated one by one. */
+  textdocs: z.array(z.unknown()).max(20).optional(),
+  /** The files a Canvas export added (D124 (3)): a message without text, only their cards. */
+  files: z.array(z.unknown()).max(20).optional(),
 });
 export type Message = z.infer<typeof messageSchema>;
 

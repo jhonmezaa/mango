@@ -10,18 +10,30 @@ import {
   ChatFilesScanResultsProps,
   grantChatFilesApi,
 } from "../constructs/chat-files-scan.js";
-import { CodeConnector, CodeConnectorProps } from "../constructs/code-connector.js";
+import {
+  CodeConnector,
+  CodeConnectorProps,
+} from "../constructs/code-connector.js";
 import { TextdocConnector } from "../constructs/textdoc-connector.js";
 import { acknowledge, arnWildcardFinding } from "../nag.js";
 import { CodeSandbox, CodeSandboxProps } from "../constructs/code-sandbox.js";
-import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
+import {
+  CurReconciler,
+  CurReconcilerProps,
+} from "../constructs/cur-reconciler.js";
 import { EvalJudge, EvalJudgeProps } from "../constructs/eval-judge.js";
 import { HarnessLogsGovernor, HarnessLogsGovernorProps } from "../constructs/harness-logs.js";
 import { platformPolicies } from "../constructs/governance.js";
-import { OperationalAlarms, OperationalAlarmsProps } from "../constructs/operational-alarms.js";
+import {
+  OperationalAlarms,
+  OperationalAlarmsProps,
+} from "../constructs/operational-alarms.js";
 import { RemoteMcpApi } from "../constructs/remote-mcp-api.js";
 import { RemoteRelease } from "../constructs/remote-release.js";
-import { RenderDocument, RenderDocumentProps } from "../constructs/render-document.js";
+import {
+  RenderDocument,
+  RenderDocumentProps,
+} from "../constructs/render-document.js";
 import { TraceReader, TraceReaderProps } from "../constructs/trace-reader.js";
 import { TurnWorker, TurnWorkerProps } from "../constructs/turn-worker.js";
 import {
@@ -61,7 +73,10 @@ abstract class CoreNestedStack extends NestedStack {
    */
   protected namespaceOf(installation: Installation): Installation {
     if (!Token.isUnresolved(installation.namespace)) return installation;
-    const parameter = new CfnParameter(this, "Namespace", { type: "String", description: "Namespace of Core" });
+    const parameter = new CfnParameter(this, "Namespace", {
+      type: "String",
+      description: "Namespace of Core",
+    });
     this.setParameter("Namespace", installation.namespace);
     return { ...installation, namespace: parameter.valueAsString };
   }
@@ -151,7 +166,9 @@ export class CurReconciliationStack extends CoreNestedStack {
     this.reconciler = new CurReconciler(this, "CurReconciler", {
       ...props,
       installation: this.namespaceOf(props.installation),
-      catalogGovernedByLakeFormation: this.governedOf(props.catalogGovernedByLakeFormation),
+      catalogGovernedByLakeFormation: this.governedOf(
+        props.catalogGovernedByLakeFormation,
+      ),
     });
   }
 
@@ -256,12 +273,18 @@ export class TurnWorkerStack extends CoreNestedStack {
  * `SandboxVpc`, D99 (2)), and the bucket names the scanner's role by its fixed name.
  */
 export interface SandboxStackProps extends CodeSandboxProps {
-  readonly scanResults: Omit<ChatFilesScanResultsProps, "installation" | "bucket">;
+  readonly scanResults: Omit<
+    ChatFilesScanResultsProps,
+    "installation" | "bucket"
+  >;
   readonly apiTaskRole: iam.IRole;
   /** The base guardrail, which mango-api asks about the texts of a chart or a table (D118 (7)). */
   readonly guardrailArn: string;
   /** The code connector behind the Gateway (D114 (1)): what it reaches of Core. */
-  readonly connector: Omit<CodeConnectorProps, "installation" | "codeInterpreter">;
+  readonly connector: Omit<
+    CodeConnectorProps,
+    "installation" | "codeInterpreter"
+  >;
 }
 
 export class SandboxStack extends CoreNestedStack {
@@ -360,14 +383,20 @@ export class UiSandboxStack extends CoreNestedStack {
   constructor(scope: Construct, id: string, props: UiSandboxStackProps) {
     super(scope, id, "UI sandbox origin");
     const installation = this.namespaceOf(props.installation);
-    this.writer = new UiSandboxWriter(this, "UiSandboxWriter", { ...props, installation });
+    this.writer = new UiSandboxWriter(this, "UiSandboxWriter", {
+      ...props,
+      installation,
+    });
     new UiSandboxBytesAlarm(this, "BytesAlarm", {
       installation,
       distributionId: props.distributionId,
       alertsTopic: props.alertsTopic,
     });
     if (props.content) {
-      new UiSandboxContent(this, "Content", { ...props.content, distributionId: props.distributionId });
+      new UiSandboxContent(this, "Content", {
+        ...props.content,
+        distributionId: props.distributionId,
+      });
       acknowledgeBucketDeploymentProvider(this, [
         "Action::s3:Abort*",
         "Action::s3:DeleteObject*",
@@ -376,10 +405,12 @@ export class UiSandboxStack extends CoreNestedStack {
         "Action::s3:List*",
         "Resource::*",
         `Resource::arn:aws:s3:::${props.content.assetsBucket}/*`,
-        arnWildcardFinding(props.content.bucket.node.defaultChild as CfnResource, "/*", "Arn", this).replace(
-          /^AwsSolutions-IAM5\[(.*)\]$/,
-          "$1",
-        ),
+        arnWildcardFinding(
+          props.content.bucket.node.defaultChild as CfnResource,
+          "/*",
+          "Arn",
+          this,
+        ).replace(/^AwsSolutions-IAM5\[(.*)\]$/, "$1"),
       ]);
     }
   }
@@ -389,19 +420,27 @@ export class UiSandboxStack extends CoreNestedStack {
  * The findings of the provider aws-cdk-lib creates for the `BucketDeployment`s of a nested stack
  * (its singleton function, role and policy), as Core acknowledges its own.
  */
-function acknowledgeBucketDeploymentProvider(stack: NestedStack, findings: string[]): void {
+function acknowledgeBucketDeploymentProvider(
+  stack: NestedStack,
+  findings: string[],
+): void {
   for (const child of stack.node.children) {
     if (!/^(AWS[0-9a-f]{32}|Custom::)/.test(child.node.id)) continue;
     acknowledge(
       child,
-      { id: "AwsSolutions-L1", reason: "CDK-managed provider; runtime is chosen by aws-cdk-lib." },
+      {
+        id: "AwsSolutions-L1",
+        reason: "CDK-managed provider; runtime is chosen by aws-cdk-lib.",
+      },
       {
         id: "AwsSolutions-IAM4[Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]",
-        reason: "CDK-managed provider uses AWSLambdaBasicExecutionRole for its own logs.",
+        reason:
+          "CDK-managed provider uses AWSLambdaBasicExecutionRole for its own logs.",
       },
       ...findings.map((finding) => ({
         id: `AwsSolutions-IAM5[${finding}]`,
-        reason: "CDK-managed provider policy generated by aws-cdk-lib (release assets copied to the UI sandbox bucket).",
+        reason:
+          "CDK-managed provider policy generated by aws-cdk-lib (release assets copied to the UI sandbox bucket).",
       })),
     );
   }

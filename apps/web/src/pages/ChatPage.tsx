@@ -24,6 +24,7 @@ import { BlockedComposer, ChatBlocked, type ChatBlockedKind } from '../component
 import { ChatHeader } from '../components/chat/ChatHeader';
 import { ChatInput } from '../components/chat/ChatInput';
 import { ChatFilesProvider } from '../components/chat/chatFiles';
+import { CanvasProvider, type TextdocCard } from '../components/chat/canvas/canvasApi';
 import { ChatMessage } from '../components/chat/ChatMessage';
 import { ThreadList } from '../components/chat/ThreadList';
 import {
@@ -54,6 +55,13 @@ import { NotFoundPage } from './NotFoundPage';
 const ChatApprovalCard = lazy(() =>
   import('../components/chat/ChatApprovalCard').then((module) => ({
     default: module.ChatApprovalCard,
+  })),
+);
+
+// The Canvas (D124): its panel and preview stay out of the main chunk until a card opens it.
+const CanvasPanel = lazy(() =>
+  import('../components/chat/canvas/CanvasPanel').then((module) => ({
+    default: module.CanvasPanel,
   })),
 );
 
@@ -348,15 +356,16 @@ export function ChatPage() {
     expireSession('turn');
   }, [expireSession]);
 
-  const { state, isStreaming, send, stop, reset, reconnect, updateApproval } = useChatStream({
-    api,
-    onConversationStarted,
-    onTurnFinished: reloadConversations,
-    onTurnCompleted,
-    onUnauthenticated: expireSession,
-    onSessionEndedDuringTurn,
-    onBusy,
-  });
+  const { state, isStreaming, send, stop, reset, reconnect, updateApproval, append } =
+    useChatStream({
+      api,
+      onConversationStarted,
+      onTurnFinished: reloadConversations,
+      onTurnCompleted,
+      onUnauthenticated: expireSession,
+      onSessionEndedDuringTurn,
+      onBusy,
+    });
   useEffect(() => {
     resetRef.current = reset;
   }, [reset]);
@@ -621,6 +630,51 @@ export function ChatPage() {
     [state.conversationId, scopeAgent, threadTitle, notify, t],
   );
 
+  // The Canvas (design round 41): one document open at a time, beside the conversation.
+  // It belongs to the conversation it was opened in: another conversation does not show it.
+  const [opened, setOpened] = useState<{ card: TextdocCard; conversationId: string | null } | null>(
+    null,
+  );
+  const canvas = opened && opened.conversationId === state.conversationId ? opened.card : null;
+  const [ask, setAsk] = useState<{ text: string; key: number } | null>(null);
+  const openCanvas = useCallback(
+    (card: TextdocCard) => {
+      setOpened({ card, conversationId: state.conversationId });
+    },
+    [state.conversationId],
+  );
+  // A newer version of the open document arrived in an answer: the panel reads it again.
+  const latestCards = useMemo(
+    () => new Map(state.messages.flatMap((m) => m.textdocs ?? []).map((c) => [c.textdoc_id, c])),
+    [state.messages],
+  );
+  const openCard = canvas ? (latestCards.get(canvas.textdoc_id) ?? canvas) : null;
+  const opener = useMemo(
+    () => ({ open: openCanvas, openId: canvas?.textdoc_id ?? null }),
+    [openCanvas, canvas?.textdoc_id],
+  );
+  const closeCanvas = useCallback(() => {
+    setOpened(null);
+  }, []);
+  const askInChat = useCallback((text: string) => {
+    setAsk((current) => ({ text, key: (current?.key ?? 0) + 1 }));
+  }, []);
+  const exported = useCallback(
+    (file: { file_id: string; name: string; kind: string; size_bytes: number }) => {
+      append({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: '',
+        tools: [],
+        status: 'done',
+        files: [{ ...file, image: false, role: 'file' }],
+        createdAt: new Date().toISOString(),
+      });
+    },
+    [append],
+  );
+  const composerRestore = ask && (!busy || ask.key > busy.key) ? ask : busy;
+
   if (!validRouteId) return <NotFoundPage />;
 
   const isEmpty = state.messages.length === 0 && !loading && !loadError;
@@ -638,284 +692,302 @@ export function ChatPage() {
   const lastQuestion = state.messages.findLastIndex((message) => message.role === 'user');
 
   return (
-    <div className="chat-grid">
-      {!narrow && (
-        <ThreadList
-          conversations={conversations}
-          agents={agentsById}
-          error={conversationsError}
-          retryAt={conversationsRetryAt}
-          outage={historyOutage}
-          activeId={routeId}
-          onNew={newChat}
-          onRetry={reloadConversations}
-        />
-      )}
-      {drawerOpen && (
-        <div
-          className="overlay overlay-drawer"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) closeHistory();
-          }}
-        >
-          {/* Design chat.jsx: the history opens in a 340px `Drawer` titled "Historial". */}
-          <aside
-            ref={drawerRef}
-            className="drawer chat-threads-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="chat-history-title"
-          >
-            <div className="drawer-head">
-              <h2 id="chat-history-title" className="drawer-title">
-                {t('chat.history')}
-              </h2>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon"
-                aria-label={t('common.close')}
-                onClick={closeHistory}
-              >
-                <CloseIcon size={13} />
-              </button>
-            </div>
-            <ThreadList
-              conversations={conversations}
-              agents={agentsById}
-              error={conversationsError}
-              retryAt={conversationsRetryAt}
-              outage={historyOutage}
-              activeId={routeId}
-              onNew={newChat}
-              onRetry={reloadConversations}
-              onPick={closeHistory}
-            />
-          </aside>
-        </div>
-      )}
-      <div
-        className="chat-main"
-        onDragOver={(event) => {
-          if (!canDrop || !event.dataTransfer.types.includes('Files')) return;
-          event.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={(event) => {
-          if (event.currentTarget === event.target) setDragOver(false);
-        }}
-        onDrop={(event) => {
-          if (!canDrop) return;
-          event.preventDefault();
-          setDragOver(false);
-          if (composerFiles) composerFiles.add(Array.from(event.dataTransfer.files));
-        }}
-      >
-        {dragOver && agent && (
-          <div className="chat-drop" aria-hidden="true">
-            <UploadIcon size={22} />
-            {composerFiles ? (
-              <>
-                <div className="chat-drop-title">{t('chat.attachments.dropTitle')}</div>
-                <div className="chat-drop-hint">{t('chat.attachments.dropHint')}</div>
-              </>
-            ) : (
-              <>
-                <div className="chat-drop-title">
-                  {t('chat.attachments.dropCannot', { name: agent.name })}
-                </div>
-                <div className="chat-drop-hint">{t('chat.attachments.dropCannotHint')}</div>
-              </>
-            )}
-          </div>
+    <CanvasProvider value={opener}>
+      <div className={`chat-grid${openCard ? ' has-artifact' : ''}`}>
+        {!narrow && (
+          <ThreadList
+            conversations={conversations}
+            agents={agentsById}
+            error={conversationsError}
+            retryAt={conversationsRetryAt}
+            outage={historyOutage}
+            activeId={routeId}
+            onNew={newChat}
+            onRetry={reloadConversations}
+          />
         )}
-        <ChatHeader
-          agent={agent}
-          model={model}
-          onModelChange={chooseModel}
-          headingLevel={isEmpty && agent ? 'p' : 'h1'}
-          observe={observe}
-          onToggleObserve={toggleObserve}
-          onNewChat={newChat}
-          newChatDisabled={firstTurnRunning}
-          onOpenConversations={
-            narrow
-              ? () => {
-                  setHistoryOpen(true);
-                }
-              : undefined
-          }
-        />
-        {away && state.messages.length > 0 && (
-          <button
-            type="button"
-            className="chat-toend"
-            aria-label={t('chat.toEnd.label')}
-            onClick={toEnd}
+        {drawerOpen && (
+          <div
+            className="overlay overlay-drawer"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) closeHistory();
+            }}
           >
-            <ChevronDownIcon size={12} />
-            {newBelow && isStreaming ? t('chat.toEnd.newAnswer') : t('chat.toEnd.end')}
-          </button>
-        )}
-        <div ref={scrollRef} className="chat-scroll" onScroll={onConversationScroll}>
-          {isEmpty && agent && canChat && (
-            <AgentHero agent={agent} disabled={isStreaming} onPrompt={sendWithFiles} />
-          )}
-          {isEmpty && agentPending && CONVERSATION_SKELETON}
-          {isEmpty && blocked && <ChatBlocked kind={blocked} />}
-          {isEmpty && agentsFailed && (
-            <div className="chat-load-error" role="alert">
-              <span className="chat-load-error-icon">
-                <WarnIcon size={18} />
-              </span>
-              <h2 className="chat-load-error-title">{t('chat.noAgent.loadError')}</h2>
-              <p className="chat-load-error-body">{t('chat.noAgent.loadErrorBody')}</p>
-              <div className="chat-load-error-actions">
-                <button type="button" className="btn btn-sm" onClick={reloadAgents}>
-                  <RefreshIcon size={11} />
-                  {t('errors.retry')}
+            {/* Design chat.jsx: the history opens in a 340px `Drawer` titled "Historial". */}
+            <aside
+              ref={drawerRef}
+              className="drawer chat-threads-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="chat-history-title"
+            >
+              <div className="drawer-head">
+                <h2 id="chat-history-title" className="drawer-title">
+                  {t('chat.history')}
+                </h2>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  aria-label={t('common.close')}
+                  onClick={closeHistory}
+                >
+                  <CloseIcon size={13} />
                 </button>
               </div>
+              <ThreadList
+                conversations={conversations}
+                agents={agentsById}
+                error={conversationsError}
+                retryAt={conversationsRetryAt}
+                outage={historyOutage}
+                activeId={routeId}
+                onNew={newChat}
+                onRetry={reloadConversations}
+                onPick={closeHistory}
+              />
+            </aside>
+          </div>
+        )}
+        <div
+          className="chat-main"
+          onDragOver={(event) => {
+            if (!canDrop || !event.dataTransfer.types.includes('Files')) return;
+            event.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={(event) => {
+            if (event.currentTarget === event.target) setDragOver(false);
+          }}
+          onDrop={(event) => {
+            if (!canDrop) return;
+            event.preventDefault();
+            setDragOver(false);
+            if (composerFiles) composerFiles.add(Array.from(event.dataTransfer.files));
+          }}
+        >
+          {dragOver && agent && (
+            <div className="chat-drop" aria-hidden="true">
+              <UploadIcon size={22} />
+              {composerFiles ? (
+                <>
+                  <div className="chat-drop-title">{t('chat.attachments.dropTitle')}</div>
+                  <div className="chat-drop-hint">{t('chat.attachments.dropHint')}</div>
+                </>
+              ) : (
+                <>
+                  <div className="chat-drop-title">
+                    {t('chat.attachments.dropCannot', { name: agent.name })}
+                  </div>
+                  <div className="chat-drop-hint">{t('chat.attachments.dropCannotHint')}</div>
+                </>
+              )}
             </div>
           )}
-          {loading && CONVERSATION_SKELETON}
-          {loadError && (
-            <div className="chat-load-error" role="alert">
-              <span className="chat-load-error-icon">
-                <WarnIcon size={18} />
-              </span>
-              <h2 className="chat-load-error-title">{t('chat.loadError')}</h2>
-              {loadRetryAt !== null && (
-                <p className="chat-load-error-body">
-                  <RateWaitLine until={loadRetryAt} />
-                </p>
-              )}
-              <div className="chat-load-error-actions">
-                {loadRetryAt !== null ? (
-                  <RateWaitButton
-                    until={loadRetryAt}
-                    onRetry={retryLoad}
-                    className="btn btn-sm btn-primary"
-                  />
-                ) : (
-                  <button type="button" className="btn btn-sm btn-primary" onClick={retryLoad}>
+          <ChatHeader
+            agent={agent}
+            model={model}
+            onModelChange={chooseModel}
+            headingLevel={isEmpty && agent ? 'p' : 'h1'}
+            observe={observe}
+            onToggleObserve={toggleObserve}
+            onNewChat={newChat}
+            newChatDisabled={firstTurnRunning}
+            onOpenConversations={
+              narrow
+                ? () => {
+                    setHistoryOpen(true);
+                  }
+                : undefined
+            }
+          />
+          {away && state.messages.length > 0 && (
+            <button
+              type="button"
+              className="chat-toend"
+              aria-label={t('chat.toEnd.label')}
+              onClick={toEnd}
+            >
+              <ChevronDownIcon size={12} />
+              {newBelow && isStreaming ? t('chat.toEnd.newAnswer') : t('chat.toEnd.end')}
+            </button>
+          )}
+          <div ref={scrollRef} className="chat-scroll" onScroll={onConversationScroll}>
+            {isEmpty && agent && canChat && (
+              <AgentHero agent={agent} disabled={isStreaming} onPrompt={sendWithFiles} />
+            )}
+            {isEmpty && agentPending && CONVERSATION_SKELETON}
+            {isEmpty && blocked && <ChatBlocked kind={blocked} />}
+            {isEmpty && agentsFailed && (
+              <div className="chat-load-error" role="alert">
+                <span className="chat-load-error-icon">
+                  <WarnIcon size={18} />
+                </span>
+                <h2 className="chat-load-error-title">{t('chat.noAgent.loadError')}</h2>
+                <p className="chat-load-error-body">{t('chat.noAgent.loadErrorBody')}</p>
+                <div className="chat-load-error-actions">
+                  <button type="button" className="btn btn-sm" onClick={reloadAgents}>
                     <RefreshIcon size={11} />
                     {t('errors.retry')}
                   </button>
-                )}
-                <button type="button" className="btn btn-sm" onClick={newChat}>
-                  {t('nav.newChat')}
-                </button>
+                </div>
               </div>
-            </div>
-          )}
-          {state.messages.length > 0 && (
-            <ChatFilesProvider value={filesScope}>
-              <div className="chat-column">
-                {/* Design chat.jsx «tools faltantes»: the API lists the tools of the version
+            )}
+            {loading && CONVERSATION_SKELETON}
+            {loadError && (
+              <div className="chat-load-error" role="alert">
+                <span className="chat-load-error-icon">
+                  <WarnIcon size={18} />
+                </span>
+                <h2 className="chat-load-error-title">{t('chat.loadError')}</h2>
+                {loadRetryAt !== null && (
+                  <p className="chat-load-error-body">
+                    <RateWaitLine until={loadRetryAt} />
+                  </p>
+                )}
+                <div className="chat-load-error-actions">
+                  {loadRetryAt !== null ? (
+                    <RateWaitButton
+                      until={loadRetryAt}
+                      onRetry={retryLoad}
+                      className="btn btn-sm btn-primary"
+                    />
+                  ) : (
+                    <button type="button" className="btn btn-sm btn-primary" onClick={retryLoad}>
+                      <RefreshIcon size={11} />
+                      {t('errors.retry')}
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-sm" onClick={newChat}>
+                    {t('nav.newChat')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {state.messages.length > 0 && (
+              <ChatFilesProvider value={filesScope}>
+                <div className="chat-column">
+                  {/* Design chat.jsx «tools faltantes»: the API lists the tools of the version
                   whose MCP is disabled now (`unavailable_tools`). */}
-                {agent && canChat && agent.unavailable_tools.length > 0 && (
-                  <div className="mc-alert amber chat-notice" role="status">
-                    <WarnIcon size={14} />
-                    <div>{t('chat.toolsMissing', { name: agent.name })}</div>
-                  </div>
-                )}
-                {state.messages.map((message, index) => {
-                  const previous = state.messages[index - 1];
-                  const asked =
-                    message.role === 'assistant' && previous?.role === 'user'
-                      ? previous.content
-                      : null;
-                  // Agent answers can be regenerated by sending their question again as a new turn.
-                  const question = isStreaming ? null : asked;
-                  return (
-                    <Fragment key={message.id}>
-                      {/* Design round 35 `.ch-mi`: the target of «abrir en la coincidencia». */}
-                      <div
-                        data-mi={message.id}
-                        className={highlight === message.id ? 'ch-mi ch-hl' : 'ch-mi'}
-                      >
-                        <ChatMessage
-                          message={message}
-                          observe={observe}
-                          isAdmin={me.is_admin}
-                          onSend={sendText}
-                          resendText={question}
-                          retryText={
-                            retryText !== null && index === state.messages.length - 1
-                              ? retryText
-                              : null
-                          }
-                          onReconnect={reconnect}
-                        />
-                      </div>
-                      {/* Design chat.jsx: the write actions of the answer wait here for a person
+                  {agent && canChat && agent.unavailable_tools.length > 0 && (
+                    <div className="mc-alert amber chat-notice" role="status">
+                      <WarnIcon size={14} />
+                      <div>{t('chat.toolsMissing', { name: agent.name })}</div>
+                    </div>
+                  )}
+                  {state.messages.map((message, index) => {
+                    const previous = state.messages[index - 1];
+                    const asked =
+                      message.role === 'assistant' && previous?.role === 'user'
+                        ? previous.content
+                        : null;
+                    // Agent answers can be regenerated by sending their question again as a new turn.
+                    const question = isStreaming ? null : asked;
+                    return (
+                      <Fragment key={message.id}>
+                        {/* Design round 35 `.ch-mi`: the target of «abrir en la coincidencia». */}
+                        <div
+                          data-mi={message.id}
+                          className={highlight === message.id ? 'ch-mi ch-hl' : 'ch-mi'}
+                        >
+                          <ChatMessage
+                            message={message}
+                            observe={observe}
+                            isAdmin={me.is_admin}
+                            onSend={sendText}
+                            resendText={question}
+                            retryText={
+                              retryText !== null && index === state.messages.length - 1
+                                ? retryText
+                                : null
+                            }
+                            onReconnect={reconnect}
+                          />
+                        </div>
+                        {/* Design chat.jsx: the write actions of the answer wait here for a person
                         (D27). What a card shows is what the API stored, never the model's text. */}
-                      {/* Design remote-core.jsx: a notice of Mango, outside the answer, when a
+                        {/* Design remote-core.jsx: a notice of Mango, outside the answer, when a
                         remote tool asked the person to connect their account (D98 (20)). */}
-                      {message.connectionRequired?.map((registration) => (
-                        <ConnectCard
-                          key={registration}
-                          registrationId={registration}
-                          startedAt={startOf(message)}
-                          onResend={
-                            asked !== null && canChat
-                              ? () => {
-                                  sendText(asked);
-                                }
-                              : undefined
-                          }
-                          asked={index < lastQuestion}
-                          busy={isStreaming}
-                        />
-                      ))}
-                      {message.approvals && message.approvals.length > 0 ? (
-                        <Suspense fallback={null}>
-                          {message.approvals.map((approval) => (
-                            <ChatApprovalCard
-                              key={approval.approval_id}
-                              api={api}
-                              me={me}
-                              approval={approval}
-                              onUpdated={updateApproval}
-                              notify={notify}
-                            />
-                          ))}
-                        </Suspense>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-                {busy?.conversationId === routeId ? (
-                  <div className="mc-alert chat-busy" role="status">
-                    <InfoIcon size={14} />
-                    <div>{t('chat.busy')}</div>
-                  </div>
-                ) : null}
-                <div ref={bottomRef} />
-              </div>
-            </ChatFilesProvider>
+                        {message.connectionRequired?.map((registration) => (
+                          <ConnectCard
+                            key={registration}
+                            registrationId={registration}
+                            startedAt={startOf(message)}
+                            onResend={
+                              asked !== null && canChat
+                                ? () => {
+                                    sendText(asked);
+                                  }
+                                : undefined
+                            }
+                            asked={index < lastQuestion}
+                            busy={isStreaming}
+                          />
+                        ))}
+                        {message.approvals && message.approvals.length > 0 ? (
+                          <Suspense fallback={null}>
+                            {message.approvals.map((approval) => (
+                              <ChatApprovalCard
+                                key={approval.approval_id}
+                                api={api}
+                                me={me}
+                                approval={approval}
+                                onUpdated={updateApproval}
+                                notify={notify}
+                              />
+                            ))}
+                          </Suspense>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                  {busy?.conversationId === routeId ? (
+                    <div className="mc-alert chat-busy" role="status">
+                      <InfoIcon size={14} />
+                      <div>{t('chat.busy')}</div>
+                    </div>
+                  ) : null}
+                  <div ref={bottomRef} />
+                </div>
+              </ChatFilesProvider>
+            )}
+          </div>
+          {/* Design chat.jsx `load-error`: nothing is known about the agents, so no composer. */}
+          {agentsFailed ? null : blocked ? (
+            <BlockedComposer kind={blocked} />
+          ) : (
+            <ChatInput
+              agentName={agentName}
+              disabled={!canChat}
+              isStreaming={isStreaming}
+              onSend={sendWithFiles}
+              onStop={stop}
+              restore={composerRestore}
+              files={composerFiles}
+              canAttach={canAttach}
+            />
           )}
         </div>
-        {/* Design chat.jsx `load-error`: nothing is known about the agents, so no composer. */}
-        {agentsFailed ? null : blocked ? (
-          <BlockedComposer kind={blocked} />
-        ) : (
-          <ChatInput
-            agentName={agentName}
-            disabled={!canChat}
-            isStreaming={isStreaming}
-            onSend={sendWithFiles}
-            onStop={stop}
-            restore={busy}
-            files={composerFiles}
-            canAttach={canAttach}
-          />
-        )}
+        {openCard && state.conversationId ? (
+          <ChatFilesProvider value={filesScope}>
+            <Suspense fallback={null}>
+              <CanvasPanel
+                key={openCard.textdoc_id}
+                conversationId={state.conversationId}
+                card={openCard}
+                agentName={agentName}
+                onClose={closeCanvas}
+                onAsk={askInChat}
+                onExported={exported}
+                notify={notify}
+              />
+            </Suspense>
+          </ChatFilesProvider>
+        ) : null}
+        {toasts}
+        <div className="sr-only" aria-live="polite">
+          {announcement}
+        </div>
       </div>
-      {toasts}
-      <div className="sr-only" aria-live="polite">
-        {announcement}
-      </div>
-    </div>
+    </CanvasProvider>
   );
 }

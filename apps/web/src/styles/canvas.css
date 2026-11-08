@@ -1,0 +1,408 @@
+/* Canvas (D124): design round 41 caps.css `cv-`, copied as is (D24), plus the pieces the product adds
+   (the card of an answer, the host of the runner's iframe and the chat grid with the panel). */
+@layer components {
+  .cv {
+    border-left: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+    animation: slideIn 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .cv-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cv-h-ic {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .cv-h-t {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cv-h-s {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cv-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 40;
+    min-width: 240px;
+    padding: 4px;
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    display: grid;
+  }
+  .cv-menu button {
+    display: grid;
+    gap: 1px;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 5px;
+    font-size: 12.5px;
+  }
+  .cv-menu button:hover {
+    background: var(--row-hover);
+  }
+  .cv-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .cv-old {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--amber-soft);
+    border-bottom: 1px solid color-mix(in oklab, var(--amber) 25%, transparent);
+    font-size: 12.5px;
+    flex-wrap: wrap;
+  }
+  .cv-old > svg {
+    color: var(--amber);
+  }
+  .cv-main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  .cv-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 24px;
+    min-width: 0;
+  }
+  .cv-doc {
+    font-size: 14.5px;
+    line-height: 1.7;
+  }
+  .cv-mark {
+    background: color-mix(in oklab, var(--amber) 28%, transparent);
+    color: inherit;
+    border-bottom: 2px solid var(--amber);
+    padding: 0 1px;
+    border-radius: 2px;
+  }
+  .cv-code {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    overflow: auto;
+    white-space: pre;
+  }
+  .cv-edit {
+    width: 100%;
+    min-height: 420px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--text);
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+  }
+  .cv-edit:focus {
+    border-color: var(--accent);
+  }
+  .cv-diff-h {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .cv-diff {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .cv-cmts {
+    margin-top: 22px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    display: grid;
+    gap: 10px;
+  }
+  .cv-cmts-t {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .cv-cmt {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    padding: 10px 12px;
+    display: grid;
+    gap: 6px;
+  }
+  .cv-cmt-q {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    border-left: 2px solid var(--amber);
+    padding-left: 8px;
+  }
+  .cv-cmt-x {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .cv-hist {
+    width: 200px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  .cv-hist-t {
+    padding: 10px 12px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .cv-hist-i {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 12px;
+  }
+  .cv-hist-i:hover {
+    background: var(--row-hover);
+  }
+  .cv-hist-i.is-on {
+    background: var(--row-hover);
+    box-shadow: inset 2px 0 var(--accent);
+  }
+  .cv-hist-i .mono {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding-top: 1px;
+  }
+  .cv-hist-n {
+    display: block;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .cv-pv {
+    display: grid;
+    gap: 8px;
+  }
+  .cv-pv-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .cv-origin {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-strong);
+    background: var(--row-hover);
+    border: 1px solid var(--border-strong);
+    border-radius: 5px;
+    padding: 3px 7px;
+  }
+  .cv-pv-st {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+  .cv-pv-st.is-ok {
+    color: var(--green);
+  }
+  .cv-pv-st.is-err {
+    color: var(--red);
+  }
+  .cv-frame {
+    border: 2px solid var(--border-strong);
+    border-radius: 8px;
+    background: #fff;
+    color: #1a1a1a;
+    min-height: 260px;
+    overflow: auto;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .cv-fr-msg {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 20px;
+    font:
+      13px/1.5 system-ui,
+      sans-serif;
+    color: #333;
+  }
+  .cv-fr-msg b {
+    display: block;
+    color: #111;
+  }
+  .cv-fr-msg.is-err {
+    color: #a11;
+  }
+  .cv-fr-out {
+    margin: 0;
+    padding: 12px 14px;
+    font-size: 12px;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  .cv-fr-err {
+    margin: 0;
+    padding: 12px 14px;
+    font-size: 12px;
+    color: #a11;
+    white-space: pre-wrap;
+  }
+  .cv-fr-fig {
+    padding: 10px;
+  }
+  .cv-pv-f {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  @media (max-width: 1200px) {
+    .chat-grid.has-artifact .cv {
+      position: fixed;
+      inset: 0 0 0 auto;
+      width: min(560px, 100vw);
+      z-index: 60;
+      box-shadow: -12px 0 32px rgba(0, 0, 0, 0.3);
+    }
+    .cv-hist {
+      width: 170px;
+    }
+  }
+  @keyframes cv-slide-in {
+    from {
+      transform: translateX(16px);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+  .cv {
+    animation-name: cv-slide-in;
+  }
+  /* Design chat.jsx: the panel takes a third column of 520 px. */
+  .chat-grid.has-artifact {
+    grid-template-columns: 300px minmax(0, 1fr) 520px;
+  }
+  @media (max-width: 1200px) {
+    .chat-grid.has-artifact {
+      grid-template-columns: 260px minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 1100px) {
+    .chat-grid.has-artifact {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* Design chat.jsx: the card of the answer that opens the Canvas. */
+  .cv-card {
+    margin-top: 14px;
+    padding: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+  .cv-card-ic {
+    width: 36px;
+    height: 36px;
+    border-radius: 7px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .cv-card-t {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+  .cv-card-s {
+    display: block;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .cv-card > svg {
+    color: var(--text-dim);
+  }
+  /* Where the runner's iframe goes (D123): hidden while Mango says what it waits for. */
+  .cv-fr-host {
+    width: 100%;
+  }
+  /* Kept with its size but invisible (a frame of no size may be throttled by the browser). */
+  .cv-frame {
+    position: relative;
+  }
+  .cv-fr-host.is-hidden {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .cv-fr-host iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
+  }
+  .cv-fr-hint {
+    padding: 8px 14px 12px;
+    font:
+      12px/1.5 system-ui,
+      sans-serif;
+    color: #a11;
+  }
+}

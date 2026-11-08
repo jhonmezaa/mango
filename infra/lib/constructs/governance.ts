@@ -1,7 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CfnResource, Duration, RemovalPolicy, Stack, Token } from "aws-cdk-lib";
+import {
+  CfnResource,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  Token,
+} from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as firehose from "aws-cdk-lib/aws-kinesisfirehose";
@@ -15,7 +21,12 @@ import { GUARD_EXCEPTIONS, suppressGuard } from "../guard.js";
 import { logsKeyOf } from "../logs.js";
 import { accessGroupRegistry } from "../config/groups.js";
 import { Installation } from "../config/schema.js";
-import { acknowledge, arnWildcardFinding, KMS_GRANT_ACTIONS, REASONS } from "../nag.js";
+import {
+  acknowledge,
+  arnWildcardFinding,
+  KMS_GRANT_ACTIONS,
+  REASONS,
+} from "../nag.js";
 import { mangoName } from "../names.js";
 
 /**
@@ -68,7 +79,10 @@ export interface GovernanceProps {
  * the store each. They have no physical name and hold no data: CloudFormation can create them
  * anywhere the store id reaches, and they live in the `Authorization` stack nested in Core (D99).
  */
-export function platformPolicies(scope: Construct, policyStoreId: string): avp.CfnPolicy[] {
+export function platformPolicies(
+  scope: Construct,
+  policyStoreId: string,
+): avp.CfnPolicy[] {
   return readdirSync(PLATFORM_POLICIES)
     .filter((f) => f.endsWith(".cedar"))
     .map(
@@ -127,14 +141,18 @@ export class Governance extends Construct {
   constructor(scope: Construct, id: string, props: GovernanceProps) {
     super(scope, id);
     const cfg = props.installation;
-    const removal = cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY;
+    const removal = cfg.retainData
+      ? RemovalPolicy.RETAIN
+      : RemovalPolicy.DESTROY;
     const account = Stack.of(this).account;
 
     const key = (this.dataKey = new kms.Key(this, "DataKey", {
       alias: `alias/${mangoName(cfg.namespace, "data")}`,
       description: "Mango conversations, budgets and audit trail",
       enableKeyRotation: true,
-      removalPolicy: cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      removalPolicy: cfg.retainData
+        ? RemovalPolicy.RETAIN
+        : RemovalPolicy.DESTROY,
     }));
 
     const tableProps = {
@@ -192,13 +210,19 @@ export class Governance extends Construct {
         {
           // Sparse: versions in review, approved, failed, published or retired.
           indexName: AGENTS_BY_STATUS,
-          partitionKey: { name: "status_index", type: dynamodb.AttributeType.STRING },
+          partitionKey: {
+            name: "status_index",
+            type: dynamodb.AttributeType.STRING,
+          },
           sortKey: { name: "status_at", type: dynamodb.AttributeType.STRING },
         },
         {
           // Sparse: versions by who created them (drafts and the per-creator limits).
           indexName: AGENTS_BY_CREATOR,
-          partitionKey: { name: "creator_index", type: dynamodb.AttributeType.STRING },
+          partitionKey: {
+            name: "creator_index",
+            type: dynamodb.AttributeType.STRING,
+          },
           sortKey: { name: "created_at", type: dynamodb.AttributeType.STRING },
         },
       ],
@@ -206,14 +230,17 @@ export class Governance extends Construct {
 
     this.dataAccessRole = new iam.Role(this, "DataAccessRole", {
       roleName: mangoName(cfg.namespace, "ConversationData"),
-      description: "Assumed per request with a LeadingKeys session policy (row-level security)",
+      description:
+        "Assumed per request with a LeadingKeys session policy (row-level security)",
       assumedBy: new iam.AccountPrincipal(account).withConditions({
         ArnEquals: {
           "aws:PrincipalArn": [
             props.apiTaskRole.roleArn,
             ...(props.turnWorkerRoleArn ? [props.turnWorkerRoleArn] : []),
             ...(props.codeConnectorRoleArn ? [props.codeConnectorRoleArn] : []),
-            ...(props.textdocConnectorRoleArn ? [props.textdocConnectorRoleArn] : []),
+            ...(props.textdocConnectorRoleArn
+              ? [props.textdocConnectorRoleArn]
+              : []),
           ],
         },
       }),
@@ -228,14 +255,19 @@ export class Governance extends Construct {
         actions: ["dynamodb:GetItem", "dynamodb:Query"],
         resources: [this.budgets.tableArn],
         conditions: {
-          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": [...DATA_ACCESS_BUDGET_KEYS] },
+          "ForAllValues:StringLike": {
+            "dynamodb:LeadingKeys": [...DATA_ACCESS_BUDGET_KEYS],
+          },
         },
       }),
     );
     acknowledge(this.dataAccessRole, ...KMS_GRANT_ACTIONS);
 
     // --- L1 authorization: Verified Permissions --------------------------------------
-    const schema = readFileSync(resolve(PLATFORM_POLICIES, "schema.cedarschema.json"), "utf8");
+    const schema = readFileSync(
+      resolve(PLATFORM_POLICIES, "schema.cedarschema.json"),
+      "utf8",
+    );
     this.policyStore = new avp.CfnPolicyStore(this, "PolicyStore", {
       description: `Mango ${cfg.namespace} platform authorization (L1)`,
       validationSettings: { mode: "STRICT" },
@@ -264,7 +296,9 @@ export class Governance extends Construct {
     );
     // A release decides days and mode at deployment (overridden below): the construct only
     // validates literal values.
-    const lockDays = Token.isUnresolved(cfg.audit.retentionDays) ? 1 : cfg.audit.retentionDays;
+    const lockDays = Token.isUnresolved(cfg.audit.retentionDays)
+      ? 1
+      : cfg.audit.retentionDays;
     const lock =
       cfg.audit.mode === "COMPLIANCE"
         ? s3.ObjectLockRetention.compliance(Duration.days(lockDays))
@@ -301,7 +335,8 @@ export class Governance extends Construct {
           }),
         ),
         dataOutputPrefix: "events/!{timestamp:yyyy/MM/dd}/",
-        errorOutputPrefix: "errors/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}/",
+        errorOutputPrefix:
+          "errors/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}/",
         bufferingInterval: Duration.seconds(60),
         encryptionKey: key,
       }),
@@ -310,12 +345,21 @@ export class Governance extends Construct {
     acknowledge(
       this.auditStream,
       ...KMS_GRANT_ACTIONS,
-      ...["s3:Abort*", "s3:DeleteObject*", "s3:GetBucket*", "s3:GetObject*", "s3:List*"].map((a) => ({
+      ...[
+        "s3:Abort*",
+        "s3:DeleteObject*",
+        "s3:GetBucket*",
+        "s3:GetObject*",
+        "s3:List*",
+      ].map((a) => ({
         id: `AwsSolutions-IAM5[Action::${a}]`,
         reason: REASONS.cdkGrant,
       })),
       {
-        id: arnWildcardFinding(this.auditBucket.node.defaultChild as CfnResource, "/*"),
+        id: arnWildcardFinding(
+          this.auditBucket.node.defaultChild as CfnResource,
+          "/*",
+        ),
         reason: REASONS.cdkGrant,
       },
     );
@@ -330,7 +374,10 @@ export class Governance extends Construct {
     apiTaskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         sid: "ListBedrockModels",
-        actions: ["bedrock:ListFoundationModels", "bedrock:ListInferenceProfiles"],
+        actions: [
+          "bedrock:ListFoundationModels",
+          "bedrock:ListInferenceProfiles",
+        ],
         resources: ["*"],
       }),
     );
@@ -346,7 +393,11 @@ export class Governance extends Construct {
     grantee.grantPrincipal.addToPrincipalPolicy(
       new iam.PolicyStatement({
         sid: "WebSessionsTable",
-        actions: ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem"],
+        actions: [
+          "dynamodb:DeleteItem",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+        ],
         resources: [this.webSessions.tableArn],
       }),
     );
@@ -363,7 +414,9 @@ export class Governance extends Construct {
         sid: "RateLimitsTable",
         actions: ["dynamodb:GetItem", "dynamodb:PutItem"],
         resources: [this.rateLimits.tableArn],
-        conditions: { "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#*"] } },
+        conditions: {
+          "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["LIMIT#*"] },
+        },
       }),
     );
   }
@@ -389,7 +442,9 @@ export class Governance extends Construct {
         ],
         resources: [
           this.agents.tableArn,
-          ...[AGENTS_BY_STATUS, AGENTS_BY_CREATOR].map((index) => `${this.agents.tableArn}/index/${index}`),
+          ...[AGENTS_BY_STATUS, AGENTS_BY_CREATOR].map(
+            (index) => `${this.agents.tableArn}/index/${index}`,
+          ),
         ],
       }),
     );
@@ -397,10 +452,16 @@ export class Governance extends Construct {
       new iam.PolicyStatement({
         sid: "PublishedPointerIsProvisionerOnly",
         effect: iam.Effect.DENY,
-        actions: ["dynamodb:DeleteItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
+        actions: [
+          "dynamodb:DeleteItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+        ],
         resources: [this.agents.tableArn],
         conditions: {
-          "ForAnyValue:StringLike": { "dynamodb:LeadingKeys": [`${AGENTS_PUBLISHED_PARTITION}*`] },
+          "ForAnyValue:StringLike": {
+            "dynamodb:LeadingKeys": [`${AGENTS_PUBLISHED_PARTITION}*`],
+          },
         },
       }),
     );
@@ -464,8 +525,10 @@ export class Governance extends Construct {
         updated_by: { S: "iac-seed" },
       },
     };
-    const calls: Record<string, { partition: string; call: Omit<cr.AwsSdkCall, "physicalResourceId"> }> =
-      {};
+    const calls: Record<
+      string,
+      { partition: string; call: Omit<cr.AwsSdkCall, "physicalResourceId"> }
+    > = {};
     for (const [id, item] of Object.entries(items)) {
       calls[id] = {
         partition: (item.PK as { S: string }).S,
@@ -512,7 +575,9 @@ export class Governance extends Construct {
     for (const [id, { partition, call }] of Object.entries(calls)) {
       const putIfAbsent: cr.AwsSdkCall = {
         ...call,
-        physicalResourceId: cr.PhysicalResourceId.of(`settings-seed-${partition}`),
+        physicalResourceId: cr.PhysicalResourceId.of(
+          `settings-seed-${partition}`,
+        ),
       };
       const seed = new cr.AwsCustomResource(this, id, {
         onCreate: putIfAbsent,
@@ -521,14 +586,20 @@ export class Governance extends Construct {
           new iam.PolicyStatement({
             actions: ["dynamodb:PutItem"],
             resources: [this.settings.tableArn],
-            conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [partition] } },
+            conditions: {
+              "ForAllValues:StringEquals": {
+                "dynamodb:LeadingKeys": [partition],
+              },
+            },
           }),
           new iam.PolicyStatement({
             actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
             resources: [this.dataKey.keyArn],
             // Only through DynamoDB, never direct use of the shared data key.
             conditions: {
-              StringEquals: { "kms:ViaService": `dynamodb.${Stack.of(this).region}.amazonaws.com` },
+              StringEquals: {
+                "kms:ViaService": `dynamodb.${Stack.of(this).region}.amazonaws.com`,
+              },
             },
           }),
         ]),

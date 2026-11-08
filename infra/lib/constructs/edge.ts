@@ -1,7 +1,15 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ArnFormat, CfnResource, Duration, Fn, Lazy, RemovalPolicy, Stack } from "aws-cdk-lib";
+import {
+  ArnFormat,
+  CfnResource,
+  Duration,
+  Fn,
+  Lazy,
+  RemovalPolicy,
+  Stack,
+} from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
@@ -103,7 +111,10 @@ export const spaAuthConfigSchema = z
 export type SpaAuthConfig = z.infer<typeof spaAuthConfigSchema>;
 
 /** The runtime configuration of a release: two of its values are deploy-time text (D58). */
-export interface ReleaseSpaConfig extends Omit<SpaRuntimeConfig, "signUpDomains" | "aiPolicyUrl"> {
+export interface ReleaseSpaConfig extends Omit<
+  SpaRuntimeConfig,
+  "signUpDomains" | "aiPolicyUrl"
+> {
   readonly deployTime: {
     /** Company domains separated by commas; the stack parameter only admits domain characters. */
     readonly signUpDomains: string;
@@ -128,7 +139,9 @@ export function releaseConfigJson(config: ReleaseSpaConfig): string {
     `"apiBasePath":${text(config.apiBasePath)}`,
     `"signUpDomains":["${Fn.join('","', Fn.split(",", config.deployTime.signUpDomains))}"]`,
     `"auth":${JSON.stringify(config.auth)}`,
-    ...(config.sandboxOrigin ? [`"sandboxOrigin":${text(config.sandboxOrigin)}`] : []),
+    ...(config.sandboxOrigin
+      ? [`"sandboxOrigin":${text(config.sandboxOrigin)}`]
+      : []),
   ];
   return `{${members.join(",")}${config.deployTime.aiPolicyUrlMember}}`;
 }
@@ -140,6 +153,17 @@ export function releaseConfigJson(config: ReleaseSpaConfig): string {
  * everything, files of the web application included.
  */
 export const API_RATE_LIMIT = 6000;
+/** The rule of `AWSManagedRulesCommonRuleSet` that blocks bodies of more than 8 KB, and its label. */
+export const BODY_SIZE_RULE = "SizeRestrictions_BODY";
+export const BODY_SIZE_LABEL =
+  "awswaf:managed:aws:core-rule-set:SizeRestrictions_Body";
+/**
+ * The one route whose body may pass 8 KB at the edge: saving a version of the Canvas (D124 (6)
+ * (i), an exception the owner agreed on 2026-11-08). The same pattern as mango-api's
+ * `TEXTDOC_VERSIONS_PATH`.
+ */
+export const CANVAS_VERSIONS_PATH =
+  "^/api/conversations/[0-9a-f]{32}/textdocs/[0-9A-HJKMNP-TV-Z]{26}/versions$";
 export const EDGE_RATE_LIMIT = 20000;
 const RATE_WINDOW_SECONDS = 300;
 /**
@@ -151,7 +175,10 @@ const RATE_WINDOW_SECONDS = 300;
 export const RATE_LIMITED_RETRY_SECONDS = 180;
 /** The same body mango-api answers a 429 with (`rate_limited` in `web.py`): the SPA reads one format. */
 export const API_RATE_LIMITED_BODY = JSON.stringify({
-  error: { code: "rate_limited", message: "too many requests; try again later" },
+  error: {
+    code: "rate_limited",
+    message: "too many requests; try again later",
+  },
 });
 /**
  * Style of the page a browser gets when the ceiling blocks a page load (design «Demasiadas
@@ -178,7 +205,8 @@ export const RATE_LIMITED_STYLE =
  * CSP source of `RATE_LIMITED_STYLE` (`sha256` of its UTF-8 bytes, base64). Written out, not
  * computed: a test recomputes it and fails when the style changes and this does not.
  */
-export const RATE_LIMITED_STYLE_HASH = "'sha256-Gjss+7p1uhaP+tEut0dsomFhNXqIt4LaLzETwmFaDKo='";
+export const RATE_LIMITED_STYLE_HASH =
+  "'sha256-Gjss+7p1uhaP+tEut0dsomFhNXqIt4LaLzETwmFaDKo='";
 /**
  * What a browser shows when the ceiling blocks a page load: the design's page (round 34). No
  * script and nothing external: it has to work while Mango does not answer this address.
@@ -205,12 +233,21 @@ export const SANDBOX_ONLY_PATHS = ["sandbox.html", "vendor"] as const;
 
 /** Fails the synthesis when the built SPA holds what only the second origin may serve. */
 export function assertNoSandboxContent(dist: string): void {
-  const found = SANDBOX_ONLY_PATHS.filter((path) => existsSync(resolve(dist, path)));
-  if (found.length) throw new Error(`the SPA must not serve sandbox content (D123): ${found.join(", ")}`);
+  const found = SANDBOX_ONLY_PATHS.filter((path) =>
+    existsSync(resolve(dist, path)),
+  );
+  if (found.length)
+    throw new Error(
+      `the SPA must not serve sandbox content (D123): ${found.join(", ")}`,
+    );
 }
 
 /** Deterministic Cognito managed-login domain (used by CSP before Cognito exists). */
-export function cognitoDomainUrl(namespace: string, account: string, region: string): string {
+export function cognitoDomainUrl(
+  namespace: string,
+  account: string,
+  region: string,
+): string {
   return `https://mango-${namespace}-${account}.auth.${region}.amazoncognito.com`;
 }
 
@@ -222,7 +259,10 @@ export class Edge extends Construct {
   readonly distribution: cloudfront.Distribution;
   readonly spaBucket: s3.Bucket;
   /** CloudWatch names of the web ACL and of its per-IP rate limits (`AWS/WAFV2` dimensions). */
-  readonly rateLimitMetrics: { readonly webAcl: string; readonly rules: string[] };
+  readonly rateLimitMetrics: {
+    readonly webAcl: string;
+    readonly rules: string[];
+  };
   /** The web ACL of the distribution: the second origin uses it too (D123 (8), TM-UI12). */
   readonly webAclArn: string;
   /** Where the v2 access logs of the distributions are delivered (the access-logs bucket). */
@@ -236,7 +276,11 @@ export class Edge extends Construct {
     super(scope, id);
     const cfg = props.installation;
     const stack = Stack.of(this);
-    const cognitoDomain = cognitoDomainUrl(cfg.namespace, stack.account, stack.region);
+    const cognitoDomain = cognitoDomainUrl(
+      cfg.namespace,
+      stack.account,
+      stack.region,
+    );
 
     this.spaBucket = new s3.Bucket(this, "Spa", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -284,19 +328,85 @@ export class Edge extends Construct {
       defaultAction: { allow: {} },
       visibilityConfig: visibility(this.rateLimitMetrics.webAcl),
       customResponseBodies: {
-        ApiRateLimited: { contentType: "APPLICATION_JSON", content: API_RATE_LIMITED_BODY },
+        ApiRateLimited: {
+          contentType: "APPLICATION_JSON",
+          content: API_RATE_LIMITED_BODY,
+        },
         RateLimited: { contentType: "TEXT_HTML", content: RATE_LIMITED_PAGE },
       },
       rules: [
-        ...["AWSManagedRulesCommonRuleSet", "AWSManagedRulesKnownBadInputsRuleSet", "AWSManagedRulesAmazonIpReputationList"].map(
-          (name, i) => ({
-            name,
-            priority: i,
-            overrideAction: { none: {} },
-            statement: { managedRuleGroupStatement: { vendorName: "AWS", name } },
-            visibilityConfig: visibility(name),
-          }),
-        ),
+        ...[
+          "AWSManagedRulesCommonRuleSet",
+          "AWSManagedRulesKnownBadInputsRuleSet",
+          "AWSManagedRulesAmazonIpReputationList",
+        ].map((name, i) => ({
+          name,
+          priority: i,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: "AWS",
+              name,
+              // D124 (6) (i): the 8 KB body limit only counts here and blocks in the rule
+              // below, which leaves out one route; every other rule of the group still blocks.
+              ...(name === "AWSManagedRulesCommonRuleSet"
+                ? {
+                    ruleActionOverrides: [
+                      { name: BODY_SIZE_RULE, actionToUse: { count: {} } },
+                    ],
+                  }
+                : {}),
+            },
+          },
+          visibilityConfig: visibility(name),
+        })),
+        // The body limit of the managed group (8 KB), blocking as before on every request but
+        // the save of a version of the Canvas (POST, its exact path; mango-api caps that one at
+        // 640 KiB, D124 (6) (i)). The path is matched as sent, with no transformation.
+        {
+          name: "BodySizeOutsideCanvas",
+          priority: 3,
+          action: { block: {} },
+          statement: {
+            andStatement: {
+              statements: [
+                {
+                  labelMatchStatement: { scope: "LABEL", key: BODY_SIZE_LABEL },
+                },
+                {
+                  notStatement: {
+                    statement: {
+                      andStatement: {
+                        statements: [
+                          {
+                            byteMatchStatement: {
+                              fieldToMatch: { method: {} },
+                              positionalConstraint: "EXACTLY",
+                              searchString: "POST",
+                              textTransformations: [
+                                { priority: 0, type: "NONE" },
+                              ],
+                            },
+                          },
+                          {
+                            regexMatchStatement: {
+                              fieldToMatch: { uriPath: {} },
+                              regexString: CANVAS_VERSIONS_PATH,
+                              textTransformations: [
+                                { priority: 0, type: "NONE" },
+                              ],
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+          visibilityConfig: visibility("BodySizeOutsideCanvas"),
+        },
         // First, so that mango-api's clients get the JSON answer. Only what reaches mango-api
         // counts: the files of the web application are two of every three requests of a
         // first load and CloudFront serves them from its cache (D72).
@@ -342,62 +452,71 @@ export class Edge extends Construct {
 
     // On every behavior, and on the answers of the web ACL as well: it is the only source of
     // the CSP of a block (see `blockWith`).
-    const headers = new cloudfront.ResponseHeadersPolicy(this, "SecurityHeaders", {
-      responseHeadersPolicyName: mangoName(cfg.namespace, "security-headers"),
-      securityHeadersBehavior: {
-        contentSecurityPolicy: {
-          override: true,
-          // Lazy: the knowledge bucket and the second origin are added after this construct.
-          contentSecurityPolicy: Lazy.string({
-            produce: () =>
-              [
-                "default-src 'self'",
-                "script-src 'self'",
-                // The page of a block carries its own style (see `RATE_LIMITED_STYLE`).
-                `style-src 'self' ${RATE_LIMITED_STYLE_HASH}`,
-                // The figures of a code cell are read with the person's token and shown as `blob:`
-                // URLs (C4, D116 (5)): never an image URL of the model or of another origin.
-                "img-src 'self' data: blob:",
-                "font-src 'self'",
-                [
-                  "connect-src 'self'",
-                  cognitoDomain,
-                  `https://cognito-idp.${stack.region}.amazonaws.com`,
-                  ...this.connectOrigins,
-                ].join(" "),
-                `form-action 'self' ${cognitoDomain}`,
-                // Only the second origin (D123); without it, frame-src falls back to 'self'.
-                ...(this.frameOrigins.length ? [`frame-src ${this.frameOrigins.join(" ")}`] : []),
-                "frame-ancestors 'none'",
-                "base-uri 'none'",
-                "object-src 'none'",
-                "require-trusted-types-for 'script'",
-                "trusted-types 'none'",
-              ].join("; "),
-          }),
-        },
-        strictTransportSecurity: {
-          override: true,
-          accessControlMaxAge: Duration.days(365),
-          includeSubdomains: true,
-        },
-        contentTypeOptions: { override: true },
-        frameOptions: { override: true, frameOption: cloudfront.HeadersFrameOption.DENY },
-        referrerPolicy: {
-          override: true,
-          referrerPolicy: cloudfront.HeadersReferrerPolicy.NO_REFERRER,
-        },
-      },
-      customHeadersBehavior: {
-        customHeaders: [
-          {
-            header: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+    const headers = new cloudfront.ResponseHeadersPolicy(
+      this,
+      "SecurityHeaders",
+      {
+        responseHeadersPolicyName: mangoName(cfg.namespace, "security-headers"),
+        securityHeadersBehavior: {
+          contentSecurityPolicy: {
             override: true,
+            // Lazy: the knowledge bucket and the second origin are added after this construct.
+            contentSecurityPolicy: Lazy.string({
+              produce: () =>
+                [
+                  "default-src 'self'",
+                  "script-src 'self'",
+                  // The page of a block carries its own style (see `RATE_LIMITED_STYLE`).
+                  `style-src 'self' ${RATE_LIMITED_STYLE_HASH}`,
+                  // The figures of a code cell are read with the person's token and shown as `blob:`
+                  // URLs (C4, D116 (5)): never an image URL of the model or of another origin.
+                  "img-src 'self' data: blob:",
+                  "font-src 'self'",
+                  [
+                    "connect-src 'self'",
+                    cognitoDomain,
+                    `https://cognito-idp.${stack.region}.amazonaws.com`,
+                    ...this.connectOrigins,
+                  ].join(" "),
+                  `form-action 'self' ${cognitoDomain}`,
+                  // Only the second origin (D123); without it, frame-src falls back to 'self'.
+                  ...(this.frameOrigins.length
+                    ? [`frame-src ${this.frameOrigins.join(" ")}`]
+                    : []),
+                  "frame-ancestors 'none'",
+                  "base-uri 'none'",
+                  "object-src 'none'",
+                  "require-trusted-types-for 'script'",
+                  "trusted-types 'none'",
+                ].join("; "),
+            }),
           },
-        ],
+          strictTransportSecurity: {
+            override: true,
+            accessControlMaxAge: Duration.days(365),
+            includeSubdomains: true,
+          },
+          contentTypeOptions: { override: true },
+          frameOptions: {
+            override: true,
+            frameOption: cloudfront.HeadersFrameOption.DENY,
+          },
+          referrerPolicy: {
+            override: true,
+            referrerPolicy: cloudfront.HeadersReferrerPolicy.NO_REFERRER,
+          },
+        },
+        customHeadersBehavior: {
+          customHeaders: [
+            {
+              header: "Permissions-Policy",
+              value: "camera=(), microphone=(), geolocation=()",
+              override: true,
+            },
+          ],
+        },
       },
-    });
+    );
 
     // SPA routing without distribution-wide error pages (which would also rewrite API errors).
     const spaRouter = new cloudfront.Function(this, "SpaRouter", {
@@ -433,7 +552,10 @@ export class Edge extends Construct {
         responseHeadersPolicy: headers,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         functionAssociations: [
-          { function: spaRouter, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+          {
+            function: spaRouter,
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          },
         ],
       },
       additionalBehaviors: {
@@ -442,14 +564,18 @@ export class Edge extends Construct {
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+          originRequestPolicy:
+            cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
           responseHeadersPolicy: headers,
           compress: false,
         },
       },
     });
     this.webAclArn = webAcl.attrArn;
-    this.accessLogDestinationArn = this.logAccess(cfg.namespace, props.accessLogs);
+    this.accessLogDestinationArn = this.logAccess(
+      cfg.namespace,
+      props.accessLogs,
+    );
     this.acknowledgeFindings();
   }
 
@@ -470,11 +596,15 @@ export class Edge extends Construct {
         resourceName: this.distribution.distributionId,
       }),
     });
-    const destination = new logs.CfnDeliveryDestination(this, "AccessLogDestination", {
-      name: mangoName(ns, "cloudfront-access-s3"),
-      destinationResourceArn: `${bucket.bucketArn}/${ACCESS_LOG_PREFIX}`,
-      outputFormat: "w3c",
-    });
+    const destination = new logs.CfnDeliveryDestination(
+      this,
+      "AccessLogDestination",
+      {
+        name: mangoName(ns, "cloudfront-access-s3"),
+        destinationResourceArn: `${bucket.bucketArn}/${ACCESS_LOG_PREFIX}`,
+        outputFormat: "w3c",
+      },
+    );
     const delivery = new logs.CfnDelivery(this, "AccessLogDelivery", {
       deliverySourceName: source.name,
       deliveryDestinationArn: destination.attrArn,
@@ -490,14 +620,28 @@ export class Edge extends Construct {
         actions: ["s3:PutObject"],
         resources: [bucket.arnForObjects(`${ACCESS_LOG_PREFIX}/*`)],
         conditions: {
-          StringEquals: { "s3:x-amz-acl": "bucket-owner-full-control", "aws:SourceAccount": stack.account },
-          ArnLike: { "aws:SourceArn": stack.formatArn({ service: "logs", resource: "delivery-source", resourceName: "*", arnFormat: ArnFormat.COLON_RESOURCE_NAME }) },
+          StringEquals: {
+            "s3:x-amz-acl": "bucket-owner-full-control",
+            "aws:SourceAccount": stack.account,
+          },
+          ArnLike: {
+            "aws:SourceArn": stack.formatArn({
+              service: "logs",
+              resource: "delivery-source",
+              resourceName: "*",
+              arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+            }),
+          },
         },
       }),
     );
-    if (policy.policyDependable) delivery.node.addDependency(policy.policyDependable);
+    if (policy.policyDependable)
+      delivery.node.addDependency(policy.policyDependable);
     // The checks only read the legacy `Logging` property: logging is on, through the delivery.
-    suppressCheckov(this.distribution.node.defaultChild as CfnResource, CHECKOV_EXCEPTIONS.cloudfrontLogsV2);
+    suppressCheckov(
+      this.distribution.node.defaultChild as CfnResource,
+      CHECKOV_EXCEPTIONS.cloudfrontLogsV2,
+    );
     acknowledge(this.distribution, {
       id: "AwsSolutions-CFR3",
       reason:
@@ -512,7 +656,8 @@ export class Edge extends Construct {
       this.distribution,
       {
         id: "AwsSolutions-CFR1",
-        reason: "Access is controlled by authentication; no geographic restriction is required.",
+        reason:
+          "Access is controlled by authentication; no geographic restriction is required.",
       },
       {
         id: "AwsSolutions-CFR4",
@@ -558,14 +703,18 @@ export class Edge extends Construct {
     // Fail the synth rather than publish a config.json the SPA would reject.
     spaAuthConfigSchema.parse(config.auth);
     if (!existsSync(resolve(WEB_DIST, "index.html"))) {
-      throw new Error(`SPA not built: run 'pnpm --filter @mango/web build' (${WEB_DIST})`);
+      throw new Error(
+        `SPA not built: run 'pnpm --filter @mango/web build' (${WEB_DIST})`,
+      );
     }
     assertNoSandboxContent(WEB_DIST);
     // Hashed assets are immutable; the entry point and runtime config are never cached.
     const assets = new s3deploy.BucketDeployment(this, "SpaAssets", {
       destinationBucket: this.spaBucket,
       sources: [s3deploy.Source.asset(WEB_DIST, { exclude: ["index.html"] })],
-      cacheControl: [s3deploy.CacheControl.fromString("public, max-age=31536000, immutable")],
+      cacheControl: [
+        s3deploy.CacheControl.fromString("public, max-age=31536000, immutable"),
+      ],
       prune: false,
       memoryLimit: 512,
     });

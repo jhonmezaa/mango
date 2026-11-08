@@ -1,4 +1,10 @@
-import { ArnFormat, CfnResource, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import {
+  ArnFormat,
+  CfnResource,
+  Duration,
+  RemovalPolicy,
+  Stack,
+} from "aws-cdk-lib";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as events from "aws-cdk-lib/aws-events";
@@ -18,23 +24,41 @@ import { PythonFunction } from "./python-function.js";
 import { renderDocumentName } from "./render-document.js";
 
 /** Namespace and dimension of the metric the function emits (embedded metric format). */
-export const CHAT_FILES_METRICS = { namespace: "Mango/ChatFiles", dimension: "Installation" };
+export const CHAT_FILES_METRICS = {
+  namespace: "Mango/ChatFiles",
+  dimension: "Installation",
+};
 /** Its alarms, by name: the dashboard of Core names them (each nested stack is a leaf, D99 (4)). */
-export const CHAT_FILES_ALARMS = { blocked: "ChatFiles-blocked", failed: "ChatFilesScanResults-failed" };
+export const CHAT_FILES_ALARMS = {
+  blocked: "ChatFiles-blocked",
+  failed: "ChatFilesScanResults-failed",
+};
 /** What the scan event of each object is called on the default bus (GuardDuty documentation). */
-export const SCAN_RESULT_DETAIL_TYPE = "GuardDuty Malware Protection Object Scan Result";
+export const SCAN_RESULT_DETAIL_TYPE =
+  "GuardDuty Malware Protection Object Scan Result";
 /**
  * The only attributes the function writes (`functions/chat-files-scan`): the key of the item and
  * what the scan said. Anything else of the Conversations table is out of its reach.
  */
-export const SCAN_RECORD_ATTRIBUTES = ["PK", "SK", "scan_result", "scanned_at", "scan_etag", "scan_version", "ttl"];
+export const SCAN_RECORD_ATTRIBUTES = [
+  "PK",
+  "SK",
+  "scan_result",
+  "scanned_at",
+  "scan_etag",
+  "scan_version",
+  "ttl",
+];
 
 export interface ChatFilesScanResultsProps {
   readonly installation: Installation;
   /** The chat files bucket of Core (D116). */
   readonly bucket: s3.IBucket;
   /** The Conversations table: the scan of a file is recorded in its owner's partition. */
-  readonly conversations: { readonly tableName: string; readonly tableArn: string };
+  readonly conversations: {
+    readonly tableName: string;
+    readonly tableArn: string;
+  };
   /** Key of the Conversations table. */
   readonly dataKey: kms.IKey;
   /** Key for the function's environment variables. */
@@ -67,7 +91,8 @@ export class ChatFilesScanResults extends Construct {
 
     const role = new iam.Role(this, "Role", {
       roleName: name,
-      description: "Records what the malware scan said of each chat file (D116); reads nothing",
+      description:
+        "Records what the malware scan said of each chat file (D116); reads nothing",
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     });
     role.addToPolicy(
@@ -77,8 +102,13 @@ export class ChatFilesScanResults extends Construct {
         resources: [props.conversations.tableArn],
         conditions: {
           "ForAllValues:StringLike": { "dynamodb:LeadingKeys": ["USER#*"] },
-          "ForAllValues:StringEquals": { "dynamodb:Attributes": SCAN_RECORD_ATTRIBUTES },
-          StringEqualsIfExists: { "dynamodb:Select": "SPECIFIC_ATTRIBUTES", "dynamodb:ReturnValues": "NONE" },
+          "ForAllValues:StringEquals": {
+            "dynamodb:Attributes": SCAN_RECORD_ATTRIBUTES,
+          },
+          StringEqualsIfExists: {
+            "dynamodb:Select": "SPECIFIC_ATTRIBUTES",
+            "dynamodb:ReturnValues": "NONE",
+          },
         },
       }),
     );
@@ -87,7 +117,11 @@ export class ChatFilesScanResults extends Construct {
         sid: "DataKeyViaDynamoDB",
         actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
         resources: [props.dataKey.keyArn],
-        conditions: { StringEquals: { "kms:ViaService": `dynamodb.${stack.region}.amazonaws.com` } },
+        conditions: {
+          StringEquals: {
+            "kms:ViaService": `dynamodb.${stack.region}.amazonaws.com`,
+          },
+        },
       }),
     );
 
@@ -104,7 +138,11 @@ export class ChatFilesScanResults extends Construct {
         // Lambda sends the failed event to the encrypted queue with the function's role.
         actions: ["kms:Decrypt", "kms:GenerateDataKey"],
         resources: [props.alerts.key.keyArn],
-        conditions: { StringEquals: { "kms:ViaService": `sqs.${stack.region}.amazonaws.com` } },
+        conditions: {
+          StringEquals: {
+            "kms:ViaService": `sqs.${stack.region}.amazonaws.com`,
+          },
+        },
       }),
     );
 
@@ -112,10 +150,13 @@ export class ChatFilesScanResults extends Construct {
       packageName: "mango-chat-files-scan",
       packagePath: "functions/chat-files-scan",
       retainLogs: cfg.retainData,
-      logsRemovalPolicy: cfg.retainData ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE : RemovalPolicy.DESTROY,
+      logsRemovalPolicy: cfg.retainData
+        ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE
+        : RemovalPolicy.DESTROY,
       handler: "mango_chat_files_scan.handler.lambda_handler",
       functionName: name,
-      description: "Records the GuardDuty malware scan of each chat file for mango-api (D116)",
+      description:
+        "Records the GuardDuty malware scan of each chat file for mango-api (D116)",
       role,
       timeout: Duration.seconds(30),
       memorySize: 256,
@@ -127,23 +168,35 @@ export class ChatFilesScanResults extends Construct {
       },
       environmentEncryption: props.configKey,
     }).function;
-    acknowledge(role, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
+    acknowledge(role, {
+      id: "AwsSolutions-IAM5[Resource::*]",
+      reason: REASONS.xray,
+    });
 
     new events.Rule(this, "Rule", {
       ruleName: mangoName(ns, "ChatFiles-scan-results"),
-      description: "Records the malware scan of each object of the chat files bucket (D116)",
+      description:
+        "Records the malware scan of each object of the chat files bucket (D116)",
       eventPattern: {
         source: ["aws.guardduty"],
         detailType: [SCAN_RESULT_DETAIL_TYPE],
         detail: {
           s3ObjectDetails: {
             bucketName: [props.bucket.bucketName],
-            objectKey: [{ prefix: CHAT_FILES_PREFIXES.uploads }, { prefix: CHAT_FILES_PREFIXES.owner }],
+            objectKey: [
+              { prefix: CHAT_FILES_PREFIXES.uploads },
+              { prefix: CHAT_FILES_PREFIXES.owner },
+            ],
           },
         },
       },
       // Recording a scan is idempotent (the newest one wins): a retry never changes a result.
-      targets: [new targets.LambdaFunction(this.function, { retryAttempts: 2, maxEventAge: Duration.hours(6) })],
+      targets: [
+        new targets.LambdaFunction(this.function, {
+          retryAttempts: 2,
+          maxEventAge: Duration.hours(6),
+        }),
+      ],
     });
 
     this.alarms(ns, props.alerts.topic, deadLetters);
@@ -152,13 +205,19 @@ export class ChatFilesScanResults extends Construct {
   private alarms(ns: string, topic: sns.ITopic, deadLetters: sqs.IQueue): void {
     const notify = new cloudwatchActions.SnsAction(topic);
     const fiveMinutes = Duration.minutes(5);
-    const alarm = (id: string, alarmName: string, description: string, metric: cloudwatch.IMetric) =>
+    const alarm = (
+      id: string,
+      alarmName: string,
+      description: string,
+      metric: cloudwatch.IMetric,
+    ) =>
       new cloudwatch.Alarm(this, id, {
         alarmName: mangoName(ns, alarmName),
         alarmDescription: description,
         metric,
         threshold: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
         evaluationPeriods: 1,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       }).addAlarmAction(notify);
@@ -213,7 +272,10 @@ export interface ChatFilesApiProps {
  * whatever this policy says. A managed policy of its own, in a stack nested in Core (D99): the
  * role is close to its limit of inline policies and Core to its limit of resources.
  */
-export function grantChatFilesApi(scope: Construct, props: ChatFilesApiProps): iam.ManagedPolicy {
+export function grantChatFilesApi(
+  scope: Construct,
+  props: ChatFilesApiProps,
+): iam.ManagedPolicy {
   const region = Stack.of(scope).region;
   const uploads = props.bucket.arnForObjects(`${CHAT_FILES_PREFIXES.uploads}*`);
   const files = props.bucket.arnForObjects(`${CHAT_FILES_PREFIXES.owner}*`);
@@ -223,16 +285,30 @@ export function grantChatFilesApi(scope: Construct, props: ChatFilesApiProps): i
     roles: [props.apiTaskRole],
     statements: [
       // `HeadObject` and two ranges of an upload, the copy's source, the images of the chat.
-      new iam.PolicyStatement({ sid: "ReadChatFiles", actions: ["s3:GetObject"], resources: [uploads, files] }),
+      new iam.PolicyStatement({
+        sid: "ReadChatFiles",
+        actions: ["s3:GetObject"],
+        resources: [uploads, files],
+      }),
       // The copy's destination; no tags (only the scanner tags, D116 (10)).
-      new iam.PolicyStatement({ sid: "CopyChatUploads", actions: ["s3:PutObject"], resources: [files] }),
+      new iam.PolicyStatement({
+        sid: "CopyChatUploads",
+        actions: ["s3:PutObject"],
+        resources: [files],
+      }),
       // D116 (9): the files of a deleted conversation. Older versions go the next day (lifecycle).
-      new iam.PolicyStatement({ sid: "DeleteChatFiles", actions: ["s3:DeleteObject"], resources: [uploads, files] }),
+      new iam.PolicyStatement({
+        sid: "DeleteChatFiles",
+        actions: ["s3:DeleteObject"],
+        resources: [uploads, files],
+      }),
       new iam.PolicyStatement({
         sid: "ChatFilesKey",
         actions: ["kms:Decrypt", "kms:GenerateDataKey"],
         resources: [props.key.keyArn],
-        conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
+        conditions: {
+          StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` },
+        },
       }),
       // D118 (7), TM-CI5: the texts of a chart or a table of a cell, before the chat draws it;
       // the same base guardrail the turn worker asks about the cells, and only it.
@@ -265,12 +341,24 @@ export function grantChatFilesApi(scope: Construct, props: ChatFilesApiProps): i
   acknowledge(
     policy,
     {
-      id: arnWildcardFinding(bucket, `/${CHAT_FILES_PREFIXES.uploads}*`, "Arn", policy),
-      reason: "Chat uploads are keyed at runtime by caller and ULIDs (D116 (4)); the prefix uploads/ is the scope.",
+      id: arnWildcardFinding(
+        bucket,
+        `/${CHAT_FILES_PREFIXES.uploads}*`,
+        "Arn",
+        policy,
+      ),
+      reason:
+        "Chat uploads are keyed at runtime by caller and ULIDs (D116 (4)); the prefix uploads/ is the scope.",
     },
     {
-      id: arnWildcardFinding(bucket, `/${CHAT_FILES_PREFIXES.owner}*`, "Arn", policy),
-      reason: "Chat files are created at runtime under their owner's prefix (D116 (3)); owner/ is the scope.",
+      id: arnWildcardFinding(
+        bucket,
+        `/${CHAT_FILES_PREFIXES.owner}*`,
+        "Arn",
+        policy,
+      ),
+      reason:
+        "Chat files are created at runtime under their owner's prefix (D116 (3)); owner/ is the scope.",
     },
   );
   return policy;

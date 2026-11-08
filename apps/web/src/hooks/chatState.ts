@@ -2,6 +2,9 @@ import type { ChatEvent } from '../api/chatEvents';
 import { parseCells } from '../api/codeSchemas';
 import type { ChatApproval, Message, ToolCall, ToolStatus } from '../api/schemas';
 import type { MessageAttachment } from '../components/chat/attachments';
+import type { CodeFile } from '../api/codeSchemas';
+import type { TextdocCard } from '../components/chat/canvas/canvasApi';
+import { parseExportFiles, parseTextdocCards } from '../components/chat/canvas/textdocCards';
 import { CODE_RECIPIENT, type CodeBlockData } from './codeBlock';
 import type { TurnView } from './turnView';
 
@@ -206,6 +209,10 @@ export interface DisplayMessage {
   usage?: { inputTokens: number; outputTokens: number; costUsd: string };
   /** The «Analizando» block of an answer that ran code (C4): live from `v1`, or stored. */
   code?: CodeBlockData;
+  /** The cards of the Canvas documents this answer wrote (D124): live from `v1`, or stored. */
+  textdocs?: TextdocCard[];
+  /** The files a Canvas export added (D124 (3)): a message without text, only their cards. */
+  files?: CodeFile[];
 }
 
 export interface ChatState {
@@ -293,6 +300,8 @@ export type ChatAction =
   | { type: 'withdraw'; ids: readonly string[] }
   /** A request changed (confirmed, signed, run…): replace it wherever it is shown. */
   | { type: 'approval'; approval: ChatApproval }
+  /** A message stored outside a turn (a Canvas export, D124 (3)), added at the end. */
+  | { type: 'append'; message: DisplayMessage }
   | {
       type: 'finish';
       assistantId: string;
@@ -329,6 +338,8 @@ export function fromApiMessage(
     connectionRequired: message.connection_required ?? [],
     remoteSources: message.remote_sources ?? [],
     ...(message.code?.length ? { code: { cells: parseCells(message.code), pending: 0 } } : {}),
+    ...(message.textdocs?.length ? { textdocs: parseTextdocCards(message.textdocs) } : {}),
+    ...(message.files?.length ? { files: parseExportFiles(message.files) } : {}),
     // How a cut answer ended, after a reload (R3b): «Detener», or Mango lost the turn.
     status:
       message.stop_code === 'cancelled'
@@ -474,6 +485,17 @@ function sameBlock(a: CodeBlockData | undefined, b: CodeBlockData): boolean {
   );
 }
 
+function sameCards(a: readonly TextdocCard[] | undefined, b: readonly TextdocCard[]): boolean {
+  return (
+    a !== undefined &&
+    a.length === b.length &&
+    a.every((card, i) => {
+      const other = b.at(i);
+      return other?.textdoc_id === card.textdoc_id && other.version === card.version;
+    })
+  );
+}
+
 function eventReducer(
   state: ChatState,
   assistantId: string,
@@ -504,7 +526,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         // A cell never changes once shown: the block keeps its object (and its memo) until a
         // cell is added or a call starts or ends.
         const changed = hasCode(view.code) && !sameBlock(message.code, view.code);
-        return endOfTurn(changed ? { ...withText, code: view.code } : withText, view);
+        const withCode = changed ? { ...withText, code: view.code } : withText;
+        // The Canvas cards (D124): replaced only when one is added or a version changes.
+        const cards =
+          view.textdocs.length > 0 && !sameCards(message.textdocs, view.textdocs)
+            ? { ...withCode, textdocs: view.textdocs }
+            : withCode;
+        return endOfTurn(cards, view);
       });
     }
     case 'connection':
@@ -543,6 +571,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
     case 'reset':
       return { conversationId: action.conversationId, messages: action.messages };
+    case 'append':
+      return { ...state, messages: [...state.messages, action.message] };
     case 'send':
       return {
         ...state,

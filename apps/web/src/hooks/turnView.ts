@@ -9,6 +9,8 @@ import {
   type ChatApproval,
   type ToolStatus,
 } from '../api/schemas';
+import type { TextdocCard } from '../components/chat/canvas/canvasApi';
+import { parseTextdocCards } from '../components/chat/canvas/textdocCards';
 import { CODE_RECIPIENT, type CodeBlockData } from './codeBlock';
 
 /**
@@ -74,6 +76,8 @@ const answerSchema = messageSchema.extend({
     knowledge: z.array(knowledgeSchema).max(50).optional(),
     approvals: z.array(z.unknown()).max(50).optional(),
     connection_required: z.array(remoteConnectionEvent.shape.registration_id).max(20).optional(),
+    // The Canvas cards (D124): validated one by one by `parseTextdocCards`.
+    textdocs: z.array(z.unknown()).max(100).optional(),
     result: resultSchema.optional(),
     error: errorSchema.optional(),
   }),
@@ -98,6 +102,8 @@ export interface TurnView {
   error: z.infer<typeof errorSchema> | null;
   /** The «Analizando» block (C4): the cells shown and the calls still waiting for theirs. */
   code: CodeBlockData;
+  /** The Canvas documents the turn wrote (D124): one card each, its newest version. */
+  textdocs: TextdocCard[];
 }
 
 export const EMPTY_TURN: TurnView = {
@@ -111,6 +117,7 @@ export const EMPTY_TURN: TurnView = {
   result: null,
   error: null,
   code: { cells: [], pending: 0 },
+  textdocs: [],
 };
 
 /** A turn whose documents do not have the shape this client knows. */
@@ -180,5 +187,6 @@ export function turnViewOf(channels: Channels): TurnView {
     result: metadata.result ?? null,
     error: metadata.error ?? null,
     code,
+    textdocs: parseTextdocCards(metadata.textdocs),
   };
 }

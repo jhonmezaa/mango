@@ -22,7 +22,8 @@ export const TEXTDOC_TARGET_NAME = "textdoc";
 export const TEXTDOC_LIMITS = ["textdoc.write"];
 
 /** `Mango-<ns>-Textdoc`: the connector's role, named so Core can trust it without reading the nested stack (D99 (4)). */
-export const textdocConnectorRoleName = (ns: string) => mangoName(ns, "Textdoc");
+export const textdocConnectorRoleName = (ns: string) =>
+  mangoName(ns, "Textdoc");
 
 export function textdocConnectorRoleArn(scope: Construct, ns: string): string {
   const { partition, account } = Stack.of(scope);
@@ -38,7 +39,10 @@ interface ToolDefinition {
 /** The tools of `connectors/textdoc/tool-schema.json`. */
 export function textdocTools(): ToolDefinition[] {
   return JSON.parse(
-    readFileSync(resolve(REPO_ROOT, "connectors/textdoc/tool-schema.json"), "utf8"),
+    readFileSync(
+      resolve(REPO_ROOT, "connectors/textdoc/tool-schema.json"),
+      "utf8",
+    ),
   ) as ToolDefinition[];
 }
 
@@ -59,7 +63,11 @@ export interface TextdocConnectorProps {
   readonly webClientId: string;
   /** Task runs (D78) run as their owner, with a token of this client. */
   readonly tasksClientId: string;
-  readonly gateway: { readonly id: string; readonly arn: string; readonly roleArn: string };
+  readonly gateway: {
+    readonly id: string;
+    readonly arn: string;
+    readonly roleArn: string;
+  };
   /** Cedar policy engine of the Gateway (L2, default deny). */
   readonly policyEngineId: string;
 }
@@ -88,7 +96,8 @@ export class TextdocConnector extends Construct {
 
     this.role = new iam.Role(this, "Role", {
       roleName: textdocConnectorRoleName(ns),
-      description: "Canvas tools: the documents and code of a conversation, written only in Mango",
+      description:
+        "Canvas tools: the documents and code of a conversation, written only in Mango",
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
     });
 
@@ -106,7 +115,9 @@ export class TextdocConnector extends Construct {
           actions: ["dynamodb:GetItem", "dynamodb:PutItem"],
           resources: [props.rateLimits.tableArn],
           conditions: {
-            "ForAllValues:StringLike": { "dynamodb:LeadingKeys": TEXTDOC_LIMITS.map((l) => `LIMIT#${l}#*`) },
+            "ForAllValues:StringLike": {
+              "dynamodb:LeadingKeys": TEXTDOC_LIMITS.map((l) => `LIMIT#${l}#*`),
+            },
           },
         }),
         new iam.PolicyStatement({
@@ -118,7 +129,11 @@ export class TextdocConnector extends Construct {
           sid: "DataKeyViaDynamoDB",
           actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
           resources: [props.dataKey.keyArn],
-          conditions: { StringEquals: { "kms:ViaService": `dynamodb.${region}.amazonaws.com` } },
+          conditions: {
+            StringEquals: {
+              "kms:ViaService": `dynamodb.${region}.amazonaws.com`,
+            },
+          },
         }),
         new iam.PolicyStatement({
           sid: "WriteAuditTrail",
@@ -127,17 +142,23 @@ export class TextdocConnector extends Construct {
         }),
       ],
     });
-    acknowledge(this.role, { id: "AwsSolutions-IAM5[Resource::*]", reason: REASONS.xray });
+    acknowledge(this.role, {
+      id: "AwsSolutions-IAM5[Resource::*]",
+      reason: REASONS.xray,
+    });
 
     this.function = new PythonFunction(this, "Function", {
       packageName: "mango-textdoc",
       packagePath: "connectors/textdoc",
       retainLogs: cfg.retainData,
       // A create that rolls back deletes its log group, so that a retry does not find it (D58 (27)).
-      logsRemovalPolicy: cfg.retainData ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE : RemovalPolicy.DESTROY,
+      logsRemovalPolicy: cfg.retainData
+        ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE
+        : RemovalPolicy.DESTROY,
       handler: "mango_textdoc.handler.lambda_handler",
       functionName: mangoName(ns, "Textdoc"),
-      description: "Canvas tools: create, update and comment the documents of a conversation (D124)",
+      description:
+        "Canvas tools: create, update and comment the documents of a conversation (D124)",
       role: this.role,
       timeout: Duration.seconds(30),
       memorySize: 512,
@@ -160,7 +181,12 @@ export class TextdocConnector extends Construct {
     // --- Behind the Gateway (rule 3) -----------------------------------------------------
     // The Gateway's role is Core's; its permission to invoke this function lives here, so that
     // Core never reads this stack (D99 (4)).
-    const gatewayRole = iam.Role.fromRoleArn(this, "GatewayRole", props.gateway.roleArn, { mutable: true });
+    const gatewayRole = iam.Role.fromRoleArn(
+      this,
+      "GatewayRole",
+      props.gateway.roleArn,
+      { mutable: true },
+    );
     const invoke = new iam.Policy(this, "GatewayInvoke", {
       roles: [gatewayRole],
       statements: [
@@ -176,19 +202,29 @@ export class TextdocConnector extends Construct {
       gatewayIdentifier: props.gateway.id,
       name: TEXTDOC_TARGET_NAME,
       description: "Canvas of Mango's chat",
-      credentialProviderConfigurations: [{ credentialProviderType: "GATEWAY_IAM_ROLE" }],
+      credentialProviderConfigurations: [
+        { credentialProviderType: "GATEWAY_IAM_ROLE" },
+      ],
       targetConfiguration: {
-        mcp: { lambda: { lambdaArn: this.function.functionArn, toolSchema: { inlinePayload: tools } } },
+        mcp: {
+          lambda: {
+            lambdaArn: this.function.functionArn,
+            toolSchema: { inlinePayload: tools },
+          },
+        },
       },
     });
     this.target.node.addDependency(invoke);
     // As the code tools: any signed-in user on an invocation mango-api signed may call them
     // (D33). Which agent version has them, and which conversation they reach, the signature
     // decides (the interceptor refuses a call without conversation, TM-CV1).
-    const actions = tools.map((t) => `AgentCore::Action::"${TEXTDOC_TARGET_NAME}___${t.name}"`);
+    const actions = tools.map(
+      (t) => `AgentCore::Action::"${TEXTDOC_TARGET_NAME}___${t.name}"`,
+    );
     const cedar = new agentcore.CfnPolicy(this, "CedarPolicy", {
       name: `Mango_${ns}_Textdoc`,
-      description: "Signed-in users may write the Canvas of their own conversations; the signature decides which",
+      description:
+        "Signed-in users may write the Canvas of their own conversations; the signature decides which",
       policyEngineId: props.policyEngineId,
       definition: {
         cedar: {

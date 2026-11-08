@@ -268,6 +268,12 @@ RENDER_CLIENT_CONFIG = Config(retries={"mode": "standard", "max_attempts": 1}, r
 """A render takes up to the function's timeout (3 minutes, D117): wait a little longer."""
 
 MAX_BODY_BYTES = 32 * 1024
+TEXTDOC_BODY_BYTES = 640 * 1024
+"""A version of the Canvas the person saves (D124 (6) (i)): its text of up to 256 KiB in UTF-8,
+which JSON may double (newlines and quotes escaped). Only on that one route."""
+TEXTDOC_VERSIONS_PATH = re.compile(
+    r"^/api/conversations/[0-9a-f]{32}/textdocs/[0-9A-HJKMNP-TV-Z]{26}/versions$"
+)
 TURN_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 MAX_STREAM_OFFSET = 1_000_000
 """The largest ``after`` of a turn's stream: far more deltas than a turn of 600 s writes."""
@@ -1346,6 +1352,14 @@ def _chat_turns(services: Services, clients: Callable[[str], Any]) -> turns.Chat
 # --- ASGI middleware --------------------------------------------------------------------
 
 
+def body_limit(method: str, path: str) -> int:
+    """The largest body a request may bring: 32 KiB, and 640 KiB only to save a version of the
+    Canvas (D124 (6) (i), the same exception as the edge's)."""
+    if method == "POST" and TEXTDOC_VERSIONS_PATH.fullmatch(path):
+        return TEXTDOC_BODY_BYTES
+    return MAX_BODY_BYTES
+
+
 class HostAndSizeGuard:
     """Rejects unexpected Host headers and oversized bodies before routing."""
 
@@ -1363,7 +1377,8 @@ class HostAndSizeGuard:
             await _error(400, "bad_request", "invalid host")(scope, receive, send)
             return
         length = headers.get(b"content-length")
-        if length is not None and (not length.isdigit() or int(length) > MAX_BODY_BYTES):
+        limit = body_limit(scope.get("method", ""), scope.get("path", ""))
+        if length is not None and (not length.isdigit() or int(length) > limit):
             await _error(413, "payload_too_large", "request too large")(scope, receive, send)
             return
 
@@ -1374,7 +1389,7 @@ class HostAndSizeGuard:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > MAX_BODY_BYTES:
+                if received > limit:
                     raise HTTPException(status_code=413, detail="request too large")
             return message
 

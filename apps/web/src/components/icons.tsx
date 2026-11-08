@@ -424,3 +424,24 @@ export const MemoryIcon = createIcon(
     <path d="M12 9h-2M12 13h2" />
   </>,
 );
+
+/** Design round 41 `memory.jsx`: the history of the Canvas versions. */
+export const HistoryIcon = createIcon(
+  'History',
+  <>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5M12 8v4l3 2" />
+  </>,
+);
+
+/** Design round 41 `memory.jsx`: «Mostrar cambios». */
+export const DiffIcon = createIcon(
+  'Diff',
+  <>
+    <path d="M8 4v10M3 9h10M15 15h6" />
+    <rect x="3" y="3" width="18" height="18" rx="2" opacity=".35" />
+  </>,
+);
+
+/** Design round 41 `memory.jsx`: the comments of the agent in the Canvas. */
+export const CommentIcon = createIcon('Comment', <path d="M4 5h16v11H9l-5 4z" />);

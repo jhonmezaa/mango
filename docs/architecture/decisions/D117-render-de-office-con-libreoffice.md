@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Lambda-contenedor con LibreOffice (Recomendada)»; el cómo, puntos 2 a 5, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión; los puntos 6 a 8, al construirla el 2026-11-07: el 6 elegido por el agente principal, por delegación expresa del dueño del 2026-11-07, el 7 propuesto por un agente y el 8 elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07; el punto 9, al conectarla el 2026-11-08 (PR D2), elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07)
 - **Precisa / reemplaza a:** precisa [D99](D099-stacks-anidados-en-core.md) (un stack anidado más, `RenderDocument`, y el tope de `Core` de una release: 411, punto 8), [D87](D087-como-se-construyen-los-reportes.md) (2) (que evitó imágenes de contenedor para los reportes: esta es otra función, con su imagen) y [D58](D058-distribucion-para-clientes.md) (una imagen más en el ECR del proveedor); respeta [D25](D025-recursos-creados-en-runtime.md)
-- **Precisada por:** [D119](D119-skills-de-documentos-con-helpers-de-la-release.md) (8) (la tool `render_document` del target `code` es quien la invoca)
+- **Precisada por:** [D119](D119-skills-de-documentos-con-helpers-de-la-release.md) (8) (la tool `render_document` del target `code` es quien la invoca); [D124](D124-canvas.md) (6) (f) (mango-api la invoca para el PDF de una exportación del Canvas)
 
 ## Decisión
 

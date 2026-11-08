@@ -45,6 +45,7 @@ import { Soon } from '../Soon';
 import { AttachmentChips } from './AttachmentChips';
 import { formatMessageTime } from './threadGroups';
 import { ChatChartFile } from './ChatChart';
+import { CanvasCard } from './canvas/CanvasCard';
 import { CodeBlock } from './CodeBlock';
 import { ChatTableFile } from './DataTable';
 import { FileCard } from './FileCard';
@@ -197,6 +198,8 @@ interface Props {
 }
 
 const NO_SOURCES: readonly string[] = [];
+/** The `recipient` prefix of a Canvas call (`textdoc.create`…, D124). */
+const TEXTDOC_RECIPIENT = 'textdoc.';
 const NO_LINK_SOURCES: readonly RemoteLinkSource[] = [];
 
 /** The remote services a stored answer read, from the person's connections (read on demand). */
@@ -315,7 +318,11 @@ export const ChatMessage = memo(function ChatMessage({
   const tools = useMemo(
     () =>
       message.tools.filter(
-        (tool) => tool.name !== CODE_RECIPIENT && !(code && tool.name === CODE_TOOL_NAME),
+        (tool) =>
+          tool.name !== CODE_RECIPIENT &&
+          !(code && tool.name === CODE_TOOL_NAME) &&
+          // A Canvas call is its card, not an entry of the tool list (design round 41).
+          !tool.name.startsWith(TEXTDOC_RECIPIENT),
       ),
     [message.tools, code],
   );
@@ -466,6 +473,12 @@ export const ChatMessage = memo(function ChatMessage({
           <ChatTableFile key={table.file.file_id} file={table.file} csv={table.csv} />
         ))}
         {cards.map((file) => (
+          <FileCard key={file.file_id} file={file} />
+        ))}
+        {message.textdocs?.map((card) => (
+          <CanvasCard key={card.textdoc_id} card={card} />
+        ))}
+        {message.files?.map((file) => (
           <FileCard key={file.file_id} file={file} />
         ))}
         {message.status === 'error' &&

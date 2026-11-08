@@ -401,5 +401,10 @@ export function useChatStream({
     dispatch({ type: 'approval', approval });
   }, []);
 
-  return { state, isStreaming, send, stop, reset, reconnect, updateApproval };
+  /** A message the API stored outside a turn (a Canvas export, D124 (3)): shown at the end. */
+  const append = useCallback((message: DisplayMessage) => {
+    dispatch({ type: 'append', message });
+  }, []);
+
+  return { state, isStreaming, send, stop, reset, reconnect, updateApproval, append };
 }
