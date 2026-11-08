@@ -4,6 +4,7 @@ import {
   CfnResource,
   Duration,
   Fn,
+  NestedStack,
   RemovalPolicy,
   Stack,
   StackProps,
@@ -434,7 +435,7 @@ export class CoreStack extends Stack {
     });
     // Its connector (D114 (1)) is a Mango connector behind the Gateway, in the same nested stack:
     // Core trusts its role by name and reads nothing of it (D99 (4)).
-    new SandboxStack(this, "Sandbox", {
+    const sandbox = new SandboxStack(this, "Sandbox", {
       installation: cfg,
       vpcId: sandboxVpc.vpc.vpcId,
       chatFiles: { bucket: chatFiles.bucket, key: chatFiles.key },
@@ -1059,6 +1060,16 @@ export class CoreStack extends Stack {
     });
     // «Probar búsqueda» throttled by Bedrock counts in the alarm of the tool (D88 (12)).
     knowledge.countApiThrottles(api.logGroup);
+
+    // D114 (16): the code sandbox last. Its Code Interpreter's network interfaces can stay
+    // attached for hours after it is deleted, so an update that creates it and then rolls back
+    // leaves its subnets, security group and VPC behind. After every other nested stack and the
+    // API service, a failure elsewhere cancels the update before the Code Interpreter exists.
+    // Nothing reads the sandbox stack, so this adds no cycle.
+    for (const child of this.node.children) {
+      if (child instanceof NestedStack && child !== sandbox) sandbox.node.addDependency(child);
+    }
+    sandbox.node.addDependency(api.service);
 
     // `-c skipSpa=true` allows synthesizing before the SPA is built (CI checks only).
     if (!this.node.tryGetContext("skipSpa")) {

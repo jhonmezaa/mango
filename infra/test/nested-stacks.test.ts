@@ -49,6 +49,18 @@ const STATEFUL = [
   "AWS::BedrockAgentCore::Memory",
 ];
 
+/** Whether `id` reads the Code Interpreter of `resources`, directly or through what it reads. */
+function readsInterpreter(resources: Record<string, Resource>, id: string, seen = new Set<string>()): boolean {
+  if (seen.has(id)) return false;
+  seen.add(id);
+  const resource = resources[id]!;
+  if (resource.Type === "AWS::BedrockAgentCore::CodeInterpreterCustom") return true;
+  const text = JSON.stringify(resource.Properties ?? {});
+  const named = new Set<string>(resource.DependsOn ?? []);
+  for (const match of text.matchAll(/"(?:Ref|Fn::GetAtt)":\s*(?:"([^"]+)"|\["([^"]+)")/g)) named.add(match[1] ?? match[2]!);
+  return [...named].some((other) => other in resources && readsInterpreter(resources, other, seen));
+}
+
 describe("stacks nested in Core (D99)", () => {
   it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox, RenderDocument and UiSandbox, and keep Core of a release under 425 resources", () => {
     expect([...nested.keys()].sort()).toEqual([
@@ -134,6 +146,27 @@ describe("stacks nested in Core (D99)", () => {
   it("are deleted after the uninstall guard, which depends on them", () => {
     const guard = Object.values(template.Resources).find((r) => r.Type === "Custom::MangoUninstallGuard")!;
     for (const [id] of stackResources) expect(guard.DependsOn).toContain(id);
+  });
+
+  // D114 (16): an update that created the Code Interpreter and then rolled back left the sandbox's
+  // network behind for hours (its `agentic_ai` interfaces stay attached), 2026-11-08.
+  it("create the Code Interpreter last: after every other nested stack, the API and the rest of its stack", () => {
+    const [sandboxId, sandbox] = stackResources.find(([id]) => id.startsWith("SandboxNestedStack"))!;
+    for (const [id] of stackResources) {
+      if (id !== sandboxId) expect(sandbox.DependsOn).toContain(id);
+    }
+    const services = Object.entries(template.Resources).filter(([, r]) => r.Type === "AWS::ECS::Service");
+    expect(services).toHaveLength(1);
+    expect(sandbox.DependsOn).toContain(services[0]![0]);
+
+    const inside = nested.get("Sandbox")!.Resources;
+    const [, interpreter] = Object.entries(inside).find(([, r]) => r.Type === "AWS::BedrockAgentCore::CodeInterpreterCustom")!;
+    const reads = JSON.stringify(Object.fromEntries(Object.entries(inside).filter(([, r]) => r !== interpreter)));
+    const before = ["AWS::GuardDuty::MalwareProtectionPlan", "AWS::Lambda::Function", "AWS::BedrockAgentCore::GatewayTarget"];
+    const waited = Object.entries(inside).filter(([id, r]) => before.includes(r.Type) && !readsInterpreter(inside, id));
+    expect(waited.map(([, r]) => r.Type)).toEqual(expect.arrayContaining(before));
+    for (const [id] of waited) expect(interpreter.DependsOn).toContain(id);
+    expect(reads).toContain("CodeInterpreter"); // the code connector does read it, and comes after
   });
 
   it("keep the operational alarms and the dashboard, under names of their own (D99 (3))", () => {

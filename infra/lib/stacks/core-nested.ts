@@ -357,6 +357,16 @@ export class SandboxStack extends CoreNestedStack {
       gateway: c.gateway,
       policyEngineId: c.policyEngineId,
     });
+    // D114 (16): the Code Interpreter waits for what in this stack does not read it. Its network
+    // interfaces (`agentic_ai`) can stay attached for hours after it is deleted, and a rollback
+    // then cannot delete the sandbox's subnets, security group or VPC. Created last, a failure of
+    // anything else here cancels the update before it exists.
+    this.sandbox.codeInterpreter.node.addDependency(
+      this.sandbox.scanPlan,
+      this.sandbox.scanner,
+      this.scanResults,
+      this.textdoc,
+    );
   }
 }
 

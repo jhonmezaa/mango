@@ -45,6 +45,8 @@ deployment/provider/deploy.sh 'repo:<owner>@<owner id>/<repo>@<repo id>' 'o-xxxx
 
 Las alertas leen eventos de administración de CloudTrail: la cuenta necesita un trail que los registre.
 
+**Al pasar a una versión con D117 (render-document, 2026-11-07):** repetir `deploy.sh` antes de que un cliente instale esa versión. La política del repositorio gana la sentencia `CustomerRenderFunctionPull` (el servicio Lambda, solo para funciones `Mango-*-RenderDocument` de las organizaciones cliente). Sin ella, `Core` se revierte en `RenderDocumentFunction` con «Lambda does not have permission to access the ECR image» (visto el 2026-11-08 en una instalación del cliente).
+
 **Al pasar a una versión con D69 (2026-10-05):** repetir `deploy.sh` antes de publicar. El rol de publicación gana `s3:GetObject` sobre `mango/assets/*` del bucket regional; sin él, la primera release que reutilice un asset falla al compararlo. El cambio dispara la alerta de cambio de rol, como debe.
 
 ## Después de instalar
