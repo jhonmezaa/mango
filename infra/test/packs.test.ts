@@ -751,7 +751,8 @@ describe("release packs (D36): only what the release key signed", () => {
     const own = Template.fromStack(core).toJSON().Resources as Record<string, unknown>;
     // 455 since the chat files and the code sandbox (D114, D116, precision of D99 of 2026-11-07).
     // 458 since the agents' memory, its key and alias (D122: data, so in Core, D99 (2)).
-    expect(Object.keys(own).length).toBeLessThanOrEqual(458);
+    // 468 since the second origin (D123 (9), precision of D99 of 2026-11-08).
+    expect(Object.keys(own).length).toBeLessThanOrEqual(468);
   });
 
   it("ships the pack to the bucket and the catalog to the provisioner", () => {

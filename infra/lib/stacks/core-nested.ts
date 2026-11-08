@@ -20,6 +20,7 @@ import { RemoteRelease } from "../constructs/remote-release.js";
 import { RenderDocument, RenderDocumentProps } from "../constructs/render-document.js";
 import { TraceReader, TraceReaderProps } from "../constructs/trace-reader.js";
 import { TurnWorker, TurnWorkerProps } from "../constructs/turn-worker.js";
+import { UiSandboxWriter, UiSandboxWriterProps } from "../constructs/ui-sandbox-origin.js";
 
 /**
  * Stacks nested in Core (D99). CloudFormation counts at most 500 resources per template, and a
@@ -276,6 +277,26 @@ export class RenderDocumentStack extends CoreNestedStack {
   constructor(scope: Construct, id: string, props: RenderDocumentProps) {
     super(scope, id, "render of Office documents");
     this.render = new RenderDocument(this, "RenderDocument", {
+      ...props,
+      installation: this.namespaceOf(props.installation),
+    });
+  }
+}
+
+/**
+ * The second origin's pieces that Core does not read (D123 (2)): the custom resource that writes
+ * the SPA's origin to the key value store of the sandbox distribution, its function
+ * `Mango-<ns>-UiSandboxOrigin`, and the v2 access log delivery of that distribution. Nothing here
+ * holds data: the bucket, the distribution, its headers policy, function and store stay in Core,
+ * because the CSP of the SPA names the distribution (`frame-src`). Writing the store from here,
+ * after both distributions exist, is what keeps them from waiting for each other.
+ */
+export class UiSandboxStack extends CoreNestedStack {
+  readonly writer: UiSandboxWriter;
+
+  constructor(scope: Construct, id: string, props: UiSandboxWriterProps) {
+    super(scope, id, "UI sandbox origin");
+    this.writer = new UiSandboxWriter(this, "UiSandboxWriter", {
       ...props,
       installation: this.namespaceOf(props.installation),
     });

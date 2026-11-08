@@ -191,6 +191,18 @@ export const RATE_LIMITED_PAGE =
   '<div class="code">C&oacute;digo 429</div>' +
   "</main></body></html>";
 
+/**
+ * What only the second origin may serve (D123, TM-UI1): its runner and the mirror of
+ * dependencies, which run with `unsafe-eval`. Never in the SPA's bucket.
+ */
+export const SANDBOX_ONLY_PATHS = ["sandbox.html", "vendor"] as const;
+
+/** Fails the synthesis when the built SPA holds what only the second origin may serve. */
+export function assertNoSandboxContent(dist: string): void {
+  const found = SANDBOX_ONLY_PATHS.filter((path) => existsSync(resolve(dist, path)));
+  if (found.length) throw new Error(`the SPA must not serve sandbox content (D123): ${found.join(", ")}`);
+}
+
 /** Deterministic Cognito managed-login domain (used by CSP before Cognito exists). */
 export function cognitoDomainUrl(namespace: string, account: string, region: string): string {
   return `https://mango-${namespace}-${account}.auth.${region}.amazoncognito.com`;
@@ -205,8 +217,14 @@ export class Edge extends Construct {
   readonly spaBucket: s3.Bucket;
   /** CloudWatch names of the web ACL and of its per-IP rate limits (`AWS/WAFV2` dimensions). */
   readonly rateLimitMetrics: { readonly webAcl: string; readonly rules: string[] };
+  /** The web ACL of the distribution: the second origin uses it too (D123 (8), TM-UI12). */
+  readonly webAclArn: string;
+  /** Where the v2 access logs of the distributions are delivered (the access-logs bucket). */
+  readonly accessLogDestinationArn: string;
   /** Origins the SPA may also connect to besides its own and Cognito's (`allowConnectTo`). */
   private readonly connectOrigins: string[] = [];
+  /** Origins the SPA may frame (`allowFrameFrom`): the second origin only (D123 (2)). */
+  private readonly frameOrigins: string[] = [];
 
   constructor(scope: Construct, id: string, props: EdgeProps) {
     super(scope, id);
@@ -323,31 +341,34 @@ export class Edge extends Construct {
       securityHeadersBehavior: {
         contentSecurityPolicy: {
           override: true,
-          contentSecurityPolicy: [
-            "default-src 'self'",
-            "script-src 'self'",
-            // The page of a block carries its own style (see `RATE_LIMITED_STYLE`).
-            `style-src 'self' ${RATE_LIMITED_STYLE_HASH}`,
-            // The figures of a code cell are read with the person's token and shown as `blob:`
-            // URLs (C4, D116 (5)): never an image URL of the model or of another origin.
-            "img-src 'self' data: blob:",
-            "font-src 'self'",
-            Lazy.string({
-              produce: () =>
+          // Lazy: the knowledge bucket and the second origin are added after this construct.
+          contentSecurityPolicy: Lazy.string({
+            produce: () =>
+              [
+                "default-src 'self'",
+                "script-src 'self'",
+                // The page of a block carries its own style (see `RATE_LIMITED_STYLE`).
+                `style-src 'self' ${RATE_LIMITED_STYLE_HASH}`,
+                // The figures of a code cell are read with the person's token and shown as `blob:`
+                // URLs (C4, D116 (5)): never an image URL of the model or of another origin.
+                "img-src 'self' data: blob:",
+                "font-src 'self'",
                 [
                   "connect-src 'self'",
                   cognitoDomain,
                   `https://cognito-idp.${stack.region}.amazonaws.com`,
                   ...this.connectOrigins,
                 ].join(" "),
-            }),
-            `form-action 'self' ${cognitoDomain}`,
-            "frame-ancestors 'none'",
-            "base-uri 'none'",
-            "object-src 'none'",
-            "require-trusted-types-for 'script'",
-            "trusted-types 'none'",
-          ].join("; "),
+                `form-action 'self' ${cognitoDomain}`,
+                // Only the second origin (D123); without it, frame-src falls back to 'self'.
+                ...(this.frameOrigins.length ? [`frame-src ${this.frameOrigins.join(" ")}`] : []),
+                "frame-ancestors 'none'",
+                "base-uri 'none'",
+                "object-src 'none'",
+                "require-trusted-types-for 'script'",
+                "trusted-types 'none'",
+              ].join("; "),
+          }),
         },
         strictTransportSecurity: {
           override: true,
@@ -421,7 +442,8 @@ export class Edge extends Construct {
         },
       },
     });
-    this.logAccess(cfg.namespace, props.accessLogs);
+    this.webAclArn = webAcl.attrArn;
+    this.accessLogDestinationArn = this.logAccess(cfg.namespace, props.accessLogs);
     this.acknowledgeFindings();
   }
 
@@ -430,7 +452,7 @@ export class Edge extends Construct {
    * selection: the legacy log always writes the query string (D98 (9), TM-016). The delivery
    * source of a distribution lives in us-east-1, the only region Mango installs in (§4.7).
    */
-  private logAccess(ns: string, bucket: s3.IBucket): void {
+  private logAccess(ns: string, bucket: s3.IBucket): string {
     const stack = Stack.of(this);
     const source = new logs.CfnDeliverySource(this, "AccessLogSource", {
       name: mangoName(ns, "cloudfront-access"),
@@ -476,6 +498,7 @@ export class Edge extends Construct {
         "Access logs go through CloudFront standard logging v2 (AWS::Logs::Delivery to the access-logs bucket), " +
         "without the query string (D98 (9)); this rule only reads the legacy logging property.",
     });
+    return destination.attrArn;
   }
 
   private acknowledgeFindings(): void {
@@ -505,6 +528,17 @@ export class Edge extends Construct {
     this.connectOrigins.push(origin);
   }
 
+  /**
+   * Let the SPA frame one origin (CSP `frame-src`): the second origin of D123, an exact host,
+   * never a wildcard (`*.cloudfront.net` would let any distribution in, TM-UI2).
+   */
+  allowFrameFrom(origin: string): void {
+    if (!origin.startsWith("https://") || origin.includes("*")) {
+      throw new Error("frame-src takes one exact https origin");
+    }
+    this.frameOrigins.push(origin);
+  }
+
   get origin(): string {
     return `https://${this.distribution.distributionDomainName}`;
   }
@@ -520,6 +554,7 @@ export class Edge extends Construct {
     if (!existsSync(resolve(WEB_DIST, "index.html"))) {
       throw new Error(`SPA not built: run 'pnpm --filter @mango/web build' (${WEB_DIST})`);
     }
+    assertNoSandboxContent(WEB_DIST);
     // Hashed assets are immutable; the entry point and runtime config are never cached.
     const assets = new s3deploy.BucketDeployment(this, "SpaAssets", {
       destinationBucket: this.spaBucket,

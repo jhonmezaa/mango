@@ -1,0 +1,15 @@
+[project]
+name = "mango-ui-sandbox-origin"
+version = "0.1.0"
+description = "Custom resource that writes the SPA origin to the key value store read by the UI sandbox distribution (D123)"
+requires-python = ">=3.13,<3.14"
+# The CloudFront KeyValueStore API is signed with SigV4A, which botocore only does with the
+# AWS CRT (`botocore[crt]`); the Lambda runtime's boto3 does not bring it.
+dependencies = ["boto3[crt]>=1.43.104"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_ui_sandbox_origin"]

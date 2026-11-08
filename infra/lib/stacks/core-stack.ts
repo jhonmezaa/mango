@@ -23,6 +23,7 @@ import { CUR_RECONCILER_ALARMS } from "../constructs/cur-reconciler.js";
 import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
+import { UiSandboxOrigin } from "../constructs/ui-sandbox-origin.js";
 import { EVAL_JUDGE_ALARMS, EVALUATION_FEE_USD } from "../constructs/eval-judge.js";
 import { CHAT_FILES_ALARMS } from "../constructs/chat-files-scan.js";
 import { DenyEvalsContent, Evals, EvalsCapture, judgeModels } from "../constructs/evals.js";
@@ -87,6 +88,7 @@ import {
   RenderDocumentStack,
   SandboxStack,
   TurnWorkerStack,
+  UiSandboxStack,
 } from "./core-nested.js";
 
 export interface CoreStackProps extends StackProps {
@@ -126,6 +128,21 @@ export class CoreStack extends Stack {
 
     const network = new Network(this, "Network", { installation: cfg, accessLogs });
     const edge = new Edge(this, "Edge", { installation: cfg, alb: network.alb, accessLogs });
+    // D123: the second origin, for code Mango did not write (Canvas previews, MCP Apps). Its
+    // distribution is in Core because the SPA's CSP names it; the SPA frames only that origin.
+    const uiSandbox = new UiSandboxOrigin(this, "UiSandboxOrigin", {
+      installation: cfg,
+      accessLogs,
+      webAclArn: edge.webAclArn,
+    });
+    edge.allowFrameFrom(uiSandbox.origin);
+    new UiSandboxStack(this, "UiSandbox", {
+      installation: cfg,
+      keyValueStoreArn: uiSandbox.keyValueStore.keyValueStoreArn,
+      spaOrigin: edge.origin,
+      distributionId: uiSandbox.distribution.distributionId,
+      accessLogDestinationArn: edge.accessLogDestinationArn,
+    });
     const identity = new Identity(this, "Identity", {
       installation: cfg,
       appOrigin: edge.origin,

@@ -1,7 +1,8 @@
-# Segundo origen para código no confiable (sandbox de UI, Canvas y MCP Apps): modelo de amenazas (v0.1)
+# Segundo origen para código no confiable (sandbox de UI, Canvas y MCP Apps): modelo de amenazas (v0.2)
 
 > Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (fases 5 y 6: V0 a V3, K1, A1, A2). Decisiones que lo enmarcan: [D123](../../architecture/decisions/D123-segundo-origen-para-codigo-no-confiable.md) (segundo origen y espejo de dependencias en la release, vigente; su punto 8 recoge lo que este modelo fijó), [D124](../../architecture/decisions/D124-canvas.md) (Canvas, vigente) y [D125](../../architecture/decisions/D125-mcp-apps-de-solo-lectura.md) (MCP Apps de solo lectura, vigente; su punto 6 recoge lo que este modelo fijó); reglas 1, 3, 4 y 8 de `AGENTS.md`; D15, D24, D25, D39, D58, D63, D69, D93, D98, D116, D118; la excepción `CKV_AWS_174` de `AGENTS.md`.
 > Amplía `mango-architecture-threat-model.md` (TM-001 inyección indirecta, TM-012 contenido no confiable en la web), [`remote-mcp-threat-model.md`](remote-mcp-threat-model.md) (lo que trae un MCP remoto) y [`code-interpreter-threat-model.md`](code-interpreter-threat-model.md) (el código del servidor; este modelo es el del navegador).
+> **v0.2 (2026-11-08):** V1 construyó la infraestructura del segundo origen, sin contenido y sin instalar (D123 (9)); ver «Lo que construyó V1». Los controles de TM-UI1, UI2, UI11 y UI12 marcados **V1** existen ya, con tests en `infra/test/ui-sandbox-origin.test.ts`.
 > v0.1 se escribe **antes** de construir: no hay código ni recursos. La evidencia es el código de `main` (la CSP de la SPA en `infra/lib/constructs/edge.ts`), la investigación del laboratorio del 2026-11-07 (análisis estático del sandbox público de ChatGPT, informe de infraestructura web de AWS y la revisión con REA del RPC y de la CSP del iframe interior) y el hallazgo «la CSP por `<meta>` solo endurece y el iframe escrito con `document.write` hereda la del padre». Esta noche no se llamó a AWS. Los supuestos los fijó el agente que escribió el modelo con la opción recomendada, por delegación expresa del dueño del 2026-11-07 (ver «Supuestos validados»).
 
 ## Executive summary
@@ -148,6 +149,16 @@ flowchart LR
 | TM-UI11 | Cualquier sitio | La URL del runner | Incrustarlo en otra página | Usar el runner como gadget o confundir a la persona | Integridad | — | — | **V1:** `frame-ancestors` con el origen de la SPA que pone la CloudFront Function; si la KVS no tiene valor, la función pone `frame-ancestors 'none'` (falla cerrado); cabecera CSP `sandbox` en el exterior; `X-Frame-Options` no se pone (`frame-ancestors` manda) | Test de la función con KVS vacía | Baja | Baja | **low** |
 | TM-UI12 | Cualquier sitio | CORS `*` en `/vendor/*` | Descargar el espejo desde otros sitios | Coste de CloudFront | Coste | — | — | **V1:** el web ACL de la SPA (con su límite de tasa) también en la segunda distribución; `Cache-Control: immutable` en `/vendor/`; alarma de bytes servidos | Métricas de CloudFront | Baja | Baja | **low** |
 
+## Lo que construyó V1 (2026-11-08)
+
+- **TM-UI1:** bucket propio del sandbox (`UiSandboxOrigin`), su propia distribución con un único origen; un test comprueba que la distribución de la SPA no tiene origen, comportamiento ni política hacia él, y la síntesis falla si la SPA construida trae `sandbox.html` o `vendor/`.
+- **TM-UI2:** la CSP de la SPA solo gana `frame-src https://<distribución del sandbox>` por su host exacto (`Edge.allowFrameFrom` rechaza comodines y lo que no sea `https`); un test fija `script-src 'self'`, sin `unsafe-eval` ni `unsafe-inline`, `blob:` solo en `img-src` (las figuras de D116 (5)), con Trusted Types y `frame-ancestors 'none'`.
+- **TM-UI11:** la CSP entera la pone la CloudFront Function (`viewer-response`): el techo más `frame-ancestors` con el origen de la SPA, leído de la KVS `Mango-<ns>-ui-sandbox`; con la llave vacía, un valor que no es un origen `https` exacto o un fallo al leer, `frame-ancestors 'none'`. La política de cabeceras lleva el techo con `frame-ancestors 'none'` y `override: false` para lo que no pasa por la función (las respuestas del web ACL). La KVS la escribe un custom resource del stack anidado `UiSandbox` que solo acepta un origen `https` exacto y solo puede escribir esa KVS. Sin `X-Frame-Options`.
+- **TM-UI12:** el mismo web ACL que la SPA; solo `GET` y `HEAD`; CORS (`*`, sin credenciales) solo bajo `/vendor/`. La alarma de bytes servidos y el `Cache-Control: immutable` llegan con el espejo (V2).
+- **TM-UI4, TM-UI9 (cabeceras):** `Permissions-Policy` que niega cámara, micrófono, geolocalización, pago, USB, `storage-access` y captura de pantalla; `Origin-Agent-Cluster: ?1`; `nosniff`; `no-referrer`; HSTS.
+- **El techo del exterior** lleva `'unsafe-inline'` y `'unsafe-eval'` en `script-src`: el iframe interior creado con `srcdoc` hereda la CSP del runner y el `<meta>` solo endurece. El runner nunca escribe en su propio DOM lo que recibe (V3); la red sigue siendo solo `'self'`. Se suma al residual de `unsafe-eval` y `unsafe-inline` de abajo.
+- **Pendiente de V0 (AWS):** el orden entre la política y la función (P7: el diseño da el mismo resultado en los dos órdenes, salvo que la política añadiera su respaldo además del de la función, lo que cerraría el iframe: falla cerrada, y se vería en V0), P1, P2, P5 y los canales de salida.
+
 ## Criticality calibration
 
 - **high:** código no confiable en el origen de la SPA; robo de token o de sesión; tools de escritura desde una app.
@@ -176,12 +187,12 @@ Fijados el 2026-11-07 por el agente que escribió el modelo, con la opción reco
 
 ## Riesgos residuales
 
-**Pendientes de aceptación del dueño.** El agente que escribió el modelo no los acepta.
+**Pendientes de aceptación del dueño** (salvo las excepciones, aceptadas el 2026-11-08). El agente que escribió el modelo no los acepta.
 
 - **TM-UI4:** la CSP no cubre todos los canales de salida (WebRTC en particular; `prefetch` y DNS según el navegador). Un código hostil podría sacar lo que se le mandó a dibujar. Lo acota mandar solo eso; V0 mide qué deja cada navegador.
 - **TM-UI1:** el aislamiento depende de que la distribución de la SPA nunca sirva el runner; lo protege un test, no una frontera de AWS.
 - **`unsafe-eval` y `unsafe-inline` dentro del sandbox:** necesarios para Babel, esbuild y Pyodide; aceptables solo por el aislamiento de sitio y de origen opaco.
-- **PoC sin dominio propio:** sin subdominio por app; el aislamiento entre apps es solo el del origen opaco (TM-UI5). La excepción `CKV_AWS_174` para la segunda distribución se consulta con el dueño en V1 (D123 (6)): no se registra aquí.
+- **PoC sin dominio propio:** sin subdominio por app; el aislamiento entre apps es solo el del origen opaco (TM-UI5). Las ampliaciones de `CKV_AWS_174` (certificado por defecto) y `CKV_AWS_86`/`AwsSolutions-CFR3` (logs v2) a la segunda distribución están registradas en `AGENTS.md`, aceptadas por el dueño el 2026-11-08 (D123 (9) (f)).
 
 ## Quality check
 

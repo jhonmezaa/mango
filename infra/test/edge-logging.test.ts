@@ -26,8 +26,10 @@ const only = (type: string): any => {
 
 describe("access logs of the distribution", () => {
   it("drops the legacy log, which always writes the query string", () => {
-    const distribution = only("AWS::CloudFront::Distribution");
-    expect(distribution.Properties.DistributionConfig.Logging).toBeUndefined();
+    // Neither the SPA's distribution nor the second origin's (D123 (9)).
+    const distributions = Object.values(template.findResources("AWS::CloudFront::Distribution"));
+    expect(distributions).toHaveLength(2);
+    for (const distribution of distributions) expect(distribution.Properties.DistributionConfig.Logging).toBeUndefined();
   });
 
   it("delivers v2 logs of the distribution to the access-logs bucket", () => {

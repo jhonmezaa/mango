@@ -118,14 +118,18 @@ describe("hardening (Checkov)", () => {
         expect(logicalId).toMatch(/^CustomCDKBucketDeployment/);
       }
       if (ids.includes(CHECKOV_EXCEPTIONS.cloudfrontTls.id)) {
+        // The two distributions of the PoC (D15, D123 (6)), while they use the default certificate.
+        expect(logicalId).toMatch(/^(EdgeDistribution|UiSandboxOriginDistribution)/);
         const cert = (resource as { Properties: { DistributionConfig: { ViewerCertificate?: object } } })
           .Properties.DistributionConfig.ViewerCertificate;
         expect(cert === undefined || JSON.stringify(cert).includes('"CloudFrontDefaultCertificate":true')).toBe(true);
       }
       if (ids.includes(CHECKOV_EXCEPTIONS.cloudfrontLogsV2.id)) {
-        // Only the distribution, and only while its v2 delivery exists (D98 (9)).
-        expect(logicalId).toMatch(/^EdgeDistribution/);
-        expect(Object.keys(template.findResources("AWS::Logs::Delivery"))).toHaveLength(1);
+        // Only the two distributions (the SPA's and the second origin's, D123 (9) (f)), and only
+        // while each has its v2 delivery (D98 (9)).
+        expect(logicalId).toMatch(/^(EdgeDistribution|UiSandboxOriginDistribution)/);
+        const sources = Object.values(template.findResources("AWS::Logs::DeliverySource"));
+        expect(sources.filter((s) => JSON.stringify(s.Properties.ResourceArn).includes(`"${logicalId}"`))).toHaveLength(1);
       }
       if (ids.includes(CHECKOV_EXCEPTIONS.runtimeImageToken.id)) {
         // The agent execution role and the permissions boundary of agent roles, nothing else.
@@ -136,7 +140,11 @@ describe("hardening (Checkov)", () => {
 });
 
 describe("web session cookie (D63)", () => {
-  const distribution = Object.values(template.findResources("AWS::CloudFront::Distribution"))[0]!.Properties
+  const distribution = Object.values(
+    template.findResources("AWS::CloudFront::Distribution", {
+      Properties: { DistributionConfig: { Comment: `Mango-${cfg.namespace}-web` } },
+    }),
+  )[0]!.Properties
     .DistributionConfig as {
     DefaultCacheBehavior: Record<string, unknown>;
     CacheBehaviors: Record<string, unknown>[];
@@ -161,9 +169,10 @@ describe("web session cookie (D63)", () => {
   it("keeps cookies out of the CloudFront access logs (TM-S6)", () => {
     // Standard logging v2 (D98 (9)): no legacy log, and no cookie field in the delivery.
     expect(distribution.Logging).toBeUndefined();
+    // One per distribution: the SPA's and the second origin's (D123 (9)).
     const deliveries = Object.values(template.findResources("AWS::Logs::Delivery"));
-    expect(deliveries).toHaveLength(1);
-    expect(deliveries[0]!.Properties.RecordFields).not.toContain("cs(Cookie)");
+    expect(deliveries).toHaveLength(2);
+    for (const delivery of deliveries) expect(delivery.Properties.RecordFields).not.toContain("cs(Cookie)");
   });
 
   it("keeps session records in a protected table that expires them, without a stream", () => {

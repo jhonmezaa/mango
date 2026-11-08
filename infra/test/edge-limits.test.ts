@@ -29,6 +29,15 @@ const template = fromCore(
 const [acl] = Object.values(template.findResources("AWS::WAFv2::WebACL", { Properties: { Scope: "CLOUDFRONT" } })) as any[];
 const rules = acl.Properties.Rules as any[];
 const rule = (name: string) => rules.find((r) => r.Name === name);
+// The SPA's distribution and its headers policy; the second origin (D123) has its own of each.
+const spaDistributions = () =>
+  template.findResources("AWS::CloudFront::Distribution", {
+    Properties: { DistributionConfig: { Comment: `Mango-${cfg.namespace}-web` } },
+  });
+const spaPolicies = () =>
+  template.findResources("AWS::CloudFront::ResponseHeadersPolicy", {
+    Properties: { ResponseHeadersPolicyConfig: { Name: `Mango-${cfg.namespace}-security-headers` } },
+  });
 
 describe("edge web ACL (D72)", () => {
   it("evaluates the managed rules first, then the limit of the API, then the ceiling of everything", () => {
@@ -56,8 +65,8 @@ describe("edge web ACL (D72)", () => {
         TextTransformations: [{ Priority: 0, Type: "NONE" }],
       },
     });
-    expect(Object.keys(template.findResources("AWS::CloudFront::Distribution"))).toHaveLength(1);
-    const [distribution] = Object.values(template.findResources("AWS::CloudFront::Distribution")) as any[];
+    expect(Object.keys(spaDistributions())).toHaveLength(1);
+    const [distribution] = Object.values(spaDistributions()) as any[];
     expect(distribution.Properties.DistributionConfig.CacheBehaviors.map((b: any) => b.PathPattern)).toEqual(["/api/*"]);
     // The ceiling has no filter: nothing gets around it.
     const all = rule("RateLimitPerIp").Statement.RateBasedStatement;
@@ -97,7 +106,7 @@ describe("edge web ACL (D72)", () => {
       const names = r.Action.Block.CustomResponse.ResponseHeaders.map((h: any) => h.Name.toLowerCase());
       expect(names).not.toContain("content-security-policy");
     }
-    const policies = template.findResources("AWS::CloudFront::ResponseHeadersPolicy");
+    const policies = spaPolicies();
     expect(Object.keys(policies)).toHaveLength(1);
     const [policyId, policy] = Object.entries(policies)[0] as [string, any];
     const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy;
@@ -110,7 +119,7 @@ describe("edge web ACL (D72)", () => {
       expect(directives).toContain(directive);
     }
     expect(text).not.toMatch(/unsafe-inline|unsafe-eval|\*/);
-    const [distribution] = Object.values(template.findResources("AWS::CloudFront::Distribution")) as any[];
+    const [distribution] = Object.values(spaDistributions()) as any[];
     const config = distribution.Properties.DistributionConfig;
     for (const behavior of [config.DefaultCacheBehavior, ...config.CacheBehaviors]) {
       expect(behavior.ResponseHeadersPolicyId).toEqual({ Ref: policyId });
@@ -153,7 +162,7 @@ describe("edge web ACL (D72)", () => {
     const [, style] = /<style>([^<]*)<\/style>/.exec(RATE_LIMITED_PAGE) ?? [];
     const hash = createHash("sha256").update(style ?? "", "utf8").digest("base64");
     expect(RATE_LIMITED_STYLE_HASH).toBe(`'sha256-${hash}'`);
-    const [policy] = Object.values(template.findResources("AWS::CloudFront::ResponseHeadersPolicy")) as any[];
+    const [policy] = Object.values(spaPolicies()) as any[];
     const text = renderJoin(policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy.ContentSecurityPolicy);
     const styleSrc = text.split("; ").filter((d) => d.startsWith("style-src"));
     expect(styleSrc).toEqual([`style-src 'self' 'sha256-${hash}'`]);
