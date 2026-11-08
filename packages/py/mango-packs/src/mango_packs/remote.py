@@ -185,8 +185,8 @@ class AppCsp(StrictModel):
     Gateway (rule 3), and the ceiling of the second origin names no curated domain yet
     (D123 (9) (d)). A domain here would be a way out that no policy of Mango sees."""
 
-    connect_domains: Annotated[list[EgressHost], Field(max_length=0)] = []
-    resource_domains: Annotated[list[EgressHost], Field(max_length=0)] = []
+    connect_domains: Annotated[list[EgressHost], Field(default_factory=list, max_length=0)]
+    resource_domains: Annotated[list[EgressHost], Field(default_factory=list, max_length=0)]
 
 
 class ToolUi(StrictModel):
@@ -199,10 +199,10 @@ class ToolUi(StrictModel):
     # sha256 of the file's bytes: the pipeline checks it before signing, the release before
     # shipping it, and the SPA once more before the runner draws it (TM-UI8).
     html_sha256: Sha256Hex
-    csp: AppCsp = AppCsp()
+    csp: AppCsp = Field(default_factory=lambda: AppCsp(connect_domains=[], resource_domains=[]))
     # Tools of this profile the app may call (`visibility: ["app"]`), every one `read`; the
     # app calls nothing else, and only the ones its registration approved (TM-UI6).
-    calls: Annotated[list[ToolName], Field(max_length=MAX_APP_CALLS)] = []
+    calls: Annotated[list[ToolName], Field(default_factory=list, max_length=MAX_APP_CALLS)]
 
 
 class RemoteTool(StrictModel):

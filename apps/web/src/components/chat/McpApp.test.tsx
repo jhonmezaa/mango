@@ -188,13 +188,17 @@ describe('an MCP App in the chat (D125, design round 41)', () => {
     await user.click(screen.getByRole('button', { name: 'Cerrar la app' }));
     expect(screen.getByText('Cerraste la app.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Abrir de nuevo' }));
-    await waitFor(() => { expect(opened.requests).toHaveLength(3); });
+    await waitFor(() => {
+      expect(opened.requests).toHaveLength(3);
+    });
   });
 
   it('draws nothing when the release no longer curates the app', async () => {
     const { container } = setup(
       vi.fn(() => Promise.reject(new ApiError(404, 'app_unavailable', 'x'))),
     );
-    await waitFor(() => { expect(container.querySelector('.ap-card')).toBeNull(); });
+    await waitFor(() => {
+      expect(container.querySelector('.ap-card')).toBeNull();
+    });
   });
 });
