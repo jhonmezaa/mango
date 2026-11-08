@@ -20,8 +20,10 @@ TASK_TYPE = "Mango::Task"
 KNOWLEDGE_BASE_TYPE = "Mango::KnowledgeBase"
 REMOTE_MCP_TYPE = "Mango::RemoteMcp"
 TICKET_TYPE = "Mango::Ticket"
+CONVERSATION_TYPE = "Mango::Conversation"
 PLATFORM = ("Mango::Platform", "mango")
-# Limit of requests per BatchIsAuthorized call.
+# Limit of requests per BatchIsAuthorized call. That operation has no IAM action of its own:
+# the roles allow it with ``verifiedpermissions:IsAuthorized`` (API reference).
 _BATCH_SIZE = 30
 
 
@@ -45,6 +47,15 @@ class TaskResource:
     """What Cedar knows about a task (D78): its owner, read from the Tasks table."""
 
     task_id: str
+    owner: str
+
+
+@dataclass(frozen=True)
+class ConversationResource:
+    """What Cedar knows about a conversation (D121 (7), TM-TW3): its owner, read from the
+    turn's record in the person's partition, never from the request."""
+
+    conversation_id: str
     owner: str
 
 
@@ -100,6 +111,13 @@ def _task_entity(task: TaskResource) -> dict[str, Any]:
     return {
         "identifier": {"entityType": TASK_TYPE, "entityId": task.task_id},
         "attributes": {"owner": _user_ref(task.owner)},
+    }
+
+
+def _conversation_entity(conversation: ConversationResource) -> dict[str, Any]:
+    return {
+        "identifier": {"entityType": CONVERSATION_TYPE, "entityId": conversation.conversation_id},
+        "attributes": {"owner": _user_ref(conversation.owner)},
     }
 
 
@@ -160,7 +178,7 @@ class Authorizer:
             "attributes": attributes,
         }
 
-    def is_allowed(  # noqa: PLR0911 - one refusal per resource whose attributes do not match
+    def is_allowed(  # noqa: PLR0911, PLR0912 - one refusal per resource whose attributes do not match
         self,
         user: UserContext,
         action: str,
@@ -172,6 +190,7 @@ class Authorizer:
         knowledge: KnowledgeBaseResource | None = None,
         remote: RemoteMcpResource | None = None,
         ticket: TicketResource | None = None,
+        conversation: ConversationResource | None = None,
     ) -> bool:
         """One decision. ``agent`` carries the attributes of an ``Mango::Agent`` resource,
         ``task`` those of a ``Mango::Task``, ``knowledge`` those of a ``Mango::KnowledgeBase``
@@ -221,6 +240,15 @@ class Authorizer:
                 logger.error("ticket attributes do not match the resource; denying")
                 return False
             resource, *extra = _ticket_entities(ticket)
+        if conversation is not None:
+            if (
+                resource_type != CONVERSATION_TYPE
+                or conversation.conversation_id != resource_id
+                or any(r is not None for r in (agent, task, knowledge, remote, ticket))
+            ):
+                logger.error("conversation attributes do not match the resource; denying")
+                return False
+            resource = _conversation_entity(conversation)
         try:
             resp = self._client.is_authorized(
                 policyStoreId=self._store,

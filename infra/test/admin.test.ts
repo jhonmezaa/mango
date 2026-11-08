@@ -291,6 +291,30 @@ describe("Admin v0 infrastructure (D17)", () => {
     );
   });
 
+  it("registers OwnConversation: only the owner of a conversation, on its owner from the turn's record (D121 (7), TM-TW3)", () => {
+    const [store] = Object.values(template.findResources("AWS::VerifiedPermissions::PolicyStore"));
+    const schema = JSON.parse(store!.Properties.Schema.CedarJson);
+    expect(schema.Mango.actions.OwnConversation.appliesTo).toEqual({
+      principalTypes: ["User"],
+      resourceTypes: ["Conversation"],
+    });
+    expect(schema.Mango.entityTypes.Conversation.shape.attributes).toEqual({
+      owner: { type: "Entity", name: "User", required: true },
+    });
+    const statements = Object.values(template.findResources("AWS::VerifiedPermissions::Policy")).map(
+      (p) => p.Properties.Definition.Static.Statement as string,
+    );
+    const own = statements.filter((s) => s.includes('"OwnConversation"'));
+    expect(own).toHaveLength(1);
+    expect(own[0]).toContain("resource is Mango::Conversation");
+    expect(own[0]).toContain("when { resource.owner == principal };");
+    // Not even an administrator reads someone else's turns (D23).
+    expect(own[0]).not.toContain("isAdmin");
+    expect(readFileSync(resolve(import.meta.dirname, "../../policies/cedar/platform/conversations-own.cedar"), "utf8")).toBe(
+      own[0],
+    );
+  });
+
   it("seeds settings put-if-absent on create and update", () => {
     const seeds = Object.values(template.findResources("Custom::AWS")).filter((r) => {
       const call = JSON.stringify(r.Properties.Create ?? "");

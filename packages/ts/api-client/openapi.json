@@ -13509,6 +13509,57 @@
         "title": "TriggerOut",
         "type": "object"
       },
+      "TurnCancelled": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "interrupted",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "turn_id": {
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "state",
+          "cancelled"
+        ],
+        "title": "TurnCancelled",
+        "type": "object"
+      },
+      "TurnCreated": {
+        "additionalProperties": false,
+        "description": "A queued turn: its stream is read with ``GET /api/chat/turns/{turn_id}/stream``.",
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "turn_id"
+        ],
+        "title": "TurnCreated",
+        "type": "object"
+      },
       "UnreadOut": {
         "additionalProperties": false,
         "properties": {
@@ -18178,6 +18229,7 @@
     },
     "/chat": {
       "post": {
+        "description": "The stream of D57, answered while the turn runs (retired in R5, D120 (7)).",
         "operationId": "chat",
         "requestBody": {
           "content": {
@@ -18210,6 +18262,136 @@
           }
         },
         "summary": "Chat"
+      }
+    },
+    "/chat/turns": {
+      "post": {
+        "description": "The same turn as ``POST /api/chat``, without its stream: the client reads it with\n``GET /api/chat/turns/{turn_id}/stream`` (D120, D121 (2)).",
+        "operationId": "create_turn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create Turn"
+      }
+    },
+    "/chat/turns/{turn_id}/cancel": {
+      "post": {
+        "description": "«Detener» (D121 (7)): the owner's turn ends ``interrupted``; it is charged in full\nand the next question goes in a new session. Idempotent; audited without content.",
+        "operationId": "cancel_turn",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "title": "Turn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnCancelled"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Cancel Turn"
+      }
+    },
+    "/chat/turns/{turn_id}/stream": {
+      "get": {
+        "description": "The turn in ``v1`` deltas from delta ``after + 1`` (D120 (3), (4)), from any task.\nEach connection counts against the person's shared limit (TM-TW6).",
+        "operationId": "turn_stream",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Turn Stream"
       }
     },
     "/conversations": {

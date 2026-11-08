@@ -70,10 +70,12 @@ from mango_api.audit import (
     audit_events_out,
 )
 from mango_api.authz import (
+    CONVERSATION_TYPE,
     PLATFORM,
     REMOTE_MCP_TYPE,
     AgentResource,
     Authorizer,
+    ConversationResource,
     KnowledgeBaseResource,
     RemoteMcpResource,
     TaskResource,
@@ -224,7 +226,7 @@ from mango_api.tasks_store import Automation, Run, RunStatus, TaskStore
 from mango_api.tickets import RunTicketWriter, TicketsDeps, TicketToolGate, tickets_router
 from mango_api.tool_policies import PolicyStore, ToolPolicyDeps, tool_policy_router
 from mango_api.turns_store import DynamoTurnLog, MemoryTurnLog
-from mango_api.web import ApiError, Caller, error_response
+from mango_api.web import ApiError, Caller, error_response, rate_limited
 from mango_api.web_session import (
     CognitoTokens,
     SessionStore,
@@ -250,6 +252,9 @@ from mango_core.tickets import TicketStore
 logger = logging.getLogger("mango_api")
 
 MAX_BODY_BYTES = 32 * 1024
+TURN_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+MAX_STREAM_OFFSET = 1_000_000
+"""The largest ``after`` of a turn's stream: far more deltas than a turn of 600 s writes."""
 HEALTH_PATH = "/api/health"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 """Time (two words), level, logger and message: the metric filter of the alarm
@@ -274,6 +279,20 @@ class ChatRequest(_Strict):
     keeps the agent it started with."""
     model: Annotated[str, Field(pattern=MODEL_ID_PATTERN)] | None = None
     """One of the agent's allowed models (D22); default: the agent's default model."""
+
+
+class TurnCreated(_Strict):
+    """A queued turn: its stream is read with ``GET /api/chat/turns/{turn_id}/stream``."""
+
+    conversation_id: str
+    turn_id: str
+
+
+class TurnCancelled(_Strict):
+    turn_id: str
+    state: Literal["queued", "running", "done", "interrupted", "failed"]
+    cancelled: bool
+    """True when this call stopped the turn; False when it had already ended."""
 
 
 class MeCan(_Strict):
@@ -1358,6 +1377,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         knowledge: KnowledgeBaseResource | None = None,
         remote: RemoteMcpResource | None = None,
         ticket: TicketResource | None = None,
+        conversation: ConversationResource | None = None,
     ) -> Awaitable[None]:
         # Every decision is audited; ``read_only`` only lets the log hide allowed reads.
         # ``context`` (validated or server-generated ids only) links the decision to its turn.
@@ -1377,6 +1397,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             elif ticket is not None:
                 # D112: creator and assignee from the Tickets table, the agent as published.
                 decide = partial(services.authorizer.is_allowed, ticket=ticket)
+            elif conversation is not None:
+                # D121 (7), TM-TW3: the owner as the turn's record says.
+                decide = partial(services.authorizer.is_allowed, conversation=conversation)
             allowed = await asyncio.to_thread(decide, *subject, *([agent] if agent else []))
             await asyncio.to_thread(
                 services.audit.emit,
@@ -1918,8 +1941,9 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             knowledge_sources_router(services.knowledge, current_user, require, knowledge_allowed)
         )
 
-    @app.post("/api/chat")
-    async def chat(body: ChatRequest, caller: CallerDependency) -> Response:
+    async def begin_turn(body: ChatRequest, caller: Caller) -> tuple[turns.ChatTurns, str, str]:
+        """Validate, authorize and queue a turn (D121): what ``POST /api/chat`` and
+        ``POST /api/chat/turns`` share. The conversation and the turn of it."""
         user = caller.user
         repo = services.conversations
         is_new = body.conversation_id is None
@@ -1948,8 +1972,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
         agent = turns.admit(agent_id, agent, record, body.agent_id)
         checked = await asyncio.to_thread(turns.check_turn, services, caller, agent, body.model)
-        # The turn runs in the turn worker (D121): it reserves, invokes and writes its events;
-        # this request answers with them, as when the turn ran here.
+        # The turn runs in the turn worker (D121): it reserves, invokes and writes its events.
         chat_turns = services.chat_turns
         if chat_turns is None:  # set by create_app
             raise ApiError(503, "agent_unavailable", "please try again")
@@ -1963,12 +1986,98 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                 message=body.message,
             )
         )
-        first = await chat_turns.opening(user.user_id, turn_id)
+        return chat_turns, conversation_id, turn_id
+
+    @app.post("/api/chat")
+    async def chat(body: ChatRequest, caller: CallerDependency) -> Response:
+        """The stream of D57, answered while the turn runs (retired in R5, D120 (7))."""
+        chat_turns, _conversation_id, turn_id = await begin_turn(body, caller)
+        first = await chat_turns.opening(caller.user.user_id, turn_id)
         return StreamingResponse(
-            chat_turns.stream(user.user_id, turn_id, first),
+            chat_turns.stream(caller.user.user_id, turn_id, first),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
+
+    @app.post("/api/chat/turns", response_model=TurnCreated)
+    async def create_turn(body: ChatRequest, caller: CallerDependency) -> TurnCreated:
+        """The same turn as ``POST /api/chat``, without its stream: the client reads it with
+        ``GET /api/chat/turns/{turn_id}/stream`` (D120, D121 (2))."""
+        _chat_turns, conversation_id, turn_id = await begin_turn(body, caller)
+        return TurnCreated(conversation_id=conversation_id, turn_id=turn_id)
+
+    stream_reads = services.limits.limiter("chat.stream_reads")
+
+    async def owned_turn(caller: Caller, turn_id: str, *, read_only: bool) -> turns.ChatTurns:
+        """The caller's own turn (TM-TW3), twice over: it is looked up in their partition only
+        (row-level security), and Cedar decides ``OwnConversation`` on its conversation with
+        the owner its record holds, audited. Someone else's turn, one that does not exist and
+        a denial answer the same 404."""
+        chat_turns = services.chat_turns
+        if chat_turns is None or not TURN_ID_RE.fullmatch(turn_id):
+            raise HTTPException(status_code=404, detail="not found")
+        user_id = caller.user.user_id
+        status = await asyncio.to_thread(chat_turns.log.status, user_id, turn_id)
+        if status is None or not CONVERSATION_ID_RE.fullmatch(status.conversation_id):
+            raise HTTPException(status_code=404, detail="not found")
+        try:
+            await require(
+                caller,
+                "OwnConversation",
+                CONVERSATION_TYPE,
+                status.conversation_id,
+                read_only=read_only,
+                context={"conversation_id": status.conversation_id, "turn": turn_id},
+                # A record written before R3 has no owner: the partition it was read from.
+                conversation=ConversationResource(status.conversation_id, status.owner or user_id),
+            )
+        except HTTPException:
+            raise HTTPException(status_code=404, detail="not found") from None
+        return chat_turns
+
+    @app.get(
+        "/api/chat/turns/{turn_id}/stream",
+        responses={200: {"content": {"text/event-stream": {}}}},
+    )
+    async def turn_stream(
+        turn_id: str,
+        caller: CallerDependency,
+        after: Annotated[int, Query(ge=0, le=MAX_STREAM_OFFSET)] = 0,
+    ) -> Response:
+        """The turn in ``v1`` deltas from delta ``after + 1`` (D120 (3), (4)), from any task.
+        Each connection counts against the person's shared limit (TM-TW6)."""
+        user_id = caller.user.user_id
+        if not await asyncio.to_thread(stream_reads.allow, user_id):
+            raise rate_limited(stream_reads.retry_after(user_id))
+        chat_turns = await owned_turn(caller, turn_id, read_only=True)
+        return StreamingResponse(
+            chat_turns.stream_v1(user_id, turn_id, after),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/api/chat/turns/{turn_id}/cancel", response_model=TurnCancelled)
+    async def cancel_turn(turn_id: str, caller: CallerDependency) -> TurnCancelled:
+        """«Detener» (D121 (7)): the owner's turn ends ``interrupted``; it is charged in full
+        and the next question goes in a new session. Idempotent; audited without content."""
+        user = caller.user
+        chat_turns = await owned_turn(caller, turn_id, read_only=False)
+        outcome = await asyncio.to_thread(chat_turns.cancel, user.user_id, turn_id)
+        if outcome is None:
+            raise HTTPException(status_code=404, detail="not found")
+        status, cancelled = outcome
+        services.audit.emit(
+            "agent.cancelled",
+            user.user_id,
+            {
+                "conversation_id": status.conversation_id,
+                "turn": turn_id,
+                "cancelled": cancelled,
+                "state": status.state.value,
+            },
+            user,
+        )
+        return TurnCancelled(turn_id=turn_id, state=status.state.value, cancelled=cancelled)
 
     return _wrap(app, settings)
 

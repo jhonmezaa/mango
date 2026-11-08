@@ -186,8 +186,10 @@ class FakeAuthorizer:
     resources: list[Any] = field(default_factory=list)
     """The Agent entity of each decision, as mango-api built it."""
 
-    def is_allowed(self, _user: Any, _action: str, _rt: str, _rid: str, agent: Any = None) -> bool:
-        self.resources.append(agent)
+    def is_allowed(
+        self, _user: Any, _action: str, _rt: str, _rid: str, agent: Any = None, **other: Any
+    ) -> bool:
+        self.resources.append(agent if agent is not None else next(iter(other.values()), None))
         return self.allow
 
 

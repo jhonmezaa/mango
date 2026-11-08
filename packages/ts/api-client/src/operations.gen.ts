@@ -45,6 +45,8 @@ import {
     zCancelApprovalBody,
     zCancelApprovalPath,
     zCancelApprovalResponse,
+    zCancelTurnPath,
+    zCancelTurnResponse,
     zChangePersonAreaBody,
     zChangePersonAreaPath,
     zChangePersonAreaResponse,
@@ -67,6 +69,8 @@ import {
     zCreateNewTaskResponse,
     zCreateNewTicketBody,
     zCreateNewTicketResponse,
+    zCreateTurnBody,
+    zCreateTurnResponse,
     zDeleteExistingKnowledgeBaseBody,
     zDeleteExistingKnowledgeBasePath,
     zDeleteExistingKnowledgeBaseResponse,
@@ -383,7 +387,7 @@ import {
  * Every route of mango-api that answers JSON: how to call it and the zod schemas of its path
  * parameters, query, body and response. Paths are relative to the API base path.
  *
- * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, POST /evals/requirement-changes/{change_id}/approve, POST /evals/requirement-changes/{change_id}/reject, POST /evals/requirement-changes/{change_id}/withdraw, POST /evals/suites/{suite_id}/delete, POST /playground/runs, POST /session, DELETE /session.
+ * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, GET /chat/turns/{turn_id}/stream, POST /evals/requirement-changes/{change_id}/approve, POST /evals/requirement-changes/{change_id}/reject, POST /evals/requirement-changes/{change_id}/withdraw, POST /evals/suites/{suite_id}/delete, POST /playground/runs, POST /session, DELETE /session.
  */
 export const operations = {
     addComment: {
@@ -521,6 +525,15 @@ export const operations = {
         body: zCancelApprovalBody,
         response: zCancelApprovalResponse,
     },
+    cancelTurn: {
+        method: 'POST',
+        path: '/chat/turns/{turn_id}/cancel',
+        status: 200,
+        pathParams: zCancelTurnPath,
+        query: null,
+        body: null,
+        response: zCancelTurnResponse,
+    },
     changePersonArea: {
         method: 'POST',
         path: '/admin/people/{user_id}/area',
@@ -601,6 +614,15 @@ export const operations = {
         query: null,
         body: zCreateNewTicketBody,
         response: zCreateNewTicketResponse,
+    },
+    createTurn: {
+        method: 'POST',
+        path: '/chat/turns',
+        status: 200,
+        pathParams: null,
+        query: null,
+        body: zCreateTurnBody,
+        response: zCreateTurnResponse,
     },
     deleteExistingKnowledgeBase: {
         method: 'POST',

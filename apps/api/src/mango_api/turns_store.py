@@ -7,7 +7,8 @@ every task of mango-api reach them only through a client bound to that person.
 * ``TURN#<turn>#STATE``: ``queued`` → ``running`` → ``done`` | ``interrupted`` | ``failed``.
   Every change is conditional on the state it comes from: of two workers that receive the
   same message only one moves it to ``running`` (TM-TW5), and a turn may be marked
-  ``interrupted`` from outside the worker (a reader that sees it stalled; «Cancelar», R3).
+  ``interrupted`` from outside the worker (a reader that sees it stalled, or its owner's
+  «Detener»: ``POST /api/chat/turns/{turn}/cancel``).
 * ``TURN#<turn>#EVT#<seq:08d>``: one item per event of the stream, numbered from 1, written
   once (conditional), read in order.
 
@@ -61,6 +62,10 @@ class TurnStatus:
     rejection: dict[str, Any] | None = None
     """Why a turn ended before its stream started: the HTTP error the request answers with
     (status, code and message only; never content)."""
+    conversation_id: str = ""
+    owner: str = ""
+    """Who the turn belongs to, as written when it was queued (the subject of the partition;
+    empty in records written before R3)."""
 
 
 class TurnLog(Protocol):
@@ -92,6 +97,10 @@ class TurnLog(Protocol):
 
     def events(self, user_id: str, turn_id: str, after: int) -> list[TurnEvent]:
         """The events after ``after``, in order."""
+        ...
+
+    def last_seq(self, user_id: str, turn_id: str) -> int:
+        """The number of the turn's last event (0 without any)."""
         ...
 
     def status(self, user_id: str, turn_id: str) -> TurnStatus | None: ...
@@ -147,6 +156,7 @@ class DynamoTurnLog:
                 **_state_key(user_id, turn_id),
                 "state": {"S": TurnState.QUEUED.value},
                 "conversation_id": {"S": conversation_id},
+                "owner": {"S": user_id},
                 "deadline": {"N": str(deadline)},
                 "ttl": self._ttl(),
             },
@@ -244,6 +254,23 @@ class DynamoTurnLog:
             for item in resp.get("Items", [])
         ]
 
+    def last_seq(self, user_id: str, turn_id: str) -> int:
+        resp = self._clients(user_id).query(
+            TableName=self._table,
+            KeyConditionExpression="PK = :pk AND SK BETWEEN :from AND :to",
+            ExpressionAttributeValues={
+                ":pk": {"S": f"USER#{user_id}"},
+                ":from": {"S": _event_sk(turn_id, 1)},
+                ":to": {"S": _event_sk(turn_id, 99_999_999)},
+            },
+            ConsistentRead=True,
+            ScanIndexForward=False,
+            Limit=1,
+            ProjectionExpression="SK",
+        )
+        items = resp.get("Items", [])
+        return int(items[0]["SK"]["S"].rsplit("#", 1)[1]) if items else 0
+
     def status(self, user_id: str, turn_id: str) -> TurnStatus | None:
         item = (
             self._clients(user_id)
@@ -257,6 +284,8 @@ class DynamoTurnLog:
             state=TurnState(item["state"]["S"]),
             deadline=int(item.get("deadline", {}).get("N", "0")),
             rejection=json.loads(raw) if raw else None,
+            conversation_id=item.get("conversation_id", {}).get("S", ""),
+            owner=item.get("owner", {}).get("S", ""),
         )
 
     def wait(self, user_id: str, turn_id: str, seconds: float) -> None:
@@ -268,6 +297,7 @@ class DynamoTurnLog:
 class _MemoryTurn:
     state: TurnState
     deadline: int
+    conversation_id: str = ""
     rejection: dict[str, Any] | None = None
     events: dict[int, TurnEvent] = field(default_factory=dict)
 
@@ -286,7 +316,9 @@ class MemoryTurnLog:
         with self._changed:
             if (user_id, turn_id) in self._turns:
                 raise ValueError("turn exists")
-            self._turns[(user_id, turn_id)] = _MemoryTurn(TurnState.QUEUED, deadline)
+            self._turns[(user_id, turn_id)] = _MemoryTurn(
+                TurnState.QUEUED, deadline, conversation_id
+            )
             self._changed.notify_all()
 
     def claim(self, user_id: str, turn_id: str, *, worker: str, deadline: int) -> bool:
@@ -339,7 +371,14 @@ class MemoryTurnLog:
             turn = self._turns.get((user_id, turn_id))
             if turn is None:
                 return None
-            return TurnStatus(turn.state, turn.deadline, turn.rejection)
+            return TurnStatus(
+                turn.state, turn.deadline, turn.rejection, turn.conversation_id, user_id
+            )
+
+    def last_seq(self, user_id: str, turn_id: str) -> int:
+        with self._changed:
+            turn = self._turns.get((user_id, turn_id))
+            return max(turn.events, default=0) if turn is not None else 0
 
     def wait(self, user_id: str, turn_id: str, seconds: float) -> None:
         with self._changed:

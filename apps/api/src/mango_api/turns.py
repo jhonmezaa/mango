@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from mango_api import harness, knowledge_citations, sessions
+from mango_api import chat_stream, harness, knowledge_citations, sessions
 from mango_api.activity import TurnActivity
 from mango_api.activity_store import Origin
 from mango_api.approvals import (
@@ -58,7 +58,7 @@ from mango_api.pricing import Usage, cost, estimate_max_cost, knowledge_cost, tu
 from mango_api.published import AgentUnavailableError, PublishedAgent, usable_by
 from mango_api.settings import ModelPrice
 from mango_api.settings_store import SettingsUnavailableError
-from mango_api.turns_store import ENDED, TurnEvent, TurnLog, TurnState
+from mango_api.turns_store import ENDED, TurnEvent, TurnLog, TurnState, TurnStatus
 from mango_api.web import ApiError, Caller
 from mango_core import invocation, usage_days
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN
@@ -84,7 +84,15 @@ SETTLE_SECONDS = 120
 PICKUP_SECONDS = 30
 """How long a turn may wait in the queue before the request gives it up (TM-TW10)."""
 READ_POLL_SECONDS = 0.25
+"""The shortest wait between two reads of the turn's record."""
+READ_POLL_MAX_SECONDS = 1.0
+"""The longest one: while nothing new arrives the wait grows up to here (TM-TW6)."""
+READ_POLL_FACTOR = 1.5
+READ_FAST_SECONDS = 2.0
+"""The first seconds of a read always wait the shortest: no latency is lost at the start."""
 STATE_POLL_SECONDS = 2.0
+END_ATTEMPTS = 5
+"""Tries to write the end of a turn stopped from outside its worker after its last event."""
 TERMINAL_EVENTS = frozenset({"done", "error"})
 UPSTREAM_ERROR = {"code": "upstream_error", "message": "the agent failed"}
 MESSAGE_VERSION = 1
@@ -643,6 +651,27 @@ def worker_name() -> str:
     return f"{socket.gethostname()}:{os.getpid()}"
 
 
+class ReadBackoff:
+    """How long a reader waits before reading the turn's record again: the shortest wait
+    during its first seconds and right after something new, then 1.5 times longer each read
+    that brings nothing, up to ``READ_POLL_MAX_SECONDS`` (about 2,400 queries in a turn of
+    600 s become about 600)."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._start = clock()
+        self._next = READ_POLL_SECONDS
+
+    def seen(self) -> None:
+        self._next = READ_POLL_SECONDS
+
+    def wait(self) -> float:
+        wait = self._next
+        if self._clock() - self._start >= READ_FAST_SECONDS:
+            self._next = min(self._next * READ_POLL_FACTOR, READ_POLL_MAX_SECONDS)
+        return wait
+
+
 # --- The chat turn ----------------------------------------------------------------------
 
 
@@ -730,6 +759,7 @@ class ChatTurns:
     async def opening(self, user_id: str, turn_id: str) -> list[TurnEvent]:
         """The first events of the turn, once its stream started; raises what the request
         answers when the turn ended before that (the same error as before D121)."""
+        backoff = ReadBackoff()
         while True:
             events = await asyncio.to_thread(self._log.events, user_id, turn_id, 0)
             if events:
@@ -755,7 +785,7 @@ class ChatTurns:
                     logger.warning("chat turn %s was given up %s", turn_id, status.state.value)
                     raise ApiError(503, "agent_unavailable", "please try again")
                 continue
-            await self._pause(user_id, turn_id)
+            await self._pause(user_id, turn_id, backoff.wait())
 
     async def stream(
         self, user_id: str, turn_id: str, first: list[TurnEvent]
@@ -764,6 +794,7 @@ class ChatTurns:
         15 s without one, and the end once the worker closed the turn (the message, the
         settlement and the title of a new conversation are written by then)."""
         loop = time.monotonic
+        backoff = ReadBackoff()
         seq, pending, ended = 0, first, False
         sent_at = state_at = loop()
         while True:
@@ -784,15 +815,18 @@ class ChatTurns:
                         continue
                     return
                 if int(self._clock()) > status.deadline and await asyncio.to_thread(
-                    self.interrupt, user_id, turn_id, seq
+                    self.interrupt, user_id, turn_id
                 ):
-                    yield sse("error", UPSTREAM_ERROR)
-                    return
+                    # Its end was written after its last event: read and sent as any other.
+                    pending = await asyncio.to_thread(self._log.events, user_id, turn_id, seq)
+                    continue
             if loop() - sent_at >= HEARTBEAT_SECONDS:
                 yield b": ping\n\n"
                 sent_at = loop()
-            await self._pause(user_id, turn_id)
+            await self._pause(user_id, turn_id, backoff.wait())
             pending = await asyncio.to_thread(self._log.events, user_id, turn_id, seq)
+            if pending:
+                backoff.seen()
 
     async def _closed(self, user_id: str, turn_id: str) -> None:
         """Wait, at most ``SETTLE_SECONDS``, until the worker closes the turn."""
@@ -801,29 +835,126 @@ class ChatTurns:
             status = await asyncio.to_thread(self._log.status, user_id, turn_id)
             if status is None or status.state in ENDED:
                 return
-            await self._pause(user_id, turn_id)
+            await self._pause(user_id, turn_id, READ_POLL_SECONDS)
 
-    async def _pause(self, user_id: str, turn_id: str) -> None:
+    async def _pause(self, user_id: str, turn_id: str, seconds: float) -> None:
         """Between two reads. Polling the table sleeps on the event loop: a thread of the
         pool per waiting request would starve the other routes (FASTAPI-LIMITS-001)."""
         if self._log.notifies:
-            await asyncio.to_thread(self._log.wait, user_id, turn_id, READ_POLL_SECONDS)
+            await asyncio.to_thread(self._log.wait, user_id, turn_id, seconds)
         else:
-            await asyncio.sleep(READ_POLL_SECONDS)
+            await asyncio.sleep(seconds)
 
-    def interrupt(self, user_id: str, turn_id: str, seq: int) -> bool:
-        """Mark a running turn ``interrupted`` from outside its worker (it stalled past its
-        deadline; «Cancelar» in R3) and record why its stream ended. Its reservation stays
-        held for the reconciler (D73) and its session is never continued (D121 (7))."""
-        if not self._log.end(
-            user_id, turn_id, TurnState.INTERRUPTED, were=frozenset({TurnState.RUNNING})
-        ):
+    def interrupt(
+        self,
+        user_id: str,
+        turn_id: str,
+        *,
+        error: dict[str, Any] = UPSTREAM_ERROR,
+        were: frozenset[TurnState] = frozenset({TurnState.RUNNING}),
+    ) -> bool:
+        """Mark a turn ``interrupted`` from outside its worker (it stalled past its deadline,
+        or its owner stopped it) and write why its stream ended after its last event. Its
+        reservation stays held for the reconciler (D73) or is settled by its worker, and its
+        session is never continued (D121 (7)).
+
+        The end takes the number after the last event: when the worker writes one first, the
+        end goes after it, and the worker's next write finds the number taken and stops."""
+        if not self._log.end(user_id, turn_id, TurnState.INTERRUPTED, were=were):
             return False
         try:
-            self._log.append(user_id, turn_id, seq + 1, "error", UPSTREAM_ERROR)
+            for _ in range(END_ATTEMPTS):
+                seq = self._log.last_seq(user_id, turn_id) + 1
+                if self._log.append(user_id, turn_id, seq, "error", error):
+                    return True
+            logger.warning("the end of interrupted chat turn %s was not recorded", turn_id)
         except Exception:
             logger.exception("the end of an interrupted chat turn was not recorded")
         return True
+
+    def cancel(self, user_id: str, turn_id: str) -> tuple[TurnStatus, bool] | None:
+        """The owner's «Detener» (D121 (7)): a turn still queued or running ends
+        ``interrupted``. ``None`` when the person has no such turn (TM-TW3). Idempotent: a
+        turn that already ended is left as it is."""
+        status = self._log.status(user_id, turn_id)
+        if status is None:
+            return None
+        cancelled = status.state not in ENDED and self.interrupt(
+            user_id,
+            turn_id,
+            error=chat_stream.CANCELLED,
+            were=frozenset({TurnState.QUEUED, TurnState.RUNNING}),
+        )
+        now = self._log.status(user_id, turn_id) or status
+        return now, cancelled
+
+    async def stream_v1(  # noqa: PLR0912 - one branch per state of the turn
+        self, user_id: str, turn_id: str, after: int
+    ) -> AsyncIterator[bytes]:
+        """The turn as ``v1`` deltas (D120), from delta ``after + 1``: the record is replayed
+        from its first event and what the client already has is not sent again. A comment
+        every 15 s without anything new; the end once the worker closed the turn."""
+        loop = time.monotonic
+        backoff = ReadBackoff()
+        yield chat_stream.encoding_event()
+        status = await asyncio.to_thread(self._log.status, user_id, turn_id)
+        if status is None:
+            return
+        translator = chat_stream.Translator(turn_id, status.conversation_id)
+        compressor = chat_stream.Compressor()
+        offset = seq = 0
+        sent_at = state_at = loop()
+
+        def send(deltas: list[chat_stream.Delta]) -> list[bytes]:
+            nonlocal offset
+            out = []
+            for delta in deltas:
+                offset += 1
+                if offset > after:
+                    out.append(chat_stream.delta_event(offset, compressor.short(delta)))
+            return out
+
+        while True:
+            events = await asyncio.to_thread(self._log.events, user_id, turn_id, seq)
+            for event in events:
+                seq = event.seq
+                for chunk in send(translator.feed(event)):
+                    yield chunk
+                    sent_at = loop()
+            if events:
+                backoff.seen()
+            if not translator.ended and (not events or loop() - state_at >= STATE_POLL_SECONDS):
+                state_at = loop()
+                status = await asyncio.to_thread(self._log.status, user_id, turn_id)
+                if status is None:
+                    return
+                if status.state in ENDED:
+                    if await asyncio.to_thread(self._log.events, user_id, turn_id, seq):
+                        continue
+                    for chunk in send(translator.close(status)):
+                        yield chunk
+                elif int(self._clock()) > status.deadline:
+                    await asyncio.to_thread(self._give_up, user_id, turn_id, status)
+                    continue
+            if translator.ended:
+                await self._closed(user_id, turn_id)
+                yield chat_stream.complete_events(status.conversation_id, turn_id)
+                return
+            if events:
+                continue
+            if loop() - sent_at >= HEARTBEAT_SECONDS:
+                yield b": ping\n\n"
+                sent_at = loop()
+            await self._pause(user_id, turn_id, backoff.wait())
+
+    def _give_up(self, user_id: str, turn_id: str, status: TurnStatus) -> None:
+        """A turn past its deadline: nobody took it in time (TM-TW10), so it never runs; or its
+        worker stopped, so it ends interrupted."""
+        if status.state == TurnState.QUEUED:
+            if self._log.end(user_id, turn_id, TurnState.FAILED, were=frozenset({status.state})):
+                logger.warning("chat turn %s was given up queued", turn_id)
+        elif self.interrupt(user_id, turn_id):
+            logger.warning("chat turn %s was given up running", turn_id)
 
     # --- the worker ---------------------------------------------------------------------
 
@@ -1109,7 +1240,7 @@ class ChatTurns:
             agentcore=agentcore,
         )
 
-    def _answer(self, started: _Started) -> TurnState:
+    def _answer(self, started: _Started) -> TurnState:  # noqa: PLR0912, PLR0915
         """The stream of the turn, as events of its record; the state it ends in."""
         services, log = self._services, self._log
         user = started.caller.user
@@ -1117,11 +1248,29 @@ class ChatTurns:
         conversation_id, turn_id = message.conversation_id, message.turn_id
         repo = services.conversations
         seq = 0
+        # Stopped from outside (its owner's «Detener», or a reader that saw it stalled): the
+        # end of its stream is written, so nothing more is (D121 (7)).
+        stopped = False
 
         def put(kind: str, data: dict[str, Any]) -> None:
-            nonlocal seq
+            nonlocal seq, stopped
+            if stopped:
+                return
             seq += 1
-            log.append(user.user_id, turn_id, seq, kind, data)
+            if not log.append(user.user_id, turn_id, seq, kind, data):
+                stopped = True
+                logger.info("chat turn %s was stopped: its stream is not written", turn_id)
+
+        def still_running() -> bool:
+            nonlocal stopped
+            if not stopped:
+                try:
+                    status = log.status(user.user_id, turn_id)
+                except Exception:
+                    logger.exception("the state of chat turn %s could not be read", turn_id)
+                    status = None
+                stopped = status is not None and status.state != TurnState.RUNNING
+            return not stopped
 
         put("conversation", {"conversation_id": conversation_id})
         result = harness.InvocationResult()
@@ -1153,6 +1302,9 @@ class ChatTurns:
                 if event.kind != harness.WRITE_CALL:
                     put(event.kind, event.data)
                     continue
+                if stopped:
+                    # Nobody reads this turn any more: nothing is asked of the person.
+                    continue
                 # The Gateway refused the call (no approval). It becomes a request with the
                 # tier computed here from its real arguments (D27).
                 approval = request_approval(
@@ -1161,35 +1313,39 @@ class ChatTurns:
                 if approval is not None:
                     approval_ids.append(approval.approval_id)
                     put("approval", approval.model_dump(mode="json"))
-            # Shown to the person only when it is everything the turn cost.
-            actual = cost(result.usage, started.price)
-            message_id = repo.add_message(
-                user.user_id,
-                conversation_id,
-                "assistant",
-                result.text,
-                result.tools,
-                approvals=approval_ids,
-                citations=knowledge_citations.citations(result.searches),
-                connection_required=result.connection_required,
-                remote_sources=result.remote_sources,
-            )
-            put(
-                "done",
-                {
-                    "message_id": message_id,
-                    "stop_reason": result.stop_reason,
-                    "usage": {
-                        "input_tokens": result.usage.input_tokens,
-                        "output_tokens": result.usage.output_tokens,
+            # The stream was read to its end even when it was stopped, so that the turn is
+            # settled with what it really cost ("charged in full"); but its answer, which the
+            # person stopped, is not stored, and its session is never continued.
+            if still_running():
+                # Shown to the person only when it is everything the turn cost.
+                actual = cost(result.usage, started.price)
+                message_id = repo.add_message(
+                    user.user_id,
+                    conversation_id,
+                    "assistant",
+                    result.text,
+                    result.tools,
+                    approvals=approval_ids,
+                    citations=knowledge_citations.citations(result.searches),
+                    connection_required=result.connection_required,
+                    remote_sources=result.remote_sources,
+                )
+                put(
+                    "done",
+                    {
+                        "message_id": message_id,
+                        "stop_reason": result.stop_reason,
+                        "usage": {
+                            "input_tokens": result.usage.input_tokens,
+                            "output_tokens": result.usage.output_tokens,
+                        },
+                        "cost_usd": str(actual.quantize(Decimal("0.0001"))),
+                        # Registrations only, never content or URLs: the live turn shows «Leyó
+                        # {servicio}» and classifies its links as after a reload.
+                        "remote_sources": result.remote_sources,
                     },
-                    "cost_usd": str(actual.quantize(Decimal("0.0001"))),
-                    # Registrations only, never content or URLs: the live turn shows «Leyó
-                    # {servicio}» and classifies its links as after a reload.
-                    "remote_sources": result.remote_sources,
-                },
-            )
-            answered = True
+                )
+                answered = not stopped
         except Exception:
             if result.harness_missing:
                 # Not a failure of this turn: the agent cannot answer anybody until it is
@@ -1233,6 +1389,8 @@ class ChatTurns:
             )
         if answered:
             return TurnState.DONE
+        if stopped:
+            return TurnState.INTERRUPTED
         # The agent was reached and the end of the turn is not known: interrupted, its
         # reservation held for the reconciler (D73) and its session never continued (D121 (7)).
         return (

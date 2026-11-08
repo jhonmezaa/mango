@@ -7069,6 +7069,40 @@ export type TriggerOut = {
 };
 
 /**
+ * TurnCancelled
+ */
+export type TurnCancelled = {
+    /**
+     * Cancelled
+     */
+    cancelled: boolean;
+    /**
+     * State
+     */
+    state: 'queued' | 'running' | 'done' | 'interrupted' | 'failed';
+    /**
+     * Turn Id
+     */
+    turn_id: string;
+};
+
+/**
+ * TurnCreated
+ *
+ * A queued turn: its stream is read with ``GET /api/chat/turns/{turn_id}/stream``.
+ */
+export type TurnCreated = {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string;
+    /**
+     * Turn Id
+     */
+    turn_id: string;
+};
+
+/**
  * UnreadOut
  */
 export type UnreadOut = {
@@ -9879,6 +9913,94 @@ export type ChatErrors = {
 export type ChatError = ChatErrors[keyof ChatErrors];
 
 export type ChatResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type CreateTurnData = {
+    body: ChatRequest;
+    path?: never;
+    query?: never;
+    url: '/chat/turns';
+};
+
+export type CreateTurnErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type CreateTurnError = CreateTurnErrors[keyof CreateTurnErrors];
+
+export type CreateTurnResponses = {
+    /**
+     * Successful Response
+     */
+    200: TurnCreated;
+};
+
+export type CreateTurnResponse = CreateTurnResponses[keyof CreateTurnResponses];
+
+export type CancelTurnData = {
+    body?: never;
+    path: {
+        /**
+         * Turn Id
+         */
+        turn_id: string;
+    };
+    query?: never;
+    url: '/chat/turns/{turn_id}/cancel';
+};
+
+export type CancelTurnErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type CancelTurnError = CancelTurnErrors[keyof CancelTurnErrors];
+
+export type CancelTurnResponses = {
+    /**
+     * Successful Response
+     */
+    200: TurnCancelled;
+};
+
+export type CancelTurnResponse = CancelTurnResponses[keyof CancelTurnResponses];
+
+export type TurnStreamData = {
+    body?: never;
+    path: {
+        /**
+         * Turn Id
+         */
+        turn_id: string;
+    };
+    query?: {
+        /**
+         * After
+         */
+        after?: number;
+    };
+    url: '/chat/turns/{turn_id}/stream';
+};
+
+export type TurnStreamErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type TurnStreamError = TurnStreamErrors[keyof TurnStreamErrors];
+
+export type TurnStreamResponses = {
     /**
      * Successful Response
      */

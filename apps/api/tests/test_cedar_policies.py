@@ -9,11 +9,13 @@ import pytest
 
 from mango_api.authz import (
     AGENT_TYPE,
+    CONVERSATION_TYPE,
     KNOWLEDGE_BASE_TYPE,
     PLATFORM,
     REMOTE_MCP_TYPE,
     AgentResource,
     Authorizer,
+    ConversationResource,
     KnowledgeBaseResource,
     RemoteMcpResource,
 )
@@ -470,3 +472,21 @@ def test_stopping_requiring_a_suite_is_decided_by_admins_only(authz: Authorizer)
         if authz.is_allowed(u, "ApproveEvalRequirement", AGENT_TYPE, AGENT, resource)
     }
     assert allowed == {"admin-1"}
+
+
+def test_only_the_owner_reads_or_stops_the_turns_of_a_conversation(authz: Authorizer) -> None:
+    # D121 (7), TM-TW3: not even an administrator (D23).
+    conversation = ConversationResource("c" * 32, owner=MEMBER.user_id)
+    allowed = {
+        u.user_id
+        for u in EVERYONE
+        if authz.is_allowed(
+            u, "OwnConversation", CONVERSATION_TYPE, "c" * 32, conversation=conversation
+        )
+    }
+    assert allowed == {MEMBER.user_id}
+    # The attributes must be those of the resource asked about.
+    assert not authz.is_allowed(
+        MEMBER, "OwnConversation", CONVERSATION_TYPE, "d" * 32, conversation=conversation
+    )
+    assert not authz.is_allowed(MEMBER, "OwnConversation", *PLATFORM)

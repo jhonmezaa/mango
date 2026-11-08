@@ -3298,6 +3298,31 @@ export const zTriggerOutSchema = z.object({
 });
 
 /**
+ * TurnCancelled
+ */
+export const zTurnCancelledSchema = z.object({
+    cancelled: z.boolean(),
+    state: z.enum([
+        'queued',
+        'running',
+        'done',
+        'interrupted',
+        'failed'
+    ]),
+    turn_id: z.string()
+});
+
+/**
+ * TurnCreated
+ *
+ * A queued turn: its stream is read with ``GET /api/chat/turns/{turn_id}/stream``.
+ */
+export const zTurnCreatedSchema = z.object({
+    conversation_id: z.string(),
+    turn_id: z.string()
+});
+
+/**
  * UnreadOut
  */
 export const zUnreadOutSchema = z.object({
@@ -4568,6 +4593,30 @@ export const zRejectApprovalPath = z.object({
 export const zRejectApprovalResponse = zApprovalOutSchema;
 
 export const zChatBody = zChatRequestSchema;
+
+export const zCreateTurnBody = zChatRequestSchema;
+
+/**
+ * Successful Response
+ */
+export const zCreateTurnResponse = zTurnCreatedSchema;
+
+export const zCancelTurnPath = z.object({
+    turn_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zCancelTurnResponse = zTurnCancelledSchema;
+
+export const zTurnStreamPath = z.object({
+    turn_id: z.string()
+});
+
+export const zTurnStreamQuery = z.object({
+    after: z.int().gte(0).lte(1000000).optional().default(0)
+});
 
 /**
  * Successful Response

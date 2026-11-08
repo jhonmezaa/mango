@@ -55,6 +55,9 @@ from mango_api.rate_limits import (
 
 MODEL_REFRESHES_PER_MINUTE = 5
 AGENT_LISTS_PER_MINUTE = 30
+CHAT_STREAM_READS_PER_MINUTE = 60
+"""Connections to the streams of turns per person: a client retries 12 times per cut, with
+back-off (D120 (4)), so a few open chats never reach it."""
 
 MINUTE = 60
 HOUR = 3600
@@ -209,6 +212,15 @@ LIMITS: dict[str, LimitSpec] = {
         HOUR,
         shared=True,
         why="Comments on tickets: text other people and agents read (D112, TM-TK8).",
+    ),
+    "chat.stream_reads": LimitSpec(
+        CHAT_STREAM_READS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why=(
+            "Each connection to a turn's stream replays its record from the Conversations "
+            "table; reconnecting in a loop is bounded for the person on every task (TM-TW6)."
+        ),
     ),
     "knowledge.changes": LimitSpec(
         knowledge.CHANGES_PER_HOUR,

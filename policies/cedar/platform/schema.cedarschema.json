@@ -34,6 +34,14 @@
           }
         }
       },
+      "Conversation": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "owner": { "type": "Entity", "name": "User", "required": true }
+          }
+        }
+      },
       "KnowledgeBase": {
         "shape": {
           "type": "Record",
@@ -149,6 +157,9 @@
       "ViewTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Task"] } },
       "ControlTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Task"] } },
       "OwnTask": { "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Task"] } },
+      "OwnConversation": {
+        "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Conversation"] }
+      },
       "ApproveToolPolicy": {
         "appliesTo": { "principalTypes": ["User"], "resourceTypes": ["Platform"] }
       },
